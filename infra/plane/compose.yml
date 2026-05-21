@@ -1,0 +1,533 @@
+x-plane: &plane
+  APP_VERSION: v2.6.0
+  APP_DOMAIN: ${DOMAIN_NAME:-localhost}
+  MACHINE_SIGNATURE: ${MACHINE_SIGNATURE}
+  DEPLOY_PLATFORM: docker_compose
+  PRIME_HOST: https://prime.plane.so
+  IS_AIRGAPPED: ${IS_AIRGAPPED:-0}
+
+x-monitor-env: &monitor-env
+  SERVICE_HTTP_WEB: web:3000
+  SERVICE_HTTP_API: api:8000
+  SERVICE_HTTP_LIVE: live:3000/live/health
+  SERVICE_HTTP_PROXY: proxy:80
+  SERVICE_HTTP_MINIO: plane-minio:9090
+  SERVICE_TCP_REDIS: plane-redis:6379
+  SERVICE_TCP_POSTGRES: plane-db:5432
+  TRUSTED_PROXIES: ${TRUSTED_PROXIES:-0.0.0.0/0}
+  API_HOSTNAME: ${API_HOSTNAME:-http://api:8000}
+
+x-email-env: &email-env
+  SMTP_DOMAIN: ${SMTP_DOMAIN:-0.0.0.0}
+  EMAIL_SAVE_ENDPOINT: http://api:8000/intake/email/
+  TLS_CERT_PATH: ${TLS_CERT_PATH:-}
+  TLS_PRIV_KEY_PATH: ${TLS_PRIV_KEY_PATH:-}
+  MAX_ATTACHMENT_SIZE: ${MAX_ATTACHMENT_SIZE:-10485760}
+
+x-proxy-env: &proxy-env
+  SITE_ADDRESS: ${SITE_ADDRESS:-localhost:80}
+  CERT_EMAIL: ${CERT_EMAIL:-admin@example.com}
+  CERT_ACME_CA: ${CERT_ACME_CA}
+  CERT_ACME_DNS: ${CERT_ACME_DNS}
+  BUCKET_NAME: ${BUCKET_NAME:-uploads}
+  FILE_SIZE_LIMIT: ${FILE_SIZE_LIMIT:-5242880}
+  LISTEN_HTTP_PORT: ${LISTEN_HTTP_PORT:-80}
+  LISTEN_HTTPS_PORT: ${LISTEN_HTTPS_PORT:-443}
+  LISTEN_SMTP_PORT_25: ${LISTEN_SMTP_PORT_25:-25}
+  LISTEN_SMTP_PORT_465: ${LISTEN_SMTP_PORT_465:-465}
+  LISTEN_SMTP_PORT_587: ${LISTEN_SMTP_PORT_587:-587}
+
+x-pg-env: &pg-env
+  POSTGRES_USER: ${POSTGRES_USER:-plane}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-plane}
+  POSTGRES_DB: ${POSTGRES_DB:-plane}
+  PGDATA: ${PGDATA:-/var/lib/postgresql/data}
+  PLANE_PI_DATABASE_URL: ${PLANE_PI_DATABASE_URL:-postgresql://plane:plane@plane-db/plane_pi}
+  DATABASE_URL: ${DATABASE_URL:-postgresql://plane:plane@plane-db/plane}
+  FOLLOWER_POSTGRES_URI: ${FOLLOWER_POSTGRES_URI:-postgresql://plane:plane@plane-db/plane}
+
+x-rabbitmq-env: &rabbitmq-env
+  RABBITMQ_HOST: ${RABBITMQ_HOST:-plane-mq}
+  RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+  RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-plane}
+  RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-plane}
+  RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-plane}
+  RABBITMQ_VHOST: ${RABBITMQ_VHOST:-plane}
+  AMQP_URL: ${AMQP_URL:-amqp://plane:plane@plane-mq:5672/plane}
+
+x-redis-env: &redis-env
+  REDIS_HOST: ${REDIS_HOST:-plane-redis}
+  REDIS_PORT: ${REDIS_PORT:-6379}
+  REDIS_URL: ${REDIS_URL:-redis://plane-redis:6379/}
+
+x-docstore-env: &docstore-env
+  USE_MINIO: ${USE_MINIO:-1}
+  USE_STORAGE_PROXY: ${USE_STORAGE_PROXY:-0}
+  MINIO_ROOT_USER: ${MINIO_ROOT_USER:-access-key}
+  MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-secret-key}
+  BUCKET_NAME: ${BUCKET_NAME:-uploads}
+
+  AWS_REGION: ${AWS_REGION:-us-east-1}
+  AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-access-key}
+  AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-secret-key}
+  AWS_S3_ENDPOINT_URL: ${AWS_S3_ENDPOINT_URL:-http://plane-minio:9000}
+  AWS_S3_BUCKET_NAME: ${AWS_S3_BUCKET_NAME:-uploads}
+
+x-silo-env: &silo-env
+  IS_SELF_MANAGED: ${IS_SELF_MANAGED:-1}
+  PORT: 3000
+  # Silo App Envs
+  BATCH_SIZE: ${BATCH_SIZE:-60}
+  DEDUP_INTERVAL: ${DEDUP_INTERVAL:-3}
+
+  APP_BASE_URL: ${WEB_URL}
+  API_BASE_URL: ${API_BASE_URL:-http://api:8000}
+  SILO_API_BASE_URL: ${INTEGRATION_CALLBACK_BASE_URL:-${WEB_URL}}
+  SILO_BASE_PATH: ${SILO_BASE_PATH:-/silo}
+  WEBHOOK_SECRET: ${WEBHOOK_SECRET:-plane-silo}
+  MQ_PREFETCH_COUNT: ${MQ_PREFETCH_COUNT:-10}
+
+  # Authentication
+  SILO_HMAC_SECRET_KEY: ${SILO_HMAC_SECRET_KEY:-tnbbvj6ATPvze4zaygdujxg4dpk4hqx0WDW}
+  AES_SECRET_KEY: ${AES_SECRET_KEY:-wvRonyo2xksk00E2h0hAbR5pFETQwbBK}
+
+  # Feature Flag Envs
+  FEATURE_FLAG_SERVER_BASE_URL: ${FEATURE_FLAG_SERVER_BASE_URL}
+
+  # Github Envs
+  GITHUB_APP_NAME: ${GITHUB_APP_NAME}
+  GITHUB_APP_ID: ${GITHUB_APP_ID}
+  GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID}
+  GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET}
+  GITHUB_PRIVATE_KEY: ${GITHUB_PRIVATE_KEY}
+
+  # Gitlab Envs
+  GITLAB_CLIENT_ID: ${GITLAB_CLIENT_ID}
+  GITLAB_CLIENT_SECRET: ${GITLAB_CLIENT_SECRET}
+
+  # Slack Envs
+  SLACK_CLIENT_ID: ${SLACK_CLIENT_ID}
+  SLACK_CLIENT_SECRET: ${SLACK_CLIENT_SECRET}
+
+x-opensearch-env: &opensearch-env
+  OPENSEARCH_ENABLED: ${OPENSEARCH_ENABLED:-0}
+  OPENSEARCH_URL: ${OPENSEARCH_URL}
+  OPENSEARCH_USERNAME: ${OPENSEARCH_USERNAME}
+  OPENSEARCH_PASSWORD: ${OPENSEARCH_PASSWORD}
+  OPENSEARCH_INDEX_PREFIX: ${OPENSEARCH_INDEX_PREFIX}
+  OPENSEARCH_ML_MODEL_ID: ${EMBEDDING_MODEL_ID:-}
+
+x-app-env: &app-env
+  IS_SELF_MANAGED: ${IS_SELF_MANAGED:-1}
+  WEB_URL: ${WEB_URL:-http://localhost}
+  DEBUG: ${DEBUG:-0}
+  CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+  API_BASE_URL: ${API_BASE_URL:-http://api:8000}
+  LIVE_BASE_URL: ${LIVE_BASE_URL:-http://live:3000}
+  LIVE_BASE_PATH: ${LIVE_BASE_PATH:-/live}
+  PI_BASE_URL: ${WEB_URL:-http://localhost}/pi
+  PI_BASE_PATH: ${PI_BASE_PATH:-/pi}
+  # Gunicorn Workers
+  GUNICORN_WORKERS: ${GUNICORN_WORKERS:-2}
+  # Application secret
+  SECRET_KEY: ${SECRET_KEY:-60gp0byfz2dvffa45cxl20p1scy9xbpf6d8c5y0geejgkyp1b5}
+  FILE_SIZE_LIMIT: ${FILE_SIZE_LIMIT:-5242880}
+  SSL_VERIFY: ${SSL_VERIFY:-1}
+  FEATURE_FLAG_SERVER_BASE_URL: ${FEATURE_FLAG_SERVER_BASE_URL:-http://monitor:8080}
+  PAYMENT_SERVER_BASE_URL: ${PAYMENT_SERVER_BASE_URL:-http://monitor:8080}
+  # Enternal Services Config
+  SILO_HMAC_SECRET_KEY: ${SILO_HMAC_SECRET_KEY:-tnbbvj6ATPvze4zaygdujxg4dpk4hqx0WDW}
+  AES_SECRET_KEY: ${AES_SECRET_KEY:-wvRonyo2xksk00E2h0hAbR5pFETQwbBK}
+  # API key rate limit
+  API_KEY_RATE_LIMIT: ${API_KEY_RATE_LIMIT:-60/minute}
+  # Force HTTPS for handling SSL Termination
+  MINIO_ENDPOINT_SSL: ${MINIO_ENDPOINT_SSL:-0}
+  # Live Server Secret Key
+  LIVE_SERVER_SECRET_KEY: ${LIVE_SERVER_SECRET_KEY:-htbqvBJAgpm9bzvf3r4urJer0ENReatceh}
+  #Pi Internal Secret
+  PI_INTERNAL_SECRET: ${PI_INTERNAL_SECRET:-tyfvfqvBJAgpm9bzvf3r4urJer0Ehfdubk}
+  # Intake Email Domain
+  INTAKE_EMAIL_DOMAIN: ${INTAKE_EMAIL_DOMAIN:-example.com}
+  # OpenAPI / drf-spectacular toggle for API schema and docs
+  ENABLE_DRF_SPECTACULAR: ${ENABLE_DRF_SPECTACULAR:-0}
+
+x-live-env: &live-env
+  API_BASE_URL: ${API_BASE_URL:-http://api:8000}
+  LIVE_SERVER_SECRET_KEY: ${LIVE_SERVER_SECRET_KEY:-htbqvBJAgpm9bzvf3r4urJer0ENReatceh}
+  IFRAMELY_URL: ${IFRAMELY_URL:-http://iframely:8061}
+
+x-outbox-poller-env: &outbox-poller-env
+  OUTBOX_POLLER_MEMORY_LIMIT_MB: ${OUTBOX_POLLER_MEMORY_LIMIT_MB:-512}
+  OUTBOX_POLLER_INTERVAL_MIN: ${OUTBOX_POLLER_INTERVAL_MIN:-0.25}
+  OUTBOX_POLLER_INTERVAL_MAX: ${OUTBOX_POLLER_INTERVAL_MAX:-2}
+  OUTBOX_POLLER_BATCH_SIZE: ${OUTBOX_POLLER_BATCH_SIZE:-250}
+  OUTBOX_POLLER_MEMORY_CHECK_INTERVAL: ${OUTBOX_POLLER_MEMORY_CHECK_INTERVAL:-30}
+  OUTBOX_POLLER_POOL_SIZE: ${OUTBOX_POLLER_POOL_SIZE:-4}
+  OUTBOX_POLLER_POOL_MIN_SIZE: ${OUTBOX_POLLER_POOL_MIN_SIZE:-2}
+  OUTBOX_POLLER_POOL_MAX_SIZE: ${OUTBOX_POLLER_POOL_MAX_SIZE:-10}
+  OUTBOX_POLLER_POOL_TIMEOUT: ${OUTBOX_POLLER_POOL_TIMEOUT:-30.0}
+  OUTBOX_POLLER_POOL_MAX_IDLE: ${OUTBOX_POLLER_POOL_MAX_IDLE:-300.0}
+  OUTBOX_POLLER_POOL_MAX_LIFETIME: ${OUTBOX_POLLER_POOL_MAX_LIFETIME:-3600}
+  OUTBOX_POLLER_POOL_RECONNECT_TIMEOUT: ${OUTBOX_POLLER_POOL_RECONNECT_TIMEOUT:-5.0}
+  OUTBOX_POLLER_POOL_HEALTH_CHECK_INTERVAL: ${OUTBOX_POLLER_POOL_HEALTH_CHECK_INTERVAL:-30}
+
+x-automation-consumer-env: &automation-consumer-env
+  AUTOMATION_EVENT_STREAM_QUEUE_NAME: ${AUTOMATION_EVENT_STREAM_QUEUE_NAME:-plane.event_stream.automations}
+  AUTOMATION_EVENT_STREAM_PREFETCH: ${AUTOMATION_EVENT_STREAM_PREFETCH:-10}
+  AUTOMATION_EXCHANGE_NAME: ${AUTOMATION_EXCHANGE_NAME:-plane.event_stream}
+
+x-pi-env: &pi-env
+  # PI-only (rest from *app-env, *pg-env, *rabbitmq-env, *docstore-env, *opensearch-env)
+  FASTAPI_APP_HOST: ${FASTAPI_APP_HOST:-0.0.0.0}
+  FASTAPI_APP_WORKERS: ${FASTAPI_APP_WORKERS:-1}
+  PLANE_FRONTEND_URL: ${WEB_URL:-http://localhost}
+  PLANE_API_HOST: ${PLANE_API_HOST:-${WEB_URL:-http://localhost}}
+  PI_INTERNAL_SECRET: ${PI_INTERNAL_SECRET:-tyfvfqvBJAgpm9bzvf3r4urJer0Ehfdubk}
+  PI_BASE_PATH: ${PI_BASE_PATH:-/pi}
+
+  PLANE_OAUTH_REDIRECT_URI: ${WEB_URL:-http://localhost}/pi/api/v1/oauth/callback/
+  PLANE_OAUTH_STATE_EXPIRY_SECONDS: ${PLANE_OAUTH_STATE_EXPIRY_SECONDS:-82800}
+  OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+  CLAUDE_BASE_URL: ${CLAUDE_BASE_URL:-}
+  COHERE_BASE_URL: ${COHERE_BASE_URL:-}
+  GROQ_BASE_URL: ${GROQ_BASE_URL:-}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  CLAUDE_API_KEY: ${CLAUDE_API_KEY:-}
+  GROQ_API_KEY: ${GROQ_API_KEY:-}
+  COHERE_API_KEY: ${COHERE_API_KEY:-}
+  CUSTOM_LLM_ENABLED: ${CUSTOM_LLM_ENABLED:-false}
+  CUSTOM_LLM_MODEL_KEY: ${CUSTOM_LLM_MODEL_KEY:-gpt-oss-120b}
+  CUSTOM_LLM_BASE_URL: ${CUSTOM_LLM_BASE_URL:-}
+  CUSTOM_LLM_API_KEY: ${CUSTOM_LLM_API_KEY:-}
+  CUSTOM_LLM_NAME: ${CUSTOM_LLM_NAME:-GPT-OSS-120B}
+  CUSTOM_LLM_DESCRIPTION: ${CUSTOM_LLM_DESCRIPTION:-A self-hosted OpenAI-compatible model}
+  CUSTOM_LLM_MAX_TOKENS: ${CUSTOM_LLM_MAX_TOKENS:-128000}
+  EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
+  BR_AWS_ACCESS_KEY_ID: ${BR_AWS_ACCESS_KEY_ID:-}
+  BR_AWS_SECRET_ACCESS_KEY: ${BR_AWS_SECRET_ACCESS_KEY:-}
+  BR_AWS_SESSION_TOKEN: ${BR_AWS_SESSION_TOKEN:-}
+  CELERY_VECTOR_SYNC_ENABLED: ${CELERY_VECTOR_SYNC_ENABLED:-0}
+  CELERY_VECTOR_SYNC_INTERVAL: ${CELERY_VECTOR_SYNC_INTERVAL:-3}
+  CELERY_WORKSPACE_PLAN_SYNC_ENABLED: ${CELERY_WORKSPACE_PLAN_SYNC_ENABLED:-0}
+  CELERY_WORKSPACE_PLAN_SYNC_INTERVAL: ${CELERY_WORKSPACE_PLAN_SYNC_INTERVAL:-86400}
+  CELERY_DOCS_SYNC_ENABLED: ${CELERY_DOCS_SYNC_ENABLED:-0}
+  CELERY_DOCS_SYNC_INTERVAL: ${CELERY_DOCS_SYNC_INTERVAL:-86400}
+
+services:
+  admin:
+    image: makeplane/admin-commercial:v2.6.0
+    restart: unless-stopped
+    deploy:
+      replicas: ${ADMIN_REPLICAS:-1}
+    depends_on:
+      - api
+      - web
+
+  web:
+    image: makeplane/web-commercial:v2.6.0
+    restart: unless-stopped
+    deploy:
+      replicas: ${WEB_REPLICAS:-1}
+    depends_on:
+      - api
+      - worker
+
+  space:
+    image: makeplane/space-commercial:v2.6.0
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/spaces/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+    deploy:
+      replicas: ${SPACE_REPLICAS:-1}
+    depends_on:
+      - api
+      - web
+
+  live:
+    image: makeplane/live-commercial:v2.6.0
+    environment:
+      <<: [*live-env, *redis-env]
+    restart: unless-stopped
+    deploy:
+      replicas: ${LIVE_REPLICAS:-1}
+    depends_on:
+      - api
+      - web
+
+  monitor:
+    image: makeplane/monitor-commercial:v2.6.0
+    volumes:
+      - ${INSTALL_DIR:-./plane}/data/monitor:/app
+    environment:
+      <<: [*plane, *monitor-env]
+    restart: unless-stopped
+    deploy:
+      replicas: 1
+
+  api:
+    image: makeplane/backend-commercial:v2.6.0
+    command: ./bin/docker-entrypoint-api-ee.sh
+    environment:
+      <<: [*plane, *app-env, *pg-env, *redis-env, *rabbitmq-env, *docstore-env, *opensearch-env]
+    restart: unless-stopped
+    deploy:
+      replicas: ${API_REPLICAS:-1}
+    volumes:
+      - ${INSTALL_DIR:-./plane}/logs/api:/code/plane/logs
+    depends_on:
+      - plane-db
+      - plane-redis
+
+  worker:
+    image: makeplane/backend-commercial:v2.6.0
+    command: ./bin/docker-entrypoint-worker.sh
+    environment:
+      <<: [*plane, *app-env, *pg-env, *redis-env, *rabbitmq-env, *docstore-env, *opensearch-env]
+    restart: unless-stopped
+    deploy:
+      replicas: ${WORKER_REPLICAS:-1}
+    volumes:
+      - ${INSTALL_DIR:-./plane}/logs/worker:/code/plane/logs
+    depends_on:
+      - api
+      - plane-db
+      - plane-redis
+
+  beat-worker:
+    image: makeplane/backend-commercial:v2.6.0
+    command: ./bin/docker-entrypoint-beat.sh
+    environment:
+      <<: [*plane, *app-env, *pg-env, *redis-env, *rabbitmq-env, *docstore-env, *opensearch-env]
+    restart: unless-stopped
+    deploy:
+      replicas: ${BEAT_WORKER_REPLICAS:-1}
+    volumes:
+      - ${INSTALL_DIR:-./plane}/logs/beat-worker:/code/plane/logs
+    depends_on:
+      - api
+      - plane-db
+      - plane-redis
+
+  migrator:
+    image: makeplane/backend-commercial:v2.6.0
+    command: ./bin/docker-entrypoint-migrator.sh
+    environment:
+      <<: [*plane, *app-env, *pg-env, *redis-env, *rabbitmq-env, *docstore-env, *opensearch-env]
+    restart: "no"
+    deploy:
+      replicas: 1
+    volumes:
+      - ${INSTALL_DIR:-./plane}/logs/migrator:/code/plane/logs
+    depends_on:
+      - plane-db
+      - plane-redis
+
+  plane-db:
+    image: postgres:15.7-alpine
+    command: postgres -c 'max_connections=1000'
+    environment:
+      <<: [*pg-env]
+    restart: unless-stopped
+    deploy:
+      replicas: 1
+    volumes:
+      - ${INSTALL_DIR:-./plane}/data/db:/var/lib/postgresql/data
+
+  pi-db-init:
+    image: postgres:15.7-alpine
+    restart: "no"
+    environment:
+      <<: [*pg-env]
+    command: >
+      /bin/sh -c '
+      echo "Waiting for plane-db to be ready...";
+      until pg_isready -h plane-db -U ${POSTGRES_USER}; do sleep 2; done;
+      export PGPASSWORD=${POSTGRES_PASSWORD};
+      psql -h plane-db -U ${POSTGRES_USER} -d postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'plane_pi'" | grep -q 1 || psql -h plane-db -U ${POSTGRES_USER} -d postgres -c "CREATE DATABASE plane_pi";
+      echo "Database plane_pi is ready";
+      exit 0;
+      '
+    deploy:
+      replicas: ${PI_MIGRATOR_REPLICAS:-0}
+    depends_on:
+      - plane-db
+
+  plane-redis:
+    image: valkey/valkey:7.2.11-alpine
+    environment:
+      <<: [*redis-env]
+    restart: unless-stopped
+    deploy:
+      replicas: 1
+    volumes:
+      - ${INSTALL_DIR:-./plane}/data/redis:/data
+
+  plane-mq:
+    image: rabbitmq:3.13.6-management-alpine
+    environment:
+      <<: [*rabbitmq-env]
+    restart: unless-stopped
+    deploy:
+      replicas: 1
+    volumes:
+      - ${INSTALL_DIR:-./plane}/data/mq:/var/lib/rabbitmq
+
+  plane-minio:
+    image: minio/minio:latest
+    command: server /export --console-address ":9090"
+    environment:
+      <<: [*docstore-env]
+    restart: unless-stopped
+    deploy:
+      replicas: 1
+    volumes:
+      - ${INSTALL_DIR:-./plane}/data/minio/uploads:/export
+      - ${INSTALL_DIR:-./plane}/data/minio/data:/data
+
+  iframely:
+    image: makeplane/iframely:v1.2.0
+    restart: unless-stopped
+    deploy:
+      replicas: ${IFRAMELY_REPLICAS:-1}
+
+  silo:
+    image: makeplane/silo-commercial:v2.6.0
+    environment:
+      <<: [*silo-env, *pg-env, *rabbitmq-env, *redis-env, *docstore-env]
+    restart: unless-stopped
+    deploy:
+      replicas: ${SILO_REPLICAS:-1}
+    depends_on:
+      - plane-redis
+      - plane-mq
+
+  email:
+    image: makeplane/email-commercial:v2.6.0
+    volumes:
+      - ${INSTALL_DIR:-./plane}/data/email/tls:/opt/email/tls
+    environment:
+      <<: [*email-env]
+    healthcheck:
+      test: ["CMD", "nc", "-zv", "localhost", "10025"]
+      interval: 1m30s
+      timeout: 30s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    deploy:
+      replicas: ${EMAIL_REPLICAS:-0}
+
+  automation-consumer:
+    image: makeplane/backend-commercial:v2.6.0
+    command: ./bin/docker-entrypoint-automation-consumer.sh
+    environment:
+      <<:
+        [*automation-consumer-env, *plane, *app-env, *pg-env, *redis-env, *rabbitmq-env, *docstore-env, *opensearch-env]
+    restart: unless-stopped
+    deploy:
+      replicas: ${AUTOMATION_CONSUMER_REPLICAS:-1}
+    depends_on:
+      - plane-db
+      - plane-mq
+
+  outbox-poller:
+    image: makeplane/backend-commercial:v2.6.0
+    command: ./bin/docker-entrypoint-outbox-poller.sh
+    environment:
+      <<: [*outbox-poller-env, *plane, *app-env, *pg-env, *redis-env, *rabbitmq-env, *docstore-env, *opensearch-env]
+    restart: unless-stopped
+    deploy:
+      replicas: ${OUTBOX_POLLER_REPLICAS:-1}
+    depends_on:
+      - plane-db
+      - plane-mq
+
+  pi-api:
+    image: makeplane/plane-pi-commercial:v2.6.0
+    environment:
+      <<: [*plane, *app-env, *pg-env, *redis-env, *rabbitmq-env, *docstore-env, *opensearch-env, *pi-env]
+    restart: unless-stopped
+    deploy:
+      replicas: ${PI_API_REPLICAS:-0}
+    depends_on:
+      - plane-db
+      - plane-mq
+      - monitor
+
+  pi-beat:
+    image: makeplane/plane-pi-commercial:v2.6.0
+    command: ./bin/entrypoint-celery-beat.sh
+    environment:
+      <<: [*plane, *app-env, *pg-env, *redis-env, *rabbitmq-env, *docstore-env, *opensearch-env, *pi-env]
+    restart: unless-stopped
+    deploy:
+      replicas: ${PI_BEAT_REPLICAS:-0}
+    depends_on:
+      - plane-db
+      - plane-mq
+      - pi-api
+
+  pi-worker:
+    image: makeplane/plane-pi-commercial:v2.6.0
+    command: ./bin/entrypoint-celery-worker.sh
+    environment:  
+      <<: [*plane, *app-env, *pg-env, *redis-env, *rabbitmq-env, *docstore-env, *opensearch-env, *pi-env]
+    restart: unless-stopped
+    deploy:
+      replicas: ${PI_WORKER_REPLICAS:-0}
+    depends_on:
+      - plane-db
+      - plane-mq
+
+  pi-migrator:
+    image: makeplane/plane-pi-commercial:v2.6.0
+    command: ./bin/entrypoint-migrator.sh
+    environment:
+      <<: [*plane, *app-env, *pg-env, *redis-env, *rabbitmq-env, *docstore-env, *opensearch-env, *pi-env]
+    restart: "no"
+    deploy:
+      replicas: ${PI_MIGRATOR_REPLICAS:-0}
+    depends_on:
+      - plane-db
+      - plane-mq
+
+  # Comment this if you already have a reverse proxy running
+  proxy:
+    image: makeplane/proxy-commercial:v2.6.0
+    restart: unless-stopped
+    environment:
+      <<: [*proxy-env]
+    ports:
+      - target: 80
+        published: ${LISTEN_HTTP_PORT:-80}
+        protocol: tcp
+        mode: host
+      - target: 443
+        published: ${LISTEN_HTTPS_PORT:-443}
+        protocol: tcp
+        mode: host
+      - target: 10025
+        published: ${LISTEN_SMTP_PORT_25:-25}
+        protocol: tcp
+        mode: host
+      - target: 10465
+        published: ${LISTEN_SMTP_PORT_465:-465}
+        protocol: tcp
+        mode: host
+      - target: 10587
+        published: ${LISTEN_SMTP_PORT_587:-587}
+        protocol: tcp
+        mode: host
+    volumes:
+      - ${INSTALL_DIR:-./plane}/caddy/config:/config
+      - ${INSTALL_DIR:-./plane}/caddy/data:/data
+    depends_on:
+      - web
+      - api
+      - space
+      - admin
+      - live

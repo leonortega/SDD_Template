@@ -1,0 +1,20 @@
+name: agentic-nexus
+
+networks:
+  nexus:
+
+volumes:
+  nexus-data:
+
+services:
+  nexus:
+    image: sonatype/nexus3:latest
+    container_name: agentic-nexus
+    ports:
+      - "8088:8081"
+      - "5000:5000"
+    volumes:
+      - nexus-data:/nexus-data
+    networks:
+      - nexus
+    restart: unless-stopped

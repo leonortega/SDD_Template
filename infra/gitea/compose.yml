@@ -1,0 +1,44 @@
+name: agentic-gitea
+
+networks:
+  gitea:
+
+volumes:
+  gitea-data:
+  runner-data:
+
+services:
+  gitea:
+    image: gitea/gitea:1.21.7
+    container_name: agentic-gitea
+    environment:
+      USER_UID: 1000
+      USER_GID: 1000
+      GITEA__server__DOMAIN: localhost
+      GITEA__server__ROOT_URL: http://localhost:3000/
+      GITEA__server__SSH_DOMAIN: localhost
+      GITEA__server__SSH_PORT: 2222
+      GITEA__actions__ENABLED: "true"
+      GITEA__packages__ENABLED: "false"
+    ports:
+      - "3000:3000"
+      - "2222:22"
+    volumes:
+      - gitea-data:/data
+    networks:
+      - gitea
+    restart: unless-stopped
+
+  runner:
+    image: gitea/act_runner:latest
+    container_name: agentic-gitea-runner
+    depends_on:
+      - gitea
+    env_file:
+      - runner.env
+    volumes:
+      - runner-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - gitea
+    restart: unless-stopped

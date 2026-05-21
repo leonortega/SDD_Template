@@ -1,0 +1,14 @@
+# Local container runtime state
+infra/plane/plane/
+**/data/
+**/logs/
+
+# Local secrets and machine-specific environment files
+*.env
+!*.env.example
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
