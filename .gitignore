@@ -6,6 +6,8 @@ infra/plane/plane/
 # Local secrets and machine-specific environment files
 *.env
 !*.env.example
+.plane.local.json
+.codex/client-tools.local.json
 
 # OS/editor noise
 .DS_Store

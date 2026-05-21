@@ -81,6 +81,122 @@ Use `compose.yml` consistently for Docker Compose files.
 14. Agent updates Plane ticket
 ```
 
+## Chat-Driven Ticket Workflow
+
+Plane ticket work starts from Codex chat, not from a user-run command. The repo-local skill at `.codex/skills/plane-start-ticket` guides Codex to list Todo tickets, create or reuse a Git branch, generate OpenSpec-style planning notes, update the Plane ticket description, and comment with the branch name.
+
+Example chat requests:
+
+```text
+List Plane Todo tickets
+Start the next Plane Todo ticket
+Start E2EPROJECT-1
+```
+
+The workflow uses the Plane API. It must never use Plane MCP, Docker containers, or direct database access for Plane.
+
+### Client Tool Configuration
+
+Copy the tracked template to a local ignored file and adjust it for the client environment:
+
+```powershell
+Copy-Item .\.codex\client-tools.example.json .\.codex\client-tools.local.json
+```
+
+Default configuration:
+
+```json
+{
+  "plane": {
+    "baseUrl": "http://agentic.lvh.me:8080",
+    "apiToken": "replace-with-plane-api-token",
+    "workspaceSlug": "e2etest",
+    "projectIdentifier": "E2EPROJECT",
+    "todoState": "Todo"
+  },
+  "git": {
+    "baseBranch": "dev",
+    "branchPrefix": "feat",
+    "branchPattern": "{prefix}/{ticketKeySlug}-{titleSlug}",
+    "maxBranchLength": 100
+  }
+}
+```
+
+Supported branch patterns:
+
+```text
+{prefix}/{ticketKeySlug}-{titleSlug}
+{prefix}/{ticketKeySlug}
+{prefix}/{projectKeySlug}/{ticketKeySlug}-{titleSlug}
+ticket/{ticketKeySlug}-{titleSlug}
+codex/{ticketKeySlug}-{titleSlug}
+```
+
+Default branch example:
+
+```text
+feat/e2eproject-1-create-files-and-folders-for-a-site
+```
+
+Optional environment variables override local config when present:
+
+```text
+PLANE_BASE_URL
+PLANE_API_TOKEN
+PLANE_WORKSPACE_SLUG
+PLANE_PROJECT_IDENTIFIER
+PLANE_TODO_STATE
+GIT_BASE_BRANCH
+GIT_BRANCH_PREFIX
+GIT_BRANCH_PATTERN
+```
+
+### Plane API Setup
+
+Register a Plane API key before using the chat workflow:
+
+1. Log in to Plane.
+2. Open Profile Settings.
+3. Open Personal Access Tokens.
+4. Click Add personal access token.
+5. Add a clear title and description for this local agent workflow.
+6. Choose an expiry according to the client security policy.
+7. Copy the generated key once and store it only in `.codex/client-tools.local.json` or a local secret store.
+
+Plane API requests authenticate with the `X-API-Key` header. Do not commit the key, paste it into tickets, or store it in tracked config.
+
+Set the Plane API connection in the ignored `.codex/client-tools.local.json` file:
+
+```json
+{
+  "plane": {
+    "baseUrl": "http://agentic.lvh.me:8080",
+    "apiToken": "plane_api_...",
+    "workspaceSlug": "e2etest",
+    "projectIdentifier": "E2EPROJECT",
+    "todoState": "Todo"
+  }
+}
+```
+
+Optional environment variables can override local JSON config for company-managed machines or CI, but they are not required for local use.
+
+Quick read-only token check using the local JSON config:
+
+```powershell
+$config = Get-Content .\.codex\client-tools.local.json | ConvertFrom-Json
+Invoke-RestMethod `
+  -Uri "$($config.plane.baseUrl)/api/v1/users/me/" `
+  -Headers @{ "X-API-Key" = $config.plane.apiToken }
+```
+
+Token storage depends on the client environment. Never commit real Plane tokens or credential-bearing client settings.
+
+Reference: [Plane API authentication](https://developers.plane.so/api-reference/introduction).
+
+Use the lowercase workspace slug from the Plane URL. Plane's current API uses `work-items` endpoints for tickets; the older `issues` endpoints are deprecated. For project-scoped calls, resolve `projectIdentifier` to the project UUID by listing projects in the workspace.
+
 ## Local Platform
 
 The local platform is managed from a single Docker Compose entrypoint:

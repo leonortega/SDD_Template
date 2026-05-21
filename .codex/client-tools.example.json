@@ -1,0 +1,15 @@
+{
+  "plane": {
+    "baseUrl": "http://agentic.lvh.me:8080",
+    "apiToken": "replace-with-plane-api-token",
+    "workspaceSlug": "e2etest",
+    "projectIdentifier": "E2EPROJECT",
+    "todoState": "Todo"
+  },
+  "git": {
+    "baseBranch": "dev",
+    "branchPrefix": "feat",
+    "branchPattern": "{prefix}/{ticketKeySlug}-{titleSlug}",
+    "maxBranchLength": 100
+  }
+}

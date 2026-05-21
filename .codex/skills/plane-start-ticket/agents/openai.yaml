@@ -1,0 +1,4 @@
+interface:
+  display_name: "Plane Ticket Starter"
+  short_description: "Start Plane tickets from chat with safe Git branching."
+  default_prompt: "Start the next Plane Todo ticket."
