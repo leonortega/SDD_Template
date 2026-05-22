@@ -9,7 +9,7 @@ description: Start Plane work items from chat by listing Todo tickets, preparing
 
 Use this skill for a chat-driven Plane workflow. The user should not need to run a command; Codex should call the configured Plane API and local Git commands from the conversation.
 
-For setup details and branch pattern options, read `references/configuration.md` when configuration is missing or the user asks how to configure the tools.
+For setup details and branch pattern options, read `references/configuration.md` when configuration is missing or the user asks how to configure the tools. Before making Plane API calls, read `references/plane-api.md`.
 
 ## Configuration
 
@@ -20,14 +20,17 @@ Read `.codex/client-tools.local.json` as the primary configuration file. Fall ba
 - Plane workspace slug: `e2etest`
 - Plane project identifier: `E2EPROJECT`
 - Todo state: `Todo`
+- In-progress state: `In Progress`
 - Base branch: `dev`
 - Branch prefix: `feat`
 - Branch pattern: `{prefix}/{ticketKeySlug}-{titleSlug}`
 - Max branch length: `100`
 
-Optional environment variables override local JSON config when present: `PLANE_BASE_URL`, `PLANE_API_TOKEN`, `PLANE_WORKSPACE_SLUG`, `PLANE_PROJECT_IDENTIFIER`, `PLANE_TODO_STATE`, `GIT_BASE_BRANCH`, `GIT_BRANCH_PREFIX`, `GIT_BRANCH_PATTERN`.
+Optional environment variables override local JSON config when present: `PLANE_BASE_URL`, `PLANE_API_TOKEN`, `PLANE_WORKSPACE_SLUG`, `PLANE_PROJECT_IDENTIFIER`, `PLANE_TODO_STATE`, `PLANE_IN_PROGRESS_STATE`, `GIT_BASE_BRANCH`, `GIT_BRANCH_PREFIX`, `GIT_BRANCH_PATTERN`.
 
 Never print, store, or write real tokens into repo files, branch names, ticket text, logs, or OpenSpec artifacts.
+
+Before any mutating step, validate that `baseUrl`, `apiToken`, lowercase `workspaceSlug`, `projectIdentifier`, `baseBranch`, and `branchPattern` are present. The `branchPattern` must include `{ticketKeySlug}`.
 
 ## Workflow
 
@@ -35,7 +38,7 @@ Never print, store, or write real tokens into repo files, branch names, ticket t
 
 1. List Plane tickets in the configured Todo state using the Plane API with credentials from local JSON config or optional environment overrides.
 2. Show ticket key, title, and state.
-3. Ask the user to choose a ticket.
+3. Ask the user to choose a ticket, even if there is exactly one Todo ticket.
 4. Do not mutate Git or Plane while only listing tickets.
 
 ### Ticket Specified
@@ -46,7 +49,13 @@ Never print, store, or write real tokens into repo files, branch names, ticket t
 4. Create or reuse the configured branch name.
 5. Analyze the ticket description in an OpenSpec explore style.
 6. Update only the managed generated block in the Plane ticket description.
-7. Add a Plane ticket comment with the branch name and base branch.
+7. Add a Plane ticket comment with the branch name and base branch, unless a generated comment for the same branch already exists.
+8. Move the Plane ticket to the configured in-progress state, unless it is already there.
+9. Create an OpenSpec proposal using the `openspec-propose` skill (`/opsx:propose`) with a change name matching the branch name as closely as OpenSpec allows.
+
+For step 9, if the branch name contains `/`, convert it to a filesystem-safe kebab-case OpenSpec change id by replacing `/` with `-`. Example: branch `feat/e2eproject-1-create-files-and-folders-for-a-site` becomes OpenSpec change `feat-e2eproject-1-create-files-and-folders-for-a-site`. Use the Plane ticket title and generated planning block as proposal input.
+
+Only move the ticket to the in-progress state after branch creation, generated description update, and branch comment all succeed or are confirmed idempotently already complete. Only create the OpenSpec proposal after the ticket is in the in-progress state.
 
 ## Branch Naming
 
@@ -60,7 +69,7 @@ Build branch names from the configured pattern. Supported placeholders:
 Slug rules:
 
 - Lowercase all text.
-- Replace non-alphanumeric runs with `-`.
+- Replace `/` and non-alphanumeric runs with `-`.
 - Collapse repeated dashes.
 - Trim leading and trailing dashes.
 - Cap to configured max length.
@@ -106,6 +115,10 @@ Load credentials from `.codex/client-tools.local.json` or optional environment o
 
 Use Plane's current `work-items` endpoints, not deprecated `issues` endpoints. Workspace slugs are case-sensitive in API paths; use the lowercase slug from the Plane URL. If only `projectIdentifier` is configured, resolve it through `GET /api/v1/workspaces/{workspace_slug}/projects/` and use the returned project UUID for project-scoped `work-items` calls.
 
+To move a ticket to the in-progress state, resolve the project states through the Plane API, find the state whose name equals configured `plane.inProgressState`, and update the work item's state by id. Do not guess a state id.
+
+Use `IA generated branch: {branchName}` as the stable branch comment marker. If existing comments contain the same marker, do not add another branch comment.
+
 ## Failure Rules
 
 - Dirty working tree: stop before branch creation or Plane mutation.
@@ -115,3 +128,6 @@ Use Plane's current `work-items` endpoints, not deprecated `issues` endpoints. W
 - Failed fast-forward pull: stop and report the branch issue.
 - Malformed generated markers: stop before updating the ticket.
 - Weak generated analysis: regenerate before updating Plane.
+- Missing in-progress state: stop after the branch/comment steps and report that the configured state was not found; do not guess another state.
+- Existing OpenSpec change with the derived name: follow `openspec-propose` guidance for existing changes instead of overwriting.
+- Existing branch comment or target state: treat as already complete and continue.

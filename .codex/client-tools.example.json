@@ -4,7 +4,8 @@
     "apiToken": "replace-with-plane-api-token",
     "workspaceSlug": "e2etest",
     "projectIdentifier": "E2EPROJECT",
-    "todoState": "Todo"
+    "todoState": "Todo",
+    "inProgressState": "In Progress"
   },
   "git": {
     "baseBranch": "dev",

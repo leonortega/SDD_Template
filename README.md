@@ -83,7 +83,7 @@ Use `compose.yml` consistently for Docker Compose files.
 
 ## Chat-Driven Ticket Workflow
 
-Plane ticket work starts from Codex chat, not from a user-run command. The repo-local skill at `.codex/skills/plane-start-ticket` guides Codex to list Todo tickets, create or reuse a Git branch, generate OpenSpec-style planning notes, update the Plane ticket description, and comment with the branch name.
+Plane ticket work starts from Codex chat, not from a user-run command. The repo-local skill at `.codex/skills/plane-start-ticket` guides Codex to list Todo tickets, create or reuse a Git branch, generate OpenSpec-style planning notes, update the Plane ticket description, comment with the branch name, move the ticket to `In Progress`, and create an OpenSpec proposal.
 
 Example chat requests:
 
@@ -112,7 +112,8 @@ Default configuration:
     "apiToken": "replace-with-plane-api-token",
     "workspaceSlug": "e2etest",
     "projectIdentifier": "E2EPROJECT",
-    "todoState": "Todo"
+    "todoState": "Todo",
+    "inProgressState": "In Progress"
   },
   "git": {
     "baseBranch": "dev",
@@ -147,6 +148,7 @@ PLANE_API_TOKEN
 PLANE_WORKSPACE_SLUG
 PLANE_PROJECT_IDENTIFIER
 PLANE_TODO_STATE
+PLANE_IN_PROGRESS_STATE
 GIT_BASE_BRANCH
 GIT_BRANCH_PREFIX
 GIT_BRANCH_PATTERN
@@ -175,7 +177,8 @@ Set the Plane API connection in the ignored `.codex/client-tools.local.json` fil
     "apiToken": "plane_api_...",
     "workspaceSlug": "e2etest",
     "projectIdentifier": "E2EPROJECT",
-    "todoState": "Todo"
+    "todoState": "Todo",
+    "inProgressState": "In Progress"
   }
 }
 ```
@@ -196,6 +199,8 @@ Token storage depends on the client environment. Never commit real Plane tokens 
 Reference: [Plane API authentication](https://developers.plane.so/api-reference/introduction).
 
 Use the lowercase workspace slug from the Plane URL. Plane's current API uses `work-items` endpoints for tickets; the older `issues` endpoints are deprecated. For project-scoped calls, resolve `projectIdentifier` to the project UUID by listing projects in the workspace.
+
+After Codex comments on the Plane ticket with the branch, it moves the ticket to the configured `inProgressState`. It then creates an OpenSpec proposal with `/opsx:propose` using a change name derived from the branch; branch slashes are converted to dashes for the OpenSpec change id. Re-runs should not duplicate the generated branch comment or repeat the state move when the ticket is already in progress.
 
 ## Local Platform
 

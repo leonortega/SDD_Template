@@ -11,7 +11,8 @@ Use `.codex/client-tools.local.json` as the primary local configuration file. Ke
     "apiToken": "replace-with-plane-api-token",
     "workspaceSlug": "e2etest",
     "projectIdentifier": "E2EPROJECT",
-    "todoState": "Todo"
+    "todoState": "Todo",
+    "inProgressState": "In Progress"
   },
   "git": {
     "baseBranch": "dev",
@@ -29,6 +30,7 @@ Use `.codex/client-tools.local.json` as the primary local configuration file. Ke
 - `PLANE_WORKSPACE_SLUG`
 - `PLANE_PROJECT_IDENTIFIER`
 - `PLANE_TODO_STATE`
+- `PLANE_IN_PROGRESS_STATE`
 - `GIT_BASE_BRANCH`
 - `GIT_BRANCH_PREFIX`
 - `GIT_BRANCH_PATTERN`
@@ -58,3 +60,14 @@ Copy-Item .\.codex\client-tools.example.json .\.codex\client-tools.local.json
 Set `plane.apiToken` in `.codex/client-tools.local.json`. The token is sent as the `X-API-Key` header. Never commit real Plane tokens or client URLs that should remain private. Use Plane API only; do not use Plane MCP, Docker containers, or direct database access for this workflow.
 
 Use the lowercase workspace slug from the Plane URL. Use `work-items` endpoints for tickets. For project-scoped list/detail calls, resolve `projectIdentifier` to a project UUID through `GET /api/v1/workspaces/{workspace_slug}/projects/`.
+
+Resolve the configured in-progress state by name before updating a ticket state. The default is `In Progress`.
+
+After the ticket is commented with the branch, create an OpenSpec proposal through `openspec-propose` (`/opsx:propose`). Use the branch name as the source name; if it contains `/`, replace `/` with `-` for the OpenSpec change id.
+
+Known local defaults:
+
+- `baseUrl`: `http://agentic.lvh.me:8080`
+- `workspaceSlug`: `e2etest`
+- `projectIdentifier`: `E2EPROJECT`
+- `baseBranch`: `dev`
