@@ -1,0 +1,4 @@
+interface:
+  display_name: "Gitea PR Review Agent"
+  short_description: "Review Gitea pull requests and post actionable findings"
+  default_prompt: "Review the selected Gitea pull request, research relevant docs when useful, and post actionable findings as a PR comment."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Infra Tool Configurator"
+  short_description: "Configure local lab tools safely."
+  default_prompt: "Use $configure-infra-tools to configure the local lab tools."

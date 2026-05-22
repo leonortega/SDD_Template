@@ -85,6 +85,8 @@ Use `compose.yml` consistently for Docker Compose files.
 
 Plane ticket work starts from Codex chat, not from a user-run command. The repo-local skill at `.codex/skills/plane-start-ticket` guides Codex to list Todo tickets, create or reuse a Git branch, generate OpenSpec-style planning notes, update the Plane ticket description, comment with the branch name, move the ticket to `In Progress`, and create an OpenSpec proposal.
 
+Implementation handoff also starts from chat. The repo-local skill at `.codex/skills/openspec-implement-change` runs `/opsx:apply`, implements the OpenSpec tasks, adds edge-case unit tests, verifies the app and tests, commits with a readable change list, pushes after hooks pass, opens a Gitea PR, invokes `.codex/skills/gitea-pr-review-agent`, moves the Plane ticket to the configured review state, and comments on Plane with the PR link.
+
 Example chat requests:
 
 ```text
@@ -113,13 +115,29 @@ Default configuration:
     "workspaceSlug": "e2etest",
     "projectIdentifier": "E2EPROJECT",
     "todoState": "Todo",
-    "inProgressState": "In Progress"
+    "inProgressState": "In Progress",
+    "reviewState": "In Review"
   },
   "git": {
     "baseBranch": "dev",
     "branchPrefix": "feat",
     "branchPattern": "{prefix}/{ticketKeySlug}-{titleSlug}",
     "maxBranchLength": 100
+  },
+  "gitea": {
+    "baseUrl": "http://localhost:3000",
+    "apiToken": "replace-with-gitea-api-token",
+    "owner": "",
+    "repo": ""
+  },
+  "pr": {
+    "reviewers": "all",
+    "labels": {
+      "enabled": true,
+      "reviewed": "codex-reviewed",
+      "needsTests": "needs-tests",
+      "needsChanges": "needs-changes"
+    }
   }
 }
 ```
@@ -149,10 +167,31 @@ PLANE_WORKSPACE_SLUG
 PLANE_PROJECT_IDENTIFIER
 PLANE_TODO_STATE
 PLANE_IN_PROGRESS_STATE
+PLANE_REVIEW_STATE
 GIT_BASE_BRANCH
 GIT_BRANCH_PREFIX
 GIT_BRANCH_PATTERN
+GITEA_BASE_URL
+GITEA_API_TOKEN
+GITEA_OWNER
+GITEA_REPO
+PR_REVIEWERS
+PR_LABEL_REVIEWED
+PR_LABEL_NEEDS_TESTS
+PR_LABEL_NEEDS_CHANGES
 ```
+
+Configuration details:
+
+- `plane.reviewState` is the Plane state used after a PR is created and reviewed. Default: `In Review`.
+- `gitea.baseUrl` is the Gitea web/API root. Default: `http://localhost:3000`.
+- `gitea.apiToken` is required for PR creation, review comments, labels, and reviewer lookup. Store real tokens only in `.codex/client-tools.local.json` or an environment variable.
+- `gitea.owner` and `gitea.repo` can be left empty; the implementation skill infers them from `git remote get-url origin` when possible.
+- `pr.reviewers` controls requested reviewers. Use `"all"` to request all repository developers/collaborators from Gitea, excluding the PR author and automation user. Use an explicit JSON array such as `["alice", "bob"]` to request a fixed developer list.
+- `pr.labels.enabled` controls whether the review workflow uses labels. When enabled, missing labels are created before use. Defaults are `codex-reviewed`, `needs-tests`, and `needs-changes`.
+- `pr.labels.reviewed` is applied after the review agent posts a review for the current PR head SHA.
+- `pr.labels.needsTests` is applied when the review finds missing or failing tests.
+- `pr.labels.needsChanges` is applied when the review finds actionable defects or blocking issues.
 
 ### Plane API Setup
 
@@ -201,6 +240,56 @@ Reference: [Plane API authentication](https://developers.plane.so/api-reference/
 Use the lowercase workspace slug from the Plane URL. Plane's current API uses `work-items` endpoints for tickets; the older `issues` endpoints are deprecated. For project-scoped calls, resolve `projectIdentifier` to the project UUID by listing projects in the workspace.
 
 After Codex comments on the Plane ticket with the branch, it moves the ticket to the configured `inProgressState`. It then creates an OpenSpec proposal with `/opsx:propose` using a change name derived from the branch; branch slashes are converted to dashes for the OpenSpec change id. Re-runs should not duplicate the generated branch comment or repeat the state move when the ticket is already in progress.
+
+After implementation is complete, Codex opens a Gitea PR and invokes the PR review agent immediately. The review agent reviews only that PR, posts one top-level Gitea comment, adds an idempotency marker for the PR head SHA, ensures configured labels exist, and applies the appropriate review labels. It does not run on a timer.
+
+After the PR review comment is posted, Codex moves the Plane ticket to configured `reviewState` and adds a Plane comment using the stable marker `IA generated PR: {prUrl}`. If the configured review state does not exist, Codex stops after PR creation and review instead of guessing another state.
+
+### Gitea PR Setup
+
+Create a Gitea API token for the local agent workflow and store it only in `.codex/client-tools.local.json`:
+
+```json
+{
+  "gitea": {
+    "baseUrl": "http://localhost:3000",
+    "apiToken": "gitea_token_...",
+    "owner": "leon",
+    "repo": "SDD_template"
+  },
+  "pr": {
+    "reviewers": "all",
+    "labels": {
+      "enabled": true,
+      "reviewed": "codex-reviewed",
+      "needsTests": "needs-tests",
+      "needsChanges": "needs-changes"
+    }
+  }
+}
+```
+
+To use a fixed reviewer list instead of all repository developers:
+
+```json
+{
+  "pr": {
+    "reviewers": ["alice", "bob", "carol"]
+  }
+}
+```
+
+If labels are enabled, the review workflow creates missing labels in Gitea before applying them. Disable labels for repositories that do not use PR labels:
+
+```json
+{
+  "pr": {
+    "labels": {
+      "enabled": false
+    }
+  }
+}
+```
 
 ## Local Platform
 

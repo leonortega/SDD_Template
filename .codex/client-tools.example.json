@@ -5,12 +5,28 @@
     "workspaceSlug": "e2etest",
     "projectIdentifier": "E2EPROJECT",
     "todoState": "Todo",
-    "inProgressState": "In Progress"
+    "inProgressState": "In Progress",
+    "reviewState": "In Review"
   },
   "git": {
     "baseBranch": "dev",
     "branchPrefix": "feat",
     "branchPattern": "{prefix}/{ticketKeySlug}-{titleSlug}",
     "maxBranchLength": 100
+  },
+  "gitea": {
+    "baseUrl": "http://localhost:3000",
+    "apiToken": "replace-with-gitea-api-token",
+    "owner": "",
+    "repo": ""
+  },
+  "pr": {
+    "reviewers": "all",
+    "labels": {
+      "enabled": true,
+      "reviewed": "codex-reviewed",
+      "needsTests": "needs-tests",
+      "needsChanges": "needs-changes"
+    }
   }
 }
