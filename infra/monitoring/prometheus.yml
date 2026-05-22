@@ -13,6 +13,9 @@ scrape_configs:
     scheme: https
     static_configs:
       - targets:
-          - replace-dev-app.azurewebsites.net
-          - replace-qa-app.azurewebsites.net
-          - replace-prod-app.azurewebsites.net
+          - replace-dev-web.azurewebsites.net
+          - replace-dev-api.azurewebsites.net
+          - replace-qa-web.azurewebsites.net
+          - replace-qa-api.azurewebsites.net
+          - replace-prod-web.azurewebsites.net
+          - replace-prod-api.azurewebsites.net

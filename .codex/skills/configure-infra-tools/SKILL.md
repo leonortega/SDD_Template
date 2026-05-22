@@ -17,7 +17,7 @@ The configuration topology is:
   - Plane for ticket management.
   - Gitea for source code repositories.
   - Gitea Actions runner for CI/CD execution.
-  - Sonatype Nexus Repository Community Edition for artifacts and container images.
+  - Sonatype Nexus Repository Community Edition for build artifacts and packages.
   - Prometheus for app metrics scraping.
   - Grafana for local and Azure dashboards.
 - Azure:
@@ -37,11 +37,14 @@ Configuration has only two phases:
   - `.codex/client-tools.local.json`
   - `infra/plane/variables.env`
   - `infra/gitea/runner.env`
+  - `infra/monitoring/prometheus.local.yml`
 - Keep tracked `.example` files as templates, not secret stores.
 - Before any live-service check, remind the user that infra must be running with `.\infra\up.ps1`.
 - Do not run `.\infra\up.ps1` automatically. Ask the user whether they want Codex to run it; if they decline, continue with file-based setup and skip live checks.
 - If pre-start values are missing or unsafe while local infra is running, ask the user to run `.\infra\down.ps1` or ask whether Codex should run it. Apply the pre-start values only after infra is down, then ask before running `.\infra\up.ps1`.
 - Do not use Plane MCP, Docker database access, or direct database queries for Plane client workflow validation. Use the Plane API.
+- Do not obtain user names, passwords, API tokens, runner tokens, initial admin passwords, or other credentials from Docker images, containers, container shells, mounted volumes, service databases, or logs. Ask the user for the value and explain the supported UI, CLI, or API path they should use to obtain or rotate it.
+- Docker may be used for non-secret operational checks such as service status, bind mounts, health, and non-sensitive provisioning logs.
 - Redact secret values in all summaries. Refer to the key name and file path only.
 
 ## Workflow
@@ -64,7 +67,7 @@ Run a file-based audit first:
 .\.codex\skills\configure-infra-tools\scripts\configure_infra_tools.ps1 -Mode Audit
 ```
 
-Also inspect relevant repo files when needed: `.gitignore`, `.codex/client-tools.example.json`, `infra/plane/variables.env.example`, `infra/gitea/runner.env.example`, `infra/monitoring/prometheus.yml`, and `infra/azure/*.parameters.json`.
+Also inspect relevant repo files when needed: `.gitignore`, `.codex/client-tools.example.json`, `infra/plane/variables.env.example`, `infra/gitea/runner.env.example`, `infra/monitoring/prometheus.yml`, `infra/monitoring/prometheus.local.yml`, and `infra/azure/*.parameters.json`.
 
 ### 2. Initialize Missing Local Files
 
@@ -92,14 +95,14 @@ Use this order unless the user asks for a narrower tool:
 1. Plane: ticket management.
 2. Gitea: source code repository and PR automation.
 3. Gitea Actions runner: CI/CD execution.
-4. Sonatype Nexus Repository Community Edition: artifact repository and container image registry.
+4. Sonatype Nexus Repository Community Edition: artifact and package repository.
 5. Azure DEV: app runtime, config, and SQLite DB.
 6. Azure QA: app runtime, config, and SQLite DB.
 7. Azure PROD: app runtime, config, and SQLite DB.
 8. Prometheus: scrape app metrics.
 9. Grafana: dashboards for local and Azure metrics.
 
-Nexus stays before Azure because CI/CD artifact setup belongs before deployment flow. The current Azure infrastructure does not depend on Nexus because the Bicep deploys App Service resources directly. Prometheus and Grafana stay after Azure because Azure app hostnames are needed for scrape targets and dashboards.
+Nexus stays before Azure because CI/CD artifact setup belongs before deployment flow. This repo uses Nexus for build artifacts/packages, not as the Azure image source. Azure remains App Service runtime/package deployment: the Bicep deploys App Service resources directly and does not configure container image pulls. Prometheus and Grafana stay after Azure because Azure app hostnames are needed for scrape targets and dashboards.
 
 When asking for values, use this format:
 
@@ -155,7 +158,23 @@ $values = @{
 .\.codex\skills\configure-infra-tools\scripts\configure_infra_tools.ps1 -Mode SetClientTools -ValuesJson $values
 ```
 
-Plane env and Gitea runner values use `-Mode SetPlaneEnv` and `-Mode SetGiteaRunner` with flat JSON key/value objects.
+Plane env and Gitea runner values use `-Mode SetPlaneEnv` and `-Mode SetGiteaRunner` with flat JSON key/value objects. Prometheus Azure scrape targets use `-Mode SetPrometheusAzureTargets` against ignored `infra/monitoring/prometheus.local.yml`.
+
+Prometheus Azure target example:
+
+```powershell
+$values = @{
+  targets = @(
+    "https://replace-dev-web.azurewebsites.net",
+    "https://replace-dev-api.azurewebsites.net",
+    "https://replace-qa-web.azurewebsites.net",
+    "https://replace-qa-api.azurewebsites.net",
+    "https://replace-prod-web.azurewebsites.net",
+    "https://replace-prod-api.azurewebsites.net"
+  )
+} | ConvertTo-Json -Depth 5
+.\.codex\skills\configure-infra-tools\scripts\configure_infra_tools.ps1 -Mode SetPrometheusAzureTargets -ValuesJson $values
+```
 
 ### 5. Live Checks
 
@@ -172,10 +191,11 @@ Useful live checks after infra is running:
 - Plane: call `{baseUrl}/api/v1/users/me/` with `X-API-Key`.
 - Plane projects: list projects and confirm `workspaceSlug` and `projectIdentifier`.
 - Gitea: open or request `http://localhost:3000`, confirm API token access, repository owner/name, collaborators for `pr.reviewers = "all"`, and runner registration when needed.
-- Nexus: check `http://localhost:8088`, then validate admin or service credentials for artifact publish or container registry workflows.
+- Nexus: check `http://localhost:8088`, then validate service credentials for artifact/package publish workflows.
 - Azure: after deployment, check DEV, QA, and PROD web/API URLs from Bicep outputs.
 - Prometheus: check `http://localhost:9090` after Azure outputs are available when Azure targets are configured.
-- Grafana: check `http://localhost:3001`.
+- Prometheus local file: verify Docker mounts `infra/monitoring/prometheus.local.yml` to `/etc/prometheus/prometheus.yml` when `PROMETHEUS_CONFIG_FILE=./prometheus.local.yml`.
+- Grafana: check `http://localhost:3001`, verify the Prometheus datasource, and verify dashboard provisioning logs show `finished to provision dashboards`.
 
 ### 6. Azure DEV/QA/PROD Environment Creation
 
@@ -217,9 +237,59 @@ The template creates, per environment:
   - `VITE_API_BASE_URL`
   - `NEXT_PUBLIC_API_BASE_URL`
 
-After deployment, capture the Bicep outputs for each environment and update `infra/monitoring/prometheus.yml` Azure targets if the user wants monitoring pointed at the new app hostnames. Do not store publish profiles, Azure credentials, or deployment secrets in tracked files.
+After deployment, capture the Bicep outputs for each environment and update ignored `infra/monitoring/prometheus.local.yml` Azure targets if the user wants monitoring pointed at the new app hostnames. Keep tracked `infra/monitoring/prometheus.yml` as a placeholder-safe template. Do not store publish profiles, Azure credentials, deployment secrets, or environment-specific Azure hostnames in tracked files.
 
 Do not configure Prometheus Azure targets or Grafana Azure dashboards until Azure DEV, QA, and PROD outputs are available.
+
+Do not configure Azure App Service to pull container images from Nexus for the default workflow. If the user later chooses container-image deployment, treat that as a separate architecture change that needs a public HTTPS registry endpoint or Azure Container Registry.
+
+### 7. Prometheus Configuration
+
+Prometheus uses two files:
+
+- `infra/monitoring/prometheus.yml`: tracked template with placeholder-safe targets.
+- `infra/monitoring/prometheus.local.yml`: ignored runtime config with real local/Azure targets.
+
+Before startup, ensure `infra/plane/variables.env` sets `PROMETHEUS_CONFIG_FILE=./prometheus.local.yml` when real Azure hostnames should be used. If this pre-start value is missing while infra is running, ask to stop the infra before changing the mount source, then recreate Prometheus or restart the stack.
+
+Use `SetPrometheusAzureTargets` after Azure DEV, QA, and PROD deployment outputs exist. Strip `https://` from Azure URLs automatically; Prometheus target values should be hostnames, not secrets.
+
+After changing `PROMETHEUS_CONFIG_FILE` or dashboard mounts, recreate the affected service so Docker applies the new bind mount:
+
+```powershell
+docker compose --env-file infra\plane\variables.env -f infra\compose.yml --project-directory infra up -d --force-recreate --no-deps prometheus
+```
+
+Validate Prometheus:
+
+```powershell
+docker inspect agentic-prometheus --format '{{range .Mounts}}{{println .Source "=>" .Destination}}{{end}}'
+Invoke-RestMethod -Uri 'http://localhost:9090/api/v1/targets'
+```
+
+### 8. Grafana Configuration
+
+Grafana uses repo-managed provisioning for the datasource and dashboards:
+
+- `infra/monitoring/grafana/provisioning/datasources/prometheus.yml`
+- `infra/monitoring/grafana/provisioning/dashboards/dashboards.yml`
+- `infra/monitoring/grafana/dashboards/local-infra-health.json`
+- `infra/monitoring/grafana/dashboards/azure-app-health.json`
+
+The datasource points to `http://prometheus:9090` inside Docker. Dashboards must use Prometheus queries first, because Azure Monitor credentials are not part of the default local delivery lab.
+
+After adding or changing Grafana dashboard mounts, recreate Grafana:
+
+```powershell
+docker compose --env-file infra\plane\variables.env -f infra\compose.yml --project-directory infra up -d --force-recreate --no-deps grafana
+```
+
+Validate Grafana:
+
+```powershell
+Invoke-RestMethod -Uri 'http://localhost:3001/api/health'
+docker logs --since 2m agentic-grafana 2>&1 | Select-String -Pattern 'provisioning.dashboard|finished to provision dashboards|level=error'
+```
 
 ## Required Improvements for This Repo
 
@@ -231,10 +301,10 @@ During setup, explicitly handle these known local findings:
 - `.codex/client-tools.local.json` may contain placeholder `gitea.apiToken`; ask for a Gitea API token before PR creation, PR review comments, labels, or reviewer lookup.
 - `infra/plane/variables.env` may contain weak local defaults such as `POSTGRES_PASSWORD=plane`, RabbitMQ password `plane`, and MinIO `access-key` / `secret-key`; replace them with generated local secrets when the user agrees.
 - `infra/gitea/runner.env` is incomplete while `GITEA_RUNNER_REGISTRATION_TOKEN=replace-with-token-from-gitea`.
-- `infra/monitoring/prometheus.yml` contains placeholder Azure targets until real Azure app hostnames exist.
+- `infra/monitoring/prometheus.yml` intentionally contains placeholder Azure targets. Real Azure app hostnames belong in ignored `infra/monitoring/prometheus.local.yml`.
 - `infra/azure/main.bicep` should create DEV, QA, and PROD-compatible App Service resources for both a web app and REST API. Use the tracked parameter files and `infra/azure/deploy-environments.ps1` for repeatable creation.
 - Grafana uses default local credentials unless changed by the user; if dashboards will be shared or exposed beyond localhost, ask the user to rotate the admin password.
-- Nexus needs post-start service account or admin credentials when CI/CD publish workflows are enabled.
+- Nexus needs post-start service account credentials when CI/CD artifact/package publish workflows are enabled.
 
 ## Secret Generation
 

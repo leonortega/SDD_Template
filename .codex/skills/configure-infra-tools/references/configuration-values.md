@@ -9,7 +9,7 @@ Configure the full environment in this order unless the user asks for a specific
 1. Plane: ticket management.
 2. Gitea: source code repository and PR automation.
 3. Gitea Actions runner: CI/CD execution.
-4. Sonatype Nexus Repository Community Edition: artifact repository and container image registry.
+4. Sonatype Nexus Repository Community Edition: artifact and package repository.
 5. Azure DEV: app runtime, config, and SQLite DB.
 6. Azure QA: app runtime, config, and SQLite DB.
 7. Azure PROD: app runtime, config, and SQLite DB.
@@ -21,7 +21,7 @@ Use only two phases:
 - Pre-start: values required before local infra can start safely.
 - Post-start: values obtained from running tools or used to complete implementation, deployment, CI/CD, monitoring, and dashboard flow.
 
-Nexus stays before Azure because CI/CD artifact setup belongs before deployment flow. The current Azure infrastructure does not depend on Nexus because the Bicep deploys App Service resources directly. Prometheus and Grafana stay after Azure because Azure app hostnames are needed for scrape targets and dashboards.
+Nexus stays before Azure because CI/CD artifact setup belongs before deployment flow. This repo uses Nexus for build artifacts/packages, not as the Azure image source. Azure remains App Service runtime/package deployment: the Bicep deploys App Service resources directly and does not configure container image pulls. Prometheus and Grafana stay after Azure because Azure app hostnames are needed for scrape targets and dashboards.
 
 Ask one value at a time. For each value, explain:
 
@@ -194,9 +194,9 @@ Validation guidance:
 
 Step-by-step prompts:
 
-- Ask for `gitea.apiToken` only if missing or placeholder and the container CLI cannot generate one safely.
+- Ask for `gitea.apiToken` only if missing or placeholder.
   - How to get it from UI: open Gitea at `http://localhost:3000`, log in, open user Settings, choose Applications, generate a token with repository, issue/PR, user, and organization read scopes, then copy it once.
-  - How to get it from local CLI when acceptable: run the Gitea admin CLI inside the `agentic-gitea` container as the `git` user to generate an access token for the repository owner.
+  - How to get it from API when acceptable: use a user-authenticated Gitea API token creation endpoint or personal access token UI. Do not have Codex retrieve or generate this token from a Docker container, database, mounted volume, or logs.
   - Phase: post-start.
   - Required for: creating PRs, reading collaborators, adding comments, creating/applying labels, and PR review automation.
 - Ask for `gitea.owner` and `gitea.repo` only if they cannot be inferred from `git remote get-url origin`.
@@ -260,9 +260,9 @@ Validation guidance:
 
 Step-by-step prompts:
 
-- Ask for `GITEA_RUNNER_REGISTRATION_TOKEN` only if missing or placeholder and the container CLI cannot generate it safely.
+- Ask for `GITEA_RUNNER_REGISTRATION_TOKEN` only if missing or placeholder.
   - How to get it from UI: open Gitea at `http://localhost:3000`, open Site Administration or repository Actions runner settings, create/copy a runner registration token for the repository or instance.
-  - How to get it from local CLI when acceptable: run `gitea actions generate-runner-token --scope {owner}/{repo}` inside the `agentic-gitea` container as the `git` user.
+  - How to get it from API when acceptable: use Gitea's supported admin/repository runner-token API with user-provided credentials or token. Do not have Codex retrieve or generate this token from a Docker container, database, mounted volume, or logs.
   - Phase: post-start.
   - Required for: registering the runner container.
 - Ask for `GITEA_RUNNER_NAME` when it is missing or set to `replace-with-runner-name`.
@@ -278,20 +278,44 @@ Local URL: `http://localhost:8088`
 
 Nexus service startup uses Compose defaults pre-start. Nexus CI/CD values are post-start because they are obtained after the Nexus UI is running.
 
+Default strategy for this repo:
+
+- Use Nexus for build artifacts/packages published by Gitea Actions.
+- Promote the same artifact to Azure DEV, QA, and PROD.
+- Deploy to Azure App Service runtime apps using package/ZIP deployment or another App Service package deploy mechanism.
+- Do not configure Azure to pull container images from Nexus in the default workflow.
+- Do not require a Nexus Docker hosted registry unless the user explicitly changes the architecture to container-image deployment.
+
 Step-by-step prompts:
 
 - Ask for Nexus admin or service account username during the post-start Nexus step.
-  - How to get it: open Nexus at `http://localhost:8088`; for first login, retrieve the initial admin password from the Nexus data volume or container, log in as `admin`, then create a service account for automation.
+  - How to get it: open Nexus at `http://localhost:8088`; use the supported first-login or password-reset flow, then create a service account for automation. Ask the user to provide the username. Do not have Codex read the initial admin password from Docker containers, mounted volumes, databases, or logs.
   - Phase: post-start.
-  - Required for: pushing artifacts or configuring repositories.
+  - Required for: pushing artifacts/packages or configuring repositories.
 - Ask for Nexus service account password or token during the post-start Nexus step.
   - How to get it: create or reset the service account credential in Nexus security settings.
   - Phase: post-start.
   - Required for: CI/CD publish jobs.
 - Ask for repository names during the post-start Nexus step.
-  - Defaults: use a hosted container registry on port `5000` and create hosted package repositories as needed.
+  - Defaults: create hosted package/artifact repositories as needed for the app stack, for example `raw-hosted`, `nuget-hosted`, `npm-hosted`, or `maven-releases`.
   - Phase: post-start.
   - Required for: wiring Gitea Actions publish steps.
+
+Gitea Actions settings for Option A:
+
+- Store Nexus service credentials as Gitea Actions secrets, not tracked files.
+- Typical secret names:
+  - `NEXUS_URL`
+  - `NEXUS_USERNAME`
+  - `NEXUS_PASSWORD`
+  - `NEXUS_REPOSITORY`
+- Build the deployable artifact once, publish it to Nexus, then deploy or promote that same artifact to Azure environments.
+
+Azure settings for Option A:
+
+- Keep `infra/azure/main.bicep` using runtime stacks such as `DOTNETCORE|8.0`.
+- Do not set App Service container image settings, registry URL, registry username, or registry password.
+- Azure deployment credentials are separate from Nexus credentials and should be configured through Azure-supported auth for CI/CD.
 
 Do not write Nexus credentials into tracked files. Prefer Gitea Actions secrets, local secret storage, or ignored local config if a future local file is added.
 
@@ -300,7 +324,17 @@ Do not write Nexus credentials into tracked files. Prefer Gitea Actions secrets,
 Files:
 
 - `infra/monitoring/prometheus.yml`
+- `infra/monitoring/prometheus.local.yml`
 - `infra/monitoring/grafana/provisioning/datasources/prometheus.yml`
+- `infra/monitoring/grafana/provisioning/dashboards/dashboards.yml`
+- `infra/monitoring/grafana/dashboards/local-infra-health.json`
+- `infra/monitoring/grafana/dashboards/azure-app-health.json`
+
+Runtime mount setting:
+
+- `PROMETHEUS_CONFIG_FILE` in `infra/plane/variables.env`
+- Tracked default: `./prometheus.yml`
+- Local value after Azure targets exist: `./prometheus.local.yml`
 
 Local URLs:
 
@@ -310,16 +344,27 @@ Local URLs:
 
 Known placeholders:
 
-- `replace-dev-app.azurewebsites.net`
-- `replace-qa-app.azurewebsites.net`
-- `replace-prod-app.azurewebsites.net`
+- `replace-dev-web.azurewebsites.net`
+- `replace-dev-api.azurewebsites.net`
+- `replace-qa-web.azurewebsites.net`
+- `replace-qa-api.azurewebsites.net`
+- `replace-prod-web.azurewebsites.net`
+- `replace-prod-api.azurewebsites.net`
 
 Ask for Azure app hostnames only after Azure apps exist. Until then, report these as expected placeholders, not blocking local infra startup.
 
 Do not configure Prometheus Azure targets or Grafana Azure dashboards until Azure DEV, QA, and PROD outputs are available.
 
+Use `infra/monitoring/prometheus.yml` only as the tracked placeholder-safe template. Store real Azure hostnames in ignored `infra/monitoring/prometheus.local.yml`. Keep `infra/monitoring/prometheus.local.yml` out of commits.
+
 Prometheus step-by-step prompts:
 
+- Ask whether to use a local Prometheus runtime config file once Azure hostnames exist.
+  - Default tracked value: `PROMETHEUS_CONFIG_FILE=./prometheus.yml`.
+  - Local runtime value: `PROMETHEUS_CONFIG_FILE=./prometheus.local.yml`.
+  - How to set it: update ignored `infra/plane/variables.env`, then recreate Prometheus so Docker applies the mount.
+  - Phase: pre-start for the mount source, post-start for target content.
+  - Required for: using real Azure targets without exposing hostnames in tracked files.
 - Ask for local app metrics targets only when an app exposes metrics outside the default Prometheus target.
   - How to get it: use the Docker Compose service name and metrics port, for example `api:8080`, and confirm the app serves `/metrics`.
   - Phase: post-start.
@@ -333,6 +378,29 @@ Prometheus step-by-step prompts:
   - Phase: post-start.
   - Required for: Prometheus scrape configuration.
 
+Useful command to set Azure targets:
+
+```powershell
+$values = @{
+  targets = @(
+    "<dev-web-host>.azurewebsites.net",
+    "<dev-api-host>.azurewebsites.net",
+    "<qa-web-host>.azurewebsites.net",
+    "<qa-api-host>.azurewebsites.net",
+    "<prod-web-host>.azurewebsites.net",
+    "<prod-api-host>.azurewebsites.net"
+  )
+} | ConvertTo-Json -Depth 5
+.\.codex\skills\configure-infra-tools\scripts\configure_infra_tools.ps1 -Mode SetPrometheusAzureTargets -ValuesJson $values
+```
+
+Useful Prometheus validation:
+
+```powershell
+docker inspect agentic-prometheus --format '{{range .Mounts}}{{println .Source "=>" .Destination}}{{end}}'
+Invoke-RestMethod -Uri 'http://localhost:9090/api/v1/targets'
+```
+
 Grafana step-by-step prompts:
 
 - Ask whether to rotate the default Grafana admin password.
@@ -341,13 +409,25 @@ Grafana step-by-step prompts:
   - Phase: pre-start when changing Compose before startup, otherwise post-start when rotating in the UI.
   - Required for: any shared or non-local dashboard use.
 - Ask whether dashboards should include Azure metrics.
-  - How to get values: use Azure app hostnames from Bicep outputs and any Azure Monitor workspace/query credentials if dashboards will read Azure Monitor directly.
+  - How to get values: use Prometheus job `azure-apps` after Azure app hostnames are configured; use Azure Monitor workspace/query credentials only if the user explicitly wants direct Azure Monitor dashboards.
   - Phase: post-start.
   - Required for: Azure dashboard panels beyond Prometheus-scraped `/metrics`.
 - Ask for dashboard import JSON only if the user has a preferred dashboard.
   - How to get it: export JSON from Grafana dashboard settings or provide a dashboard ID from Grafana.com.
   - Phase: post-start.
   - Required for: custom dashboard setup.
+
+Default repo-managed dashboards:
+
+- `Local Infra Health`: checks `up{job="prometheus"}`.
+- `Azure App Health`: checks `up{job="azure-apps"}`.
+
+Useful Grafana validation:
+
+```powershell
+Invoke-RestMethod -Uri 'http://localhost:3001/api/health'
+docker logs --since 2m agentic-grafana 2>&1 | Select-String -Pattern 'provisioning.dashboard|finished to provision dashboards|level=error'
+```
 
 ## Azure
 
@@ -452,5 +532,6 @@ Validation guidance:
 - Run `az account show` before deployment and report the active subscription without exposing tokens.
 - Use `-WhatIf` first unless the user explicitly asked to deploy directly.
 - After deployment, check each output URL with `Invoke-WebRequest`; a default App Service landing page is acceptable before app packages are deployed.
-- Update `infra/monitoring/prometheus.yml` Azure targets only when the user asks to wire monitoring to the new hostnames.
+- Update ignored `infra/monitoring/prometheus.local.yml` Azure targets only when the user asks to wire monitoring to the new hostnames.
+- Keep tracked `infra/monitoring/prometheus.yml` placeholder-safe and free of environment-specific Azure hostnames.
 - Run Azure commands only when the user asks for Azure validation, planning, or deployment.

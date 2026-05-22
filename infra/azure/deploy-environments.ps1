@@ -11,6 +11,18 @@ $ErrorActionPreference = "Stop"
 $azureDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $template = Join-Path $azureDir "main.bicep"
 
+function Invoke-AzChecked {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string[]]$Arguments
+  )
+
+  & az @Arguments
+  if ($LASTEXITCODE -ne 0) {
+    throw "Azure CLI command failed: az $($Arguments -join ' ')"
+  }
+}
+
 $deployments = @(
   @{
     Environment = "dev"
@@ -29,36 +41,42 @@ $deployments = @(
   }
 )
 
-az account show --output none
+Invoke-AzChecked @("account", "show", "--output", "none")
 
 foreach ($deployment in $deployments) {
   if ($WhatIf) {
-    az group show --name $deployment.ResourceGroup --output none 2>$null
+    & az group show --name $deployment.ResourceGroup --output none 2>$null
     if ($LASTEXITCODE -ne 0) {
       Write-Output "WhatIf: resource group '$($deployment.ResourceGroup)' would be created in '$Location'. Skipping deployment what-if for '$($deployment.Environment)' until the group exists."
       continue
     }
 
     $deploymentName = "agentic-$($deployment.Environment)-$(Get-Date -Format yyyyMMddHHmmss)"
-    az deployment group what-if `
-      --resource-group $deployment.ResourceGroup `
-      --name $deploymentName `
-      --template-file $template `
-      --parameters $deployment.Parameters
+    Invoke-AzChecked @(
+      "deployment", "group", "what-if",
+      "--resource-group", $deployment.ResourceGroup,
+      "--name", $deploymentName,
+      "--template-file", $template,
+      "--parameters", $deployment.Parameters
+    )
     continue
   }
 
-  az group create `
-    --name $deployment.ResourceGroup `
-    --location $Location `
-    --tags "project=agentic-e2e" "env=$($deployment.Environment)" "managedBy=bicep" `
-    --output none
+  Invoke-AzChecked @(
+    "group", "create",
+    "--name", $deployment.ResourceGroup,
+    "--location", $Location,
+    "--tags", "project=agentic-e2e", "env=$($deployment.Environment)", "managedBy=bicep",
+    "--output", "none"
+  )
 
   $deploymentName = "agentic-$($deployment.Environment)-$(Get-Date -Format yyyyMMddHHmmss)"
-  az deployment group create `
-    --resource-group $deployment.ResourceGroup `
-    --name $deploymentName `
-    --template-file $template `
-    --parameters $deployment.Parameters `
-    --output table
+  Invoke-AzChecked @(
+    "deployment", "group", "create",
+    "--resource-group", $deployment.ResourceGroup,
+    "--name", $deploymentName,
+    "--template-file", $template,
+    "--parameters", $deployment.Parameters,
+    "--output", "table"
+  )
 }

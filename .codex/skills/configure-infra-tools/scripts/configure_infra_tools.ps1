@@ -1,5 +1,5 @@
 param(
-  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetPlaneEnv", "SetGiteaRunner")]
+  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetPlaneEnv", "SetGiteaRunner", "SetPrometheusAzureTargets")]
   [string]$Mode = "Audit",
 
   [string]$Root = (Resolve-Path ".").Path,
@@ -147,6 +147,43 @@ function Convert-JsonToHashtable {
   return Convert-ObjectToHashtable $object
 }
 
+function Convert-PrometheusTarget {
+  param([string]$Value)
+
+  $target = $Value.Trim()
+  $target = $target -replace "^https?://", ""
+  $target = $target.TrimEnd("/")
+  if ([string]::IsNullOrWhiteSpace($target)) {
+    throw "Prometheus target cannot be empty."
+  }
+  return $target
+}
+
+function Set-PrometheusAzureTargets {
+  param(
+    [string]$Path,
+    [string[]]$Targets
+  )
+
+  $content = Get-Content -Path $Path -Raw
+  $normalizedTargets = @($Targets | ForEach-Object { Convert-PrometheusTarget $_ })
+  if ($normalizedTargets.Count -eq 0) {
+    throw "At least one Azure Prometheus target is required."
+  }
+
+  $targetLines = ($normalizedTargets | ForEach-Object { "          - $_" }) -join [Environment]::NewLine
+  $replacement = "`${prefix}$targetLines$([Environment]::NewLine)"
+  $pattern = "(?ms)(?<prefix>  - job_name: azure-apps.*?      - targets:\r?\n)(?:          - .+?(?:\r?\n|$))+"
+  $updated = [regex]::Replace($content, $pattern, $replacement, 1)
+  if ($updated -eq $content) {
+    throw "Could not find azure-apps targets block in $Path."
+  }
+
+  if (-not $DryRun) {
+    Set-Content -Path $Path -Value $updated -Encoding UTF8
+  }
+}
+
 function Convert-ObjectToHashtable {
   param($InputObject)
 
@@ -289,14 +326,27 @@ function Invoke-Audit {
     Add-Item $result "findings" $runnerLocal "GITEA_RUNNER_REGISTRATION_TOKEN" "Missing or placeholder Gitea runner registration token." "warning"
   }
 
-  $promLocal = "infra/monitoring/prometheus.yml"
+  $promLocal = "infra/monitoring/prometheus.local.yml"
   $promPath = Join-RootPath $promLocal
   if (Test-Path $promPath) {
     $prom = Get-Content -Path $promPath -Raw
-    foreach ($target in @("replace-dev-app.azurewebsites.net", "replace-qa-app.azurewebsites.net", "replace-prod-app.azurewebsites.net")) {
+    foreach ($target in @("replace-dev-web.azurewebsites.net", "replace-dev-api.azurewebsites.net", "replace-qa-web.azurewebsites.net", "replace-qa-api.azurewebsites.net", "replace-prod-web.azurewebsites.net", "replace-prod-api.azurewebsites.net")) {
       if ($prom.Contains($target)) {
-        Add-Item $result "findings" $promLocal "azure-apps" "Placeholder Azure target remains: $target." "info"
+        Add-Item $result "findings" $promLocal "azure-apps" "Placeholder Azure target remains in local Prometheus config: $target." "info"
       }
+    }
+  } elseif ($plane.Contains("PROMETHEUS_CONFIG_FILE") -and $plane["PROMETHEUS_CONFIG_FILE"] -eq "./prometheus.local.yml") {
+    Add-Item $result "findings" $promLocal "PROMETHEUS_CONFIG_FILE" "Plane env points Prometheus at a missing local config file." "warning" "pre-start"
+  }
+
+  $grafanaDashboards = @(
+    "infra/monitoring/grafana/provisioning/dashboards/dashboards.yml",
+    "infra/monitoring/grafana/dashboards/local-infra-health.json",
+    "infra/monitoring/grafana/dashboards/azure-app-health.json"
+  )
+  foreach ($dashboardFile in $grafanaDashboards) {
+    if (-not (Test-Path (Join-RootPath $dashboardFile))) {
+      Add-Item $result "findings" $dashboardFile "grafana-dashboard-provisioning" "Missing Grafana dashboard provisioning artifact." "info" "post-start"
     }
   }
 
@@ -308,6 +358,7 @@ function Invoke-InitLocalFiles {
   Copy-LocalFile $result ".codex/client-tools.example.json" ".codex/client-tools.local.json"
   Copy-LocalFile $result "infra/plane/variables.env.example" "infra/plane/variables.env"
   Copy-LocalFile $result "infra/gitea/runner.env.example" "infra/gitea/runner.env"
+  Copy-LocalFile $result "infra/monitoring/prometheus.yml" "infra/monitoring/prometheus.local.yml"
   return $result
 }
 
@@ -367,12 +418,33 @@ function Invoke-SetEnvMode {
   return $result
 }
 
+function Invoke-SetPrometheusAzureTargets {
+  $result = New-Result
+  $targetRelative = "infra/monitoring/prometheus.local.yml"
+  $target = Join-RootPath $targetRelative
+  if (-not (Test-Path $target)) {
+    throw "Missing $targetRelative. Run -Mode InitLocalFiles first."
+  }
+
+  $values = Convert-JsonToHashtable $ValuesJson
+  if (-not $values.Contains("targets")) {
+    throw "ValuesJson must include a targets array."
+  }
+
+  Set-PrometheusAzureTargets -Path $target -Targets @($values["targets"])
+  foreach ($targetValue in @($values["targets"])) {
+    Add-Item $result "actions" $targetRelative "azure-apps" "Set Azure Prometheus target $(Convert-PrometheusTarget $targetValue)."
+  }
+  return $result
+}
+
 switch ($Mode) {
   "Audit" { $result = Invoke-Audit }
   "InitLocalFiles" { $result = Invoke-InitLocalFiles }
   "SetClientTools" { $result = Invoke-SetClientTools }
   "SetPlaneEnv" { $result = Invoke-SetEnvMode -TargetRelative "infra/plane/variables.env" }
   "SetGiteaRunner" { $result = Invoke-SetEnvMode -TargetRelative "infra/gitea/runner.env" }
+  "SetPrometheusAzureTargets" { $result = Invoke-SetPrometheusAzureTargets }
 }
 
 $result | ConvertTo-Json -Depth 10

@@ -8,6 +8,7 @@ infra/plane/plane/
 !*.env.example
 .plane.local.json
 .codex/client-tools.local.json
+infra/monitoring/prometheus.local.yml
 
 # OS/editor noise
 .DS_Store
