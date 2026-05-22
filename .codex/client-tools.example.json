@@ -1,32 +1,32 @@
 {
   "plane": {
-    "baseUrl": "http://agentic.lvh.me:8080",
+    "baseUrl": "replace-with-plane-base-url",
     "apiToken": "replace-with-plane-api-token",
-    "workspaceSlug": "e2etest",
-    "projectIdentifier": "E2EPROJECT",
-    "todoState": "Todo",
-    "inProgressState": "In Progress",
-    "reviewState": "In Review"
+    "workspaceSlug": "replace-with-plane-workspace-slug",
+    "projectIdentifier": "replace-with-plane-project-identifier",
+    "todoState": "replace-with-plane-todo-state",
+    "inProgressState": "replace-with-plane-in-progress-state",
+    "reviewState": "replace-with-plane-review-state"
   },
   "git": {
-    "baseBranch": "dev",
-    "branchPrefix": "feat",
+    "baseBranch": "replace-with-base-branch",
+    "branchPrefix": "replace-with-branch-prefix",
     "branchPattern": "{prefix}/{ticketKeySlug}-{titleSlug}",
     "maxBranchLength": 100
   },
   "gitea": {
-    "baseUrl": "http://localhost:3000",
+    "baseUrl": "replace-with-gitea-base-url",
     "apiToken": "replace-with-gitea-api-token",
-    "owner": "",
-    "repo": ""
+    "owner": "replace-with-gitea-owner",
+    "repo": "replace-with-gitea-repo"
   },
   "pr": {
-    "reviewers": "all",
+    "reviewers": "replace-with-reviewers",
     "labels": {
       "enabled": true,
-      "reviewed": "codex-reviewed",
-      "needsTests": "needs-tests",
-      "needsChanges": "needs-changes"
+      "reviewed": "replace-with-reviewed-label",
+      "needsTests": "replace-with-needs-tests-label",
+      "needsChanges": "replace-with-needs-changes-label"
     }
   }
 }

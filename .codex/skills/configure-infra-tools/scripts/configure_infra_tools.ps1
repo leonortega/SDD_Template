@@ -33,13 +33,15 @@ function Add-Item {
     [string]$Path,
     [string]$Key,
     [string]$Message,
-    [string]$Severity = "info"
+    [string]$Severity = "info",
+    [string]$Phase = "post-start"
   )
 
   $Result[$Bucket] += [ordered]@{
     path = $Path
     key = $Key
     severity = $Severity
+    phase = $Phase
     message = $Message
   }
 }
@@ -248,7 +250,7 @@ function Invoke-Audit {
   $planeLocal = "infra/plane/variables.env"
   $plane = Read-EnvFile (Join-RootPath $planeLocal)
   if ($plane.Count -eq 0) {
-    Add-Item $result "findings" $planeLocal "" "Plane local env file is missing or empty." "error"
+    Add-Item $result "findings" $planeLocal "" "Plane local env file is missing or empty." "error" "pre-start"
   } else {
     $unsafePairs = @{
       POSTGRES_PASSWORD = @("plane")
@@ -261,28 +263,28 @@ function Invoke-Audit {
 
     foreach ($key in $unsafePairs.Keys) {
       if ($plane.Contains($key) -and ($unsafePairs[$key] -contains $plane[$key])) {
-        Add-Item $result "findings" $planeLocal $key "Unsafe local default; replace with a generated local value." "warning"
+        Add-Item $result "findings" $planeLocal $key "Unsafe local default; replace with a generated local value." "warning" "pre-start"
       }
     }
 
     foreach ($key in @("MACHINE_SIGNATURE", "SECRET_KEY", "SILO_HMAC_SECRET_KEY", "AES_SECRET_KEY", "LIVE_SERVER_SECRET_KEY", "PI_INTERNAL_SECRET")) {
       if (-not $plane.Contains($key) -or (Test-Placeholder $plane[$key])) {
-        Add-Item $result "findings" $planeLocal $key "Missing or placeholder generated secret." "warning"
+        Add-Item $result "findings" $planeLocal $key "Missing or placeholder generated secret." "warning" "pre-start"
       }
     }
 
     if ($plane.Contains("FOLLOWER_POSTGRES_URI") -and $plane["FOLLOWER_POSTGRES_URI"] -match "plane:plane@") {
-      Add-Item $result "findings" $planeLocal "FOLLOWER_POSTGRES_URI" "Contains unsafe default Postgres password." "warning"
+      Add-Item $result "findings" $planeLocal "FOLLOWER_POSTGRES_URI" "Contains unsafe default Postgres password." "warning" "pre-start"
     }
     if ($plane.Contains("AMQP_URL") -and $plane["AMQP_URL"] -match "plane:plane@") {
-      Add-Item $result "findings" $planeLocal "AMQP_URL" "Contains unsafe default RabbitMQ password." "warning"
+      Add-Item $result "findings" $planeLocal "AMQP_URL" "Contains unsafe default RabbitMQ password." "warning" "pre-start"
     }
   }
 
   $runnerLocal = "infra/gitea/runner.env"
   $runner = Read-EnvFile (Join-RootPath $runnerLocal)
   if ($runner.Count -eq 0) {
-    Add-Item $result "findings" $runnerLocal "" "Gitea runner env file is missing or empty." "error"
+    Add-Item $result "findings" $runnerLocal "" "Gitea runner env file is missing or empty." "error" "pre-start"
   } elseif (-not $runner.Contains("GITEA_RUNNER_REGISTRATION_TOKEN") -or (Test-Placeholder $runner["GITEA_RUNNER_REGISTRATION_TOKEN"])) {
     Add-Item $result "findings" $runnerLocal "GITEA_RUNNER_REGISTRATION_TOKEN" "Missing or placeholder Gitea runner registration token." "warning"
   }

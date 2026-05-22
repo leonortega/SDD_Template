@@ -1,6 +1,6 @@
 ---
 name: plane-start-ticket
-description: Start Plane work items from chat by listing Todo tickets, preparing safe Git branches, generating OpenSpec-style planning notes, updating the Plane ticket description, and commenting with the branch. Use when the user asks to start the next Plane ticket, start a specific ticket such as E2EPROJECT-1, list Todo Plane tickets, prepare a ticket branch, or connect Plane ticket work to the local Git/OpenSpec workflow.
+description: Start Plane work items from chat by listing Todo tickets, preparing safe Git branches, pushing new branches to Gitea, generating OpenSpec-style planning notes, updating the Plane ticket description, and commenting with the branch. Use when the user asks to start the next Plane ticket, start a specific ticket such as E2EPROJECT-1, list Todo Plane tickets, prepare a ticket branch, or connect Plane ticket work to the local Git/OpenSpec workflow.
 ---
 
 # Plane Start Ticket
@@ -47,15 +47,16 @@ Before any mutating step, validate that `baseUrl`, `apiToken`, lowercase `worksp
 2. Check `git status --porcelain`. If any output exists, stop and report changed files.
 3. Switch to the configured base branch and run `git pull --ff-only`.
 4. Create or reuse the configured branch name.
-5. Analyze the ticket description in an OpenSpec explore style.
-6. Update only the managed generated block in the Plane ticket description.
-7. Add a Plane ticket comment with the branch name and base branch, unless a generated comment for the same branch already exists.
-8. Move the Plane ticket to the configured in-progress state, unless it is already there.
-9. Create an OpenSpec proposal using the `openspec-propose` skill (`/opsx:propose`) with a change name matching the branch name as closely as OpenSpec allows.
+5. Push the branch to Gitea with upstream tracking using `git push -u origin {branchName}`. If the upstream branch already exists and points to the same commit, treat it as complete; if the push is rejected or would require a non-fast-forward update, stop and report the branch issue.
+6. Analyze the ticket description in an OpenSpec explore style.
+7. Update only the managed generated block in the Plane ticket description.
+8. Add a Plane ticket comment with the branch name, base branch, and pushed Gitea branch, unless a generated comment for the same branch already exists.
+9. Move the Plane ticket to the configured in-progress state, unless it is already there.
+10. Create an OpenSpec proposal using the `openspec-propose` skill (`/opsx:propose`) with a change name matching the branch name as closely as OpenSpec allows.
 
-For step 9, if the branch name contains `/`, convert it to a filesystem-safe kebab-case OpenSpec change id by replacing `/` with `-`. Example: branch `feat/e2eproject-1-create-files-and-folders-for-a-site` becomes OpenSpec change `feat-e2eproject-1-create-files-and-folders-for-a-site`. Use the Plane ticket title and generated planning block as proposal input.
+For step 10, if the branch name contains `/`, convert it to a filesystem-safe kebab-case OpenSpec change id by replacing `/` with `-`. Example: branch `feat/e2eproject-1-create-files-and-folders-for-a-site` becomes OpenSpec change `feat-e2eproject-1-create-files-and-folders-for-a-site`. Use the Plane ticket title and generated planning block as proposal input.
 
-Only move the ticket to the in-progress state after branch creation, generated description update, and branch comment all succeed or are confirmed idempotently already complete. Only create the OpenSpec proposal after the ticket is in the in-progress state.
+Only move the ticket to the in-progress state after branch creation, Gitea push, generated description update, and branch comment all succeed or are confirmed idempotently already complete. Only create the OpenSpec proposal after the ticket is in the in-progress state.
 
 ## Branch Naming
 
@@ -126,6 +127,7 @@ Use `IA generated branch: {branchName}` as the stable branch comment marker. If 
 - Invalid or empty title slug: fall back to a ticket-key-only branch segment.
 - Existing branch: switch to it instead of creating a duplicate.
 - Failed fast-forward pull: stop and report the branch issue.
+- Failed Gitea branch push: stop before Plane mutation and report the push failure.
 - Malformed generated markers: stop before updating the ticket.
 - Weak generated analysis: regenerate before updating Plane.
 - Missing in-progress state: stop after the branch/comment steps and report that the configured state was not found; do not guess another state.

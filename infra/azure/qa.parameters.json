@@ -4,6 +4,15 @@
   "parameters": {
     "environmentName": {
       "value": "qa"
+    },
+    "projectName": {
+      "value": "agentic-e2e"
+    },
+    "appServicePlanSkuName": {
+      "value": "B1"
+    },
+    "appServicePlanSkuTier": {
+      "value": "Basic"
     }
   }
 }
