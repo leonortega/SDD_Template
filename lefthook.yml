@@ -6,6 +6,4 @@ pre-commit:
 commit-msg:
   commands:
     require-ticket:
-      run: >
-        powershell -NoProfile -ExecutionPolicy Bypass -Command
-        "$msg = Get-Content -Raw '{1}'; if ($msg -notmatch '^(E2EPROJECT-[0-9]+|openspec/[a-z0-9][a-z0-9-]*): .+') { Write-Error 'Commit message must start with a ticket or OpenSpec id, for example: E2EPROJECT-1: scaffold blank Blazor site'; exit 1 }"
+      run: powershell -NoProfile -ExecutionPolicy Bypass -File .githooks/require-ticket.ps1 "{1}"

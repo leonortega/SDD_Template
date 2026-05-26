@@ -545,9 +545,24 @@ pre-commit:
 commit-msg:
   commands:
     require-ticket:
-      run: >
-        powershell -NoProfile -ExecutionPolicy Bypass -Command
-        "$msg = Get-Content -Raw '{1}'; if ($msg -notmatch '^(E2EPROJECT-[0-9]+|openspec/[a-z0-9][a-z0-9-]*): .+') { Write-Error 'Commit message must start with a ticket or OpenSpec id, for example: E2EPROJECT-1: scaffold blank Blazor site'; exit 1 }"
+      run: powershell -NoProfile -ExecutionPolicy Bypass -File .githooks/require-ticket.ps1 "{1}"
+'@
+
+  Write-TemplateFile $result ".githooks/require-ticket.ps1" @'
+param(
+  [Parameter(Mandatory = $true)]
+  [string]$MessagePath
+)
+
+$ErrorActionPreference = "Stop"
+
+$message = Get-Content -Path $MessagePath -Raw
+$pattern = "^(\[SDD\] .+|E2EPROJECT-[0-9]+: .+|openspec/[a-z0-9][a-z0-9-]*: .+)"
+
+if ($message -notmatch $pattern) {
+  Write-Error "Commit message must start with a ticket, OpenSpec id, or [SDD] for direct SDD repo maintenance, for example: E2EPROJECT-1: scaffold blank Blazor site"
+  exit 1
+}
 '@
 
   Write-TemplateFile $result ".gitea/workflows/pr-validation.yml" @'
