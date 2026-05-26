@@ -1,0 +1,47 @@
+# Gitea PR Automation Configuration
+
+Owns:
+
+- `.codex/client-tools.local.json` Gitea and PR sections.
+- Gitea API token guidance.
+- Repository owner/name, reviewers, and review labels.
+
+Use the shared script:
+
+```powershell
+.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode Audit
+.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode SetClientTools -ValuesJson $values
+```
+
+## Required Values
+
+Ask only when missing, placeholder, or not inferable:
+
+- `gitea.baseUrl`: usually `http://localhost:3000`.
+- `gitea.apiToken`: personal access token with repository, issue/PR, user, and organization read access. Never print it.
+- `gitea.owner`: repository owner, inferred from `git remote get-url origin` when possible.
+- `gitea.repo`: repository name, inferred from the remote when possible.
+- `pr.reviewers`: default `"all"` unless the user wants fixed reviewers.
+- `pr.labels.enabled`: default `true`.
+- `pr.labels.reviewed`: default `codex-reviewed`.
+- `pr.labels.needsTests`: default `needs-tests`.
+- `pr.labels.needsChanges`: default `needs-changes`.
+
+## Prompting
+
+Ask for `gitea.apiToken` only if missing or placeholder.
+
+How to get it: open Gitea at `http://localhost:3000`, log in, open user Settings, choose Applications, generate a token with repository and PR/comment/label access, then copy it once.
+
+Do not retrieve or generate this token from Docker containers, databases, mounted volumes, or logs.
+
+## Live Validation
+
+Live validation requires local infra to be running. Ask before running `.\infra\up.ps1`.
+
+Validate:
+
+- Token can access the current user endpoint.
+- Owner/repo exists.
+- If `pr.reviewers = "all"`, collaborators can be listed and at least one reviewer is resolvable.
+- If labels are enabled, labels can be listed. Missing labels may be created later by the review workflow; do not create labels during configuration unless explicitly requested.

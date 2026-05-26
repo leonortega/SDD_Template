@@ -1,0 +1,4 @@
+interface:
+  display_name: "Configure Dev Environment"
+  short_description: "Route local delivery lab setup"
+  default_prompt: "Use $configure-dev-environment to audit the repo setup and help me choose which environment area to configure."

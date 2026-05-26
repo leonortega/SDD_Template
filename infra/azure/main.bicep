@@ -19,10 +19,10 @@ param appServicePlanSkuName string = 'B1'
 param appServicePlanSkuTier string = 'Basic'
 
 @description('Linux runtime stack for the web app.')
-param webRuntimeStack string = 'DOTNETCORE|8.0'
+param webRuntimeStack string = 'DOTNETCORE|10.0'
 
 @description('Linux runtime stack for the REST API app.')
-param apiRuntimeStack string = 'DOTNETCORE|8.0'
+param apiRuntimeStack string = 'DOTNETCORE|10.0'
 
 @description('Relative SQLite database file name used by the REST API.')
 param sqliteDatabaseFileName string = 'app.db'

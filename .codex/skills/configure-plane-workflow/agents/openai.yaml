@@ -1,0 +1,4 @@
+interface:
+  display_name: "Configure Plane Workflow"
+  short_description: "Set up Plane tickets and states"
+  default_prompt: "Use $configure-plane-workflow to configure Plane ticket workflow for this repo."

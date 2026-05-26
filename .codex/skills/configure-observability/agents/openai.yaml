@@ -1,0 +1,4 @@
+interface:
+  display_name: "Configure Observability"
+  short_description: "Set up metrics and dashboards"
+  default_prompt: "Use $configure-observability to configure Prometheus, Grafana, and Azure scrape targets."

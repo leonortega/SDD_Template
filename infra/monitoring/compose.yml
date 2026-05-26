@@ -9,7 +9,7 @@ volumes:
 
 services:
   dozzle:
-    image: amir20/dozzle:latest
+    image: amir20/dozzle:v10.6.2
     container_name: agentic-dozzle
     ports:
       - "8888:8080"
@@ -20,7 +20,7 @@ services:
     restart: unless-stopped
 
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.11.3
     container_name: agentic-prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
@@ -35,7 +35,7 @@ services:
     restart: unless-stopped
 
   grafana:
-    image: grafana/grafana-oss:latest
+    image: grafana/grafana-oss:13.0.1-security-01
     container_name: agentic-grafana
     environment:
       GF_SECURITY_ADMIN_USER: admin

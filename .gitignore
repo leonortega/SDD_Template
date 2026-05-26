@@ -8,6 +8,8 @@ infra/plane/plane/
 !*.env.example
 .plane.local.json
 .codex/client-tools.local.json
+.codex/quality.local.json
+.codex/azure-login.local.json
 infra/monitoring/prometheus.local.yml
 
 # OS/editor noise

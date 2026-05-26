@@ -1,0 +1,59 @@
+# Quality Gates Configuration
+
+Owns:
+
+- `global.json`
+- `.editorconfig`
+- `Directory.Build.props`
+- `lefthook.yml`
+- `.gitea/workflows/pr-validation.yml`
+- `.gitea/workflows/README.md`
+
+Use the shared script:
+
+```powershell
+.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode AuditQualityGates
+.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode InitQualityGateTemplates
+```
+
+## Strategy
+
+- Gitea PR validation is the source of truth for formatting, build, tests, coverage, dependency audit, full secret scanning, and filesystem security scanning.
+- Local Git hooks are convenience checks only.
+- Do not configure default pre-push restore/build/test/security scans.
+- Do not write scanner, Gitea, Nexus, or Azure secrets into tracked files.
+
+## Local Hooks
+
+Use Lefthook by default:
+
+- `pre-commit`: `gitleaks protect --staged --redact`.
+- `commit-msg`: require a ticket or OpenSpec id such as `E2EPROJECT-1: scaffold blank Blazor site`.
+- Optional staged formatting checks are acceptable only when fast and scoped.
+
+## PR Validation
+
+Use a .NET 10 SDK runner image, for example `mcr.microsoft.com/dotnet/sdk:10.0`.
+
+Required checks:
+
+- `dotnet restore`
+- `dotnet format --verify-no-changes --no-restore`
+- `dotnet build -c Release --no-restore`
+- `dotnet test -c Release --no-build`
+- coverage collection/reporting
+- `dotnet list package --vulnerable --include-transitive`
+- full Gitleaks scan
+- Trivy filesystem scan
+
+Semgrep is optional. Default to skipping it until the first real application code exists.
+
+## Branch Protection
+
+Ask the user to configure Gitea branch protection:
+
+- Block direct pushes to `main`.
+- Require pull requests.
+- Require the PR validation workflow to pass.
+- Require review approval or the configured review label.
+- Block merge while `needs-changes` is present.

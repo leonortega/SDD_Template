@@ -1,0 +1,4 @@
+interface:
+  display_name: "Configure Gitea Runner"
+  short_description: "Set up Gitea Actions runner"
+  default_prompt: "Use $configure-gitea-actions-runner to configure the Gitea Actions runner."

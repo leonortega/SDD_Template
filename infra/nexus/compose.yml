@@ -8,7 +8,7 @@ volumes:
 
 services:
   nexus:
-    image: sonatype/nexus3:latest
+    image: sonatype/nexus3:3.92.2
     container_name: agentic-nexus
     ports:
       - "8088:8081"
