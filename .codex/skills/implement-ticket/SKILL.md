@@ -1,0 +1,152 @@
+---
+name: implement-ticket
+description: Implement an already-started Plane ticket through OpenSpec tasks, configured quality and coverage gates, Gitea PR handoff, review-agent fixes, and Plane review-state update. Use when a Plane ticket already has an implementation branch and OpenSpec change, or when Codex is asked to continue, finish, validate, or hand off ticket implementation work.
+---
+
+# Implement Ticket
+
+## Overview
+
+Use this skill after `plane-start-ticket` has created or reused the implementation branch, moved the Plane ticket to progress, and created the OpenSpec change. This skill owns implementation through PR handoff. It does not select Todo tickets, create initial branches, or archive OpenSpec changes.
+
+## Configuration
+
+Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.example.json` only for defaults and setup guidance.
+
+Read coverage config from `.codex/quality.local.json` when present. If it is missing, invalid, or missing `coverage.minimumPercent`, use `80` and report the configuration gap. The safe tracked template is `.codex/quality.example.json`.
+
+Required/defaulted values:
+
+- `plane.baseUrl`, `plane.apiToken`, `plane.workspaceSlug`, `plane.projectIdentifier`
+- `plane.reviewState`, default `In Review`
+- `git.baseBranch`
+- `gitea.baseUrl`, `gitea.apiToken`, `gitea.owner`, `gitea.repo`
+- `pr.reviewers`
+- `pr.labels.reviewed`, `pr.labels.needsTests`, `pr.labels.needsChanges`
+- `coverage.minimumPercent`, default `80`
+
+Never print, commit, paste into tickets, or write real tokens into tracked files.
+
+## Workflow
+
+### 1. Resolve Context
+
+1. Identify the Plane ticket, current branch, and OpenSpec change from user input, branch name, or existing OpenSpec changes.
+2. Stop if the branch or OpenSpec change is missing; tell the user to run the `plane-start-ticket` flow first.
+3. Check `git status --porcelain`. If unrelated changes exist, stop before implementation and list the changed files.
+4. Confirm the OpenSpec change is active:
+   ```powershell
+   openspec status --change "<change>" --json
+   ```
+5. Load apply instructions:
+   ```powershell
+   openspec instructions apply --change "<change>" --json
+   ```
+6. Read every context file returned by the apply instructions.
+
+### 2. Discover Quality Gates
+
+Inspect configured quality surfaces. Do not invent validation commands.
+
+- `.codex/quality.local.json`, falling back to coverage threshold `80`
+- `.codex/quality.example.json`, for the tracked default
+- `.gitea/workflows/pr-validation.yml`
+- `.gitea/workflows/README.md`
+- `lefthook.yml`
+
+Treat Gitea Actions PR validation as the authoritative quality gate. Treat local hooks as automatic protections that run through normal Git operations.
+
+### 3. Implement Tasks
+
+Follow `openspec-apply-change`:
+
+1. Implement pending OpenSpec tasks one at a time.
+2. Add or update tests for changed behavior.
+3. Mark a task complete only after its code and related tests are updated.
+4. If implementation reveals extra required work, add a new OpenSpec task before doing that work.
+5. Keep OpenSpec specs, design notes, and tasks aligned with the latest implementation.
+
+### 4. Quality And Coverage Completion
+
+Implementation is not complete until:
+
+- all OpenSpec tasks are complete,
+- OpenSpec verification has no critical issues,
+- configured local hooks or quality tools pass when they run,
+- Gitea PR validation passes,
+- coverage meets `coverage.minimumPercent`.
+
+If coverage is below the configured threshold, add or update OpenSpec tasks for missing test coverage, then add tests until the threshold is met. Never lower the threshold just to pass a ticket.
+
+### 5. Validation Failure Handling
+
+When local hooks, configured quality tools, OpenSpec verification, PR review, or Gitea Actions fail:
+
+1. Add or update an OpenSpec task for the fix before or alongside the code change.
+2. Update specs when behavior changes.
+3. Update design notes when architecture or flow changes.
+4. Add or update tests for regressions, edge cases, and coverage gaps.
+5. Maintain a running list of fixes, improvements, and tests changed during the implementation.
+
+### 6. Verify OpenSpec
+
+Run `openspec-verify-change` before PR handoff. Fix critical issues. Convert required follow-up into OpenSpec tasks and keep artifacts current with the final code state.
+
+### 7. Commit And Push
+
+1. Stage only intentional files.
+2. Commit with a message that satisfies the configured commit hook and includes the Plane ticket or OpenSpec id.
+3. Let hooks run naturally. Do not bypass hooks unless the user explicitly requests that in the current chat.
+4. Push the branch.
+
+### 8. Create Or Reuse The Gitea PR
+
+Reuse an existing open PR for the branch when present. Otherwise create a PR targeting the configured base branch.
+
+The PR body must include:
+
+- Plane ticket id
+- OpenSpec change id
+- implementation summary
+- tests added or updated
+- coverage threshold used
+- configured quality gates expected to run
+- fixes and improvements applied
+- known non-blocking risks or gaps
+
+### 9. Review And Fix Loop
+
+Invoke `gitea-pr-review-agent`. Fix actionable findings, update OpenSpec tasks/artifacts for each review-driven fix, push updates, and repeat until there are no blocking review findings or quality failures. Apply configured PR labels based on the final review outcome.
+
+### 10. Plane Handoff
+
+Move the Plane ticket to `plane.reviewState`, default `In Review`, only after PR creation, review-agent posting, and blocking fix loops are complete.
+
+Add a Plane comment with:
+
+- PR link
+- coverage threshold used
+- quality gate result
+- fixes applied
+- improvements applied
+- tests added or updated
+- remaining non-blocking risks or gaps
+
+Do not move the ticket to Done.
+
+## Archive And QA Policy
+
+- Do not archive OpenSpec changes in this skill.
+- Archive only after PR merge in a separate post-merge flow.
+- QA findings after merge must create a new related Plane bug ticket linked to the parent ticket.
+- The bug ticket gets its own branch, OpenSpec change if needed, implementation, PR, and review flow.
+
+## Failure Rules
+
+- Missing branch or OpenSpec change: stop and route to `plane-start-ticket`.
+- Dirty worktree with unrelated changes: stop before implementation.
+- Missing or placeholder API token: stop before Plane or Gitea mutations.
+- Invalid coverage config: use `80`, report the issue, and do not lower the gate.
+- Failing coverage: add/update OpenSpec task and tests before completion.
+- Existing PR: reuse it instead of creating a duplicate.
+- Missing Plane review state: stop after PR/review work and report the missing state.

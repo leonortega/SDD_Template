@@ -245,14 +245,64 @@ function Test-FileContains {
   return $content -match $Pattern
 }
 
+function Get-QualityCoverageMinimum {
+  param([string]$RelativePath)
+
+  $path = Join-RootPath $RelativePath
+  if (-not (Test-Path $path)) { return $null }
+
+  try {
+    $quality = Get-Content -Path $path -Raw | ConvertFrom-Json
+  } catch {
+    return $null
+  }
+
+  if ($null -eq $quality.coverage.minimumPercent) { return $null }
+  $minimum = 0
+  if (-not [int]::TryParse([string]$quality.coverage.minimumPercent, [ref]$minimum)) {
+    return $null
+  }
+  return $minimum
+}
+
+function Get-QualityCoverageMinimumFromObject {
+  param($Quality)
+
+  if ($null -eq $Quality.coverage.minimumPercent) { return $null }
+  $minimum = 0
+  if (-not [int]::TryParse([string]$Quality.coverage.minimumPercent, [ref]$minimum)) {
+    return $null
+  }
+  return $minimum
+}
+
 function Add-QualityGateAuditFindings {
   param($Result)
+
+  $qualityExample = ".codex/quality.example.json"
+  $qualityLocal = ".codex/quality.local.json"
+  $defaultCoverage = Get-QualityCoverageMinimum $qualityExample
+  $localCoverage = Get-QualityCoverageMinimum $qualityLocal
+
+  if ($null -eq $defaultCoverage) {
+    Add-Item $Result "findings" $qualityExample "coverage.minimumPercent" "Missing or invalid default coverage threshold; expected integer 1-100 with default 80." "warning"
+  } elseif ($defaultCoverage -lt 1 -or $defaultCoverage -gt 100) {
+    Add-Item $Result "findings" $qualityExample "coverage.minimumPercent" "Default coverage threshold must be between 1 and 100." "warning"
+  }
+
+  if (-not (Test-Path (Join-RootPath $qualityLocal))) {
+    Add-Item $Result "findings" $qualityLocal "coverage.minimumPercent" "Local quality config is missing; InitLocalFiles creates it from .codex/quality.example.json. Default coverage threshold is 80." "info"
+  } elseif ($null -eq $localCoverage) {
+    Add-Item $Result "findings" $qualityLocal "coverage.minimumPercent" "Local coverage threshold is missing or invalid; use SetQualityConfig with coverage.minimumPercent." "warning"
+  } elseif ($localCoverage -lt 1 -or $localCoverage -gt 100) {
+    Add-Item $Result "findings" $qualityLocal "coverage.minimumPercent" "Local coverage threshold must be between 1 and 100." "warning"
+  }
 
   $prWorkflow = ".gitea/workflows/pr-validation.yml"
   if (-not (Test-Path (Join-RootPath $prWorkflow))) {
     Add-Item $Result "findings" $prWorkflow "" "Missing Gitea PR validation workflow." "warning"
   } else {
-    foreach ($expected in @("dotnet restore", "dotnet format", "dotnet build", "dotnet test", "gitleaks", "trivy")) {
+    foreach ($expected in @("dotnet restore", "dotnet format", "dotnet build", "dotnet test", "minimumPercent", "gitleaks", "trivy")) {
       if (-not (Test-FileContains $prWorkflow ([regex]::Escape($expected)))) {
         Add-Item $Result "findings" $prWorkflow $expected "PR validation workflow does not mention $expected." "warning"
       }
@@ -536,6 +586,14 @@ dotnet_diagnostic.CA1822.severity = none
 </Project>
 '@
 
+  Write-TemplateFile $result ".codex/quality.example.json" @'
+{
+  "coverage": {
+    "minimumPercent": 80
+  }
+}
+'@
+
   Write-TemplateFile $result "lefthook.yml" @'
 pre-commit:
   commands:
@@ -594,6 +652,41 @@ jobs:
 
       - name: Test
         run: dotnet test -c Release --no-build --logger trx --collect:"XPlat Code Coverage"
+
+      - name: Enforce coverage threshold
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          config=".codex/quality.local.json"
+          if [ ! -f "$config" ]; then
+            config=".codex/quality.example.json"
+          fi
+
+          minimum="$(sed -n 's/.*"minimumPercent"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$config" | head -n 1 || true)"
+          if [ -z "$minimum" ]; then
+            minimum="80"
+          fi
+
+          coverage_file="$(find . -path '*/coverage.cobertura.xml' -print -quit)"
+          if [ -z "$coverage_file" ]; then
+            echo "No Cobertura coverage report found."
+            exit 1
+          fi
+
+          line_rate="$(sed -n 's/.*line-rate="\([0-9.]*\)".*/\1/p' "$coverage_file" | head -n 1 || true)"
+          if [ -z "$line_rate" ]; then
+            echo "Could not read line-rate from $coverage_file."
+            exit 1
+          fi
+
+          actual="$(awk -v rate="$line_rate" 'BEGIN { printf "%.2f", rate * 100 }')"
+          awk -v actual="$actual" -v minimum="$minimum" 'BEGIN { exit !(actual + 0 >= minimum + 0) }' || {
+            echo "Coverage ${actual}% is below required ${minimum}%."
+            exit 1
+          }
+
+          echo "Coverage ${actual}% meets required ${minimum}%."
 
       - name: Dependency vulnerability audit
         run: dotnet list package --vulnerable --include-transitive
@@ -698,6 +791,8 @@ jobs:
 
 Gitea PR validation is the source of truth. Local hooks are only convenience checks for staged secrets and commit-message shape.
 
+Coverage threshold defaults to `80%` from `.codex/quality.example.json`. Local development may override it with ignored `.codex/quality.local.json`; CI falls back to the tracked example when no local config is present.
+
 Required repository secrets:
 
 - `NEXUS_URL`
@@ -716,6 +811,7 @@ Recommended branch protection:
 - Block direct pushes to `main`.
 - Require pull requests.
 - Require the PR validation workflow to pass.
+- Require coverage to meet the configured threshold.
 - Require review approval or the configured review label.
 - Block merge while `needs-changes` is present.
 '@
@@ -728,8 +824,7 @@ function Invoke-SetQualityConfig {
   $targetRelative = ".codex/quality.local.json"
   $target = Join-RootPath $targetRelative
   if (-not (Test-Path $target)) {
-    Add-Item $result "warnings" $targetRelative "" "No local quality config file exists yet; no values were written. Use InitQualityGateTemplates for tracked templates." "warning"
-    return $result
+    Copy-LocalFile $result ".codex/quality.example.json" $targetRelative
   }
 
   $values = Convert-JsonToHashtable $ValuesJson
@@ -737,10 +832,28 @@ function Invoke-SetQualityConfig {
     throw "ValuesJson is required for SetQualityConfig when $targetRelative exists."
   }
 
-  $config = Get-Content -Path $target -Raw | ConvertFrom-Json -Depth 20
+  if (Test-Path $target) {
+    $config = Get-Content -Path $target -Raw | ConvertFrom-Json -Depth 20
+  } else {
+    $source = Join-RootPath ".codex/quality.example.json"
+    if (-not (Test-Path $source)) {
+      throw "Missing .codex/quality.example.json. Run -Mode InitQualityGateTemplates first."
+    }
+    $config = Get-Content -Path $source -Raw | ConvertFrom-Json -Depth 20
+  }
+
   foreach ($key in $values.Keys) {
-    Set-ObjectValue -Object $config -Path @($key) -Value $values[$key]
+    $path = @($key -split "\.")
+    Set-ObjectValue -Object $config -Path $path -Value $values[$key]
     Add-Item $result "actions" $targetRelative $key "Set confirmed local quality config value."
+  }
+
+  $minimum = Get-QualityCoverageMinimumFromObject $config
+  if ($null -eq $minimum) {
+    throw "coverage.minimumPercent must be an integer between 1 and 100."
+  }
+  if ($minimum -lt 1 -or $minimum -gt 100) {
+    throw "coverage.minimumPercent must be between 1 and 100."
   }
 
   if (-not $DryRun) {
@@ -752,6 +865,7 @@ function Invoke-SetQualityConfig {
 function Invoke-InitLocalFiles {
   $result = New-Result
   Copy-LocalFile $result ".codex/client-tools.example.json" ".codex/client-tools.local.json"
+  Copy-LocalFile $result ".codex/quality.example.json" ".codex/quality.local.json"
   Copy-LocalFile $result "infra/plane/variables.env.example" "infra/plane/variables.env"
   Copy-LocalFile $result "infra/gitea/runner.env.example" "infra/gitea/runner.env"
   Copy-LocalFile $result "infra/monitoring/prometheus.yml" "infra/monitoring/prometheus.local.yml"

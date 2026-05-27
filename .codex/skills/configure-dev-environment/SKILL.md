@@ -62,7 +62,7 @@ Useful modes:
 - `AuditQualityGates`: inspect quality and CI/CD templates.
 - `InitQualityGateTemplates`: create tracked quality-gate templates.
 - `SetPrometheusAzureTargets`: update ignored Prometheus Azure targets.
-- `SetQualityConfig`: update `.codex/quality.local.json` if it exists.
+- `SetQualityConfig`: create or update `.codex/quality.local.json`, including `coverage.minimumPercent` (default `80`).
 
 ## Routing Flow
 

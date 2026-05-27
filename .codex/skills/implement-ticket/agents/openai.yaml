@@ -1,0 +1,4 @@
+interface:
+  display_name: "Implement Ticket"
+  short_description: "Finish Plane ticket implementation through PR handoff"
+  default_prompt: "Implement the current Plane ticket from its existing branch and OpenSpec change, satisfy configured quality and coverage gates, create or update the PR, run review, and update Plane."

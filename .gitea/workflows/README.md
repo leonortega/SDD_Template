@@ -2,6 +2,8 @@
 
 Gitea PR validation is the source of truth. Local hooks are only convenience checks for staged secrets and commit-message shape.
 
+Coverage threshold defaults to `80%` from `.codex/quality.example.json`. Local development may override it with ignored `.codex/quality.local.json`; CI falls back to the tracked example when no local config is present.
+
 Required repository secrets:
 
 - `NEXUS_URL`
@@ -20,5 +22,6 @@ Recommended branch protection:
 - Block direct pushes to `main`.
 - Require pull requests.
 - Require the PR validation workflow to pass.
+- Require coverage to meet the configured threshold.
 - Require review approval or the configured review label.
 - Block merge while `needs-changes` is present.

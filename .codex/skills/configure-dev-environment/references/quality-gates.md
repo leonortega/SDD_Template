@@ -5,6 +5,8 @@ Owns:
 - `global.json`
 - `.editorconfig`
 - `Directory.Build.props`
+- `.codex/quality.example.json`
+- `.codex/quality.local.json`
 - `lefthook.yml`
 - `.gitea/workflows/pr-validation.yml`
 - `.gitea/workflows/README.md`
@@ -14,11 +16,14 @@ Use the shared script:
 ```powershell
 .\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode AuditQualityGates
 .\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode InitQualityGateTemplates
+.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode SetQualityConfig -ValuesJson '{"coverage":{"minimumPercent":80}}'
 ```
 
 ## Strategy
 
 - Gitea PR validation is the source of truth for formatting, build, tests, coverage, dependency audit, full secret scanning, and filesystem security scanning.
+- Coverage threshold is configurable through `.codex/quality.local.json`; default to `coverage.minimumPercent = 80`.
+- Gitea Actions should fall back to `.codex/quality.example.json` when local config is absent.
 - Local Git hooks are convenience checks only.
 - Do not configure default pre-push restore/build/test/security scans.
 - Do not write scanner, Gitea, Nexus, or Azure secrets into tracked files.
@@ -42,6 +47,7 @@ Required checks:
 - `dotnet build -c Release --no-restore`
 - `dotnet test -c Release --no-build`
 - coverage collection/reporting
+- coverage threshold enforcement using configured `coverage.minimumPercent`
 - `dotnet list package --vulnerable --include-transitive`
 - full Gitleaks scan
 - Trivy filesystem scan
