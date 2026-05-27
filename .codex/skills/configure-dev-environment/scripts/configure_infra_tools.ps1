@@ -1318,7 +1318,7 @@ jobs:
           git checkout --force FETCH_HEAD
 
       - name: Publish
-        run: dotnet publish -c Release -o ./artifacts/app
+        run: dotnet publish src/SDDTemplate.Site/SDDTemplate.Site.csproj -c Release -o ./artifacts/app
 
       - name: Install packaging tools
         run: |
@@ -1375,7 +1375,10 @@ jobs:
           AZURE_DEV_WEBAPP_NAME: ${{ secrets.AZURE_DEV_WEBAPP_NAME }}
 
       - name: Smoke check DEV
-        run: curl --fail "$AZURE_DEV_WEBAPP_URL"
+        run: |
+          curl --fail --silent --show-error --location "$AZURE_DEV_WEBAPP_URL" -o response.html
+          grep -q "<title>SDD Template</title>" response.html
+          ! grep -qi "Microsoft Azure" response.html
         env:
           AZURE_DEV_WEBAPP_URL: ${{ secrets.AZURE_DEV_WEBAPP_URL }}
 
@@ -1410,7 +1413,10 @@ jobs:
           AZURE_QA_WEBAPP_NAME: ${{ secrets.AZURE_QA_WEBAPP_NAME }}
 
       - name: Smoke check QA
-        run: curl --fail "$AZURE_QA_WEBAPP_URL"
+        run: |
+          curl --fail --silent --show-error --location "$AZURE_QA_WEBAPP_URL" -o response.html
+          grep -q "<title>SDD Template</title>" response.html
+          ! grep -qi "Microsoft Azure" response.html
         env:
           AZURE_QA_WEBAPP_URL: ${{ secrets.AZURE_QA_WEBAPP_URL }}
 '@
