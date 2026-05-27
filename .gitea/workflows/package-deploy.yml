@@ -3,7 +3,7 @@ name: Package and deploy
 on:
   push:
     branches:
-      - main
+      - dev
   workflow_dispatch:
     inputs:
       environment:
@@ -44,7 +44,7 @@ jobs:
           cd artifacts/app
           zip -r ../app.zip .
           cd ../..
-          sha256sum artifacts/app.zip > artifacts/app.zip.sha256
+          sha256sum artifacts/app.zip | sed 's#artifacts/app.zip#app.zip#' > artifacts/app.zip.sha256
           git rev-parse HEAD > artifacts/commit.sha
 
       - name: Upload artifact to Nexus
@@ -61,11 +61,13 @@ jobs:
   deploy-dev:
     needs: package
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event.inputs.environment == 'dev'
+    if: github.event_name == 'push' || github.event.inputs.environment == 'dev' || github.event.inputs.environment == 'qa'
     steps:
       - name: Download artifact from Nexus
         run: |
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip"
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip.sha256 "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip.sha256"
+          sha256sum -c app.zip.sha256
         env:
           NEXUS_URL: ${{ secrets.NEXUS_URL }}
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
@@ -87,3 +89,35 @@ jobs:
         run: curl --fail "$AZURE_DEV_WEBAPP_URL"
         env:
           AZURE_DEV_WEBAPP_URL: ${{ secrets.AZURE_DEV_WEBAPP_URL }}
+
+  deploy-qa:
+    needs: deploy-dev
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.inputs.environment == 'qa'
+    steps:
+      - name: Download artifact from Nexus
+        run: |
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip"
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip.sha256 "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip.sha256"
+          sha256sum -c app.zip.sha256
+        env:
+          NEXUS_URL: ${{ secrets.NEXUS_URL }}
+          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+          NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy QA package
+        run: az webapp deploy --resource-group "$AZURE_QA_RESOURCE_GROUP" --name "$AZURE_QA_WEBAPP_NAME" --src-path app.zip --type zip
+        env:
+          AZURE_QA_RESOURCE_GROUP: ${{ secrets.AZURE_QA_RESOURCE_GROUP }}
+          AZURE_QA_WEBAPP_NAME: ${{ secrets.AZURE_QA_WEBAPP_NAME }}
+
+      - name: Smoke check QA
+        run: curl --fail "$AZURE_QA_WEBAPP_URL"
+        env:
+          AZURE_QA_WEBAPP_URL: ${{ secrets.AZURE_QA_WEBAPP_URL }}

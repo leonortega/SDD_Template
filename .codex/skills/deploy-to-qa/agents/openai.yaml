@@ -1,0 +1,4 @@
+interface:
+  display_name: "Deploy to QA"
+  short_description: "Promote merged work to QA"
+  default_prompt: "Use $deploy-to-qa to promote a merged PR artifact through DEV and QA."

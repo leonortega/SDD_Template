@@ -6,7 +6,8 @@
     "projectIdentifier": "replace-with-plane-project-identifier",
     "todoState": "replace-with-plane-todo-state",
     "inProgressState": "replace-with-plane-in-progress-state",
-    "reviewState": "replace-with-plane-review-state"
+    "reviewState": "replace-with-plane-review-state",
+    "qaState": "replace-with-plane-qa-state"
   },
   "git": {
     "baseBranch": "replace-with-base-branch",

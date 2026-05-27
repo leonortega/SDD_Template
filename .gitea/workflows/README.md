@@ -22,14 +22,27 @@ Required repository secrets:
 - `AZURE_DEV_RESOURCE_GROUP`
 - `AZURE_DEV_WEBAPP_NAME`
 - `AZURE_DEV_WEBAPP_URL`
+- `AZURE_QA_RESOURCE_GROUP`
+- `AZURE_QA_WEBAPP_NAME`
+- `AZURE_QA_WEBAPP_URL`
 
-Add equivalent QA and PROD secrets before enabling promotion jobs.
+Add equivalent PROD secrets before enabling PROD promotion jobs.
 
 Recommended branch protection:
 
-- Block direct pushes to `main`.
-- Require pull requests.
+- Block direct pushes to `dev` and `main`.
+- Require pull requests into `dev`.
+- Update `main` only after QA passes, preferably by fast-forwarding the tested commit.
+- Require the PR validation workflow to pass.
 - Require the exact emitted status check context: `PR validation / validate (pull_request)`.
 - Require coverage to meet the configured threshold.
 - Require review approval or the configured review label.
 - Block merge while `needs-changes` is present.
+
+Release flow:
+
+```text
+feature branch -> dev -> DEV -> QA -> main -> PROD
+```
+
+The package workflow builds and publishes from `dev`. DEV and QA must deploy the same Nexus ZIP artifact for the same commit SHA.

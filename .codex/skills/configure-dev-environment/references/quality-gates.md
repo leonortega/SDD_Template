@@ -67,8 +67,21 @@ Semgrep is optional. Default to skipping it until the first real application cod
 
 Ask the user to configure Gitea branch protection:
 
-- Block direct pushes to `main`.
-- Require pull requests.
+- Block direct pushes to `dev` and `main`.
+- Require pull requests into `dev`.
+- Update `main` only after QA passes, preferably by fast-forwarding the tested commit.
+- Require the PR validation workflow to pass.
+- Require coverage to meet the configured threshold.
 - Require the exact emitted PR validation status context: `PR validation / validate (pull_request)`.
 - Require review approval or the configured review label.
 - Block merge while `needs-changes` is present.
+
+## Release Branching
+
+Use this release path:
+
+```text
+feature branch -> dev -> DEV -> QA -> main -> PROD
+```
+
+The package/deploy workflow should build and publish from `dev`. DEV and QA deployments must download the same Nexus ZIP for the same commit SHA. PROD must reuse the QA-passed artifact commit after `main` is updated.
