@@ -25,32 +25,6 @@ Store these as repository or organization Actions secrets:
 
 Never write Nexus credentials into tracked files.
 
-## Local Nexus Check Configuration
-
-Store the Nexus user used for repository checks in ignored `.codex/client-tools.local.json`, never in tracked files:
-
-- `nexus.baseUrl`: Host URL used by local checks, normally `http://localhost:8088`.
-- `nexus.username`: Nexus user that can list repositories and read/write the artifact repository.
-- `nexus.password`: Nexus password or token for that user.
-- `nexus.repository`: Hosted raw repository name, default `raw-hosted`.
-
-`config infra` infers `nexus.baseUrl` and `nexus.repository`. It must ask the user for `nexus.username` and `nexus.password` because credentials are not inferable and must not be read from containers, mounted volumes, databases, or logs.
-
-Configure it with `SetClientTools` after the user supplies the values:
-
-```powershell
-.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode SetClientTools -ValuesJson '{
-  "nexus": {
-    "baseUrl": "http://localhost:8088",
-    "username": "gitea-actions",
-    "password": "replace-with-user-supplied-password-or-token",
-    "repository": "raw-hosted"
-  }
-}'
-```
-
-All Nexus repository checks must use this local configuration. Do not rely on unauthenticated `http://localhost:8088/service/rest/v1/repositories` checks.
-
 Official Gitea Actions secrets documentation: https://docs.gitea.com/usage/actions/secrets
 
 Manual setup in Gitea:
@@ -111,12 +85,8 @@ Create a Nexus service account:
 Validate from the host without exposing credentials:
 
 ```powershell
-$client = Get-Content .codex/client-tools.local.json -Raw | ConvertFrom-Json
-$pair = "$($client.nexus.username):$($client.nexus.password)"
-$encoded = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes($pair))
-$headers = @{ Authorization = "Basic $encoded" }
-Invoke-RestMethod "$($client.nexus.baseUrl)/service/rest/v1/repositories" -Headers $headers |
-  Where-Object { $_.name -eq $client.nexus.repository -and $_.format -eq 'raw' -and $_.type -eq 'hosted' }
+Invoke-RestMethod 'http://localhost:8088/service/rest/v1/repositories' |
+  Where-Object { $_.name -eq 'raw-hosted' -and $_.format -eq 'raw' -and $_.type -eq 'hosted' }
 ```
 
 Validate from Gitea Actions later by running the package workflow. The workflow uploads to:

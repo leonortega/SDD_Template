@@ -18,7 +18,7 @@ Safety:
 Workflow:
 
 1. Run `AuditQualityGates` to verify package/deploy workflow presence.
-2. Ask for Nexus service account, password/token, local Nexus URL, and repository name only when configuring artifact publishing or repository validation.
+2. Ask for Nexus service account and repository names only when configuring artifact publishing.
 3. When values are missing, explain how to create the Nexus raw hosted repository, create a Nexus service account, add Gitea Actions secrets, include official documentation links, and provide validation commands.
-4. Guide the user to store Nexus credentials as Gitea Actions secrets for CI and in ignored `.codex/client-tools.local.json` for local repository checks.
+4. Guide the user to store Nexus credentials as Gitea Actions secrets.
 5. Keep the release model: build once, upload artifact/checksum/commit metadata to Nexus, deploy/promote the same artifact.

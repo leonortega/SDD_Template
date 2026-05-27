@@ -42,13 +42,6 @@ When setup needs values the user must supply manually, do not only ask for the v
 - Include official documentation links for manual configuration surfaces such as Gitea Actions secrets, Nexus repositories, Azure service principals, and Plane/Gitea API tokens.
 - If the repo has enough context to infer non-secret values, show the inferred value and ask the user to confirm before writing it.
 
-## Client Tools Local Config Rules
-
-- For `.codex/client-tools.local.json`, always complete safe inferred non-secret values during audit/setup before reporting findings.
-- Inferred values include local service URLs, default workflow state names, Git branch defaults, PR labels, Gitea owner/repo from `origin`, and Nexus local URL/repository name.
-- Never infer or fabricate API tokens, passwords, service-account credentials, Plane workspace/project identifiers, or cloud identifiers that are not discoverable from local repo/Azure metadata.
-- If a required value is not inferable, report it as a user-supplied value with its source, destination, official setup surface, and validation command.
-
 ## Shared Script
 
 Use the shared deterministic script:

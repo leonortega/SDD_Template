@@ -24,7 +24,6 @@ Required or defaulted values:
 - `plane.baseUrl`, `plane.apiToken`, `plane.workspaceSlug`, `plane.projectIdentifier`
 - `plane.qaState`: target state after QA validation. Default: `QA`.
 - `gitea.baseUrl`, `gitea.apiToken`, `gitea.owner`, `gitea.repo`
-- `nexus.baseUrl`, `nexus.username`, `nexus.password`, `nexus.repository`
 
 Optional environment variables override local JSON when present: `PLANE_QA_STATE`, `GITEA_BASE_URL`, `GITEA_API_TOKEN`, `GITEA_OWNER`, `GITEA_REPO`.
 
@@ -40,7 +39,7 @@ Never print, commit, paste into tickets, or write real API tokens, Nexus credent
    - `app/{commitSha}/app.zip`
    - `app/{commitSha}/app.zip.sha256`
    - `app/{commitSha}/commit.sha`
-6. Confirm the artifact, checksum, and commit metadata exist in Nexus using the configured Nexus credentials. Treat missing Nexus local config or any missing file as blocking.
+6. Confirm the artifact, checksum, and commit metadata exist in Nexus. Treat any missing file as blocking.
 7. Compare `commit.sha` with the resolved commit SHA. Treat mismatch as blocking.
 
 ## DEV And QA Promotion
