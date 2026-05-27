@@ -26,7 +26,6 @@ Ask only when missing or placeholder:
 - `plane.todoState`: default ready state, usually `Todo`.
 - `plane.inProgressState`: default `In Progress`.
 - `plane.reviewState`: default `In Review`.
-- `plane.qaState`: default `QA`; used after the `deploy-to-qa` workflow validates QA.
 
 ## Docker Env Values
 
