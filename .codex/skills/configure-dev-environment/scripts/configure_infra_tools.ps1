@@ -1360,6 +1360,9 @@ jobs:
           NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
           NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
 
+      - name: Install Azure CLI
+        run: curl -sL https://aka.ms/InstallAzureCLIDeb | bash
+
       - name: Azure login
         uses: azure/login@v2
         with:
@@ -1392,6 +1395,9 @@ jobs:
           NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
           NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
 
+      - name: Install Azure CLI
+        run: curl -sL https://aka.ms/InstallAzureCLIDeb | bash
+
       - name: Azure login
         uses: azure/login@v2
         with:
@@ -1418,7 +1424,7 @@ Coverage threshold defaults to `80%` from `.codex/quality.example.json`. Local d
 
 Required repository secrets:
 
-- `NEXUS_URL`
+- `NEXUS_URL` - use `http://host.docker.internal:8088` for local Docker Desktop runner jobs.
 - `NEXUS_USERNAME`
 - `NEXUS_PASSWORD`
 - `NEXUS_REPOSITORY`

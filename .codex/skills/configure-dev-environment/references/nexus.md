@@ -18,7 +18,7 @@ Owns:
 
 Store these as repository or organization Actions secrets:
 
-- `NEXUS_URL`: Base URL used by the runner to reach Nexus. For this local Docker network, prefer `http://nexus:8081`. For browser/manual checks use `http://localhost:8088`.
+- `NEXUS_URL`: Base URL used by the runner job containers to reach Nexus. For this local Docker Desktop setup, prefer `http://host.docker.internal:8088` because Gitea Actions creates per-job networks that cannot resolve the Nexus Compose service alias. For browser/manual checks use `http://localhost:8088`.
 - `NEXUS_USERNAME`: Nexus service account username used only by Gitea Actions.
 - `NEXUS_PASSWORD`: Nexus service account password or token.
 - `NEXUS_REPOSITORY`: Hosted raw repository name, default `raw-hosted`.

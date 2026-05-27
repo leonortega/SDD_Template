@@ -14,7 +14,7 @@ That check pulls the configured job image, verifies required tools inside it, an
 
 Required repository secrets:
 
-- `NEXUS_URL`
+- `NEXUS_URL` - use `http://host.docker.internal:8088` for local Docker Desktop runner jobs.
 - `NEXUS_USERNAME`
 - `NEXUS_PASSWORD`
 - `NEXUS_REPOSITORY`
