@@ -83,7 +83,7 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Deploy DEV package
-        run: az webapp deploy --resource-group "$AZURE_DEV_RESOURCE_GROUP" --name "$AZURE_DEV_WEBAPP_NAME" --src-path app.zip --type zip
+        run: az webapp deploy --resource-group "$AZURE_DEV_RESOURCE_GROUP" --name "$AZURE_DEV_WEBAPP_NAME" --src-path app.zip --type zip --clean true
         env:
           AZURE_DEV_RESOURCE_GROUP: ${{ secrets.AZURE_DEV_RESOURCE_GROUP }}
           AZURE_DEV_WEBAPP_NAME: ${{ secrets.AZURE_DEV_WEBAPP_NAME }}
@@ -121,7 +121,7 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Deploy QA package
-        run: az webapp deploy --resource-group "$AZURE_QA_RESOURCE_GROUP" --name "$AZURE_QA_WEBAPP_NAME" --src-path app.zip --type zip
+        run: az webapp deploy --resource-group "$AZURE_QA_RESOURCE_GROUP" --name "$AZURE_QA_WEBAPP_NAME" --src-path app.zip --type zip --clean true
         env:
           AZURE_QA_RESOURCE_GROUP: ${{ secrets.AZURE_QA_RESOURCE_GROUP }}
           AZURE_QA_WEBAPP_NAME: ${{ secrets.AZURE_QA_WEBAPP_NAME }}
