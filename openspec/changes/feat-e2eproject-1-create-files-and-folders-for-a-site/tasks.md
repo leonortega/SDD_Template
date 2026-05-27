@@ -20,3 +20,4 @@
 - [x] 3.6 Update PR validation to use a .NET 10 SDK image that the local Gitea runner can pull successfully.
 - [x] 3.7 Replace JavaScript-based PR validation actions with shell steps compatible with the .NET SDK container.
 - [x] 3.8 Map local Gitea hostnames to the Docker host during containerized shell checkout.
+- [x] 3.9 Pin Gitleaks installation to the Linux release archive instead of the removed install script.
