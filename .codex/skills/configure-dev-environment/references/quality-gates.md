@@ -15,6 +15,7 @@ Use the shared script:
 
 ```powershell
 .\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode AuditQualityGates
+.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode ValidateGiteaActionsRunner
 .\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode InitQualityGateTemplates
 .\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode SetQualityConfig -ValuesJson '{"coverage":{"minimumPercent":80}}'
 ```
@@ -38,7 +39,13 @@ Use Lefthook by default:
 
 ## PR Validation
 
-Use a .NET 10 SDK runner image, for example `mcr.microsoft.com/dotnet/sdk:10.0`.
+Use a pinned .NET 10 SDK runner image that has been validated on the local runner, for example `mcr.microsoft.com/dotnet/sdk:10.0.300`.
+
+When a workflow uses a job `container:` based on the .NET SDK image, avoid JavaScript-based `uses:` actions inside that job unless the container also includes `node`. Prefer shell steps for checkout and scanner execution:
+
+- Shell checkout that rewrites local Gitea hostnames (`localhost` and `gitea`) to `host.docker.internal`.
+- Pinned Gitleaks release archive installation.
+- Shell Trivy installation and `trivy fs` execution.
 
 Required checks:
 
@@ -52,14 +59,29 @@ Required checks:
 - full Gitleaks scan
 - Trivy filesystem scan
 
+Run `ValidateGiteaActionsRunner` after changing workflow container images or checkout/scanner setup. It validates Docker availability, pulls the configured PR validation image, checks required tools inside the image, and verifies the job container can reach the repository origin through `host.docker.internal`.
+
 Semgrep is optional. Default to skipping it until the first real application code exists.
 
 ## Branch Protection
 
 Ask the user to configure Gitea branch protection:
 
-- Block direct pushes to `main`.
-- Require pull requests.
+- Block direct pushes to `dev` and `main`.
+- Require pull requests into `dev`.
+- Update `main` only after QA passes, preferably by fast-forwarding the tested commit.
 - Require the PR validation workflow to pass.
+- Require coverage to meet the configured threshold.
+- Require the exact emitted PR validation status context: `PR validation / validate (pull_request)`.
 - Require review approval or the configured review label.
 - Block merge while `needs-changes` is present.
+
+## Release Branching
+
+Use this release path:
+
+```text
+feature branch -> dev -> DEV -> QA -> main -> PROD
+```
+
+The package/deploy workflow should build and publish from `dev`. DEV and QA deployments must download the same Nexus ZIP for the same commit SHA. PROD must reuse the QA-passed artifact commit after `main` is updated.

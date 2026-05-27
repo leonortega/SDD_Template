@@ -56,6 +56,15 @@ Inspect configured quality surfaces. Do not invent validation commands.
 
 Treat Gitea Actions PR validation as the authoritative quality gate. Treat local hooks as automatic protections that run through normal Git operations.
 
+When Gitea Actions runner, workflow container, or security tool compatibility is part of the configured gate, use the existing infra validation path instead of inventing ad hoc checks:
+
+```powershell
+.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode AuditQualityGates
+.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode ValidateGiteaActionsRunner
+```
+
+Use `ValidateGiteaActionsRunner` whenever Gitea Actions fails before repository validation commands run, or logs show image pull failures, missing `node`, checkout networking failures, missing scanners, missing shell tools, or job-container tool incompatibility.
+
 ### 3. Implement Tasks
 
 Follow `openspec-apply-change`:
@@ -78,15 +87,16 @@ Implementation is not complete until:
 
 If coverage is below the configured threshold, add or update OpenSpec tasks for missing test coverage, then add tests until the threshold is met. Never lower the threshold just to pass a ticket.
 
-### 5. Validation Failure Handling
+### 5. Validation Failure Classification
 
 When local hooks, configured quality tools, OpenSpec verification, PR review, or Gitea Actions fail:
 
-1. Add or update an OpenSpec task for the fix before or alongside the code change.
-2. Update specs when behavior changes.
-3. Update design notes when architecture or flow changes.
-4. Add or update tests for regressions, edge cases, and coverage gaps.
-5. Maintain a running list of fixes, improvements, and tests changed during the implementation.
+1. Classify the failure before editing files.
+2. Treat app, code, spec, formatting, build, test, coverage, staged-secret, or review findings against changed behavior as implementation failures. Fix them in the current ticket, add or update OpenSpec tasks before or alongside the fix, update specs/design when behavior changes, and add or update tests for regressions, edge cases, and coverage gaps.
+3. Treat runner, workflow-container, Docker image pull, missing `node`, local Gitea hostname, scanner installation, missing shell tool, or stale tool-install URL failures as infra/tooling failures. Route through `configure-dev-environment`, `configure-gitea-actions-runner`, or `configure-quality-gates`; run `AuditQualityGates` and `ValidateGiteaActionsRunner` when applicable.
+4. If an infra/tooling failure blocks the authoritative PR gate, fix repo-owned workflow/config issues in the branch or route external setup issues to the infra skill, then keep the ticket open until Gitea PR validation passes. Record the fix separately from feature implementation work.
+5. Full local `gitleaks detect --source . --redact --no-git` findings in ignored local secret files are local setup notes, not implementation defects. Staged `gitleaks protect --staged --redact` and CI secret scans remain authoritative for tracked changes.
+6. Maintain a running list grouped as feature fixes, quality/test fixes, infra validation fixes, and remaining non-blocking infra notes.
 
 ### 6. Verify OpenSpec
 
@@ -111,12 +121,19 @@ The PR body must include:
 - tests added or updated
 - coverage threshold used
 - configured quality gates expected to run
-- fixes and improvements applied
-- known non-blocking risks or gaps
+- feature fixes applied
+- quality/test fixes applied
+- infra validation fixes applied
+- remaining non-blocking infra notes
+- known non-blocking product risks or gaps
 
 ### 9. Review And Fix Loop
 
 Invoke `gitea-pr-review-agent`. Fix actionable findings, update OpenSpec tasks/artifacts for each review-driven fix, push updates, and repeat until there are no blocking review findings or quality failures. Apply configured PR labels based on the final review outcome.
+
+The review agent uses `<!-- codex-review-agent:{headSha} -->` markers. After every pushed head SHA, ensure the review-agent outcome applies to the current head. Do not duplicate review comments for the same head SHA unless the user explicitly asks for a fresh review.
+
+When the current head has passing tests/CI and the latest review-agent outcome no longer identifies missing tests or blocking changes, remove stale `pr.labels.needsTests` and `pr.labels.needsChanges` labels from the PR. Keep `pr.labels.reviewed` when the current head has been reviewed.
 
 ### 10. Plane Handoff
 
@@ -127,9 +144,12 @@ Add a Plane comment with:
 - PR link
 - coverage threshold used
 - quality gate result
-- fixes applied
+- feature fixes applied
+- quality/test fixes applied
+- infra validation fixes applied
 - improvements applied
 - tests added or updated
+- remaining non-blocking infra notes
 - remaining non-blocking risks or gaps
 
 Do not move the ticket to Done.
@@ -148,5 +168,9 @@ Do not move the ticket to Done.
 - Missing or placeholder API token: stop before Plane or Gitea mutations.
 - Invalid coverage config: use `80`, report the issue, and do not lower the gate.
 - Failing coverage: add/update OpenSpec task and tests before completion.
+- Gitea Actions infra/tooling failure: route through `configure-dev-environment`, `configure-gitea-actions-runner`, or `configure-quality-gates`; run `ValidateGiteaActionsRunner` when runner/container compatibility is implicated; do not classify it as a product implementation defect.
+- Ignored local secret findings from full local scans: report as local setup notes unless the same secret is staged, tracked, or reported by CI.
 - Existing PR: reuse it instead of creating a duplicate.
+- Existing review-agent comment for same head SHA: reuse it instead of posting a duplicate; post a new review marker only after the head SHA changes.
+- Stale PR labels: remove `needs-tests` after required tests are added and passing; remove `needs-changes` after requested fixes are in place and the current-head review has no blocking findings.
 - Missing Plane review state: stop after PR/review work and report the missing state.

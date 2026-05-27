@@ -1,5 +1,5 @@
 param(
-  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetPlaneEnv", "SetGiteaRunner", "SetPrometheusAzureTargets", "AuditQualityGates", "InitQualityGateTemplates", "SetQualityConfig")]
+  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetPlaneEnv", "SetGiteaRunner", "SetPrometheusAzureTargets", "AuditQualityGates", "ValidateGiteaActionsRunner", "InitQualityGateTemplates", "SetQualityConfig")]
   [string]$Mode = "Audit",
 
   [string]$Root = (Resolve-Path ".").Path,
@@ -245,6 +245,108 @@ function Test-FileContains {
   return $content -match $Pattern
 }
 
+function Get-WorkflowContent {
+  param([string]$RelativePath)
+
+  $path = Join-RootPath $RelativePath
+  if (-not (Test-Path $path)) { return $null }
+  return Get-Content -Path $path -Raw
+}
+
+function Get-WorkflowContainerImage {
+  param([string]$Content)
+
+  if ([string]::IsNullOrWhiteSpace($Content)) { return $null }
+  if ($Content -match "(?m)^\s*image:\s*(\S+)\s*$") {
+    return $Matches[1].Trim()
+  }
+  return $null
+}
+
+function Add-GiteaActionsRunnerCompatibilityFindings {
+  param(
+    $Result,
+    [string]$WorkflowRelativePath
+  )
+
+  $workflow = Get-WorkflowContent $WorkflowRelativePath
+  if ([string]::IsNullOrWhiteSpace($workflow)) { return }
+
+  $containerImage = Get-WorkflowContainerImage $workflow
+  $usesJobContainer = -not [string]::IsNullOrWhiteSpace($containerImage)
+  $usesDotnetSdkContainer = $containerImage -match "^mcr\.microsoft\.com/dotnet/sdk:"
+
+  if ($usesJobContainer -and $usesDotnetSdkContainer) {
+    if ($workflow -match "(?m)^\s*uses:\s*actions/checkout@") {
+      Add-Item $Result "findings" $WorkflowRelativePath "actions.checkout" "Workflow uses actions/checkout inside the .NET SDK job container. JavaScript actions require node in the job container; use shell checkout or a container image that includes node." "warning"
+    }
+
+    if ($workflow -match "(?m)^\s*uses:\s*aquasecurity/trivy-action@") {
+      Add-Item $Result "findings" $WorkflowRelativePath "trivy-action" "Workflow uses a JavaScript Trivy action inside the .NET SDK job container. Install and run trivy from shell, or use a container image that includes node." "warning"
+    }
+  }
+
+  if ($workflow -match "raw\.githubusercontent\.com/gitleaks/gitleaks/(master|main)/install\.sh") {
+    Add-Item $Result "findings" $WorkflowRelativePath "gitleaks.install" "Workflow installs Gitleaks from a moving raw install script URL. Pin a Gitleaks release archive so CI does not break when install paths change." "warning"
+  }
+
+  if ($workflow -match "zip\s+-r" -and $workflow -notmatch "apt-get install .*zip") {
+    Add-Item $Result "findings" $WorkflowRelativePath "zip.install" "Workflow creates ZIP artifacts inside a container but does not install zip. The .NET SDK container does not include zip by default." "warning"
+  }
+
+  if ($usesDotnetSdkContainer -and $containerImage -match ":10\.0\.100$") {
+    Add-Item $Result "findings" $WorkflowRelativePath "dotnet.sdk.image" "Workflow uses mcr.microsoft.com/dotnet/sdk:10.0.100, which failed to pull on the local runner. Prefer a validated .NET 10 patch image such as 10.0.300 when compatible with global.json roll-forward." "warning"
+  }
+
+  if ($workflow -match "git fetch --depth 1 origin" -or $workflow -match "git remote add origin") {
+    foreach ($hostname in @("localhost", "gitea")) {
+      $rewriteLine = 'repo_url="${repo_url/__HOST__/host.docker.internal}"'.Replace("__HOST__", $hostname)
+      if ($workflow -notmatch [regex]::Escape($rewriteLine)) {
+        Add-Item $Result "findings" $WorkflowRelativePath "checkout.$hostname" "Containerized shell checkout does not rewrite '$hostname' to 'host.docker.internal'. Docker job containers may fail to reach local Gitea." "warning"
+      }
+    }
+  }
+
+}
+
+function Add-GiteaBranchProtectionAuditFindings {
+  param($Result)
+
+  $clientLocal = ".codex/client-tools.local.json"
+  $clientPath = Join-RootPath $clientLocal
+  if (-not (Test-Path $clientPath)) { return }
+
+  try {
+    $client = Get-Content -Path $clientPath -Raw | ConvertFrom-Json
+  } catch {
+    Add-Item $Result "findings" $clientLocal "" "Could not parse local client tool config for branch protection validation." "warning"
+    return
+  }
+
+  if (Test-Placeholder $client.gitea.apiToken -or $null -eq $client.gitea.baseUrl -or $null -eq $client.gitea.owner -or $null -eq $client.gitea.repo) {
+    Add-Item $Result "findings" $clientLocal "gitea" "Cannot validate Gitea branch protection status contexts because Gitea API config is missing or placeholder." "info"
+    return
+  }
+
+  $expectedContext = "PR validation / validate (pull_request)"
+  $headers = @{ Authorization = "token $($client.gitea.apiToken)"; Accept = "application/json" }
+  $baseUrl = ([string]$client.gitea.baseUrl).TrimEnd("/")
+  $targetBranches = @("main", "dev")
+
+  foreach ($branch in $targetBranches) {
+    try {
+      $protection = Invoke-RestMethod -Method Get -Uri "$baseUrl/api/v1/repos/$($client.gitea.owner)/$($client.gitea.repo)/branch_protections/$branch" -Headers $headers
+    } catch {
+      Add-Item $Result "findings" ".gitea/workflows/README.md" "branch-protection.$branch" "Could not read Gitea branch protection for '$branch'. Configure required status check context '$expectedContext' manually if branch protection is enabled." "info"
+      continue
+    }
+
+    if ($protection.enable_status_check -and (@($protection.status_check_contexts) -notcontains $expectedContext)) {
+      Add-Item $Result "findings" ".gitea/workflows/README.md" "branch-protection.$branch" "Gitea branch protection for '$branch' requires status contexts '$(@($protection.status_check_contexts) -join ', ')', but PR validation reports '$expectedContext'. Update branch protection to require the emitted context." "warning"
+    }
+  }
+}
+
 function Get-QualityCoverageMinimum {
   param([string]$RelativePath)
 
@@ -307,16 +409,26 @@ function Add-QualityGateAuditFindings {
         Add-Item $Result "findings" $prWorkflow $expected "PR validation workflow does not mention $expected." "warning"
       }
     }
+    Add-GiteaActionsRunnerCompatibilityFindings $Result $prWorkflow
   }
 
   $releaseWorkflow = ".gitea/workflows/package-deploy.yml"
   if (-not (Test-Path (Join-RootPath $releaseWorkflow))) {
     Add-Item $Result "findings" $releaseWorkflow "" "Missing package/deploy workflow for Nexus artifact publication and Azure promotion." "warning"
   } else {
-    foreach ($expected in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "az webapp deploy")) {
+    foreach ($expected in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "az webapp deploy", "deploy-qa", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_WEBAPP_NAME", "AZURE_QA_WEBAPP_URL")) {
       if (-not (Test-FileContains $releaseWorkflow ([regex]::Escape($expected)))) {
         Add-Item $Result "findings" $releaseWorkflow $expected "Package/deploy workflow does not mention $expected." "warning"
       }
+    }
+    Add-GiteaActionsRunnerCompatibilityFindings $Result $releaseWorkflow
+    if (-not (Test-FileContains $releaseWorkflow "branches:\s*\r?\n\s*-\s*dev")) {
+      Add-Item $Result "findings" $releaseWorkflow "on.push.branches.dev" "Package/deploy workflow should trigger from dev for QA candidate artifacts." "warning"
+    }
+    $releaseContent = Get-Content -Path (Join-RootPath $releaseWorkflow) -Raw
+    $publishCount = ([regex]::Matches($releaseContent, "dotnet publish")).Count
+    if ($publishCount -gt 1) {
+      Add-Item $Result "findings" $releaseWorkflow "dotnet publish" "Package/deploy workflow appears to publish more than once; DEV and QA should promote the same Nexus artifact." "warning"
     }
   }
 
@@ -379,16 +491,266 @@ function Add-QualityGateAuditFindings {
   if (-not (Test-Path (Join-RootPath $secretsDoc))) {
     Add-Item $Result "findings" $secretsDoc "" "Missing documentation for required Gitea Actions secrets and branch protection." "warning"
   } else {
-    foreach ($secret in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "AZURE_CREDENTIALS")) {
+    foreach ($secret in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "AZURE_CREDENTIALS", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_WEBAPP_NAME", "AZURE_QA_WEBAPP_URL")) {
       if (-not (Test-FileContains $secretsDoc $secret)) {
         Add-Item $Result "findings" $secretsDoc $secret "Required Gitea Actions secret is not documented." "warning"
       }
     }
   }
+
+  Add-GiteaBranchProtectionAuditFindings $Result
+  Add-GiteaActionsSecretAuditFindings $Result
+  Add-NexusRepositoryAuditFindings $Result
+}
+
+function Get-ConfiguredGiteaActionsSecrets {
+  $clientPath = Join-RootPath ".codex/client-tools.local.json"
+  if (-not (Test-Path $clientPath)) {
+    return $null
+  }
+
+  try {
+    $client = Get-Content -Path $clientPath -Raw | ConvertFrom-Json
+  } catch {
+    return $null
+  }
+
+  if ($null -eq $client.gitea -or
+      [string]::IsNullOrWhiteSpace([string]$client.gitea.baseUrl) -or
+      [string]::IsNullOrWhiteSpace([string]$client.gitea.owner) -or
+      [string]::IsNullOrWhiteSpace([string]$client.gitea.repo) -or
+      (Test-Placeholder ([string]$client.gitea.apiToken))) {
+    return $null
+  }
+
+  $headers = @{ Authorization = "token $($client.gitea.apiToken)" }
+  $uri = "$($client.gitea.baseUrl.TrimEnd('/'))/api/v1/repos/$($client.gitea.owner)/$($client.gitea.repo)/actions/secrets?limit=100"
+  $response = Invoke-RestMethod -Uri $uri -Headers $headers -TimeoutSec 15
+  if ($response.PSObject.Properties.Name -contains "secrets") {
+    return @($response.secrets | ForEach-Object { $_.name })
+  }
+
+  return @($response | ForEach-Object { $_.name })
+}
+
+function Add-GiteaActionsSecretAuditFindings {
+  param($Result)
+
+  $requiredSecrets = @(
+    "NEXUS_URL",
+    "NEXUS_USERNAME",
+    "NEXUS_PASSWORD",
+    "NEXUS_REPOSITORY",
+    "AZURE_CREDENTIALS",
+    "AZURE_DEV_RESOURCE_GROUP",
+    "AZURE_DEV_WEBAPP_NAME",
+    "AZURE_DEV_WEBAPP_URL",
+    "AZURE_QA_RESOURCE_GROUP",
+    "AZURE_QA_WEBAPP_NAME",
+    "AZURE_QA_WEBAPP_URL"
+  )
+
+  try {
+    $configuredSecrets = Get-ConfiguredGiteaActionsSecrets
+  } catch {
+    Add-Item $Result "findings" ".codex/client-tools.local.json" "gitea.actions.secrets" "Could not validate Gitea Actions secrets by API; verify Gitea is running and the configured token can list repository Actions secrets." "warning" "post-start"
+    return
+  }
+
+  if ($null -eq $configuredSecrets) {
+    Add-Item $Result "findings" ".codex/client-tools.local.json" "gitea.actions.secrets" "Gitea Actions secrets were not validated because local Gitea API configuration is missing or placeholder." "warning" "post-start"
+    return
+  }
+
+  foreach ($secret in $requiredSecrets) {
+    if ($configuredSecrets -notcontains $secret) {
+      Add-Item $Result "findings" ".gitea/workflows/package-deploy.yml" $secret "Missing required Gitea Actions secret for package/deploy workflow." "warning" "post-start"
+    }
+  }
+}
+
+function Get-NexusConfig {
+  $clientPath = Join-RootPath ".codex/client-tools.local.json"
+  if (-not (Test-Path $clientPath)) {
+    return $null
+  }
+
+  try {
+    $client = Get-Content -Path $clientPath -Raw | ConvertFrom-Json
+  } catch {
+    return $null
+  }
+
+  if ($null -eq $client.nexus) {
+    return $null
+  }
+
+  return $client.nexus
+}
+
+function Test-NexusConfigComplete {
+  param($Nexus)
+
+  if ($null -eq $Nexus) { return $false }
+  foreach ($key in @("baseUrl", "username", "password", "repository")) {
+    if ($null -eq $Nexus.$key -or (Test-Placeholder ([string]$Nexus.$key))) {
+      return $false
+    }
+  }
+
+  return $true
+}
+
+function Get-NexusRepositories {
+  param($Nexus)
+
+  $baseUrl = ([string]$Nexus.baseUrl).TrimEnd("/")
+  $pair = "$($Nexus.username):$($Nexus.password)"
+  $encoded = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes($pair))
+  $headers = @{ Authorization = "Basic $encoded" }
+  return Invoke-RestMethod -Uri "$baseUrl/service/rest/v1/repositories" -Headers $headers -TimeoutSec 15
+}
+
+function Add-NexusRepositoryAuditFindings {
+  param($Result)
+
+  $nexus = Get-NexusConfig
+  if (-not (Test-NexusConfigComplete $nexus)) {
+    Add-Item $Result "findings" ".codex/client-tools.local.json" "nexus" "Missing Nexus local check configuration; set nexus.baseUrl, nexus.username, nexus.password, and nexus.repository so repository checks can authenticate." "warning" "post-start"
+    return
+  }
+
+  try {
+    $repositories = @(Get-NexusRepositories $nexus)
+  } catch {
+    Add-Item $Result "findings" ".codex/client-tools.local.json" "nexus.repository" "Could not validate Nexus repository with configured credentials; verify Nexus is running and the configured user can list repositories." "warning" "post-start"
+    return
+  }
+
+  $expectedRepository = [string]$nexus.repository
+  $matchedRepository = @($repositories | Where-Object { $_.name -eq $expectedRepository -and $_.format -eq "raw" -and $_.type -eq "hosted" })
+  if ($matchedRepository.Count -eq 0) {
+    Add-Item $Result "findings" ".codex/client-tools.local.json" "nexus.repository" "Configured Nexus repository '$expectedRepository' was not found as a hosted raw repository." "warning" "post-start"
+  }
+}
+
+function Test-ClientValueMissing {
+  param(
+    $Object,
+    [string]$Name
+  )
+
+  if ($null -eq $Object) { return $true }
+  if ($Object.PSObject.Properties.Name -notcontains $Name) { return $true }
+  return Test-Placeholder ([string]$Object.$Name)
+}
+
+function Set-InferredClientValue {
+  param(
+    $Result,
+    $Client,
+    [string[]]$Path,
+    $Value
+  )
+
+  $cursor = $Client
+  for ($i = 0; $i -lt ($Path.Count - 1); $i++) {
+    Ensure-ObjectProperty -Object $cursor -Name $Path[$i]
+    $cursor = $cursor.$($Path[$i])
+  }
+
+  $leaf = $Path[$Path.Count - 1]
+  if (-not (Test-ClientValueMissing $cursor $leaf)) {
+    return
+  }
+
+  Set-ObjectValue -Object $Client -Path $Path -Value $Value
+  Add-Item $Result "actions" ".codex/client-tools.local.json" ($Path -join ".") "Set inferred local client tool value."
+}
+
+function Get-GitRemoteOwnerRepo {
+  $remoteUrl = ""
+  try {
+    $remoteUrl = (& git -C $Root remote get-url origin 2>$null)
+  } catch {
+    return $null
+  }
+
+  if ([string]::IsNullOrWhiteSpace($remoteUrl)) { return $null }
+  $remoteUrl = $remoteUrl.Trim()
+
+  if ($remoteUrl -match "[:/]([^/:]+)/([^/]+?)(?:\.git)?$") {
+    return [pscustomobject]@{
+      owner = $Matches[1]
+      repo = $Matches[2]
+    }
+  }
+
+  return $null
+}
+
+function Ensure-InferredClientToolsConfig {
+  param($Result)
+
+  $targetRelative = ".codex/client-tools.local.json"
+  $target = Join-RootPath $targetRelative
+  if (-not (Test-Path $target)) {
+    $source = Join-RootPath ".codex/client-tools.example.json"
+    if (-not (Test-Path $source)) {
+      Add-Item $Result "warnings" ".codex/client-tools.example.json" "" "Template file is missing; cannot initialize local client tools config." "warning"
+      return
+    }
+
+    Add-Item $Result "actions" $targetRelative "" "Create local client tools config from template."
+    if (-not $DryRun) {
+      Copy-Item -Path $source -Destination $target
+    }
+  }
+
+  if (-not (Test-Path $target)) { return }
+  try {
+    $client = Get-Content -Path $target -Raw | ConvertFrom-Json -Depth 20
+  } catch {
+    Add-Item $Result "findings" $targetRelative "" "Local client tools config is not valid JSON." "error"
+    return
+  }
+
+  $remote = Get-GitRemoteOwnerRepo
+
+  Set-InferredClientValue $Result $client @("plane", "baseUrl") "http://localhost:8080"
+  Set-InferredClientValue $Result $client @("plane", "todoState") "Todo"
+  Set-InferredClientValue $Result $client @("plane", "inProgressState") "In Progress"
+  Set-InferredClientValue $Result $client @("plane", "reviewState") "In Review"
+  Set-InferredClientValue $Result $client @("plane", "qaState") "QA"
+
+  Set-InferredClientValue $Result $client @("git", "baseBranch") "dev"
+  Set-InferredClientValue $Result $client @("git", "branchPrefix") "codex"
+  Set-InferredClientValue $Result $client @("git", "branchPattern") "{prefix}/{ticketKeySlug}-{titleSlug}"
+  Set-InferredClientValue $Result $client @("git", "maxBranchLength") 100
+
+  Set-InferredClientValue $Result $client @("gitea", "baseUrl") "http://localhost:3000"
+  if ($null -ne $remote) {
+    Set-InferredClientValue $Result $client @("gitea", "owner") $remote.owner
+    Set-InferredClientValue $Result $client @("gitea", "repo") $remote.repo
+  }
+
+  Set-InferredClientValue $Result $client @("nexus", "baseUrl") "http://localhost:8088"
+  Set-InferredClientValue $Result $client @("nexus", "repository") "raw-hosted"
+
+  Set-InferredClientValue $Result $client @("pr", "reviewers") "all"
+  Set-InferredClientValue $Result $client @("pr", "labels", "enabled") $true
+  Set-InferredClientValue $Result $client @("pr", "labels", "reviewed") "codex-reviewed"
+  Set-InferredClientValue $Result $client @("pr", "labels", "needsTests") "needs-tests"
+  Set-InferredClientValue $Result $client @("pr", "labels", "needsChanges") "needs-changes"
+
+  if (-not $DryRun) {
+    $client | ConvertTo-Json -Depth 20 | Set-Content -Path $target -Encoding UTF8
+  }
 }
 
 function Invoke-Audit {
   $result = New-Result
+  Ensure-InferredClientToolsConfig $result
 
   $clientLocal = ".codex/client-tools.local.json"
   $clientPath = Join-RootPath $clientLocal
@@ -396,14 +758,18 @@ function Invoke-Audit {
     Add-Item $result "findings" $clientLocal "" "Local client tool config is missing." "error"
   } else {
     $client = Get-Content -Path $clientPath -Raw | ConvertFrom-Json
-    if ($null -eq $client.plane.inProgressState) {
-      Add-Item $result "findings" $clientLocal "plane.inProgressState" "Missing; default should be In Progress unless the user chooses another state." "warning"
-    }
-    if ($null -eq $client.plane.reviewState) {
-      Add-Item $result "findings" $clientLocal "plane.reviewState" "Missing; default should be In Review unless the user chooses another Plane review state." "warning"
+    foreach ($requiredPlaneValue in @("baseUrl", "todoState", "inProgressState", "reviewState", "qaState")) {
+      if (Test-ClientValueMissing $client.plane $requiredPlaneValue) {
+        Add-Item $result "findings" $clientLocal "plane.$requiredPlaneValue" "Missing inferred Plane local value; rerun Audit to apply defaults or set manually." "warning"
+      }
     }
     if (Test-Placeholder $client.plane.apiToken) {
-      Add-Item $result "findings" $clientLocal "plane.apiToken" "Missing or placeholder Plane API token." "error"
+      Add-Item $result "findings" $clientLocal "plane.apiToken" "Missing or placeholder Plane API token; ask the user for this value." "error"
+    }
+    foreach ($requiredPlaneUserValue in @("workspaceSlug", "projectIdentifier")) {
+      if (Test-ClientValueMissing $client.plane $requiredPlaneUserValue) {
+        Add-Item $result "findings" $clientLocal "plane.$requiredPlaneUserValue" "Missing Plane value and it is not inferable from local files; ask the user for this value." "warning"
+      }
     }
 
     if ($null -eq $client.gitea) {
@@ -413,7 +779,22 @@ function Invoke-Audit {
         Add-Item $result "findings" $clientLocal "gitea.baseUrl" "Missing; default should be http://localhost:3000." "warning"
       }
       if (Test-Placeholder $client.gitea.apiToken) {
-        Add-Item $result "findings" $clientLocal "gitea.apiToken" "Missing or placeholder Gitea API token for PR creation, review comments, labels, and reviewer lookup." "error"
+        Add-Item $result "findings" $clientLocal "gitea.apiToken" "Missing or placeholder Gitea API token for PR creation, review comments, labels, and reviewer lookup; ask the user for this value." "error"
+      }
+      foreach ($requiredGiteaValue in @("owner", "repo")) {
+        if (Test-ClientValueMissing $client.gitea $requiredGiteaValue) {
+          Add-Item $result "findings" $clientLocal "gitea.$requiredGiteaValue" "Missing Gitea value and it could not be inferred from the git origin remote; ask the user for this value." "warning"
+        }
+      }
+    }
+
+    if ($null -eq $client.nexus) {
+      Add-Item $result "findings" $clientLocal "nexus" "Missing Nexus local check config; inferred baseUrl/repository should be completed, username and password/token must come from the user." "warning"
+    } else {
+      foreach ($requiredNexusUserValue in @("username", "password")) {
+        if (Test-ClientValueMissing $client.nexus $requiredNexusUserValue) {
+          Add-Item $result "findings" $clientLocal "nexus.$requiredNexusUserValue" "Missing Nexus credential and it is not inferable; ask the user for this value." "warning"
+        }
       }
     }
 
@@ -511,7 +892,77 @@ function Invoke-Audit {
 
 function Invoke-AuditQualityGates {
   $result = New-Result
+  Ensure-InferredClientToolsConfig $result
   Add-QualityGateAuditFindings $result
+  return $result
+}
+
+function Invoke-ValidateGiteaActionsRunner {
+  $result = New-Result
+  $workflowRelativePath = ".gitea/workflows/pr-validation.yml"
+  $workflow = Get-WorkflowContent $workflowRelativePath
+
+  Add-QualityGateAuditFindings $result
+
+  if ([string]::IsNullOrWhiteSpace($workflow)) {
+    Add-Item $result "findings" $workflowRelativePath "" "Cannot run Gitea Actions validation because the PR validation workflow is missing." "error"
+    return $result
+  }
+
+  $containerImage = Get-WorkflowContainerImage $workflow
+  if ([string]::IsNullOrWhiteSpace($containerImage)) {
+    Add-Item $result "findings" $workflowRelativePath "container.image" "Cannot validate runner job container because no container image is configured." "warning"
+    return $result
+  }
+
+  $docker = Get-Command docker -ErrorAction SilentlyContinue
+  if ($null -eq $docker) {
+    Add-Item $result "findings" "docker" "" "Docker CLI is missing; install Docker Desktop or Docker Engine before validating Gitea Actions runner containers." "error"
+    return $result
+  }
+
+  try {
+    & docker version | Out-Null
+    Add-Item $result "actions" "docker" "" "Docker CLI is available."
+  } catch {
+    Add-Item $result "findings" "docker" "" "Docker CLI is installed but not usable: $($_.Exception.Message)" "error"
+    return $result
+  }
+
+  try {
+    & docker pull $containerImage | Out-Null
+    Add-Item $result "actions" $workflowRelativePath "container.image" "Pulled runner job image $containerImage successfully."
+  } catch {
+    Add-Item $result "findings" $workflowRelativePath "container.image" "Could not pull runner job image $containerImage. Pin a pullable stable patch image before enabling PR validation." "error"
+    return $result
+  }
+
+  $toolCheck = "for tool in bash git curl tar dotnet; do command -v `$tool >/dev/null || { echo missing:`$tool; exit 1; }; done"
+  try {
+    & docker run --rm --entrypoint /bin/sh $containerImage -lc $toolCheck | Out-Null
+    Add-Item $result "actions" $workflowRelativePath "container.tools" "Runner job image includes bash, git, curl, tar, and dotnet."
+  } catch {
+    Add-Item $result "findings" $workflowRelativePath "container.tools" "Runner job image is missing a tool required by shell-based PR validation. Required: bash, git, curl, tar, dotnet." "error"
+  }
+
+  $origin = $null
+  try {
+    $origin = (& git -C $Root remote get-url origin).Trim()
+  } catch {
+    Add-Item $result "findings" "git" "origin" "Cannot resolve git origin URL for container checkout validation." "warning"
+  }
+
+  if (-not [string]::IsNullOrWhiteSpace($origin)) {
+    $repoUrl = $origin -replace "localhost", "host.docker.internal"
+    $repoUrl = $repoUrl -replace "gitea", "host.docker.internal"
+    try {
+      & docker run --rm -e "REPO_URL=$repoUrl" --entrypoint /bin/sh $containerImage -lc 'git ls-remote "$REPO_URL" HEAD >/dev/null' | Out-Null
+      Add-Item $result "actions" $workflowRelativePath "checkout.network" "Runner job image can reach the repository origin through host.docker.internal."
+    } catch {
+      Add-Item $result "findings" $workflowRelativePath "checkout.network" "Runner job image cannot reach the repository origin through host.docker.internal. Check Gitea URL rewriting, Docker host networking, and GITEA_INSTANCE_URL." "error"
+    }
+  }
+
   return $result
 }
 
@@ -586,6 +1037,117 @@ dotnet_diagnostic.CA1822.severity = none
 </Project>
 '@
 
+  Write-TemplateFile $result ".gitignore" @'
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+artifacts/
+TestResults/
+[Tt]est[Rr]esult*/
+coverage/
+coverage.*
+*.coverage
+*.coveragexml
+*.trx
+*.vsp
+*.vspx
+*.sap
+
+# Visual Studio user and cache files
+.vs/
+*.user
+*.rsuser
+*.suo
+*.userosscache
+*.sln.docstates
+*.sln.DotSettings.user
+*.userprefs
+*.pidb
+*.svclog
+*.pdb
+*.ilk
+*.symbols.nupkg
+
+# Visual Studio profiling and diagnostics
+*.psess
+*.diagsession
+BenchmarkDotNet.Artifacts/
+
+# .NET Core / ASP.NET Core
+project.lock.json
+project.assets.json
+*.nuget.props
+*.nuget.targets
+packages.lock.json
+appsettings.*.local.json
+appsettings.Local.json
+appsettings.Development.local.json
+appsettings.Production.local.json
+Properties/launchSettings.local.json
+
+# NuGet
+packages/
+*.nupkg
+*.snupkg
+*.nuspec.user
+
+# Rider / JetBrains
+.idea/
+*.sln.iml
+
+# VS Code
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+
+# Node/frontend artifacts that may appear in web projects
+node_modules/
+dist/
+.vite/
+.next/
+.nuxt/
+out/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local container runtime state
+infra/plane/plane/
+**/data/
+**/logs/
+
+# Local secrets and machine-specific environment files
+*.env
+!*.env.example
+.plane.local.json
+.codex/client-tools.local.json
+.codex/quality.local.json
+.codex/azure-login.local.json
+infra/monitoring/prometheus.local.yml
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+'@
+
   Write-TemplateFile $result ".codex/quality.example.json" @'
 {
   "coverage": {
@@ -636,10 +1198,21 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     container:
-      image: mcr.microsoft.com/dotnet/sdk:10.0.100
+      image: mcr.microsoft.com/dotnet/sdk:10.0.300
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          repo_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          repo_url="${repo_url/localhost/host.docker.internal}"
+          repo_url="${repo_url/gitea/host.docker.internal}"
+
+          git init .
+          git remote add origin "$repo_url"
+          git fetch --depth 1 origin "$GITHUB_SHA"
+          git checkout --force FETCH_HEAD
 
       - name: Restore
         run: dotnet restore
@@ -693,19 +1266,19 @@ jobs:
 
       - name: Install Gitleaks
         run: |
-          curl -sSfL https://raw.githubusercontent.com/gitleaks/gitleaks/master/install.sh | sh -s -- -b /usr/local/bin
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz \
+            | tar -xz -C /usr/local/bin gitleaks
 
       - name: Secret scan
         run: gitleaks detect --source . --redact --no-git
 
+      - name: Install Trivy
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+            | sh -s -- -b /usr/local/bin v0.70.0
+
       - name: Trivy filesystem scan
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: fs
-          scan-ref: .
-          severity: HIGH,CRITICAL
-          exit-code: "1"
-          ignore-unfixed: true
+        run: trivy fs --severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed .
 
       # Optional: add Semgrep when rules and runtime budget are agreed.
 '@
@@ -716,7 +1289,7 @@ name: Package and deploy
 on:
   push:
     branches:
-      - main
+      - dev
   workflow_dispatch:
     inputs:
       environment:
@@ -728,20 +1301,36 @@ jobs:
   package:
     runs-on: ubuntu-latest
     container:
-      image: mcr.microsoft.com/dotnet/sdk:10.0.100
+      image: mcr.microsoft.com/dotnet/sdk:10.0.300
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          repo_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          repo_url="${repo_url/localhost/host.docker.internal}"
+          repo_url="${repo_url/gitea/host.docker.internal}"
+
+          git init .
+          git remote add origin "$repo_url"
+          git fetch --depth 1 origin "$GITHUB_SHA"
+          git checkout --force FETCH_HEAD
 
       - name: Publish
         run: dotnet publish -c Release -o ./artifacts/app
+
+      - name: Install packaging tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends zip
 
       - name: Create deployable ZIP
         run: |
           cd artifacts/app
           zip -r ../app.zip .
           cd ../..
-          sha256sum artifacts/app.zip > artifacts/app.zip.sha256
+          sha256sum artifacts/app.zip | sed 's#artifacts/app.zip#app.zip#' > artifacts/app.zip.sha256
           git rev-parse HEAD > artifacts/commit.sha
 
       - name: Upload artifact to Nexus
@@ -758,11 +1347,13 @@ jobs:
   deploy-dev:
     needs: package
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event.inputs.environment == 'dev'
+    if: github.event_name == 'push' || github.event.inputs.environment == 'dev' || github.event.inputs.environment == 'qa'
     steps:
       - name: Download artifact from Nexus
         run: |
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip"
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip.sha256 "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip.sha256"
+          sha256sum -c app.zip.sha256
         env:
           NEXUS_URL: ${{ secrets.NEXUS_URL }}
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
@@ -784,6 +1375,38 @@ jobs:
         run: curl --fail "$AZURE_DEV_WEBAPP_URL"
         env:
           AZURE_DEV_WEBAPP_URL: ${{ secrets.AZURE_DEV_WEBAPP_URL }}
+
+  deploy-qa:
+    needs: deploy-dev
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.inputs.environment == 'qa'
+    steps:
+      - name: Download artifact from Nexus
+        run: |
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip"
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip.sha256 "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip.sha256"
+          sha256sum -c app.zip.sha256
+        env:
+          NEXUS_URL: ${{ secrets.NEXUS_URL }}
+          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+          NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy QA package
+        run: az webapp deploy --resource-group "$AZURE_QA_RESOURCE_GROUP" --name "$AZURE_QA_WEBAPP_NAME" --src-path app.zip --type zip
+        env:
+          AZURE_QA_RESOURCE_GROUP: ${{ secrets.AZURE_QA_RESOURCE_GROUP }}
+          AZURE_QA_WEBAPP_NAME: ${{ secrets.AZURE_QA_WEBAPP_NAME }}
+
+      - name: Smoke check QA
+        run: curl --fail "$AZURE_QA_WEBAPP_URL"
+        env:
+          AZURE_QA_WEBAPP_URL: ${{ secrets.AZURE_QA_WEBAPP_URL }}
 '@
 
   Write-TemplateFile $result ".gitea/workflows/README.md" @'
@@ -803,17 +1426,29 @@ Required repository secrets:
 - `AZURE_DEV_RESOURCE_GROUP`
 - `AZURE_DEV_WEBAPP_NAME`
 - `AZURE_DEV_WEBAPP_URL`
+- `AZURE_QA_RESOURCE_GROUP`
+- `AZURE_QA_WEBAPP_NAME`
+- `AZURE_QA_WEBAPP_URL`
 
-Add equivalent QA and PROD secrets before enabling promotion jobs.
+Add equivalent PROD secrets before enabling PROD promotion jobs.
 
 Recommended branch protection:
 
-- Block direct pushes to `main`.
-- Require pull requests.
+- Block direct pushes to `dev` and `main`.
+- Require pull requests into `dev`.
+- Update `main` only after QA passes, preferably by fast-forwarding the tested commit.
 - Require the PR validation workflow to pass.
 - Require coverage to meet the configured threshold.
 - Require review approval or the configured review label.
 - Block merge while `needs-changes` is present.
+
+Release flow:
+
+```text
+feature branch -> dev -> DEV -> QA -> main -> PROD
+```
+
+The package workflow builds and publishes from `dev`. DEV and QA must deploy the same Nexus ZIP artifact for the same commit SHA.
 '@
 
   return $result
@@ -882,7 +1517,7 @@ function Invoke-SetClientTools {
 
   $values = Convert-JsonToHashtable $ValuesJson
   $config = Get-Content -Path $target -Raw | ConvertFrom-Json -Depth 20
-  foreach ($section in @("plane", "git", "gitea", "pr")) {
+  foreach ($section in @("plane", "git", "gitea", "nexus", "pr")) {
     if ($values.Contains($section)) {
       Ensure-ObjectProperty -Object $config -Name $section
       foreach ($key in $values[$section].Keys) {
@@ -951,6 +1586,7 @@ function Invoke-SetPrometheusAzureTargets {
 switch ($Mode) {
   "Audit" { $result = Invoke-Audit }
   "AuditQualityGates" { $result = Invoke-AuditQualityGates }
+  "ValidateGiteaActionsRunner" { $result = Invoke-ValidateGiteaActionsRunner }
   "InitLocalFiles" { $result = Invoke-InitLocalFiles }
   "InitQualityGateTemplates" { $result = Invoke-InitQualityGateTemplates }
   "SetClientTools" { $result = Invoke-SetClientTools }

@@ -81,7 +81,9 @@ When `pr.labels.enabled` is true:
 2. Apply the reviewed label after posting a review comment.
 3. Apply the needs-tests label if the review identifies missing or failing tests.
 4. Apply the needs-changes label if the review identifies actionable defects or blocking issues.
-5. If label creation or assignment fails due to permissions or disabled labels, continue the review and mention the label failure in the PR comment or completion summary.
+5. Remove the needs-tests label when the current head no longer has missing or failing test findings.
+6. Remove the needs-changes label when the current head no longer has actionable defects or blocking issues.
+7. If label creation, assignment, or removal fails due to permissions or disabled labels, continue the review and mention the label failure in the PR comment or completion summary.
 
 ## Output Style
 

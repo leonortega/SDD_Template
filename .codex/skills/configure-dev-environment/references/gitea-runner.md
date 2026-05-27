@@ -11,6 +11,7 @@ Use the shared script:
 
 ```powershell
 .\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode Audit
+.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode ValidateGiteaActionsRunner
 .\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode SetGiteaRunner -ValuesJson $values
 ```
 
@@ -46,3 +47,7 @@ Validate:
 - Gitea Actions are enabled.
 - Runner registered and visible in Gitea.
 - Runner can start jobs.
+- PR validation job image can be pulled by Docker.
+- PR validation job image contains required shell tools (`bash`, `git`, `curl`, `tar`, and `dotnet`).
+- Containerized checkout can reach the local Gitea repository through `host.docker.internal`.
+- Containerized workflows do not rely on JavaScript `uses:` actions unless the job container includes `node`.
