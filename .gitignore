@@ -17,3 +17,8 @@ infra/monitoring/prometheus.local.yml
 Thumbs.db
 .idea/
 .vscode/
+
+# .NET build and test output
+bin/
+obj/
+TestResults/

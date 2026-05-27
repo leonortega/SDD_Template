@@ -39,6 +39,9 @@ Azure
 ## Repository Layout
 
 ```text
+SDDTemplate.slnx
+src/
+└─ SDDTemplate.Site/
 infra/
 ├─ compose.yml
 ├─ plane/
@@ -61,6 +64,14 @@ infra/
 ```
 
 Use `compose.yml` consistently for Docker Compose files.
+
+## Application Build
+
+Build the Blazor site from the repository root:
+
+```powershell
+dotnet build .\SDDTemplate.slnx
+```
 
 ## Delivery Flow
 
