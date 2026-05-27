@@ -19,6 +19,7 @@ jobs:
 
           repo_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
           repo_url="${repo_url/localhost/host.docker.internal}"
+          repo_url="${repo_url/gitea/host.docker.internal}"
 
           git init .
           git remote add origin "$repo_url"
