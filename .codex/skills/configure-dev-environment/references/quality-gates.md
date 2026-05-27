@@ -69,6 +69,6 @@ Ask the user to configure Gitea branch protection:
 
 - Block direct pushes to `main`.
 - Require pull requests.
-- Require the PR validation workflow to pass.
+- Require the exact emitted PR validation status context: `PR validation / validate (pull_request)`.
 - Require review approval or the configured review label.
 - Block merge while `needs-changes` is present.

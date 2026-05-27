@@ -29,7 +29,7 @@ Recommended branch protection:
 
 - Block direct pushes to `main`.
 - Require pull requests.
-- Require the PR validation workflow to pass.
+- Require the exact emitted status check context: `PR validation / validate (pull_request)`.
 - Require coverage to meet the configured threshold.
 - Require review approval or the configured review label.
 - Block merge while `needs-changes` is present.

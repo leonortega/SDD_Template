@@ -309,6 +309,44 @@ function Add-GiteaActionsRunnerCompatibilityFindings {
 
 }
 
+function Add-GiteaBranchProtectionAuditFindings {
+  param($Result)
+
+  $clientLocal = ".codex/client-tools.local.json"
+  $clientPath = Join-RootPath $clientLocal
+  if (-not (Test-Path $clientPath)) { return }
+
+  try {
+    $client = Get-Content -Path $clientPath -Raw | ConvertFrom-Json
+  } catch {
+    Add-Item $Result "findings" $clientLocal "" "Could not parse local client tool config for branch protection validation." "warning"
+    return
+  }
+
+  if (Test-Placeholder $client.gitea.apiToken -or $null -eq $client.gitea.baseUrl -or $null -eq $client.gitea.owner -or $null -eq $client.gitea.repo) {
+    Add-Item $Result "findings" $clientLocal "gitea" "Cannot validate Gitea branch protection status contexts because Gitea API config is missing or placeholder." "info"
+    return
+  }
+
+  $expectedContext = "PR validation / validate (pull_request)"
+  $headers = @{ Authorization = "token $($client.gitea.apiToken)"; Accept = "application/json" }
+  $baseUrl = ([string]$client.gitea.baseUrl).TrimEnd("/")
+  $targetBranches = @("main", "dev")
+
+  foreach ($branch in $targetBranches) {
+    try {
+      $protection = Invoke-RestMethod -Method Get -Uri "$baseUrl/api/v1/repos/$($client.gitea.owner)/$($client.gitea.repo)/branch_protections/$branch" -Headers $headers
+    } catch {
+      Add-Item $Result "findings" ".gitea/workflows/README.md" "branch-protection.$branch" "Could not read Gitea branch protection for '$branch'. Configure required status check context '$expectedContext' manually if branch protection is enabled." "info"
+      continue
+    }
+
+    if ($protection.enable_status_check -and (@($protection.status_check_contexts) -notcontains $expectedContext)) {
+      Add-Item $Result "findings" ".gitea/workflows/README.md" "branch-protection.$branch" "Gitea branch protection for '$branch' requires status contexts '$(@($protection.status_check_contexts) -join ', ')', but PR validation reports '$expectedContext'. Update branch protection to require the emitted context." "warning"
+    }
+  }
+}
+
 function Get-QualityCoverageMinimum {
   param([string]$RelativePath)
 
@@ -451,6 +489,8 @@ function Add-QualityGateAuditFindings {
       }
     }
   }
+
+  Add-GiteaBranchProtectionAuditFindings $Result
 }
 
 function Invoke-Audit {
