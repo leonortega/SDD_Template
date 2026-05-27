@@ -499,10 +499,258 @@ function Add-QualityGateAuditFindings {
   }
 
   Add-GiteaBranchProtectionAuditFindings $Result
+  Add-GiteaActionsSecretAuditFindings $Result
+  Add-NexusRepositoryAuditFindings $Result
+}
+
+function Get-ConfiguredGiteaActionsSecrets {
+  $clientPath = Join-RootPath ".codex/client-tools.local.json"
+  if (-not (Test-Path $clientPath)) {
+    return $null
+  }
+
+  try {
+    $client = Get-Content -Path $clientPath -Raw | ConvertFrom-Json
+  } catch {
+    return $null
+  }
+
+  if ($null -eq $client.gitea -or
+      [string]::IsNullOrWhiteSpace([string]$client.gitea.baseUrl) -or
+      [string]::IsNullOrWhiteSpace([string]$client.gitea.owner) -or
+      [string]::IsNullOrWhiteSpace([string]$client.gitea.repo) -or
+      (Test-Placeholder ([string]$client.gitea.apiToken))) {
+    return $null
+  }
+
+  $headers = @{ Authorization = "token $($client.gitea.apiToken)" }
+  $uri = "$($client.gitea.baseUrl.TrimEnd('/'))/api/v1/repos/$($client.gitea.owner)/$($client.gitea.repo)/actions/secrets?limit=100"
+  $response = Invoke-RestMethod -Uri $uri -Headers $headers -TimeoutSec 15
+  if ($response.PSObject.Properties.Name -contains "secrets") {
+    return @($response.secrets | ForEach-Object { $_.name })
+  }
+
+  return @($response | ForEach-Object { $_.name })
+}
+
+function Add-GiteaActionsSecretAuditFindings {
+  param($Result)
+
+  $requiredSecrets = @(
+    "NEXUS_URL",
+    "NEXUS_USERNAME",
+    "NEXUS_PASSWORD",
+    "NEXUS_REPOSITORY",
+    "AZURE_CREDENTIALS",
+    "AZURE_DEV_RESOURCE_GROUP",
+    "AZURE_DEV_WEBAPP_NAME",
+    "AZURE_DEV_WEBAPP_URL",
+    "AZURE_QA_RESOURCE_GROUP",
+    "AZURE_QA_WEBAPP_NAME",
+    "AZURE_QA_WEBAPP_URL"
+  )
+
+  try {
+    $configuredSecrets = Get-ConfiguredGiteaActionsSecrets
+  } catch {
+    Add-Item $Result "findings" ".codex/client-tools.local.json" "gitea.actions.secrets" "Could not validate Gitea Actions secrets by API; verify Gitea is running and the configured token can list repository Actions secrets." "warning" "post-start"
+    return
+  }
+
+  if ($null -eq $configuredSecrets) {
+    Add-Item $Result "findings" ".codex/client-tools.local.json" "gitea.actions.secrets" "Gitea Actions secrets were not validated because local Gitea API configuration is missing or placeholder." "warning" "post-start"
+    return
+  }
+
+  foreach ($secret in $requiredSecrets) {
+    if ($configuredSecrets -notcontains $secret) {
+      Add-Item $Result "findings" ".gitea/workflows/package-deploy.yml" $secret "Missing required Gitea Actions secret for package/deploy workflow." "warning" "post-start"
+    }
+  }
+}
+
+function Get-NexusConfig {
+  $clientPath = Join-RootPath ".codex/client-tools.local.json"
+  if (-not (Test-Path $clientPath)) {
+    return $null
+  }
+
+  try {
+    $client = Get-Content -Path $clientPath -Raw | ConvertFrom-Json
+  } catch {
+    return $null
+  }
+
+  if ($null -eq $client.nexus) {
+    return $null
+  }
+
+  return $client.nexus
+}
+
+function Test-NexusConfigComplete {
+  param($Nexus)
+
+  if ($null -eq $Nexus) { return $false }
+  foreach ($key in @("baseUrl", "username", "password", "repository")) {
+    if ($null -eq $Nexus.$key -or (Test-Placeholder ([string]$Nexus.$key))) {
+      return $false
+    }
+  }
+
+  return $true
+}
+
+function Get-NexusRepositories {
+  param($Nexus)
+
+  $baseUrl = ([string]$Nexus.baseUrl).TrimEnd("/")
+  $pair = "$($Nexus.username):$($Nexus.password)"
+  $encoded = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes($pair))
+  $headers = @{ Authorization = "Basic $encoded" }
+  return Invoke-RestMethod -Uri "$baseUrl/service/rest/v1/repositories" -Headers $headers -TimeoutSec 15
+}
+
+function Add-NexusRepositoryAuditFindings {
+  param($Result)
+
+  $nexus = Get-NexusConfig
+  if (-not (Test-NexusConfigComplete $nexus)) {
+    Add-Item $Result "findings" ".codex/client-tools.local.json" "nexus" "Missing Nexus local check configuration; set nexus.baseUrl, nexus.username, nexus.password, and nexus.repository so repository checks can authenticate." "warning" "post-start"
+    return
+  }
+
+  try {
+    $repositories = @(Get-NexusRepositories $nexus)
+  } catch {
+    Add-Item $Result "findings" ".codex/client-tools.local.json" "nexus.repository" "Could not validate Nexus repository with configured credentials; verify Nexus is running and the configured user can list repositories." "warning" "post-start"
+    return
+  }
+
+  $expectedRepository = [string]$nexus.repository
+  $matchedRepository = @($repositories | Where-Object { $_.name -eq $expectedRepository -and $_.format -eq "raw" -and $_.type -eq "hosted" })
+  if ($matchedRepository.Count -eq 0) {
+    Add-Item $Result "findings" ".codex/client-tools.local.json" "nexus.repository" "Configured Nexus repository '$expectedRepository' was not found as a hosted raw repository." "warning" "post-start"
+  }
+}
+
+function Test-ClientValueMissing {
+  param(
+    $Object,
+    [string]$Name
+  )
+
+  if ($null -eq $Object) { return $true }
+  if ($Object.PSObject.Properties.Name -notcontains $Name) { return $true }
+  return Test-Placeholder ([string]$Object.$Name)
+}
+
+function Set-InferredClientValue {
+  param(
+    $Result,
+    $Client,
+    [string[]]$Path,
+    $Value
+  )
+
+  $cursor = $Client
+  for ($i = 0; $i -lt ($Path.Count - 1); $i++) {
+    Ensure-ObjectProperty -Object $cursor -Name $Path[$i]
+    $cursor = $cursor.$($Path[$i])
+  }
+
+  $leaf = $Path[$Path.Count - 1]
+  if (-not (Test-ClientValueMissing $cursor $leaf)) {
+    return
+  }
+
+  Set-ObjectValue -Object $Client -Path $Path -Value $Value
+  Add-Item $Result "actions" ".codex/client-tools.local.json" ($Path -join ".") "Set inferred local client tool value."
+}
+
+function Get-GitRemoteOwnerRepo {
+  $remoteUrl = ""
+  try {
+    $remoteUrl = (& git -C $Root remote get-url origin 2>$null)
+  } catch {
+    return $null
+  }
+
+  if ([string]::IsNullOrWhiteSpace($remoteUrl)) { return $null }
+  $remoteUrl = $remoteUrl.Trim()
+
+  if ($remoteUrl -match "[:/]([^/:]+)/([^/]+?)(?:\.git)?$") {
+    return [pscustomobject]@{
+      owner = $Matches[1]
+      repo = $Matches[2]
+    }
+  }
+
+  return $null
+}
+
+function Ensure-InferredClientToolsConfig {
+  param($Result)
+
+  $targetRelative = ".codex/client-tools.local.json"
+  $target = Join-RootPath $targetRelative
+  if (-not (Test-Path $target)) {
+    $source = Join-RootPath ".codex/client-tools.example.json"
+    if (-not (Test-Path $source)) {
+      Add-Item $Result "warnings" ".codex/client-tools.example.json" "" "Template file is missing; cannot initialize local client tools config." "warning"
+      return
+    }
+
+    Add-Item $Result "actions" $targetRelative "" "Create local client tools config from template."
+    if (-not $DryRun) {
+      Copy-Item -Path $source -Destination $target
+    }
+  }
+
+  if (-not (Test-Path $target)) { return }
+  try {
+    $client = Get-Content -Path $target -Raw | ConvertFrom-Json -Depth 20
+  } catch {
+    Add-Item $Result "findings" $targetRelative "" "Local client tools config is not valid JSON." "error"
+    return
+  }
+
+  $remote = Get-GitRemoteOwnerRepo
+
+  Set-InferredClientValue $Result $client @("plane", "baseUrl") "http://localhost:8080"
+  Set-InferredClientValue $Result $client @("plane", "todoState") "Todo"
+  Set-InferredClientValue $Result $client @("plane", "inProgressState") "In Progress"
+  Set-InferredClientValue $Result $client @("plane", "reviewState") "In Review"
+  Set-InferredClientValue $Result $client @("plane", "qaState") "QA"
+
+  Set-InferredClientValue $Result $client @("git", "baseBranch") "dev"
+  Set-InferredClientValue $Result $client @("git", "branchPrefix") "codex"
+  Set-InferredClientValue $Result $client @("git", "branchPattern") "{prefix}/{ticketKeySlug}-{titleSlug}"
+  Set-InferredClientValue $Result $client @("git", "maxBranchLength") 100
+
+  Set-InferredClientValue $Result $client @("gitea", "baseUrl") "http://localhost:3000"
+  if ($null -ne $remote) {
+    Set-InferredClientValue $Result $client @("gitea", "owner") $remote.owner
+    Set-InferredClientValue $Result $client @("gitea", "repo") $remote.repo
+  }
+
+  Set-InferredClientValue $Result $client @("nexus", "baseUrl") "http://localhost:8088"
+  Set-InferredClientValue $Result $client @("nexus", "repository") "raw-hosted"
+
+  Set-InferredClientValue $Result $client @("pr", "reviewers") "all"
+  Set-InferredClientValue $Result $client @("pr", "labels", "enabled") $true
+  Set-InferredClientValue $Result $client @("pr", "labels", "reviewed") "codex-reviewed"
+  Set-InferredClientValue $Result $client @("pr", "labels", "needsTests") "needs-tests"
+  Set-InferredClientValue $Result $client @("pr", "labels", "needsChanges") "needs-changes"
+
+  if (-not $DryRun) {
+    $client | ConvertTo-Json -Depth 20 | Set-Content -Path $target -Encoding UTF8
+  }
 }
 
 function Invoke-Audit {
   $result = New-Result
+  Ensure-InferredClientToolsConfig $result
 
   $clientLocal = ".codex/client-tools.local.json"
   $clientPath = Join-RootPath $clientLocal
@@ -510,17 +758,18 @@ function Invoke-Audit {
     Add-Item $result "findings" $clientLocal "" "Local client tool config is missing." "error"
   } else {
     $client = Get-Content -Path $clientPath -Raw | ConvertFrom-Json
-    if ($null -eq $client.plane.inProgressState) {
-      Add-Item $result "findings" $clientLocal "plane.inProgressState" "Missing; default should be In Progress unless the user chooses another state." "warning"
-    }
-    if ($null -eq $client.plane.reviewState) {
-      Add-Item $result "findings" $clientLocal "plane.reviewState" "Missing; default should be In Review unless the user chooses another Plane review state." "warning"
-    }
-    if ($null -eq $client.plane.qaState) {
-      Add-Item $result "findings" $clientLocal "plane.qaState" "Missing; default should be QA unless the user chooses another Plane QA state." "warning"
+    foreach ($requiredPlaneValue in @("baseUrl", "todoState", "inProgressState", "reviewState", "qaState")) {
+      if (Test-ClientValueMissing $client.plane $requiredPlaneValue) {
+        Add-Item $result "findings" $clientLocal "plane.$requiredPlaneValue" "Missing inferred Plane local value; rerun Audit to apply defaults or set manually." "warning"
+      }
     }
     if (Test-Placeholder $client.plane.apiToken) {
-      Add-Item $result "findings" $clientLocal "plane.apiToken" "Missing or placeholder Plane API token." "error"
+      Add-Item $result "findings" $clientLocal "plane.apiToken" "Missing or placeholder Plane API token; ask the user for this value." "error"
+    }
+    foreach ($requiredPlaneUserValue in @("workspaceSlug", "projectIdentifier")) {
+      if (Test-ClientValueMissing $client.plane $requiredPlaneUserValue) {
+        Add-Item $result "findings" $clientLocal "plane.$requiredPlaneUserValue" "Missing Plane value and it is not inferable from local files; ask the user for this value." "warning"
+      }
     }
 
     if ($null -eq $client.gitea) {
@@ -530,7 +779,22 @@ function Invoke-Audit {
         Add-Item $result "findings" $clientLocal "gitea.baseUrl" "Missing; default should be http://localhost:3000." "warning"
       }
       if (Test-Placeholder $client.gitea.apiToken) {
-        Add-Item $result "findings" $clientLocal "gitea.apiToken" "Missing or placeholder Gitea API token for PR creation, review comments, labels, and reviewer lookup." "error"
+        Add-Item $result "findings" $clientLocal "gitea.apiToken" "Missing or placeholder Gitea API token for PR creation, review comments, labels, and reviewer lookup; ask the user for this value." "error"
+      }
+      foreach ($requiredGiteaValue in @("owner", "repo")) {
+        if (Test-ClientValueMissing $client.gitea $requiredGiteaValue) {
+          Add-Item $result "findings" $clientLocal "gitea.$requiredGiteaValue" "Missing Gitea value and it could not be inferred from the git origin remote; ask the user for this value." "warning"
+        }
+      }
+    }
+
+    if ($null -eq $client.nexus) {
+      Add-Item $result "findings" $clientLocal "nexus" "Missing Nexus local check config; inferred baseUrl/repository should be completed, username and password/token must come from the user." "warning"
+    } else {
+      foreach ($requiredNexusUserValue in @("username", "password")) {
+        if (Test-ClientValueMissing $client.nexus $requiredNexusUserValue) {
+          Add-Item $result "findings" $clientLocal "nexus.$requiredNexusUserValue" "Missing Nexus credential and it is not inferable; ask the user for this value." "warning"
+        }
       }
     }
 
@@ -628,6 +892,7 @@ function Invoke-Audit {
 
 function Invoke-AuditQualityGates {
   $result = New-Result
+  Ensure-InferredClientToolsConfig $result
   Add-QualityGateAuditFindings $result
   return $result
 }
@@ -770,6 +1035,117 @@ dotnet_diagnostic.CA1822.severity = none
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
   </PropertyGroup>
 </Project>
+'@
+
+  Write-TemplateFile $result ".gitignore" @'
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+artifacts/
+TestResults/
+[Tt]est[Rr]esult*/
+coverage/
+coverage.*
+*.coverage
+*.coveragexml
+*.trx
+*.vsp
+*.vspx
+*.sap
+
+# Visual Studio user and cache files
+.vs/
+*.user
+*.rsuser
+*.suo
+*.userosscache
+*.sln.docstates
+*.sln.DotSettings.user
+*.userprefs
+*.pidb
+*.svclog
+*.pdb
+*.ilk
+*.symbols.nupkg
+
+# Visual Studio profiling and diagnostics
+*.psess
+*.diagsession
+BenchmarkDotNet.Artifacts/
+
+# .NET Core / ASP.NET Core
+project.lock.json
+project.assets.json
+*.nuget.props
+*.nuget.targets
+packages.lock.json
+appsettings.*.local.json
+appsettings.Local.json
+appsettings.Development.local.json
+appsettings.Production.local.json
+Properties/launchSettings.local.json
+
+# NuGet
+packages/
+*.nupkg
+*.snupkg
+*.nuspec.user
+
+# Rider / JetBrains
+.idea/
+*.sln.iml
+
+# VS Code
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+
+# Node/frontend artifacts that may appear in web projects
+node_modules/
+dist/
+.vite/
+.next/
+.nuxt/
+out/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local container runtime state
+infra/plane/plane/
+**/data/
+**/logs/
+
+# Local secrets and machine-specific environment files
+*.env
+!*.env.example
+.plane.local.json
+.codex/client-tools.local.json
+.codex/quality.local.json
+.codex/azure-login.local.json
+infra/monitoring/prometheus.local.yml
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
 '@
 
   Write-TemplateFile $result ".codex/quality.example.json" @'
@@ -1141,7 +1517,7 @@ function Invoke-SetClientTools {
 
   $values = Convert-JsonToHashtable $ValuesJson
   $config = Get-Content -Path $target -Raw | ConvertFrom-Json -Depth 20
-  foreach ($section in @("plane", "git", "gitea", "pr")) {
+  foreach ($section in @("plane", "git", "gitea", "nexus", "pr")) {
     if ($values.Contains($section)) {
       Ensure-ObjectProperty -Object $config -Name $section
       foreach ($key in $values[$section].Keys) {

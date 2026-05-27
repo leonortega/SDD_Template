@@ -1,3 +1,91 @@
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+artifacts/
+TestResults/
+[Tt]est[Rr]esult*/
+coverage/
+coverage.*
+*.coverage
+*.coveragexml
+*.trx
+*.vsp
+*.vspx
+*.sap
+
+# Visual Studio user and cache files
+.vs/
+*.user
+*.rsuser
+*.suo
+*.userosscache
+*.sln.docstates
+*.sln.DotSettings.user
+*.userprefs
+*.pidb
+*.svclog
+*.pdb
+*.ilk
+*.symbols.nupkg
+
+# Visual Studio profiling and diagnostics
+*.psess
+*.diagsession
+BenchmarkDotNet.Artifacts/
+
+# .NET Core / ASP.NET Core
+project.lock.json
+project.assets.json
+*.nuget.props
+*.nuget.targets
+packages.lock.json
+appsettings.*.local.json
+appsettings.Local.json
+appsettings.Development.local.json
+appsettings.Production.local.json
+Properties/launchSettings.local.json
+
+# NuGet
+packages/
+*.nupkg
+*.snupkg
+*.nuspec.user
+
+# Rider / JetBrains
+.idea/
+*.sln.iml
+
+# VS Code
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+
+# Node/frontend artifacts that may appear in web projects
+node_modules/
+dist/
+.vite/
+.next/
+.nuxt/
+out/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
 # Local container runtime state
 infra/plane/plane/
 **/data/
@@ -15,10 +103,6 @@ infra/monitoring/prometheus.local.yml
 # OS/editor noise
 .DS_Store
 Thumbs.db
-.idea/
-.vscode/
-
-# .NET build and test output
-bin/
-obj/
-TestResults/
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/

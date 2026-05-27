@@ -21,6 +21,12 @@
     "owner": "replace-with-gitea-owner",
     "repo": "replace-with-gitea-repo"
   },
+  "nexus": {
+    "baseUrl": "replace-with-nexus-base-url",
+    "username": "replace-with-nexus-username",
+    "password": "replace-with-nexus-password-or-token",
+    "repository": "replace-with-nexus-repository"
+  },
   "pr": {
     "reviewers": "replace-with-reviewers",
     "labels": {
