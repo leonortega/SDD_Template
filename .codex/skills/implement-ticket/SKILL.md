@@ -133,6 +133,8 @@ Invoke `gitea-pr-review-agent`. Fix actionable findings, update OpenSpec tasks/a
 
 The review agent uses `<!-- codex-review-agent:{headSha} -->` markers. After every pushed head SHA, ensure the review-agent outcome applies to the current head. Do not duplicate review comments for the same head SHA unless the user explicitly asks for a fresh review.
 
+When the current head has passing tests/CI and the latest review-agent outcome no longer identifies missing tests or blocking changes, remove stale `pr.labels.needsTests` and `pr.labels.needsChanges` labels from the PR. Keep `pr.labels.reviewed` when the current head has been reviewed.
+
 ### 10. Plane Handoff
 
 Move the Plane ticket to `plane.reviewState`, default `In Review`, only after PR creation, review-agent posting, and blocking fix loops are complete.
@@ -170,4 +172,5 @@ Do not move the ticket to Done.
 - Ignored local secret findings from full local scans: report as local setup notes unless the same secret is staged, tracked, or reported by CI.
 - Existing PR: reuse it instead of creating a duplicate.
 - Existing review-agent comment for same head SHA: reuse it instead of posting a duplicate; post a new review marker only after the head SHA changes.
+- Stale PR labels: remove `needs-tests` after required tests are added and passing; remove `needs-changes` after requested fixes are in place and the current-head review has no blocking findings.
 - Missing Plane review state: stop after PR/review work and report the missing state.
