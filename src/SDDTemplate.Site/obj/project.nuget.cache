@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "dgSpecHash": "xaLjxX4ts/w=",
+  "success": true,
+  "projectFilePath": "C:\\Endava\\EndevLocal\\Personal\\SDD_template\\src\\SDDTemplate.Site\\SDDTemplate.Site.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\mlortega\\.nuget\\packages\\microsoft.aspnetcore.app.internal.assets\\10.0.8\\microsoft.aspnetcore.app.internal.assets.10.0.8.nupkg.sha512"
+  ],
+  "logs": []
+}

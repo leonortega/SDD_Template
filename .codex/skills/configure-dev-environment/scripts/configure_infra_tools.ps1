@@ -313,10 +313,18 @@ function Add-QualityGateAuditFindings {
   if (-not (Test-Path (Join-RootPath $releaseWorkflow))) {
     Add-Item $Result "findings" $releaseWorkflow "" "Missing package/deploy workflow for Nexus artifact publication and Azure promotion." "warning"
   } else {
-    foreach ($expected in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "az webapp deploy")) {
+    foreach ($expected in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "az webapp deploy", "deploy-qa", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_WEBAPP_NAME", "AZURE_QA_WEBAPP_URL")) {
       if (-not (Test-FileContains $releaseWorkflow ([regex]::Escape($expected)))) {
         Add-Item $Result "findings" $releaseWorkflow $expected "Package/deploy workflow does not mention $expected." "warning"
       }
+    }
+    if (-not (Test-FileContains $releaseWorkflow "branches:\s*\r?\n\s*-\s*dev")) {
+      Add-Item $Result "findings" $releaseWorkflow "on.push.branches.dev" "Package/deploy workflow should trigger from dev for QA candidate artifacts." "warning"
+    }
+    $releaseContent = Get-Content -Path (Join-RootPath $releaseWorkflow) -Raw
+    $publishCount = ([regex]::Matches($releaseContent, "dotnet publish")).Count
+    if ($publishCount -gt 1) {
+      Add-Item $Result "findings" $releaseWorkflow "dotnet publish" "Package/deploy workflow appears to publish more than once; DEV and QA should promote the same Nexus artifact." "warning"
     }
   }
 
@@ -379,7 +387,7 @@ function Add-QualityGateAuditFindings {
   if (-not (Test-Path (Join-RootPath $secretsDoc))) {
     Add-Item $Result "findings" $secretsDoc "" "Missing documentation for required Gitea Actions secrets and branch protection." "warning"
   } else {
-    foreach ($secret in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "AZURE_CREDENTIALS")) {
+    foreach ($secret in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "AZURE_CREDENTIALS", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_WEBAPP_NAME", "AZURE_QA_WEBAPP_URL")) {
       if (-not (Test-FileContains $secretsDoc $secret)) {
         Add-Item $Result "findings" $secretsDoc $secret "Required Gitea Actions secret is not documented." "warning"
       }
@@ -401,6 +409,9 @@ function Invoke-Audit {
     }
     if ($null -eq $client.plane.reviewState) {
       Add-Item $result "findings" $clientLocal "plane.reviewState" "Missing; default should be In Review unless the user chooses another Plane review state." "warning"
+    }
+    if ($null -eq $client.plane.qaState) {
+      Add-Item $result "findings" $clientLocal "plane.qaState" "Missing; default should be QA unless the user chooses another Plane QA state." "warning"
     }
     if (Test-Placeholder $client.plane.apiToken) {
       Add-Item $result "findings" $clientLocal "plane.apiToken" "Missing or placeholder Plane API token." "error"
@@ -716,7 +727,7 @@ name: Package and deploy
 on:
   push:
     branches:
-      - main
+      - dev
   workflow_dispatch:
     inputs:
       environment:
@@ -741,7 +752,7 @@ jobs:
           cd artifacts/app
           zip -r ../app.zip .
           cd ../..
-          sha256sum artifacts/app.zip > artifacts/app.zip.sha256
+          sha256sum artifacts/app.zip | sed 's#artifacts/app.zip#app.zip#' > artifacts/app.zip.sha256
           git rev-parse HEAD > artifacts/commit.sha
 
       - name: Upload artifact to Nexus
@@ -758,11 +769,13 @@ jobs:
   deploy-dev:
     needs: package
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event.inputs.environment == 'dev'
+    if: github.event_name == 'push' || github.event.inputs.environment == 'dev' || github.event.inputs.environment == 'qa'
     steps:
       - name: Download artifact from Nexus
         run: |
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip"
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip.sha256 "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip.sha256"
+          sha256sum -c app.zip.sha256
         env:
           NEXUS_URL: ${{ secrets.NEXUS_URL }}
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
@@ -784,6 +797,38 @@ jobs:
         run: curl --fail "$AZURE_DEV_WEBAPP_URL"
         env:
           AZURE_DEV_WEBAPP_URL: ${{ secrets.AZURE_DEV_WEBAPP_URL }}
+
+  deploy-qa:
+    needs: deploy-dev
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.inputs.environment == 'qa'
+    steps:
+      - name: Download artifact from Nexus
+        run: |
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip"
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip.sha256 "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip.sha256"
+          sha256sum -c app.zip.sha256
+        env:
+          NEXUS_URL: ${{ secrets.NEXUS_URL }}
+          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+          NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy QA package
+        run: az webapp deploy --resource-group "$AZURE_QA_RESOURCE_GROUP" --name "$AZURE_QA_WEBAPP_NAME" --src-path app.zip --type zip
+        env:
+          AZURE_QA_RESOURCE_GROUP: ${{ secrets.AZURE_QA_RESOURCE_GROUP }}
+          AZURE_QA_WEBAPP_NAME: ${{ secrets.AZURE_QA_WEBAPP_NAME }}
+
+      - name: Smoke check QA
+        run: curl --fail "$AZURE_QA_WEBAPP_URL"
+        env:
+          AZURE_QA_WEBAPP_URL: ${{ secrets.AZURE_QA_WEBAPP_URL }}
 '@
 
   Write-TemplateFile $result ".gitea/workflows/README.md" @'
@@ -803,17 +848,29 @@ Required repository secrets:
 - `AZURE_DEV_RESOURCE_GROUP`
 - `AZURE_DEV_WEBAPP_NAME`
 - `AZURE_DEV_WEBAPP_URL`
+- `AZURE_QA_RESOURCE_GROUP`
+- `AZURE_QA_WEBAPP_NAME`
+- `AZURE_QA_WEBAPP_URL`
 
-Add equivalent QA and PROD secrets before enabling promotion jobs.
+Add equivalent PROD secrets before enabling PROD promotion jobs.
 
 Recommended branch protection:
 
-- Block direct pushes to `main`.
-- Require pull requests.
+- Block direct pushes to `dev` and `main`.
+- Require pull requests into `dev`.
+- Update `main` only after QA passes, preferably by fast-forwarding the tested commit.
 - Require the PR validation workflow to pass.
 - Require coverage to meet the configured threshold.
 - Require review approval or the configured review label.
 - Block merge while `needs-changes` is present.
+
+Release flow:
+
+```text
+feature branch -> dev -> DEV -> QA -> main -> PROD
+```
+
+The package workflow builds and publishes from `dev`. DEV and QA must deploy the same Nexus ZIP artifact for the same commit SHA.
 '@
 
   return $result

@@ -97,10 +97,22 @@ $NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip
 
 ## Release Flow
 
-- Merge to `main` builds once.
+- Feature branches open PRs into `dev`.
+- Merge to `dev` builds once.
 - Publish one deployable ZIP artifact.
 - Compute checksum and commit SHA metadata.
 - Upload artifact, checksum, and metadata to Nexus.
 - Deploy DEV from the Nexus artifact.
-- Promote the same artifact to QA and PROD after environment checks pass.
+- Promote the same artifact to QA after DEV checks pass.
+- Move the Plane ticket to QA only after QA checks pass.
+- Merge or fast-forward the tested commit to `main` only after QA passes.
+- Deploy PROD from the QA-passed artifact commit.
 - Do not rebuild between environments.
+
+Default release path:
+
+```text
+feature branch -> dev -> DEV -> QA -> main -> PROD
+```
+
+If updating `main` creates a new merge commit, record and promote the original QA-passed artifact commit SHA instead of rebuilding a new PROD artifact.

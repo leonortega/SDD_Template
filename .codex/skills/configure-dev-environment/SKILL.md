@@ -1,6 +1,6 @@
 ---
 name: configure-dev-environment
-description: Router for configuring this repo's local development and delivery environment. Use when Codex needs to set up, audit, repair, or guide configuration for Plane, Gitea PR automation, Gitea Actions runner, code quality gates, Nexus artifacts, Azure DEV/QA/PROD environments, Prometheus/Grafana monitoring, or when the user asks "config infra", "setup environment", or is unsure which setup area they need.
+description: Router for configuring this repo's local development and delivery environment. Use when Codex needs to set up, audit, repair, or guide configuration for Plane, Gitea PR automation, Gitea Actions runner, code quality gates, Nexus artifacts, Azure DEV/QA/PROD environments, DEV-to-QA deployment promotion, Prometheus/Grafana monitoring, or when the user asks "config infra", "setup environment", or is unsure which setup area they need.
 ---
 
 # Configure Dev Environment
@@ -77,11 +77,11 @@ Useful modes:
    - Gitea PR automation
    - Gitea Actions runner
    - Quality gates and CI
-   - Nexus artifacts
+   - Nexus artifacts and DEV-to-QA promotion
    - Azure environments
    - Monitoring dashboards
 7. If the user is vague, default to full guided setup in this order:
-   Plane -> Gitea PR automation -> Gitea Actions runner -> Quality gates and CI -> Nexus artifacts -> Azure environments -> Monitoring dashboards.
+   Plane -> Gitea PR automation -> Gitea Actions runner -> Quality gates and CI -> Nexus artifacts and DEV-to-QA promotion -> Azure environments -> Monitoring dashboards.
 
 ## Domain Routing
 
@@ -89,7 +89,7 @@ Useful modes:
 - Gitea PR automation: use `$configure-gitea-source-control`; read `references/gitea-pr.md`.
 - Gitea Actions runner: use `$configure-gitea-actions-runner`; read `references/gitea-runner.md`.
 - Quality gates and CI: use `$configure-quality-gates`; read `references/quality-gates.md`.
-- Nexus artifacts: use `$configure-artifact-delivery`; read `references/nexus.md`.
+- Nexus artifacts and deployment promotion: use `$configure-artifact-delivery`; read `references/nexus.md`.
 - Azure environments: use `$configure-azure-environments`; read `references/azure.md`.
 - Monitoring dashboards: use `$configure-observability`; read `references/observability.md`.
 

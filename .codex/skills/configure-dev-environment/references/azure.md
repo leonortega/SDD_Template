@@ -67,6 +67,19 @@ az ad sp create-for-rbac `
 
 Store the complete JSON file contents as the Gitea Actions secret `AZURE_CREDENTIALS`. Do not paste the JSON into chat or tracked files.
 
+## Gitea Actions App Service Secrets
+
+The package/deploy workflow deploys DEV and QA from the same Nexus ZIP artifact. Store these values as Gitea Actions secrets:
+
+- `AZURE_DEV_RESOURCE_GROUP`
+- `AZURE_DEV_WEBAPP_NAME`
+- `AZURE_DEV_WEBAPP_URL`
+- `AZURE_QA_RESOURCE_GROUP`
+- `AZURE_QA_WEBAPP_NAME`
+- `AZURE_QA_WEBAPP_URL`
+
+Use the Bicep deployment outputs for the web app names and URLs. Keep real Azure hostnames out of tracked files except placeholder-safe documentation.
+
 Validation without exposing the secret:
 
 ```powershell
