@@ -60,6 +60,16 @@ Build a scoped QA checklist from the ticket only. Include categories only when t
 
 If the ticket's test expectations are weak, complete them in the QA result comment by listing the concrete scenarios you created and executed. Do not broaden into unrelated regression testing unless the ticket explicitly asks for it.
 
+Apply this general QA quality bar before executing tests:
+
+- Define the test oracle: what observable behavior proves the ticket works, what observable behavior proves it is broken, and which source establishes that expectation.
+- Translate acceptance criteria into explicit assertions, not just navigation steps or screenshots. A passing test must check status, content, state, side effects, errors, visual state, or data changes as applicable.
+- Cover the highest-risk boundary and negative cases implied by the change, even when the ticket only describes the happy path. Keep the scope ticket-specific.
+- Verify the delivered environment, artifact, commit, or deployment being tested so a pass cannot accidentally apply to the wrong build.
+- Treat evidence as data to validate, not decoration. Screenshots, logs, traces, and reports must be checked for contradictions such as blank captures, wrong environment, console errors, failed network calls, stale data, or misleading render artifacts.
+- Record any assumptions used to fill gaps in weak requirements. If an assumption materially changes pass/fail meaning, classify the result as blocked or ask for clarification instead of passing by guesswork.
+- Prefer automated assertions for repeatable facts and use manual or visual evidence only where automation cannot express the expected behavior reliably.
+
 ### 3. Select Tools
 
 Inspect the repo before choosing tools:
@@ -87,6 +97,7 @@ For website E2E:
 - Keep tests independent and able to run alone.
 - Use explicit assertions that reflect user-observable behavior.
 - Capture screenshots or traces for meaningful proof, especially failures and completed critical paths.
+- For visually blank or intentionally empty pages, assert the computed `html`/`body` background color, body dimensions, visible text, page title, and screenshot pixel/background result so transparent or tool-rendered black captures are not accepted as valid visual evidence without an explicit note.
 - Check responsive behavior when the ticket changes layout or UI flow.
 - Check accessibility basics when forms, navigation, labels, focus, or keyboard flows are involved.
 
@@ -104,6 +115,7 @@ Classify generated tests before deciding where to save them:
 
 - Reusable regression tests belong in the repository's normal test structure and should be committed through a follow-up implementation workflow when appropriate.
 - One-off exploratory QA scripts, ad hoc generated tests, screenshots, traces, logs, and reports belong in the QA evidence bundle.
+- Never stage or commit `artifacts/qa/**`; this path is for ignored run evidence only.
 
 Collect evidence in a stable per-run local folder:
 
@@ -126,6 +138,8 @@ Use a deterministic `runId` such as UTC `yyyyMMdd-HHmmss` plus a short commit SH
 Useful evidence includes:
 
 - screenshots for UI paths
+- computed visual-state JSON for blank/empty pages, including background color and console errors
+- a screenshot note or normalized screenshot when a capture tool renders a transparent page differently than a normal browser viewport
 - Playwright/Cypress/Selenium traces or videos when available
 - API request/response summaries with sensitive data removed
 - test logs
@@ -154,7 +168,29 @@ Do not move a ticket to `plane.doneState` until the evidence link or fallback ev
 
 Do not publish secrets, cookies, authorization headers, raw tokens, private credentials, or sensitive payloads in evidence. Redact or discard unsafe evidence before zipping or commenting.
 
-### 6. Plane Result
+### 6. Git And Hook Policy
+
+Respect the repo's hooks when QA creates files:
+
+- `gitleaks protect --staged --redact` scans staged files. Keep raw QA evidence ignored under `artifacts/qa/**` and do not stage it.
+- The commit message hook requires messages to start with a Plane ticket key, an OpenSpec id, or `[SDD]`.
+- Commit reusable ticket-specific tests with the ticket key when available, for example:
+
+```text
+E2EPROJECT-123: add E2E regression tests
+```
+
+- Use `[SDD]` only for repo workflow or QA platform maintenance, for example:
+
+```text
+[SDD] Add QA automation baseline
+```
+
+- One-off generated tests stay in `artifacts/qa/{ticketKey}/{runId}/generated-tests/` and are uploaded as evidence, not committed.
+- Reusable tests must reference secrets through environment variables or test configuration placeholders. Never hardcode real credentials, tokens, cookies, connection strings, or private payloads.
+- If reusable tests require new repo config, stage only intentional source/config files and leave screenshots, logs, reports, traces, videos, and ZIP evidence untracked.
+
+### 7. Plane Result
 
 Before commenting, read existing comments when the API allows it. Use this stable marker:
 
@@ -181,6 +217,8 @@ Move the ticket to `plane.doneState` only after:
 
 - the ticket was in `plane.qaState` or the user explicitly overrode the state check,
 - every required ticket-scoped QA scenario passed,
+- the QA result includes the test oracle, explicit assertions, risk-based negative or boundary checks where applicable, and any assumptions used to fill weak requirements,
+- evidence was validated against the assertions and does not contradict the pass result,
 - evidence was collected and published to Nexus, attached to Plane, or documented as a local-only fallback,
 - the QA result comment was added or confirmed idempotently present.
 
