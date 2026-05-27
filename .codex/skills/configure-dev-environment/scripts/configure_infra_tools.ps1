@@ -1,5 +1,5 @@
 param(
-  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetPlaneEnv", "SetGiteaRunner", "SetPrometheusAzureTargets", "AuditQualityGates", "InitQualityGateTemplates", "SetQualityConfig")]
+  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetPlaneEnv", "SetGiteaRunner", "SetPrometheusAzureTargets", "AuditQualityGates", "ValidateGiteaActionsRunner", "InitQualityGateTemplates", "SetQualityConfig")]
   [string]$Mode = "Audit",
 
   [string]$Root = (Resolve-Path ".").Path,
@@ -245,6 +245,70 @@ function Test-FileContains {
   return $content -match $Pattern
 }
 
+function Get-WorkflowContent {
+  param([string]$RelativePath)
+
+  $path = Join-RootPath $RelativePath
+  if (-not (Test-Path $path)) { return $null }
+  return Get-Content -Path $path -Raw
+}
+
+function Get-WorkflowContainerImage {
+  param([string]$Content)
+
+  if ([string]::IsNullOrWhiteSpace($Content)) { return $null }
+  if ($Content -match "(?m)^\s*image:\s*(\S+)\s*$") {
+    return $Matches[1].Trim()
+  }
+  return $null
+}
+
+function Add-GiteaActionsRunnerCompatibilityFindings {
+  param(
+    $Result,
+    [string]$WorkflowRelativePath
+  )
+
+  $workflow = Get-WorkflowContent $WorkflowRelativePath
+  if ([string]::IsNullOrWhiteSpace($workflow)) { return }
+
+  $containerImage = Get-WorkflowContainerImage $workflow
+  $usesJobContainer = -not [string]::IsNullOrWhiteSpace($containerImage)
+  $usesDotnetSdkContainer = $containerImage -match "^mcr\.microsoft\.com/dotnet/sdk:"
+
+  if ($usesJobContainer -and $usesDotnetSdkContainer) {
+    if ($workflow -match "(?m)^\s*uses:\s*actions/checkout@") {
+      Add-Item $Result "findings" $WorkflowRelativePath "actions.checkout" "Workflow uses actions/checkout inside the .NET SDK job container. JavaScript actions require node in the job container; use shell checkout or a container image that includes node." "warning"
+    }
+
+    if ($workflow -match "(?m)^\s*uses:\s*aquasecurity/trivy-action@") {
+      Add-Item $Result "findings" $WorkflowRelativePath "trivy-action" "Workflow uses a JavaScript Trivy action inside the .NET SDK job container. Install and run trivy from shell, or use a container image that includes node." "warning"
+    }
+  }
+
+  if ($workflow -match "raw\.githubusercontent\.com/gitleaks/gitleaks/(master|main)/install\.sh") {
+    Add-Item $Result "findings" $WorkflowRelativePath "gitleaks.install" "Workflow installs Gitleaks from a moving raw install script URL. Pin a Gitleaks release archive so CI does not break when install paths change." "warning"
+  }
+
+  if ($workflow -match "zip\s+-r" -and $workflow -notmatch "apt-get install .*zip") {
+    Add-Item $Result "findings" $WorkflowRelativePath "zip.install" "Workflow creates ZIP artifacts inside a container but does not install zip. The .NET SDK container does not include zip by default." "warning"
+  }
+
+  if ($usesDotnetSdkContainer -and $containerImage -match ":10\.0\.100$") {
+    Add-Item $Result "findings" $WorkflowRelativePath "dotnet.sdk.image" "Workflow uses mcr.microsoft.com/dotnet/sdk:10.0.100, which failed to pull on the local runner. Prefer a validated .NET 10 patch image such as 10.0.300 when compatible with global.json roll-forward." "warning"
+  }
+
+  if ($workflow -match "git fetch --depth 1 origin" -or $workflow -match "git remote add origin") {
+    foreach ($hostname in @("localhost", "gitea")) {
+      $rewriteLine = 'repo_url="${repo_url/__HOST__/host.docker.internal}"'.Replace("__HOST__", $hostname)
+      if ($workflow -notmatch [regex]::Escape($rewriteLine)) {
+        Add-Item $Result "findings" $WorkflowRelativePath "checkout.$hostname" "Containerized shell checkout does not rewrite '$hostname' to 'host.docker.internal'. Docker job containers may fail to reach local Gitea." "warning"
+      }
+    }
+  }
+
+}
+
 function Get-QualityCoverageMinimum {
   param([string]$RelativePath)
 
@@ -307,6 +371,7 @@ function Add-QualityGateAuditFindings {
         Add-Item $Result "findings" $prWorkflow $expected "PR validation workflow does not mention $expected." "warning"
       }
     }
+    Add-GiteaActionsRunnerCompatibilityFindings $Result $prWorkflow
   }
 
   $releaseWorkflow = ".gitea/workflows/package-deploy.yml"
@@ -318,6 +383,7 @@ function Add-QualityGateAuditFindings {
         Add-Item $Result "findings" $releaseWorkflow $expected "Package/deploy workflow does not mention $expected." "warning"
       }
     }
+    Add-GiteaActionsRunnerCompatibilityFindings $Result $releaseWorkflow
   }
 
   $globalJson = "global.json"
@@ -515,6 +581,75 @@ function Invoke-AuditQualityGates {
   return $result
 }
 
+function Invoke-ValidateGiteaActionsRunner {
+  $result = New-Result
+  $workflowRelativePath = ".gitea/workflows/pr-validation.yml"
+  $workflow = Get-WorkflowContent $workflowRelativePath
+
+  Add-QualityGateAuditFindings $result
+
+  if ([string]::IsNullOrWhiteSpace($workflow)) {
+    Add-Item $result "findings" $workflowRelativePath "" "Cannot run Gitea Actions validation because the PR validation workflow is missing." "error"
+    return $result
+  }
+
+  $containerImage = Get-WorkflowContainerImage $workflow
+  if ([string]::IsNullOrWhiteSpace($containerImage)) {
+    Add-Item $result "findings" $workflowRelativePath "container.image" "Cannot validate runner job container because no container image is configured." "warning"
+    return $result
+  }
+
+  $docker = Get-Command docker -ErrorAction SilentlyContinue
+  if ($null -eq $docker) {
+    Add-Item $result "findings" "docker" "" "Docker CLI is missing; install Docker Desktop or Docker Engine before validating Gitea Actions runner containers." "error"
+    return $result
+  }
+
+  try {
+    & docker version | Out-Null
+    Add-Item $result "actions" "docker" "" "Docker CLI is available."
+  } catch {
+    Add-Item $result "findings" "docker" "" "Docker CLI is installed but not usable: $($_.Exception.Message)" "error"
+    return $result
+  }
+
+  try {
+    & docker pull $containerImage | Out-Null
+    Add-Item $result "actions" $workflowRelativePath "container.image" "Pulled runner job image $containerImage successfully."
+  } catch {
+    Add-Item $result "findings" $workflowRelativePath "container.image" "Could not pull runner job image $containerImage. Pin a pullable stable patch image before enabling PR validation." "error"
+    return $result
+  }
+
+  $toolCheck = "for tool in bash git curl tar dotnet; do command -v `$tool >/dev/null || { echo missing:`$tool; exit 1; }; done"
+  try {
+    & docker run --rm --entrypoint /bin/sh $containerImage -lc $toolCheck | Out-Null
+    Add-Item $result "actions" $workflowRelativePath "container.tools" "Runner job image includes bash, git, curl, tar, and dotnet."
+  } catch {
+    Add-Item $result "findings" $workflowRelativePath "container.tools" "Runner job image is missing a tool required by shell-based PR validation. Required: bash, git, curl, tar, dotnet." "error"
+  }
+
+  $origin = $null
+  try {
+    $origin = (& git -C $Root remote get-url origin).Trim()
+  } catch {
+    Add-Item $result "findings" "git" "origin" "Cannot resolve git origin URL for container checkout validation." "warning"
+  }
+
+  if (-not [string]::IsNullOrWhiteSpace($origin)) {
+    $repoUrl = $origin -replace "localhost", "host.docker.internal"
+    $repoUrl = $repoUrl -replace "gitea", "host.docker.internal"
+    try {
+      & docker run --rm -e "REPO_URL=$repoUrl" --entrypoint /bin/sh $containerImage -lc 'git ls-remote "$REPO_URL" HEAD >/dev/null' | Out-Null
+      Add-Item $result "actions" $workflowRelativePath "checkout.network" "Runner job image can reach the repository origin through host.docker.internal."
+    } catch {
+      Add-Item $result "findings" $workflowRelativePath "checkout.network" "Runner job image cannot reach the repository origin through host.docker.internal. Check Gitea URL rewriting, Docker host networking, and GITEA_INSTANCE_URL." "error"
+    }
+  }
+
+  return $result
+}
+
 function Write-TemplateFile {
   param(
     $Result,
@@ -636,10 +771,21 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     container:
-      image: mcr.microsoft.com/dotnet/sdk:10.0.100
+      image: mcr.microsoft.com/dotnet/sdk:10.0.300
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          repo_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          repo_url="${repo_url/localhost/host.docker.internal}"
+          repo_url="${repo_url/gitea/host.docker.internal}"
+
+          git init .
+          git remote add origin "$repo_url"
+          git fetch --depth 1 origin "$GITHUB_SHA"
+          git checkout --force FETCH_HEAD
 
       - name: Restore
         run: dotnet restore
@@ -693,19 +839,19 @@ jobs:
 
       - name: Install Gitleaks
         run: |
-          curl -sSfL https://raw.githubusercontent.com/gitleaks/gitleaks/master/install.sh | sh -s -- -b /usr/local/bin
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz \
+            | tar -xz -C /usr/local/bin gitleaks
 
       - name: Secret scan
         run: gitleaks detect --source . --redact --no-git
 
+      - name: Install Trivy
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+            | sh -s -- -b /usr/local/bin v0.70.0
+
       - name: Trivy filesystem scan
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: fs
-          scan-ref: .
-          severity: HIGH,CRITICAL
-          exit-code: "1"
-          ignore-unfixed: true
+        run: trivy fs --severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed .
 
       # Optional: add Semgrep when rules and runtime budget are agreed.
 '@
@@ -728,13 +874,29 @@ jobs:
   package:
     runs-on: ubuntu-latest
     container:
-      image: mcr.microsoft.com/dotnet/sdk:10.0.100
+      image: mcr.microsoft.com/dotnet/sdk:10.0.300
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          repo_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          repo_url="${repo_url/localhost/host.docker.internal}"
+          repo_url="${repo_url/gitea/host.docker.internal}"
+
+          git init .
+          git remote add origin "$repo_url"
+          git fetch --depth 1 origin "$GITHUB_SHA"
+          git checkout --force FETCH_HEAD
 
       - name: Publish
         run: dotnet publish -c Release -o ./artifacts/app
+
+      - name: Install packaging tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends zip
 
       - name: Create deployable ZIP
         run: |
@@ -951,6 +1113,7 @@ function Invoke-SetPrometheusAzureTargets {
 switch ($Mode) {
   "Audit" { $result = Invoke-Audit }
   "AuditQualityGates" { $result = Invoke-AuditQualityGates }
+  "ValidateGiteaActionsRunner" { $result = Invoke-ValidateGiteaActionsRunner }
   "InitLocalFiles" { $result = Invoke-InitLocalFiles }
   "InitQualityGateTemplates" { $result = Invoke-InitQualityGateTemplates }
   "SetClientTools" { $result = Invoke-SetClientTools }
