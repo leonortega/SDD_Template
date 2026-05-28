@@ -1,6 +1,6 @@
 ---
 name: configure-artifact-delivery
-description: Configure Nexus artifact delivery and promotion for this repo, including Nexus service account guidance, artifact repository names, Gitea Actions secrets for Nexus, package/deploy workflow setup, build-once promote-same-artifact release flow, QA RC versioning, and PROD artifact promotion.
+description: Configure Nexus artifact delivery and promotion for this repo, including Nexus service account guidance, artifact repository names, Gitea Actions secrets for Nexus, package/deploy workflow setup, build-once promote-same-artifact release flow, ticket-gated DEV/QA/PROD deployment, QA RC versioning, and PROD artifact promotion.
 ---
 
 # Configure Artifact Delivery
@@ -22,6 +22,6 @@ Workflow:
 3. When values are missing, explain how to create the Nexus raw hosted repository, create a Nexus service account, add Gitea Actions secrets, include official documentation links, and provide validation commands.
 4. Guide the user to store Nexus credentials as Gitea Actions secrets for CI and in ignored `.codex/client-tools.local.json` for local repository checks.
 5. Keep the release model: build once, upload artifact/checksum/commit metadata to Nexus, deploy/promote the same artifact through DEV, QA, and PROD.
-6. Ensure workflow setup includes `/health` checks for DEV/QA/PROD and PROD dispatch inputs `artifact_commit_sha`, `release_version`, and `source_rc_version`.
+6. Ensure workflow setup includes `/health` checks for DEV/QA/PROD, `.codex/delivery-policy.json` ticket gating, `dev` push deployment for DEV/QA, `main` push deployment for PROD only, and PROD dispatch inputs `artifact_commit_sha`, `release_version`, and `source_rc_version`.
 7. Ensure Plane comments record version lineage so humans can trace `artifact commit -> source RC -> final release` without inspecting Git/Nexus manually.
 8. Ensure Nexus release manifests at `app/{commitSha}/release.json` carry machine-readable release, QA, PROD, monitoring, and rollback metadata.
