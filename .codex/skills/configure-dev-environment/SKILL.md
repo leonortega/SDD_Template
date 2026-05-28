@@ -85,11 +85,11 @@ Useful modes:
    - Gitea PR automation
    - Gitea Actions runner
    - Quality gates and CI
-   - Nexus artifacts and DEV-to-QA promotion
+   - Nexus artifacts and deployment promotion
    - Azure environments
    - Monitoring dashboards
 7. If the user is vague, default to full guided setup in this order:
-   Plane -> Gitea PR automation -> Gitea Actions runner -> Quality gates and CI -> Nexus artifacts and DEV-to-QA promotion -> Azure environments -> Monitoring dashboards.
+   Plane -> Gitea PR automation -> Gitea Actions runner -> Quality gates and CI -> Nexus artifacts and deployment promotion -> Azure environments -> Monitoring dashboards.
 
 ## Domain Routing
 

@@ -57,6 +57,8 @@ Discover validation commands from manifests, README files, project files, and ex
 
 Fix every failure before continuing. If no runnable app exists, record that as a verification gap instead of inventing a command.
 
+For web/API application work, preserve the deployment health contract: `/health` must return HTTP 200 with JSON `status=ok` and must not expose secrets or host internals. Add or preserve tests for this endpoint when app startup, routing, middleware, hosting, or deployment-facing behavior changes. Treat health endpoint removal or breakage as a release-blocking implementation failure.
+
 ### 4. Commit And Push
 
 1. Inspect `git status --porcelain` and stage only intentional files.

@@ -84,4 +84,4 @@ Use this release path:
 feature branch -> dev -> DEV -> QA -> main -> PROD
 ```
 
-The package/deploy workflow should build and publish from `dev`. DEV and QA deployments must download the same Nexus ZIP for the same commit SHA. PROD must reuse the QA-passed artifact commit after `main` is updated.
+The package/deploy workflow should build and publish from `dev`. DEV and QA deployments must download the same Nexus ZIP for the same commit SHA and pass page plus `/health` checks. PROD must reuse the QA-passed artifact commit after `main` is updated, using workflow dispatch inputs `artifact_commit_sha`, `release_version`, and `source_rc_version`; PROD must not rebuild and must pass page plus `/health` checks before success is recorded. Release automation should update `app/{commitSha}/release.json` instead of renaming `app.zip`.

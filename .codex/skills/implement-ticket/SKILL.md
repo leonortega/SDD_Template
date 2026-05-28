@@ -85,6 +85,13 @@ Implementation is not complete until:
 - Gitea PR validation passes,
 - coverage meets `coverage.minimumPercent`.
 
+For web/API application work, preserve the delivery health contract required by deployment promotion:
+
+- The app must expose `/health` with HTTP 200 and JSON `status=ok`.
+- The endpoint must not expose secrets, connection strings, tokens, host internals, or detailed exception data.
+- Add or preserve focused tests for `/health` when application startup, routing, middleware, hosting, or deployment-facing behavior changes.
+- Treat removal or breakage of `/health` as an implementation failure because DEV, QA, and PROD promotion gates depend on it.
+
 If coverage is below the configured threshold, add or update OpenSpec tasks for missing test coverage, then add tests until the threshold is met. Never lower the threshold just to pass a ticket.
 
 ### 5. Validation Failure Classification

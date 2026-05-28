@@ -23,4 +23,5 @@ Workflow:
 4. Preview with `.\infra\azure\deploy-environments.ps1 -Location eastus -WhatIf`.
 5. Deploy only after approval.
 6. When `AZURE_CREDENTIALS` is missing, explain how to create the service principal JSON, where to store it in Gitea Actions secrets, official documentation links, and validation commands.
-7. Pass Azure output hostnames to `$configure-observability` only when monitoring should be wired.
+7. When PROD deployment is enabled, verify the Gitea Actions secret names `AZURE_PROD_RESOURCE_GROUP`, `AZURE_PROD_WEBAPP_NAME`, and `AZURE_PROD_WEBAPP_URL` exist. Infer their non-secret values from Azure deployment outputs or `az webapp list`, then configure only after confirming the values.
+8. Pass Azure output hostnames to `$configure-observability` only when monitoring should be wired.
