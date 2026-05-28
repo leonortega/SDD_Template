@@ -11,6 +11,8 @@ Use this skill after a PR has merged to `dev` but before QA promotion. It is an 
 
 Do not perform DEV/QA validation inside this skill. `deploy-to-qa` owns artifact promotion and environment checks.
 
+Before running, read `.codex/skills/_shared/delivery-contract.md`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode ArtifactPaths` when building Nexus artifact paths.
+
 ## Configuration
 
 Read `.codex/client-tools.local.json` first. Required values are Plane, Gitea, and Nexus settings used by `deploy-to-qa`.

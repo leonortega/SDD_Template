@@ -11,6 +11,8 @@ Use this skill for a chat-driven Plane workflow. The user should not need to run
 
 For setup details and branch pattern options, read `references/configuration.md` when configuration is missing or the user asks how to configure the tools. Before making Plane API calls, read `references/plane-api.md`.
 
+Read `.codex/skills/_shared/delivery-contract.md` before mutating Plane or Git so generated markers, state names, and rerun behavior stay consistent across the delivery workflow.
+
 ## Configuration
 
 Read `.codex/client-tools.local.json` as the primary configuration file. Fall back to `.codex/client-tools.example.json` only for defaults and setup guidance, then apply environment variable overrides only when present. Defaults are:

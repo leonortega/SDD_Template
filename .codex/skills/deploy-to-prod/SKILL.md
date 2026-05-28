@@ -15,6 +15,8 @@ feature branch -> dev -> DEV -> QA -> E2E QA OK -> main -> PROD
 
 PROD must reuse the QA-approved Nexus artifact. Never rebuild, republish, or rename the artifact during PROD promotion.
 
+Before promotion, read `.codex/skills/_shared/delivery-contract.md`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode ValidateReleaseManifest` when checking `release.json` and `-Mode ArtifactPaths` when verifying Nexus artifact paths.
+
 ## Configuration
 
 Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.example.json` only for structure, then apply environment overrides when present.

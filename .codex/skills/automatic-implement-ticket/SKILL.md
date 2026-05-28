@@ -11,6 +11,8 @@ Use this master skill as the default high-level entry point for normal ticket de
 
 PROD promotion remains explicit. Do not invoke `deploy-to-prod` only because QA passed unless the user explicitly asks to promote to PROD.
 
+Before routing, read `.codex/skills/_shared/delivery-contract.md` and apply its state, marker, artifact, release manifest, versioning, and rerun rules.
+
 ## Configuration
 
 Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.example.json` only for structure and defaults. Read `.codex/quality.local.json` when coverage context is needed.

@@ -15,6 +15,8 @@ feature branch -> dev -> DEV -> QA -> main -> PROD
 
 `main` is updated only after QA passes. PROD promotion is separate and must reuse the QA-passed artifact commit.
 
+Before promotion, read `.codex/skills/_shared/delivery-contract.md`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode ArtifactPaths` for Nexus paths and validate `release.json` against `.codex/skills/_shared/release.schema.json` after writing it.
+
 ## Configuration
 
 Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.example.json` for structure only, then apply environment variable overrides when present.
