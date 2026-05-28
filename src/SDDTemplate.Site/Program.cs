@@ -23,6 +23,12 @@ _ = app.UseAntiforgery();
 _ = app.MapGet("/health", (IHostEnvironment environment) =>
     Results.Ok(new HealthResponse("ok", environment.EnvironmentName, DateTimeOffset.UtcNow)));
 
+_ = app.MapGet("/metrics", () => Results.Text(
+    "# HELP sddtemplate_health Application health status.`n" +
+    "# TYPE sddtemplate_health gauge`n" +
+    "sddtemplate_health 1`n",
+    "text/plain; version=0.0.4"));
+
 _ = app.MapStaticAssets();
 _ = app.MapRazorComponents<App>();
 
