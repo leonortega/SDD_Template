@@ -17,6 +17,8 @@ feature branch -> dev -> DEV -> QA -> main -> PROD
 
 Before promotion, read `.codex/skills/_shared/delivery-contract.md`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode ArtifactPaths` for Nexus paths and validate `release.json` against `.codex/skills/_shared/release.schema.json` after writing it.
 
+For push-triggered DEV/QA deployment, the commit or merged PR title must start with the ticket key format configured in `.codex/delivery-policy.json`, such as `E2EPROJECT-123: ...`. Maintenance commits and non-ticket PRs must not deploy.
+
 ## Configuration
 
 Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.example.json` for structure only, then apply environment variable overrides when present.
