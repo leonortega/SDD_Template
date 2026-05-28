@@ -154,6 +154,68 @@ namespace SDDTemplate.Site.Tests
             Assert.Contains("Package/deploy workflow should upload a baseline Nexus release manifest next to the artifact.", script);
         }
 
+        [Fact]
+        public void ConfigureAuditRequiresDeliveryContextLockGitignoreEntry()
+        {
+            string script = ReadConfigureScript();
+
+            Assert.Contains(".codex/delivery-context.local.json", script);
+            Assert.Contains("Local ticket context lock must be ignored", script);
+        }
+
+        [Fact]
+        public void DeliveryContextLockIsIgnoredAndSharedContractDefinesIt()
+        {
+            string gitignore = File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, ".gitignore"));
+            string contract = ReadSkill("_shared", "delivery-contract.md");
+
+            Assert.Contains(".codex/delivery-context.local.json", gitignore);
+            Assert.Contains("## Ticket Context Lock", contract);
+            Assert.Contains("Normal automatic delivery must stay locked to one Plane ticket.", contract);
+            Assert.Contains("\"ticketKey\": \"E2EPROJECT-123\"", contract);
+            Assert.Contains("release.json.planeTicketKey", contract);
+            Assert.Contains("rollback-prod", contract);
+        }
+
+        [Fact]
+        public void SkillSynchronizationRuleRequiresConfigureCheckAfterDeliverySkillChanges()
+        {
+            string contract = ReadSkill("_shared", "delivery-contract.md");
+            string configureRouter = ReadSkill("configure-dev-environment", "SKILL.md");
+
+            Assert.Contains("Before finishing any change to a non-OpenSpec delivery skill", contract);
+            Assert.Contains("update the matching `configure-*` skill docs, references, templates, scripts, and tests in the same change", contract);
+            Assert.Contains("state in the final response that the configure skills were checked and no configure sync was required", contract);
+            Assert.Contains("Before changing configure behavior or finishing any non-OpenSpec delivery skill change", configureRouter);
+            Assert.Contains("If no configure update is needed, say that explicitly in the final response", configureRouter);
+        }
+
+        [Fact]
+        public void DeliveryFlowSkillsEnforceTicketContextLock()
+        {
+            string[] skillNames =
+            [
+                "automatic-implement-ticket",
+                "plane-start-ticket",
+                "implement-ticket",
+                "gitea-pr-review-agent",
+                "post-merge-deploy",
+                "deploy-to-qa",
+                "test-e2e",
+                "deploy-to-prod",
+                "file-qa-bug",
+                "pipeline-status",
+                "hotfix-prod",
+                "rollback-prod"
+            ];
+
+            foreach (string skillName in skillNames)
+            {
+                string skill = ReadSkill(skillName, "SKILL.md");
+                Assert.Contains("delivery-context.local.json", skill);
+            }
+        }
+
         private static string ReadWorkflow()
         {
             return File.ReadAllText(Path.Combine(
@@ -172,6 +234,16 @@ namespace SDDTemplate.Site.Tests
                 "configure-dev-environment",
                 "scripts",
                 "configure_infra_tools.ps1"));
+        }
+
+        private static string ReadSkill(string skillName, string fileName)
+        {
+            return File.ReadAllText(Path.Combine(
+                FindRepositoryRoot().FullName,
+                ".codex",
+                "skills",
+                skillName,
+                fileName));
         }
 
         private static string GetSection(string content, string sectionHeader)

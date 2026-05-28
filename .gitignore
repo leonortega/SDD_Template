@@ -13,6 +13,7 @@ bld/
 [Ll]og/
 [Ll]ogs/
 artifacts/
+.codex/delivery-context.local.json
 TestResults/
 [Tt]est[Rr]esult*/
 coverage/

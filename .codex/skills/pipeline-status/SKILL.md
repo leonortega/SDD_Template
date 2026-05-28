@@ -9,7 +9,7 @@ description: Produce a read-only operator dashboard for Plane tickets, Gitea PRs
 
 Use this skill for read-only delivery visibility. It must not mutate Plane, Git, Gitea, Nexus, Azure, or local repo files.
 
-Read `.codex/skills/_shared/delivery-contract.md` before reporting so state names, markers, artifact paths, and version terms match the rest of the delivery workflow.
+Read `.codex/skills/_shared/delivery-contract.md` before reporting so state names, markers, ticket context lock, artifact paths, and version terms match the rest of the delivery workflow.
 
 ## Configuration
 
@@ -23,6 +23,7 @@ Collect what is relevant to the request:
 
 - Plane tickets by configured states: Todo, In Progress, In Review, QA, Done.
 - Current ticket generated markers: branch, PR, QA deployment, E2E QA, PROD deployment, rollback, QA bug.
+- Active `.codex/delivery-context.local.json` lock, including ticket key, branch, PR, artifact commit, RC/final versions, and any mismatch with discovered state.
 - Gitea open PRs, merged PRs, target branches, labels, latest review markers, and CI status when available.
 - Nexus artifacts and `release.json` for relevant commits.
 - Git branches and SemVer tags.
@@ -36,6 +37,7 @@ Report concise sections:
 - Current state and next recommended skill.
 - Open blockers.
 - Ticket/PR/artifact mapping.
+- Active ticket lock and cross-ticket mismatches.
 - Deployed versions for DEV, QA, and PROD when known.
 - Missing configuration or unavailable external systems.
 
