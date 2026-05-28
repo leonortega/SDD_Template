@@ -9,7 +9,7 @@ description: Create a linked Plane bug from failed QA evidence, preserve failure
 
 Use this skill when QA finds a product defect after a ticket has reached QA. The original ticket stays in QA unless the user explicitly changes workflow policy. Create a linked bug with evidence, then start the normal fix workflow only when the defect requires code work.
 
-Before filing or linking tickets, read `.codex/skills/_shared/delivery-contract.md` for stable markers, rerun behavior, and QA defect ownership rules.
+Before filing or linking tickets, read `.codex/skills/_shared/delivery-contract.md` for stable markers, ticket context lock, rerun behavior, and QA defect ownership rules.
 
 ## Configuration
 
@@ -20,8 +20,9 @@ Never print or store real tokens, cookies, credentials, or sensitive QA payloads
 ## Workflow
 
 1. Resolve the parent Plane ticket, failed QA run, tested commit, artifact, QA URL, and evidence path or URL.
-2. Confirm the failure is a product defect, not tooling, missing credentials, missing test data, unreachable infrastructure, or evidence upload failure.
-3. Create or reuse a linked Plane bug ticket with:
+2. Read `.codex/delivery-context.local.json` when present and verify the parent ticket, tested commit, artifact `release.json.planeTicketKey`, and evidence path match the locked `ticketKey`. If they do not, stop before filing a bug against the wrong parent.
+3. Confirm the failure is a product defect, not tooling, missing credentials, missing test data, unreachable infrastructure, or evidence upload failure.
+4. Create or reuse a linked Plane bug ticket with:
    - parent ticket key,
    - tested commit and artifact,
    - QA environment and URLs,
@@ -29,9 +30,9 @@ Never print or store real tokens, cookies, credentials, or sensitive QA payloads
    - evidence link or local fallback path,
    - severity and user impact,
    - marker `IA generated QA bug: {parentTicketKey}`.
-4. Comment on the parent ticket with the bug link and leave the parent in QA.
-5. If code work is required, invoke `plane-start-ticket` for the bug ticket.
-6. If the defect is only data, environment, or unclear requirements, stop after filing the bug and report the non-code owner.
+5. Comment on the parent ticket with the bug link and leave the parent in QA.
+6. If code work is required, invoke `plane-start-ticket` for the bug ticket. The new bug ticket becomes the active lock only after the parent link is recorded.
+7. If the defect is only data, environment, or unclear requirements, stop after filing the bug and report the non-code owner.
 
 ## OpenSpec Policy
 
@@ -40,6 +41,7 @@ Default to OpenSpec for product bugs and hotfixes. Skip OpenSpec only when the b
 ## Failure Rules
 
 - Missing parent ticket or QA evidence: stop and ask for the missing identifier.
+- Ticket context lock mismatch: stop before filing or linking a bug.
 - Unsafe evidence contains secrets: redact or discard unsafe evidence before commenting.
 - Existing linked bug with the same marker and tested commit: reuse it instead of creating a duplicate.
 - Plane mutation fails: do not create branches or OpenSpec changes until the bug relationship is recorded.

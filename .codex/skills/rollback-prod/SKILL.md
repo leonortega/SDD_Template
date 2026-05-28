@@ -9,7 +9,7 @@ description: Roll back PROD to a previously verified Nexus artifact. Use when Co
 
 Use this skill when PROD must be restored to a previous known-good artifact. Rollback is a deployment operation, not a rebuild. It must redeploy an existing Nexus artifact and preserve release traceability.
 
-Before rollback, read `.codex/skills/_shared/delivery-contract.md`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode ArtifactPaths` and `-Mode ValidateReleaseManifest` when checking rollback candidates.
+Before rollback, read `.codex/skills/_shared/delivery-contract.md`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode ArtifactPaths` and `-Mode ValidateReleaseManifest` when checking rollback candidates. Rollback may target an incident/release rather than the active ticket lock, but a mismatch must be explicit.
 
 ## Configuration
 
@@ -24,16 +24,17 @@ Never print, commit, paste into tickets, or write real tokens, Nexus credentials
 ## Preflight
 
 1. Resolve the current PROD release from the latest Plane PROD deployment comment or release manifest.
-2. If the user did not supply a rollback target, list known-good candidates from Plane PROD comments, Git tags, and Nexus `release.json` metadata. Order newest-first, mark the current PROD release, and ask the user to choose a target before mutating anything.
-3. Resolve the rollback target from user input, Plane PROD comments, Git tags, or Nexus `release.json` metadata.
-4. Verify the target artifact exists:
+2. Read `.codex/delivery-context.local.json` when present and report the active ticket lock. If the rollback target differs from the lock, require explicit user confirmation before mutation.
+3. If the user did not supply a rollback target, list known-good candidates from Plane PROD comments, Git tags, and Nexus `release.json` metadata. Order newest-first, mark the current PROD release, and ask the user to choose a target before mutating anything.
+4. Resolve the rollback target from user input, Plane PROD comments, Git tags, or Nexus `release.json` metadata.
+5. Verify the target artifact exists:
    - `app/{commitSha}/app.zip`
    - `app/{commitSha}/app.zip.sha256`
    - `app/{commitSha}/commit.sha`
    - `app/{commitSha}/release.json`
-5. Verify checksum and `commit.sha`.
-6. Verify `release.json` marks the target as previously QA-approved and either previously PROD-deployed or explicitly user-approved as the rollback target.
-7. Stop if the target commit equals the current PROD commit unless the user explicitly asks to redeploy the same artifact.
+6. Verify checksum and `commit.sha`.
+7. Verify `release.json` marks the target as previously QA-approved and either previously PROD-deployed or explicitly user-approved as the rollback target.
+8. Stop if the target commit equals the current PROD commit unless the user explicitly asks to redeploy the same artifact.
 
 ## Rollback Deployment
 

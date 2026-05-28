@@ -7,6 +7,8 @@ description: Compatibility alias for configuring this repo's local development a
 
 This skill is a compatibility router. The active entrypoint is `$configure-dev-environment`.
 
+Before changing configure behavior, read `.codex/skills/_shared/delivery-contract.md` and apply its Skill Synchronization Rule.
+
 When this skill triggers:
 
 1. Read `.codex/skills/configure-dev-environment/SKILL.md`.
