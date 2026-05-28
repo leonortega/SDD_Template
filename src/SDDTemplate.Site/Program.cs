@@ -1,3 +1,4 @@
+using SDDTemplate.Site;
 using SDDTemplate.Site.Components;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
@@ -19,10 +20,13 @@ _ = app.UseHttpsRedirection();
 
 _ = app.UseAntiforgery();
 
+_ = app.MapGet("/health", (IHostEnvironment environment) =>
+    Results.Ok(new HealthResponse("ok", environment.EnvironmentName, DateTimeOffset.UtcNow)));
+
 _ = app.MapStaticAssets();
 _ = app.MapRazorComponents<App>();
 
 app.Run();
 
 [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
-internal sealed partial class Program;
+public sealed partial class Program;

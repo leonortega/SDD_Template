@@ -25,8 +25,11 @@ Required repository secrets:
 - `AZURE_QA_RESOURCE_GROUP`
 - `AZURE_QA_WEBAPP_NAME`
 - `AZURE_QA_WEBAPP_URL`
+- `AZURE_PROD_RESOURCE_GROUP`
+- `AZURE_PROD_WEBAPP_NAME`
+- `AZURE_PROD_WEBAPP_URL`
 
-Add equivalent PROD secrets before enabling PROD promotion jobs.
+PROD promotion is workflow-dispatch only and must pass an existing `artifact_commit_sha`, `release_version`, and `source_rc_version`. The PROD job downloads the existing Nexus artifact and does not rebuild.
 
 Recommended branch protection:
 
@@ -45,4 +48,4 @@ Release flow:
 feature branch -> dev -> DEV -> QA -> main -> PROD
 ```
 
-The package workflow builds and publishes from `dev`. DEV and QA must deploy the same Nexus ZIP artifact for the same commit SHA.
+The package workflow builds and publishes from `dev`. DEV and QA must deploy the same Nexus ZIP artifact for the same commit SHA. PROD must deploy the QA-approved Nexus artifact by commit SHA and must pass both the page smoke check and `/health` check.

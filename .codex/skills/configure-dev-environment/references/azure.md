@@ -69,7 +69,7 @@ Store the complete JSON file contents as the Gitea Actions secret `AZURE_CREDENT
 
 ## Gitea Actions App Service Secrets
 
-The package/deploy workflow deploys DEV and QA from the same Nexus ZIP artifact. Store these values as Gitea Actions secrets:
+The package/deploy workflow deploys DEV and QA from the same Nexus ZIP artifact. PROD promotion downloads the QA-approved artifact by commit SHA and does not rebuild. Store these values as Gitea Actions secrets:
 
 - `AZURE_DEV_RESOURCE_GROUP`
 - `AZURE_DEV_WEBAPP_NAME`
@@ -77,6 +77,9 @@ The package/deploy workflow deploys DEV and QA from the same Nexus ZIP artifact.
 - `AZURE_QA_RESOURCE_GROUP`
 - `AZURE_QA_WEBAPP_NAME`
 - `AZURE_QA_WEBAPP_URL`
+- `AZURE_PROD_RESOURCE_GROUP`
+- `AZURE_PROD_WEBAPP_NAME`
+- `AZURE_PROD_WEBAPP_URL`
 
 Use the Bicep deployment outputs for the web app names and URLs. Keep real Azure hostnames out of tracked files except placeholder-safe documentation.
 
@@ -124,5 +127,6 @@ Deploy after approval:
 
 - Report the active subscription name/id and tenant without exposing tokens.
 - After deployment, check each output URL.
+- Deployment validation must include the app `/health` endpoint for DEV, QA, and PROD. PROD success requires both page smoke and `/health` checks to pass.
 - Keep environment-specific Azure hostnames out of tracked files.
 - Pass Azure outputs to observability only when the user wants monitoring wired to the new hostnames.
