@@ -47,16 +47,30 @@ Before any mutating step, validate that `baseUrl`, `apiToken`, lowercase `worksp
 2. Check `git status --porcelain`. If any output exists, stop and report changed files.
 3. Switch to the configured base branch and run `git pull --ff-only`.
 4. Create or reuse the configured branch name.
-5. Push the branch to Gitea with upstream tracking using `git push -u origin {branchName}`. If the upstream branch already exists and points to the same commit, treat it as complete; if the push is rejected or would require a non-fast-forward update, stop and report the branch issue.
-6. Analyze the ticket description in an OpenSpec explore style.
-7. Update only the managed generated block in the Plane ticket description.
-8. Add a Plane ticket comment with the branch name, base branch, and pushed Gitea branch, unless a generated comment for the same branch already exists.
-9. Move the Plane ticket to the configured in-progress state, unless it is already there.
-10. Create an OpenSpec proposal using the `openspec-propose` skill (`/opsx:propose`) with a change name matching the branch name as closely as OpenSpec allows.
+5. Pre-scan branch conflicts before creating or switching branches:
+   - `git show-ref --verify refs/heads/{branchName}` for a local branch.
+   - `git ls-remote --heads origin {branchName}` for a remote branch.
+   If both exist and point to different commits, stop and report the conflict. If the remote branch exists and the local branch is missing, create the local branch from the remote only when it descends from the configured base branch.
+6. Push the branch to Gitea with upstream tracking using `git push -u origin {branchName}`. If the upstream branch already exists and points to the same commit, treat it as complete; if the push is rejected or would require a non-fast-forward update, stop and report the branch issue.
+7. Analyze the ticket description in an OpenSpec explore style unless OpenSpec is explicitly skipped by policy below.
+8. Update only the managed generated block in the Plane ticket description.
+9. Add a Plane ticket comment with the branch name, base branch, pushed Gitea branch, and OpenSpec decision, unless a generated comment for the same branch already exists.
+10. Move the Plane ticket to the configured in-progress state, unless it is already there.
+11. Create an OpenSpec proposal using the `openspec-propose` skill (`/opsx:propose`) with a change name matching the branch name as closely as OpenSpec allows, unless OpenSpec is explicitly skipped.
 
-For step 10, if the branch name contains `/`, convert it to a filesystem-safe kebab-case OpenSpec change id by replacing `/` with `-`. Example: branch `feat/e2eproject-1-create-files-and-folders-for-a-site` becomes OpenSpec change `feat-e2eproject-1-create-files-and-folders-for-a-site`. Use the Plane ticket title and generated planning block as proposal input.
+For step 11, if the branch name contains `/`, convert it to a filesystem-safe kebab-case OpenSpec change id by replacing `/` with `-`. Example: branch `feat/e2eproject-1-create-files-and-folders-for-a-site` becomes OpenSpec change `feat-e2eproject-1-create-files-and-folders-for-a-site`. Use the Plane ticket title and generated planning block as proposal input.
 
 Only move the ticket to the in-progress state after branch creation, Gitea push, generated description update, and branch comment all succeed or are confirmed idempotently already complete. Only create the OpenSpec proposal after the ticket is in the in-progress state.
+
+## OpenSpec Decision
+
+Default to creating an OpenSpec proposal for feature, bug, and hotfix tickets. Skip OpenSpec only when one of these is true:
+
+- the ticket contains an explicit `no-openspec` marker,
+- the ticket is clearly labeled or titled as `chore` or `ops-only`,
+- the user explicitly requests no OpenSpec in the current chat.
+
+When OpenSpec is skipped, write `OpenSpec: skipped ({reason})` in the generated ticket block and branch comment. Do not invoke `openspec-propose`.
 
 ## Branch Naming
 
@@ -108,6 +122,13 @@ On rerun, replace only the content between `<!-- ia-generated:start -->` and `<!
 
 Acceptance criteria must be concrete and testable. Reject and regenerate criteria containing generic wording such as `works correctly`, `as expected`, or `properly implemented`.
 
+Concrete examples:
+
+- `GET /health returns HTTP 200 with JSON field status equal to ok.`
+- `Submitting an empty contact form shows required-field validation without creating a record.`
+- `The home page renders the configured site title on desktop and mobile widths.`
+- `Unauthorized API requests return HTTP 401 and do not expose stack traces or secrets.`
+
 ## Plane Access
 
 Use the Plane API only. Never use Plane MCP, Docker containers, or direct database access for Plane.
@@ -127,6 +148,7 @@ Use `IA generated branch: {branchName}` as the stable branch comment marker. If 
 - Invalid or empty title slug: fall back to a ticket-key-only branch segment.
 - Existing branch: switch to it instead of creating a duplicate.
 - Failed fast-forward pull: stop and report the branch issue.
+- Local/remote branch conflict: stop before Plane mutation and report both refs.
 - Failed Gitea branch push: stop before Plane mutation and report the push failure.
 - Malformed generated markers: stop before updating the ticket.
 - Weak generated analysis: regenerate before updating Plane.
