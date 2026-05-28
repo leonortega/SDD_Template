@@ -21,16 +21,17 @@ Never print, commit, paste into tickets, or write real tokens, Nexus credentials
 
 ## Preflight
 
-1. Resolve the rollback target from user input, Plane PROD comments, Git tags, or Nexus `release.json` metadata.
-2. Verify the target artifact exists:
+1. Resolve the current PROD release from the latest Plane PROD deployment comment or release manifest.
+2. If the user did not supply a rollback target, list known-good candidates from Plane PROD comments, Git tags, and Nexus `release.json` metadata. Order newest-first, mark the current PROD release, and ask the user to choose a target before mutating anything.
+3. Resolve the rollback target from user input, Plane PROD comments, Git tags, or Nexus `release.json` metadata.
+4. Verify the target artifact exists:
    - `app/{commitSha}/app.zip`
    - `app/{commitSha}/app.zip.sha256`
    - `app/{commitSha}/commit.sha`
    - `app/{commitSha}/release.json`
-3. Verify checksum and `commit.sha`.
-4. Verify `release.json` marks the target as previously QA-approved and either previously PROD-deployed or explicitly user-approved as the rollback target.
-5. Resolve the current PROD release from the latest Plane PROD deployment comment or release manifest.
-6. Stop if the target commit equals the current PROD commit unless the user explicitly asks to redeploy the same artifact.
+5. Verify checksum and `commit.sha`.
+6. Verify `release.json` marks the target as previously QA-approved and either previously PROD-deployed or explicitly user-approved as the rollback target.
+7. Stop if the target commit equals the current PROD commit unless the user explicitly asks to redeploy the same artifact.
 
 ## Rollback Deployment
 
@@ -66,11 +67,22 @@ Include current PROD version/commit, rollback target version/commit, Nexus artif
 
 Update `app/{commitSha}/release.json` with rollback deployment timestamp, workflow run URL, PROD URL, and rollback source/current version relationship when rollback passes.
 
+Create or update a Plane incident ticket with marker:
+
+```text
+IA generated PROD rollback incident: {rollbackVersionOrCommit}
+```
+
+Record who or what requested the rollback when known, why it was needed, current PROD before rollback, rollback target, timeline, verification evidence, and follow-up decision.
+
+After rollback, explicitly document Git state. `main` is not automatically reverted. Require one follow-up: open a hotfix PR, open a revert PR, or record an accepted temporary divergence note with owner and expected resolution.
+
 ## Failure Rules
 
 - Missing artifact/checksum/commit metadata: stop.
 - Missing or inconsistent `release.json`: stop unless the user explicitly approves the artifact as rollback target.
 - Checksum mismatch: stop.
+- No rollback target supplied: list known-good candidates and stop before mutation.
 - Workflow rebuilds or skips `/health`: stop.
 - PROD page or `/health` failure: comment failure and stop.
 - Monitoring unavailable: record as unavailable, not product failure, when direct app checks pass.
