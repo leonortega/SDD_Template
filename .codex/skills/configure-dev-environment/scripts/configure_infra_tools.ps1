@@ -416,7 +416,7 @@ function Add-QualityGateAuditFindings {
   if (-not (Test-Path (Join-RootPath $releaseWorkflow))) {
     Add-Item $Result "findings" $releaseWorkflow "" "Missing package/deploy workflow for Nexus artifact publication and Azure promotion." "warning"
   } else {
-    foreach ($expected in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "az webapp deploy", "deploy-qa", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_WEBAPP_NAME", "AZURE_QA_WEBAPP_URL")) {
+    foreach ($expected in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "az webapp deploy", "deploy-qa", "deploy-prod", "artifact_commit_sha", "release_version", "source_rc_version", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_WEBAPP_NAME", "AZURE_QA_WEBAPP_URL", "AZURE_PROD_RESOURCE_GROUP", "AZURE_PROD_WEBAPP_NAME", "AZURE_PROD_WEBAPP_URL", "/health")) {
       if (-not (Test-FileContains $releaseWorkflow ([regex]::Escape($expected)))) {
         Add-Item $Result "findings" $releaseWorkflow $expected "Package/deploy workflow does not mention $expected." "warning"
       }
@@ -428,7 +428,7 @@ function Add-QualityGateAuditFindings {
     $releaseContent = Get-Content -Path (Join-RootPath $releaseWorkflow) -Raw
     $publishCount = ([regex]::Matches($releaseContent, "dotnet publish")).Count
     if ($publishCount -gt 1) {
-      Add-Item $Result "findings" $releaseWorkflow "dotnet publish" "Package/deploy workflow appears to publish more than once; DEV and QA should promote the same Nexus artifact." "warning"
+      Add-Item $Result "findings" $releaseWorkflow "dotnet publish" "Package/deploy workflow appears to publish more than once; DEV, QA, and PROD should promote the same Nexus artifact." "warning"
     }
   }
 
@@ -1296,9 +1296,22 @@ on:
         description: Target environment for promotion
         required: true
         default: dev
+      artifact_commit_sha:
+        description: Existing Nexus artifact commit SHA for PROD promotion
+        required: false
+        default: ''
+      release_version:
+        description: Release version for PROD promotion
+        required: false
+        default: ''
+      source_rc_version:
+        description: QA-approved RC version promoted to PROD
+        required: false
+        default: ''
 
 jobs:
   package:
+    if: github.event_name == 'push' || github.event.inputs.environment == 'dev' || github.event.inputs.environment == 'qa'
     runs-on: ubuntu-latest
     container:
       image: mcr.microsoft.com/dotnet/sdk:10.0.300
@@ -1379,6 +1392,8 @@ jobs:
           curl --fail --silent --show-error --location "$AZURE_DEV_WEBAPP_URL" -o response.html
           grep -q "<title>SDD Template</title>" response.html
           ! grep -qi "Microsoft Azure" response.html
+          curl --fail --silent --show-error --location "$AZURE_DEV_WEBAPP_URL/health" -o health.json
+          grep -q '"status":"ok"' health.json
         env:
           AZURE_DEV_WEBAPP_URL: ${{ secrets.AZURE_DEV_WEBAPP_URL }}
 
@@ -1417,8 +1432,60 @@ jobs:
           curl --fail --silent --show-error --location "$AZURE_QA_WEBAPP_URL" -o response.html
           grep -q "<title>SDD Template</title>" response.html
           ! grep -qi "Microsoft Azure" response.html
+          curl --fail --silent --show-error --location "$AZURE_QA_WEBAPP_URL/health" -o health.json
+          grep -q '"status":"ok"' health.json
         env:
           AZURE_QA_WEBAPP_URL: ${{ secrets.AZURE_QA_WEBAPP_URL }}
+
+  deploy-prod:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod'
+    steps:
+      - name: Validate PROD promotion inputs
+        run: |
+          test -n "$ARTIFACT_COMMIT_SHA"
+          test -n "$RELEASE_VERSION"
+          test -n "$SOURCE_RC_VERSION"
+        env:
+          ARTIFACT_COMMIT_SHA: ${{ github.event.inputs.artifact_commit_sha }}
+          RELEASE_VERSION: ${{ github.event.inputs.release_version }}
+          SOURCE_RC_VERSION: ${{ github.event.inputs.source_rc_version }}
+
+      - name: Download artifact from Nexus
+        run: |
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$ARTIFACT_COMMIT_SHA/app.zip"
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip.sha256 "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$ARTIFACT_COMMIT_SHA/app.zip.sha256"
+          sha256sum -c app.zip.sha256
+        env:
+          ARTIFACT_COMMIT_SHA: ${{ github.event.inputs.artifact_commit_sha }}
+          NEXUS_URL: ${{ secrets.NEXUS_URL }}
+          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+          NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
+
+      - name: Install Azure CLI
+        run: curl -sL https://aka.ms/InstallAzureCLIDeb | bash
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy PROD package
+        run: az webapp deploy --resource-group "$AZURE_PROD_RESOURCE_GROUP" --name "$AZURE_PROD_WEBAPP_NAME" --src-path app.zip --type zip --clean true
+        env:
+          AZURE_PROD_RESOURCE_GROUP: ${{ secrets.AZURE_PROD_RESOURCE_GROUP }}
+          AZURE_PROD_WEBAPP_NAME: ${{ secrets.AZURE_PROD_WEBAPP_NAME }}
+
+      - name: Smoke check PROD
+        run: |
+          curl --fail --silent --show-error --location "$AZURE_PROD_WEBAPP_URL" -o response.html
+          grep -q "<title>SDD Template</title>" response.html
+          ! grep -qi "Microsoft Azure" response.html
+          curl --fail --silent --show-error --location "$AZURE_PROD_WEBAPP_URL/health" -o health.json
+          grep -q '"status":"ok"' health.json
+        env:
+          AZURE_PROD_WEBAPP_URL: ${{ secrets.AZURE_PROD_WEBAPP_URL }}
 '@
 
   Write-TemplateFile $result ".gitea/workflows/README.md" @'
@@ -1441,8 +1508,11 @@ Required repository secrets:
 - `AZURE_QA_RESOURCE_GROUP`
 - `AZURE_QA_WEBAPP_NAME`
 - `AZURE_QA_WEBAPP_URL`
+- `AZURE_PROD_RESOURCE_GROUP`
+- `AZURE_PROD_WEBAPP_NAME`
+- `AZURE_PROD_WEBAPP_URL`
 
-Add equivalent PROD secrets before enabling PROD promotion jobs.
+PROD promotion is workflow-dispatch only and must pass an existing `artifact_commit_sha`, `release_version`, and `source_rc_version`. The PROD job downloads the existing Nexus artifact and does not rebuild.
 
 Recommended branch protection:
 
@@ -1460,7 +1530,7 @@ Release flow:
 feature branch -> dev -> DEV -> QA -> main -> PROD
 ```
 
-The package workflow builds and publishes from `dev`. DEV and QA must deploy the same Nexus ZIP artifact for the same commit SHA.
+The package workflow builds and publishes from `dev`. DEV and QA must deploy the same Nexus ZIP artifact for the same commit SHA. PROD must deploy the QA-approved Nexus artifact by commit SHA and must pass both the page smoke check and `/health` check.
 '@
 
   return $result
