@@ -25,8 +25,64 @@ on:
         default: ''
 
 jobs:
+  classify-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      app_changed: ${{ steps.classify.outputs.app_changed }}
+    steps:
+      - name: Checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          repo_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          repo_url="${repo_url/localhost/host.docker.internal}"
+          repo_url="${repo_url/gitea/host.docker.internal}"
+
+          git init .
+          git remote add origin "$repo_url"
+          git fetch origin "$GITHUB_SHA"
+          git checkout --force FETCH_HEAD
+
+          before="${{ github.event.before }}"
+          if [ -n "$before" ] && [ "$before" != "0000000000000000000000000000000000000000" ]; then
+            git fetch origin "$before" || true
+          fi
+
+      - name: Classify changed files
+        id: classify
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "$GITHUB_EVENT_NAME" != "push" ]; then
+            echo "app_changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          before="${{ github.event.before }}"
+          if [ -n "$before" ] && [ "$before" != "0000000000000000000000000000000000000000" ] && git cat-file -e "$before^{commit}" 2>/dev/null; then
+            changed_files="$(git diff --name-only "$before" "$GITHUB_SHA")"
+          else
+            changed_files="$(git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA")"
+          fi
+
+          app_changed=false
+          while IFS= read -r path; do
+            case "$path" in
+              src/*|tests/*|*.sln|*.csproj|Directory.Build.props|Directory.Build.targets|global.json)
+                app_changed=true
+                ;;
+            esac
+          done <<EOF
+          $changed_files
+          EOF
+
+          echo "app_changed=$app_changed" >> "$GITHUB_OUTPUT"
+
   package:
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/dev' && !startsWith(github.event.head_commit.message, '[SDD]')) || github.event.inputs.environment == 'dev' || github.event.inputs.environment == 'qa'
+    needs: classify-changes
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/dev' && needs.classify-changes.outputs.app_changed == 'true') || github.event.inputs.environment == 'dev' || github.event.inputs.environment == 'qa'
     runs-on: ubuntu-latest
     container:
       image: mcr.microsoft.com/dotnet/sdk:10.0.300
@@ -73,9 +129,11 @@ jobs:
           NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
 
   deploy-dev:
-    needs: package
+    needs:
+      - classify-changes
+      - package
     runs-on: ubuntu-latest
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/dev' && !startsWith(github.event.head_commit.message, '[SDD]')) || github.event.inputs.environment == 'dev' || github.event.inputs.environment == 'qa'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/dev' && needs.classify-changes.outputs.app_changed == 'true') || github.event.inputs.environment == 'dev' || github.event.inputs.environment == 'qa'
     steps:
       - name: Download artifact from Nexus
         run: |
@@ -113,9 +171,11 @@ jobs:
           AZURE_DEV_WEBAPP_URL: ${{ secrets.AZURE_DEV_WEBAPP_URL }}
 
   deploy-qa:
-    needs: deploy-dev
+    needs:
+      - classify-changes
+      - deploy-dev
     runs-on: ubuntu-latest
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/dev' && !startsWith(github.event.head_commit.message, '[SDD]')) || github.event.inputs.environment == 'qa'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/dev' && needs.classify-changes.outputs.app_changed == 'true') || github.event.inputs.environment == 'qa'
     steps:
       - name: Download artifact from Nexus
         run: |
@@ -153,8 +213,9 @@ jobs:
           AZURE_QA_WEBAPP_URL: ${{ secrets.AZURE_QA_WEBAPP_URL }}
 
   deploy-prod:
+    needs: classify-changes
     runs-on: ubuntu-latest
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main' && !startsWith(github.event.head_commit.message, '[SDD]')) || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod')
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.classify-changes.outputs.app_changed == 'true') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod')
     steps:
       - name: Resolve PROD promotion inputs
         shell: bash

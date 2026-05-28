@@ -73,7 +73,7 @@ Stop if any QA gate, tag gate, artifact gate, or checksum gate fails.
 
 PROD deployment can be triggered in two supported ways:
 
-- A non-`[SDD]` push/merge to `main` deploys PROD only and downloads the existing Nexus artifact for `GITHUB_SHA`.
+- A push/merge to `main` deploys PROD only when the changed files include application/test/package source, and downloads the existing Nexus artifact for `GITHUB_SHA`.
 - Manual workflow dispatch with `environment=prod` deploys the artifact identified by `artifact_commit_sha`.
 
 For manual dispatch, trigger the Gitea package/deploy workflow with:
@@ -85,7 +85,7 @@ release_version={finalVersion}
 source_rc_version={sourceRcVersion}
 ```
 
-The PROD workflow must not run package, DEV, or QA jobs for a `main` push or `environment=prod` dispatch. It must download `app/{artifact_commit_sha}/app.zip` from Nexus, verify `app.zip.sha256`, deploy to PROD, then run:
+The PROD workflow must not run package, DEV, or QA jobs for a `main` push or `environment=prod` dispatch. Maintenance-only changes such as `.codex/**` or workflow-only edits must not deploy PROD. PROD must download `app/{artifact_commit_sha}/app.zip` from Nexus, verify `app.zip.sha256`, deploy to PROD, then run:
 
 - PROD page smoke check: HTTP 200, expected title/content, no Azure placeholder page.
 - PROD health check: `GET {prodWebUrl}/health` returns HTTP 200 and JSON `status=ok`.
