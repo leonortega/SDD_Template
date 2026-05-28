@@ -15,6 +15,8 @@ feature branch -> dev -> DEV -> QA -> E2E QA OK -> main -> PROD
 
 PROD must reuse the QA-approved Nexus artifact. Never rebuild, republish, or rename the artifact during PROD promotion.
 
+Before promotion, read `.codex/skills/_shared/delivery-contract.md`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode ValidateReleaseManifest` when checking `release.json` and `-Mode ArtifactPaths` when verifying Nexus artifact paths.
+
 ## Configuration
 
 Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.example.json` only for structure, then apply environment overrides when present.
@@ -69,7 +71,12 @@ Stop if any QA gate, tag gate, artifact gate, or checksum gate fails.
 
 ## PROD Deployment
 
-Trigger the Gitea package/deploy workflow with:
+PROD deployment can be triggered in two supported ways:
+
+- A push/merge to `main` deploys PROD only when the changed files include application/test/package source, and downloads the existing Nexus artifact for `GITHUB_SHA`.
+- Manual workflow dispatch with `environment=prod` deploys the artifact identified by `artifact_commit_sha`.
+
+For manual dispatch, trigger the Gitea package/deploy workflow with:
 
 ```text
 environment=prod
@@ -78,7 +85,7 @@ release_version={finalVersion}
 source_rc_version={sourceRcVersion}
 ```
 
-The PROD workflow must download `app/{artifact_commit_sha}/app.zip` from Nexus, verify `app.zip.sha256`, deploy to PROD, then run:
+The PROD workflow must not run package, DEV, or QA jobs for a `main` push or `environment=prod` dispatch. Maintenance-only changes such as `.codex/**` or workflow-only edits must not deploy PROD. PROD must download `app/{artifact_commit_sha}/app.zip` from Nexus, verify `app.zip.sha256`, deploy to PROD, then run:
 
 - PROD page smoke check: HTTP 200, expected title/content, no Azure placeholder page.
 - PROD health check: `GET {prodWebUrl}/health` returns HTTP 200 and JSON `status=ok`.
@@ -86,13 +93,14 @@ The PROD workflow must download `app/{artifact_commit_sha}/app.zip` from Nexus, 
 After dispatch, inspect the workflow run jobs and logs against the artifact-reuse contract. A successful PROD run must show that the workflow:
 
 - used `environment=prod`,
-- consumed `artifact_commit_sha={qaApprovedCommit}`,
+- consumed `artifact_commit_sha={qaApprovedCommit}` for manual dispatch or `GITHUB_SHA` for a `main` push,
 - downloaded `app/{artifact_commit_sha}/app.zip` from Nexus,
 - verified `app.zip.sha256`,
 - skipped rebuild/republish behavior,
+- skipped DEV and QA deployment behavior,
 - ran direct PROD page and `/health` checks.
 
-Prefer named job checks such as `deploy-prod` when present, but do not rely only on job names. If the workflow rebuilds, republishes, downloads from `GITHUB_SHA` instead of `artifact_commit_sha`, lacks a PROD deployment path, or skips `/health`, treat it as blocking workflow drift.
+Prefer named job checks such as `deploy-prod` when present, but do not rely only on job names. If the workflow rebuilds, republishes, downloads an artifact commit that does not match the approved commit, lacks a PROD deployment path, deploys DEV/QA during PROD promotion, or skips `/health`, treat it as blocking workflow drift.
 
 ## PROD Verification
 

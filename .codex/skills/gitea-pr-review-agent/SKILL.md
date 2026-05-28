@@ -11,6 +11,8 @@ Use this skill to review one explicit Gitea pull request. It is invoked by `open
 
 For exact Gitea API endpoint guidance, read `references/gitea-review-api.md` before making API calls.
 
+Read `.codex/skills/_shared/delivery-contract.md` before posting review output so severity labels and PR label semantics remain consistent with implementation and deployment gates.
+
 ## Configuration
 
 Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.example.json` for defaults only, then apply environment variable overrides when present.
