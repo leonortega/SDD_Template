@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - dev
+      - main
   workflow_dispatch:
     inputs:
       environment:
@@ -25,7 +26,7 @@ on:
 
 jobs:
   package:
-    if: (github.event_name == 'push' && !startsWith(github.event.head_commit.message, '[SDD]')) || github.event.inputs.environment == 'dev' || github.event.inputs.environment == 'qa'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/dev' && !startsWith(github.event.head_commit.message, '[SDD]')) || github.event.inputs.environment == 'dev' || github.event.inputs.environment == 'qa'
     runs-on: ubuntu-latest
     container:
       image: mcr.microsoft.com/dotnet/sdk:10.0.300
@@ -74,7 +75,7 @@ jobs:
   deploy-dev:
     needs: package
     runs-on: ubuntu-latest
-    if: (github.event_name == 'push' && !startsWith(github.event.head_commit.message, '[SDD]')) || github.event.inputs.environment == 'dev' || github.event.inputs.environment == 'qa'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/dev' && !startsWith(github.event.head_commit.message, '[SDD]')) || github.event.inputs.environment == 'dev' || github.event.inputs.environment == 'qa'
     steps:
       - name: Download artifact from Nexus
         run: |
@@ -114,7 +115,7 @@ jobs:
   deploy-qa:
     needs: deploy-dev
     runs-on: ubuntu-latest
-    if: (github.event_name == 'push' && !startsWith(github.event.head_commit.message, '[SDD]')) || github.event.inputs.environment == 'qa'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/dev' && !startsWith(github.event.head_commit.message, '[SDD]')) || github.event.inputs.environment == 'qa'
     steps:
       - name: Download artifact from Nexus
         run: |
@@ -153,13 +154,23 @@ jobs:
 
   deploy-prod:
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main' && !startsWith(github.event.head_commit.message, '[SDD]')) || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod')
     steps:
-      - name: Validate PROD promotion inputs
+      - name: Resolve PROD promotion inputs
+        shell: bash
         run: |
-          test -n "$ARTIFACT_COMMIT_SHA"
-          test -n "$RELEASE_VERSION"
-          test -n "$SOURCE_RC_VERSION"
+          set -euo pipefail
+
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            artifact_commit_sha="$GITHUB_SHA"
+          else
+            artifact_commit_sha="$ARTIFACT_COMMIT_SHA"
+            test -n "$RELEASE_VERSION"
+            test -n "$SOURCE_RC_VERSION"
+          fi
+
+          test -n "$artifact_commit_sha"
+          echo "PROD_ARTIFACT_COMMIT_SHA=$artifact_commit_sha" >> "$GITHUB_ENV"
         env:
           ARTIFACT_COMMIT_SHA: ${{ github.event.inputs.artifact_commit_sha }}
           RELEASE_VERSION: ${{ github.event.inputs.release_version }}
@@ -167,11 +178,10 @@ jobs:
 
       - name: Download artifact from Nexus
         run: |
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$ARTIFACT_COMMIT_SHA/app.zip"
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip.sha256 "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$ARTIFACT_COMMIT_SHA/app.zip.sha256"
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$PROD_ARTIFACT_COMMIT_SHA/app.zip"
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip.sha256 "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$PROD_ARTIFACT_COMMIT_SHA/app.zip.sha256"
           sha256sum -c app.zip.sha256
         env:
-          ARTIFACT_COMMIT_SHA: ${{ github.event.inputs.artifact_commit_sha }}
           NEXUS_URL: ${{ secrets.NEXUS_URL }}
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
           NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
