@@ -448,6 +448,13 @@ function Add-QualityGateAuditFindings {
     Add-Item $Result "findings" $deliveryPolicy "ticketKeyPattern" "Delivery policy must define ticketKeyPattern for deployment gating." "warning"
   }
 
+  $gitignore = ".gitignore"
+  if (-not (Test-Path (Join-RootPath $gitignore))) {
+    Add-Item $Result "findings" $gitignore ".codex/delivery-context.local.json" "Missing .gitignore; local ticket context lock must not be committed." "warning"
+  } elseif (-not (Test-FileContains $gitignore "\.codex/delivery-context\.local\.json")) {
+    Add-Item $Result "findings" $gitignore ".codex/delivery-context.local.json" "Local ticket context lock must be ignored so automatic delivery stays ticket-scoped without committing runtime state." "warning"
+  }
+
   $globalJson = "global.json"
   $globalJsonPath = Join-RootPath $globalJson
   if (-not (Test-Path $globalJsonPath)) {
@@ -1158,6 +1165,7 @@ infra/plane/plane/
 .codex/client-tools.local.json
 .codex/quality.local.json
 .codex/azure-login.local.json
+.codex/delivery-context.local.json
 infra/monitoring/prometheus.local.yml
 
 # OS/editor noise
