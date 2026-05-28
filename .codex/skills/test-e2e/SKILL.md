@@ -22,6 +22,7 @@ Required or defaulted values:
 - `plane.doneState`, default `Done` only when explicitly configured or confirmed
 - `gitea.baseUrl`, `gitea.apiToken`, `gitea.owner`, `gitea.repo` when PR/deploy context is needed
 - `nexus.baseUrl`, `nexus.username`, `nexus.password`, `nexus.repository` when publishing QA evidence bundles
+- source RC version for release candidates, supplied by the user or resolved from an existing annotated tag on the tested commit, using format `vMAJOR.MINOR.PATCH-rc.N`
 
 Optional environment variables override local JSON when present:
 
@@ -163,12 +164,27 @@ qa/{ticketKey}/{runId}/qa-evidence.zip
 5. Add the Nexus evidence URL to the Plane comment.
 6. If Nexus is unavailable but Plane attachments are configured and safe, attach evidence to Plane.
 7. If neither Nexus nor Plane attachments are available, include local evidence paths in the Plane comment and clearly label them as local-only fallback evidence.
+8. Update `app/{commitSha}/release.json` in Nexus after QA passes, adding source RC version, QA evidence URL, QA result, QA timestamp, tested URLs, and the E2E scenario summary. Preserve existing artifact, checksum, PR, ticket, DEV, and QA deployment fields.
 
 Do not move a ticket to `plane.doneState` until the evidence link or fallback evidence path has been written to Plane. If evidence upload fails after tests pass, comment the upload failure, leave the ticket in QA, and report the blocking evidence publication issue.
 
 Do not publish secrets, cookies, authorization headers, raw tokens, private credentials, or sensitive payloads in evidence. Redact or discard unsafe evidence before zipping or commenting.
 
-### 6. Git And Hook Policy
+### 6. QA Release Candidate Marker
+
+Before moving a ticket to `plane.doneState`, establish a release-candidate marker for the exact tested artifact commit:
+
+1. Resolve the tested commit SHA from the QA deployment comment, PR metadata, Nexus artifact path, or user input.
+2. Resolve the source RC version from user input or an existing annotated tag on that commit. Use format `vMAJOR.MINOR.PATCH-rc.N`.
+3. If no RC version is supplied and no matching tag exists, stop after recording QA evidence and ask for the RC version; do not move the ticket to Done.
+4. Verify the RC tag is annotated and points to the tested commit. If the tag is missing, create it on the tested commit only after every QA scenario passes and evidence is published.
+5. Push the RC tag only after the QA result comment is ready and the tag target has been verified.
+6. Include the source RC version in the E2E QA Plane comment.
+7. Update the Nexus release manifest so `release.json` records `artifact commit -> source RC version -> pending final PROD version`.
+
+The RC tag is the human release-candidate identifier for the QA-approved artifact. It must not replace the immutable Nexus identity `app/{commitSha}/app.zip`.
+
+### 7. Git And Hook Policy
 
 Respect the repo's hooks when QA creates files:
 
@@ -190,7 +206,7 @@ E2EPROJECT-123: add E2E regression tests
 - Reusable tests must reference secrets through environment variables or test configuration placeholders. Never hardcode real credentials, tokens, cookies, connection strings, or private payloads.
 - If reusable tests require new repo config, stage only intentional source/config files and leave screenshots, logs, reports, traces, videos, and ZIP evidence untracked.
 
-### 7. Plane Result
+### 8. Plane Result
 
 Before commenting, read existing comments when the API allows it. Use this stable marker:
 
@@ -205,6 +221,9 @@ The comment must include:
 - ticket key and current state
 - tested QA URL and API base URL when applicable
 - commit, PR, artifact, or deployment reference when available
+- source RC version
+- RC tag URL or tag name and the verified tag target commit
+- release lineage: `artifact commit -> source RC version -> pending final PROD version`
 - selected test tool and why
 - scenarios executed
 - pass/fail result
@@ -219,6 +238,7 @@ Move the ticket to `plane.doneState` only after:
 - every required ticket-scoped QA scenario passed,
 - the QA result includes the test oracle, explicit assertions, risk-based negative or boundary checks where applicable, and any assumptions used to fill weak requirements,
 - evidence was validated against the assertions and does not contradict the pass result,
+- the source RC version was recorded and any RC tag used for PROD promotion points to the tested commit,
 - evidence was collected and published to Nexus, attached to Plane, or documented as a local-only fallback,
 - the QA result comment was added or confirmed idempotently present.
 

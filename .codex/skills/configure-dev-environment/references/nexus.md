@@ -125,6 +125,20 @@ Validate from Gitea Actions later by running the package workflow. The workflow 
 $NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip
 ```
 
+For PROD promotion, the workflow must download from the QA-approved artifact commit supplied at dispatch time:
+
+```text
+$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${artifact_commit_sha}/app.zip
+```
+
+Each artifact commit should also have a machine-readable release manifest:
+
+```text
+$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${commitSha}/release.json
+```
+
+Use `release.json` for automation and idempotency. It should carry commit SHA, checksum, artifact path, PR URL, Plane ticket key, DEV/QA/PROD URLs and status, QA evidence URL, source RC tag, final release tag, workflow run URLs, monitoring status, and timestamps. Plane comments remain the human-readable summary.
+
 ## Release Flow
 
 - Feature branches open PRs into `dev`.
@@ -133,10 +147,15 @@ $NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip
 - Compute checksum and commit SHA metadata.
 - Upload artifact, checksum, and metadata to Nexus.
 - Deploy DEV from the Nexus artifact.
-- Promote the same artifact to QA after DEV checks pass.
+- Promote the same artifact to QA after DEV page and `/health` checks pass.
 - Move the Plane ticket to QA only after QA checks pass.
+- Create or verify an annotated RC tag such as `v1.2.0-rc.1` on the QA-approved artifact commit after E2E QA passes.
 - Merge or fast-forward the tested commit to `main` only after QA passes.
-- Deploy PROD from the QA-passed artifact commit.
+- Create the final annotated release tag such as `v1.2.0` on the same commit.
+- Deploy PROD from the QA-passed artifact commit by workflow dispatch inputs `artifact_commit_sha`, `release_version`, and `source_rc_version`.
+- Validate PROD page and `/health`; use Prometheus/Grafana as observability verification when available.
+- Record version lineage in Plane comments at each phase: QA deployment as unversioned candidate or known RC, E2E QA as `artifact commit -> source RC`, and PROD as `artifact commit -> source RC -> final release`.
+- For rollback, redeploy a previous known-good `app/{commitSha}/app.zip`, verify checksum and `/health`, update `release.json`, and comment Plane with rollback lineage.
 - Do not rebuild between environments.
 
 Default release path:

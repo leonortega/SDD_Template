@@ -36,6 +36,8 @@ docker inspect agentic-prometheus --format '{{range .Mounts}}{{println .Source "
 Invoke-RestMethod -Uri 'http://localhost:9090/api/v1/targets'
 ```
 
+For PROD promotion checks, verify the PROD web target is present and `health=up` when Prometheus is running. If the PROD API target is configured but no API is deployed for the current app, record it as an observability configuration note rather than an application failure. Direct PROD page and `/health` checks remain the authoritative app-working gate.
+
 ## Grafana
 
 Repo-managed provisioning:
