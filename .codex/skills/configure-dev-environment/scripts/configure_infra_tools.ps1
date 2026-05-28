@@ -416,7 +416,7 @@ function Add-QualityGateAuditFindings {
   if (-not (Test-Path (Join-RootPath $releaseWorkflow))) {
     Add-Item $Result "findings" $releaseWorkflow "" "Missing package/deploy workflow for Nexus artifact publication and Azure promotion." "warning"
   } else {
-    foreach ($expected in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "az webapp deploy", "deploy-qa", "deploy-prod", "artifact_commit_sha", "release_version", "source_rc_version", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_WEBAPP_NAME", "AZURE_QA_WEBAPP_URL", "AZURE_PROD_RESOURCE_GROUP", "AZURE_PROD_WEBAPP_NAME", "AZURE_PROD_WEBAPP_URL", "/health")) {
+    foreach ($expected in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "az webapp deploy", "classify-changes", "app_changed", "deploy_allowed", ".codex/delivery-policy.json", "ticketKeyPattern", "refs/heads/dev", "refs/heads/main", "deploy-qa", "deploy-prod", "artifact_commit_sha", "PROD_ARTIFACT_COMMIT_SHA", "release_version", "source_rc_version", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_WEBAPP_NAME", "AZURE_QA_WEBAPP_URL", "AZURE_PROD_RESOURCE_GROUP", "AZURE_PROD_WEBAPP_NAME", "AZURE_PROD_WEBAPP_URL", "/health")) {
       if (-not (Test-FileContains $releaseWorkflow ([regex]::Escape($expected)))) {
         Add-Item $Result "findings" $releaseWorkflow $expected "Package/deploy workflow does not mention $expected." "warning"
       }
@@ -425,11 +425,24 @@ function Add-QualityGateAuditFindings {
     if (-not (Test-FileContains $releaseWorkflow "branches:\s*\r?\n\s*-\s*dev")) {
       Add-Item $Result "findings" $releaseWorkflow "on.push.branches.dev" "Package/deploy workflow should trigger from dev for QA candidate artifacts." "warning"
     }
+    if (-not (Test-FileContains $releaseWorkflow "branches:\s*\r?\n\s*-\s*dev\s*\r?\n\s*-\s*main")) {
+      Add-Item $Result "findings" $releaseWorkflow "on.push.branches.main" "Package/deploy workflow should trigger from main for ticket-gated PROD promotion only." "warning"
+    }
+    if (-not (Test-FileContains $releaseWorkflow "needs\.classify-changes\.outputs\.deploy_allowed == 'true'")) {
+      Add-Item $Result "findings" $releaseWorkflow "deploy_allowed" "Push-triggered deployments should be gated by ticket-named commits or merged PR titles." "warning"
+    }
     $releaseContent = Get-Content -Path (Join-RootPath $releaseWorkflow) -Raw
     $publishCount = ([regex]::Matches($releaseContent, "dotnet publish")).Count
     if ($publishCount -gt 1) {
       Add-Item $Result "findings" $releaseWorkflow "dotnet publish" "Package/deploy workflow appears to publish more than once; DEV, QA, and PROD should promote the same Nexus artifact." "warning"
     }
+  }
+
+  $deliveryPolicy = ".codex/delivery-policy.json"
+  if (-not (Test-Path (Join-RootPath $deliveryPolicy))) {
+    Add-Item $Result "findings" $deliveryPolicy "ticketKeyPattern" "Missing delivery policy used by commit hooks and deployment gating." "warning"
+  } elseif (-not (Test-FileContains $deliveryPolicy '"ticketKeyPattern"\s*:')) {
+    Add-Item $Result "findings" $deliveryPolicy "ticketKeyPattern" "Delivery policy must define ticketKeyPattern for deployment gating." "warning"
   }
 
   $globalJson = "global.json"
@@ -1157,6 +1170,12 @@ $RECYCLE.BIN/
 }
 '@
 
+  Write-TemplateFile $result ".codex/delivery-policy.json" @'
+{
+  "ticketKeyPattern": "E2EPROJECT-[0-9]+"
+}
+'@
+
   Write-TemplateFile $result "lefthook.yml" @'
 pre-commit:
   commands:
@@ -1178,10 +1197,21 @@ param(
 $ErrorActionPreference = "Stop"
 
 $message = Get-Content -Path $MessagePath -Raw
-$pattern = "^(\[SDD\] .+|E2EPROJECT-[0-9]+: .+|openspec/[a-z0-9][a-z0-9-]*: .+)"
+$repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+$policyPath = Join-Path $repoRoot ".codex/delivery-policy.json"
+$ticketKeyPattern = "E2EPROJECT-[0-9]+"
+
+if (Test-Path -LiteralPath $policyPath) {
+  $policy = Get-Content -LiteralPath $policyPath -Raw | ConvertFrom-Json
+  if ($policy.ticketKeyPattern) {
+    $ticketKeyPattern = [string]$policy.ticketKeyPattern
+  }
+}
+
+$pattern = "^(\[SDD\] .+|${ticketKeyPattern}: .+|openspec/[a-z0-9][a-z0-9-]*: .+)"
 
 if ($message -notmatch $pattern) {
-  Write-Error "Commit message must start with a ticket, OpenSpec id, or [SDD] for direct SDD repo maintenance, for example: E2EPROJECT-1: scaffold blank Blazor site"
+  Write-Error "Commit message must start with a ticket matching '$ticketKeyPattern', OpenSpec id, or [SDD] for direct SDD repo maintenance, for example: E2EPROJECT-1: scaffold blank Blazor site"
   exit 1
 }
 '@
@@ -1291,6 +1321,7 @@ on:
   push:
     branches:
       - dev
+      - main
   workflow_dispatch:
     inputs:
       environment:
@@ -1311,8 +1342,78 @@ on:
         default: ''
 
 jobs:
+  classify-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      app_changed: ${{ steps.classify.outputs.app_changed }}
+      deploy_allowed: ${{ steps.classify.outputs.deploy_allowed }}
+    steps:
+      - name: Checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          repo_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          repo_url="${repo_url/localhost/host.docker.internal}"
+          repo_url="${repo_url/gitea/host.docker.internal}"
+
+          git init .
+          git remote add origin "$repo_url"
+          git fetch origin "$GITHUB_SHA"
+          git checkout --force FETCH_HEAD
+
+          before="${{ github.event.before }}"
+          if [ -n "$before" ] && [ "$before" != "0000000000000000000000000000000000000000" ]; then
+            git fetch origin "$before" || true
+          fi
+
+      - name: Classify changed files
+        id: classify
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "$GITHUB_EVENT_NAME" != "push" ]; then
+            echo "app_changed=true" >> "$GITHUB_OUTPUT"
+            echo "deploy_allowed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          before="${{ github.event.before }}"
+          if [ -n "$before" ] && [ "$before" != "0000000000000000000000000000000000000000" ] && git cat-file -e "$before^{commit}" 2>/dev/null; then
+            changed_files="$(git diff --name-only "$before" "$GITHUB_SHA")"
+          else
+            changed_files="$(git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA")"
+          fi
+
+          app_changed=false
+          while IFS= read -r path; do
+            case "$path" in
+              src/*|tests/*|*.sln|*.csproj|Directory.Build.props|Directory.Build.targets|global.json)
+                app_changed=true
+                ;;
+            esac
+          done <<EOF
+          $changed_files
+          EOF
+
+          ticket_key_pattern="$(sed -n 's/.*"ticketKeyPattern"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' .codex/delivery-policy.json | head -n 1 || true)"
+          test -n "$ticket_key_pattern"
+
+          commit_message="${{ github.event.head_commit.message }}"
+          ticket_pattern="^${ticket_key_pattern}: "
+          merge_pr_pattern="^Merge pull request '${ticket_key_pattern}:"
+          deploy_allowed=false
+          if [[ "$commit_message" =~ $ticket_pattern || "$commit_message" =~ $merge_pr_pattern ]]; then
+            deploy_allowed=true
+          fi
+
+          echo "app_changed=$app_changed" >> "$GITHUB_OUTPUT"
+          echo "deploy_allowed=$deploy_allowed" >> "$GITHUB_OUTPUT"
+
   package:
-    if: github.event_name == 'push' || github.event.inputs.environment == 'dev' || github.event.inputs.environment == 'qa'
+    needs: classify-changes
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/dev' && needs.classify-changes.outputs.app_changed == 'true' && needs.classify-changes.outputs.deploy_allowed == 'true') || github.event.inputs.environment == 'dev' || github.event.inputs.environment == 'qa'
     runs-on: ubuntu-latest
     container:
       image: mcr.microsoft.com/dotnet/sdk:10.0.300
@@ -1359,9 +1460,11 @@ jobs:
           NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
 
   deploy-dev:
-    needs: package
+    needs:
+      - classify-changes
+      - package
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event.inputs.environment == 'dev' || github.event.inputs.environment == 'qa'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/dev' && needs.classify-changes.outputs.app_changed == 'true' && needs.classify-changes.outputs.deploy_allowed == 'true') || github.event.inputs.environment == 'dev' || github.event.inputs.environment == 'qa'
     steps:
       - name: Download artifact from Nexus
         run: |
@@ -1399,9 +1502,11 @@ jobs:
           AZURE_DEV_WEBAPP_URL: ${{ secrets.AZURE_DEV_WEBAPP_URL }}
 
   deploy-qa:
-    needs: deploy-dev
+    needs:
+      - classify-changes
+      - deploy-dev
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event.inputs.environment == 'qa'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/dev' && needs.classify-changes.outputs.app_changed == 'true' && needs.classify-changes.outputs.deploy_allowed == 'true') || github.event.inputs.environment == 'qa'
     steps:
       - name: Download artifact from Nexus
         run: |
@@ -1439,14 +1544,25 @@ jobs:
           AZURE_QA_WEBAPP_URL: ${{ secrets.AZURE_QA_WEBAPP_URL }}
 
   deploy-prod:
+    needs: classify-changes
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.classify-changes.outputs.app_changed == 'true' && needs.classify-changes.outputs.deploy_allowed == 'true') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod')
     steps:
-      - name: Validate PROD promotion inputs
+      - name: Resolve PROD promotion inputs
+        shell: bash
         run: |
-          test -n "$ARTIFACT_COMMIT_SHA"
-          test -n "$RELEASE_VERSION"
-          test -n "$SOURCE_RC_VERSION"
+          set -euo pipefail
+
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            artifact_commit_sha="$GITHUB_SHA"
+          else
+            artifact_commit_sha="$ARTIFACT_COMMIT_SHA"
+            test -n "$RELEASE_VERSION"
+            test -n "$SOURCE_RC_VERSION"
+          fi
+
+          test -n "$artifact_commit_sha"
+          echo "PROD_ARTIFACT_COMMIT_SHA=$artifact_commit_sha" >> "$GITHUB_ENV"
         env:
           ARTIFACT_COMMIT_SHA: ${{ github.event.inputs.artifact_commit_sha }}
           RELEASE_VERSION: ${{ github.event.inputs.release_version }}
@@ -1454,11 +1570,10 @@ jobs:
 
       - name: Download artifact from Nexus
         run: |
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$ARTIFACT_COMMIT_SHA/app.zip"
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip.sha256 "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$ARTIFACT_COMMIT_SHA/app.zip.sha256"
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$PROD_ARTIFACT_COMMIT_SHA/app.zip"
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip.sha256 "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$PROD_ARTIFACT_COMMIT_SHA/app.zip.sha256"
           sha256sum -c app.zip.sha256
         env:
-          ARTIFACT_COMMIT_SHA: ${{ github.event.inputs.artifact_commit_sha }}
           NEXUS_URL: ${{ secrets.NEXUS_URL }}
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
           NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
@@ -1496,6 +1611,14 @@ Gitea PR validation is the source of truth. Local hooks are only convenience che
 
 Coverage threshold defaults to `80%` from `.codex/quality.example.json`. Local development may override it with ignored `.codex/quality.local.json`; CI falls back to the tracked example when no local config is present.
 
+The local runner executes PR validation inside a pinned .NET SDK container. Keep checkout and security tools shell-based unless the job container explicitly includes `node`; JavaScript `uses:` actions can fail inside plain SDK containers. Validate runner compatibility after workflow changes:
+
+```powershell
+.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode ValidateGiteaActionsRunner
+```
+
+That check pulls the configured job image, verifies required tools inside it, and confirms the container can reach local Gitea through `host.docker.internal`.
+
 Required repository secrets:
 
 - `NEXUS_URL` - use `http://host.docker.internal:8088` for local Docker Desktop runner jobs.
@@ -1513,7 +1636,9 @@ Required repository secrets:
 - `AZURE_PROD_WEBAPP_NAME`
 - `AZURE_PROD_WEBAPP_URL`
 
-PROD promotion is workflow-dispatch only and must pass an existing `artifact_commit_sha`, `release_version`, and `source_rc_version`. The PROD job downloads the existing Nexus artifact and does not rebuild.
+Push-triggered deployments are ticket-gated by `.codex/delivery-policy.json`. Only commits or merged PR titles that start with the configured ticket key pattern may deploy. `[SDD]`, OpenSpec, chore, and ops-only maintenance changes do not deploy automatically.
+
+DEV and QA deploy only from `dev` when application/test/package source changed. PROD deploys only from `main` when the same ticket-gated application change is merged there. Manual workflow dispatch remains available for explicit DEV/QA/PROD promotion; PROD dispatch must pass an existing `artifact_commit_sha`, `release_version`, and `source_rc_version`. The PROD job downloads the existing Nexus artifact and does not rebuild.
 
 Recommended branch protection:
 
@@ -1521,6 +1646,7 @@ Recommended branch protection:
 - Require pull requests into `dev`.
 - Update `main` only after QA passes, preferably by fast-forwarding the tested commit.
 - Require the PR validation workflow to pass.
+- Require the exact emitted status check context: `PR validation / validate (pull_request)`.
 - Require coverage to meet the configured threshold.
 - Require review approval or the configured review label.
 - Block merge while `needs-changes` is present.
@@ -1531,7 +1657,7 @@ Release flow:
 feature branch -> dev -> DEV -> QA -> main -> PROD
 ```
 
-The package workflow builds and publishes from `dev`. DEV and QA must deploy the same Nexus ZIP artifact for the same commit SHA. PROD must deploy the QA-approved Nexus artifact by commit SHA and must pass both the page smoke check and `/health` check.
+The package workflow builds and publishes from ticket-gated application changes on `dev`. DEV and QA must deploy the same Nexus ZIP artifact for the same commit SHA. PROD must deploy the QA-approved Nexus artifact from `main` or explicit dispatch by commit SHA and must pass both the page smoke check and `/health` check.
 '@
 
   return $result

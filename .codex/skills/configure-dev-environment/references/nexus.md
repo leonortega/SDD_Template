@@ -125,7 +125,7 @@ Validate from Gitea Actions later by running the package workflow. The workflow 
 $NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip
 ```
 
-For PROD promotion, the workflow must download from the QA-approved artifact commit supplied at dispatch time:
+For PROD promotion, the workflow must download from the QA-approved artifact commit. A ticket-gated push to `main` resolves this from `GITHUB_SHA`; explicit workflow dispatch uses the supplied `artifact_commit_sha`:
 
 ```text
 $NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${artifact_commit_sha}/app.zip
@@ -150,9 +150,9 @@ Use `release.json` for automation and idempotency. It should carry commit SHA, c
 - Promote the same artifact to QA after DEV page and `/health` checks pass.
 - Move the Plane ticket to QA only after QA checks pass.
 - Create or verify an annotated RC tag such as `v1.2.0-rc.1` on the QA-approved artifact commit after E2E QA passes.
-- Merge or fast-forward the tested commit to `main` only after QA passes.
+- Merge or fast-forward the tested commit to `main` only after QA passes. Push-triggered PROD deployment is allowed only when the commit or merged PR title starts with the configured ticket key pattern in `.codex/delivery-policy.json` and application/test/package source changed.
 - Create the final annotated release tag such as `v1.2.0` on the same commit.
-- Deploy PROD from the QA-passed artifact commit by workflow dispatch inputs `artifact_commit_sha`, `release_version`, and `source_rc_version`.
+- Deploy PROD from the QA-passed artifact commit by ticket-gated `main` push or explicit workflow dispatch inputs `artifact_commit_sha`, `release_version`, and `source_rc_version`.
 - Validate PROD page and `/health`; use Prometheus/Grafana as observability verification when available.
 - Record version lineage in Plane comments at each phase: QA deployment as unversioned candidate or known RC, E2E QA as `artifact commit -> source RC`, and PROD as `artifact commit -> source RC -> final release`.
 - For rollback, redeploy a previous known-good `app/{commitSha}/app.zip`, verify checksum and `/health`, update `release.json`, and comment Plane with rollback lineage.
@@ -164,4 +164,4 @@ Default release path:
 feature branch -> dev -> DEV -> QA -> main -> PROD
 ```
 
-If updating `main` creates a new merge commit, record and promote the original QA-passed artifact commit SHA instead of rebuilding a new PROD artifact.
+If updating `main` creates a new merge commit, ensure that exact merge commit already has the QA-approved Nexus artifact before allowing push-triggered PROD deployment. Otherwise, use explicit dispatch with the original QA-passed artifact commit SHA. Maintenance-only `[SDD]`, OpenSpec, chore, and ops changes must not deploy automatically.
