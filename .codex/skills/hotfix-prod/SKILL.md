@@ -11,6 +11,8 @@ Use this skill when PROD needs a targeted code fix rather than a rollback. It is
 
 Prefer `rollback-prod` when restoring a known-good artifact is enough.
 
+Before starting, read `.codex/skills/_shared/delivery-contract.md` and preserve its artifact, QA, PROD, and rollback invariants.
+
 ## Configuration
 
 Read `.codex/client-tools.local.json` first. Required values are Plane, Git, Gitea, Nexus, and deployment settings used by the normal delivery skills.

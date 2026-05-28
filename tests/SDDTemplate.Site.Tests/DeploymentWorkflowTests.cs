@@ -8,8 +8,9 @@ namespace SDDTemplate.Site.Tests
             string workflow = ReadWorkflow();
 
             Assert.Contains("artifact_commit_sha", workflow);
-            Assert.Contains("app/$ARTIFACT_COMMIT_SHA/app.zip", workflow);
-            Assert.Contains("app/$ARTIFACT_COMMIT_SHA/app.zip.sha256", workflow);
+            Assert.Contains("PROD_ARTIFACT_COMMIT_SHA=$artifact_commit_sha", workflow);
+            Assert.Contains("app/$PROD_ARTIFACT_COMMIT_SHA/app.zip", workflow);
+            Assert.Contains("app/$PROD_ARTIFACT_COMMIT_SHA/app.zip.sha256", workflow);
         }
 
         [Fact]

@@ -9,6 +9,8 @@ description: Implement an already-started Plane ticket through OpenSpec tasks, c
 
 Use this skill after `plane-start-ticket` has created or reused the implementation branch, moved the Plane ticket to progress, and created the OpenSpec change. This skill owns implementation through PR handoff. It does not select Todo tickets, create initial branches, or archive OpenSpec changes.
 
+Read `.codex/skills/_shared/delivery-contract.md` before handoff or review work so PR labels, severity, markers, and rerun checkpoints match the rest of the delivery workflow.
+
 ## Configuration
 
 Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.example.json` only for defaults and setup guidance.
