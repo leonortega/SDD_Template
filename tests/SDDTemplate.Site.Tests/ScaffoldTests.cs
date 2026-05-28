@@ -40,6 +40,23 @@ namespace SDDTemplate.Site.Tests
             Assert.False(ScaffoldInfo.IsTemplateSampleContent(markup));
         }
 
+        [Fact]
+        public void BlankSiteDefinesWhitePageBackground()
+        {
+            string appCss = Path.Combine(
+                FindRepositoryRoot().FullName,
+                "src",
+                "SDDTemplate.Site",
+                "wwwroot",
+                "app.css");
+
+            string styles = File.ReadAllText(appCss);
+
+            Assert.Contains("html,", styles);
+            Assert.Contains("body", styles);
+            Assert.Contains("background: #fff;", styles);
+        }
+
         public static TheoryData<string> RequiredFiles()
         {
             return [.. ScaffoldInfo.RequiredFiles];

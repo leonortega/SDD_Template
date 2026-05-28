@@ -62,10 +62,10 @@ Stop if any QA gate, tag gate, artifact gate, or checksum gate fails.
 2. Verify `main` can fast-forward to the QA-approved commit.
 3. If `main` has diverged, stop and report the divergence. Do not create a merge commit unless the user explicitly changes the release policy.
 4. Fast-forward `main` to the QA-approved commit.
-5. Create an annotated final release tag on the QA-approved commit.
+5. Create the annotated final release tag only after fast-forward feasibility is confirmed and immediately before pushing.
 6. Tag message must include ticket key, PR URL, source RC version, final version, QA evidence URL, Nexus artifact URL, checksum, and commit SHA.
-7. Push `main` and the release tag only after every preflight check passes.
-8. If branch protection blocks the `main` push, open a PR to `main` with the QA-approved commit and final version details, then stop before PROD deployment until that PR is merged. Do not deploy PROD from a commit that is not reachable from `main`.
+7. Push `main` and the release tag only after every preflight check passes. If the push fails after creating the local tag and the tag was not created on the remote, delete the local tag before stopping so no orphaned local release tag remains.
+8. If branch protection blocks the `main` push, delete any local-only final release tag, open a PR to `main` with the QA-approved commit and final version details, label/comment it as release-blocking, and stop before PROD deployment until that PR is merged. The user must rerun `deploy-to-prod` after the promotion PR merges. Do not deploy PROD from a commit that is not reachable from `main`.
 
 ## PROD Deployment
 
@@ -83,9 +83,16 @@ The PROD workflow must download `app/{artifact_commit_sha}/app.zip` from Nexus, 
 - PROD page smoke check: HTTP 200, expected title/content, no Azure placeholder page.
 - PROD health check: `GET {prodWebUrl}/health` returns HTTP 200 and JSON `status=ok`.
 
-After dispatch, inspect the workflow run jobs. A successful run is valid only when a `deploy-prod` job exists, completes successfully, and the package/DEV/QA jobs are skipped for `environment=prod`. If the run succeeds without `deploy-prod`, treat it as blocking workflow drift rather than a deployment success.
+After dispatch, inspect the workflow run jobs and logs against the artifact-reuse contract. A successful PROD run must show that the workflow:
 
-If the workflow rebuilds, republishes, downloads from `GITHUB_SHA` instead of `artifact_commit_sha`, lacks the `deploy-prod` job, or skips `/health`, treat it as blocking workflow drift.
+- used `environment=prod`,
+- consumed `artifact_commit_sha={qaApprovedCommit}`,
+- downloaded `app/{artifact_commit_sha}/app.zip` from Nexus,
+- verified `app.zip.sha256`,
+- skipped rebuild/republish behavior,
+- ran direct PROD page and `/health` checks.
+
+Prefer named job checks such as `deploy-prod` when present, but do not rely only on job names. If the workflow rebuilds, republishes, downloads from `GITHUB_SHA` instead of `artifact_commit_sha`, lacks a PROD deployment path, or skips `/health`, treat it as blocking workflow drift.
 
 ## PROD Verification
 
@@ -142,7 +149,9 @@ Only write a success result after the workflow passed and direct PROD page plus 
 - Missing Nexus artifact/checksum/commit metadata: stop.
 - Checksum or commit metadata mismatch: stop.
 - Diverged `main`: stop.
-- Missing PROD workflow job or skipped `deploy-prod`: route to `$configure-artifact-delivery` or `$configure-dev-environment`, fix the workflow through PR, then rerun PROD dispatch only after the fix reaches `main`.
+- Local-only release tag after failed push: delete the local tag before stopping unless the tag already exists on the remote.
+- Branch protection blocks `main`: open a release-blocking promotion PR and require rerunning this skill after merge.
+- PROD workflow violates the artifact-reuse contract: route to `$configure-artifact-delivery` or `$configure-dev-environment`, fix the workflow through PR, then rerun PROD dispatch only after the fix reaches `main`.
 - Missing `AZURE_PROD_RESOURCE_GROUP`, `AZURE_PROD_WEBAPP_NAME`, or `AZURE_PROD_WEBAPP_URL` Gitea Actions secrets: route to `$configure-azure-environments` or `$configure-dev-environment`, configure the secrets from Azure deployment outputs without exposing secret values, then rerun PROD dispatch.
 - PROD workflow failure: comment failure and stop.
 - PROD page or `/health` failure: comment failure and stop.

@@ -27,6 +27,7 @@ Ask only when missing or placeholder:
 - `plane.inProgressState`: default `In Progress`.
 - `plane.reviewState`: default `In Review`.
 - `plane.qaState`: default `QA`; used after the `deploy-to-qa` workflow validates QA.
+- `plane.doneState`: default `Done`; used after `test-e2e` validates ticket-specific QA evidence.
 
 ## Docker Env Values
 

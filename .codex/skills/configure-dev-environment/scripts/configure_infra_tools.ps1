@@ -722,6 +722,7 @@ function Ensure-InferredClientToolsConfig {
   Set-InferredClientValue $Result $client @("plane", "inProgressState") "In Progress"
   Set-InferredClientValue $Result $client @("plane", "reviewState") "In Review"
   Set-InferredClientValue $Result $client @("plane", "qaState") "QA"
+  Set-InferredClientValue $Result $client @("plane", "doneState") "Done"
 
   Set-InferredClientValue $Result $client @("git", "baseBranch") "dev"
   Set-InferredClientValue $Result $client @("git", "branchPrefix") "codex"
@@ -758,7 +759,7 @@ function Invoke-Audit {
     Add-Item $result "findings" $clientLocal "" "Local client tool config is missing." "error"
   } else {
     $client = Get-Content -Path $clientPath -Raw | ConvertFrom-Json
-    foreach ($requiredPlaneValue in @("baseUrl", "todoState", "inProgressState", "reviewState", "qaState")) {
+    foreach ($requiredPlaneValue in @("baseUrl", "todoState", "inProgressState", "reviewState", "qaState", "doneState")) {
       if (Test-ClientValueMissing $client.plane $requiredPlaneValue) {
         Add-Item $result "findings" $clientLocal "plane.$requiredPlaneValue" "Missing inferred Plane local value; rerun Audit to apply defaults or set manually." "warning"
       }
