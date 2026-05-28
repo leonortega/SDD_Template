@@ -7,13 +7,15 @@ description: Promote a merged pull request artifact through Nexus, Azure DEV, an
 
 ## Overview
 
-Use this skill after a feature PR has merged to `dev` and the package/deploy workflow has produced a Nexus artifact. The release rule is:
+Use this skill after a feature PR has merged to `dev` and the package/deploy workflow has produced a Nexus artifact. For automatic post-merge coordination and artifact waiting, use `post-merge-deploy` first. The release rule is:
 
 ```text
 feature branch -> dev -> DEV -> QA -> main -> PROD
 ```
 
 `main` is updated only after QA passes. PROD promotion is separate and must reuse the QA-passed artifact commit.
+
+Before promotion, read `.codex/skills/_shared/delivery-contract.md`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode ArtifactPaths` for Nexus paths and validate `release.json` against `.codex/skills/_shared/release.schema.json` after writing it.
 
 ## Configuration
 
@@ -34,24 +36,25 @@ Never print, commit, paste into tickets, or write real API tokens, Nexus credent
 
 1. Verify the PR is merged and its target branch is `dev`. If the PR merged elsewhere, stop and report the branch mismatch.
 2. Resolve the merged commit SHA from Gitea PR metadata. Use the merge commit SHA as the artifact identity.
-3. Resolve the Plane ticket key from the branch name, PR title, PR body, commit messages, or existing Plane comments.
-4. Verify the package/deploy workflow completed for the merged commit. If it did not run, report that config-infra should be used to repair `.gitea/workflows/package-deploy.yml`.
-5. Build the Nexus artifact paths:
+3. Verify the PR does not currently carry `pr.labels.needsChanges` or `pr.labels.needsTests`. If either label remains, stop before promotion.
+4. Resolve the Plane ticket key from the branch name, PR title, PR body, commit messages, or existing Plane comments.
+5. Verify the package/deploy workflow completed for the merged commit. If it did not run, report that config-infra should be used to repair `.gitea/workflows/package-deploy.yml`.
+6. Build the Nexus artifact paths:
    - `app/{commitSha}/app.zip`
    - `app/{commitSha}/app.zip.sha256`
    - `app/{commitSha}/commit.sha`
    - `app/{commitSha}/release.json`
-6. Confirm the artifact, checksum, and commit metadata exist in Nexus using the configured Nexus credentials. Treat missing Nexus local config or any missing file as blocking.
-7. Compare `commit.sha` with the resolved commit SHA. Treat mismatch as blocking.
+7. Confirm the artifact, checksum, and commit metadata exist in Nexus using the configured Nexus credentials. Treat missing Nexus local config, Nexus outage, or any missing file as blocking.
+8. Compare `commit.sha` with the resolved commit SHA. Treat mismatch as blocking.
 
 ## DEV And QA Promotion
 
 1. Confirm DEV deployment succeeded for the same commit. If DEV failed, add a Plane failure comment and stop.
-2. Validate the DEV URL using the workflow smoke-check result or a fresh `curl --fail` when the URL is available.
-3. Validate DEV `/health` using workflow output or a fresh request. It must return HTTP 200 and JSON `status=ok`.
+2. Validate the DEV URL using the workflow smoke-check result or a fresh `curl --fail` when the URL is available. For fresh checks, retry with backoff for Azure cold starts: 5 attempts with waits of 5, 10, 20, 30, and 60 seconds.
+3. Validate DEV `/health` using workflow output or a fresh request. It must return HTTP 200 and JSON `status=ok`. For fresh checks, use the same retry/backoff policy.
 4. Confirm QA deployment downloaded the same Nexus artifact path used by DEV. Do not rebuild.
-5. Validate the QA URL using the workflow smoke-check result or a fresh `curl --fail` when the URL is available.
-6. Validate QA `/health` using workflow output or a fresh request. It must return HTTP 200 and JSON `status=ok`.
+5. Validate the QA URL using the workflow smoke-check result or a fresh `curl --fail` when the URL is available. For fresh checks, use the same retry/backoff policy.
+6. Validate QA `/health` using workflow output or a fresh request. It must return HTTP 200 and JSON `status=ok`. For fresh checks, use the same retry/backoff policy.
 7. If DEV or QA page or `/health` validation fails, add a Plane failure comment and do not move the ticket state.
 8. Create or update `app/{commitSha}/release.json` with commit SHA, checksum, artifact URL, PR URL, Plane ticket key, DEV/QA URLs, DEV/QA status, health status, workflow run URL, and `versionStatus=unversioned QA candidate` unless an RC tag already exists.
 9. Upload `release.json` to Nexus next to the artifact.
@@ -94,6 +97,8 @@ Include:
 - Stop on DEV failure.
 - Stop on QA failure.
 - Stop on DEV or QA `/health` failure.
+- Stop when merged PR still has `needs-changes` or `needs-tests`.
+- Stop when Nexus is unreachable; do not use a degraded artifact source.
 - Treat placeholder config as missing.
 - Preserve unrelated local working tree changes.
 - Route missing infra, secrets, workflow templates, Azure resources, or branch protection setup to `$configure-dev-environment`.

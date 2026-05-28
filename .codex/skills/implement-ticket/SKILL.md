@@ -9,6 +9,8 @@ description: Implement an already-started Plane ticket through OpenSpec tasks, c
 
 Use this skill after `plane-start-ticket` has created or reused the implementation branch, moved the Plane ticket to progress, and created the OpenSpec change. This skill owns implementation through PR handoff. It does not select Todo tickets, create initial branches, or archive OpenSpec changes.
 
+Read `.codex/skills/_shared/delivery-contract.md` before handoff or review work so PR labels, severity, markers, and rerun checkpoints match the rest of the delivery workflow.
+
 ## Configuration
 
 Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.example.json` only for defaults and setup guidance.
@@ -34,15 +36,24 @@ Never print, commit, paste into tickets, or write real tokens into tracked files
 1. Identify the Plane ticket, current branch, and OpenSpec change from user input, branch name, or existing OpenSpec changes.
 2. Stop if the branch or OpenSpec change is missing; tell the user to run the `plane-start-ticket` flow first.
 3. Check `git status --porcelain`. If unrelated changes exist, stop before implementation and list the changed files.
-4. Confirm the OpenSpec change is active:
+4. Detect resume checkpoints before doing new work:
+   - completed and pending OpenSpec tasks,
+   - existing implementation commits on the branch,
+   - upstream branch and push status,
+   - existing open PR for the branch,
+   - latest review-agent marker for the current head SHA,
+   - current `needs-tests` and `needs-changes` labels,
+   - latest Gitea Actions status.
+   Continue from the latest completed checkpoint instead of restarting earlier steps.
+5. Confirm the OpenSpec change is active:
    ```powershell
    openspec status --change "<change>" --json
    ```
-5. Load apply instructions:
+6. Load apply instructions:
    ```powershell
    openspec instructions apply --change "<change>" --json
    ```
-6. Read every context file returned by the apply instructions.
+7. Read every context file returned by the apply instructions.
 
 ### 2. Discover Quality Gates
 
@@ -55,6 +66,15 @@ Inspect configured quality surfaces. Do not invent validation commands.
 - `lefthook.yml`
 
 Treat Gitea Actions PR validation as the authoritative quality gate. Treat local hooks as automatic protections that run through normal Git operations.
+
+For coverage, discover a local fallback command before relying on CI-only feedback:
+
+1. Prefer the command used by `.gitea/workflows/pr-validation.yml`.
+2. Then prefer commands documented in `.gitea/workflows/README.md`, `lefthook.yml`, project README files, or package/build manifests.
+3. If exactly one stack-native coverage command is obvious, use it as a local fallback. For .NET, this may be `dotnet test --collect:"XPlat Code Coverage"` only when the repo is clearly a .NET test solution and no repo-specific command overrides it.
+4. If no unambiguous local coverage command exists, report that CI remains the only coverage source.
+
+The local fallback is advisory for faster iteration. Gitea Actions remains authoritative before PR handoff.
 
 When Gitea Actions runner, workflow container, or security tool compatibility is part of the configured gate, use the existing infra validation path instead of inventing ad hoc checks:
 
@@ -103,7 +123,8 @@ When local hooks, configured quality tools, OpenSpec verification, PR review, or
 3. Treat runner, workflow-container, Docker image pull, missing `node`, local Gitea hostname, scanner installation, missing shell tool, or stale tool-install URL failures as infra/tooling failures. Route through `configure-dev-environment`, `configure-gitea-actions-runner`, or `configure-quality-gates`; run `AuditQualityGates` and `ValidateGiteaActionsRunner` when applicable.
 4. If an infra/tooling failure blocks the authoritative PR gate, fix repo-owned workflow/config issues in the branch or route external setup issues to the infra skill, then keep the ticket open until Gitea PR validation passes. Record the fix separately from feature implementation work.
 5. Full local `gitleaks detect --source . --redact --no-git` findings in ignored local secret files are local setup notes, not implementation defects. Staged `gitleaks protect --staged --redact` and CI secret scans remain authoritative for tracked changes.
-6. Maintain a running list grouped as feature fixes, quality/test fixes, infra validation fixes, and remaining non-blocking infra notes.
+6. Treat flaky or intermittent failures separately when the same command or CI job passes and fails without code changes. Rerun once. If the rerun passes, record a flaky-test note and continue only when the authoritative gate is passing. If it fails again, classify as implementation or infra based on the failure evidence.
+7. Maintain a running list grouped as feature fixes, quality/test fixes, flaky/intermittent notes, infra validation fixes, and remaining non-blocking infra notes.
 
 ### 6. Verify OpenSpec
 
@@ -136,7 +157,9 @@ The PR body must include:
 
 ### 9. Review And Fix Loop
 
-Invoke `gitea-pr-review-agent`. Fix actionable findings, update OpenSpec tasks/artifacts for each review-driven fix, push updates, and repeat until there are no blocking review findings or quality failures. Apply configured PR labels based on the final review outcome.
+Invoke `gitea-pr-review-agent`. Fix actionable `BLOCKER` findings, update OpenSpec tasks/artifacts for each review-driven fix, push updates, and repeat until there are no blocking review findings or quality failures. Apply configured PR labels based on the final review outcome.
+
+Cap the review/fix loop at 3 review cycles for the current ticket unless the user explicitly asks to continue. If blocking feedback remains after 3 current-head cycles, stop and summarize the unresolved finding, why it remains unresolved, and whether it appears stale, conflicting, or still valid.
 
 The review agent uses `<!-- codex-review-agent:{headSha} -->` markers. After every pushed head SHA, ensure the review-agent outcome applies to the current head. Do not duplicate review comments for the same head SHA unless the user explicitly asks for a fresh review.
 
@@ -175,9 +198,12 @@ Do not move the ticket to Done.
 - Missing or placeholder API token: stop before Plane or Gitea mutations.
 - Invalid coverage config: use `80`, report the issue, and do not lower the gate.
 - Failing coverage: add/update OpenSpec task and tests before completion.
+- Missing local coverage command: report the gap; do not invent a command when CI is the only configured coverage source.
+- Flaky test or CI failure: rerun once before classifying; do not edit product code solely for an unconfirmed intermittent failure.
 - Gitea Actions infra/tooling failure: route through `configure-dev-environment`, `configure-gitea-actions-runner`, or `configure-quality-gates`; run `ValidateGiteaActionsRunner` when runner/container compatibility is implicated; do not classify it as a product implementation defect.
 - Ignored local secret findings from full local scans: report as local setup notes unless the same secret is staged, tracked, or reported by CI.
 - Existing PR: reuse it instead of creating a duplicate.
 - Existing review-agent comment for same head SHA: reuse it instead of posting a duplicate; post a new review marker only after the head SHA changes.
 - Stale PR labels: remove `needs-tests` after required tests are added and passing; remove `needs-changes` after requested fixes are in place and the current-head review has no blocking findings.
+- Review loop exceeds 3 cycles with remaining blockers: stop and escalate with a concise conflict/stale-feedback summary.
 - Missing Plane review state: stop after PR/review work and report the missing state.
