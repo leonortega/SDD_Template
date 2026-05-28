@@ -11,6 +11,8 @@ Use this skill to review one explicit Gitea pull request. It is invoked by `open
 
 For exact Gitea API endpoint guidance, read `references/gitea-review-api.md` before making API calls.
 
+Read `.codex/skills/_shared/delivery-contract.md` before posting review output so severity labels and PR label semantics remain consistent with implementation and deployment gates.
+
 ## Configuration
 
 Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.example.json` for defaults only, then apply environment variable overrides when present.
@@ -41,6 +43,7 @@ Fetch:
 - changed files or diff
 - existing PR comments
 - relevant local source files for changed code
+- changed line count for diff-size classification
 
 If a comment contains `<!-- codex-review-agent:{headSha} -->`, skip posting another review for the same head SHA unless the user explicitly asks for a fresh review.
 
@@ -56,6 +59,22 @@ Prioritize findings in this order:
 
 Use internet research when useful. Prefer official docs first; use trusted posts, issue discussions, or release notes only when official docs are insufficient. Cite sources in the PR comment when external research materially affects a finding.
 
+Use these severity labels for every finding:
+
+- `BLOCKER`: likely bug, security/data-loss risk, broken required behavior, missing required test, failing gate, or release-blocking compatibility issue.
+- `WARNING`: meaningful risk or maintainability issue that should be considered but does not block the current PR.
+- `SUGGESTION`: optional improvement that should not block implementation handoff.
+
+The implementation loop treats only `BLOCKER` findings as blocking.
+
+Use deterministic diff scope:
+
+- Under 500 changed lines: review the full diff.
+- 500 changed lines or more: perform a structured risk-based review and clearly state any areas not reviewed line-by-line.
+- Always fully inspect changes touching auth, authorization, persistence, migrations, deployment workflows, secrets, public APIs, tests, and health/deployment contracts.
+
+Restrict internet research to official documentation, primary source repositories, release notes, standards, or vendor docs unless those are insufficient for a concrete finding. Do not browse for general style opinions. Limit external research to findings where the source materially changes the conclusion.
+
 Do not leave vague style feedback. Every finding must include the affected file or behavior, why it matters, and the suggested correction.
 
 ### 3. Post The Review
@@ -66,6 +85,7 @@ Post one top-level Gitea PR comment. Include:
 - short review summary
 - findings ordered by severity
 - test gaps
+- diff scope reviewed and any large-diff sampling limits
 - sources consulted when applicable
 
 If no issues are found, say so clearly and mention any residual verification gaps.
@@ -95,4 +115,4 @@ Use a code-review stance. Lead with findings and severity. Keep summaries brief.
 - PR not found: stop and report the lookup attempted.
 - Duplicate review marker for the same head SHA: skip mutation unless explicitly asked to refresh.
 - Internet unavailable: continue with local review and note that external validation was skipped.
-- Large diffs: sample only when necessary, but clearly state what was not reviewed.
+- Large diffs: follow the threshold rules above and clearly state what was not reviewed line-by-line.

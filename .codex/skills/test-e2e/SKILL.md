@@ -11,6 +11,10 @@ Use this skill after deployment validation has already moved a Plane ticket to Q
 
 This skill is technology-agnostic. Inspect the repository first. Use an established E2E/API test tool when one is already configured; otherwise ask the user to choose before creating or running technology-dependent tests.
 
+Non-interactive context means the run has no available user-response channel, such as cron automation, CI, detached automation, or an explicit "do not ask" instruction.
+
+Read `.codex/skills/_shared/delivery-contract.md` before QA state changes. Use `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode CheckGitIgnored` before writing evidence, `-Mode NextRcVersion` when deriving RC tags, and `-Mode ValidateReleaseManifest` after updating `release.json`.
+
 ## Configuration
 
 Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.example.json` only for structure and default names, then apply environment variable overrides when present.
@@ -67,6 +71,7 @@ Apply this general QA quality bar before executing tests:
 - Translate acceptance criteria into explicit assertions, not just navigation steps or screenshots. A passing test must check status, content, state, side effects, errors, visual state, or data changes as applicable.
 - Cover the highest-risk boundary and negative cases implied by the change, even when the ticket only describes the happy path. Keep the scope ticket-specific.
 - Verify the delivered environment, artifact, commit, or deployment being tested so a pass cannot accidentally apply to the wrong build.
+- Include lightweight performance observations for ticket-relevant paths. Record response time, browser timing, or API latency when the tool exposes it. Treat obvious major regressions as QA failures when the ticket is performance-sensitive or the latency breaks user-observable acceptance criteria; otherwise record them as warnings.
 - Treat evidence as data to validate, not decoration. Screenshots, logs, traces, and reports must be checked for contradictions such as blank captures, wrong environment, console errors, failed network calls, stale data, or misleading render artifacts.
 - Record any assumptions used to fill gaps in weak requirements. If an assumption materially changes pass/fail meaning, classify the result as blocked or ask for clarification instead of passing by guesswork.
 - Prefer automated assertions for repeatable facts and use manual or visual evidence only where automation cannot express the expected behavior reliably.
@@ -175,8 +180,13 @@ Do not publish secrets, cookies, authorization headers, raw tokens, private cred
 Before moving a ticket to `plane.doneState`, establish a release-candidate marker for the exact tested artifact commit:
 
 1. Resolve the tested commit SHA from the QA deployment comment, PR metadata, Nexus artifact path, or user input.
-2. Resolve the source RC version from user input or an existing annotated tag on that commit. Use format `vMAJOR.MINOR.PATCH-rc.N`.
-3. If no RC version is supplied and no matching tag exists, stop after recording QA evidence and ask for the RC version; do not move the ticket to Done.
+2. Resolve the source RC version from user input, an existing annotated tag on that commit, or deterministic auto-increment. Use format `vMAJOR.MINOR.PATCH-rc.N`.
+3. If no RC version is supplied and no matching tag exists, derive the next RC:
+   - find the latest final SemVer tag `vMAJOR.MINOR.PATCH`,
+   - default to the next patch version for new QA candidates,
+   - if RC tags already exist for that version, use the next `rc.N`,
+   - if the ticket or release notes specify a target final version, use that version instead of next patch.
+   If version derivation is ambiguous, stop after recording QA evidence and ask for the RC version; do not move the ticket to Done.
 4. Verify the RC tag is annotated and points to the tested commit. If the tag is missing, create it on the tested commit only after every QA scenario passes and evidence is published.
 5. Push the RC tag only after the QA result comment is ready and the tag target has been verified.
 6. Include the source RC version in the E2E QA Plane comment.
@@ -188,6 +198,7 @@ The RC tag is the human release-candidate identifier for the QA-approved artifac
 
 Respect the repo's hooks when QA creates files:
 
+- Before writing evidence, verify `artifacts/qa/**` or a broader `artifacts/` rule is ignored by Git. If it is not ignored, stop and route to workflow maintenance before generating screenshots, traces, logs, reports, or ZIP evidence.
 - `gitleaks protect --staged --redact` scans staged files. Keep raw QA evidence ignored under `artifacts/qa/**` and do not stage it.
 - The commit message hook requires messages to start with a Plane ticket key, an OpenSpec id, or `[SDD]`.
 - Commit reusable ticket-specific tests with the ticket key when available, for example:
@@ -244,6 +255,23 @@ Move the ticket to `plane.doneState` only after:
 
 If any required QA scenario fails, add the result comment and leave the ticket in `plane.qaState`.
 
+### 9. OpenSpec Archival Handoff
+
+After every required QA scenario passes, evidence is published, the E2E QA comment is present, and the ticket has been moved to `plane.doneState`, check whether the completed ticket is linked to an active OpenSpec change.
+
+Resolve the OpenSpec change id from, in order:
+
+- explicit user input
+- Plane ticket description or generated planning blocks
+- Gitea PR title, body, labels, branch name, or comments
+- local `openspec/changes/*` entries that clearly reference the ticket key
+
+If exactly one active OpenSpec change is linked to the completed ticket, invoke `$openspec-archive-change` for that change. Do not reimplement archive movement or spec sync inside this skill.
+
+If multiple active OpenSpec changes match, or no clear linked change can be resolved, do not guess. Add the unresolved archival handoff to the completion summary and leave the OpenSpec change active until the user selects the change.
+
+If `$openspec-archive-change` reports incomplete artifacts, incomplete tasks, spec sync warnings, or needs user confirmation, stop the archival handoff and report the exact blocker. Do not undo the QA pass or move the Plane ticket back from Done.
+
 ## Failure Rules
 
 - Missing Plane API config: stop before Plane reads or mutations.
@@ -251,8 +279,10 @@ If any required QA scenario fails, add the result comment and leave the ticket i
 - Ticket not in `plane.qaState`: stop unless the user explicitly overrides.
 - Tool choice is ambiguous: ask the user before technology-dependent tests.
 - Non-interactive ambiguous tool choice: stop with `tool choice required`.
+- QA evidence path is not ignored by Git: stop before generating evidence.
+- RC version cannot be supplied or derived: comment available evidence, leave ticket in QA, and ask for the RC version.
 - QA test failure: comment evidence and do not move the ticket to Done.
-- Product defect after QA: create or route to a follow-up bug/fix workflow; do not fix product code inside this skill unless the user changes the task.
+- Product defect after QA: invoke `file-qa-bug`; do not fix product code inside this skill unless the user changes the task.
 - Missing evidence upload support: include local evidence paths or links in the Plane comment.
 - Secrets in logs or screenshots: redact or discard the evidence before commenting.
 
