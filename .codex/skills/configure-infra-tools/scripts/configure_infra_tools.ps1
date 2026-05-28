@@ -1,5 +1,4 @@
 param(
-  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetPlaneEnv", "SetGiteaRunner", "SetPrometheusAzureTargets", "AuditQualityGates", "InitQualityGateTemplates", "SetQualityConfig")]
   [string]$Mode = "Audit",
 
   [string]$Root = (Resolve-Path ".").Path,

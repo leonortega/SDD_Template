@@ -69,7 +69,7 @@ Store the complete JSON file contents as the Gitea Actions secret `AZURE_CREDENT
 
 ## Gitea Actions App Service Secrets
 
-The package/deploy workflow deploys DEV and QA from the same Nexus ZIP artifact. PROD promotion downloads the QA-approved artifact by commit SHA and does not rebuild. Store these values as Gitea Actions secrets:
+The package/deploy workflow deploys DEV and QA from the same Nexus ZIP artifact on ticket-gated `dev` pushes. PROD promotion downloads the QA-approved artifact by commit SHA and does not rebuild. A ticket-gated `main` push is valid only when `main` points to the exact QA-approved packaged commit; otherwise use explicit PROD dispatch with `artifact_commit_sha`. Store these values as Gitea Actions secrets:
 
 - `AZURE_DEV_RESOURCE_GROUP`
 - `AZURE_DEV_WEBAPP_NAME`

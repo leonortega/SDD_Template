@@ -4,6 +4,18 @@ Use this reference before running non-config delivery skills. Skill-local instru
 
 For repeated Plane, Gitea, Nexus, and Git endpoint patterns, read `.codex/skills/_shared/api-helpers.md`.
 
+## Skill Synchronization Rule
+
+When changing any non-OpenSpec delivery skill or any `configure-*` skill, check for policy drift across related skills before finishing.
+
+Source-of-truth order:
+
+1. `_shared/delivery-contract.md`
+2. Non-OpenSpec delivery-flow skills: `automatic-implement-ticket`, `plane-start-ticket`, `implement-ticket`, `gitea-pr-review-agent`, `post-merge-deploy`, `deploy-to-qa`, `test-e2e`, `deploy-to-prod`, `rollback-prod`, `file-qa-bug`, `pipeline-status`, and `hotfix-prod`
+3. Configure skills and generated templates: `configure-dev-environment`, `configure-artifact-delivery`, `configure-quality-gates`, and related `configure-*` skills
+
+If configure skills differ from delivery-flow skills, update configure docs, templates, audits, and tests to match the delivery-flow rule. Do not update OpenSpec-specific skills unless the requested change explicitly affects OpenSpec behavior.
+
 ## States And Flow
 
 Default Plane states:
