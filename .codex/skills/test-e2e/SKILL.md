@@ -13,7 +13,7 @@ This skill is technology-agnostic. Inspect the repository first. Use an establis
 
 Non-interactive context means the run has no available user-response channel, such as cron automation, CI, detached automation, or an explicit "do not ask" instruction.
 
-Read `.codex/skills/_shared/delivery-contract.md` before QA state changes. Use `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode CheckGitIgnored` before writing evidence, `-Mode NextRcVersion` when deriving RC tags, and `-Mode ValidateReleaseManifest` after updating `release.json`.
+Read `.codex/skills/_shared/delivery-contract.md` before QA state changes. Use `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode CheckGitIgnored` before writing evidence, `-Mode NextRcVersion` when deriving RC tags, and `-Mode ValidateReleaseManifest` after updating `release.json`. Enforce the ticket context lock before testing, tagging, publishing evidence, or moving state.
 
 ## Configuration
 
@@ -44,10 +44,11 @@ Never print, commit, paste into tickets, or write real API tokens, cookies, sess
 ### 1. Resolve Context
 
 1. Resolve the Plane ticket from user input, current branch, Gitea PR metadata, deployment comments, commit messages, or a ticket key.
-2. Fetch the Plane ticket with expanded state/project data.
-3. Verify the ticket is in `plane.qaState`. If it is not, stop unless the user explicitly asks to test despite the state mismatch.
-4. Resolve the project UUID and the configured `plane.doneState` by exact state name before any mutation. If `plane.doneState` is missing or unresolved, stop and ask for configuration.
-5. Read ticket description, acceptance criteria, explicit test expectations, generated planning blocks, PR comments, deployment comments, and linked implementation context.
+2. Read `.codex/delivery-context.local.json` when present and verify the resolved Plane ticket, QA deployment commit, artifact commit, and evidence path match the locked `ticketKey`. If any value belongs to another ticket, stop before testing or writing evidence.
+3. Fetch the Plane ticket with expanded state/project data.
+4. Verify the ticket is in `plane.qaState`. If it is not, stop unless the user explicitly asks to test despite the state mismatch.
+5. Resolve the project UUID and the configured `plane.doneState` by exact state name before any mutation. If `plane.doneState` is missing or unresolved, stop and ask for configuration.
+6. Read ticket description, acceptance criteria, explicit test expectations, generated planning blocks, PR comments, deployment comments, and linked implementation context.
 
 Use Plane API only. Do not use Plane MCP, Docker containers, or direct database access for Plane.
 
@@ -180,17 +181,18 @@ Do not publish secrets, cookies, authorization headers, raw tokens, private cred
 Before moving a ticket to `plane.doneState`, establish a release-candidate marker for the exact tested artifact commit:
 
 1. Resolve the tested commit SHA from the QA deployment comment, PR metadata, Nexus artifact path, or user input.
-2. Resolve the source RC version from user input, an existing annotated tag on that commit, or deterministic auto-increment. Use format `vMAJOR.MINOR.PATCH-rc.N`.
-3. If no RC version is supplied and no matching tag exists, derive the next RC:
+2. Verify the tested commit's `release.json.planeTicketKey` matches the locked/resolved ticket key before deriving or pushing an RC tag.
+3. Resolve the source RC version from user input, an existing annotated tag on that commit, or deterministic auto-increment. Use format `vMAJOR.MINOR.PATCH-rc.N`.
+4. If no RC version is supplied and no matching tag exists, derive the next RC:
    - find the latest final SemVer tag `vMAJOR.MINOR.PATCH`,
    - default to the next patch version for new QA candidates,
    - if RC tags already exist for that version, use the next `rc.N`,
    - if the ticket or release notes specify a target final version, use that version instead of next patch.
    If version derivation is ambiguous, stop after recording QA evidence and ask for the RC version; do not move the ticket to Done.
-4. Verify the RC tag is annotated and points to the tested commit. If the tag is missing, create it on the tested commit only after every QA scenario passes and evidence is published.
-5. Push the RC tag only after the QA result comment is ready and the tag target has been verified.
-6. Include the source RC version in the E2E QA Plane comment.
-7. Update the Nexus release manifest so `release.json` records `artifact commit -> source RC version -> pending final PROD version`.
+5. Verify the RC tag is annotated and points to the tested commit. If the tag is missing, create it on the tested commit only after every QA scenario passes and evidence is published.
+6. Push the RC tag only after the QA result comment is ready and the tag target has been verified.
+7. Include the source RC version in the E2E QA Plane comment.
+8. Update the Nexus release manifest so `release.json` records `artifact commit -> source RC version -> pending final PROD version`.
 
 The RC tag is the human release-candidate identifier for the QA-approved artifact. It must not replace the immutable Nexus identity `app/{commitSha}/app.zip`.
 
@@ -277,6 +279,7 @@ If `$openspec-archive-change` reports incomplete artifacts, incomplete tasks, sp
 - Missing Plane API config: stop before Plane reads or mutations.
 - Missing or placeholder `plane.doneState`: stop and ask for configuration.
 - Ticket not in `plane.qaState`: stop unless the user explicitly overrides.
+- Ticket context lock mismatch: stop before testing, evidence publication, RC tagging, or state movement.
 - Tool choice is ambiguous: ask the user before technology-dependent tests.
 - Non-interactive ambiguous tool choice: stop with `tool choice required`.
 - QA evidence path is not ignored by Git: stop before generating evidence.

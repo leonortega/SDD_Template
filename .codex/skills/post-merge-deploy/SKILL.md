@@ -11,7 +11,7 @@ Use this skill after a PR has merged to `dev` but before QA promotion. It is an 
 
 Do not perform DEV/QA validation inside this skill. `deploy-to-qa` owns artifact promotion and environment checks.
 
-Before running, read `.codex/skills/_shared/delivery-contract.md`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode ArtifactPaths` when building Nexus artifact paths.
+Before running, read `.codex/skills/_shared/delivery-contract.md`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode ArtifactPaths` when building Nexus artifact paths. Enforce the ticket context lock before delegating to `deploy-to-qa`.
 
 ## Configuration
 
@@ -26,14 +26,16 @@ Never print or write real tokens, passwords, cookies, Azure credentials, or Nexu
 3. Verify the PR does not currently have configured `pr.labels.needsChanges` or `pr.labels.needsTests`.
 4. Resolve the merge commit SHA from Gitea metadata.
 5. Resolve the Plane ticket key from the PR title/body, branch name, commit messages, or Plane comments.
-6. Poll for the Nexus artifact files for the merge commit:
+6. Read `.codex/delivery-context.local.json` when present and verify the resolved ticket key, PR number, branch, and merge commit when known match the lock. If any resolved value belongs to another ticket, stop before waiting for artifacts.
+7. Poll for the Nexus artifact files for the merge commit:
    - `app/{commitSha}/app.zip`
    - `app/{commitSha}/app.zip.sha256`
    - `app/{commitSha}/commit.sha`
    - `app/{commitSha}/release.json` when present
-7. Use bounded waiting: check immediately, then retry with backoff for up to 10 minutes unless the user asked for a shorter wait.
-8. Verify `commit.sha` matches the merge commit before delegating.
-9. Invoke `deploy-to-qa` with the resolved PR, ticket key, and merge commit.
+8. Use bounded waiting: check immediately, then retry with backoff for up to 10 minutes unless the user asked for a shorter wait.
+9. Verify `commit.sha` matches the merge commit before delegating.
+10. If `release.json` exists, verify `planeTicketKey` matches the locked/resolved ticket key.
+11. Invoke `deploy-to-qa` with the resolved PR, ticket key, and merge commit.
 
 ## Idempotency
 

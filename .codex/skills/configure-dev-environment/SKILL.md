@@ -7,6 +7,8 @@ description: Router for configuring this repo's local development and delivery e
 
 Use this skill as the entrypoint for the repo-local delivery lab. Keep this file lean: run the shared audit, group findings by domain, then route to the focused skill or reference.
 
+Before changing configure behavior or finishing any non-OpenSpec delivery skill change, read `.codex/skills/_shared/delivery-contract.md` and apply its Skill Synchronization Rule. Keep configure docs, templates, audits, and tests synchronized with the non-OpenSpec delivery-flow skills; when behavior differs, delivery-flow skills are authoritative. If a delivery skill change affects repo setup, generated files, workflow YAML, secrets, ignored local files, labels, ticket gates, artifact paths, release manifests, QA/PROD promotion, rollback, or audit/repair behavior, update the matching configure skill and tests in the same change. If no configure update is needed, say that explicitly in the final response.
+
 Act as a step-by-step configurator. When a required executable, SDK, CLI, scanner, local service, library, package, or runtime is missing or incompatible, stop that domain step long enough to tell the user exactly how to install it, link the official source, and list the post-install validation/configuration commands before continuing.
 
 When setup needs values the user must supply manually, do not only ask for the values. Explain where each value comes from, why it is needed, where to configure it, the exact UI or CLI path when possible, official documentation links, and validation commands that prove the value is configured correctly.
