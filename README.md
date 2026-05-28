@@ -1,181 +1,259 @@
 # Agentic E2E Development Lab
 
-This project defines a local end-to-end software delivery lab for testing AI agents across a realistic development workflow.
+This repository is a template for a local, agent-driven software delivery lab. Its goal is to let Codex-style agents take a Plane ticket from idea to production using the same checks, handoffs, artifacts, and promotion rules a real engineering team would use.
 
-The core idea is simple:
+The lab keeps delivery tooling local and deployment targets remote:
 
-- Local Docker Compose runs the software delivery platform.
-- Azure runs only the application environments.
-- The same build artifact is promoted across DEV, QA, and PROD.
+- Local Docker Compose runs Plane, Gitea, the Gitea Actions runner, Nexus, Dozzle, Prometheus, and Grafana.
+- Azure hosts only the DEV, QA, and PROD application runtimes.
+- Nexus stores the immutable build artifact promoted across DEV, QA, PROD, and rollback.
+- Plane is the source of ticket state, generated workflow markers, and delivery comments.
+- OpenSpec records the planned behavior before implementation.
 
-## Architecture
+## Current Workflow
+
+The current delivery flow is:
 
 ```text
-Local machine
-├─ Plane
-│  └─ ticket management
-├─ Gitea
-│  └─ source code repository
-├─ Gitea Actions runner
-│  └─ CI/CD execution
-├─ Sonatype Nexus Repository Community Edition
-│  └─ artifact and package repository
-├─ Dozzle
-│  └─ local container logs
-├─ Prometheus
-│  └─ scrape app metrics
-└─ Grafana
-   └─ dashboards for local + Azure metrics
-
-Azure
-├─ DEV
-│  └─ app runtime + config + optional DB
-├─ QA
-│  └─ app runtime + config + optional DB
-└─ PROD
-   └─ app runtime + config + optional DB
+Plane Todo
+  -> branch + OpenSpec proposal
+  -> implementation + tests
+  -> Gitea PR
+  -> PR validation + Codex review agent
+  -> merge to dev
+  -> Nexus package + Azure DEV + Azure QA
+  -> E2E QA evidence
+  -> Plane Done
+  -> explicit PROD promotion to main/PROD
+  -> rollback or hotfix when needed
 ```
+
+Normal ticket work is driven from Codex chat. The high-level entry point is:
+
+```text
+automatically continue this ticket
+```
+
+or any equivalent request to continue, resume, implement, deploy, QA, or hand off a ticket. That routes through `.codex/skills/automatic-implement-ticket`, which inspects Plane, Git, Gitea, Nexus, OpenSpec, QA evidence, tags, and PROD state, then delegates to the next focused workflow skill.
+
+The workflow is intentionally checkpoint-based. Reruns continue from existing Plane comments, branch names, PRs, Nexus artifacts, QA evidence, tags, and release manifests instead of restarting from the beginning.
 
 ## Repository Layout
 
 ```text
 SDDTemplate.slnx
 src/
-└─ SDDTemplate.Site/
+`-- SDDTemplate.Site/
+tests/
+`-- SDDTemplate.Site.Tests/
+openspec/
+`-- changes/
 infra/
-├─ compose.yml
-├─ plane/
-│  ├─ compose.yml
-│  └─ variables.env
-├─ gitea/
-│  ├─ compose.yml
-│  └─ runner.env
-├─ nexus/
-│  └─ compose.yml
-├─ monitoring/
-│  ├─ compose.yml
-│  ├─ prometheus.yml
-│  └─ grafana/
-└─ azure/
-   ├─ main.bicep
-   ├─ dev.parameters.json
-   ├─ qa.parameters.json
-   └─ prod.parameters.json
+|-- compose.yml
+|-- up.ps1
+|-- down.ps1
+|-- plane/
+|-- gitea/
+|-- nexus/
+|-- monitoring/
+`-- azure/
+.gitea/
+`-- workflows/
+.codex/
+|-- skills/
+|-- client-tools.example.json
+|-- quality.example.json
+`-- delivery-policy.json
+artifacts/
+`-- qa/
 ```
 
 Use `compose.yml` consistently for Docker Compose files.
 
-## Application Build
+## Local Development
 
-Build the Blazor site from the repository root:
+Build the solution from the repository root:
 
 ```powershell
 dotnet build .\SDDTemplate.slnx
 ```
 
-## Delivery Flow
+Run tests:
 
-```text
-1. Create ticket in Plane
-2. Agent reads ticket
-3. Agent creates branch in Gitea
-4. Agent changes code
-5. Agent opens PR in Gitea
-6. Gitea Actions runs build/tests
-7. CI publishes artifact/package to Nexus
-8. CI deploys to Azure DEV
-9. Agent validates DEV
-10. Same artifact is promoted to QA
-11. Agent validates QA
-12. Same artifact is promoted to PROD
-13. Agent checks metrics/logs
-14. Agent updates Plane ticket
+```powershell
+dotnet test .\SDDTemplate.slnx
 ```
 
-## Client Tool Configuration
+Run formatting verification:
 
-Configure this repo through Codex chat, not by manually editing every local file:
-
-```text
-config infra
+```powershell
+dotnet format --verify-no-changes
 ```
 
-That request uses `.codex/skills/configure-infra-tools`. The skill audits local config, initializes missing ignored files from tracked templates, asks for missing values one step at a time, explains how to obtain each value from the relevant UI/API/CLI, and applies only confirmed values.
-
-The skill configures the delivery lab in this order:
-
-```text
-Plane -> Gitea -> Gitea Actions runner -> Nexus -> Azure DEV -> Azure QA -> Azure PROD -> Prometheus -> Grafana
-```
-
-It handles:
-
-- client tool settings for Plane, Git, Gitea PRs, reviewers, and labels
-- Plane Docker environment values and generated local secrets
-- Gitea runner registration values
-- Nexus artifact/package publishing values
-- Azure DEV, QA, and PROD App Service environments
-- Prometheus local/Azure scrape targets
-- Grafana datasource and dashboard provisioning
-
-The skill separates values into pre-start and post-start phases. If a pre-start value is missing while infra is running, it asks before stopping the stack, applies the value, and then asks before starting the stack again.
-
-Credentials are never read from Docker containers, mounted volumes, databases, or logs. The skill asks for secrets in chat and explains the supported UI/API path to obtain or rotate them.
-
-The main local files managed by the skill are:
-
-```text
-.codex/client-tools.local.json
-infra/plane/variables.env
-infra/gitea/runner.env
-infra/monitoring/prometheus.local.yml
-```
-
-Tracked templates stay placeholder-safe. Real tokens, local secrets, and Azure hostnames belong only in ignored local files.
-
-After configuration, start the local platform with the helper script:
+Start the local delivery platform:
 
 ```powershell
 .\infra\up.ps1
 ```
 
-The same stack can also be started from Docker Compose directly:
+Stop it:
+
+```powershell
+.\infra\down.ps1
+```
+
+The same stack can be started directly with Docker Compose:
 
 ```powershell
 docker compose --env-file .\infra\plane\variables.env -f .\infra\compose.yml up -d
 ```
 
-Azure is configured by the same skill after the local delivery tools are ready. It creates one App Service environment per stage:
+## Configuration Workflow
+
+Configure the lab through Codex chat:
 
 ```text
-DEV  -> rg-agentic-dev
-QA   -> rg-agentic-qa
-PROD -> rg-agentic-prod
+config infra
 ```
 
-Each Azure environment contains only the application runtime, environment configuration, SQLite-backed API settings, and monitoring integration. Azure App Service uses runtime/package deployment by default; it does not pull container images from Nexus.
+That routes through `.codex/skills/configure-dev-environment`, which delegates to the specific setup skills for Plane, Gitea, the Gitea Actions runner, Nexus, Azure, quality gates, and observability.
 
-## Chat-Driven Ticket Workflow
+Configuration order:
 
-Plane ticket work starts from Codex chat, not from a user-run command. The repo-local skill at `.codex/skills/plane-start-ticket` guides Codex to list Todo tickets, create or reuse a Git branch, push that branch to Gitea, generate OpenSpec-style planning notes, update the Plane ticket description, comment with the branch name, move the ticket to `In Progress`, and create an OpenSpec proposal.
+```text
+Plane -> Gitea -> Gitea Actions runner -> quality gates -> Nexus -> Azure DEV -> Azure QA -> Azure PROD -> Prometheus -> Grafana
+```
 
-Implementation handoff also starts from chat. The repo-local skill at `.codex/skills/openspec-implement-change` runs `/opsx:apply`, implements the OpenSpec tasks, adds edge-case unit tests, verifies the app and tests, commits with a readable change list, pushes after hooks pass, opens a Gitea PR, invokes `.codex/skills/gitea-pr-review-agent`, moves the Plane ticket to the configured review state, and comments on Plane with the PR link.
+The main local files are:
 
-Example chat requests:
+```text
+.codex/client-tools.local.json
+.codex/quality.local.json
+infra/plane/variables.env
+infra/gitea/runner.env
+infra/monitoring/prometheus.local.yml
+```
+
+Tracked example files remain placeholder-safe. Real tokens, local secrets, generated Plane secrets, local Azure hostnames, and delivery locks belong only in ignored local files.
+
+Credentials must be supplied through supported UI/API/CLI paths. The workflow must not read secrets from Docker containers, mounted volumes, databases, logs, or committed files.
+
+## Ticket Lifecycle
+
+Plane states used by the delivery workflow:
+
+- `Todo`: work is not started.
+- `In Progress`: branch and implementation are active.
+- `In Review`: PR exists and awaits review or merge.
+- `QA`: the artifact is deployed to QA and awaits E2E validation.
+- `Done`: E2E QA passed and the artifact is eligible for explicit PROD promotion.
+
+Useful chat requests:
 
 ```text
 List Plane Todo tickets
 Start the next Plane Todo ticket
 Start E2EPROJECT-1
+Continue E2EPROJECT-1
+Where does E2EPROJECT-1 stand?
+Run QA for E2EPROJECT-1
+Promote E2EPROJECT-1 to PROD
 ```
 
-The workflow uses the Plane API. It must never use Plane MCP, Docker containers, or direct database access for Plane.
+The ticket key pattern is configured in `.codex/delivery-policy.json` and currently matches:
 
-After Codex comments on the Plane ticket with the branch, it moves the ticket to the configured `inProgressState`. It then creates an OpenSpec proposal with `/opsx:propose` using a change name derived from the branch; branch slashes are converted to dashes for the OpenSpec change id. Re-runs should not duplicate the generated branch comment or repeat the state move when the ticket is already in progress.
+```text
+E2EPROJECT-[0-9]+
+```
 
-After implementation is complete, Codex opens a Gitea PR and invokes the PR review agent immediately. The review agent reviews only that PR, posts one top-level Gitea comment, adds an idempotency marker for the PR head SHA, ensures configured labels exist, and applies the appropriate review labels. It does not run on a timer.
+Ticket delivery is locked to one active ticket with ignored `.codex/delivery-context.local.json`. Child skills verify that Plane comments, branch, PR, artifact commit, QA evidence, RC tag, and PROD release lineage match the locked ticket before mutating or promoting anything.
 
-After the PR review comment is posted, Codex moves the Plane ticket to configured `reviewState` and adds a Plane comment using the stable marker `IA generated PR: {prUrl}`. If the configured review state does not exist, Codex stops after PR creation and review instead of guessing another state.
+## Quality Gates
+
+Gitea PR validation is the source of truth. Local hooks are convenience checks only.
+
+PR validation runs:
+
+- `dotnet restore`
+- `dotnet format --verify-no-changes --no-restore`
+- `dotnet build -c Release --no-restore`
+- `dotnet test -c Release --no-build --collect:"XPlat Code Coverage"`
+- coverage enforcement, defaulting to `80%`
+- `dotnet list package --vulnerable --include-transitive`
+- Gitleaks secret scan
+- Trivy filesystem scan for high and critical findings
+
+The workflow file is `.gitea/workflows/pr-validation.yml`. See `.gitea/workflows/README.md` for required repository secrets and branch protection guidance.
+
+Recommended branch rules:
+
+- Block direct pushes to `dev` and `main`.
+- Require pull requests into `dev`.
+- Require the PR validation workflow to pass.
+- Require review approval or the configured review label.
+- Block merge while `needs-tests` or `needs-changes` is present.
+- Update `main` only after QA passes for the exact artifact commit.
+
+## Artifact And Release Rules
+
+Nexus is mandatory for DEV, QA, PROD, and rollback promotion. The workflow does not rebuild between environments and does not deploy from local files.
+
+Artifact identity is the commit SHA:
+
+```text
+app/{commitSha}/app.zip
+app/{commitSha}/app.zip.sha256
+app/{commitSha}/commit.sha
+app/{commitSha}/release.json
+```
+
+`commit.sha` must match the artifact commit. `app.zip.sha256` must verify before deployment.
+
+`release.json` is validated against `.codex/skills/_shared/release.schema.json`. It records the artifact checksum, Plane ticket key, DEV/QA/PROD deployment metadata, QA evidence, RC version, final release version, and rollback lineage as the artifact moves through the pipeline.
+
+Version rules:
+
+- Source RC format: `vMAJOR.MINOR.PATCH-rc.N`
+- Final release format: `vMAJOR.MINOR.PATCH`
+- RC tags point to the QA-tested artifact commit.
+- Final tags point to the QA-approved artifact commit.
+
+## Deployment Rules
+
+Push-triggered deployment is ticket-gated. Only application or test changes with a commit message or merged PR title that starts with the configured ticket key can deploy automatically.
+
+Flow:
+
+```text
+feature branch -> dev -> DEV -> QA -> main -> PROD
+```
+
+DEV and QA deploy from `dev` using the same Nexus ZIP artifact for the same commit SHA. PROD deploys only from `main` when `main` points to the QA-approved packaged commit, or through an explicit manual dispatch that supplies an existing `artifact_commit_sha`, `release_version`, and `source_rc_version`.
+
+PROD promotion is explicit. QA passing makes a ticket eligible for PROD; it does not automatically promote the artifact unless the user asks for PROD promotion or a ticket-gated merge to `main` triggers the PROD-only workflow.
+
+Rollback deploys a previously verified Nexus artifact and does not rewrite `main`. After rollback, the expected follow-up is a hotfix PR, revert PR, or an explicit temporary divergence note with an owner and resolution plan.
+
+## Operator Skills
+
+The repo-local workflow is encoded as Codex skills under `.codex/skills/`.
+
+Common entry points:
+
+- `configure-dev-environment`: configure Plane, Gitea, runner, quality gates, Nexus, Azure, and observability.
+- `pipeline-status`: read-only dashboard for tickets, PRs, artifacts, QA evidence, tags, and deployments.
+- `automatic-implement-ticket`: inspect state and route to the next valid delivery step.
+- `plane-start-ticket`: select a Plane ticket, create branch context, and create the OpenSpec proposal.
+- `implement-ticket`: implement an active ticket and hand off a PR.
+- `gitea-pr-review-agent`: review a specific Gitea PR and apply review labels.
+- `post-merge-deploy`: continue after a PR merges to `dev`.
+- `deploy-to-qa`: verify the merged PR artifact and promote through DEV/QA.
+- `test-e2e`: run QA checks, store evidence, and move passing tickets to `Done`.
+- `deploy-to-prod`: promote a QA-approved artifact to PROD.
+- `rollback-prod`: restore PROD to a previously verified artifact.
+- `hotfix-prod`: run an expedited, gated production hotfix.
+
+The shared delivery contract is `.codex/skills/_shared/delivery-contract.md`. When delivery behavior changes, update the related skills, configuration docs, workflow files, and regression tests together.
 
 ## Key Principle
 
@@ -183,5 +261,6 @@ After the PR review comment is posted, Codex moves the Plane ticket to configure
 Local tools manage the delivery workflow.
 Azure hosts only DEV, QA, and PROD runtime resources.
 Nexus stores the exact build artifact promoted between environments.
-Azure App Service uses runtime/package deployment by default; it does not pull container images from Nexus.
+Plane records ticket state and generated workflow checkpoints.
+Production promotion is explicit and artifact-based.
 ```
