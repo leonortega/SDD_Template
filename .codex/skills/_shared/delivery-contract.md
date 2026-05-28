@@ -22,6 +22,8 @@ Plane Todo -> branch/OpenSpec -> implementation -> PR review -> dev -> DEV/QA ->
 
 PROD promotion is explicit. Do not promote to PROD only because QA passed unless the user asks for PROD promotion or a non-`[SDD]` merge to `main` triggers the PROD-only workflow.
 
+Push-triggered environment deployment is allowed only for ticket-named work. The ticket key pattern is configured in `.codex/delivery-policy.json`. The commit message must start with the configured ticket key format, such as `E2EPROJECT-123: ...`, or be a Gitea merge commit whose PR title starts with that ticket key format. `[SDD]`, `openspec/...`, and maintenance-only commits do not deploy environments.
+
 ## Stable Markers
 
 Use these exact markers for idempotency:

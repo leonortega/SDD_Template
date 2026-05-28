@@ -17,6 +17,8 @@ PROD must reuse the QA-approved Nexus artifact. Never rebuild, republish, or ren
 
 Before promotion, read `.codex/skills/_shared/delivery-contract.md`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode ValidateReleaseManifest` when checking `release.json` and `-Mode ArtifactPaths` when verifying Nexus artifact paths.
 
+For push-triggered PROD deployment from `main`, the commit or merged PR title must start with the ticket key format configured in `.codex/delivery-policy.json`, such as `E2EPROJECT-123: ...`. Maintenance commits, `[SDD]` commits, and non-ticket PRs must not deploy PROD.
+
 ## Configuration
 
 Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.example.json` only for structure, then apply environment overrides when present.
@@ -73,7 +75,7 @@ Stop if any QA gate, tag gate, artifact gate, or checksum gate fails.
 
 PROD deployment can be triggered in two supported ways:
 
-- A push/merge to `main` deploys PROD only when the changed files include application/test/package source, and downloads the existing Nexus artifact for `GITHUB_SHA`.
+- A push/merge to `main` deploys PROD only when the changed files include application/test/package source and the commit or merged PR title starts with the configured ticket key format from `.codex/delivery-policy.json`. It downloads the existing Nexus artifact for `GITHUB_SHA`.
 - Manual workflow dispatch with `environment=prod` deploys the artifact identified by `artifact_commit_sha`.
 
 For manual dispatch, trigger the Gitea package/deploy workflow with:

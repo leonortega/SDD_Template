@@ -36,6 +36,18 @@ namespace SDDTemplate.Site.Tests
             Assert.Contains("'\"status\":\"ok\"'", prodJob);
         }
 
+        [Fact]
+        public void PushDeploymentsRequireTicketNamedCommitOrMergedPr()
+        {
+            string workflow = ReadWorkflow();
+
+            Assert.Contains("ticketKeyPattern", workflow);
+            Assert.Contains("ticket_pattern=\"^${ticket_key_pattern}: \"", workflow);
+            Assert.Contains("merge_pr_pattern=\"^Merge pull request '${ticket_key_pattern}:\"", workflow);
+            Assert.Contains("deploy_allowed=$deploy_allowed", workflow);
+            Assert.Contains("needs.classify-changes.outputs.deploy_allowed == 'true'", workflow);
+        }
+
         private static string ReadWorkflow()
         {
             return File.ReadAllText(Path.Combine(
