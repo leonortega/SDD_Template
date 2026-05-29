@@ -11,9 +11,9 @@ Use this skill after a PR has merged to `dev` but before QA promotion. It is an 
 
 Do not perform DEV/QA validation inside this skill. `deploy-to-qa` owns artifact promotion and environment checks.
 
-Before running, read `.codex/skills/_shared/delivery-contract.md`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode ArtifactPaths` when building Nexus artifact paths. Enforce the ticket context lock before delegating to `deploy-to-qa`.
+Before running, read `.codex/skills/_shared/delivery-contract.md`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` for deterministic mechanics: `ValidateTicketLock` against `.codex/delivery-context.local.json` before waiting for artifacts, `ValidateDeploymentLane` before delegating to `deploy-to-qa`, and `ArtifactPaths` when building Nexus artifact paths.
 
-When parallel delivery is active and `.codex/parallel-delivery.local.json` exists in the coordinator checkout, respect the serialized deployment lane before waiting for artifacts or delegating to `deploy-to-qa`. If another ticket owns the lane, stop and report the owner; do not deploy, promote, or update Plane for this ticket.
+When parallel delivery is active and `.codex/parallel-delivery.local.json` exists in the coordinator checkout, call `ValidateDeploymentLane` before waiting for artifacts or delegating to `deploy-to-qa`. If another ticket owns the lane, stop and report the owner; do not deploy, promote, or update Plane for this ticket.
 
 ## Configuration
 
@@ -28,7 +28,7 @@ Never print or write real tokens, passwords, cookies, Azure credentials, or Nexu
 3. Verify the PR does not currently have configured `pr.labels.needsChanges` or `pr.labels.needsTests`.
 4. Resolve the merge commit SHA from Gitea metadata.
 5. Resolve the Plane ticket key from the PR title/body, branch name, commit messages, or Plane comments.
-6. Read `.codex/delivery-context.local.json` when present and verify the resolved ticket key, PR number, branch, and merge commit when known match the lock. If any resolved value belongs to another ticket, stop before waiting for artifacts.
+6. Run `ValidateTicketLock` with the resolved ticket key, PR number, branch, and merge/artifact commit when known. If the result is invalid, stop before waiting for artifacts.
 7. Poll for the Nexus artifact files for the merge commit:
    - `app/{commitSha}/app.zip`
    - `app/{commitSha}/app.zip.sha256`

@@ -155,6 +155,21 @@ Use this structure unless a workflow-specific skill requires more detail:
 
 Prefer Markdown links for long URLs, short commit display text such as ``8acc4d4`` with the full SHA recorded in a field when needed, and grouped sections over long flat `Label: value` lists. Keep automation-critical values present and searchable; do not hide the stable marker, commit SHA, ticket key, release version, artifact URL, or evidence URL inside prose only.
 
+## Reusable Delivery Tools
+
+Use `.codex/skills/_shared/scripts/delivery_tools.ps1` for deterministic delivery mechanics instead of duplicating script logic in skills:
+
+- `ArtifactPaths`: derive Nexus artifact paths for `app/{commitSha}`.
+- `CheckGitIgnored`: verify evidence or local runtime paths are ignored before writing generated files.
+- `NextRcVersion`: derive the next RC version from existing Git tags.
+- `ValidateReleaseManifest`: validate required `release.json` fields and version formats.
+- `ValidateTicketLock`: compare resolved ticket, branch, PR, artifact commit, RC, or final version against `.codex/delivery-context.local.json`.
+- `ValidateDeploymentLane`: enforce serialized deployment ownership from `.codex/parallel-delivery.local.json`.
+- `RenderPlaneComment`: render standard Markdown Plane comments for QA deployment, E2E QA, and PROD deployment.
+- `UpdateReleaseManifest`: merge stage-specific fields into `release.json` while preserving existing metadata, then validate the result.
+
+Skills remain responsible for API calls, user-facing decisions, blocker classification, and whether a mutation is allowed. The script is the reusable preflight/render/update helper.
+
 ## PR Labels And Review Severity
 
 Default labels:

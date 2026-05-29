@@ -297,6 +297,88 @@ namespace SDDTemplate.Site.Tests
         }
 
         [Fact]
+        public void SharedDeliveryToolsExposeReusableWorkflowModes()
+        {
+            string contract = ReadSkill("_shared", "delivery-contract.md");
+            string script = File.ReadAllText(Path.Combine(
+                FindRepositoryRoot().FullName,
+                ".codex",
+                "skills",
+                "_shared",
+                "scripts",
+                "delivery_tools.ps1"));
+
+            foreach (string mode in new[]
+            {
+                "ValidateTicketLock",
+                "ValidateDeploymentLane",
+                "RenderPlaneComment",
+                "UpdateReleaseManifest"
+            })
+            {
+                Assert.Contains(mode, contract);
+                Assert.Contains(mode, script);
+            }
+
+            Assert.Contains("function Test-TicketLock", script);
+            Assert.Contains("function Test-DeploymentLane", script);
+            Assert.Contains("function Render-PlaneComment", script);
+            Assert.Contains("function Update-ReleaseManifest", script);
+        }
+
+        [Fact]
+        public void DeliverySkillsUseSharedToolsForRepeatedMechanics()
+        {
+            Dictionary<string, string[]> expectations = new()
+            {
+                ["deploy-to-qa"] =
+                [
+                    "ValidateTicketLock",
+                    "ValidateDeploymentLane",
+                    "UpdateReleaseManifest",
+                    "RenderPlaneComment -Type QADeployment"
+                ],
+                ["test-e2e"] =
+                [
+                    "ValidateTicketLock",
+                    "ValidateDeploymentLane",
+                    "UpdateReleaseManifest",
+                    "RenderPlaneComment -Type E2EQA"
+                ],
+                ["deploy-to-prod"] =
+                [
+                    "ValidateTicketLock",
+                    "ValidateDeploymentLane",
+                    "UpdateReleaseManifest",
+                    "RenderPlaneComment -Type ProdDeployment"
+                ],
+                ["post-merge-deploy"] =
+                [
+                    "ValidateTicketLock",
+                    "ValidateDeploymentLane",
+                    "ArtifactPaths"
+                ],
+                ["rollback-prod"] =
+                [
+                    "ValidateTicketLock",
+                    "UpdateReleaseManifest",
+                    "ValidateReleaseManifest"
+                ]
+            };
+
+            foreach ((string skillName, string[] expectedModes) in expectations)
+            {
+                string skill = ReadSkill(skillName, "SKILL.md");
+
+                Assert.Contains(".codex/skills/_shared/scripts/delivery_tools.ps1", skill);
+                foreach (string expectedMode in expectedModes)
+                {
+                    Assert.Contains(expectedMode, skill);
+                }
+            }
+        }
+
+        [Fact]
         public void DeliveryFlowSkillsEnforceTicketContextLock()
         {
             string[] skillNames =
