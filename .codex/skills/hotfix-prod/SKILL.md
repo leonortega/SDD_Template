@@ -13,13 +13,11 @@ Prefer `rollback-prod` when restoring a known-good artifact is enough.
 
 ## Shared Context
 
-Before starting, read `.codex/skills/_shared/delivery-contract.md`, `docs/context-management.md`, `docs/development.md`, and `docs/deployment.md` and preserve ticket context locks, artifact lineage, QA, PROD, rollback, and Context Findings Review invariants.
+Before starting, follow `.codex/skills/_shared/skill-startup.md` with `docs/development.md` and `docs/deployment.md` as stage-specific docs.
 
 ## Configuration
 
 Read `.codex/client-tools.local.json` first. Required values are Plane, Git, Gitea, Nexus, and deployment settings used by the normal delivery skills.
-
-Never print or write real tokens, passwords, cookies, Azure credentials, or Nexus credentials.
 
 ## Workflow
 

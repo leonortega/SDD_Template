@@ -11,7 +11,7 @@ Use this skill after `plane-start-ticket` has created or reused the implementati
 
 ## Shared Context
 
-Before implementation, handoff, or review work, read `.codex/skills/_shared/delivery-contract.md`, `docs/context-management.md`, and `docs/development.md` so PR labels, severity, ticket context locks, markers, context authority, quality gates, Context Findings Review, and rerun checkpoints match the rest of the delivery workflow.
+Before implementation, handoff, or review work, follow `.codex/skills/_shared/skill-startup.md` with `docs/development.md` as the stage-specific doc.
 
 ## Configuration
 
@@ -28,8 +28,6 @@ Required/defaulted values:
 - `pr.reviewers`
 - `pr.labels.reviewed`, `pr.labels.needsTests`, `pr.labels.needsChanges`
 - `coverage.minimumPercent`, default `80`
-
-Never print, commit, paste into tickets, or write real tokens into tracked files.
 
 ## Workflow
 
@@ -143,9 +141,9 @@ Run `openspec-verify-change` before PR handoff. Fix critical issues. Convert req
 
 ### Context Findings Review
 
-Before committing, apply the Context Findings classification from `docs/context-management.md`. If the finding changes enforceable automation behavior, update `.codex/skills/_shared/delivery-contract.md` plus related skills and tests.
+Before committing, apply the Context Findings classification from `docs/context-management.md` and the memory update process from `.codex/memory/retrieval-policy.md`. If the finding changes enforceable automation behavior, update `.codex/skills/_shared/delivery-contract.md` plus related skills and tests.
 
-If implementation discovers durable knowledge, update the matching doc in the same PR. If no durable knowledge was discovered, record `Docs: no durable context changes` in the PR body and Plane handoff comment.
+If implementation discovers durable authoritative knowledge, update the matching doc in the same PR. If it discovers reusable non-authoritative knowledge, update `.codex/memory/`. If no durable knowledge was discovered, record `Docs: no durable context changes` in the PR body and Plane handoff comment.
 
 ### 8. Create Or Reuse The Gitea PR
 
@@ -164,6 +162,7 @@ The PR body must include:
 - infra validation fixes applied
 - Context findings: added/updated/none
 - Docs updated: <files> or Docs: no durable context changes
+- `Memory updated: <files>` or `Memory updated: none`
 - Assumptions recorded: <short list or none>
 - remaining non-blocking infra notes
 - known non-blocking product risks or gaps
@@ -194,6 +193,7 @@ Add a Plane comment with:
 - tests added or updated
 - Context findings: added/updated/none
 - Docs updated: <files> or Docs: no durable context changes
+- `Memory updated: <files>` or `Memory updated: none`
 - Assumptions recorded: <short list or none>
 - remaining non-blocking infra notes
 - remaining non-blocking risks or gaps

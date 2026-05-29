@@ -13,7 +13,7 @@ For setup details and branch pattern options, read `references/configuration.md`
 
 ## Shared Context
 
-Before mutating Plane or Git, read `.codex/skills/_shared/delivery-contract.md`, `docs/context-management.md`, and `docs/architecture.md` so generated markers, state names, context authority, ticket locks, and rerun behavior stay consistent across the delivery workflow.
+Before mutating Plane or Git, follow `.codex/skills/_shared/skill-startup.md` with `docs/architecture.md` as the stage-specific doc.
 
 This skill owns initial creation of ignored `.codex/delivery-context.local.json` for automatic delivery. Never commit that file.
 
@@ -33,8 +33,6 @@ Read `.codex/client-tools.local.json` as the primary configuration file. Fall ba
 - Max branch length: `100`
 
 Optional environment variables override local JSON config when present: `PLANE_BASE_URL`, `PLANE_API_TOKEN`, `PLANE_WORKSPACE_SLUG`, `PLANE_PROJECT_IDENTIFIER`, `PLANE_TODO_STATE`, `PLANE_IN_PROGRESS_STATE`, `GIT_BASE_BRANCH`, `GIT_BRANCH_PREFIX`, `GIT_BRANCH_PATTERN`.
-
-Never print, store, or write real tokens into repo files, branch names, ticket text, logs, or OpenSpec artifacts.
 
 Before any mutating step, validate that `baseUrl`, `apiToken`, lowercase `workspaceSlug`, `projectIdentifier`, `baseBranch`, and `branchPattern` are present. The `branchPattern` must include `{ticketKeySlug}`.
 

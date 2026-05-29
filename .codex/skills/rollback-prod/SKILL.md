@@ -11,7 +11,7 @@ Use this skill when PROD must be restored to a previous known-good artifact. Rol
 
 ## Shared Context
 
-Before rollback, read `.codex/skills/_shared/delivery-contract.md`, `docs/context-management.md`, and `docs/deployment.md`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` for deterministic mechanics: `ArtifactPaths`, `ValidateReleaseManifest`, `ValidateTicketLock`, and `UpdateReleaseManifest`. Rollback may target an incident/release rather than the active ticket lock, but a mismatch must be explicit.
+Before rollback, follow `.codex/skills/_shared/skill-startup.md` with `docs/deployment.md` as the stage-specific doc. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` helpers: `ArtifactPaths`, `ValidateReleaseManifest`, `ValidateTicketLock`, and `UpdateReleaseManifest`. Rollback may target an incident/release rather than the active ticket lock, but a mismatch must be explicit.
 
 ## Configuration
 
@@ -20,8 +20,6 @@ Read `.codex/client-tools.local.json` first. Required values:
 - `plane.baseUrl`, `plane.apiToken`, `plane.workspaceSlug`, `plane.projectIdentifier`
 - `gitea.baseUrl`, `gitea.apiToken`, `gitea.owner`, `gitea.repo`
 - `nexus.baseUrl`, `nexus.username`, `nexus.password`, `nexus.repository`
-
-Never print, commit, paste into tickets, or write real tokens, Nexus credentials, Azure credentials, or secrets.
 
 ## Preflight
 

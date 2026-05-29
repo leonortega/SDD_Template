@@ -13,13 +13,11 @@ PROD promotion remains explicit. Do not invoke `deploy-to-prod` only because QA 
 
 ## Shared Context
 
-Before routing, read `.codex/skills/_shared/delivery-contract.md`, `docs/context-management.md`, and `docs/architecture.md`. Apply their shared rules for state names, stable markers, ticket context locks, artifact lineage, release manifests, versioning, reruns, context freshness, and conflict handling.
+Before routing, follow `.codex/skills/_shared/skill-startup.md` with `docs/architecture.md` as the stage-specific doc.
 
 ## Configuration
 
 Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.example.json` only for structure and defaults. Read `.codex/quality.local.json` when coverage context is needed.
-
-Never print, commit, paste into tickets, or write real Plane, Gitea, Nexus, Azure, cookie, or session secrets.
 
 Use ignored `.codex/delivery-context.local.json` as the ticket context lock according to the shared contract. If the lock or durable checkpoints conflict with the resolved ticket, stop or invoke `pipeline-status` instead of routing to a child skill.
 
@@ -68,4 +66,5 @@ Summarize:
 - resolved route,
 - child skill invoked or blocker found,
 - checkpoint evidence used,
+- memory updates made or skipped,
 - next required user or system action when blocked.

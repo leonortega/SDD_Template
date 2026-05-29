@@ -2,6 +2,8 @@
 
 This repository treats context as an SDLC asset. Durable project knowledge belongs in tracked documentation and workflow contracts, not only in chat history, temporary notes, PR comments, or Plane comments.
 
+`.codex/memory/` provides a reviewable repository memory layer for reusable workflow knowledge, repeated failure patterns, module landmarks, and release or QA lessons. Memory is a retrieval aid only; it must be verified against the authority order below before it drives an action.
+
 ## Authority Order
 
 When sources disagree, use this order until the conflict is resolved:
@@ -13,7 +15,8 @@ When sources disagree, use this order until the conflict is resolved:
 5. Canonical docs in `docs/`.
 6. Current code, tests, workflow files, and configuration templates.
 7. Historical Plane comments, PR comments, QA evidence, release manifests, and tags.
-8. Agent assumptions.
+8. `.codex/memory/` entries.
+9. Agent assumptions.
 
 Assumptions must never override a concrete source. If an assumption is required to continue, record it in the handoff summary.
 
@@ -60,6 +63,7 @@ Every implementation, review, QA, deployment, PROD, rollback, or hotfix handoff 
 - QA evidence, RC version, final version, or rollback target when relevant
 - blockers, risks, and assumptions
 - context findings and docs updated
+- memory updated or explicitly not updated when the workflow performs a memory update review
 - next required action
 
 ## Context Findings
@@ -71,5 +75,8 @@ During implementation and retrospective work, update durable docs when new reusa
 - artifact, deployment, QA, release, rollback, or monitoring finding -> `docs/deployment.md`
 - agent context loading, freshness, authority, handoff, or conflict rule -> `docs/context-management.md`
 - enforceable automation behavior -> `.codex/skills/_shared/delivery-contract.md` plus affected skills and tests
+- reusable but non-authoritative workflow memory -> `.codex/memory/`
+
+When updating memory, follow `.codex/memory/retrieval-policy.md`. Memory updates must be source-backed, small, and reviewable. If a finding is authoritative or enforceable, update the appropriate docs or delivery contract before adding any memory note.
 
 Temporary debugging details, one-off failures, and local machine quirks should stay in run evidence or handoff notes unless they reveal a durable rule.
