@@ -9,7 +9,7 @@ description: Implement an OpenSpec change through the complete local delivery wo
 
 Use this skill to take an active OpenSpec change from implementation through Gitea PR handoff. Compose the existing `openspec-apply-change` workflow with local verification, Git, Gitea, the `gitea-pr-review-agent` skill, and Plane API updates.
 
-For exact Gitea and Plane endpoint guidance, read `references/gitea-plane-handoff.md` before making API calls.
+For exact Gitea and Plane endpoint guidance, read `references/gitea-plane-handoff.md` before making API calls. Read `docs/context-management.md` before implementation handoff so context findings, freshness, and handoff summaries match the repo policy.
 
 ## Configuration
 
@@ -61,14 +61,27 @@ For web/API application work, preserve the deployment health contract: `/health`
 
 ### 4. Commit And Push
 
-1. Inspect `git status --porcelain` and stage only intentional files.
-2. Create a commit with a human-readable subject derived from the branch or change name.
-3. Include a commit body with:
+1. Run Context Findings Review before staging.
+2. Inspect `git status --porcelain` and stage only intentional files.
+3. Create a commit with a human-readable subject derived from the branch or change name.
+4. Include a commit body with:
    - implemented changes
    - tests added or changed
    - verification commands run
-4. Push the branch.
-5. If Husky or another Git hook fails during commit or push, fix the issue, rerun relevant verification, update the commit as needed, and retry. Do not bypass hooks unless the user explicitly instructs that in the current chat.
+5. Push the branch.
+6. If Husky or another Git hook fails during commit or push, fix the issue, rerun relevant verification, update the commit as needed, and retry. Do not bypass hooks unless the user explicitly instructs that in the current chat.
+
+### Context Findings Review
+
+Before committing, classify durable implementation findings using `docs/context-management.md` and `.codex/skills/_shared/delivery-contract.md`:
+
+- architecture/topology/source-of-truth finding -> `docs/architecture.md`
+- local setup, commands, repo conventions, testing, or quality gates -> `docs/development.md`
+- artifact, deployment, QA, release, rollback, or monitoring finding -> `docs/deployment.md`
+- agent context loading, freshness, authority, handoff, or conflict rule -> `docs/context-management.md`
+- enforceable automation behavior -> `.codex/skills/_shared/delivery-contract.md` plus related skills and tests
+
+If implementation discovers durable knowledge, update the matching doc in the same PR. If no durable knowledge was discovered, record `Docs: no durable context changes` in the PR body and Plane handoff comment.
 
 ### 5. Open The Gitea PR
 
@@ -78,14 +91,14 @@ For web/API application work, preserve the deployment health contract: `/health`
    - If `pr.reviewers` is an array, use that username list exactly.
    - If no reviewers can be resolved, create the PR without reviewers and document the gap in the PR body.
 3. Create configured PR labels if they do not exist and labels are enabled.
-4. Create the PR with title from the branch in human-readable text and a body containing all commit message change lists.
+4. Create the PR with title from the branch in human-readable text and a body containing all commit message change lists, `Context findings: added/updated/none`, `Docs updated: <files>` or `Docs: no durable context changes`, and `Assumptions recorded: <short list or none>`.
 5. Apply the configured reviewed label after the review agent completes. Apply `needs-tests` or `needs-changes` when the review agent reports those outcomes.
 
 ### 6. Review And Update Plane
 
 1. Invoke the `gitea-pr-review-agent` skill against the newly created PR.
 2. Move the linked Plane work item to `plane.reviewState`, default `In Review`, only after PR creation and review-agent posting complete.
-3. Add a Plane comment containing the PR link.
+3. Add a Plane comment containing the PR link, `Context findings: added/updated/none`, `Docs updated: <files>` or `Docs: no durable context changes`, and `Assumptions recorded: <short list or none>`.
 4. If the configured Plane state is missing, stop after PR creation and review, report the missing state, and do not guess another state.
 
 ## Idempotency And Failure Rules
@@ -99,4 +112,4 @@ For web/API application work, preserve the deployment health contract: `/health`
 
 ## Completion Summary
 
-End with the selected change, commit SHA, PR URL, reviewers requested, labels applied, Plane state update result, verification commands, and any gaps.
+End with the selected change, commit SHA, PR URL, reviewers requested, labels applied, Plane state update result, verification commands, context findings, docs updated or `Docs: no durable context changes`, assumptions recorded, and any gaps.

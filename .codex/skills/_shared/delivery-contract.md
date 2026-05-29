@@ -4,6 +4,8 @@ Use this reference before running non-config delivery skills. Skill-local instru
 
 For repeated Plane, Gitea, Nexus, and Git endpoint patterns, read `.codex/skills/_shared/api-helpers.md`.
 
+For durable context policy, read `docs/context-management.md`. The docs are the human-readable context layer; this delivery contract is the agent-enforced operational layer. If the docs and this contract conflict, the delivery contract wins for automation behavior until the docs are corrected.
+
 ## Skill Synchronization Rule
 
 When changing any non-OpenSpec delivery skill or any `configure-*` skill, check for policy drift across related skills before finishing.
@@ -11,8 +13,9 @@ When changing any non-OpenSpec delivery skill or any `configure-*` skill, check 
 Source-of-truth order:
 
 1. `_shared/delivery-contract.md`
-2. Non-OpenSpec delivery-flow skills: `parallel-ticket-coordinator`, `automatic-implement-ticket`, `plane-start-ticket`, `implement-ticket`, `gitea-pr-review-agent`, `post-merge-deploy`, `deploy-to-qa`, `test-e2e`, `deploy-to-prod`, `rollback-prod`, `file-qa-bug`, `pipeline-status`, and `hotfix-prod`
-3. Configure skills and generated templates: `configure-dev-environment`, `configure-artifact-delivery`, `configure-quality-gates`, and related `configure-*` skills
+2. `docs/context-management.md`, `docs/architecture.md`, `docs/development.md`, and `docs/deployment.md` for durable human-readable context
+3. Non-OpenSpec delivery-flow skills: `parallel-ticket-coordinator`, `automatic-implement-ticket`, `plane-start-ticket`, `implement-ticket`, `gitea-pr-review-agent`, `post-merge-deploy`, `deploy-to-qa`, `test-e2e`, `deploy-to-prod`, `rollback-prod`, `file-qa-bug`, `pipeline-status`, and `hotfix-prod`
+4. Configure skills and generated templates: `configure-dev-environment`, `configure-artifact-delivery`, `configure-quality-gates`, and related `configure-*` skills
 
 If configure skills differ from delivery-flow skills, update configure docs, templates, audits, and tests to match the delivery-flow rule. Do not update OpenSpec-specific skills unless the requested change explicitly affects OpenSpec behavior.
 
@@ -22,6 +25,12 @@ Before finishing any change to a non-OpenSpec delivery skill, run this completio
 - If it does, update the matching `configure-*` skill docs, references, templates, scripts, and tests in the same change.
 - If it does not, state in the final response that the configure skills were checked and no configure sync was required.
 - Add or update regression tests for the sync point when the behavior is enforceable from files.
+
+## Context Findings
+
+Implementation and retrospective work must preserve durable context discovered during delivery. Apply the Context Findings classification from `docs/context-management.md`.
+
+Implementation PR bodies and Plane handoff comments must include `Context findings: added/updated/none`, `Docs updated: <files>` or `Docs: no durable context changes`, and `Assumptions recorded: <short list or none>`.
 
 ## States And Flow
 

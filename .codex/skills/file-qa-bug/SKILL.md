@@ -9,7 +9,9 @@ description: Create a linked Plane bug from failed QA evidence, preserve failure
 
 Use this skill when QA finds a product defect after a ticket has reached QA. The original ticket stays in QA unless the user explicitly changes workflow policy. Create a linked bug with evidence, then start the normal fix workflow only when the defect requires code work.
 
-Before filing or linking tickets, read `.codex/skills/_shared/delivery-contract.md` for stable markers, ticket context lock, rerun behavior, and QA defect ownership rules.
+## Shared Context
+
+Before filing or linking tickets, read `.codex/skills/_shared/delivery-contract.md`, `docs/context-management.md`, `docs/development.md`, and `docs/deployment.md` for stable markers, ticket context locks, rerun behavior, QA evidence, and defect ownership rules.
 
 ## Configuration
 

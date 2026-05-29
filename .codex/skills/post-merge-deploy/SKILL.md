@@ -11,9 +11,9 @@ Use this skill after a PR has merged to `dev` but before QA promotion. It is an 
 
 Do not perform DEV/QA validation inside this skill. `deploy-to-qa` owns artifact promotion and environment checks.
 
-Before running, read `.codex/skills/_shared/delivery-contract.md`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` for deterministic mechanics: `ValidateTicketLock` against `.codex/delivery-context.local.json` before waiting for artifacts, `ValidateDeploymentLane` before delegating to `deploy-to-qa`, and `ArtifactPaths` when building Nexus artifact paths.
+## Shared Context
 
-When parallel delivery is active and `.codex/parallel-delivery.local.json` exists in the coordinator checkout, call `ValidateDeploymentLane` before waiting for artifacts or delegating to `deploy-to-qa`. If another ticket owns the lane, stop and report the owner; do not deploy, promote, or update Plane for this ticket.
+Before running, read `.codex/skills/_shared/delivery-contract.md`, `docs/context-management.md`, and `docs/deployment.md`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` for deterministic mechanics: `ValidateTicketLock` against `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, and `ArtifactPaths`.
 
 ## Configuration
 

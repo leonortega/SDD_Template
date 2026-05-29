@@ -11,7 +11,9 @@ Use this skill to review one explicit Gitea pull request. It is invoked by `open
 
 For exact Gitea API endpoint guidance, read `references/gitea-review-api.md` before making API calls.
 
-Read `.codex/skills/_shared/delivery-contract.md` before posting review output so severity labels, ticket context lock, and PR label semantics remain consistent with implementation and deployment gates.
+## Shared Context
+
+Before posting review output, read `.codex/skills/_shared/delivery-contract.md`, `docs/context-management.md`, and `docs/development.md` so severity labels, ticket context locks, PR label semantics, and review handoff expectations remain consistent with implementation and deployment gates.
 
 ## Configuration
 

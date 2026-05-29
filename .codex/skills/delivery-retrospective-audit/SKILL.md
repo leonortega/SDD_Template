@@ -9,7 +9,9 @@ description: Inspect completed, failed, or blocked Plane/Gitea/OpenSpec delivery
 
 Use this skill after or between delivery runs to find repeated process misses and turn them into controlled improvements. This skill does not deliver tickets, deploy releases, or promote environments; it audits evidence and improves the workflow only when the evidence supports it.
 
-Read `.codex/skills/_shared/delivery-contract.md` first. Treat it as the policy baseline and apply its Skill Synchronization Rule before changing any delivery or configure skill.
+## Shared Context
+
+Read `.codex/skills/_shared/delivery-contract.md`, `docs/context-management.md`, `docs/architecture.md`, `docs/development.md`, and `docs/deployment.md` first. Treat the delivery contract as the policy baseline and apply its Skill Synchronization Rule before changing any delivery or configure skill.
 
 ## Operating Modes
 
@@ -26,6 +28,10 @@ Never silently rewrite workflow rules from one isolated failure. Require either 
 Inspect the smallest useful set first, then expand as needed:
 
 - `.codex/skills/_shared/delivery-contract.md`
+- `docs/context-management.md`
+- `docs/architecture.md`
+- `docs/development.md`
+- `docs/deployment.md`
 - `.codex/skills/automatic-implement-ticket/SKILL.md`
 - `.codex/skills/implement-ticket/SKILL.md`
 - `.codex/skills/gitea-pr-review-agent/SKILL.md`
@@ -90,9 +96,12 @@ Apply one of these outcomes:
 - `Configure sync update`: setup docs, templates, audit scripts, or tests must match delivery behavior.
 - `Regression test`: a script/template/check should enforce the rule.
 - `Quality gate update`: CI or local validation should catch the issue.
+- `Docs update`: durable findings should be promoted to `docs/architecture.md`, `docs/development.md`, `docs/deployment.md`, or `docs/context-management.md`.
 - `Follow-up ticket`: the change is product work, infra work, or too large for the current retrospective.
 
 Prefer tests or deterministic validation for enforceable rules. Prefer skill text only for judgment-heavy process rules.
+
+Use the Context Findings classification from `docs/context-management.md` to decide whether a durable finding belongs in `docs/architecture.md`, `docs/development.md`, `docs/deployment.md`, `docs/context-management.md`, or `.codex/skills/_shared/delivery-contract.md` plus related skills and tests.
 
 ### 5. Apply Changes Safely
 
@@ -100,10 +109,11 @@ When applying changes:
 
 1. Keep edits scoped to the improvement.
 2. Update `_shared/delivery-contract.md` first when the rule is cross-cutting.
-3. Update affected delivery-flow skills.
-4. Update configure skills, generated templates, audits, and tests when the Skill Synchronization Rule requires it.
-5. Add or update regression tests when the behavior can be enforced from files.
-6. Run the narrowest relevant validation command, such as skill validation, script tests, or existing repo tests.
+3. Update the matching durable docs when the finding is reusable project knowledge.
+4. Update affected delivery-flow skills.
+5. Update configure skills, generated templates, audits, and tests when the Skill Synchronization Rule requires it.
+6. Add or update regression tests when the behavior can be enforced from files.
+7. Run the narrowest relevant validation command, such as skill validation, script tests, or existing repo tests.
 
 Do not change OpenSpec-specific skills unless the requested improvement explicitly affects OpenSpec behavior.
 

@@ -42,6 +42,11 @@ The workflow is intentionally checkpoint-based. Reruns continue from existing Pl
 
 ```text
 SDDTemplate.slnx
+docs/
+|-- architecture.md
+|-- context-management.md
+|-- deployment.md
+`-- development.md
 src/
 `-- SDDTemplate.Site/
 tests/
@@ -69,6 +74,19 @@ artifacts/
 ```
 
 Use `compose.yml` consistently for Docker Compose files.
+
+## Canonical Context
+
+Durable project context lives in `docs/`:
+
+- `docs/context-management.md`: context authority, freshness, conflict, and handoff rules.
+- `docs/architecture.md`: system topology, sources of truth, ticket locks, and deployment-lane ownership.
+- `docs/development.md`: implementation workflow, local commands, OpenSpec usage, and quality gates.
+- `docs/deployment.md`: artifact promotion, QA evidence, versions, PROD, rollback, and hotfix rules.
+
+The shared delivery contract remains `.codex/skills/_shared/delivery-contract.md`. It is the agent-enforced operational policy. If docs and the delivery contract conflict, the delivery contract wins for automation behavior until the docs are corrected.
+
+Every implementation must run a Context Findings Review. Durable findings update the matching `docs/` file in the same PR. If no durable context changed, the PR body and Plane handoff comment must state `Docs: no durable context changes`.
 
 ## Local Development
 
@@ -146,15 +164,7 @@ Tracked example files remain placeholder-safe. Real tokens, local secrets, gener
 
 Credentials must be supplied through supported UI/API/CLI paths. The workflow must not read secrets from Docker containers, mounted volumes, databases, logs, or committed files.
 
-## Ticket Lifecycle
-
-Plane states used by the delivery workflow:
-
-- `Todo`: work is not started.
-- `In Progress`: branch and implementation are active.
-- `In Review`: PR exists and awaits review or merge.
-- `QA`: the artifact is deployed to QA and awaits E2E validation.
-- `Done`: E2E QA passed and the artifact is eligible for explicit PROD promotion.
+## Workflow References
 
 Useful chat requests:
 
@@ -168,127 +178,15 @@ Run QA for E2EPROJECT-1
 Promote E2EPROJECT-1 to PROD
 ```
 
-The ticket key pattern is configured in `.codex/delivery-policy.json` and currently matches:
+Use `Coordinate parallel Plane tickets` when more than one ticket should be active at the same time.
 
-```text
-E2EPROJECT-[0-9]+
-```
+Detailed workflow references:
 
-Ticket delivery is locked to one active ticket with ignored `.codex/delivery-context.local.json`. Child skills verify that Plane comments, branch, PR, artifact commit, QA evidence, RC tag, and PROD release lineage match the locked ticket before mutating or promoting anything.
-
-## Parallel Ticket Delivery
-
-Use the parallel coordinator when more than one ticket should be active at the same time:
-
-```text
-Coordinate parallel Plane tickets
-```
-
-That routes through `.codex/skills/parallel-ticket-coordinator`. The coordinator assigns one Git worktree and one local ticket lock to each active ticket, then invokes the existing role skills from inside the assigned worktree.
-
-Default placeholder-safe config lives in `.codex/client-tools.example.json`:
-
-```json
-"parallelDelivery": {
-  "enabled": false,
-  "maxActiveTickets": 2,
-  "worktreeRoot": "../ticket-worktrees",
-  "deploymentLanePolicy": "serialized",
-  "agentModelPolicy": {
-    "pipelineStatus": {
-      "model": "gpt-5.4-mini",
-      "reasoningEffort": "low"
-    },
-    "implementation": {
-      "model": "gpt-5.3-codex",
-      "reasoningEffort": "medium"
-    },
-    "deployToProd": {
-      "model": "gpt-5.4",
-      "reasoningEffort": "high"
-    }
-  }
-}
-```
-
-Parallel implementation uses this shape:
-
-```text
-SDD_template/                  coordinator checkout
-../ticket-worktrees/
-  e2eproject-123/              ticket worktree with its own .codex/delivery-context.local.json
-  e2eproject-124/              ticket worktree with its own .codex/delivery-context.local.json
-```
-
-Planning, implementation, PR validation, and review can run concurrently across ticket worktrees. DEV, QA, E2E QA, PROD, rollback, and hotfix promotion stay serialized because they share Azure environments, Nexus release manifests, RC/final tags, and Plane deployment evidence. The coordinator records active ticket mappings and deployment-lane ownership in ignored `.codex/parallel-delivery.local.json`.
-
-`agentModelPolicy` controls cost per on-the-fly sub-agent. Read-only status and mechanical promotion checks can use smaller models and lower reasoning; implementation, review, PROD, rollback, and hotfix work use stronger models or higher reasoning. `model: "inherit"` means the coordinator should not override the parent run's model.
-
-## Quality Gates
-
-Gitea PR validation is the source of truth. Local hooks are convenience checks only.
-
-PR validation runs:
-
-- `dotnet restore`
-- `dotnet format --verify-no-changes --no-restore`
-- `dotnet build -c Release --no-restore`
-- `dotnet test -c Release --no-build --collect:"XPlat Code Coverage"`
-- coverage enforcement, defaulting to `80%`
-- `dotnet list package --vulnerable --include-transitive`
-- Gitleaks secret scan
-- Trivy filesystem scan for high and critical findings
-
-The workflow file is `.gitea/workflows/pr-validation.yml`. See `.gitea/workflows/README.md` for required repository secrets and branch protection guidance.
-
-Recommended branch rules:
-
-- Block direct pushes to `dev` and `main`.
-- Require pull requests into `dev`.
-- Require the PR validation workflow to pass.
-- Require review approval or the configured review label.
-- Block merge while `needs-tests` or `needs-changes` is present.
-- Update `main` only after QA passes for the exact artifact commit.
-
-## Artifact And Release Rules
-
-Nexus is mandatory for DEV, QA, PROD, and rollback promotion. The workflow does not rebuild between environments and does not deploy from local files.
-
-Artifact identity is the commit SHA:
-
-```text
-app/{commitSha}/app.zip
-app/{commitSha}/app.zip.sha256
-app/{commitSha}/commit.sha
-app/{commitSha}/release.json
-```
-
-`commit.sha` must match the artifact commit. `app.zip.sha256` must verify before deployment.
-
-`release.json` is validated against `.codex/skills/_shared/release.schema.json`. It records the artifact checksum, Plane ticket key, DEV/QA/PROD deployment metadata, QA evidence, RC version, final release version, and rollback lineage as the artifact moves through the pipeline.
-
-Version rules:
-
-- Source RC format: `vMAJOR.MINOR.PATCH-rc.N`
-- Final release format: `vMAJOR.MINOR.PATCH`
-- RC tags point to the QA-tested artifact commit.
-- Final tags point to the QA-approved artifact commit.
-
-## Deployment Rules
-
-Push-triggered deployment is ticket-gated. Only application or test changes with a commit message or merged PR title that starts with the configured ticket key can deploy automatically.
-
-Flow:
-
-```text
-feature branch -> dev -> DEV -> QA -> main -> PROD
-```
-
-DEV and QA deploy from `dev` using the same Nexus ZIP artifact for the same commit SHA. PROD deploys only from `main` when `main` points to the QA-approved packaged commit, or through an explicit manual dispatch that supplies an existing `artifact_commit_sha`, `release_version`, and `source_rc_version`.
-
-PROD promotion is explicit. QA passing makes a ticket eligible for PROD; it does not automatically promote the artifact unless the user asks for PROD promotion or a ticket-gated merge to `main` triggers the PROD-only workflow.
-
-Rollback deploys a previously verified Nexus artifact and does not rewrite `main`. After rollback, the expected follow-up is a hotfix PR, revert PR, or an explicit temporary divergence note with an owner and resolution plan.
+- `docs/context-management.md`: ticket states, locks, context authority, freshness, conflict handling, and handoff rules.
+- `docs/architecture.md`: parallel worktree isolation, deployment-lane ownership, and source-of-truth topology.
+- `docs/development.md`: implementation flow, OpenSpec usage, quality gates, and local validation commands.
+- `docs/deployment.md`: artifact identity, release manifests, versioning, QA evidence, deployment, PROD, rollback, and hotfix rules.
+- `.codex/skills/_shared/delivery-contract.md`: agent-enforced operational rules.
 
 ## Operator Skills
 

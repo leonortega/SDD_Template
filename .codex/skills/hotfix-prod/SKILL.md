@@ -11,7 +11,9 @@ Use this skill when PROD needs a targeted code fix rather than a rollback. It is
 
 Prefer `rollback-prod` when restoring a known-good artifact is enough.
 
-Before starting, read `.codex/skills/_shared/delivery-contract.md` and preserve its ticket context lock, artifact, QA, PROD, and rollback invariants.
+## Shared Context
+
+Before starting, read `.codex/skills/_shared/delivery-contract.md`, `docs/context-management.md`, `docs/development.md`, and `docs/deployment.md` and preserve ticket context locks, artifact lineage, QA, PROD, rollback, and Context Findings Review invariants.
 
 ## Configuration
 

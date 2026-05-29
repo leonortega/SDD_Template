@@ -15,9 +15,9 @@ feature branch -> dev -> DEV -> QA -> E2E QA OK -> main -> PROD
 
 PROD must reuse the QA-approved Nexus artifact. Never rebuild, republish, or rename the artifact during PROD promotion.
 
-Before promotion, read `.codex/skills/_shared/delivery-contract.md`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` for deterministic mechanics: `ValidateTicketLock` against `.codex/delivery-context.local.json` before tagging/main/PROD/comment mutation, `ValidateDeploymentLane` before deployment-lane mutations, `ArtifactPaths` for Nexus artifact paths, `ValidateReleaseManifest` when checking `release.json`, `UpdateReleaseManifest` after PROD verification, and `RenderPlaneComment -Type ProdDeployment` for the Plane comment.
+## Shared Context
 
-When parallel delivery is active and `.codex/parallel-delivery.local.json` exists in the coordinator checkout, call `ValidateDeploymentLane` before tagging, updating `main`, triggering PROD, updating `release.json`, or commenting success. If another ticket owns the lane, stop and report the owner.
+Before promotion, read `.codex/skills/_shared/delivery-contract.md`, `docs/context-management.md`, and `docs/deployment.md`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` for deterministic mechanics: `ValidateTicketLock` against `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, `ArtifactPaths`, `ValidateReleaseManifest`, `UpdateReleaseManifest`, and `RenderPlaneComment -Type ProdDeployment`.
 
 For push-triggered PROD deployment from `main`, the commit or merged PR title must start with the ticket key format configured in `.codex/delivery-policy.json`, such as `E2EPROJECT-123: ...`. Maintenance commits, `[SDD]` commits, and non-ticket PRs must not deploy PROD.
 
