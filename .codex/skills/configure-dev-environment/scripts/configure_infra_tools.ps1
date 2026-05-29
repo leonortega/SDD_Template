@@ -6,6 +6,8 @@ param(
 
   [switch]$DryRun,
 
+  [switch]$AllowAuditWrites,
+
   [string]$ValuesJson
 )
 
@@ -16,15 +18,32 @@ function Join-RootPath {
   return (Join-Path $Root $RelativePath)
 }
 
+function Get-RepoRelativePath {
+  param([string]$FullPath)
+
+  $rootPath = (Resolve-Path $Root).Path.TrimEnd("\", "/") + [System.IO.Path]::DirectorySeparatorChar
+  $targetPath = (Resolve-Path $FullPath).Path
+  $rootUri = [System.Uri]::new($rootPath)
+  $targetUri = [System.Uri]::new($targetPath)
+  return [System.Uri]::UnescapeDataString($rootUri.MakeRelativeUri($targetUri).ToString()).Replace("\", "/")
+}
+
 function New-Result {
   return [ordered]@{
     mode = $Mode
     dryRun = [bool]$DryRun
+    writeEnabled = (Test-ConfigWritesEnabled)
     actions = @()
     findings = @()
     recommendations = @()
     warnings = @()
   }
+}
+
+function Test-ConfigWritesEnabled {
+  if ($DryRun) { return $false }
+  if ($Mode -like "Audit*" -and -not $AllowAuditWrites) { return $false }
+  return $true
 }
 
 function Add-Item {
@@ -144,7 +163,7 @@ function Set-EnvValues {
 function Convert-JsonToHashtable {
   param([string]$Json)
   if ([string]::IsNullOrWhiteSpace($Json)) { return @{} }
-  $object = $Json | ConvertFrom-Json -Depth 20
+  $object = $Json | ConvertFrom-Json
   return Convert-ObjectToHashtable $object
 }
 
@@ -405,7 +424,7 @@ function Add-QualityGateAuditFindings {
   if (-not (Test-Path (Join-RootPath $prWorkflow))) {
     Add-Item $Result "findings" $prWorkflow "" "Missing Gitea PR validation workflow." "warning"
   } else {
-    foreach ($expected in @("dotnet restore", "dotnet format", "dotnet build", "dotnet test", "minimumPercent", "gitleaks", "trivy")) {
+    foreach ($expected in @("dotnet restore", "dotnet format", "dotnet build", "dotnet test", "ReadCoverageThreshold", "ReadCoberturaLineRate", "gitleaks", "trivy")) {
       if (-not (Test-FileContains $prWorkflow ([regex]::Escape($expected)))) {
         Add-Item $Result "findings" $prWorkflow $expected "PR validation workflow does not mention $expected." "warning"
       }
@@ -417,7 +436,7 @@ function Add-QualityGateAuditFindings {
   if (-not (Test-Path (Join-RootPath $releaseWorkflow))) {
     Add-Item $Result "findings" $releaseWorkflow "" "Missing package/deploy workflow for Nexus artifact publication and Azure promotion." "warning"
   } else {
-    foreach ($expected in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "az webapp deploy", "classify-changes", "app_changed", "deploy_allowed", ".codex/delivery-policy.json", "ticketKeyPattern", "refs/heads/dev", "refs/heads/main", "deploy-qa", "deploy-prod", "artifact_commit_sha", "PROD_ARTIFACT_COMMIT_SHA", "release_version", "source_rc_version", "release.json", "schemaVersion", "planeTicketKey", "versionStatus", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_WEBAPP_NAME", "AZURE_QA_WEBAPP_URL", "AZURE_PROD_RESOURCE_GROUP", "AZURE_PROD_WEBAPP_NAME", "AZURE_PROD_WEBAPP_URL", "/health")) {
+    foreach ($expected in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "az webapp deploy", "classify-changes", "app_changed", "deploy_allowed", ".codex/delivery-policy.json", "ReadDeliveryPolicy", "ExtractTicketKey", "refs/heads/dev", "refs/heads/main", "deploy-qa", "deploy-prod", "artifact_commit_sha", "PROD_ARTIFACT_COMMIT_SHA", "release_version", "source_rc_version", "release.json", "CreateReleaseManifest", "ValidateReleaseManifest", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_WEBAPP_NAME", "AZURE_QA_WEBAPP_URL", "AZURE_PROD_RESOURCE_GROUP", "AZURE_PROD_WEBAPP_NAME", "AZURE_PROD_WEBAPP_URL", "/health")) {
       if (-not (Test-FileContains $releaseWorkflow ([regex]::Escape($expected)))) {
         Add-Item $Result "findings" $releaseWorkflow $expected "Package/deploy workflow does not mention $expected." "warning"
       }
@@ -488,7 +507,7 @@ function Add-QualityGateAuditFindings {
   }
 
   foreach ($composeFile in Get-ChildItem -Path (Join-RootPath "infra") -Filter "compose.yml" -Recurse -ErrorAction SilentlyContinue) {
-    $relativeCompose = [System.IO.Path]::GetRelativePath($Root, $composeFile.FullName).Replace("\", "/")
+    $relativeCompose = Get-RepoRelativePath $composeFile.FullName
     $lines = Get-Content -Path $composeFile.FullName
     for ($i = 0; $i -lt $lines.Count; $i++) {
       if ($lines[$i] -match "^\s*image:\s*(\S+):(\S+)\s*$") {
@@ -695,7 +714,12 @@ function Set-InferredClientValue {
   }
 
   Set-ObjectValue -Object $Client -Path $Path -Value $Value
-  Add-Item $Result "actions" ".codex/client-tools.local.json" ($Path -join ".") "Set inferred local client tool value."
+  $message = if (Test-ConfigWritesEnabled) {
+    "Set inferred local client tool value."
+  } else {
+    "Would set inferred local client tool value; audit modes are read-only unless -AllowAuditWrites is supplied."
+  }
+  Add-Item $Result "actions" ".codex/client-tools.local.json" ($Path -join ".") $message
 }
 
 function Get-GitRemoteOwnerRepo {
@@ -759,7 +783,7 @@ function Get-ToolRecommendationCatalog {
     throw "Missing .codex/tool-recommendations.example.json."
   }
 
-  return Get-Content -Path $catalogPath -Raw | ConvertFrom-Json -Depth 20
+  return Get-Content -Path $catalogPath -Raw | ConvertFrom-Json
 }
 
 function Ensure-InferredClientToolsConfig {
@@ -775,14 +799,14 @@ function Ensure-InferredClientToolsConfig {
     }
 
     Add-Item $Result "actions" $targetRelative "" "Create local client tools config from template."
-    if (-not $DryRun) {
+    if (Test-ConfigWritesEnabled) {
       Copy-Item -Path $source -Destination $target
     }
   }
 
   if (-not (Test-Path $target)) { return }
   try {
-    $client = Get-Content -Path $target -Raw | ConvertFrom-Json -Depth 20
+    $client = Get-Content -Path $target -Raw | ConvertFrom-Json
   } catch {
     Add-Item $Result "findings" $targetRelative "" "Local client tools config is not valid JSON." "error"
     return
@@ -850,7 +874,7 @@ function Ensure-InferredClientToolsConfig {
   Set-InferredClientValue $Result $client @("recommendedTools", "accepted") @()
   Set-InferredClientValue $Result $client @("recommendedTools", "dismissed") @()
 
-  if (-not $DryRun) {
+  if (Test-ConfigWritesEnabled) {
     $client | ConvertTo-Json -Depth 20 | Set-Content -Path $target -Encoding UTF8
   }
 }
@@ -1025,7 +1049,7 @@ function Invoke-AuditRecommendedTools {
 
   if (Test-Path $clientPath) {
     try {
-      $client = Get-Content -Path $clientPath -Raw | ConvertFrom-Json -Depth 20
+      $client = Get-Content -Path $clientPath -Raw | ConvertFrom-Json
       if ($null -ne $client.recommendedTools) {
         if ($client.recommendedTools.enabled -eq $false) { $recommendationsEnabled = $false }
         $accepted = @($client.recommendedTools.accepted)
@@ -1085,7 +1109,7 @@ function Invoke-SetRecommendedTools {
     throw "ValuesJson must include accepted or dismissed recommendation id arrays."
   }
 
-  $config = Get-Content -Path $target -Raw | ConvertFrom-Json -Depth 20
+  $config = Get-Content -Path $target -Raw | ConvertFrom-Json
   Ensure-ObjectProperty -Object $config -Name "recommendedTools"
   Set-ObjectValue -Object $config -Path @("recommendedTools", "enabled") -Value $true
   Set-ObjectValue -Object $config -Path @("recommendedTools", "mode") -Value "guided-manual"
@@ -1461,10 +1485,7 @@ jobs:
             config=".codex/quality.example.json"
           fi
 
-          minimum="$(sed -n 's/.*"minimumPercent"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$config" | head -n 1 || true)"
-          if [ -z "$minimum" ]; then
-            minimum="80"
-          fi
+          minimum="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ReadCoverageThreshold --path "$config" --fallback 80)"
 
           coverage_file="$(find . -path '*/coverage.cobertura.xml' -print -quit)"
           if [ -z "$coverage_file" ]; then
@@ -1472,13 +1493,7 @@ jobs:
             exit 1
           fi
 
-          line_rate="$(sed -n 's/.*line-rate="\([0-9.]*\)".*/\1/p' "$coverage_file" | head -n 1 || true)"
-          if [ -z "$line_rate" ]; then
-            echo "Could not read line-rate from $coverage_file."
-            exit 1
-          fi
-
-          actual="$(awk -v rate="$line_rate" 'BEGIN { printf "%.2f", rate * 100 }')"
+          actual="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ReadCoberturaLineRate --path "$coverage_file")"
           awk -v actual="$actual" -v minimum="$minimum" 'BEGIN { exit !(actual + 0 >= minimum + 0) }' || {
             echo "Coverage ${actual}% is below required ${minimum}%."
             exit 1
@@ -1591,14 +1606,12 @@ jobs:
           $changed_files
           EOF
 
-          ticket_key_pattern="$(sed -n 's/.*"ticketKeyPattern"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' .codex/delivery-policy.json | head -n 1 || true)"
-          test -n "$ticket_key_pattern"
+          ticket_key_pattern="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ReadDeliveryPolicy --path .codex/delivery-policy.json)"
 
           commit_message="${{ github.event.head_commit.message }}"
-          ticket_pattern="^${ticket_key_pattern}: "
-          merge_pr_pattern="^Merge pull request '${ticket_key_pattern}:"
+          plane_ticket_key="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ExtractTicketKey --pattern "$ticket_key_pattern" --message "$commit_message")"
           deploy_allowed=false
-          if [[ "$commit_message" =~ $ticket_pattern || "$commit_message" =~ $merge_pr_pattern ]]; then
+          if [ -n "$plane_ticket_key" ]; then
             deploy_allowed=true
           fi
 
@@ -1646,29 +1659,14 @@ jobs:
         run: |
           checksum="$(cut -d ' ' -f1 artifacts/app.zip.sha256)"
           commit_sha="$(cat artifacts/commit.sha)"
-          ticket_key_pattern="$(sed -n 's/.*"ticketKeyPattern"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' .codex/delivery-policy.json | head -n 1 || true)"
-          test -n "$ticket_key_pattern"
+          ticket_key_pattern="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ReadDeliveryPolicy --path .codex/delivery-policy.json)"
 
           commit_message="$(git log -1 --pretty=%B)"
-          plane_ticket_key="$(printf '%s\n' "$commit_message" | sed -n "s/^\(${ticket_key_pattern}\): .*/\1/p" | head -n 1 || true)"
-          if [ -z "$plane_ticket_key" ]; then
-            plane_ticket_key="$(printf '%s\n' "$commit_message" | sed -n "s/^Merge pull request '\(${ticket_key_pattern}\):.*/\1/p" | head -n 1 || true)"
-          fi
-          if [ -z "$plane_ticket_key" ]; then
-            plane_ticket_key="manual-dispatch"
-          fi
+          plane_ticket_key="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ExtractTicketKey --pattern "$ticket_key_pattern" --message "$commit_message" --fallback manual-dispatch)"
 
           artifact_url="$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip"
-          cat > artifacts/release.json <<EOF
-          {
-            "schemaVersion": 1,
-            "commitSha": "$commit_sha",
-            "checksum": "$checksum",
-            "artifactUrl": "$artifact_url",
-            "planeTicketKey": "$plane_ticket_key",
-            "versionStatus": "unversioned"
-          }
-          EOF
+          dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- CreateReleaseManifest --output artifacts/release.json --commit-sha "$commit_sha" --checksum "$checksum" --artifact-url "$artifact_url" --plane-ticket-key "$plane_ticket_key" --version-status unversioned
+          dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ValidateReleaseManifest --path artifacts/release.json
 
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/app.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip"
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/app.zip.sha256 "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip.sha256"
@@ -1898,13 +1896,13 @@ function Invoke-SetQualityConfig {
   }
 
   if (Test-Path $target) {
-    $config = Get-Content -Path $target -Raw | ConvertFrom-Json -Depth 20
+    $config = Get-Content -Path $target -Raw | ConvertFrom-Json
   } else {
     $source = Join-RootPath ".codex/quality.example.json"
     if (-not (Test-Path $source)) {
       throw "Missing .codex/quality.example.json. Run -Mode InitQualityGateTemplates first."
     }
-    $config = Get-Content -Path $source -Raw | ConvertFrom-Json -Depth 20
+    $config = Get-Content -Path $source -Raw | ConvertFrom-Json
   }
 
   foreach ($key in $values.Keys) {
@@ -1946,7 +1944,7 @@ function Invoke-SetClientTools {
   }
 
   $values = Convert-JsonToHashtable $ValuesJson
-  $config = Get-Content -Path $target -Raw | ConvertFrom-Json -Depth 20
+  $config = Get-Content -Path $target -Raw | ConvertFrom-Json
   foreach ($section in @("plane", "git", "gitea", "nexus", "pr")) {
     if ($values.Contains($section)) {
       Ensure-ObjectProperty -Object $config -Name $section

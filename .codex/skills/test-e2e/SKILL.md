@@ -11,6 +11,8 @@ Use this skill after deployment validation has already moved a Plane ticket to Q
 
 This skill is technology-agnostic. Inspect the repository first. Use an established E2E/API test tool when one is already configured; otherwise ask the user to choose before creating or running technology-dependent tests.
 
+For Blazor or other rendered website changes, prefer `$frontend-testing-debugging` when the repo has `.codex/skills/frontend-testing-debugging/SKILL.md` and the ticket requires browser-visible validation, responsive layout checks, console health, screenshots, or interaction proof. Keep API and deployment health checks in the repo-native .NET/API path.
+
 Non-interactive context means the run has no available user-response channel, such as cron automation, CI, detached automation, or an explicit "do not ask" instruction.
 
 Read `.codex/skills/_shared/delivery-contract.md` before QA state changes. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` for deterministic mechanics: `ValidateTicketLock` against `.codex/delivery-context.local.json` before testing/tagging/evidence/state mutation, `ValidateDeploymentLane` before deployment-lane mutations, `CheckGitIgnored` before writing evidence, `NextRcVersion` when deriving RC tags, `UpdateReleaseManifest` after QA passes, `ValidateReleaseManifest` before upload, and `RenderPlaneComment -Type E2EQA` for the Plane comment.
