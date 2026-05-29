@@ -1,11 +1,20 @@
 param(
   [Parameter(Mandatory = $true)]
-  [ValidateSet('ArtifactPaths', 'CheckGitIgnored', 'NextRcVersion', 'ValidateReleaseManifest')]
+  [ValidateSet('ArtifactPaths', 'CheckGitIgnored', 'NextRcVersion', 'ValidateReleaseManifest', 'ValidateTicketLock', 'ValidateDeploymentLane', 'RenderPlaneComment', 'UpdateReleaseManifest')]
   [string] $Mode,
 
   [string] $CommitSha,
   [string] $Path,
   [string] $TargetVersion,
+  [string] $TicketKey,
+  [string] $Branch,
+  [string] $PrNumber,
+  [string] $ArtifactCommitSha,
+  [string] $SourceRcVersion,
+  [string] $FinalReleaseVersion,
+  [string] $Stage,
+  [string] $Type,
+  [string] $InputJson,
   [string] $RepoRoot = (Get-Location).Path
 )
 
@@ -14,6 +23,29 @@ $ErrorActionPreference = 'Stop'
 
 function Write-Json($Value) {
   $Value | ConvertTo-Json -Depth 20
+}
+
+function Get-ObjectProperty($Object, [string] $Name) {
+  if ($null -eq $Object) {
+    return $null
+  }
+  if ($Object.PSObject.Properties.Name -contains $Name) {
+    return $Object.$Name
+  }
+  return $null
+}
+
+function Test-ExpectedValue([System.Collections.Generic.List[string]] $Errors, [string] $Name, $Actual, [string] $Expected) {
+  if ([string]::IsNullOrWhiteSpace($Expected)) {
+    return
+  }
+  if ([string]::IsNullOrWhiteSpace([string]$Actual)) {
+    $Errors.Add("$Name is missing from the lock.")
+    return
+  }
+  if ([string]$Actual -ne $Expected) {
+    $Errors.Add("$Name mismatch: lock has '$Actual', expected '$Expected'.")
+  }
 }
 
 function Get-ArtifactPaths([string] $Sha) {
@@ -150,9 +182,233 @@ function Test-ReleaseManifest([string] $ManifestPath) {
   }
 }
 
+function Test-TicketLock {
+  $lockPath = Join-Path $RepoRoot '.codex/delivery-context.local.json'
+  if (-not (Test-Path -LiteralPath $lockPath)) {
+    return [pscustomobject]@{
+      path = $lockPath
+      exists = $false
+      valid = $true
+      errors = @()
+    }
+  }
+
+  $lock = Get-Content -LiteralPath $lockPath -Raw | ConvertFrom-Json
+  $errors = [System.Collections.Generic.List[string]]::new()
+
+  Test-ExpectedValue $errors 'ticketKey' (Get-ObjectProperty $lock 'ticketKey') $TicketKey
+  Test-ExpectedValue $errors 'branch' (Get-ObjectProperty $lock 'branch') $Branch
+  Test-ExpectedValue $errors 'prNumber' (Get-ObjectProperty $lock 'prNumber') $PrNumber
+  Test-ExpectedValue $errors 'artifactCommitSha' (Get-ObjectProperty $lock 'artifactCommitSha') $ArtifactCommitSha
+  Test-ExpectedValue $errors 'sourceRcVersion' (Get-ObjectProperty $lock 'sourceRcVersion') $SourceRcVersion
+  Test-ExpectedValue $errors 'finalReleaseVersion' (Get-ObjectProperty $lock 'finalReleaseVersion') $FinalReleaseVersion
+
+  [pscustomobject]@{
+    path = $lockPath
+    exists = $true
+    valid = $errors.Count -eq 0
+    ticketKey = Get-ObjectProperty $lock 'ticketKey'
+    branch = Get-ObjectProperty $lock 'branch'
+    prNumber = Get-ObjectProperty $lock 'prNumber'
+    artifactCommitSha = Get-ObjectProperty $lock 'artifactCommitSha'
+    sourceRcVersion = Get-ObjectProperty $lock 'sourceRcVersion'
+    finalReleaseVersion = Get-ObjectProperty $lock 'finalReleaseVersion'
+    errors = @($errors)
+  }
+}
+
+function Test-DeploymentLane {
+  $lanePath = Join-Path $RepoRoot '.codex/parallel-delivery.local.json'
+  if (-not (Test-Path -LiteralPath $lanePath)) {
+    return [pscustomobject]@{
+      path = $lanePath
+      active = $false
+      valid = $true
+      errors = @()
+    }
+  }
+
+  $state = Get-Content -LiteralPath $lanePath -Raw | ConvertFrom-Json
+  $policy = [string](Get-ObjectProperty $state 'deploymentLanePolicy')
+  $owner = Get-ObjectProperty $state 'deploymentLaneOwner'
+  $ownerTicket = [string](Get-ObjectProperty $owner 'ticketKey')
+  $ownerStage = [string](Get-ObjectProperty $owner 'stage')
+  $errors = [System.Collections.Generic.List[string]]::new()
+
+  if ($policy -eq 'serialized' -and -not [string]::IsNullOrWhiteSpace($ownerTicket)) {
+    if (-not [string]::IsNullOrWhiteSpace($TicketKey) -and $ownerTicket -ne $TicketKey) {
+      $errors.Add("Deployment lane is owned by '$ownerTicket' at stage '$ownerStage'.")
+    }
+  }
+
+  [pscustomobject]@{
+    path = $lanePath
+    active = $true
+    valid = $errors.Count -eq 0
+    policy = $policy
+    ownerTicketKey = $ownerTicket
+    ownerStage = $ownerStage
+    requestedTicketKey = $TicketKey
+    requestedStage = $Stage
+    errors = @($errors)
+  }
+}
+
+function Format-Link($Text, $Url) {
+  if ([string]::IsNullOrWhiteSpace([string]$Url)) {
+    return [string]$Text
+  }
+  return "[$Text]($Url)"
+}
+
+function Get-InputObject {
+  if ([string]::IsNullOrWhiteSpace($InputJson)) {
+    return [pscustomobject]@{}
+  }
+  return $InputJson | ConvertFrom-Json
+}
+
+function Render-PlaneComment {
+  if ([string]::IsNullOrWhiteSpace($Type)) {
+    throw 'Type is required for RenderPlaneComment.'
+  }
+
+  $data = Get-InputObject
+  $shortCommit = [string](Get-ObjectProperty $data 'shortCommit')
+  if ([string]::IsNullOrWhiteSpace($shortCommit)) {
+    $fullCommit = [string](Get-ObjectProperty $data 'commitSha')
+    if ($fullCommit.Length -ge 7) {
+      $shortCommit = $fullCommit.Substring(0, 7)
+    }
+  }
+
+  switch ($Type) {
+    'QADeployment' {
+      $commitSha = [string](Get-ObjectProperty $data 'commitSha')
+      $lines = @(
+        "IA generated QA deployment: $commitSha",
+        '',
+        "**Status:** $((Get-ObjectProperty $data 'status'))",
+        '',
+        '**Context**',
+        "- PR: $(Format-Link 'PR' (Get-ObjectProperty $data 'prUrl'))",
+        "- Commit: ``$shortCommit`` (``$commitSha``)",
+        "- Version: $((Get-ObjectProperty $data 'versionStatus'))",
+        "- Workflow: $(Format-Link 'workflow run' (Get-ObjectProperty $data 'workflowRunUrl'))",
+        '',
+        '**Artifacts**',
+        "- App ZIP: $(Format-Link 'app.zip' (Get-ObjectProperty $data 'artifactUrl'))",
+        "- Checksum: ``$((Get-ObjectProperty $data 'checksum'))``",
+        "- Release manifest: $(Format-Link 'release.json' (Get-ObjectProperty $data 'releaseManifestUrl'))",
+        '',
+        '**Environment Validation**',
+        '| Environment | Page | `/health` | URL |',
+        '| --- | --- | --- | --- |',
+        "| DEV | $((Get-ObjectProperty $data 'devStatus')) | $((Get-ObjectProperty $data 'devHealthStatus')) | $(Format-Link 'DEV' (Get-ObjectProperty $data 'devUrl')) |",
+        "| QA | $((Get-ObjectProperty $data 'qaStatus')) | $((Get-ObjectProperty $data 'qaHealthStatus')) | $(Format-Link 'QA' (Get-ObjectProperty $data 'qaUrl')) |"
+      )
+      return ($lines -join [Environment]::NewLine)
+    }
+    'E2EQA' {
+      $ticket = [string](Get-ObjectProperty $data 'ticketKey')
+      $commitSha = [string](Get-ObjectProperty $data 'commitSha')
+      $lines = @(
+        "IA generated E2E QA: $ticket",
+        '',
+        "**Status:** $((Get-ObjectProperty $data 'status'))",
+        '',
+        '**Context**',
+        "- Ticket: ``$ticket`` ($((Get-ObjectProperty $data 'ticketState')))",
+        "- QA URL: $(Format-Link 'open QA' (Get-ObjectProperty $data 'qaUrl'))",
+        "- Commit: ``$shortCommit`` (``$commitSha``)",
+        "- PR: $(Format-Link 'PR' (Get-ObjectProperty $data 'prUrl'))",
+        "- Artifact: $(Format-Link 'app.zip' (Get-ObjectProperty $data 'artifactUrl'))",
+        "- Source RC: ``$((Get-ObjectProperty $data 'sourceRcVersion'))`` -> ``$commitSha``",
+        "- Release lineage: ``$shortCommit`` -> ``$((Get-ObjectProperty $data 'sourceRcVersion'))`` -> pending ``$((Get-ObjectProperty $data 'finalReleaseVersion'))``",
+        '',
+        '**Scenarios**',
+        "$((Get-ObjectProperty $data 'scenariosMarkdown'))",
+        '',
+        '**Evidence**',
+        "- Evidence bundle: $(Format-Link 'qa-evidence.zip' (Get-ObjectProperty $data 'evidenceUrl'))",
+        "- Release manifest: $(Format-Link 'release.json' (Get-ObjectProperty $data 'releaseManifestUrl'))",
+        '',
+        '**Notes**',
+        "$((Get-ObjectProperty $data 'notesMarkdown'))"
+      )
+      return ($lines -join [Environment]::NewLine)
+    }
+    'ProdDeployment' {
+      $finalVersion = [string](Get-ObjectProperty $data 'finalReleaseVersion')
+      $commitSha = [string](Get-ObjectProperty $data 'commitSha')
+      $lines = @(
+        "IA generated PROD deployment: $finalVersion",
+        '',
+        "**Status:** $((Get-ObjectProperty $data 'status'))",
+        '',
+        '**Release**',
+        "- Ticket: ``$((Get-ObjectProperty $data 'ticketKey'))`` ($((Get-ObjectProperty $data 'ticketState')))",
+        "- Final version: ``$finalVersion``",
+        "- Source RC: ``$((Get-ObjectProperty $data 'sourceRcVersion'))``",
+        "- Lineage: ``$shortCommit`` -> ``$((Get-ObjectProperty $data 'sourceRcVersion'))`` -> ``$finalVersion``",
+        "- Final tag: ``$finalVersion`` -> ``$commitSha``",
+        "- Main update: $((Get-ObjectProperty $data 'mainUpdateResult'))",
+        '',
+        '**References**',
+        "- Release PR: $(Format-Link 'release PR' (Get-ObjectProperty $data 'releasePrUrl'))",
+        "- Workflow: $(Format-Link 'workflow run' (Get-ObjectProperty $data 'workflowRunUrl'))",
+        "- Artifact: $(Format-Link 'app.zip' (Get-ObjectProperty $data 'artifactUrl'))",
+        "- Checksum: ``$((Get-ObjectProperty $data 'checksum'))``",
+        "- Release manifest: $(Format-Link 'release.json' (Get-ObjectProperty $data 'releaseManifestUrl'))",
+        "- QA evidence: $(Format-Link 'qa-evidence.zip' (Get-ObjectProperty $data 'qaEvidenceUrl'))",
+        '',
+        '**Production Validation**',
+        "$((Get-ObjectProperty $data 'validationMarkdown'))",
+        '',
+        "**PROD URL:** $(Format-Link 'open production' (Get-ObjectProperty $data 'prodUrl'))"
+      )
+      return ($lines -join [Environment]::NewLine)
+    }
+    default {
+      throw "Unsupported RenderPlaneComment type: $Type"
+    }
+  }
+}
+
+function Update-ReleaseManifest {
+  if ([string]::IsNullOrWhiteSpace($Path)) {
+    throw 'Path is required for UpdateReleaseManifest.'
+  }
+  if ([string]::IsNullOrWhiteSpace($InputJson)) {
+    throw 'InputJson is required for UpdateReleaseManifest.'
+  }
+
+  $manifest = [pscustomobject]@{}
+  if (Test-Path -LiteralPath $Path) {
+    $manifest = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+  }
+
+  $updates = $InputJson | ConvertFrom-Json
+  foreach ($property in $updates.PSObject.Properties) {
+    $manifest | Add-Member -NotePropertyName $property.Name -NotePropertyValue $property.Value -Force
+  }
+
+  $parent = Split-Path -Parent $Path
+  if (-not [string]::IsNullOrWhiteSpace($parent) -and -not (Test-Path -LiteralPath $parent)) {
+    New-Item -ItemType Directory -Path $parent | Out-Null
+  }
+
+  $manifest | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $Path -Encoding UTF8
+  Test-ReleaseManifest $Path
+}
+
 switch ($Mode) {
   'ArtifactPaths' { Write-Json (Get-ArtifactPaths $CommitSha) }
   'CheckGitIgnored' { Write-Json (Test-GitIgnored $Path) }
   'NextRcVersion' { Write-Json (Get-NextRcVersion $TargetVersion) }
   'ValidateReleaseManifest' { Write-Json (Test-ReleaseManifest $Path) }
+  'ValidateTicketLock' { Write-Json (Test-TicketLock) }
+  'ValidateDeploymentLane' { Write-Json (Test-DeploymentLane) }
+  'RenderPlaneComment' { Render-PlaneComment }
+  'UpdateReleaseManifest' { Write-Json (Update-ReleaseManifest) }
 }

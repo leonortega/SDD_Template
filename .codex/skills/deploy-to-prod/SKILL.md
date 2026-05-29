@@ -15,9 +15,9 @@ feature branch -> dev -> DEV -> QA -> E2E QA OK -> main -> PROD
 
 PROD must reuse the QA-approved Nexus artifact. Never rebuild, republish, or rename the artifact during PROD promotion.
 
-Before promotion, read `.codex/skills/_shared/delivery-contract.md`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode ValidateReleaseManifest` when checking `release.json` and `-Mode ArtifactPaths` when verifying Nexus artifact paths. Enforce the ticket context lock before tagging, updating `main`, triggering PROD, or commenting success.
+Before promotion, read `.codex/skills/_shared/delivery-contract.md`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` for deterministic mechanics: `ValidateTicketLock` against `.codex/delivery-context.local.json` before tagging/main/PROD/comment mutation, `ValidateDeploymentLane` before deployment-lane mutations, `ArtifactPaths` for Nexus artifact paths, `ValidateReleaseManifest` when checking `release.json`, `UpdateReleaseManifest` after PROD verification, and `RenderPlaneComment -Type ProdDeployment` for the Plane comment.
 
-When parallel delivery is active and `.codex/parallel-delivery.local.json` exists in the coordinator checkout, respect the serialized deployment lane before tagging, updating `main`, triggering PROD, updating `release.json`, or commenting success. If another ticket owns the lane, stop and report the owner.
+When parallel delivery is active and `.codex/parallel-delivery.local.json` exists in the coordinator checkout, call `ValidateDeploymentLane` before tagging, updating `main`, triggering PROD, updating `release.json`, or commenting success. If another ticket owns the lane, stop and report the owner.
 
 For push-triggered PROD deployment from `main`, the commit or merged PR title must start with the ticket key format configured in `.codex/delivery-policy.json`, such as `E2EPROJECT-123: ...`. Maintenance commits, `[SDD]` commits, and non-ticket PRs must not deploy PROD.
 
@@ -44,7 +44,7 @@ Never print, commit, paste into tickets, or write real API tokens, cookies, Nexu
 ## Preflight
 
 1. Resolve the target Plane ticket, PR, QA-approved commit SHA, source RC version, and final release version from user input, Plane comments, Gitea PR metadata, tags, or Nexus artifact paths.
-2. Read `.codex/delivery-context.local.json` when present and verify the target Plane ticket, PR, QA-approved commit, source RC version when known, and final release version when known match the locked `ticketKey`. If anything resolves to another ticket, stop before tag or `main` mutation.
+2. Run `ValidateTicketLock` with the target Plane ticket, PR, QA-approved commit, source RC version when known, and final release version when known. If the result is invalid, stop before tag or `main` mutation.
 3. Require SemVer tags:
    - source RC: `vMAJOR.MINOR.PATCH-rc.N`
    - final release: `vMAJOR.MINOR.PATCH`
@@ -119,7 +119,7 @@ After the workflow succeeds, run direct verification before commenting success:
 6. Query Grafana health at `http://localhost:3001/api/health` when local Grafana is reachable.
 7. If Prometheus or Grafana is unreachable, classify monitoring as unavailable. Direct HTTP and `/health` checks remain authoritative for app success.
 8. If direct page or `/health` checks fail, classify PROD verification as failed and do not claim success.
-9. When PROD verification passes, update `app/{commitSha}/release.json` with final release version, final tag, PROD URL, PROD page status, PROD `/health` status, workflow run URL, monitoring status, and PROD deployment timestamp. Upload the updated manifest to Nexus.
+9. When PROD verification passes, use `UpdateReleaseManifest` to update `app/{commitSha}/release.json` with final release version, final tag, PROD URL, PROD page status, PROD `/health` status, workflow run URL, monitoring status, and PROD deployment timestamp. Validate and upload the updated manifest to Nexus.
 
 PROD success must never be based on screenshots alone.
 
@@ -133,41 +133,7 @@ IA generated PROD deployment: {finalVersion}
 
 Do not duplicate a PROD result comment with the same marker, commit, artifact, and PROD URL unless the user explicitly asks for a fresh run.
 
-Keep the marker as the first line by itself, then format the comment as readable Markdown:
-
-```markdown
-IA generated PROD deployment: {finalVersion}
-
-**Status:** PASS|FAIL|BLOCKED - one-sentence production outcome.
-
-**Release**
-- Ticket: `{ticketKey}` ({currentState})
-- Final version: `{finalVersion}`
-- Source RC: `{sourceRcVersion}`
-- Lineage: `{shortCommit}` -> `{sourceRcVersion}` -> `{finalVersion}`
-- Final tag: `{finalVersion}` -> `{commitSha}`
-- Main update: concise ref update result
-
-**References**
-- Release PR: [#{releasePrNumber}]({releasePrUrl})
-- Source PR: [#{sourcePrNumber}]({sourcePrUrl})
-- Workflow: [run {runNumber}]({workflowRunUrl})
-- Artifact: [app.zip]({nexusArtifactUrl})
-- Checksum: `{checksum}`
-- Release manifest: [release.json]({nexusReleaseManifestUrl})
-- QA evidence: [qa-evidence.zip]({qaEvidenceUrl})
-
-**Production Validation**
-| Check | Result |
-| --- | --- |
-| Page smoke | passed/failed, HTTP status, title/placeholder notes |
-| `/health` | passed/failed, HTTP status, response summary |
-| `/metrics` | passed/failed/not applicable, response summary |
-| Prometheus | passed/failed/not checked, target summary |
-| Grafana | passed/failed/not checked, API health summary |
-
-**PROD URL:** [open production]({prodUrl})
-```
+Keep the marker as the first line by itself. Use `RenderPlaneComment -Type ProdDeployment` with the resolved release, reference, evidence, and production validation data to format the readable Markdown body.
 
 The comment must include:
 

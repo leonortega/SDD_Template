@@ -13,9 +13,9 @@ This skill is technology-agnostic. Inspect the repository first. Use an establis
 
 Non-interactive context means the run has no available user-response channel, such as cron automation, CI, detached automation, or an explicit "do not ask" instruction.
 
-Read `.codex/skills/_shared/delivery-contract.md` before QA state changes. Use `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode CheckGitIgnored` before writing evidence, `-Mode NextRcVersion` when deriving RC tags, and `-Mode ValidateReleaseManifest` after updating `release.json`. Enforce the ticket context lock before testing, tagging, publishing evidence, or moving state.
+Read `.codex/skills/_shared/delivery-contract.md` before QA state changes. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` for deterministic mechanics: `ValidateTicketLock` against `.codex/delivery-context.local.json` before testing/tagging/evidence/state mutation, `ValidateDeploymentLane` before deployment-lane mutations, `CheckGitIgnored` before writing evidence, `NextRcVersion` when deriving RC tags, `UpdateReleaseManifest` after QA passes, `ValidateReleaseManifest` before upload, and `RenderPlaneComment -Type E2EQA` for the Plane comment.
 
-When parallel delivery is active and `.codex/parallel-delivery.local.json` exists in the coordinator checkout, respect the serialized deployment lane before testing QA, writing evidence, deriving RC tags, updating `release.json`, or moving Plane. If another ticket owns the lane, stop and report the owner.
+When parallel delivery is active and `.codex/parallel-delivery.local.json` exists in the coordinator checkout, call `ValidateDeploymentLane` before testing QA, writing evidence, deriving RC tags, updating `release.json`, or moving Plane. If another ticket owns the lane, stop and report the owner.
 
 ## Configuration
 
@@ -46,7 +46,7 @@ Never print, commit, paste into tickets, or write real API tokens, cookies, sess
 ### 1. Resolve Context
 
 1. Resolve the Plane ticket from user input, current branch, Gitea PR metadata, deployment comments, commit messages, or a ticket key.
-2. Read `.codex/delivery-context.local.json` when present and verify the resolved Plane ticket, QA deployment commit, artifact commit, and evidence path match the locked `ticketKey`. If any value belongs to another ticket, stop before testing or writing evidence.
+2. Run `ValidateTicketLock` with the resolved Plane ticket, QA deployment commit, artifact commit, and known version values. If the result is invalid, stop before testing or writing evidence.
 3. Fetch the Plane ticket with expanded state/project data.
 4. Verify the ticket is in `plane.qaState`. If it is not, stop unless the user explicitly asks to test despite the state mismatch.
 5. Resolve the project UUID and the configured `plane.doneState` by exact state name before any mutation. If `plane.doneState` is missing or unresolved, stop and ask for configuration.
@@ -172,7 +172,7 @@ qa/{ticketKey}/{runId}/qa-evidence.zip
 5. Add the Nexus evidence URL to the Plane comment.
 6. If Nexus is unavailable but Plane attachments are configured and safe, attach evidence to Plane.
 7. If neither Nexus nor Plane attachments are available, include local evidence paths in the Plane comment and clearly label them as local-only fallback evidence.
-8. Update `app/{commitSha}/release.json` in Nexus after QA passes, adding source RC version, QA evidence URL, QA result, QA timestamp, tested URLs, and the E2E scenario summary. Preserve existing artifact, checksum, PR, ticket, DEV, and QA deployment fields.
+8. Use `UpdateReleaseManifest` after QA passes, adding source RC version, QA evidence URL, QA result, QA timestamp, tested URLs, and the E2E scenario summary while preserving existing artifact, checksum, PR, ticket, DEV, and QA deployment fields.
 
 Do not move a ticket to `plane.doneState` until the evidence link or fallback evidence path has been written to Plane. If evidence upload fails after tests pass, comment the upload failure, leave the ticket in QA, and report the blocking evidence publication issue.
 
@@ -231,40 +231,7 @@ IA generated E2E QA: {ticketKey}
 
 Do not duplicate a QA result comment with the same marker and same tested commit/artifact unless the user explicitly asks for a fresh run.
 
-Keep the marker as the first line by itself, then format the comment as readable Markdown:
-
-```markdown
-IA generated E2E QA: {ticketKey}
-
-**Status:** PASS|FAIL|BLOCKED - one-sentence QA outcome.
-
-**Context**
-- Ticket: `{ticketKey}` ({currentState})
-- QA URL: [open QA]({qaUrl})
-- API base URL: `{apiBaseUrl}` or not applicable
-- Commit: `{shortCommit}` (`{commitSha}`)
-- PR: [#{prNumber}]({prUrl})
-- Artifact: [app.zip]({artifactUrl})
-- Source RC: `{sourceRcVersion}` -> `{commitSha}`
-- Release lineage: `{shortCommit}` -> `{sourceRcVersion}` -> pending `{finalProdVersion}`
-
-**Scenarios**
-| Check | Result |
-| --- | --- |
-| Format/build/tests/deployed page/API/health/metrics/etc. | passed/failed details |
-
-**Tooling**
-- Selected tools: concise reason for the test stack and any workflow runs used.
-
-**Evidence**
-- Evidence bundle: [qa-evidence.zip]({evidenceUrl})
-- Included: summary, plan, logs, TRX/results, HTTP/browser smoke JSON, screenshots, traces, or videos.
-- Release manifest: [release.json]({releaseManifestUrl})
-
-**Notes**
-- Defects/blockers: none, or list only actionable failures.
-- Completed expectations: concise statement tying results back to ticket requirements.
-```
+Keep the marker as the first line by itself. Use `RenderPlaneComment -Type E2EQA` with the resolved QA data, scenario summary, evidence links, and notes to format the readable Markdown body.
 
 The comment must include:
 

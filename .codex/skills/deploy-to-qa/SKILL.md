@@ -15,9 +15,9 @@ feature branch -> dev -> DEV -> QA -> main -> PROD
 
 `main` is updated only after QA passes. PROD promotion is separate and must reuse the QA-passed artifact commit.
 
-Before promotion, read `.codex/skills/_shared/delivery-contract.md`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode ArtifactPaths` for Nexus paths and validate `release.json` against `.codex/skills/_shared/release.schema.json` after writing it. Enforce the ticket context lock before promoting.
+Before promotion, read `.codex/skills/_shared/delivery-contract.md`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` for deterministic mechanics: `ArtifactPaths` for Nexus paths, `ValidateTicketLock` against `.codex/delivery-context.local.json` before promotion, `ValidateDeploymentLane` before deployment-lane mutations, `UpdateReleaseManifest` after DEV/QA validation, `ValidateReleaseManifest` before upload, and `RenderPlaneComment -Type QADeployment` for the Plane comment.
 
-When parallel delivery is active and `.codex/parallel-delivery.local.json` exists in the coordinator checkout, respect the serialized deployment lane before promoting artifacts, deploying DEV/QA, updating `release.json`, or moving Plane. If another ticket owns the lane, stop and report the owner.
+When parallel delivery is active and `.codex/parallel-delivery.local.json` exists in the coordinator checkout, call `ValidateDeploymentLane` before promoting artifacts, deploying DEV/QA, updating `release.json`, or moving Plane. If another ticket owns the lane, stop and report the owner.
 
 For push-triggered DEV/QA deployment, the commit or merged PR title must start with the ticket key format configured in `.codex/delivery-policy.json`, such as `E2EPROJECT-123: ...`. Maintenance commits and non-ticket PRs must not deploy.
 
@@ -42,7 +42,7 @@ Never print, commit, paste into tickets, or write real API tokens, Nexus credent
 2. Resolve the merged commit SHA from Gitea PR metadata. Use the merge commit SHA as the artifact identity.
 3. Verify the PR does not currently carry `pr.labels.needsChanges` or `pr.labels.needsTests`. If either label remains, stop before promotion.
 4. Resolve the Plane ticket key from the branch name, PR title, PR body, commit messages, or existing Plane comments.
-5. Read `.codex/delivery-context.local.json` when present and verify the resolved ticket key, PR, branch, and merged commit match the lock. If they do not, stop before reading or promoting artifacts.
+5. Run `ValidateTicketLock` with the resolved ticket key, PR, branch, and merged/artifact commit. If the result is invalid, stop before reading or promoting artifacts.
 6. Verify the package/deploy workflow completed for the merged commit. If it did not run, report that config-infra should be used to repair `.gitea/workflows/package-deploy.yml`.
 7. Build the Nexus artifact paths:
    - `app/{commitSha}/app.zip`
@@ -62,8 +62,8 @@ Never print, commit, paste into tickets, or write real API tokens, Nexus credent
 5. Validate the QA URL using the workflow smoke-check result or a fresh `curl --fail` when the URL is available. For fresh checks, use the same retry/backoff policy.
 6. Validate QA `/health` using workflow output or a fresh request. It must return HTTP 200 and JSON `status=ok`. For fresh checks, use the same retry/backoff policy.
 7. If DEV or QA page or `/health` validation fails, add a Plane failure comment and do not move the ticket state.
-8. Create or update `app/{commitSha}/release.json` with commit SHA, checksum, artifact URL, PR URL, Plane ticket key, DEV/QA URLs, DEV/QA status, health status, workflow run URL, and `versionStatus=unversioned QA candidate` unless an RC tag already exists.
-9. Upload `release.json` to Nexus next to the artifact.
+8. Use `UpdateReleaseManifest` to create or update `app/{commitSha}/release.json` with commit SHA, checksum, artifact URL, PR URL, Plane ticket key, DEV/QA URLs, DEV/QA status, health status, workflow run URL, and `versionStatus=unversioned QA candidate` unless an RC tag already exists.
+9. Validate and upload `release.json` to Nexus next to the artifact.
 10. If QA passes, move the Plane work item to `plane.qaState`, default `QA`.
 
 ## Plane Updates
@@ -80,33 +80,7 @@ IA generated QA deployment: {commitSha}
 
 Skip adding the comment if an existing comment already contains the same marker.
 
-Keep the marker as the first line by itself, then format the comment as readable Markdown:
-
-```markdown
-IA generated QA deployment: {commitSha}
-
-**Status:** PASS|FAIL - QA deployment validation outcome.
-
-**Context**
-- PR: [#{prNumber}]({prUrl})
-- Commit: `{shortCommit}` (`{commitSha}`)
-- Version: unversioned QA candidate, or source RC `{sourceRcVersion}` when already known
-- Workflow: [run {runNumber}]({workflowRunUrl})
-
-**Artifacts**
-- App ZIP: [app.zip]({nexusArtifactUrl})
-- Checksum: `{checksum}`
-- Release manifest: [release.json]({nexusReleaseManifestUrl})
-
-**Environment Validation**
-| Environment | Page | `/health` | URL |
-| --- | --- | --- | --- |
-| DEV | passed/failed | passed/failed/not checked | [DEV]({devUrl}) |
-| QA | passed/failed | passed/failed/not checked | [QA]({qaUrl}) |
-
-**Notes**
-- RC assignment happens during E2E QA before Done. Omit this when a source RC is already known.
-```
+Keep the marker as the first line by itself. Use `RenderPlaneComment -Type QADeployment` with the resolved deployment data to format the readable Markdown body.
 
 The comment must include:
 
