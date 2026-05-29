@@ -59,8 +59,10 @@ Inspect the smallest useful set first, then expand as needed:
 - `.codex/skills/gitea-pr-review-agent/SKILL.md`
 - `.codex/skills/openspec-verify-change/SKILL.md`
 - `.codex/skills/configure-dev-environment/SKILL.md`
+- `.codex/agent-evals/workflow-cases.json`
 - `.codex/skills/configure-*` docs, references, scripts, templates, and tests when setup or generated behavior is implicated
 - `.codex/delivery-context.local.json` when present, without printing secrets
+- ignored `.codex/agent-telemetry.local.jsonl` and `.codex/agent-evals/results.local.json` when present, without printing prompts or sensitive payloads
 - recent Git commits, branches, tags, PR labels, PR review comments, CI results, OpenSpec verification output, Plane comments, QA bug tickets, Nexus release manifests, and deployment evidence when available
 
 ## Workflow
@@ -104,6 +106,8 @@ Group findings by the workflow layer that should improve:
 - `skill-drift`: delivery skills and configure skills disagree with `_shared/delivery-contract.md`.
 - `observability`: evidence, logs, comments, or status reporting were insufficient to diagnose a run.
 - `agency-risk`: an agent had too much write authority, used the wrong tool boundary, attempted unsafe mutation, or acted without sufficient confirmation.
+- `model-optimization`: model choice, reasoning effort, prompt-cache hygiene, tool-call count, retries, latency, or token use produced avoidable cost or delay.
+- `eval-coverage`: a repeated miss lacks a workflow eval case that would catch route selection, tool selection, argument precision, mutation gates, stop conditions, or handoff gaps.
 
 For each finding, include the evidence, why it matters, and the durable improvement that would prevent recurrence.
 
@@ -118,6 +122,7 @@ Apply one of these outcomes:
 - `Shared contract update`: multiple skills need a new common rule.
 - `Configure sync update`: setup docs, templates, audit scripts, or tests must match delivery behavior.
 - `Regression test`: a script/template/check should enforce the rule.
+- `Workflow eval`: `.codex/agent-evals/workflow-cases.json` should gain or refine a case for the missed agent behavior.
 - `Quality gate update`: CI or local validation should catch the issue.
 - `Docs update`: durable findings should be promoted to `docs/architecture.md`, `docs/development.md`, `docs/deployment.md`, or `docs/context-management.md`.
 - `Memory update`: reusable but non-authoritative findings should be added to `.codex/memory/` through the memory update process.
@@ -140,7 +145,8 @@ When applying changes:
 5. Update affected delivery-flow skills.
 6. Update configure skills, generated templates, audits, and tests when the Skill Synchronization Rule requires it.
 7. Add or update regression tests when the behavior can be enforced from files.
-8. Run the narrowest relevant validation command, such as skill validation, script tests, or existing repo tests.
+8. Add or update workflow eval cases when the behavior is agent decision quality rather than deterministic file validation.
+9. Run the narrowest relevant validation command, such as skill validation, script tests, or existing repo tests.
 
 Do not change OpenSpec-specific skills unless the requested improvement explicitly affects OpenSpec behavior.
 

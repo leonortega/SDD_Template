@@ -66,6 +66,32 @@ Every implementation, review, QA, deployment, PROD, rollback, or hotfix handoff 
 - memory updated or explicitly not updated when the workflow performs a memory update review
 - next required action
 
+## Prompt Cache Hygiene
+
+Long-running agent workflows should keep stable context before volatile runtime context so repeated calls can reuse cacheable prompt prefixes. Put repository policy, delivery contract excerpts, skill instructions, schemas, and stable examples before ticket-specific Plane comments, PR diffs, tool results, timestamps, logs, and health-check output.
+
+Dynamic values belong near the end of the working context:
+
+- current user request
+- active ticket state and generated comments
+- Git branch, dirty state, commit SHA, PR state, labels, and CI status
+- Nexus manifests, Azure health checks, QA evidence, and monitoring output
+- tool errors, retries, and latest observations
+
+Do not insert timestamps, random IDs, raw tool dumps, or refreshed status summaries into otherwise stable context blocks. If a run records model telemetry, write it to ignored local output such as `.codex/agent-telemetry.local.jsonl` and summarize only the useful optimization finding in handoff text.
+
+## Agent Telemetry
+
+When the platform exposes usage data, delivery agents should record non-secret optimization telemetry for retrospective analysis:
+
+- workflow stage and agent role
+- model and reasoning effort
+- input, output, reasoning, and cached token counts when available
+- tool-call count, retry count, elapsed time, and outcome
+- blocker category when the run stops
+
+Telemetry is evidence for model routing, prompt-cache hygiene, tool-description changes, and eval coverage. It is not an authority source and must not contain secrets, full prompts, raw credentials, private payloads, or large tool results.
+
 ## Context Findings
 
 During implementation and retrospective work, update durable docs when new reusable knowledge is discovered:
