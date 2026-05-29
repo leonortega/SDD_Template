@@ -21,7 +21,28 @@ Default to read-only mode unless the user explicitly asks to apply changes.
 - `Proposal mode`: draft exact skill/config/test changes without editing files.
 - `Apply mode`: edit skills, scripts, templates, or tests after evidence is clear and the user requested implementation.
 
-Never silently rewrite workflow rules from one isolated failure. Require either a repeated pattern, a high-severity gap, or a direct inconsistency with the delivery contract.
+Never silently rewrite workflow rules from one isolated failure. Apply the Agent Self-Improvement Gate in `.codex/skills/_shared/delivery-contract.md` before changing skills, workflow policy, configure templates, or quality gates from retrospective evidence.
+
+This skill is safe to run as a manual quality lane through prompts such as:
+
+- `Audit recent delivery workflow`
+- `Audit failed QA/review/CI run`
+- `Run agent self-improvement audit`
+
+Do not create recurring automations, scheduled jobs, Plane tickets, deployment actions, tags, or ticket-state mutations from this skill unless the user explicitly requests that separate action.
+
+## Triggers
+
+Run this audit after or between delivery work when one of these conditions occurs:
+
+- a QA bug is filed or E2E QA fails,
+- `gitea-pr-review-agent` misses a meaningful issue,
+- Gitea Actions, local quality gates, or runner tooling fail in a way that blocks handoff,
+- deployment, release manifest, rollback, or hotfix flow is blocked,
+- a delivery skill and configure skill appear to disagree,
+- the operator asks for a periodic manual review after several completed tickets, such as every 3 to 5 tickets.
+
+If operators want scheduled audits, create a follow-up ticket that defines cadence, ownership, output destination, and allowed mutations.
 
 ## Evidence Sources
 
@@ -82,8 +103,11 @@ Group findings by the workflow layer that should improve:
 - `deployment`: artifact, release manifest, health contract, promotion, tag, or rollback rules missed something.
 - `skill-drift`: delivery skills and configure skills disagree with `_shared/delivery-contract.md`.
 - `observability`: evidence, logs, comments, or status reporting were insufficient to diagnose a run.
+- `agency-risk`: an agent had too much write authority, used the wrong tool boundary, attempted unsafe mutation, or acted without sufficient confirmation.
 
 For each finding, include the evidence, why it matters, and the durable improvement that would prevent recurrence.
+
+Use `templates/audit-checklist.md` as the default report skeleton when producing a read-only audit or proposal.
 
 ### 4. Decide Whether To Improve
 
@@ -100,6 +124,8 @@ Apply one of these outcomes:
 - `Follow-up ticket`: the change is product work, infra work, or too large for the current retrospective.
 
 Prefer tests or deterministic validation for enforceable rules. Prefer skill text only for judgment-heavy process rules.
+
+Before choosing any outcome other than `No change`, confirm the Agent Self-Improvement Gate in `.codex/skills/_shared/delivery-contract.md` is satisfied.
 
 Use the Context Findings classification from `docs/context-management.md` and `.codex/memory/retrieval-policy.md` to decide whether a durable finding belongs in `docs/`, `.codex/skills/_shared/delivery-contract.md` plus related skills and tests, or `.codex/memory/`.
 

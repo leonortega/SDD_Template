@@ -34,6 +34,21 @@ Implementation and retrospective work must preserve durable context discovered d
 
 Implementation PR bodies and Plane handoff comments must include `Context findings: added/updated/none`, `Docs updated: <files>` or `Docs: no durable context changes`, `Memory updated: <files>` or `Memory updated: none`, and `Assumptions recorded: <short list or none>`.
 
+## Agent Self-Improvement Gate
+
+Agent self-improvement is a controlled quality lane, not an automatic permission to rewrite workflow behavior.
+
+Use `delivery-retrospective-audit` for prompts such as `Audit recent delivery workflow`, `Audit failed QA/review/CI run`, or `Run agent self-improvement audit`. The audit is read-only by default and must not mutate Plane state, deploy, promote, tag, create scheduled automations, or rewrite active ticket context unless the user explicitly requests that separate action.
+
+Before changing any skill, workflow policy, configure template, or quality gate from retrospective evidence, at least one gate must be met:
+
+- repeated pattern across multiple delivery runs,
+- high-severity failure that could recur or affect QA, PROD, artifacts, secrets, or user-visible behavior,
+- direct conflict with this delivery contract,
+- missing deterministic check for an already-required workflow rule.
+
+When a retrospective changes delivery behavior, update this contract first when the rule is cross-cutting, then synchronize affected delivery skills, configure skills, durable docs, templates, and regression tests under the Skill Synchronization Rule.
+
 ## States And Flow
 
 Default Plane states:

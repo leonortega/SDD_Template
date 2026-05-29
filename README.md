@@ -176,6 +176,9 @@ Continue E2EPROJECT-1
 Where does E2EPROJECT-1 stand?
 Run QA for E2EPROJECT-1
 Promote E2EPROJECT-1 to PROD
+Audit recent delivery workflow
+Audit failed QA/review/CI run
+Run agent self-improvement audit
 ```
 
 Use `Coordinate parallel Plane tickets` when more than one ticket should be active at the same time. Read `docs/parallel-delivery.md` first for the dry-run checklist, worktree layout, role contracts, serialized deployment lane rules, and cleanup/recovery steps.
@@ -196,6 +199,7 @@ The repo-local workflow is encoded as Codex skills under `.codex/skills/`.
 Common entry points:
 
 - `configure-dev-environment`: configure Plane, Gitea, runner, quality gates, Nexus, Azure, and observability.
+- `delivery-retrospective-audit`: inspect recent delivery evidence and propose evidence-gated workflow or agent self-improvements.
 - `pipeline-status`: read-only dashboard for tickets, PRs, artifacts, QA evidence, tags, and deployments.
 - `parallel-ticket-coordinator`: coordinate multiple active tickets across isolated Git worktrees while serializing deployment promotion.
 - `automatic-implement-ticket`: inspect state and route to the next valid delivery step.
@@ -210,6 +214,12 @@ Common entry points:
 - `hotfix-prod`: run an expedited, gated production hotfix.
 
 The shared delivery contract is `.codex/skills/_shared/delivery-contract.md`. When delivery behavior changes, update the related skills, configuration docs, workflow files, and regression tests together.
+
+## Quality: Audit Agents & Self-Improvement
+
+The delivery lab includes a manual quality lane for improving agent behavior from evidence. Use `delivery-retrospective-audit` after QA bugs, meaningful review misses, CI/tooling blockers, deployment blockers, delivery/configure skill drift, or as a periodic manual review after several completed tickets.
+
+The audit is read-only by default. It can recommend skill, contract, docs, template, quality-gate, memory, or follow-up ticket changes, but durable workflow changes require repeated evidence, a high-severity gap, direct delivery-contract drift, or a missing deterministic check for an already-required rule. Recurring scheduled audits should be introduced through a separate follow-up ticket that defines cadence, ownership, output location, and allowed mutations.
 
 ## Key Principle
 
