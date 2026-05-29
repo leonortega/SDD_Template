@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 
 namespace SDDTemplate.DeliveryTools.Tests
@@ -277,7 +278,7 @@ namespace SDDTemplate.DeliveryTools.Tests
         {
             ProcessStartInfo startInfo = new()
             {
-                FileName = "powershell",
+                FileName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "powershell" : "pwsh",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
             };

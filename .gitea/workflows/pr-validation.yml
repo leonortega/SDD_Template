@@ -35,6 +35,19 @@ jobs:
       - name: Build
         run: dotnet build -c Release --no-restore
 
+      - name: Install PowerShell
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          apt-get update
+          apt-get install -y --no-install-recommends wget apt-transport-https ca-certificates gnupg
+          . /etc/os-release
+          wget -q "https://packages.microsoft.com/config/debian/${VERSION_ID}/packages-microsoft-prod.deb" -O /tmp/packages-microsoft-prod.deb
+          dpkg -i /tmp/packages-microsoft-prod.deb
+          apt-get update
+          apt-get install -y --no-install-recommends powershell
+
       - name: Test
         run: dotnet test -c Release --no-build --logger trx --collect:"XPlat Code Coverage"
 
