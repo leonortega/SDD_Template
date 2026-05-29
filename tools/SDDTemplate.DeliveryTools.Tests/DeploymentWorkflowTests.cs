@@ -1,4 +1,6 @@
-namespace SDDTemplate.Site.Tests
+using System.Text.Json;
+
+namespace SDDTemplate.DeliveryTools.Tests
 {
     public sealed class DeploymentWorkflowTests
     {
@@ -105,6 +107,15 @@ namespace SDDTemplate.Site.Tests
         }
 
         [Fact]
+        public void SolutionFileChangesIncludeSlnxAsAppAffecting()
+        {
+            string workflow = ReadWorkflow();
+            string classifyJob = GetJobSection(workflow, "classify-changes");
+
+            Assert.Contains("*.slnx", classifyJob);
+        }
+
+        [Fact]
         public void ConfigureAuditRequiresAllWorkflowSecretsInReadme()
         {
             string script = ReadConfigureScript();
@@ -181,6 +192,65 @@ namespace SDDTemplate.Site.Tests
             Assert.Contains("\"ticketKey\": \"E2EPROJECT-123\"", contract);
             Assert.Contains("release.json.planeTicketKey", contract);
             Assert.Contains("rollback-prod", contract);
+        }
+
+        [Fact]
+        public void AgentOptimizationPolicyDocsAndEvalFixturesAreDefined()
+        {
+            string root = FindRepositoryRoot().FullName;
+            string deliveryPolicy = File.ReadAllText(Path.Combine(root, ".codex", "delivery-policy.json"));
+            string gitignore = File.ReadAllText(Path.Combine(root, ".gitignore"));
+            string contextDocs = ReadDoc("context-management.md");
+            string developmentDocs = ReadDoc("development.md");
+            string retrospective = ReadSkill("delivery-retrospective-audit", "SKILL.md");
+            string skillStartup = ReadSkill("_shared", "skill-startup.md");
+
+            using JsonDocument policy = JsonDocument.Parse(deliveryPolicy);
+            JsonElement optimization = policy.RootElement.GetProperty("agentOptimization");
+            Assert.True(optimization.GetProperty("promptCache").GetProperty("enabled").GetBoolean());
+            Assert.True(optimization.GetProperty("promptCache").GetProperty("staticContextFirst").GetBoolean());
+            Assert.True(optimization.GetProperty("workflowEvals").GetProperty("requireEvalEvidenceBeforeNewAgentRole").GetBoolean());
+            Assert.Contains("cachedTokens", optimization.GetProperty("telemetry").GetProperty("requiredFields").EnumerateArray().Select(field => field.GetString()));
+
+            using JsonDocument cases = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, ".codex", "agent-evals", "workflow-cases.json")));
+            string[] caseIds = [.. cases.RootElement.GetProperty("cases").EnumerateArray().Select(item => item.GetProperty("id").GetString() ?? string.Empty)];
+            Assert.Contains("ticket-start-lock-created", caseIds);
+            Assert.Contains("implementation-quality-gated", caseIds);
+            Assert.Contains("qa-promotion-artifact-lineage", caseIds);
+            Assert.Contains("prod-explicit-artifact-promotion", caseIds);
+            Assert.Contains("rollback-no-main-rewrite", caseIds);
+
+            Assert.Contains(".codex/agent-telemetry.local.jsonl", gitignore);
+            Assert.Contains(".codex/agent-evals/results.local.json", gitignore);
+            Assert.Contains("## Prompt Cache Hygiene", contextDocs);
+            Assert.Contains("## Agent Telemetry", contextDocs);
+            Assert.Contains("## Agent Workflow Evals", developmentDocs);
+            Assert.Contains("audit_skill_contracts.ps1", developmentDocs);
+            Assert.Contains("model-optimization", retrospective);
+            Assert.Contains("eval-coverage", retrospective);
+            Assert.Contains(".codex/delivery-policy.json", skillStartup);
+            Assert.Contains("agentOptimization", skillStartup);
+        }
+
+        [Fact]
+        public void SkillContractAuditScriptRunsInAdvisoryModeByDefault()
+        {
+            string script = File.ReadAllText(Path.Combine(
+                FindRepositoryRoot().FullName,
+                ".codex",
+                "skills",
+                "_shared",
+                "scripts",
+                "audit_skill_contracts.ps1"));
+
+            Assert.Contains("FailOnFindings", script);
+            Assert.Contains("IncludeConfigure", script);
+            Assert.Contains("IncludeOpenSpec", script);
+            Assert.Contains("AllSkills", script);
+            Assert.Contains("requiredSections", script);
+            Assert.Contains("requiredTerms", script);
+            Assert.Contains("ConvertTo-Json -Depth 10", script);
+            Assert.Contains("if ($FailOnFindings -and $summary.failed -gt 0)", script);
         }
 
         [Fact]

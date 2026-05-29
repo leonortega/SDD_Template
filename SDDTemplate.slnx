@@ -7,5 +7,6 @@
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj" />
+    <Project Path="tools/SDDTemplate.DeliveryTools.Tests/SDDTemplate.DeliveryTools.Tests.csproj" />
   </Folder>
 </Solution>

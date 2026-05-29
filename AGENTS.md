@@ -4,17 +4,15 @@ This repository is an SDD/SDLC agentic template. Use the existing workflow files
 
 ## Start Here
 
-Before implementing, reviewing, or deploying work, inspect the relevant local context:
+Before implementing, reviewing, or deploying work, inspect the relevant local context for the current workflow stage:
 
 - `README.md`
-- `openspec/`
-- `.codex/skills/`
 - `.codex/skills/_shared/skill-startup.md`
 - `.codex/memory/memory_summary.md`
 - `.codex/memory/MEMORY.md`
 - `.codex/delivery-policy.json`
-- `.codex/quality.local.json`
-- `.codex/client-tools.local.json`
+
+Then read only the stage-specific docs, OpenSpec artifacts, skills, code, tests, and workflow files needed for the task. Read `.codex/quality.local.json` or `.codex/client-tools.local.json` only when the workflow needs those values, and never print secrets or credential-bearing values.
 
 Prefer repository-specific skills and scripts over ad hoc process decisions.
 

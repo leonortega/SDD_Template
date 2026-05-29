@@ -72,6 +72,26 @@ Use `.codex/skills/delivery-retrospective-audit` to inspect recent delivery evid
 
 Retrospectives are read-only by default. Apply durable workflow changes only when the evidence shows a repeated pattern, a high-severity gap, direct drift from `.codex/skills/_shared/delivery-contract.md`, or a missing deterministic check for an already-required rule. The audit must not mutate Plane state, deploy, promote, tag, or create recurring automations unless the user explicitly requests that separate action.
 
+## Agent Workflow Evals
+
+Agent behavior is evaluated separately from product behavior. The default workflow fixtures live in `.codex/agent-evals/workflow-cases.json` and cover ticket start, implementation, PR review, QA promotion, E2E QA, PROD promotion, and rollback.
+
+Use these evals when changing delivery skills, adding new agent roles, changing model routing, or investigating repeated agent failures. Each case checks route selection, tool selection, argument precision, mutation gates, stop conditions, and handoff fields. New agent roles or routing complexity should be backed by eval evidence that the existing workflow struggled or became ambiguous.
+
+Local eval output belongs in ignored `.codex/agent-evals/results.local.json`.
+
+## Skill Contract Audit
+
+Run the shared skill-contract audit after changing delivery skills or during retrospective hardening:
+
+```powershell
+.\.codex\skills\_shared\scripts\audit_skill_contracts.ps1
+```
+
+The audit checks non-OpenSpec, non-configure skills by default for standard delivery contract sections and core terms such as validation, ticket context, and handoff behavior. Use `-IncludeConfigure`, `-IncludeOpenSpec`, or `-AllSkills` to broaden the scope. Treat failures as review findings: either update the skill or document why that skill intentionally uses a different shape.
+
+Use `-FailOnFindings` when the audit is part of a hard quality gate.
+
 ## Context Findings
 
 Every implementation must finish with a Context Findings Review. Durable findings update the matching file under `docs/` in the same PR. If there are no durable findings, the PR body and Plane handoff comment must state `Docs: no durable context changes`.

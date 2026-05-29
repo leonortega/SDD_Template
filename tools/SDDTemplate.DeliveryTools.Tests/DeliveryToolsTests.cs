@@ -1,8 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
-using SDDTemplate.DeliveryTools;
 
-namespace SDDTemplate.Site.Tests
+namespace SDDTemplate.DeliveryTools.Tests
 {
     public sealed class DeliveryToolsTests
     {

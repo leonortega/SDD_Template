@@ -6,16 +6,7 @@ Memory is not an authority source. Use it to find relevant context quickly, then
 
 ## Authority Reminder
 
-When sources disagree, follow the authority order from `docs/context-management.md`:
-
-1. Latest explicit user request in the current conversation.
-2. Active Plane ticket state, description, acceptance criteria, and generated markers.
-3. Active OpenSpec proposal, design, specs, and tasks.
-4. `.codex/skills/_shared/delivery-contract.md`.
-5. Canonical docs in `docs/`.
-6. Current code, tests, workflow files, and configuration templates.
-7. Historical Plane comments, PR comments, QA evidence, release manifests, and tags.
-8. Agent assumptions.
+When sources disagree, follow the authority order in `docs/context-management.md`. Do not duplicate that list here; this memory index is intentionally subordinate to current user intent, Plane, OpenSpec, the shared delivery contract, canonical docs, current files, durable evidence, and only then memory.
 
 ## Memory Files
 

@@ -28,6 +28,19 @@ function Write-Json($Value) {
   $Value | ConvertTo-Json -Depth 20
 }
 
+function Invoke-DeliveryCli([string[]] $Arguments, [switch] $AllowFailure) {
+  $project = Join-Path $RepoRoot 'tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj'
+  if (-not (Test-Path -LiteralPath $project)) {
+    throw "Delivery tools project not found: $project"
+  }
+
+  $output = & dotnet run --project $project -- $Arguments
+  if ($LASTEXITCODE -ne 0 -and -not $AllowFailure) {
+    throw "Delivery tools command failed: $($Arguments -join ' ')"
+  }
+  return ($output -join [Environment]::NewLine).Trim()
+}
+
 function Get-ObjectProperty($Object, [string] $Name) {
   if ($null -eq $Object) {
     return $null
@@ -152,50 +165,19 @@ function Test-ReleaseManifest([string] $ManifestPath) {
   if ([string]::IsNullOrWhiteSpace($ManifestPath)) {
     throw 'Path is required for ValidateReleaseManifest.'
   }
-  if (-not (Test-Path -LiteralPath $ManifestPath)) {
-    throw "Release manifest not found: $ManifestPath"
-  }
 
-  $manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
-  $missing = @()
-  foreach ($field in @('schemaVersion', 'commitSha', 'checksum', 'artifactUrl', 'planeTicketKey', 'versionStatus')) {
-    if (-not ($manifest.PSObject.Properties.Name -contains $field) -or [string]::IsNullOrWhiteSpace([string]$manifest.$field)) {
-      $missing += $field
-    }
-  }
-
-  $errors = @()
-  if ($missing.Count -gt 0) {
-    $errors += "Missing required fields: $($missing -join ', ')"
-  }
-  if (($manifest.PSObject.Properties.Name -contains 'commitSha') -and $manifest.commitSha -notmatch '^[0-9a-fA-F]{7,40}$') {
-    $errors += 'commitSha must be 7 to 40 hex characters.'
-  }
-  if (($manifest.PSObject.Properties.Name -contains 'sourceRcVersion') -and $manifest.sourceRcVersion -and $manifest.sourceRcVersion -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$') {
-    $errors += 'sourceRcVersion must use vMAJOR.MINOR.PATCH-rc.N.'
-  }
-  if (($manifest.PSObject.Properties.Name -contains 'finalReleaseVersion') -and $manifest.finalReleaseVersion -and $manifest.finalReleaseVersion -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') {
-    $errors += 'finalReleaseVersion must use vMAJOR.MINOR.PATCH.'
-  }
+  $validation = Invoke-DeliveryCli @('ValidateReleaseManifest', '--path', $ManifestPath) -AllowFailure | ConvertFrom-Json
 
   [pscustomobject]@{
     path = $ManifestPath
-    valid = $errors.Count -eq 0
-    errors = $errors
+    valid = [bool]$validation.Valid
+    errors = @($validation.Errors)
   }
 }
 
 function Get-DeliveryPolicy {
   $policyPath = Join-Path $RepoRoot '.codex/delivery-policy.json'
-  if (-not (Test-Path -LiteralPath $policyPath)) {
-    throw "Delivery policy not found: $policyPath"
-  }
-
-  $policy = Get-Content -LiteralPath $policyPath -Raw | ConvertFrom-Json
-  $ticketKeyPattern = [string](Get-ObjectProperty $policy 'ticketKeyPattern')
-  if ([string]::IsNullOrWhiteSpace($ticketKeyPattern)) {
-    throw 'delivery-policy.json must define ticketKeyPattern.'
-  }
+  $ticketKeyPattern = Invoke-DeliveryCli @('ReadDeliveryPolicy', '--path', $policyPath)
 
   [pscustomobject]@{
     path = $policyPath
@@ -209,17 +191,11 @@ function Get-ExtractedTicketKey {
     throw 'Message is required for ExtractTicketKey.'
   }
 
-  $firstLine = ($Message -replace "`r`n", "`n").Split("`n")[0]
-  $ticketKey = $null
-  if ($firstLine -match "^($($policy.ticketKeyPattern)): ") {
-    $ticketKey = $Matches[1]
+  $args = @('ExtractTicketKey', '--pattern', $policy.ticketKeyPattern, '--message', $Message)
+  if (-not [string]::IsNullOrWhiteSpace($FallbackTicketKey)) {
+    $args += @('--fallback', $FallbackTicketKey)
   }
-  elseif ($firstLine -match "^Merge pull request '($($policy.ticketKeyPattern)):") {
-    $ticketKey = $Matches[1]
-  }
-  elseif (-not [string]::IsNullOrWhiteSpace($FallbackTicketKey)) {
-    $ticketKey = $FallbackTicketKey
-  }
+  $ticketKey = Invoke-DeliveryCli $args
 
   [pscustomobject]@{
     ticketKey = $ticketKey
@@ -239,15 +215,7 @@ function Get-CoverageThreshold {
     $qualityPath = Join-Path $RepoRoot '.codex/quality.example.json'
   }
 
-  $minimum = $FallbackCoverageMinimum
-  if (Test-Path -LiteralPath $qualityPath) {
-    $quality = Get-Content -LiteralPath $qualityPath -Raw | ConvertFrom-Json
-    $coverage = Get-ObjectProperty $quality 'coverage'
-    $configured = Get-ObjectProperty $coverage 'minimumPercent'
-    if ($null -ne $configured -and [int]::TryParse([string]$configured, [ref]$minimum)) {
-      $minimum = [int]$configured
-    }
-  }
+  $minimum = [int](Invoke-DeliveryCli @('ReadCoverageThreshold', '--path', $qualityPath, '--fallback', ([string]$FallbackCoverageMinimum)))
 
   [pscustomobject]@{
     path = $qualityPath
@@ -263,17 +231,12 @@ function Get-CoberturaLineRate {
     throw "Cobertura coverage file not found: $Path"
   }
 
-  [xml]$coverage = Get-Content -LiteralPath $Path -Raw
-  $lineRate = [string]$coverage.coverage.'line-rate'
-  if ([string]::IsNullOrWhiteSpace($lineRate)) {
-    throw "Could not read line-rate from $Path."
-  }
-
-  $rate = [decimal]::Parse($lineRate, [System.Globalization.CultureInfo]::InvariantCulture)
+  $percent = [decimal]::Parse((Invoke-DeliveryCli @('ReadCoberturaLineRate', '--path', $Path)), [System.Globalization.CultureInfo]::InvariantCulture)
+  $rate = $percent / 100
   [pscustomobject]@{
     path = $Path
     lineRate = $rate
-    percent = [Math]::Round($rate * 100, 2)
+    percent = $percent
   }
 }
 
