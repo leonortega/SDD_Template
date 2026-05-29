@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "mode": "guided-manual",
+  "recommendations": [
+    {
+      "id": "gitea-pr-review-agent-skill",
+      "name": "Gitea PR review skill",
+      "type": "skill",
+      "requires": [ "gitea", "gitea-actions" ],
+      "purpose": "Review Gitea pull requests, post actionable findings, and apply configured review labels.",
+      "installMethod": "manual-copy",
+      "source": "repo:.codex/skills/gitea-pr-review-agent/SKILL.md",
+      "target": ".codex/skills/gitea-pr-review-agent/SKILL.md",
+      "validation": "Test-Path .\\.codex\\skills\\gitea-pr-review-agent\\SKILL.md"
+    },
+    {
+      "id": "azure-environment-config-skill",
+      "name": "Azure environment configuration skill",
+      "type": "skill",
+      "requires": [ "azure" ],
+      "purpose": "Guide Azure DEV, QA, and PROD App Service setup with Bicep validation and deployment checks.",
+      "installMethod": "manual-copy",
+      "source": "repo:.codex/skills/configure-azure-environments/SKILL.md",
+      "target": ".codex/skills/configure-azure-environments/SKILL.md",
+      "validation": "Test-Path .\\.codex\\skills\\configure-azure-environments\\SKILL.md"
+    },
+    {
+      "id": "browser-e2e-qa-plugin",
+      "name": "Browser E2E QA plugin",
+      "type": "plugin",
+      "requires": [ "e2e" ],
+      "purpose": "Open local or deployed web targets, inspect pages, capture screenshots, and verify user-facing QA flows.",
+      "installMethod": "manual-config",
+      "source": "manual:Codex Browser plugin or equivalent local browser automation configuration",
+      "target": "Codex app plugin configuration",
+      "validation": "Open the target site in the in-app browser and capture a smoke-test screenshot."
+    },
+    {
+      "id": "playwright-frontend-testing-skill",
+      "name": "Playwright frontend testing skill",
+      "type": "skill",
+      "requires": [ "e2e" ],
+      "purpose": "Run focused browser checks for layout, interaction, console errors, and responsive behavior.",
+      "installMethod": "manual-copy",
+      "source": "repo or approved skill source:frontend-testing-debugging/SKILL.md",
+      "target": ".codex/skills/frontend-testing-debugging/SKILL.md",
+      "validation": "Test-Path .\\.codex\\skills\\frontend-testing-debugging\\SKILL.md"
+    },
+    {
+      "id": "dotnet-quality-gates-skill",
+      "name": ".NET quality gates skill",
+      "type": "skill",
+      "requires": [ "dotnet", "gitea-actions" ],
+      "purpose": "Keep restore, format, build, test, coverage, vulnerability, secret, and filesystem scans aligned with CI.",
+      "installMethod": "manual-copy",
+      "source": "repo:.codex/skills/configure-quality-gates/SKILL.md",
+      "target": ".codex/skills/configure-quality-gates/SKILL.md",
+      "validation": "Test-Path .\\.codex\\skills\\configure-quality-gates\\SKILL.md"
+    },
+    {
+      "id": "openspec-delivery-skills",
+      "name": "OpenSpec delivery skills",
+      "type": "skill",
+      "requires": [ "openspec" ],
+      "purpose": "Create, apply, verify, and archive behavior changes before implementation and after QA completion.",
+      "installMethod": "manual-copy",
+      "source": "repo:.codex/skills/openspec-*",
+      "target": ".codex/skills/openspec-*",
+      "validation": "Test-Path .\\.codex\\skills\\openspec-propose\\SKILL.md"
+    }
+  ],
+  "notRecommended": [
+    {
+      "id": "plane-mcp-for-ticket-delivery",
+      "name": "Plane MCP",
+      "type": "mcp",
+      "requires": [ "plane" ],
+      "reason": "Plane MCP is intentionally not recommended for this delivery flow; repo-local skills must use the configured Plane API and never Plane MCP, containers, or direct databases for ticket delivery."
+    }
+  ]
+}

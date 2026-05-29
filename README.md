@@ -124,6 +124,14 @@ Configuration order:
 Plane -> Gitea -> Gitea Actions runner -> quality gates -> Nexus -> Azure DEV -> Azure QA -> Azure PROD -> Prometheus -> Grafana
 ```
 
+During full setup or base-code creation, the configurator can also run a recommended tooling audit:
+
+```powershell
+.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode AuditRecommendedTools
+```
+
+The audit suggests stack-relevant MCPs, plugins, and Codex skills from `.codex/tool-recommendations.example.json`. Skill acquisition is manual by default: read the source repository's `SKILL.md`, create `.codex/skills/{skill-name}/`, write the new `SKILL.md`, and copy only required referenced scripts or templates. Plugin and MCP setup should prefer manual configuration instructions over installer commands, and secrets must never be configured automatically.
+
 The main local files are:
 
 ```text

@@ -72,8 +72,10 @@ The old path under `configure-infra-tools` is a compatibility wrapper. Prefer th
 Useful modes:
 
 - `Audit`: full file-based audit.
+- `AuditRecommendedTools`: read-only stack detection and MCP/plugin/skill recommendation report.
 - `InitLocalFiles`: create ignored local files from tracked templates.
 - `SetClientTools`: update `.codex/client-tools.local.json`.
+- `SetRecommendedTools`: record accepted or dismissed recommendation ids in `.codex/client-tools.local.json`; it must not install skills, plugins, MCPs, or secrets.
 - `SetPlaneEnv`: update `infra/plane/variables.env`.
 - `SetGiteaRunner`: update `infra/gitea/runner.env`.
 - `AuditQualityGates`: inspect quality and CI/CD templates.
@@ -88,8 +90,12 @@ Useful modes:
 2. Summarize findings by domain without exposing secret values.
 3. For every missing prerequisite found during audit or validation, provide install, official link, and post-install validation/configuration commands.
 4. For every missing user-supplied value, provide source, destination, manual setup steps, official link, and validation command.
-5. Ask: `Which setup area do you want to work on now?`
-6. Offer these choices:
+5. Run `AuditRecommendedTools` when the user is doing full setup or base-code creation, then summarize relevant MCPs, plugins, and skills from `.codex/tool-recommendations.example.json`.
+6. For skills, prefer manual repo-based acquisition: identify the source repo/path, read the source `SKILL.md`, create `.codex/skills/{skill-name}/`, write `.codex/skills/{skill-name}/SKILL.md`, and copy only required referenced scripts/templates. Do not copy secrets, local state, caches, or unrelated files.
+7. For plugins and MCPs, prefer manual configuration instructions over installer commands. Show the exact files or UI fields to create or edit when known, ask before adding config, and never configure secrets automatically. Command installers are fallback-only.
+8. Record accepted or dismissed recommendation ids with `SetRecommendedTools` only after user confirmation.
+9. Ask: `Which setup area do you want to work on now?`
+10. Offer these choices:
    - Full guided setup
    - Plane tickets
    - Gitea PR automation
@@ -98,7 +104,7 @@ Useful modes:
    - Nexus artifacts and deployment promotion
    - Azure environments
    - Monitoring dashboards
-7. If the user is vague, default to full guided setup in this order:
+11. If the user is vague, default to full guided setup in this order:
    Plane -> Gitea PR automation -> Gitea Actions runner -> Quality gates and CI -> Nexus artifacts and deployment promotion -> Azure environments -> Monitoring dashboards.
 
 ## Domain Routing
@@ -122,5 +128,6 @@ End setup work with:
 - Missing tools with install command, official URL, and validation/configuration command.
 - Missing user-supplied values with source, destination, manual setup steps, official URL, and validation command.
 - Docker images or libraries pinned/updated, including the source used to confirm the current stable version.
+- Recommended MCPs, plugins, and skills shown, accepted, dismissed, or skipped. For accepted skills, state that manual copy from source `SKILL.md` is the default acquisition path.
 - Whether validation was file-only or included live checks.
 - Reminder to run `.\infra\up.ps1` if live services were not started.
