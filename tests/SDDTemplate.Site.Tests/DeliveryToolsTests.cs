@@ -130,9 +130,9 @@ namespace SDDTemplate.Site.Tests
         public void ParallelDeliveryDryRunValidatesUniqueTicketWorktreesAndSerializedLane()
         {
             string root = CreateTempDirectory();
-            string script = Path.Combine(FindRepositoryRoot().FullName, ".codex", "skills", "_shared", "scripts", "delivery_tools.ps1");
-            string stateJson = JsonSerializer.Serialize(new
+            using JsonDocument document = RunParallelDeliveryDryRun(root, new
             {
+                enabled = true,
                 maxActiveTickets = 2,
                 deploymentLanePolicy = "serialized",
                 deploymentLaneOwner = new { ticketKey = "E2EPROJECT-1", stage = "deploy-to-qa" },
@@ -143,12 +143,85 @@ namespace SDDTemplate.Site.Tests
                 },
             });
 
-            string output = RunPowerShell(script, "-Mode", "ValidateParallelDeliveryDryRun", "-RepoRoot", root, "-InputJson", stateJson);
-            using JsonDocument document = JsonDocument.Parse(output);
-
             Assert.True(document.RootElement.GetProperty("valid").GetBoolean());
             Assert.Equal(2, document.RootElement.GetProperty("activeTicketCount").GetInt32());
             Assert.Equal("serialized", document.RootElement.GetProperty("deploymentLanePolicy").GetString());
+        }
+
+        [Fact]
+        public void ParallelDeliveryDryRunReportsUnsafeTicketWorktreePlans()
+        {
+            string root = CreateTempDirectory();
+            using JsonDocument document = RunParallelDeliveryDryRun(root, new
+            {
+                enabled = false,
+                maxActiveTickets = 2,
+                deploymentLanePolicy = "serialized",
+                deploymentLaneOwner = new { ticketKey = "E2EPROJECT-999", stage = "deploy-to-qa" },
+                tickets = new[]
+                {
+                    new { ticketKey = "E2EPROJECT-1", branch = "codex/e2eproject-1-a", worktreePath = "../ticket-worktrees/e2eproject-1" },
+                    new { ticketKey = "E2EPROJECT-1", branch = "codex/e2eproject-1-a", worktreePath = "../ticket-worktrees/e2eproject-1" },
+                    new { ticketKey = "E2EPROJECT-3", branch = "codex/e2eproject-3-c", worktreePath = "" },
+                },
+            });
+            string[] errors = GetJsonErrors(document);
+
+            Assert.False(document.RootElement.GetProperty("valid").GetBoolean());
+            Assert.Contains(errors, error => error.Contains("parallelDelivery.enabled must be true", StringComparison.Ordinal));
+            Assert.Contains(errors, error => error.Contains("Active ticket count '3' exceeds maxActiveTickets '2'", StringComparison.Ordinal));
+            Assert.Contains(errors, error => error.Contains("Duplicate ticketKey 'E2EPROJECT-1'", StringComparison.Ordinal));
+            Assert.Contains(errors, error => error.Contains("Duplicate branch 'codex/e2eproject-1-a'", StringComparison.Ordinal));
+            Assert.Contains(errors, error => error.Contains("Duplicate worktreePath '../ticket-worktrees/e2eproject-1'", StringComparison.Ordinal));
+            Assert.Contains(errors, error => error.Contains("Ticket 'E2EPROJECT-3' is missing worktreePath", StringComparison.Ordinal));
+            Assert.Contains(errors, error => error.Contains("Serialized deployment lane owner 'E2EPROJECT-999' is not an active ticket", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public void ParallelDeliveryDryRunReportsUnsupportedLanePolicyAndMissingRuntimeFiles()
+        {
+            string root = CreateTempDirectory();
+            using JsonDocument document = RunParallelDeliveryDryRun(root, new
+            {
+                enabled = true,
+                maxActiveTickets = 2,
+                deploymentLanePolicy = "parallel",
+                requiredLocalConfigFiles = new[]
+                {
+                    ".codex/client-tools.local.json",
+                    ".codex/quality.local.json",
+                },
+                tickets = new[]
+                {
+                    new { ticketKey = "E2EPROJECT-1", branch = "codex/e2eproject-1-a", worktreePath = "../ticket-worktrees/e2eproject-1" },
+                },
+            });
+            string[] errors = GetJsonErrors(document);
+
+            Assert.False(document.RootElement.GetProperty("valid").GetBoolean());
+            Assert.Contains(errors, error => error.Contains("Unsupported deploymentLanePolicy 'parallel'", StringComparison.Ordinal));
+            Assert.Contains(errors, error => error.Contains("Required local runtime file '.codex/client-tools.local.json' is missing.", StringComparison.Ordinal));
+            Assert.Contains(errors, error => error.Contains("Required local runtime file '.codex/quality.local.json' is missing.", StringComparison.Ordinal));
+        }
+
+        private static JsonDocument RunParallelDeliveryDryRun(string root, object state)
+        {
+            string script = Path.Combine(FindRepositoryRoot().FullName, ".codex", "skills", "_shared", "scripts", "delivery_tools.ps1");
+            string output = RunPowerShell(
+                script,
+                "-Mode",
+                "ValidateParallelDeliveryDryRun",
+                "-RepoRoot",
+                root,
+                "-InputJson",
+                JsonSerializer.Serialize(state));
+
+            return JsonDocument.Parse(output);
+        }
+
+        private static string[] GetJsonErrors(JsonDocument document)
+        {
+            return [.. document.RootElement.GetProperty("errors").EnumerateArray().Select(error => error.GetString() ?? string.Empty)];
         }
 
         private static string RunPowerShellScript(params string[] args)
