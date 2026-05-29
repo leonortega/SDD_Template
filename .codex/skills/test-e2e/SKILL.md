@@ -231,6 +231,41 @@ IA generated E2E QA: {ticketKey}
 
 Do not duplicate a QA result comment with the same marker and same tested commit/artifact unless the user explicitly asks for a fresh run.
 
+Keep the marker as the first line by itself, then format the comment as readable Markdown:
+
+```markdown
+IA generated E2E QA: {ticketKey}
+
+**Status:** PASS|FAIL|BLOCKED - one-sentence QA outcome.
+
+**Context**
+- Ticket: `{ticketKey}` ({currentState})
+- QA URL: [open QA]({qaUrl})
+- API base URL: `{apiBaseUrl}` or not applicable
+- Commit: `{shortCommit}` (`{commitSha}`)
+- PR: [#{prNumber}]({prUrl})
+- Artifact: [app.zip]({artifactUrl})
+- Source RC: `{sourceRcVersion}` -> `{commitSha}`
+- Release lineage: `{shortCommit}` -> `{sourceRcVersion}` -> pending `{finalProdVersion}`
+
+**Scenarios**
+| Check | Result |
+| --- | --- |
+| Format/build/tests/deployed page/API/health/metrics/etc. | passed/failed details |
+
+**Tooling**
+- Selected tools: concise reason for the test stack and any workflow runs used.
+
+**Evidence**
+- Evidence bundle: [qa-evidence.zip]({evidenceUrl})
+- Included: summary, plan, logs, TRX/results, HTTP/browser smoke JSON, screenshots, traces, or videos.
+- Release manifest: [release.json]({releaseManifestUrl})
+
+**Notes**
+- Defects/blockers: none, or list only actionable failures.
+- Completed expectations: concise statement tying results back to ticket requirements.
+```
+
 The comment must include:
 
 - ticket key and current state

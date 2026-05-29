@@ -80,7 +80,35 @@ IA generated QA deployment: {commitSha}
 
 Skip adding the comment if an existing comment already contains the same marker.
 
-Include:
+Keep the marker as the first line by itself, then format the comment as readable Markdown:
+
+```markdown
+IA generated QA deployment: {commitSha}
+
+**Status:** PASS|FAIL - QA deployment validation outcome.
+
+**Context**
+- PR: [#{prNumber}]({prUrl})
+- Commit: `{shortCommit}` (`{commitSha}`)
+- Version: unversioned QA candidate, or source RC `{sourceRcVersion}` when already known
+- Workflow: [run {runNumber}]({workflowRunUrl})
+
+**Artifacts**
+- App ZIP: [app.zip]({nexusArtifactUrl})
+- Checksum: `{checksum}`
+- Release manifest: [release.json]({nexusReleaseManifestUrl})
+
+**Environment Validation**
+| Environment | Page | `/health` | URL |
+| --- | --- | --- | --- |
+| DEV | passed/failed | passed/failed/not checked | [DEV]({devUrl}) |
+| QA | passed/failed | passed/failed/not checked | [QA]({qaUrl}) |
+
+**Notes**
+- RC assignment happens during E2E QA before Done. Omit this when a source RC is already known.
+```
+
+The comment must include:
 
 - PR URL
 - commit SHA
