@@ -11,7 +11,7 @@ When changing any non-OpenSpec delivery skill or any `configure-*` skill, check 
 Source-of-truth order:
 
 1. `_shared/delivery-contract.md`
-2. Non-OpenSpec delivery-flow skills: `automatic-implement-ticket`, `plane-start-ticket`, `implement-ticket`, `gitea-pr-review-agent`, `post-merge-deploy`, `deploy-to-qa`, `test-e2e`, `deploy-to-prod`, `rollback-prod`, `file-qa-bug`, `pipeline-status`, and `hotfix-prod`
+2. Non-OpenSpec delivery-flow skills: `parallel-ticket-coordinator`, `automatic-implement-ticket`, `plane-start-ticket`, `implement-ticket`, `gitea-pr-review-agent`, `post-merge-deploy`, `deploy-to-qa`, `test-e2e`, `deploy-to-prod`, `rollback-prod`, `file-qa-bug`, `pipeline-status`, and `hotfix-prod`
 3. Configure skills and generated templates: `configure-dev-environment`, `configure-artifact-delivery`, `configure-quality-gates`, and related `configure-*` skills
 
 If configure skills differ from delivery-flow skills, update configure docs, templates, audits, and tests to match the delivery-flow rule. Do not update OpenSpec-specific skills unless the requested change explicitly affects OpenSpec behavior.
@@ -47,6 +47,8 @@ Push-triggered environment deployment is allowed only for ticket-named work. The
 
 Normal automatic delivery must stay locked to one Plane ticket. Use ignored `.codex/delivery-context.local.json` as the local ticket context lock. Never commit it.
 
+Parallel delivery keeps the same lock shape, but scopes it to the ticket worktree. Each active ticket worktree must contain its own `.codex/delivery-context.local.json`, and role agents must run only from the worktree assigned to that ticket. Do not share one checkout, one lock file, or one active implementation branch across multiple active tickets.
+
 Baseline shape:
 
 ```json
@@ -64,11 +66,63 @@ Baseline shape:
 Rules:
 
 - `automatic-implement-ticket` resolves or creates the lock before delegating. If no ticket is selected, it must ask or route to `pipeline-status` instead of guessing.
+- `parallel-ticket-coordinator` creates or reuses one Git worktree per active ticket, records that assignment in ignored `.codex/parallel-delivery.local.json`, and delegates child skills only inside the assigned worktree.
 - `plane-start-ticket` creates or updates the lock after the selected ticket, branch, and OpenSpec decision are known.
 - Child skills must verify their resolved ticket, branch, PR, artifact `release.json.planeTicketKey`, QA evidence path, RC tag, and PROD release lineage match the locked `ticketKey` before mutating or promoting.
 - If the lock exists and a child skill resolves a different ticket key, stop and report the mismatch. Do not deploy, test, move state, tag, or comment the other ticket.
 - If the lock is stale but all durable checkpoints clearly identify one different ticket, stop and ask the user to clear or replace the lock; do not silently rewrite it.
 - `pipeline-status` may read and report the lock plus mismatches. `rollback-prod` may operate by incident/release target, but must report when it differs from the active lock and require explicit user confirmation before mutation.
+
+## Parallel Delivery
+
+Parallel delivery uses role-specialized agents and Git worktrees to let multiple tickets progress through planning, implementation, PR validation, and review at the same time. The default local runtime state file is ignored `.codex/parallel-delivery.local.json`; never commit it or print secret-derived values copied into a worktree.
+
+Baseline shape:
+
+```json
+{
+  "maxActiveTickets": 2,
+  "deploymentLanePolicy": "serialized",
+  "agentModelPolicy": {
+    "pipelineStatus": {
+      "model": "gpt-5.4-mini",
+      "reasoningEffort": "low"
+    },
+    "implementation": {
+      "model": "gpt-5.3-codex",
+      "reasoningEffort": "medium"
+    },
+    "deployToProd": {
+      "model": "gpt-5.4",
+      "reasoningEffort": "high"
+    }
+  },
+  "deploymentLaneOwner": {
+    "ticketKey": "E2EPROJECT-123",
+    "stage": "deploy-to-qa"
+  },
+  "tickets": [
+    {
+      "ticketKey": "E2EPROJECT-123",
+      "branch": "feat/e2eproject-123-example",
+      "worktreePath": "../ticket-worktrees/e2eproject-123",
+      "stage": "implement-ticket",
+      "prNumber": 12
+    }
+  ]
+}
+```
+
+Rules:
+
+- `parallelDelivery.maxActiveTickets` limits active ticket worktrees. If the limit is reached, report the active tickets and do not start another one.
+- `parallelDelivery.worktreeRoot` is the only supported isolation model for parallel implementation. Fresh clones and shared-checkout parallelism are unsupported.
+- `parallelDelivery.agentModelPolicy` maps each delivery role to a model and reasoning effort. `model: inherit` means omit the model override and use the parent Codex run's model.
+- Each active ticket owns exactly one worktree and one implementation branch. Reuse matching worktrees; stop if a ticket, branch, or worktree mapping conflicts with durable Plane/Gitea/Git checkpoints.
+- Copy ignored local config needed by child skills into each worktree without printing tokens, passwords, cookies, or credential-bearing URLs. Keep tracked templates placeholder-safe.
+- Implementation and review stages may run concurrently across tickets.
+- DEV, QA, E2E QA, PROD, rollback, and hotfix promotion share deployment lanes and release tags. With `deploymentLanePolicy` set to `serialized`, only the recorded lane owner may run `post-merge-deploy`, `deploy-to-qa`, `test-e2e`, or `deploy-to-prod`; other agents must wait or report the owner.
+- PROD promotion remains explicit. Parallel delivery must not promote to PROD only because QA passed.
 
 ## Stable Markers
 

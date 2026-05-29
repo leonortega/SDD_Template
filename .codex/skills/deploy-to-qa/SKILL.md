@@ -17,6 +17,8 @@ feature branch -> dev -> DEV -> QA -> main -> PROD
 
 Before promotion, read `.codex/skills/_shared/delivery-contract.md`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode ArtifactPaths` for Nexus paths and validate `release.json` against `.codex/skills/_shared/release.schema.json` after writing it. Enforce the ticket context lock before promoting.
 
+When parallel delivery is active and `.codex/parallel-delivery.local.json` exists in the coordinator checkout, respect the serialized deployment lane before promoting artifacts, deploying DEV/QA, updating `release.json`, or moving Plane. If another ticket owns the lane, stop and report the owner.
+
 For push-triggered DEV/QA deployment, the commit or merged PR title must start with the ticket key format configured in `.codex/delivery-policy.json`, such as `E2EPROJECT-123: ...`. Maintenance commits and non-ticket PRs must not deploy.
 
 ## Configuration

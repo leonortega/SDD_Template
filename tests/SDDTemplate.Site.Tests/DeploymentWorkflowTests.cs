@@ -161,6 +161,8 @@ namespace SDDTemplate.Site.Tests
 
             Assert.Contains(".codex/delivery-context.local.json", script);
             Assert.Contains("Local ticket context lock must be ignored", script);
+            Assert.Contains(".codex/parallel-delivery.local.json", script);
+            Assert.Contains("Parallel delivery runtime state must be ignored", script);
         }
 
         [Fact]
@@ -170,11 +172,61 @@ namespace SDDTemplate.Site.Tests
             string contract = ReadSkill("_shared", "delivery-contract.md");
 
             Assert.Contains(".codex/delivery-context.local.json", gitignore);
+            Assert.Contains(".codex/parallel-delivery.local.json", gitignore);
             Assert.Contains("## Ticket Context Lock", contract);
             Assert.Contains("Normal automatic delivery must stay locked to one Plane ticket.", contract);
+            Assert.Contains("scopes it to the ticket worktree", contract);
+            Assert.Contains("one Git worktree per active ticket", contract);
+            Assert.Contains("deploymentLanePolicy", contract);
+            Assert.Contains("serialized", contract);
             Assert.Contains("\"ticketKey\": \"E2EPROJECT-123\"", contract);
             Assert.Contains("release.json.planeTicketKey", contract);
             Assert.Contains("rollback-prod", contract);
+        }
+
+        [Fact]
+        public void ParallelTicketCoordinatorSkillAndAgentAreDefined()
+        {
+            string skill = ReadSkill("parallel-ticket-coordinator", "SKILL.md");
+            string agent = ReadSkill("parallel-ticket-coordinator", Path.Combine("agents", "openai.yaml"));
+
+            Assert.Contains("name: parallel-ticket-coordinator", skill);
+            Assert.Contains("one Git worktree per active ticket", skill);
+            Assert.Contains(".codex/parallel-delivery.local.json", skill);
+            Assert.Contains("serialized deployment lane", skill);
+            Assert.Contains("Parallel Ticket Coordinator", agent);
+            Assert.Contains("$parallel-ticket-coordinator", agent);
+        }
+
+        [Fact]
+        public void ClientToolsExampleDefinesParallelDeliveryDefaults()
+        {
+            string config = File.ReadAllText(Path.Combine(
+                FindRepositoryRoot().FullName,
+                ".codex",
+                "client-tools.example.json"));
+
+            Assert.Contains("\"parallelDelivery\"", config);
+            Assert.Contains("\"enabled\": false", config);
+            Assert.Contains("\"maxActiveTickets\": 2", config);
+            Assert.Contains("\"worktreeRoot\": \"../ticket-worktrees\"", config);
+            Assert.Contains("\"deploymentLanePolicy\": \"serialized\"", config);
+            Assert.Contains("\"agentModelPolicy\"", config);
+            Assert.Contains("\"coordinator\"", config);
+            Assert.Contains("\"model\": \"inherit\"", config);
+            Assert.Contains("\"pipelineStatus\"", config);
+            Assert.Contains("\"model\": \"gpt-5.4-mini\"", config);
+            Assert.Contains("\"ticketStarter\"", config);
+            Assert.Contains("\"implementation\"", config);
+            Assert.Contains("\"model\": \"gpt-5.3-codex\"", config);
+            Assert.Contains("\"prReview\"", config);
+            Assert.Contains("\"deployToProd\"", config);
+            Assert.Contains("\"reasoningEffort\": \"high\"", config);
+
+            string script = ReadConfigureScript();
+            Assert.Contains("parallelDelivery\", \"agentModelPolicy\", \"pipelineStatus\", \"model", script);
+            Assert.Contains("parallelDelivery\", \"agentModelPolicy\", \"implementation\", \"model", script);
+            Assert.Contains("parallelDelivery\", \"agentModelPolicy\", \"deployToProd\", \"reasoningEffort", script);
         }
 
         [Fact]
@@ -196,6 +248,7 @@ namespace SDDTemplate.Site.Tests
             string[] skillNames =
             [
                 "automatic-implement-ticket",
+                "parallel-ticket-coordinator",
                 "plane-start-ticket",
                 "implement-ticket",
                 "gitea-pr-review-agent",

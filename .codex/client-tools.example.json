@@ -36,5 +36,61 @@
       "needsTests": "replace-with-needs-tests-label",
       "needsChanges": "replace-with-needs-changes-label"
     }
+  },
+  "parallelDelivery": {
+    "enabled": false,
+    "maxActiveTickets": 2,
+    "worktreeRoot": "../ticket-worktrees",
+    "deploymentLanePolicy": "serialized",
+    "agentModelPolicy": {
+      "coordinator": {
+        "model": "inherit",
+        "reasoningEffort": "medium"
+      },
+      "pipelineStatus": {
+        "model": "gpt-5.4-mini",
+        "reasoningEffort": "low"
+      },
+      "ticketStarter": {
+        "model": "gpt-5.4-mini",
+        "reasoningEffort": "medium"
+      },
+      "implementation": {
+        "model": "gpt-5.3-codex",
+        "reasoningEffort": "medium"
+      },
+      "prReview": {
+        "model": "gpt-5.4",
+        "reasoningEffort": "high"
+      },
+      "postMergeDeploy": {
+        "model": "gpt-5.4-mini",
+        "reasoningEffort": "medium"
+      },
+      "deployToQa": {
+        "model": "gpt-5.4-mini",
+        "reasoningEffort": "medium"
+      },
+      "e2eQa": {
+        "model": "gpt-5.4",
+        "reasoningEffort": "medium"
+      },
+      "deployToProd": {
+        "model": "gpt-5.4",
+        "reasoningEffort": "high"
+      },
+      "fileQaBug": {
+        "model": "gpt-5.4",
+        "reasoningEffort": "medium"
+      },
+      "rollbackProd": {
+        "model": "gpt-5.4",
+        "reasoningEffort": "high"
+      },
+      "hotfixProd": {
+        "model": "gpt-5.3-codex",
+        "reasoningEffort": "high"
+      }
+    }
   }
 }
