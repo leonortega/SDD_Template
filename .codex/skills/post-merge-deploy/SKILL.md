@@ -13,7 +13,7 @@ Do not perform DEV/QA validation inside this skill. `deploy-to-qa` owns artifact
 
 ## Shared Context
 
-Before running, follow `.codex/skills/_shared/skill-startup.md` with `docs/deployment.md` as the stage-specific doc. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` helpers: `ValidateTicketLock`, `ValidateDeploymentLane`, and `ArtifactPaths`.
+Before running, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` helpers: `ValidateTicketLock` for `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, and `ArtifactPaths`.
 
 ## Configuration
 

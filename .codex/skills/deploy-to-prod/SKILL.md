@@ -17,7 +17,7 @@ PROD must reuse the QA-approved Nexus artifact. Never rebuild, republish, or ren
 
 ## Shared Context
 
-Before promotion, follow `.codex/skills/_shared/skill-startup.md` with `docs/deployment.md` as the stage-specific doc. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` helpers: `ValidateTicketLock`, `ValidateDeploymentLane`, `ArtifactPaths`, `ValidateReleaseManifest`, `UpdateReleaseManifest`, and `RenderPlaneComment -Type ProdDeployment`.
+Before promotion, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` helpers: `ValidateTicketLock` for `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, `ArtifactPaths`, `ValidateReleaseManifest`, `UpdateReleaseManifest`, and `RenderPlaneComment -Type ProdDeployment`.
 
 For push-triggered PROD deployment from `main`, the commit or merged PR title must start with the ticket key format configured in `.codex/delivery-policy.json`, such as `E2EPROJECT-123: ...`. Maintenance commits, `[SDD]` commits, and non-ticket PRs must not deploy PROD.
 

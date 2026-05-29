@@ -178,7 +178,7 @@ Run QA for E2EPROJECT-1
 Promote E2EPROJECT-1 to PROD
 ```
 
-Use `Coordinate parallel Plane tickets` when more than one ticket should be active at the same time.
+Use `Coordinate parallel Plane tickets` when more than one ticket should be active at the same time. Read `docs/parallel-delivery.md` first for the dry-run checklist, worktree layout, role contracts, serialized deployment lane rules, and cleanup/recovery steps.
 
 Detailed workflow references:
 
@@ -186,6 +186,7 @@ Detailed workflow references:
 - `docs/architecture.md`: parallel worktree isolation, deployment-lane ownership, and source-of-truth topology.
 - `docs/development.md`: implementation flow, OpenSpec usage, quality gates, and local validation commands.
 - `docs/deployment.md`: artifact identity, release manifests, versioning, QA evidence, deployment, PROD, rollback, and hotfix rules.
+- `docs/parallel-delivery.md`: optional multi-ticket coordination, dry-run preflight, subagent role contracts, and cleanup/recovery.
 - `.codex/skills/_shared/delivery-contract.md`: agent-enforced operational rules.
 
 ## Operator Skills

@@ -13,7 +13,7 @@ Prefer `rollback-prod` when restoring a known-good artifact is enough.
 
 ## Shared Context
 
-Before starting, follow `.codex/skills/_shared/skill-startup.md` with `docs/development.md` and `docs/deployment.md` as stage-specific docs.
+Before starting, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md`, with `docs/development.md` and `docs/deployment.md` as stage-specific docs.
 
 ## Configuration
 

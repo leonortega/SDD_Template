@@ -59,6 +59,8 @@ When setup needs values the user must supply manually, do not only ask for the v
 - Copy ignored local config into ticket worktrees only when a child delivery skill requires it. Report copied filenames, not secret values.
 - Deployment promotion remains serialized because DEV, QA, PROD, RC tags, final release tags, and Nexus release manifests are shared surfaces.
 - `agentModelPolicy` is a cost-control policy for on-the-fly sub-agents. `model=inherit` means no explicit model override; unavailable model ids should fall back to inherited model behavior and be reported.
+- `ValidateParallelDeliveryDryRun` must pass before parallel Git, Plane, or Gitea mutation. Include required ignored local runtime files such as `.codex/client-tools.local.json` and `.codex/quality.local.json` when child skills need them.
+- See `docs/parallel-delivery.md` for operator guidance, dry-run checklist, role contracts, and cleanup/recovery steps.
 
 ## Shared Script
 

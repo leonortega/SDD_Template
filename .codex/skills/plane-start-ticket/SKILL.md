@@ -13,7 +13,7 @@ For setup details and branch pattern options, read `references/configuration.md`
 
 ## Shared Context
 
-Before mutating Plane or Git, follow `.codex/skills/_shared/skill-startup.md` with `docs/architecture.md` as the stage-specific doc.
+Before mutating Plane or Git, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md`, with `docs/architecture.md` as the stage-specific doc.
 
 This skill owns initial creation of ignored `.codex/delivery-context.local.json` for automatic delivery. Never commit that file.
 

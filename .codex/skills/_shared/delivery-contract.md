@@ -131,9 +131,22 @@ Rules:
 - `parallelDelivery.agentModelPolicy` maps each delivery role to a model and reasoning effort. `model: inherit` means omit the model override and use the parent Codex run's model.
 - Each active ticket owns exactly one worktree and one implementation branch. Reuse matching worktrees; stop if a ticket, branch, or worktree mapping conflicts with durable Plane/Gitea/Git checkpoints.
 - Copy ignored local config needed by child skills into each worktree without printing tokens, passwords, cookies, or credential-bearing URLs. Keep tracked templates placeholder-safe.
+- Before Git, Plane, or Gitea mutation for new or reused parallel work, run `ValidateParallelDeliveryDryRun` with planned tickets, lane state, enabled state, and required local runtime files. The operator-facing question is: `Can I safely start these 2 tickets in parallel?`
 - Implementation and review stages may run concurrently across tickets.
 - DEV, QA, E2E QA, PROD, rollback, and hotfix promotion share deployment lanes and release tags. With `deploymentLanePolicy` set to `serialized`, only the recorded lane owner may run `post-merge-deploy`, `deploy-to-qa`, `test-e2e`, or `deploy-to-prod`; other agents must wait or report the owner.
 - PROD promotion remains explicit. Parallel delivery must not promote to PROD only because QA passed.
+
+Role contracts:
+
+- `coordinator`: owns preflight, routing, runtime-state synthesis, lane ownership, and all cross-ticket decisions.
+- `ticketStarter`: prepares ticket branch, worktree, Plane/OpenSpec setup, and ticket lock only.
+- `implementation`: edits and tests one assigned ticket worktree only.
+- `prReview`: performs focused review, labels, and comments without taking unrelated implementation work.
+- `deployment`: handles post-merge DEV/QA promotion only when the serialized deployment lane is free or owned by the ticket.
+- `qa`: validates QA and records evidence only with lane ownership.
+- `prodHotfix`: handles PROD, rollback, and hotfix only after explicit user intent and lane validation.
+
+Every child agent must return concise status, files touched, validation run, blockers, and next action. Never let two agents mutate the same Plane ticket. Never parallelize DEV, QA, E2E QA, PROD, rollback, or hotfix promotion.
 
 ## Stable Markers
 
@@ -180,7 +193,7 @@ Use `.codex/skills/_shared/scripts/delivery_tools.ps1` for deterministic deliver
 - `ValidateReleaseManifest`: validate required `release.json` fields and version formats.
 - `ValidateTicketLock`: compare resolved ticket, branch, PR, artifact commit, RC, or final version against `.codex/delivery-context.local.json`.
 - `ValidateDeploymentLane`: enforce serialized deployment ownership from `.codex/parallel-delivery.local.json`.
-- `ValidateParallelDeliveryDryRun`: validate planned ticket/worktree/branch uniqueness and serialized lane ownership without mutating Git, Plane, Gitea, Nexus, or Azure.
+- `ValidateParallelDeliveryDryRun`: validate enabled state, planned ticket/worktree/branch uniqueness, serialized lane ownership, supported lane policy, and required ignored local runtime files without mutating Git, Plane, Gitea, Nexus, or Azure.
 - `RenderPlaneComment`: render standard Markdown Plane comments for QA deployment, E2E QA, and PROD deployment.
 - `UpdateReleaseManifest`: merge stage-specific fields into `release.json` while preserving existing metadata, then validate the result.
 

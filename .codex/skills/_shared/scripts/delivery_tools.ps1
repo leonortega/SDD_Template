@@ -353,6 +353,11 @@ function Test-ParallelDeliveryDryRun {
   $state = Get-InputObject
   $errors = [System.Collections.Generic.List[string]]::new()
   $tickets = @((Get-ObjectProperty $state 'tickets'))
+  $enabled = Get-ObjectProperty $state 'enabled'
+  if ($null -ne $enabled -and -not [bool]$enabled) {
+    $errors.Add('parallelDelivery.enabled must be true before starting or routing parallel ticket work.')
+  }
+
   $maxActiveTickets = Get-ObjectProperty $state 'maxActiveTickets'
   if ($null -ne $maxActiveTickets -and $tickets.Count -gt [int]$maxActiveTickets) {
     $errors.Add("Active ticket count '$($tickets.Count)' exceeds maxActiveTickets '$maxActiveTickets'.")
@@ -385,18 +390,60 @@ function Test-ParallelDeliveryDryRun {
   }
 
   $policy = [string](Get-ObjectProperty $state 'deploymentLanePolicy')
+  if (-not [string]::IsNullOrWhiteSpace($policy) -and $policy -ne 'serialized') {
+    $errors.Add("Unsupported deploymentLanePolicy '$policy'. Only 'serialized' is supported.")
+  }
+
   $owner = Get-ObjectProperty $state 'deploymentLaneOwner'
   $ownerTicket = [string](Get-ObjectProperty $owner 'ticketKey')
   if ($policy -eq 'serialized' -and -not [string]::IsNullOrWhiteSpace($ownerTicket) -and -not $ticketKeys.ContainsKey($ownerTicket)) {
     $errors.Add("Serialized deployment lane owner '$ownerTicket' is not an active ticket.")
   }
 
+  $requiredLocalConfigFilesValue = Get-ObjectProperty $state 'requiredLocalConfigFiles'
+  [object[]]$requiredLocalConfigFiles = @()
+  if ($null -ne $requiredLocalConfigFilesValue) {
+    $requiredLocalConfigFiles = @($requiredLocalConfigFilesValue)
+  }
+  foreach ($requiredFile in $requiredLocalConfigFiles) {
+    $relativePath = [string]$requiredFile
+    if ([string]::IsNullOrWhiteSpace($relativePath)) {
+      continue
+    }
+
+    $localPath = if ([System.IO.Path]::IsPathRooted($relativePath)) {
+      $relativePath
+    } else {
+      Join-Path $RepoRoot $relativePath
+    }
+
+    if (-not (Test-Path -LiteralPath $localPath)) {
+      $errors.Add("Required local runtime file '$relativePath' is missing.")
+      continue
+    }
+
+    if (-not [System.IO.Path]::IsPathRooted($relativePath)) {
+      Push-Location $RepoRoot
+      try {
+        & git check-ignore -q -- "$relativePath" 2>$null
+        if ($LASTEXITCODE -ne 0) {
+          $errors.Add("Required local runtime file '$relativePath' must be ignored.")
+        }
+      }
+      finally {
+        Pop-Location
+      }
+    }
+  }
+
   [pscustomobject]@{
     valid = $errors.Count -eq 0
+    enabled = $enabled
     activeTicketCount = $tickets.Count
     maxActiveTickets = $maxActiveTickets
     deploymentLanePolicy = $policy
     deploymentLaneOwnerTicketKey = $ownerTicket
+    requiredLocalConfigFiles = $requiredLocalConfigFiles
     errors = @($errors)
   }
 }

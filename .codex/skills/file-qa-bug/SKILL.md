@@ -11,7 +11,7 @@ Use this skill when QA finds a product defect after a ticket has reached QA. The
 
 ## Shared Context
 
-Before filing or linking tickets, follow `.codex/skills/_shared/skill-startup.md` with `docs/development.md` and `docs/deployment.md` as stage-specific docs.
+Before filing or linking tickets, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md`, with `docs/development.md` and `docs/deployment.md` as stage-specific docs.
 
 ## Configuration
 

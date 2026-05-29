@@ -13,7 +13,7 @@ For exact Gitea API endpoint guidance, read `references/gitea-review-api.md` bef
 
 ## Shared Context
 
-Before posting review output, follow `.codex/skills/_shared/skill-startup.md` with `docs/development.md` as the stage-specific doc.
+Before posting review output, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md`, with `docs/development.md` as the stage-specific doc.
 
 ## Configuration
 

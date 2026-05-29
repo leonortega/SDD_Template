@@ -198,6 +198,54 @@ namespace SDDTemplate.Site.Tests
         }
 
         [Fact]
+        public void ParallelDeliveryDocsContractsAndCoordinatorDefinePreflightRolesAndRecovery()
+        {
+            string readme = File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, "README.md"));
+            string docs = ReadDoc("parallel-delivery.md");
+            string contract = ReadSkill("_shared", "delivery-contract.md");
+            string coordinator = ReadSkill("parallel-ticket-coordinator", "SKILL.md");
+            string configureRouter = ReadSkill("configure-dev-environment", "SKILL.md");
+
+            Assert.Contains("docs/parallel-delivery.md", readme);
+            Assert.Contains("## Cleanup And Recovery", docs);
+            Assert.Contains("Can I safely start these 2 tickets in parallel?", docs);
+            Assert.Contains("parallelDelivery.maxActiveTickets=2", docs);
+            Assert.Contains("parallelDelivery.enabled=false", docs);
+            Assert.Contains("local runtime files required by child worktrees", docs);
+
+            Assert.Contains("Before Git, Plane, or Gitea mutation", contract);
+            Assert.Contains("ValidateParallelDeliveryDryRun", contract);
+            Assert.Contains("one worktree", contract);
+            Assert.Contains("Never let two agents mutate the same Plane ticket", contract);
+            Assert.Contains("Never parallelize DEV, QA, E2E QA, PROD, rollback, or hotfix promotion", contract);
+
+            Assert.Contains("Before any Git, Plane, or Gitea mutation", coordinator);
+            Assert.Contains("Failed `ValidateParallelDeliveryDryRun`", coordinator);
+            Assert.Contains("## Cleanup And Recovery", coordinator);
+            Assert.Contains("required ignored local runtime files", coordinator);
+
+            foreach (string role in new[]
+            {
+                "coordinator",
+                "ticketStarter",
+                "implementation",
+                "prReview",
+                "deployment",
+                "qa",
+                "prodHotfix"
+            })
+            {
+                Assert.Contains($"`{role}`", docs);
+                Assert.Contains($"`{role}`", contract);
+                Assert.Contains($"`{role}`", coordinator);
+            }
+
+            Assert.Contains("parallelDelivery.enabled=false", configureRouter);
+            Assert.Contains("docs/parallel-delivery.md", configureRouter);
+            Assert.Contains("required ignored local runtime files", configureRouter);
+        }
+
+        [Fact]
         public void ClientToolsExampleDefinesParallelDeliveryDefaults()
         {
             string config = File.ReadAllText(Path.Combine(

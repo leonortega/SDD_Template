@@ -11,9 +11,11 @@ Use this skill when the user asks to process more than one Plane ticket at the s
 
 This skill orchestrates existing role skills. It does not duplicate child workflows and does not implement ticket-specific code itself.
 
+The coordinator owns preflight, routing, runtime-state synthesis, deployment lane ownership, and all cross-ticket decisions. It must synthesize child-agent results before reporting handoff, and it must preserve one Git worktree per active ticket.
+
 ## Shared Context
 
-Before routing, follow `.codex/skills/_shared/skill-startup.md` with `docs/architecture.md` as the stage-specific doc.
+Before routing, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md`, with `docs/architecture.md` as the stage-specific doc.
 
 ## Configuration
 
@@ -50,6 +52,18 @@ Default role mapping:
 
 If a role is missing from local config, use the example default for that role and report the fallback. If a configured model is unavailable in the current Codex runtime, omit the model override, keep the configured reasoning effort when possible, and report the fallback without blocking the ticket.
 
+## Role Contracts
+
+- `coordinator`: owns preflight, routing, runtime-state synthesis, lane ownership, and cross-ticket decisions.
+- `ticketStarter`: prepares ticket branch, worktree, Plane/OpenSpec setup, and ticket lock only.
+- `implementation`: edits and tests one assigned ticket worktree only.
+- `prReview`: performs focused review, labels, and comments without taking unrelated implementation work.
+- `deployment`: handles post-merge DEV/QA promotion only when the serialized deployment lane is free or owned by the ticket.
+- `qa`: validates QA and records evidence only with lane ownership.
+- `prodHotfix`: handles PROD, rollback, and hotfix only after explicit user intent and lane validation.
+
+Every child agent must return concise status, files touched, validation run, blockers, and next action.
+
 ## Runtime State
 
 Use ignored `.codex/parallel-delivery.local.json` in the coordinator checkout as the parallel delivery index. Never commit it.
@@ -72,6 +86,7 @@ Each ticket worktree must have its own ignored `.codex/delivery-context.local.js
 2. Run `git worktree list` and compare active worktrees with the runtime state.
 3. Inspect Plane/Gitea/Nexus/QA state only as needed to route each ticket.
 4. If the runtime state references a missing worktree or a worktree branch no longer matches the ticket, report the stale entry and do not route that ticket until it is repaired.
+5. Before any Git, Plane, or Gitea mutation for new or reused parallel work, run `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode ValidateParallelDeliveryDryRun` with the planned state. The operator-facing checklist question is: `Can I safely start these 2 tickets in parallel?`
 
 ### 2. Select Or Reuse Tickets
 
@@ -131,11 +146,20 @@ With `deploymentLanePolicy` set to `serialized`, only one ticket may own the sha
 
 - Missing or disabled `parallelDelivery.enabled`: report that parallel delivery is not enabled and show the placeholder-safe config keys to set.
 - Missing `worktreeRoot`: use `../ticket-worktrees` and report the default.
+- Failed `ValidateParallelDeliveryDryRun`: stop before Git, Plane, or Gitea mutation and report duplicate tickets, duplicate branches, duplicate worktrees, missing worktree paths, deployment lane conflicts, unsupported lane policy, disabled parallel delivery, or missing required ignored local runtime files.
 - Dirty coordinator checkout before creating a new worktree: stop before Git or Plane mutation.
 - Existing worktree mapped to a different ticket or branch: stop and report the conflict.
 - Existing `.codex/delivery-context.local.json` in a ticket worktree points to another ticket: stop before routing.
 - Serialized deployment lane owned by another ticket: do not promote, deploy, tag, move QA/Done state, or write release evidence for the blocked ticket.
 - Missing child-skill config: preserve the child skill blocker and do not route around it.
+
+## Cleanup And Recovery
+
+- Stale runtime state: compare `.codex/parallel-delivery.local.json` with `git worktree list`, Plane, Gitea, and branch state; do not route stale entries until repaired.
+- Missing worktree: report the ticket and branch, then recreate only after durable checkpoints confirm the same ticket/branch mapping.
+- Blocked ticket: keep the ticket entry, record the blocker, and route other independent tickets if max active tickets and lane ownership allow it.
+- Lane-owner conflict: preserve the owner until QA evidence, PROD evidence, rollback/hotfix handoff, or a clear blocker releases the lane.
+- Completed ticket: remove the ticket from the local runtime index only after PR, QA, or PROD handoff evidence reaches a stable checkpoint.
 
 ## Output
 
