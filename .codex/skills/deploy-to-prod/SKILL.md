@@ -133,6 +133,42 @@ IA generated PROD deployment: {finalVersion}
 
 Do not duplicate a PROD result comment with the same marker, commit, artifact, and PROD URL unless the user explicitly asks for a fresh run.
 
+Keep the marker as the first line by itself, then format the comment as readable Markdown:
+
+```markdown
+IA generated PROD deployment: {finalVersion}
+
+**Status:** PASS|FAIL|BLOCKED - one-sentence production outcome.
+
+**Release**
+- Ticket: `{ticketKey}` ({currentState})
+- Final version: `{finalVersion}`
+- Source RC: `{sourceRcVersion}`
+- Lineage: `{shortCommit}` -> `{sourceRcVersion}` -> `{finalVersion}`
+- Final tag: `{finalVersion}` -> `{commitSha}`
+- Main update: concise ref update result
+
+**References**
+- Release PR: [#{releasePrNumber}]({releasePrUrl})
+- Source PR: [#{sourcePrNumber}]({sourcePrUrl})
+- Workflow: [run {runNumber}]({workflowRunUrl})
+- Artifact: [app.zip]({nexusArtifactUrl})
+- Checksum: `{checksum}`
+- Release manifest: [release.json]({nexusReleaseManifestUrl})
+- QA evidence: [qa-evidence.zip]({qaEvidenceUrl})
+
+**Production Validation**
+| Check | Result |
+| --- | --- |
+| Page smoke | passed/failed, HTTP status, title/placeholder notes |
+| `/health` | passed/failed, HTTP status, response summary |
+| `/metrics` | passed/failed/not applicable, response summary |
+| Prometheus | passed/failed/not checked, target summary |
+| Grafana | passed/failed/not checked, API health summary |
+
+**PROD URL:** [open production]({prodUrl})
+```
+
 The comment must include:
 
 - ticket key and current state

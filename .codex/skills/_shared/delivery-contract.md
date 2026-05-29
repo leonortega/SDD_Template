@@ -141,6 +141,20 @@ Use these exact markers for idempotency:
 
 Before adding generated comments or moving states, read existing comments when the API allows it and treat matching markers as already completed.
 
+## Plane Comment Format
+
+Generated Plane comments must keep the stable marker as the first line by itself, followed by a blank line and a human-readable Markdown summary.
+
+Use this structure unless a workflow-specific skill requires more detail:
+
+1. `**Status:** PASS|FAIL|BLOCKED - one-sentence outcome`
+2. `**Context:**` compact bullets for ticket, state, version, commit, PR, artifact, and workflow run.
+3. `**Validation:**` grouped bullets or a small Markdown table for environment checks, test totals, and monitoring checks.
+4. `**Evidence:**` durable links to Nexus manifests, evidence ZIPs, screenshots, logs, or local fallback paths.
+5. `**Notes:**` only when defects, blockers, assumptions, or tooling issues matter.
+
+Prefer Markdown links for long URLs, short commit display text such as ``8acc4d4`` with the full SHA recorded in a field when needed, and grouped sections over long flat `Label: value` lists. Keep automation-critical values present and searchable; do not hide the stable marker, commit SHA, ticket key, release version, artifact URL, or evidence URL inside prose only.
+
 ## PR Labels And Review Severity
 
 Default labels:
