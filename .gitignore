@@ -59,6 +59,10 @@ appsettings.Local.json
 appsettings.Development.local.json
 appsettings.Production.local.json
 Properties/launchSettings.local.json
+App_Data/
+*.db
+*.db-shm
+*.db-wal
 
 # NuGet
 packages/
@@ -94,6 +98,8 @@ pnpm-debug.log*
 infra/plane/plane/
 **/data/
 **/logs/
+!src/SDDTemplate.Site/Data/
+!src/SDDTemplate.Site/Data/**
 
 # Local secrets and machine-specific environment files
 *.env
