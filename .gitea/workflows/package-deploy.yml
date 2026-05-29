@@ -80,14 +80,12 @@ jobs:
           $changed_files
           EOF
 
-          ticket_key_pattern="$(sed -n 's/.*"ticketKeyPattern"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' .codex/delivery-policy.json | head -n 1 || true)"
-          test -n "$ticket_key_pattern"
+          ticket_key_pattern="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ReadDeliveryPolicy --path .codex/delivery-policy.json)"
 
           commit_message="${{ github.event.head_commit.message }}"
-          ticket_pattern="^${ticket_key_pattern}: "
-          merge_pr_pattern="^Merge pull request '${ticket_key_pattern}:"
+          plane_ticket_key="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ExtractTicketKey --pattern "$ticket_key_pattern" --message "$commit_message")"
           deploy_allowed=false
-          if [[ "$commit_message" =~ $ticket_pattern || "$commit_message" =~ $merge_pr_pattern ]]; then
+          if [ -n "$plane_ticket_key" ]; then
             deploy_allowed=true
           fi
 
@@ -135,29 +133,14 @@ jobs:
         run: |
           checksum="$(cut -d ' ' -f1 artifacts/app.zip.sha256)"
           commit_sha="$(cat artifacts/commit.sha)"
-          ticket_key_pattern="$(sed -n 's/.*"ticketKeyPattern"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' .codex/delivery-policy.json | head -n 1 || true)"
-          test -n "$ticket_key_pattern"
+          ticket_key_pattern="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ReadDeliveryPolicy --path .codex/delivery-policy.json)"
 
           commit_message="$(git log -1 --pretty=%B)"
-          plane_ticket_key="$(printf '%s\n' "$commit_message" | sed -n "s/^\(${ticket_key_pattern}\): .*/\1/p" | head -n 1 || true)"
-          if [ -z "$plane_ticket_key" ]; then
-            plane_ticket_key="$(printf '%s\n' "$commit_message" | sed -n "s/^Merge pull request '\(${ticket_key_pattern}\):.*/\1/p" | head -n 1 || true)"
-          fi
-          if [ -z "$plane_ticket_key" ]; then
-            plane_ticket_key="manual-dispatch"
-          fi
+          plane_ticket_key="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ExtractTicketKey --pattern "$ticket_key_pattern" --message "$commit_message" --fallback manual-dispatch)"
 
           artifact_url="$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip"
-          cat > artifacts/release.json <<EOF
-          {
-            "schemaVersion": 1,
-            "commitSha": "$commit_sha",
-            "checksum": "$checksum",
-            "artifactUrl": "$artifact_url",
-            "planeTicketKey": "$plane_ticket_key",
-            "versionStatus": "unversioned"
-          }
-          EOF
+          dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- CreateReleaseManifest --output artifacts/release.json --commit-sha "$commit_sha" --checksum "$checksum" --artifact-url "$artifact_url" --plane-ticket-key "$plane_ticket_key" --version-status unversioned
+          dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ValidateReleaseManifest --path artifacts/release.json
 
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/app.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip"
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/app.zip.sha256 "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip.sha256"

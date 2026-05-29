@@ -46,7 +46,8 @@ When setup needs values the user must supply manually, do not only ask for the v
 
 ## Client Tools Local Config Rules
 
-- For `.codex/client-tools.local.json`, always complete safe inferred non-secret values during audit/setup before reporting findings.
+- For `.codex/client-tools.local.json`, complete safe inferred non-secret values during explicit setup/write modes before reporting findings.
+- `Audit*` modes are read-only by default. They may report inferred values as actions, but must not write `.codex/client-tools.local.json` unless the operator explicitly passes `-AllowAuditWrites`.
 - Inferred values include local service URLs, default workflow state names, Git branch defaults, PR labels, Gitea owner/repo from `origin`, and Nexus local URL/repository name.
 - Never infer or fabricate API tokens, passwords, service-account credentials, Plane workspace/project identifiers, or cloud identifiers that are not discoverable from local repo/Azure metadata.
 - If a required value is not inferable, report it as a user-supplied value with its source, destination, official setup surface, and validation command.
@@ -78,7 +79,7 @@ Useful modes:
 - `SetRecommendedTools`: record accepted or dismissed recommendation ids in `.codex/client-tools.local.json`; it must not install skills, plugins, MCPs, or secrets.
 - `SetPlaneEnv`: update `infra/plane/variables.env`.
 - `SetGiteaRunner`: update `infra/gitea/runner.env`.
-- `AuditQualityGates`: inspect quality and CI/CD templates.
+- `AuditQualityGates`: inspect quality and CI/CD templates without writing local config by default.
 - `ValidateGiteaActionsRunner`: live-check Docker runner prerequisites for PR validation containers, including image pull, required tools, and local Gitea checkout reachability.
 - `InitQualityGateTemplates`: create tracked quality-gate templates.
 - `SetPrometheusAzureTargets`: update ignored Prometheus Azure targets.

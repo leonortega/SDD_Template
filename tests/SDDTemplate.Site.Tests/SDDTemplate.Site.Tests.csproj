@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\SDDTemplate.Site\SDDTemplate.Site.csproj" />
+    <ProjectReference Include="..\..\tools\SDDTemplate.DeliveryTools\SDDTemplate.DeliveryTools.csproj" />
   </ItemGroup>
 
 </Project>

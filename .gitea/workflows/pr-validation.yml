@@ -48,10 +48,7 @@ jobs:
             config=".codex/quality.example.json"
           fi
 
-          minimum="$(sed -n 's/.*"minimumPercent"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$config" | head -n 1 || true)"
-          if [ -z "$minimum" ]; then
-            minimum="80"
-          fi
+          minimum="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ReadCoverageThreshold --path "$config" --fallback 80)"
 
           coverage_file="$(find . -path '*/coverage.cobertura.xml' -print -quit)"
           if [ -z "$coverage_file" ]; then
@@ -59,13 +56,7 @@ jobs:
             exit 1
           fi
 
-          line_rate="$(sed -n 's/.*line-rate="\([0-9.]*\)".*/\1/p' "$coverage_file" | head -n 1 || true)"
-          if [ -z "$line_rate" ]; then
-            echo "Could not read line-rate from $coverage_file."
-            exit 1
-          fi
-
-          actual="$(awk -v rate="$line_rate" 'BEGIN { printf "%.2f", rate * 100 }')"
+          actual="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ReadCoberturaLineRate --path "$coverage_file")"
           awk -v actual="$actual" -v minimum="$minimum" 'BEGIN { exit !(actual + 0 >= minimum + 0) }' || {
             echo "Coverage ${actual}% is below required ${minimum}%."
             exit 1

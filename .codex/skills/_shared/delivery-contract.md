@@ -162,9 +162,14 @@ Use `.codex/skills/_shared/scripts/delivery_tools.ps1` for deterministic deliver
 - `ArtifactPaths`: derive Nexus artifact paths for `app/{commitSha}`.
 - `CheckGitIgnored`: verify evidence or local runtime paths are ignored before writing generated files.
 - `NextRcVersion`: derive the next RC version from existing Git tags.
+- `ReadDeliveryPolicy`: read `.codex/delivery-policy.json` and return the configured ticket key pattern.
+- `ExtractTicketKey`: extract ticket keys from ticket-prefixed commits or Gitea merge commit titles.
+- `ReadCoverageThreshold`: read the configured coverage minimum with the repo default fallback.
+- `ReadCoberturaLineRate`: read Cobertura coverage percent from XML without shell text parsing.
 - `ValidateReleaseManifest`: validate required `release.json` fields and version formats.
 - `ValidateTicketLock`: compare resolved ticket, branch, PR, artifact commit, RC, or final version against `.codex/delivery-context.local.json`.
 - `ValidateDeploymentLane`: enforce serialized deployment ownership from `.codex/parallel-delivery.local.json`.
+- `ValidateParallelDeliveryDryRun`: validate planned ticket/worktree/branch uniqueness and serialized lane ownership without mutating Git, Plane, Gitea, Nexus, or Azure.
 - `RenderPlaneComment`: render standard Markdown Plane comments for QA deployment, E2E QA, and PROD deployment.
 - `UpdateReleaseManifest`: merge stage-specific fields into `release.json` while preserving existing metadata, then validate the result.
 

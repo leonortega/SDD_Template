@@ -1,6 +1,6 @@
 param(
   [Parameter(Mandatory = $true)]
-  [ValidateSet('ArtifactPaths', 'CheckGitIgnored', 'NextRcVersion', 'ValidateReleaseManifest', 'ValidateTicketLock', 'ValidateDeploymentLane', 'RenderPlaneComment', 'UpdateReleaseManifest')]
+  [ValidateSet('ArtifactPaths', 'CheckGitIgnored', 'NextRcVersion', 'ReadDeliveryPolicy', 'ExtractTicketKey', 'ReadCoverageThreshold', 'ReadCoberturaLineRate', 'ValidateReleaseManifest', 'ValidateTicketLock', 'ValidateDeploymentLane', 'ValidateParallelDeliveryDryRun', 'RenderPlaneComment', 'UpdateReleaseManifest')]
   [string] $Mode,
 
   [string] $CommitSha,
@@ -14,6 +14,9 @@ param(
   [string] $FinalReleaseVersion,
   [string] $Stage,
   [string] $Type,
+  [string] $Message,
+  [int] $FallbackCoverageMinimum = 80,
+  [string] $FallbackTicketKey,
   [string] $InputJson,
   [string] $RepoRoot = (Get-Location).Path
 )
@@ -182,6 +185,98 @@ function Test-ReleaseManifest([string] $ManifestPath) {
   }
 }
 
+function Get-DeliveryPolicy {
+  $policyPath = Join-Path $RepoRoot '.codex/delivery-policy.json'
+  if (-not (Test-Path -LiteralPath $policyPath)) {
+    throw "Delivery policy not found: $policyPath"
+  }
+
+  $policy = Get-Content -LiteralPath $policyPath -Raw | ConvertFrom-Json
+  $ticketKeyPattern = [string](Get-ObjectProperty $policy 'ticketKeyPattern')
+  if ([string]::IsNullOrWhiteSpace($ticketKeyPattern)) {
+    throw 'delivery-policy.json must define ticketKeyPattern.'
+  }
+
+  [pscustomobject]@{
+    path = $policyPath
+    ticketKeyPattern = $ticketKeyPattern
+  }
+}
+
+function Get-ExtractedTicketKey {
+  $policy = Get-DeliveryPolicy
+  if ([string]::IsNullOrWhiteSpace($Message)) {
+    throw 'Message is required for ExtractTicketKey.'
+  }
+
+  $firstLine = ($Message -replace "`r`n", "`n").Split("`n")[0]
+  $ticketKey = $null
+  if ($firstLine -match "^($($policy.ticketKeyPattern)): ") {
+    $ticketKey = $Matches[1]
+  }
+  elseif ($firstLine -match "^Merge pull request '($($policy.ticketKeyPattern)):") {
+    $ticketKey = $Matches[1]
+  }
+  elseif (-not [string]::IsNullOrWhiteSpace($FallbackTicketKey)) {
+    $ticketKey = $FallbackTicketKey
+  }
+
+  [pscustomobject]@{
+    ticketKey = $ticketKey
+    matched = -not [string]::IsNullOrWhiteSpace($ticketKey)
+    ticketKeyPattern = $policy.ticketKeyPattern
+  }
+}
+
+function Get-CoverageThreshold {
+  $qualityPath = if ([string]::IsNullOrWhiteSpace($Path)) {
+    Join-Path $RepoRoot '.codex/quality.local.json'
+  } else {
+    if ([System.IO.Path]::IsPathRooted($Path)) { $Path } else { Join-Path $RepoRoot $Path }
+  }
+
+  if (-not (Test-Path -LiteralPath $qualityPath)) {
+    $qualityPath = Join-Path $RepoRoot '.codex/quality.example.json'
+  }
+
+  $minimum = $FallbackCoverageMinimum
+  if (Test-Path -LiteralPath $qualityPath) {
+    $quality = Get-Content -LiteralPath $qualityPath -Raw | ConvertFrom-Json
+    $coverage = Get-ObjectProperty $quality 'coverage'
+    $configured = Get-ObjectProperty $coverage 'minimumPercent'
+    if ($null -ne $configured -and [int]::TryParse([string]$configured, [ref]$minimum)) {
+      $minimum = [int]$configured
+    }
+  }
+
+  [pscustomobject]@{
+    path = $qualityPath
+    minimumPercent = $minimum
+  }
+}
+
+function Get-CoberturaLineRate {
+  if ([string]::IsNullOrWhiteSpace($Path)) {
+    throw 'Path is required for ReadCoberturaLineRate.'
+  }
+  if (-not (Test-Path -LiteralPath $Path)) {
+    throw "Cobertura coverage file not found: $Path"
+  }
+
+  [xml]$coverage = Get-Content -LiteralPath $Path -Raw
+  $lineRate = [string]$coverage.coverage.'line-rate'
+  if ([string]::IsNullOrWhiteSpace($lineRate)) {
+    throw "Could not read line-rate from $Path."
+  }
+
+  $rate = [decimal]::Parse($lineRate, [System.Globalization.CultureInfo]::InvariantCulture)
+  [pscustomobject]@{
+    path = $Path
+    lineRate = $rate
+    percent = [Math]::Round($rate * 100, 2)
+  }
+}
+
 function Test-TicketLock {
   $lockPath = Join-Path $RepoRoot '.codex/delivery-context.local.json'
   if (-not (Test-Path -LiteralPath $lockPath)) {
@@ -250,6 +345,58 @@ function Test-DeploymentLane {
     ownerStage = $ownerStage
     requestedTicketKey = $TicketKey
     requestedStage = $Stage
+    errors = @($errors)
+  }
+}
+
+function Test-ParallelDeliveryDryRun {
+  $state = Get-InputObject
+  $errors = [System.Collections.Generic.List[string]]::new()
+  $tickets = @((Get-ObjectProperty $state 'tickets'))
+  $maxActiveTickets = Get-ObjectProperty $state 'maxActiveTickets'
+  if ($null -ne $maxActiveTickets -and $tickets.Count -gt [int]$maxActiveTickets) {
+    $errors.Add("Active ticket count '$($tickets.Count)' exceeds maxActiveTickets '$maxActiveTickets'.")
+  }
+
+  $ticketKeys = @{}
+  $worktreePaths = @{}
+  $branches = @{}
+  foreach ($ticket in $tickets) {
+    $ticketKey = [string](Get-ObjectProperty $ticket 'ticketKey')
+    $worktreePath = [string](Get-ObjectProperty $ticket 'worktreePath')
+    $branch = [string](Get-ObjectProperty $ticket 'branch')
+
+    if ([string]::IsNullOrWhiteSpace($ticketKey)) { $errors.Add('A ticket entry is missing ticketKey.') }
+    if ([string]::IsNullOrWhiteSpace($worktreePath)) { $errors.Add("Ticket '$ticketKey' is missing worktreePath.") }
+    if ([string]::IsNullOrWhiteSpace($branch)) { $errors.Add("Ticket '$ticketKey' is missing branch.") }
+
+    foreach ($entry in @(
+      @{ name = 'ticketKey'; value = $ticketKey; seen = $ticketKeys },
+      @{ name = 'worktreePath'; value = $worktreePath; seen = $worktreePaths },
+      @{ name = 'branch'; value = $branch; seen = $branches }
+    )) {
+      if ([string]::IsNullOrWhiteSpace([string]$entry.value)) { continue }
+      if ($entry.seen.ContainsKey($entry.value)) {
+        $errors.Add("Duplicate $($entry.name) '$($entry.value)' in parallel delivery state.")
+      } else {
+        $entry.seen[$entry.value] = $true
+      }
+    }
+  }
+
+  $policy = [string](Get-ObjectProperty $state 'deploymentLanePolicy')
+  $owner = Get-ObjectProperty $state 'deploymentLaneOwner'
+  $ownerTicket = [string](Get-ObjectProperty $owner 'ticketKey')
+  if ($policy -eq 'serialized' -and -not [string]::IsNullOrWhiteSpace($ownerTicket) -and -not $ticketKeys.ContainsKey($ownerTicket)) {
+    $errors.Add("Serialized deployment lane owner '$ownerTicket' is not an active ticket.")
+  }
+
+  [pscustomobject]@{
+    valid = $errors.Count -eq 0
+    activeTicketCount = $tickets.Count
+    maxActiveTickets = $maxActiveTickets
+    deploymentLanePolicy = $policy
+    deploymentLaneOwnerTicketKey = $ownerTicket
     errors = @($errors)
   }
 }
@@ -406,9 +553,14 @@ switch ($Mode) {
   'ArtifactPaths' { Write-Json (Get-ArtifactPaths $CommitSha) }
   'CheckGitIgnored' { Write-Json (Test-GitIgnored $Path) }
   'NextRcVersion' { Write-Json (Get-NextRcVersion $TargetVersion) }
+  'ReadDeliveryPolicy' { Write-Json (Get-DeliveryPolicy) }
+  'ExtractTicketKey' { Write-Json (Get-ExtractedTicketKey) }
+  'ReadCoverageThreshold' { Write-Json (Get-CoverageThreshold) }
+  'ReadCoberturaLineRate' { Write-Json (Get-CoberturaLineRate) }
   'ValidateReleaseManifest' { Write-Json (Test-ReleaseManifest $Path) }
   'ValidateTicketLock' { Write-Json (Test-TicketLock) }
   'ValidateDeploymentLane' { Write-Json (Test-DeploymentLane) }
+  'ValidateParallelDeliveryDryRun' { Write-Json (Test-ParallelDeliveryDryRun) }
   'RenderPlaneComment' { Render-PlaneComment }
   'UpdateReleaseManifest' { Write-Json (Update-ReleaseManifest) }
 }

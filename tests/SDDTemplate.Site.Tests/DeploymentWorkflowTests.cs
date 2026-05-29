@@ -41,9 +41,8 @@ namespace SDDTemplate.Site.Tests
         {
             string workflow = ReadWorkflow();
 
-            Assert.Contains("ticketKeyPattern", workflow);
-            Assert.Contains("ticket_pattern=\"^${ticket_key_pattern}: \"", workflow);
-            Assert.Contains("merge_pr_pattern=\"^Merge pull request '${ticket_key_pattern}:\"", workflow);
+            Assert.Contains("ReadDeliveryPolicy", workflow);
+            Assert.Contains("ExtractTicketKey", workflow);
             Assert.Contains("deploy_allowed=$deploy_allowed", workflow);
             Assert.Contains("needs.classify-changes.outputs.deploy_allowed == 'true'", workflow);
         }
@@ -54,13 +53,13 @@ namespace SDDTemplate.Site.Tests
             string workflow = ReadWorkflow();
             string packageJob = GetJobSection(workflow, "package");
 
-            Assert.Contains("cat > artifacts/release.json", packageJob);
-            Assert.Contains("\"schemaVersion\": 1", packageJob);
-            Assert.Contains("\"commitSha\": \"$commit_sha\"", packageJob);
-            Assert.Contains("\"checksum\": \"$checksum\"", packageJob);
-            Assert.Contains("\"artifactUrl\": \"$artifact_url\"", packageJob);
-            Assert.Contains("\"planeTicketKey\": \"$plane_ticket_key\"", packageJob);
-            Assert.Contains("\"versionStatus\": \"unversioned\"", packageJob);
+            Assert.Contains("CreateReleaseManifest", packageJob);
+            Assert.Contains("--commit-sha \"$commit_sha\"", packageJob);
+            Assert.Contains("--checksum \"$checksum\"", packageJob);
+            Assert.Contains("--artifact-url \"$artifact_url\"", packageJob);
+            Assert.Contains("--plane-ticket-key \"$plane_ticket_key\"", packageJob);
+            Assert.Contains("--version-status unversioned", packageJob);
+            Assert.Contains("ValidateReleaseManifest", packageJob);
             Assert.Contains("app/${GITHUB_SHA}/release.json", packageJob);
         }
 
@@ -101,8 +100,8 @@ namespace SDDTemplate.Site.Tests
             Assert.DoesNotContain(".codex/*", classifyJob);
             Assert.DoesNotContain(".gitea/*", classifyJob);
             Assert.Contains("deploy_allowed=false", classifyJob);
-            Assert.Contains("ticket_pattern=\"^${ticket_key_pattern}: \"", classifyJob);
-            Assert.Contains("merge_pr_pattern=\"^Merge pull request '${ticket_key_pattern}:\"", classifyJob);
+            Assert.Contains("ReadDeliveryPolicy", classifyJob);
+            Assert.Contains("ExtractTicketKey", classifyJob);
         }
 
         [Fact]
@@ -146,10 +145,10 @@ namespace SDDTemplate.Site.Tests
         {
             string script = ReadConfigureScript();
 
-            Assert.Contains("cat > artifacts/release.json", script);
-            Assert.Contains("\"schemaVersion\": 1", script);
-            Assert.Contains("\"planeTicketKey\": \"$plane_ticket_key\"", script);
-            Assert.Contains("\"versionStatus\": \"unversioned\"", script);
+            Assert.Contains("CreateReleaseManifest", script);
+            Assert.Contains("--plane-ticket-key \"$plane_ticket_key\"", script);
+            Assert.Contains("--version-status unversioned", script);
+            Assert.Contains("ValidateReleaseManifest", script);
             Assert.Contains("app/${GITHUB_SHA}/release.json", script);
             Assert.Contains("Package/deploy workflow should upload a baseline Nexus release manifest next to the artifact.", script);
         }
@@ -310,8 +309,13 @@ namespace SDDTemplate.Site.Tests
 
             foreach (string mode in new[]
             {
+                "ReadDeliveryPolicy",
+                "ExtractTicketKey",
+                "ReadCoverageThreshold",
+                "ReadCoberturaLineRate",
                 "ValidateTicketLock",
                 "ValidateDeploymentLane",
+                "ValidateParallelDeliveryDryRun",
                 "RenderPlaneComment",
                 "UpdateReleaseManifest"
             })
@@ -322,6 +326,11 @@ namespace SDDTemplate.Site.Tests
 
             Assert.Contains("function Test-TicketLock", script);
             Assert.Contains("function Test-DeploymentLane", script);
+            Assert.Contains("function Get-DeliveryPolicy", script);
+            Assert.Contains("function Get-ExtractedTicketKey", script);
+            Assert.Contains("function Get-CoverageThreshold", script);
+            Assert.Contains("function Get-CoberturaLineRate", script);
+            Assert.Contains("function Test-ParallelDeliveryDryRun", script);
             Assert.Contains("function Render-PlaneComment", script);
             Assert.Contains("function Update-ReleaseManifest", script);
         }
@@ -403,6 +412,19 @@ namespace SDDTemplate.Site.Tests
                 string skill = ReadSkill(skillName, "SKILL.md");
                 Assert.Contains("delivery-context.local.json", skill);
             }
+        }
+
+        [Fact]
+        public void FrontendTestingDebuggingSkillIsInstalledAndPreferredForWebsiteQa()
+        {
+            string frontendSkill = ReadSkill("frontend-testing-debugging", "SKILL.md");
+            string e2eSkill = ReadSkill("test-e2e", "SKILL.md");
+
+            Assert.Contains("name: frontend-testing-debugging", frontendSkill);
+            Assert.Contains("Prefer the Browser plugin", frontendSkill);
+            Assert.Contains("$frontend-testing-debugging", e2eSkill);
+            Assert.Contains("Blazor", e2eSkill);
+            Assert.Contains("browser-visible validation", e2eSkill);
         }
 
         private static string ReadWorkflow()
