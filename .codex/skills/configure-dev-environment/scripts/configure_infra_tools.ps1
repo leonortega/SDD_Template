@@ -466,6 +466,22 @@ function Add-QualityGateAuditFindings {
     Add-Item $Result "findings" $deliveryPolicy "ticketKeyPattern" "Missing delivery policy used by commit hooks and deployment gating." "warning"
   } elseif (-not (Test-FileContains $deliveryPolicy '"ticketKeyPattern"\s*:')) {
     Add-Item $Result "findings" $deliveryPolicy "ticketKeyPattern" "Delivery policy must define ticketKeyPattern for deployment gating." "warning"
+  } else {
+    foreach ($expectedPolicyKey in @(
+      '"agentOptimization"\s*:',
+      '"maxAutonomousIterations"\s*:',
+      '"maxToolRetries"\s*:',
+      '"promptCache"\s*:',
+      '"telemetry"\s*:',
+      '"workflowEvals"\s*:',
+      '"cachedTokens"',
+      '"requireEvalEvidenceBeforeNewAgentRole"\s*:'
+    )) {
+      if (-not (Test-FileContains $deliveryPolicy $expectedPolicyKey)) {
+        Add-Item $Result "findings" $deliveryPolicy "agentOptimization" "Delivery policy should include agentOptimization defaults for retries, prompt cache, telemetry, and workflow eval paths." "warning"
+        break
+      }
+    }
   }
 
   $gitignore = ".gitignore"
@@ -1390,7 +1406,40 @@ $RECYCLE.BIN/
 
   Write-TemplateFile $result ".codex/delivery-policy.json" @'
 {
-  "ticketKeyPattern": "E2EPROJECT-[0-9]+"
+  "ticketKeyPattern": "E2EPROJECT-[0-9]+",
+  "agentOptimization": {
+    "maxAutonomousIterations": 20,
+    "maxToolRetries": 2,
+    "promptCache": {
+      "enabled": true,
+      "staticContextFirst": true,
+      "dynamicRuntimeContextLast": true,
+      "trackCachedTokens": true
+    },
+    "telemetry": {
+      "enabled": true,
+      "localPath": ".codex/agent-telemetry.local.jsonl",
+      "requiredFields": [
+        "timestampUtc",
+        "workflowStage",
+        "agentRole",
+        "model",
+        "reasoningEffort",
+        "inputTokens",
+        "outputTokens",
+        "cachedTokens",
+        "toolCallCount",
+        "retryCount",
+        "elapsedMilliseconds",
+        "outcome"
+      ]
+    },
+    "workflowEvals": {
+      "casesPath": ".codex/agent-evals/workflow-cases.json",
+      "resultsPath": ".codex/agent-evals/results.local.json",
+      "requireEvalEvidenceBeforeNewAgentRole": true
+    }
+  }
 }
 '@
 

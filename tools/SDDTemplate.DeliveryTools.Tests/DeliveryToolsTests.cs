@@ -86,6 +86,43 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
+        public void InitQualityGateTemplatesWritesCurrentDeliveryPolicyShape()
+        {
+            string root = CreateTempDirectory();
+
+            string output = RunPowerShellScript("-Mode", "InitQualityGateTemplates", "-Root", root);
+            string policyPath = Path.Combine(root, ".codex", "delivery-policy.json");
+
+            Assert.True(File.Exists(policyPath));
+            Assert.Contains(".codex/delivery-policy.json", output);
+            using JsonDocument policy = JsonDocument.Parse(File.ReadAllText(policyPath));
+            JsonElement optimization = policy.RootElement.GetProperty("agentOptimization");
+            Assert.Equal(20, optimization.GetProperty("maxAutonomousIterations").GetInt32());
+            Assert.Equal(2, optimization.GetProperty("maxToolRetries").GetInt32());
+            Assert.True(optimization.GetProperty("promptCache").GetProperty("trackCachedTokens").GetBoolean());
+            Assert.Equal(".codex/agent-telemetry.local.jsonl", optimization.GetProperty("telemetry").GetProperty("localPath").GetString());
+            Assert.Equal(".codex/agent-evals/results.local.json", optimization.GetProperty("workflowEvals").GetProperty("resultsPath").GetString());
+        }
+
+        [Fact]
+        public void AuditQualityGatesReportsLegacyDeliveryPolicyMissingAgentOptimization()
+        {
+            string root = CreateTempDirectory();
+            _ = Directory.CreateDirectory(Path.Combine(root, ".codex"));
+            File.WriteAllText(
+                Path.Combine(root, ".codex", "delivery-policy.json"),
+                JsonSerializer.Serialize(new { ticketKeyPattern = "E2EPROJECT-[0-9]+" }));
+
+            string output = RunPowerShellScript("-Mode", "AuditQualityGates", "-Root", root);
+            using JsonDocument audit = JsonDocument.Parse(output);
+            JsonElement finding = audit.RootElement.GetProperty("findings").EnumerateArray().Single(
+                item => item.GetProperty("path").GetString() == ".codex/delivery-policy.json"
+                    && item.GetProperty("key").GetString() == "agentOptimization");
+
+            Assert.Equal("warning", finding.GetProperty("severity").GetString());
+        }
+
+        [Fact]
         public void AuditRecommendedToolsRespectsAcceptedAndDismissedDecisions()
         {
             string root = CreateTempDirectory();
