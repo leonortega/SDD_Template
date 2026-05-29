@@ -11,13 +11,11 @@ Use this skill for read-only delivery visibility. It must not mutate Plane, Git,
 
 ## Shared Context
 
-Before reporting, read `.codex/skills/_shared/delivery-contract.md`, `docs/context-management.md`, and `docs/architecture.md` so state names, markers, ticket context locks, artifact paths, version terms, context freshness, and conflict reporting match the rest of the delivery workflow.
+Before reporting, follow `.codex/skills/_shared/skill-startup.md` with `docs/architecture.md` as the stage-specific doc. This remains a read-only skill; do not update memory unless the user explicitly asks for a workflow-memory correction.
 
 ## Configuration
 
 Read `.codex/client-tools.local.json` first. Use available Plane, Gitea, Nexus, and monitoring settings. If a system is unconfigured or unreachable, record it as unavailable instead of failing the whole status.
-
-Never print real tokens, credentials, cookies, or private payloads.
 
 ## Status Sources
 

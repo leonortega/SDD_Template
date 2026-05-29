@@ -4,6 +4,8 @@ Use this reference before running non-config delivery skills. Skill-local instru
 
 For repeated Plane, Gitea, Nexus, and Git endpoint patterns, read `.codex/skills/_shared/api-helpers.md`.
 
+For common delivery-skill startup, memory read behavior, and memory update classification, read `.codex/skills/_shared/skill-startup.md`.
+
 For durable context policy, read `docs/context-management.md`. The docs are the human-readable context layer; this delivery contract is the agent-enforced operational layer. If the docs and this contract conflict, the delivery contract wins for automation behavior until the docs are corrected.
 
 ## Skill Synchronization Rule
@@ -30,7 +32,7 @@ Before finishing any change to a non-OpenSpec delivery skill, run this completio
 
 Implementation and retrospective work must preserve durable context discovered during delivery. Apply the Context Findings classification from `docs/context-management.md`.
 
-Implementation PR bodies and Plane handoff comments must include `Context findings: added/updated/none`, `Docs updated: <files>` or `Docs: no durable context changes`, and `Assumptions recorded: <short list or none>`.
+Implementation PR bodies and Plane handoff comments must include `Context findings: added/updated/none`, `Docs updated: <files>` or `Docs: no durable context changes`, `Memory updated: <files>` or `Memory updated: none`, and `Assumptions recorded: <short list or none>`.
 
 ## States And Flow
 

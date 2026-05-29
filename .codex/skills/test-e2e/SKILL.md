@@ -17,7 +17,7 @@ Non-interactive context means the run has no available user-response channel, su
 
 ## Shared Context
 
-Before QA state changes, read `.codex/skills/_shared/delivery-contract.md`, `docs/context-management.md`, and `docs/deployment.md`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` for deterministic mechanics: `ValidateTicketLock` against `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, `CheckGitIgnored`, `NextRcVersion`, `UpdateReleaseManifest`, `ValidateReleaseManifest`, and `RenderPlaneComment -Type E2EQA`.
+Before QA state changes, follow `.codex/skills/_shared/skill-startup.md` with `docs/deployment.md` as the stage-specific doc. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` helpers: `ValidateTicketLock`, `ValidateDeploymentLane`, `CheckGitIgnored`, `NextRcVersion`, `UpdateReleaseManifest`, `ValidateReleaseManifest`, and `RenderPlaneComment -Type E2EQA`.
 
 ## Configuration
 
@@ -40,8 +40,6 @@ Optional environment variables override local JSON when present:
 - `GITEA_API_TOKEN`
 - `GITEA_OWNER`
 - `GITEA_REPO`
-
-Never print, commit, paste into tickets, or write real API tokens, cookies, session values, Nexus credentials, Azure credentials, or other secrets.
 
 ## Workflow
 

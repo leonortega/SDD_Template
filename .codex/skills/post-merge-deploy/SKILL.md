@@ -13,13 +13,11 @@ Do not perform DEV/QA validation inside this skill. `deploy-to-qa` owns artifact
 
 ## Shared Context
 
-Before running, read `.codex/skills/_shared/delivery-contract.md`, `docs/context-management.md`, and `docs/deployment.md`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` for deterministic mechanics: `ValidateTicketLock` against `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, and `ArtifactPaths`.
+Before running, follow `.codex/skills/_shared/skill-startup.md` with `docs/deployment.md` as the stage-specific doc. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` helpers: `ValidateTicketLock`, `ValidateDeploymentLane`, and `ArtifactPaths`.
 
 ## Configuration
 
 Read `.codex/client-tools.local.json` first. Required values are Plane, Gitea, and Nexus settings used by `deploy-to-qa`.
-
-Never print or write real tokens, passwords, cookies, Azure credentials, or Nexus credentials.
 
 ## Workflow
 

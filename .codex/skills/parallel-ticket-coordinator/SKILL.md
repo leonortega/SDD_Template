@@ -13,7 +13,7 @@ This skill orchestrates existing role skills. It does not duplicate child workfl
 
 ## Shared Context
 
-Before routing, read `.codex/skills/_shared/delivery-contract.md`, `docs/context-management.md`, and `docs/architecture.md` so one Git worktree per active ticket, ticket context locks, deployment lane ownership, markers, context freshness, and rerun rules match the rest of the delivery workflow.
+Before routing, follow `.codex/skills/_shared/skill-startup.md` with `docs/architecture.md` as the stage-specific doc.
 
 ## Configuration
 
@@ -27,7 +27,7 @@ Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.e
 - `git.baseBranch`, default `dev`
 - Plane, Gitea, Nexus, PR label, and quality config used by delegated child skills
 
-Never print, commit, paste into tickets, or write real Plane, Gitea, Nexus, Azure, cookie, or session secrets. When copying ignored local config into a ticket worktree, report only filenames copied, never values.
+When copying ignored local config into a ticket worktree, report only filenames copied, never values.
 
 ## Agent Model Policy
 

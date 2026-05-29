@@ -11,7 +11,7 @@ Use this skill after or between delivery runs to find repeated process misses an
 
 ## Shared Context
 
-Read `.codex/skills/_shared/delivery-contract.md`, `docs/context-management.md`, `docs/architecture.md`, `docs/development.md`, and `docs/deployment.md` first. Treat the delivery contract as the policy baseline and apply its Skill Synchronization Rule before changing any delivery or configure skill.
+Follow `.codex/skills/_shared/skill-startup.md` with `docs/architecture.md`, `docs/development.md`, and `docs/deployment.md` as stage-specific docs. Treat the delivery contract as the policy baseline and apply its Skill Synchronization Rule before changing any delivery or configure skill.
 
 ## Operating Modes
 
@@ -28,6 +28,7 @@ Never silently rewrite workflow rules from one isolated failure. Require either 
 Inspect the smallest useful set first, then expand as needed:
 
 - `.codex/skills/_shared/delivery-contract.md`
+- `.codex/memory/MEMORY.md` and relevant `.codex/memory/*.md` files
 - `docs/context-management.md`
 - `docs/architecture.md`
 - `docs/development.md`
@@ -40,8 +41,6 @@ Inspect the smallest useful set first, then expand as needed:
 - `.codex/skills/configure-*` docs, references, scripts, templates, and tests when setup or generated behavior is implicated
 - `.codex/delivery-context.local.json` when present, without printing secrets
 - recent Git commits, branches, tags, PR labels, PR review comments, CI results, OpenSpec verification output, Plane comments, QA bug tickets, Nexus release manifests, and deployment evidence when available
-
-Do not print real Plane, Gitea, Nexus, Azure, cookie, token, session, or credential values. Redact secrets in summaries.
 
 ## Workflow
 
@@ -97,11 +96,12 @@ Apply one of these outcomes:
 - `Regression test`: a script/template/check should enforce the rule.
 - `Quality gate update`: CI or local validation should catch the issue.
 - `Docs update`: durable findings should be promoted to `docs/architecture.md`, `docs/development.md`, `docs/deployment.md`, or `docs/context-management.md`.
+- `Memory update`: reusable but non-authoritative findings should be added to `.codex/memory/` through the memory update process.
 - `Follow-up ticket`: the change is product work, infra work, or too large for the current retrospective.
 
 Prefer tests or deterministic validation for enforceable rules. Prefer skill text only for judgment-heavy process rules.
 
-Use the Context Findings classification from `docs/context-management.md` to decide whether a durable finding belongs in `docs/architecture.md`, `docs/development.md`, `docs/deployment.md`, `docs/context-management.md`, or `.codex/skills/_shared/delivery-contract.md` plus related skills and tests.
+Use the Context Findings classification from `docs/context-management.md` and `.codex/memory/retrieval-policy.md` to decide whether a durable finding belongs in `docs/`, `.codex/skills/_shared/delivery-contract.md` plus related skills and tests, or `.codex/memory/`.
 
 ### 5. Apply Changes Safely
 
@@ -110,10 +110,11 @@ When applying changes:
 1. Keep edits scoped to the improvement.
 2. Update `_shared/delivery-contract.md` first when the rule is cross-cutting.
 3. Update the matching durable docs when the finding is reusable project knowledge.
-4. Update affected delivery-flow skills.
-5. Update configure skills, generated templates, audits, and tests when the Skill Synchronization Rule requires it.
-6. Add or update regression tests when the behavior can be enforced from files.
-7. Run the narrowest relevant validation command, such as skill validation, script tests, or existing repo tests.
+4. Update `.codex/memory/` when the finding is reusable but non-authoritative.
+5. Update affected delivery-flow skills.
+6. Update configure skills, generated templates, audits, and tests when the Skill Synchronization Rule requires it.
+7. Add or update regression tests when the behavior can be enforced from files.
+8. Run the narrowest relevant validation command, such as skill validation, script tests, or existing repo tests.
 
 Do not change OpenSpec-specific skills unless the requested improvement explicitly affects OpenSpec behavior.
 

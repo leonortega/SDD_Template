@@ -11,13 +11,11 @@ Use this skill when QA finds a product defect after a ticket has reached QA. The
 
 ## Shared Context
 
-Before filing or linking tickets, read `.codex/skills/_shared/delivery-contract.md`, `docs/context-management.md`, `docs/development.md`, and `docs/deployment.md` for stable markers, ticket context locks, rerun behavior, QA evidence, and defect ownership rules.
+Before filing or linking tickets, follow `.codex/skills/_shared/skill-startup.md` with `docs/development.md` and `docs/deployment.md` as stage-specific docs.
 
 ## Configuration
 
 Read `.codex/client-tools.local.json` first. Required values are Plane settings and Git settings when a fix branch is needed.
-
-Never print or store real tokens, cookies, credentials, or sensitive QA payloads.
 
 ## Workflow
 

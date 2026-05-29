@@ -13,7 +13,7 @@ For exact Gitea API endpoint guidance, read `references/gitea-review-api.md` bef
 
 ## Shared Context
 
-Before posting review output, read `.codex/skills/_shared/delivery-contract.md`, `docs/context-management.md`, and `docs/development.md` so severity labels, ticket context locks, PR label semantics, and review handoff expectations remain consistent with implementation and deployment gates.
+Before posting review output, follow `.codex/skills/_shared/skill-startup.md` with `docs/development.md` as the stage-specific doc.
 
 ## Configuration
 
@@ -28,8 +28,6 @@ Required or defaulted values:
 - `pr.labels.reviewed`: default `codex-reviewed`.
 - `pr.labels.needsTests`: default `needs-tests`.
 - `pr.labels.needsChanges`: default `needs-changes`.
-
-Never print Gitea tokens.
 
 ## Workflow
 

@@ -17,7 +17,7 @@ feature branch -> dev -> DEV -> QA -> main -> PROD
 
 ## Shared Context
 
-Before promotion, read `.codex/skills/_shared/delivery-contract.md`, `docs/context-management.md`, and `docs/deployment.md`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` for deterministic mechanics: `ArtifactPaths`, `ValidateTicketLock` against `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, `UpdateReleaseManifest`, `ValidateReleaseManifest`, and `RenderPlaneComment -Type QADeployment`.
+Before promotion, follow `.codex/skills/_shared/skill-startup.md` with `docs/deployment.md` as the stage-specific doc. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` helpers: `ArtifactPaths`, `ValidateTicketLock`, `ValidateDeploymentLane`, `UpdateReleaseManifest`, `ValidateReleaseManifest`, and `RenderPlaneComment -Type QADeployment`.
 
 For push-triggered DEV/QA deployment, the commit or merged PR title must start with the ticket key format configured in `.codex/delivery-policy.json`, such as `E2EPROJECT-123: ...`. Maintenance commits and non-ticket PRs must not deploy.
 
@@ -33,8 +33,6 @@ Required or defaulted values:
 - `nexus.baseUrl`, `nexus.username`, `nexus.password`, `nexus.repository`
 
 Optional environment variables override local JSON when present: `PLANE_QA_STATE`, `GITEA_BASE_URL`, `GITEA_API_TOKEN`, `GITEA_OWNER`, `GITEA_REPO`.
-
-Never print, commit, paste into tickets, or write real API tokens, Nexus credentials, Azure credentials, or secret values.
 
 ## Preflight
 

@@ -9,6 +9,8 @@ description: Use when testing, debugging, or making targeted improvements to ren
 
 Use this skill for ticket-scoped website QA or targeted frontend debugging. The `test-e2e` skill should prefer this skill for Blazor UI changes when rendered behavior, responsive layout, browser console health, screenshots, or user interactions need validation.
 
+When invoked as part of delivery QA, follow `.codex/skills/_shared/skill-startup.md` and keep browser evidence under the QA evidence rules owned by `test-e2e`.
+
 ## Browser Path
 
 Prefer the Codex Browser plugin when it is available in the current session:
