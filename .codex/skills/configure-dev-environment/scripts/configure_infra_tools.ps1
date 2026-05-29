@@ -1,5 +1,5 @@
 param(
-  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetPlaneEnv", "SetGiteaRunner", "SetPrometheusAzureTargets", "AuditQualityGates", "ValidateGiteaActionsRunner", "InitQualityGateTemplates", "SetQualityConfig")]
+  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetPlaneEnv", "SetGiteaRunner", "SetPrometheusAzureTargets", "AuditQualityGates", "AuditRecommendedTools", "SetRecommendedTools", "ValidateGiteaActionsRunner", "InitQualityGateTemplates", "SetQualityConfig")]
   [string]$Mode = "Audit",
 
   [string]$Root = (Resolve-Path ".").Path,
@@ -22,6 +22,7 @@ function New-Result {
     dryRun = [bool]$DryRun
     actions = @()
     findings = @()
+    recommendations = @()
     warnings = @()
   }
 }
@@ -718,6 +719,49 @@ function Get-GitRemoteOwnerRepo {
   return $null
 }
 
+function Get-DetectedStackTags {
+  $tags = [System.Collections.Generic.List[string]]::new()
+
+  if ((Get-ChildItem -Path $Root -Filter "*.slnx" -ErrorAction SilentlyContinue).Count -gt 0 -or
+      (Get-ChildItem -Path $Root -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue).Count -gt 0) {
+    $tags.Add("dotnet")
+  }
+  if (Test-Path (Join-RootPath "infra/plane")) { $tags.Add("plane") }
+  if (Test-Path (Join-RootPath "infra/gitea")) { $tags.Add("gitea") }
+  if (Test-Path (Join-RootPath ".gitea/workflows")) { $tags.Add("gitea-actions") }
+  if (Test-Path (Join-RootPath "infra/nexus")) { $tags.Add("nexus") }
+  if (Test-Path (Join-RootPath "infra/azure")) { $tags.Add("azure") }
+  if (Test-Path (Join-RootPath "infra/monitoring")) { $tags.Add("observability") }
+  if ((Test-Path (Join-RootPath "artifacts/qa")) -or (Test-Path (Join-RootPath ".codex/skills/test-e2e/SKILL.md"))) { $tags.Add("e2e") }
+  if (Test-Path (Join-RootPath "openspec")) { $tags.Add("openspec") }
+
+  return @($tags | Select-Object -Unique)
+}
+
+function Test-RecommendationMatchesStack {
+  param(
+    $Recommendation,
+    [string[]]$DetectedTags
+  )
+
+  $requires = @($Recommendation.requires)
+  if ($requires.Count -eq 0) { return $true }
+
+  foreach ($tag in $requires) {
+    if ($DetectedTags -notcontains $tag) { return $false }
+  }
+  return $true
+}
+
+function Get-ToolRecommendationCatalog {
+  $catalogPath = Join-RootPath ".codex/tool-recommendations.example.json"
+  if (-not (Test-Path $catalogPath)) {
+    throw "Missing .codex/tool-recommendations.example.json."
+  }
+
+  return Get-Content -Path $catalogPath -Raw | ConvertFrom-Json -Depth 20
+}
+
 function Ensure-InferredClientToolsConfig {
   param($Result)
 
@@ -801,10 +845,23 @@ function Ensure-InferredClientToolsConfig {
   Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "rollbackProd", "reasoningEffort") "high"
   Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "hotfixProd", "model") "gpt-5.3-codex"
   Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "hotfixProd", "reasoningEffort") "high"
+  Set-InferredClientValue $Result $client @("recommendedTools", "enabled") $true
+  Set-InferredClientValue $Result $client @("recommendedTools", "mode") "guided-manual"
+  Set-InferredClientValue $Result $client @("recommendedTools", "accepted") @()
+  Set-InferredClientValue $Result $client @("recommendedTools", "dismissed") @()
 
   if (-not $DryRun) {
     $client | ConvertTo-Json -Depth 20 | Set-Content -Path $target -Encoding UTF8
   }
+}
+
+function Add-Recommendation {
+  param(
+    $Result,
+    $Recommendation
+  )
+
+  $Result["recommendations"] += $Recommendation
 }
 
 function Invoke-Audit {
@@ -953,6 +1010,96 @@ function Invoke-AuditQualityGates {
   $result = New-Result
   Ensure-InferredClientToolsConfig $result
   Add-QualityGateAuditFindings $result
+  return $result
+}
+
+function Invoke-AuditRecommendedTools {
+  $result = New-Result
+  $detectedTags = Get-DetectedStackTags
+  $catalog = Get-ToolRecommendationCatalog
+  $accepted = @()
+  $dismissed = @()
+  $recommendationsEnabled = $true
+  $clientLocal = ".codex/client-tools.local.json"
+  $clientPath = Join-RootPath $clientLocal
+
+  if (Test-Path $clientPath) {
+    try {
+      $client = Get-Content -Path $clientPath -Raw | ConvertFrom-Json -Depth 20
+      if ($null -ne $client.recommendedTools) {
+        if ($client.recommendedTools.enabled -eq $false) { $recommendationsEnabled = $false }
+        $accepted = @($client.recommendedTools.accepted)
+        $dismissed = @($client.recommendedTools.dismissed)
+      } else {
+        Add-Item $result "findings" $clientLocal "recommendedTools" "Recommended tools config is missing; use SetRecommendedTools after the user accepts or dismisses recommendations." "info"
+      }
+    } catch {
+      Add-Item $result "findings" $clientLocal "recommendedTools" "Could not parse local client config; recommended tools audit will use defaults." "warning"
+    }
+  } else {
+    Add-Item $result "findings" $clientLocal "recommendedTools" "Local client config is missing; recommended tools audit will use defaults." "info"
+  }
+
+  Add-Item $result "actions" ".codex/tool-recommendations.example.json" "detectedStack" "Detected stack tags: $($detectedTags -join ', ')."
+
+  if (-not $recommendationsEnabled) {
+    Add-Item $result "findings" $clientLocal "recommendedTools.enabled" "Recommended tools audit is disabled in local config." "info"
+    return $result
+  }
+
+  foreach ($entry in @($catalog.recommendations)) {
+    if (-not (Test-RecommendationMatchesStack -Recommendation $entry -DetectedTags $detectedTags)) { continue }
+    if ($dismissed -contains $entry.id) { continue }
+
+    Add-Recommendation $result ([ordered]@{
+      id = $entry.id
+      name = $entry.name
+      type = $entry.type
+      purpose = $entry.purpose
+      installMethod = $entry.installMethod
+      source = $entry.source
+      target = $entry.target
+      validation = $entry.validation
+      accepted = ($accepted -contains $entry.id)
+    })
+  }
+
+  foreach ($entry in @($catalog.notRecommended)) {
+    if (-not (Test-RecommendationMatchesStack -Recommendation $entry -DetectedTags $detectedTags)) { continue }
+    Add-Item $result "findings" $entry.name $entry.id $entry.reason "info"
+  }
+
+  return $result
+}
+
+function Invoke-SetRecommendedTools {
+  $result = New-Result
+  $targetRelative = ".codex/client-tools.local.json"
+  $target = Join-RootPath $targetRelative
+  if (-not (Test-Path $target)) {
+    throw "Missing $targetRelative. Run -Mode InitLocalFiles first."
+  }
+
+  $values = Convert-JsonToHashtable $ValuesJson
+  if (-not $values.Contains("accepted") -and -not $values.Contains("dismissed")) {
+    throw "ValuesJson must include accepted or dismissed recommendation id arrays."
+  }
+
+  $config = Get-Content -Path $target -Raw | ConvertFrom-Json -Depth 20
+  Ensure-ObjectProperty -Object $config -Name "recommendedTools"
+  Set-ObjectValue -Object $config -Path @("recommendedTools", "enabled") -Value $true
+  Set-ObjectValue -Object $config -Path @("recommendedTools", "mode") -Value "guided-manual"
+
+  foreach ($key in @("accepted", "dismissed")) {
+    if ($values.Contains($key)) {
+      Set-ObjectValue -Object $config -Path @("recommendedTools", $key) -Value @($values[$key])
+      Add-Item $result "actions" $targetRelative "recommendedTools.$key" "Record confirmed recommendation ids; no skills, plugins, MCPs, or secrets were installed."
+    }
+  }
+
+  if (-not $DryRun) {
+    $config | ConvertTo-Json -Depth 20 | Set-Content -Path $target -Encoding UTF8
+  }
   return $result
 }
 
@@ -1869,10 +2016,12 @@ function Invoke-SetPrometheusAzureTargets {
 switch ($Mode) {
   "Audit" { $result = Invoke-Audit }
   "AuditQualityGates" { $result = Invoke-AuditQualityGates }
+  "AuditRecommendedTools" { $result = Invoke-AuditRecommendedTools }
   "ValidateGiteaActionsRunner" { $result = Invoke-ValidateGiteaActionsRunner }
   "InitLocalFiles" { $result = Invoke-InitLocalFiles }
   "InitQualityGateTemplates" { $result = Invoke-InitQualityGateTemplates }
   "SetClientTools" { $result = Invoke-SetClientTools }
+  "SetRecommendedTools" { $result = Invoke-SetRecommendedTools }
   "SetPlaneEnv" { $result = Invoke-SetEnvMode -TargetRelative "infra/plane/variables.env" }
   "SetGiteaRunner" { $result = Invoke-SetEnvMode -TargetRelative "infra/gitea/runner.env" }
   "SetPrometheusAzureTargets" { $result = Invoke-SetPrometheusAzureTargets }

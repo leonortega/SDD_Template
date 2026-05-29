@@ -92,5 +92,11 @@
         "reasoningEffort": "high"
       }
     }
+  },
+  "recommendedTools": {
+    "enabled": true,
+    "mode": "guided-manual",
+    "accepted": [],
+    "dismissed": []
   }
 }

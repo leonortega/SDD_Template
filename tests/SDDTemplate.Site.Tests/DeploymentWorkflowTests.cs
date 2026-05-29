@@ -230,6 +230,60 @@ namespace SDDTemplate.Site.Tests
         }
 
         [Fact]
+        public void RecommendedToolsConfigAndCatalogUseGuidedManualDefaults()
+        {
+            string config = File.ReadAllText(Path.Combine(
+                FindRepositoryRoot().FullName,
+                ".codex",
+                "client-tools.example.json"));
+            string catalog = ReadToolRecommendationsCatalog();
+
+            Assert.Contains("\"recommendedTools\"", config);
+            Assert.Contains("\"mode\": \"guided-manual\"", config);
+            Assert.Contains("\"accepted\": []", config);
+            Assert.Contains("\"dismissed\": []", config);
+            Assert.Contains("\"mode\": \"guided-manual\"", catalog);
+            Assert.Contains("\"installMethod\": \"manual-copy\"", catalog);
+            Assert.Contains("\"installMethod\": \"manual-config\"", catalog);
+            Assert.DoesNotContain("installCommand", catalog);
+        }
+
+        [Fact]
+        public void RecommendedToolsAuditDetectsCurrentStackAndAvoidsPlaneMcp()
+        {
+            string script = ReadConfigureScript();
+            string catalog = ReadToolRecommendationsCatalog();
+
+            Assert.Contains("AuditRecommendedTools", script);
+            Assert.Contains("SetRecommendedTools", script);
+            Assert.Contains("function Get-DetectedStackTags", script);
+            Assert.Contains("\"dotnet\"", script);
+            Assert.Contains("\"plane\"", script);
+            Assert.Contains("\"gitea\"", script);
+            Assert.Contains("\"nexus\"", script);
+            Assert.Contains("\"azure\"", script);
+            Assert.Contains("\"e2e\"", script);
+            Assert.Contains("Plane MCP is intentionally not recommended", catalog);
+            Assert.Contains("repo-local skills must use the configured Plane API", catalog);
+        }
+
+        [Fact]
+        public void ConfigureDocsDescribeManualSkillAcquisitionWorkflow()
+        {
+            string configureRouter = ReadSkill("configure-dev-environment", "SKILL.md");
+            string readme = File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, "README.md"));
+
+            Assert.Contains("AuditRecommendedTools", configureRouter);
+            Assert.Contains("SetRecommendedTools", configureRouter);
+            Assert.Contains("read the source `SKILL.md`", configureRouter);
+            Assert.Contains("create `.codex/skills/{skill-name}/`", configureRouter);
+            Assert.Contains("manual repo-based acquisition", configureRouter);
+            Assert.Contains("manual by default", readme);
+            Assert.Contains("read the source repository's `SKILL.md`", readme);
+            Assert.Contains(".codex/tool-recommendations.example.json", readme);
+        }
+
+        [Fact]
         public void SkillSynchronizationRuleRequiresConfigureCheckAfterDeliverySkillChanges()
         {
             string contract = ReadSkill("_shared", "delivery-contract.md");
@@ -287,6 +341,14 @@ namespace SDDTemplate.Site.Tests
                 "configure-dev-environment",
                 "scripts",
                 "configure_infra_tools.ps1"));
+        }
+
+        private static string ReadToolRecommendationsCatalog()
+        {
+            return File.ReadAllText(Path.Combine(
+                FindRepositoryRoot().FullName,
+                ".codex",
+                "tool-recommendations.example.json"));
         }
 
         private static string ReadSkill(string skillName, string fileName)
