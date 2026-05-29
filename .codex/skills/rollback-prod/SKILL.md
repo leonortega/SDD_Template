@@ -9,7 +9,9 @@ description: Roll back PROD to a previously verified Nexus artifact. Use when Co
 
 Use this skill when PROD must be restored to a previous known-good artifact. Rollback is a deployment operation, not a rebuild. It must redeploy an existing Nexus artifact and preserve release traceability.
 
-Before rollback, read `.codex/skills/_shared/delivery-contract.md`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` for deterministic mechanics: `ArtifactPaths` and `ValidateReleaseManifest` when checking rollback candidates, `ValidateTicketLock` when reporting active lock mismatch, and `UpdateReleaseManifest` after rollback verification. Rollback may target an incident/release rather than the active ticket lock, but a mismatch must be explicit.
+## Shared Context
+
+Before rollback, read `.codex/skills/_shared/delivery-contract.md`, `docs/context-management.md`, and `docs/deployment.md`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` for deterministic mechanics: `ArtifactPaths`, `ValidateReleaseManifest`, `ValidateTicketLock`, and `UpdateReleaseManifest`. Rollback may target an incident/release rather than the active ticket lock, but a mismatch must be explicit.
 
 ## Configuration
 

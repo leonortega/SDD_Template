@@ -9,7 +9,9 @@ description: Implement an already-started Plane ticket through OpenSpec tasks, c
 
 Use this skill after `plane-start-ticket` has created or reused the implementation branch, moved the Plane ticket to progress, and created the OpenSpec change. This skill owns implementation through PR handoff. It does not select Todo tickets, create initial branches, or archive OpenSpec changes.
 
-Read `.codex/skills/_shared/delivery-contract.md` before handoff or review work so PR labels, severity, ticket context lock, markers, and rerun checkpoints match the rest of the delivery workflow.
+## Shared Context
+
+Before implementation, handoff, or review work, read `.codex/skills/_shared/delivery-contract.md`, `docs/context-management.md`, and `docs/development.md` so PR labels, severity, ticket context locks, markers, context authority, quality gates, Context Findings Review, and rerun checkpoints match the rest of the delivery workflow.
 
 ## Configuration
 
@@ -133,10 +135,17 @@ Run `openspec-verify-change` before PR handoff. Fix critical issues. Convert req
 
 ### 7. Commit And Push
 
-1. Stage only intentional files.
-2. Commit with a message that satisfies the configured commit hook and includes the Plane ticket or OpenSpec id.
-3. Let hooks run naturally. Do not bypass hooks unless the user explicitly requests that in the current chat.
-4. Push the branch.
+1. Run Context Findings Review before staging.
+2. Stage only intentional files.
+3. Commit with a message that satisfies the configured commit hook and includes the Plane ticket or OpenSpec id.
+4. Let hooks run naturally. Do not bypass hooks unless the user explicitly requests that in the current chat.
+5. Push the branch.
+
+### Context Findings Review
+
+Before committing, apply the Context Findings classification from `docs/context-management.md`. If the finding changes enforceable automation behavior, update `.codex/skills/_shared/delivery-contract.md` plus related skills and tests.
+
+If implementation discovers durable knowledge, update the matching doc in the same PR. If no durable knowledge was discovered, record `Docs: no durable context changes` in the PR body and Plane handoff comment.
 
 ### 8. Create Or Reuse The Gitea PR
 
@@ -153,6 +162,9 @@ The PR body must include:
 - feature fixes applied
 - quality/test fixes applied
 - infra validation fixes applied
+- Context findings: added/updated/none
+- Docs updated: <files> or Docs: no durable context changes
+- Assumptions recorded: <short list or none>
 - remaining non-blocking infra notes
 - known non-blocking product risks or gaps
 
@@ -180,6 +192,9 @@ Add a Plane comment with:
 - infra validation fixes applied
 - improvements applied
 - tests added or updated
+- Context findings: added/updated/none
+- Docs updated: <files> or Docs: no durable context changes
+- Assumptions recorded: <short list or none>
 - remaining non-blocking infra notes
 - remaining non-blocking risks or gaps
 

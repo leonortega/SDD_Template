@@ -9,7 +9,9 @@ description: Produce a read-only operator dashboard for Plane tickets, Gitea PRs
 
 Use this skill for read-only delivery visibility. It must not mutate Plane, Git, Gitea, Nexus, Azure, or local repo files.
 
-Read `.codex/skills/_shared/delivery-contract.md` before reporting so state names, markers, ticket context lock, artifact paths, and version terms match the rest of the delivery workflow.
+## Shared Context
+
+Before reporting, read `.codex/skills/_shared/delivery-contract.md`, `docs/context-management.md`, and `docs/architecture.md` so state names, markers, ticket context locks, artifact paths, version terms, context freshness, and conflict reporting match the rest of the delivery workflow.
 
 ## Configuration
 

@@ -296,6 +296,74 @@ namespace SDDTemplate.Site.Tests
         }
 
         [Fact]
+        public void CanonicalContextDocsExistAndReadmeLinksThem()
+        {
+            string readme = File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, "README.md"));
+
+            foreach (string docPath in new[]
+            {
+                "context-management.md",
+                "architecture.md",
+                "development.md",
+                "deployment.md"
+            })
+            {
+                string doc = ReadDoc(docPath);
+                Assert.False(string.IsNullOrWhiteSpace(doc));
+                Assert.Contains($"docs/{docPath}", readme);
+            }
+
+            Assert.Contains("## Canonical Context", readme);
+            Assert.Contains("Docs: no durable context changes", readme);
+        }
+
+        [Fact]
+        public void DeliveryContractReferencesContextManagementDocs()
+        {
+            string contract = ReadSkill("_shared", "delivery-contract.md");
+
+            Assert.Contains("docs/context-management.md", contract);
+            Assert.Contains("docs/architecture.md", contract);
+            Assert.Contains("docs/development.md", contract);
+            Assert.Contains("docs/deployment.md", contract);
+            Assert.Contains("delivery contract wins for automation behavior", contract);
+        }
+
+        [Fact]
+        public void ImplementationSkillsRequireContextFindingsReview()
+        {
+            string skill = ReadSkill("implement-ticket", "SKILL.md");
+
+            Assert.Contains("Context Findings Review", skill);
+            Assert.Contains("docs/context-management.md", skill);
+            Assert.Contains("Docs: no durable context changes", skill);
+            Assert.Contains("Context findings: added/updated/none", skill);
+            Assert.Contains("Assumptions recorded: <short list or none>", skill);
+        }
+
+        [Fact]
+        public void ContextFindingClassificationRoutesToCanonicalDocs()
+        {
+            string contract = ReadSkill("_shared", "delivery-contract.md");
+            string contextDocs = ReadDoc("context-management.md");
+            string retrospective = ReadSkill("delivery-retrospective-audit", "SKILL.md");
+            string implementation = ReadSkill("implement-ticket", "SKILL.md");
+            string contextFindings = GetSection(contextDocs, "## Context Findings");
+
+            Assert.Contains("docs/architecture.md", contextFindings);
+            Assert.Contains("docs/development.md", contextFindings);
+            Assert.Contains("docs/deployment.md", contextFindings);
+            Assert.Contains("docs/context-management.md", contextFindings);
+            Assert.Contains(".codex/skills/_shared/delivery-contract.md", contextFindings);
+
+            Assert.DoesNotContain("Equivalent plain-language routing", contextDocs);
+            Assert.Contains("Implementation PR bodies and Plane handoff comments", contract);
+            Assert.Contains("Context Findings classification from `docs/context-management.md`", contract);
+            Assert.Contains("Context Findings classification from `docs/context-management.md`", implementation);
+            Assert.Contains("Context Findings classification from `docs/context-management.md`", retrospective);
+        }
+
+        [Fact]
         public void SharedDeliveryToolsExposeReusableWorkflowModes()
         {
             string contract = ReadSkill("_shared", "delivery-contract.md");
@@ -388,6 +456,73 @@ namespace SDDTemplate.Site.Tests
         }
 
         [Fact]
+        public void DeliverySkillsReferenceSharedContextDocsByRole()
+        {
+            string[] deliverySkills =
+            [
+                "automatic-implement-ticket",
+                "delivery-retrospective-audit",
+                "deploy-to-prod",
+                "deploy-to-qa",
+                "file-qa-bug",
+                "gitea-pr-review-agent",
+                "hotfix-prod",
+                "implement-ticket",
+                "parallel-ticket-coordinator",
+                "pipeline-status",
+                "plane-start-ticket",
+                "post-merge-deploy",
+                "rollback-prod",
+                "test-e2e"
+            ];
+
+            foreach (string skillName in deliverySkills)
+            {
+                string skill = ReadSkill(skillName, "SKILL.md");
+                Assert.Contains(".codex/skills/_shared/delivery-contract.md", skill);
+                Assert.Contains("docs/context-management.md", skill);
+            }
+
+            foreach (string skillName in new[]
+            {
+                "post-merge-deploy",
+                "deploy-to-qa",
+                "test-e2e",
+                "deploy-to-prod",
+                "rollback-prod",
+                "hotfix-prod",
+                "file-qa-bug"
+            })
+            {
+                Assert.Contains("docs/deployment.md", ReadSkill(skillName, "SKILL.md"));
+            }
+
+            foreach (string skillName in new[]
+            {
+                "implement-ticket",
+                "gitea-pr-review-agent",
+                "hotfix-prod",
+                "file-qa-bug",
+                "delivery-retrospective-audit"
+            })
+            {
+                Assert.Contains("docs/development.md", ReadSkill(skillName, "SKILL.md"));
+            }
+
+            foreach (string skillName in new[]
+            {
+                "automatic-implement-ticket",
+                "parallel-ticket-coordinator",
+                "pipeline-status",
+                "plane-start-ticket",
+                "delivery-retrospective-audit"
+            })
+            {
+                Assert.Contains("docs/architecture.md", ReadSkill(skillName, "SKILL.md"));
+            }
+        }
+
+        [Fact]
         public void DeliveryFlowSkillsEnforceTicketContextLock()
         {
             string[] skillNames =
@@ -453,6 +588,14 @@ namespace SDDTemplate.Site.Tests
                 FindRepositoryRoot().FullName,
                 ".codex",
                 "tool-recommendations.example.json"));
+        }
+
+        private static string ReadDoc(string fileName)
+        {
+            return File.ReadAllText(Path.Combine(
+                FindRepositoryRoot().FullName,
+                "docs",
+                fileName));
         }
 
         private static string ReadSkill(string skillName, string fileName)

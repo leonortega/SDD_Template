@@ -15,9 +15,9 @@ For Blazor or other rendered website changes, prefer `$frontend-testing-debuggin
 
 Non-interactive context means the run has no available user-response channel, such as cron automation, CI, detached automation, or an explicit "do not ask" instruction.
 
-Read `.codex/skills/_shared/delivery-contract.md` before QA state changes. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` for deterministic mechanics: `ValidateTicketLock` against `.codex/delivery-context.local.json` before testing/tagging/evidence/state mutation, `ValidateDeploymentLane` before deployment-lane mutations, `CheckGitIgnored` before writing evidence, `NextRcVersion` when deriving RC tags, `UpdateReleaseManifest` after QA passes, `ValidateReleaseManifest` before upload, and `RenderPlaneComment -Type E2EQA` for the Plane comment.
+## Shared Context
 
-When parallel delivery is active and `.codex/parallel-delivery.local.json` exists in the coordinator checkout, call `ValidateDeploymentLane` before testing QA, writing evidence, deriving RC tags, updating `release.json`, or moving Plane. If another ticket owns the lane, stop and report the owner.
+Before QA state changes, read `.codex/skills/_shared/delivery-contract.md`, `docs/context-management.md`, and `docs/deployment.md`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` for deterministic mechanics: `ValidateTicketLock` against `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, `CheckGitIgnored`, `NextRcVersion`, `UpdateReleaseManifest`, `ValidateReleaseManifest`, and `RenderPlaneComment -Type E2EQA`.
 
 ## Configuration
 

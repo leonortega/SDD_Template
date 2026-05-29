@@ -9,7 +9,11 @@ description: Coordinate multiple Plane tickets through role-specialized delivery
 
 Use this skill when the user asks to process more than one Plane ticket at the same time, run parallel ticket delivery, create parallel role agents, or coordinate concurrent Plane work.
 
-This skill orchestrates existing role skills. It does not duplicate child workflows and does not implement ticket-specific code itself. It maintains one Git worktree per active ticket. Read `.codex/skills/_shared/delivery-contract.md` before routing so worktree isolation, ticket context locks, deployment lane ownership, markers, and rerun rules match the rest of the delivery workflow.
+This skill orchestrates existing role skills. It does not duplicate child workflows and does not implement ticket-specific code itself.
+
+## Shared Context
+
+Before routing, read `.codex/skills/_shared/delivery-contract.md`, `docs/context-management.md`, and `docs/architecture.md` so one Git worktree per active ticket, ticket context locks, deployment lane ownership, markers, context freshness, and rerun rules match the rest of the delivery workflow.
 
 ## Configuration
 

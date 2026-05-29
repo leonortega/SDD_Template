@@ -11,7 +11,9 @@ Use this master skill as the default high-level entry point for normal ticket de
 
 PROD promotion remains explicit. Do not invoke `deploy-to-prod` only because QA passed unless the user explicitly asks to promote to PROD.
 
-Before routing, read `.codex/skills/_shared/delivery-contract.md` and apply its state, marker, ticket context lock, artifact, release manifest, versioning, and rerun rules.
+## Shared Context
+
+Before routing, read `.codex/skills/_shared/delivery-contract.md`, `docs/context-management.md`, and `docs/architecture.md`. Apply their shared rules for state names, stable markers, ticket context locks, artifact lineage, release manifests, versioning, reruns, context freshness, and conflict handling.
 
 ## Configuration
 
@@ -19,7 +21,7 @@ Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.e
 
 Never print, commit, paste into tickets, or write real Plane, Gitea, Nexus, Azure, cookie, or session secrets.
 
-Use ignored `.codex/delivery-context.local.json` as the ticket context lock. If the user specifies a ticket, resolve it and create or update the lock before delegating. If the lock exists, every resolved checkpoint must match its `ticketKey`; if it does not, stop or invoke `pipeline-status` instead of routing to a child skill.
+Use ignored `.codex/delivery-context.local.json` as the ticket context lock according to the shared contract. If the lock or durable checkpoints conflict with the resolved ticket, stop or invoke `pipeline-status` instead of routing to a child skill.
 
 ## State Inspection
 

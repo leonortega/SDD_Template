@@ -11,7 +11,9 @@ Use this skill for a chat-driven Plane workflow. The user should not need to run
 
 For setup details and branch pattern options, read `references/configuration.md` when configuration is missing or the user asks how to configure the tools. Before making Plane API calls, read `references/plane-api.md`.
 
-Read `.codex/skills/_shared/delivery-contract.md` before mutating Plane or Git so generated markers, state names, and rerun behavior stay consistent across the delivery workflow.
+## Shared Context
+
+Before mutating Plane or Git, read `.codex/skills/_shared/delivery-contract.md`, `docs/context-management.md`, and `docs/architecture.md` so generated markers, state names, context authority, ticket locks, and rerun behavior stay consistent across the delivery workflow.
 
 This skill owns initial creation of ignored `.codex/delivery-context.local.json` for automatic delivery. Never commit that file.
 
