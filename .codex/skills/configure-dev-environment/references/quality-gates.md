@@ -24,6 +24,7 @@ Use the shared script:
 ## Strategy
 
 - Gitea PR validation is the source of truth for formatting, build, tests, coverage, dependency audit, full secret scanning, and filesystem security scanning.
+- `.codex/delivery-policy.json` must include both `ticketKeyPattern` for deployment gating and `agentOptimization` defaults for retry limits, prompt-cache ordering, telemetry output, and workflow eval paths.
 - Coverage threshold is configurable through `.codex/quality.local.json`; default to `coverage.minimumPercent = 80`.
 - Gitea Actions should fall back to `.codex/quality.example.json` when local config is absent.
 - Local Git hooks are convenience checks only.
@@ -79,7 +80,7 @@ Ask the user to configure Gitea branch protection:
 
 ## Deployment Gating
 
-Push-triggered deployments are gated by `.codex/delivery-policy.json`. The workflow reads `ticketKeyPattern` and deploys only when the commit message or merged PR title starts with that ticket key. `[SDD]`, OpenSpec, chore, and ops-only maintenance commits are accepted by local hooks where appropriate but must not deploy automatically.
+Push-triggered deployments are gated by `.codex/delivery-policy.json`. The workflow reads `ticketKeyPattern` and deploys only when the commit message or merged PR title starts with that ticket key. The same policy file carries `agentOptimization` defaults used by delivery agents when the platform exposes retry, prompt-cache, telemetry, or eval data. `[SDD]`, OpenSpec, chore, and ops-only maintenance commits are accepted by local hooks where appropriate but must not deploy automatically.
 
 DEV and QA deploy only from `dev` when application/test/package source changed. PROD deploys only from `main` when `main` points to the exact QA-approved packaged commit for the same ticket-gated application change. Manual workflow dispatch remains available for explicit promotion with `artifact_commit_sha`.
 
