@@ -454,6 +454,9 @@ function Add-QualityGateAuditFindings {
   } elseif (-not (Test-FileContains $gitignore "\.codex/delivery-context\.local\.json")) {
     Add-Item $Result "findings" $gitignore ".codex/delivery-context.local.json" "Local ticket context lock must be ignored so automatic delivery stays ticket-scoped without committing runtime state." "warning"
   }
+  if ((Test-Path (Join-RootPath $gitignore)) -and -not (Test-FileContains $gitignore "\.codex/parallel-delivery\.local\.json")) {
+    Add-Item $Result "findings" $gitignore ".codex/parallel-delivery.local.json" "Parallel delivery runtime state must be ignored so active ticket worktree assignments and lane ownership are not committed." "warning"
+  }
 
   $globalJson = "global.json"
   $globalJsonPath = Join-RootPath $globalJson
@@ -770,6 +773,35 @@ function Ensure-InferredClientToolsConfig {
   Set-InferredClientValue $Result $client @("pr", "labels", "needsTests") "needs-tests"
   Set-InferredClientValue $Result $client @("pr", "labels", "needsChanges") "needs-changes"
 
+  Set-InferredClientValue $Result $client @("parallelDelivery", "enabled") $false
+  Set-InferredClientValue $Result $client @("parallelDelivery", "maxActiveTickets") 2
+  Set-InferredClientValue $Result $client @("parallelDelivery", "worktreeRoot") "../ticket-worktrees"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "deploymentLanePolicy") "serialized"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "coordinator", "model") "inherit"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "coordinator", "reasoningEffort") "medium"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "pipelineStatus", "model") "gpt-5.4-mini"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "pipelineStatus", "reasoningEffort") "low"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "ticketStarter", "model") "gpt-5.4-mini"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "ticketStarter", "reasoningEffort") "medium"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "implementation", "model") "gpt-5.3-codex"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "implementation", "reasoningEffort") "medium"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "prReview", "model") "gpt-5.4"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "prReview", "reasoningEffort") "high"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "postMergeDeploy", "model") "gpt-5.4-mini"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "postMergeDeploy", "reasoningEffort") "medium"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "deployToQa", "model") "gpt-5.4-mini"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "deployToQa", "reasoningEffort") "medium"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "e2eQa", "model") "gpt-5.4"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "e2eQa", "reasoningEffort") "medium"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "deployToProd", "model") "gpt-5.4"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "deployToProd", "reasoningEffort") "high"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "fileQaBug", "model") "gpt-5.4"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "fileQaBug", "reasoningEffort") "medium"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "rollbackProd", "model") "gpt-5.4"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "rollbackProd", "reasoningEffort") "high"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "hotfixProd", "model") "gpt-5.3-codex"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "hotfixProd", "reasoningEffort") "high"
+
   if (-not $DryRun) {
     $client | ConvertTo-Json -Depth 20 | Set-Content -Path $target -Encoding UTF8
   }
@@ -1080,6 +1112,8 @@ bld/
 [Ll]og/
 [Ll]ogs/
 artifacts/
+.codex/delivery-context.local.json
+.codex/parallel-delivery.local.json
 TestResults/
 [Tt]est[Rr]esult*/
 coverage/
@@ -1165,7 +1199,6 @@ infra/plane/plane/
 .codex/client-tools.local.json
 .codex/quality.local.json
 .codex/azure-login.local.json
-.codex/delivery-context.local.json
 infra/monitoring/prometheus.local.yml
 
 # OS/editor noise

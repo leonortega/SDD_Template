@@ -15,6 +15,8 @@ Non-interactive context means the run has no available user-response channel, su
 
 Read `.codex/skills/_shared/delivery-contract.md` before QA state changes. Use `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode CheckGitIgnored` before writing evidence, `-Mode NextRcVersion` when deriving RC tags, and `-Mode ValidateReleaseManifest` after updating `release.json`. Enforce the ticket context lock before testing, tagging, publishing evidence, or moving state.
 
+When parallel delivery is active and `.codex/parallel-delivery.local.json` exists in the coordinator checkout, respect the serialized deployment lane before testing QA, writing evidence, deriving RC tags, updating `release.json`, or moving Plane. If another ticket owns the lane, stop and report the owner.
+
 ## Configuration
 
 Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.example.json` only for structure and default names, then apply environment variable overrides when present.

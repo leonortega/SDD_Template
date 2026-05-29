@@ -168,6 +168,54 @@ E2EPROJECT-[0-9]+
 
 Ticket delivery is locked to one active ticket with ignored `.codex/delivery-context.local.json`. Child skills verify that Plane comments, branch, PR, artifact commit, QA evidence, RC tag, and PROD release lineage match the locked ticket before mutating or promoting anything.
 
+## Parallel Ticket Delivery
+
+Use the parallel coordinator when more than one ticket should be active at the same time:
+
+```text
+Coordinate parallel Plane tickets
+```
+
+That routes through `.codex/skills/parallel-ticket-coordinator`. The coordinator assigns one Git worktree and one local ticket lock to each active ticket, then invokes the existing role skills from inside the assigned worktree.
+
+Default placeholder-safe config lives in `.codex/client-tools.example.json`:
+
+```json
+"parallelDelivery": {
+  "enabled": false,
+  "maxActiveTickets": 2,
+  "worktreeRoot": "../ticket-worktrees",
+  "deploymentLanePolicy": "serialized",
+  "agentModelPolicy": {
+    "pipelineStatus": {
+      "model": "gpt-5.4-mini",
+      "reasoningEffort": "low"
+    },
+    "implementation": {
+      "model": "gpt-5.3-codex",
+      "reasoningEffort": "medium"
+    },
+    "deployToProd": {
+      "model": "gpt-5.4",
+      "reasoningEffort": "high"
+    }
+  }
+}
+```
+
+Parallel implementation uses this shape:
+
+```text
+SDD_template/                  coordinator checkout
+../ticket-worktrees/
+  e2eproject-123/              ticket worktree with its own .codex/delivery-context.local.json
+  e2eproject-124/              ticket worktree with its own .codex/delivery-context.local.json
+```
+
+Planning, implementation, PR validation, and review can run concurrently across ticket worktrees. DEV, QA, E2E QA, PROD, rollback, and hotfix promotion stay serialized because they share Azure environments, Nexus release manifests, RC/final tags, and Plane deployment evidence. The coordinator records active ticket mappings and deployment-lane ownership in ignored `.codex/parallel-delivery.local.json`.
+
+`agentModelPolicy` controls cost per on-the-fly sub-agent. Read-only status and mechanical promotion checks can use smaller models and lower reasoning; implementation, review, PROD, rollback, and hotfix work use stronger models or higher reasoning. `model: "inherit"` means the coordinator should not override the parent run's model.
+
 ## Quality Gates
 
 Gitea PR validation is the source of truth. Local hooks are convenience checks only.
@@ -242,6 +290,7 @@ Common entry points:
 
 - `configure-dev-environment`: configure Plane, Gitea, runner, quality gates, Nexus, Azure, and observability.
 - `pipeline-status`: read-only dashboard for tickets, PRs, artifacts, QA evidence, tags, and deployments.
+- `parallel-ticket-coordinator`: coordinate multiple active tickets across isolated Git worktrees while serializing deployment promotion.
 - `automatic-implement-ticket`: inspect state and route to the next valid delivery step.
 - `plane-start-ticket`: select a Plane ticket, create branch context, and create the OpenSpec proposal.
 - `implement-ticket`: implement an active ticket and hand off a PR.

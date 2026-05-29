@@ -13,6 +13,8 @@ Do not perform DEV/QA validation inside this skill. `deploy-to-qa` owns artifact
 
 Before running, read `.codex/skills/_shared/delivery-contract.md`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode ArtifactPaths` when building Nexus artifact paths. Enforce the ticket context lock before delegating to `deploy-to-qa`.
 
+When parallel delivery is active and `.codex/parallel-delivery.local.json` exists in the coordinator checkout, respect the serialized deployment lane before waiting for artifacts or delegating to `deploy-to-qa`. If another ticket owns the lane, stop and report the owner; do not deploy, promote, or update Plane for this ticket.
+
 ## Configuration
 
 Read `.codex/client-tools.local.json` first. Required values are Plane, Gitea, and Nexus settings used by `deploy-to-qa`.

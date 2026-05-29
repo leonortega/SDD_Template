@@ -51,6 +51,14 @@ When setup needs values the user must supply manually, do not only ask for the v
 - Never infer or fabricate API tokens, passwords, service-account credentials, Plane workspace/project identifiers, or cloud identifiers that are not discoverable from local repo/Azure metadata.
 - If a required value is not inferable, report it as a user-supplied value with its source, destination, official setup surface, and validation command.
 
+## Parallel Delivery Rules
+
+- Parallel ticket delivery uses Git worktrees only. The default placeholder-safe config is `parallelDelivery.enabled=false`, `parallelDelivery.maxActiveTickets=2`, `parallelDelivery.worktreeRoot=../ticket-worktrees`, `parallelDelivery.deploymentLanePolicy=serialized`, and `parallelDelivery.agentModelPolicy` with per-role model/reasoning defaults.
+- The coordinator runtime index `.codex/parallel-delivery.local.json` and each worktree's `.codex/delivery-context.local.json` must be ignored and never committed.
+- Copy ignored local config into ticket worktrees only when a child delivery skill requires it. Report copied filenames, not secret values.
+- Deployment promotion remains serialized because DEV, QA, PROD, RC tags, final release tags, and Nexus release manifests are shared surfaces.
+- `agentModelPolicy` is a cost-control policy for on-the-fly sub-agents. `model=inherit` means no explicit model override; unavailable model ids should fall back to inherited model behavior and be reported.
+
 ## Shared Script
 
 Use the shared deterministic script:
