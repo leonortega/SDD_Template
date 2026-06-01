@@ -34,6 +34,10 @@ Required or defaulted values:
 
 Optional environment variables override local JSON when present: `PLANE_QA_STATE`, `GITEA_BASE_URL`, `GITEA_API_TOKEN`, `GITEA_OWNER`, `GITEA_REPO`.
 
+## Workflow
+
+Run preflight, DEV/QA promotion, Plane updates, and handoff reporting in order. Do not move the ticket to QA until deployment validation and release manifest validation pass.
+
 ## Preflight
 
 1. Verify the PR is merged and its target branch is `dev`. If the PR merged elsewhere, stop and report the branch mismatch.
@@ -94,6 +98,10 @@ The comment must include:
 - Nexus release manifest URL: `app/{commitSha}/release.json`
 - version status: `unversioned QA candidate` unless an RC tag already exists for the commit
 - source RC version when already known, otherwise state that RC assignment happens during E2E QA before Done
+
+## Output
+
+Report the ticket, merged PR, artifact commit, DEV/QA URLs, health validation, Nexus release manifest, Plane QA-state update, and next handoff to E2E QA.
 
 ## Failure Rules
 

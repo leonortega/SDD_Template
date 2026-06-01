@@ -43,6 +43,10 @@ Read `.codex/client-tools.local.json` first. Required values are Plane, Gitea, a
 - If the artifact exists, skip waiting and delegate immediately.
 - If labels were stale but have since been removed, continue.
 
+## Output
+
+Report the PR, merge commit, artifact availability, validation status, deployment-lane result, invoked child skill, and handoff to QA or the blocker found.
+
 ## Failure Rules
 
 - Unmerged PR: stop and report the PR state.

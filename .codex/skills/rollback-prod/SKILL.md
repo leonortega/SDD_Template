@@ -21,6 +21,10 @@ Read `.codex/client-tools.local.json` first. Required values:
 - `gitea.baseUrl`, `gitea.apiToken`, `gitea.owner`, `gitea.repo`
 - `nexus.baseUrl`, `nexus.username`, `nexus.password`, `nexus.repository`
 
+## Workflow
+
+Run preflight, rollback deployment, verification, Plane result, and follow-up handoff steps in order. Do not mutate PROD until artifact and release-manifest validation pass.
+
 ## Preflight
 
 1. Resolve the current PROD release from the latest Plane PROD deployment comment or release manifest.
@@ -79,6 +83,10 @@ IA generated PROD rollback incident: {rollbackVersionOrCommit}
 Record who or what requested the rollback when known, why it was needed, current PROD before rollback, rollback target, timeline, verification evidence, and follow-up decision.
 
 After rollback, explicitly document Git state. `main` is not automatically reverted. Require one follow-up: open a hotfix PR, open a revert PR, or record an accepted temporary divergence note with owner and expected resolution.
+
+## Output
+
+Report the rollback target, current and restored PROD versions, artifact commit, validation results, Plane rollback comment, incident/follow-up handoff, and any remaining Git-line divergence.
 
 ## Failure Rules
 
