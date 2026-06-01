@@ -38,6 +38,10 @@ Read `.codex/client-tools.local.json` first. Required values are Plane settings 
 
 Default to OpenSpec for product bugs and hotfixes. Skip OpenSpec only when the bug is explicitly marked `no-openspec`, `ops-only`, or the user explicitly requests no OpenSpec.
 
+## Output
+
+Report the parent ticket, QA validation failure, bug ticket link, evidence path or URL, whether a fix workflow was started, and the handoff owner for non-code defects.
+
 ## Failure Rules
 
 - Missing parent ticket or QA evidence: stop and ask for the missing identifier.

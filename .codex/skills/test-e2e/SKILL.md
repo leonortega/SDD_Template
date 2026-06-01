@@ -278,6 +278,10 @@ If multiple active OpenSpec changes match, or no clear linked change can be reso
 
 If `$openspec-archive-change` reports incomplete artifacts, incomplete tasks, spec sync warnings, or needs user confirmation, stop the archival handoff and report the exact blocker. Do not undo the QA pass or move the Plane ticket back from Done.
 
+## Output
+
+Report the ticket, QA environment, scenarios tested, validation assertions, evidence path or URL, RC version, Plane state/comment updates, OpenSpec archival handoff, and any blockers or residual risk.
+
 ## Failure Rules
 
 - Missing Plane API config: stop before Plane reads or mutations.

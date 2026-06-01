@@ -42,7 +42,11 @@ Required/defaulted values:
    - existing implementation commits on the branch,
    - upstream branch and push status,
    - existing open PR for the branch,
-   - latest review-agent marker for the current head SHA,
+   - latest review-agent marker and stable AI finding ids for the current head SHA,
+   - existing OpenSpec `## PR Review Feedback` tasks,
+   - human-authored top-level PR comments and inline code review comments,
+   - latest Plane `IA generated PR feedback detected: {headSha}:{feedbackBatchId}` markers,
+   - latest Plane `IA generated PR feedback fixes: {headSha}:{feedbackBatchId}` markers,
    - current `needs-tests` and `needs-changes` labels,
    - latest Gitea Actions status.
    Continue from the latest completed checkpoint instead of restarting earlier steps.
@@ -120,7 +124,7 @@ If coverage is below the configured threshold, add or update OpenSpec tasks for 
 When local hooks, configured quality tools, OpenSpec verification, PR review, or Gitea Actions fail:
 
 1. Classify the failure before editing files.
-2. Treat app, code, spec, formatting, build, test, coverage, staged-secret, or review findings against changed behavior as implementation failures. Fix them in the current ticket, add or update OpenSpec tasks before or alongside the fix, update specs/design when behavior changes, and add or update tests for regressions, edge cases, and coverage gaps.
+2. Treat app, code, spec, formatting, build, test, coverage, staged-secret, or PR review feedback against changed behavior as implementation failures. Fix them in the current ticket, add or update OpenSpec tasks before or alongside the fix, update specs/design when behavior changes, and add or update tests for regressions, edge cases, and coverage gaps.
 3. Treat runner, workflow-container, Docker image pull, missing `node`, local Gitea hostname, scanner installation, missing shell tool, or stale tool-install URL failures as infra/tooling failures. Route through `configure-dev-environment`, `configure-gitea-actions-runner`, or `configure-quality-gates`; run `AuditQualityGates` and `ValidateGiteaActionsRunner` when applicable.
 4. If an infra/tooling failure blocks the authoritative PR gate, fix repo-owned workflow/config issues in the branch or route external setup issues to the infra skill, then keep the ticket open until Gitea PR validation passes. Record the fix separately from feature implementation work.
 5. Full local `gitleaks detect --source . --redact --no-git` findings in ignored local secret files are local setup notes, not implementation defects. Staged `gitleaks protect --staged --redact` and CI secret scans remain authoritative for tracked changes.
@@ -169,17 +173,21 @@ The PR body must include:
 
 ### 9. Review And Fix Loop
 
-Invoke `gitea-pr-review-agent`. Fix actionable `BLOCKER` findings, update OpenSpec tasks/artifacts for each review-driven fix, push updates, and repeat until there are no blocking review findings or quality failures. Apply configured PR labels based on the final review outcome.
+Invoke the repo-owned `pr-review-feedback-loop` skill after PR creation and on every open-PR resume. That skill owns AI review findings, late human PR comments, feedback batch ids, Plane detection/fix comments, and OpenSpec `## PR Review Feedback` tasks. Do not put this local delivery behavior in external `openspec-*` skills.
 
-Cap the review/fix loop at 3 review cycles for the current ticket unless the user explicitly asks to continue. If blocking feedback remains after 3 current-head cycles, stop and summarize the unresolved finding, why it remains unresolved, and whether it appears stale, conflicting, or still valid.
+After `pr-review-feedback-loop` returns, continue only when:
 
-The review agent uses `<!-- codex-review-agent:{headSha} -->` markers. After every pushed head SHA, ensure the review-agent outcome applies to the current head. Do not duplicate review comments for the same head SHA unless the user explicitly asks for a fresh review.
+- current-head AI review has been run or reused,
+- all OpenSpec `## PR Review Feedback` tasks are complete,
+- all current feedback batches have `IA generated PR feedback fixes: {headSha}:{feedbackBatchId}` markers,
+- validation for feedback fixes has passed,
+- `pr.labels.needsTests` and `pr.labels.needsChanges` are no longer valid for the current head.
 
-When the current head has passing tests/CI and the latest review-agent outcome no longer identifies missing tests or blocking changes, remove stale `pr.labels.needsTests` and `pr.labels.needsChanges` labels from the PR. Keep `pr.labels.reviewed` when the current head has been reviewed.
+Keep Plane in `In Review` while late human feedback fixes are applied. If `pr-review-feedback-loop` reports ambiguous or conflicting human feedback, stop and preserve its blocker classification.
 
 ### 10. Plane Handoff
 
-Move the Plane ticket to `plane.reviewState`, default `In Review`, only after PR creation, review-agent posting, and blocking fix loops are complete.
+Move the Plane ticket to `plane.reviewState`, default `In Review`, only after PR creation, AI review-agent posting, all current OpenSpec PR review feedback tasks are complete, all current feedback batches have fix markers, and blocking fix loops are complete. If the ticket is already `In Review` during a late human-feedback resume, leave it there and add the detection/fix comments instead of moving state.
 
 Add a Plane comment with:
 
@@ -199,6 +207,10 @@ Add a Plane comment with:
 - remaining non-blocking risks or gaps
 
 Do not move the ticket to Done.
+
+## Output
+
+Report the ticket, branch, OpenSpec change, PR URL, commits pushed, validation and coverage results, PR review feedback batches handled, Context Findings Review result, Plane handoff state, and any remaining blockers or risks.
 
 ## Archive And QA Policy
 
@@ -220,6 +232,9 @@ Do not move the ticket to Done.
 - Ignored local secret findings from full local scans: report as local setup notes unless the same secret is staged, tracked, or reported by CI.
 - Existing PR: reuse it instead of creating a duplicate.
 - Existing review-agent comment for same head SHA: reuse it instead of posting a duplicate; post a new review marker only after the head SHA changes.
-- Stale PR labels: remove `needs-tests` after required tests are added and passing; remove `needs-changes` after requested fixes are in place and the current-head review has no blocking findings.
+- Actionable AI or human PR feedback: invoke `pr-review-feedback-loop` to create OpenSpec `## PR Review Feedback` tasks, post Plane feedback batch comments, apply fixes, validate, commit, push, and rerun AI review before handoff.
+- Ambiguous or conflicting human PR feedback: stop before changing code, request clarification in the PR when possible, and record the blocker in Plane.
+- Late human PR feedback after `In Review`: process it on manual resume and keep Plane in `In Review` while fixes are applied.
+- Stale PR labels: remove `needs-tests` after required tests are added and passing; remove `needs-changes` after requested fixes are in place, OpenSpec PR review feedback tasks are complete, and the current-head review has no blocking findings.
 - Review loop exceeds 3 cycles with remaining blockers: stop and escalate with a concise conflict/stale-feedback summary.
 - Missing Plane review state: stop after PR/review work and report the missing state.

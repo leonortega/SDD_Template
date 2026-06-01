@@ -11,6 +11,14 @@ Use this skill for ticket-scoped website QA or targeted frontend debugging. The 
 
 When invoked as part of delivery QA, follow `.codex/skills/_shared/skill-startup.md` and keep browser evidence under the QA evidence rules owned by `test-e2e`.
 
+## Shared Context
+
+When this skill is used for ticket delivery, follow `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md` through the caller skill. Preserve validation evidence and handoff details in the owning ticket workflow.
+
+## Workflow
+
+Use the Browser path first, then apply the QA quality bar, collect evidence, and return a concise validation handoff to the calling skill.
+
 ## Browser Path
 
 Prefer the Codex Browser plugin when it is available in the current session:
@@ -43,3 +51,9 @@ Report:
 - assertions made,
 - evidence captured,
 - failures, blockers, or residual risk.
+
+## Failure Rules
+
+- If the target URL is unavailable, stop and report the validation blocker to the caller.
+- If Browser is unavailable and no Playwright fallback is configured, report the missing tool path instead of inventing durable repo files.
+- If screenshots, traces, console logs, or request data contain secrets, redact or discard them before handoff.

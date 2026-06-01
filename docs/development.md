@@ -47,7 +47,11 @@ Stop local delivery infrastructure:
 
 Feature work starts from a Plane ticket and normally creates an OpenSpec proposal before implementation. Agents should read the Plane ticket, active OpenSpec artifacts, the ticket context lock, relevant code, relevant tests, and quality-gate configuration before editing.
 
-Implementation is complete only when OpenSpec tasks are complete, behavior is tested, quality gates pass or are handed off to CI as the authority, and a Gitea PR has review-agent coverage.
+Implementation is complete only when OpenSpec tasks are complete, PR review feedback tasks are complete, behavior is tested, quality gates pass or are handed off to CI as the authority, and a Gitea PR has review-agent coverage.
+
+PR review feedback has two timed loops owned by the repo-local `pr-review-feedback-loop` skill. The AI review loop runs immediately after PR creation and after every feedback fix; every AI finding becomes a `## PR Review Feedback` task in the active OpenSpec `tasks.md` before the PR is ready for human review. Human PR review happens later and reconnects only when the operator manually resumes the ticket, such as `automatically continue this ticket` or `continue E2EPROJECT-123`. Do not carry this local delivery behavior in external `openspec-*` skills.
+
+Feedback batches use Plane markers `IA generated PR feedback detected: {headSha}:{feedbackBatchId}` and `IA generated PR feedback fixes: {headSha}:{feedbackBatchId}`. The batch id is derived from sorted source ids, so late human comments on the same PR head are processed as a new batch instead of being skipped by an earlier fix. Plane remains `In Review` while late human feedback fixes are applied; ambiguous or conflicting human comments block handoff until clarified.
 
 ## Quality Gates
 
@@ -88,7 +92,7 @@ Run the shared skill-contract audit after changing delivery skills or during ret
 .\.codex\skills\_shared\scripts\audit_skill_contracts.ps1
 ```
 
-The audit checks non-OpenSpec, non-configure skills by default for standard delivery contract sections and core terms such as validation, ticket context, and handoff behavior. Use `-IncludeConfigure`, `-IncludeOpenSpec`, or `-AllSkills` to broaden the scope. Treat failures as review findings: either update the skill or document why that skill intentionally uses a different shape.
+The audit checks non-OpenSpec, non-configure skills by default for standard delivery contract sections and core terms such as validation, ticket context, and handoff behavior. Normal process validation must use the default scope and exclude `openspec-*` skills because they are external/vendor skills updated by their upstream owner. Use `-IncludeConfigure` only when configure skills are part of the change; reserve `-IncludeOpenSpec` or `-AllSkills` for explicit external-skill maintenance.
 
 Use `-FailOnFindings` when the audit is part of a hard quality gate.
 

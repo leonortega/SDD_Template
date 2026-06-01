@@ -39,6 +39,10 @@ Optional environment variables override local JSON when present:
 - `GITEA_OWNER`
 - `GITEA_REPO`
 
+## Workflow
+
+Run preflight, main/tag promotion, PROD deployment, PROD verification, Plane result, and release handoff steps in order. Do not continue to the next step until the prior validation evidence is present.
+
 ## Preflight
 
 1. Resolve the target Plane ticket, PR, QA-approved commit SHA, source RC version, and final release version from user input, Plane comments, Gitea PR metadata, tags, or Nexus artifact paths.
@@ -151,6 +155,10 @@ The comment must include:
 - pass/fail result
 
 Only write a success result after the workflow passed and direct PROD page plus `/health` verification passed. If app checks fail, write a failure comment and stop. If only local monitoring is unavailable, deployment may still pass, but the comment must state monitoring verification was unavailable.
+
+## Output
+
+Report the final release version, PROD URL, final tag, deployed artifact commit, validation results, Plane comment status, and any handoff or monitoring gaps.
 
 ## Failure Rules
 
