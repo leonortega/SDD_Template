@@ -387,6 +387,9 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("\"mode\": \"guided-manual\"", catalog);
             Assert.Contains("\"installMethod\": \"manual-copy\"", catalog);
             Assert.Contains("\"installMethod\": \"manual-config\"", catalog);
+            Assert.Contains("\"installMethod\": \"manual-reference\"", catalog);
+            Assert.Contains("\"officialSources\"", catalog);
+            Assert.Contains("\"searchQueries\"", catalog);
             Assert.DoesNotContain("installCommand", catalog);
         }
 
@@ -400,11 +403,28 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("SetRecommendedTools", script);
             Assert.Contains("function Get-DetectedStackTags", script);
             Assert.Contains("\"dotnet\"", script);
+            Assert.Contains("\"dotnet-10\"", script);
+            Assert.Contains("\"aspnet-core\"", script);
+            Assert.Contains("\"blazor\"", script);
+            Assert.Contains("\"xunit\"", script);
+            Assert.Contains("\"coverage\"", script);
             Assert.Contains("\"plane\"", script);
             Assert.Contains("\"gitea\"", script);
+            Assert.Contains("\"gitea-actions-runner\"", script);
             Assert.Contains("\"nexus\"", script);
+            Assert.Contains("\"nexus-artifacts\"", script);
             Assert.Contains("\"azure\"", script);
+            Assert.Contains("\"azure-app-service\"", script);
+            Assert.Contains("\"prometheus\"", script);
+            Assert.Contains("\"grafana\"", script);
             Assert.Contains("\"e2e\"", script);
+            Assert.Contains("\"browser-e2e\"", script);
+            Assert.Contains("\"playwright-guidance\"", script);
+            Assert.Contains("Add-StackContextDriftFindings", script);
+            Assert.Contains("dotnet-10-platform-guidance", catalog);
+            Assert.Contains("manual-copy", catalog);
+            Assert.Contains("repo:.codex/skills/frontend-testing-debugging/SKILL.md", catalog);
+            Assert.Contains("https://playwright.dev/docs/best-practices", catalog);
             Assert.Contains("Plane MCP is intentionally not recommended", catalog);
             Assert.Contains("repo-local skills must use the configured Plane API", catalog);
         }
@@ -420,9 +440,94 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("read the source `SKILL.md`", configureRouter);
             Assert.Contains("create `.codex/skills/{skill-name}/`", configureRouter);
             Assert.Contains("manual repo-based acquisition", configureRouter);
+            Assert.Contains("Do not install skills by command", configureRouter);
+            Assert.Contains("stack-context drift", configureRouter);
             Assert.Contains("manual by default", readme);
             Assert.Contains("read the source repository's `SKILL.md`", readme);
+            Assert.Contains("Skills are not installed by command", readme);
             Assert.Contains(".codex/tool-recommendations.example.json", readme);
+        }
+
+        [Fact]
+        public void StackToolsetDocsAndOpenSpecContextAreDefined()
+        {
+            string architecture = ReadDoc("architecture.md");
+            string development = ReadDoc("development.md");
+            string deployment = ReadDoc("deployment.md");
+            string openSpecConfig = File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, "openspec", "config.yaml"));
+
+            Assert.Contains("## Technology Stack And Tool Set", architecture);
+            Assert.Contains("Plane", architecture);
+            Assert.Contains("Gitea Actions", architecture);
+            Assert.Contains("Nexus", architecture);
+            Assert.Contains("Azure App Service", architecture);
+            Assert.Contains("Prometheus", architecture);
+            Assert.Contains("Grafana", architecture);
+            Assert.Contains("Skills are not installed by command", architecture);
+
+            Assert.Contains("## Technology Stack And Tool Set", development);
+            Assert.Contains(".NET 10", development);
+            Assert.Contains("ASP.NET Core", development);
+            Assert.Contains("Blazor", development);
+            Assert.Contains("xUnit", development);
+            Assert.Contains("coverlet", development);
+            Assert.Contains("official-first research", development);
+            Assert.Contains("Browser plugin and Playwright-style", development);
+
+            Assert.Contains("## Technology Stack And Tool Set", deployment);
+            Assert.Contains("Azure App Service", deployment);
+            Assert.Contains("Prometheus", deployment);
+            Assert.Contains("Grafana", deployment);
+            Assert.Contains("qa/{ticketKey}/{runId}/qa-evidence.zip", deployment);
+
+            Assert.Contains("context: |", openSpecConfig);
+            Assert.Contains("Delivery tool set:", openSpecConfig);
+            Assert.Contains("Application stack: .NET 10, ASP.NET Core, Blazor", openSpecConfig);
+            Assert.Contains("Recommended skills are copied manually", openSpecConfig);
+            Assert.Contains("Plane MCP is not used for ticket delivery", openSpecConfig);
+            Assert.Contains("official-first research", openSpecConfig);
+            Assert.Contains("rules:", openSpecConfig);
+            Assert.Contains("proposal:", openSpecConfig);
+            Assert.Contains("design:", openSpecConfig);
+            Assert.Contains("tasks:", openSpecConfig);
+            Assert.Contains("spec:", openSpecConfig);
+        }
+
+        [Fact]
+        public void FirstTicketStartRequiresStackContextPreflight()
+        {
+            string readme = File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, "README.md"));
+            string development = ReadDoc("development.md");
+            string contract = ReadSkill("_shared", "delivery-contract.md");
+            string starter = ReadSkill("plane-start-ticket", "SKILL.md");
+            string automatic = ReadSkill("automatic-implement-ticket", "SKILL.md");
+            string configure = ReadSkill("configure-dev-environment", "SKILL.md");
+
+            Assert.Contains("Before the first ticket starts", readme);
+            Assert.Contains("routes to `configure-dev-environment`", readme);
+            Assert.Contains("Before the first ticket starts", development);
+            Assert.Contains("stop before creating branches, Plane generated blocks, ticket locks, or OpenSpec proposals", development);
+
+            Assert.Contains("Before starting the first ticket", contract);
+            Assert.Contains("AuditRecommendedTools", contract);
+            Assert.Contains("stack-context.*", contract);
+            Assert.Contains("Route the operator to `configure-dev-environment`", contract);
+
+            Assert.Contains("## Stack Context Preflight", starter);
+            Assert.Contains("docs/architecture.md`, `docs/development.md`, and `docs/deployment.md` contain `Technology Stack And Tool Set`", starter);
+            Assert.Contains("openspec/config.yaml` contains `context:` and `rules:`", starter);
+            Assert.Contains(".codex/tool-recommendations.example.json", starter);
+            Assert.Contains("AuditRecommendedTools", starter);
+            Assert.Contains("stop before branch creation, Plane description updates, comments, state changes, ticket-lock writes, or OpenSpec proposal creation", starter);
+            Assert.Contains("Run the Stack Context Preflight", starter);
+
+            Assert.Contains("Stack Context Preflight", automatic);
+            Assert.Contains("first ticket must not create a branch", automatic);
+            Assert.Contains("stack-context.*", automatic);
+
+            Assert.Contains("blocks the first ticket because stack context is missing", configure);
+            Assert.Contains("openspec/config.yaml", configure);
+            Assert.Contains(".codex/tool-recommendations.example.json", configure);
         }
 
         [Fact]

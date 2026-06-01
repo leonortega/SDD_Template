@@ -163,6 +163,74 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
+        public void AuditRecommendedToolsDetectsExpandedStackAndReturnsOfficialMetadata()
+        {
+            string root = CreateTempDirectory();
+            _ = Directory.CreateDirectory(Path.Combine(root, ".codex"));
+            File.Copy(
+                Path.Combine(FindRepositoryRoot().FullName, ".codex", "tool-recommendations.example.json"),
+                Path.Combine(root, ".codex", "tool-recommendations.example.json"));
+            WriteExpandedStackFixture(root, includeContext: true);
+
+            string output = RunPowerShellScript("-Mode", "AuditRecommendedTools", "-Root", root);
+            using JsonDocument audit = JsonDocument.Parse(output);
+            string stackMessage = audit.RootElement.GetProperty("actions").EnumerateArray().Single(
+                item => item.GetProperty("key").GetString() == "detectedStack").GetProperty("message").GetString() ?? string.Empty;
+
+            foreach (string tag in new[]
+            {
+                "dotnet-10",
+                "aspnet-core",
+                "blazor",
+                "xunit",
+                "coverage",
+                "gitea-actions-runner",
+                "nexus-artifacts",
+                "azure-app-service",
+                "prometheus",
+                "grafana",
+                "browser-e2e",
+                "playwright-guidance",
+                "openspec"
+            })
+            {
+                Assert.Contains(tag, stackMessage);
+            }
+
+            JsonElement dotnetGuidance = audit.RootElement.GetProperty("recommendations").EnumerateArray().Single(
+                item => item.GetProperty("id").GetString() == "dotnet-10-platform-guidance");
+            string[] requires = [.. dotnetGuidance.GetProperty("requires").EnumerateArray().Select(item => item.GetString() ?? string.Empty)];
+            string[] officialSources = [.. dotnetGuidance.GetProperty("officialSources").EnumerateArray().Select(item => item.GetString() ?? string.Empty)];
+            string[] searchQueries = [.. dotnetGuidance.GetProperty("searchQueries").EnumerateArray().Select(item => item.GetString() ?? string.Empty)];
+
+            Assert.Contains("dotnet-10", requires);
+            Assert.Contains(officialSources, source => source.Contains("learn.microsoft.com", StringComparison.Ordinal));
+            Assert.Contains(searchQueries, query => query.Contains("site:learn.microsoft.com", StringComparison.Ordinal));
+            Assert.Equal("manual-reference", dotnetGuidance.GetProperty("installMethod").GetString());
+            Assert.Contains(audit.RootElement.GetProperty("recommendations").EnumerateArray(),
+                item => item.GetProperty("id").GetString() == "nexus-artifact-api-guidance");
+        }
+
+        [Fact]
+        public void AuditRecommendedToolsReportsStackContextDrift()
+        {
+            string root = CreateTempDirectory();
+            _ = Directory.CreateDirectory(Path.Combine(root, ".codex"));
+            File.Copy(
+                Path.Combine(FindRepositoryRoot().FullName, ".codex", "tool-recommendations.example.json"),
+                Path.Combine(root, ".codex", "tool-recommendations.example.json"));
+            WriteExpandedStackFixture(root, includeContext: false);
+
+            string output = RunPowerShellScript("-Mode", "AuditRecommendedTools", "-Root", root);
+            using JsonDocument audit = JsonDocument.Parse(output);
+            string[] findingKeys = [.. audit.RootElement.GetProperty("findings").EnumerateArray()
+                .Select(item => item.GetProperty("key").GetString() ?? string.Empty)];
+
+            Assert.Contains("stack-context.dotnet-10", findingKeys);
+            Assert.Contains("stack-context.azure-app-service", findingKeys);
+        }
+
+        [Fact]
         public void ParallelDeliveryDryRunValidatesUniqueTicketWorktreesAndSerializedLane()
         {
             string root = CreateTempDirectory();
@@ -303,6 +371,74 @@ namespace SDDTemplate.DeliveryTools.Tests
             string path = Path.Combine(Path.GetTempPath(), "sdd-template-tests", Guid.NewGuid().ToString("N"));
             _ = Directory.CreateDirectory(path);
             return path;
+        }
+
+        private static void WriteExpandedStackFixture(string root, bool includeContext)
+        {
+            File.WriteAllText(
+                Path.Combine(root, "global.json"),
+                JsonSerializer.Serialize(new { sdk = new { version = "10.0.100", rollForward = "latestFeature" } }));
+
+            string sourceDirectory = Path.Combine(root, "src", "Example.Site");
+            string testDirectory = Path.Combine(root, "tests", "Example.Site.Tests");
+            _ = Directory.CreateDirectory(sourceDirectory);
+            _ = Directory.CreateDirectory(testDirectory);
+            File.WriteAllText(
+                Path.Combine(sourceDirectory, "Example.Site.csproj"),
+                """
+                <Project Sdk="Microsoft.NET.Sdk.Web">
+                  <PropertyGroup>
+                    <TargetFramework>net10.0</TargetFramework>
+                    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+                  </PropertyGroup>
+                </Project>
+                """);
+            File.WriteAllText(Path.Combine(sourceDirectory, "App.razor"), """<Router AppAssembly="@typeof(Program).Assembly" />""");
+            File.WriteAllText(
+                Path.Combine(testDirectory, "Example.Site.Tests.csproj"),
+                """
+                <Project Sdk="Microsoft.NET.Sdk">
+                  <PropertyGroup>
+                    <TargetFramework>net10.0</TargetFramework>
+                  </PropertyGroup>
+                  <ItemGroup>
+                    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+                    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.8" />
+                    <PackageReference Include="xunit" Version="2.9.3" />
+                  </ItemGroup>
+                </Project>
+                """);
+
+            _ = Directory.CreateDirectory(Path.Combine(root, "infra", "plane"));
+            _ = Directory.CreateDirectory(Path.Combine(root, "infra", "gitea"));
+            _ = Directory.CreateDirectory(Path.Combine(root, "infra", "nexus"));
+            _ = Directory.CreateDirectory(Path.Combine(root, "infra", "azure"));
+            _ = Directory.CreateDirectory(Path.Combine(root, "infra", "monitoring", "grafana"));
+            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "prometheus.yml"), "prometheus:\nglobal:\n  scrape_interval: 15s\n");
+
+            string workflowDirectory = Path.Combine(root, ".gitea", "workflows");
+            _ = Directory.CreateDirectory(workflowDirectory);
+            File.WriteAllText(
+                Path.Combine(workflowDirectory, "package-deploy.yml"),
+                "steps:\n  - run: echo $NEXUS_URL && az webapp deploy\n");
+
+            string e2eSkillDirectory = Path.Combine(root, ".codex", "skills", "test-e2e");
+            string frontendSkillDirectory = Path.Combine(root, ".codex", "skills", "frontend-testing-debugging");
+            _ = Directory.CreateDirectory(e2eSkillDirectory);
+            _ = Directory.CreateDirectory(frontendSkillDirectory);
+            File.WriteAllText(Path.Combine(e2eSkillDirectory, "SKILL.md"), "Use Playwright for rendered browser QA.");
+            File.WriteAllText(Path.Combine(frontendSkillDirectory, "SKILL.md"), "# Frontend Testing Debugging");
+
+            _ = Directory.CreateDirectory(Path.Combine(root, "openspec"));
+
+            if (!includeContext) { return; }
+
+            string context = ".NET 10 ASP.NET Core Blazor xUnit coverage Plane Gitea Gitea Actions Nexus Azure App Service Prometheus Grafana Browser Playwright OpenSpec";
+            _ = Directory.CreateDirectory(Path.Combine(root, "docs"));
+            File.WriteAllText(Path.Combine(root, "docs", "architecture.md"), context);
+            File.WriteAllText(Path.Combine(root, "docs", "development.md"), context);
+            File.WriteAllText(Path.Combine(root, "docs", "deployment.md"), context);
+            File.WriteAllText(Path.Combine(root, "openspec", "config.yaml"), $"schema: spec-driven\ncontext: |\n  {context}\n");
         }
 
         private static DirectoryInfo FindRepositoryRoot()

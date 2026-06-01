@@ -759,20 +759,135 @@ function Get-GitRemoteOwnerRepo {
   return $null
 }
 
+function Test-AnyRepoFileContains {
+  param(
+    [string[]]$RelativeRoots,
+    [string[]]$Filters,
+    [string]$Pattern
+  )
+
+  foreach ($relativeRoot in $RelativeRoots) {
+    $path = Join-RootPath $relativeRoot
+    if (-not (Test-Path $path)) { continue }
+
+    foreach ($filter in $Filters) {
+      foreach ($file in Get-ChildItem -Path $path -Recurse -File -Filter $filter -ErrorAction SilentlyContinue) {
+        try {
+          $content = Get-Content -Path $file.FullName -Raw -ErrorAction Stop
+          if ($content -match $Pattern) { return $true }
+        } catch {
+          continue
+        }
+      }
+    }
+  }
+
+  return $false
+}
+
+function Get-StackContextContent {
+  $paths = @(
+    "docs/architecture.md",
+    "docs/development.md",
+    "docs/deployment.md",
+    "openspec/config.yaml"
+  )
+
+  $parts = foreach ($relativePath in $paths) {
+    $path = Join-RootPath $relativePath
+    if (Test-Path $path) {
+      Get-Content -Path $path -Raw
+    }
+  }
+
+  return ($parts -join [Environment]::NewLine)
+}
+
+function Add-StackContextDriftFindings {
+  param(
+    $Result,
+    [string[]]$DetectedTags
+  )
+
+  $context = Get-StackContextContent
+  $expectedMentions = @(
+    [pscustomobject]@{ tag = "dotnet-10"; pattern = "\.NET 10|net10\.0"; label = ".NET 10" },
+    [pscustomobject]@{ tag = "aspnet-core"; pattern = "ASP\.NET Core"; label = "ASP.NET Core" },
+    [pscustomobject]@{ tag = "blazor"; pattern = "Blazor"; label = "Blazor" },
+    [pscustomobject]@{ tag = "xunit"; pattern = "xUnit"; label = "xUnit" },
+    [pscustomobject]@{ tag = "coverage"; pattern = "coverage|coverlet"; label = "coverage" },
+    [pscustomobject]@{ tag = "plane"; pattern = "Plane"; label = "Plane" },
+    [pscustomobject]@{ tag = "gitea"; pattern = "Gitea"; label = "Gitea" },
+    [pscustomobject]@{ tag = "gitea-actions-runner"; pattern = "Gitea Actions"; label = "Gitea Actions" },
+    [pscustomobject]@{ tag = "nexus-artifacts"; pattern = "Nexus"; label = "Nexus artifacts" },
+    [pscustomobject]@{ tag = "azure-app-service"; pattern = "Azure App Service"; label = "Azure App Service" },
+    [pscustomobject]@{ tag = "prometheus"; pattern = "Prometheus"; label = "Prometheus" },
+    [pscustomobject]@{ tag = "grafana"; pattern = "Grafana"; label = "Grafana" },
+    [pscustomobject]@{ tag = "browser-e2e"; pattern = "Browser|Playwright"; label = "Browser or Playwright QA" },
+    [pscustomobject]@{ tag = "playwright-guidance"; pattern = "Playwright"; label = "Playwright guidance" },
+    [pscustomobject]@{ tag = "openspec"; pattern = "OpenSpec"; label = "OpenSpec" }
+  )
+
+  foreach ($expected in $expectedMentions) {
+    if ($DetectedTags -notcontains $expected.tag) { continue }
+    if ($context -match $expected.pattern) { continue }
+
+    Add-Item $Result "findings" "docs/, openspec/config.yaml" "stack-context.$($expected.tag)" "Detected stack tag '$($expected.tag)' but durable docs/OpenSpec context do not mention $($expected.label)." "warning"
+  }
+}
+
 function Get-DetectedStackTags {
   $tags = [System.Collections.Generic.List[string]]::new()
 
-  if ((Get-ChildItem -Path $Root -Filter "*.slnx" -ErrorAction SilentlyContinue).Count -gt 0 -or
-      (Get-ChildItem -Path $Root -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue).Count -gt 0) {
+  $hasSolution = (Get-ChildItem -Path $Root -Filter "*.slnx" -ErrorAction SilentlyContinue).Count -gt 0
+  $hasProject = (Get-ChildItem -Path $Root -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue).Count -gt 0
+  if ($hasSolution -or $hasProject) {
     $tags.Add("dotnet")
+  }
+  if ((Test-FileContains "global.json" '"version"\s*:\s*"10\.') -or
+      (Test-AnyRepoFileContains @("src", "tests", "tools") @("*.csproj") "<TargetFramework>net10\.0</TargetFramework>")) {
+    $tags.Add("dotnet-10")
+  }
+  if (Test-AnyRepoFileContains @("src", "tests") @("*.csproj") "Microsoft\.NET\.Sdk\.Web|Microsoft\.AspNetCore") {
+    $tags.Add("aspnet-core")
+  }
+  if ((Test-AnyRepoFileContains @("src") @("*.csproj", "*.razor") "Blazor|@page|Microsoft\.NET\.Sdk\.Web") -or
+      (Test-AnyRepoFileContains @("src") @("*.csproj") "BlazorDisableThrowNavigationException")) {
+    $tags.Add("blazor")
+  }
+  if (Test-AnyRepoFileContains @("tests") @("*.csproj") "xunit") { $tags.Add("xunit") }
+  if ((Test-AnyRepoFileContains @("tests") @("*.csproj") "coverlet") -or
+      (Test-FileContains ".codex/quality.example.json" '"coverage"')) {
+    $tags.Add("coverage")
   }
   if (Test-Path (Join-RootPath "infra/plane")) { $tags.Add("plane") }
   if (Test-Path (Join-RootPath "infra/gitea")) { $tags.Add("gitea") }
-  if (Test-Path (Join-RootPath ".gitea/workflows")) { $tags.Add("gitea-actions") }
-  if (Test-Path (Join-RootPath "infra/nexus")) { $tags.Add("nexus") }
-  if (Test-Path (Join-RootPath "infra/azure")) { $tags.Add("azure") }
+  if (Test-Path (Join-RootPath ".gitea/workflows")) {
+    $tags.Add("gitea-actions")
+    $tags.Add("gitea-actions-runner")
+  }
+  if ((Test-Path (Join-RootPath "infra/nexus")) -or (Test-AnyRepoFileContains @(".gitea/workflows") @("*.yml", "*.yaml") "NEXUS_|/repository/")) {
+    $tags.Add("nexus")
+    $tags.Add("nexus-artifacts")
+  }
+  if ((Test-Path (Join-RootPath "infra/azure")) -or (Test-AnyRepoFileContains @(".gitea/workflows") @("*.yml", "*.yaml") "az webapp deploy|Azure App Service")) {
+    $tags.Add("azure")
+    $tags.Add("azure-app-service")
+  }
   if (Test-Path (Join-RootPath "infra/monitoring")) { $tags.Add("observability") }
-  if ((Test-Path (Join-RootPath "artifacts/qa")) -or (Test-Path (Join-RootPath ".codex/skills/test-e2e/SKILL.md"))) { $tags.Add("e2e") }
+  if ((Test-FileContains "infra/monitoring/prometheus.yml" "prometheus") -or
+      (Test-FileContains "infra/monitoring/prometheus.local.yml" "prometheus")) {
+    $tags.Add("prometheus")
+  }
+  if (Test-Path (Join-RootPath "infra/monitoring/grafana")) { $tags.Add("grafana") }
+  if ((Test-Path (Join-RootPath "artifacts/qa")) -or (Test-Path (Join-RootPath ".codex/skills/test-e2e/SKILL.md"))) {
+    $tags.Add("e2e")
+    $tags.Add("browser-e2e")
+  }
+  if ((Test-Path (Join-RootPath ".codex/skills/frontend-testing-debugging/SKILL.md")) -or
+      (Test-FileContains ".codex/skills/test-e2e/SKILL.md" "Playwright")) {
+    $tags.Add("playwright-guidance")
+  }
   if (Test-Path (Join-RootPath "openspec")) { $tags.Add("openspec") }
 
   return @($tags | Select-Object -Unique)
@@ -1081,6 +1196,7 @@ function Invoke-AuditRecommendedTools {
   }
 
   Add-Item $result "actions" ".codex/tool-recommendations.example.json" "detectedStack" "Detected stack tags: $($detectedTags -join ', ')."
+  Add-StackContextDriftFindings $result $detectedTags
 
   if (-not $recommendationsEnabled) {
     Add-Item $result "findings" $clientLocal "recommendedTools.enabled" "Recommended tools audit is disabled in local config." "info"
@@ -1091,7 +1207,7 @@ function Invoke-AuditRecommendedTools {
     if (-not (Test-RecommendationMatchesStack -Recommendation $entry -DetectedTags $detectedTags)) { continue }
     if ($dismissed -contains $entry.id) { continue }
 
-    Add-Recommendation $result ([ordered]@{
+    $recommendation = [ordered]@{
       id = $entry.id
       name = $entry.name
       type = $entry.type
@@ -1101,7 +1217,15 @@ function Invoke-AuditRecommendedTools {
       target = $entry.target
       validation = $entry.validation
       accepted = ($accepted -contains $entry.id)
-    })
+    }
+
+    foreach ($optionalField in @("requires", "researchTopics", "officialSources", "searchQueries", "notes")) {
+      if ($entry.PSObject.Properties.Name -contains $optionalField) {
+        $recommendation[$optionalField] = $entry.$optionalField
+      }
+    }
+
+    Add-Recommendation $result $recommendation
   }
 
   foreach ($entry in @($catalog.notRecommended)) {

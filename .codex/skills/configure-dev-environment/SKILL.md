@@ -93,12 +93,14 @@ Useful modes:
 2. Summarize findings by domain without exposing secret values.
 3. For every missing prerequisite found during audit or validation, provide install, official link, and post-install validation/configuration commands.
 4. For every missing user-supplied value, provide source, destination, manual setup steps, official link, and validation command.
-5. Run `AuditRecommendedTools` when the user is doing full setup or base-code creation, then summarize relevant MCPs, plugins, and skills from `.codex/tool-recommendations.example.json`.
-6. For skills, prefer manual repo-based acquisition: identify the source repo/path, read the source `SKILL.md`, create `.codex/skills/{skill-name}/`, write `.codex/skills/{skill-name}/SKILL.md`, and copy only required referenced scripts/templates. Do not copy secrets, local state, caches, or unrelated files.
-7. For plugins and MCPs, prefer manual configuration instructions over installer commands. Show the exact files or UI fields to create or edit when known, ask before adding config, and never configure secrets automatically. Command installers are fallback-only.
-8. Record accepted or dismissed recommendation ids with `SetRecommendedTools` only after user confirmation.
-9. Ask: `Which setup area do you want to work on now?`
-10. Offer these choices:
+5. Run `AuditRecommendedTools` when the user is doing full setup or base-code creation, then summarize relevant MCPs, plugins, skills, official-first references, detected stack tags, and stack-context drift from `.codex/tool-recommendations.example.json`.
+6. Treat `docs/` as the durable stack/tooling source of truth and `openspec/config.yaml` as the compact AI-facing summary. The recommendation audit verifies those against current repo files; when they differ, report the drift before recommending new tooling.
+7. If `plane-start-ticket` or `automatic-implement-ticket` blocks the first ticket because stack context is missing, configure `docs/architecture.md`, `docs/development.md`, `docs/deployment.md`, `openspec/config.yaml`, and `.codex/tool-recommendations.example.json` before ticket mutation resumes.
+8. For skills, use manual repo-based acquisition only: identify the source repo/path, read the source `SKILL.md`, create `.codex/skills/{skill-name}/`, write `.codex/skills/{skill-name}/SKILL.md`, and copy only required referenced scripts/templates. Do not install skills by command. Do not copy secrets, local state, caches, generated artifacts, or unrelated files.
+9. For plugins and MCPs, prefer manual configuration instructions over installer commands. Show the exact files or UI fields to create or edit when known, ask before adding config, and never configure secrets automatically. Command installers are fallback-only after explicit approval.
+10. Record accepted or dismissed recommendation ids with `SetRecommendedTools` only after user confirmation.
+11. Ask: `Which setup area do you want to work on now?`
+12. Offer these choices:
    - Full guided setup
    - Plane tickets
    - Gitea PR automation
@@ -107,7 +109,7 @@ Useful modes:
    - Nexus artifacts and deployment promotion
    - Azure environments
    - Monitoring dashboards
-11. If the user is vague, default to full guided setup in this order:
+13. If the user is vague, default to full guided setup in this order:
    Plane -> Gitea PR automation -> Gitea Actions runner -> Quality gates and CI -> Nexus artifacts and deployment promotion -> Azure environments -> Monitoring dashboards.
 
 ## Domain Routing
