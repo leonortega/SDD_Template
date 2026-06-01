@@ -36,6 +36,8 @@ automatically continue this ticket
 
 or any equivalent request to continue, resume, implement, deploy, QA, or hand off a ticket. That routes through `.codex/skills/automatic-implement-ticket`, which inspects Plane, Git, Gitea, Nexus, OpenSpec, QA evidence, tags, and PROD state, then delegates to the next focused workflow skill.
 
+Before the first ticket starts, the workflow verifies that the tool set and tech stack are configured in `docs/`, `openspec/config.yaml`, and the tracked `.codex/tool-recommendations.example.json` template. Project-specific recommendation state is written only to ignored `.codex/tool-recommendations.local.json`. If required context is missing or the recommendation audit reports stack-context drift, ticket start stops before branch, Plane, ticket-lock, or OpenSpec mutation and routes to `configure-dev-environment`.
+
 The workflow is intentionally checkpoint-based. Reruns continue from existing Plane comments, branch names, PRs, Nexus artifacts, QA evidence, tags, and release manifests instead of restarting from the beginning.
 
 ## Repository Layout
@@ -142,19 +144,23 @@ Configuration order:
 Plane -> Gitea -> Gitea Actions runner -> quality gates -> Nexus -> Azure DEV -> Azure QA -> Azure PROD -> Prometheus -> Grafana
 ```
 
-During full setup or base-code creation, the configurator can also run a recommended tooling audit:
+During full setup or base-code creation, the configurator can also run a recommended tooling and skill audit:
 
 ```powershell
 .\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode AuditRecommendedTools
+.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode DiscoverProjectGuidance
 ```
 
-The audit suggests stack-relevant MCPs, plugins, and Codex skills from `.codex/tool-recommendations.example.json`. Skill acquisition is manual by default: read the source repository's `SKILL.md`, create `.codex/skills/{skill-name}/`, write the new `SKILL.md`, and copy only required referenced scripts or templates. Plugin and MCP setup should prefer manual configuration instructions over installer commands, and secrets must never be configured automatically.
+The audit scans the current repository for stack, tooling, environments, test frameworks, QA workflows, code standards, web UI, REST/API, and security signals. `project-guidance-discover` owns the project-guidance flow: it builds a `project-guidance-search-plan` from detected signals, reports existing skills, suggested missing skills, and non-skill guidance such as tools, references, practices, and standards. For missing skills, the agent researches official skill sources first, then technology-owner or widely used public sources when no official skill exists, verifies whether the skill already exists in `.codex/skills/`, shows the suggested list, asks whether the operator wants to add additional desired skills or guidance, and only then hands confirmed skill items to `project-guidance-acquire`. After confirmation, discovery can write ignored `.codex/tool-recommendations.local.json`, shaped like the tracked example catalog but enriched with current detected tags, sources, targets, validation commands, accepted/dismissed state, and recommendation-level `usedInSteps`. `project-guidance-mapper` reads that local file, verifies listed skill targets still exist, and can append a workflow step to `usedInSteps` after a guidance item is used, confirmed, or inferred. `.codex/tool-recommendations.example.json` remains a placeholder-safe example/template, not runtime project state. The intended stack is defined in `docs/` and summarized in `openspec/config.yaml`; the audit verifies that intent against current files and reports drift when they disagree.
+
+Skill acquisition is manual by default: read the source repository's `SKILL.md`, create `.codex/skills/{skill-name}/`, write the new `SKILL.md`, and copy only required referenced scripts or templates. Skills are not installed by command in this workflow. Plugin and MCP setup should prefer manual configuration instructions over installer commands, and secrets must never be configured automatically.
 
 The main local files are:
 
 ```text
 .codex/client-tools.local.json
 .codex/quality.local.json
+.codex/tool-recommendations.local.json
 infra/plane/variables.env
 infra/gitea/runner.env
 infra/monitoring/prometheus.local.yml

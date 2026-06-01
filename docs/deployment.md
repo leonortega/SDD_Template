@@ -10,6 +10,17 @@ feature branch -> dev -> DEV -> QA -> main -> PROD
 
 Push-triggered deployment is allowed only for ticket-named application changes. The ticket key pattern is configured in `.codex/delivery-policy.json`. `[SDD]`, OpenSpec-only, chore, and ops-only maintenance commits do not deploy environments automatically.
 
+## Technology Stack And Tool Set
+
+Deployment tooling is intentionally local-first except for the application runtimes. Gitea Actions packages and deploys ticket-gated application changes, Nexus stores the exact artifact and `release.json`, Azure App Service hosts DEV/QA/PROD, and Prometheus/Grafana verify configured health visibility.
+
+- Nexus paths under `app/{commitSha}/` are the durable artifact identity; environments must promote that same ZIP and checksum instead of rebuilding.
+- Azure deployment uses App Service ZIP deployment from the existing Nexus artifact.
+- Prometheus scrapes local infrastructure and configured Azure app `/health` targets.
+- Grafana dashboards are provisioned from tracked files and should visualize Prometheus data without embedding secrets.
+- QA evidence is retained locally under ignored paths and preferably published to Nexus under `qa/{ticketKey}/{runId}/qa-evidence.zip`.
+- Deployment guidance is mapped through `project-guidance-mapper`; missing deployment, observability, QA, security, release, or rollback skills and references are discovered by `project-guidance-discover`, copied only through `project-guidance-acquire` when they are confirmed skill items, and otherwise kept as local catalog guidance.
+
 ## Artifacts
 
 Nexus stores artifacts by commit SHA:

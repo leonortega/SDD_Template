@@ -42,6 +42,11 @@ If the state is ambiguous, invoke `pipeline-status` or produce a read-only statu
 ## Routing
 
 - Ticket in Todo with no branch: invoke `plane-start-ticket`.
+
+  Before routing, preserve the `plane-start-ticket` Stack Context Preflight:
+  - The first ticket must not create a branch, Plane generated block, ticket lock, or OpenSpec proposal until `docs/architecture.md`, `docs/development.md`, `docs/deployment.md`, and `openspec/config.yaml` define the current tool set and tech stack without `stack-context.*` drift from `AuditRecommendedTools`.
+  - Treat `.codex/tool-recommendations.example.json` as the tracked shape/template only.
+  - When project guidance coverage has not been reviewed, route to `project-guidance-discover` so suggested skills and guidance are shown, additional desired items are requested, and only confirmed skill items are passed to `project-guidance-acquire`.
 - Ticket in In Progress with active branch/OpenSpec but no PR: invoke `implement-ticket`.
 - Open PR exists: route to `implement-ticket`; it delegates immediate AI review feedback fixes and late human PR feedback fixes to the repo-owned `pr-review-feedback-loop` skill.
 - PR merged to `dev` and artifact is not yet promoted to QA: invoke `post-merge-deploy`.
