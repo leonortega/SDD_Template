@@ -216,6 +216,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             string[] caseIds = [.. cases.RootElement.GetProperty("cases").EnumerateArray().Select(item => item.GetProperty("id").GetString() ?? string.Empty)];
             Assert.Contains("ticket-start-lock-created", caseIds);
             Assert.Contains("implementation-quality-gated", caseIds);
+            Assert.Contains("late-human-pr-feedback-manual-resume", caseIds);
             Assert.Contains("qa-promotion-artifact-lineage", caseIds);
             Assert.Contains("prod-explicit-artifact-promotion", caseIds);
             Assert.Contains("rollback-no-main-rewrite", caseIds);
@@ -226,10 +227,34 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("## Agent Telemetry", contextDocs);
             Assert.Contains("## Agent Workflow Evals", developmentDocs);
             Assert.Contains("audit_skill_contracts.ps1", developmentDocs);
+            Assert.Contains("Normal process validation must use the default scope and exclude `openspec-*` skills", developmentDocs);
             Assert.Contains("model-optimization", retrospective);
             Assert.Contains("eval-coverage", retrospective);
             Assert.Contains(".codex/delivery-policy.json", skillStartup);
             Assert.Contains("agentOptimization", skillStartup);
+        }
+
+        [Fact]
+        public void WorkflowEvalRequiresLateHumanFeedbackBatchResume()
+        {
+            string root = FindRepositoryRoot().FullName;
+            using JsonDocument cases = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, ".codex", "agent-evals", "workflow-cases.json")));
+            JsonElement lateFeedbackCase = cases.RootElement.GetProperty("cases").EnumerateArray().Single(item =>
+                string.Equals(item.GetProperty("id").GetString(), "late-human-pr-feedback-manual-resume", StringComparison.Ordinal));
+
+            Assert.Equal("automatic-implement-ticket", lateFeedbackCase.GetProperty("stage").GetString());
+            Assert.Equal("implement-ticket", lateFeedbackCase.GetProperty("expectedRoute").GetString());
+
+            string[] evidence = [.. lateFeedbackCase.GetProperty("requiredEvidence").EnumerateArray().Select(item => item.GetString() ?? string.Empty)];
+            string[] expectations = [.. lateFeedbackCase.GetProperty("toolExpectations").EnumerateArray().Select(item => item.GetString() ?? string.Empty)];
+            string[] stopConditions = [.. lateFeedbackCase.GetProperty("stopConditions").EnumerateArray().Select(item => item.GetString() ?? string.Empty)];
+
+            Assert.Contains("new human top-level or inline PR comment ids", evidence);
+            Assert.Contains("Manual resume scans PR comments instead of relying on webhook or polling", expectations);
+            Assert.Contains("Delegate feedback processing to pr-review-feedback-loop", expectations);
+            Assert.Contains("Derive a new feedbackBatchId from sorted late human comment source ids", expectations);
+            Assert.Contains("Keep Plane In Review while applying late human feedback fixes", expectations);
+            Assert.Contains("late human comment source ids are already covered by a completed feedback batch", stopConditions);
         }
 
         [Fact]
@@ -460,6 +485,51 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
+        public void ImplementationReviewLoopRequiresReconnectablePrFeedbackBatches()
+        {
+            string contract = ReadSkill("_shared", "delivery-contract.md");
+            string implementation = ReadSkill("implement-ticket", "SKILL.md");
+            string feedbackLoop = ReadSkill("pr-review-feedback-loop", "SKILL.md");
+            string reviewAgent = ReadSkill("gitea-pr-review-agent", "SKILL.md");
+            string autoRouter = ReadSkill("automatic-implement-ticket", "SKILL.md");
+            string developmentDocs = ReadDoc("development.md");
+            string giteaApiReference = ReadSkill("gitea-pr-review-agent", Path.Combine("references", "gitea-review-api.md"));
+
+            Assert.Contains("PR Review Feedback", contract);
+            Assert.Contains("top-level PR comments and inline code review comments", contract);
+            Assert.Contains("IA generated PR feedback detected: {headSha}:{feedbackBatchId}", contract);
+            Assert.Contains("IA generated PR feedback fixes: {headSha}:{feedbackBatchId}", contract);
+            Assert.Contains("deterministic short id from the sorted source ids", contract);
+            Assert.Contains("late human comments on the same `headSha`", contract);
+            Assert.Contains("Commit and push", contract, StringComparison.OrdinalIgnoreCase);
+
+            Assert.Contains("pr-review-feedback-loop", implementation);
+            Assert.Contains("Do not put this local delivery behavior in external `openspec-*` skills", implementation);
+
+            Assert.Contains("OpenSpec `## PR Review Feedback` tasks", feedbackLoop);
+            Assert.Contains("including AI `BLOCKER`, `WARNING`, and `SUGGESTION` severities", feedbackLoop);
+            Assert.Contains("Apply the requested code, test, documentation, or workflow change", feedbackLoop);
+            Assert.Contains("Commit with the ticket key", feedbackLoop);
+            Assert.Contains("IA generated PR feedback detected: {headSha}:{feedbackBatchId}", feedbackLoop);
+            Assert.Contains("IA generated PR feedback fixes: {headSha}:{feedbackBatchId}", feedbackLoop);
+            Assert.Contains("Keep Plane in `In Review`", implementation);
+
+            Assert.Contains("Plane PR feedback detection/fix batch markers", autoRouter);
+            Assert.Contains("later human comment on the same PR head SHA", autoRouter);
+            Assert.Contains("route to `implement-ticket`", autoRouter);
+            Assert.Contains("pr-review-feedback-loop", autoRouter);
+
+            Assert.Contains("Human-authored comments are implementation inputs", reviewAgent);
+            Assert.Contains("stable finding id", reviewAgent);
+            Assert.Contains("pulls/{index}/reviews", giteaApiReference);
+            Assert.Contains("pulls/{index}/reviews/{reviewId}/comments", giteaApiReference);
+            Assert.Contains("Every AI finding in the review body must include a stable finding id", giteaApiReference);
+            Assert.Contains("PR review feedback has two timed loops", developmentDocs);
+            Assert.Contains("repo-local `pr-review-feedback-loop` skill", developmentDocs);
+            Assert.Contains("Plane remains `In Review` while late human feedback fixes are applied", developmentDocs);
+        }
+
+        [Fact]
         public void ContextFindingClassificationRoutesToCanonicalDocs()
         {
             string contract = ReadSkill("_shared", "delivery-contract.md");
@@ -589,6 +659,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                 "parallel-ticket-coordinator",
                 "pipeline-status",
                 "plane-start-ticket",
+                "pr-review-feedback-loop",
                 "post-merge-deploy",
                 "rollback-prod",
                 "test-e2e"
@@ -618,6 +689,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             foreach (string skillName in new[]
             {
                 "implement-ticket",
+                "pr-review-feedback-loop",
                 "gitea-pr-review-agent",
                 "hotfix-prod",
                 "file-qa-bug",
@@ -649,6 +721,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                 "parallel-ticket-coordinator",
                 "plane-start-ticket",
                 "implement-ticket",
+                "pr-review-feedback-loop",
                 "gitea-pr-review-agent",
                 "post-merge-deploy",
                 "deploy-to-qa",

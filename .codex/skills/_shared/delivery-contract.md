@@ -16,7 +16,7 @@ Source-of-truth order:
 
 1. `_shared/delivery-contract.md`
 2. `docs/context-management.md`, `docs/architecture.md`, `docs/development.md`, and `docs/deployment.md` for durable human-readable context
-3. Non-OpenSpec delivery-flow skills: `parallel-ticket-coordinator`, `automatic-implement-ticket`, `plane-start-ticket`, `implement-ticket`, `gitea-pr-review-agent`, `post-merge-deploy`, `deploy-to-qa`, `test-e2e`, `deploy-to-prod`, `rollback-prod`, `file-qa-bug`, `pipeline-status`, and `hotfix-prod`
+3. Non-OpenSpec delivery-flow skills: `parallel-ticket-coordinator`, `automatic-implement-ticket`, `plane-start-ticket`, `implement-ticket`, `pr-review-feedback-loop`, `gitea-pr-review-agent`, `post-merge-deploy`, `deploy-to-qa`, `test-e2e`, `deploy-to-prod`, `rollback-prod`, `file-qa-bug`, `pipeline-status`, and `hotfix-prod`
 4. Configure skills and generated templates: `configure-dev-environment`, `configure-artifact-delivery`, `configure-quality-gates`, and related `configure-*` skills
 
 If configure skills differ from delivery-flow skills, update configure docs, templates, audits, and tests to match the delivery-flow rule. Do not update OpenSpec-specific skills unless the requested change explicitly affects OpenSpec behavior.
@@ -176,6 +176,8 @@ Use these exact markers for idempotency:
 - PROD rollback incident: `IA generated PROD rollback incident: {rollbackVersionOrCommit}`
 - PROD hotfix: `IA generated PROD hotfix: {incidentOrTicketKey}`
 - PR review agent: `<!-- codex-review-agent:{headSha} -->`
+- PR review feedback detected: `IA generated PR feedback detected: {headSha}:{feedbackBatchId}`
+- PR review feedback fixes: `IA generated PR feedback fixes: {headSha}:{feedbackBatchId}`
 - Plane generated description block: `<!-- ia-generated:start -->` through `<!-- ia-generated:end -->`
 
 Before adding generated comments or moving states, read existing comments when the API allows it and treat matching markers as already completed.
@@ -228,7 +230,37 @@ Review findings must use:
 - `WARNING`: meaningful non-blocking risk.
 - `SUGGESTION`: optional improvement.
 
-QA promotion must stop when a merged PR still has `needs-tests` or `needs-changes`.
+Severity describes risk and PR label behavior. In this repository, every AI review finding is still tracked as required PR review feedback before human-review handoff, including `WARNING` and `SUGGESTION`.
+
+## PR Review Feedback
+
+PR review has two reconnectable loops:
+
+1. AI review runs immediately after PR creation. The PR is not ready for human review until the current head has a review-agent comment, AI findings have been converted into OpenSpec feedback tasks, all feedback tasks are complete, relevant validation has passed, and current-head `needs-tests` / `needs-changes` labels are clean.
+2. Human review happens later. The automatic workflow reconnects only when the operator manually resumes the ticket, such as `automatically continue this ticket` or `continue E2EPROJECT-123`. Plane remains `In Review` while human feedback fixes are applied unless the workflow stops on an ambiguous or conflicting blocker.
+
+Feedback batches are identified by source ids, not only by head SHA. Compute `feedbackBatchId` as a deterministic short id from the sorted source ids in the batch, such as AI finding ids, Gitea top-level comment ids, and inline review comment ids. This allows late human comments on the same `headSha` to create a new batch instead of being skipped by an earlier fix marker.
+
+`pr-review-feedback-loop` is the repo-owned skill that applies this rule. External `openspec-*` skills must not be edited to carry this local delivery behavior.
+
+When actionable AI or human feedback is found:
+
+- Add or update a `## PR Review Feedback` section in the active OpenSpec `tasks.md`.
+- Add one task for each feedback item. Each task must record source type, source id or link, head SHA, severity, and the requested code, test, documentation, or workflow change.
+- Add a Plane ticket comment with marker `IA generated PR feedback detected: {headSha}:{feedbackBatchId}` before applying fixes. The comment must list source ids or links, classifications, and OpenSpec feedback task ids.
+- Apply the requested code, test, documentation, or workflow change when it is clear and scoped to the ticket.
+- Update OpenSpec specs or design artifacts when the feedback changes required behavior.
+- Run the relevant quality checks for the changed files.
+- Commit and push the fix to the existing PR branch.
+- Mark the OpenSpec feedback tasks complete only after the code and validation are complete.
+- Add a Plane ticket comment with marker `IA generated PR feedback fixes: {headSha}:{feedbackBatchId}` that lists the source ids or links addressed, the OpenSpec tasks completed, the commit pushed, validation run, and any comments skipped as non-actionable, stale, ambiguous, duplicate, generated, or conflicting.
+- Rerun the AI review loop on the new head before returning to human review.
+
+AI review findings must have stable finding ids in the PR review comment so `pr-review-feedback-loop` can convert them into deterministic feedback tasks and batch ids. Human-authored Gitea PR feedback includes top-level PR comments and inline code review comments, plus review-thread replies supported by the configured Gitea version.
+
+Do not treat generated agent comments, duplicate comments already addressed by a newer head SHA or completed feedback batch, resolved/outdated inline comments, or purely informational comments as required code changes. Record skipped human comments in the Plane detection or fix comment. If human feedback is ambiguous or conflicts with the ticket, OpenSpec, security policy, or another human comment, stop before guessing and report the blocker in the PR and Plane ticket.
+
+Before PR handoff, merge, or QA promotion, stop when any current PR feedback batch is unresolved, any OpenSpec `## PR Review Feedback` task is incomplete, or the merged PR still has `needs-tests` or `needs-changes`.
 
 ## Nexus Artifacts
 

@@ -205,6 +205,7 @@ Common entry points:
 - `automatic-implement-ticket`: inspect state and route to the next valid delivery step.
 - `plane-start-ticket`: select a Plane ticket, create branch context, and create the OpenSpec proposal.
 - `implement-ticket`: implement an active ticket and hand off a PR.
+- `pr-review-feedback-loop`: process AI review findings and late human PR comments through OpenSpec feedback tasks, Plane batch comments, fixes, validation, and AI reruns.
 - `gitea-pr-review-agent`: review a specific Gitea PR and apply review labels.
 - `post-merge-deploy`: continue after a PR merges to `dev`.
 - `deploy-to-qa`: verify the merged PR artifact and promote through DEV/QA.

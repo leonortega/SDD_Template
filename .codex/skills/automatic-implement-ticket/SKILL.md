@@ -21,13 +21,17 @@ Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.e
 
 Use ignored `.codex/delivery-context.local.json` as the ticket context lock according to the shared contract. If the lock or durable checkpoints conflict with the resolved ticket, stop or invoke `pipeline-status` instead of routing to a child skill.
 
+## Workflow
+
+Run state inspection, routing, rerun handling, and output reporting as one read-first workflow. Use validation evidence from child skills and durable checkpoints before routing to the next handoff stage.
+
 ## State Inspection
 
 Before delegating, inspect as much context as is safely available:
 
 - Plane ticket key, state, generated markers, linked parent/bug tickets, and deployment/QA/PROD comments.
 - Current Git branch, branch naming, local dirty state, remote branch, active OpenSpec change, and relevant tags.
-- Gitea PR status, target branch, merge status, head/merge commit, review markers, and `needs-tests` / `needs-changes` labels.
+- Gitea PR status, target branch, merge status, head/merge commit, AI review markers, stable AI finding ids, human-authored top-level and inline review comments, OpenSpec `## PR Review Feedback` tasks, Plane PR feedback detection/fix batch markers, and `needs-tests` / `needs-changes` labels.
 - Nexus artifact files under `app/{commitSha}/`: `app.zip`, `app.zip.sha256`, `commit.sha`, and `release.json`.
 - QA evidence marker `IA generated E2E QA: {ticketKey}` and source RC tag.
 - PROD marker `IA generated PROD deployment: {finalVersion}` and latest release manifest.
@@ -39,7 +43,7 @@ If the state is ambiguous, invoke `pipeline-status` or produce a read-only statu
 
 - Ticket in Todo with no branch: invoke `plane-start-ticket`.
 - Ticket in In Progress with active branch/OpenSpec but no PR: invoke `implement-ticket`.
-- Open PR exists: invoke or resume `implement-ticket` review/fix loop.
+- Open PR exists: route to `implement-ticket`; it delegates immediate AI review feedback fixes and late human PR feedback fixes to the repo-owned `pr-review-feedback-loop` skill.
 - PR merged to `dev` and artifact is not yet promoted to QA: invoke `post-merge-deploy`.
 - Ticket in QA: invoke `test-e2e`.
 - QA failed with product defect: invoke `file-qa-bug`.
@@ -55,8 +59,14 @@ When a child skill stops on a blocker, preserve its blocker classification and d
 
 - Missing Nexus artifact blocks deployment promotion.
 - Stale `needs-changes` or `needs-tests` labels block QA promotion.
+- Unresolved PR review feedback batches, incomplete OpenSpec `## PR Review Feedback` tasks, or late actionable human PR comments block implementation handoff and QA promotion until fixes are committed, pushed, rerun through AI review, and recorded in Plane.
+- A later human comment on the same PR head SHA is not covered by an earlier feedback-fix marker unless its source id is included in that marker's `feedbackBatchId`.
 - Missing RC tag blocks PROD promotion.
 - QA product defect routes to `file-qa-bug`, not direct code edits inside QA.
+
+## Failure Rules
+
+If routing evidence is ambiguous, validation is missing for the next mutating stage, or the ticket context lock conflicts with durable checkpoints, stop or route to `pipeline-status` instead of guessing.
 
 ## Output
 

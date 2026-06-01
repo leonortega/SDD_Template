@@ -44,10 +44,13 @@ Fetch:
 - commits
 - changed files or diff
 - existing PR comments
+- existing inline review comments and review-thread replies when the configured Gitea version exposes them
 - relevant local source files for changed code
 - changed line count for diff-size classification
 
-If a comment contains `<!-- codex-review-agent:{headSha} -->`, skip posting another review for the same head SHA unless the user explicitly asks for a fresh review.
+If a comment contains `<!-- codex-review-agent:{headSha} -->`, skip posting another review for the same head SHA unless the user explicitly asks for a fresh review. The existing review still remains an implementation feedback source for `implement-ticket`.
+
+Human-authored comments are implementation inputs, not review-agent findings. Preserve them in the review context, avoid duplicating them as Codex findings unless local analysis independently confirms the issue, and report actionable human feedback to the caller so `pr-review-feedback-loop` can create OpenSpec `## PR Review Feedback` tasks, apply fixes, commit, push, rerun AI review, and record Plane feedback batch comments.
 
 ### 2. Review The Code
 
@@ -65,9 +68,9 @@ Use these severity labels for every finding:
 
 - `BLOCKER`: likely bug, security/data-loss risk, broken required behavior, missing required test, failing gate, or release-blocking compatibility issue.
 - `WARNING`: meaningful risk or maintainability issue that should be considered but does not block the current PR.
-- `SUGGESTION`: optional improvement that should not block implementation handoff.
+- `SUGGESTION`: optional improvement by severity, still tracked as required PR review feedback in this repository before human-review handoff.
 
-The implementation loop treats only `BLOCKER` findings as blocking.
+The implementation loop converts every AI finding into OpenSpec PR review feedback tasks. Only `BLOCKER` findings control release-blocking review severity and `needs-changes`; missing or failing tests control `needs-tests`.
 
 Use deterministic diff scope:
 
@@ -85,10 +88,12 @@ Post one top-level Gitea PR comment. Include:
 
 - marker `<!-- codex-review-agent:{headSha} -->`
 - short review summary
-- findings ordered by severity
+- findings ordered by severity, each with a stable finding id
 - test gaps
 - diff scope reviewed and any large-diff sampling limits
 - sources consulted when applicable
+
+Stable finding ids must be deterministic for the same head SHA and finding target. Use compact ids such as `AI-001`, `AI-002`, or `AI-{shortHash}` and include them in the visible finding heading so `implement-ticket` can compute feedback batch ids and create OpenSpec feedback tasks.
 
 If no issues are found, say so clearly and mention any residual verification gaps.
 
@@ -106,6 +111,10 @@ When `pr.labels.enabled` is true:
 5. Remove the needs-tests label when the current head no longer has missing or failing test findings.
 6. Remove the needs-changes label when the current head no longer has actionable defects or blocking issues.
 7. If label creation, assignment, or removal fails due to permissions or disabled labels, continue the review and mention the label failure in the PR comment or completion summary.
+
+## Output
+
+Return the reviewed PR number, head SHA, labels applied or removed, validation context inspected, findings summary, and any handoff notes for `implement-ticket`.
 
 ## Output Style
 

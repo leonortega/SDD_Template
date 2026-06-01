@@ -40,17 +40,20 @@
         "ticket lock",
         "Plane acceptance criteria",
         "active OpenSpec tasks",
+        "OpenSpec PR Review Feedback tasks",
         "relevant code and tests",
         ".codex/quality.local.json or tracked default"
       ],
       "toolExpectations": [
         "Use repository commands before inventing new quality gates",
         "Run build, tests, formatting, or explain why a gate could not run",
-        "Run Context Findings Review before handoff"
+        "Run Context Findings Review before handoff",
+        "Create Plane PR feedback detected and fixes markers for each unresolved feedback batch"
       ],
       "stopConditions": [
         "resolved ticket differs from the lock",
         "OpenSpec tasks conflict with Plane acceptance criteria",
+        "OpenSpec PR Review Feedback tasks remain incomplete",
         "required quality gate fails without an explicit blocker"
       ],
       "handoffFields": [
@@ -77,6 +80,7 @@
       ],
       "toolExpectations": [
         "Post review marker for the inspected head SHA",
+        "Emit stable finding ids for every AI review finding",
         "Use BLOCKER, WARNING, or SUGGESTION severity",
         "Apply needs-tests or needs-changes only when evidence supports it"
       ],
@@ -90,6 +94,41 @@
         "headSha",
         "findings",
         "labels",
+        "validation"
+      ]
+    },
+    {
+      "id": "late-human-pr-feedback-manual-resume",
+      "stage": "automatic-implement-ticket",
+      "goal": "Reconnect automation after humans add PR comments after the AI review loop already completed.",
+      "expectedRoute": "implement-ticket",
+      "requiredEvidence": [
+        "Plane ticket is In Review",
+        "open PR with current head SHA",
+        "existing AI review marker and clean labels from an earlier batch",
+        "new human top-level or inline PR comment ids",
+        "Plane PR feedback detection and fix batch markers",
+        "OpenSpec PR Review Feedback tasks"
+      ],
+      "toolExpectations": [
+        "Manual resume scans PR comments instead of relying on webhook or polling",
+        "Delegate feedback processing to pr-review-feedback-loop",
+        "Derive a new feedbackBatchId from sorted late human comment source ids",
+        "Create or update OpenSpec PR Review Feedback tasks before fixing",
+        "Keep Plane In Review while applying late human feedback fixes",
+        "Rerun AI review on the pushed fix before handoff"
+      ],
+      "stopConditions": [
+        "late human comment source ids are already covered by a completed feedback batch",
+        "human feedback is ambiguous or conflicts with ticket, OpenSpec, or security policy",
+        "needs-tests or needs-changes remains after feedback fixes"
+      ],
+      "handoffFields": [
+        "ticketKey",
+        "prNumberOrUrl",
+        "headSha",
+        "feedbackBatchId",
+        "openSpecFeedbackTasks",
         "validation"
       ]
     },
