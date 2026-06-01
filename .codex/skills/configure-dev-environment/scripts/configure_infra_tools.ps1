@@ -1,5 +1,5 @@
 param(
-  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetPlaneEnv", "SetGiteaRunner", "SetPrometheusAzureTargets", "AuditQualityGates", "AuditRecommendedTools", "SetRecommendedTools", "ValidateGiteaActionsRunner", "InitQualityGateTemplates", "SetQualityConfig")]
+  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetPlaneEnv", "SetGiteaRunner", "SetPrometheusAzureTargets", "AuditQualityGates", "AuditRecommendedTools", "DiscoverProjectGuidance", "AcquireProjectGuidance", "SetRecommendedTools", "MapProjectGuidanceStep", "ValidateGiteaActionsRunner", "InitQualityGateTemplates", "SetQualityConfig")]
   [string]$Mode = "Audit",
 
   [string]$Root = (Resolve-Path ".").Path,
@@ -40,8 +40,23 @@ function New-Result {
   }
 }
 
+function Test-ValuesJsonFlag {
+  param([string]$Name)
+
+  if ([string]::IsNullOrWhiteSpace($ValuesJson)) { return $false }
+
+  try {
+    $data = $ValuesJson | ConvertFrom-Json
+    if ($data.PSObject.Properties.Name -notcontains $Name) { return $false }
+    return [bool]$data.$Name
+  } catch {
+    return $false
+  }
+}
+
 function Test-ConfigWritesEnabled {
   if ($DryRun) { return $false }
+  if ($Mode -eq "DiscoverProjectGuidance") { return (Test-ValuesJsonFlag "persistLocal") }
   if ($Mode -like "Audit*" -and -not $AllowAuditWrites) { return $false }
   return $true
 }
@@ -759,23 +774,30 @@ function Get-GitRemoteOwnerRepo {
   return $null
 }
 
-function Get-DetectedStackTags {
-  $tags = [System.Collections.Generic.List[string]]::new()
+function Test-AnyRepoFileContains {
+  param(
+    [string[]]$RelativeRoots,
+    [string[]]$Filters,
+    [string]$Pattern
+  )
 
-  if ((Get-ChildItem -Path $Root -Filter "*.slnx" -ErrorAction SilentlyContinue).Count -gt 0 -or
-      (Get-ChildItem -Path $Root -Filter "*.csproj" -Recurse -ErrorAction SilentlyContinue).Count -gt 0) {
-    $tags.Add("dotnet")
+  foreach ($relativeRoot in $RelativeRoots) {
+    $path = Join-RootPath $relativeRoot
+    if (-not (Test-Path $path)) { continue }
+
+    foreach ($filter in $Filters) {
+      foreach ($file in Get-ChildItem -Path $path -Recurse -File -Filter $filter -ErrorAction SilentlyContinue) {
+        try {
+          $content = Get-Content -Path $file.FullName -Raw -ErrorAction Stop
+          if ($content -match $Pattern) { return $true }
+        } catch {
+          continue
+        }
+      }
+    }
   }
-  if (Test-Path (Join-RootPath "infra/plane")) { $tags.Add("plane") }
-  if (Test-Path (Join-RootPath "infra/gitea")) { $tags.Add("gitea") }
-  if (Test-Path (Join-RootPath ".gitea/workflows")) { $tags.Add("gitea-actions") }
-  if (Test-Path (Join-RootPath "infra/nexus")) { $tags.Add("nexus") }
-  if (Test-Path (Join-RootPath "infra/azure")) { $tags.Add("azure") }
-  if (Test-Path (Join-RootPath "infra/monitoring")) { $tags.Add("observability") }
-  if ((Test-Path (Join-RootPath "artifacts/qa")) -or (Test-Path (Join-RootPath ".codex/skills/test-e2e/SKILL.md"))) { $tags.Add("e2e") }
-  if (Test-Path (Join-RootPath "openspec")) { $tags.Add("openspec") }
 
-  return @($tags | Select-Object -Unique)
+  return $false
 }
 
 function Test-RecommendationMatchesStack {
@@ -902,6 +924,438 @@ function Add-Recommendation {
   )
 
   $Result["recommendations"] += $Recommendation
+}
+
+$projectGuidanceDiscoveryScript = Join-Path $PSScriptRoot "..\..\project-guidance-discover\scripts\project_guidance_discovery.ps1"
+. (Resolve-Path $projectGuidanceDiscoveryScript).Path
+
+function Get-RecommendedToolsDecisionState {
+  $state = [ordered]@{
+    enabled = $true
+    accepted = @()
+    dismissed = @()
+  }
+
+  $clientPath = Join-RootPath ".codex/client-tools.local.json"
+  if (-not (Test-Path $clientPath)) { return $state }
+
+  try {
+    $client = Get-Content -Path $clientPath -Raw | ConvertFrom-Json
+    if ($null -eq $client.recommendedTools) { return $state }
+
+    if ($client.recommendedTools.enabled -eq $false) { $state.enabled = $false }
+    $state.accepted = @($client.recommendedTools.accepted)
+    $state.dismissed = @($client.recommendedTools.dismissed)
+  } catch {
+    return $state
+  }
+
+  return $state
+}
+
+function ConvertTo-CatalogRecommendation {
+  param(
+    $Entry,
+    [string[]]$Accepted
+  )
+
+  $recommendation = [ordered]@{
+    id = $Entry.id
+    name = $Entry.name
+    type = $Entry.type
+    purpose = $Entry.purpose
+    installMethod = $Entry.installMethod
+    source = $Entry.source
+    target = $Entry.target
+    validation = $Entry.validation
+    accepted = ($Accepted -contains $Entry.id)
+  }
+
+  foreach ($optionalField in @("requires", "researchTopics", "officialSources", "searchQueries", "notes")) {
+    if ($Entry.PSObject.Properties.Name -contains $optionalField) {
+      $recommendation[$optionalField] = $Entry.$optionalField
+    }
+  }
+
+  return $recommendation
+}
+
+function Get-CanonicalWorkflowSteps {
+  return @(
+    "config-infra",
+    "first-ticket-setup",
+    "planning",
+    "implementation",
+    "pr-review",
+    "review-feedback",
+    "post-merge-deploy",
+    "e2e-qa",
+    "prod-promotion",
+    "rollback",
+    "hotfix",
+    "retrospective"
+  )
+}
+
+function Get-DefaultPrimarySkillsForWorkflowStep {
+  param([string]$WorkflowStep)
+
+  switch ($WorkflowStep) {
+    "config-infra" { return @("configure-dev-environment") }
+    "first-ticket-setup" { return @("plane-start-ticket") }
+    "planning" { return @("openspec-propose", "openspec-explore") }
+    "implementation" { return @("implement-ticket") }
+    "pr-review" { return @("gitea-pr-review-agent") }
+    "review-feedback" { return @("pr-review-feedback-loop") }
+    "post-merge-deploy" { return @("post-merge-deploy", "deploy-to-qa") }
+    "e2e-qa" { return @("test-e2e") }
+    "prod-promotion" { return @("deploy-to-prod") }
+    "rollback" { return @("rollback-prod") }
+    "hotfix" { return @("hotfix-prod") }
+    "retrospective" { return @("delivery-retrospective-audit") }
+    default { return @() }
+  }
+}
+
+function Get-DefaultSupportingSkillsForWorkflowStep {
+  param([string]$WorkflowStep)
+
+  switch ($WorkflowStep) {
+    "config-infra" { return @("project-guidance-discover", "project-guidance-mapper") }
+    "first-ticket-setup" { return @("configure-dev-environment", "project-guidance-discover", "project-guidance-mapper") }
+    "planning" { return @("aspnet-core", "plan-ui-change", "dotnet-webapi", "security-best-practices") }
+    "implementation" { return @("aspnet-core", "plan-ui-change", "dotnet-webapi", "security-best-practices", "assertion-quality") }
+    "pr-review" { return @("aspnet-core", "dotnet-webapi", "security-best-practices", "assertion-quality", "playwright") }
+    "review-feedback" { return @("aspnet-core", "plan-ui-change", "dotnet-webapi", "security-best-practices", "assertion-quality") }
+    "post-merge-deploy" { return @("configure-artifact-delivery", "configure-azure-environments", "configure-observability") }
+    "e2e-qa" { return @("frontend-testing-debugging", "playwright", "assertion-quality") }
+    "prod-promotion" { return @("configure-artifact-delivery", "configure-azure-environments", "configure-observability") }
+    "rollback" { return @("configure-artifact-delivery", "configure-azure-environments", "security-best-practices") }
+    "hotfix" { return @("security-best-practices", "assertion-quality", "aspnet-core") }
+    "retrospective" { return @("project-guidance-discover", "project-guidance-mapper", "configure-dev-environment") }
+    default { return @() }
+  }
+}
+
+function Get-DefaultRecommendationIdsForWorkflowStep {
+  param([string]$WorkflowStep)
+
+  switch ($WorkflowStep) {
+    "config-infra" { return @("project-guidance-search-plan") }
+    "first-ticket-setup" { return @("project-guidance-search-plan") }
+    "planning" { return @("openai-aspnet-core-skill", "dotnet-blazor-plan-ui-change-skill", "dotnet-webapi-skill", "openai-security-best-practices-skill", "clean-code-practice-guidance", "modern-dotnet-architecture-guidance") }
+    "implementation" { return @("openai-aspnet-core-skill", "dotnet-blazor-plan-ui-change-skill", "dotnet-webapi-skill", "openai-security-best-practices-skill", "dotnet-assertion-quality-skill", "clean-code-practice-guidance", "modern-dotnet-architecture-guidance", "rest-api-design-practice-guidance") }
+    "pr-review" { return @("gitea-pr-review-agent-skill", "openai-aspnet-core-skill", "dotnet-webapi-skill", "openai-security-best-practices-skill", "dotnet-assertion-quality-skill", "pr-review-practice-guidance") }
+    "review-feedback" { return @("openai-aspnet-core-skill", "dotnet-blazor-plan-ui-change-skill", "dotnet-webapi-skill", "openai-security-best-practices-skill", "dotnet-assertion-quality-skill", "clean-code-practice-guidance") }
+    "post-merge-deploy" { return @("nexus-artifact-api-guidance", "azure-app-service-zip-deploy-guidance", "prometheus-config-guidance", "grafana-provisioning-guidance", "release-practice-guidance") }
+    "e2e-qa" { return @("browser-e2e-qa-plugin", "playwright-frontend-testing-skill", "openai-playwright-skill", "dotnet-assertion-quality-skill", "qa-automation-practice-guidance") }
+    "prod-promotion" { return @("nexus-artifact-api-guidance", "azure-app-service-zip-deploy-guidance", "prometheus-config-guidance", "grafana-provisioning-guidance", "release-practice-guidance") }
+    "rollback" { return @("nexus-artifact-api-guidance", "azure-app-service-zip-deploy-guidance", "prometheus-config-guidance", "grafana-provisioning-guidance", "rollback-practice-guidance") }
+    "hotfix" { return @("openai-security-best-practices-skill", "dotnet-assertion-quality-skill", "release-practice-guidance", "rollback-practice-guidance") }
+    "retrospective" { return @("project-guidance-search-plan", "clean-code-practice-guidance", "qa-automation-practice-guidance", "pr-review-practice-guidance") }
+    default { return @() }
+  }
+}
+
+function Get-ExistingRecommendationStepUsage {
+  param($Existing)
+
+  $usage = @{}
+  if ($null -eq $Existing) { return $usage }
+
+  foreach ($recommendation in @($Existing.recommendations)) {
+    if ($null -eq $recommendation.id) { continue }
+    if ($recommendation.PSObject.Properties.Name -notcontains "usedInSteps") { continue }
+    $usage[[string]$recommendation.id] = @($recommendation.usedInSteps)
+  }
+
+  if ($Existing.PSObject.Properties.Name -contains "workflowStepMappings") {
+    foreach ($mapping in @($Existing.workflowStepMappings)) {
+      if ($null -eq $mapping.workflowStep) { continue }
+      foreach ($id in @($mapping.recommendationIds)) {
+        if ([string]::IsNullOrWhiteSpace([string]$id)) { continue }
+        $current = if ($usage.ContainsKey([string]$id)) { @($usage[[string]$id]) } else { @() }
+        $usage[[string]$id] = @(@($current) + @([string]$mapping.workflowStep) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
+      }
+    }
+  }
+
+  return $usage
+}
+
+function Add-UsedInStepsToRecommendation {
+  param(
+    [hashtable]$Recommendation,
+    [hashtable]$Usage
+  )
+
+  $id = [string]$Recommendation["id"]
+  $steps = if ($Usage.ContainsKey($id)) { @($Usage[$id]) } else { @() }
+  $Recommendation["usedInSteps"] = @($steps | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
+  return $Recommendation
+}
+
+function Get-RecommendationSearchText {
+  param($Recommendation)
+
+  $parts = @(
+    $Recommendation.id,
+    $Recommendation.name,
+    $Recommendation.type,
+    $Recommendation.purpose,
+    $Recommendation.notes,
+    @($Recommendation.requires) -join " ",
+    @($Recommendation.researchTopics) -join " ",
+    @($Recommendation.tags) -join " "
+  )
+
+  return (($parts | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }) -join " ").ToLowerInvariant()
+}
+
+function Test-RecommendationFitsWorkflowStep {
+  param(
+    $Recommendation,
+    [string]$WorkflowStep
+  )
+
+  $text = Get-RecommendationSearchText $Recommendation
+  switch ($WorkflowStep) {
+    "config-infra" { return $text -match "guidance-search|tool|mcp|plugin|delivery|environment|configure" }
+    "first-ticket-setup" { return $text -match "guidance-search|ticket|stack|architecture|tool|context" }
+    "planning" { return $text -match "architecture|clean|api|rest|ui|blazor|security|standard|practice" }
+    "implementation" { return $text -match "aspnet|blazor|api|rest|security|clean|architecture|assertion|test|code" }
+    "pr-review" { return $text -match "review|security|assertion|api|rest|clean|architecture|gitea" }
+    "review-feedback" { return $text -match "feedback|review|security|assertion|api|rest|clean|architecture" }
+    "post-merge-deploy" { return $text -match "nexus|azure|deploy|release|prometheus|grafana|observability" }
+    "e2e-qa" { return $text -match "qa|e2e|browser|playwright|test|assertion" }
+    "prod-promotion" { return $text -match "prod|release|nexus|azure|deploy|prometheus|grafana|observability" }
+    "rollback" { return $text -match "rollback|nexus|azure|prod|release|artifact|monitoring" }
+    "hotfix" { return $text -match "hotfix|security|test|assertion|release|rollback|api" }
+    "retrospective" { return $text -match "practice|standard|quality|review|guidance-search|clean|qa" }
+    default { return $false }
+  }
+}
+
+function Get-ExistingProjectGuidanceLocalState {
+  $path = Join-RootPath ".codex/tool-recommendations.local.json"
+  if (-not (Test-Path $path)) { return $null }
+
+  try {
+    return Get-Content -Path $path -Raw | ConvertFrom-Json
+  } catch {
+    return $null
+  }
+}
+
+function New-ProjectGuidanceLocalState {
+  param(
+    [string[]]$Accepted,
+    [string[]]$Dismissed,
+    [object[]]$UserAddedRequestedGuidance = @(),
+    [switch]$Confirmed
+  )
+
+  $detectedTags = Get-DetectedStackTags
+  $report = Get-ProjectGuidanceDiscoveryReport -Accepted $Accepted -Dismissed $Dismissed -UserAddedRequestedGuidance $UserAddedRequestedGuidance -Confirmed:($Confirmed)
+  $catalog = Get-ToolRecommendationCatalog
+  $recommendations = @()
+  $existing = Get-ExistingProjectGuidanceLocalState
+  $stepUsage = Get-ExistingRecommendationStepUsage $existing
+
+  if ($report.researchTopics.Count -gt 0) {
+    $recommendations += [ordered]@{
+      id = "project-guidance-search-plan"
+      name = "Project guidance search plan"
+      type = "guidance-search-plan"
+      purpose = "Research skills, tools, references, practices, standards, MCPs, and plugins from detected project technologies, environments, tests, security gates, and code standards before proposing local guidance updates."
+      installMethod = "research-then-manual-copy"
+      accepted = $false
+      detected = $true
+      requiresUserConfirmation = $true
+      sourceDiscovery = "official-first-internet-search"
+      topics = @($report.researchTopics)
+      nextStep = "Use project-guidance-discover to show suggested missing skills and guidance, ask for additional desired items, then pass confirmed skill items to project-guidance-acquire."
+    }
+  }
+
+  $recommendations += @($report.suggestedMissingSkills)
+  $recommendations += @($report.suggestedPresentSkills)
+  $recommendations += @($report.suggestedGuidance)
+  $recommendations += @($report.userAddedRequestedGuidance)
+
+  foreach ($entry in @($catalog.recommendations)) {
+    if (-not (Test-RecommendationMatchesStack -Recommendation $entry -DetectedTags $detectedTags)) { continue }
+    if ($Dismissed -contains $entry.id) { continue }
+    $recommendations += ConvertTo-CatalogRecommendation -Entry $entry -Accepted $Accepted
+  }
+
+  $recommendationsById = [ordered]@{}
+  foreach ($recommendation in @($recommendations)) {
+    if ($null -eq $recommendation) { continue }
+    $hash = Convert-ObjectToHashtable $recommendation
+    if (-not $hash.Contains("id") -or [string]::IsNullOrWhiteSpace([string]$hash["id"])) {
+      if (-not $hash.Contains("name") -or [string]::IsNullOrWhiteSpace([string]$hash["name"])) { continue }
+      $hash["id"] = ([string]$hash["name"]).ToLowerInvariant().Replace(" ", "-")
+    }
+    $recommendationsById[[string]$hash["id"]] = Add-UsedInStepsToRecommendation -Recommendation $hash -Usage $stepUsage
+  }
+
+  $notRecommended = foreach ($entry in @($catalog.notRecommended)) {
+    if (-not (Test-RecommendationMatchesStack -Recommendation $entry -DetectedTags $detectedTags)) { continue }
+
+    [ordered]@{
+      id = $entry.id
+      name = $entry.name
+      type = $entry.type
+      requires = @($entry.requires)
+      reason = $entry.reason
+      dismissed = ($Dismissed -contains $entry.id)
+    }
+  }
+
+  return [ordered]@{
+    schemaVersion = 1
+    mode = "guided-manual"
+    sourceCatalog = ".codex/tool-recommendations.example.json"
+    localStatePath = ".codex/tool-recommendations.local.json"
+    generatedBy = "project-guidance-discover"
+    generatedAtUtc = [DateTime]::UtcNow.ToString("o")
+    detectedTags = @($report.detectedTags)
+    researchTopics = @($report.researchTopics)
+    existingSkills = @($report.existingSkills)
+    suggestedMissingSkills = @($report.suggestedMissingSkills)
+    suggestedPresentSkills = @($report.suggestedPresentSkills)
+    suggestedGuidance = @($report.suggestedGuidance)
+    userAddedRequestedGuidance = @($report.userAddedRequestedGuidance)
+    userAddedRequestedSkills = @($report.userAddedRequestedSkills)
+    finalConfirmedGuidance = @($report.finalConfirmedGuidance)
+    finalConfirmedSkills = @($report.finalConfirmedSkills)
+    acceptedRecommendations = @($Accepted)
+    dismissedRecommendations = @($Dismissed)
+    recommendations = @($recommendationsById.Values)
+    notRecommended = @($notRecommended)
+  }
+}
+
+function Write-ProjectGuidanceLocalState {
+  param(
+    $Result,
+    $State,
+    [string]$Message
+  )
+
+  $targetRelative = ".codex/tool-recommendations.local.json"
+  $target = Join-RootPath $targetRelative
+  Add-Item $Result "actions" $targetRelative "projectGuidance" $Message
+
+  if (Test-ConfigWritesEnabled) {
+    $targetDirectory = Split-Path -Parent $target
+    if (-not (Test-Path $targetDirectory)) {
+      New-Item -ItemType Directory -Path $targetDirectory -Force | Out-Null
+    }
+
+    $State | ConvertTo-Json -Depth 30 | Set-Content -Path $target -Encoding UTF8
+  }
+}
+
+function Get-HashtableArrayValue {
+  param(
+    [hashtable]$Map,
+    [string]$Key
+  )
+
+  if (-not $Map.Contains($Key) -or $null -eq $Map[$Key]) { return @() }
+  return @($Map[$Key])
+}
+
+function Get-ConfirmedGuidanceItemsFromJson {
+  param([AllowNull()][string]$Json)
+
+  if ([string]::IsNullOrWhiteSpace($Json)) {
+    throw "ValuesJson is required for AcquireProjectGuidance."
+  }
+  if ($Json -match '"installCommand"\s*:') {
+    throw "AcquireProjectGuidance rejects installCommand; project skills must use manual-copy only."
+  }
+
+  $data = $Json | ConvertFrom-Json
+  if ($data -is [array]) { return @($data) }
+  foreach ($propertyName in @("finalConfirmedGuidance", "confirmedGuidance", "finalConfirmedSkills", "skills", "guidance")) {
+    if ($data.PSObject.Properties.Name -contains $propertyName) {
+      return @($data.$propertyName)
+    }
+  }
+
+  throw "ValuesJson must include finalConfirmedGuidance, confirmedGuidance, finalConfirmedSkills, skills, or guidance."
+}
+
+function Test-RepoRelativeTarget {
+  param([string]$TargetRelative)
+
+  if ([string]::IsNullOrWhiteSpace($TargetRelative)) { return $false }
+  $normalized = $TargetRelative.Replace("\", "/")
+  if (-not $normalized.StartsWith(".codex/skills/")) { return $false }
+  if (-not $normalized.EndsWith("/SKILL.md")) { return $false }
+  if ($normalized -match "(^|/)\.\.($|/)") { return $false }
+  return $true
+}
+
+function Invoke-AcquireProjectGuidance {
+  $result = New-Result
+  $items = Get-ConfirmedGuidanceItemsFromJson $ValuesJson
+
+  foreach ($item in @($items)) {
+    $type = if ($item.PSObject.Properties.Name -contains "type") { [string]$item.type } else { "skill" }
+    $name = if ($item.PSObject.Properties.Name -contains "name") { [string]$item.name } elseif ($item.PSObject.Properties.Name -contains "id") { [string]$item.id } else { "unnamed-guidance" }
+    $installMethod = if ($item.PSObject.Properties.Name -contains "installMethod") { [string]$item.installMethod } elseif ($type -eq "skill") { "manual-copy" } else { "manual-reference" }
+
+    if ($type -ne "skill") {
+      Add-Item $result "findings" $name "non-skill-guidance" "Non-skill guidance remains in .codex/tool-recommendations.local.json; no file copy is required." "info"
+      continue
+    }
+    if ($installMethod -ne "manual-copy") {
+      Add-Item $result "warnings" $name "installMethod" "Skipping skill because installMethod is '$installMethod', not manual-copy." "warning"
+      continue
+    }
+
+    $source = if ($item.PSObject.Properties.Name -contains "source") { [string]$item.source } else { "" }
+    $targetRelative = if ($item.PSObject.Properties.Name -contains "target") { [string]$item.target } else { ".codex/skills/$name/SKILL.md" }
+    if (-not (Test-RepoRelativeTarget $targetRelative)) {
+      Add-Item $result "warnings" $targetRelative "target" "Skipping skill because target must be under .codex/skills/{skill-name}/SKILL.md." "warning"
+      continue
+    }
+
+    if (-not $source.StartsWith("repo:")) {
+      Add-Item $result "warnings" $name "source" "Source '$source' is not a repo: path. Read the source SKILL.md manually, then run acquisition with a repo: source or copy through the project-guidance-acquire skill." "warning"
+      continue
+    }
+
+    $sourceRelative = $source.Substring("repo:".Length)
+    $sourcePath = Join-RootPath $sourceRelative
+    $targetPath = Join-RootPath $targetRelative
+    if (-not (Test-Path $sourcePath)) {
+      Add-Item $result "warnings" $sourceRelative "source" "Source SKILL.md does not exist." "warning"
+      continue
+    }
+    if (Test-Path $targetPath) {
+      Add-Item $result "findings" $targetRelative "already-present" "Repo-local skill already exists; not overwriting without explicit replacement." "info"
+      continue
+    }
+
+    Add-Item $result "actions" $targetRelative "manual-copy" "Copy confirmed SKILL.md from $source."
+    if (Test-ConfigWritesEnabled) {
+      $targetDirectory = Split-Path -Parent $targetPath
+      if (-not (Test-Path $targetDirectory)) {
+        New-Item -ItemType Directory -Path $targetDirectory -Force | Out-Null
+      }
+      Copy-Item -Path $sourcePath -Destination $targetPath
+    }
+
+    $validation = if ($item.PSObject.Properties.Name -contains "validation") { [string]$item.validation } else { "Test-Path $targetRelative" }
+    Add-Item $result "findings" $targetRelative "validation" "Validate with: $validation" "info"
+  }
+
+  return $result
 }
 
 function Invoke-Audit {
@@ -1081,17 +1535,21 @@ function Invoke-AuditRecommendedTools {
   }
 
   Add-Item $result "actions" ".codex/tool-recommendations.example.json" "detectedStack" "Detected stack tags: $($detectedTags -join ', ')."
+  Add-StackContextDriftFindings $result $detectedTags
 
   if (-not $recommendationsEnabled) {
     Add-Item $result "findings" $clientLocal "recommendedTools.enabled" "Recommended tools audit is disabled in local config." "info"
     return $result
   }
 
+  Add-ProjectGuidanceSearchPlanRecommendation $result $detectedTags
+  Add-DetectedSkillRecommendations $result $detectedTags $accepted $dismissed
+
   foreach ($entry in @($catalog.recommendations)) {
     if (-not (Test-RecommendationMatchesStack -Recommendation $entry -DetectedTags $detectedTags)) { continue }
     if ($dismissed -contains $entry.id) { continue }
 
-    Add-Recommendation $result ([ordered]@{
+    $recommendation = [ordered]@{
       id = $entry.id
       name = $entry.name
       type = $entry.type
@@ -1101,12 +1559,87 @@ function Invoke-AuditRecommendedTools {
       target = $entry.target
       validation = $entry.validation
       accepted = ($accepted -contains $entry.id)
-    })
+    }
+
+    foreach ($optionalField in @("requires", "researchTopics", "officialSources", "searchQueries", "notes")) {
+      if ($entry.PSObject.Properties.Name -contains $optionalField) {
+        $recommendation[$optionalField] = $entry.$optionalField
+      }
+    }
+
+    Add-Recommendation $result $recommendation
   }
 
   foreach ($entry in @($catalog.notRecommended)) {
     if (-not (Test-RecommendationMatchesStack -Recommendation $entry -DetectedTags $detectedTags)) { continue }
     Add-Item $result "findings" $entry.name $entry.id $entry.reason "info"
+  }
+
+  return $result
+}
+
+function Invoke-DiscoverProjectGuidance {
+  $accepted = @()
+  $dismissed = @()
+  $additionalGuidance = @()
+  $confirmed = $false
+  $persistLocal = $false
+  $clientPath = Join-RootPath ".codex/client-tools.local.json"
+
+  if (Test-Path $clientPath) {
+    try {
+      $client = Get-Content -Path $clientPath -Raw | ConvertFrom-Json
+      if ($null -ne $client.recommendedTools) {
+        $accepted = @($client.recommendedTools.accepted)
+        $dismissed = @($client.recommendedTools.dismissed)
+      }
+    } catch {
+      # Discovery remains useful even when local preference state is unreadable.
+    }
+  }
+
+  if (-not [string]::IsNullOrWhiteSpace($ValuesJson)) {
+    $data = $ValuesJson | ConvertFrom-Json
+    $additionalGuidance = Get-AdditionalGuidanceRequestsFromJson $ValuesJson
+    if ($data.PSObject.Properties.Name -contains "confirmed") {
+      $confirmed = [bool]$data.confirmed
+    } elseif ($data.PSObject.Properties.Name -contains "confirmSuggested") {
+      $confirmed = [bool]$data.confirmSuggested
+    }
+
+    if ($data.PSObject.Properties.Name -contains "persistLocal") {
+      $persistLocal = [bool]$data.persistLocal
+    } elseif ($data.PSObject.Properties.Name -contains "writeLocalRecommendations") {
+      $persistLocal = [bool]$data.writeLocalRecommendations
+    }
+  }
+
+  $report = Get-ProjectGuidanceDiscoveryReport -Accepted $accepted -Dismissed $dismissed -UserAddedRequestedGuidance $additionalGuidance -Confirmed:($confirmed)
+  $result = [ordered]@{
+    mode = $Mode
+    dryRun = [bool]$DryRun
+    writeEnabled = (Test-ConfigWritesEnabled)
+    actions = @()
+    findings = @()
+    recommendations = @()
+    warnings = @()
+    detectedTags = $report.detectedTags
+    researchTopics = $report.researchTopics
+    existingSkills = $report.existingSkills
+    suggestedMissingSkills = $report.suggestedMissingSkills
+    suggestedPresentSkills = $report.suggestedPresentSkills
+    suggestedGuidance = $report.suggestedGuidance
+    userAddedRequestedGuidance = $report.userAddedRequestedGuidance
+    userAddedRequestedSkills = $report.userAddedRequestedSkills
+    finalConfirmedGuidance = $report.finalConfirmedGuidance
+    finalConfirmedSkills = $report.finalConfirmedSkills
+    localRecommendationsPath = ".codex/tool-recommendations.local.json"
+    nextUserQuestion = $report.nextUserQuestion
+  }
+
+  if ($persistLocal) {
+    $state = New-ProjectGuidanceLocalState -Accepted $accepted -Dismissed $dismissed -UserAddedRequestedGuidance $additionalGuidance -Confirmed:($confirmed)
+    Write-ProjectGuidanceLocalState $result $state "Persist catalog-shaped project guidance state for project-guidance-mapper and future workflow steps."
   }
 
   return $result
@@ -1140,6 +1673,84 @@ function Invoke-SetRecommendedTools {
   if (-not $DryRun) {
     $config | ConvertTo-Json -Depth 20 | Set-Content -Path $target -Encoding UTF8
   }
+  return $result
+}
+
+function Invoke-MapProjectGuidanceStep {
+  $result = New-Result
+  $values = Convert-JsonToHashtable $ValuesJson
+
+  if (-not $values.Contains("workflowStep") -or [string]::IsNullOrWhiteSpace([string]$values.workflowStep)) {
+    throw "ValuesJson must include workflowStep."
+  }
+
+  $workflowStep = [string]$values.workflowStep
+  $canonicalSteps = Get-CanonicalWorkflowSteps
+  if ($canonicalSteps -notcontains $workflowStep) {
+    throw "workflowStep must be one of: $($canonicalSteps -join ', ')."
+  }
+
+  $decisions = Get-RecommendedToolsDecisionState
+  $state = New-ProjectGuidanceLocalState -Accepted $decisions.accepted -Dismissed $decisions.dismissed
+
+  $explicitRecommendationIds = @(Get-HashtableArrayValue $values "recommendationIds")
+  if ($explicitRecommendationIds.Count -eq 0) {
+    $explicitRecommendationIds = @(Get-HashtableArrayValue $values "guidanceIds")
+  }
+
+  $existingMappedIds = @($state.recommendations | Where-Object {
+    $_.usedInSteps -contains $workflowStep
+  } | ForEach-Object { [string]$_.id })
+  $defaultIds = @(Get-DefaultRecommendationIdsForWorkflowStep $workflowStep)
+  $heuristicIds = @($state.recommendations | Where-Object {
+    ($null -eq $_.usedInSteps -or @($_.usedInSteps).Count -eq 0) -and (Test-RecommendationFitsWorkflowStep $_ $workflowStep)
+  } | ForEach-Object { [string]$_.id })
+
+  $selectedIds = if ($explicitRecommendationIds.Count -gt 0) {
+    @($explicitRecommendationIds)
+  } else {
+    @($existingMappedIds + $defaultIds + $heuristicIds)
+  }
+  $selectedIds = @($selectedIds | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Sort-Object -Unique)
+
+  $foundIds = [System.Collections.Generic.List[string]]::new()
+  foreach ($recommendation in @($state.recommendations)) {
+    if ($selectedIds -notcontains [string]$recommendation.id) { continue }
+    $currentSteps = if ($null -ne $recommendation.usedInSteps) { @($recommendation.usedInSteps) } else { @() }
+    $recommendation["usedInSteps"] = @(@($currentSteps) + @($workflowStep) | Sort-Object -Unique)
+    $foundIds.Add([string]$recommendation.id)
+  }
+
+  $missingIds = @($selectedIds | Where-Object { $foundIds -notcontains [string]$_ })
+  foreach ($missingId in $missingIds) {
+    Add-Item $result "warnings" ".codex/tool-recommendations.local.json" $missingId "Recommendation id was requested or inferred for '$workflowStep' but is not present in the local catalog." "warning"
+  }
+
+  $state.generatedBy = "project-guidance-mapper"
+  $state.generatedAtUtc = [DateTime]::UtcNow.ToString("o")
+
+  Write-ProjectGuidanceLocalState $result $state "Persist project-guidance-mapper usedInSteps mapping for '$workflowStep'."
+  $primarySkills = @(Get-HashtableArrayValue $values "primarySkills")
+  if ($primarySkills.Count -eq 0) { $primarySkills = @(Get-DefaultPrimarySkillsForWorkflowStep $workflowStep) }
+  $supportingSkills = @(Get-HashtableArrayValue $values "supportingSkills")
+  if ($supportingSkills.Count -eq 0) { $supportingSkills = @(Get-DefaultSupportingSkillsForWorkflowStep $workflowStep) }
+  $guidanceRecommendations = @($state.recommendations | Where-Object { $foundIds -contains [string]$_.id } | ForEach-Object {
+    [ordered]@{
+      id = $_.id
+      name = $_.name
+      type = $_.type
+      usedInSteps = @($_.usedInSteps)
+    }
+  })
+
+  $result["workflowStep"] = $workflowStep
+  $result["primarySkills"] = @($primarySkills)
+  $result["supportingSkills"] = @($supportingSkills)
+  $result["guidanceRecommendations"] = @($guidanceRecommendations)
+  $result["missingUsefulGuidance"] = @($missingIds)
+  $result["why"] = $(if ($values.Contains("why")) { [string]$values.why } elseif ($values.Contains("reason")) { [string]$values.reason } else { "Mapped project guidance for workflow step '$workflowStep'." })
+  $result["nextAction"] = $(if ($values.Contains("nextAction")) { [string]$values.nextAction } else { "Use mapped guidance after verifying current ticket, files, and installed skills." })
+  $result["localMappingUpdated"] = (Test-ConfigWritesEnabled)
   return $result
 }
 
@@ -2077,11 +2688,14 @@ switch ($Mode) {
   "Audit" { $result = Invoke-Audit }
   "AuditQualityGates" { $result = Invoke-AuditQualityGates }
   "AuditRecommendedTools" { $result = Invoke-AuditRecommendedTools }
+  "DiscoverProjectGuidance" { $result = Invoke-DiscoverProjectGuidance }
+  "AcquireProjectGuidance" { $result = Invoke-AcquireProjectGuidance }
   "ValidateGiteaActionsRunner" { $result = Invoke-ValidateGiteaActionsRunner }
   "InitLocalFiles" { $result = Invoke-InitLocalFiles }
   "InitQualityGateTemplates" { $result = Invoke-InitQualityGateTemplates }
   "SetClientTools" { $result = Invoke-SetClientTools }
   "SetRecommendedTools" { $result = Invoke-SetRecommendedTools }
+  "MapProjectGuidanceStep" { $result = Invoke-MapProjectGuidanceStep }
   "SetPlaneEnv" { $result = Invoke-SetEnvMode -TargetRelative "infra/plane/variables.env" }
   "SetGiteaRunner" { $result = Invoke-SetEnvMode -TargetRelative "infra/gitea/runner.env" }
   "SetPrometheusAzureTargets" { $result = Invoke-SetPrometheusAzureTargets }

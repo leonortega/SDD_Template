@@ -1,0 +1,95 @@
+---
+name: project-guidance-discover
+description: Discover project-relevant guidance from the current repository. Use when Codex needs to scan tech stack, tools, environments, QA/test setup, security gates, code standards, architecture, web UI, REST/API needs, MCP/plugin/tool/reference needs, or "config infra" guidance findings; show suggested missing skills and guidance to the user; ask for additional desired skills or guidance; and prepare confirmed items for local acquisition or mapping.
+---
+
+# Project Guidance Discover
+
+## Overview
+
+Use this skill before acquiring project expert skills or persisting project guidance. Discovery is read-only until the user confirms the final list.
+
+Use it for first-ticket setup, base-code setup, `config infra`, or any handoff where missing framework, tool, QA, security, architecture, code-standard, documentation, MCP, plugin, or general engineering guidance could make the next ticket less reliable.
+
+## Shared Context
+
+Read `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md` before using discovery to affect delivery behavior. Treat docs, OpenSpec context, current files, and validation output as stronger than memory or assumptions.
+
+## Workflow
+
+1. Scan the repository for technology, tool, environment, QA, security, code-standard, architecture, web UI, REST/API, deploy, observability, and rollback signals.
+2. Build research topics from detected signals. Do not rely on a fixed catalog alone.
+3. Search official-first sources for each topic:
+   - OpenAI skill catalogs and docs.
+   - Technology-owner skill repositories or docs, such as Microsoft, .NET, Playwright, Gitea, Sonatype Nexus, Azure, Prometheus, Grafana, Docker, Kubernetes, or OWASP.
+   - Well-used public skills or references only when no official or technology-owner source exists; label them as community-maintained.
+4. Check whether each candidate skill already exists at `.codex/skills/{skill-name}/SKILL.md`.
+5. Show suggested missing skills and guidance with source, target, detected need, validation command, and whether the item is a `skill`, `mcp`, `plugin`, `tool`, `reference`, `practice`, or `standard`.
+6. Ask the user which additional desired skills or guidance to add.
+7. If the user adds items, research and validate those sources with the same official-first policy.
+8. Produce the final confirmed list for `project-guidance-acquire`. Do not copy anything from this skill.
+9. After confirmation, persist the catalog-shaped local discovery state to `.codex/tool-recommendations.local.json` when requested. The local file keeps source, target, validation, accepted/dismissed state, detected tags, research topics, and recommendation entries with optional `usedInSteps`.
+
+## Deterministic Script
+
+Use the configure router when deterministic scanning is needed:
+
+```powershell
+.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode DiscoverProjectGuidance
+```
+
+To update the local project reference after the user confirms discovery, pass `persistLocal=true`:
+
+```powershell
+.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode DiscoverProjectGuidance -ValuesJson '{"confirmed":true,"persistLocal":true}'
+```
+
+The report must include:
+
+- `detectedTags`
+- `researchTopics`
+- `existingSkills`
+- `suggestedMissingSkills`
+- `suggestedGuidance`
+- `userAddedRequestedGuidance`
+- `finalConfirmedGuidance`
+- `localRecommendationsPath`
+
+Use `AuditRecommendedTools` when the user also needs MCP, plugin, and non-skill recommendation findings.
+
+The local file is intentionally ignored and shaped like `.codex/tool-recommendations.example.json`, but it is project-specific runtime state. `project-guidance-mapper` updates `usedInSteps` on recommendations after a step uses, confirms, or infers a guidance mapping.
+
+## Output
+
+Return a user-facing handoff with detected tags, research topics, existing skills, suggested missing skills, suggested non-skill guidance, user-added requested guidance, final confirmed guidance, validation commands, and the next action.
+
+## User Handoff
+
+Present suggestions before acquisition. Use a compact message like:
+
+```text
+I found these missing project guidance items:
+- aspnet-core skill: detected .NET/ASP.NET Core; source <url>; target .codex/skills/aspnet-core/SKILL.md
+- Playwright reference: detected browser QA; source <url>; type reference
+
+Do you want to add any other desired skills or guidance before I prepare the final acquisition/mapping list?
+```
+
+If the user says no, pass only the suggested confirmed list to `project-guidance-acquire`. If the user adds items, append researched and validated entries, show the updated final list, then pass the confirmed skill items to `project-guidance-acquire` and keep non-skill guidance in the local catalog.
+
+## Safety
+
+- Do not install, copy, or configure skills.
+- Do not use command installers.
+- Do not read or print secrets.
+- Do not recommend Plane MCP for ticket delivery; repo-local skills use the configured Plane API.
+- Record accepted or dismissed recommendation ids only with `SetRecommendedTools` after explicit user confirmation.
+- Do not commit `.codex/tool-recommendations.local.json`; it is local project state.
+- Do not list OpenSpec or configure skills as installable skill recommendations in the local or example catalog.
+
+## Failure Rules
+
+- Stop when the detected project stack conflicts with docs/OpenSpec context; route to `configure-dev-environment`.
+- Stop when a source cannot be verified from an official, technology-owner, or clearly labeled community source.
+- Stop when the user has not answered the additional desired skills/guidance prompt.
+- Stop before any copy operation; copying belongs to `project-guidance-acquire`.

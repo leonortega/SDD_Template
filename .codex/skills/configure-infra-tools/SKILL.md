@@ -5,28 +5,36 @@ description: Compatibility alias for configuring this repo's local development a
 
 # Configure Infra Tools
 
-This skill is a compatibility router. The active entrypoint is `$configure-dev-environment`.
+## Overview
+
+This skill is a compatibility router for older prompts. The active entrypoint is `$configure-dev-environment`; keep the operational setup flow there so this alias does not drift.
+
+## Shared Context
 
 Before changing configure behavior, read `.codex/skills/_shared/delivery-contract.md` and apply its Skill Synchronization Rule.
+
+Also apply `docs/context-management.md` for durable configuration findings, ticket context, validation notes, and handoff reporting.
+
+## Workflow
 
 When this skill triggers:
 
 1. Read `.codex/skills/configure-dev-environment/SKILL.md`.
-2. Run the shared audit through the new script path:
+2. Route immediately to `$configure-dev-environment` and follow its audit, safety, domain routing, and output rules.
+3. If the caller explicitly asked for the legacy script path, use the active shared script path instead:
 
 ```powershell
 .\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode Audit
 ```
 
-3. Ask which setup area the user wants to work on:
-   - Full guided setup
-   - Plane tickets
-   - Gitea PR automation
-   - Gitea Actions runner
-   - Quality gates and CI
-   - Nexus artifacts
-   - Azure environments
-   - Monitoring dashboards
-4. Route to the matching specialized skill.
-
 Keep using the same safety rules as `$configure-dev-environment`: no secrets in tracked files, no Docker secret extraction, and no automatic infra startup or shutdown.
+
+## Output
+
+Report that routing moved to `$configure-dev-environment`, the audit result, selected setup area, validation status, and handoff blockers.
+
+## Failure Rules
+
+- Stop when the active configure entrypoint cannot be read.
+- Stop when validation finds missing local config or secrets that require manual user action.
+- Stop before mutating ticket, Git, Plane, Gitea, Nexus, Azure, or monitoring state from this compatibility alias.
