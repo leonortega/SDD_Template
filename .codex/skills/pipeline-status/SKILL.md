@@ -17,6 +17,10 @@ Before reporting, follow `.codex/skills/_shared/skill-startup.md`, which reads `
 
 Read `.codex/client-tools.local.json` first. Use available Plane, Gitea, Nexus, and monitoring settings. If a system is unconfigured or unreachable, record it as unavailable instead of failing the whole status.
 
+## Workflow
+
+Collect read-only status sources, compare them against the ticket context lock, report validation gaps, and recommend the next handoff route without mutating Plane, Git, Gitea, Nexus, Azure, tags, or release manifests.
+
 ## Status Sources
 
 Collect what is relevant to the request:

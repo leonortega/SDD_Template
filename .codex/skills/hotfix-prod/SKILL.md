@@ -37,6 +37,10 @@ Read `.codex/client-tools.local.json` first. Required values are Plane, Git, Git
 - Do not bundle unrelated cleanup or feature work.
 - If the fix grows beyond a targeted change, stop and route to the normal `automatic-implement-ticket` flow.
 
+## Output
+
+Report the incident or hotfix ticket, branch, PR, validation performed, artifact/QA/PROD status when reached, and the next handoff or blocker.
+
 ## Failure Rules
 
 - Missing incident context: stop and ask for the production symptom and impact.

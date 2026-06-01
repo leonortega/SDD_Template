@@ -146,6 +146,10 @@ To move a ticket to the in-progress state, resolve the project states through th
 
 Use `IA generated branch: {branchName}` as the stable branch comment marker. If existing comments contain the same marker, do not add another branch comment.
 
+## Output
+
+Report the selected ticket, branch, OpenSpec change or explicit no-OpenSpec rationale, ticket lock path, validation performed, Plane comment marker, and handoff to `implement-ticket`.
+
 ## Failure Rules
 
 - Dirty working tree: stop before branch creation or Plane mutation.
