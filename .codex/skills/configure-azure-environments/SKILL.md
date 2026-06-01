@@ -5,9 +5,17 @@ description: Configure Azure DEV, QA, and PROD App Service environments for this
 
 # Configure Azure Environments
 
+## Overview
+
+Configure Azure DEV, QA, and PROD App Service environments for ticket-gated deployment validation and handoff.
+
+## Shared Context
+
 Read `.codex/skills/configure-dev-environment/references/azure.md` before asking for values or applying changes.
 
 Use repo scripts under `infra/azure/` for Azure preview and deployment.
+
+Apply `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md` before changing deployment behavior or recording durable configuration findings.
 
 Safety:
 
@@ -15,7 +23,7 @@ Safety:
 - Run `az account show` before deployment and report subscription context without exposing tokens.
 - Use `-WhatIf` first unless the user explicitly asks to deploy directly.
 
-Workflow:
+## Workflow
 
 1. Confirm Azure CLI exists and `az account show` succeeds.
 2. Ask only for values that differ from defaults.
@@ -25,3 +33,13 @@ Workflow:
 6. When `AZURE_CREDENTIALS` is missing, explain how to create the service principal JSON, where to store it in Gitea Actions secrets, official documentation links, and validation commands.
 7. When PROD deployment is enabled, verify the Gitea Actions secret names `AZURE_PROD_RESOURCE_GROUP`, `AZURE_PROD_WEBAPP_NAME`, and `AZURE_PROD_WEBAPP_URL` exist. Infer their non-secret values from Azure deployment outputs or `az webapp list`, then configure only after confirming the values.
 8. Pass Azure output hostnames to `$configure-observability` only when monitoring should be wired.
+
+## Output
+
+Report Azure CLI validation, what-if/deploy status, configured non-secret values, missing secrets, and ticket handoff blockers without exposing credentials.
+
+## Failure Rules
+
+- Stop when Azure CLI, subscription context, or required user values are missing.
+- Stop when validation or what-if output shows unsafe environment drift.
+- Stop before deploying or changing PROD settings without explicit user approval.

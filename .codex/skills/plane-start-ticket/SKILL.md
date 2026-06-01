@@ -44,15 +44,17 @@ Required stack context:
 
 - `docs/architecture.md`, `docs/development.md`, and `docs/deployment.md` contain `Technology Stack And Tool Set`.
 - `openspec/config.yaml` contains `context:` and `rules:` with the current stack and artifact guidance.
-- `.codex/tool-recommendations.example.json` exists and uses manual-copy skill recommendations plus manual-config/manual-reference entries.
+- `.codex/tool-recommendations.example.json` exists as the tracked placeholder-safe shape/template.
+- Ignored `.codex/tool-recommendations.local.json` is used only after project guidance discovery confirms local recommendations and `usedInSteps`.
 
 Run the read-only recommendation audit before Git, Plane, or OpenSpec mutation when any of these files are missing, appear unconfigured, or this is the first ticket start in a fresh repository:
 
 ```powershell
 .\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode AuditRecommendedTools
+.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode DiscoverProjectGuidance
 ```
 
-If the audit reports any `stack-context.*` warning, or if the required files are missing or placeholder-only, stop before branch creation, Plane description updates, comments, state changes, ticket-lock writes, or OpenSpec proposal creation. Route to `$configure-dev-environment` to define the stack/tooling docs, complete `openspec/config.yaml`, and update the recommendation catalog first.
+If the audit reports any `stack-context.*` warning, if `DiscoverProjectGuidance` reports missing suggested skills or guidance that the operator has not reviewed, or if the required files are missing or placeholder-only, stop before branch creation, Plane description updates, comments, state changes, ticket-lock writes, or OpenSpec proposal creation. Route to `$configure-dev-environment` plus `project-guidance-discover` to define the stack/tooling docs, complete `openspec/config.yaml`, review suggested skills and guidance, ask for additional desired items, and update the local recommendation catalog first.
 
 ## Workflow
 
@@ -66,7 +68,7 @@ If the audit reports any `stack-context.*` warning, or if the required files are
 ### Ticket Specified
 
 1. Fetch the Plane ticket by key or id.
-2. Run the Stack Context Preflight. If stack/tooling docs, OpenSpec config, or recommendation catalog are missing or drifted, stop and route to `configure-dev-environment` before mutating Git, Plane, or OpenSpec.
+2. Run the Stack Context Preflight. If stack/tooling docs, OpenSpec config, local project guidance catalog, or project guidance discovery review are missing or drifted, stop and route to `configure-dev-environment` and `project-guidance-discover` before mutating Git, Plane, or OpenSpec.
 3. Check `git status --porcelain`. If any output exists, stop and report changed files.
 4. Switch to the configured base branch and run `git pull --ff-only`.
 5. Create or reuse the configured branch name.
