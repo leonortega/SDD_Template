@@ -15,6 +15,7 @@ bld/
 artifacts/
 .codex/delivery-context.local.json
 .codex/parallel-delivery.local.json
+.codex/tool-recommendations.local.json
 .codex/agent-telemetry.local.jsonl
 .codex/agent-evals/results.local.json
 TestResults/

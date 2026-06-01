@@ -384,6 +384,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("\"mode\": \"guided-manual\"", config);
             Assert.Contains("\"accepted\": []", config);
             Assert.Contains("\"dismissed\": []", config);
+            Assert.Contains(".codex/tool-recommendations.local.json", File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, ".gitignore")));
             Assert.Contains("\"mode\": \"guided-manual\"", catalog);
             Assert.Contains("\"installMethod\": \"manual-copy\"", catalog);
             Assert.Contains("\"installMethod\": \"manual-config\"", catalog);
@@ -397,36 +398,84 @@ namespace SDDTemplate.DeliveryTools.Tests
         public void RecommendedToolsAuditDetectsCurrentStackAndAvoidsPlaneMcp()
         {
             string script = ReadConfigureScript();
+            string discoveryScript = ReadSkill("project-guidance-discover", Path.Combine("scripts", "project_guidance_discovery.ps1"));
             string catalog = ReadToolRecommendationsCatalog();
 
             Assert.Contains("AuditRecommendedTools", script);
+            Assert.Contains("DiscoverProjectGuidance", script);
+            Assert.Contains("AcquireProjectGuidance", script);
             Assert.Contains("SetRecommendedTools", script);
-            Assert.Contains("function Get-DetectedStackTags", script);
-            Assert.Contains("\"dotnet\"", script);
-            Assert.Contains("\"dotnet-10\"", script);
-            Assert.Contains("\"aspnet-core\"", script);
-            Assert.Contains("\"blazor\"", script);
-            Assert.Contains("\"xunit\"", script);
-            Assert.Contains("\"coverage\"", script);
-            Assert.Contains("\"plane\"", script);
-            Assert.Contains("\"gitea\"", script);
-            Assert.Contains("\"gitea-actions-runner\"", script);
-            Assert.Contains("\"nexus\"", script);
-            Assert.Contains("\"nexus-artifacts\"", script);
-            Assert.Contains("\"azure\"", script);
-            Assert.Contains("\"azure-app-service\"", script);
-            Assert.Contains("\"prometheus\"", script);
-            Assert.Contains("\"grafana\"", script);
-            Assert.Contains("\"e2e\"", script);
-            Assert.Contains("\"browser-e2e\"", script);
-            Assert.Contains("\"playwright-guidance\"", script);
-            Assert.Contains("Add-StackContextDriftFindings", script);
+            Assert.Contains("MapProjectGuidanceStep", script);
+            Assert.Contains("tool-recommendations.local.json", script);
+            Assert.Contains("usedInSteps", script);
+            Assert.Contains("projectGuidanceDiscoveryScript", script);
+            Assert.Contains("project-guidance-discover", script);
+            Assert.Contains("project_guidance_discovery.ps1", script);
+            Assert.Contains("function Invoke-DiscoverProjectGuidance", script);
+            Assert.Contains("function Invoke-AcquireProjectGuidance", script);
+            Assert.Contains("function Invoke-MapProjectGuidanceStep", script);
+            Assert.Contains("function Get-DetectedStackTags", discoveryScript);
+            Assert.Contains("function Get-ProjectGuidanceResearchTopics", discoveryScript);
+            Assert.Contains("function Get-ProjectGuidanceDiscoveryReport", discoveryScript);
+            Assert.Contains("project-guidance-search-plan", discoveryScript);
+            Assert.Contains("guidance-search-plan", discoveryScript);
+            Assert.Contains("research-then-manual-copy", discoveryScript);
+            Assert.Contains("\"dotnet\"", discoveryScript);
+            Assert.Contains("\"dotnet-10\"", discoveryScript);
+            Assert.Contains("\"aspnet-core\"", discoveryScript);
+            Assert.Contains("\"blazor\"", discoveryScript);
+            Assert.Contains("\"node\"", discoveryScript);
+            Assert.Contains("\"typescript\"", discoveryScript);
+            Assert.Contains("\"react\"", discoveryScript);
+            Assert.Contains("\"python\"", discoveryScript);
+            Assert.Contains("\"java\"", discoveryScript);
+            Assert.Contains("\"docker\"", discoveryScript);
+            Assert.Contains("\"terraform\"", discoveryScript);
+            Assert.Contains("\"kubernetes\"", discoveryScript);
+            Assert.Contains("\"xunit\"", discoveryScript);
+            Assert.Contains("\"coverage\"", discoveryScript);
+            Assert.Contains("\"plane\"", discoveryScript);
+            Assert.Contains("\"gitea\"", discoveryScript);
+            Assert.Contains("\"gitea-actions-runner\"", discoveryScript);
+            Assert.Contains("\"nexus\"", discoveryScript);
+            Assert.Contains("\"nexus-artifacts\"", discoveryScript);
+            Assert.Contains("\"azure\"", discoveryScript);
+            Assert.Contains("\"azure-app-service\"", discoveryScript);
+            Assert.Contains("\"prometheus\"", discoveryScript);
+            Assert.Contains("\"grafana\"", discoveryScript);
+            Assert.Contains("\"e2e\"", discoveryScript);
+            Assert.Contains("\"browser-e2e\"", discoveryScript);
+            Assert.Contains("\"playwright-guidance\"", discoveryScript);
+            Assert.Contains("\"clean-code\"", discoveryScript);
+            Assert.Contains("\"architecture-guidance\"", discoveryScript);
+            Assert.Contains("\"web-ui\"", discoveryScript);
+            Assert.Contains("\"rest-api\"", discoveryScript);
+            Assert.Contains("\"security\"", discoveryScript);
+            Assert.Contains("Add-StackContextDriftFindings", discoveryScript);
+            Assert.Contains("Add-DetectedSkillRecommendations", discoveryScript);
+            Assert.Contains("openai-aspnet-core-skill", discoveryScript);
+            Assert.Contains("dotnet-blazor-plan-ui-change-skill", discoveryScript);
+            Assert.Contains("dotnet-webapi-skill", discoveryScript);
+            Assert.Contains("openai-security-best-practices-skill", discoveryScript);
+            Assert.Contains("openai-playwright-skill", discoveryScript);
+            Assert.Contains("dotnet-assertion-quality-skill", discoveryScript);
+            Assert.Contains("skill-gap", discoveryScript);
+            Assert.Contains("official-first-internet-search", discoveryScript);
+            Assert.Contains("requiresUserConfirmation", discoveryScript);
+            Assert.Contains("github.com/openai/skills", discoveryScript);
+            Assert.Contains("github.com/dotnet/skills", discoveryScript);
             Assert.Contains("dotnet-10-platform-guidance", catalog);
+            Assert.Contains("clean-code-practice-guidance", catalog);
+            Assert.Contains("qa-automation-practice-guidance", catalog);
+            Assert.Contains("security-review-standard-guidance", catalog);
             Assert.Contains("manual-copy", catalog);
             Assert.Contains("repo:.codex/skills/frontend-testing-debugging/SKILL.md", catalog);
             Assert.Contains("https://playwright.dev/docs/best-practices", catalog);
             Assert.Contains("Plane MCP is intentionally not recommended", catalog);
             Assert.Contains("repo-local skills must use the configured Plane API", catalog);
+            Assert.DoesNotContain("openspec-delivery-skills", catalog);
+            Assert.DoesNotContain("dotnet-quality-gates-skill", catalog);
+            Assert.DoesNotContain("azure-environment-config-skill", catalog);
         }
 
         [Fact]
@@ -436,16 +485,79 @@ namespace SDDTemplate.DeliveryTools.Tests
             string readme = File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, "README.md"));
 
             Assert.Contains("AuditRecommendedTools", configureRouter);
+            Assert.Contains("DiscoverProjectGuidance", configureRouter);
+            Assert.Contains("AcquireProjectGuidance", configureRouter);
             Assert.Contains("SetRecommendedTools", configureRouter);
+            Assert.Contains("project-guidance-discover", configureRouter);
+            Assert.Contains("project-guidance-acquire", configureRouter);
+            Assert.Contains("project-guidance-mapper", configureRouter);
             Assert.Contains("read the source `SKILL.md`", configureRouter);
             Assert.Contains("create `.codex/skills/{skill-name}/`", configureRouter);
             Assert.Contains("manual repo-based acquisition", configureRouter);
             Assert.Contains("Do not install skills by command", configureRouter);
             Assert.Contains("stack-context drift", configureRouter);
+            Assert.Contains("scan-derived guidance findings", configureRouter);
+            Assert.Contains("project-guidance-search-plan", configureRouter);
+            Assert.Contains("detected project signals", configureRouter);
+            Assert.Contains("additional desired skills or guidance", configureRouter);
+            Assert.Contains("persistLocal=true", configureRouter);
+            Assert.Contains("MapProjectGuidanceStep", configureRouter);
+            Assert.Contains(".codex/tool-recommendations.local.json", configureRouter);
+            Assert.Contains("asks whether the user wants to add additional desired items", File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, "docs", "development.md")));
+            Assert.Contains("usedInSteps", File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, "docs", "development.md")));
             Assert.Contains("manual by default", readme);
+            Assert.Contains("suggested missing skills", readme);
+            Assert.Contains("stack, tooling, environments, test frameworks", readme);
+            Assert.Contains("asks whether the operator wants to add additional desired skills or guidance", readme);
+            Assert.Contains(".codex/tool-recommendations.local.json", readme);
+            Assert.Contains("project-guidance-mapper` reads that local file", readme);
             Assert.Contains("read the source repository's `SKILL.md`", readme);
             Assert.Contains("Skills are not installed by command", readme);
             Assert.Contains(".codex/tool-recommendations.example.json", readme);
+        }
+
+        [Fact]
+        public void ProjectGuidanceDiscoveryAcquisitionAndMapperSkillsAreDefined()
+        {
+            string discover = ReadSkill("project-guidance-discover", "SKILL.md");
+            string acquire = ReadSkill("project-guidance-acquire", "SKILL.md");
+            string mapper = ReadSkill("project-guidance-mapper", "SKILL.md");
+            string discoveryScript = ReadSkill("project-guidance-discover", Path.Combine("scripts", "project_guidance_discovery.ps1"));
+
+            Assert.Contains("name: project-guidance-discover", discover);
+            Assert.Contains("suggested missing skills and guidance", discover);
+            Assert.Contains("additional desired skills or guidance", discover);
+            Assert.Contains("final confirmed list", discover);
+            Assert.Contains("Do not copy anything from this skill", discover);
+            Assert.Contains("function Get-ProjectGuidanceDiscoveryReport", discoveryScript);
+            Assert.Contains("suggestedMissingSkills", discoveryScript);
+            Assert.Contains("userAddedRequestedGuidance", discoveryScript);
+            Assert.Contains("finalConfirmedGuidance", discoveryScript);
+            Assert.Contains("persistLocal=true", discover);
+            Assert.Contains(".codex/tool-recommendations.local.json", discover);
+            Assert.Contains("usedInSteps", discover);
+
+            Assert.Contains("name: project-guidance-acquire", acquire);
+            Assert.Contains("final confirmed list from `project-guidance-discover`", acquire);
+            Assert.Contains("Do not use command-based skill installers", acquire);
+            Assert.Contains("Do not install into `$CODEX_HOME`", acquire);
+            Assert.Contains("Test-Path", acquire);
+            Assert.Contains("Do not copy secrets", acquire);
+            Assert.Contains("Refresh `.codex/tool-recommendations.local.json`", acquire);
+
+            Assert.Contains("name: project-guidance-mapper", mapper);
+            Assert.Contains(".codex/tool-recommendations.local.json", mapper);
+            Assert.Contains("MapProjectGuidanceStep", mapper);
+            Assert.Contains("usedInSteps", mapper);
+            Assert.Contains("Config infra", mapper);
+            Assert.Contains("First ticket setup", mapper);
+            Assert.Contains("Planning", mapper);
+            Assert.Contains("Implementation", mapper);
+            Assert.Contains("PR review", mapper);
+            Assert.Contains("E2E QA", mapper);
+            Assert.Contains("Rollback", mapper);
+            Assert.Contains("Hotfix", mapper);
+            Assert.Contains("missingUsefulGuidance", mapper);
         }
 
         [Fact]
@@ -464,6 +576,9 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("Prometheus", architecture);
             Assert.Contains("Grafana", architecture);
             Assert.Contains("Skills are not installed by command", architecture);
+            Assert.Contains("project-guidance-discover", architecture);
+            Assert.Contains("project-guidance-acquire", architecture);
+            Assert.Contains("project-guidance-mapper", architecture);
 
             Assert.Contains("## Technology Stack And Tool Set", development);
             Assert.Contains(".NET 10", development);
@@ -473,17 +588,25 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("coverlet", development);
             Assert.Contains("official-first research", development);
             Assert.Contains("Browser plugin and Playwright-style", development);
+            Assert.Contains("project-guidance-discover", development);
+            Assert.Contains("project-guidance-acquire", development);
+            Assert.Contains("project-guidance-mapper", development);
 
             Assert.Contains("## Technology Stack And Tool Set", deployment);
             Assert.Contains("Azure App Service", deployment);
             Assert.Contains("Prometheus", deployment);
             Assert.Contains("Grafana", deployment);
             Assert.Contains("qa/{ticketKey}/{runId}/qa-evidence.zip", deployment);
+            Assert.Contains("project-guidance-mapper", deployment);
 
             Assert.Contains("context: |", openSpecConfig);
             Assert.Contains("Delivery tool set:", openSpecConfig);
             Assert.Contains("Application stack: .NET 10, ASP.NET Core, Blazor", openSpecConfig);
             Assert.Contains("Recommended skills are copied manually", openSpecConfig);
+            Assert.Contains("project-guidance-discover", openSpecConfig);
+            Assert.Contains("project-guidance-acquire", openSpecConfig);
+            Assert.Contains("project-guidance-mapper", openSpecConfig);
+            Assert.Contains("usedInSteps", openSpecConfig);
             Assert.Contains("Plane MCP is not used for ticket delivery", openSpecConfig);
             Assert.Contains("official-first research", openSpecConfig);
             Assert.Contains("rules:", openSpecConfig);
