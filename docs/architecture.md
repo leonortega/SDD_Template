@@ -12,6 +12,18 @@ This repository is a local agentic delivery lab for a .NET Blazor site. The repo
 - OpenSpec records planned behavior before implementation.
 - `.codex/skills` encode operator workflows for setup, implementation, review, deployment, QA, rollback, and hotfix.
 
+## Technology Stack And Tool Set
+
+The intended delivery tool set is tracked here so agents can distinguish project intent from accidental local drift. Configuration audits should verify this intent against current files such as `global.json`, `.csproj` files, `infra/**`, `.gitea/workflows/**`, monitoring provisioning, and OpenSpec context.
+
+- Plane is the ticket system and records generated delivery markers, state transitions, and handoff comments.
+- OpenSpec captures planned behavior, requirements, design decisions, and task checklists before implementation and after review feedback.
+- Gitea hosts source control and pull requests; Gitea Actions is the authoritative PR validation and deployment workflow runner.
+- Nexus stores immutable artifacts, checksums, release manifests, and preferred QA evidence bundles.
+- Azure App Service hosts only the DEV, QA, and PROD application runtimes.
+- Prometheus and Grafana provide local infrastructure and Azure application health visibility; Dozzle provides local container log inspection.
+- Repo-local Codex skills under `.codex/skills` are copied from repository sources when recommended. Skills are not installed by command, and MCP/plugin setup is manual configuration unless a later explicit task authorizes otherwise.
+
 ## Sources Of Truth
 
 - Plane is authoritative for ticket state and generated checkpoint comments.

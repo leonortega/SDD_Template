@@ -36,6 +36,8 @@ automatically continue this ticket
 
 or any equivalent request to continue, resume, implement, deploy, QA, or hand off a ticket. That routes through `.codex/skills/automatic-implement-ticket`, which inspects Plane, Git, Gitea, Nexus, OpenSpec, QA evidence, tags, and PROD state, then delegates to the next focused workflow skill.
 
+Before the first ticket starts, the workflow verifies that the tool set and tech stack are configured in `docs/`, `openspec/config.yaml`, and `.codex/tool-recommendations.example.json`. If that context is missing or the recommendation audit reports stack-context drift, ticket start stops before branch, Plane, ticket-lock, or OpenSpec mutation and routes to `configure-dev-environment`.
+
 The workflow is intentionally checkpoint-based. Reruns continue from existing Plane comments, branch names, PRs, Nexus artifacts, QA evidence, tags, and release manifests instead of restarting from the beginning.
 
 ## Repository Layout
@@ -148,7 +150,9 @@ During full setup or base-code creation, the configurator can also run a recomme
 .\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode AuditRecommendedTools
 ```
 
-The audit suggests stack-relevant MCPs, plugins, and Codex skills from `.codex/tool-recommendations.example.json`. Skill acquisition is manual by default: read the source repository's `SKILL.md`, create `.codex/skills/{skill-name}/`, write the new `SKILL.md`, and copy only required referenced scripts or templates. Plugin and MCP setup should prefer manual configuration instructions over installer commands, and secrets must never be configured automatically.
+The audit suggests stack-relevant MCPs, plugins, Codex skills, and official-first reference guidance from `.codex/tool-recommendations.example.json`. The intended stack is defined in `docs/` and summarized in `openspec/config.yaml`; the audit verifies that intent against current files and reports drift when they disagree.
+
+Skill acquisition is manual by default: read the source repository's `SKILL.md`, create `.codex/skills/{skill-name}/`, write the new `SKILL.md`, and copy only required referenced scripts or templates. Skills are not installed by command in this workflow. Plugin and MCP setup should prefer manual configuration instructions over installer commands, and secrets must never be configured automatically.
 
 The main local files are:
 

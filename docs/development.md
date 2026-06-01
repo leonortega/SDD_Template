@@ -11,6 +11,16 @@ This repository uses a .NET solution with a Blazor application and xUnit tests.
 - OpenSpec changes: `openspec/changes`
 - Repo-local Codex workflows: `.codex/skills`
 
+## Technology Stack And Tool Set
+
+The application stack is .NET 10 with ASP.NET Core and Blazor. The site project targets `net10.0` with `Microsoft.NET.Sdk.Web`; tests target `net10.0` with xUnit, `Microsoft.AspNetCore.Mvc.Testing`, `Microsoft.NET.Test.Sdk`, and coverlet coverage collection.
+
+Use official-first research when changing platform behavior, generated templates, tests, or workflow guidance. Prefer Microsoft Learn for .NET, ASP.NET Core, Blazor, Azure App Service, and architecture guidance; Playwright docs for browser automation; Gitea, Sonatype Nexus, Prometheus, and Grafana official docs for their tools. Community sources are allowed only when clearly labeled and not used to override repo policy.
+
+QA automation starts with repo-native tests and PR validation. Browser-visible Blazor behavior should use the Browser plugin and Playwright-style user-visible assertions when configured; one-off evidence belongs under ignored `artifacts/qa/**`, while reusable regression tests belong in the normal test tree through an implementation workflow.
+
+Clean-code and architecture guidance should fit this repository's current size: keep changes small, preserve separation between delivery tooling and application code, avoid broad abstractions until they remove real complexity, and prefer observable behavior tests over implementation-detail tests.
+
 ## Common Commands
 
 Build:
@@ -46,6 +56,8 @@ Stop local delivery infrastructure:
 ## Implementation Workflow
 
 Feature work starts from a Plane ticket and normally creates an OpenSpec proposal before implementation. Agents should read the Plane ticket, active OpenSpec artifacts, the ticket context lock, relevant code, relevant tests, and quality-gate configuration before editing.
+
+Before the first ticket starts, verify the repository tool set and tech stack are configured in `docs/architecture.md`, this file, `docs/deployment.md`, `openspec/config.yaml`, and `.codex/tool-recommendations.example.json`. The ticket-start flow must run or inspect `AuditRecommendedTools` and stop before creating branches, Plane generated blocks, ticket locks, or OpenSpec proposals when stack context is missing or reports `stack-context.*` drift. Use `configure-dev-environment` to complete the docs, OpenSpec context, and recommendation catalog first.
 
 Implementation is complete only when OpenSpec tasks are complete, PR review feedback tasks are complete, behavior is tested, quality gates pass or are handed off to CI as the authority, and a Gitea PR has review-agent coverage.
 
