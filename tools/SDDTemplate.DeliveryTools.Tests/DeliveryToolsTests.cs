@@ -87,6 +87,175 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
+        public void SyncWorktreeLocalConfigCopiesOnlyAllowlistedLocalRuntimeFiles()
+        {
+            string root = CreateTempDirectory();
+            string worktree = Path.Combine(root, "ticket-worktrees", "e2eproject-1");
+            _ = Directory.CreateDirectory(Path.Combine(root, ".codex"));
+            _ = Directory.CreateDirectory(worktree);
+            File.WriteAllText(Path.Combine(root, ".codex", "client-tools.local.json"), JsonSerializer.Serialize(new { gitea = new { apiToken = "super-secret-token" } }));
+            File.WriteAllText(Path.Combine(root, ".codex", "quality.local.json"), JsonSerializer.Serialize(new { coverage = new { minimumPercent = 80 } }));
+            File.WriteAllText(Path.Combine(root, ".codex", "tool-recommendations.local.json"), JsonSerializer.Serialize(new { recommendations = Array.Empty<object>() }));
+            File.WriteAllText(Path.Combine(root, ".codex", "parallel-delivery.local.json"), JsonSerializer.Serialize(new { tickets = Array.Empty<object>() }));
+            File.WriteAllText(Path.Combine(root, ".codex", "delivery-context.local.json"), JsonSerializer.Serialize(new { ticketKey = "E2EPROJECT-ROOT" }));
+            File.WriteAllText(Path.Combine(root, ".codex", "azure-login.local.json"), JsonSerializer.Serialize(new { clientSecret = "do-not-copy" }));
+
+            string output = RunPowerShellScript(
+                "-Mode",
+                "SyncWorktreeLocalConfig",
+                "-Root",
+                root,
+                "-ValuesJson",
+                JsonSerializer.Serialize(new { worktreePaths = new[] { worktree } }));
+
+            Assert.True(File.Exists(Path.Combine(worktree, ".codex", "client-tools.local.json")));
+            Assert.True(File.Exists(Path.Combine(worktree, ".codex", "quality.local.json")));
+            Assert.True(File.Exists(Path.Combine(worktree, ".codex", "tool-recommendations.local.json")));
+            Assert.False(File.Exists(Path.Combine(worktree, ".codex", "parallel-delivery.local.json")));
+            Assert.False(File.Exists(Path.Combine(worktree, ".codex", "delivery-context.local.json")));
+            Assert.False(File.Exists(Path.Combine(worktree, ".codex", "azure-login.local.json")));
+            Assert.DoesNotContain("super-secret-token", output);
+            Assert.Contains(".codex/client-tools.local.json", output);
+            Assert.Contains(".codex/quality.local.json", output);
+        }
+
+        [Fact]
+        public void SyncWorktreeLocalConfigOverwritesDifferentAllowlistedFilesWithoutPrintingSecrets()
+        {
+            string root = CreateTempDirectory();
+            string worktree = Path.Combine(root, "ticket-worktrees", "e2eproject-1");
+            _ = Directory.CreateDirectory(Path.Combine(root, ".codex"));
+            _ = Directory.CreateDirectory(Path.Combine(worktree, ".codex"));
+            File.WriteAllText(Path.Combine(root, ".codex", "client-tools.local.json"), JsonSerializer.Serialize(new { gitea = new { apiToken = "new-secret-token" } }));
+            File.WriteAllText(Path.Combine(root, ".codex", "quality.local.json"), JsonSerializer.Serialize(new { coverage = new { minimumPercent = 85 } }));
+            File.WriteAllText(Path.Combine(worktree, ".codex", "client-tools.local.json"), JsonSerializer.Serialize(new { gitea = new { apiToken = "old-secret-token" } }));
+            File.WriteAllText(Path.Combine(worktree, ".codex", "quality.local.json"), JsonSerializer.Serialize(new { coverage = new { minimumPercent = 80 } }));
+
+            string output = RunPowerShellScript(
+                "-Mode",
+                "SyncWorktreeLocalConfig",
+                "-Root",
+                root,
+                "-ValuesJson",
+                JsonSerializer.Serialize(new { worktreePaths = new[] { worktree } }));
+
+            Assert.Contains("new-secret-token", File.ReadAllText(Path.Combine(worktree, ".codex", "client-tools.local.json")));
+            Assert.Contains("85", File.ReadAllText(Path.Combine(worktree, ".codex", "quality.local.json")));
+            Assert.DoesNotContain("new-secret-token", output);
+            Assert.DoesNotContain("old-secret-token", output);
+            Assert.Contains("Overwrite allowlisted local runtime file", output);
+        }
+
+        [Fact]
+        public void SyncWorktreeLocalConfigReportsMissingRequiredSourceConfig()
+        {
+            string root = CreateTempDirectory();
+            string worktree = Path.Combine(root, "ticket-worktrees", "e2eproject-1");
+            _ = Directory.CreateDirectory(Path.Combine(root, ".codex"));
+            _ = Directory.CreateDirectory(worktree);
+            File.WriteAllText(Path.Combine(root, ".codex", "quality.local.json"), JsonSerializer.Serialize(new { coverage = new { minimumPercent = 80 } }));
+
+            string output = RunPowerShellScript(
+                "-Mode",
+                "SyncWorktreeLocalConfig",
+                "-Root",
+                root,
+                "-ValuesJson",
+                JsonSerializer.Serialize(new { worktreePaths = new[] { worktree } }));
+            using JsonDocument result = JsonDocument.Parse(output);
+            JsonElement finding = result.RootElement.GetProperty("findings").EnumerateArray().Single(
+                item => item.GetProperty("path").GetString() == ".codex/client-tools.local.json");
+
+            Assert.Equal("error", finding.GetProperty("severity").GetString());
+            Assert.Contains("Coordinator checkout is missing required local runtime file", finding.GetProperty("message").GetString());
+            Assert.False(File.Exists(Path.Combine(worktree, ".codex", "client-tools.local.json")));
+        }
+
+        [Fact]
+        public void EnsureDeliveryContextCreatesTicketScopedLockFromExplicitValues()
+        {
+            string root = CreateTempDirectory();
+            string output = RunPowerShellScript(
+                "-Mode",
+                "EnsureDeliveryContext",
+                "-Root",
+                root,
+                "-ValuesJson",
+                JsonSerializer.Serialize(new
+                {
+                    ticketKey = "E2EPROJECT-2",
+                    branch = "feat/e2eproject-2-add-a-crud-view-por-a-client",
+                    openspecChange = "feat-e2eproject-2-add-a-crud-view-por-a-client",
+                    prNumber = 11,
+                }));
+            string lockPath = Path.Combine(root, ".codex", "delivery-context.local.json");
+
+            Assert.True(File.Exists(lockPath));
+            using JsonDocument context = JsonDocument.Parse(File.ReadAllText(lockPath));
+            Assert.Equal("E2EPROJECT-2", context.RootElement.GetProperty("ticketKey").GetString());
+            Assert.Equal("feat/e2eproject-2-add-a-crud-view-por-a-client", context.RootElement.GetProperty("branch").GetString());
+            Assert.Equal("feat-e2eproject-2-add-a-crud-view-por-a-client", context.RootElement.GetProperty("openspecChange").GetString());
+            Assert.Equal(11, context.RootElement.GetProperty("prNumber").GetInt32());
+            Assert.Contains("Create or update ticket context lock", output);
+        }
+
+        [Fact]
+        public void EnsureDeliveryContextRefusesDifferentExistingTicketLockByDefault()
+        {
+            string root = CreateTempDirectory();
+            _ = Directory.CreateDirectory(Path.Combine(root, ".codex"));
+            File.WriteAllText(
+                Path.Combine(root, ".codex", "delivery-context.local.json"),
+                JsonSerializer.Serialize(new { ticketKey = "E2EPROJECT-1", branch = "feat/e2eproject-1" }));
+
+            string output = RunPowerShellScriptExpectFailure(
+                "-Mode",
+                "EnsureDeliveryContext",
+                "-Root",
+                root,
+                "-ValuesJson",
+                JsonSerializer.Serialize(new { ticketKey = "E2EPROJECT-2", branch = "feat/e2eproject-2" }));
+
+            Assert.Contains("Existing .codex/delivery-context.local.json points to 'E2EPROJECT-1'", output);
+        }
+
+        [Fact]
+        public void AuditReportsRecordedTicketWorktreesMissingLocalRuntimeConfig()
+        {
+            string root = CreateTempDirectory();
+            string worktree = Path.Combine(root, "ticket-worktrees", "e2eproject-1");
+            _ = Directory.CreateDirectory(Path.Combine(root, ".codex"));
+            _ = Directory.CreateDirectory(worktree);
+            File.Copy(
+                Path.Combine(FindRepositoryRoot().FullName, ".codex", "client-tools.example.json"),
+                Path.Combine(root, ".codex", "client-tools.local.json"));
+            File.Copy(
+                Path.Combine(FindRepositoryRoot().FullName, ".codex", "client-tools.example.json"),
+                Path.Combine(root, ".codex", "client-tools.example.json"));
+            File.Copy(
+                Path.Combine(FindRepositoryRoot().FullName, ".codex", "quality.example.json"),
+                Path.Combine(root, ".codex", "quality.example.json"));
+            File.WriteAllText(
+                Path.Combine(root, ".codex", "parallel-delivery.local.json"),
+                JsonSerializer.Serialize(new
+                {
+                    tickets = new[]
+                    {
+                        new { ticketKey = "E2EPROJECT-1", branch = "feat/e2eproject-1", worktreePath = worktree },
+                    },
+                }));
+
+            string output = RunPowerShellScript("-Mode", "Audit", "-Root", root);
+            using JsonDocument result = JsonDocument.Parse(output);
+            string[] messages = [.. result.RootElement.GetProperty("findings")
+                .EnumerateArray()
+                .Select(item => item.GetProperty("message").GetString() ?? string.Empty)];
+
+            Assert.Contains(messages, message => message.Contains("Ticket worktree is missing required local runtime file '.codex/client-tools.local.json'", StringComparison.Ordinal));
+            Assert.Contains(messages, message => message.Contains("Ticket worktree is missing required local runtime file '.codex/quality.local.json'", StringComparison.Ordinal));
+        }
+
+        [Fact]
         public void InitQualityGateTemplatesWritesCurrentDeliveryPolicyShape()
         {
             string root = CreateTempDirectory();

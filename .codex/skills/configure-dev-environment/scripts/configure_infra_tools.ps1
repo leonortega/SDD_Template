@@ -1,5 +1,5 @@
 param(
-  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetPlaneEnv", "SetGiteaRunner", "SetPrometheusAzureTargets", "AuditQualityGates", "AuditRecommendedTools", "DiscoverProjectGuidance", "AcquireProjectGuidance", "SetRecommendedTools", "MapProjectGuidanceStep", "ValidateGiteaActionsRunner", "InitQualityGateTemplates", "SetQualityConfig")]
+  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetPlaneEnv", "SetGiteaRunner", "SetPrometheusAzureTargets", "AuditQualityGates", "AuditRecommendedTools", "DiscoverProjectGuidance", "AcquireProjectGuidance", "SetRecommendedTools", "MapProjectGuidanceStep", "ValidateGiteaActionsRunner", "InitQualityGateTemplates", "SetQualityConfig", "SyncWorktreeLocalConfig", "EnsureDeliveryContext")]
   [string]$Mode = "Audit",
 
   [string]$Root = (Resolve-Path ".").Path,
@@ -278,6 +278,193 @@ function Test-FileContains {
   if (-not (Test-Path $path)) { return $false }
   $content = Get-Content -Path $path -Raw
   return $content -match $Pattern
+}
+
+function Get-FileSha256 {
+  param([string]$Path)
+
+  $stream = [System.IO.File]::OpenRead($Path)
+  try {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+      $hash = $sha.ComputeHash($stream)
+      return ([System.BitConverter]::ToString($hash)).Replace("-", "")
+    }
+    finally {
+      $sha.Dispose()
+    }
+  }
+  finally {
+    $stream.Dispose()
+  }
+}
+
+function Get-WorktreeLocalConfigFiles {
+  return @(
+    [pscustomobject]@{ relativePath = ".codex/client-tools.local.json"; required = $true },
+    [pscustomobject]@{ relativePath = ".codex/quality.local.json"; required = $true },
+    [pscustomobject]@{ relativePath = ".codex/tool-recommendations.local.json"; required = $false }
+  )
+}
+
+function Resolve-AnyPath {
+  param([string]$Path)
+
+  if ([string]::IsNullOrWhiteSpace($Path)) { return $null }
+  if ([System.IO.Path]::IsPathRooted($Path)) {
+    return [System.IO.Path]::GetFullPath($Path)
+  }
+  return [System.IO.Path]::GetFullPath((Join-Path $Root $Path))
+}
+
+function Add-UniquePath {
+  param(
+    [System.Collections.Generic.List[string]]$Paths,
+    [string]$Path
+  )
+
+  $fullPath = Resolve-AnyPath $Path
+  if ([string]::IsNullOrWhiteSpace($fullPath)) { return }
+
+  foreach ($existing in $Paths) {
+    if ([string]::Equals($existing, $fullPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+      return
+    }
+  }
+  $Paths.Add($fullPath)
+}
+
+function Get-ValuesJsonWorktreePaths {
+  $paths = [System.Collections.Generic.List[string]]::new()
+  if ([string]::IsNullOrWhiteSpace($ValuesJson)) { return @($paths) }
+
+  try {
+    $values = $ValuesJson | ConvertFrom-Json
+  } catch {
+    return @($paths)
+  }
+
+  if ($values.PSObject.Properties.Name -contains "worktreePath") {
+    Add-UniquePath $paths ([string]$values.worktreePath)
+  }
+  if ($values.PSObject.Properties.Name -contains "worktreePaths") {
+    foreach ($path in @($values.worktreePaths)) {
+      Add-UniquePath $paths ([string]$path)
+    }
+  }
+  return @($paths)
+}
+
+function Get-RecordedParallelWorktreePaths {
+  $paths = [System.Collections.Generic.List[string]]::new()
+  $parallelPath = Join-RootPath ".codex/parallel-delivery.local.json"
+  if (-not (Test-Path $parallelPath)) { return @($paths) }
+
+  try {
+    $state = Get-Content -Path $parallelPath -Raw | ConvertFrom-Json
+  } catch {
+    return @($paths)
+  }
+
+  foreach ($ticket in @($state.tickets)) {
+    if ($null -eq $ticket) { continue }
+    if ($ticket.PSObject.Properties.Name -notcontains "worktreePath") { continue }
+    Add-UniquePath $paths ([string]$ticket.worktreePath)
+  }
+  return @($paths)
+}
+
+function Get-GitWorktreePaths {
+  $paths = [System.Collections.Generic.List[string]]::new()
+  try {
+    $lines = @(& git -C $Root worktree list --porcelain 2>$null)
+  } catch {
+    return @($paths)
+  }
+
+  $rootPath = [System.IO.Path]::GetFullPath($Root)
+  foreach ($line in $lines) {
+    if ($line -notmatch "^worktree\s+(.+)$") { continue }
+    $worktreePath = [System.IO.Path]::GetFullPath($Matches[1])
+    if ([string]::Equals($worktreePath, $rootPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+      continue
+    }
+    Add-UniquePath $paths $worktreePath
+  }
+  return @($paths)
+}
+
+function Get-KnownWorktreePaths {
+  $paths = [System.Collections.Generic.List[string]]::new()
+  foreach ($path in @(Get-GitWorktreePaths)) {
+    Add-UniquePath $paths $path
+  }
+  foreach ($path in @(Get-RecordedParallelWorktreePaths)) {
+    Add-UniquePath $paths $path
+  }
+  return @($paths)
+}
+
+function Get-SyncTargetWorktreePaths {
+  $explicit = @(Get-ValuesJsonWorktreePaths)
+  if ($explicit.Count -gt 0) { return $explicit }
+  return @(Get-KnownWorktreePaths)
+}
+
+function Get-CurrentGitBranch {
+  try {
+    $branch = (& git -C $Root branch --show-current 2>$null)
+    if ([string]::IsNullOrWhiteSpace($branch)) { return $null }
+    return $branch.Trim()
+  } catch {
+    return $null
+  }
+}
+
+function Get-InferredOpenSpecChange {
+  param([string]$Branch)
+
+  if ([string]::IsNullOrWhiteSpace($Branch)) { return $null }
+  return $Branch.Replace("/", "-")
+}
+
+function Get-DisplayPath {
+  param([string]$FullPath)
+
+  try {
+    return Get-RepoRelativePath $FullPath
+  } catch {
+    return $FullPath
+  }
+}
+
+function Add-WorktreeLocalConfigAuditFindings {
+  param($Result)
+
+  foreach ($worktreePath in @(Get-KnownWorktreePaths)) {
+    $displayPath = Get-DisplayPath $worktreePath
+    if (-not (Test-Path -LiteralPath $worktreePath -PathType Container)) {
+      Add-Item $Result "findings" $displayPath "worktreePath" "Recorded ticket worktree path does not exist; repair the parallel delivery index before routing this ticket." "warning"
+      continue
+    }
+
+    foreach ($file in @(Get-WorktreeLocalConfigFiles)) {
+      $relativePath = [string]$file.relativePath
+      $sourcePath = Join-RootPath $relativePath
+      $targetPath = Join-Path $worktreePath $relativePath
+      if (-not (Test-Path $sourcePath) -and -not [bool]$file.required) { continue }
+
+      if (-not (Test-Path -LiteralPath $targetPath)) {
+        $severity = if ([bool]$file.required) { "error" } else { "info" }
+        $message = if ([bool]$file.required) {
+          "Ticket worktree is missing required local runtime file '$relativePath'. Run SyncWorktreeLocalConfig from the coordinator checkout before routing child skills."
+        } else {
+          "Ticket worktree is missing optional local runtime file '$relativePath'. SyncWorktreeLocalConfig will copy it when present in the coordinator checkout."
+        }
+        Add-Item $Result "findings" $displayPath $relativePath $message $severity
+      }
+    }
+  }
 }
 
 function Get-WorkflowContent {
@@ -1496,6 +1683,7 @@ function Invoke-Audit {
   }
 
   Add-QualityGateAuditFindings $result
+  Add-WorktreeLocalConfigAuditFindings $result
 
   return $result
 }
@@ -2612,6 +2800,122 @@ function Invoke-InitLocalFiles {
   return $result
 }
 
+function Invoke-SyncWorktreeLocalConfig {
+  $result = New-Result
+  $worktreePaths = @(Get-SyncTargetWorktreePaths)
+  if ($worktreePaths.Count -eq 0) {
+    Add-Item $result "findings" "git worktree" "" "No ticket worktrees were found. Provide ValuesJson with worktreePaths or create/reuse ticket worktrees first." "warning"
+    return $result
+  }
+
+  foreach ($file in @(Get-WorktreeLocalConfigFiles)) {
+    $relativePath = [string]$file.relativePath
+    $sourcePath = Join-RootPath $relativePath
+    if (-not (Test-Path -LiteralPath $sourcePath)) {
+      if ([bool]$file.required) {
+        Add-Item $result "findings" $relativePath "" "Coordinator checkout is missing required local runtime file '$relativePath'. Run InitLocalFiles and SetClientTools before syncing ticket worktrees." "error"
+      } else {
+        Add-Item $result "findings" $relativePath "" "Optional local runtime file '$relativePath' is not present in the coordinator checkout; skipping it." "info"
+      }
+    }
+  }
+
+  foreach ($worktreePath in $worktreePaths) {
+    $displayPath = Get-DisplayPath $worktreePath
+    if (-not (Test-Path -LiteralPath $worktreePath -PathType Container)) {
+      Add-Item $result "findings" $displayPath "worktreePath" "Ticket worktree path does not exist; create or repair the worktree before syncing local config." "error"
+      continue
+    }
+
+    foreach ($file in @(Get-WorktreeLocalConfigFiles)) {
+      $relativePath = [string]$file.relativePath
+      $sourcePath = Join-RootPath $relativePath
+      if (-not (Test-Path -LiteralPath $sourcePath)) { continue }
+
+      $targetPath = Join-Path $worktreePath $relativePath
+      $targetDirectory = Split-Path -Parent $targetPath
+      if (Test-Path -LiteralPath $targetPath) {
+        $sourceHash = Get-FileSha256 $sourcePath
+        $targetHash = Get-FileSha256 $targetPath
+        if ($sourceHash -eq $targetHash) {
+          Add-Item $result "findings" $displayPath $relativePath "Allowlisted local runtime file is already synced." "info"
+          continue
+        }
+
+        Add-Item $result "actions" $displayPath $relativePath "Overwrite allowlisted local runtime file from coordinator checkout."
+      } else {
+        Add-Item $result "actions" $displayPath $relativePath "Copy allowlisted local runtime file from coordinator checkout."
+      }
+
+      if (Test-ConfigWritesEnabled) {
+        if (-not (Test-Path -LiteralPath $targetDirectory)) {
+          New-Item -ItemType Directory -Path $targetDirectory -Force | Out-Null
+        }
+        Copy-Item -Path $sourcePath -Destination $targetPath -Force
+      }
+    }
+  }
+
+  return $result
+}
+
+function Invoke-EnsureDeliveryContext {
+  $result = New-Result
+  $targetRelative = ".codex/delivery-context.local.json"
+  $target = Join-RootPath $targetRelative
+  $values = Convert-JsonToHashtable $ValuesJson
+
+  if (-not $values.Contains("ticketKey") -or [string]::IsNullOrWhiteSpace([string]$values.ticketKey)) {
+    throw "ValuesJson must include ticketKey for EnsureDeliveryContext."
+  }
+
+  $ticketKey = [string]$values.ticketKey
+  $branch = if ($values.Contains("branch")) { [string]$values.branch } else { Get-CurrentGitBranch }
+  if ([string]::IsNullOrWhiteSpace($branch)) {
+    throw "ValuesJson must include branch when the current Git branch cannot be inferred."
+  }
+
+  $openspecChange = if ($values.Contains("openspecChange")) { [string]$values.openspecChange } else { Get-InferredOpenSpecChange $branch }
+  $replaceExisting = $values.Contains("replaceExisting") -and [bool]$values.replaceExisting
+
+  if (Test-Path -LiteralPath $target) {
+    try {
+      $existing = Get-Content -Path $target -Raw | ConvertFrom-Json
+      $existingTicket = [string]$existing.ticketKey
+      if (-not [string]::IsNullOrWhiteSpace($existingTicket) -and $existingTicket -ne $ticketKey -and -not $replaceExisting) {
+        throw "Existing $targetRelative points to '$existingTicket'. Pass replaceExisting=true only after confirming the current worktree belongs to '$ticketKey'."
+      }
+    } catch {
+      if (-not $replaceExisting) {
+        throw
+      }
+    }
+  }
+
+  $context = [ordered]@{
+    ticketKey = $ticketKey
+    branch = $branch
+  }
+  if (-not [string]::IsNullOrWhiteSpace($openspecChange)) {
+    $context["openspecChange"] = $openspecChange
+  }
+  foreach ($optionalKey in @("prNumber", "artifactCommitSha", "sourceRcVersion", "finalReleaseVersion")) {
+    if ($values.Contains($optionalKey) -and -not [string]::IsNullOrWhiteSpace([string]$values[$optionalKey])) {
+      $context[$optionalKey] = $values[$optionalKey]
+    }
+  }
+
+  Add-Item $result "actions" $targetRelative "" "Create or update ticket context lock for '$ticketKey' without copying another worktree's lock."
+  if (Test-ConfigWritesEnabled) {
+    $targetDirectory = Split-Path -Parent $target
+    if (-not (Test-Path -LiteralPath $targetDirectory)) {
+      New-Item -ItemType Directory -Path $targetDirectory -Force | Out-Null
+    }
+    ([pscustomobject]$context) | ConvertTo-Json -Depth 10 | Set-Content -Path $target -Encoding UTF8
+  }
+  return $result
+}
+
 function Invoke-SetClientTools {
   $result = New-Result
   $targetRelative = ".codex/client-tools.local.json"
@@ -2700,6 +3004,8 @@ switch ($Mode) {
   "SetClientTools" { $result = Invoke-SetClientTools }
   "SetRecommendedTools" { $result = Invoke-SetRecommendedTools }
   "MapProjectGuidanceStep" { $result = Invoke-MapProjectGuidanceStep }
+  "SyncWorktreeLocalConfig" { $result = Invoke-SyncWorktreeLocalConfig }
+  "EnsureDeliveryContext" { $result = Invoke-EnsureDeliveryContext }
   "SetPlaneEnv" { $result = Invoke-SetEnvMode -TargetRelative "infra/plane/variables.env" }
   "SetGiteaRunner" { $result = Invoke-SetEnvMode -TargetRelative "infra/gitea/runner.env" }
   "SetPrometheusAzureTargets" { $result = Invoke-SetPrometheusAzureTargets }
