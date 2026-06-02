@@ -48,7 +48,10 @@ dotnet format --verify-no-changes
 
 - Read memory at the start of planning, implementation, review, QA, deployment, rollback, hotfix, and retrospective work.
 - Use `MEMORY.md` as the index into deeper memory files.
+- Use `.codex/memory/search_memory.ps1 -Query <symptom>` when debugging concrete errors, blockers, failed commands, deployment issues, PR feedback, QA failures, configuration mismatches, or local tooling problems.
 - Write memory only for reusable, source-backed knowledge.
 - Follow `retrieval-policy.md#update-process` when updating memory.
 - Prefer updating canonical docs when the finding is authoritative workflow or architecture context.
 - Keep secrets, tokens, local credentials, and ignored local runtime state out of memory.
+- Before final handoff for any non-trivial repository work, report `Memory updated: <files>` or `Memory updated: none` after classifying reusable errors, blockers, fixes, configuration repairs, tooling corrections, and debugging results.
+- Recent cross-thread lessons include worktree local-config sync, Gitea reviewer collaborator requirements, Plane comment payload fields, Gitea Actions shell/runtime assumptions, PR feedback batching, and live Azure app-to-app settings for topology deployments.

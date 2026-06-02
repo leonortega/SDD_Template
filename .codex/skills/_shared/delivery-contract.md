@@ -34,6 +34,17 @@ Implementation and retrospective work must preserve durable context discovered d
 
 Implementation PR bodies and Plane handoff comments must include `Context findings: added/updated/none`, `Docs updated: <files>` or `Docs: no durable context changes`, `Memory updated: <files>` or `Memory updated: none`, and `Assumptions recorded: <short list or none>`.
 
+## Durable Learning Capture Gate
+
+Before final handoff for any non-trivial repository work, classify whether the run discovered reusable knowledge using `.codex/memory/retrieval-policy.md#update-process`. This applies to implementation, review feedback, DEV/QA deployment, E2E QA, PROD deployment, rollback, hotfix, retrospective workflow maintenance, local tooling fixes, configuration repairs, debugging, and any prompt where an error, issue, blocker, or fix was diagnosed.
+
+This gate is mandatory even when no memory update is needed. The final handoff must include one of:
+
+- `Memory updated: <files>` when reusable non-authoritative knowledge was added or updated.
+- `Memory updated: none` when the run produced no reusable memory candidates.
+
+Do not treat Plane comments, PR comments, QA evidence, logs, or chat summaries as a substitute for this gate. If a run fixes or diagnoses a blocker that could recur across tickets, first decide whether it belongs in canonical docs, this delivery contract plus related skills/tests, or `.codex/memory/`, then update the selected durable surface before reporting completion.
+
 ## Agent Self-Improvement Gate
 
 Agent self-improvement is a controlled quality lane, not an automatic permission to rewrite workflow behavior.
