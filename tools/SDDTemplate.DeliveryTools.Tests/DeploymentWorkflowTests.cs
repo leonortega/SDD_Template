@@ -749,6 +749,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             string autoRouter = ReadSkill("automatic-implement-ticket", "SKILL.md");
             string developmentDocs = ReadDoc("development.md");
             string giteaApiReference = ReadSkill("gitea-pr-review-agent", Path.Combine("references", "gitea-review-api.md"));
+            string apiHelpers = ReadSkill("_shared", "api-helpers.md");
 
             Assert.Contains("PR Review Feedback", contract);
             Assert.Contains("top-level PR comments and inline code review comments", contract);
@@ -767,7 +768,15 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("Commit with the ticket key", feedbackLoop);
             Assert.Contains("IA generated PR feedback detected: {headSha}:{feedbackBatchId}", feedbackLoop);
             Assert.Contains("IA generated PR feedback fixes: {headSha}:{feedbackBatchId}", feedbackLoop);
+            Assert.Contains("comment_html", feedbackLoop);
+            Assert.Contains("comment_stripped", feedbackLoop);
+            Assert.Contains("verify `comment_stripped` starts with the marker", feedbackLoop);
             Assert.Contains("Keep Plane in `In Review`", implementation);
+
+            Assert.Contains("comment_html", contract);
+            Assert.Contains("comment_stripped", contract);
+            Assert.Contains("Do not send a Gitea-style `comment` or `body` field", apiHelpers);
+            Assert.Contains("verify `comment_stripped` starts with the stable marker", apiHelpers);
 
             Assert.Contains("Plane PR feedback detection/fix batch markers", autoRouter);
             Assert.Contains("later human comment on the same PR head SHA", autoRouter);

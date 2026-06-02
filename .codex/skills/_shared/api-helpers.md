@@ -40,6 +40,25 @@ Create generated comments:
 POST {plane.baseUrl}/api/v1/workspaces/{workspaceSlug}/projects/{projectUuid}/work-items/{workItemUuid}/comments/
 ```
 
+Payload:
+
+```json
+{
+  "comment_html": "<p>IA generated marker...</p>",
+  "comment_stripped": "IA generated marker...\n\nStatus: ..."
+}
+```
+
+Plane work-item comments render from `comment_html` and expose searchable text through `comment_stripped`. Do not send a Gitea-style `comment` or `body` field; it can create a blank `<p></p>` Plane comment. After posting or patching a generated marker, read the comment back and verify `comment_stripped` starts with the stable marker before reporting success.
+
+Repair an accidentally blank generated comment:
+
+```text
+PATCH {plane.baseUrl}/api/v1/workspaces/{workspaceSlug}/projects/{projectUuid}/work-items/{workItemUuid}/comments/{commentUuid}/
+```
+
+Use the same `comment_html` and `comment_stripped` payload shape.
+
 ## Gitea
 
 Headers:
