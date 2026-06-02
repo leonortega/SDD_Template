@@ -324,10 +324,16 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("parallelDelivery.maxActiveTickets=2", docs);
             Assert.Contains("parallelDelivery.enabled=false", docs);
             Assert.Contains("local runtime files required by child worktrees", docs);
+            Assert.Contains("SyncWorktreeLocalConfig", docs);
+            Assert.Contains("EnsureDeliveryContext", docs);
+            Assert.Contains(".codex/tool-recommendations.local.json", docs);
+            Assert.Contains(".codex/azure-login.local.json", docs);
 
             Assert.Contains("Before Git, Plane, or Gitea mutation", contract);
             Assert.Contains("ValidateParallelDeliveryDryRun", contract);
             Assert.Contains("one worktree", contract);
+            Assert.Contains(".codex/tool-recommendations.local.json", contract);
+            Assert.Contains(".codex/azure-login.local.json", contract);
             Assert.Contains("Never let two agents mutate the same Plane ticket", contract);
             Assert.Contains("Never parallelize DEV, QA, E2E QA, PROD, rollback, or hotfix promotion", contract);
 
@@ -335,6 +341,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("Failed `ValidateParallelDeliveryDryRun`", coordinator);
             Assert.Contains("## Cleanup And Recovery", coordinator);
             Assert.Contains("required ignored local runtime files", coordinator);
+            Assert.Contains("SyncWorktreeLocalConfig", coordinator);
+            Assert.Contains("EnsureDeliveryContext", coordinator);
 
             foreach (string role in new[]
             {
@@ -355,6 +363,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("parallelDelivery.enabled=false", configureRouter);
             Assert.Contains("docs/parallel-delivery.md", configureRouter);
             Assert.Contains("required ignored local runtime files", configureRouter);
+            Assert.Contains("SyncWorktreeLocalConfig", configureRouter);
+            Assert.Contains("EnsureDeliveryContext", configureRouter);
         }
 
         [Fact]
