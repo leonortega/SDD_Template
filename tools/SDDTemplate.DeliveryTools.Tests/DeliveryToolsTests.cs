@@ -653,7 +653,7 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             ProcessStartInfo startInfo = new()
             {
-                FileName = "powershell",
+                FileName = GetPowerShellFileName(),
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
             };
@@ -678,7 +678,7 @@ namespace SDDTemplate.DeliveryTools.Tests
         {
             ProcessStartInfo startInfo = new()
             {
-                FileName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "powershell" : "pwsh",
+                FileName = GetPowerShellFileName(),
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
             };
@@ -697,6 +697,11 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.True(process.ExitCode == 0, stderr);
             return stdout;
+        }
+
+        private static string GetPowerShellFileName()
+        {
+            return RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "powershell" : "pwsh";
         }
 
         private static string CreateTempDirectory()
