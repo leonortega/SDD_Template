@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
-using SDDTemplate.Site.Clients;
+using SDDTemplate.Data.Clients;
 
-namespace SDDTemplate.Site.Data
+namespace SDDTemplate.Data
 {
     public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : DbContext(options)
     {

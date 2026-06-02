@@ -4,11 +4,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
-using SDDTemplate.Site.Data;
+using SDDTemplate.Data;
 
 #nullable disable
 
-namespace SDDTemplate.Site.Data.Migrations
+namespace SDDTemplate.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
     [Migration("20260529211940_InitialClientStorage")]
@@ -20,7 +20,7 @@ namespace SDDTemplate.Site.Data.Migrations
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.8");
 
-            modelBuilder.Entity("SDDTemplate.Site.Clients.Client", b =>
+            modelBuilder.Entity("SDDTemplate.Data.Clients.Client", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()

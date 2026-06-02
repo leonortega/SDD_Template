@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace SDDTemplate.Site.Data.Migrations
+namespace SDDTemplate.Data.Migrations
 {
     /// <inheritdoc />
     [ExcludeFromCodeCoverage]

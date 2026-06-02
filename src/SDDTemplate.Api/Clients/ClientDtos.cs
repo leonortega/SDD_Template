@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
+using SDDTemplate.Data.Clients;
 
-namespace SDDTemplate.Site.Clients
+namespace SDDTemplate.Api.Clients
 {
     public sealed record ClientResponse(
         int Id,

@@ -1,16 +1,12 @@
 using SDDTemplate.Site;
-using SDDTemplate.Site.Clients;
 using SDDTemplate.Site.Components;
-using SDDTemplate.Site.Data;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 _ = builder.Services.AddRazorComponents();
-_ = builder.Services.AddApplicationDatabase(builder.Configuration, builder.Environment);
 
 WebApplication app = builder.Build();
-await app.MigrateApplicationDatabaseAsync();
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
@@ -34,8 +30,6 @@ _ = app.MapGet("/metrics", () => Results.Text(
     "# TYPE sddtemplate_health gauge`n" +
     "sddtemplate_health 1`n",
     "text/plain; version=0.0.4"));
-
-_ = app.MapClientEndpoints();
 
 _ = app.MapStaticAssets();
 _ = app.MapRazorComponents<App>();

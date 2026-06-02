@@ -4,7 +4,10 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
   </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SDDTemplate.Data\SDDTemplate.Data.csproj" />
+  </ItemGroup>
 
 </Project>

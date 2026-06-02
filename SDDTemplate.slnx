@@ -1,5 +1,7 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/SDDTemplate.Api/SDDTemplate.Api.csproj" />
+    <Project Path="src/SDDTemplate.Data/SDDTemplate.Data.csproj" />
     <Project Path="src/SDDTemplate.Site/SDDTemplate.Site.csproj" />
   </Folder>
   <Folder Name="/tests/">

@@ -9,8 +9,7 @@ namespace SDDTemplate.Site.Tests
             string migrationsRoot = Path.Combine(
                 repositoryRoot.FullName,
                 "src",
-                "SDDTemplate.Site",
-                "Data",
+                "SDDTemplate.Data",
                 "Migrations");
             string migration = File.ReadAllText(Directory.GetFiles(migrationsRoot, "*_InitialClientStorage.cs").Single());
 

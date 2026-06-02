@@ -50,6 +50,8 @@ docs/
 |-- deployment.md
 `-- development.md
 src/
+|-- SDDTemplate.Api/
+|-- SDDTemplate.Data/
 `-- SDDTemplate.Site/
 tests/
 `-- SDDTemplate.Site.Tests/

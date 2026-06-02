@@ -1,6 +1,6 @@
 ## Context
 
-The current application is a .NET 10 Blazor site with minimal health and metrics endpoints and no existing persistence layer. The ticket asks for client data storage, migrations, REST access, validation, and a CRUD view for client records.
+The current application is a .NET 10 Blazor site with minimal health and metrics endpoints and no existing persistence layer. The ticket asks for client data storage, migrations, REST access, validation, and a CRUD view for client records. Review feedback requires the implementation to separate the Blazor site, REST API, and EF Core data layer so future Azure web/API deployments can evolve independently.
 
 ## Goals / Non-Goals
 
@@ -20,8 +20,9 @@ The current application is a .NET 10 Blazor site with minimal health and metrics
 
 - Use Entity Framework Core for persistence and migrations because the ticket explicitly requires database elements using migrations and the app is a .NET application. Alternative: hand-written SQL scripts, which would add more custom deployment mechanics and less testable application integration.
 - Keep Client as an application-owned model with explicit request DTOs for create/update operations. This keeps validation and API contracts separate from persistence details. Alternative: bind API requests directly to the entity, which would make accidental persistence-field exposure more likely.
-- Implement REST endpoints under a client-specific route group such as `/api/clients`. Minimal APIs fit the current `Program.cs` style and avoid introducing controller structure before the app needs it.
-- Use Blazor components/pages for the CRUD view and call the REST API through a typed client or local service abstraction. This keeps the UI aligned with the user-facing API contract while still allowing tests to exercise API behavior independently.
+- Implement REST endpoints under a client-specific route group such as `/api/clients` in a dedicated API project. Minimal APIs fit the current scope and avoid introducing controller structure before the app needs it.
+- Move Client persistence concerns into a dedicated data project containing the entity, DbContext, migrations, and database setup extension.
+- Use Blazor components/pages for the CRUD view and call the REST API through a configured API base URL. This keeps the UI aligned with the user-facing API contract while still allowing tests to exercise API behavior independently.
 - Use required string/date validation for the requested client fields and normalize field names in code to conventional C# names, including `LastName`, `BornDate`, and `ZipCode`.
 
 ## Risks / Trade-offs
@@ -32,9 +33,9 @@ The current application is a .NET 10 Blazor site with minimal health and metrics
 
 ## Migration Plan
 
-1. Add the EF Core model, DbContext, provider configuration, and initial client migration.
-2. Add REST endpoints and validation for client CRUD operations.
-3. Add the Blazor CRUD page and navigation.
+1. Add the EF Core model, DbContext, provider configuration, and initial client migration in the data project.
+2. Add REST endpoints and validation for client CRUD operations in the API project.
+3. Add the Blazor CRUD page and navigation in the site project.
 4. Add tests for schema/persistence, API success and failure paths, and UI page availability.
 5. Run the configured build, test, coverage, and formatting gates before PR handoff.
 
