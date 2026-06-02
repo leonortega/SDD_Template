@@ -4,7 +4,7 @@ Gitea PR validation is the source of truth. Local hooks are only convenience che
 
 Coverage threshold defaults to `80%` from `.codex/quality.example.json`. Local development may override it with ignored `.codex/quality.local.json`; CI falls back to the tracked example when no local config is present.
 
-The local runner executes PR validation inside a pinned .NET SDK container. PR validation installs PowerShell in the job container because repository delivery-tool tests execute `.ps1` helpers through `pwsh` on Linux. Keep checkout and security tools shell-based unless the job container explicitly includes `node`; JavaScript `uses:` actions can fail inside plain SDK containers. Validate runner compatibility after workflow changes:
+The local runner executes PR validation inside a pinned .NET SDK container. PR validation installs PowerShell in the job container because repository delivery-tool tests execute `.ps1` helpers through `pwsh` on Linux. The install step derives the Microsoft package feed from `/etc/os-release` because pinned .NET SDK containers may be Ubuntu even though they are Debian-like. Keep checkout and security tools shell-based unless the job container explicitly includes `node`; JavaScript `uses:` actions can fail inside plain SDK containers. Validate runner compatibility after workflow changes:
 
 ```powershell
 .\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode ValidateGiteaActionsRunner
