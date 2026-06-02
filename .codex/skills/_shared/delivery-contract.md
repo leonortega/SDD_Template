@@ -188,6 +188,8 @@ Before adding generated comments or moving states, read existing comments when t
 
 Generated Plane comments must keep the stable marker as the first line by itself, followed by a blank line and a human-readable Markdown summary.
 
+When creating or repairing Plane work-item comments through the API, send both `comment_html` and `comment_stripped`; do not send Gitea-style `comment` or `body` fields. Plane can accept those fields while rendering a blank `<p></p>` comment. After posting or patching a generated marker, read the comment back and verify `comment_stripped` starts with the stable marker before reporting the Plane comment as added.
+
 Use this structure unless a workflow-specific skill requires more detail:
 
 1. `**Status:** PASS|FAIL|BLOCKED - one-sentence outcome`
