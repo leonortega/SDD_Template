@@ -11,8 +11,9 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.Contains("artifact_commit_sha", workflow);
             Assert.Contains("PROD_ARTIFACT_COMMIT_SHA=$artifact_commit_sha", workflow);
-            Assert.Contains("app/$PROD_ARTIFACT_COMMIT_SHA/app.zip", workflow);
-            Assert.Contains("app/$PROD_ARTIFACT_COMMIT_SHA/app.zip.sha256", workflow);
+            Assert.Contains("app/$PROD_ARTIFACT_COMMIT_SHA/deployable-apps.json", workflow);
+            Assert.Contains("app/$PROD_ARTIFACT_COMMIT_SHA/$artifact_name", workflow);
+            Assert.Contains("app/$PROD_ARTIFACT_COMMIT_SHA/$artifact_name.sha256", workflow);
         }
 
         [Fact]
@@ -23,7 +24,8 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.DoesNotContain("dotnet publish", prodJob);
             Assert.DoesNotContain("Upload artifact to Nexus", prodJob);
-            Assert.DoesNotContain("app/${GITHUB_SHA}/app.zip", prodJob);
+            Assert.DoesNotContain("app/${GITHUB_SHA}/site.zip", prodJob);
+            Assert.DoesNotContain("app/${GITHUB_SHA}/api.zip", prodJob);
         }
 
         [Fact]
@@ -34,7 +36,8 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.Contains("Smoke check PROD", prodJob);
             Assert.Contains("<title>SDD Template</title>", prodJob);
-            Assert.Contains("$AZURE_PROD_WEBAPP_URL/health", prodJob);
+            Assert.Contains("AZURE_PROD_${app_upper}_APP_URL", prodJob);
+            Assert.Contains("${app_url}${health_path}", prodJob);
             Assert.Contains("'\"status\":\"ok\"'", prodJob);
         }
 
@@ -57,12 +60,60 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.Contains("CreateReleaseManifest", packageJob);
             Assert.Contains("--commit-sha \"$commit_sha\"", packageJob);
-            Assert.Contains("--checksum \"$checksum\"", packageJob);
+            Assert.Contains("--checksum \"$first_artifact_checksum\"", packageJob);
             Assert.Contains("--artifact-url \"$artifact_url\"", packageJob);
             Assert.Contains("--plane-ticket-key \"$plane_ticket_key\"", packageJob);
             Assert.Contains("--version-status unversioned", packageJob);
             Assert.Contains("ValidateReleaseManifest", packageJob);
             Assert.Contains("app/${GITHUB_SHA}/release.json", packageJob);
+        }
+
+        [Fact]
+        public void TopologyManifestContainsSiteAndApiApps()
+        {
+            string root = FindRepositoryRoot().FullName;
+            string manifest = File.ReadAllText(Path.Combine(root, "infra", "deployment", "apps.json"));
+
+            Assert.Contains("\"appId\": \"site\"", manifest);
+            Assert.Contains("\"projectPath\": \"src/SDDTemplate.Site/SDDTemplate.Site.csproj\"", manifest);
+            Assert.Contains("\"role\": \"web\"", manifest);
+            Assert.Contains("\"artifactName\": \"site.zip\"", manifest);
+            Assert.Contains("\"appId\": \"api\"", manifest);
+            Assert.Contains("\"projectPath\": \"src/SDDTemplate.Api/SDDTemplate.Api.csproj\"", manifest);
+            Assert.Contains("\"role\": \"api\"", manifest);
+            Assert.Contains("\"artifactName\": \"api.zip\"", manifest);
+        }
+
+        [Fact]
+        public void AzureBicepUsesTopologyAndAppsettingsMappings()
+        {
+            string bicep = File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, "infra", "azure", "main.bicep"));
+
+            Assert.Contains("param deployableApps array", bicep);
+            Assert.Contains("resource apps 'Microsoft.Web/sites@2023-12-01' = [for app in deployableApps", bicep);
+            Assert.Contains("Api__BaseUrl", bicep);
+            Assert.Contains("Cors__AllowedOrigins__0", bicep);
+            Assert.Contains("ConnectionStrings__ClientsDb", bicep);
+            Assert.Contains("output apps array", bicep);
+            Assert.Contains("output siteAppName", bicep);
+            Assert.Contains("output apiAppName", bicep);
+        }
+
+        [Fact]
+        public void PackageWorkflowPublishesUploadsAndDeploysPerAppArtifacts()
+        {
+            string workflow = ReadWorkflow();
+            string packageJob = GetJobSection(workflow, "package");
+
+            Assert.Contains("infra/deployment/apps.json", workflow);
+            Assert.Contains("jq -r '.apps[] | [.appId, .projectPath, .artifactName] | @tsv'", packageJob);
+            Assert.Contains("dotnet publish \"$project_path\"", packageJob);
+            Assert.Contains("artifacts/packages/$artifact_name", packageJob);
+            Assert.Contains("deployable-apps.json", workflow);
+            Assert.Contains("az webapp deploy", workflow);
+            Assert.Contains("AZURE_DEV_${app_upper}_APP_NAME", workflow);
+            Assert.Contains("AZURE_QA_${app_upper}_APP_NAME", workflow);
+            Assert.Contains("AZURE_PROD_${app_upper}_APP_NAME", workflow);
         }
 
         [Fact]
@@ -143,14 +194,20 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.Contains("NEXUS_REPOSITORY", readmeAudit);
             Assert.Contains("AZURE_DEV_RESOURCE_GROUP", readmeAudit);
-            Assert.Contains("AZURE_DEV_WEBAPP_NAME", readmeAudit);
-            Assert.Contains("AZURE_DEV_WEBAPP_URL", readmeAudit);
+            Assert.Contains("AZURE_DEV_SITE_APP_NAME", readmeAudit);
+            Assert.Contains("AZURE_DEV_SITE_APP_URL", readmeAudit);
+            Assert.Contains("AZURE_DEV_API_APP_NAME", readmeAudit);
+            Assert.Contains("AZURE_DEV_API_APP_URL", readmeAudit);
             Assert.Contains("AZURE_QA_RESOURCE_GROUP", readmeAudit);
-            Assert.Contains("AZURE_QA_WEBAPP_NAME", readmeAudit);
-            Assert.Contains("AZURE_QA_WEBAPP_URL", readmeAudit);
+            Assert.Contains("AZURE_QA_SITE_APP_NAME", readmeAudit);
+            Assert.Contains("AZURE_QA_SITE_APP_URL", readmeAudit);
+            Assert.Contains("AZURE_QA_API_APP_NAME", readmeAudit);
+            Assert.Contains("AZURE_QA_API_APP_URL", readmeAudit);
             Assert.Contains("AZURE_PROD_RESOURCE_GROUP", readmeAudit);
-            Assert.Contains("AZURE_PROD_WEBAPP_NAME", readmeAudit);
-            Assert.Contains("AZURE_PROD_WEBAPP_URL", readmeAudit);
+            Assert.Contains("AZURE_PROD_SITE_APP_NAME", readmeAudit);
+            Assert.Contains("AZURE_PROD_SITE_APP_URL", readmeAudit);
+            Assert.Contains("AZURE_PROD_API_APP_NAME", readmeAudit);
+            Assert.Contains("AZURE_PROD_API_APP_URL", readmeAudit);
             Assert.Contains("Required Gitea Actions secret is not documented.", readmeAudit);
         }
 
@@ -164,8 +221,10 @@ namespace SDDTemplate.DeliveryTools.Tests
                 "function Get-NexusConfig");
 
             Assert.Contains("\"AZURE_PROD_RESOURCE_GROUP\"", liveSecretAudit);
-            Assert.Contains("\"AZURE_PROD_WEBAPP_NAME\"", liveSecretAudit);
-            Assert.Contains("\"AZURE_PROD_WEBAPP_URL\"", liveSecretAudit);
+            Assert.Contains("\"AZURE_PROD_SITE_APP_NAME\"", liveSecretAudit);
+            Assert.Contains("\"AZURE_PROD_SITE_APP_URL\"", liveSecretAudit);
+            Assert.Contains("\"AZURE_PROD_API_APP_NAME\"", liveSecretAudit);
+            Assert.Contains("\"AZURE_PROD_API_APP_URL\"", liveSecretAudit);
         }
 
         [Fact]
@@ -179,6 +238,26 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("ValidateReleaseManifest", script);
             Assert.Contains("app/${GITHUB_SHA}/release.json", script);
             Assert.Contains("Package/deploy workflow should upload a baseline Nexus release manifest next to the artifact.", script);
+        }
+
+        [Fact]
+        public void ConfigureAzureSkillOwnsDeploymentTopologyReview()
+        {
+            string skill = ReadSkill("configure-azure-environments", "SKILL.md");
+            string azureReference = ReadSkill("configure-dev-environment", Path.Combine("references", "azure.md"));
+            string implementation = ReadSkill("implement-ticket", "SKILL.md");
+            string feedbackLoop = ReadSkill("pr-review-feedback-loop", "SKILL.md");
+
+            Assert.Contains("Deployment Topology Review", skill);
+            Assert.Contains("infra/deployment/apps.json", skill);
+            Assert.Contains("Microsoft.NET.Sdk.Web", skill);
+            Assert.Contains("Api:BaseUrl", skill);
+            Assert.Contains("Api__BaseUrl", skill);
+            Assert.Contains("Cors__AllowedOrigins__0", skill);
+            Assert.Contains("ConnectionStrings__ClientsDb", skill);
+            Assert.Contains("Deployment Topology Review", azureReference);
+            Assert.Contains("Deployment topology: updated/verified/no deployable app changes", implementation);
+            Assert.Contains("Deployment Topology Review", feedbackLoop);
         }
 
         [Fact]

@@ -27,17 +27,18 @@ Deployment tooling is intentionally local-first except for the application runti
 Nexus stores artifacts by commit SHA:
 
 ```text
-app/{commitSha}/app.zip
-app/{commitSha}/app.zip.sha256
+app/{commitSha}/deployable-apps.json
+app/{commitSha}/{artifactName}
+app/{commitSha}/{artifactName}.sha256
 app/{commitSha}/commit.sha
 app/{commitSha}/release.json
 ```
 
-`commit.sha` must match the artifact commit. `app.zip.sha256` must verify before deployment. `release.json` records ticket, artifact, environment, QA, version, PROD, and rollback lineage.
+`commit.sha` must match the artifact commit. Every `{artifactName}.sha256` from `deployable-apps.json` must verify before deployment. `release.json` records ticket, representative artifact metadata, environment, QA, version, PROD, and rollback lineage.
 
 ## Environments
 
-DEV and QA deploy from `dev` and must use the same Nexus ZIP artifact for the same commit SHA. Both environments must pass web page checks and web/API `/health` smoke checks.
+DEV and QA deploy from `dev` and must use the same Nexus artifacts for the same commit SHA. The deploy workflow reads `infra/deployment/apps.json`, publishes one ZIP per deployable app, deploys each ZIP to its matching Azure App Service app, and requires web page checks plus every app `/health` smoke check.
 
 PROD deploys only a QA-approved existing Nexus artifact. PROD does not rebuild. Promotion requires a final version, source RC version, verified artifact commit, and successful PROD web page plus web/API `/health` checks.
 

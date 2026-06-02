@@ -54,8 +54,9 @@ Run preflight, main/tag promotion, PROD deployment, PROD verification, Plane res
 5. Read Plane comments and find `IA generated E2E QA: {ticketKey}` for the same commit/artifact.
 6. Verify the E2E QA comment includes pass result, PR URL, QA URL, Nexus artifact URL, QA evidence URL, and source RC version.
 7. Verify Nexus contains:
-   - `app/{commitSha}/app.zip`
-   - `app/{commitSha}/app.zip.sha256`
+   - `app/{commitSha}/deployable-apps.json`
+   - one `app/{commitSha}/{artifactName}` per topology app
+   - one `app/{commitSha}/{artifactName}.sha256` per topology app
    - `app/{commitSha}/commit.sha`
    - `app/{commitSha}/release.json`
 8. Download checksum metadata only as needed and verify `commit.sha` exactly matches the QA-approved commit.
@@ -81,7 +82,7 @@ Stop if any QA gate, tag gate, artifact gate, or checksum gate fails.
 PROD deployment can be triggered in two supported ways:
 
 - A push/merge to `main` deploys PROD only when the changed files include application/test/package source and the commit or merged PR title starts with the configured ticket key format from `.codex/delivery-policy.json`. It downloads the existing Nexus artifact for `GITHUB_SHA`.
-- Manual workflow dispatch with `environment=prod` deploys the artifact identified by `artifact_commit_sha`.
+- Manual workflow dispatch with `environment=prod` deploys the topology artifacts identified by `artifact_commit_sha`.
 
 For manual dispatch, trigger the Gitea package/deploy workflow with:
 
@@ -92,17 +93,17 @@ release_version={finalVersion}
 source_rc_version={sourceRcVersion}
 ```
 
-The PROD workflow must not run package, DEV, or QA jobs for a `main` push or `environment=prod` dispatch. Maintenance-only changes such as `.codex/**` or workflow-only edits must not deploy PROD. PROD must download `app/{artifact_commit_sha}/app.zip` from Nexus, verify `app.zip.sha256`, deploy to PROD, then run:
+The PROD workflow must not run package, DEV, or QA jobs for a `main` push or `environment=prod` dispatch. Maintenance-only changes such as `.codex/**` or workflow-only edits must not deploy PROD. PROD must download `app/{artifact_commit_sha}/deployable-apps.json` and every listed app ZIP from Nexus, verify each checksum, deploy each app to PROD, then run:
 
 - PROD page smoke check: HTTP 200, expected title/content, no Azure placeholder page.
-- PROD health check: `GET {prodWebUrl}/health` returns HTTP 200 and JSON `status=ok`.
+- PROD health checks: every topology app health path returns HTTP 200 and JSON `status=ok`.
 
 After dispatch, inspect the workflow run jobs and logs against the artifact-reuse contract. A successful PROD run must show that the workflow:
 
 - used `environment=prod`,
 - consumed `artifact_commit_sha={qaApprovedCommit}` for manual dispatch or `GITHUB_SHA` for a `main` push,
-- downloaded `app/{artifact_commit_sha}/app.zip` from Nexus,
-- verified `app.zip.sha256`,
+- downloaded `app/{artifact_commit_sha}/deployable-apps.json` and per-app ZIPs from Nexus,
+- verified every per-app checksum,
 - skipped rebuild/republish behavior,
 - skipped DEV and QA deployment behavior,
 - ran direct PROD page and `/health` checks.
@@ -114,7 +115,7 @@ Prefer named job checks such as `deploy-prod` when present, but do not rely only
 After the workflow succeeds, run direct verification before commenting success:
 
 1. Request the PROD web URL and assert HTTP 200 plus expected page title/content.
-2. Request `{prodWebUrl}/health` and assert HTTP 200 plus `status=ok`.
+2. Request every topology app health path and assert HTTP 200 plus `status=ok`.
 3. Query Prometheus targets at `http://localhost:9090/api/v1/targets` when local Prometheus is reachable.
 4. Verify the PROD web target is present and `health=up`.
 5. If a PROD API target is configured but this repo does not deploy an API, record it as an observability configuration note instead of a product failure.
@@ -174,7 +175,7 @@ Report the final release version, PROD URL, final tag, deployed artifact commit,
 - Local-only release tag after failed push: delete the local tag before stopping unless the tag already exists on the remote.
 - Branch protection blocks `main`: open a release-blocking promotion PR and require rerunning this skill after merge.
 - PROD workflow violates the artifact-reuse contract: route to `$configure-artifact-delivery` or `$configure-dev-environment`, fix the workflow through PR, then rerun PROD dispatch only after the fix reaches `main`.
-- Missing `AZURE_PROD_RESOURCE_GROUP`, `AZURE_PROD_WEBAPP_NAME`, or `AZURE_PROD_WEBAPP_URL` Gitea Actions secrets: route to `$configure-azure-environments` or `$configure-dev-environment`, configure the secrets from Azure deployment outputs without exposing secret values, then rerun PROD dispatch.
+- Missing `AZURE_PROD_RESOURCE_GROUP` or any `AZURE_PROD_{APPID}_APP_NAME` / `AZURE_PROD_{APPID}_APP_URL` Gitea Actions secrets: route to `$configure-azure-environments` or `$configure-dev-environment`, configure the secrets from Azure deployment outputs without exposing secret values, then rerun PROD dispatch.
 - PROD workflow failure: comment failure and stop.
 - PROD page or `/health` failure: comment failure and stop.
 - Prometheus/Grafana unavailable: record as monitoring unavailable; do not fail the deployment when direct app checks pass.

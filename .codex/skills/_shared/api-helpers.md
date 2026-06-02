@@ -99,8 +99,9 @@ POST {gitea.baseUrl}/api/v1/repos/{owner}/{repo}/issues/{index}/labels
 Artifact paths are defined in `delivery-contract.md`. Use the configured base URL and repository:
 
 ```text
-{nexus.baseUrl}/repository/{nexus.repository}/app/{commitSha}/app.zip
-{nexus.baseUrl}/repository/{nexus.repository}/app/{commitSha}/app.zip.sha256
+{nexus.baseUrl}/repository/{nexus.repository}/app/{commitSha}/deployable-apps.json
+{nexus.baseUrl}/repository/{nexus.repository}/app/{commitSha}/{artifactName}
+{nexus.baseUrl}/repository/{nexus.repository}/app/{commitSha}/{artifactName}.sha256
 {nexus.baseUrl}/repository/{nexus.repository}/app/{commitSha}/commit.sha
 {nexus.baseUrl}/repository/{nexus.repository}/app/{commitSha}/release.json
 ```
