@@ -1,12 +1,15 @@
 # Architecture
 
-This repository is a local agentic delivery lab for a .NET Blazor site. The repo is designed so Codex-style agents can move a Plane ticket from idea to production through explicit planning, implementation, review, artifact promotion, QA, and release checkpoints.
+This repository is a local agentic delivery lab for a .NET Blazor site, ASP.NET Core API, and shared data layer. The repo is designed so Codex-style agents can move a Plane ticket from idea to production through explicit planning, implementation, review, artifact promotion, QA, and release checkpoints.
 
 ## System Topology
 
-- The application lives under `src/SDDTemplate.Site` and is tested from `tests/SDDTemplate.Site.Tests`.
+- The frontend application lives under `src/SDDTemplate.Site`.
+- The REST API application lives under `src/SDDTemplate.Api`.
+- The EF Core entities, DbContext, migrations, and database setup live under `src/SDDTemplate.Data`.
+- Application behavior is tested from `tests/SDDTemplate.Site.Tests`.
 - Local Docker Compose infrastructure provides Plane, Gitea, the Gitea Actions runner, Nexus, Dozzle, Prometheus, and Grafana.
-- Azure hosts only the remote DEV, QA, and PROD application runtimes.
+- Azure hosts only the remote DEV, QA, and PROD application runtimes. The web and API runtimes may be deployed as separate App Service apps per environment.
 - Nexus stores immutable application artifacts and release manifests.
 - Plane records ticket state, generated workflow markers, and human-readable delivery comments.
 - OpenSpec records planned behavior before implementation.

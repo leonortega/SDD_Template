@@ -12,10 +12,11 @@ Push-triggered deployment is allowed only for ticket-named application changes. 
 
 ## Technology Stack And Tool Set
 
-Deployment tooling is intentionally local-first except for the application runtimes. Gitea Actions packages and deploys ticket-gated application changes, Nexus stores the exact artifact and `release.json`, Azure App Service hosts DEV/QA/PROD, and Prometheus/Grafana verify configured health visibility.
+Deployment tooling is intentionally local-first except for the application runtimes. Gitea Actions packages and deploys ticket-gated application changes, Nexus stores the exact artifact and `release.json`, Azure App Service hosts DEV/QA/PROD web and API runtimes, and Prometheus/Grafana verify configured health visibility.
 
 - Nexus paths under `app/{commitSha}/` are the durable artifact identity; environments must promote that same ZIP and checksum instead of rebuilding.
 - Azure deployment uses App Service ZIP deployment from the existing Nexus artifact.
+- The Blazor site project (`src/SDDTemplate.Site`) and REST API project (`src/SDDTemplate.Api`) are separated so Azure environments can host web and API App Service apps independently. The API references `src/SDDTemplate.Data` for EF Core entities, DbContext, migrations, and database setup.
 - Prometheus scrapes local infrastructure and configured Azure app `/health` targets.
 - Grafana dashboards are provisioned from tracked files and should visualize Prometheus data without embedding secrets.
 - QA evidence is retained locally under ignored paths and preferably published to Nexus under `qa/{ticketKey}/{runId}/qa-evidence.zip`.
@@ -36,9 +37,9 @@ app/{commitSha}/release.json
 
 ## Environments
 
-DEV and QA deploy from `dev` and must use the same Nexus ZIP artifact for the same commit SHA. Both environments must pass page and `/health` smoke checks.
+DEV and QA deploy from `dev` and must use the same Nexus ZIP artifact for the same commit SHA. Both environments must pass web page checks and web/API `/health` smoke checks.
 
-PROD deploys only a QA-approved existing Nexus artifact. PROD does not rebuild. Promotion requires a final version, source RC version, verified artifact commit, and successful PROD page and `/health` checks.
+PROD deploys only a QA-approved existing Nexus artifact. PROD does not rebuild. Promotion requires a final version, source RC version, verified artifact commit, and successful PROD web page plus web/API `/health` checks.
 
 ## QA Evidence And Versions
 

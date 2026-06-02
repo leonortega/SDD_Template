@@ -1,6 +1,9 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
-namespace SDDTemplate.Site.Data
+namespace SDDTemplate.Data
 {
     public static class DatabaseSetup
     {
@@ -12,9 +15,9 @@ namespace SDDTemplate.Site.Data
             return services.AddDbContext<ApplicationDbContext>(options => options.UseSqlite(connectionString));
         }
 
-        public static async Task MigrateApplicationDatabaseAsync(this WebApplication app)
+        public static async Task MigrateApplicationDatabaseAsync(this IServiceProvider services)
         {
-            using IServiceScope scope = app.Services.CreateScope();
+            using IServiceScope scope = services.CreateScope();
             ApplicationDbContext db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
             string? dataSource = db.Database.GetDbConnection().DataSource;

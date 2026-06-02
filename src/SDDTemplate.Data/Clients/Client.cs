@@ -1,4 +1,4 @@
-namespace SDDTemplate.Site.Clients
+namespace SDDTemplate.Data.Clients
 {
     public sealed class Client
     {

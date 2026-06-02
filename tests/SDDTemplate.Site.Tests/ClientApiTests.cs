@@ -2,7 +2,8 @@ using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
-using SDDTemplate.Site.Clients;
+using SDDTemplate.Api;
+using SDDTemplate.Api.Clients;
 
 namespace SDDTemplate.Site.Tests
 {
@@ -11,7 +12,7 @@ namespace SDDTemplate.Site.Tests
         [Fact]
         public async Task ClientApiCreatesListsUpdatesAndDeletesClient()
         {
-            await using WebApplicationFactory<Program> factory = CreateFactory();
+            await using WebApplicationFactory<ApiAssemblyMarker> factory = CreateFactory();
             using HttpClient httpClient = factory.CreateClient();
             ClientRequest createRequest = ValidRequest(name: "Ana", lastName: "Lopez");
 
@@ -45,7 +46,7 @@ namespace SDDTemplate.Site.Tests
         [Fact]
         public async Task ClientApiRejectsMissingRequiredFields()
         {
-            await using WebApplicationFactory<Program> factory = CreateFactory();
+            await using WebApplicationFactory<ApiAssemblyMarker> factory = CreateFactory();
             using HttpClient httpClient = factory.CreateClient();
 
             HttpResponseMessage response = await httpClient.PostAsJsonAsync("/api/clients", new ClientRequest(
@@ -66,7 +67,7 @@ namespace SDDTemplate.Site.Tests
         [Fact]
         public async Task ClientApiRejectsInvalidBornDateAndZipCode()
         {
-            await using WebApplicationFactory<Program> factory = CreateFactory();
+            await using WebApplicationFactory<ApiAssemblyMarker> factory = CreateFactory();
             using HttpClient httpClient = factory.CreateClient();
 
             HttpResponseMessage response = await httpClient.PostAsJsonAsync("/api/clients", new ClientRequest(
@@ -87,7 +88,7 @@ namespace SDDTemplate.Site.Tests
         [Fact]
         public async Task ClientApiReturnsNotFoundForUnknownClient()
         {
-            await using WebApplicationFactory<Program> factory = CreateFactory();
+            await using WebApplicationFactory<ApiAssemblyMarker> factory = CreateFactory();
             using HttpClient httpClient = factory.CreateClient();
 
             HttpResponseMessage getResponse = await httpClient.GetAsync("/api/clients/404");
@@ -99,11 +100,11 @@ namespace SDDTemplate.Site.Tests
             Assert.Equal(HttpStatusCode.NotFound, deleteResponse.StatusCode);
         }
 
-        private static WebApplicationFactory<Program> CreateFactory()
+        private static WebApplicationFactory<ApiAssemblyMarker> CreateFactory()
         {
             string databasePath = Path.Combine(Path.GetTempPath(), $"sddtemplate-clients-{Guid.NewGuid():N}.db");
 
-            return new WebApplicationFactory<Program>()
+            return new WebApplicationFactory<ApiAssemblyMarker>()
                 .WithWebHostBuilder(builder =>
                 {
                     _ = builder.ConfigureAppConfiguration((context, config) =>

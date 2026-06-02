@@ -26,3 +26,7 @@
 - [x] 4.4 Add UI/page rendering tests for the Client CRUD route and visible empty/list states where supported.
 - [x] 4.5 Run the configured build, test, coverage, formatting, and security gates before PR handoff.
 - [x] 4.6 Fix Gitea Actions PR-validation blockers found during handoff rerun.
+
+## PR Review Feedback
+
+- [x] RF-1 Source: human review `robert` review id 5 on head `a25a8a8b90e71e687ae8fa008f41d813725a9a3b`; severity: BLOCKER; requested change: separate the Client REST API from the Blazor site and move database entities, DbContext, migrations, and setup into a separate data project for Azure web/API deployment alignment.

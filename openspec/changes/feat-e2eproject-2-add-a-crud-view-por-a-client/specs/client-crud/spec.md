@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Client data model
-The system SHALL define a persisted Client record with Name, Last Name, Address, Born date, City, Country, and ZIP code fields.
+The system SHALL define a persisted Client record with Name, Last Name, Address, Born date, City, Country, and ZIP code fields in a data project that owns EF Core entities, DbContext, migrations, and database setup.
 
 #### Scenario: Client schema is available
 - **WHEN** the application database schema is created from migrations
@@ -19,7 +19,7 @@ The system SHALL validate Client create and update requests before saving them.
 - **THEN** the system MUST reject the request with validation errors and MUST NOT save the invalid record.
 
 ### Requirement: Client REST API
-The system SHALL expose REST endpoints for listing, reading, creating, updating, and deleting Client records.
+The system SHALL expose REST endpoints for listing, reading, creating, updating, and deleting Client records from a dedicated API project.
 
 #### Scenario: Create client through API
 - **WHEN** a caller submits a valid Client create request
@@ -42,4 +42,4 @@ The system SHALL provide a Blazor CRUD view for managing Client records.
 
 #### Scenario: Manage client records
 - **WHEN** a user creates, edits, or deletes a Client through the CRUD view
-- **THEN** the UI MUST call the REST API and reflect the resulting Client list state.
+- **THEN** the UI MUST call the configured REST API base URL and reflect the resulting Client list state.

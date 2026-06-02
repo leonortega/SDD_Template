@@ -1,8 +1,9 @@
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
-using SDDTemplate.Site.Data;
+using SDDTemplate.Data;
+using SDDTemplate.Data.Clients;
 
-namespace SDDTemplate.Site.Clients
+namespace SDDTemplate.Api.Clients
 {
     public static class ClientEndpoints
     {

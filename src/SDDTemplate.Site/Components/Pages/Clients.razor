@@ -1,5 +1,7 @@
 @page "/clients"
+@using System.Text.Json
 @attribute [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
+@inject IConfiguration Configuration
 
 <PageTitle>Clients</PageTitle>
 
@@ -80,7 +82,8 @@
 
 <script>
 (() => {
-    const apiUrl = "/api/clients";
+    const apiBaseUrl = @((MarkupString)JsonSerializer.Serialize(ApiBaseUrl));
+    const apiUrl = `${apiBaseUrl.replace(/\/$/, "")}/api/clients`;
     const form = document.getElementById("client-form");
     const resetButton = document.getElementById("client-reset");
     const list = document.getElementById("clients-list");
@@ -238,3 +241,7 @@
     loadClients();
 })();
 </script>
+
+@code {
+    private string ApiBaseUrl => Configuration["Api:BaseUrl"] ?? string.Empty;
+}

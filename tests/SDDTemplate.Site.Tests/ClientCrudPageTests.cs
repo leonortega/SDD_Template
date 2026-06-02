@@ -8,7 +8,7 @@ namespace SDDTemplate.Site.Tests
         [Fact]
         public async Task ClientsPageRendersCrudShell()
         {
-            await using WebApplicationFactory<Program> factory = new();
+            await using WebApplicationFactory<SiteAssemblyMarker> factory = new();
             using HttpClient client = factory.CreateClient();
 
             HttpResponseMessage response = await client.GetAsync("/clients");
@@ -19,6 +19,7 @@ namespace SDDTemplate.Site.Tests
             Assert.Contains("id=\"client-form\"", markup);
             Assert.Contains("id=\"clients-list\"", markup);
             Assert.Contains("/api/clients", markup);
+            Assert.Contains("const apiBaseUrl", markup);
         }
     }
 }
