@@ -2539,6 +2539,7 @@ jobs:
           apt-get install -y --no-install-recommends jq zip
 
       - name: Publish topology apps
+        shell: bash
         run: |
           set -euo pipefail
           mkdir -p artifacts/packages
@@ -2552,6 +2553,7 @@ jobs:
           git rev-parse HEAD > artifacts/commit.sha
 
       - name: Upload topology artifacts to Nexus
+        shell: bash
         run: |
           first_artifact_name="$(jq -r '.apps | sort_by(.deployOrder) | .[0].artifactName' infra/deployment/apps.json)"
           checksum="$(cut -d ' ' -f1 "artifacts/packages/$first_artifact_name.sha256")"
@@ -2592,6 +2594,7 @@ jobs:
           apt-get install -y --no-install-recommends jq
 
       - name: Download topology artifacts from Nexus
+        shell: bash
         run: |
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o deployable-apps.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/deployable-apps.json"
           jq -r '.[].artifactName' deployable-apps.json |
@@ -2615,6 +2618,7 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Deploy DEV topology apps
+        shell: bash
         run: |
           jq -r '.[] | [.appId, .artifactName] | @tsv' deployable-apps.json |
           while IFS=$'\t' read -r app_id artifact_name; do
@@ -2628,6 +2632,7 @@ jobs:
           AZURE_DEV_API_APP_NAME: ${{ secrets.AZURE_DEV_API_APP_NAME }}
 
       - name: Smoke check DEV topology apps
+        shell: bash
         run: |
           jq -r '.[] | [.appId, .role, .healthPath] | @tsv' deployable-apps.json |
           while IFS=$'\t' read -r app_id role health_path; do
@@ -2659,6 +2664,7 @@ jobs:
           apt-get install -y --no-install-recommends jq
 
       - name: Download topology artifacts from Nexus
+        shell: bash
         run: |
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o deployable-apps.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/deployable-apps.json"
           jq -r '.[].artifactName' deployable-apps.json |
@@ -2682,6 +2688,7 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Deploy QA topology apps
+        shell: bash
         run: |
           jq -r '.[] | [.appId, .artifactName] | @tsv' deployable-apps.json |
           while IFS=$'\t' read -r app_id artifact_name; do
@@ -2695,6 +2702,7 @@ jobs:
           AZURE_QA_API_APP_NAME: ${{ secrets.AZURE_QA_API_APP_NAME }}
 
       - name: Smoke check QA topology apps
+        shell: bash
         run: |
           jq -r '.[] | [.appId, .role, .healthPath] | @tsv' deployable-apps.json |
           while IFS=$'\t' read -r app_id role health_path; do
@@ -2744,6 +2752,7 @@ jobs:
           apt-get install -y --no-install-recommends jq
 
       - name: Download topology artifacts from Nexus
+        shell: bash
         run: |
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o deployable-apps.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$PROD_ARTIFACT_COMMIT_SHA/deployable-apps.json"
           jq -r '.[].artifactName' deployable-apps.json |
@@ -2767,6 +2776,7 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Deploy PROD topology apps
+        shell: bash
         run: |
           jq -r '.[] | [.appId, .artifactName] | @tsv' deployable-apps.json |
           while IFS=$'\t' read -r app_id artifact_name; do
@@ -2780,6 +2790,7 @@ jobs:
           AZURE_PROD_API_APP_NAME: ${{ secrets.AZURE_PROD_API_APP_NAME }}
 
       - name: Smoke check PROD topology apps
+        shell: bash
         run: |
           jq -r '.[] | [.appId, .role, .healthPath] | @tsv' deployable-apps.json |
           while IFS=$'\t' read -r app_id role health_path; do
