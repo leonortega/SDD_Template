@@ -65,3 +65,7 @@ If a gate cannot be run, document the reason and the residual risk.
 When in doubt, first inspect the applicable skill under `.codex/skills/` and follow its workflow. This file is only the entry point; detailed delivery behavior belongs in the skills, OpenSpec artifacts, and configured local tools.
 
 Use `.codex/memory/` as a reviewable repository memory layer. Memory is guidance only and must be verified against the current user request, Plane, OpenSpec, the shared delivery contract, canonical docs, current files, and live tool output before acting on it.
+
+For practical use, start with `.codex/memory/memory_summary.md`, then use `.codex/memory/MEMORY.md` or run `.codex/memory/search_memory.ps1 -Query <symptom>` for concrete errors, blockers, failed commands, deployment issues, PR feedback, QA failures, configuration mismatches, or local tooling problems.
+
+Before final handoff for any non-trivial repo work, perform a durable learning capture: classify whether any error, issue, blocker, fix, configuration repair, local tooling correction, or debugging result could help solve a similar situation later. Update `docs/`, `.codex/skills/_shared/delivery-contract.md` plus related skills/tests, or `.codex/memory/` according to `.codex/memory/retrieval-policy.md#update-process`, then report `Memory updated: <files>` or `Memory updated: none`.

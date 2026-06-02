@@ -30,6 +30,25 @@ Use progressive disclosure:
 3. Open only the specific deeper files needed for the task.
 4. Verify all task-critical facts against current repo files, Plane, OpenSpec, Gitea, Nexus, Azure, Git, or live command output.
 
+## Operational Use Loop
+
+Use memory as a practical loop during repository work:
+
+1. Start: read `memory_summary.md`, then use `MEMORY.md` or the search helper to find relevant deeper entries.
+2. Debug: when an error, blocker, failed command, deploy issue, PR feedback, QA failure, or configuration mismatch appears, search memory with the concrete symptom before inventing a fix.
+3. Verify: treat memory as a lead, then confirm against current files and live state.
+4. Finish: run the durable learning capture gate and report `Memory updated: <files>` or `Memory updated: none`.
+
+Search helper:
+
+```powershell
+.\.codex\memory\search_memory.ps1 -ListTopics
+.\.codex\memory\search_memory.ps1 -Query Api__BaseUrl
+.\.codex\memory\search_memory.ps1 -Query Gitea,reviewer
+```
+
+Search terms should be concrete: command names, error fragments, config keys, service names, workflow stages, marker names, or tool names. Examples: `dotnet`, `pipefail`, `comment_html`, `Api__BaseUrl`, `collaborators`, `pwsh`, `coverage`, `autocrlf`.
+
 ## Write Policy
 
 Agents may propose or write memory updates only when the information is reusable and source-backed.

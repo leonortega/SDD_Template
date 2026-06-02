@@ -904,6 +904,96 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
+        public void RepositoryWorkRequiresDurableLearningCaptureGate()
+        {
+            string contract = ReadSkill("_shared", "delivery-contract.md");
+            string skillStartup = ReadSkill("_shared", "skill-startup.md");
+            string e2eSkill = ReadSkill("test-e2e", "SKILL.md");
+            string agents = File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, "AGENTS.md"));
+            string memoryPolicy = File.ReadAllText(Path.Combine(
+                FindRepositoryRoot().FullName,
+                ".codex",
+                "memory",
+                "retrieval-policy.md"));
+
+            Assert.Contains("## Durable Learning Capture Gate", contract);
+            Assert.Contains("Before final handoff for any non-trivial repository work", contract);
+            Assert.Contains("any prompt where an error, issue, blocker, or fix was diagnosed", contract);
+            Assert.Contains("Memory updated: <files>", contract);
+            Assert.Contains("Memory updated: none", contract);
+            Assert.Contains("Do not treat Plane comments, PR comments, QA evidence, logs, or chat summaries as a substitute", contract);
+
+            Assert.Contains("## Durable Learning Capture", skillStartup);
+            Assert.Contains("This is not limited to QA or ticket delivery", skillStartup);
+            Assert.Contains("Memory updated: <files>` or `Memory updated: none", skillStartup);
+
+            Assert.Contains("Before final handoff for any non-trivial repo work", agents);
+            Assert.Contains("any error, issue, blocker, fix, configuration repair, local tooling correction, or debugging result", agents);
+
+            Assert.Contains("### 10. Durable Learning Capture Gate", e2eSkill);
+            Assert.Contains(".codex/memory/retrieval-policy.md#update-process", e2eSkill);
+            Assert.Contains("Plane comments, QA evidence, and final chat summaries do not satisfy this gate by themselves", e2eSkill);
+            Assert.Contains("Memory updated: <files>` or `Memory updated: none", e2eSkill);
+
+            Assert.Contains("## Update Process", memoryPolicy);
+            Assert.Contains("Reusable but non-authoritative workflow knowledge belongs in `.codex/memory/`", memoryPolicy);
+        }
+
+        [Fact]
+        public void MemorySearchHelperSupportsSymptomDrivenLookup()
+        {
+            string root = FindRepositoryRoot().FullName;
+            string searchScriptPath = Path.Combine(root, ".codex", "memory", "search_memory.ps1");
+            string searchScript = File.ReadAllText(searchScriptPath);
+            string retrievalPolicy = File.ReadAllText(Path.Combine(root, ".codex", "memory", "retrieval-policy.md"));
+            string memorySummary = File.ReadAllText(Path.Combine(root, ".codex", "memory", "memory_summary.md"));
+            string skillStartup = ReadSkill("_shared", "skill-startup.md");
+            string agents = File.ReadAllText(Path.Combine(root, "AGENTS.md"));
+            string contextDocs = ReadDoc("context-management.md");
+
+            Assert.Contains("param(", searchScript);
+            Assert.Contains("-ListTopics", retrievalPolicy);
+            Assert.Contains("search_memory.ps1 -Query <symptom>", memorySummary);
+            Assert.Contains(".codex/memory/search_memory.ps1", skillStartup);
+            Assert.Contains("search_memory.ps1 -Query <symptom>", agents);
+            Assert.Contains("search_memory.ps1 -Query <symptom>", contextDocs);
+
+            using System.Diagnostics.Process process = new()
+            {
+                StartInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "pwsh",
+                    ArgumentList =
+                    {
+                        "-NoProfile",
+                        "-File",
+                        searchScriptPath,
+                        "-Query",
+                        "Api__BaseUrl",
+                        "-AsJson",
+                        "-Root",
+                        root
+                    },
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false
+                }
+            };
+
+            Assert.True(process.Start());
+            string output = process.StandardOutput.ReadToEnd();
+            string error = process.StandardError.ReadToEnd();
+            bool exited = process.WaitForExit(30_000);
+
+            Assert.True(exited, "Memory search helper did not exit within the timeout.");
+            Assert.Equal(0, process.ExitCode);
+            Assert.Contains("Api__BaseUrl", output);
+            Assert.DoesNotContain("password", output, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("token", output, StringComparison.OrdinalIgnoreCase);
+            Assert.True(string.IsNullOrWhiteSpace(error), error);
+        }
+
+        [Fact]
         public void SharedDeliveryToolsExposeReusableWorkflowModes()
         {
             string contract = ReadSkill("_shared", "delivery-contract.md");
