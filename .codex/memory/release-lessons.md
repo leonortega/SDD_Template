@@ -76,3 +76,12 @@ Rollback restores PROD to a previously verified Nexus artifact. Rollback does no
 
 Production hotfixes should remain expedited but gated. They still require ticket/incident context, branch and PR handling, review, immutable artifact deployment, QA evidence, and explicit PROD promotion.
 
+## Topology Changes Must Reach Live App Settings
+
+- Type: Pattern
+- Status: Active
+- Source: current conversation, `infra/deployment/apps.json`, `infra/azure/main.bicep`, E2EPROJECT-2 QA evidence
+- Last verified: 2026-06-02
+
+When deployable app topology or `appsettings*.json` mappings change, it is not enough for the tracked manifest, Bicep, and workflow to be correct. The live DEV/QA/PROD App Service settings must also be deployed or repaired so non-secret inferred mappings such as web `Api__BaseUrl`, API `Cors__AllowedOrigins__0`, and API `ConnectionStrings__ClientsDb` are present. If QA shows the API works directly but the site cannot call it, compare the rendered site configuration and live Azure app settings against the topology manifest before treating the issue as product code.
+
