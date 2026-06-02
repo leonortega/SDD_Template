@@ -117,6 +117,8 @@ For web/API application work, preserve the delivery health contract required by 
 - Add or preserve focused tests for `/health` when application startup, routing, middleware, hosting, or deployment-facing behavior changes.
 - Treat removal or breakage of `/health` as an implementation failure because DEV, QA, and PROD promotion gates depend on it.
 
+Run Deployment Topology Review through `configure-azure-environments` when changes touch `src/**.csproj`, `src/**/Program.cs`, `src/**/appsettings*.json`, `infra/deployment/**`, `infra/azure/**`, or `.gitea/workflows/package-deploy.yml`. Verify `infra/deployment/apps.json`, Azure Bicep App Service settings, package/deploy workflow artifacts, and per-app DEV/QA/PROD secret documentation stay aligned. Handoff comments must include `Deployment topology: updated`, `Deployment topology: verified`, or `Deployment topology: no deployable app changes`.
+
 If coverage is below the configured threshold, add or update OpenSpec tasks for missing test coverage, then add tests until the threshold is met. Never lower the threshold just to pass a ticket.
 
 ### 5. Validation Failure Classification
@@ -205,6 +207,7 @@ Add a Plane comment with:
 - Assumptions recorded: <short list or none>
 - remaining non-blocking infra notes
 - remaining non-blocking risks or gaps
+- Deployment topology: updated/verified/no deployable app changes
 
 Do not move the ticket to Done.
 

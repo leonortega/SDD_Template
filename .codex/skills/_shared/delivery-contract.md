@@ -273,13 +273,14 @@ Nexus is mandatory for DEV, QA, PROD, and rollback promotion. Do not rebuild bet
 Artifact identity is the commit SHA:
 
 ```text
-app/{commitSha}/app.zip
-app/{commitSha}/app.zip.sha256
+app/{commitSha}/deployable-apps.json
+app/{commitSha}/{artifactName}
+app/{commitSha}/{artifactName}.sha256
 app/{commitSha}/commit.sha
 app/{commitSha}/release.json
 ```
 
-`commit.sha` must exactly match the artifact commit. `app.zip.sha256` must verify the ZIP before deployment.
+`deployable-apps.json` is the packaged copy of `infra/deployment/apps.json` sorted for deployment. `commit.sha` must exactly match the artifact commit. Every `{artifactName}.sha256` listed by the topology must verify before deployment.
 
 ## Release Manifest
 

@@ -57,7 +57,7 @@ Required/defaulted values:
    Include PR link, source ids or links, classifications, and OpenSpec feedback task ids.
    Use the Plane work-item comments API payload fields `comment_html` and `comment_stripped`; do not use Gitea-style `comment` or `body` fields. Read the comment back and verify `comment_stripped` starts with the marker so the workflow cannot silently create a blank Plane comment.
 8. Apply the requested code, test, documentation, or workflow change in the existing PR branch. Update OpenSpec specs or design artifacts when behavior changes.
-9. Run the relevant validation checks for changed files. Use the same quality-gate discovery and failure classification as `implement-ticket`.
+9. Run the relevant validation checks for changed files. Use the same quality-gate discovery and failure classification as `implement-ticket`. If feedback fixes touch `src/**.csproj`, `src/**/Program.cs`, `src/**/appsettings*.json`, `infra/deployment/**`, `infra/azure/**`, or `.gitea/workflows/package-deploy.yml`, run Deployment Topology Review through `configure-azure-environments` and report `Deployment topology: updated`, `Deployment topology: verified`, or `Deployment topology: no deployable app changes` in the Plane fix comment.
 10. Mark OpenSpec feedback tasks complete only after code and validation are complete.
 11. Commit with the ticket key, push the fix, and add a Plane comment with marker:
 

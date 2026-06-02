@@ -45,7 +45,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                 validPath,
                 "abcdef1",
                 "abc123",
-                "http://nexus/repository/raw-hosted/app/abcdef1/app.zip",
+                "http://nexus/repository/raw-hosted/app/abcdef1/site.zip",
                 "E2EPROJECT-1",
                 "unversioned");
 

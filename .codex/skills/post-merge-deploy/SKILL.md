@@ -28,8 +28,9 @@ Read `.codex/client-tools.local.json` first. Required values are Plane, Gitea, a
 5. Resolve the Plane ticket key from the PR title/body, branch name, commit messages, or Plane comments.
 6. Run `ValidateTicketLock` with the resolved ticket key, PR number, branch, and merge/artifact commit when known. If the result is invalid, stop before waiting for artifacts.
 7. Poll for the Nexus artifact files for the merge commit:
-   - `app/{commitSha}/app.zip`
-   - `app/{commitSha}/app.zip.sha256`
+   - `app/{commitSha}/deployable-apps.json`
+   - one `app/{commitSha}/{artifactName}` per topology app
+   - one `app/{commitSha}/{artifactName}.sha256` per topology app
    - `app/{commitSha}/commit.sha`
    - `app/{commitSha}/release.json` when present
 8. Use bounded waiting: check immediately, then retry with backoff for up to 10 minutes unless the user asked for a shorter wait.

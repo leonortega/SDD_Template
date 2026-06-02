@@ -638,7 +638,7 @@ function Add-QualityGateAuditFindings {
   if (-not (Test-Path (Join-RootPath $releaseWorkflow))) {
     Add-Item $Result "findings" $releaseWorkflow "" "Missing package/deploy workflow for Nexus artifact publication and Azure promotion." "warning"
   } else {
-    foreach ($expected in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "az webapp deploy", "classify-changes", "app_changed", "deploy_allowed", ".codex/delivery-policy.json", "ReadDeliveryPolicy", "ExtractTicketKey", "refs/heads/dev", "refs/heads/main", "deploy-qa", "deploy-prod", "artifact_commit_sha", "PROD_ARTIFACT_COMMIT_SHA", "release_version", "source_rc_version", "release.json", "CreateReleaseManifest", "ValidateReleaseManifest", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_WEBAPP_NAME", "AZURE_QA_WEBAPP_URL", "AZURE_PROD_RESOURCE_GROUP", "AZURE_PROD_WEBAPP_NAME", "AZURE_PROD_WEBAPP_URL", "/health")) {
+    foreach ($expected in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "az webapp deploy", "classify-changes", "app_changed", "deploy_allowed", ".codex/delivery-policy.json", "ReadDeliveryPolicy", "ExtractTicketKey", "refs/heads/dev", "refs/heads/main", "deploy-qa", "deploy-prod", "artifact_commit_sha", "PROD_ARTIFACT_COMMIT_SHA", "release_version", "source_rc_version", "release.json", "CreateReleaseManifest", "ValidateReleaseManifest", "infra/deployment/apps.json", "deployable-apps.json", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_SITE_APP_NAME", "AZURE_QA_SITE_APP_URL", "AZURE_QA_API_APP_NAME", "AZURE_QA_API_APP_URL", "AZURE_PROD_RESOURCE_GROUP", "AZURE_PROD_SITE_APP_NAME", "AZURE_PROD_SITE_APP_URL", "AZURE_PROD_API_APP_NAME", "AZURE_PROD_API_APP_URL", "/health")) {
       if (-not (Test-FileContains $releaseWorkflow ([regex]::Escape($expected)))) {
         Add-Item $Result "findings" $releaseWorkflow $expected "Package/deploy workflow does not mention $expected." "warning"
       }
@@ -657,9 +657,8 @@ function Add-QualityGateAuditFindings {
       Add-Item $Result "findings" $releaseWorkflow "release.json" "Package/deploy workflow should upload a baseline Nexus release manifest next to the artifact." "warning"
     }
     $releaseContent = Get-Content -Path (Join-RootPath $releaseWorkflow) -Raw
-    $publishCount = ([regex]::Matches($releaseContent, "dotnet publish")).Count
-    if ($publishCount -gt 1) {
-      Add-Item $Result "findings" $releaseWorkflow "dotnet publish" "Package/deploy workflow appears to publish more than once; DEV, QA, and PROD should promote the same Nexus artifact." "warning"
+    if (-not (Test-FileContains $releaseWorkflow "jq -r '\.apps\[\] \| \[\.appId, \.projectPath, \.artifactName\] \| @tsv'")) {
+      Add-Item $Result "findings" $releaseWorkflow "topology.publish" "Package/deploy workflow should publish deployable apps from infra/deployment/apps.json." "warning"
     }
   }
 
@@ -739,8 +738,23 @@ function Add-QualityGateAuditFindings {
   }
 
   $azureMain = "infra/azure/main.bicep"
+  $topologyManifest = "infra/deployment/apps.json"
+  if (-not (Test-Path (Join-RootPath $topologyManifest))) {
+    Add-Item $Result "findings" $topologyManifest "" "Missing deployable app topology manifest used by Azure Bicep and package/deploy workflow." "warning"
+  } else {
+    foreach ($expectedTopology in @('"appId"\s*:\s*"site"', '"appId"\s*:\s*"api"', '"projectPath"\s*:', '"artifactName"\s*:', '"healthPath"\s*:')) {
+      if (-not (Test-FileContains $topologyManifest $expectedTopology)) {
+        Add-Item $Result "findings" $topologyManifest $expectedTopology "Deployable app topology manifest is missing an expected app or field." "warning"
+      }
+    }
+  }
   if (Test-FileContains $azureMain "DOTNETCORE\|8\.0") {
     Add-Item $Result "findings" $azureMain "webRuntimeStack/apiRuntimeStack" "Azure runtime defaults still target DOTNETCORE|8.0; align with .NET 10 app or use a self-contained deployment strategy." "warning"
+  }
+  foreach ($expectedAzureMapping in @("deployableApps", "Api__BaseUrl", "Cors__AllowedOrigins__0", "ConnectionStrings__ClientsDb", "output apps array")) {
+    if (-not (Test-FileContains $azureMain ([regex]::Escape($expectedAzureMapping)))) {
+      Add-Item $Result "findings" $azureMain $expectedAzureMapping "Azure Bicep should map topology apps and appsettings-derived App Service settings." "warning"
+    }
   }
   foreach ($parametersFile in @("infra/azure/dev.parameters.json", "infra/azure/qa.parameters.json", "infra/azure/prod.parameters.json")) {
     if (Test-Path (Join-RootPath $parametersFile)) {
@@ -755,7 +769,7 @@ function Add-QualityGateAuditFindings {
   if (-not (Test-Path (Join-RootPath $secretsDoc))) {
     Add-Item $Result "findings" $secretsDoc "" "Missing documentation for required Gitea Actions secrets and branch protection." "warning"
   } else {
-    foreach ($secret in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "NEXUS_REPOSITORY", "AZURE_CREDENTIALS", "AZURE_DEV_RESOURCE_GROUP", "AZURE_DEV_WEBAPP_NAME", "AZURE_DEV_WEBAPP_URL", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_WEBAPP_NAME", "AZURE_QA_WEBAPP_URL", "AZURE_PROD_RESOURCE_GROUP", "AZURE_PROD_WEBAPP_NAME", "AZURE_PROD_WEBAPP_URL")) {
+    foreach ($secret in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "NEXUS_REPOSITORY", "AZURE_CREDENTIALS", "AZURE_DEV_RESOURCE_GROUP", "AZURE_DEV_SITE_APP_NAME", "AZURE_DEV_SITE_APP_URL", "AZURE_DEV_API_APP_NAME", "AZURE_DEV_API_APP_URL", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_SITE_APP_NAME", "AZURE_QA_SITE_APP_URL", "AZURE_QA_API_APP_NAME", "AZURE_QA_API_APP_URL", "AZURE_PROD_RESOURCE_GROUP", "AZURE_PROD_SITE_APP_NAME", "AZURE_PROD_SITE_APP_URL", "AZURE_PROD_API_APP_NAME", "AZURE_PROD_API_APP_URL")) {
       if (-not (Test-FileContains $secretsDoc $secret)) {
         Add-Item $Result "findings" $secretsDoc $secret "Required Gitea Actions secret is not documented." "warning"
       }
@@ -807,14 +821,20 @@ function Add-GiteaActionsSecretAuditFindings {
     "NEXUS_REPOSITORY",
     "AZURE_CREDENTIALS",
     "AZURE_DEV_RESOURCE_GROUP",
-    "AZURE_DEV_WEBAPP_NAME",
-    "AZURE_DEV_WEBAPP_URL",
+    "AZURE_DEV_SITE_APP_NAME",
+    "AZURE_DEV_SITE_APP_URL",
+    "AZURE_DEV_API_APP_NAME",
+    "AZURE_DEV_API_APP_URL",
     "AZURE_QA_RESOURCE_GROUP",
-    "AZURE_QA_WEBAPP_NAME",
-    "AZURE_QA_WEBAPP_URL",
+    "AZURE_QA_SITE_APP_NAME",
+    "AZURE_QA_SITE_APP_URL",
+    "AZURE_QA_API_APP_NAME",
+    "AZURE_QA_API_APP_URL",
     "AZURE_PROD_RESOURCE_GROUP",
-    "AZURE_PROD_WEBAPP_NAME",
-    "AZURE_PROD_WEBAPP_URL"
+    "AZURE_PROD_SITE_APP_NAME",
+    "AZURE_PROD_SITE_APP_URL",
+    "AZURE_PROD_API_APP_NAME",
+    "AZURE_PROD_API_APP_URL"
   )
 
   try {
@@ -2463,7 +2483,7 @@ jobs:
           app_changed=false
           while IFS= read -r path; do
             case "$path" in
-              src/*|tests/*|*.sln|*.csproj|Directory.Build.props|Directory.Build.targets|global.json)
+              src/*|tests/*|infra/deployment/*|infra/azure/*|*.sln|*.slnx|*.csproj|Directory.Build.props|Directory.Build.targets|global.json)
                 app_changed=true
                 ;;
             esac
@@ -2504,37 +2524,44 @@ jobs:
           git fetch --depth 1 origin "$GITHUB_SHA"
           git checkout --force FETCH_HEAD
 
-      - name: Publish
-        run: dotnet publish src/SDDTemplate.Site/SDDTemplate.Site.csproj -c Release -o ./artifacts/app
-
       - name: Install packaging tools
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends zip
+          apt-get install -y --no-install-recommends jq zip
 
-      - name: Create deployable ZIP
+      - name: Publish topology apps
         run: |
-          cd artifacts/app
-          zip -r ../app.zip .
-          cd ../..
-          sha256sum artifacts/app.zip | sed 's#artifacts/app.zip#app.zip#' > artifacts/app.zip.sha256
+          set -euo pipefail
+          mkdir -p artifacts/packages
+          jq -c '.apps | sort_by(.deployOrder)' infra/deployment/apps.json > artifacts/deployable-apps.json
+          jq -r '.apps[] | [.appId, .projectPath, .artifactName] | @tsv' infra/deployment/apps.json |
+          while IFS=$'\t' read -r app_id project_path artifact_name; do
+            dotnet publish "$project_path" -c Release -o "artifacts/$app_id"
+            (cd "artifacts/$app_id" && zip -r "../packages/$artifact_name" .)
+            sha256sum "artifacts/packages/$artifact_name" | sed "s#artifacts/packages/##" > "artifacts/packages/$artifact_name.sha256"
+          done
           git rev-parse HEAD > artifacts/commit.sha
 
-      - name: Upload artifact to Nexus
+      - name: Upload topology artifacts to Nexus
         run: |
-          checksum="$(cut -d ' ' -f1 artifacts/app.zip.sha256)"
+          first_artifact_name="$(jq -r '.apps | sort_by(.deployOrder) | .[0].artifactName' infra/deployment/apps.json)"
+          checksum="$(cut -d ' ' -f1 "artifacts/packages/$first_artifact_name.sha256")"
           commit_sha="$(cat artifacts/commit.sha)"
           ticket_key_pattern="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ReadDeliveryPolicy --path .codex/delivery-policy.json)"
 
           commit_message="$(git log -1 --pretty=%B)"
           plane_ticket_key="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ExtractTicketKey --pattern "$ticket_key_pattern" --message "$commit_message" --fallback manual-dispatch)"
 
-          artifact_url="$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip"
+          artifact_url="$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/$first_artifact_name"
           dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- CreateReleaseManifest --output artifacts/release.json --commit-sha "$commit_sha" --checksum "$checksum" --artifact-url "$artifact_url" --plane-ticket-key "$plane_ticket_key" --version-status unversioned
           dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ValidateReleaseManifest --path artifacts/release.json
 
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/app.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip"
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/app.zip.sha256 "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip.sha256"
+          jq -r '.apps[] | .artifactName' infra/deployment/apps.json |
+          while IFS= read -r artifact_name; do
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file "artifacts/packages/$artifact_name" "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/$artifact_name"
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file "artifacts/packages/$artifact_name.sha256" "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/$artifact_name.sha256"
+          done
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/deployable-apps.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/deployable-apps.json"
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/commit.sha "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/commit.sha"
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/release.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/release.json"
         env:
@@ -2550,11 +2577,20 @@ jobs:
     runs-on: ubuntu-latest
     if: (github.event_name == 'push' && github.ref == 'refs/heads/dev' && needs.classify-changes.outputs.app_changed == 'true' && needs.classify-changes.outputs.deploy_allowed == 'true') || github.event.inputs.environment == 'dev' || github.event.inputs.environment == 'qa'
     steps:
-      - name: Download artifact from Nexus
+      - name: Install deployment tools
         run: |
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip"
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip.sha256 "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip.sha256"
-          sha256sum -c app.zip.sha256
+          apt-get update
+          apt-get install -y --no-install-recommends jq
+
+      - name: Download topology artifacts from Nexus
+        run: |
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o deployable-apps.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/deployable-apps.json"
+          jq -r '.[].artifactName' deployable-apps.json |
+          while IFS= read -r artifact_name; do
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o "$artifact_name" "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/$artifact_name"
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o "$artifact_name.sha256" "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/$artifact_name.sha256"
+            sha256sum -c "$artifact_name.sha256"
+          done
         env:
           NEXUS_URL: ${{ secrets.NEXUS_URL }}
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
@@ -2569,21 +2605,37 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Deploy DEV package
-        run: az webapp deploy --resource-group "$AZURE_DEV_RESOURCE_GROUP" --name "$AZURE_DEV_WEBAPP_NAME" --src-path app.zip --type zip --clean true
+      - name: Deploy DEV topology apps
+        run: |
+          jq -r '.[] | [.appId, .artifactName] | @tsv' deployable-apps.json |
+          while IFS=$'\t' read -r app_id artifact_name; do
+            app_upper="$(echo "$app_id" | tr '[:lower:]-' '[:upper:]_')"
+            name_var="AZURE_DEV_${app_upper}_APP_NAME"
+            az webapp deploy --resource-group "$AZURE_DEV_RESOURCE_GROUP" --name "${!name_var}" --src-path "$artifact_name" --type zip --clean true
+          done
         env:
           AZURE_DEV_RESOURCE_GROUP: ${{ secrets.AZURE_DEV_RESOURCE_GROUP }}
-          AZURE_DEV_WEBAPP_NAME: ${{ secrets.AZURE_DEV_WEBAPP_NAME }}
+          AZURE_DEV_SITE_APP_NAME: ${{ secrets.AZURE_DEV_SITE_APP_NAME }}
+          AZURE_DEV_API_APP_NAME: ${{ secrets.AZURE_DEV_API_APP_NAME }}
 
-      - name: Smoke check DEV
+      - name: Smoke check DEV topology apps
         run: |
-          curl --fail --silent --show-error --location "$AZURE_DEV_WEBAPP_URL" -o response.html
-          grep -q "<title>SDD Template</title>" response.html
-          ! grep -qi "Microsoft Azure" response.html
-          curl --fail --silent --show-error --location "$AZURE_DEV_WEBAPP_URL/health" -o health.json
-          grep -q '"status":"ok"' health.json
+          jq -r '.[] | [.appId, .role, .healthPath] | @tsv' deployable-apps.json |
+          while IFS=$'\t' read -r app_id role health_path; do
+            app_upper="$(echo "$app_id" | tr '[:lower:]-' '[:upper:]_')"
+            url_var="AZURE_DEV_${app_upper}_APP_URL"
+            app_url="${!url_var}"
+            if [ "$role" = "web" ]; then
+              curl --fail --silent --show-error --location "$app_url" -o response.html
+              grep -q "<title>SDD Template</title>" response.html
+              ! grep -qi "Microsoft Azure" response.html
+            fi
+            curl --fail --silent --show-error --location "${app_url}${health_path}" -o health.json
+            grep -q '"status":"ok"' health.json
+          done
         env:
-          AZURE_DEV_WEBAPP_URL: ${{ secrets.AZURE_DEV_WEBAPP_URL }}
+          AZURE_DEV_SITE_APP_URL: ${{ secrets.AZURE_DEV_SITE_APP_URL }}
+          AZURE_DEV_API_APP_URL: ${{ secrets.AZURE_DEV_API_APP_URL }}
 
   deploy-qa:
     needs:
@@ -2592,11 +2644,20 @@ jobs:
     runs-on: ubuntu-latest
     if: (github.event_name == 'push' && github.ref == 'refs/heads/dev' && needs.classify-changes.outputs.app_changed == 'true' && needs.classify-changes.outputs.deploy_allowed == 'true') || github.event.inputs.environment == 'qa'
     steps:
-      - name: Download artifact from Nexus
+      - name: Install deployment tools
         run: |
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip"
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip.sha256 "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip.sha256"
-          sha256sum -c app.zip.sha256
+          apt-get update
+          apt-get install -y --no-install-recommends jq
+
+      - name: Download topology artifacts from Nexus
+        run: |
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o deployable-apps.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/deployable-apps.json"
+          jq -r '.[].artifactName' deployable-apps.json |
+          while IFS= read -r artifact_name; do
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o "$artifact_name" "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/$artifact_name"
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o "$artifact_name.sha256" "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/$artifact_name.sha256"
+            sha256sum -c "$artifact_name.sha256"
+          done
         env:
           NEXUS_URL: ${{ secrets.NEXUS_URL }}
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
@@ -2611,21 +2672,37 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Deploy QA package
-        run: az webapp deploy --resource-group "$AZURE_QA_RESOURCE_GROUP" --name "$AZURE_QA_WEBAPP_NAME" --src-path app.zip --type zip --clean true
+      - name: Deploy QA topology apps
+        run: |
+          jq -r '.[] | [.appId, .artifactName] | @tsv' deployable-apps.json |
+          while IFS=$'\t' read -r app_id artifact_name; do
+            app_upper="$(echo "$app_id" | tr '[:lower:]-' '[:upper:]_')"
+            name_var="AZURE_QA_${app_upper}_APP_NAME"
+            az webapp deploy --resource-group "$AZURE_QA_RESOURCE_GROUP" --name "${!name_var}" --src-path "$artifact_name" --type zip --clean true
+          done
         env:
           AZURE_QA_RESOURCE_GROUP: ${{ secrets.AZURE_QA_RESOURCE_GROUP }}
-          AZURE_QA_WEBAPP_NAME: ${{ secrets.AZURE_QA_WEBAPP_NAME }}
+          AZURE_QA_SITE_APP_NAME: ${{ secrets.AZURE_QA_SITE_APP_NAME }}
+          AZURE_QA_API_APP_NAME: ${{ secrets.AZURE_QA_API_APP_NAME }}
 
-      - name: Smoke check QA
+      - name: Smoke check QA topology apps
         run: |
-          curl --fail --silent --show-error --location "$AZURE_QA_WEBAPP_URL" -o response.html
-          grep -q "<title>SDD Template</title>" response.html
-          ! grep -qi "Microsoft Azure" response.html
-          curl --fail --silent --show-error --location "$AZURE_QA_WEBAPP_URL/health" -o health.json
-          grep -q '"status":"ok"' health.json
+          jq -r '.[] | [.appId, .role, .healthPath] | @tsv' deployable-apps.json |
+          while IFS=$'\t' read -r app_id role health_path; do
+            app_upper="$(echo "$app_id" | tr '[:lower:]-' '[:upper:]_')"
+            url_var="AZURE_QA_${app_upper}_APP_URL"
+            app_url="${!url_var}"
+            if [ "$role" = "web" ]; then
+              curl --fail --silent --show-error --location "$app_url" -o response.html
+              grep -q "<title>SDD Template</title>" response.html
+              ! grep -qi "Microsoft Azure" response.html
+            fi
+            curl --fail --silent --show-error --location "${app_url}${health_path}" -o health.json
+            grep -q '"status":"ok"' health.json
+          done
         env:
-          AZURE_QA_WEBAPP_URL: ${{ secrets.AZURE_QA_WEBAPP_URL }}
+          AZURE_QA_SITE_APP_URL: ${{ secrets.AZURE_QA_SITE_APP_URL }}
+          AZURE_QA_API_APP_URL: ${{ secrets.AZURE_QA_API_APP_URL }}
 
   deploy-prod:
     needs: classify-changes
@@ -2652,11 +2729,20 @@ jobs:
           RELEASE_VERSION: ${{ github.event.inputs.release_version }}
           SOURCE_RC_VERSION: ${{ github.event.inputs.source_rc_version }}
 
-      - name: Download artifact from Nexus
+      - name: Install deployment tools
         run: |
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$PROD_ARTIFACT_COMMIT_SHA/app.zip"
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip.sha256 "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$PROD_ARTIFACT_COMMIT_SHA/app.zip.sha256"
-          sha256sum -c app.zip.sha256
+          apt-get update
+          apt-get install -y --no-install-recommends jq
+
+      - name: Download topology artifacts from Nexus
+        run: |
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o deployable-apps.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$PROD_ARTIFACT_COMMIT_SHA/deployable-apps.json"
+          jq -r '.[].artifactName' deployable-apps.json |
+          while IFS= read -r artifact_name; do
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o "$artifact_name" "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$PROD_ARTIFACT_COMMIT_SHA/$artifact_name"
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o "$artifact_name.sha256" "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$PROD_ARTIFACT_COMMIT_SHA/$artifact_name.sha256"
+            sha256sum -c "$artifact_name.sha256"
+          done
         env:
           NEXUS_URL: ${{ secrets.NEXUS_URL }}
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
@@ -2671,21 +2757,37 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Deploy PROD package
-        run: az webapp deploy --resource-group "$AZURE_PROD_RESOURCE_GROUP" --name "$AZURE_PROD_WEBAPP_NAME" --src-path app.zip --type zip --clean true
+      - name: Deploy PROD topology apps
+        run: |
+          jq -r '.[] | [.appId, .artifactName] | @tsv' deployable-apps.json |
+          while IFS=$'\t' read -r app_id artifact_name; do
+            app_upper="$(echo "$app_id" | tr '[:lower:]-' '[:upper:]_')"
+            name_var="AZURE_PROD_${app_upper}_APP_NAME"
+            az webapp deploy --resource-group "$AZURE_PROD_RESOURCE_GROUP" --name "${!name_var}" --src-path "$artifact_name" --type zip --clean true
+          done
         env:
           AZURE_PROD_RESOURCE_GROUP: ${{ secrets.AZURE_PROD_RESOURCE_GROUP }}
-          AZURE_PROD_WEBAPP_NAME: ${{ secrets.AZURE_PROD_WEBAPP_NAME }}
+          AZURE_PROD_SITE_APP_NAME: ${{ secrets.AZURE_PROD_SITE_APP_NAME }}
+          AZURE_PROD_API_APP_NAME: ${{ secrets.AZURE_PROD_API_APP_NAME }}
 
-      - name: Smoke check PROD
+      - name: Smoke check PROD topology apps
         run: |
-          curl --fail --silent --show-error --location "$AZURE_PROD_WEBAPP_URL" -o response.html
-          grep -q "<title>SDD Template</title>" response.html
-          ! grep -qi "Microsoft Azure" response.html
-          curl --fail --silent --show-error --location "$AZURE_PROD_WEBAPP_URL/health" -o health.json
-          grep -q '"status":"ok"' health.json
+          jq -r '.[] | [.appId, .role, .healthPath] | @tsv' deployable-apps.json |
+          while IFS=$'\t' read -r app_id role health_path; do
+            app_upper="$(echo "$app_id" | tr '[:lower:]-' '[:upper:]_')"
+            url_var="AZURE_PROD_${app_upper}_APP_URL"
+            app_url="${!url_var}"
+            if [ "$role" = "web" ]; then
+              curl --fail --silent --show-error --location "$app_url" -o response.html
+              grep -q "<title>SDD Template</title>" response.html
+              ! grep -qi "Microsoft Azure" response.html
+            fi
+            curl --fail --silent --show-error --location "${app_url}${health_path}" -o health.json
+            grep -q '"status":"ok"' health.json
+          done
         env:
-          AZURE_PROD_WEBAPP_URL: ${{ secrets.AZURE_PROD_WEBAPP_URL }}
+          AZURE_PROD_SITE_APP_URL: ${{ secrets.AZURE_PROD_SITE_APP_URL }}
+          AZURE_PROD_API_APP_URL: ${{ secrets.AZURE_PROD_API_APP_URL }}
 '@
 
   Write-TemplateFile $result ".gitea/workflows/README.md" @'
@@ -2711,14 +2813,20 @@ Required repository secrets:
 - `NEXUS_REPOSITORY`
 - `AZURE_CREDENTIALS`
 - `AZURE_DEV_RESOURCE_GROUP`
-- `AZURE_DEV_WEBAPP_NAME`
-- `AZURE_DEV_WEBAPP_URL`
+- `AZURE_DEV_SITE_APP_NAME`
+- `AZURE_DEV_SITE_APP_URL`
+- `AZURE_DEV_API_APP_NAME`
+- `AZURE_DEV_API_APP_URL`
 - `AZURE_QA_RESOURCE_GROUP`
-- `AZURE_QA_WEBAPP_NAME`
-- `AZURE_QA_WEBAPP_URL`
+- `AZURE_QA_SITE_APP_NAME`
+- `AZURE_QA_SITE_APP_URL`
+- `AZURE_QA_API_APP_NAME`
+- `AZURE_QA_API_APP_URL`
 - `AZURE_PROD_RESOURCE_GROUP`
-- `AZURE_PROD_WEBAPP_NAME`
-- `AZURE_PROD_WEBAPP_URL`
+- `AZURE_PROD_SITE_APP_NAME`
+- `AZURE_PROD_SITE_APP_URL`
+- `AZURE_PROD_API_APP_NAME`
+- `AZURE_PROD_API_APP_URL`
 
 Push-triggered deployments are ticket-gated by `.codex/delivery-policy.json`. Only commits or merged PR titles that start with the configured ticket key pattern may deploy. `[SDD]`, OpenSpec, chore, and ops-only maintenance changes do not deploy automatically.
 
@@ -2741,7 +2849,7 @@ Release flow:
 feature branch -> dev -> DEV -> QA -> main -> PROD
 ```
 
-The package workflow builds and publishes from ticket-gated application changes on `dev`, including a baseline `app/{commitSha}/release.json`. DEV and QA must deploy the same Nexus ZIP artifact for the same commit SHA. PROD must deploy the QA-approved Nexus artifact from an exact-commit `main` promotion or explicit dispatch by commit SHA and must pass both the page smoke check and `/health` check.
+The package workflow reads `infra/deployment/apps.json`, builds one ZIP per deployable app, and publishes from ticket-gated application changes on `dev`, including `app/{commitSha}/deployable-apps.json`, per-app ZIP/checksum files, and a baseline `app/{commitSha}/release.json`. DEV and QA must deploy the same Nexus app artifacts for the same commit SHA. PROD must deploy the QA-approved Nexus app artifacts from an exact-commit `main` promotion or explicit dispatch by commit SHA and must pass each app health check.
 '@
 
   return $result

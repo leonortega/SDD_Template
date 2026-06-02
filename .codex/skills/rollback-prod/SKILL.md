@@ -1,6 +1,6 @@
 ---
 name: rollback-prod
-description: Roll back PROD to a previously verified Nexus artifact. Use when Codex needs to choose a known-good release from release.json metadata, redeploy app/{commitSha}/app.zip to PROD without rebuilding, verify PROD page and /health, check Prometheus/Grafana when available, and comment rollback evidence on Plane.
+description: Roll back PROD to previously verified Nexus topology artifacts. Use when Codex needs to choose a known-good release from release.json metadata, redeploy app/{commitSha}/deployable-apps.json and per-app ZIPs to PROD without rebuilding, verify PROD page and all app /health checks, check Prometheus/Grafana when available, and comment rollback evidence on Plane.
 ---
 
 # Rollback PROD
@@ -32,8 +32,9 @@ Run preflight, rollback deployment, verification, Plane result, and follow-up ha
 3. If the user did not supply a rollback target, list known-good candidates from Plane PROD comments, Git tags, and Nexus `release.json` metadata. Order newest-first, mark the current PROD release, and ask the user to choose a target before mutating anything.
 4. Resolve the rollback target from user input, Plane PROD comments, Git tags, or Nexus `release.json` metadata.
 5. Verify the target artifact exists:
-   - `app/{commitSha}/app.zip`
-   - `app/{commitSha}/app.zip.sha256`
+   - `app/{commitSha}/deployable-apps.json`
+   - one `app/{commitSha}/{artifactName}` per topology app
+   - one `app/{commitSha}/{artifactName}.sha256` per topology app
    - `app/{commitSha}/commit.sha`
    - `app/{commitSha}/release.json`
 6. Verify checksum and `commit.sha`.
@@ -51,7 +52,7 @@ release_version={rollbackVersionOrTag}
 source_rc_version={sourceRcVersion}
 ```
 
-The workflow must download `app/{artifact_commit_sha}/app.zip`, verify checksum, deploy the ZIP, and run page plus `/health` checks. Do not rebuild.
+The workflow must download `app/{artifact_commit_sha}/deployable-apps.json`, download every listed app ZIP, verify every checksum, deploy the ZIPs, and run page plus all app `/health` checks. Do not rebuild.
 
 ## Verification
 

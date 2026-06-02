@@ -1,6 +1,6 @@
 ---
 name: deploy-to-qa
-description: Promote a merged pull request artifact through Nexus, Azure DEV, and Azure QA, then update Plane. Use when Codex needs to verify a merged Gitea PR, locate the linked Plane ticket, confirm the immutable Nexus ZIP artifact and checksum, validate Azure DEV and QA page plus /health checks, comment artifact and deployment links on the ticket, and move the ticket to QA.
+description: Promote merged pull request topology artifacts through Nexus, Azure DEV, and Azure QA, then update Plane. Use when Codex needs to verify a merged Gitea PR, locate the linked Plane ticket, confirm immutable Nexus per-app ZIP artifacts and checksums, validate Azure DEV and QA page plus all app /health checks, comment artifact and deployment links on the ticket, and move the ticket to QA.
 ---
 
 # Deploy To QA
@@ -47,11 +47,12 @@ Run preflight, DEV/QA promotion, Plane updates, and handoff reporting in order. 
 5. Run `ValidateTicketLock` with the resolved ticket key, PR, branch, and merged/artifact commit. If the result is invalid, stop before reading or promoting artifacts.
 6. Verify the package/deploy workflow completed for the merged commit. If it did not run, report that config-infra should be used to repair `.gitea/workflows/package-deploy.yml`.
 7. Build the Nexus artifact paths:
-   - `app/{commitSha}/app.zip`
-   - `app/{commitSha}/app.zip.sha256`
+   - `app/{commitSha}/deployable-apps.json`
+   - one `app/{commitSha}/{artifactName}` per topology app
+   - one `app/{commitSha}/{artifactName}.sha256` per topology app
    - `app/{commitSha}/commit.sha`
    - `app/{commitSha}/release.json`
-8. Confirm the artifact, checksum, and commit metadata exist in Nexus using the configured Nexus credentials. Treat missing Nexus local config, Nexus outage, or any missing file as blocking.
+8. Confirm the topology manifest, every app artifact, every checksum, and commit metadata exist in Nexus using the configured Nexus credentials. Treat missing Nexus local config, Nexus outage, or any missing file as blocking.
 9. Compare `commit.sha` with the resolved commit SHA. Treat mismatch as blocking.
 10. Read `release.json` when present and verify `planeTicketKey` matches the locked/resolved ticket key. Treat another ticket key as blocking cross-ticket promotion.
 
@@ -60,11 +61,11 @@ Run preflight, DEV/QA promotion, Plane updates, and handoff reporting in order. 
 1. Confirm DEV deployment succeeded for the same commit. If DEV failed, add a Plane failure comment and stop.
 2. Validate the DEV URL using the workflow smoke-check result or a fresh `curl --fail` when the URL is available. For fresh checks, retry with backoff for Azure cold starts: 5 attempts with waits of 5, 10, 20, 30, and 60 seconds.
 3. Validate DEV `/health` using workflow output or a fresh request. It must return HTTP 200 and JSON `status=ok`. For fresh checks, use the same retry/backoff policy.
-4. Confirm QA deployment downloaded the same Nexus artifact path used by DEV. Do not rebuild.
+4. Confirm QA deployment downloaded the same Nexus topology and app artifact paths used by DEV. Do not rebuild.
 5. Validate the QA URL using the workflow smoke-check result or a fresh `curl --fail` when the URL is available. For fresh checks, use the same retry/backoff policy.
 6. Validate QA `/health` using workflow output or a fresh request. It must return HTTP 200 and JSON `status=ok`. For fresh checks, use the same retry/backoff policy.
 7. If DEV or QA page or `/health` validation fails, add a Plane failure comment and do not move the ticket state.
-8. Use `UpdateReleaseManifest` to create or update `app/{commitSha}/release.json` with commit SHA, checksum, artifact URL, PR URL, Plane ticket key, DEV/QA URLs, DEV/QA status, health status, workflow run URL, and `versionStatus=unversioned QA candidate` unless an RC tag already exists.
+8. Use `UpdateReleaseManifest` to create or update `app/{commitSha}/release.json` with commit SHA, representative checksum/artifact URL, PR URL, Plane ticket key, DEV/QA URLs, DEV/QA status, per-app health status, workflow run URL, and `versionStatus=unversioned QA candidate` unless an RC tag already exists.
 9. Validate and upload `release.json` to Nexus next to the artifact.
 10. If QA passes, move the Plane work item to `plane.qaState`, default `QA`.
 
@@ -88,12 +89,12 @@ The comment must include:
 
 - PR URL
 - commit SHA
-- Nexus artifact URL
+- Nexus topology/artifact URLs
 - checksum
 - DEV URL and status
-- DEV `/health` status
+- DEV per-app `/health` status
 - QA URL and status
-- QA `/health` status
+- QA per-app `/health` status
 - workflow run URL when available
 - Nexus release manifest URL: `app/{commitSha}/release.json`
 - version status: `unversioned QA candidate` unless an RC tag already exists for the commit
