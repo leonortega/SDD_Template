@@ -25,3 +25,4 @@
 - [x] 4.3 Add validation tests for missing required fields and invalid field formats.
 - [x] 4.4 Add UI/page rendering tests for the Client CRUD route and visible empty/list states where supported.
 - [x] 4.5 Run the configured build, test, coverage, formatting, and security gates before PR handoff.
+- [x] 4.6 Fix Gitea Actions PR-validation blockers found during handoff rerun.

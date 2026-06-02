@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text.Json;
 using SDDTemplate.DeliveryTools;
@@ -91,3 +92,6 @@ static string Required(Dictionary<string, string> options, string key)
         ? value
         : throw new ArgumentException($"--{key} is required.");
 }
+
+[ExcludeFromCodeCoverage]
+internal partial class Program;
