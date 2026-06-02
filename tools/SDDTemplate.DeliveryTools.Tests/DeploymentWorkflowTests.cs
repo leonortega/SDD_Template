@@ -116,6 +116,23 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
+        public void PrValidationInstallsPowerShellFromContainerOsPackageFeed()
+        {
+            string workflow = ReadPrValidationWorkflow();
+            string installStep = GetBetween(workflow, "      - name: Install PowerShell", "      - name: Test");
+            string configureTemplate = ReadConfigureScript();
+
+            Assert.Contains("case \"${ID:-}\" in", installStep);
+            Assert.Contains("ubuntu|debian) package_os=\"$ID\" ;;", installStep);
+            Assert.Contains("https://packages.microsoft.com/config/${package_os}/${VERSION_ID}/packages-microsoft-prod.deb", installStep);
+            Assert.DoesNotContain("config/debian/${VERSION_ID}", installStep);
+
+            Assert.Contains("case \"${ID:-}\" in", configureTemplate);
+            Assert.Contains("https://packages.microsoft.com/config/${package_os}/${VERSION_ID}/packages-microsoft-prod.deb", configureTemplate);
+            Assert.DoesNotContain("config/debian/${VERSION_ID}", configureTemplate);
+        }
+
+        [Fact]
         public void ConfigureAuditRequiresAllWorkflowSecretsInReadme()
         {
             string script = ReadConfigureScript();
@@ -988,6 +1005,15 @@ namespace SDDTemplate.DeliveryTools.Tests
                 ".gitea",
                 "workflows",
                 "package-deploy.yml"));
+        }
+
+        private static string ReadPrValidationWorkflow()
+        {
+            return File.ReadAllText(Path.Combine(
+                FindRepositoryRoot().FullName,
+                ".gitea",
+                "workflows",
+                "pr-validation.yml"));
         }
 
         private static string ReadConfigureScript()
