@@ -46,8 +46,8 @@ namespace SDDTemplate.DeliveryTools.Tests
         {
             string workflow = ReadWorkflow();
 
-            Assert.Contains("ReadDeliveryPolicy", workflow);
-            Assert.Contains("ExtractTicketKey", workflow);
+            Assert.Contains("ticketKeyPattern", workflow);
+            Assert.Contains("BASH_REMATCH", workflow);
             Assert.Contains("deploy_allowed=$deploy_allowed", workflow);
             Assert.Contains("needs.classify-changes.outputs.deploy_allowed == 'true'", workflow);
         }
@@ -153,8 +153,9 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.DoesNotContain(".codex/*", classifyJob);
             Assert.DoesNotContain(".gitea/*", classifyJob);
             Assert.Contains("deploy_allowed=false", classifyJob);
-            Assert.Contains("ReadDeliveryPolicy", classifyJob);
-            Assert.Contains("ExtractTicketKey", classifyJob);
+            Assert.Contains("ticketKeyPattern", classifyJob);
+            Assert.Contains("BASH_REMATCH", classifyJob);
+            Assert.DoesNotContain("dotnet run", classifyJob);
         }
 
         [Fact]
