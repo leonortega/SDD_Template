@@ -146,7 +146,7 @@
       ],
       "toolExpectations": [
         "Validate release manifest before mutation",
-        "Verify app.zip.sha256",
+        "Verify each topology artifact checksum",
         "Update Plane only after artifact and deployment checks pass"
       ],
       "stopConditions": [

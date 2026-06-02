@@ -145,6 +145,17 @@ Add the PR link comment:
 POST {plane.baseUrl}/api/v1/workspaces/{workspaceSlug}/projects/{projectUuid}/work-items/{workItemUuid}/comments/
 ```
 
+Payload:
+
+```json
+{
+  "comment_html": "<p>IA generated PR: {prUrl}</p>",
+  "comment_stripped": "IA generated PR: {prUrl}"
+}
+```
+
+Do not send a Gitea-style `comment` or `body` field. Plane can create a blank rendered comment when those fields are used. After posting, read the comment back and verify `comment_stripped` starts with the stable marker.
+
 Use a stable marker:
 
 ```text

@@ -147,7 +147,7 @@ Rules:
 - `parallelDelivery.worktreeRoot` is the only supported isolation model for parallel implementation. Fresh clones and shared-checkout parallelism are unsupported.
 - `parallelDelivery.agentModelPolicy` maps each delivery role to a model and reasoning effort. `model: inherit` means omit the model override and use the parent Codex run's model.
 - Each active ticket owns exactly one worktree and one implementation branch. Reuse matching worktrees; stop if a ticket, branch, or worktree mapping conflicts with durable Plane/Gitea/Git checkpoints.
-- Copy ignored local config needed by child skills into each worktree without printing tokens, passwords, cookies, or credential-bearing URLs. Keep tracked templates placeholder-safe.
+- Copy ignored local config needed by child skills into each worktree without printing tokens, passwords, cookies, or credential-bearing URLs. The default allowlist is `.codex/client-tools.local.json`, `.codex/quality.local.json`, and `.codex/tool-recommendations.local.json` when present; do not copy `.codex/parallel-delivery.local.json`, `.codex/delivery-context.local.json`, `.codex/azure-login.local.json`, or app `*.local.json` files by default. Keep tracked templates placeholder-safe.
 - Before Git, Plane, or Gitea mutation for new or reused parallel work, run `ValidateParallelDeliveryDryRun` with planned tickets, lane state, enabled state, and required local runtime files. The operator-facing question is: `Can I safely start these 2 tickets in parallel?`
 - Implementation and review stages may run concurrently across tickets.
 - DEV, QA, E2E QA, PROD, rollback, and hotfix promotion share deployment lanes and release tags. With `deploymentLanePolicy` set to `serialized`, only the recorded lane owner may run `post-merge-deploy`, `deploy-to-qa`, `test-e2e`, or `deploy-to-prod`; other agents must wait or report the owner.
@@ -187,6 +187,8 @@ Before adding generated comments or moving states, read existing comments when t
 ## Plane Comment Format
 
 Generated Plane comments must keep the stable marker as the first line by itself, followed by a blank line and a human-readable Markdown summary.
+
+When creating or repairing Plane work-item comments through the API, send both `comment_html` and `comment_stripped`; do not send Gitea-style `comment` or `body` fields. Plane can accept those fields while rendering a blank `<p></p>` comment. After posting or patching a generated marker, read the comment back and verify `comment_stripped` starts with the stable marker before reporting the Plane comment as added.
 
 Use this structure unless a workflow-specific skill requires more detail:
 
@@ -271,13 +273,14 @@ Nexus is mandatory for DEV, QA, PROD, and rollback promotion. Do not rebuild bet
 Artifact identity is the commit SHA:
 
 ```text
-app/{commitSha}/app.zip
-app/{commitSha}/app.zip.sha256
+app/{commitSha}/deployable-apps.json
+app/{commitSha}/{artifactName}
+app/{commitSha}/{artifactName}.sha256
 app/{commitSha}/commit.sha
 app/{commitSha}/release.json
 ```
 
-`commit.sha` must exactly match the artifact commit. `app.zip.sha256` must verify the ZIP before deployment.
+`deployable-apps.json` is the packaged copy of `infra/deployment/apps.json` sorted for deployment. `commit.sha` must exactly match the artifact commit. Every `{artifactName}.sha256` listed by the topology must verify before deployment.
 
 ## Release Manifest
 

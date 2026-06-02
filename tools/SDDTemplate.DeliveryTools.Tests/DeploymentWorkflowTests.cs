@@ -11,8 +11,9 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.Contains("artifact_commit_sha", workflow);
             Assert.Contains("PROD_ARTIFACT_COMMIT_SHA=$artifact_commit_sha", workflow);
-            Assert.Contains("app/$PROD_ARTIFACT_COMMIT_SHA/app.zip", workflow);
-            Assert.Contains("app/$PROD_ARTIFACT_COMMIT_SHA/app.zip.sha256", workflow);
+            Assert.Contains("app/$PROD_ARTIFACT_COMMIT_SHA/deployable-apps.json", workflow);
+            Assert.Contains("app/$PROD_ARTIFACT_COMMIT_SHA/$artifact_name", workflow);
+            Assert.Contains("app/$PROD_ARTIFACT_COMMIT_SHA/$artifact_name.sha256", workflow);
         }
 
         [Fact]
@@ -23,7 +24,8 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.DoesNotContain("dotnet publish", prodJob);
             Assert.DoesNotContain("Upload artifact to Nexus", prodJob);
-            Assert.DoesNotContain("app/${GITHUB_SHA}/app.zip", prodJob);
+            Assert.DoesNotContain("app/${GITHUB_SHA}/site.zip", prodJob);
+            Assert.DoesNotContain("app/${GITHUB_SHA}/api.zip", prodJob);
         }
 
         [Fact]
@@ -34,7 +36,8 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.Contains("Smoke check PROD", prodJob);
             Assert.Contains("<title>SDD Template</title>", prodJob);
-            Assert.Contains("$AZURE_PROD_WEBAPP_URL/health", prodJob);
+            Assert.Contains("AZURE_PROD_${app_upper}_APP_URL", prodJob);
+            Assert.Contains("${app_url}${health_path}", prodJob);
             Assert.Contains("'\"status\":\"ok\"'", prodJob);
         }
 
@@ -57,12 +60,60 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.Contains("CreateReleaseManifest", packageJob);
             Assert.Contains("--commit-sha \"$commit_sha\"", packageJob);
-            Assert.Contains("--checksum \"$checksum\"", packageJob);
+            Assert.Contains("--checksum \"$first_artifact_checksum\"", packageJob);
             Assert.Contains("--artifact-url \"$artifact_url\"", packageJob);
             Assert.Contains("--plane-ticket-key \"$plane_ticket_key\"", packageJob);
             Assert.Contains("--version-status unversioned", packageJob);
             Assert.Contains("ValidateReleaseManifest", packageJob);
             Assert.Contains("app/${GITHUB_SHA}/release.json", packageJob);
+        }
+
+        [Fact]
+        public void TopologyManifestContainsSiteAndApiApps()
+        {
+            string root = FindRepositoryRoot().FullName;
+            string manifest = File.ReadAllText(Path.Combine(root, "infra", "deployment", "apps.json"));
+
+            Assert.Contains("\"appId\": \"site\"", manifest);
+            Assert.Contains("\"projectPath\": \"src/SDDTemplate.Site/SDDTemplate.Site.csproj\"", manifest);
+            Assert.Contains("\"role\": \"web\"", manifest);
+            Assert.Contains("\"artifactName\": \"site.zip\"", manifest);
+            Assert.Contains("\"appId\": \"api\"", manifest);
+            Assert.Contains("\"projectPath\": \"src/SDDTemplate.Api/SDDTemplate.Api.csproj\"", manifest);
+            Assert.Contains("\"role\": \"api\"", manifest);
+            Assert.Contains("\"artifactName\": \"api.zip\"", manifest);
+        }
+
+        [Fact]
+        public void AzureBicepUsesTopologyAndAppsettingsMappings()
+        {
+            string bicep = File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, "infra", "azure", "main.bicep"));
+
+            Assert.Contains("param deployableApps array", bicep);
+            Assert.Contains("resource apps 'Microsoft.Web/sites@2023-12-01' = [for app in deployableApps", bicep);
+            Assert.Contains("Api__BaseUrl", bicep);
+            Assert.Contains("Cors__AllowedOrigins__0", bicep);
+            Assert.Contains("ConnectionStrings__ClientsDb", bicep);
+            Assert.Contains("output apps array", bicep);
+            Assert.Contains("output siteAppName", bicep);
+            Assert.Contains("output apiAppName", bicep);
+        }
+
+        [Fact]
+        public void PackageWorkflowPublishesUploadsAndDeploysPerAppArtifacts()
+        {
+            string workflow = ReadWorkflow();
+            string packageJob = GetJobSection(workflow, "package");
+
+            Assert.Contains("infra/deployment/apps.json", workflow);
+            Assert.Contains("jq -r '.apps[] | [.appId, .projectPath, .artifactName] | @tsv'", packageJob);
+            Assert.Contains("dotnet publish \"$project_path\"", packageJob);
+            Assert.Contains("artifacts/packages/$artifact_name", packageJob);
+            Assert.Contains("deployable-apps.json", workflow);
+            Assert.Contains("az webapp deploy", workflow);
+            Assert.Contains("AZURE_DEV_${app_upper}_APP_NAME", workflow);
+            Assert.Contains("AZURE_QA_${app_upper}_APP_NAME", workflow);
+            Assert.Contains("AZURE_PROD_${app_upper}_APP_NAME", workflow);
         }
 
         [Fact]
@@ -116,6 +167,23 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
+        public void PrValidationInstallsPowerShellFromContainerOsPackageFeed()
+        {
+            string workflow = ReadPrValidationWorkflow();
+            string installStep = GetBetween(workflow, "      - name: Install PowerShell", "      - name: Test");
+            string configureTemplate = ReadConfigureScript();
+
+            Assert.Contains("case \"${ID:-}\" in", installStep);
+            Assert.Contains("ubuntu|debian) package_os=\"$ID\" ;;", installStep);
+            Assert.Contains("https://packages.microsoft.com/config/${package_os}/${VERSION_ID}/packages-microsoft-prod.deb", installStep);
+            Assert.DoesNotContain("config/debian/${VERSION_ID}", installStep);
+
+            Assert.Contains("case \"${ID:-}\" in", configureTemplate);
+            Assert.Contains("https://packages.microsoft.com/config/${package_os}/${VERSION_ID}/packages-microsoft-prod.deb", configureTemplate);
+            Assert.DoesNotContain("config/debian/${VERSION_ID}", configureTemplate);
+        }
+
+        [Fact]
         public void ConfigureAuditRequiresAllWorkflowSecretsInReadme()
         {
             string script = ReadConfigureScript();
@@ -126,14 +194,20 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.Contains("NEXUS_REPOSITORY", readmeAudit);
             Assert.Contains("AZURE_DEV_RESOURCE_GROUP", readmeAudit);
-            Assert.Contains("AZURE_DEV_WEBAPP_NAME", readmeAudit);
-            Assert.Contains("AZURE_DEV_WEBAPP_URL", readmeAudit);
+            Assert.Contains("AZURE_DEV_SITE_APP_NAME", readmeAudit);
+            Assert.Contains("AZURE_DEV_SITE_APP_URL", readmeAudit);
+            Assert.Contains("AZURE_DEV_API_APP_NAME", readmeAudit);
+            Assert.Contains("AZURE_DEV_API_APP_URL", readmeAudit);
             Assert.Contains("AZURE_QA_RESOURCE_GROUP", readmeAudit);
-            Assert.Contains("AZURE_QA_WEBAPP_NAME", readmeAudit);
-            Assert.Contains("AZURE_QA_WEBAPP_URL", readmeAudit);
+            Assert.Contains("AZURE_QA_SITE_APP_NAME", readmeAudit);
+            Assert.Contains("AZURE_QA_SITE_APP_URL", readmeAudit);
+            Assert.Contains("AZURE_QA_API_APP_NAME", readmeAudit);
+            Assert.Contains("AZURE_QA_API_APP_URL", readmeAudit);
             Assert.Contains("AZURE_PROD_RESOURCE_GROUP", readmeAudit);
-            Assert.Contains("AZURE_PROD_WEBAPP_NAME", readmeAudit);
-            Assert.Contains("AZURE_PROD_WEBAPP_URL", readmeAudit);
+            Assert.Contains("AZURE_PROD_SITE_APP_NAME", readmeAudit);
+            Assert.Contains("AZURE_PROD_SITE_APP_URL", readmeAudit);
+            Assert.Contains("AZURE_PROD_API_APP_NAME", readmeAudit);
+            Assert.Contains("AZURE_PROD_API_APP_URL", readmeAudit);
             Assert.Contains("Required Gitea Actions secret is not documented.", readmeAudit);
         }
 
@@ -147,8 +221,10 @@ namespace SDDTemplate.DeliveryTools.Tests
                 "function Get-NexusConfig");
 
             Assert.Contains("\"AZURE_PROD_RESOURCE_GROUP\"", liveSecretAudit);
-            Assert.Contains("\"AZURE_PROD_WEBAPP_NAME\"", liveSecretAudit);
-            Assert.Contains("\"AZURE_PROD_WEBAPP_URL\"", liveSecretAudit);
+            Assert.Contains("\"AZURE_PROD_SITE_APP_NAME\"", liveSecretAudit);
+            Assert.Contains("\"AZURE_PROD_SITE_APP_URL\"", liveSecretAudit);
+            Assert.Contains("\"AZURE_PROD_API_APP_NAME\"", liveSecretAudit);
+            Assert.Contains("\"AZURE_PROD_API_APP_URL\"", liveSecretAudit);
         }
 
         [Fact]
@@ -162,6 +238,26 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("ValidateReleaseManifest", script);
             Assert.Contains("app/${GITHUB_SHA}/release.json", script);
             Assert.Contains("Package/deploy workflow should upload a baseline Nexus release manifest next to the artifact.", script);
+        }
+
+        [Fact]
+        public void ConfigureAzureSkillOwnsDeploymentTopologyReview()
+        {
+            string skill = ReadSkill("configure-azure-environments", "SKILL.md");
+            string azureReference = ReadSkill("configure-dev-environment", Path.Combine("references", "azure.md"));
+            string implementation = ReadSkill("implement-ticket", "SKILL.md");
+            string feedbackLoop = ReadSkill("pr-review-feedback-loop", "SKILL.md");
+
+            Assert.Contains("Deployment Topology Review", skill);
+            Assert.Contains("infra/deployment/apps.json", skill);
+            Assert.Contains("Microsoft.NET.Sdk.Web", skill);
+            Assert.Contains("Api:BaseUrl", skill);
+            Assert.Contains("Api__BaseUrl", skill);
+            Assert.Contains("Cors__AllowedOrigins__0", skill);
+            Assert.Contains("ConnectionStrings__ClientsDb", skill);
+            Assert.Contains("Deployment Topology Review", azureReference);
+            Assert.Contains("Deployment topology: updated/verified/no deployable app changes", implementation);
+            Assert.Contains("Deployment Topology Review", feedbackLoop);
         }
 
         [Fact]
@@ -307,10 +403,16 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("parallelDelivery.maxActiveTickets=2", docs);
             Assert.Contains("parallelDelivery.enabled=false", docs);
             Assert.Contains("local runtime files required by child worktrees", docs);
+            Assert.Contains("SyncWorktreeLocalConfig", docs);
+            Assert.Contains("EnsureDeliveryContext", docs);
+            Assert.Contains(".codex/tool-recommendations.local.json", docs);
+            Assert.Contains(".codex/azure-login.local.json", docs);
 
             Assert.Contains("Before Git, Plane, or Gitea mutation", contract);
             Assert.Contains("ValidateParallelDeliveryDryRun", contract);
             Assert.Contains("one worktree", contract);
+            Assert.Contains(".codex/tool-recommendations.local.json", contract);
+            Assert.Contains(".codex/azure-login.local.json", contract);
             Assert.Contains("Never let two agents mutate the same Plane ticket", contract);
             Assert.Contains("Never parallelize DEV, QA, E2E QA, PROD, rollback, or hotfix promotion", contract);
 
@@ -318,6 +420,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("Failed `ValidateParallelDeliveryDryRun`", coordinator);
             Assert.Contains("## Cleanup And Recovery", coordinator);
             Assert.Contains("required ignored local runtime files", coordinator);
+            Assert.Contains("SyncWorktreeLocalConfig", coordinator);
+            Assert.Contains("EnsureDeliveryContext", coordinator);
 
             foreach (string role in new[]
             {
@@ -338,6 +442,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("parallelDelivery.enabled=false", configureRouter);
             Assert.Contains("docs/parallel-delivery.md", configureRouter);
             Assert.Contains("required ignored local runtime files", configureRouter);
+            Assert.Contains("SyncWorktreeLocalConfig", configureRouter);
+            Assert.Contains("EnsureDeliveryContext", configureRouter);
         }
 
         [Fact]
@@ -722,6 +828,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             string autoRouter = ReadSkill("automatic-implement-ticket", "SKILL.md");
             string developmentDocs = ReadDoc("development.md");
             string giteaApiReference = ReadSkill("gitea-pr-review-agent", Path.Combine("references", "gitea-review-api.md"));
+            string apiHelpers = ReadSkill("_shared", "api-helpers.md");
 
             Assert.Contains("PR Review Feedback", contract);
             Assert.Contains("top-level PR comments and inline code review comments", contract);
@@ -740,7 +847,15 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("Commit with the ticket key", feedbackLoop);
             Assert.Contains("IA generated PR feedback detected: {headSha}:{feedbackBatchId}", feedbackLoop);
             Assert.Contains("IA generated PR feedback fixes: {headSha}:{feedbackBatchId}", feedbackLoop);
+            Assert.Contains("comment_html", feedbackLoop);
+            Assert.Contains("comment_stripped", feedbackLoop);
+            Assert.Contains("verify `comment_stripped` starts with the marker", feedbackLoop);
             Assert.Contains("Keep Plane in `In Review`", implementation);
+
+            Assert.Contains("comment_html", contract);
+            Assert.Contains("comment_stripped", contract);
+            Assert.Contains("Do not send a Gitea-style `comment` or `body` field", apiHelpers);
+            Assert.Contains("verify `comment_stripped` starts with the stable marker", apiHelpers);
 
             Assert.Contains("Plane PR feedback detection/fix batch markers", autoRouter);
             Assert.Contains("later human comment on the same PR head SHA", autoRouter);
@@ -988,6 +1103,15 @@ namespace SDDTemplate.DeliveryTools.Tests
                 ".gitea",
                 "workflows",
                 "package-deploy.yml"));
+        }
+
+        private static string ReadPrValidationWorkflow()
+        {
+            return File.ReadAllText(Path.Combine(
+                FindRepositoryRoot().FullName,
+                ".gitea",
+                "workflows",
+                "pr-validation.yml"));
         }
 
         private static string ReadConfigureScript()

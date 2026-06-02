@@ -70,8 +70,9 @@ function Get-ArtifactPaths([string] $Sha) {
   }
 
   [pscustomobject]@{
-    appZip = "app/$Sha/app.zip"
-    checksum = "app/$Sha/app.zip.sha256"
+    topology = "app/$Sha/deployable-apps.json"
+    appArtifactPattern = "app/$Sha/{artifactName}"
+    checksumPattern = "app/$Sha/{artifactName}.sha256"
     commitMetadata = "app/$Sha/commit.sha"
     releaseManifest = "app/$Sha/release.json"
   }
@@ -454,7 +455,8 @@ function Render-PlaneComment {
         "- Workflow: $(Format-Link 'workflow run' (Get-ObjectProperty $data 'workflowRunUrl'))",
         '',
         '**Artifacts**',
-        "- App ZIP: $(Format-Link 'app.zip' (Get-ObjectProperty $data 'artifactUrl'))",
+        "- Topology artifact: $(Format-Link 'deployable-apps.json' (Get-ObjectProperty $data 'topologyUrl'))",
+        "- Representative app artifact: $(Format-Link 'app artifact' (Get-ObjectProperty $data 'artifactUrl'))",
         "- Checksum: ``$((Get-ObjectProperty $data 'checksum'))``",
         "- Release manifest: $(Format-Link 'release.json' (Get-ObjectProperty $data 'releaseManifestUrl'))",
         '',
@@ -479,7 +481,7 @@ function Render-PlaneComment {
         "- QA URL: $(Format-Link 'open QA' (Get-ObjectProperty $data 'qaUrl'))",
         "- Commit: ``$shortCommit`` (``$commitSha``)",
         "- PR: $(Format-Link 'PR' (Get-ObjectProperty $data 'prUrl'))",
-        "- Artifact: $(Format-Link 'app.zip' (Get-ObjectProperty $data 'artifactUrl'))",
+        "- Artifact: $(Format-Link 'app artifact' (Get-ObjectProperty $data 'artifactUrl'))",
         "- Source RC: ``$((Get-ObjectProperty $data 'sourceRcVersion'))`` -> ``$commitSha``",
         "- Release lineage: ``$shortCommit`` -> ``$((Get-ObjectProperty $data 'sourceRcVersion'))`` -> pending ``$((Get-ObjectProperty $data 'finalReleaseVersion'))``",
         '',
@@ -514,7 +516,7 @@ function Render-PlaneComment {
         '**References**',
         "- Release PR: $(Format-Link 'release PR' (Get-ObjectProperty $data 'releasePrUrl'))",
         "- Workflow: $(Format-Link 'workflow run' (Get-ObjectProperty $data 'workflowRunUrl'))",
-        "- Artifact: $(Format-Link 'app.zip' (Get-ObjectProperty $data 'artifactUrl'))",
+        "- Artifact: $(Format-Link 'app artifact' (Get-ObjectProperty $data 'artifactUrl'))",
         "- Checksum: ``$((Get-ObjectProperty $data 'checksum'))``",
         "- Release manifest: $(Format-Link 'release.json' (Get-ObjectProperty $data 'releaseManifestUrl'))",
         "- QA evidence: $(Format-Link 'qa-evidence.zip' (Get-ObjectProperty $data 'qaEvidenceUrl'))",

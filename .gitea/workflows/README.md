@@ -4,7 +4,7 @@ Gitea PR validation is the source of truth. Local hooks are only convenience che
 
 Coverage threshold defaults to `80%` from `.codex/quality.example.json`. Local development may override it with ignored `.codex/quality.local.json`; CI falls back to the tracked example when no local config is present.
 
-The local runner executes PR validation inside a pinned .NET SDK container. Keep checkout and security tools shell-based unless the job container explicitly includes `node`; JavaScript `uses:` actions can fail inside plain SDK containers. Validate runner compatibility after workflow changes:
+The local runner executes PR validation inside a pinned .NET SDK container. PR validation installs PowerShell in the job container because repository delivery-tool tests execute `.ps1` helpers through `pwsh` on Linux. The install step derives the Microsoft package feed from `/etc/os-release` because pinned .NET SDK containers may be Ubuntu even though they are Debian-like. Keep checkout and security tools shell-based unless the job container explicitly includes `node`; JavaScript `uses:` actions can fail inside plain SDK containers. Validate runner compatibility after workflow changes:
 
 ```powershell
 .\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode ValidateGiteaActionsRunner
@@ -20,14 +20,20 @@ Required repository secrets:
 - `NEXUS_REPOSITORY`
 - `AZURE_CREDENTIALS`
 - `AZURE_DEV_RESOURCE_GROUP`
-- `AZURE_DEV_WEBAPP_NAME`
-- `AZURE_DEV_WEBAPP_URL`
+- `AZURE_DEV_SITE_APP_NAME`
+- `AZURE_DEV_SITE_APP_URL`
+- `AZURE_DEV_API_APP_NAME`
+- `AZURE_DEV_API_APP_URL`
 - `AZURE_QA_RESOURCE_GROUP`
-- `AZURE_QA_WEBAPP_NAME`
-- `AZURE_QA_WEBAPP_URL`
+- `AZURE_QA_SITE_APP_NAME`
+- `AZURE_QA_SITE_APP_URL`
+- `AZURE_QA_API_APP_NAME`
+- `AZURE_QA_API_APP_URL`
 - `AZURE_PROD_RESOURCE_GROUP`
-- `AZURE_PROD_WEBAPP_NAME`
-- `AZURE_PROD_WEBAPP_URL`
+- `AZURE_PROD_SITE_APP_NAME`
+- `AZURE_PROD_SITE_APP_URL`
+- `AZURE_PROD_API_APP_NAME`
+- `AZURE_PROD_API_APP_URL`
 
 Push-triggered deployments are ticket-gated by `.codex/delivery-policy.json`. Only commits or merged PR titles that start with the configured ticket key pattern may deploy. `[SDD]`, OpenSpec, chore, and ops-only maintenance changes do not deploy automatically.
 
@@ -50,4 +56,4 @@ Release flow:
 feature branch -> dev -> DEV -> QA -> main -> PROD
 ```
 
-The package workflow builds and publishes from ticket-gated application changes on `dev`, including a baseline `app/{commitSha}/release.json`. DEV and QA must deploy the same Nexus ZIP artifact for the same commit SHA. PROD must deploy the QA-approved Nexus artifact from an exact-commit `main` promotion or explicit dispatch by commit SHA and must pass both the page smoke check and `/health` check.
+The package workflow reads `infra/deployment/apps.json`, builds one ZIP per deployable app, and publishes the topology plus artifacts under `app/{commitSha}/` with a baseline `release.json`. DEV and QA must deploy the same Nexus artifacts for the same commit SHA. PROD must deploy the QA-approved Nexus artifacts from an exact-commit `main` promotion or explicit dispatch by commit SHA and must pass the web page smoke check plus every app `/health` check.

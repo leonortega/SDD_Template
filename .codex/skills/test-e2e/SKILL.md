@@ -196,7 +196,7 @@ Before moving a ticket to `plane.doneState`, establish a release-candidate marke
 7. Include the source RC version in the E2E QA Plane comment.
 8. Update the Nexus release manifest so `release.json` records `artifact commit -> source RC version -> pending final PROD version`.
 
-The RC tag is the human release-candidate identifier for the QA-approved artifact. It must not replace the immutable Nexus identity `app/{commitSha}/app.zip`.
+The RC tag is the human release-candidate identifier for the QA-approved artifact set. It must not replace the immutable Nexus identity under `app/{commitSha}/` from `deployable-apps.json` and each per-app ZIP/checksum pair.
 
 ### 7. Git And Hook Policy
 
