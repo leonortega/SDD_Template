@@ -114,6 +114,14 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("AZURE_DEV_${app_upper}_APP_NAME", workflow);
             Assert.Contains("AZURE_QA_${app_upper}_APP_NAME", workflow);
             Assert.Contains("AZURE_PROD_${app_upper}_APP_NAME", workflow);
+            Assert.Contains("- name: Publish topology apps\n        shell: bash", workflow);
+            Assert.Contains("- name: Upload topology artifacts to Nexus\n        shell: bash", workflow);
+            Assert.Contains("- name: Deploy DEV topology apps\n        shell: bash", workflow);
+            Assert.Contains("- name: Smoke check DEV topology apps\n        shell: bash", workflow);
+            Assert.Contains("- name: Deploy QA topology apps\n        shell: bash", workflow);
+            Assert.Contains("- name: Smoke check QA topology apps\n        shell: bash", workflow);
+            Assert.Contains("- name: Deploy PROD topology apps\n        shell: bash", workflow);
+            Assert.Contains("- name: Smoke check PROD topology apps\n        shell: bash", workflow);
         }
 
         [Fact]

@@ -128,6 +128,7 @@ jobs:
           apt-get install -y --no-install-recommends jq zip
 
       - name: Publish topology apps
+        shell: bash
         run: |
           set -euo pipefail
 
@@ -144,6 +145,7 @@ jobs:
           git rev-parse HEAD > artifacts/commit.sha
 
       - name: Upload topology artifacts to Nexus
+        shell: bash
         run: |
           set -euo pipefail
 
@@ -187,6 +189,7 @@ jobs:
           apt-get install -y --no-install-recommends jq
 
       - name: Download topology artifacts from Nexus
+        shell: bash
         run: |
           set -euo pipefail
 
@@ -212,6 +215,7 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Deploy DEV topology apps
+        shell: bash
         run: |
           set -euo pipefail
 
@@ -230,6 +234,7 @@ jobs:
           AZURE_DEV_API_APP_NAME: ${{ secrets.AZURE_DEV_API_APP_NAME }}
 
       - name: Smoke check DEV topology apps
+        shell: bash
         run: |
           set -euo pipefail
 
@@ -264,6 +269,7 @@ jobs:
           apt-get install -y --no-install-recommends jq
 
       - name: Download topology artifacts from Nexus
+        shell: bash
         run: |
           set -euo pipefail
 
@@ -289,6 +295,7 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Deploy QA topology apps
+        shell: bash
         run: |
           set -euo pipefail
 
@@ -307,6 +314,7 @@ jobs:
           AZURE_QA_API_APP_NAME: ${{ secrets.AZURE_QA_API_APP_NAME }}
 
       - name: Smoke check QA topology apps
+        shell: bash
         run: |
           set -euo pipefail
 
@@ -359,6 +367,7 @@ jobs:
           apt-get install -y --no-install-recommends jq
 
       - name: Download topology artifacts from Nexus
+        shell: bash
         run: |
           set -euo pipefail
 
@@ -384,6 +393,7 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Deploy PROD topology apps
+        shell: bash
         run: |
           set -euo pipefail
 
@@ -402,6 +412,7 @@ jobs:
           AZURE_PROD_API_APP_NAME: ${{ secrets.AZURE_PROD_API_APP_NAME }}
 
       - name: Smoke check PROD topology apps
+        shell: bash
         run: |
           set -euo pipefail
 
