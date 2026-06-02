@@ -14,6 +14,41 @@ namespace SDDTemplate.Site.Tests
             Assert.Contains($"<TargetFramework>{TestScaffoldInfo.TargetFramework}</TargetFramework>", projectXml);
         }
 
+        [Fact]
+        public void SolutionSeparatesSiteApiAndDataProjects()
+        {
+            DirectoryInfo repositoryRoot = FindRepositoryRoot();
+            string solution = File.ReadAllText(Path.Combine(repositoryRoot.FullName, "SDDTemplate.slnx"));
+
+            Assert.Contains("src/SDDTemplate.Site/SDDTemplate.Site.csproj", solution);
+            Assert.Contains("src/SDDTemplate.Api/SDDTemplate.Api.csproj", solution);
+            Assert.Contains("src/SDDTemplate.Data/SDDTemplate.Data.csproj", solution);
+        }
+
+        [Fact]
+        public void SiteDoesNotHostClientApiOrDatabaseInfrastructure()
+        {
+            DirectoryInfo repositoryRoot = FindRepositoryRoot();
+            string siteProgram = File.ReadAllText(Path.Combine(repositoryRoot.FullName, "src", "SDDTemplate.Site", "Program.cs"));
+            string siteProject = File.ReadAllText(Path.Combine(repositoryRoot.FullName, "src", "SDDTemplate.Site", "SDDTemplate.Site.csproj"));
+
+            Assert.DoesNotContain("MapClientEndpoints", siteProgram);
+            Assert.DoesNotContain("AddApplicationDatabase", siteProgram);
+            Assert.DoesNotContain("Microsoft.EntityFrameworkCore", siteProject);
+        }
+
+        [Fact]
+        public void ApiHostsClientApiAndReferencesDataProject()
+        {
+            DirectoryInfo repositoryRoot = FindRepositoryRoot();
+            string apiProgram = File.ReadAllText(Path.Combine(repositoryRoot.FullName, "src", "SDDTemplate.Api", "Program.cs"));
+            string apiProject = File.ReadAllText(Path.Combine(repositoryRoot.FullName, "src", "SDDTemplate.Api", "SDDTemplate.Api.csproj"));
+
+            Assert.Contains("MapClientEndpoints", apiProgram);
+            Assert.Contains("MigrateApplicationDatabaseAsync", apiProgram);
+            Assert.Contains("SDDTemplate.Data.csproj", apiProject);
+        }
+
         [Theory]
         [MemberData(nameof(RequiredFiles))]
         public void SiteProjectContainsStandardBlazorScaffoldFiles(string relativePath)

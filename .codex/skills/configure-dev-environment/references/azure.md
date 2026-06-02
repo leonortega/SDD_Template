@@ -2,12 +2,14 @@
 
 Owns:
 
+- `infra/deployment/apps.json`.
 - `infra/azure/main.bicep`.
 - `infra/azure/dev.parameters.json`.
 - `infra/azure/qa.parameters.json`.
 - `infra/azure/prod.parameters.json`.
 - `infra/azure/deploy-environments.ps1`.
 - DEV/QA/PROD App Service runtime and outputs.
+- Deployment Topology Review for deployable apps and `appsettings*.json` to App Service setting mappings.
 
 ## Defaults
 
@@ -15,7 +17,8 @@ Owns:
 - Location: `eastus`.
 - SKU/tier: `B1` / `Basic`.
 - SQLite path: `/home/data/app.db`.
-- Current Bicep runtime defaults may be `DOTNETCORE|8.0`; for a .NET 10 app, ask whether to use a .NET 10 runtime when available or self-contained deployment.
+- Runtime stack: `DOTNETCORE|10.0`.
+- Manifest app ids: lowercase app ids from `infra/deployment/apps.json`; current defaults are `site` and `api`.
 
 ## Prompting
 
@@ -25,7 +28,7 @@ Ask only for values that differ from defaults:
 - Resource group names.
 - Location.
 - App Service plan SKU/tier.
-- Web/API runtime stack.
+- Runtime stack.
 - SQLite database file name.
 
 For PROD, warn that SQLite is appropriate only for low-concurrency single-instance workloads. Recommend Azure SQL or another managed database if PROD needs higher write concurrency, backups, or multi-instance scale-out.
@@ -67,21 +70,38 @@ az ad sp create-for-rbac `
 
 Store the complete JSON file contents as the Gitea Actions secret `AZURE_CREDENTIALS`. Do not paste the JSON into chat or tracked files.
 
+## Deployment Topology Review
+
+Run this review when changes touch deployable projects, `Program.cs`, `appsettings*.json`, Azure infrastructure, or the package/deploy workflow.
+
+- Detect deployable projects by `Microsoft.NET.Sdk.Web` under `src/**`.
+- Classify Blazor/Razor projects as `web` and endpoint-only projects as `api`.
+- Keep `infra/deployment/apps.json` aligned with app id, project path, role, artifact name, health path, deploy order, and dependencies.
+- Flatten appsettings keys into App Service settings using double underscores.
+- Infer known values between apps, including `Api__BaseUrl`, `Cors__AllowedOrigins__0`, and `ConnectionStrings__ClientsDb`.
+- Use placeholder-safe mappings or exact manual setup instructions for unknown values. Never write real secrets or environment hostnames into tracked appsettings files.
+
 ## Gitea Actions App Service Secrets
 
 The package/deploy workflow deploys DEV and QA from the same Nexus ZIP artifact on ticket-gated `dev` pushes. PROD promotion downloads the QA-approved artifact by commit SHA and does not rebuild. A ticket-gated `main` push is valid only when `main` points to the exact QA-approved packaged commit; otherwise use explicit PROD dispatch with `artifact_commit_sha`. Store these values as Gitea Actions secrets:
 
 - `AZURE_DEV_RESOURCE_GROUP`
-- `AZURE_DEV_WEBAPP_NAME`
-- `AZURE_DEV_WEBAPP_URL`
+- `AZURE_DEV_SITE_APP_NAME`
+- `AZURE_DEV_SITE_APP_URL`
+- `AZURE_DEV_API_APP_NAME`
+- `AZURE_DEV_API_APP_URL`
 - `AZURE_QA_RESOURCE_GROUP`
-- `AZURE_QA_WEBAPP_NAME`
-- `AZURE_QA_WEBAPP_URL`
+- `AZURE_QA_SITE_APP_NAME`
+- `AZURE_QA_SITE_APP_URL`
+- `AZURE_QA_API_APP_NAME`
+- `AZURE_QA_API_APP_URL`
 - `AZURE_PROD_RESOURCE_GROUP`
-- `AZURE_PROD_WEBAPP_NAME`
-- `AZURE_PROD_WEBAPP_URL`
+- `AZURE_PROD_SITE_APP_NAME`
+- `AZURE_PROD_SITE_APP_URL`
+- `AZURE_PROD_API_APP_NAME`
+- `AZURE_PROD_API_APP_URL`
 
-Use the Bicep deployment outputs for the web app names and URLs. Keep real Azure hostnames out of tracked files except placeholder-safe documentation.
+Use the Bicep deployment outputs for app names and URLs. Keep real Azure hostnames out of tracked files except placeholder-safe documentation.
 
 Validation without exposing the secret:
 
@@ -101,7 +121,7 @@ try {
   $env:AZURE_CONFIG_DIR = $tmp
   az login --service-principal --username $cred.clientId --password $cred.clientSecret --tenant $cred.tenantId --output none
   az account set --subscription $cred.subscriptionId
-  az webapp show --resource-group rg-agentic-dev --name '<dev-web-app-name>' --query "{name:name,state:state}" -o json
+  az webapp show --resource-group rg-agentic-dev --name '<dev-site-app-name>' --query "{name:name,state:state}" -o json
 } finally {
   Remove-Item Env:\AZURE_CONFIG_DIR -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
@@ -127,6 +147,6 @@ Deploy after approval:
 
 - Report the active subscription name/id and tenant without exposing tokens.
 - After deployment, check each output URL.
-- Deployment validation must include the app `/health` endpoint for DEV, QA, and PROD. PROD success requires both page smoke and `/health` checks to pass.
+- Deployment validation must include every manifest app `/health` endpoint for DEV, QA, and PROD. PROD success requires web page smoke and all app `/health` checks to pass.
 - Keep environment-specific Azure hostnames out of tracked files.
 - Pass Azure outputs to observability only when the user wants monitoring wired to the new hostnames.

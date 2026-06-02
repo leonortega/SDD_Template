@@ -10,13 +10,14 @@
 Artifact identity is the commit SHA.
 
 ```text
-app/{commitSha}/app.zip
-app/{commitSha}/app.zip.sha256
+app/{commitSha}/deployable-apps.json
+app/{commitSha}/{artifactName}
+app/{commitSha}/{artifactName}.sha256
 app/{commitSha}/commit.sha
 app/{commitSha}/release.json
 ```
 
-`commit.sha` must exactly match the artifact commit. `app.zip.sha256` must verify the ZIP before deployment.
+`commit.sha` must exactly match the artifact commit. Each `{artifactName}.sha256` must verify its ZIP before deployment.
 
 ## Release Manifest
 

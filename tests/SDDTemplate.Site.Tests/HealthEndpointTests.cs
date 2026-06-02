@@ -9,7 +9,7 @@ namespace SDDTemplate.Site.Tests
         [Fact]
         public async Task HealthEndpointReturnsOkStatus()
         {
-            await using WebApplicationFactory<Program> factory = new();
+            await using WebApplicationFactory<SiteAssemblyMarker> factory = new();
             using HttpClient client = factory.CreateClient();
 
             HttpResponseMessage response = await client.GetAsync("/health");
@@ -25,7 +25,7 @@ namespace SDDTemplate.Site.Tests
         [Fact]
         public async Task HealthEndpointDoesNotExposeSensitiveConfiguration()
         {
-            await using WebApplicationFactory<Program> factory = new();
+            await using WebApplicationFactory<SiteAssemblyMarker> factory = new();
             using HttpClient client = factory.CreateClient();
 
             string response = await client.GetStringAsync("/health");
@@ -39,7 +39,7 @@ namespace SDDTemplate.Site.Tests
         [Fact]
         public async Task MetricsEndpointReturnsPrometheusGauge()
         {
-            await using WebApplicationFactory<Program> factory = new();
+            await using WebApplicationFactory<SiteAssemblyMarker> factory = new();
             using HttpClient client = factory.CreateClient();
 
             HttpResponseMessage response = await client.GetAsync("/metrics");

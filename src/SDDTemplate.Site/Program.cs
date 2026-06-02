@@ -15,7 +15,9 @@ if (!app.Environment.IsDevelopment())
     // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     _ = app.UseHsts();
 }
-_ = app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
+_ = app.UseWhen(
+    context => !context.Request.Path.StartsWithSegments("/api"),
+    branch => branch.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true));
 _ = app.UseHttpsRedirection();
 
 _ = app.UseAntiforgery();

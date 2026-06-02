@@ -5,7 +5,9 @@ This repository uses a .NET solution with a Blazor application and xUnit tests.
 ## Project Shape
 
 - Solution: `SDDTemplate.slnx`
-- App: `src/SDDTemplate.Site`
+- Web app: `src/SDDTemplate.Site`
+- REST API: `src/SDDTemplate.Api`
+- Data layer: `src/SDDTemplate.Data`
 - Tests: `tests/SDDTemplate.Site.Tests`
 - Delivery helpers: `tools/SDDTemplate.DeliveryTools`
 - OpenSpec changes: `openspec/changes`
@@ -13,7 +15,7 @@ This repository uses a .NET solution with a Blazor application and xUnit tests.
 
 ## Technology Stack And Tool Set
 
-The application stack is .NET 10 with ASP.NET Core and Blazor. The site project targets `net10.0` with `Microsoft.NET.Sdk.Web`; tests target `net10.0` with xUnit, `Microsoft.AspNetCore.Mvc.Testing`, `Microsoft.NET.Test.Sdk`, and coverlet coverage collection.
+The application stack is .NET 10 with ASP.NET Core, Minimal APIs, EF Core, and Blazor. The site and API projects target `net10.0` with `Microsoft.NET.Sdk.Web`; the data project targets `net10.0` with EF Core and owns entities, DbContext, migrations, and database setup. Tests target `net10.0` with xUnit, `Microsoft.AspNetCore.Mvc.Testing`, `Microsoft.NET.Test.Sdk`, and coverlet coverage collection.
 
 Use official-first research when changing platform behavior, generated templates, tests, or workflow guidance. Prefer Microsoft Learn for .NET, ASP.NET Core, Blazor, Azure App Service, and architecture guidance; Playwright docs for browser automation; Gitea, Sonatype Nexus, Prometheus, and Grafana official docs for their tools. Community sources are allowed only when clearly labeled and not used to override repo policy.
 

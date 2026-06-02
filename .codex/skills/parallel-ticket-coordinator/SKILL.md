@@ -29,7 +29,7 @@ Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.e
 - `git.baseBranch`, default `dev`
 - Plane, Gitea, Nexus, PR label, and quality config used by delegated child skills
 
-When copying ignored local config into a ticket worktree, report only filenames copied, never values.
+When copying ignored local config into a ticket worktree, report only filenames copied, never values. The default allowlist is `.codex/client-tools.local.json`, `.codex/quality.local.json`, and `.codex/tool-recommendations.local.json` when present. Do not copy `.codex/parallel-delivery.local.json`, `.codex/delivery-context.local.json`, `.codex/azure-login.local.json`, or app `*.local.json` files by default.
 
 ## Agent Model Policy
 
@@ -103,9 +103,12 @@ Each ticket worktree must have its own ignored `.codex/delivery-context.local.js
 4. Copy required ignored local config files into the ticket worktree:
    - `.codex/client-tools.local.json`
    - `.codex/quality.local.json`
+   - `.codex/tool-recommendations.local.json` when present
    - other ignored local delivery config only when a child skill requires it
 5. Do not copy `.codex/parallel-delivery.local.json` into ticket worktrees.
-6. Create or update that worktree's `.codex/delivery-context.local.json` only after the ticket, branch, and OpenSpec decision are known.
+6. Do not copy `.codex/delivery-context.local.json`; create or update that worktree's ticket lock only after the ticket, branch, and OpenSpec decision are known.
+7. Use `configure-dev-environment` mode `SyncWorktreeLocalConfig` to repair a new or reused ticket worktree before routing child skills when allowlisted local config is missing.
+8. Use `configure-dev-environment` mode `EnsureDeliveryContext` to repair a missing ticket lock only after the worktree's ticket key, branch, OpenSpec change, and PR number are known.
 
 ### 4. Route Role Agents
 

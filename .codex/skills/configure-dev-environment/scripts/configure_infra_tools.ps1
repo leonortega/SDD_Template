@@ -1,5 +1,5 @@
 param(
-  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetPlaneEnv", "SetGiteaRunner", "SetPrometheusAzureTargets", "AuditQualityGates", "AuditRecommendedTools", "DiscoverProjectGuidance", "AcquireProjectGuidance", "SetRecommendedTools", "MapProjectGuidanceStep", "ValidateGiteaActionsRunner", "InitQualityGateTemplates", "SetQualityConfig")]
+  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetPlaneEnv", "SetGiteaRunner", "SetPrometheusAzureTargets", "AuditQualityGates", "AuditRecommendedTools", "DiscoverProjectGuidance", "AcquireProjectGuidance", "SetRecommendedTools", "MapProjectGuidanceStep", "ValidateGiteaActionsRunner", "InitQualityGateTemplates", "SetQualityConfig", "SyncWorktreeLocalConfig", "EnsureDeliveryContext")]
   [string]$Mode = "Audit",
 
   [string]$Root = (Resolve-Path ".").Path,
@@ -280,6 +280,193 @@ function Test-FileContains {
   return $content -match $Pattern
 }
 
+function Get-FileSha256 {
+  param([string]$Path)
+
+  $stream = [System.IO.File]::OpenRead($Path)
+  try {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+      $hash = $sha.ComputeHash($stream)
+      return ([System.BitConverter]::ToString($hash)).Replace("-", "")
+    }
+    finally {
+      $sha.Dispose()
+    }
+  }
+  finally {
+    $stream.Dispose()
+  }
+}
+
+function Get-WorktreeLocalConfigFiles {
+  return @(
+    [pscustomobject]@{ relativePath = ".codex/client-tools.local.json"; required = $true },
+    [pscustomobject]@{ relativePath = ".codex/quality.local.json"; required = $true },
+    [pscustomobject]@{ relativePath = ".codex/tool-recommendations.local.json"; required = $false }
+  )
+}
+
+function Resolve-AnyPath {
+  param([string]$Path)
+
+  if ([string]::IsNullOrWhiteSpace($Path)) { return $null }
+  if ([System.IO.Path]::IsPathRooted($Path)) {
+    return [System.IO.Path]::GetFullPath($Path)
+  }
+  return [System.IO.Path]::GetFullPath((Join-Path $Root $Path))
+}
+
+function Add-UniquePath {
+  param(
+    [System.Collections.Generic.List[string]]$Paths,
+    [string]$Path
+  )
+
+  $fullPath = Resolve-AnyPath $Path
+  if ([string]::IsNullOrWhiteSpace($fullPath)) { return }
+
+  foreach ($existing in $Paths) {
+    if ([string]::Equals($existing, $fullPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+      return
+    }
+  }
+  $Paths.Add($fullPath)
+}
+
+function Get-ValuesJsonWorktreePaths {
+  $paths = [System.Collections.Generic.List[string]]::new()
+  if ([string]::IsNullOrWhiteSpace($ValuesJson)) { return @($paths) }
+
+  try {
+    $values = $ValuesJson | ConvertFrom-Json
+  } catch {
+    return @($paths)
+  }
+
+  if ($values.PSObject.Properties.Name -contains "worktreePath") {
+    Add-UniquePath $paths ([string]$values.worktreePath)
+  }
+  if ($values.PSObject.Properties.Name -contains "worktreePaths") {
+    foreach ($path in @($values.worktreePaths)) {
+      Add-UniquePath $paths ([string]$path)
+    }
+  }
+  return @($paths)
+}
+
+function Get-RecordedParallelWorktreePaths {
+  $paths = [System.Collections.Generic.List[string]]::new()
+  $parallelPath = Join-RootPath ".codex/parallel-delivery.local.json"
+  if (-not (Test-Path $parallelPath)) { return @($paths) }
+
+  try {
+    $state = Get-Content -Path $parallelPath -Raw | ConvertFrom-Json
+  } catch {
+    return @($paths)
+  }
+
+  foreach ($ticket in @($state.tickets)) {
+    if ($null -eq $ticket) { continue }
+    if ($ticket.PSObject.Properties.Name -notcontains "worktreePath") { continue }
+    Add-UniquePath $paths ([string]$ticket.worktreePath)
+  }
+  return @($paths)
+}
+
+function Get-GitWorktreePaths {
+  $paths = [System.Collections.Generic.List[string]]::new()
+  try {
+    $lines = @(& git -C $Root worktree list --porcelain 2>$null)
+  } catch {
+    return @($paths)
+  }
+
+  $rootPath = [System.IO.Path]::GetFullPath($Root)
+  foreach ($line in $lines) {
+    if ($line -notmatch "^worktree\s+(.+)$") { continue }
+    $worktreePath = [System.IO.Path]::GetFullPath($Matches[1])
+    if ([string]::Equals($worktreePath, $rootPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+      continue
+    }
+    Add-UniquePath $paths $worktreePath
+  }
+  return @($paths)
+}
+
+function Get-KnownWorktreePaths {
+  $paths = [System.Collections.Generic.List[string]]::new()
+  foreach ($path in @(Get-GitWorktreePaths)) {
+    Add-UniquePath $paths $path
+  }
+  foreach ($path in @(Get-RecordedParallelWorktreePaths)) {
+    Add-UniquePath $paths $path
+  }
+  return @($paths)
+}
+
+function Get-SyncTargetWorktreePaths {
+  $explicit = @(Get-ValuesJsonWorktreePaths)
+  if ($explicit.Count -gt 0) { return $explicit }
+  return @(Get-KnownWorktreePaths)
+}
+
+function Get-CurrentGitBranch {
+  try {
+    $branch = (& git -C $Root branch --show-current 2>$null)
+    if ([string]::IsNullOrWhiteSpace($branch)) { return $null }
+    return $branch.Trim()
+  } catch {
+    return $null
+  }
+}
+
+function Get-InferredOpenSpecChange {
+  param([string]$Branch)
+
+  if ([string]::IsNullOrWhiteSpace($Branch)) { return $null }
+  return $Branch.Replace("/", "-")
+}
+
+function Get-DisplayPath {
+  param([string]$FullPath)
+
+  try {
+    return Get-RepoRelativePath $FullPath
+  } catch {
+    return $FullPath
+  }
+}
+
+function Add-WorktreeLocalConfigAuditFindings {
+  param($Result)
+
+  foreach ($worktreePath in @(Get-KnownWorktreePaths)) {
+    $displayPath = Get-DisplayPath $worktreePath
+    if (-not (Test-Path -LiteralPath $worktreePath -PathType Container)) {
+      Add-Item $Result "findings" $displayPath "worktreePath" "Recorded ticket worktree path does not exist; repair the parallel delivery index before routing this ticket." "warning"
+      continue
+    }
+
+    foreach ($file in @(Get-WorktreeLocalConfigFiles)) {
+      $relativePath = [string]$file.relativePath
+      $sourcePath = Join-RootPath $relativePath
+      $targetPath = Join-Path $worktreePath $relativePath
+      if (-not (Test-Path $sourcePath) -and -not [bool]$file.required) { continue }
+
+      if (-not (Test-Path -LiteralPath $targetPath)) {
+        $severity = if ([bool]$file.required) { "error" } else { "info" }
+        $message = if ([bool]$file.required) {
+          "Ticket worktree is missing required local runtime file '$relativePath'. Run SyncWorktreeLocalConfig from the coordinator checkout before routing child skills."
+        } else {
+          "Ticket worktree is missing optional local runtime file '$relativePath'. SyncWorktreeLocalConfig will copy it when present in the coordinator checkout."
+        }
+        Add-Item $Result "findings" $displayPath $relativePath $message $severity
+      }
+    }
+  }
+}
+
 function Get-WorkflowContent {
   param([string]$RelativePath)
 
@@ -451,7 +638,7 @@ function Add-QualityGateAuditFindings {
   if (-not (Test-Path (Join-RootPath $releaseWorkflow))) {
     Add-Item $Result "findings" $releaseWorkflow "" "Missing package/deploy workflow for Nexus artifact publication and Azure promotion." "warning"
   } else {
-    foreach ($expected in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "az webapp deploy", "classify-changes", "app_changed", "deploy_allowed", ".codex/delivery-policy.json", "ReadDeliveryPolicy", "ExtractTicketKey", "refs/heads/dev", "refs/heads/main", "deploy-qa", "deploy-prod", "artifact_commit_sha", "PROD_ARTIFACT_COMMIT_SHA", "release_version", "source_rc_version", "release.json", "CreateReleaseManifest", "ValidateReleaseManifest", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_WEBAPP_NAME", "AZURE_QA_WEBAPP_URL", "AZURE_PROD_RESOURCE_GROUP", "AZURE_PROD_WEBAPP_NAME", "AZURE_PROD_WEBAPP_URL", "/health")) {
+    foreach ($expected in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "az webapp deploy", "classify-changes", "app_changed", "deploy_allowed", ".codex/delivery-policy.json", "ReadDeliveryPolicy", "ExtractTicketKey", "refs/heads/dev", "refs/heads/main", "deploy-qa", "deploy-prod", "artifact_commit_sha", "PROD_ARTIFACT_COMMIT_SHA", "release_version", "source_rc_version", "release.json", "CreateReleaseManifest", "ValidateReleaseManifest", "infra/deployment/apps.json", "deployable-apps.json", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_SITE_APP_NAME", "AZURE_QA_SITE_APP_URL", "AZURE_QA_API_APP_NAME", "AZURE_QA_API_APP_URL", "AZURE_PROD_RESOURCE_GROUP", "AZURE_PROD_SITE_APP_NAME", "AZURE_PROD_SITE_APP_URL", "AZURE_PROD_API_APP_NAME", "AZURE_PROD_API_APP_URL", "/health")) {
       if (-not (Test-FileContains $releaseWorkflow ([regex]::Escape($expected)))) {
         Add-Item $Result "findings" $releaseWorkflow $expected "Package/deploy workflow does not mention $expected." "warning"
       }
@@ -470,9 +657,8 @@ function Add-QualityGateAuditFindings {
       Add-Item $Result "findings" $releaseWorkflow "release.json" "Package/deploy workflow should upload a baseline Nexus release manifest next to the artifact." "warning"
     }
     $releaseContent = Get-Content -Path (Join-RootPath $releaseWorkflow) -Raw
-    $publishCount = ([regex]::Matches($releaseContent, "dotnet publish")).Count
-    if ($publishCount -gt 1) {
-      Add-Item $Result "findings" $releaseWorkflow "dotnet publish" "Package/deploy workflow appears to publish more than once; DEV, QA, and PROD should promote the same Nexus artifact." "warning"
+    if (-not (Test-FileContains $releaseWorkflow "jq -r '\.apps\[\] \| \[\.appId, \.projectPath, \.artifactName\] \| @tsv'")) {
+      Add-Item $Result "findings" $releaseWorkflow "topology.publish" "Package/deploy workflow should publish deployable apps from infra/deployment/apps.json." "warning"
     }
   }
 
@@ -552,8 +738,23 @@ function Add-QualityGateAuditFindings {
   }
 
   $azureMain = "infra/azure/main.bicep"
+  $topologyManifest = "infra/deployment/apps.json"
+  if (-not (Test-Path (Join-RootPath $topologyManifest))) {
+    Add-Item $Result "findings" $topologyManifest "" "Missing deployable app topology manifest used by Azure Bicep and package/deploy workflow." "warning"
+  } else {
+    foreach ($expectedTopology in @('"appId"\s*:\s*"site"', '"appId"\s*:\s*"api"', '"projectPath"\s*:', '"artifactName"\s*:', '"healthPath"\s*:')) {
+      if (-not (Test-FileContains $topologyManifest $expectedTopology)) {
+        Add-Item $Result "findings" $topologyManifest $expectedTopology "Deployable app topology manifest is missing an expected app or field." "warning"
+      }
+    }
+  }
   if (Test-FileContains $azureMain "DOTNETCORE\|8\.0") {
     Add-Item $Result "findings" $azureMain "webRuntimeStack/apiRuntimeStack" "Azure runtime defaults still target DOTNETCORE|8.0; align with .NET 10 app or use a self-contained deployment strategy." "warning"
+  }
+  foreach ($expectedAzureMapping in @("deployableApps", "Api__BaseUrl", "Cors__AllowedOrigins__0", "ConnectionStrings__ClientsDb", "output apps array")) {
+    if (-not (Test-FileContains $azureMain ([regex]::Escape($expectedAzureMapping)))) {
+      Add-Item $Result "findings" $azureMain $expectedAzureMapping "Azure Bicep should map topology apps and appsettings-derived App Service settings." "warning"
+    }
   }
   foreach ($parametersFile in @("infra/azure/dev.parameters.json", "infra/azure/qa.parameters.json", "infra/azure/prod.parameters.json")) {
     if (Test-Path (Join-RootPath $parametersFile)) {
@@ -568,7 +769,7 @@ function Add-QualityGateAuditFindings {
   if (-not (Test-Path (Join-RootPath $secretsDoc))) {
     Add-Item $Result "findings" $secretsDoc "" "Missing documentation for required Gitea Actions secrets and branch protection." "warning"
   } else {
-    foreach ($secret in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "NEXUS_REPOSITORY", "AZURE_CREDENTIALS", "AZURE_DEV_RESOURCE_GROUP", "AZURE_DEV_WEBAPP_NAME", "AZURE_DEV_WEBAPP_URL", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_WEBAPP_NAME", "AZURE_QA_WEBAPP_URL", "AZURE_PROD_RESOURCE_GROUP", "AZURE_PROD_WEBAPP_NAME", "AZURE_PROD_WEBAPP_URL")) {
+    foreach ($secret in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "NEXUS_REPOSITORY", "AZURE_CREDENTIALS", "AZURE_DEV_RESOURCE_GROUP", "AZURE_DEV_SITE_APP_NAME", "AZURE_DEV_SITE_APP_URL", "AZURE_DEV_API_APP_NAME", "AZURE_DEV_API_APP_URL", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_SITE_APP_NAME", "AZURE_QA_SITE_APP_URL", "AZURE_QA_API_APP_NAME", "AZURE_QA_API_APP_URL", "AZURE_PROD_RESOURCE_GROUP", "AZURE_PROD_SITE_APP_NAME", "AZURE_PROD_SITE_APP_URL", "AZURE_PROD_API_APP_NAME", "AZURE_PROD_API_APP_URL")) {
       if (-not (Test-FileContains $secretsDoc $secret)) {
         Add-Item $Result "findings" $secretsDoc $secret "Required Gitea Actions secret is not documented." "warning"
       }
@@ -620,14 +821,20 @@ function Add-GiteaActionsSecretAuditFindings {
     "NEXUS_REPOSITORY",
     "AZURE_CREDENTIALS",
     "AZURE_DEV_RESOURCE_GROUP",
-    "AZURE_DEV_WEBAPP_NAME",
-    "AZURE_DEV_WEBAPP_URL",
+    "AZURE_DEV_SITE_APP_NAME",
+    "AZURE_DEV_SITE_APP_URL",
+    "AZURE_DEV_API_APP_NAME",
+    "AZURE_DEV_API_APP_URL",
     "AZURE_QA_RESOURCE_GROUP",
-    "AZURE_QA_WEBAPP_NAME",
-    "AZURE_QA_WEBAPP_URL",
+    "AZURE_QA_SITE_APP_NAME",
+    "AZURE_QA_SITE_APP_URL",
+    "AZURE_QA_API_APP_NAME",
+    "AZURE_QA_API_APP_URL",
     "AZURE_PROD_RESOURCE_GROUP",
-    "AZURE_PROD_WEBAPP_NAME",
-    "AZURE_PROD_WEBAPP_URL"
+    "AZURE_PROD_SITE_APP_NAME",
+    "AZURE_PROD_SITE_APP_URL",
+    "AZURE_PROD_API_APP_NAME",
+    "AZURE_PROD_API_APP_URL"
   )
 
   try {
@@ -1496,6 +1703,7 @@ function Invoke-Audit {
   }
 
   Add-QualityGateAuditFindings $result
+  Add-WorktreeLocalConfigAuditFindings $result
 
   return $result
 }
@@ -2132,6 +2340,23 @@ jobs:
       - name: Build
         run: dotnet build -c Release --no-restore
 
+      - name: Install PowerShell
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          apt-get update
+          apt-get install -y --no-install-recommends wget apt-transport-https ca-certificates gnupg
+          . /etc/os-release
+          case "${ID:-}" in
+            ubuntu|debian) package_os="$ID" ;;
+            *) echo "Unsupported PowerShell package OS: ${ID:-unknown}" && exit 1 ;;
+          esac
+          wget -q "https://packages.microsoft.com/config/${package_os}/${VERSION_ID}/packages-microsoft-prod.deb" -O /tmp/packages-microsoft-prod.deb
+          dpkg -i /tmp/packages-microsoft-prod.deb
+          apt-get update
+          apt-get install -y --no-install-recommends powershell
+
       - name: Test
         run: dotnet test -c Release --no-build --logger trx --collect:"XPlat Code Coverage"
 
@@ -2258,7 +2483,7 @@ jobs:
           app_changed=false
           while IFS= read -r path; do
             case "$path" in
-              src/*|tests/*|*.sln|*.csproj|Directory.Build.props|Directory.Build.targets|global.json)
+              src/*|tests/*|infra/deployment/*|infra/azure/*|*.sln|*.slnx|*.csproj|Directory.Build.props|Directory.Build.targets|global.json)
                 app_changed=true
                 ;;
             esac
@@ -2299,37 +2524,44 @@ jobs:
           git fetch --depth 1 origin "$GITHUB_SHA"
           git checkout --force FETCH_HEAD
 
-      - name: Publish
-        run: dotnet publish src/SDDTemplate.Site/SDDTemplate.Site.csproj -c Release -o ./artifacts/app
-
       - name: Install packaging tools
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends zip
+          apt-get install -y --no-install-recommends jq zip
 
-      - name: Create deployable ZIP
+      - name: Publish topology apps
         run: |
-          cd artifacts/app
-          zip -r ../app.zip .
-          cd ../..
-          sha256sum artifacts/app.zip | sed 's#artifacts/app.zip#app.zip#' > artifacts/app.zip.sha256
+          set -euo pipefail
+          mkdir -p artifacts/packages
+          jq -c '.apps | sort_by(.deployOrder)' infra/deployment/apps.json > artifacts/deployable-apps.json
+          jq -r '.apps[] | [.appId, .projectPath, .artifactName] | @tsv' infra/deployment/apps.json |
+          while IFS=$'\t' read -r app_id project_path artifact_name; do
+            dotnet publish "$project_path" -c Release -o "artifacts/$app_id"
+            (cd "artifacts/$app_id" && zip -r "../packages/$artifact_name" .)
+            sha256sum "artifacts/packages/$artifact_name" | sed "s#artifacts/packages/##" > "artifacts/packages/$artifact_name.sha256"
+          done
           git rev-parse HEAD > artifacts/commit.sha
 
-      - name: Upload artifact to Nexus
+      - name: Upload topology artifacts to Nexus
         run: |
-          checksum="$(cut -d ' ' -f1 artifacts/app.zip.sha256)"
+          first_artifact_name="$(jq -r '.apps | sort_by(.deployOrder) | .[0].artifactName' infra/deployment/apps.json)"
+          checksum="$(cut -d ' ' -f1 "artifacts/packages/$first_artifact_name.sha256")"
           commit_sha="$(cat artifacts/commit.sha)"
           ticket_key_pattern="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ReadDeliveryPolicy --path .codex/delivery-policy.json)"
 
           commit_message="$(git log -1 --pretty=%B)"
           plane_ticket_key="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ExtractTicketKey --pattern "$ticket_key_pattern" --message "$commit_message" --fallback manual-dispatch)"
 
-          artifact_url="$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip"
+          artifact_url="$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/$first_artifact_name"
           dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- CreateReleaseManifest --output artifacts/release.json --commit-sha "$commit_sha" --checksum "$checksum" --artifact-url "$artifact_url" --plane-ticket-key "$plane_ticket_key" --version-status unversioned
           dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ValidateReleaseManifest --path artifacts/release.json
 
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/app.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip"
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/app.zip.sha256 "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip.sha256"
+          jq -r '.apps[] | .artifactName' infra/deployment/apps.json |
+          while IFS= read -r artifact_name; do
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file "artifacts/packages/$artifact_name" "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/$artifact_name"
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file "artifacts/packages/$artifact_name.sha256" "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/$artifact_name.sha256"
+          done
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/deployable-apps.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/deployable-apps.json"
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/commit.sha "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/commit.sha"
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/release.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/release.json"
         env:
@@ -2345,11 +2577,20 @@ jobs:
     runs-on: ubuntu-latest
     if: (github.event_name == 'push' && github.ref == 'refs/heads/dev' && needs.classify-changes.outputs.app_changed == 'true' && needs.classify-changes.outputs.deploy_allowed == 'true') || github.event.inputs.environment == 'dev' || github.event.inputs.environment == 'qa'
     steps:
-      - name: Download artifact from Nexus
+      - name: Install deployment tools
         run: |
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip"
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip.sha256 "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip.sha256"
-          sha256sum -c app.zip.sha256
+          apt-get update
+          apt-get install -y --no-install-recommends jq
+
+      - name: Download topology artifacts from Nexus
+        run: |
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o deployable-apps.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/deployable-apps.json"
+          jq -r '.[].artifactName' deployable-apps.json |
+          while IFS= read -r artifact_name; do
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o "$artifact_name" "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/$artifact_name"
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o "$artifact_name.sha256" "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/$artifact_name.sha256"
+            sha256sum -c "$artifact_name.sha256"
+          done
         env:
           NEXUS_URL: ${{ secrets.NEXUS_URL }}
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
@@ -2364,21 +2605,37 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Deploy DEV package
-        run: az webapp deploy --resource-group "$AZURE_DEV_RESOURCE_GROUP" --name "$AZURE_DEV_WEBAPP_NAME" --src-path app.zip --type zip --clean true
+      - name: Deploy DEV topology apps
+        run: |
+          jq -r '.[] | [.appId, .artifactName] | @tsv' deployable-apps.json |
+          while IFS=$'\t' read -r app_id artifact_name; do
+            app_upper="$(echo "$app_id" | tr '[:lower:]-' '[:upper:]_')"
+            name_var="AZURE_DEV_${app_upper}_APP_NAME"
+            az webapp deploy --resource-group "$AZURE_DEV_RESOURCE_GROUP" --name "${!name_var}" --src-path "$artifact_name" --type zip --clean true
+          done
         env:
           AZURE_DEV_RESOURCE_GROUP: ${{ secrets.AZURE_DEV_RESOURCE_GROUP }}
-          AZURE_DEV_WEBAPP_NAME: ${{ secrets.AZURE_DEV_WEBAPP_NAME }}
+          AZURE_DEV_SITE_APP_NAME: ${{ secrets.AZURE_DEV_SITE_APP_NAME }}
+          AZURE_DEV_API_APP_NAME: ${{ secrets.AZURE_DEV_API_APP_NAME }}
 
-      - name: Smoke check DEV
+      - name: Smoke check DEV topology apps
         run: |
-          curl --fail --silent --show-error --location "$AZURE_DEV_WEBAPP_URL" -o response.html
-          grep -q "<title>SDD Template</title>" response.html
-          ! grep -qi "Microsoft Azure" response.html
-          curl --fail --silent --show-error --location "$AZURE_DEV_WEBAPP_URL/health" -o health.json
-          grep -q '"status":"ok"' health.json
+          jq -r '.[] | [.appId, .role, .healthPath] | @tsv' deployable-apps.json |
+          while IFS=$'\t' read -r app_id role health_path; do
+            app_upper="$(echo "$app_id" | tr '[:lower:]-' '[:upper:]_')"
+            url_var="AZURE_DEV_${app_upper}_APP_URL"
+            app_url="${!url_var}"
+            if [ "$role" = "web" ]; then
+              curl --fail --silent --show-error --location "$app_url" -o response.html
+              grep -q "<title>SDD Template</title>" response.html
+              ! grep -qi "Microsoft Azure" response.html
+            fi
+            curl --fail --silent --show-error --location "${app_url}${health_path}" -o health.json
+            grep -q '"status":"ok"' health.json
+          done
         env:
-          AZURE_DEV_WEBAPP_URL: ${{ secrets.AZURE_DEV_WEBAPP_URL }}
+          AZURE_DEV_SITE_APP_URL: ${{ secrets.AZURE_DEV_SITE_APP_URL }}
+          AZURE_DEV_API_APP_URL: ${{ secrets.AZURE_DEV_API_APP_URL }}
 
   deploy-qa:
     needs:
@@ -2387,11 +2644,20 @@ jobs:
     runs-on: ubuntu-latest
     if: (github.event_name == 'push' && github.ref == 'refs/heads/dev' && needs.classify-changes.outputs.app_changed == 'true' && needs.classify-changes.outputs.deploy_allowed == 'true') || github.event.inputs.environment == 'qa'
     steps:
-      - name: Download artifact from Nexus
+      - name: Install deployment tools
         run: |
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip"
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip.sha256 "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip.sha256"
-          sha256sum -c app.zip.sha256
+          apt-get update
+          apt-get install -y --no-install-recommends jq
+
+      - name: Download topology artifacts from Nexus
+        run: |
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o deployable-apps.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/deployable-apps.json"
+          jq -r '.[].artifactName' deployable-apps.json |
+          while IFS= read -r artifact_name; do
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o "$artifact_name" "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/$artifact_name"
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o "$artifact_name.sha256" "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/$artifact_name.sha256"
+            sha256sum -c "$artifact_name.sha256"
+          done
         env:
           NEXUS_URL: ${{ secrets.NEXUS_URL }}
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
@@ -2406,21 +2672,37 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Deploy QA package
-        run: az webapp deploy --resource-group "$AZURE_QA_RESOURCE_GROUP" --name "$AZURE_QA_WEBAPP_NAME" --src-path app.zip --type zip --clean true
+      - name: Deploy QA topology apps
+        run: |
+          jq -r '.[] | [.appId, .artifactName] | @tsv' deployable-apps.json |
+          while IFS=$'\t' read -r app_id artifact_name; do
+            app_upper="$(echo "$app_id" | tr '[:lower:]-' '[:upper:]_')"
+            name_var="AZURE_QA_${app_upper}_APP_NAME"
+            az webapp deploy --resource-group "$AZURE_QA_RESOURCE_GROUP" --name "${!name_var}" --src-path "$artifact_name" --type zip --clean true
+          done
         env:
           AZURE_QA_RESOURCE_GROUP: ${{ secrets.AZURE_QA_RESOURCE_GROUP }}
-          AZURE_QA_WEBAPP_NAME: ${{ secrets.AZURE_QA_WEBAPP_NAME }}
+          AZURE_QA_SITE_APP_NAME: ${{ secrets.AZURE_QA_SITE_APP_NAME }}
+          AZURE_QA_API_APP_NAME: ${{ secrets.AZURE_QA_API_APP_NAME }}
 
-      - name: Smoke check QA
+      - name: Smoke check QA topology apps
         run: |
-          curl --fail --silent --show-error --location "$AZURE_QA_WEBAPP_URL" -o response.html
-          grep -q "<title>SDD Template</title>" response.html
-          ! grep -qi "Microsoft Azure" response.html
-          curl --fail --silent --show-error --location "$AZURE_QA_WEBAPP_URL/health" -o health.json
-          grep -q '"status":"ok"' health.json
+          jq -r '.[] | [.appId, .role, .healthPath] | @tsv' deployable-apps.json |
+          while IFS=$'\t' read -r app_id role health_path; do
+            app_upper="$(echo "$app_id" | tr '[:lower:]-' '[:upper:]_')"
+            url_var="AZURE_QA_${app_upper}_APP_URL"
+            app_url="${!url_var}"
+            if [ "$role" = "web" ]; then
+              curl --fail --silent --show-error --location "$app_url" -o response.html
+              grep -q "<title>SDD Template</title>" response.html
+              ! grep -qi "Microsoft Azure" response.html
+            fi
+            curl --fail --silent --show-error --location "${app_url}${health_path}" -o health.json
+            grep -q '"status":"ok"' health.json
+          done
         env:
-          AZURE_QA_WEBAPP_URL: ${{ secrets.AZURE_QA_WEBAPP_URL }}
+          AZURE_QA_SITE_APP_URL: ${{ secrets.AZURE_QA_SITE_APP_URL }}
+          AZURE_QA_API_APP_URL: ${{ secrets.AZURE_QA_API_APP_URL }}
 
   deploy-prod:
     needs: classify-changes
@@ -2447,11 +2729,20 @@ jobs:
           RELEASE_VERSION: ${{ github.event.inputs.release_version }}
           SOURCE_RC_VERSION: ${{ github.event.inputs.source_rc_version }}
 
-      - name: Download artifact from Nexus
+      - name: Install deployment tools
         run: |
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$PROD_ARTIFACT_COMMIT_SHA/app.zip"
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip.sha256 "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$PROD_ARTIFACT_COMMIT_SHA/app.zip.sha256"
-          sha256sum -c app.zip.sha256
+          apt-get update
+          apt-get install -y --no-install-recommends jq
+
+      - name: Download topology artifacts from Nexus
+        run: |
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o deployable-apps.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$PROD_ARTIFACT_COMMIT_SHA/deployable-apps.json"
+          jq -r '.[].artifactName' deployable-apps.json |
+          while IFS= read -r artifact_name; do
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o "$artifact_name" "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$PROD_ARTIFACT_COMMIT_SHA/$artifact_name"
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o "$artifact_name.sha256" "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$PROD_ARTIFACT_COMMIT_SHA/$artifact_name.sha256"
+            sha256sum -c "$artifact_name.sha256"
+          done
         env:
           NEXUS_URL: ${{ secrets.NEXUS_URL }}
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
@@ -2466,21 +2757,37 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Deploy PROD package
-        run: az webapp deploy --resource-group "$AZURE_PROD_RESOURCE_GROUP" --name "$AZURE_PROD_WEBAPP_NAME" --src-path app.zip --type zip --clean true
+      - name: Deploy PROD topology apps
+        run: |
+          jq -r '.[] | [.appId, .artifactName] | @tsv' deployable-apps.json |
+          while IFS=$'\t' read -r app_id artifact_name; do
+            app_upper="$(echo "$app_id" | tr '[:lower:]-' '[:upper:]_')"
+            name_var="AZURE_PROD_${app_upper}_APP_NAME"
+            az webapp deploy --resource-group "$AZURE_PROD_RESOURCE_GROUP" --name "${!name_var}" --src-path "$artifact_name" --type zip --clean true
+          done
         env:
           AZURE_PROD_RESOURCE_GROUP: ${{ secrets.AZURE_PROD_RESOURCE_GROUP }}
-          AZURE_PROD_WEBAPP_NAME: ${{ secrets.AZURE_PROD_WEBAPP_NAME }}
+          AZURE_PROD_SITE_APP_NAME: ${{ secrets.AZURE_PROD_SITE_APP_NAME }}
+          AZURE_PROD_API_APP_NAME: ${{ secrets.AZURE_PROD_API_APP_NAME }}
 
-      - name: Smoke check PROD
+      - name: Smoke check PROD topology apps
         run: |
-          curl --fail --silent --show-error --location "$AZURE_PROD_WEBAPP_URL" -o response.html
-          grep -q "<title>SDD Template</title>" response.html
-          ! grep -qi "Microsoft Azure" response.html
-          curl --fail --silent --show-error --location "$AZURE_PROD_WEBAPP_URL/health" -o health.json
-          grep -q '"status":"ok"' health.json
+          jq -r '.[] | [.appId, .role, .healthPath] | @tsv' deployable-apps.json |
+          while IFS=$'\t' read -r app_id role health_path; do
+            app_upper="$(echo "$app_id" | tr '[:lower:]-' '[:upper:]_')"
+            url_var="AZURE_PROD_${app_upper}_APP_URL"
+            app_url="${!url_var}"
+            if [ "$role" = "web" ]; then
+              curl --fail --silent --show-error --location "$app_url" -o response.html
+              grep -q "<title>SDD Template</title>" response.html
+              ! grep -qi "Microsoft Azure" response.html
+            fi
+            curl --fail --silent --show-error --location "${app_url}${health_path}" -o health.json
+            grep -q '"status":"ok"' health.json
+          done
         env:
-          AZURE_PROD_WEBAPP_URL: ${{ secrets.AZURE_PROD_WEBAPP_URL }}
+          AZURE_PROD_SITE_APP_URL: ${{ secrets.AZURE_PROD_SITE_APP_URL }}
+          AZURE_PROD_API_APP_URL: ${{ secrets.AZURE_PROD_API_APP_URL }}
 '@
 
   Write-TemplateFile $result ".gitea/workflows/README.md" @'
@@ -2506,14 +2813,20 @@ Required repository secrets:
 - `NEXUS_REPOSITORY`
 - `AZURE_CREDENTIALS`
 - `AZURE_DEV_RESOURCE_GROUP`
-- `AZURE_DEV_WEBAPP_NAME`
-- `AZURE_DEV_WEBAPP_URL`
+- `AZURE_DEV_SITE_APP_NAME`
+- `AZURE_DEV_SITE_APP_URL`
+- `AZURE_DEV_API_APP_NAME`
+- `AZURE_DEV_API_APP_URL`
 - `AZURE_QA_RESOURCE_GROUP`
-- `AZURE_QA_WEBAPP_NAME`
-- `AZURE_QA_WEBAPP_URL`
+- `AZURE_QA_SITE_APP_NAME`
+- `AZURE_QA_SITE_APP_URL`
+- `AZURE_QA_API_APP_NAME`
+- `AZURE_QA_API_APP_URL`
 - `AZURE_PROD_RESOURCE_GROUP`
-- `AZURE_PROD_WEBAPP_NAME`
-- `AZURE_PROD_WEBAPP_URL`
+- `AZURE_PROD_SITE_APP_NAME`
+- `AZURE_PROD_SITE_APP_URL`
+- `AZURE_PROD_API_APP_NAME`
+- `AZURE_PROD_API_APP_URL`
 
 Push-triggered deployments are ticket-gated by `.codex/delivery-policy.json`. Only commits or merged PR titles that start with the configured ticket key pattern may deploy. `[SDD]`, OpenSpec, chore, and ops-only maintenance changes do not deploy automatically.
 
@@ -2536,7 +2849,7 @@ Release flow:
 feature branch -> dev -> DEV -> QA -> main -> PROD
 ```
 
-The package workflow builds and publishes from ticket-gated application changes on `dev`, including a baseline `app/{commitSha}/release.json`. DEV and QA must deploy the same Nexus ZIP artifact for the same commit SHA. PROD must deploy the QA-approved Nexus artifact from an exact-commit `main` promotion or explicit dispatch by commit SHA and must pass both the page smoke check and `/health` check.
+The package workflow reads `infra/deployment/apps.json`, builds one ZIP per deployable app, and publishes from ticket-gated application changes on `dev`, including `app/{commitSha}/deployable-apps.json`, per-app ZIP/checksum files, and a baseline `app/{commitSha}/release.json`. DEV and QA must deploy the same Nexus app artifacts for the same commit SHA. PROD must deploy the QA-approved Nexus app artifacts from an exact-commit `main` promotion or explicit dispatch by commit SHA and must pass each app health check.
 '@
 
   return $result
@@ -2592,6 +2905,122 @@ function Invoke-InitLocalFiles {
   Copy-LocalFile $result "infra/plane/variables.env.example" "infra/plane/variables.env"
   Copy-LocalFile $result "infra/gitea/runner.env.example" "infra/gitea/runner.env"
   Copy-LocalFile $result "infra/monitoring/prometheus.yml" "infra/monitoring/prometheus.local.yml"
+  return $result
+}
+
+function Invoke-SyncWorktreeLocalConfig {
+  $result = New-Result
+  $worktreePaths = @(Get-SyncTargetWorktreePaths)
+  if ($worktreePaths.Count -eq 0) {
+    Add-Item $result "findings" "git worktree" "" "No ticket worktrees were found. Provide ValuesJson with worktreePaths or create/reuse ticket worktrees first." "warning"
+    return $result
+  }
+
+  foreach ($file in @(Get-WorktreeLocalConfigFiles)) {
+    $relativePath = [string]$file.relativePath
+    $sourcePath = Join-RootPath $relativePath
+    if (-not (Test-Path -LiteralPath $sourcePath)) {
+      if ([bool]$file.required) {
+        Add-Item $result "findings" $relativePath "" "Coordinator checkout is missing required local runtime file '$relativePath'. Run InitLocalFiles and SetClientTools before syncing ticket worktrees." "error"
+      } else {
+        Add-Item $result "findings" $relativePath "" "Optional local runtime file '$relativePath' is not present in the coordinator checkout; skipping it." "info"
+      }
+    }
+  }
+
+  foreach ($worktreePath in $worktreePaths) {
+    $displayPath = Get-DisplayPath $worktreePath
+    if (-not (Test-Path -LiteralPath $worktreePath -PathType Container)) {
+      Add-Item $result "findings" $displayPath "worktreePath" "Ticket worktree path does not exist; create or repair the worktree before syncing local config." "error"
+      continue
+    }
+
+    foreach ($file in @(Get-WorktreeLocalConfigFiles)) {
+      $relativePath = [string]$file.relativePath
+      $sourcePath = Join-RootPath $relativePath
+      if (-not (Test-Path -LiteralPath $sourcePath)) { continue }
+
+      $targetPath = Join-Path $worktreePath $relativePath
+      $targetDirectory = Split-Path -Parent $targetPath
+      if (Test-Path -LiteralPath $targetPath) {
+        $sourceHash = Get-FileSha256 $sourcePath
+        $targetHash = Get-FileSha256 $targetPath
+        if ($sourceHash -eq $targetHash) {
+          Add-Item $result "findings" $displayPath $relativePath "Allowlisted local runtime file is already synced." "info"
+          continue
+        }
+
+        Add-Item $result "actions" $displayPath $relativePath "Overwrite allowlisted local runtime file from coordinator checkout."
+      } else {
+        Add-Item $result "actions" $displayPath $relativePath "Copy allowlisted local runtime file from coordinator checkout."
+      }
+
+      if (Test-ConfigWritesEnabled) {
+        if (-not (Test-Path -LiteralPath $targetDirectory)) {
+          New-Item -ItemType Directory -Path $targetDirectory -Force | Out-Null
+        }
+        Copy-Item -Path $sourcePath -Destination $targetPath -Force
+      }
+    }
+  }
+
+  return $result
+}
+
+function Invoke-EnsureDeliveryContext {
+  $result = New-Result
+  $targetRelative = ".codex/delivery-context.local.json"
+  $target = Join-RootPath $targetRelative
+  $values = Convert-JsonToHashtable $ValuesJson
+
+  if (-not $values.Contains("ticketKey") -or [string]::IsNullOrWhiteSpace([string]$values.ticketKey)) {
+    throw "ValuesJson must include ticketKey for EnsureDeliveryContext."
+  }
+
+  $ticketKey = [string]$values.ticketKey
+  $branch = if ($values.Contains("branch")) { [string]$values.branch } else { Get-CurrentGitBranch }
+  if ([string]::IsNullOrWhiteSpace($branch)) {
+    throw "ValuesJson must include branch when the current Git branch cannot be inferred."
+  }
+
+  $openspecChange = if ($values.Contains("openspecChange")) { [string]$values.openspecChange } else { Get-InferredOpenSpecChange $branch }
+  $replaceExisting = $values.Contains("replaceExisting") -and [bool]$values.replaceExisting
+
+  if (Test-Path -LiteralPath $target) {
+    try {
+      $existing = Get-Content -Path $target -Raw | ConvertFrom-Json
+      $existingTicket = [string]$existing.ticketKey
+      if (-not [string]::IsNullOrWhiteSpace($existingTicket) -and $existingTicket -ne $ticketKey -and -not $replaceExisting) {
+        throw "Existing $targetRelative points to '$existingTicket'. Pass replaceExisting=true only after confirming the current worktree belongs to '$ticketKey'."
+      }
+    } catch {
+      if (-not $replaceExisting) {
+        throw
+      }
+    }
+  }
+
+  $context = [ordered]@{
+    ticketKey = $ticketKey
+    branch = $branch
+  }
+  if (-not [string]::IsNullOrWhiteSpace($openspecChange)) {
+    $context["openspecChange"] = $openspecChange
+  }
+  foreach ($optionalKey in @("prNumber", "artifactCommitSha", "sourceRcVersion", "finalReleaseVersion")) {
+    if ($values.Contains($optionalKey) -and -not [string]::IsNullOrWhiteSpace([string]$values[$optionalKey])) {
+      $context[$optionalKey] = $values[$optionalKey]
+    }
+  }
+
+  Add-Item $result "actions" $targetRelative "" "Create or update ticket context lock for '$ticketKey' without copying another worktree's lock."
+  if (Test-ConfigWritesEnabled) {
+    $targetDirectory = Split-Path -Parent $target
+    if (-not (Test-Path -LiteralPath $targetDirectory)) {
+      New-Item -ItemType Directory -Path $targetDirectory -Force | Out-Null
+    }
+    ([pscustomobject]$context) | ConvertTo-Json -Depth 10 | Set-Content -Path $target -Encoding UTF8
+  }
   return $result
 }
 
@@ -2683,6 +3112,8 @@ switch ($Mode) {
   "SetClientTools" { $result = Invoke-SetClientTools }
   "SetRecommendedTools" { $result = Invoke-SetRecommendedTools }
   "MapProjectGuidanceStep" { $result = Invoke-MapProjectGuidanceStep }
+  "SyncWorktreeLocalConfig" { $result = Invoke-SyncWorktreeLocalConfig }
+  "EnsureDeliveryContext" { $result = Invoke-EnsureDeliveryContext }
   "SetPlaneEnv" { $result = Invoke-SetEnvMode -TargetRelative "infra/plane/variables.env" }
   "SetGiteaRunner" { $result = Invoke-SetEnvMode -TargetRelative "infra/gitea/runner.env" }
   "SetPrometheusAzureTargets" { $result = Invoke-SetPrometheusAzureTargets }
