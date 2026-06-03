@@ -79,12 +79,13 @@ If the audit reports any `stack-context.*` warning, if `DiscoverProjectGuidance`
 7. Push the branch to Gitea with upstream tracking using `git push -u origin {branchName}`. If the upstream branch already exists and points to the same commit, treat it as complete; if the push is rejected or would require a non-fast-forward update, stop and report the branch issue.
 8. Analyze the ticket description in an OpenSpec explore style unless OpenSpec is explicitly skipped by policy below.
 9. Update only the managed generated block in the Plane ticket description.
-10. Add a Plane ticket comment with the branch name, base branch, pushed Gitea branch, and OpenSpec decision, unless a generated comment for the same branch already exists.
-11. Create or update `.codex/delivery-context.local.json` with `ticketKey`, `branch`, `openspecChange` when applicable, and any known PR/artifact/version fields. If an existing lock names a different ticket, stop and ask the user to clear or replace the lock.
-12. Move the Plane ticket to the configured in-progress state, unless it is already there.
-13. Create an OpenSpec proposal using the `openspec-propose` skill (`/opsx:propose`) with a change name matching the branch name as closely as OpenSpec allows, unless OpenSpec is explicitly skipped.
+10. If the fetched Plane ticket has empty or null `estimate_point`, infer and patch `estimate_point` from the generated analysis using the rubric below. If `estimate_point` already has a value, preserve it exactly and do not overwrite a human estimate.
+11. Add a Plane ticket comment with the branch name, base branch, pushed Gitea branch, and OpenSpec decision, unless a generated comment for the same branch already exists.
+12. Create or update `.codex/delivery-context.local.json` with `ticketKey`, `branch`, `openspecChange` when applicable, and any known PR/artifact/version fields. If an existing lock names a different ticket, stop and ask the user to clear or replace the lock.
+13. Move the Plane ticket to the configured in-progress state, unless it is already there.
+14. Create an OpenSpec proposal using the `openspec-propose` skill (`/opsx:propose`) with a change name matching the branch name as closely as OpenSpec allows, unless OpenSpec is explicitly skipped.
 
-For step 13, if the branch name contains `/`, convert it to a filesystem-safe kebab-case OpenSpec change id by replacing `/` with `-`. Example: branch `feat/e2eproject-1-create-files-and-folders-for-a-site` becomes OpenSpec change `feat-e2eproject-1-create-files-and-folders-for-a-site`. Use the Plane ticket title and generated planning block as proposal input.
+For step 14, if the branch name contains `/`, convert it to a filesystem-safe kebab-case OpenSpec change id by replacing `/` with `-`. Example: branch `feat/e2eproject-1-create-files-and-folders-for-a-site` becomes OpenSpec change `feat-e2eproject-1-create-files-and-folders-for-a-site`. Use the Plane ticket title and generated planning block as proposal input.
 
 Only move the ticket to the in-progress state after branch creation, Gitea push, generated description update, and branch comment all succeed or are confirmed idempotently already complete. Only create the OpenSpec proposal after the ticket is in the in-progress state.
 
@@ -154,6 +155,21 @@ Concrete examples:
 - `Submitting an empty contact form shows required-field validation without creating a record.`
 - `The home page renders the configured site title on desktop and mobile widths.`
 - `Unauthorized API requests return HTTP 401 and do not expose stack traces or secrets.`
+
+## Estimate Points
+
+After the generated ticket block is complete, set Plane `estimate_point` only when the current ticket field is null or empty. Never overwrite a non-empty estimate because it may be a human planning value.
+
+Use this rubric:
+
+- `0`: explicitly no-op, research-only, or investigation ticket with no expected code/config/doc change.
+- `1`: trivial text/config-only change.
+- `2`: small localized code or doc change.
+- `3`: normal single-feature implementation with tests.
+- `5`: multi-area implementation, API/data/UI interaction, or deployment-sensitive change.
+- `7`: large or high-risk work requiring broad coordination.
+
+Patch the work item with only the resolved `estimate_point` value and any other fields required by Plane for a valid partial update. If Plane rejects the estimate patch after the generated description update succeeds, report the estimate update as blocked and continue only when no later workflow rule requires the estimate field.
 
 ## Plane Access
 

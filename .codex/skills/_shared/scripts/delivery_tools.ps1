@@ -419,6 +419,29 @@ function Format-Link($Text, $Url) {
   return "[$Text]($Url)"
 }
 
+function Format-Duration([Nullable[long]] $Milliseconds) {
+  if ($null -eq $Milliseconds -or $Milliseconds -lt 0) {
+    return 'n/a'
+  }
+
+  $duration = [TimeSpan]::FromMilliseconds([double]$Milliseconds)
+  if ($duration.TotalHours -ge 1) {
+    return ('{0}h {1:D2}m {2:D2}s' -f [math]::Floor($duration.TotalHours), $duration.Minutes, $duration.Seconds)
+  }
+  if ($duration.TotalMinutes -ge 1) {
+    return ('{0}m {1:D2}s' -f [math]::Floor($duration.TotalMinutes), $duration.Seconds)
+  }
+  return ('{0}s' -f [math]::Max(0, [math]::Round($duration.TotalSeconds)))
+}
+
+function Get-LongProperty($Object, [string] $Name) {
+  $value = Get-ObjectProperty $Object $Name
+  if ($null -eq $value -or [string]::IsNullOrWhiteSpace([string]$value)) {
+    return $null
+  }
+  return [long]$value
+}
+
 function Get-InputObject {
   if ([string]::IsNullOrWhiteSpace($InputJson)) {
     return [pscustomobject]@{}
@@ -526,6 +549,52 @@ function Render-PlaneComment {
         '',
         "**PROD URL:** $(Format-Link 'open production' (Get-ObjectProperty $data 'prodUrl'))"
       )
+      return ($lines -join [Environment]::NewLine)
+    }
+    'WorkflowTiming' {
+      $ticket = [string](Get-ObjectProperty $data 'ticketKey')
+      if ([string]::IsNullOrWhiteSpace($ticket)) {
+        throw 'ticketKey is required for WorkflowTiming comments.'
+      }
+
+      $stageRows = @((Get-ObjectProperty $data 'stages'))
+      $totalElapsedMilliseconds = Get-LongProperty $data 'totalElapsedMilliseconds'
+      if ($null -eq $totalElapsedMilliseconds) {
+        $totalElapsedMilliseconds = 0
+        foreach ($stageRow in $stageRows) {
+          $stageElapsed = Get-LongProperty $stageRow 'elapsedMilliseconds'
+          if ($null -ne $stageElapsed -and $stageElapsed -gt 0) {
+            $totalElapsedMilliseconds += $stageElapsed
+          }
+        }
+      }
+
+      $lines = @(
+        "IA generated workflow timing: $ticket",
+        '',
+        "**Status:** $((Get-ObjectProperty $data 'status'))",
+        "- Current route: ``$((Get-ObjectProperty $data 'currentRoute'))``",
+        "- Total elapsed: $(Format-Duration $totalElapsedMilliseconds)",
+        '',
+        '| Stage | Outcome | Duration | Started UTC | Finished UTC |',
+        '| --- | --- | ---: | --- | --- |'
+      )
+
+      foreach ($stageRow in $stageRows) {
+        $stageName = [string](Get-ObjectProperty $stageRow 'stage')
+        $outcome = [string](Get-ObjectProperty $stageRow 'outcome')
+        $startedUtc = [string](Get-ObjectProperty $stageRow 'startedUtc')
+        $finishedUtc = [string](Get-ObjectProperty $stageRow 'finishedUtc')
+        $elapsed = Get-LongProperty $stageRow 'elapsedMilliseconds'
+
+        if ([string]::IsNullOrWhiteSpace($stageName)) { $stageName = 'unknown' }
+        if ([string]::IsNullOrWhiteSpace($outcome)) { $outcome = 'unknown' }
+        if ([string]::IsNullOrWhiteSpace($startedUtc)) { $startedUtc = 'n/a' }
+        if ([string]::IsNullOrWhiteSpace($finishedUtc)) { $finishedUtc = 'n/a' }
+
+        $lines += "| ``$stageName`` | $outcome | $(Format-Duration $elapsed) | $startedUtc | $finishedUtc |"
+      }
+
       return ($lines -join [Environment]::NewLine)
     }
     default {
