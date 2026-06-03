@@ -434,6 +434,16 @@ function Format-Duration([Nullable[long]] $Milliseconds) {
   return ('{0}s' -f [math]::Max(0, [math]::Round($duration.TotalSeconds)))
 }
 
+function Format-UtcTimestamp($Value) {
+  if ($null -eq $Value -or [string]::IsNullOrWhiteSpace([string]$Value)) {
+    return 'n/a'
+  }
+  if ($Value -is [datetime]) {
+    return $Value.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ', [System.Globalization.CultureInfo]::InvariantCulture)
+  }
+  return [string]$Value
+}
+
 function Get-LongProperty($Object, [string] $Name) {
   $value = Get-ObjectProperty $Object $Name
   if ($null -eq $value -or [string]::IsNullOrWhiteSpace([string]$value)) {
@@ -583,14 +593,12 @@ function Render-PlaneComment {
       foreach ($stageRow in $stageRows) {
         $stageName = [string](Get-ObjectProperty $stageRow 'stage')
         $outcome = [string](Get-ObjectProperty $stageRow 'outcome')
-        $startedUtc = [string](Get-ObjectProperty $stageRow 'startedUtc')
-        $finishedUtc = [string](Get-ObjectProperty $stageRow 'finishedUtc')
+        $startedUtc = Format-UtcTimestamp (Get-ObjectProperty $stageRow 'startedUtc')
+        $finishedUtc = Format-UtcTimestamp (Get-ObjectProperty $stageRow 'finishedUtc')
         $elapsed = Get-LongProperty $stageRow 'elapsedMilliseconds'
 
         if ([string]::IsNullOrWhiteSpace($stageName)) { $stageName = 'unknown' }
         if ([string]::IsNullOrWhiteSpace($outcome)) { $outcome = 'unknown' }
-        if ([string]::IsNullOrWhiteSpace($startedUtc)) { $startedUtc = 'n/a' }
-        if ([string]::IsNullOrWhiteSpace($finishedUtc)) { $finishedUtc = 'n/a' }
 
         $lines += "| ``$stageName`` | $outcome | $(Format-Duration $elapsed) | $startedUtc | $finishedUtc |"
       }

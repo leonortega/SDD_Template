@@ -277,6 +277,154 @@
       ]
     },
     {
+      "id": "weak-ticket-refinement-before-mutation",
+      "stage": "plane-start-ticket",
+      "goal": "Classify a weak Plane Todo ticket before branch, Plane state, lock, or OpenSpec mutation.",
+      "expectedRoute": "plane-start-ticket",
+      "requiredEvidence": [
+        "Plane ticket title and description",
+        "ticket readiness classification",
+        "managed Plane generated block",
+        "missing readiness fields when blocked"
+      ],
+      "toolExpectations": [
+        "Classify ticket as ready, enrichable, or blocked before mutation",
+        "For enrichable tickets, update only the managed Plane block with concrete acceptance criteria, affected areas, validation expectations, risks, and definition of done",
+        "For blocked tickets, stop before branch creation, Plane state changes, delivery lock writes, comments, or OpenSpec proposal creation"
+      ],
+      "stopConditions": [
+        "user-visible goal is missing",
+        "acceptance criteria cannot be safely generated",
+        "validation expectation is unknown and ticket intent is ambiguous"
+      ],
+      "handoffFields": [
+        "ticketKey",
+        "readinessStatus",
+        "missingIntent",
+        "generatedBlockUpdated",
+        "mutationPerformed"
+      ]
+    },
+    {
+      "id": "low-risk-compact-path-keeps-gates",
+      "stage": "automatic-implement-ticket",
+      "goal": "Use compact context for low-risk work without skipping required delivery gates.",
+      "expectedRoute": "implement-ticket",
+      "requiredEvidence": [
+        "delivery risk classification low",
+        "ticket lock",
+        "branch and PR context",
+        "validation evidence",
+        "docs and memory classification"
+      ],
+      "toolExpectations": [
+        "Use compact planning or review summaries for low-risk work",
+        "Do not skip ticket, branch, PR, validation, quality, handoff, docs, or memory gates",
+        "Report compact depth was used because risk was low"
+      ],
+      "stopConditions": [
+        "risk cannot be resolved",
+        "required validation evidence is missing",
+        "low-risk classification conflicts with changed paths or acceptance criteria"
+      ],
+      "handoffFields": [
+        "ticketKey",
+        "deliveryRisk",
+        "depth",
+        "validation",
+        "memoryUpdated"
+      ]
+    },
+    {
+      "id": "oversized-workload-requires-split-or-exception",
+      "stage": "implement-ticket",
+      "goal": "Stop before implementation when OpenSpec tasks forecast oversized work without a split or exception decision.",
+      "expectedRoute": "implement-ticket",
+      "requiredEvidence": [
+        "OpenSpec tasks.md",
+        "Review Workload Forecast",
+        "400-line budget risk",
+        "Chained PRs recommended",
+        "Decision needed before apply"
+      ],
+      "toolExpectations": [
+        "Parse workload forecast before editing code",
+        "Require chained work-unit plan, size:exception, or exception-ok before implementation",
+        "Keep code, tests, and docs together by deliverable work unit"
+      ],
+      "stopConditions": [
+        "Review Workload Forecast is missing",
+        "high workload has no split or exception decision",
+        "work units are split only by file type"
+      ],
+      "handoffFields": [
+        "ticketKey",
+        "workloadRisk",
+        "decisionNeeded",
+        "splitOrExceptionDecision",
+        "blockedBeforeMutation"
+      ]
+    },
+    {
+      "id": "high-risk-pr-requires-adversarial-review",
+      "stage": "gitea-pr-review-agent",
+      "goal": "Run adversarial review for high-risk PR surfaces.",
+      "expectedRoute": "gitea-pr-review-agent",
+      "requiredEvidence": [
+        "PR diff",
+        "delivery risk classification high",
+        "Plane or OpenSpec acceptance criteria",
+        "changed paths or diff size",
+        "review mode and verdict"
+      ],
+      "toolExpectations": [
+        "Detect adversarial review trigger for auth, persistence, migrations, deployment workflows, secrets, public APIs, health contracts, rollback/hotfix, or large diffs",
+        "Read acceptance criteria before judging implementation",
+        "Return verdict PASS, PASS WITH GAPS, or FAIL",
+        "Emit stable finding ids for adversarial findings"
+      ],
+      "stopConditions": [
+        "acceptance criteria cannot be loaded for required adversarial review",
+        "high-risk behavior lacks passing proof",
+        "PR head SHA changes during review"
+      ],
+      "handoffFields": [
+        "prNumber",
+        "headSha",
+        "reviewMode",
+        "verdict",
+        "findings"
+      ]
+    },
+    {
+      "id": "stale-installed-skill-index-before-delegation",
+      "stage": "automatic-implement-ticket",
+      "goal": "Report stale installed-skill runtime index before delegating child work.",
+      "expectedRoute": "automatic-implement-ticket",
+      "requiredEvidence": [
+        ".codex/skills/*/SKILL.md",
+        ".codex/installed-skill-index.local.json",
+        ".codex/installed-skill-index.cache.local.json",
+        "project-guidance catalog remains separate"
+      ],
+      "toolExpectations": [
+        "Use installed-skill index only as a derived exact-path cache",
+        "Detect missing or stale index from skill path, mtime, or size changes",
+        "Do not duplicate .codex/tool-recommendations.local.json catalog data into the skill index",
+        "Report regeneration instead of scanning repeatedly inside every child agent"
+      ],
+      "stopConditions": [
+        "delegation needs exact skill paths and index is stale",
+        "index contains non-skill guidance, secrets, or accepted/dismissed recommendation state"
+      ],
+      "handoffFields": [
+        "indexStatus",
+        "skillPaths",
+        "regenerationRequired",
+        "projectGuidanceSeparate"
+      ]
+    },
+    {
       "id": "rollback-no-main-rewrite",
       "stage": "rollback-prod",
       "goal": "Roll PROD back to a known-good artifact without rewriting main.",
