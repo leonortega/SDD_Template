@@ -638,7 +638,7 @@ function Add-QualityGateAuditFindings {
   if (-not (Test-Path (Join-RootPath $releaseWorkflow))) {
     Add-Item $Result "findings" $releaseWorkflow "" "Missing package/deploy workflow for Nexus artifact publication and Azure promotion." "warning"
   } else {
-    foreach ($expected in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "az webapp deploy", "classify-changes", "app_changed", "deploy_allowed", ".codex/delivery-policy.json", "ticketKeyPattern", "BASH_REMATCH", "refs/heads/dev", "refs/heads/main", "qa/**", "deploy-qa", "e2e-qa", "e2e-qa-branch", "deploy-prod", "artifact_commit_sha", "PROD_ARTIFACT_COMMIT_SHA", "release_version", "source_rc_version", "release.json", "CreateReleaseManifest", "ValidateReleaseManifest", "infra/deployment/apps.json", "deployable-apps.json", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_SITE_APP_NAME", "AZURE_QA_SITE_APP_URL", "AZURE_QA_API_APP_NAME", "AZURE_QA_API_APP_URL", "E2E_SITE_URL", "E2E_API_URL", "E2E_ARTIFACT_COMMIT_SHA", "qa-e2e-evidence.zip", "AZURE_PROD_RESOURCE_GROUP", "AZURE_PROD_SITE_APP_NAME", "AZURE_PROD_SITE_APP_URL", "AZURE_PROD_API_APP_NAME", "AZURE_PROD_API_APP_URL", "/health")) {
+    foreach ($expected in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "az webapp deploy", "classify-changes", "app_changed", "deploy_allowed", ".codex/delivery-policy.json", "ticketKeyPattern", "BASH_REMATCH", "refs/heads/dev", "refs/heads/main", "qa/**", "deploy-qa", "e2e-qa-branch", "deploy-prod", "artifact_commit_sha", "PROD_ARTIFACT_COMMIT_SHA", "release_version", "source_rc_version", "release.json", "CreateReleaseManifest", "ValidateReleaseManifest", "infra/deployment/apps.json", "deployable-apps.json", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_SITE_APP_NAME", "AZURE_QA_SITE_APP_URL", "AZURE_QA_API_APP_NAME", "AZURE_QA_API_APP_URL", "E2E_SITE_URL", "E2E_API_URL", "E2E_ARTIFACT_COMMIT_SHA", "qa-e2e-evidence.zip", "AZURE_PROD_RESOURCE_GROUP", "AZURE_PROD_SITE_APP_NAME", "AZURE_PROD_SITE_APP_URL", "AZURE_PROD_API_APP_NAME", "AZURE_PROD_API_APP_URL", "/health")) {
       if (-not (Test-FileContains $releaseWorkflow ([regex]::Escape($expected)))) {
         Add-Item $Result "findings" $releaseWorkflow $expected "Package/deploy workflow does not mention $expected." "warning"
       }
@@ -2722,86 +2722,6 @@ jobs:
           AZURE_QA_SITE_APP_URL: ${{ secrets.AZURE_QA_SITE_APP_URL }}
           AZURE_QA_API_APP_URL: ${{ secrets.AZURE_QA_API_APP_URL }}
 
-  e2e-qa:
-    needs:
-      - classify-changes
-      - deploy-qa
-    runs-on: ubuntu-latest
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/dev' && needs.classify-changes.outputs.app_changed == 'true' && needs.classify-changes.outputs.deploy_allowed == 'true') || github.event.inputs.environment == 'qa'
-    steps:
-      - name: Checkout
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          repo_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
-          repo_url="${repo_url/localhost/host.docker.internal}"
-          repo_url="${repo_url/gitea/host.docker.internal}"
-
-          git init .
-          git remote add origin "$repo_url"
-          git fetch --depth 1 origin "$GITHUB_SHA"
-          git checkout --force FETCH_HEAD
-
-      - name: Install E2E tools
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          apt-get update
-          apt-get install -y --no-install-recommends ca-certificates curl zip
-          curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-          apt-get install -y --no-install-recommends nodejs
-          cd tests/SDDTemplate.E2ETests
-          npm ci
-          npm run install:browsers
-
-      - name: Run QA E2E suite and upload evidence
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cd tests/SDDTemplate.E2ETests
-          mkdir -p evidence
-
-          test_exit=0
-          npm test || test_exit=$?
-
-          run_id="$(date -u +%Y%m%d-%H%M%S)-${GITHUB_SHA:0:7}"
-          ticket_key_pattern="$(sed -nE 's/.*"ticketKeyPattern"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' ../../.codex/delivery-policy.json | head -n 1)"
-          commit_message="$(git log -1 --pretty=%B)"
-          plane_ticket_key="manual-dispatch"
-          if [[ "$commit_message" =~ ^($ticket_key_pattern) ]]; then
-            plane_ticket_key="${BASH_REMATCH[1]}"
-          elif [[ "$commit_message" =~ Merge\ pull\ request.*\'($ticket_key_pattern): ]]; then
-            plane_ticket_key="${BASH_REMATCH[1]}"
-          fi
-
-          {
-            echo "ticketKey=$plane_ticket_key"
-            echo "commitSha=$GITHUB_SHA"
-            echo "runId=$run_id"
-            echo "siteUrl=$E2E_SITE_URL"
-            echo "apiUrl=$E2E_API_URL"
-            echo "result=$([ "$test_exit" -eq 0 ] && echo PASS || echo FAIL)"
-          } > evidence/qa-e2e-summary.txt
-
-          [ -d playwright-report ] && cp -r playwright-report evidence/
-          [ -d test-results ] && cp -r test-results evidence/
-          zip -r qa-e2e-evidence.zip evidence
-
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file qa-e2e-evidence.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/qa-e2e-evidence.zip"
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file qa-e2e-evidence.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/qa/${plane_ticket_key}/${run_id}/qa-e2e-evidence.zip"
-
-          exit "$test_exit"
-        env:
-          E2E_SITE_URL: ${{ secrets.AZURE_QA_SITE_APP_URL }}
-          E2E_API_URL: ${{ secrets.AZURE_QA_API_APP_URL }}
-          NEXUS_URL: ${{ secrets.NEXUS_URL }}
-          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
-          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
-          NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
-
   e2e-qa-branch:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/qa/')
@@ -3035,7 +2955,7 @@ Release flow:
 feature branch -> dev -> DEV -> QA -> Gitea E2E evidence -> Plane E2E QA -> main -> PROD
 ```
 
-The package workflow reads `infra/deployment/apps.json`, builds one ZIP per deployable app, and publishes from ticket-gated application changes on `dev`, including `app/{commitSha}/deployable-apps.json`, per-app ZIP/checksum files, and a baseline `app/{commitSha}/release.json`. DEV and QA must deploy the same Nexus app artifacts for the same commit SHA. After QA deploy and smoke checks, the `e2e-qa` job runs the committed Playwright suite against the deployed QA Site/API URLs and uploads `app/{commitSha}/qa-e2e-evidence.zip` plus a ticket/run evidence copy under `qa/{ticketKey}/{runId}/qa-e2e-evidence.zip`. This Gitea job is evidence-only; the `test-e2e` skill remains responsible for Plane Done state, RC tagging, and release manifest QA lineage. PROD must deploy the QA-approved Nexus app artifacts from an exact-commit `main` promotion or explicit dispatch by commit SHA and must pass each app health check.
+The package workflow reads `infra/deployment/apps.json`, builds one ZIP per deployable app, and publishes from ticket-gated application changes on `dev`, including `app/{commitSha}/deployable-apps.json`, per-app ZIP/checksum files, and a baseline `app/{commitSha}/release.json`. DEV and QA must deploy the same Nexus app artifacts for the same commit SHA. After QA deploy and smoke checks, push a `qa/{ticketKey}` branch from current `dev`; the `e2e-qa-branch` job runs the committed Playwright suite against the deployed QA Site/API URLs without redeploying, resolves the artifact commit from the branch point with `dev`, and uploads `app/{commitSha}/qa-e2e-evidence.zip` plus a ticket/run evidence copy under `qa/{ticketKey}/{runId}/qa-e2e-evidence.zip`. This Gitea job is evidence-only; the `test-e2e` skill remains responsible for Plane Done state, RC tagging, and release manifest QA lineage. PROD must deploy the QA-approved Nexus app artifacts from an exact-commit `main` promotion or explicit dispatch by commit SHA and must pass each app health check.
 '@
 
   return $result
