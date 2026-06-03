@@ -162,3 +162,12 @@ When merging `dev` into a ticket feature branch, Git's generated merge message c
 
 If `npx playwright install` or `npm run install:browsers` times out locally, later Playwright commands may fail with an active lockfile at `%LOCALAPPDATA%\ms-playwright\__dirlock`. Before removing the lock, check for live `node.exe` processes whose command line still references Playwright install or download. Stop only those stale installer processes, then remove the lock. In this repository, official QA E2E should run remotely through Gitea against deployed QA apps; local Playwright execution is only for authoring diagnostics.
 
+## PowerShell Json Timestamps Need Explicit Formatting
+
+- Type: Pattern
+- Status: Active
+- Source: PR 16 CI failure in `RenderPlaneCommentRendersWorkflowTimingTable`, `.codex/skills/_shared/scripts/delivery_tools.ps1`
+- Last verified: 2026-06-03
+
+PowerShell `ConvertFrom-Json` can coerce ISO timestamp strings into `DateTime` values, and later string interpolation renders them with the host culture instead of the original `yyyy-MM-ddTHH:mm:ssZ` form. For Plane comments, workflow timing tables, or tests that assert exact UTC text, format timestamp values explicitly with invariant UTC formatting before interpolation. Reproduce failures with the CI-shaped command `dotnet test .\SDDTemplate.slnx -c Release --no-build --logger trx --collect:"XPlat Code Coverage"`.
+
