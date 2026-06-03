@@ -5,6 +5,7 @@ on:
     branches:
       - dev
       - main
+      - qa/**
   workflow_dispatch:
     inputs:
       environment:
@@ -335,6 +336,171 @@ jobs:
         env:
           AZURE_QA_SITE_APP_URL: ${{ secrets.AZURE_QA_SITE_APP_URL }}
           AZURE_QA_API_APP_URL: ${{ secrets.AZURE_QA_API_APP_URL }}
+
+  e2e-qa:
+    needs:
+      - classify-changes
+      - deploy-qa
+    runs-on: ubuntu-latest
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/dev' && needs.classify-changes.outputs.app_changed == 'true' && needs.classify-changes.outputs.deploy_allowed == 'true') || github.event.inputs.environment == 'qa'
+    steps:
+      - name: Checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          repo_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          repo_url="${repo_url/localhost/host.docker.internal}"
+          repo_url="${repo_url/gitea/host.docker.internal}"
+
+          git init .
+          git remote add origin "$repo_url"
+          git fetch --depth 1 origin "$GITHUB_SHA"
+          git checkout --force FETCH_HEAD
+
+      - name: Install E2E tools
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates curl zip
+          curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+          apt-get install -y --no-install-recommends nodejs
+          cd tests/SDDTemplate.E2ETests
+          npm ci
+          npm run install:browsers
+
+      - name: Run QA E2E suite and upload evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd tests/SDDTemplate.E2ETests
+          mkdir -p evidence
+
+          test_exit=0
+          npm test || test_exit=$?
+
+          run_id="$(date -u +%Y%m%d-%H%M%S)-${GITHUB_SHA:0:7}"
+          ticket_key_pattern="$(sed -nE 's/.*"ticketKeyPattern"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' ../../.codex/delivery-policy.json | head -n 1)"
+          commit_message="$(git log -1 --pretty=%B)"
+          plane_ticket_key="manual-dispatch"
+          if [[ "$commit_message" =~ ^($ticket_key_pattern) ]]; then
+            plane_ticket_key="${BASH_REMATCH[1]}"
+          elif [[ "$commit_message" =~ Merge\ pull\ request.*\'($ticket_key_pattern): ]]; then
+            plane_ticket_key="${BASH_REMATCH[1]}"
+          fi
+
+          {
+            echo "ticketKey=$plane_ticket_key"
+            echo "commitSha=$GITHUB_SHA"
+            echo "runId=$run_id"
+            echo "siteUrl=$E2E_SITE_URL"
+            echo "apiUrl=$E2E_API_URL"
+            echo "result=$([ "$test_exit" -eq 0 ] && echo PASS || echo FAIL)"
+          } > evidence/qa-e2e-summary.txt
+
+          [ -d playwright-report ] && cp -r playwright-report evidence/
+          [ -d test-results ] && cp -r test-results evidence/
+          zip -r qa-e2e-evidence.zip evidence
+
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file qa-e2e-evidence.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/qa-e2e-evidence.zip"
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file qa-e2e-evidence.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/qa/${plane_ticket_key}/${run_id}/qa-e2e-evidence.zip"
+
+          exit "$test_exit"
+        env:
+          E2E_SITE_URL: ${{ secrets.AZURE_QA_SITE_APP_URL }}
+          E2E_API_URL: ${{ secrets.AZURE_QA_API_APP_URL }}
+          NEXUS_URL: ${{ secrets.NEXUS_URL }}
+          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+          NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
+
+  e2e-qa-branch:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/qa/')
+    steps:
+      - name: Checkout QA E2E branch
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          repo_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          repo_url="${repo_url/localhost/host.docker.internal}"
+          repo_url="${repo_url/gitea/host.docker.internal}"
+
+          git init .
+          git remote add origin "$repo_url"
+          git fetch --depth 50 origin "$GITHUB_SHA"
+          git checkout --force FETCH_HEAD
+          git fetch --depth 50 origin dev
+
+      - name: Resolve QA artifact commit
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          artifact_commit_sha="$(git merge-base HEAD origin/dev)"
+          test -n "$artifact_commit_sha"
+          echo "E2E_ARTIFACT_COMMIT_SHA=$artifact_commit_sha" >> "$GITHUB_ENV"
+
+          ticket_key_pattern="$(sed -nE 's/.*"ticketKeyPattern"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' .codex/delivery-policy.json | head -n 1)"
+          branch_name="${GITHUB_REF#refs/heads/}"
+          plane_ticket_key="$(printf '%s\n' "$branch_name" | sed -nE "s#^qa/($ticket_key_pattern)(/.*)?\$#\1#p" | head -n 1)"
+          test -n "$plane_ticket_key"
+          echo "E2E_PLANE_TICKET_KEY=$plane_ticket_key" >> "$GITHUB_ENV"
+
+      - name: Install E2E tools
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates curl zip
+          curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+          apt-get install -y --no-install-recommends nodejs
+          cd tests/SDDTemplate.E2ETests
+          npm ci
+          npm run install:browsers
+
+      - name: Run QA branch E2E suite and upload evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd tests/SDDTemplate.E2ETests
+          mkdir -p evidence
+
+          test_exit=0
+          npm test || test_exit=$?
+
+          run_id="$(date -u +%Y%m%d-%H%M%S)-${GITHUB_SHA:0:7}"
+          {
+            echo "ticketKey=$E2E_PLANE_TICKET_KEY"
+            echo "artifactCommitSha=$E2E_ARTIFACT_COMMIT_SHA"
+            echo "testCommitSha=$GITHUB_SHA"
+            echo "runId=$run_id"
+            echo "siteUrl=$E2E_SITE_URL"
+            echo "apiUrl=$E2E_API_URL"
+            echo "result=$([ "$test_exit" -eq 0 ] && echo PASS || echo FAIL)"
+          } > evidence/qa-e2e-summary.txt
+
+          [ -d playwright-report ] && cp -r playwright-report evidence/
+          [ -d test-results ] && cp -r test-results evidence/
+          zip -r qa-e2e-evidence.zip evidence
+
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file qa-e2e-evidence.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${E2E_ARTIFACT_COMMIT_SHA}/qa-e2e-evidence.zip"
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file qa-e2e-evidence.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/qa/${E2E_PLANE_TICKET_KEY}/${run_id}/qa-e2e-evidence.zip"
+
+          exit "$test_exit"
+        env:
+          E2E_SITE_URL: ${{ secrets.AZURE_QA_SITE_APP_URL }}
+          E2E_API_URL: ${{ secrets.AZURE_QA_API_APP_URL }}
+          NEXUS_URL: ${{ secrets.NEXUS_URL }}
+          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+          NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
 
   deploy-prod:
     needs: classify-changes
