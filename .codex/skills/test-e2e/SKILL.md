@@ -13,6 +13,8 @@ This skill is technology-agnostic. Inspect the repository first. Use an establis
 
 For Blazor or other rendered website changes, prefer `$frontend-testing-debugging` when the repo has `.codex/skills/frontend-testing-debugging/SKILL.md` and the ticket requires browser-visible validation, responsive layout checks, console health, screenshots, or interaction proof. Keep API and deployment health checks in the repo-native .NET/API path.
 
+When the repository contains `tests/SDDTemplate.E2ETests`, treat it as the reusable deployed-QA regression suite. The suite is executed by Gitea Actions after `deploy-qa` against the deployed QA Site/API URLs, and the Gitea job is evidence-only. If ticket-specific E2E tests must be created after the ticket is already in QA, create a `qa/{ticketKey}` branch from the QA-deployed `dev` artifact commit, add or update the tests there, and push that branch so Gitea runs `e2e-qa-branch` remotely without redeploying. This skill still owns QA acceptance: verify the Gitea E2E evidence bundle, run or rerun the suite manually only when remote execution is unavailable or diagnostic evidence is needed, publish final QA evidence, create or verify the RC tag, update release metadata, comment Plane, and move the ticket to Done only after all checks pass.
+
 Non-interactive context means the run has no available user-response channel, such as cron automation, CI, detached automation, or an explicit "do not ask" instruction.
 
 ## Shared Context
@@ -45,7 +47,7 @@ Optional environment variables override local JSON when present:
 
 ### 1. Resolve Context
 
-1. Resolve the Plane ticket from user input, current branch, Gitea PR metadata, deployment comments, commit messages, or a ticket key.
+1. Resolve the Plane ticket from user input, current branch, Gitea PR metadata, deployment comments, Gitea E2E evidence, commit messages, or a ticket key.
 2. Run `ValidateTicketLock` with the resolved Plane ticket, QA deployment commit, artifact commit, and known version values. If the result is invalid, stop before testing or writing evidence.
 3. Fetch the Plane ticket with expanded state/project data.
 4. Verify the ticket is in `plane.qaState`. If it is not, stop unless the user explicitly asks to test despite the state mismatch.
@@ -87,7 +89,7 @@ Inspect the repo before choosing tools:
 - API specs, OpenAPI/Swagger files, Postman collections, k6 scripts, REST Assured or language-native integration tests
 - Existing helper APIs, fixtures, auth setup, seeded users, environment variable conventions
 
-Use an established tool when the repo clearly already has one.
+Use an established tool when the repo clearly already has one. For this repository's committed QA E2E suite, run Playwright remotely through Gitea Actions against deployed QA URLs; do not start local web servers for QA acceptance. Local Playwright execution is only a fallback for authoring diagnostics and must still target deployed QA URLs with `E2E_SITE_URL` and `E2E_API_URL`.
 
 If no tool is configured, or several valid technology-dependent choices exist, ask the user before proceeding. Present concrete choices with a recommendation:
 
@@ -161,18 +163,19 @@ Create `qa-summary.md` with the result, tested URLs, selected tools, commit/arti
 Prefer durable links in Plane comments. Use this evidence publication order:
 
 1. Commit reusable tests to the repo only when they are intended to become part of regression coverage.
-2. Save all run evidence locally under `artifacts/qa/{ticketKey}/{runId}/`.
-3. Zip the run folder as `qa-evidence.zip`.
-4. Upload `qa-evidence.zip` to Nexus when Nexus config is available, using a path like:
+2. When the Gitea `e2e-qa` or `e2e-qa-branch` job has already run the committed suite, verify the Nexus bundle at `app/{commitSha}/qa-e2e-evidence.zip` and prefer reusing it as supporting evidence instead of rerunning the same test without cause.
+3. Save all run evidence locally under `artifacts/qa/{ticketKey}/{runId}/`.
+4. Zip the run folder as `qa-evidence.zip`.
+5. Upload `qa-evidence.zip` to Nexus when Nexus config is available, using a path like:
 
 ```text
 qa/{ticketKey}/{runId}/qa-evidence.zip
 ```
 
-5. Add the Nexus evidence URL to the Plane comment.
-6. If Nexus is unavailable but Plane attachments are configured and safe, attach evidence to Plane.
-7. If neither Nexus nor Plane attachments are available, include local evidence paths in the Plane comment and clearly label them as local-only fallback evidence.
-8. Use `UpdateReleaseManifest` after QA passes, adding source RC version, QA evidence URL, QA result, QA timestamp, tested URLs, and the E2E scenario summary while preserving existing artifact, checksum, PR, ticket, DEV, and QA deployment fields.
+6. Add the Nexus evidence URL to the Plane comment.
+7. If Nexus is unavailable but Plane attachments are configured and safe, attach evidence to Plane.
+8. If neither Nexus nor Plane attachments are available, include local evidence paths in the Plane comment and clearly label them as local-only fallback evidence.
+9. Use `UpdateReleaseManifest` after QA passes, adding source RC version, QA evidence URL, QA result, QA timestamp, tested URLs, and the E2E scenario summary while preserving existing artifact, checksum, PR, ticket, DEV, and QA deployment fields.
 
 Do not move a ticket to `plane.doneState` until the evidence link or fallback evidence path has been written to Plane. If evidence upload fails after tests pass, comment the upload failure, leave the ticket in QA, and report the blocking evidence publication issue.
 

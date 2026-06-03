@@ -90,6 +90,10 @@ dist/
 .next/
 .nuxt/
 out/
+tests/SDDTemplate.E2ETests/playwright-report/
+tests/SDDTemplate.E2ETests/test-results/
+tests/SDDTemplate.E2ETests/evidence/
+tests/SDDTemplate.E2ETests/qa-e2e-evidence.zip
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
