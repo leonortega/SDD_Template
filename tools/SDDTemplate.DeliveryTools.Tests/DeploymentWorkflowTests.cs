@@ -419,6 +419,55 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
+        public void WorkflowTimingCommentsAreContractedForAutomaticDelivery()
+        {
+            string contract = ReadSkill("_shared", "delivery-contract.md");
+            string automatic = ReadSkill("automatic-implement-ticket", "SKILL.md");
+            string contextDocs = ReadDoc("context-management.md");
+            string script = File.ReadAllText(Path.Combine(
+                FindRepositoryRoot().FullName,
+                ".codex",
+                "skills",
+                "_shared",
+                "scripts",
+                "delivery_tools.ps1"));
+
+            Assert.Contains("IA generated workflow timing: {ticketKey}", contract);
+            Assert.Contains("RenderPlaneComment -Type WorkflowTiming", contract);
+            Assert.Contains("comment_html", contract);
+            Assert.Contains("comment_stripped", contract);
+            Assert.Contains("update or reuse the existing workflow timing marker comment", contract);
+
+            Assert.Contains(".codex/agent-telemetry.local.jsonl", automatic);
+            Assert.Contains("RenderPlaneComment -Type WorkflowTiming", automatic);
+            Assert.Contains("IA generated workflow timing: {ticketKey}", automatic);
+            Assert.Contains("patch that comment instead of creating a duplicate", automatic);
+            Assert.Contains("workflow timing marker", automatic);
+
+            Assert.Contains("concise generated Plane timing comment", contextDocs);
+            Assert.Contains("'WorkflowTiming'", script);
+            Assert.Contains("| Stage | Outcome | Duration | Started UTC | Finished UTC |", script);
+        }
+
+        [Fact]
+        public void PlaneStartTicketSetsEstimatePointOnlyWhenMissing()
+        {
+            string starter = ReadSkill("plane-start-ticket", "SKILL.md");
+            string planeApi = ReadSkill("plane-start-ticket", Path.Combine("references", "plane-api.md"));
+
+            Assert.Contains("If the fetched Plane ticket has empty or null `estimate_point`", starter);
+            Assert.Contains("preserve it exactly and do not overwrite a human estimate", starter);
+            Assert.Contains("## Estimate Points", starter);
+            Assert.Contains("`0`: explicitly no-op, research-only, or investigation ticket", starter);
+            Assert.Contains("`7`: large or high-risk work requiring broad coordination", starter);
+            Assert.Contains("Patch the work item with only the resolved `estimate_point` value", starter);
+
+            Assert.Contains("\"estimate_point\": 3", planeApi);
+            Assert.Contains("Only send this patch when the fetched work item has null or empty `estimate_point`", planeApi);
+            Assert.Contains("Preserve any non-empty `estimate_point` value", planeApi);
+        }
+
+        [Fact]
         public void DeployToProdRequiresPostProdRetrospectiveLearningEvidence()
         {
             string root = FindRepositoryRoot().FullName;
@@ -1167,6 +1216,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                 "ValidateDeploymentLane",
                 "ValidateParallelDeliveryDryRun",
                 "RenderPlaneComment",
+                "WorkflowTiming",
                 "UpdateReleaseManifest"
             })
             {
