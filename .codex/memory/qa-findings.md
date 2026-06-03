@@ -72,3 +72,21 @@ In PowerShell-based QA scripts, `Invoke-WebRequest` non-2xx response bodies may 
 
 For rendered website or Blazor UI QA, map to frontend/browser testing guidance in addition to API/deployment checks. Browser-visible validation should cover rendered content, console/network health, screenshots, traces, and interaction proof when the ticket changes UI behavior.
 
+## QA Branch Actions Require Workflow On The Pushed Ref
+
+- Type: Pattern
+- Status: Active
+- Source: Gitea Actions run 91 setup for `qa/E2EPROJECT-2/rerun-current-20260603024107`, failed no-run attempt from `qa/E2EPROJECT-2/rerun-20260603023208`
+- Last verified: 2026-06-03
+
+For `qa/{ticketKey}` E2E reruns, push a ref that contains the current `.gitea/workflows/package-deploy.yml` with the `qa/**` trigger and `e2e-qa-branch` job. Pushing an older artifact commit that predates the QA branch workflow can create the remote branch successfully but produce no Gitea Actions run. Use a branch based on current `origin/dev` when the goal is to run the evidence-only QA branch workflow without redeploying.
+
+## Expected Browser Noise In CRUD E2E
+
+- Type: Pattern
+- Status: Active
+- Source: Gitea Actions runs 91, 92, and 93 for `qa/E2EPROJECT-2/rerun-console-filter-20260603024728`; Nexus evidence `app/787036922b45e595e53e241457ebdb7ff8cc9db8/qa-e2e-evidence.zip`
+- Last verified: 2026-06-03
+
+In Playwright CRUD QA flows, expected negative-path browser activity can surface as console or request noise even when the app behavior is correct. For E2EPROJECT-2, an intentional validation POST returned HTTP 400 and Chromium logged `Failed to load resource`, while a successful delete could emit a browser-side `DELETE ... net::ERR_ABORTED` even though API verification confirmed the record was removed. Keep console and request-failure assertions strict, but add narrow allowances around expected validation and delete actions instead of accepting all 400s or all aborted requests.
+
