@@ -114,6 +114,7 @@ Group findings by the workflow layer that should improve:
 - `agency-risk`: an agent had too much write authority, used the wrong tool boundary, attempted unsafe mutation, or acted without sufficient confirmation.
 - `model-optimization`: model choice, reasoning effort, prompt-cache hygiene, tool-call count, retries, latency, or token use produced avoidable cost or delay.
 - `eval-coverage`: a repeated miss lacks a workflow eval case that would catch route selection, tool selection, argument precision, mutation gates, stop conditions, or handoff gaps.
+- `risk-depth`: delivery risk classification, compact path selection, workload forecast, adversarial review trigger, or installed-skill index behavior was missing, stale, too heavy for low-risk work, or too light for high-risk work.
 
 For each finding, include the evidence, why it matters, and the durable improvement that would prevent recurrence.
 
@@ -133,6 +134,8 @@ Apply one of these outcomes:
 - `Docs update`: durable findings should be promoted to `docs/architecture.md`, `docs/development.md`, `docs/deployment.md`, or `docs/context-management.md`.
 - `Memory update`: reusable but non-authoritative findings should be added to `.codex/memory/` through the memory update process.
 - `Follow-up ticket`: the change is product work, infra work, or too large for the current retrospective.
+
+For `risk-depth` findings, prefer deterministic helpers or workflow evals over more prose. Examples: weak ticket started without refinement, high-risk PR skipped adversarial review, oversized tasks lacked a split/exception decision, low-risk work loaded unnecessary broad context, or installed-skill index was stale before delegation.
 
 Prefer tests or deterministic validation for enforceable rules. Prefer skill text only for judgment-heavy process rules.
 

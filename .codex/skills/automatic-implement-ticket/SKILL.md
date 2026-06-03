@@ -25,6 +25,13 @@ Use ignored `.codex/delivery-context.local.json` as the ticket context lock acco
 
 Run state inspection, routing, rerun handling, and output reporting as one read-first workflow. Use validation evidence from child skills and durable checkpoints before routing to the next handoff stage.
 
+Before delegating child work, apply the shared delivery contract's risk-adaptive depth and installed-skill runtime index rules:
+
+- Resolve delivery risk from ticket, OpenSpec, PR/diff, artifact, and deployment evidence when enough information exists.
+- Use compact summaries for low-risk routing, but never skip ticket, branch, PR, validation, QA, artifact, PROD, rollback, or secret-safety gates.
+- For high-risk routes, preserve full acceptance/spec context and tell the child skill whether adversarial review, deployment topology checks, or workload forecast resolution is required.
+- When a current installed-skill index exists, use it only to pass exact `SKILL.md` paths to child agents. If it is missing or stale, report that it should be regenerated; do not treat it as a replacement for `project-guidance-*`.
+
 For each delegated child skill, record a non-secret telemetry row with `timestampUtc`, `workflowStage`, `agentRole`, `elapsedMilliseconds`, `retryCount`, and `outcome` in ignored `.codex/agent-telemetry.local.jsonl` when the platform exposes the needed values. After a stage completes, is skipped idempotently, or blocks, render a compact Plane timing comment with `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode RenderPlaneComment -Type WorkflowTiming`.
 
 Use stable marker `IA generated workflow timing: {ticketKey}`. Before posting, read existing Plane comments when the API allows it; if the timing marker already exists for the ticket, patch that comment instead of creating a duplicate. Send both `comment_html` and `comment_stripped`, never `comment` or `body`, and verify `comment_stripped` starts with the timing marker after posting or patching. The Plane comment must include only status, current route, total elapsed time, and a stage table with stage, outcome, duration, started UTC, and finished UTC; keep token counts, full prompts, raw logs, credential-bearing URLs, and noisy tool details only out of Plane.
@@ -83,6 +90,7 @@ Summarize:
 
 - ticket and current state,
 - resolved route,
+- delivery risk and whether compact or full depth was used,
 - child skill invoked or blocker found,
 - checkpoint evidence used,
 - workflow timing comment added, updated, reused, or skipped with reason,
