@@ -13,7 +13,7 @@ This skill is technology-agnostic. Inspect the repository first. Use an establis
 
 For Blazor or other rendered website changes, prefer `$frontend-testing-debugging` when the repo has `.codex/skills/frontend-testing-debugging/SKILL.md` and the ticket requires browser-visible validation, responsive layout checks, console health, screenshots, or interaction proof. Keep API and deployment health checks in the repo-native .NET/API path.
 
-When the repository contains `tests/SDDTemplate.E2ETests`, treat it as the reusable deployed-QA regression suite. The suite is executed by Gitea Actions after `deploy-qa` against the deployed QA Site/API URLs, and the Gitea job is evidence-only. If ticket-specific E2E tests must be created after the ticket is already in QA, create a `qa/{ticketKey}` branch from the QA-deployed `dev` artifact commit, add or update the tests there, and push that branch so Gitea runs `e2e-qa-branch` remotely without redeploying. This skill still owns QA acceptance: verify the Gitea E2E evidence bundle, run or rerun the suite manually only when remote execution is unavailable or diagnostic evidence is needed, publish final QA evidence, create or verify the RC tag, update release metadata, comment Plane, and move the ticket to Done only after all checks pass.
+When the repository contains `tests/SDDTemplate.E2ETests`, treat it as the reusable deployed-QA regression suite. The suite is executed by the Gitea `e2e-qa-branch` job against the deployed QA Site/API URLs, and the Gitea job is evidence-only. After `deploy-qa` succeeds, create a `qa/{ticketKey}` branch from current `dev`, add or update tests there when needed, and push that branch so Gitea runs the suite remotely without redeploying. This skill still owns QA acceptance: verify the Gitea E2E evidence bundle, run or rerun the suite manually only when remote execution is unavailable or diagnostic evidence is needed, publish final QA evidence, create or verify the RC tag, update release metadata, comment Plane, and move the ticket to Done only after all checks pass.
 
 Non-interactive context means the run has no available user-response channel, such as cron automation, CI, detached automation, or an explicit "do not ask" instruction.
 
@@ -163,7 +163,7 @@ Create `qa-summary.md` with the result, tested URLs, selected tools, commit/arti
 Prefer durable links in Plane comments. Use this evidence publication order:
 
 1. Commit reusable tests to the repo only when they are intended to become part of regression coverage.
-2. When the Gitea `e2e-qa` or `e2e-qa-branch` job has already run the committed suite, verify the Nexus bundle at `app/{commitSha}/qa-e2e-evidence.zip` and prefer reusing it as supporting evidence instead of rerunning the same test without cause.
+2. When the Gitea `e2e-qa-branch` job has already run the committed suite, verify the Nexus bundle at `app/{commitSha}/qa-e2e-evidence.zip` and prefer reusing it as supporting evidence instead of rerunning the same test without cause.
 3. Save all run evidence locally under `artifacts/qa/{ticketKey}/{runId}/`.
 4. Zip the run folder as `qa-evidence.zip`.
 5. Upload `qa-evidence.zip` to Nexus when Nexus config is available, using a path like:

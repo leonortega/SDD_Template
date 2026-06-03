@@ -103,6 +103,7 @@ namespace SDDTemplate.DeliveryTools.Tests
         public void PackageWorkflowPublishesUploadsAndDeploysPerAppArtifacts()
         {
             string workflow = ReadWorkflow();
+            string normalizedWorkflow = NormalizeLineEndings(workflow);
             string packageJob = GetJobSection(workflow, "package");
 
             Assert.Contains("infra/deployment/apps.json", workflow);
@@ -114,32 +115,36 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("AZURE_DEV_${app_upper}_APP_NAME", workflow);
             Assert.Contains("AZURE_QA_${app_upper}_APP_NAME", workflow);
             Assert.Contains("AZURE_PROD_${app_upper}_APP_NAME", workflow);
-            Assert.Contains("- name: Publish topology apps\n        shell: bash", workflow);
-            Assert.Contains("- name: Upload topology artifacts to Nexus\n        shell: bash", workflow);
-            Assert.Contains("- name: Deploy DEV topology apps\n        shell: bash", workflow);
-            Assert.Contains("- name: Smoke check DEV topology apps\n        shell: bash", workflow);
-            Assert.Contains("- name: Deploy QA topology apps\n        shell: bash", workflow);
-            Assert.Contains("- name: Smoke check QA topology apps\n        shell: bash", workflow);
-            Assert.Contains("  e2e-qa:", workflow);
-            Assert.Contains("- name: Deploy PROD topology apps\n        shell: bash", workflow);
-            Assert.Contains("- name: Smoke check PROD topology apps\n        shell: bash", workflow);
+            Assert.Contains("- name: Publish topology apps\n        shell: bash", normalizedWorkflow);
+            Assert.Contains("- name: Upload topology artifacts to Nexus\n        shell: bash", normalizedWorkflow);
+            Assert.Contains("- name: Deploy DEV topology apps\n        shell: bash", normalizedWorkflow);
+            Assert.Contains("- name: Smoke check DEV topology apps\n        shell: bash", normalizedWorkflow);
+            Assert.Contains("- name: Deploy QA topology apps\n        shell: bash", normalizedWorkflow);
+            Assert.Contains("- name: Smoke check QA topology apps\n        shell: bash", normalizedWorkflow);
+            Assert.DoesNotContain("\n  e2e-qa:\n", normalizedWorkflow);
+            Assert.Contains("\n  e2e-qa-branch:\n", normalizedWorkflow);
+            Assert.Contains("- name: Deploy PROD topology apps\n        shell: bash", normalizedWorkflow);
+            Assert.Contains("- name: Smoke check PROD topology apps\n        shell: bash", normalizedWorkflow);
         }
 
         [Fact]
-        public void PackageWorkflowRunsQaE2eAfterQaDeploymentAndUploadsEvidence()
+        public void PackageWorkflowUsesQaBranchE2eAsEvidenceGate()
         {
             string workflow = ReadWorkflow();
-            string e2eJob = GetJobSection(workflow, "e2e-qa");
+            string normalizedWorkflow = NormalizeLineEndings(workflow);
+            string e2eJob = GetJobSection(workflow, "e2e-qa-branch");
 
-            Assert.Contains("- deploy-qa", e2eJob);
+            Assert.DoesNotContain("\n  e2e-qa:\n", normalizedWorkflow);
+            Assert.Contains("startsWith(github.ref, 'refs/heads/qa/')", e2eJob);
+            Assert.Contains("git merge-base HEAD origin/dev", e2eJob);
             Assert.Contains("tests/SDDTemplate.E2ETests", e2eJob);
             Assert.Contains("npm ci", e2eJob);
             Assert.Contains("npm run install:browsers", e2eJob);
             Assert.Contains("npm test || test_exit=$?", e2eJob);
             Assert.Contains("E2E_SITE_URL: ${{ secrets.AZURE_QA_SITE_APP_URL }}", e2eJob);
             Assert.Contains("E2E_API_URL: ${{ secrets.AZURE_QA_API_APP_URL }}", e2eJob);
-            Assert.Contains("app/${GITHUB_SHA}/qa-e2e-evidence.zip", e2eJob);
-            Assert.Contains("qa/${plane_ticket_key}/${run_id}/qa-e2e-evidence.zip", e2eJob);
+            Assert.Contains("app/${E2E_ARTIFACT_COMMIT_SHA}/qa-e2e-evidence.zip", e2eJob);
+            Assert.Contains("qa/${E2E_PLANE_TICKET_KEY}/${run_id}/qa-e2e-evidence.zip", e2eJob);
             Assert.Contains("exit \"$test_exit\"", e2eJob);
         }
 
@@ -310,11 +315,12 @@ namespace SDDTemplate.DeliveryTools.Tests
             string developmentDoc = ReadDoc("development.md");
             string e2eSkill = ReadSkill("test-e2e", "SKILL.md");
 
-            Assert.Contains("  e2e-qa:", script);
+            Assert.Contains("  e2e-qa-branch:", script);
+            Assert.DoesNotContain("\n  e2e-qa:\n", NormalizeLineEndings(script));
             Assert.Contains("qa-e2e-evidence.zip", script);
             Assert.Contains("E2E_SITE_URL", script);
             Assert.Contains("E2E_API_URL", script);
-            Assert.Contains("Gitea Actions runs the committed Playwright QA E2E suite", deploymentDoc);
+            Assert.Contains("push a `qa/{ticketKey}` branch from current `dev`", deploymentDoc);
             Assert.Contains("tests/SDDTemplate.E2ETests", developmentDoc);
             Assert.Contains("deployed-QA regression suite", e2eSkill);
             Assert.Contains("qa/{ticketKey}", e2eSkill);
@@ -1350,6 +1356,11 @@ namespace SDDTemplate.DeliveryTools.Tests
             }
 
             return next < 0 ? content[start..] : content[start..next];
+        }
+
+        private static string NormalizeLineEndings(string content)
+        {
+            return content.Replace("\r\n", "\n", StringComparison.Ordinal);
         }
 
         private static string GetBetween(string content, string startMarker, string endMarker)
