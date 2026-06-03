@@ -190,6 +190,7 @@ Use these exact markers for idempotency:
 - PROD rollback: `IA generated PROD rollback: {rollbackVersionOrCommit}`
 - PROD rollback incident: `IA generated PROD rollback incident: {rollbackVersionOrCommit}`
 - PROD hotfix: `IA generated PROD hotfix: {incidentOrTicketKey}`
+- Workflow timing: `IA generated workflow timing: {ticketKey}`
 - PR review agent: `<!-- codex-review-agent:{headSha} -->`
 - PR review feedback detected: `IA generated PR feedback detected: {headSha}:{feedbackBatchId}`
 - PR review feedback fixes: `IA generated PR feedback fixes: {headSha}:{feedbackBatchId}`
@@ -215,6 +216,8 @@ Use this structure unless a workflow-specific skill requires more detail:
 
 Prefer Markdown links for long URLs, short commit display text such as ``8acc4d4`` with the full SHA recorded in a field when needed, and grouped sections over long flat `Label: value` lists. Keep automation-critical values present and searchable; do not hide the stable marker, commit SHA, ticket key, release version, artifact URL, or evidence URL inside prose only.
 
+Workflow timing comments use marker `IA generated workflow timing: {ticketKey}` and a compact Markdown table with stage, outcome, duration, started UTC, and finished UTC. Raw telemetry stays in ignored `.codex/agent-telemetry.local.jsonl`; Plane timing comments must not include token counts, raw logs, full prompts, credential-bearing URLs, secrets, or noisy tool details. On rerun, update or reuse the existing workflow timing marker comment for the same ticket instead of creating duplicates. Render the comment with `RenderPlaneComment -Type WorkflowTiming`, send both `comment_html` and `comment_stripped`, and verify `comment_stripped` starts with the marker after posting or patching.
+
 ## Reusable Delivery Tools
 
 Use `.codex/skills/_shared/scripts/delivery_tools.ps1` for deterministic delivery mechanics instead of duplicating script logic in skills:
@@ -230,7 +233,7 @@ Use `.codex/skills/_shared/scripts/delivery_tools.ps1` for deterministic deliver
 - `ValidateTicketLock`: compare resolved ticket, branch, PR, artifact commit, RC, or final version against `.codex/delivery-context.local.json`.
 - `ValidateDeploymentLane`: enforce serialized deployment ownership from `.codex/parallel-delivery.local.json`.
 - `ValidateParallelDeliveryDryRun`: validate enabled state, planned ticket/worktree/branch uniqueness, serialized lane ownership, supported lane policy, and required ignored local runtime files without mutating Git, Plane, Gitea, Nexus, or Azure.
-- `RenderPlaneComment`: render standard Markdown Plane comments for QA deployment, E2E QA, and PROD deployment.
+- `RenderPlaneComment`: render standard Markdown Plane comments for QA deployment, E2E QA, PROD deployment, and workflow timing.
 - `UpdateReleaseManifest`: merge stage-specific fields into `release.json` while preserving existing metadata, then validate the result.
 
 Skills remain responsible for API calls, user-facing decisions, blocker classification, and whether a mutation is allowed. The script is the reusable preflight/render/update helper.
