@@ -1,20 +1,32 @@
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+context: |
+  This repository is an agentic SDD/SDLC delivery lab. Agents move Plane tickets through OpenSpec planning, implementation, Gitea review, Nexus artifact promotion, Azure DEV/QA/PROD deployment, E2E QA evidence, explicit PROD promotion, rollback, and hotfix workflows.
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+  Durable project intent lives in docs/. The shared delivery contract at .codex/skills/_shared/delivery-contract.md is the agent-enforced policy layer. Agents should use documented intent first, then verify against current files and live tool output before mutating state.
+
+  Delivery tool set: Plane records tickets, states, and generated markers; OpenSpec records planned behavior; Gitea hosts PRs and reviews; Gitea Actions is the authoritative PR validation/deployment runner; Nexus stores immutable artifacts, release manifests, and preferred QA evidence bundles; Azure App Service hosts DEV, QA, and PROD application runtimes; Prometheus and Grafana provide local and Azure health visibility.
+
+  Application stack: .NET 10, ASP.NET Core, Blazor, xUnit, Microsoft.AspNetCore.Mvc.Testing, Microsoft.NET.Test.Sdk, and coverlet coverage. Quality gates include restore, format verification, release build, tests with coverage, dependency vulnerability audit, secret scan, and Trivy filesystem scan. Code standards include clean code, proportionate architecture, Blazor web UI quality, ASP.NET Core REST/API endpoint quality, and OWASP-aligned security review.
+
+  QA automation should prefer repo-native tests for repeatable checks and Browser/Playwright-style automation for rendered Blazor behavior when configured. Browser checks should assert user-visible behavior, console/network health, responsive behavior when relevant, and evidence validity.
+
+  Recommendation audits scan the repository for detected tools, frameworks, environments, test frameworks, QA practices, code standards, web UI, REST/API, and security signals. project-guidance-discover owns project guidance suggestions: it first builds a project-guidance-search-plan from those signals, reports existing skills, suggested missing skills, and non-skill guidance such as tools, references, practices, and standards. It researches official skill sources first, then technology-owner or widely used public sources when no official skill exists, verifies whether the target skill is already in .codex/skills/, shows the suggested list, and asks whether the user wants to add additional desired skills or guidance. Only after user confirmation does project-guidance-acquire copy the final confirmed skill items. Recommended skills are copied manually from repository sources: read the source SKILL.md, create .codex/skills/{skill-name}/, write the copied SKILL.md, and copy only required referenced scripts or templates. project-guidance-mapper maps config, ticket start, planning, implementation, review, QA, deploy, rollback, hotfix, and retrospective steps to repo-local workflow skills, installed expert skills, and local catalog guidance by updating recommendation-level usedInSteps in .codex/tool-recommendations.local.json. Do not copy secrets, local state, caches, unrelated files, or generated artifacts. Plugins and MCPs use manual configuration unless an explicit later task authorizes otherwise. Plane MCP is not used for ticket delivery; repo-local skills use the configured Plane API.
+
+  Use official-first research for platform and tooling guidance. Prefer Microsoft Learn for .NET, ASP.NET Core, Blazor, Azure App Service, and architecture; Playwright docs for browser automation; and official Gitea, Sonatype Nexus, Prometheus, and Grafana docs for those tools.
+
+rules:
+  proposal:
+    - Include the Plane ticket context when available.
+    - Name impacted capabilities and the user-visible goal.
+    - Include non-goals when the boundary matters.
+  design:
+    - Record meaningful architecture or tooling decisions.
+    - Include alternatives considered when a choice is not obvious.
+    - Call out source-of-truth impacts across docs, skills, workflows, and config.
+  tasks:
+    - Include implementation, tests, quality gates, and docs/context review.
+    - Include recommendation-audit updates when tooling or stack guidance changes.
+  spec:
+    - Use SHALL requirements with observable scenarios.
+    - Avoid implementation-only details unless needed to prevent ambiguity.

@@ -1,5 +1,5 @@
 param(
-  [string]$Location = "eastus",
+  [string]$Location = "westcentralus",
   [string]$DevResourceGroup = "rg-agentic-dev",
   [string]$QaResourceGroup = "rg-agentic-qa",
   [string]$ProdResourceGroup = "rg-agentic-prod",

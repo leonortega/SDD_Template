@@ -122,13 +122,16 @@ Invoke-RestMethod "$($client.nexus.baseUrl)/service/rest/v1/repositories" -Heade
 Validate from Gitea Actions later by running the package workflow. The workflow uploads to:
 
 ```text
-$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip
+$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/deployable-apps.json
+$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/{artifactName}
+$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/{artifactName}.sha256
 ```
 
 For PROD promotion, the workflow must download from the QA-approved artifact commit. A ticket-gated push to `main` resolves this from `GITHUB_SHA` and is valid only when `main` points to the exact QA-approved packaged commit; explicit workflow dispatch uses the supplied `artifact_commit_sha`:
 
 ```text
-$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${artifact_commit_sha}/app.zip
+$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${artifact_commit_sha}/deployable-apps.json
+$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${artifact_commit_sha}/{artifactName}
 ```
 
 Each artifact commit must also have a machine-readable release manifest:
@@ -143,19 +146,19 @@ Use `release.json` for automation and idempotency. It should carry commit SHA, c
 
 - Feature branches open PRs into `dev`.
 - Merge to `dev` builds once.
-- Publish one deployable ZIP artifact.
-- Compute checksum and commit SHA metadata.
-- Upload artifact, checksum, and metadata to Nexus.
-- Deploy DEV from the Nexus artifact.
-- Promote the same artifact to QA after DEV page and `/health` checks pass.
+- Publish one deployable ZIP artifact per app in `infra/deployment/apps.json`.
+- Compute per-app checksums and commit SHA metadata.
+- Upload topology, artifacts, checksums, and metadata to Nexus.
+- Deploy DEV from the Nexus topology artifacts.
+- Promote the same topology artifacts to QA after DEV page and all app `/health` checks pass.
 - Move the Plane ticket to QA only after QA checks pass.
 - Create or verify an annotated RC tag such as `v1.2.0-rc.1` on the QA-approved artifact commit after E2E QA passes.
 - Fast-forward the tested commit to `main` only after QA passes. Push-triggered PROD deployment is allowed only when `main` points to the exact QA-approved packaged commit, the commit or merged PR title starts with the configured ticket key pattern in `.codex/delivery-policy.json`, and application/test/package source changed.
 - Create the final annotated release tag such as `v1.2.0` on the same commit.
 - Deploy PROD from the QA-passed artifact commit by ticket-gated `main` push or explicit workflow dispatch inputs `artifact_commit_sha`, `release_version`, and `source_rc_version`.
-- Validate PROD page and `/health`; use Prometheus/Grafana as observability verification when available.
+- Validate PROD page and all app `/health` checks; use Prometheus/Grafana as observability verification when available.
 - Record version lineage in Plane comments at each phase: QA deployment as unversioned candidate or known RC, E2E QA as `artifact commit -> source RC`, and PROD as `artifact commit -> source RC -> final release`.
-- For rollback, redeploy a previous known-good `app/{commitSha}/app.zip`, verify checksum and `/health`, update `release.json`, and comment Plane with rollback lineage.
+- For rollback, redeploy previous known-good `app/{commitSha}/deployable-apps.json` topology artifacts, verify checksums and `/health`, update `release.json`, and comment Plane with rollback lineage.
 - Do not rebuild between environments.
 
 Default release path:

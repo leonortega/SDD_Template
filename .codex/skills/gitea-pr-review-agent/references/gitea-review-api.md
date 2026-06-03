@@ -40,6 +40,15 @@ Fetch existing comments through the issue comments endpoint:
 GET {gitea.baseUrl}/api/v1/repos/{owner}/{repo}/issues/{index}/comments
 ```
 
+Fetch pull request reviews and inline review comments when supported by the configured Gitea version:
+
+```text
+GET {gitea.baseUrl}/api/v1/repos/{owner}/{repo}/pulls/{index}/reviews
+GET {gitea.baseUrl}/api/v1/repos/{owner}/{repo}/pulls/{index}/reviews/{reviewId}/comments
+```
+
+Treat human-authored top-level comments, inline code comments, and review-thread replies as implementation feedback. Exclude generated comments such as `<!-- codex-review-agent:{headSha} -->`, `IA generated PR feedback detected: {headSha}:{feedbackBatchId}`, `IA generated PR feedback fixes: {headSha}:{feedbackBatchId}`, and other Plane stable markers from human-feedback fix requirements.
+
 ## Review Comment
 
 Post a top-level PR comment:
@@ -57,6 +66,8 @@ Payload:
 ```
 
 Skip posting if an existing comment contains the same marker for the same head SHA.
+
+Every AI finding in the review body must include a stable finding id for the inspected head SHA, such as `AI-001`, so the implementation workflow can compute a deterministic feedback batch id from sorted source ids.
 
 ## Labels
 

@@ -11,9 +11,15 @@ Use this skill after deployment validation has already moved a Plane ticket to Q
 
 This skill is technology-agnostic. Inspect the repository first. Use an established E2E/API test tool when one is already configured; otherwise ask the user to choose before creating or running technology-dependent tests.
 
+For Blazor or other rendered website changes, prefer `$frontend-testing-debugging` when the repo has `.codex/skills/frontend-testing-debugging/SKILL.md` and the ticket requires browser-visible validation, responsive layout checks, console health, screenshots, or interaction proof. Keep API and deployment health checks in the repo-native .NET/API path.
+
+When the repository contains `tests/SDDTemplate.E2ETests`, treat it as the reusable deployed-QA regression suite. The suite is executed by the Gitea `e2e-qa-branch` job against the deployed QA Site/API URLs, and the Gitea job is evidence-only. After `deploy-qa` succeeds, create a `qa/{ticketKey}` branch from current `dev`, add or update tests there when needed, and push that branch so Gitea runs the suite remotely without redeploying. This skill still owns QA acceptance: verify the Gitea E2E evidence bundle, run or rerun the suite manually only when remote execution is unavailable or diagnostic evidence is needed, publish final QA evidence, create or verify the RC tag, update release metadata, comment Plane, and move the ticket to Done only after all checks pass.
+
 Non-interactive context means the run has no available user-response channel, such as cron automation, CI, detached automation, or an explicit "do not ask" instruction.
 
-Read `.codex/skills/_shared/delivery-contract.md` before QA state changes. Use `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode CheckGitIgnored` before writing evidence, `-Mode NextRcVersion` when deriving RC tags, and `-Mode ValidateReleaseManifest` after updating `release.json`. Enforce the ticket context lock before testing, tagging, publishing evidence, or moving state.
+## Shared Context
+
+Before QA state changes, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` helpers: `ValidateTicketLock` for `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, `CheckGitIgnored`, `NextRcVersion`, `UpdateReleaseManifest`, `ValidateReleaseManifest`, and `RenderPlaneComment -Type E2EQA`.
 
 ## Configuration
 
@@ -37,14 +43,12 @@ Optional environment variables override local JSON when present:
 - `GITEA_OWNER`
 - `GITEA_REPO`
 
-Never print, commit, paste into tickets, or write real API tokens, cookies, session values, Nexus credentials, Azure credentials, or other secrets.
-
 ## Workflow
 
 ### 1. Resolve Context
 
-1. Resolve the Plane ticket from user input, current branch, Gitea PR metadata, deployment comments, commit messages, or a ticket key.
-2. Read `.codex/delivery-context.local.json` when present and verify the resolved Plane ticket, QA deployment commit, artifact commit, and evidence path match the locked `ticketKey`. If any value belongs to another ticket, stop before testing or writing evidence.
+1. Resolve the Plane ticket from user input, current branch, Gitea PR metadata, deployment comments, Gitea E2E evidence, commit messages, or a ticket key.
+2. Run `ValidateTicketLock` with the resolved Plane ticket, QA deployment commit, artifact commit, and known version values. If the result is invalid, stop before testing or writing evidence.
 3. Fetch the Plane ticket with expanded state/project data.
 4. Verify the ticket is in `plane.qaState`. If it is not, stop unless the user explicitly asks to test despite the state mismatch.
 5. Resolve the project UUID and the configured `plane.doneState` by exact state name before any mutation. If `plane.doneState` is missing or unresolved, stop and ask for configuration.
@@ -85,7 +89,7 @@ Inspect the repo before choosing tools:
 - API specs, OpenAPI/Swagger files, Postman collections, k6 scripts, REST Assured or language-native integration tests
 - Existing helper APIs, fixtures, auth setup, seeded users, environment variable conventions
 
-Use an established tool when the repo clearly already has one.
+Use an established tool when the repo clearly already has one. For this repository's committed QA E2E suite, run Playwright remotely through Gitea Actions against deployed QA URLs; do not start local web servers for QA acceptance. Local Playwright execution is only a fallback for authoring diagnostics and must still target deployed QA URLs with `E2E_SITE_URL` and `E2E_API_URL`.
 
 If no tool is configured, or several valid technology-dependent choices exist, ask the user before proceeding. Present concrete choices with a recommendation:
 
@@ -159,18 +163,19 @@ Create `qa-summary.md` with the result, tested URLs, selected tools, commit/arti
 Prefer durable links in Plane comments. Use this evidence publication order:
 
 1. Commit reusable tests to the repo only when they are intended to become part of regression coverage.
-2. Save all run evidence locally under `artifacts/qa/{ticketKey}/{runId}/`.
-3. Zip the run folder as `qa-evidence.zip`.
-4. Upload `qa-evidence.zip` to Nexus when Nexus config is available, using a path like:
+2. When the Gitea `e2e-qa-branch` job has already run the committed suite, verify the Nexus bundle at `app/{commitSha}/qa-e2e-evidence.zip` and prefer reusing it as supporting evidence instead of rerunning the same test without cause.
+3. Save all run evidence locally under `artifacts/qa/{ticketKey}/{runId}/`.
+4. Zip the run folder as `qa-evidence.zip`.
+5. Upload `qa-evidence.zip` to Nexus when Nexus config is available, using a path like:
 
 ```text
 qa/{ticketKey}/{runId}/qa-evidence.zip
 ```
 
-5. Add the Nexus evidence URL to the Plane comment.
-6. If Nexus is unavailable but Plane attachments are configured and safe, attach evidence to Plane.
-7. If neither Nexus nor Plane attachments are available, include local evidence paths in the Plane comment and clearly label them as local-only fallback evidence.
-8. Update `app/{commitSha}/release.json` in Nexus after QA passes, adding source RC version, QA evidence URL, QA result, QA timestamp, tested URLs, and the E2E scenario summary. Preserve existing artifact, checksum, PR, ticket, DEV, and QA deployment fields.
+6. Add the Nexus evidence URL to the Plane comment.
+7. If Nexus is unavailable but Plane attachments are configured and safe, attach evidence to Plane.
+8. If neither Nexus nor Plane attachments are available, include local evidence paths in the Plane comment and clearly label them as local-only fallback evidence.
+9. Use `UpdateReleaseManifest` after QA passes, adding source RC version, QA evidence URL, QA result, QA timestamp, tested URLs, and the E2E scenario summary while preserving existing artifact, checksum, PR, ticket, DEV, and QA deployment fields.
 
 Do not move a ticket to `plane.doneState` until the evidence link or fallback evidence path has been written to Plane. If evidence upload fails after tests pass, comment the upload failure, leave the ticket in QA, and report the blocking evidence publication issue.
 
@@ -194,7 +199,7 @@ Before moving a ticket to `plane.doneState`, establish a release-candidate marke
 7. Include the source RC version in the E2E QA Plane comment.
 8. Update the Nexus release manifest so `release.json` records `artifact commit -> source RC version -> pending final PROD version`.
 
-The RC tag is the human release-candidate identifier for the QA-approved artifact. It must not replace the immutable Nexus identity `app/{commitSha}/app.zip`.
+The RC tag is the human release-candidate identifier for the QA-approved artifact set. It must not replace the immutable Nexus identity under `app/{commitSha}/` from `deployable-apps.json` and each per-app ZIP/checksum pair.
 
 ### 7. Git And Hook Policy
 
@@ -228,6 +233,8 @@ IA generated E2E QA: {ticketKey}
 ```
 
 Do not duplicate a QA result comment with the same marker and same tested commit/artifact unless the user explicitly asks for a fresh run.
+
+Keep the marker as the first line by itself. Use `RenderPlaneComment -Type E2EQA` with the resolved QA data, scenario summary, evidence links, and notes to format the readable Markdown body.
 
 The comment must include:
 
@@ -273,6 +280,21 @@ If exactly one active OpenSpec change is linked to the completed ticket, invoke 
 If multiple active OpenSpec changes match, or no clear linked change can be resolved, do not guess. Add the unresolved archival handoff to the completion summary and leave the OpenSpec change active until the user selects the change.
 
 If `$openspec-archive-change` reports incomplete artifacts, incomplete tasks, spec sync warnings, or needs user confirmation, stop the archival handoff and report the exact blocker. Do not undo the QA pass or move the Plane ticket back from Done.
+
+### 10. Durable Learning Capture Gate
+
+Before final handoff, apply `.codex/memory/retrieval-policy.md#update-process` to every blocker, environment repair, QA harness fix, deployment finding, and recurring workflow lesson discovered during the QA run.
+
+- If the finding is authoritative project or deployment knowledge, update the matching `docs/` file.
+- If the finding changes enforceable workflow behavior, update `.codex/skills/_shared/delivery-contract.md` plus affected skills and tests.
+- If the finding is reusable but non-authoritative workflow knowledge, update the targeted `.codex/memory/` file.
+- If nothing reusable was discovered, explicitly record `Memory updated: none`.
+
+Plane comments, QA evidence, and final chat summaries do not satisfy this gate by themselves. Do not report the QA run as complete until the final handoff can state `Memory updated: <files>` or `Memory updated: none`.
+
+## Output
+
+Report the ticket, QA environment, scenarios tested, validation assertions, evidence path or URL, RC version, Plane state/comment updates, OpenSpec archival handoff, `Memory updated: <files>` or `Memory updated: none`, and any blockers or residual risk.
 
 ## Failure Rules
 
