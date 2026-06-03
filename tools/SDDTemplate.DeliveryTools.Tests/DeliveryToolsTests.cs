@@ -792,6 +792,55 @@ namespace SDDTemplate.DeliveryTools.Tests
             return JsonDocument.Parse(output);
         }
 
+        [Fact]
+        public void RenderPlaneCommentRendersWorkflowTimingTable()
+        {
+            string script = Path.Combine(FindRepositoryRoot().FullName, ".codex", "skills", "_shared", "scripts", "delivery_tools.ps1");
+            string inputJson = JsonSerializer.Serialize(new
+            {
+                ticketKey = "E2EPROJECT-123",
+                status = "PASS - automatic route completed.",
+                currentRoute = "implement-ticket",
+                stages = new[]
+                {
+                    new
+                    {
+                        stage = "plane-start-ticket",
+                        outcome = "PASS",
+                        elapsedMilliseconds = 134000,
+                        startedUtc = "2026-06-03T10:00:00Z",
+                        finishedUtc = "2026-06-03T10:02:14Z",
+                    },
+                    new
+                    {
+                        stage = "implement-ticket",
+                        outcome = "BLOCKED",
+                        elapsedMilliseconds = 3605000,
+                        startedUtc = "2026-06-03T10:02:14Z",
+                        finishedUtc = "2026-06-03T11:02:19Z",
+                    },
+                },
+            });
+
+            string output = RunPowerShell(
+                script,
+                "-Mode",
+                "RenderPlaneComment",
+                "-Type",
+                "WorkflowTiming",
+                "-InputJson",
+                inputJson);
+
+            Assert.Contains("IA generated workflow timing: E2EPROJECT-123", output);
+            Assert.Contains("**Status:** PASS - automatic route completed.", output);
+            Assert.Contains("- Current route: `implement-ticket`", output);
+            Assert.Contains("- Total elapsed: 1h 02m 19s", output);
+            Assert.Contains("| Stage | Outcome | Duration | Started UTC | Finished UTC |", output);
+            Assert.Contains("| `plane-start-ticket` | PASS | 2m 14s | 2026-06-03T10:00:00Z | 2026-06-03T10:02:14Z |", output);
+            Assert.Contains("| `implement-ticket` | BLOCKED | 1h 00m 05s | 2026-06-03T10:02:14Z | 2026-06-03T11:02:19Z |", output);
+            Assert.DoesNotContain("token", output, StringComparison.OrdinalIgnoreCase);
+        }
+
         private static string[] GetJsonErrors(JsonDocument document)
         {
             return [.. document.RootElement.GetProperty("errors").EnumerateArray().Select(error => error.GetString() ?? string.Empty)];

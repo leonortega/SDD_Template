@@ -80,7 +80,7 @@ Dynamic values belong near the end of the working context:
 - Nexus manifests, Azure health checks, QA evidence, and monitoring output
 - tool errors, retries, and latest observations
 
-Do not insert timestamps, random IDs, raw tool dumps, or refreshed status summaries into otherwise stable context blocks. If a run records model telemetry, write it to ignored local output such as `.codex/agent-telemetry.local.jsonl` and summarize only the useful optimization finding in handoff text.
+Do not insert timestamps, random IDs, raw tool dumps, or refreshed status summaries into otherwise stable context blocks. If a run records model telemetry, write it to ignored local output such as `.codex/agent-telemetry.local.jsonl` and summarize only useful optimization findings in handoff text. Automatic ticket delivery may also maintain a concise generated Plane timing comment for the active ticket, but only with per-stage outcome, duration, and UTC start/finish values; raw logs, token counts, prompts, and sensitive values stay out of Plane.
 
 ## Agent Telemetry
 
