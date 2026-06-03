@@ -5,6 +5,7 @@ on:
     branches:
       - dev
       - main
+      - qa/**
   workflow_dispatch:
     inputs:
       environment:
@@ -72,7 +73,7 @@ jobs:
           app_changed=false
           while IFS= read -r path; do
             case "$path" in
-              src/*|tests/*|*.sln|*.csproj|Directory.Build.props|Directory.Build.targets|global.json)
+              src/*|tests/*|infra/deployment/*|infra/azure/*|*.sln|*.slnx|*.csproj|Directory.Build.props|Directory.Build.targets|global.json)
                 app_changed=true
                 ;;
             esac
@@ -80,14 +81,21 @@ jobs:
           $changed_files
           EOF
 
-          ticket_key_pattern="$(sed -n 's/.*"ticketKeyPattern"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' .codex/delivery-policy.json | head -n 1 || true)"
-          test -n "$ticket_key_pattern"
+          ticket_key_pattern="$(sed -nE 's/.*"ticketKeyPattern"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' .codex/delivery-policy.json | head -n 1)"
+          if [ -z "$ticket_key_pattern" ]; then
+            echo "Could not read ticketKeyPattern from .codex/delivery-policy.json."
+            exit 1
+          fi
 
           commit_message="${{ github.event.head_commit.message }}"
-          ticket_pattern="^${ticket_key_pattern}: "
-          merge_pr_pattern="^Merge pull request '${ticket_key_pattern}:"
+          plane_ticket_key=""
+          if [[ "$commit_message" =~ ^($ticket_key_pattern) ]]; then
+            plane_ticket_key="${BASH_REMATCH[1]}"
+          elif [[ "$commit_message" =~ Merge\ pull\ request.*\'($ticket_key_pattern): ]]; then
+            plane_ticket_key="${BASH_REMATCH[1]}"
+          fi
           deploy_allowed=false
-          if [[ "$commit_message" =~ $ticket_pattern || "$commit_message" =~ $merge_pr_pattern ]]; then
+          if [ -n "$plane_ticket_key" ]; then
             deploy_allowed=true
           fi
 
@@ -115,52 +123,52 @@ jobs:
           git fetch --depth 1 origin "$GITHUB_SHA"
           git checkout --force FETCH_HEAD
 
-      - name: Publish
-        run: dotnet publish src/SDDTemplate.Site/SDDTemplate.Site.csproj -c Release -o ./artifacts/app
-
       - name: Install packaging tools
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends zip
+          apt-get install -y --no-install-recommends jq zip
 
-      - name: Create deployable ZIP
+      - name: Publish topology apps
+        shell: bash
         run: |
-          cd artifacts/app
-          zip -r ../app.zip .
-          cd ../..
-          sha256sum artifacts/app.zip | sed 's#artifacts/app.zip#app.zip#' > artifacts/app.zip.sha256
+          set -euo pipefail
+
+          mkdir -p artifacts/packages
+          jq -c '.apps | sort_by(.deployOrder)' infra/deployment/apps.json > artifacts/deployable-apps.json
+          jq -r '.apps[] | [.appId, .projectPath, .artifactName] | @tsv' infra/deployment/apps.json |
+          while IFS=$'\t' read -r app_id project_path artifact_name; do
+            echo "Publishing $app_id from $project_path"
+            dotnet publish "$project_path" -c Release -o "artifacts/$app_id"
+            (cd "artifacts/$app_id" && zip -r "../packages/$artifact_name" .)
+            sha256sum "artifacts/packages/$artifact_name" | sed "s#artifacts/packages/##" > "artifacts/packages/$artifact_name.sha256"
+          done
+
           git rev-parse HEAD > artifacts/commit.sha
 
-      - name: Upload artifact to Nexus
+      - name: Upload topology artifacts to Nexus
+        shell: bash
         run: |
-          checksum="$(cut -d ' ' -f1 artifacts/app.zip.sha256)"
+          set -euo pipefail
+
           commit_sha="$(cat artifacts/commit.sha)"
-          ticket_key_pattern="$(sed -n 's/.*"ticketKeyPattern"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' .codex/delivery-policy.json | head -n 1 || true)"
-          test -n "$ticket_key_pattern"
+          first_artifact_name="$(jq -r '.apps | sort_by(.deployOrder) | .[0].artifactName' infra/deployment/apps.json)"
+          first_artifact_checksum="$(cut -d ' ' -f1 "artifacts/packages/$first_artifact_name.sha256")"
+          ticket_key_pattern="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ReadDeliveryPolicy --path .codex/delivery-policy.json)"
 
           commit_message="$(git log -1 --pretty=%B)"
-          plane_ticket_key="$(printf '%s\n' "$commit_message" | sed -n "s/^\(${ticket_key_pattern}\): .*/\1/p" | head -n 1 || true)"
-          if [ -z "$plane_ticket_key" ]; then
-            plane_ticket_key="$(printf '%s\n' "$commit_message" | sed -n "s/^Merge pull request '\(${ticket_key_pattern}\):.*/\1/p" | head -n 1 || true)"
-          fi
-          if [ -z "$plane_ticket_key" ]; then
-            plane_ticket_key="manual-dispatch"
-          fi
+          plane_ticket_key="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ExtractTicketKey --pattern "$ticket_key_pattern" --message "$commit_message" --fallback manual-dispatch)"
 
-          artifact_url="$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip"
-          cat > artifacts/release.json <<EOF
-          {
-            "schemaVersion": 1,
-            "commitSha": "$commit_sha",
-            "checksum": "$checksum",
-            "artifactUrl": "$artifact_url",
-            "planeTicketKey": "$plane_ticket_key",
-            "versionStatus": "unversioned"
-          }
-          EOF
+          artifact_url="$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/$first_artifact_name"
+          dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- CreateReleaseManifest --output artifacts/release.json --commit-sha "$commit_sha" --checksum "$first_artifact_checksum" --artifact-url "$artifact_url" --plane-ticket-key "$plane_ticket_key" --version-status unversioned
+          dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ValidateReleaseManifest --path artifacts/release.json
 
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/app.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip"
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/app.zip.sha256 "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip.sha256"
+          jq -r '.apps[] | .artifactName' infra/deployment/apps.json |
+          while IFS= read -r artifact_name; do
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file "artifacts/packages/$artifact_name" "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/$artifact_name"
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file "artifacts/packages/$artifact_name.sha256" "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/$artifact_name.sha256"
+          done
+
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/deployable-apps.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/deployable-apps.json"
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/commit.sha "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/commit.sha"
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/release.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/release.json"
         env:
@@ -176,11 +184,23 @@ jobs:
     runs-on: ubuntu-latest
     if: (github.event_name == 'push' && github.ref == 'refs/heads/dev' && needs.classify-changes.outputs.app_changed == 'true' && needs.classify-changes.outputs.deploy_allowed == 'true') || github.event.inputs.environment == 'dev' || github.event.inputs.environment == 'qa'
     steps:
-      - name: Download artifact from Nexus
+      - name: Install deployment tools
         run: |
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip"
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip.sha256 "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip.sha256"
-          sha256sum -c app.zip.sha256
+          apt-get update
+          apt-get install -y --no-install-recommends jq
+
+      - name: Download topology artifacts from Nexus
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o deployable-apps.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/deployable-apps.json"
+          jq -r '.[].artifactName' deployable-apps.json |
+          while IFS= read -r artifact_name; do
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o "$artifact_name" "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/$artifact_name"
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o "$artifact_name.sha256" "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/$artifact_name.sha256"
+            sha256sum -c "$artifact_name.sha256"
+          done
         env:
           NEXUS_URL: ${{ secrets.NEXUS_URL }}
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
@@ -195,21 +215,47 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Deploy DEV package
-        run: az webapp deploy --resource-group "$AZURE_DEV_RESOURCE_GROUP" --name "$AZURE_DEV_WEBAPP_NAME" --src-path app.zip --type zip --clean true
+      - name: Deploy DEV topology apps
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          jq -c 'sort_by(.deployOrder)' deployable-apps.json |
+          jq -r '.[] | [.appId, .artifactName] | @tsv' |
+          while IFS=$'\t' read -r app_id artifact_name; do
+            app_upper="$(echo "$app_id" | tr '[:lower:]-' '[:upper:]_')"
+            name_var="AZURE_DEV_${app_upper}_APP_NAME"
+            app_name="${!name_var:-}"
+            test -n "$app_name"
+            az webapp deploy --resource-group "$AZURE_DEV_RESOURCE_GROUP" --name "$app_name" --src-path "$artifact_name" --type zip --clean true
+          done
         env:
           AZURE_DEV_RESOURCE_GROUP: ${{ secrets.AZURE_DEV_RESOURCE_GROUP }}
-          AZURE_DEV_WEBAPP_NAME: ${{ secrets.AZURE_DEV_WEBAPP_NAME }}
+          AZURE_DEV_SITE_APP_NAME: ${{ secrets.AZURE_DEV_SITE_APP_NAME }}
+          AZURE_DEV_API_APP_NAME: ${{ secrets.AZURE_DEV_API_APP_NAME }}
 
-      - name: Smoke check DEV
+      - name: Smoke check DEV topology apps
+        shell: bash
         run: |
-          curl --fail --silent --show-error --location "$AZURE_DEV_WEBAPP_URL" -o response.html
-          grep -q "<title>SDD Template</title>" response.html
-          ! grep -qi "Microsoft Azure" response.html
-          curl --fail --silent --show-error --location "$AZURE_DEV_WEBAPP_URL/health" -o health.json
-          grep -q '"status":"ok"' health.json
+          set -euo pipefail
+
+          jq -r '.[] | [.appId, .role, .healthPath] | @tsv' deployable-apps.json |
+          while IFS=$'\t' read -r app_id role health_path; do
+            app_upper="$(echo "$app_id" | tr '[:lower:]-' '[:upper:]_')"
+            url_var="AZURE_DEV_${app_upper}_APP_URL"
+            app_url="${!url_var:-}"
+            test -n "$app_url"
+            if [ "$role" = "web" ]; then
+              curl --fail --silent --show-error --location "$app_url" -o response.html
+              grep -q "<title>SDD Template</title>" response.html
+              ! grep -qi "Microsoft Azure" response.html
+            fi
+            curl --fail --silent --show-error --location "${app_url}${health_path}" -o health.json
+            grep -q '"status":"ok"' health.json
+          done
         env:
-          AZURE_DEV_WEBAPP_URL: ${{ secrets.AZURE_DEV_WEBAPP_URL }}
+          AZURE_DEV_SITE_APP_URL: ${{ secrets.AZURE_DEV_SITE_APP_URL }}
+          AZURE_DEV_API_APP_URL: ${{ secrets.AZURE_DEV_API_APP_URL }}
 
   deploy-qa:
     needs:
@@ -218,11 +264,23 @@ jobs:
     runs-on: ubuntu-latest
     if: (github.event_name == 'push' && github.ref == 'refs/heads/dev' && needs.classify-changes.outputs.app_changed == 'true' && needs.classify-changes.outputs.deploy_allowed == 'true') || github.event.inputs.environment == 'qa'
     steps:
-      - name: Download artifact from Nexus
+      - name: Install deployment tools
         run: |
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip"
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip.sha256 "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip.sha256"
-          sha256sum -c app.zip.sha256
+          apt-get update
+          apt-get install -y --no-install-recommends jq
+
+      - name: Download topology artifacts from Nexus
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o deployable-apps.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/deployable-apps.json"
+          jq -r '.[].artifactName' deployable-apps.json |
+          while IFS= read -r artifact_name; do
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o "$artifact_name" "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/$artifact_name"
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o "$artifact_name.sha256" "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/$artifact_name.sha256"
+            sha256sum -c "$artifact_name.sha256"
+          done
         env:
           NEXUS_URL: ${{ secrets.NEXUS_URL }}
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
@@ -237,21 +295,132 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Deploy QA package
-        run: az webapp deploy --resource-group "$AZURE_QA_RESOURCE_GROUP" --name "$AZURE_QA_WEBAPP_NAME" --src-path app.zip --type zip --clean true
+      - name: Deploy QA topology apps
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          jq -c 'sort_by(.deployOrder)' deployable-apps.json |
+          jq -r '.[] | [.appId, .artifactName] | @tsv' |
+          while IFS=$'\t' read -r app_id artifact_name; do
+            app_upper="$(echo "$app_id" | tr '[:lower:]-' '[:upper:]_')"
+            name_var="AZURE_QA_${app_upper}_APP_NAME"
+            app_name="${!name_var:-}"
+            test -n "$app_name"
+            az webapp deploy --resource-group "$AZURE_QA_RESOURCE_GROUP" --name "$app_name" --src-path "$artifact_name" --type zip --clean true
+          done
         env:
           AZURE_QA_RESOURCE_GROUP: ${{ secrets.AZURE_QA_RESOURCE_GROUP }}
-          AZURE_QA_WEBAPP_NAME: ${{ secrets.AZURE_QA_WEBAPP_NAME }}
+          AZURE_QA_SITE_APP_NAME: ${{ secrets.AZURE_QA_SITE_APP_NAME }}
+          AZURE_QA_API_APP_NAME: ${{ secrets.AZURE_QA_API_APP_NAME }}
 
-      - name: Smoke check QA
+      - name: Smoke check QA topology apps
+        shell: bash
         run: |
-          curl --fail --silent --show-error --location "$AZURE_QA_WEBAPP_URL" -o response.html
-          grep -q "<title>SDD Template</title>" response.html
-          ! grep -qi "Microsoft Azure" response.html
-          curl --fail --silent --show-error --location "$AZURE_QA_WEBAPP_URL/health" -o health.json
-          grep -q '"status":"ok"' health.json
+          set -euo pipefail
+
+          jq -r '.[] | [.appId, .role, .healthPath] | @tsv' deployable-apps.json |
+          while IFS=$'\t' read -r app_id role health_path; do
+            app_upper="$(echo "$app_id" | tr '[:lower:]-' '[:upper:]_')"
+            url_var="AZURE_QA_${app_upper}_APP_URL"
+            app_url="${!url_var:-}"
+            test -n "$app_url"
+            if [ "$role" = "web" ]; then
+              curl --fail --silent --show-error --location "$app_url" -o response.html
+              grep -q "<title>SDD Template</title>" response.html
+              ! grep -qi "Microsoft Azure" response.html
+            fi
+            curl --fail --silent --show-error --location "${app_url}${health_path}" -o health.json
+            grep -q '"status":"ok"' health.json
+          done
         env:
-          AZURE_QA_WEBAPP_URL: ${{ secrets.AZURE_QA_WEBAPP_URL }}
+          AZURE_QA_SITE_APP_URL: ${{ secrets.AZURE_QA_SITE_APP_URL }}
+          AZURE_QA_API_APP_URL: ${{ secrets.AZURE_QA_API_APP_URL }}
+
+  e2e-qa-branch:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/qa/')
+    steps:
+      - name: Checkout QA E2E branch
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          repo_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          repo_url="${repo_url/localhost/host.docker.internal}"
+          repo_url="${repo_url/gitea/host.docker.internal}"
+
+          git init .
+          git remote add origin "$repo_url"
+          git fetch --depth 50 origin "$GITHUB_SHA"
+          git checkout --force FETCH_HEAD
+          git fetch --depth 50 origin dev
+
+      - name: Resolve QA artifact commit
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          artifact_commit_sha="$(git merge-base HEAD origin/dev)"
+          test -n "$artifact_commit_sha"
+          echo "E2E_ARTIFACT_COMMIT_SHA=$artifact_commit_sha" >> "$GITHUB_ENV"
+
+          ticket_key_pattern="$(sed -nE 's/.*"ticketKeyPattern"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' .codex/delivery-policy.json | head -n 1)"
+          branch_name="${GITHUB_REF#refs/heads/}"
+          plane_ticket_key="$(printf '%s\n' "$branch_name" | sed -nE "s#^qa/($ticket_key_pattern)(/.*)?\$#\1#p" | head -n 1)"
+          test -n "$plane_ticket_key"
+          echo "E2E_PLANE_TICKET_KEY=$plane_ticket_key" >> "$GITHUB_ENV"
+
+      - name: Install E2E tools
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates curl zip
+          curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+          apt-get install -y --no-install-recommends nodejs
+          cd tests/SDDTemplate.E2ETests
+          npm ci
+          npm run install:browsers
+
+      - name: Run QA branch E2E suite and upload evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd tests/SDDTemplate.E2ETests
+          mkdir -p evidence
+
+          test_exit=0
+          npm test || test_exit=$?
+
+          run_id="$(date -u +%Y%m%d-%H%M%S)-${GITHUB_SHA:0:7}"
+          {
+            echo "ticketKey=$E2E_PLANE_TICKET_KEY"
+            echo "artifactCommitSha=$E2E_ARTIFACT_COMMIT_SHA"
+            echo "testCommitSha=$GITHUB_SHA"
+            echo "runId=$run_id"
+            echo "siteUrl=$E2E_SITE_URL"
+            echo "apiUrl=$E2E_API_URL"
+            echo "result=$([ "$test_exit" -eq 0 ] && echo PASS || echo FAIL)"
+          } > evidence/qa-e2e-summary.txt
+
+          [ -d playwright-report ] && cp -r playwright-report evidence/
+          [ -d test-results ] && cp -r test-results evidence/
+          zip -r qa-e2e-evidence.zip evidence
+
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file qa-e2e-evidence.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${E2E_ARTIFACT_COMMIT_SHA}/qa-e2e-evidence.zip"
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file qa-e2e-evidence.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/qa/${E2E_PLANE_TICKET_KEY}/${run_id}/qa-e2e-evidence.zip"
+
+          exit "$test_exit"
+        env:
+          E2E_SITE_URL: ${{ secrets.AZURE_QA_SITE_APP_URL }}
+          E2E_API_URL: ${{ secrets.AZURE_QA_API_APP_URL }}
+          NEXUS_URL: ${{ secrets.NEXUS_URL }}
+          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+          NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
 
   deploy-prod:
     needs: classify-changes
@@ -278,11 +447,23 @@ jobs:
           RELEASE_VERSION: ${{ github.event.inputs.release_version }}
           SOURCE_RC_VERSION: ${{ github.event.inputs.source_rc_version }}
 
-      - name: Download artifact from Nexus
+      - name: Install deployment tools
         run: |
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$PROD_ARTIFACT_COMMIT_SHA/app.zip"
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip.sha256 "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$PROD_ARTIFACT_COMMIT_SHA/app.zip.sha256"
-          sha256sum -c app.zip.sha256
+          apt-get update
+          apt-get install -y --no-install-recommends jq
+
+      - name: Download topology artifacts from Nexus
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o deployable-apps.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$PROD_ARTIFACT_COMMIT_SHA/deployable-apps.json"
+          jq -r '.[].artifactName' deployable-apps.json |
+          while IFS= read -r artifact_name; do
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o "$artifact_name" "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$PROD_ARTIFACT_COMMIT_SHA/$artifact_name"
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o "$artifact_name.sha256" "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$PROD_ARTIFACT_COMMIT_SHA/$artifact_name.sha256"
+            sha256sum -c "$artifact_name.sha256"
+          done
         env:
           NEXUS_URL: ${{ secrets.NEXUS_URL }}
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
@@ -297,18 +478,44 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Deploy PROD package
-        run: az webapp deploy --resource-group "$AZURE_PROD_RESOURCE_GROUP" --name "$AZURE_PROD_WEBAPP_NAME" --src-path app.zip --type zip --clean true
+      - name: Deploy PROD topology apps
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          jq -c 'sort_by(.deployOrder)' deployable-apps.json |
+          jq -r '.[] | [.appId, .artifactName] | @tsv' |
+          while IFS=$'\t' read -r app_id artifact_name; do
+            app_upper="$(echo "$app_id" | tr '[:lower:]-' '[:upper:]_')"
+            name_var="AZURE_PROD_${app_upper}_APP_NAME"
+            app_name="${!name_var:-}"
+            test -n "$app_name"
+            az webapp deploy --resource-group "$AZURE_PROD_RESOURCE_GROUP" --name "$app_name" --src-path "$artifact_name" --type zip --clean true
+          done
         env:
           AZURE_PROD_RESOURCE_GROUP: ${{ secrets.AZURE_PROD_RESOURCE_GROUP }}
-          AZURE_PROD_WEBAPP_NAME: ${{ secrets.AZURE_PROD_WEBAPP_NAME }}
+          AZURE_PROD_SITE_APP_NAME: ${{ secrets.AZURE_PROD_SITE_APP_NAME }}
+          AZURE_PROD_API_APP_NAME: ${{ secrets.AZURE_PROD_API_APP_NAME }}
 
-      - name: Smoke check PROD
+      - name: Smoke check PROD topology apps
+        shell: bash
         run: |
-          curl --fail --silent --show-error --location "$AZURE_PROD_WEBAPP_URL" -o response.html
-          grep -q "<title>SDD Template</title>" response.html
-          ! grep -qi "Microsoft Azure" response.html
-          curl --fail --silent --show-error --location "$AZURE_PROD_WEBAPP_URL/health" -o health.json
-          grep -q '"status":"ok"' health.json
+          set -euo pipefail
+
+          jq -r '.[] | [.appId, .role, .healthPath] | @tsv' deployable-apps.json |
+          while IFS=$'\t' read -r app_id role health_path; do
+            app_upper="$(echo "$app_id" | tr '[:lower:]-' '[:upper:]_')"
+            url_var="AZURE_PROD_${app_upper}_APP_URL"
+            app_url="${!url_var:-}"
+            test -n "$app_url"
+            if [ "$role" = "web" ]; then
+              curl --fail --silent --show-error --location "$app_url" -o response.html
+              grep -q "<title>SDD Template</title>" response.html
+              ! grep -qi "Microsoft Azure" response.html
+            fi
+            curl --fail --silent --show-error --location "${app_url}${health_path}" -o health.json
+            grep -q '"status":"ok"' health.json
+          done
         env:
-          AZURE_PROD_WEBAPP_URL: ${{ secrets.AZURE_PROD_WEBAPP_URL }}
+          AZURE_PROD_SITE_APP_URL: ${{ secrets.AZURE_PROD_SITE_APP_URL }}
+          AZURE_PROD_API_APP_URL: ${{ secrets.AZURE_PROD_API_APP_URL }}

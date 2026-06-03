@@ -1,0 +1,4 @@
+interface:
+  display_name: "Delivery Retrospective Audit"
+  short_description: "Turn delivery findings into workflow improvements"
+  default_prompt: "Use $delivery-retrospective-audit to inspect recent delivery evidence and propose durable workflow improvements."

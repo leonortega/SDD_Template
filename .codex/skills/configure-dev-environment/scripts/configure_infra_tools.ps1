@@ -1,10 +1,12 @@
 param(
-  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetPlaneEnv", "SetGiteaRunner", "SetPrometheusAzureTargets", "AuditQualityGates", "ValidateGiteaActionsRunner", "InitQualityGateTemplates", "SetQualityConfig")]
+  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetPlaneEnv", "SetGiteaRunner", "SetPrometheusAzureTargets", "AuditQualityGates", "AuditRecommendedTools", "DiscoverProjectGuidance", "AcquireProjectGuidance", "SetRecommendedTools", "MapProjectGuidanceStep", "ValidateGiteaActionsRunner", "InitQualityGateTemplates", "SetQualityConfig", "SyncWorktreeLocalConfig", "EnsureDeliveryContext")]
   [string]$Mode = "Audit",
 
   [string]$Root = (Resolve-Path ".").Path,
 
   [switch]$DryRun,
+
+  [switch]$AllowAuditWrites,
 
   [string]$ValuesJson
 )
@@ -16,14 +18,47 @@ function Join-RootPath {
   return (Join-Path $Root $RelativePath)
 }
 
+function Get-RepoRelativePath {
+  param([string]$FullPath)
+
+  $rootPath = (Resolve-Path $Root).Path.TrimEnd("\", "/") + [System.IO.Path]::DirectorySeparatorChar
+  $targetPath = (Resolve-Path $FullPath).Path
+  $rootUri = [System.Uri]::new($rootPath)
+  $targetUri = [System.Uri]::new($targetPath)
+  return [System.Uri]::UnescapeDataString($rootUri.MakeRelativeUri($targetUri).ToString()).Replace("\", "/")
+}
+
 function New-Result {
   return [ordered]@{
     mode = $Mode
     dryRun = [bool]$DryRun
+    writeEnabled = (Test-ConfigWritesEnabled)
     actions = @()
     findings = @()
+    recommendations = @()
     warnings = @()
   }
+}
+
+function Test-ValuesJsonFlag {
+  param([string]$Name)
+
+  if ([string]::IsNullOrWhiteSpace($ValuesJson)) { return $false }
+
+  try {
+    $data = $ValuesJson | ConvertFrom-Json
+    if ($data.PSObject.Properties.Name -notcontains $Name) { return $false }
+    return [bool]$data.$Name
+  } catch {
+    return $false
+  }
+}
+
+function Test-ConfigWritesEnabled {
+  if ($DryRun) { return $false }
+  if ($Mode -eq "DiscoverProjectGuidance") { return (Test-ValuesJsonFlag "persistLocal") }
+  if ($Mode -like "Audit*" -and -not $AllowAuditWrites) { return $false }
+  return $true
 }
 
 function Add-Item {
@@ -143,7 +178,7 @@ function Set-EnvValues {
 function Convert-JsonToHashtable {
   param([string]$Json)
   if ([string]::IsNullOrWhiteSpace($Json)) { return @{} }
-  $object = $Json | ConvertFrom-Json -Depth 20
+  $object = $Json | ConvertFrom-Json
   return Convert-ObjectToHashtable $object
 }
 
@@ -243,6 +278,193 @@ function Test-FileContains {
   if (-not (Test-Path $path)) { return $false }
   $content = Get-Content -Path $path -Raw
   return $content -match $Pattern
+}
+
+function Get-FileSha256 {
+  param([string]$Path)
+
+  $stream = [System.IO.File]::OpenRead($Path)
+  try {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+      $hash = $sha.ComputeHash($stream)
+      return ([System.BitConverter]::ToString($hash)).Replace("-", "")
+    }
+    finally {
+      $sha.Dispose()
+    }
+  }
+  finally {
+    $stream.Dispose()
+  }
+}
+
+function Get-WorktreeLocalConfigFiles {
+  return @(
+    [pscustomobject]@{ relativePath = ".codex/client-tools.local.json"; required = $true },
+    [pscustomobject]@{ relativePath = ".codex/quality.local.json"; required = $true },
+    [pscustomobject]@{ relativePath = ".codex/tool-recommendations.local.json"; required = $false }
+  )
+}
+
+function Resolve-AnyPath {
+  param([string]$Path)
+
+  if ([string]::IsNullOrWhiteSpace($Path)) { return $null }
+  if ([System.IO.Path]::IsPathRooted($Path)) {
+    return [System.IO.Path]::GetFullPath($Path)
+  }
+  return [System.IO.Path]::GetFullPath((Join-Path $Root $Path))
+}
+
+function Add-UniquePath {
+  param(
+    [System.Collections.Generic.List[string]]$Paths,
+    [string]$Path
+  )
+
+  $fullPath = Resolve-AnyPath $Path
+  if ([string]::IsNullOrWhiteSpace($fullPath)) { return }
+
+  foreach ($existing in $Paths) {
+    if ([string]::Equals($existing, $fullPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+      return
+    }
+  }
+  $Paths.Add($fullPath)
+}
+
+function Get-ValuesJsonWorktreePaths {
+  $paths = [System.Collections.Generic.List[string]]::new()
+  if ([string]::IsNullOrWhiteSpace($ValuesJson)) { return @($paths) }
+
+  try {
+    $values = $ValuesJson | ConvertFrom-Json
+  } catch {
+    return @($paths)
+  }
+
+  if ($values.PSObject.Properties.Name -contains "worktreePath") {
+    Add-UniquePath $paths ([string]$values.worktreePath)
+  }
+  if ($values.PSObject.Properties.Name -contains "worktreePaths") {
+    foreach ($path in @($values.worktreePaths)) {
+      Add-UniquePath $paths ([string]$path)
+    }
+  }
+  return @($paths)
+}
+
+function Get-RecordedParallelWorktreePaths {
+  $paths = [System.Collections.Generic.List[string]]::new()
+  $parallelPath = Join-RootPath ".codex/parallel-delivery.local.json"
+  if (-not (Test-Path $parallelPath)) { return @($paths) }
+
+  try {
+    $state = Get-Content -Path $parallelPath -Raw | ConvertFrom-Json
+  } catch {
+    return @($paths)
+  }
+
+  foreach ($ticket in @($state.tickets)) {
+    if ($null -eq $ticket) { continue }
+    if ($ticket.PSObject.Properties.Name -notcontains "worktreePath") { continue }
+    Add-UniquePath $paths ([string]$ticket.worktreePath)
+  }
+  return @($paths)
+}
+
+function Get-GitWorktreePaths {
+  $paths = [System.Collections.Generic.List[string]]::new()
+  try {
+    $lines = @(& git -C $Root worktree list --porcelain 2>$null)
+  } catch {
+    return @($paths)
+  }
+
+  $rootPath = [System.IO.Path]::GetFullPath($Root)
+  foreach ($line in $lines) {
+    if ($line -notmatch "^worktree\s+(.+)$") { continue }
+    $worktreePath = [System.IO.Path]::GetFullPath($Matches[1])
+    if ([string]::Equals($worktreePath, $rootPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+      continue
+    }
+    Add-UniquePath $paths $worktreePath
+  }
+  return @($paths)
+}
+
+function Get-KnownWorktreePaths {
+  $paths = [System.Collections.Generic.List[string]]::new()
+  foreach ($path in @(Get-GitWorktreePaths)) {
+    Add-UniquePath $paths $path
+  }
+  foreach ($path in @(Get-RecordedParallelWorktreePaths)) {
+    Add-UniquePath $paths $path
+  }
+  return @($paths)
+}
+
+function Get-SyncTargetWorktreePaths {
+  $explicit = @(Get-ValuesJsonWorktreePaths)
+  if ($explicit.Count -gt 0) { return $explicit }
+  return @(Get-KnownWorktreePaths)
+}
+
+function Get-CurrentGitBranch {
+  try {
+    $branch = (& git -C $Root branch --show-current 2>$null)
+    if ([string]::IsNullOrWhiteSpace($branch)) { return $null }
+    return $branch.Trim()
+  } catch {
+    return $null
+  }
+}
+
+function Get-InferredOpenSpecChange {
+  param([string]$Branch)
+
+  if ([string]::IsNullOrWhiteSpace($Branch)) { return $null }
+  return $Branch.Replace("/", "-")
+}
+
+function Get-DisplayPath {
+  param([string]$FullPath)
+
+  try {
+    return Get-RepoRelativePath $FullPath
+  } catch {
+    return $FullPath
+  }
+}
+
+function Add-WorktreeLocalConfigAuditFindings {
+  param($Result)
+
+  foreach ($worktreePath in @(Get-KnownWorktreePaths)) {
+    $displayPath = Get-DisplayPath $worktreePath
+    if (-not (Test-Path -LiteralPath $worktreePath -PathType Container)) {
+      Add-Item $Result "findings" $displayPath "worktreePath" "Recorded ticket worktree path does not exist; repair the parallel delivery index before routing this ticket." "warning"
+      continue
+    }
+
+    foreach ($file in @(Get-WorktreeLocalConfigFiles)) {
+      $relativePath = [string]$file.relativePath
+      $sourcePath = Join-RootPath $relativePath
+      $targetPath = Join-Path $worktreePath $relativePath
+      if (-not (Test-Path $sourcePath) -and -not [bool]$file.required) { continue }
+
+      if (-not (Test-Path -LiteralPath $targetPath)) {
+        $severity = if ([bool]$file.required) { "error" } else { "info" }
+        $message = if ([bool]$file.required) {
+          "Ticket worktree is missing required local runtime file '$relativePath'. Run SyncWorktreeLocalConfig from the coordinator checkout before routing child skills."
+        } else {
+          "Ticket worktree is missing optional local runtime file '$relativePath'. SyncWorktreeLocalConfig will copy it when present in the coordinator checkout."
+        }
+        Add-Item $Result "findings" $displayPath $relativePath $message $severity
+      }
+    }
+  }
 }
 
 function Get-WorkflowContent {
@@ -404,7 +626,7 @@ function Add-QualityGateAuditFindings {
   if (-not (Test-Path (Join-RootPath $prWorkflow))) {
     Add-Item $Result "findings" $prWorkflow "" "Missing Gitea PR validation workflow." "warning"
   } else {
-    foreach ($expected in @("dotnet restore", "dotnet format", "dotnet build", "dotnet test", "minimumPercent", "gitleaks", "trivy")) {
+    foreach ($expected in @("dotnet restore", "dotnet format", "dotnet build", "dotnet test", "ReadCoverageThreshold", "ReadCoberturaLineRate", "gitleaks", "trivy")) {
       if (-not (Test-FileContains $prWorkflow ([regex]::Escape($expected)))) {
         Add-Item $Result "findings" $prWorkflow $expected "PR validation workflow does not mention $expected." "warning"
       }
@@ -416,7 +638,7 @@ function Add-QualityGateAuditFindings {
   if (-not (Test-Path (Join-RootPath $releaseWorkflow))) {
     Add-Item $Result "findings" $releaseWorkflow "" "Missing package/deploy workflow for Nexus artifact publication and Azure promotion." "warning"
   } else {
-    foreach ($expected in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "az webapp deploy", "classify-changes", "app_changed", "deploy_allowed", ".codex/delivery-policy.json", "ticketKeyPattern", "refs/heads/dev", "refs/heads/main", "deploy-qa", "deploy-prod", "artifact_commit_sha", "PROD_ARTIFACT_COMMIT_SHA", "release_version", "source_rc_version", "release.json", "schemaVersion", "planeTicketKey", "versionStatus", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_WEBAPP_NAME", "AZURE_QA_WEBAPP_URL", "AZURE_PROD_RESOURCE_GROUP", "AZURE_PROD_WEBAPP_NAME", "AZURE_PROD_WEBAPP_URL", "/health")) {
+    foreach ($expected in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "az webapp deploy", "classify-changes", "app_changed", "deploy_allowed", ".codex/delivery-policy.json", "ticketKeyPattern", "BASH_REMATCH", "refs/heads/dev", "refs/heads/main", "qa/**", "deploy-qa", "e2e-qa-branch", "deploy-prod", "artifact_commit_sha", "PROD_ARTIFACT_COMMIT_SHA", "release_version", "source_rc_version", "release.json", "CreateReleaseManifest", "ValidateReleaseManifest", "infra/deployment/apps.json", "deployable-apps.json", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_SITE_APP_NAME", "AZURE_QA_SITE_APP_URL", "AZURE_QA_API_APP_NAME", "AZURE_QA_API_APP_URL", "E2E_SITE_URL", "E2E_API_URL", "E2E_ARTIFACT_COMMIT_SHA", "qa-e2e-evidence.zip", "AZURE_PROD_RESOURCE_GROUP", "AZURE_PROD_SITE_APP_NAME", "AZURE_PROD_SITE_APP_URL", "AZURE_PROD_API_APP_NAME", "AZURE_PROD_API_APP_URL", "/health")) {
       if (-not (Test-FileContains $releaseWorkflow ([regex]::Escape($expected)))) {
         Add-Item $Result "findings" $releaseWorkflow $expected "Package/deploy workflow does not mention $expected." "warning"
       }
@@ -435,9 +657,8 @@ function Add-QualityGateAuditFindings {
       Add-Item $Result "findings" $releaseWorkflow "release.json" "Package/deploy workflow should upload a baseline Nexus release manifest next to the artifact." "warning"
     }
     $releaseContent = Get-Content -Path (Join-RootPath $releaseWorkflow) -Raw
-    $publishCount = ([regex]::Matches($releaseContent, "dotnet publish")).Count
-    if ($publishCount -gt 1) {
-      Add-Item $Result "findings" $releaseWorkflow "dotnet publish" "Package/deploy workflow appears to publish more than once; DEV, QA, and PROD should promote the same Nexus artifact." "warning"
+    if (-not (Test-FileContains $releaseWorkflow "jq -r '\.apps\[\] \| \[\.appId, \.projectPath, \.artifactName\] \| @tsv'")) {
+      Add-Item $Result "findings" $releaseWorkflow "topology.publish" "Package/deploy workflow should publish deployable apps from infra/deployment/apps.json." "warning"
     }
   }
 
@@ -446,6 +667,22 @@ function Add-QualityGateAuditFindings {
     Add-Item $Result "findings" $deliveryPolicy "ticketKeyPattern" "Missing delivery policy used by commit hooks and deployment gating." "warning"
   } elseif (-not (Test-FileContains $deliveryPolicy '"ticketKeyPattern"\s*:')) {
     Add-Item $Result "findings" $deliveryPolicy "ticketKeyPattern" "Delivery policy must define ticketKeyPattern for deployment gating." "warning"
+  } else {
+    foreach ($expectedPolicyKey in @(
+      '"agentOptimization"\s*:',
+      '"maxAutonomousIterations"\s*:',
+      '"maxToolRetries"\s*:',
+      '"promptCache"\s*:',
+      '"telemetry"\s*:',
+      '"workflowEvals"\s*:',
+      '"cachedTokens"',
+      '"requireEvalEvidenceBeforeNewAgentRole"\s*:'
+    )) {
+      if (-not (Test-FileContains $deliveryPolicy $expectedPolicyKey)) {
+        Add-Item $Result "findings" $deliveryPolicy "agentOptimization" "Delivery policy should include agentOptimization defaults for retries, prompt cache, telemetry, and workflow eval paths." "warning"
+        break
+      }
+    }
   }
 
   $gitignore = ".gitignore"
@@ -453,6 +690,9 @@ function Add-QualityGateAuditFindings {
     Add-Item $Result "findings" $gitignore ".codex/delivery-context.local.json" "Missing .gitignore; local ticket context lock must not be committed." "warning"
   } elseif (-not (Test-FileContains $gitignore "\.codex/delivery-context\.local\.json")) {
     Add-Item $Result "findings" $gitignore ".codex/delivery-context.local.json" "Local ticket context lock must be ignored so automatic delivery stays ticket-scoped without committing runtime state." "warning"
+  }
+  if ((Test-Path (Join-RootPath $gitignore)) -and -not (Test-FileContains $gitignore "\.codex/parallel-delivery\.local\.json")) {
+    Add-Item $Result "findings" $gitignore ".codex/parallel-delivery.local.json" "Parallel delivery runtime state must be ignored so active ticket worktree assignments and lane ownership are not committed." "warning"
   }
 
   $globalJson = "global.json"
@@ -484,7 +724,7 @@ function Add-QualityGateAuditFindings {
   }
 
   foreach ($composeFile in Get-ChildItem -Path (Join-RootPath "infra") -Filter "compose.yml" -Recurse -ErrorAction SilentlyContinue) {
-    $relativeCompose = [System.IO.Path]::GetRelativePath($Root, $composeFile.FullName).Replace("\", "/")
+    $relativeCompose = Get-RepoRelativePath $composeFile.FullName
     $lines = Get-Content -Path $composeFile.FullName
     for ($i = 0; $i -lt $lines.Count; $i++) {
       if ($lines[$i] -match "^\s*image:\s*(\S+):(\S+)\s*$") {
@@ -498,8 +738,23 @@ function Add-QualityGateAuditFindings {
   }
 
   $azureMain = "infra/azure/main.bicep"
+  $topologyManifest = "infra/deployment/apps.json"
+  if (-not (Test-Path (Join-RootPath $topologyManifest))) {
+    Add-Item $Result "findings" $topologyManifest "" "Missing deployable app topology manifest used by Azure Bicep and package/deploy workflow." "warning"
+  } else {
+    foreach ($expectedTopology in @('"appId"\s*:\s*"site"', '"appId"\s*:\s*"api"', '"projectPath"\s*:', '"artifactName"\s*:', '"healthPath"\s*:')) {
+      if (-not (Test-FileContains $topologyManifest $expectedTopology)) {
+        Add-Item $Result "findings" $topologyManifest $expectedTopology "Deployable app topology manifest is missing an expected app or field." "warning"
+      }
+    }
+  }
   if (Test-FileContains $azureMain "DOTNETCORE\|8\.0") {
     Add-Item $Result "findings" $azureMain "webRuntimeStack/apiRuntimeStack" "Azure runtime defaults still target DOTNETCORE|8.0; align with .NET 10 app or use a self-contained deployment strategy." "warning"
+  }
+  foreach ($expectedAzureMapping in @("deployableApps", "Api__BaseUrl", "Cors__AllowedOrigins__0", "ConnectionStrings__ClientsDb", "output apps array")) {
+    if (-not (Test-FileContains $azureMain ([regex]::Escape($expectedAzureMapping)))) {
+      Add-Item $Result "findings" $azureMain $expectedAzureMapping "Azure Bicep should map topology apps and appsettings-derived App Service settings." "warning"
+    }
   }
   foreach ($parametersFile in @("infra/azure/dev.parameters.json", "infra/azure/qa.parameters.json", "infra/azure/prod.parameters.json")) {
     if (Test-Path (Join-RootPath $parametersFile)) {
@@ -514,7 +769,7 @@ function Add-QualityGateAuditFindings {
   if (-not (Test-Path (Join-RootPath $secretsDoc))) {
     Add-Item $Result "findings" $secretsDoc "" "Missing documentation for required Gitea Actions secrets and branch protection." "warning"
   } else {
-    foreach ($secret in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "NEXUS_REPOSITORY", "AZURE_CREDENTIALS", "AZURE_DEV_RESOURCE_GROUP", "AZURE_DEV_WEBAPP_NAME", "AZURE_DEV_WEBAPP_URL", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_WEBAPP_NAME", "AZURE_QA_WEBAPP_URL", "AZURE_PROD_RESOURCE_GROUP", "AZURE_PROD_WEBAPP_NAME", "AZURE_PROD_WEBAPP_URL")) {
+    foreach ($secret in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "NEXUS_REPOSITORY", "AZURE_CREDENTIALS", "AZURE_DEV_RESOURCE_GROUP", "AZURE_DEV_SITE_APP_NAME", "AZURE_DEV_SITE_APP_URL", "AZURE_DEV_API_APP_NAME", "AZURE_DEV_API_APP_URL", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_SITE_APP_NAME", "AZURE_QA_SITE_APP_URL", "AZURE_QA_API_APP_NAME", "AZURE_QA_API_APP_URL", "AZURE_PROD_RESOURCE_GROUP", "AZURE_PROD_SITE_APP_NAME", "AZURE_PROD_SITE_APP_URL", "AZURE_PROD_API_APP_NAME", "AZURE_PROD_API_APP_URL")) {
       if (-not (Test-FileContains $secretsDoc $secret)) {
         Add-Item $Result "findings" $secretsDoc $secret "Required Gitea Actions secret is not documented." "warning"
       }
@@ -566,14 +821,20 @@ function Add-GiteaActionsSecretAuditFindings {
     "NEXUS_REPOSITORY",
     "AZURE_CREDENTIALS",
     "AZURE_DEV_RESOURCE_GROUP",
-    "AZURE_DEV_WEBAPP_NAME",
-    "AZURE_DEV_WEBAPP_URL",
+    "AZURE_DEV_SITE_APP_NAME",
+    "AZURE_DEV_SITE_APP_URL",
+    "AZURE_DEV_API_APP_NAME",
+    "AZURE_DEV_API_APP_URL",
     "AZURE_QA_RESOURCE_GROUP",
-    "AZURE_QA_WEBAPP_NAME",
-    "AZURE_QA_WEBAPP_URL",
+    "AZURE_QA_SITE_APP_NAME",
+    "AZURE_QA_SITE_APP_URL",
+    "AZURE_QA_API_APP_NAME",
+    "AZURE_QA_API_APP_URL",
     "AZURE_PROD_RESOURCE_GROUP",
-    "AZURE_PROD_WEBAPP_NAME",
-    "AZURE_PROD_WEBAPP_URL"
+    "AZURE_PROD_SITE_APP_NAME",
+    "AZURE_PROD_SITE_APP_URL",
+    "AZURE_PROD_API_APP_NAME",
+    "AZURE_PROD_API_APP_URL"
   )
 
   try {
@@ -691,7 +952,12 @@ function Set-InferredClientValue {
   }
 
   Set-ObjectValue -Object $Client -Path $Path -Value $Value
-  Add-Item $Result "actions" ".codex/client-tools.local.json" ($Path -join ".") "Set inferred local client tool value."
+  $message = if (Test-ConfigWritesEnabled) {
+    "Set inferred local client tool value."
+  } else {
+    "Would set inferred local client tool value; audit modes are read-only unless -AllowAuditWrites is supplied."
+  }
+  Add-Item $Result "actions" ".codex/client-tools.local.json" ($Path -join ".") $message
 }
 
 function Get-GitRemoteOwnerRepo {
@@ -715,6 +981,56 @@ function Get-GitRemoteOwnerRepo {
   return $null
 }
 
+function Test-AnyRepoFileContains {
+  param(
+    [string[]]$RelativeRoots,
+    [string[]]$Filters,
+    [string]$Pattern
+  )
+
+  foreach ($relativeRoot in $RelativeRoots) {
+    $path = Join-RootPath $relativeRoot
+    if (-not (Test-Path $path)) { continue }
+
+    foreach ($filter in $Filters) {
+      foreach ($file in Get-ChildItem -Path $path -Recurse -File -Filter $filter -ErrorAction SilentlyContinue) {
+        try {
+          $content = Get-Content -Path $file.FullName -Raw -ErrorAction Stop
+          if ($content -match $Pattern) { return $true }
+        } catch {
+          continue
+        }
+      }
+    }
+  }
+
+  return $false
+}
+
+function Test-RecommendationMatchesStack {
+  param(
+    $Recommendation,
+    [string[]]$DetectedTags
+  )
+
+  $requires = @($Recommendation.requires)
+  if ($requires.Count -eq 0) { return $true }
+
+  foreach ($tag in $requires) {
+    if ($DetectedTags -notcontains $tag) { return $false }
+  }
+  return $true
+}
+
+function Get-ToolRecommendationCatalog {
+  $catalogPath = Join-RootPath ".codex/tool-recommendations.example.json"
+  if (-not (Test-Path $catalogPath)) {
+    throw "Missing .codex/tool-recommendations.example.json."
+  }
+
+  return Get-Content -Path $catalogPath -Raw | ConvertFrom-Json
+}
+
 function Ensure-InferredClientToolsConfig {
   param($Result)
 
@@ -728,14 +1044,14 @@ function Ensure-InferredClientToolsConfig {
     }
 
     Add-Item $Result "actions" $targetRelative "" "Create local client tools config from template."
-    if (-not $DryRun) {
+    if (Test-ConfigWritesEnabled) {
       Copy-Item -Path $source -Destination $target
     }
   }
 
   if (-not (Test-Path $target)) { return }
   try {
-    $client = Get-Content -Path $target -Raw | ConvertFrom-Json -Depth 20
+    $client = Get-Content -Path $target -Raw | ConvertFrom-Json
   } catch {
     Add-Item $Result "findings" $targetRelative "" "Local client tools config is not valid JSON." "error"
     return
@@ -770,9 +1086,483 @@ function Ensure-InferredClientToolsConfig {
   Set-InferredClientValue $Result $client @("pr", "labels", "needsTests") "needs-tests"
   Set-InferredClientValue $Result $client @("pr", "labels", "needsChanges") "needs-changes"
 
-  if (-not $DryRun) {
+  Set-InferredClientValue $Result $client @("parallelDelivery", "enabled") $false
+  Set-InferredClientValue $Result $client @("parallelDelivery", "maxActiveTickets") 2
+  Set-InferredClientValue $Result $client @("parallelDelivery", "worktreeRoot") "../ticket-worktrees"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "deploymentLanePolicy") "serialized"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "coordinator", "model") "inherit"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "coordinator", "reasoningEffort") "medium"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "pipelineStatus", "model") "gpt-5.4-mini"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "pipelineStatus", "reasoningEffort") "low"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "ticketStarter", "model") "gpt-5.4-mini"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "ticketStarter", "reasoningEffort") "medium"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "implementation", "model") "gpt-5.3-codex"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "implementation", "reasoningEffort") "medium"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "prReview", "model") "gpt-5.4"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "prReview", "reasoningEffort") "high"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "postMergeDeploy", "model") "gpt-5.4-mini"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "postMergeDeploy", "reasoningEffort") "medium"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "deployToQa", "model") "gpt-5.4-mini"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "deployToQa", "reasoningEffort") "medium"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "e2eQa", "model") "gpt-5.4"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "e2eQa", "reasoningEffort") "medium"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "deployToProd", "model") "gpt-5.4"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "deployToProd", "reasoningEffort") "high"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "fileQaBug", "model") "gpt-5.4"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "fileQaBug", "reasoningEffort") "medium"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "rollbackProd", "model") "gpt-5.4"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "rollbackProd", "reasoningEffort") "high"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "hotfixProd", "model") "gpt-5.3-codex"
+  Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "hotfixProd", "reasoningEffort") "high"
+  Set-InferredClientValue $Result $client @("recommendedTools", "enabled") $true
+  Set-InferredClientValue $Result $client @("recommendedTools", "mode") "guided-manual"
+  Set-InferredClientValue $Result $client @("recommendedTools", "accepted") @()
+  Set-InferredClientValue $Result $client @("recommendedTools", "dismissed") @()
+
+  if (Test-ConfigWritesEnabled) {
     $client | ConvertTo-Json -Depth 20 | Set-Content -Path $target -Encoding UTF8
   }
+}
+
+function Add-Recommendation {
+  param(
+    $Result,
+    $Recommendation
+  )
+
+  $Result["recommendations"] += $Recommendation
+}
+
+$projectGuidanceDiscoveryScript = Join-Path $PSScriptRoot "..\..\project-guidance-discover\scripts\project_guidance_discovery.ps1"
+. (Resolve-Path $projectGuidanceDiscoveryScript).Path
+
+function Get-RecommendedToolsDecisionState {
+  $state = [ordered]@{
+    enabled = $true
+    accepted = @()
+    dismissed = @()
+  }
+
+  $clientPath = Join-RootPath ".codex/client-tools.local.json"
+  if (-not (Test-Path $clientPath)) { return $state }
+
+  try {
+    $client = Get-Content -Path $clientPath -Raw | ConvertFrom-Json
+    if ($null -eq $client.recommendedTools) { return $state }
+
+    if ($client.recommendedTools.enabled -eq $false) { $state.enabled = $false }
+    $state.accepted = @($client.recommendedTools.accepted)
+    $state.dismissed = @($client.recommendedTools.dismissed)
+  } catch {
+    return $state
+  }
+
+  return $state
+}
+
+function ConvertTo-CatalogRecommendation {
+  param(
+    $Entry,
+    [string[]]$Accepted
+  )
+
+  $recommendation = [ordered]@{
+    id = $Entry.id
+    name = $Entry.name
+    type = $Entry.type
+    purpose = $Entry.purpose
+    installMethod = $Entry.installMethod
+    source = $Entry.source
+    target = $Entry.target
+    validation = $Entry.validation
+    accepted = ($Accepted -contains $Entry.id)
+  }
+
+  foreach ($optionalField in @("requires", "researchTopics", "officialSources", "searchQueries", "notes")) {
+    if ($Entry.PSObject.Properties.Name -contains $optionalField) {
+      $recommendation[$optionalField] = $Entry.$optionalField
+    }
+  }
+
+  return $recommendation
+}
+
+function Get-CanonicalWorkflowSteps {
+  return @(
+    "config-infra",
+    "first-ticket-setup",
+    "planning",
+    "implementation",
+    "pr-review",
+    "review-feedback",
+    "post-merge-deploy",
+    "e2e-qa",
+    "prod-promotion",
+    "rollback",
+    "hotfix",
+    "retrospective"
+  )
+}
+
+function Get-DefaultPrimarySkillsForWorkflowStep {
+  param([string]$WorkflowStep)
+
+  switch ($WorkflowStep) {
+    "config-infra" { return @("configure-dev-environment") }
+    "first-ticket-setup" { return @("plane-start-ticket") }
+    "planning" { return @("openspec-propose", "openspec-explore") }
+    "implementation" { return @("implement-ticket") }
+    "pr-review" { return @("gitea-pr-review-agent") }
+    "review-feedback" { return @("pr-review-feedback-loop") }
+    "post-merge-deploy" { return @("post-merge-deploy", "deploy-to-qa") }
+    "e2e-qa" { return @("test-e2e") }
+    "prod-promotion" { return @("deploy-to-prod") }
+    "rollback" { return @("rollback-prod") }
+    "hotfix" { return @("hotfix-prod") }
+    "retrospective" { return @("delivery-retrospective-audit") }
+    default { return @() }
+  }
+}
+
+function Get-DefaultSupportingSkillsForWorkflowStep {
+  param([string]$WorkflowStep)
+
+  switch ($WorkflowStep) {
+    "config-infra" { return @("project-guidance-discover", "project-guidance-mapper") }
+    "first-ticket-setup" { return @("configure-dev-environment", "project-guidance-discover", "project-guidance-mapper") }
+    "planning" { return @("aspnet-core", "plan-ui-change", "dotnet-webapi", "security-best-practices") }
+    "implementation" { return @("aspnet-core", "plan-ui-change", "dotnet-webapi", "security-best-practices", "assertion-quality") }
+    "pr-review" { return @("aspnet-core", "dotnet-webapi", "security-best-practices", "assertion-quality", "playwright") }
+    "review-feedback" { return @("aspnet-core", "plan-ui-change", "dotnet-webapi", "security-best-practices", "assertion-quality") }
+    "post-merge-deploy" { return @("configure-artifact-delivery", "configure-azure-environments", "configure-observability") }
+    "e2e-qa" { return @("frontend-testing-debugging", "playwright", "assertion-quality") }
+    "prod-promotion" { return @("configure-artifact-delivery", "configure-azure-environments", "configure-observability") }
+    "rollback" { return @("configure-artifact-delivery", "configure-azure-environments", "security-best-practices") }
+    "hotfix" { return @("security-best-practices", "assertion-quality", "aspnet-core") }
+    "retrospective" { return @("project-guidance-discover", "project-guidance-mapper", "configure-dev-environment") }
+    default { return @() }
+  }
+}
+
+function Get-DefaultRecommendationIdsForWorkflowStep {
+  param([string]$WorkflowStep)
+
+  switch ($WorkflowStep) {
+    "config-infra" { return @("project-guidance-search-plan") }
+    "first-ticket-setup" { return @("project-guidance-search-plan") }
+    "planning" { return @("openai-aspnet-core-skill", "dotnet-blazor-plan-ui-change-skill", "dotnet-webapi-skill", "openai-security-best-practices-skill", "clean-code-practice-guidance", "modern-dotnet-architecture-guidance") }
+    "implementation" { return @("openai-aspnet-core-skill", "dotnet-blazor-plan-ui-change-skill", "dotnet-webapi-skill", "openai-security-best-practices-skill", "dotnet-assertion-quality-skill", "clean-code-practice-guidance", "modern-dotnet-architecture-guidance", "rest-api-design-practice-guidance") }
+    "pr-review" { return @("gitea-pr-review-agent-skill", "openai-aspnet-core-skill", "dotnet-webapi-skill", "openai-security-best-practices-skill", "dotnet-assertion-quality-skill", "pr-review-practice-guidance") }
+    "review-feedback" { return @("openai-aspnet-core-skill", "dotnet-blazor-plan-ui-change-skill", "dotnet-webapi-skill", "openai-security-best-practices-skill", "dotnet-assertion-quality-skill", "clean-code-practice-guidance") }
+    "post-merge-deploy" { return @("nexus-artifact-api-guidance", "azure-app-service-zip-deploy-guidance", "prometheus-config-guidance", "grafana-provisioning-guidance", "release-practice-guidance") }
+    "e2e-qa" { return @("browser-e2e-qa-plugin", "playwright-frontend-testing-skill", "openai-playwright-skill", "dotnet-assertion-quality-skill", "qa-automation-practice-guidance") }
+    "prod-promotion" { return @("nexus-artifact-api-guidance", "azure-app-service-zip-deploy-guidance", "prometheus-config-guidance", "grafana-provisioning-guidance", "release-practice-guidance") }
+    "rollback" { return @("nexus-artifact-api-guidance", "azure-app-service-zip-deploy-guidance", "prometheus-config-guidance", "grafana-provisioning-guidance", "rollback-practice-guidance") }
+    "hotfix" { return @("openai-security-best-practices-skill", "dotnet-assertion-quality-skill", "release-practice-guidance", "rollback-practice-guidance") }
+    "retrospective" { return @("project-guidance-search-plan", "clean-code-practice-guidance", "qa-automation-practice-guidance", "pr-review-practice-guidance") }
+    default { return @() }
+  }
+}
+
+function Get-ExistingRecommendationStepUsage {
+  param($Existing)
+
+  $usage = @{}
+  if ($null -eq $Existing) { return $usage }
+
+  foreach ($recommendation in @($Existing.recommendations)) {
+    if ($null -eq $recommendation.id) { continue }
+    if ($recommendation.PSObject.Properties.Name -notcontains "usedInSteps") { continue }
+    $usage[[string]$recommendation.id] = @($recommendation.usedInSteps)
+  }
+
+  if ($Existing.PSObject.Properties.Name -contains "workflowStepMappings") {
+    foreach ($mapping in @($Existing.workflowStepMappings)) {
+      if ($null -eq $mapping.workflowStep) { continue }
+      foreach ($id in @($mapping.recommendationIds)) {
+        if ([string]::IsNullOrWhiteSpace([string]$id)) { continue }
+        $current = if ($usage.ContainsKey([string]$id)) { @($usage[[string]$id]) } else { @() }
+        $usage[[string]$id] = @(@($current) + @([string]$mapping.workflowStep) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
+      }
+    }
+  }
+
+  return $usage
+}
+
+function Add-UsedInStepsToRecommendation {
+  param(
+    [hashtable]$Recommendation,
+    [hashtable]$Usage
+  )
+
+  $id = [string]$Recommendation["id"]
+  $steps = if ($Usage.ContainsKey($id)) { @($Usage[$id]) } else { @() }
+  $Recommendation["usedInSteps"] = @($steps | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
+  return $Recommendation
+}
+
+function Get-RecommendationSearchText {
+  param($Recommendation)
+
+  $parts = @(
+    $Recommendation.id,
+    $Recommendation.name,
+    $Recommendation.type,
+    $Recommendation.purpose,
+    $Recommendation.notes,
+    @($Recommendation.requires) -join " ",
+    @($Recommendation.researchTopics) -join " ",
+    @($Recommendation.tags) -join " "
+  )
+
+  return (($parts | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }) -join " ").ToLowerInvariant()
+}
+
+function Test-RecommendationFitsWorkflowStep {
+  param(
+    $Recommendation,
+    [string]$WorkflowStep
+  )
+
+  $text = Get-RecommendationSearchText $Recommendation
+  switch ($WorkflowStep) {
+    "config-infra" { return $text -match "guidance-search|tool|mcp|plugin|delivery|environment|configure" }
+    "first-ticket-setup" { return $text -match "guidance-search|ticket|stack|architecture|tool|context" }
+    "planning" { return $text -match "architecture|clean|api|rest|ui|blazor|security|standard|practice" }
+    "implementation" { return $text -match "aspnet|blazor|api|rest|security|clean|architecture|assertion|test|code" }
+    "pr-review" { return $text -match "review|security|assertion|api|rest|clean|architecture|gitea" }
+    "review-feedback" { return $text -match "feedback|review|security|assertion|api|rest|clean|architecture" }
+    "post-merge-deploy" { return $text -match "nexus|azure|deploy|release|prometheus|grafana|observability" }
+    "e2e-qa" { return $text -match "qa|e2e|browser|playwright|test|assertion" }
+    "prod-promotion" { return $text -match "prod|release|nexus|azure|deploy|prometheus|grafana|observability" }
+    "rollback" { return $text -match "rollback|nexus|azure|prod|release|artifact|monitoring" }
+    "hotfix" { return $text -match "hotfix|security|test|assertion|release|rollback|api" }
+    "retrospective" { return $text -match "practice|standard|quality|review|guidance-search|clean|qa" }
+    default { return $false }
+  }
+}
+
+function Get-ExistingProjectGuidanceLocalState {
+  $path = Join-RootPath ".codex/tool-recommendations.local.json"
+  if (-not (Test-Path $path)) { return $null }
+
+  try {
+    return Get-Content -Path $path -Raw | ConvertFrom-Json
+  } catch {
+    return $null
+  }
+}
+
+function New-ProjectGuidanceLocalState {
+  param(
+    [string[]]$Accepted,
+    [string[]]$Dismissed,
+    [object[]]$UserAddedRequestedGuidance = @(),
+    [switch]$Confirmed
+  )
+
+  $detectedTags = Get-DetectedStackTags
+  $report = Get-ProjectGuidanceDiscoveryReport -Accepted $Accepted -Dismissed $Dismissed -UserAddedRequestedGuidance $UserAddedRequestedGuidance -Confirmed:($Confirmed)
+  $catalog = Get-ToolRecommendationCatalog
+  $recommendations = @()
+  $existing = Get-ExistingProjectGuidanceLocalState
+  $stepUsage = Get-ExistingRecommendationStepUsage $existing
+
+  if ($report.researchTopics.Count -gt 0) {
+    $recommendations += [ordered]@{
+      id = "project-guidance-search-plan"
+      name = "Project guidance search plan"
+      type = "guidance-search-plan"
+      purpose = "Research skills, tools, references, practices, standards, MCPs, and plugins from detected project technologies, environments, tests, security gates, and code standards before proposing local guidance updates."
+      installMethod = "research-then-manual-copy"
+      accepted = $false
+      detected = $true
+      requiresUserConfirmation = $true
+      sourceDiscovery = "official-first-internet-search"
+      topics = @($report.researchTopics)
+      nextStep = "Use project-guidance-discover to show suggested missing skills and guidance, ask for additional desired items, then pass confirmed skill items to project-guidance-acquire."
+    }
+  }
+
+  $recommendations += @($report.suggestedMissingSkills)
+  $recommendations += @($report.suggestedPresentSkills)
+  $recommendations += @($report.suggestedGuidance)
+  $recommendations += @($report.userAddedRequestedGuidance)
+
+  foreach ($entry in @($catalog.recommendations)) {
+    if (-not (Test-RecommendationMatchesStack -Recommendation $entry -DetectedTags $detectedTags)) { continue }
+    if ($Dismissed -contains $entry.id) { continue }
+    $recommendations += ConvertTo-CatalogRecommendation -Entry $entry -Accepted $Accepted
+  }
+
+  $recommendationsById = [ordered]@{}
+  foreach ($recommendation in @($recommendations)) {
+    if ($null -eq $recommendation) { continue }
+    $hash = Convert-ObjectToHashtable $recommendation
+    if (-not $hash.Contains("id") -or [string]::IsNullOrWhiteSpace([string]$hash["id"])) {
+      if (-not $hash.Contains("name") -or [string]::IsNullOrWhiteSpace([string]$hash["name"])) { continue }
+      $hash["id"] = ([string]$hash["name"]).ToLowerInvariant().Replace(" ", "-")
+    }
+    $recommendationsById[[string]$hash["id"]] = Add-UsedInStepsToRecommendation -Recommendation $hash -Usage $stepUsage
+  }
+
+  $notRecommended = foreach ($entry in @($catalog.notRecommended)) {
+    if (-not (Test-RecommendationMatchesStack -Recommendation $entry -DetectedTags $detectedTags)) { continue }
+
+    [ordered]@{
+      id = $entry.id
+      name = $entry.name
+      type = $entry.type
+      requires = @($entry.requires)
+      reason = $entry.reason
+      dismissed = ($Dismissed -contains $entry.id)
+    }
+  }
+
+  return [ordered]@{
+    schemaVersion = 1
+    mode = "guided-manual"
+    sourceCatalog = ".codex/tool-recommendations.example.json"
+    localStatePath = ".codex/tool-recommendations.local.json"
+    generatedBy = "project-guidance-discover"
+    generatedAtUtc = [DateTime]::UtcNow.ToString("o")
+    detectedTags = @($report.detectedTags)
+    researchTopics = @($report.researchTopics)
+    existingSkills = @($report.existingSkills)
+    suggestedMissingSkills = @($report.suggestedMissingSkills)
+    suggestedPresentSkills = @($report.suggestedPresentSkills)
+    suggestedGuidance = @($report.suggestedGuidance)
+    userAddedRequestedGuidance = @($report.userAddedRequestedGuidance)
+    userAddedRequestedSkills = @($report.userAddedRequestedSkills)
+    finalConfirmedGuidance = @($report.finalConfirmedGuidance)
+    finalConfirmedSkills = @($report.finalConfirmedSkills)
+    acceptedRecommendations = @($Accepted)
+    dismissedRecommendations = @($Dismissed)
+    recommendations = @($recommendationsById.Values)
+    notRecommended = @($notRecommended)
+  }
+}
+
+function Write-ProjectGuidanceLocalState {
+  param(
+    $Result,
+    $State,
+    [string]$Message
+  )
+
+  $targetRelative = ".codex/tool-recommendations.local.json"
+  $target = Join-RootPath $targetRelative
+  Add-Item $Result "actions" $targetRelative "projectGuidance" $Message
+
+  if (Test-ConfigWritesEnabled) {
+    $targetDirectory = Split-Path -Parent $target
+    if (-not (Test-Path $targetDirectory)) {
+      New-Item -ItemType Directory -Path $targetDirectory -Force | Out-Null
+    }
+
+    $State | ConvertTo-Json -Depth 30 | Set-Content -Path $target -Encoding UTF8
+  }
+}
+
+function Get-HashtableArrayValue {
+  param(
+    [hashtable]$Map,
+    [string]$Key
+  )
+
+  if (-not $Map.Contains($Key) -or $null -eq $Map[$Key]) { return @() }
+  return @($Map[$Key])
+}
+
+function Get-ConfirmedGuidanceItemsFromJson {
+  param([AllowNull()][string]$Json)
+
+  if ([string]::IsNullOrWhiteSpace($Json)) {
+    throw "ValuesJson is required for AcquireProjectGuidance."
+  }
+  if ($Json -match '"installCommand"\s*:') {
+    throw "AcquireProjectGuidance rejects installCommand; project skills must use manual-copy only."
+  }
+
+  $data = $Json | ConvertFrom-Json
+  if ($data -is [array]) { return @($data) }
+  foreach ($propertyName in @("finalConfirmedGuidance", "confirmedGuidance", "finalConfirmedSkills", "skills", "guidance")) {
+    if ($data.PSObject.Properties.Name -contains $propertyName) {
+      return @($data.$propertyName)
+    }
+  }
+
+  throw "ValuesJson must include finalConfirmedGuidance, confirmedGuidance, finalConfirmedSkills, skills, or guidance."
+}
+
+function Test-RepoRelativeTarget {
+  param([string]$TargetRelative)
+
+  if ([string]::IsNullOrWhiteSpace($TargetRelative)) { return $false }
+  $normalized = $TargetRelative.Replace("\", "/")
+  if (-not $normalized.StartsWith(".codex/skills/")) { return $false }
+  if (-not $normalized.EndsWith("/SKILL.md")) { return $false }
+  if ($normalized -match "(^|/)\.\.($|/)") { return $false }
+  return $true
+}
+
+function Invoke-AcquireProjectGuidance {
+  $result = New-Result
+  $items = Get-ConfirmedGuidanceItemsFromJson $ValuesJson
+
+  foreach ($item in @($items)) {
+    $type = if ($item.PSObject.Properties.Name -contains "type") { [string]$item.type } else { "skill" }
+    $name = if ($item.PSObject.Properties.Name -contains "name") { [string]$item.name } elseif ($item.PSObject.Properties.Name -contains "id") { [string]$item.id } else { "unnamed-guidance" }
+    $installMethod = if ($item.PSObject.Properties.Name -contains "installMethod") { [string]$item.installMethod } elseif ($type -eq "skill") { "manual-copy" } else { "manual-reference" }
+
+    if ($type -ne "skill") {
+      Add-Item $result "findings" $name "non-skill-guidance" "Non-skill guidance remains in .codex/tool-recommendations.local.json; no file copy is required." "info"
+      continue
+    }
+    if ($installMethod -ne "manual-copy") {
+      Add-Item $result "warnings" $name "installMethod" "Skipping skill because installMethod is '$installMethod', not manual-copy." "warning"
+      continue
+    }
+
+    $source = if ($item.PSObject.Properties.Name -contains "source") { [string]$item.source } else { "" }
+    $targetRelative = if ($item.PSObject.Properties.Name -contains "target") { [string]$item.target } else { ".codex/skills/$name/SKILL.md" }
+    if (-not (Test-RepoRelativeTarget $targetRelative)) {
+      Add-Item $result "warnings" $targetRelative "target" "Skipping skill because target must be under .codex/skills/{skill-name}/SKILL.md." "warning"
+      continue
+    }
+
+    if (-not $source.StartsWith("repo:")) {
+      Add-Item $result "warnings" $name "source" "Source '$source' is not a repo: path. Read the source SKILL.md manually, then run acquisition with a repo: source or copy through the project-guidance-acquire skill." "warning"
+      continue
+    }
+
+    $sourceRelative = $source.Substring("repo:".Length)
+    $sourcePath = Join-RootPath $sourceRelative
+    $targetPath = Join-RootPath $targetRelative
+    if (-not (Test-Path $sourcePath)) {
+      Add-Item $result "warnings" $sourceRelative "source" "Source SKILL.md does not exist." "warning"
+      continue
+    }
+    if (Test-Path $targetPath) {
+      Add-Item $result "findings" $targetRelative "already-present" "Repo-local skill already exists; not overwriting without explicit replacement." "info"
+      continue
+    }
+
+    Add-Item $result "actions" $targetRelative "manual-copy" "Copy confirmed SKILL.md from $source."
+    if (Test-ConfigWritesEnabled) {
+      $targetDirectory = Split-Path -Parent $targetPath
+      if (-not (Test-Path $targetDirectory)) {
+        New-Item -ItemType Directory -Path $targetDirectory -Force | Out-Null
+      }
+      Copy-Item -Path $sourcePath -Destination $targetPath
+    }
+
+    $validation = if ($item.PSObject.Properties.Name -contains "validation") { [string]$item.validation } else { "Test-Path $targetRelative" }
+    Add-Item $result "findings" $targetRelative "validation" "Validate with: $validation" "info"
+  }
+
+  return $result
 }
 
 function Invoke-Audit {
@@ -913,6 +1703,7 @@ function Invoke-Audit {
   }
 
   Add-QualityGateAuditFindings $result
+  Add-WorktreeLocalConfigAuditFindings $result
 
   return $result
 }
@@ -921,6 +1712,253 @@ function Invoke-AuditQualityGates {
   $result = New-Result
   Ensure-InferredClientToolsConfig $result
   Add-QualityGateAuditFindings $result
+  return $result
+}
+
+function Invoke-AuditRecommendedTools {
+  $result = New-Result
+  $detectedTags = Get-DetectedStackTags
+  $catalog = Get-ToolRecommendationCatalog
+  $accepted = @()
+  $dismissed = @()
+  $recommendationsEnabled = $true
+  $clientLocal = ".codex/client-tools.local.json"
+  $clientPath = Join-RootPath $clientLocal
+
+  if (Test-Path $clientPath) {
+    try {
+      $client = Get-Content -Path $clientPath -Raw | ConvertFrom-Json
+      if ($null -ne $client.recommendedTools) {
+        if ($client.recommendedTools.enabled -eq $false) { $recommendationsEnabled = $false }
+        $accepted = @($client.recommendedTools.accepted)
+        $dismissed = @($client.recommendedTools.dismissed)
+      } else {
+        Add-Item $result "findings" $clientLocal "recommendedTools" "Recommended tools config is missing; use SetRecommendedTools after the user accepts or dismisses recommendations." "info"
+      }
+    } catch {
+      Add-Item $result "findings" $clientLocal "recommendedTools" "Could not parse local client config; recommended tools audit will use defaults." "warning"
+    }
+  } else {
+    Add-Item $result "findings" $clientLocal "recommendedTools" "Local client config is missing; recommended tools audit will use defaults." "info"
+  }
+
+  Add-Item $result "actions" ".codex/tool-recommendations.example.json" "detectedStack" "Detected stack tags: $($detectedTags -join ', ')."
+  Add-StackContextDriftFindings $result $detectedTags
+
+  if (-not $recommendationsEnabled) {
+    Add-Item $result "findings" $clientLocal "recommendedTools.enabled" "Recommended tools audit is disabled in local config." "info"
+    return $result
+  }
+
+  Add-ProjectGuidanceSearchPlanRecommendation $result $detectedTags
+  Add-DetectedSkillRecommendations $result $detectedTags $accepted $dismissed
+
+  foreach ($entry in @($catalog.recommendations)) {
+    if (-not (Test-RecommendationMatchesStack -Recommendation $entry -DetectedTags $detectedTags)) { continue }
+    if ($dismissed -contains $entry.id) { continue }
+
+    $recommendation = [ordered]@{
+      id = $entry.id
+      name = $entry.name
+      type = $entry.type
+      purpose = $entry.purpose
+      installMethod = $entry.installMethod
+      source = $entry.source
+      target = $entry.target
+      validation = $entry.validation
+      accepted = ($accepted -contains $entry.id)
+    }
+
+    foreach ($optionalField in @("requires", "researchTopics", "officialSources", "searchQueries", "notes")) {
+      if ($entry.PSObject.Properties.Name -contains $optionalField) {
+        $recommendation[$optionalField] = $entry.$optionalField
+      }
+    }
+
+    Add-Recommendation $result $recommendation
+  }
+
+  foreach ($entry in @($catalog.notRecommended)) {
+    if (-not (Test-RecommendationMatchesStack -Recommendation $entry -DetectedTags $detectedTags)) { continue }
+    Add-Item $result "findings" $entry.name $entry.id $entry.reason "info"
+  }
+
+  return $result
+}
+
+function Invoke-DiscoverProjectGuidance {
+  $accepted = @()
+  $dismissed = @()
+  $additionalGuidance = @()
+  $confirmed = $false
+  $persistLocal = $false
+  $clientPath = Join-RootPath ".codex/client-tools.local.json"
+
+  if (Test-Path $clientPath) {
+    try {
+      $client = Get-Content -Path $clientPath -Raw | ConvertFrom-Json
+      if ($null -ne $client.recommendedTools) {
+        $accepted = @($client.recommendedTools.accepted)
+        $dismissed = @($client.recommendedTools.dismissed)
+      }
+    } catch {
+      # Discovery remains useful even when local preference state is unreadable.
+    }
+  }
+
+  if (-not [string]::IsNullOrWhiteSpace($ValuesJson)) {
+    $data = $ValuesJson | ConvertFrom-Json
+    $additionalGuidance = Get-AdditionalGuidanceRequestsFromJson $ValuesJson
+    if ($data.PSObject.Properties.Name -contains "confirmed") {
+      $confirmed = [bool]$data.confirmed
+    } elseif ($data.PSObject.Properties.Name -contains "confirmSuggested") {
+      $confirmed = [bool]$data.confirmSuggested
+    }
+
+    if ($data.PSObject.Properties.Name -contains "persistLocal") {
+      $persistLocal = [bool]$data.persistLocal
+    } elseif ($data.PSObject.Properties.Name -contains "writeLocalRecommendations") {
+      $persistLocal = [bool]$data.writeLocalRecommendations
+    }
+  }
+
+  $report = Get-ProjectGuidanceDiscoveryReport -Accepted $accepted -Dismissed $dismissed -UserAddedRequestedGuidance $additionalGuidance -Confirmed:($confirmed)
+  $result = [ordered]@{
+    mode = $Mode
+    dryRun = [bool]$DryRun
+    writeEnabled = (Test-ConfigWritesEnabled)
+    actions = @()
+    findings = @()
+    recommendations = @()
+    warnings = @()
+    detectedTags = $report.detectedTags
+    researchTopics = $report.researchTopics
+    existingSkills = $report.existingSkills
+    suggestedMissingSkills = $report.suggestedMissingSkills
+    suggestedPresentSkills = $report.suggestedPresentSkills
+    suggestedGuidance = $report.suggestedGuidance
+    userAddedRequestedGuidance = $report.userAddedRequestedGuidance
+    userAddedRequestedSkills = $report.userAddedRequestedSkills
+    finalConfirmedGuidance = $report.finalConfirmedGuidance
+    finalConfirmedSkills = $report.finalConfirmedSkills
+    localRecommendationsPath = ".codex/tool-recommendations.local.json"
+    nextUserQuestion = $report.nextUserQuestion
+  }
+
+  if ($persistLocal) {
+    $state = New-ProjectGuidanceLocalState -Accepted $accepted -Dismissed $dismissed -UserAddedRequestedGuidance $additionalGuidance -Confirmed:($confirmed)
+    Write-ProjectGuidanceLocalState $result $state "Persist catalog-shaped project guidance state for project-guidance-mapper and future workflow steps."
+  }
+
+  return $result
+}
+
+function Invoke-SetRecommendedTools {
+  $result = New-Result
+  $targetRelative = ".codex/client-tools.local.json"
+  $target = Join-RootPath $targetRelative
+  if (-not (Test-Path $target)) {
+    throw "Missing $targetRelative. Run -Mode InitLocalFiles first."
+  }
+
+  $values = Convert-JsonToHashtable $ValuesJson
+  if (-not $values.Contains("accepted") -and -not $values.Contains("dismissed")) {
+    throw "ValuesJson must include accepted or dismissed recommendation id arrays."
+  }
+
+  $config = Get-Content -Path $target -Raw | ConvertFrom-Json
+  Ensure-ObjectProperty -Object $config -Name "recommendedTools"
+  Set-ObjectValue -Object $config -Path @("recommendedTools", "enabled") -Value $true
+  Set-ObjectValue -Object $config -Path @("recommendedTools", "mode") -Value "guided-manual"
+
+  foreach ($key in @("accepted", "dismissed")) {
+    if ($values.Contains($key)) {
+      Set-ObjectValue -Object $config -Path @("recommendedTools", $key) -Value @($values[$key])
+      Add-Item $result "actions" $targetRelative "recommendedTools.$key" "Record confirmed recommendation ids; no skills, plugins, MCPs, or secrets were installed."
+    }
+  }
+
+  if (-not $DryRun) {
+    $config | ConvertTo-Json -Depth 20 | Set-Content -Path $target -Encoding UTF8
+  }
+  return $result
+}
+
+function Invoke-MapProjectGuidanceStep {
+  $result = New-Result
+  $values = Convert-JsonToHashtable $ValuesJson
+
+  if (-not $values.Contains("workflowStep") -or [string]::IsNullOrWhiteSpace([string]$values.workflowStep)) {
+    throw "ValuesJson must include workflowStep."
+  }
+
+  $workflowStep = [string]$values.workflowStep
+  $canonicalSteps = Get-CanonicalWorkflowSteps
+  if ($canonicalSteps -notcontains $workflowStep) {
+    throw "workflowStep must be one of: $($canonicalSteps -join ', ')."
+  }
+
+  $decisions = Get-RecommendedToolsDecisionState
+  $state = New-ProjectGuidanceLocalState -Accepted $decisions.accepted -Dismissed $decisions.dismissed
+
+  $explicitRecommendationIds = @(Get-HashtableArrayValue $values "recommendationIds")
+  if ($explicitRecommendationIds.Count -eq 0) {
+    $explicitRecommendationIds = @(Get-HashtableArrayValue $values "guidanceIds")
+  }
+
+  $existingMappedIds = @($state.recommendations | Where-Object {
+    $_.usedInSteps -contains $workflowStep
+  } | ForEach-Object { [string]$_.id })
+  $defaultIds = @(Get-DefaultRecommendationIdsForWorkflowStep $workflowStep)
+  $heuristicIds = @($state.recommendations | Where-Object {
+    ($null -eq $_.usedInSteps -or @($_.usedInSteps).Count -eq 0) -and (Test-RecommendationFitsWorkflowStep $_ $workflowStep)
+  } | ForEach-Object { [string]$_.id })
+
+  $selectedIds = if ($explicitRecommendationIds.Count -gt 0) {
+    @($explicitRecommendationIds)
+  } else {
+    @($existingMappedIds + $defaultIds + $heuristicIds)
+  }
+  $selectedIds = @($selectedIds | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Sort-Object -Unique)
+
+  $foundIds = [System.Collections.Generic.List[string]]::new()
+  foreach ($recommendation in @($state.recommendations)) {
+    if ($selectedIds -notcontains [string]$recommendation.id) { continue }
+    $currentSteps = if ($null -ne $recommendation.usedInSteps) { @($recommendation.usedInSteps) } else { @() }
+    $recommendation["usedInSteps"] = @(@($currentSteps) + @($workflowStep) | Sort-Object -Unique)
+    $foundIds.Add([string]$recommendation.id)
+  }
+
+  $missingIds = @($selectedIds | Where-Object { $foundIds -notcontains [string]$_ })
+  foreach ($missingId in $missingIds) {
+    Add-Item $result "warnings" ".codex/tool-recommendations.local.json" $missingId "Recommendation id was requested or inferred for '$workflowStep' but is not present in the local catalog." "warning"
+  }
+
+  $state.generatedBy = "project-guidance-mapper"
+  $state.generatedAtUtc = [DateTime]::UtcNow.ToString("o")
+
+  Write-ProjectGuidanceLocalState $result $state "Persist project-guidance-mapper usedInSteps mapping for '$workflowStep'."
+  $primarySkills = @(Get-HashtableArrayValue $values "primarySkills")
+  if ($primarySkills.Count -eq 0) { $primarySkills = @(Get-DefaultPrimarySkillsForWorkflowStep $workflowStep) }
+  $supportingSkills = @(Get-HashtableArrayValue $values "supportingSkills")
+  if ($supportingSkills.Count -eq 0) { $supportingSkills = @(Get-DefaultSupportingSkillsForWorkflowStep $workflowStep) }
+  $guidanceRecommendations = @($state.recommendations | Where-Object { $foundIds -contains [string]$_.id } | ForEach-Object {
+    [ordered]@{
+      id = $_.id
+      name = $_.name
+      type = $_.type
+      usedInSteps = @($_.usedInSteps)
+    }
+  })
+
+  $result["workflowStep"] = $workflowStep
+  $result["primarySkills"] = @($primarySkills)
+  $result["supportingSkills"] = @($supportingSkills)
+  $result["guidanceRecommendations"] = @($guidanceRecommendations)
+  $result["missingUsefulGuidance"] = @($missingIds)
+  $result["why"] = $(if ($values.Contains("why")) { [string]$values.why } elseif ($values.Contains("reason")) { [string]$values.reason } else { "Mapped project guidance for workflow step '$workflowStep'." })
+  $result["nextAction"] = $(if ($values.Contains("nextAction")) { [string]$values.nextAction } else { "Use mapped guidance after verifying current ticket, files, and installed skills." })
+  $result["localMappingUpdated"] = (Test-ConfigWritesEnabled)
   return $result
 }
 
@@ -1080,6 +2118,8 @@ bld/
 [Ll]og/
 [Ll]ogs/
 artifacts/
+.codex/delivery-context.local.json
+.codex/parallel-delivery.local.json
 TestResults/
 [Tt]est[Rr]esult*/
 coverage/
@@ -1165,7 +2205,6 @@ infra/plane/plane/
 .codex/client-tools.local.json
 .codex/quality.local.json
 .codex/azure-login.local.json
-.codex/delivery-context.local.json
 infra/monitoring/prometheus.local.yml
 
 # OS/editor noise
@@ -1186,7 +2225,40 @@ $RECYCLE.BIN/
 
   Write-TemplateFile $result ".codex/delivery-policy.json" @'
 {
-  "ticketKeyPattern": "E2EPROJECT-[0-9]+"
+  "ticketKeyPattern": "E2EPROJECT-[0-9]+",
+  "agentOptimization": {
+    "maxAutonomousIterations": 20,
+    "maxToolRetries": 2,
+    "promptCache": {
+      "enabled": true,
+      "staticContextFirst": true,
+      "dynamicRuntimeContextLast": true,
+      "trackCachedTokens": true
+    },
+    "telemetry": {
+      "enabled": true,
+      "localPath": ".codex/agent-telemetry.local.jsonl",
+      "requiredFields": [
+        "timestampUtc",
+        "workflowStage",
+        "agentRole",
+        "model",
+        "reasoningEffort",
+        "inputTokens",
+        "outputTokens",
+        "cachedTokens",
+        "toolCallCount",
+        "retryCount",
+        "elapsedMilliseconds",
+        "outcome"
+      ]
+    },
+    "workflowEvals": {
+      "casesPath": ".codex/agent-evals/workflow-cases.json",
+      "resultsPath": ".codex/agent-evals/results.local.json",
+      "requireEvalEvidenceBeforeNewAgentRole": true
+    }
+  }
 }
 '@
 
@@ -1268,6 +2340,23 @@ jobs:
       - name: Build
         run: dotnet build -c Release --no-restore
 
+      - name: Install PowerShell
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          apt-get update
+          apt-get install -y --no-install-recommends wget apt-transport-https ca-certificates gnupg
+          . /etc/os-release
+          case "${ID:-}" in
+            ubuntu|debian) package_os="$ID" ;;
+            *) echo "Unsupported PowerShell package OS: ${ID:-unknown}" && exit 1 ;;
+          esac
+          wget -q "https://packages.microsoft.com/config/${package_os}/${VERSION_ID}/packages-microsoft-prod.deb" -O /tmp/packages-microsoft-prod.deb
+          dpkg -i /tmp/packages-microsoft-prod.deb
+          apt-get update
+          apt-get install -y --no-install-recommends powershell
+
       - name: Test
         run: dotnet test -c Release --no-build --logger trx --collect:"XPlat Code Coverage"
 
@@ -1281,10 +2370,7 @@ jobs:
             config=".codex/quality.example.json"
           fi
 
-          minimum="$(sed -n 's/.*"minimumPercent"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$config" | head -n 1 || true)"
-          if [ -z "$minimum" ]; then
-            minimum="80"
-          fi
+          minimum="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ReadCoverageThreshold --path "$config" --fallback 80)"
 
           coverage_file="$(find . -path '*/coverage.cobertura.xml' -print -quit)"
           if [ -z "$coverage_file" ]; then
@@ -1292,13 +2378,7 @@ jobs:
             exit 1
           fi
 
-          line_rate="$(sed -n 's/.*line-rate="\([0-9.]*\)".*/\1/p' "$coverage_file" | head -n 1 || true)"
-          if [ -z "$line_rate" ]; then
-            echo "Could not read line-rate from $coverage_file."
-            exit 1
-          fi
-
-          actual="$(awk -v rate="$line_rate" 'BEGIN { printf "%.2f", rate * 100 }')"
+          actual="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ReadCoberturaLineRate --path "$coverage_file")"
           awk -v actual="$actual" -v minimum="$minimum" 'BEGIN { exit !(actual + 0 >= minimum + 0) }' || {
             echo "Coverage ${actual}% is below required ${minimum}%."
             exit 1
@@ -1336,6 +2416,7 @@ on:
     branches:
       - dev
       - main
+      - qa/**
   workflow_dispatch:
     inputs:
       environment:
@@ -1403,7 +2484,7 @@ jobs:
           app_changed=false
           while IFS= read -r path; do
             case "$path" in
-              src/*|tests/*|*.sln|*.csproj|Directory.Build.props|Directory.Build.targets|global.json)
+              src/*|tests/*|infra/deployment/*|infra/azure/*|*.sln|*.slnx|*.csproj|Directory.Build.props|Directory.Build.targets|global.json)
                 app_changed=true
                 ;;
             esac
@@ -1411,14 +2492,21 @@ jobs:
           $changed_files
           EOF
 
-          ticket_key_pattern="$(sed -n 's/.*"ticketKeyPattern"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' .codex/delivery-policy.json | head -n 1 || true)"
-          test -n "$ticket_key_pattern"
+          ticket_key_pattern="$(sed -nE 's/.*"ticketKeyPattern"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' .codex/delivery-policy.json | head -n 1)"
+          if [ -z "$ticket_key_pattern" ]; then
+            echo "Could not read ticketKeyPattern from .codex/delivery-policy.json."
+            exit 1
+          fi
 
           commit_message="${{ github.event.head_commit.message }}"
-          ticket_pattern="^${ticket_key_pattern}: "
-          merge_pr_pattern="^Merge pull request '${ticket_key_pattern}:"
+          plane_ticket_key=""
+          if [[ "$commit_message" =~ ^($ticket_key_pattern) ]]; then
+            plane_ticket_key="${BASH_REMATCH[1]}"
+          elif [[ "$commit_message" =~ Merge\ pull\ request.*\'($ticket_key_pattern): ]]; then
+            plane_ticket_key="${BASH_REMATCH[1]}"
+          fi
           deploy_allowed=false
-          if [[ "$commit_message" =~ $ticket_pattern || "$commit_message" =~ $merge_pr_pattern ]]; then
+          if [ -n "$plane_ticket_key" ]; then
             deploy_allowed=true
           fi
 
@@ -1446,52 +2534,46 @@ jobs:
           git fetch --depth 1 origin "$GITHUB_SHA"
           git checkout --force FETCH_HEAD
 
-      - name: Publish
-        run: dotnet publish src/SDDTemplate.Site/SDDTemplate.Site.csproj -c Release -o ./artifacts/app
-
       - name: Install packaging tools
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends zip
+          apt-get install -y --no-install-recommends jq zip
 
-      - name: Create deployable ZIP
+      - name: Publish topology apps
+        shell: bash
         run: |
-          cd artifacts/app
-          zip -r ../app.zip .
-          cd ../..
-          sha256sum artifacts/app.zip | sed 's#artifacts/app.zip#app.zip#' > artifacts/app.zip.sha256
+          set -euo pipefail
+          mkdir -p artifacts/packages
+          jq -c '.apps | sort_by(.deployOrder)' infra/deployment/apps.json > artifacts/deployable-apps.json
+          jq -r '.apps[] | [.appId, .projectPath, .artifactName] | @tsv' infra/deployment/apps.json |
+          while IFS=$'\t' read -r app_id project_path artifact_name; do
+            dotnet publish "$project_path" -c Release -o "artifacts/$app_id"
+            (cd "artifacts/$app_id" && zip -r "../packages/$artifact_name" .)
+            sha256sum "artifacts/packages/$artifact_name" | sed "s#artifacts/packages/##" > "artifacts/packages/$artifact_name.sha256"
+          done
           git rev-parse HEAD > artifacts/commit.sha
 
-      - name: Upload artifact to Nexus
+      - name: Upload topology artifacts to Nexus
+        shell: bash
         run: |
-          checksum="$(cut -d ' ' -f1 artifacts/app.zip.sha256)"
+          first_artifact_name="$(jq -r '.apps | sort_by(.deployOrder) | .[0].artifactName' infra/deployment/apps.json)"
+          checksum="$(cut -d ' ' -f1 "artifacts/packages/$first_artifact_name.sha256")"
           commit_sha="$(cat artifacts/commit.sha)"
-          ticket_key_pattern="$(sed -n 's/.*"ticketKeyPattern"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' .codex/delivery-policy.json | head -n 1 || true)"
-          test -n "$ticket_key_pattern"
+          ticket_key_pattern="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ReadDeliveryPolicy --path .codex/delivery-policy.json)"
 
           commit_message="$(git log -1 --pretty=%B)"
-          plane_ticket_key="$(printf '%s\n' "$commit_message" | sed -n "s/^\(${ticket_key_pattern}\): .*/\1/p" | head -n 1 || true)"
-          if [ -z "$plane_ticket_key" ]; then
-            plane_ticket_key="$(printf '%s\n' "$commit_message" | sed -n "s/^Merge pull request '\(${ticket_key_pattern}\):.*/\1/p" | head -n 1 || true)"
-          fi
-          if [ -z "$plane_ticket_key" ]; then
-            plane_ticket_key="manual-dispatch"
-          fi
+          plane_ticket_key="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ExtractTicketKey --pattern "$ticket_key_pattern" --message "$commit_message" --fallback manual-dispatch)"
 
-          artifact_url="$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip"
-          cat > artifacts/release.json <<EOF
-          {
-            "schemaVersion": 1,
-            "commitSha": "$commit_sha",
-            "checksum": "$checksum",
-            "artifactUrl": "$artifact_url",
-            "planeTicketKey": "$plane_ticket_key",
-            "versionStatus": "unversioned"
-          }
-          EOF
+          artifact_url="$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/$first_artifact_name"
+          dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- CreateReleaseManifest --output artifacts/release.json --commit-sha "$commit_sha" --checksum "$checksum" --artifact-url "$artifact_url" --plane-ticket-key "$plane_ticket_key" --version-status unversioned
+          dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ValidateReleaseManifest --path artifacts/release.json
 
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/app.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip"
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/app.zip.sha256 "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip.sha256"
+          jq -r '.apps[] | .artifactName' infra/deployment/apps.json |
+          while IFS= read -r artifact_name; do
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file "artifacts/packages/$artifact_name" "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/$artifact_name"
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file "artifacts/packages/$artifact_name.sha256" "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/$artifact_name.sha256"
+          done
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/deployable-apps.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/deployable-apps.json"
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/commit.sha "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/commit.sha"
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/release.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/release.json"
         env:
@@ -1507,11 +2589,21 @@ jobs:
     runs-on: ubuntu-latest
     if: (github.event_name == 'push' && github.ref == 'refs/heads/dev' && needs.classify-changes.outputs.app_changed == 'true' && needs.classify-changes.outputs.deploy_allowed == 'true') || github.event.inputs.environment == 'dev' || github.event.inputs.environment == 'qa'
     steps:
-      - name: Download artifact from Nexus
+      - name: Install deployment tools
         run: |
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip"
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip.sha256 "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip.sha256"
-          sha256sum -c app.zip.sha256
+          apt-get update
+          apt-get install -y --no-install-recommends jq
+
+      - name: Download topology artifacts from Nexus
+        shell: bash
+        run: |
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o deployable-apps.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/deployable-apps.json"
+          jq -r '.[].artifactName' deployable-apps.json |
+          while IFS= read -r artifact_name; do
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o "$artifact_name" "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/$artifact_name"
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o "$artifact_name.sha256" "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/$artifact_name.sha256"
+            sha256sum -c "$artifact_name.sha256"
+          done
         env:
           NEXUS_URL: ${{ secrets.NEXUS_URL }}
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
@@ -1526,21 +2618,39 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Deploy DEV package
-        run: az webapp deploy --resource-group "$AZURE_DEV_RESOURCE_GROUP" --name "$AZURE_DEV_WEBAPP_NAME" --src-path app.zip --type zip --clean true
+      - name: Deploy DEV topology apps
+        shell: bash
+        run: |
+          jq -r '.[] | [.appId, .artifactName] | @tsv' deployable-apps.json |
+          while IFS=$'\t' read -r app_id artifact_name; do
+            app_upper="$(echo "$app_id" | tr '[:lower:]-' '[:upper:]_')"
+            name_var="AZURE_DEV_${app_upper}_APP_NAME"
+            az webapp deploy --resource-group "$AZURE_DEV_RESOURCE_GROUP" --name "${!name_var}" --src-path "$artifact_name" --type zip --clean true
+          done
         env:
           AZURE_DEV_RESOURCE_GROUP: ${{ secrets.AZURE_DEV_RESOURCE_GROUP }}
-          AZURE_DEV_WEBAPP_NAME: ${{ secrets.AZURE_DEV_WEBAPP_NAME }}
+          AZURE_DEV_SITE_APP_NAME: ${{ secrets.AZURE_DEV_SITE_APP_NAME }}
+          AZURE_DEV_API_APP_NAME: ${{ secrets.AZURE_DEV_API_APP_NAME }}
 
-      - name: Smoke check DEV
+      - name: Smoke check DEV topology apps
+        shell: bash
         run: |
-          curl --fail --silent --show-error --location "$AZURE_DEV_WEBAPP_URL" -o response.html
-          grep -q "<title>SDD Template</title>" response.html
-          ! grep -qi "Microsoft Azure" response.html
-          curl --fail --silent --show-error --location "$AZURE_DEV_WEBAPP_URL/health" -o health.json
-          grep -q '"status":"ok"' health.json
+          jq -r '.[] | [.appId, .role, .healthPath] | @tsv' deployable-apps.json |
+          while IFS=$'\t' read -r app_id role health_path; do
+            app_upper="$(echo "$app_id" | tr '[:lower:]-' '[:upper:]_')"
+            url_var="AZURE_DEV_${app_upper}_APP_URL"
+            app_url="${!url_var}"
+            if [ "$role" = "web" ]; then
+              curl --fail --silent --show-error --location "$app_url" -o response.html
+              grep -q "<title>SDD Template</title>" response.html
+              ! grep -qi "Microsoft Azure" response.html
+            fi
+            curl --fail --silent --show-error --location "${app_url}${health_path}" -o health.json
+            grep -q '"status":"ok"' health.json
+          done
         env:
-          AZURE_DEV_WEBAPP_URL: ${{ secrets.AZURE_DEV_WEBAPP_URL }}
+          AZURE_DEV_SITE_APP_URL: ${{ secrets.AZURE_DEV_SITE_APP_URL }}
+          AZURE_DEV_API_APP_URL: ${{ secrets.AZURE_DEV_API_APP_URL }}
 
   deploy-qa:
     needs:
@@ -1549,11 +2659,21 @@ jobs:
     runs-on: ubuntu-latest
     if: (github.event_name == 'push' && github.ref == 'refs/heads/dev' && needs.classify-changes.outputs.app_changed == 'true' && needs.classify-changes.outputs.deploy_allowed == 'true') || github.event.inputs.environment == 'qa'
     steps:
-      - name: Download artifact from Nexus
+      - name: Install deployment tools
         run: |
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip"
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip.sha256 "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip.sha256"
-          sha256sum -c app.zip.sha256
+          apt-get update
+          apt-get install -y --no-install-recommends jq
+
+      - name: Download topology artifacts from Nexus
+        shell: bash
+        run: |
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o deployable-apps.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/deployable-apps.json"
+          jq -r '.[].artifactName' deployable-apps.json |
+          while IFS= read -r artifact_name; do
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o "$artifact_name" "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/$artifact_name"
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o "$artifact_name.sha256" "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/$artifact_name.sha256"
+            sha256sum -c "$artifact_name.sha256"
+          done
         env:
           NEXUS_URL: ${{ secrets.NEXUS_URL }}
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
@@ -1568,21 +2688,124 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Deploy QA package
-        run: az webapp deploy --resource-group "$AZURE_QA_RESOURCE_GROUP" --name "$AZURE_QA_WEBAPP_NAME" --src-path app.zip --type zip --clean true
+      - name: Deploy QA topology apps
+        shell: bash
+        run: |
+          jq -r '.[] | [.appId, .artifactName] | @tsv' deployable-apps.json |
+          while IFS=$'\t' read -r app_id artifact_name; do
+            app_upper="$(echo "$app_id" | tr '[:lower:]-' '[:upper:]_')"
+            name_var="AZURE_QA_${app_upper}_APP_NAME"
+            az webapp deploy --resource-group "$AZURE_QA_RESOURCE_GROUP" --name "${!name_var}" --src-path "$artifact_name" --type zip --clean true
+          done
         env:
           AZURE_QA_RESOURCE_GROUP: ${{ secrets.AZURE_QA_RESOURCE_GROUP }}
-          AZURE_QA_WEBAPP_NAME: ${{ secrets.AZURE_QA_WEBAPP_NAME }}
+          AZURE_QA_SITE_APP_NAME: ${{ secrets.AZURE_QA_SITE_APP_NAME }}
+          AZURE_QA_API_APP_NAME: ${{ secrets.AZURE_QA_API_APP_NAME }}
 
-      - name: Smoke check QA
+      - name: Smoke check QA topology apps
+        shell: bash
         run: |
-          curl --fail --silent --show-error --location "$AZURE_QA_WEBAPP_URL" -o response.html
-          grep -q "<title>SDD Template</title>" response.html
-          ! grep -qi "Microsoft Azure" response.html
-          curl --fail --silent --show-error --location "$AZURE_QA_WEBAPP_URL/health" -o health.json
-          grep -q '"status":"ok"' health.json
+          jq -r '.[] | [.appId, .role, .healthPath] | @tsv' deployable-apps.json |
+          while IFS=$'\t' read -r app_id role health_path; do
+            app_upper="$(echo "$app_id" | tr '[:lower:]-' '[:upper:]_')"
+            url_var="AZURE_QA_${app_upper}_APP_URL"
+            app_url="${!url_var}"
+            if [ "$role" = "web" ]; then
+              curl --fail --silent --show-error --location "$app_url" -o response.html
+              grep -q "<title>SDD Template</title>" response.html
+              ! grep -qi "Microsoft Azure" response.html
+            fi
+            curl --fail --silent --show-error --location "${app_url}${health_path}" -o health.json
+            grep -q '"status":"ok"' health.json
+          done
         env:
-          AZURE_QA_WEBAPP_URL: ${{ secrets.AZURE_QA_WEBAPP_URL }}
+          AZURE_QA_SITE_APP_URL: ${{ secrets.AZURE_QA_SITE_APP_URL }}
+          AZURE_QA_API_APP_URL: ${{ secrets.AZURE_QA_API_APP_URL }}
+
+  e2e-qa-branch:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/qa/')
+    steps:
+      - name: Checkout QA E2E branch
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          repo_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          repo_url="${repo_url/localhost/host.docker.internal}"
+          repo_url="${repo_url/gitea/host.docker.internal}"
+
+          git init .
+          git remote add origin "$repo_url"
+          git fetch --depth 50 origin "$GITHUB_SHA"
+          git checkout --force FETCH_HEAD
+          git fetch --depth 50 origin dev
+
+      - name: Resolve QA artifact commit
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          artifact_commit_sha="$(git merge-base HEAD origin/dev)"
+          test -n "$artifact_commit_sha"
+          echo "E2E_ARTIFACT_COMMIT_SHA=$artifact_commit_sha" >> "$GITHUB_ENV"
+
+          ticket_key_pattern="$(sed -nE 's/.*"ticketKeyPattern"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' .codex/delivery-policy.json | head -n 1)"
+          branch_name="${GITHUB_REF#refs/heads/}"
+          plane_ticket_key="$(printf '%s\n' "$branch_name" | sed -nE "s#^qa/($ticket_key_pattern)(/.*)?\$#\1#p" | head -n 1)"
+          test -n "$plane_ticket_key"
+          echo "E2E_PLANE_TICKET_KEY=$plane_ticket_key" >> "$GITHUB_ENV"
+
+      - name: Install E2E tools
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates curl zip
+          curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+          apt-get install -y --no-install-recommends nodejs
+          cd tests/SDDTemplate.E2ETests
+          npm ci
+          npm run install:browsers
+
+      - name: Run QA branch E2E suite and upload evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd tests/SDDTemplate.E2ETests
+          mkdir -p evidence
+
+          test_exit=0
+          npm test || test_exit=$?
+
+          run_id="$(date -u +%Y%m%d-%H%M%S)-${GITHUB_SHA:0:7}"
+          {
+            echo "ticketKey=$E2E_PLANE_TICKET_KEY"
+            echo "artifactCommitSha=$E2E_ARTIFACT_COMMIT_SHA"
+            echo "testCommitSha=$GITHUB_SHA"
+            echo "runId=$run_id"
+            echo "siteUrl=$E2E_SITE_URL"
+            echo "apiUrl=$E2E_API_URL"
+            echo "result=$([ "$test_exit" -eq 0 ] && echo PASS || echo FAIL)"
+          } > evidence/qa-e2e-summary.txt
+
+          [ -d playwright-report ] && cp -r playwright-report evidence/
+          [ -d test-results ] && cp -r test-results evidence/
+          zip -r qa-e2e-evidence.zip evidence
+
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file qa-e2e-evidence.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${E2E_ARTIFACT_COMMIT_SHA}/qa-e2e-evidence.zip"
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file qa-e2e-evidence.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/qa/${E2E_PLANE_TICKET_KEY}/${run_id}/qa-e2e-evidence.zip"
+
+          exit "$test_exit"
+        env:
+          E2E_SITE_URL: ${{ secrets.AZURE_QA_SITE_APP_URL }}
+          E2E_API_URL: ${{ secrets.AZURE_QA_API_APP_URL }}
+          NEXUS_URL: ${{ secrets.NEXUS_URL }}
+          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+          NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
 
   deploy-prod:
     needs: classify-changes
@@ -1609,11 +2832,21 @@ jobs:
           RELEASE_VERSION: ${{ github.event.inputs.release_version }}
           SOURCE_RC_VERSION: ${{ github.event.inputs.source_rc_version }}
 
-      - name: Download artifact from Nexus
+      - name: Install deployment tools
         run: |
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$PROD_ARTIFACT_COMMIT_SHA/app.zip"
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip.sha256 "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$PROD_ARTIFACT_COMMIT_SHA/app.zip.sha256"
-          sha256sum -c app.zip.sha256
+          apt-get update
+          apt-get install -y --no-install-recommends jq
+
+      - name: Download topology artifacts from Nexus
+        shell: bash
+        run: |
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o deployable-apps.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$PROD_ARTIFACT_COMMIT_SHA/deployable-apps.json"
+          jq -r '.[].artifactName' deployable-apps.json |
+          while IFS= read -r artifact_name; do
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o "$artifact_name" "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$PROD_ARTIFACT_COMMIT_SHA/$artifact_name"
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o "$artifact_name.sha256" "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$PROD_ARTIFACT_COMMIT_SHA/$artifact_name.sha256"
+            sha256sum -c "$artifact_name.sha256"
+          done
         env:
           NEXUS_URL: ${{ secrets.NEXUS_URL }}
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
@@ -1628,21 +2861,39 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Deploy PROD package
-        run: az webapp deploy --resource-group "$AZURE_PROD_RESOURCE_GROUP" --name "$AZURE_PROD_WEBAPP_NAME" --src-path app.zip --type zip --clean true
+      - name: Deploy PROD topology apps
+        shell: bash
+        run: |
+          jq -r '.[] | [.appId, .artifactName] | @tsv' deployable-apps.json |
+          while IFS=$'\t' read -r app_id artifact_name; do
+            app_upper="$(echo "$app_id" | tr '[:lower:]-' '[:upper:]_')"
+            name_var="AZURE_PROD_${app_upper}_APP_NAME"
+            az webapp deploy --resource-group "$AZURE_PROD_RESOURCE_GROUP" --name "${!name_var}" --src-path "$artifact_name" --type zip --clean true
+          done
         env:
           AZURE_PROD_RESOURCE_GROUP: ${{ secrets.AZURE_PROD_RESOURCE_GROUP }}
-          AZURE_PROD_WEBAPP_NAME: ${{ secrets.AZURE_PROD_WEBAPP_NAME }}
+          AZURE_PROD_SITE_APP_NAME: ${{ secrets.AZURE_PROD_SITE_APP_NAME }}
+          AZURE_PROD_API_APP_NAME: ${{ secrets.AZURE_PROD_API_APP_NAME }}
 
-      - name: Smoke check PROD
+      - name: Smoke check PROD topology apps
+        shell: bash
         run: |
-          curl --fail --silent --show-error --location "$AZURE_PROD_WEBAPP_URL" -o response.html
-          grep -q "<title>SDD Template</title>" response.html
-          ! grep -qi "Microsoft Azure" response.html
-          curl --fail --silent --show-error --location "$AZURE_PROD_WEBAPP_URL/health" -o health.json
-          grep -q '"status":"ok"' health.json
+          jq -r '.[] | [.appId, .role, .healthPath] | @tsv' deployable-apps.json |
+          while IFS=$'\t' read -r app_id role health_path; do
+            app_upper="$(echo "$app_id" | tr '[:lower:]-' '[:upper:]_')"
+            url_var="AZURE_PROD_${app_upper}_APP_URL"
+            app_url="${!url_var}"
+            if [ "$role" = "web" ]; then
+              curl --fail --silent --show-error --location "$app_url" -o response.html
+              grep -q "<title>SDD Template</title>" response.html
+              ! grep -qi "Microsoft Azure" response.html
+            fi
+            curl --fail --silent --show-error --location "${app_url}${health_path}" -o health.json
+            grep -q '"status":"ok"' health.json
+          done
         env:
-          AZURE_PROD_WEBAPP_URL: ${{ secrets.AZURE_PROD_WEBAPP_URL }}
+          AZURE_PROD_SITE_APP_URL: ${{ secrets.AZURE_PROD_SITE_APP_URL }}
+          AZURE_PROD_API_APP_URL: ${{ secrets.AZURE_PROD_API_APP_URL }}
 '@
 
   Write-TemplateFile $result ".gitea/workflows/README.md" @'
@@ -1668,14 +2919,20 @@ Required repository secrets:
 - `NEXUS_REPOSITORY`
 - `AZURE_CREDENTIALS`
 - `AZURE_DEV_RESOURCE_GROUP`
-- `AZURE_DEV_WEBAPP_NAME`
-- `AZURE_DEV_WEBAPP_URL`
+- `AZURE_DEV_SITE_APP_NAME`
+- `AZURE_DEV_SITE_APP_URL`
+- `AZURE_DEV_API_APP_NAME`
+- `AZURE_DEV_API_APP_URL`
 - `AZURE_QA_RESOURCE_GROUP`
-- `AZURE_QA_WEBAPP_NAME`
-- `AZURE_QA_WEBAPP_URL`
+- `AZURE_QA_SITE_APP_NAME`
+- `AZURE_QA_SITE_APP_URL`
+- `AZURE_QA_API_APP_NAME`
+- `AZURE_QA_API_APP_URL`
 - `AZURE_PROD_RESOURCE_GROUP`
-- `AZURE_PROD_WEBAPP_NAME`
-- `AZURE_PROD_WEBAPP_URL`
+- `AZURE_PROD_SITE_APP_NAME`
+- `AZURE_PROD_SITE_APP_URL`
+- `AZURE_PROD_API_APP_NAME`
+- `AZURE_PROD_API_APP_URL`
 
 Push-triggered deployments are ticket-gated by `.codex/delivery-policy.json`. Only commits or merged PR titles that start with the configured ticket key pattern may deploy. `[SDD]`, OpenSpec, chore, and ops-only maintenance changes do not deploy automatically.
 
@@ -1695,10 +2952,10 @@ Recommended branch protection:
 Release flow:
 
 ```text
-feature branch -> dev -> DEV -> QA -> main -> PROD
+feature branch -> dev -> DEV -> QA -> Gitea E2E evidence -> Plane E2E QA -> main -> PROD
 ```
 
-The package workflow builds and publishes from ticket-gated application changes on `dev`, including a baseline `app/{commitSha}/release.json`. DEV and QA must deploy the same Nexus ZIP artifact for the same commit SHA. PROD must deploy the QA-approved Nexus artifact from an exact-commit `main` promotion or explicit dispatch by commit SHA and must pass both the page smoke check and `/health` check.
+The package workflow reads `infra/deployment/apps.json`, builds one ZIP per deployable app, and publishes from ticket-gated application changes on `dev`, including `app/{commitSha}/deployable-apps.json`, per-app ZIP/checksum files, and a baseline `app/{commitSha}/release.json`. DEV and QA must deploy the same Nexus app artifacts for the same commit SHA. After QA deploy and smoke checks, push a `qa/{ticketKey}` branch from current `dev`; the `e2e-qa-branch` job runs the committed Playwright suite against the deployed QA Site/API URLs without redeploying, resolves the artifact commit from the branch point with `dev`, and uploads `app/{commitSha}/qa-e2e-evidence.zip` plus a ticket/run evidence copy under `qa/{ticketKey}/{runId}/qa-e2e-evidence.zip`. This Gitea job is evidence-only; the `test-e2e` skill remains responsible for Plane Done state, RC tagging, and release manifest QA lineage. PROD must deploy the QA-approved Nexus app artifacts from an exact-commit `main` promotion or explicit dispatch by commit SHA and must pass each app health check.
 '@
 
   return $result
@@ -1718,13 +2975,13 @@ function Invoke-SetQualityConfig {
   }
 
   if (Test-Path $target) {
-    $config = Get-Content -Path $target -Raw | ConvertFrom-Json -Depth 20
+    $config = Get-Content -Path $target -Raw | ConvertFrom-Json
   } else {
     $source = Join-RootPath ".codex/quality.example.json"
     if (-not (Test-Path $source)) {
       throw "Missing .codex/quality.example.json. Run -Mode InitQualityGateTemplates first."
     }
-    $config = Get-Content -Path $source -Raw | ConvertFrom-Json -Depth 20
+    $config = Get-Content -Path $source -Raw | ConvertFrom-Json
   }
 
   foreach ($key in $values.Keys) {
@@ -1757,6 +3014,122 @@ function Invoke-InitLocalFiles {
   return $result
 }
 
+function Invoke-SyncWorktreeLocalConfig {
+  $result = New-Result
+  $worktreePaths = @(Get-SyncTargetWorktreePaths)
+  if ($worktreePaths.Count -eq 0) {
+    Add-Item $result "findings" "git worktree" "" "No ticket worktrees were found. Provide ValuesJson with worktreePaths or create/reuse ticket worktrees first." "warning"
+    return $result
+  }
+
+  foreach ($file in @(Get-WorktreeLocalConfigFiles)) {
+    $relativePath = [string]$file.relativePath
+    $sourcePath = Join-RootPath $relativePath
+    if (-not (Test-Path -LiteralPath $sourcePath)) {
+      if ([bool]$file.required) {
+        Add-Item $result "findings" $relativePath "" "Coordinator checkout is missing required local runtime file '$relativePath'. Run InitLocalFiles and SetClientTools before syncing ticket worktrees." "error"
+      } else {
+        Add-Item $result "findings" $relativePath "" "Optional local runtime file '$relativePath' is not present in the coordinator checkout; skipping it." "info"
+      }
+    }
+  }
+
+  foreach ($worktreePath in $worktreePaths) {
+    $displayPath = Get-DisplayPath $worktreePath
+    if (-not (Test-Path -LiteralPath $worktreePath -PathType Container)) {
+      Add-Item $result "findings" $displayPath "worktreePath" "Ticket worktree path does not exist; create or repair the worktree before syncing local config." "error"
+      continue
+    }
+
+    foreach ($file in @(Get-WorktreeLocalConfigFiles)) {
+      $relativePath = [string]$file.relativePath
+      $sourcePath = Join-RootPath $relativePath
+      if (-not (Test-Path -LiteralPath $sourcePath)) { continue }
+
+      $targetPath = Join-Path $worktreePath $relativePath
+      $targetDirectory = Split-Path -Parent $targetPath
+      if (Test-Path -LiteralPath $targetPath) {
+        $sourceHash = Get-FileSha256 $sourcePath
+        $targetHash = Get-FileSha256 $targetPath
+        if ($sourceHash -eq $targetHash) {
+          Add-Item $result "findings" $displayPath $relativePath "Allowlisted local runtime file is already synced." "info"
+          continue
+        }
+
+        Add-Item $result "actions" $displayPath $relativePath "Overwrite allowlisted local runtime file from coordinator checkout."
+      } else {
+        Add-Item $result "actions" $displayPath $relativePath "Copy allowlisted local runtime file from coordinator checkout."
+      }
+
+      if (Test-ConfigWritesEnabled) {
+        if (-not (Test-Path -LiteralPath $targetDirectory)) {
+          New-Item -ItemType Directory -Path $targetDirectory -Force | Out-Null
+        }
+        Copy-Item -Path $sourcePath -Destination $targetPath -Force
+      }
+    }
+  }
+
+  return $result
+}
+
+function Invoke-EnsureDeliveryContext {
+  $result = New-Result
+  $targetRelative = ".codex/delivery-context.local.json"
+  $target = Join-RootPath $targetRelative
+  $values = Convert-JsonToHashtable $ValuesJson
+
+  if (-not $values.Contains("ticketKey") -or [string]::IsNullOrWhiteSpace([string]$values.ticketKey)) {
+    throw "ValuesJson must include ticketKey for EnsureDeliveryContext."
+  }
+
+  $ticketKey = [string]$values.ticketKey
+  $branch = if ($values.Contains("branch")) { [string]$values.branch } else { Get-CurrentGitBranch }
+  if ([string]::IsNullOrWhiteSpace($branch)) {
+    throw "ValuesJson must include branch when the current Git branch cannot be inferred."
+  }
+
+  $openspecChange = if ($values.Contains("openspecChange")) { [string]$values.openspecChange } else { Get-InferredOpenSpecChange $branch }
+  $replaceExisting = $values.Contains("replaceExisting") -and [bool]$values.replaceExisting
+
+  if (Test-Path -LiteralPath $target) {
+    try {
+      $existing = Get-Content -Path $target -Raw | ConvertFrom-Json
+      $existingTicket = [string]$existing.ticketKey
+      if (-not [string]::IsNullOrWhiteSpace($existingTicket) -and $existingTicket -ne $ticketKey -and -not $replaceExisting) {
+        throw "Existing $targetRelative points to '$existingTicket'. Pass replaceExisting=true only after confirming the current worktree belongs to '$ticketKey'."
+      }
+    } catch {
+      if (-not $replaceExisting) {
+        throw
+      }
+    }
+  }
+
+  $context = [ordered]@{
+    ticketKey = $ticketKey
+    branch = $branch
+  }
+  if (-not [string]::IsNullOrWhiteSpace($openspecChange)) {
+    $context["openspecChange"] = $openspecChange
+  }
+  foreach ($optionalKey in @("prNumber", "artifactCommitSha", "sourceRcVersion", "finalReleaseVersion")) {
+    if ($values.Contains($optionalKey) -and -not [string]::IsNullOrWhiteSpace([string]$values[$optionalKey])) {
+      $context[$optionalKey] = $values[$optionalKey]
+    }
+  }
+
+  Add-Item $result "actions" $targetRelative "" "Create or update ticket context lock for '$ticketKey' without copying another worktree's lock."
+  if (Test-ConfigWritesEnabled) {
+    $targetDirectory = Split-Path -Parent $target
+    if (-not (Test-Path -LiteralPath $targetDirectory)) {
+      New-Item -ItemType Directory -Path $targetDirectory -Force | Out-Null
+    }
+    ([pscustomobject]$context) | ConvertTo-Json -Depth 10 | Set-Content -Path $target -Encoding UTF8
+  }
+  return $result
+}
+
 function Invoke-SetClientTools {
   $result = New-Result
   $targetRelative = ".codex/client-tools.local.json"
@@ -1766,7 +3139,7 @@ function Invoke-SetClientTools {
   }
 
   $values = Convert-JsonToHashtable $ValuesJson
-  $config = Get-Content -Path $target -Raw | ConvertFrom-Json -Depth 20
+  $config = Get-Content -Path $target -Raw | ConvertFrom-Json
   foreach ($section in @("plane", "git", "gitea", "nexus", "pr")) {
     if ($values.Contains($section)) {
       Ensure-ObjectProperty -Object $config -Name $section
@@ -1836,10 +3209,17 @@ function Invoke-SetPrometheusAzureTargets {
 switch ($Mode) {
   "Audit" { $result = Invoke-Audit }
   "AuditQualityGates" { $result = Invoke-AuditQualityGates }
+  "AuditRecommendedTools" { $result = Invoke-AuditRecommendedTools }
+  "DiscoverProjectGuidance" { $result = Invoke-DiscoverProjectGuidance }
+  "AcquireProjectGuidance" { $result = Invoke-AcquireProjectGuidance }
   "ValidateGiteaActionsRunner" { $result = Invoke-ValidateGiteaActionsRunner }
   "InitLocalFiles" { $result = Invoke-InitLocalFiles }
   "InitQualityGateTemplates" { $result = Invoke-InitQualityGateTemplates }
   "SetClientTools" { $result = Invoke-SetClientTools }
+  "SetRecommendedTools" { $result = Invoke-SetRecommendedTools }
+  "MapProjectGuidanceStep" { $result = Invoke-MapProjectGuidanceStep }
+  "SyncWorktreeLocalConfig" { $result = Invoke-SyncWorktreeLocalConfig }
+  "EnsureDeliveryContext" { $result = Invoke-EnsureDeliveryContext }
   "SetPlaneEnv" { $result = Invoke-SetEnvMode -TargetRelative "infra/plane/variables.env" }
   "SetGiteaRunner" { $result = Invoke-SetEnvMode -TargetRelative "infra/gitea/runner.env" }
   "SetPrometheusAzureTargets" { $result = Invoke-SetPrometheusAzureTargets }

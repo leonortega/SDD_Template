@@ -9,13 +9,13 @@ description: Create a linked Plane bug from failed QA evidence, preserve failure
 
 Use this skill when QA finds a product defect after a ticket has reached QA. The original ticket stays in QA unless the user explicitly changes workflow policy. Create a linked bug with evidence, then start the normal fix workflow only when the defect requires code work.
 
-Before filing or linking tickets, read `.codex/skills/_shared/delivery-contract.md` for stable markers, ticket context lock, rerun behavior, and QA defect ownership rules.
+## Shared Context
+
+Before filing or linking tickets, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md`, with `docs/development.md` and `docs/deployment.md` as stage-specific docs.
 
 ## Configuration
 
 Read `.codex/client-tools.local.json` first. Required values are Plane settings and Git settings when a fix branch is needed.
-
-Never print or store real tokens, cookies, credentials, or sensitive QA payloads.
 
 ## Workflow
 
@@ -37,6 +37,10 @@ Never print or store real tokens, cookies, credentials, or sensitive QA payloads
 ## OpenSpec Policy
 
 Default to OpenSpec for product bugs and hotfixes. Skip OpenSpec only when the bug is explicitly marked `no-openspec`, `ops-only`, or the user explicitly requests no OpenSpec.
+
+## Output
+
+Report the parent ticket, QA validation failure, bug ticket link, evidence path or URL, whether a fix workflow was started, and the handoff owner for non-code defects.
 
 ## Failure Rules
 

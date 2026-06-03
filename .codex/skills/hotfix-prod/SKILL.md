@@ -11,13 +11,13 @@ Use this skill when PROD needs a targeted code fix rather than a rollback. It is
 
 Prefer `rollback-prod` when restoring a known-good artifact is enough.
 
-Before starting, read `.codex/skills/_shared/delivery-contract.md` and preserve its ticket context lock, artifact, QA, PROD, and rollback invariants.
+## Shared Context
+
+Before starting, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md`, with `docs/development.md` and `docs/deployment.md` as stage-specific docs.
 
 ## Configuration
 
 Read `.codex/client-tools.local.json` first. Required values are Plane, Git, Gitea, Nexus, and deployment settings used by the normal delivery skills.
-
-Never print or write real tokens, passwords, cookies, Azure credentials, or Nexus credentials.
 
 ## Workflow
 
@@ -36,6 +36,10 @@ Never print or write real tokens, passwords, cookies, Azure credentials, or Nexu
 - Keep hotfixes narrowly scoped to the production defect.
 - Do not bundle unrelated cleanup or feature work.
 - If the fix grows beyond a targeted change, stop and route to the normal `automatic-implement-ticket` flow.
+
+## Output
+
+Report the incident or hotfix ticket, branch, PR, validation performed, artifact/QA/PROD status when reached, and the next handoff or blocker.
 
 ## Failure Rules
 
