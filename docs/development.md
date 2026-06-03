@@ -102,9 +102,11 @@ Use `.codex/skills/delivery-retrospective-audit` to inspect recent delivery evid
 
 Retrospectives are read-only by default. Apply durable workflow changes only when the evidence shows a repeated pattern, a high-severity gap, direct drift from `.codex/skills/_shared/delivery-contract.md`, or a missing deterministic check for an already-required rule. The audit must not mutate Plane state, deploy, promote, tag, or create recurring automations unless the user explicitly requests that separate action.
 
+After a successful PROD deployment, `deploy-to-prod` automatically runs `delivery-retrospective-audit` in read-only `post-prod-ticket-release` mode. The audit writes sanitized learning evidence to ignored `.codex/agent-evals/results.local.json` and records a compact Plane marker, but it does not block or undo PROD success. Later retrospectives can use those results to identify repeated findings, eval coverage gaps, and recommended follow-up improvements.
+
 ## Agent Workflow Evals
 
-Agent behavior is evaluated separately from product behavior. The default workflow fixtures live in `.codex/agent-evals/workflow-cases.json` and cover ticket start, implementation, PR review, QA promotion, E2E QA, PROD promotion, and rollback.
+Agent behavior is evaluated separately from product behavior. The default workflow fixtures live in `.codex/agent-evals/workflow-cases.json` and cover ticket start, implementation, PR review, QA promotion, E2E QA, PROD promotion, post-PROD retrospective learning evidence, and rollback.
 
 Use these evals when changing delivery skills, adding new agent roles, changing model routing, or investigating repeated agent failures. Each case checks route selection, tool selection, argument precision, mutation gates, stop conditions, and handoff fields. New agent roles or routing complexity should be backed by eval evidence that the existing workflow struggled or became ambiguous.
 

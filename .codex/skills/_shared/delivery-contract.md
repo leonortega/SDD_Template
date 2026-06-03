@@ -186,6 +186,7 @@ Use these exact markers for idempotency:
 - E2E QA: `IA generated E2E QA: {ticketKey}`
 - QA bug: `IA generated QA bug: {parentTicketKey}`
 - PROD deployment: `IA generated PROD deployment: {finalVersion}`
+- Post-PROD retrospective: `IA generated post-PROD retrospective: {finalVersion}`
 - PROD rollback: `IA generated PROD rollback: {rollbackVersionOrCommit}`
 - PROD rollback incident: `IA generated PROD rollback incident: {rollbackVersionOrCommit}`
 - PROD hotfix: `IA generated PROD hotfix: {incidentOrTicketKey}`
@@ -195,6 +196,8 @@ Use these exact markers for idempotency:
 - Plane generated description block: `<!-- ia-generated:start -->` through `<!-- ia-generated:end -->`
 
 Before adding generated comments or moving states, read existing comments when the API allows it and treat matching markers as already completed.
+
+After a successful PROD deployment marker is recorded, `deploy-to-prod` runs a read-only `delivery-retrospective-audit` with `post-prod-ticket-release` scope. This audit stores sanitized learning evidence in ignored `.codex/agent-evals/results.local.json` and records the post-PROD retrospective marker on Plane. It is not a release gate and must not mutate Plane state, deploy, promote, tag, rewrite branches, update release manifests, create tickets, or apply docs, contract, skill, eval, test, or memory changes without a separate user request.
 
 ## Plane Comment Format
 
