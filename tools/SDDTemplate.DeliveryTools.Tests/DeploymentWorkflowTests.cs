@@ -402,6 +402,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("late-human-pr-feedback-manual-resume", caseIds);
             Assert.Contains("qa-promotion-artifact-lineage", caseIds);
             Assert.Contains("prod-explicit-artifact-promotion", caseIds);
+            Assert.Contains("post-prod-retrospective-learning-evidence", caseIds);
             Assert.Contains("rollback-no-main-rewrite", caseIds);
 
             Assert.Contains(".codex/agent-telemetry.local.jsonl", gitignore);
@@ -415,6 +416,72 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("eval-coverage", retrospective);
             Assert.Contains(".codex/delivery-policy.json", skillStartup);
             Assert.Contains("agentOptimization", skillStartup);
+        }
+
+        [Fact]
+        public void DeployToProdRequiresPostProdRetrospectiveLearningEvidence()
+        {
+            string root = FindRepositoryRoot().FullName;
+            string deployToProd = ReadSkill("deploy-to-prod", "SKILL.md");
+            string retrospective = ReadSkill("delivery-retrospective-audit", "SKILL.md");
+            string gitignore = File.ReadAllText(Path.Combine(root, ".gitignore"));
+            string contract = ReadSkill("_shared", "delivery-contract.md");
+            string developmentDocs = ReadDoc("development.md");
+            string deploymentDocs = ReadDoc("deployment.md");
+            string qualityGates = File.ReadAllText(Path.Combine(
+                root,
+                ".codex",
+                "skills",
+                "configure-dev-environment",
+                "references",
+                "quality-gates.md"));
+
+            Assert.Contains("## Post-PROD Retrospective", deployToProd);
+            Assert.Contains("post-prod-ticket-release", deployToProd);
+            Assert.Contains("IA generated post-PROD retrospective: {finalVersion}", deployToProd);
+            Assert.Contains(".codex/agent-evals/results.local.json", deployToProd);
+            Assert.Contains("must not mutate Plane state", deployToProd);
+            Assert.Contains("release handoff", deployToProd);
+
+            Assert.Contains("post-prod-ticket-release", retrospective);
+            Assert.Contains("### 6. Persist Post-PROD Learning Evidence", retrospective);
+            Assert.Contains("appliedChanges: false", retrospective);
+            Assert.Contains("IA generated post-PROD retrospective: {finalVersion}", retrospective);
+            Assert.Contains("recommend a follow-up improvement ticket instead of creating it", retrospective);
+            Assert.Contains(".codex/agent-evals/results.local.json", gitignore);
+            Assert.Contains("Post-PROD retrospective: `IA generated post-PROD retrospective: {finalVersion}`", contract);
+            Assert.Contains("post-prod-ticket-release", developmentDocs);
+            Assert.Contains("post-PROD retrospective", deploymentDocs);
+            Assert.Contains("post-PROD retrospective", qualityGates);
+        }
+
+        [Fact]
+        public void WorkflowEvalRequiresPostProdRetrospectiveLearningEvidence()
+        {
+            string root = FindRepositoryRoot().FullName;
+            using JsonDocument cases = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, ".codex", "agent-evals", "workflow-cases.json")));
+            JsonElement postProdCase = cases.RootElement.GetProperty("cases").EnumerateArray().Single(item =>
+                string.Equals(item.GetProperty("id").GetString(), "post-prod-retrospective-learning-evidence", StringComparison.Ordinal));
+
+            Assert.Equal("deploy-to-prod", postProdCase.GetProperty("stage").GetString());
+            Assert.Equal("delivery-retrospective-audit", postProdCase.GetProperty("expectedRoute").GetString());
+
+            string[] evidence = [.. postProdCase.GetProperty("requiredEvidence").EnumerateArray().Select(item => item.GetString() ?? string.Empty)];
+            string[] expectations = [.. postProdCase.GetProperty("toolExpectations").EnumerateArray().Select(item => item.GetString() ?? string.Empty)];
+            string[] stopConditions = [.. postProdCase.GetProperty("stopConditions").EnumerateArray().Select(item => item.GetString() ?? string.Empty)];
+            string[] unsafeMutations = [.. postProdCase.GetProperty("unsafeMutations").EnumerateArray().Select(item => item.GetString() ?? string.Empty)];
+            string[] handoffFields = [.. postProdCase.GetProperty("handoffFields").EnumerateArray().Select(item => item.GetString() ?? string.Empty)];
+
+            Assert.Contains("successful PROD deployment marker", evidence);
+            Assert.Contains(".codex/agent-evals/results.local.json ignored path", evidence);
+            Assert.Contains("Invoke delivery-retrospective-audit in read-only post-prod-ticket-release mode", expectations);
+            Assert.Contains("Add or reuse Plane marker IA generated post-PROD retrospective: {finalVersion}", expectations);
+            Assert.Contains("PROD deployment has not succeeded", stopConditions);
+            Assert.Contains("move Plane ticket state", unsafeMutations);
+            Assert.Contains("apply docs, delivery contract, skill, eval, test, or memory changes automatically", unsafeMutations);
+            Assert.Contains("localResultPath", handoffFields);
+            Assert.Contains("planeRetrospectiveMarker", handoffFields);
+            Assert.Contains("appliedChanges", handoffFields);
         }
 
         [Fact]

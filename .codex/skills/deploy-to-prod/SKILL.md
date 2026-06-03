@@ -41,7 +41,7 @@ Optional environment variables override local JSON when present:
 
 ## Workflow
 
-Run preflight, main/tag promotion, PROD deployment, PROD verification, Plane result, and release handoff steps in order. Do not continue to the next step until the prior validation evidence is present.
+Run preflight, main/tag promotion, PROD deployment, PROD verification, Plane result, post-PROD retrospective, and release handoff steps in order. Do not continue to the next step until the prior validation evidence is present.
 
 ## Preflight
 
@@ -157,9 +157,23 @@ The comment must include:
 
 Only write a success result after the workflow passed and direct PROD page plus `/health` verification passed. If app checks fail, write a failure comment and stop. If only local monitoring is unavailable, deployment may still pass, but the comment must state monitoring verification was unavailable.
 
+## Post-PROD Retrospective
+
+After a successful PROD result comment is recorded, automatically run `delivery-retrospective-audit` in read-only `post-prod-ticket-release` mode for the just-promoted ticket. Pass the resolved ticket key, artifact commit, final release version, PROD URL, and Nexus release manifest path or URL as the audit scope.
+
+This retrospective is a learning-evidence step, not a release gate. PROD success remains based on the artifact, workflow, direct PROD page, and `/health` validation above. If the retrospective cannot inspect optional evidence, report the evidence gap in the final handoff and keep the successful PROD result intact.
+
+The retrospective must persist compact, sanitized learning evidence:
+
+- append or update local audit result data in ignored `.codex/agent-evals/results.local.json`,
+- add or reuse a compact Plane comment with marker `IA generated post-PROD retrospective: {finalVersion}`,
+- include findings, recommended durable improvements, eval coverage gaps, residual evidence gaps, and follow-up ownership when applicable.
+
+The retrospective must not mutate Plane state, deploy, promote, tag, rewrite branches, update release manifests, create tickets, schedule automations, or apply docs, contract, skill, eval, or memory changes unless the user separately asks for apply mode. Do not include secrets, raw tool payloads, full prompts, tokens, cookies, or credential-bearing URLs in the local result or Plane comment.
+
 ## Output
 
-Report the final release version, PROD URL, final tag, deployed artifact commit, validation results, Plane comment status, and any handoff or monitoring gaps.
+Report the final release version, PROD URL, final tag, deployed artifact commit, validation results, Plane PROD comment status, post-PROD retrospective result path and Plane marker status, and any handoff, audit, or monitoring gaps.
 
 ## Failure Rules
 

@@ -40,7 +40,7 @@ app/{commitSha}/release.json
 
 DEV and QA deploy from `dev` and must use the same Nexus artifacts for the same commit SHA. The deploy workflow reads `infra/deployment/apps.json`, publishes one ZIP per deployable app, deploys each ZIP to its matching Azure App Service app, and requires web page checks plus every app `/health` smoke check. After QA smoke checks pass, push a `qa/{ticketKey}` branch from current `dev`; Gitea Actions runs the committed Playwright QA E2E suite against `AZURE_QA_SITE_APP_URL` and `AZURE_QA_API_APP_URL` without redeploying, and stores evidence against the branch point artifact commit from `dev`. This job produces evidence only and does not move Plane state, create RC tags, or update release lineage.
 
-PROD deploys only a QA-approved existing Nexus artifact. PROD does not rebuild. Promotion requires a final version, source RC version, verified artifact commit, and successful PROD web page plus web/API `/health` checks.
+PROD deploys only a QA-approved existing Nexus artifact. PROD does not rebuild. Promotion requires a final version, source RC version, verified artifact commit, and successful PROD web page plus web/API `/health` checks. After successful PROD evidence is recorded, the workflow runs a read-only post-PROD retrospective for the just-promoted ticket and stores sanitized learning evidence in ignored `.codex/agent-evals/results.local.json` plus a compact Plane marker. This retrospective is learning evidence for later workflow improvements, not a release gate.
 
 ## QA Evidence And Versions
 
