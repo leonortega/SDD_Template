@@ -27,6 +27,8 @@ rules:
   tasks:
     - Include implementation, tests, quality gates, and docs/context review.
     - Include recommendation-audit updates when tooling or stack guidance changes.
+    - Include a Review Workload Forecast with estimated changed lines, 400-line budget risk, chained PR recommendation, apply decision, delivery strategy, and suggested work units.
+    - Keep work units behavior-oriented with code, tests, and docs together; do not split only by file type.
   spec:
     - Use SHALL requirements with observable scenarios.
     - Avoid implementation-only details unless needed to prevent ambiguity.

@@ -59,6 +59,7 @@ Required/defaulted values:
    openspec instructions apply --change "<change>" --json
    ```
 8. Read every context file returned by the apply instructions.
+9. Classify delivery risk from ticket text, OpenSpec artifacts, changed/planned paths, and estimated changed lines using the shared delivery contract. Prefer `tools/SDDTemplate.DeliveryTools ClassifyDeliveryRisk` when available. Record `low`, `standard`, or `high` in the PR body and Plane handoff.
 
 ### 2. Discover Quality Gates
 
@@ -94,11 +95,14 @@ Use `ValidateGiteaActionsRunner` whenever Gitea Actions fails before repository 
 
 Follow `openspec-apply-change`:
 
-1. Implement pending OpenSpec tasks one at a time.
-2. Add or update tests for changed behavior.
-3. Mark a task complete only after its code and related tests are updated.
-4. If implementation reveals extra required work, add a new OpenSpec task before doing that work.
-5. Keep OpenSpec specs, design notes, and tasks aligned with the latest implementation.
+1. Verify the active `tasks.md` contains the Review Workload Forecast required by the shared delivery contract. Prefer `tools/SDDTemplate.DeliveryTools ParseWorkloadForecast` when available.
+2. If the forecast requires a decision before apply, stop before editing code unless a split/chained work-unit plan, `size:exception`, or `exception-ok` is recorded in the prompt or OpenSpec artifacts.
+3. Implement pending OpenSpec tasks one at a time.
+4. Add or update tests for changed behavior.
+5. Mark a task complete only after its code and related tests are updated.
+6. If implementation reveals extra required work, add a new OpenSpec task before doing that work.
+7. Keep OpenSpec specs, design notes, and tasks aligned with the latest implementation.
+8. Commit by deliverable work unit when practical: code, tests, and docs for the same behavior stay together. Do not split only by file type.
 
 ### 4. Quality And Coverage Completion
 
@@ -169,6 +173,8 @@ The PR body must include:
 - Context findings: added/updated/none
 - Docs updated: <files> or Docs: no durable context changes
 - `Memory updated: <files>` or `Memory updated: none`
+- Delivery risk: low/standard/high
+- Review workload forecast: low/medium/high and split/exception decision when applicable
 - Assumptions recorded: <short list or none>
 - remaining non-blocking infra notes
 - known non-blocking product risks or gaps
@@ -204,6 +210,8 @@ Add a Plane comment with:
 - Context findings: added/updated/none
 - Docs updated: <files> or Docs: no durable context changes
 - `Memory updated: <files>` or `Memory updated: none`
+- Delivery risk: low/standard/high
+- Review workload forecast: low/medium/high and split/exception decision when applicable
 - Assumptions recorded: <short list or none>
 - remaining non-blocking infra notes
 - remaining non-blocking risks or gaps
@@ -230,6 +238,8 @@ Report the ticket, branch, OpenSpec change, PR URL, commits pushed, validation a
 - Invalid coverage config: use `80`, report the issue, and do not lower the gate.
 - Failing coverage: add/update OpenSpec task and tests before completion.
 - Missing local coverage command: report the gap; do not invent a command when CI is the only configured coverage source.
+- Missing Review Workload Forecast: update OpenSpec tasks before implementation, or stop if the forecast cannot be derived safely.
+- Oversized/high workload without split or `size:exception`: stop before implementation and request or record the required decision.
 - Flaky test or CI failure: rerun once before classifying; do not edit product code solely for an unconfirmed intermittent failure.
 - Gitea Actions infra/tooling failure: route through `configure-dev-environment`, `configure-gitea-actions-runner`, or `configure-quality-gates`; run `ValidateGiteaActionsRunner` when runner/container compatibility is implicated; do not classify it as a product implementation defect.
 - Ignored local secret findings from full local scans: report as local setup notes unless the same secret is staged, tracked, or reported by CI.

@@ -82,6 +82,76 @@ PROD promotion is explicit. Do not promote to PROD only because QA passed unless
 
 Push-triggered environment deployment is allowed only for ticket-named work. The ticket key pattern is configured in `.codex/delivery-policy.json`. The commit message must start with the configured ticket key format, such as `E2EPROJECT-123: ...`, or be a Gitea merge commit whose PR title starts with that ticket key format. `[SDD]`, `openspec/...`, and maintenance-only commits do not deploy environments.
 
+## Risk-Adaptive Workflow Depth
+
+Strict delivery gates remain mandatory. Risk-adaptive depth changes how much planning, review, and context loading is required, not whether Plane, OpenSpec, PR validation, QA, artifact promotion, PROD, rollback, or secret-safety gates can be skipped.
+
+Classify delivery risk as:
+
+- `low`: localized docs, text, or clearly bounded low-impact changes with no deployable, API, data, auth, secret, workflow, or release-surface impact.
+- `standard`: normal feature, bug, test, or workflow work that crosses implementation and validation but does not touch high-risk surfaces.
+- `high`: work touching auth, authorization, persistence, migrations, deployment workflows, secrets, public APIs, `/health`, release manifests, Nexus/Azure/Gitea Actions, rollback/hotfix, or large diffs.
+
+Use `.codex/skills/_shared/scripts/delivery_tools.ps1` or `tools/SDDTemplate.DeliveryTools` deterministic helpers when available. Low-risk work may use compact planning and review summaries, but must still preserve ticket context, branch/PR handoff, validation evidence, docs/memory classification, and configured quality gates. High-risk work requires full workload forecast handling, adversarial review, deployment topology checks when applicable, and explicit evidence in PR and Plane handoff comments.
+
+## Ticket Refinement Gate
+
+Before `plane-start-ticket` mutates Git, Plane state, the delivery lock, or OpenSpec, classify the ticket as:
+
+- `ready`: includes a user-visible goal, concrete acceptance criteria, and validation expectations.
+- `enrichable`: intent is clear enough to proceed after adding concrete generated acceptance criteria, affected areas, validation expectations, risks, and definition of done to the managed Plane block.
+- `blocked`: product or technical intent is too vague to safely generate acceptance criteria.
+
+For `enrichable`, update only the generated Plane block and continue. For `blocked`, stop before branch, Plane state, delivery lock, or OpenSpec mutation and report the missing intent. Do not create a second planning artifact for refinement; Plane managed block plus OpenSpec remain the planning surfaces.
+
+## Review Workload Forecast
+
+OpenSpec `tasks.md` for ticketed implementation must include a compact `Review Workload Forecast` near the top:
+
+```text
+Estimated changed lines: <rough range or number>
+400-line budget risk: Low|Medium|High
+Chained PRs recommended: Yes|No
+Decision needed before apply: Yes|No
+Delivery strategy: ask-on-risk|auto-chain|single-pr|exception-ok
+Suggested work units: <single PR or PR 1 -> PR 2 -> PR 3>
+```
+
+If the forecast says `400-line budget risk: High`, `Chained PRs recommended: Yes`, or `Decision needed before apply: Yes`, implementation must not start until the prompt, Plane/OpenSpec artifacts, or user decision records one of:
+
+- split/chained work-unit plan,
+- `size:exception`,
+- `exception-ok`.
+
+Work units must be deliverable behavior slices. Keep code, tests, and docs for the same behavior together; do not split commits or PRs only by file type.
+
+## Adversarial Review
+
+`gitea-pr-review-agent` must run an adversarial pass when requested explicitly or when risk is `high`, including auth, authorization, persistence, migrations, deployment workflows, secrets, public APIs, `/health`, release manifests, rollback/hotfix, or large diffs. The pass reads Plane/OpenSpec acceptance criteria first, then tries to disprove implementation compliance through negative paths, idempotency, security, data-loss, deployment, and missing-test scenarios.
+
+Adversarial review output must include one verdict:
+
+- `PASS`: no blockers or meaningful gaps.
+- `PASS WITH GAPS`: no blockers, but warnings or tracked gaps remain.
+- `FAIL`: blocker, missing proof for required behavior, or high-risk unresolved issue.
+
+Adversarial findings feed the same `pr-review-feedback-loop` as normal AI review findings. Do not create a separate review workflow.
+
+## Installed Skill Runtime Index
+
+Project guidance remains the broad catalog for skills, tools, references, practices, standards, MCPs, and plugins. The installed-skill runtime index is only a derived cache of actual `.codex/skills/*/SKILL.md` files and exact paths for delegation.
+
+Rules:
+
+- The index must be ignored local state and secret-free.
+- Cache by schema version plus skill path, mtime, and size so unchanged skills are cheap to reuse.
+- `SKILL.md` remains the source of truth; the index does not summarize, rewrite, acquire, accept, dismiss, or replace project guidance.
+- Coordinator skills may use the index to pass exact skill paths to child agents, while `project-guidance-*` continues to own broad guidance discovery, acquisition, and mapping.
+
+## Anti-Duplication And Skill Size
+
+Do not create parallel catalogs, planning artifacts, review workflows, or quality-command lists when an existing repo-owned surface already exists. Put cross-cutting automation rules in this contract first, explain human intent in `docs/`, and keep stage skills focused on activation, hard rules, decision gates, execution steps, and output contracts. Move long examples, API endpoint details, and edge-case prose to local `references/` files or deterministic scripts when practical.
+
 ## Ticket Context Lock
 
 Normal automatic delivery must stay locked to one Plane ticket. Use ignored `.codex/delivery-context.local.json` as the local ticket context lock. Never commit it.
@@ -233,6 +303,11 @@ Use `.codex/skills/_shared/scripts/delivery_tools.ps1` for deterministic deliver
 - `ValidateTicketLock`: compare resolved ticket, branch, PR, artifact commit, RC, or final version against `.codex/delivery-context.local.json`.
 - `ValidateDeploymentLane`: enforce serialized deployment ownership from `.codex/parallel-delivery.local.json`.
 - `ValidateParallelDeliveryDryRun`: validate enabled state, planned ticket/worktree/branch uniqueness, serialized lane ownership, supported lane policy, and required ignored local runtime files without mutating Git, Plane, Gitea, Nexus, or Azure.
+- `ClassifyTicketReadiness`: classify Plane ticket text as `ready`, `enrichable`, or `blocked`.
+- `ClassifyDeliveryRisk`: classify planned or changed work as `low`, `standard`, or `high`.
+- `ParseWorkloadForecast`: parse required `Review Workload Forecast` guard lines from OpenSpec tasks.
+- `DetectAdversarialReviewTrigger`: determine whether PR review needs adversarial mode.
+- `WriteInstalledSkillIndex`: write or reuse the ignored installed-skill runtime index and cache.
 - `RenderPlaneComment`: render standard Markdown Plane comments for QA deployment, E2E QA, PROD deployment, and workflow timing.
 - `UpdateReleaseManifest`: merge stage-specific fields into `release.json` while preserving existing metadata, then validate the result.
 
