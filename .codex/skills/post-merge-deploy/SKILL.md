@@ -11,13 +11,13 @@ Use this skill after a PR has merged to `dev` but before QA promotion. It is an 
 
 Do not perform DEV/QA validation inside this skill. `deploy-to-qa` owns artifact promotion and environment checks.
 
-Before running, read `.codex/skills/_shared/delivery-contract.md`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode ArtifactPaths` when building Nexus artifact paths. Enforce the ticket context lock before delegating to `deploy-to-qa`.
+## Shared Context
+
+Before running, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` helpers: `ValidateTicketLock` for `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, and `ArtifactPaths`.
 
 ## Configuration
 
 Read `.codex/client-tools.local.json` first. Required values are Plane, Gitea, and Nexus settings used by `deploy-to-qa`.
-
-Never print or write real tokens, passwords, cookies, Azure credentials, or Nexus credentials.
 
 ## Workflow
 
@@ -26,10 +26,11 @@ Never print or write real tokens, passwords, cookies, Azure credentials, or Nexu
 3. Verify the PR does not currently have configured `pr.labels.needsChanges` or `pr.labels.needsTests`.
 4. Resolve the merge commit SHA from Gitea metadata.
 5. Resolve the Plane ticket key from the PR title/body, branch name, commit messages, or Plane comments.
-6. Read `.codex/delivery-context.local.json` when present and verify the resolved ticket key, PR number, branch, and merge commit when known match the lock. If any resolved value belongs to another ticket, stop before waiting for artifacts.
+6. Run `ValidateTicketLock` with the resolved ticket key, PR number, branch, and merge/artifact commit when known. If the result is invalid, stop before waiting for artifacts.
 7. Poll for the Nexus artifact files for the merge commit:
-   - `app/{commitSha}/app.zip`
-   - `app/{commitSha}/app.zip.sha256`
+   - `app/{commitSha}/deployable-apps.json`
+   - one `app/{commitSha}/{artifactName}` per topology app
+   - one `app/{commitSha}/{artifactName}.sha256` per topology app
    - `app/{commitSha}/commit.sha`
    - `app/{commitSha}/release.json` when present
 8. Use bounded waiting: check immediately, then retry with backoff for up to 10 minutes unless the user asked for a shorter wait.
@@ -42,6 +43,10 @@ Never print or write real tokens, passwords, cookies, Azure credentials, or Nexu
 - If the QA deployment marker `IA generated QA deployment: {commitSha}` already exists and the ticket is in QA, report that QA promotion is already complete.
 - If the artifact exists, skip waiting and delegate immediately.
 - If labels were stale but have since been removed, continue.
+
+## Output
+
+Report the PR, merge commit, artifact availability, validation status, deployment-lane result, invoked child skill, and handoff to QA or the blocker found.
 
 ## Failure Rules
 

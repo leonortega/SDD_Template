@@ -1,6 +1,6 @@
 ---
 name: rollback-prod
-description: Roll back PROD to a previously verified Nexus artifact. Use when Codex needs to choose a known-good release from release.json metadata, redeploy app/{commitSha}/app.zip to PROD without rebuilding, verify PROD page and /health, check Prometheus/Grafana when available, and comment rollback evidence on Plane.
+description: Roll back PROD to previously verified Nexus topology artifacts. Use when Codex needs to choose a known-good release from release.json metadata, redeploy app/{commitSha}/deployable-apps.json and per-app ZIPs to PROD without rebuilding, verify PROD page and all app /health checks, check Prometheus/Grafana when available, and comment rollback evidence on Plane.
 ---
 
 # Rollback PROD
@@ -9,7 +9,9 @@ description: Roll back PROD to a previously verified Nexus artifact. Use when Co
 
 Use this skill when PROD must be restored to a previous known-good artifact. Rollback is a deployment operation, not a rebuild. It must redeploy an existing Nexus artifact and preserve release traceability.
 
-Before rollback, read `.codex/skills/_shared/delivery-contract.md`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode ArtifactPaths` and `-Mode ValidateReleaseManifest` when checking rollback candidates. Rollback may target an incident/release rather than the active ticket lock, but a mismatch must be explicit.
+## Shared Context
+
+Before rollback, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` helpers: `ArtifactPaths`, `ValidateReleaseManifest`, `ValidateTicketLock`, and `UpdateReleaseManifest`. Rollback may target an incident/release rather than the active ticket lock, but a mismatch must be explicit.
 
 ## Configuration
 
@@ -19,17 +21,20 @@ Read `.codex/client-tools.local.json` first. Required values:
 - `gitea.baseUrl`, `gitea.apiToken`, `gitea.owner`, `gitea.repo`
 - `nexus.baseUrl`, `nexus.username`, `nexus.password`, `nexus.repository`
 
-Never print, commit, paste into tickets, or write real tokens, Nexus credentials, Azure credentials, or secrets.
+## Workflow
+
+Run preflight, rollback deployment, verification, Plane result, and follow-up handoff steps in order. Do not mutate PROD until artifact and release-manifest validation pass.
 
 ## Preflight
 
 1. Resolve the current PROD release from the latest Plane PROD deployment comment or release manifest.
-2. Read `.codex/delivery-context.local.json` when present and report the active ticket lock. If the rollback target differs from the lock, require explicit user confirmation before mutation.
+2. Run `ValidateTicketLock` when `.codex/delivery-context.local.json` is present and report the active ticket lock. If the rollback target differs from the lock, require explicit user confirmation before mutation.
 3. If the user did not supply a rollback target, list known-good candidates from Plane PROD comments, Git tags, and Nexus `release.json` metadata. Order newest-first, mark the current PROD release, and ask the user to choose a target before mutating anything.
 4. Resolve the rollback target from user input, Plane PROD comments, Git tags, or Nexus `release.json` metadata.
 5. Verify the target artifact exists:
-   - `app/{commitSha}/app.zip`
-   - `app/{commitSha}/app.zip.sha256`
+   - `app/{commitSha}/deployable-apps.json`
+   - one `app/{commitSha}/{artifactName}` per topology app
+   - one `app/{commitSha}/{artifactName}.sha256` per topology app
    - `app/{commitSha}/commit.sha`
    - `app/{commitSha}/release.json`
 6. Verify checksum and `commit.sha`.
@@ -47,7 +52,7 @@ release_version={rollbackVersionOrTag}
 source_rc_version={sourceRcVersion}
 ```
 
-The workflow must download `app/{artifact_commit_sha}/app.zip`, verify checksum, deploy the ZIP, and run page plus `/health` checks. Do not rebuild.
+The workflow must download `app/{artifact_commit_sha}/deployable-apps.json`, download every listed app ZIP, verify every checksum, deploy the ZIPs, and run page plus all app `/health` checks. Do not rebuild.
 
 ## Verification
 
@@ -68,7 +73,7 @@ IA generated PROD rollback: {rollbackVersionOrCommit}
 
 Include current PROD version/commit, rollback target version/commit, Nexus artifact URL, checksum, release manifest URL, workflow run URL, PROD URL, page status, `/health` status, Prometheus/Grafana status, and failure or success result.
 
-Update `app/{commitSha}/release.json` with rollback deployment timestamp, workflow run URL, PROD URL, and rollback source/current version relationship when rollback passes.
+Use `UpdateReleaseManifest` to update `app/{commitSha}/release.json` with rollback deployment timestamp, workflow run URL, PROD URL, and rollback source/current version relationship when rollback passes.
 
 Create or update a Plane incident ticket with marker:
 
@@ -79,6 +84,10 @@ IA generated PROD rollback incident: {rollbackVersionOrCommit}
 Record who or what requested the rollback when known, why it was needed, current PROD before rollback, rollback target, timeline, verification evidence, and follow-up decision.
 
 After rollback, explicitly document Git state. `main` is not automatically reverted. Require one follow-up: open a hotfix PR, open a revert PR, or record an accepted temporary divergence note with owner and expected resolution.
+
+## Output
+
+Report the rollback target, current and restored PROD versions, artifact commit, validation results, Plane rollback comment, incident/follow-up handoff, and any remaining Git-line divergence.
 
 ## Failure Rules
 

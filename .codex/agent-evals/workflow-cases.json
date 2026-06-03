@@ -1,0 +1,258 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "id": "ticket-start-lock-created",
+      "stage": "plane-start-ticket",
+      "goal": "Start one Plane Todo ticket and prepare implementation context.",
+      "expectedRoute": "plane-start-ticket",
+      "requiredEvidence": [
+        "Plane ticket key and current state",
+        "base branch",
+        "branch name",
+        "OpenSpec change id or explicit no-OpenSpec rationale",
+        ".codex/delivery-context.local.json shape"
+      ],
+      "toolExpectations": [
+        "Read existing generated Plane markers before adding new generated comments",
+        "Validate ticket key against .codex/delivery-policy.json",
+        "Create or reuse exactly one branch for the ticket"
+      ],
+      "stopConditions": [
+        "Several Todo tickets are plausible and no ticket was requested",
+        "existing ticket lock points at a different ticket",
+        "branch naming conflicts with durable Plane or Git checkpoints"
+      ],
+      "handoffFields": [
+        "ticketKey",
+        "branch",
+        "openspecChange",
+        "validation",
+        "assumptions"
+      ]
+    },
+    {
+      "id": "implementation-quality-gated",
+      "stage": "implement-ticket",
+      "goal": "Implement scoped ticket work and hand off a reviewable PR.",
+      "expectedRoute": "implement-ticket",
+      "requiredEvidence": [
+        "ticket lock",
+        "Plane acceptance criteria",
+        "active OpenSpec tasks",
+        "OpenSpec PR Review Feedback tasks",
+        "relevant code and tests",
+        ".codex/quality.local.json or tracked default"
+      ],
+      "toolExpectations": [
+        "Use repository commands before inventing new quality gates",
+        "Run build, tests, formatting, or explain why a gate could not run",
+        "Run Context Findings Review before handoff",
+        "Create Plane PR feedback detected and fixes markers for each unresolved feedback batch"
+      ],
+      "stopConditions": [
+        "resolved ticket differs from the lock",
+        "OpenSpec tasks conflict with Plane acceptance criteria",
+        "OpenSpec PR Review Feedback tasks remain incomplete",
+        "required quality gate fails without an explicit blocker"
+      ],
+      "handoffFields": [
+        "ticketKey",
+        "branch",
+        "prNumberOrUrl",
+        "validation",
+        "contextFindings",
+        "docsUpdated",
+        "memoryUpdated"
+      ]
+    },
+    {
+      "id": "pr-review-labels-and-findings",
+      "stage": "gitea-pr-review-agent",
+      "goal": "Review a Gitea PR and apply review labels consistently.",
+      "expectedRoute": "gitea-pr-review-agent",
+      "requiredEvidence": [
+        "PR diff",
+        "head SHA",
+        "CI status",
+        "ticket and OpenSpec context",
+        "existing review marker"
+      ],
+      "toolExpectations": [
+        "Post review marker for the inspected head SHA",
+        "Emit stable finding ids for every AI review finding",
+        "Use BLOCKER, WARNING, or SUGGESTION severity",
+        "Apply needs-tests or needs-changes only when evidence supports it"
+      ],
+      "stopConditions": [
+        "PR head SHA changes during review",
+        "ticket context cannot be resolved",
+        "CI status is unavailable for a promotion-blocking decision"
+      ],
+      "handoffFields": [
+        "prNumber",
+        "headSha",
+        "findings",
+        "labels",
+        "validation"
+      ]
+    },
+    {
+      "id": "late-human-pr-feedback-manual-resume",
+      "stage": "automatic-implement-ticket",
+      "goal": "Reconnect automation after humans add PR comments after the AI review loop already completed.",
+      "expectedRoute": "implement-ticket",
+      "requiredEvidence": [
+        "Plane ticket is In Review",
+        "open PR with current head SHA",
+        "existing AI review marker and clean labels from an earlier batch",
+        "new human top-level or inline PR comment ids",
+        "Plane PR feedback detection and fix batch markers",
+        "OpenSpec PR Review Feedback tasks"
+      ],
+      "toolExpectations": [
+        "Manual resume scans PR comments instead of relying on webhook or polling",
+        "Delegate feedback processing to pr-review-feedback-loop",
+        "Derive a new feedbackBatchId from sorted late human comment source ids",
+        "Create or update OpenSpec PR Review Feedback tasks before fixing",
+        "Keep Plane In Review while applying late human feedback fixes",
+        "Rerun AI review on the pushed fix before handoff"
+      ],
+      "stopConditions": [
+        "late human comment source ids are already covered by a completed feedback batch",
+        "human feedback is ambiguous or conflicts with ticket, OpenSpec, or security policy",
+        "needs-tests or needs-changes remains after feedback fixes"
+      ],
+      "handoffFields": [
+        "ticketKey",
+        "prNumberOrUrl",
+        "headSha",
+        "feedbackBatchId",
+        "openSpecFeedbackTasks",
+        "validation"
+      ]
+    },
+    {
+      "id": "qa-promotion-artifact-lineage",
+      "stage": "deploy-to-qa",
+      "goal": "Promote a merged PR artifact through DEV and QA without rebuilding.",
+      "expectedRoute": "deploy-to-qa",
+      "requiredEvidence": [
+        "merged PR",
+        "merge commit SHA",
+        "Nexus app/{commitSha} files",
+        "release.json",
+        "DEV and QA health checks"
+      ],
+      "toolExpectations": [
+        "Validate release manifest before mutation",
+        "Verify each topology artifact checksum",
+        "Update Plane only after artifact and deployment checks pass"
+      ],
+      "stopConditions": [
+        "PR has needs-tests or needs-changes",
+        "release.json planeTicketKey differs from the ticket lock",
+        "deployment lane is owned by another ticket"
+      ],
+      "handoffFields": [
+        "ticketKey",
+        "commitSha",
+        "artifactPath",
+        "devUrl",
+        "qaUrl",
+        "validation"
+      ]
+    },
+    {
+      "id": "e2e-qa-evidence-done",
+      "stage": "test-e2e",
+      "goal": "Run ticket-specific QA and move only passing tickets to Done.",
+      "expectedRoute": "test-e2e",
+      "requiredEvidence": [
+        "QA Plane state",
+        "QA deployment marker",
+        "ticket acceptance criteria",
+        "tested URLs",
+        "ignored QA evidence path"
+      ],
+      "toolExpectations": [
+        "Store evidence under an ignored artifacts path",
+        "Create a QA bug instead of moving to Done when product behavior fails",
+        "Comment PASS or FAIL evidence with the stable marker"
+      ],
+      "stopConditions": [
+        "ticket is not in QA",
+        "QA evidence path is not ignored",
+        "acceptance criteria cannot be verified"
+      ],
+      "handoffFields": [
+        "ticketKey",
+        "qaResult",
+        "evidencePathOrUrl",
+        "testedUrls",
+        "defects"
+      ]
+    },
+    {
+      "id": "prod-explicit-artifact-promotion",
+      "stage": "deploy-to-prod",
+      "goal": "Promote only a QA-approved artifact to PROD after explicit user intent.",
+      "expectedRoute": "deploy-to-prod",
+      "requiredEvidence": [
+        "Plane Done state",
+        "QA-approved artifact commit",
+        "source RC tag",
+        "main target commit",
+        "release.json",
+        "PROD health checks"
+      ],
+      "toolExpectations": [
+        "Require explicit PROD intent",
+        "Validate RC and final tag lineage",
+        "Deploy the existing Nexus artifact without rebuilding"
+      ],
+      "stopConditions": [
+        "main diverges from the intended QA-approved commit",
+        "release manifest conflicts with Plane or tags",
+        "source RC version is ambiguous"
+      ],
+      "handoffFields": [
+        "ticketKey",
+        "finalReleaseVersion",
+        "finalTag",
+        "prodUrl",
+        "validation",
+        "monitoringStatus"
+      ]
+    },
+    {
+      "id": "rollback-no-main-rewrite",
+      "stage": "rollback-prod",
+      "goal": "Roll PROD back to a known-good artifact without rewriting main.",
+      "expectedRoute": "rollback-prod",
+      "requiredEvidence": [
+        "current PROD release",
+        "known-good artifact",
+        "release manifest lineage",
+        "rollback incident or explicit target",
+        "PROD health checks"
+      ],
+      "toolExpectations": [
+        "Report active ticket lock mismatch before mutation",
+        "Deploy a previously verified Nexus artifact",
+        "Record follow-up ownership for code-line divergence"
+      ],
+      "stopConditions": [
+        "known-good artifact cannot be validated",
+        "rollback target is ambiguous",
+        "explicit rollback confirmation is missing"
+      ],
+      "handoffFields": [
+        "rollbackVersionOrCommit",
+        "prodUrl",
+        "validation",
+        "followUpRequired"
+      ]
+    }
+  ]
+}

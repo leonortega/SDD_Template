@@ -1,0 +1,26 @@
+{
+  "$schema": "./apps.schema.json",
+  "version": 1,
+  "apps": [
+    {
+      "appId": "site",
+      "projectPath": "src/SDDTemplate.Site/SDDTemplate.Site.csproj",
+      "role": "web",
+      "artifactName": "site.zip",
+      "healthPath": "/health",
+      "deployOrder": 20,
+      "dependsOn": [
+        "api"
+      ]
+    },
+    {
+      "appId": "api",
+      "projectPath": "src/SDDTemplate.Api/SDDTemplate.Api.csproj",
+      "role": "api",
+      "artifactName": "api.zip",
+      "healthPath": "/health",
+      "deployOrder": 10,
+      "dependsOn": []
+    }
+  ]
+}

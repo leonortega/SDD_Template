@@ -5,9 +5,17 @@ description: Configure Plane ticket workflow for this repo, including Plane API 
 
 # Configure Plane Workflow
 
+## Overview
+
+Configure Plane ticket workflow values used for local ticket state, validation, and delivery handoff.
+
+## Shared Context
+
 Read `.codex/skills/configure-dev-environment/references/plane.md` before asking for values or applying changes.
 
 Use the shared script at `.codex/skills/configure-dev-environment/scripts/configure_infra_tools.ps1`.
+
+Apply `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md` before changing ticket workflow behavior or handoff rules.
 
 Safety:
 
@@ -16,7 +24,7 @@ Safety:
 - Do not start or stop local infra without explicit user approval.
 - Use Plane API for live validation; do not use Plane MCP or direct database queries.
 
-Workflow:
+## Workflow
 
 1. Run `Audit`.
 2. Initialize local files with `InitLocalFiles` only if needed.
@@ -24,3 +32,13 @@ Workflow:
 4. Apply confirmed `.codex/client-tools.local.json` values with `SetClientTools`.
 5. Apply confirmed `infra/plane/variables.env` values with `SetPlaneEnv`.
 6. Perform live Plane API validation only when infra is running or the user approves starting it.
+
+## Output
+
+Report configured Plane fields, missing values, validation status, and ticket handoff blockers without exposing tokens or generated secrets.
+
+## Failure Rules
+
+- Stop when Plane API values, workspace/project identifiers, or state names are missing.
+- Stop before reading secrets from containers, mounted volumes, databases, or logs.
+- Stop before using Plane MCP or direct database access for ticket delivery.
