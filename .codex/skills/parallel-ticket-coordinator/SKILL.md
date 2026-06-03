@@ -162,7 +162,13 @@ With `deploymentLanePolicy` set to `serialized`, only one ticket may own the sha
 - Missing worktree: report the ticket and branch, then recreate only after durable checkpoints confirm the same ticket/branch mapping.
 - Blocked ticket: keep the ticket entry, record the blocker, and route other independent tickets if max active tickets and lane ownership allow it.
 - Lane-owner conflict: preserve the owner until QA evidence, PROD evidence, rollback/hotfix handoff, or a clear blocker releases the lane.
-- Completed ticket: remove the ticket from the local runtime index only after PR, QA, or PROD handoff evidence reaches a stable checkpoint.
+- Completed ticket: after QA evidence is recorded and the Plane ticket is moved to Done, run teardown from the coordinator checkout only:
+  1. Verify `git -C <worktreePath> status --porcelain` is empty.
+  2. Verify the worktree branch is merged into configured `git.baseBranch`, for example `git merge-base --is-ancestor <branch> <baseBranch>`.
+  3. Verify no deployment lane owner still references the ticket.
+  4. Run `git worktree remove <worktreePath>` and `git worktree prune`.
+  5. Remove the ticket from `.codex/parallel-delivery.local.json`.
+- Child role agents must not delete their own assigned worktree.
 
 ## Output
 

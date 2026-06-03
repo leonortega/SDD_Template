@@ -75,6 +75,6 @@ Use cleanup and recovery when runtime state and durable state disagree:
 - missing worktree: report the ticket and branch, then recreate only after durable checkpoints confirm the same ticket/branch mapping
 - blocked ticket: keep the ticket entry, record the blocker, and route other independent tickets if max active tickets and lane ownership allow it
 - lane-owner conflict: preserve the current owner until QA evidence, PROD evidence, rollback/hotfix handoff, or a clear blocker releases the lane
-- completed ticket: remove the ticket from the local runtime index only after PR, QA, or PROD handoff evidence reaches a stable checkpoint
+- completed ticket: after QA evidence is recorded and the Plane ticket is moved to Done, the coordinator checkout should verify the ticket worktree is clean, verify its branch is merged into the configured base branch, run `git worktree remove <worktreePath>` followed by `git worktree prune`, and then remove the ticket from the local runtime index
 
 Never clear a ticket lock, lane owner, or worktree mapping silently. If durable checkpoints conflict, stop and ask for explicit operator confirmation.

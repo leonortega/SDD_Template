@@ -416,6 +416,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("EnsureDeliveryContext", docs);
             Assert.Contains(".codex/tool-recommendations.local.json", docs);
             Assert.Contains(".codex/azure-login.local.json", docs);
+            Assert.Contains("after QA evidence is recorded and the Plane ticket is moved to Done", docs);
+            Assert.Contains("git worktree remove <worktreePath>", docs);
 
             Assert.Contains("Before Git, Plane, or Gitea mutation", contract);
             Assert.Contains("ValidateParallelDeliveryDryRun", contract);
@@ -424,6 +426,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains(".codex/azure-login.local.json", contract);
             Assert.Contains("Never let two agents mutate the same Plane ticket", contract);
             Assert.Contains("Never parallelize DEV, QA, E2E QA, PROD, rollback, or hotfix promotion", contract);
+            Assert.Contains("coordinator checkout owns ticket worktree teardown", contract);
+            Assert.Contains("Child role agents must not delete their own assigned worktree", contract);
 
             Assert.Contains("Before any Git, Plane, or Gitea mutation", coordinator);
             Assert.Contains("Failed `ValidateParallelDeliveryDryRun`", coordinator);
@@ -431,6 +435,9 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("required ignored local runtime files", coordinator);
             Assert.Contains("SyncWorktreeLocalConfig", coordinator);
             Assert.Contains("EnsureDeliveryContext", coordinator);
+            Assert.Contains("git -C <worktreePath> status --porcelain", coordinator);
+            Assert.Contains("git merge-base --is-ancestor <branch> <baseBranch>", coordinator);
+            Assert.Contains("git worktree prune", coordinator);
 
             foreach (string role in new[]
             {
