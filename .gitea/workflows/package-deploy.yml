@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - dev
+      - main
   workflow_dispatch:
     inputs:
       environment:
@@ -24,8 +25,78 @@ on:
         default: ''
 
 jobs:
+  classify-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      app_changed: ${{ steps.classify.outputs.app_changed }}
+      deploy_allowed: ${{ steps.classify.outputs.deploy_allowed }}
+    steps:
+      - name: Checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          repo_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          repo_url="${repo_url/localhost/host.docker.internal}"
+          repo_url="${repo_url/gitea/host.docker.internal}"
+
+          git init .
+          git remote add origin "$repo_url"
+          git fetch origin "$GITHUB_SHA"
+          git checkout --force FETCH_HEAD
+
+          before="${{ github.event.before }}"
+          if [ -n "$before" ] && [ "$before" != "0000000000000000000000000000000000000000" ]; then
+            git fetch origin "$before" || true
+          fi
+
+      - name: Classify changed files
+        id: classify
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "$GITHUB_EVENT_NAME" != "push" ]; then
+            echo "app_changed=true" >> "$GITHUB_OUTPUT"
+            echo "deploy_allowed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          before="${{ github.event.before }}"
+          if [ -n "$before" ] && [ "$before" != "0000000000000000000000000000000000000000" ] && git cat-file -e "$before^{commit}" 2>/dev/null; then
+            changed_files="$(git diff --name-only "$before" "$GITHUB_SHA")"
+          else
+            changed_files="$(git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA")"
+          fi
+
+          app_changed=false
+          while IFS= read -r path; do
+            case "$path" in
+              src/*|tests/*|*.sln|*.csproj|Directory.Build.props|Directory.Build.targets|global.json)
+                app_changed=true
+                ;;
+            esac
+          done <<EOF
+          $changed_files
+          EOF
+
+          ticket_key_pattern="$(sed -n 's/.*"ticketKeyPattern"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' .codex/delivery-policy.json | head -n 1 || true)"
+          test -n "$ticket_key_pattern"
+
+          commit_message="${{ github.event.head_commit.message }}"
+          ticket_pattern="^${ticket_key_pattern}: "
+          merge_pr_pattern="^Merge pull request '${ticket_key_pattern}:"
+          deploy_allowed=false
+          if [[ "$commit_message" =~ $ticket_pattern || "$commit_message" =~ $merge_pr_pattern ]]; then
+            deploy_allowed=true
+          fi
+
+          echo "app_changed=$app_changed" >> "$GITHUB_OUTPUT"
+          echo "deploy_allowed=$deploy_allowed" >> "$GITHUB_OUTPUT"
+
   package:
-    if: github.event_name == 'push' || github.event.inputs.environment == 'dev' || github.event.inputs.environment == 'qa'
+    needs: classify-changes
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/dev' && needs.classify-changes.outputs.app_changed == 'true' && needs.classify-changes.outputs.deploy_allowed == 'true') || github.event.inputs.environment == 'dev' || github.event.inputs.environment == 'qa'
     runs-on: ubuntu-latest
     container:
       image: mcr.microsoft.com/dotnet/sdk:10.0.300
@@ -62,9 +133,36 @@ jobs:
 
       - name: Upload artifact to Nexus
         run: |
+          checksum="$(cut -d ' ' -f1 artifacts/app.zip.sha256)"
+          commit_sha="$(cat artifacts/commit.sha)"
+          ticket_key_pattern="$(sed -n 's/.*"ticketKeyPattern"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' .codex/delivery-policy.json | head -n 1 || true)"
+          test -n "$ticket_key_pattern"
+
+          commit_message="$(git log -1 --pretty=%B)"
+          plane_ticket_key="$(printf '%s\n' "$commit_message" | sed -n "s/^\(${ticket_key_pattern}\): .*/\1/p" | head -n 1 || true)"
+          if [ -z "$plane_ticket_key" ]; then
+            plane_ticket_key="$(printf '%s\n' "$commit_message" | sed -n "s/^Merge pull request '\(${ticket_key_pattern}\):.*/\1/p" | head -n 1 || true)"
+          fi
+          if [ -z "$plane_ticket_key" ]; then
+            plane_ticket_key="manual-dispatch"
+          fi
+
+          artifact_url="$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip"
+          cat > artifacts/release.json <<EOF
+          {
+            "schemaVersion": 1,
+            "commitSha": "$commit_sha",
+            "checksum": "$checksum",
+            "artifactUrl": "$artifact_url",
+            "planeTicketKey": "$plane_ticket_key",
+            "versionStatus": "unversioned"
+          }
+          EOF
+
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/app.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip"
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/app.zip.sha256 "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/app.zip.sha256"
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/commit.sha "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/commit.sha"
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/release.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/release.json"
         env:
           NEXUS_URL: ${{ secrets.NEXUS_URL }}
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
@@ -72,9 +170,11 @@ jobs:
           NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
 
   deploy-dev:
-    needs: package
+    needs:
+      - classify-changes
+      - package
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event.inputs.environment == 'dev' || github.event.inputs.environment == 'qa'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/dev' && needs.classify-changes.outputs.app_changed == 'true' && needs.classify-changes.outputs.deploy_allowed == 'true') || github.event.inputs.environment == 'dev' || github.event.inputs.environment == 'qa'
     steps:
       - name: Download artifact from Nexus
         run: |
@@ -112,9 +212,11 @@ jobs:
           AZURE_DEV_WEBAPP_URL: ${{ secrets.AZURE_DEV_WEBAPP_URL }}
 
   deploy-qa:
-    needs: deploy-dev
+    needs:
+      - classify-changes
+      - deploy-dev
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event.inputs.environment == 'qa'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/dev' && needs.classify-changes.outputs.app_changed == 'true' && needs.classify-changes.outputs.deploy_allowed == 'true') || github.event.inputs.environment == 'qa'
     steps:
       - name: Download artifact from Nexus
         run: |
@@ -152,14 +254,25 @@ jobs:
           AZURE_QA_WEBAPP_URL: ${{ secrets.AZURE_QA_WEBAPP_URL }}
 
   deploy-prod:
+    needs: classify-changes
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.classify-changes.outputs.app_changed == 'true' && needs.classify-changes.outputs.deploy_allowed == 'true') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod')
     steps:
-      - name: Validate PROD promotion inputs
+      - name: Resolve PROD promotion inputs
+        shell: bash
         run: |
-          test -n "$ARTIFACT_COMMIT_SHA"
-          test -n "$RELEASE_VERSION"
-          test -n "$SOURCE_RC_VERSION"
+          set -euo pipefail
+
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            artifact_commit_sha="$GITHUB_SHA"
+          else
+            artifact_commit_sha="$ARTIFACT_COMMIT_SHA"
+            test -n "$RELEASE_VERSION"
+            test -n "$SOURCE_RC_VERSION"
+          fi
+
+          test -n "$artifact_commit_sha"
+          echo "PROD_ARTIFACT_COMMIT_SHA=$artifact_commit_sha" >> "$GITHUB_ENV"
         env:
           ARTIFACT_COMMIT_SHA: ${{ github.event.inputs.artifact_commit_sha }}
           RELEASE_VERSION: ${{ github.event.inputs.release_version }}
@@ -167,11 +280,10 @@ jobs:
 
       - name: Download artifact from Nexus
         run: |
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$ARTIFACT_COMMIT_SHA/app.zip"
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip.sha256 "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$ARTIFACT_COMMIT_SHA/app.zip.sha256"
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$PROD_ARTIFACT_COMMIT_SHA/app.zip"
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o app.zip.sha256 "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$PROD_ARTIFACT_COMMIT_SHA/app.zip.sha256"
           sha256sum -c app.zip.sha256
         env:
-          ARTIFACT_COMMIT_SHA: ${{ github.event.inputs.artifact_commit_sha }}
           NEXUS_URL: ${{ secrets.NEXUS_URL }}
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
           NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}

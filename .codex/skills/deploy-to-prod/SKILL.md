@@ -15,6 +15,10 @@ feature branch -> dev -> DEV -> QA -> E2E QA OK -> main -> PROD
 
 PROD must reuse the QA-approved Nexus artifact. Never rebuild, republish, or rename the artifact during PROD promotion.
 
+Before promotion, read `.codex/skills/_shared/delivery-contract.md`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode ValidateReleaseManifest` when checking `release.json` and `-Mode ArtifactPaths` when verifying Nexus artifact paths. Enforce the ticket context lock before tagging, updating `main`, triggering PROD, or commenting success.
+
+For push-triggered PROD deployment from `main`, the commit or merged PR title must start with the ticket key format configured in `.codex/delivery-policy.json`, such as `E2EPROJECT-123: ...`. Maintenance commits, `[SDD]` commits, and non-ticket PRs must not deploy PROD.
+
 ## Configuration
 
 Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.example.json` only for structure, then apply environment overrides when present.
@@ -38,21 +42,22 @@ Never print, commit, paste into tickets, or write real API tokens, cookies, Nexu
 ## Preflight
 
 1. Resolve the target Plane ticket, PR, QA-approved commit SHA, source RC version, and final release version from user input, Plane comments, Gitea PR metadata, tags, or Nexus artifact paths.
-2. Require SemVer tags:
+2. Read `.codex/delivery-context.local.json` when present and verify the target Plane ticket, PR, QA-approved commit, source RC version when known, and final release version when known match the locked `ticketKey`. If anything resolves to another ticket, stop before tag or `main` mutation.
+3. Require SemVer tags:
    - source RC: `vMAJOR.MINOR.PATCH-rc.N`
    - final release: `vMAJOR.MINOR.PATCH`
-3. Fetch the Plane ticket with expanded state/project data and verify it is in `plane.doneState`.
-4. Read Plane comments and find `IA generated E2E QA: {ticketKey}` for the same commit/artifact.
-5. Verify the E2E QA comment includes pass result, PR URL, QA URL, Nexus artifact URL, QA evidence URL, and source RC version.
-6. Verify Nexus contains:
+4. Fetch the Plane ticket with expanded state/project data and verify it is in `plane.doneState`.
+5. Read Plane comments and find `IA generated E2E QA: {ticketKey}` for the same commit/artifact.
+6. Verify the E2E QA comment includes pass result, PR URL, QA URL, Nexus artifact URL, QA evidence URL, and source RC version.
+7. Verify Nexus contains:
    - `app/{commitSha}/app.zip`
    - `app/{commitSha}/app.zip.sha256`
    - `app/{commitSha}/commit.sha`
    - `app/{commitSha}/release.json`
-7. Download checksum metadata only as needed and verify `commit.sha` exactly matches the QA-approved commit.
-8. Read `release.json` and verify it references the same commit SHA, checksum, PR, Plane ticket, QA evidence URL, and source RC version as the Plane E2E QA comment.
-9. Verify the source RC tag exists and points to the QA-approved commit.
-10. Verify the final release tag does not already exist.
+8. Download checksum metadata only as needed and verify `commit.sha` exactly matches the QA-approved commit.
+9. Read `release.json` and verify it references the same commit SHA, checksum, PR, Plane ticket, QA evidence URL, and source RC version as the Plane E2E QA comment. Treat a different `planeTicketKey` as blocking cross-ticket promotion.
+10. Verify the source RC tag exists and points to the QA-approved commit.
+11. Verify the final release tag does not already exist.
 
 Stop if any QA gate, tag gate, artifact gate, or checksum gate fails.
 
@@ -69,7 +74,12 @@ Stop if any QA gate, tag gate, artifact gate, or checksum gate fails.
 
 ## PROD Deployment
 
-Trigger the Gitea package/deploy workflow with:
+PROD deployment can be triggered in two supported ways:
+
+- A push/merge to `main` deploys PROD only when the changed files include application/test/package source and the commit or merged PR title starts with the configured ticket key format from `.codex/delivery-policy.json`. It downloads the existing Nexus artifact for `GITHUB_SHA`.
+- Manual workflow dispatch with `environment=prod` deploys the artifact identified by `artifact_commit_sha`.
+
+For manual dispatch, trigger the Gitea package/deploy workflow with:
 
 ```text
 environment=prod
@@ -78,7 +88,7 @@ release_version={finalVersion}
 source_rc_version={sourceRcVersion}
 ```
 
-The PROD workflow must download `app/{artifact_commit_sha}/app.zip` from Nexus, verify `app.zip.sha256`, deploy to PROD, then run:
+The PROD workflow must not run package, DEV, or QA jobs for a `main` push or `environment=prod` dispatch. Maintenance-only changes such as `.codex/**` or workflow-only edits must not deploy PROD. PROD must download `app/{artifact_commit_sha}/app.zip` from Nexus, verify `app.zip.sha256`, deploy to PROD, then run:
 
 - PROD page smoke check: HTTP 200, expected title/content, no Azure placeholder page.
 - PROD health check: `GET {prodWebUrl}/health` returns HTTP 200 and JSON `status=ok`.
@@ -86,13 +96,14 @@ The PROD workflow must download `app/{artifact_commit_sha}/app.zip` from Nexus, 
 After dispatch, inspect the workflow run jobs and logs against the artifact-reuse contract. A successful PROD run must show that the workflow:
 
 - used `environment=prod`,
-- consumed `artifact_commit_sha={qaApprovedCommit}`,
+- consumed `artifact_commit_sha={qaApprovedCommit}` for manual dispatch or `GITHUB_SHA` for a `main` push,
 - downloaded `app/{artifact_commit_sha}/app.zip` from Nexus,
 - verified `app.zip.sha256`,
 - skipped rebuild/republish behavior,
+- skipped DEV and QA deployment behavior,
 - ran direct PROD page and `/health` checks.
 
-Prefer named job checks such as `deploy-prod` when present, but do not rely only on job names. If the workflow rebuilds, republishes, downloads from `GITHUB_SHA` instead of `artifact_commit_sha`, lacks a PROD deployment path, or skips `/health`, treat it as blocking workflow drift.
+Prefer named job checks such as `deploy-prod` when present, but do not rely only on job names. If the workflow rebuilds, republishes, downloads an artifact commit that does not match the approved commit, lacks a PROD deployment path, deploys DEV/QA during PROD promotion, or skips `/health`, treat it as blocking workflow drift.
 
 ## PROD Verification
 
@@ -144,6 +155,7 @@ Only write a success result after the workflow passed and direct PROD page plus 
 - Missing Plane API config: stop before Plane reads or mutations.
 - Ticket not in `plane.doneState`: stop.
 - Missing or stale E2E QA marker: stop.
+- Ticket context lock mismatch: stop before tag, `main`, workflow, Plane, or release manifest mutation.
 - Missing source RC tag or wrong tag target: stop.
 - Existing final release tag: stop.
 - Missing Nexus artifact/checksum/commit metadata: stop.

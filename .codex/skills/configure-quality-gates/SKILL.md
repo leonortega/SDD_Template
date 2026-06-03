@@ -9,6 +9,8 @@ Read `.codex/skills/configure-dev-environment/references/quality-gates.md` befor
 
 Use the shared script at `.codex/skills/configure-dev-environment/scripts/configure_infra_tools.ps1`.
 
+Keep this skill synchronized with `.codex/skills/_shared/delivery-contract.md` and the non-OpenSpec delivery-flow skills. When behavior differs, delivery-flow skills are authoritative.
+
 Safety:
 
 - Keep Gitea PR validation as the authoritative gate.
