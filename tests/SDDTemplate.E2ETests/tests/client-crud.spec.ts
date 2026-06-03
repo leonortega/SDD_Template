@@ -54,14 +54,33 @@ test.describe("Client CRUD deployed QA E2E", () => {
     const consoleErrors: string[] = [];
     const failedRequests: string[] = [];
     const unexpectedResponses: string[] = [];
+    let expectedValidationConsoleErrors = 0;
+    let expectedDeleteRequestAborts = 0;
 
     page.on("console", message => {
       if (message.type() === "error") {
+        const text = message.text();
+        if (expectedValidationConsoleErrors > 0 && text.includes("status of 400")) {
+          expectedValidationConsoleErrors--;
+          return;
+        }
+
         consoleErrors.push(message.text());
       }
     });
 
     page.on("requestfailed", requestInfo => {
+      const failureText = requestInfo.failure()?.errorText ?? "";
+      if (
+        expectedDeleteRequestAborts > 0 &&
+        requestInfo.method() === "DELETE" &&
+        requestInfo.url().includes("/api/clients/") &&
+        failureText.includes("ERR_ABORTED")
+      ) {
+        expectedDeleteRequestAborts--;
+        return;
+      }
+
       failedRequests.push(`${requestInfo.method()} ${requestInfo.url()} ${requestInfo.failure()?.errorText ?? ""}`.trim());
     });
 
@@ -90,6 +109,7 @@ test.describe("Client CRUD deployed QA E2E", () => {
       ...testClient,
       bornDate: futureDate()
     });
+    expectedValidationConsoleErrors++;
     await page.getByRole("button", { name: "Save client" }).click();
     await expect(page.locator("#client-errors")).toContainText("Born date cannot be in the future.");
 
@@ -116,6 +136,7 @@ test.describe("Client CRUD deployed QA E2E", () => {
     expect(updated?.zipCode).toBe(updatedClient.zipCode);
 
     const updatedRow = rowForClient(page, updatedClient.name);
+    expectedDeleteRequestAborts++;
     await updatedRow.getByRole("button", { name: "Delete" }).click();
     await expect(page.locator("#clients-list")).not.toContainText(updatedClient.name);
     await expect(await api.get(`/api/clients/${created!.id}`)).not.toBeOK();
