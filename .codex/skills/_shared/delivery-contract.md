@@ -163,6 +163,7 @@ Rules:
 - Implementation and review stages may run concurrently across tickets.
 - DEV, QA, E2E QA, PROD, rollback, and hotfix promotion share deployment lanes and release tags. With `deploymentLanePolicy` set to `serialized`, only the recorded lane owner may run `post-merge-deploy`, `deploy-to-qa`, `test-e2e`, or `deploy-to-prod`; other agents must wait or report the owner.
 - PROD promotion remains explicit. Parallel delivery must not promote to PROD only because QA passed.
+- After QA evidence is recorded and the Plane ticket is moved to Done, the coordinator checkout owns ticket worktree teardown. Verify the worktree is clean, verify its branch is merged into the configured base branch, run `git worktree remove <worktreePath>` and `git worktree prune`, then remove that ticket from `.codex/parallel-delivery.local.json`. Child role agents must not delete their own assigned worktree.
 
 Role contracts:
 
