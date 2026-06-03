@@ -59,6 +59,44 @@ static void Run(string[] args)
                 Required(options, "plane-ticket-key"),
                 options.GetValueOrDefault("version-status", "unversioned"));
             break;
+        case "ClassifyTicketReadiness":
+            Console.WriteLine(JsonSerializer.Serialize(
+                DeliveryWorkflowHelpers.ClassifyTicketReadiness(
+                    options.GetValueOrDefault("title", string.Empty),
+                    options.GetValueOrDefault("description", string.Empty)),
+                new JsonSerializerOptions { WriteIndented = true }));
+            break;
+        case "ClassifyDeliveryRisk":
+            Console.WriteLine(JsonSerializer.Serialize(
+                DeliveryWorkflowHelpers.ClassifyDeliveryRisk(
+                    SplitList(options.GetValueOrDefault("paths", string.Empty)),
+                    options.GetValueOrDefault("context", string.Empty),
+                    int.Parse(options.GetValueOrDefault("changed-lines", "0"), CultureInfo.InvariantCulture)),
+                new JsonSerializerOptions { WriteIndented = true }));
+            break;
+        case "ParseWorkloadForecast":
+            Console.WriteLine(JsonSerializer.Serialize(
+                DeliveryWorkflowHelpers.ParseWorkloadForecast(Required(options, "markdown")),
+                new JsonSerializerOptions { WriteIndented = true }));
+            break;
+        case "DetectAdversarialReviewTrigger":
+            Console.WriteLine(JsonSerializer.Serialize(
+                DeliveryWorkflowHelpers.DetectAdversarialReviewTrigger(
+                    SplitList(options.GetValueOrDefault("paths", string.Empty)),
+                    options.GetValueOrDefault("context", string.Empty),
+                    int.Parse(options.GetValueOrDefault("changed-lines", "0"), CultureInfo.InvariantCulture),
+                    bool.Parse(options.GetValueOrDefault("explicit-request", "false"))),
+                new JsonSerializerOptions { WriteIndented = true }));
+            break;
+        case "WriteInstalledSkillIndex":
+            string root = Required(options, "root");
+            Console.WriteLine(JsonSerializer.Serialize(
+                DeliveryWorkflowHelpers.WriteInstalledSkillIndex(
+                    root,
+                    options.GetValueOrDefault("index-path", Path.Combine(root, ".codex", "installed-skill-index.local.json")),
+                    options.GetValueOrDefault("cache-path", Path.Combine(root, ".codex", "installed-skill-index.cache.local.json"))),
+                new JsonSerializerOptions { WriteIndented = true }));
+            break;
         default:
             throw new ArgumentException($"Unsupported mode: {mode}");
     }
@@ -91,6 +129,11 @@ static string Required(Dictionary<string, string> options, string key)
     return options.TryGetValue(key, out string? value) && !string.IsNullOrWhiteSpace(value)
         ? value
         : throw new ArgumentException($"--{key} is required.");
+}
+
+static string[] SplitList(string value)
+{
+    return [.. value.Split([',', ';', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
 }
 
 [ExcludeFromCodeCoverage]

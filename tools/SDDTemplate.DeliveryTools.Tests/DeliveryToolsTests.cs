@@ -62,6 +62,114 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
+        public void TicketReadinessClassifiesReadyEnrichableAndBlockedTickets()
+        {
+            TicketReadinessResult ready = DeliveryWorkflowHelpers.ClassifyTicketReadiness(
+                "Add client search",
+                """
+                Acceptance criteria:
+                - Searching by client name filters the list.
+                - Empty searches show all clients.
+                Validation: add tests for matching and empty search.
+                """);
+
+            TicketReadinessResult enrichable = DeliveryWorkflowHelpers.ClassifyTicketReadiness(
+                "Add client search",
+                "Users should be able to search clients by name from the client list.");
+
+            TicketReadinessResult blocked = DeliveryWorkflowHelpers.ClassifyTicketReadiness("Search", "Do thing");
+
+            Assert.Equal("ready", ready.Status);
+            Assert.Empty(ready.Missing);
+            Assert.Equal("enrichable", enrichable.Status);
+            Assert.Contains("validation expectation", enrichable.Missing);
+            Assert.Equal("blocked", blocked.Status);
+            Assert.Contains("user-visible goal", blocked.Missing);
+        }
+
+        [Fact]
+        public void DeliveryRiskClassifiesLowStandardAndHighWork()
+        {
+            DeliveryRiskResult low = DeliveryWorkflowHelpers.ClassifyDeliveryRisk(["docs/development.md"], "clarify setup text", 12);
+            DeliveryRiskResult standard = DeliveryWorkflowHelpers.ClassifyDeliveryRisk(["src/Feature.cs", "tests/FeatureTests.cs"], "normal feature", 120);
+            DeliveryRiskResult high = DeliveryWorkflowHelpers.ClassifyDeliveryRisk([".gitea/workflows/package-deploy.yml"], "deployment health check", 40);
+
+            Assert.Equal("low", low.Level);
+            Assert.Equal("standard", standard.Level);
+            Assert.Equal("high", high.Level);
+            Assert.Contains(high.Reasons, reason => reason.Contains("deployment", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public void WorkloadForecastParsesGuardLinesAndRequiresResolutionForOversizedWork()
+        {
+            const string markdown = """
+                ## Review Workload Forecast
+
+                Estimated changed lines: 650
+                400-line budget risk: High
+                Chained PRs recommended: Yes
+                Decision needed before apply: Yes
+                Delivery strategy: ask-on-risk
+                """;
+
+            WorkloadForecast forecast = DeliveryWorkflowHelpers.ParseWorkloadForecast(markdown);
+
+            Assert.Equal("650", forecast.EstimatedChangedLines);
+            Assert.Equal("High", forecast.BudgetRisk);
+            Assert.True(forecast.ChainedPrsRecommended);
+            Assert.True(forecast.DecisionNeededBeforeApply);
+            Assert.True(forecast.RequiresResolutionBeforeApply);
+        }
+
+        [Fact]
+        public void AdversarialReviewTriggerRequiresReviewForHighRiskOrExplicitRequests()
+        {
+            AdversarialReviewTrigger standard = DeliveryWorkflowHelpers.DetectAdversarialReviewTrigger(["docs/readme.md"], "docs only", 8, explicitRequest: false);
+            AdversarialReviewTrigger highRisk = DeliveryWorkflowHelpers.DetectAdversarialReviewTrigger(["src/SDDTemplate.Site/Program.cs"], "health endpoint", 30, explicitRequest: false);
+            AdversarialReviewTrigger explicitRequest = DeliveryWorkflowHelpers.DetectAdversarialReviewTrigger(["docs/readme.md"], "docs only", 8, explicitRequest: true);
+
+            Assert.False(standard.Required);
+            Assert.Equal("standard", standard.Mode);
+            Assert.True(highRisk.Required);
+            Assert.Equal("adversarial", highRisk.Mode);
+            Assert.True(explicitRequest.Required);
+            Assert.Contains("explicit user request", explicitRequest.Reasons);
+        }
+
+        [Fact]
+        public void InstalledSkillIndexIsDerivedCachedAndExcludesSharedHelpers()
+        {
+            string root = CreateTempDirectory();
+            string skill = Path.Combine(root, ".codex", "skills", "sample-skill");
+            string shared = Path.Combine(root, ".codex", "skills", "_shared");
+            _ = Directory.CreateDirectory(skill);
+            _ = Directory.CreateDirectory(shared);
+            File.WriteAllText(
+                Path.Combine(skill, "SKILL.md"),
+                """
+                ---
+                name: sample-skill
+                description: "Trigger: sample work. Does a sample task."
+                ---
+                # Sample
+                """);
+            File.WriteAllText(Path.Combine(shared, "SKILL.md"), "# Shared");
+
+            string indexPath = Path.Combine(root, ".codex", "installed-skill-index.local.json");
+            string cachePath = Path.Combine(root, ".codex", "installed-skill-index.cache.local.json");
+            SkillIndexWriteResult first = DeliveryWorkflowHelpers.WriteInstalledSkillIndex(root, indexPath, cachePath);
+            SkillIndexWriteResult second = DeliveryWorkflowHelpers.WriteInstalledSkillIndex(root, indexPath, cachePath);
+
+            Assert.False(first.CacheHit);
+            Assert.True(second.CacheHit);
+            Assert.Equal(1, first.SkillCount);
+            string index = File.ReadAllText(indexPath);
+            Assert.Contains("sample-skill", index);
+            Assert.DoesNotContain("_shared", index);
+        }
+
+        [Fact]
         public void AuditModesDoNotWriteLocalClientToolsConfigByDefault()
         {
             string root = CreateTempDirectory();
