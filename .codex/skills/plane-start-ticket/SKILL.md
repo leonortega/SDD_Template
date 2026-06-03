@@ -11,6 +11,10 @@ Use this skill for a chat-driven Plane workflow. The user should not need to run
 
 For setup details and branch pattern options, read `references/configuration.md` when configuration is missing or the user asks how to configure the tools. Before making Plane API calls, read `references/plane-api.md`.
 
+Read `.codex/skills/_shared/delivery-contract.md` before mutating Plane or Git so generated markers, state names, and rerun behavior stay consistent across the delivery workflow.
+
+This skill owns initial creation of ignored `.codex/delivery-context.local.json` for automatic delivery. Never commit that file.
+
 ## Configuration
 
 Read `.codex/client-tools.local.json` as the primary configuration file. Fall back to `.codex/client-tools.example.json` only for defaults and setup guidance, then apply environment variable overrides only when present. Defaults are:
@@ -55,10 +59,11 @@ Before any mutating step, validate that `baseUrl`, `apiToken`, lowercase `worksp
 7. Analyze the ticket description in an OpenSpec explore style unless OpenSpec is explicitly skipped by policy below.
 8. Update only the managed generated block in the Plane ticket description.
 9. Add a Plane ticket comment with the branch name, base branch, pushed Gitea branch, and OpenSpec decision, unless a generated comment for the same branch already exists.
-10. Move the Plane ticket to the configured in-progress state, unless it is already there.
-11. Create an OpenSpec proposal using the `openspec-propose` skill (`/opsx:propose`) with a change name matching the branch name as closely as OpenSpec allows, unless OpenSpec is explicitly skipped.
+10. Create or update `.codex/delivery-context.local.json` with `ticketKey`, `branch`, `openspecChange` when applicable, and any known PR/artifact/version fields. If an existing lock names a different ticket, stop and ask the user to clear or replace the lock.
+11. Move the Plane ticket to the configured in-progress state, unless it is already there.
+12. Create an OpenSpec proposal using the `openspec-propose` skill (`/opsx:propose`) with a change name matching the branch name as closely as OpenSpec allows, unless OpenSpec is explicitly skipped.
 
-For step 11, if the branch name contains `/`, convert it to a filesystem-safe kebab-case OpenSpec change id by replacing `/` with `-`. Example: branch `feat/e2eproject-1-create-files-and-folders-for-a-site` becomes OpenSpec change `feat-e2eproject-1-create-files-and-folders-for-a-site`. Use the Plane ticket title and generated planning block as proposal input.
+For step 12, if the branch name contains `/`, convert it to a filesystem-safe kebab-case OpenSpec change id by replacing `/` with `-`. Example: branch `feat/e2eproject-1-create-files-and-folders-for-a-site` becomes OpenSpec change `feat-e2eproject-1-create-files-and-folders-for-a-site`. Use the Plane ticket title and generated planning block as proposal input.
 
 Only move the ticket to the in-progress state after branch creation, Gitea push, generated description update, and branch comment all succeed or are confirmed idempotently already complete. Only create the OpenSpec proposal after the ticket is in the in-progress state.
 

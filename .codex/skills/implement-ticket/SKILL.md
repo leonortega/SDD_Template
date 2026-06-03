@@ -9,6 +9,8 @@ description: Implement an already-started Plane ticket through OpenSpec tasks, c
 
 Use this skill after `plane-start-ticket` has created or reused the implementation branch, moved the Plane ticket to progress, and created the OpenSpec change. This skill owns implementation through PR handoff. It does not select Todo tickets, create initial branches, or archive OpenSpec changes.
 
+Read `.codex/skills/_shared/delivery-contract.md` before handoff or review work so PR labels, severity, ticket context lock, markers, and rerun checkpoints match the rest of the delivery workflow.
+
 ## Configuration
 
 Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.example.json` only for defaults and setup guidance.
@@ -32,9 +34,10 @@ Never print, commit, paste into tickets, or write real tokens into tracked files
 ### 1. Resolve Context
 
 1. Identify the Plane ticket, current branch, and OpenSpec change from user input, branch name, or existing OpenSpec changes.
-2. Stop if the branch or OpenSpec change is missing; tell the user to run the `plane-start-ticket` flow first.
-3. Check `git status --porcelain`. If unrelated changes exist, stop before implementation and list the changed files.
-4. Detect resume checkpoints before doing new work:
+2. Read `.codex/delivery-context.local.json` when present and verify the resolved Plane ticket, current branch, OpenSpec change, existing PR, and any artifact commit match the locked `ticketKey`. If they resolve to another ticket, stop and report the mismatch.
+3. Stop if the branch or OpenSpec change is missing; tell the user to run the `plane-start-ticket` flow first.
+4. Check `git status --porcelain`. If unrelated changes exist, stop before implementation and list the changed files.
+5. Detect resume checkpoints before doing new work:
    - completed and pending OpenSpec tasks,
    - existing implementation commits on the branch,
    - upstream branch and push status,
@@ -43,15 +46,15 @@ Never print, commit, paste into tickets, or write real tokens into tracked files
    - current `needs-tests` and `needs-changes` labels,
    - latest Gitea Actions status.
    Continue from the latest completed checkpoint instead of restarting earlier steps.
-5. Confirm the OpenSpec change is active:
+6. Confirm the OpenSpec change is active:
    ```powershell
    openspec status --change "<change>" --json
    ```
-6. Load apply instructions:
+7. Load apply instructions:
    ```powershell
    openspec instructions apply --change "<change>" --json
    ```
-7. Read every context file returned by the apply instructions.
+8. Read every context file returned by the apply instructions.
 
 ### 2. Discover Quality Gates
 

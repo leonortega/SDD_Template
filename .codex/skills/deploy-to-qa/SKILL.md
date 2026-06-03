@@ -15,6 +15,10 @@ feature branch -> dev -> DEV -> QA -> main -> PROD
 
 `main` is updated only after QA passes. PROD promotion is separate and must reuse the QA-passed artifact commit.
 
+Before promotion, read `.codex/skills/_shared/delivery-contract.md`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode ArtifactPaths` for Nexus paths and validate `release.json` against `.codex/skills/_shared/release.schema.json` after writing it. Enforce the ticket context lock before promoting.
+
+For push-triggered DEV/QA deployment, the commit or merged PR title must start with the ticket key format configured in `.codex/delivery-policy.json`, such as `E2EPROJECT-123: ...`. Maintenance commits and non-ticket PRs must not deploy.
+
 ## Configuration
 
 Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.example.json` for structure only, then apply environment variable overrides when present.
@@ -36,14 +40,16 @@ Never print, commit, paste into tickets, or write real API tokens, Nexus credent
 2. Resolve the merged commit SHA from Gitea PR metadata. Use the merge commit SHA as the artifact identity.
 3. Verify the PR does not currently carry `pr.labels.needsChanges` or `pr.labels.needsTests`. If either label remains, stop before promotion.
 4. Resolve the Plane ticket key from the branch name, PR title, PR body, commit messages, or existing Plane comments.
-5. Verify the package/deploy workflow completed for the merged commit. If it did not run, report that config-infra should be used to repair `.gitea/workflows/package-deploy.yml`.
-6. Build the Nexus artifact paths:
+5. Read `.codex/delivery-context.local.json` when present and verify the resolved ticket key, PR, branch, and merged commit match the lock. If they do not, stop before reading or promoting artifacts.
+6. Verify the package/deploy workflow completed for the merged commit. If it did not run, report that config-infra should be used to repair `.gitea/workflows/package-deploy.yml`.
+7. Build the Nexus artifact paths:
    - `app/{commitSha}/app.zip`
    - `app/{commitSha}/app.zip.sha256`
    - `app/{commitSha}/commit.sha`
    - `app/{commitSha}/release.json`
-7. Confirm the artifact, checksum, and commit metadata exist in Nexus using the configured Nexus credentials. Treat missing Nexus local config, Nexus outage, or any missing file as blocking.
-8. Compare `commit.sha` with the resolved commit SHA. Treat mismatch as blocking.
+8. Confirm the artifact, checksum, and commit metadata exist in Nexus using the configured Nexus credentials. Treat missing Nexus local config, Nexus outage, or any missing file as blocking.
+9. Compare `commit.sha` with the resolved commit SHA. Treat mismatch as blocking.
+10. Read `release.json` when present and verify `planeTicketKey` matches the locked/resolved ticket key. Treat another ticket key as blocking cross-ticket promotion.
 
 ## DEV And QA Promotion
 
@@ -96,6 +102,7 @@ Include:
 - Stop on QA failure.
 - Stop on DEV or QA `/health` failure.
 - Stop when merged PR still has `needs-changes` or `needs-tests`.
+- Stop when the ticket context lock or `release.json.planeTicketKey` points to a different ticket.
 - Stop when Nexus is unreachable; do not use a degraded artifact source.
 - Treat placeholder config as missing.
 - Preserve unrelated local working tree changes.

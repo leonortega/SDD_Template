@@ -11,6 +11,8 @@ Use this skill to review one explicit Gitea pull request. It is invoked by `open
 
 For exact Gitea API endpoint guidance, read `references/gitea-review-api.md` before making API calls.
 
+Read `.codex/skills/_shared/delivery-contract.md` before posting review output so severity labels, ticket context lock, and PR label semantics remain consistent with implementation and deployment gates.
+
 ## Configuration
 
 Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.example.json` for defaults only, then apply environment variable overrides when present.
@@ -32,6 +34,8 @@ Never print Gitea tokens.
 ### 1. Resolve The PR
 
 Accept a PR number, PR URL, or the current branch. If the current branch is used, list open PRs for that head branch and select the matching PR. Review only that PR.
+
+Read `.codex/delivery-context.local.json` when present and verify the PR number, branch, title/body ticket key, and head SHA when known match the locked `ticketKey`. If the user explicitly requested a different PR, report the lock mismatch before posting labels or comments.
 
 Fetch:
 

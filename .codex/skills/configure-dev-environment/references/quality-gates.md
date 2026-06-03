@@ -2,6 +2,7 @@
 
 Owns:
 
+- `.codex/delivery-policy.json`
 - `global.json`
 - `.editorconfig`
 - `Directory.Build.props`
@@ -76,6 +77,12 @@ Ask the user to configure Gitea branch protection:
 - Require review approval or the configured review label.
 - Block merge while `needs-changes` is present.
 
+## Deployment Gating
+
+Push-triggered deployments are gated by `.codex/delivery-policy.json`. The workflow reads `ticketKeyPattern` and deploys only when the commit message or merged PR title starts with that ticket key. `[SDD]`, OpenSpec, chore, and ops-only maintenance commits are accepted by local hooks where appropriate but must not deploy automatically.
+
+DEV and QA deploy only from `dev` when application/test/package source changed. PROD deploys only from `main` when `main` points to the exact QA-approved packaged commit for the same ticket-gated application change. Manual workflow dispatch remains available for explicit promotion with `artifact_commit_sha`.
+
 ## Release Branching
 
 Use this release path:
@@ -84,4 +91,4 @@ Use this release path:
 feature branch -> dev -> DEV -> QA -> main -> PROD
 ```
 
-The package/deploy workflow should build and publish from `dev`. DEV and QA deployments must download the same Nexus ZIP for the same commit SHA and pass page plus `/health` checks. PROD must reuse the QA-passed artifact commit after `main` is updated, using workflow dispatch inputs `artifact_commit_sha`, `release_version`, and `source_rc_version`; PROD must not rebuild and must pass page plus `/health` checks before success is recorded. Release automation should update `app/{commitSha}/release.json` instead of renaming `app.zip`.
+The package/deploy workflow should build and publish from ticket-gated application changes on `dev`, including a baseline `app/{commitSha}/release.json`. DEV and QA deployments must download the same Nexus ZIP for the same commit SHA and pass page plus `/health` checks. PROD must reuse the QA-passed artifact commit after `main` is fast-forwarded to that exact commit or explicit dispatch is requested, using `artifact_commit_sha`, `release_version`, and `source_rc_version` for dispatch promotions; PROD must not rebuild and must pass page plus `/health` checks before success is recorded. Release automation should update `app/{commitSha}/release.json` instead of renaming `app.zip`.
