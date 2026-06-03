@@ -120,8 +120,61 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("- name: Smoke check DEV topology apps\n        shell: bash", workflow);
             Assert.Contains("- name: Deploy QA topology apps\n        shell: bash", workflow);
             Assert.Contains("- name: Smoke check QA topology apps\n        shell: bash", workflow);
+            Assert.Contains("  e2e-qa:", workflow);
             Assert.Contains("- name: Deploy PROD topology apps\n        shell: bash", workflow);
             Assert.Contains("- name: Smoke check PROD topology apps\n        shell: bash", workflow);
+        }
+
+        [Fact]
+        public void PackageWorkflowRunsQaE2eAfterQaDeploymentAndUploadsEvidence()
+        {
+            string workflow = ReadWorkflow();
+            string e2eJob = GetJobSection(workflow, "e2e-qa");
+
+            Assert.Contains("- deploy-qa", e2eJob);
+            Assert.Contains("tests/SDDTemplate.E2ETests", e2eJob);
+            Assert.Contains("npm ci", e2eJob);
+            Assert.Contains("npm run install:browsers", e2eJob);
+            Assert.Contains("npm test || test_exit=$?", e2eJob);
+            Assert.Contains("E2E_SITE_URL: ${{ secrets.AZURE_QA_SITE_APP_URL }}", e2eJob);
+            Assert.Contains("E2E_API_URL: ${{ secrets.AZURE_QA_API_APP_URL }}", e2eJob);
+            Assert.Contains("app/${GITHUB_SHA}/qa-e2e-evidence.zip", e2eJob);
+            Assert.Contains("qa/${plane_ticket_key}/${run_id}/qa-e2e-evidence.zip", e2eJob);
+            Assert.Contains("exit \"$test_exit\"", e2eJob);
+        }
+
+        [Fact]
+        public void PackageWorkflowRunsQaBranchE2eWithoutRedeploying()
+        {
+            string workflow = ReadWorkflow();
+            string branchJob = GetJobSection(workflow, "e2e-qa-branch");
+
+            Assert.Contains("- qa/**", workflow);
+            Assert.Contains("startsWith(github.ref, 'refs/heads/qa/')", branchJob);
+            Assert.Contains("git fetch --depth 50 origin dev", branchJob);
+            Assert.Contains("git merge-base HEAD origin/dev", branchJob);
+            Assert.Contains("E2E_ARTIFACT_COMMIT_SHA", branchJob);
+            Assert.Contains("E2E_PLANE_TICKET_KEY", branchJob);
+            Assert.Contains("tests/SDDTemplate.E2ETests", branchJob);
+            Assert.Contains("npm test || test_exit=$?", branchJob);
+            Assert.Contains("app/${E2E_ARTIFACT_COMMIT_SHA}/qa-e2e-evidence.zip", branchJob);
+            Assert.DoesNotContain("az webapp deploy", branchJob);
+        }
+
+        [Fact]
+        public void PlaywrightQaE2eSuiteIsDeployedQaOnly()
+        {
+            string root = FindRepositoryRoot().FullName;
+            string config = File.ReadAllText(Path.Combine(root, "tests", "SDDTemplate.E2ETests", "playwright.config.ts"));
+            string package = File.ReadAllText(Path.Combine(root, "tests", "SDDTemplate.E2ETests", "package.json"));
+            string spec = File.ReadAllText(Path.Combine(root, "tests", "SDDTemplate.E2ETests", "tests", "client-crud.spec.ts"));
+
+            Assert.Contains("E2E_SITE_URL and E2E_API_URL are required", config);
+            Assert.DoesNotContain("webServer", config);
+            Assert.Contains("\"@playwright/test\"", package);
+            Assert.Contains("Client CRUD deployed QA E2E", spec);
+            Assert.Contains("/api/clients", spec);
+            Assert.Contains("Born date cannot be in the future.", spec);
         }
 
         [Fact]
@@ -247,6 +300,25 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("ValidateReleaseManifest", script);
             Assert.Contains("app/${GITHUB_SHA}/release.json", script);
             Assert.Contains("Package/deploy workflow should upload a baseline Nexus release manifest next to the artifact.", script);
+        }
+
+        [Fact]
+        public void ConfigureTemplateAndDocsPreserveGiteaQaE2eEvidenceGate()
+        {
+            string script = ReadConfigureScript();
+            string deploymentDoc = ReadDoc("deployment.md");
+            string developmentDoc = ReadDoc("development.md");
+            string e2eSkill = ReadSkill("test-e2e", "SKILL.md");
+
+            Assert.Contains("  e2e-qa:", script);
+            Assert.Contains("qa-e2e-evidence.zip", script);
+            Assert.Contains("E2E_SITE_URL", script);
+            Assert.Contains("E2E_API_URL", script);
+            Assert.Contains("Gitea Actions runs the committed Playwright QA E2E suite", deploymentDoc);
+            Assert.Contains("tests/SDDTemplate.E2ETests", developmentDoc);
+            Assert.Contains("deployed-QA regression suite", e2eSkill);
+            Assert.Contains("qa/{ticketKey}", e2eSkill);
+            Assert.Contains("app/{commitSha}/qa-e2e-evidence.zip", e2eSkill);
         }
 
         [Fact]

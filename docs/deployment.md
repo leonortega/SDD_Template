@@ -38,7 +38,7 @@ app/{commitSha}/release.json
 
 ## Environments
 
-DEV and QA deploy from `dev` and must use the same Nexus artifacts for the same commit SHA. The deploy workflow reads `infra/deployment/apps.json`, publishes one ZIP per deployable app, deploys each ZIP to its matching Azure App Service app, and requires web page checks plus every app `/health` smoke check.
+DEV and QA deploy from `dev` and must use the same Nexus artifacts for the same commit SHA. The deploy workflow reads `infra/deployment/apps.json`, publishes one ZIP per deployable app, deploys each ZIP to its matching Azure App Service app, and requires web page checks plus every app `/health` smoke check. After QA smoke checks pass, Gitea Actions runs the committed Playwright QA E2E suite against `AZURE_QA_SITE_APP_URL` and `AZURE_QA_API_APP_URL`; this job produces evidence only and does not move Plane state, create RC tags, or update release lineage. When QA-specific tests need to be created after the ticket is already in QA, push them to a `qa/{ticketKey}` branch; that branch runs the same remote E2E job without redeploying and stores evidence against the branch point artifact commit from `dev`.
 
 PROD deploys only a QA-approved existing Nexus artifact. PROD does not rebuild. Promotion requires a final version, source RC version, verified artifact commit, and successful PROD web page plus web/API `/health` checks.
 
@@ -54,6 +54,12 @@ The preferred durable publication target is Nexus at:
 
 ```text
 qa/{ticketKey}/{runId}/qa-evidence.zip
+```
+
+The Gitea-run QA E2E job also uploads its evidence bundle to the artifact commit path:
+
+```text
+app/{commitSha}/qa-e2e-evidence.zip
 ```
 
 RC tags identify QA-approved artifacts. Final tags identify production releases. Release lineage should remain traceable as:
