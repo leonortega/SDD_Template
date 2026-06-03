@@ -153,3 +153,12 @@ If `git` is unavailable in a Codex PowerShell session, first check whether Git i
 
 When merging `dev` into a ticket feature branch, Git's generated merge message can fail the commit-message hook. Complete the merge with a ticket-prefixed message such as `E2EPROJECT-2: merge dev updates into feature` so hooks and deployment gating recognize the commit correctly.
 
+## Timed-Out Playwright Installs Can Leave A Cache Lock
+
+- Type: Pattern
+- Status: Active
+- Source: current conversation, local validation while adding Gitea-run QA E2E automation
+- Last verified: 2026-06-03
+
+If `npx playwright install` or `npm run install:browsers` times out locally, later Playwright commands may fail with an active lockfile at `%LOCALAPPDATA%\ms-playwright\__dirlock`. Before removing the lock, check for live `node.exe` processes whose command line still references Playwright install or download. Stop only those stale installer processes, then remove the lock. In this repository, official QA E2E should run remotely through Gitea against deployed QA apps; local Playwright execution is only for authoring diagnostics.
+
