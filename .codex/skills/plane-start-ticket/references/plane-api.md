@@ -58,6 +58,17 @@ Add branch comment:
 POST {baseUrl}/api/v1/workspaces/{workspaceSlug}/projects/{projectUuid}/work-items/{workItemUuid}/comments/
 ```
 
+Payload:
+
+```json
+{
+  "comment_html": "<p>IA generated branch: {branchName}</p><p>**Status:** ...</p>",
+  "comment_stripped": "IA generated branch: {branchName}\n\n**Status:** ..."
+}
+```
+
+Do not send a `comment` or `body` field. Plane work-item comments render from `comment_html`; the stable marker must also be present at the start of `comment_stripped` so later workflow runs can detect it. Read the comment back after posting and verify `comment_stripped` starts with the marker.
+
 Use a stable generated marker in the comment body:
 
 ```text

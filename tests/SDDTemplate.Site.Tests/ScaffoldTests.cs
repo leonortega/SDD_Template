@@ -11,7 +11,42 @@ namespace SDDTemplate.Site.Tests
 
             string projectXml = File.ReadAllText(projectFile.FullName);
 
-            Assert.Contains($"<TargetFramework>{ScaffoldInfo.TargetFramework}</TargetFramework>", projectXml);
+            Assert.Contains($"<TargetFramework>{TestScaffoldInfo.TargetFramework}</TargetFramework>", projectXml);
+        }
+
+        [Fact]
+        public void SolutionSeparatesSiteApiAndDataProjects()
+        {
+            DirectoryInfo repositoryRoot = FindRepositoryRoot();
+            string solution = File.ReadAllText(Path.Combine(repositoryRoot.FullName, "SDDTemplate.slnx"));
+
+            Assert.Contains("src/SDDTemplate.Site/SDDTemplate.Site.csproj", solution);
+            Assert.Contains("src/SDDTemplate.Api/SDDTemplate.Api.csproj", solution);
+            Assert.Contains("src/SDDTemplate.Data/SDDTemplate.Data.csproj", solution);
+        }
+
+        [Fact]
+        public void SiteDoesNotHostClientApiOrDatabaseInfrastructure()
+        {
+            DirectoryInfo repositoryRoot = FindRepositoryRoot();
+            string siteProgram = File.ReadAllText(Path.Combine(repositoryRoot.FullName, "src", "SDDTemplate.Site", "Program.cs"));
+            string siteProject = File.ReadAllText(Path.Combine(repositoryRoot.FullName, "src", "SDDTemplate.Site", "SDDTemplate.Site.csproj"));
+
+            Assert.DoesNotContain("MapClientEndpoints", siteProgram);
+            Assert.DoesNotContain("AddApplicationDatabase", siteProgram);
+            Assert.DoesNotContain("Microsoft.EntityFrameworkCore", siteProject);
+        }
+
+        [Fact]
+        public void ApiHostsClientApiAndReferencesDataProject()
+        {
+            DirectoryInfo repositoryRoot = FindRepositoryRoot();
+            string apiProgram = File.ReadAllText(Path.Combine(repositoryRoot.FullName, "src", "SDDTemplate.Api", "Program.cs"));
+            string apiProject = File.ReadAllText(Path.Combine(repositoryRoot.FullName, "src", "SDDTemplate.Api", "SDDTemplate.Api.csproj"));
+
+            Assert.Contains("MapClientEndpoints", apiProgram);
+            Assert.Contains("MigrateApplicationDatabaseAsync", apiProgram);
+            Assert.Contains("SDDTemplate.Data.csproj", apiProject);
         }
 
         [Theory]
@@ -37,7 +72,7 @@ namespace SDDTemplate.Site.Tests
 
             string markup = File.ReadAllText(homePage);
 
-            Assert.False(ScaffoldInfo.IsTemplateSampleContent(markup));
+            Assert.False(TestScaffoldInfo.IsTemplateSampleContent(markup));
         }
 
         [Fact]
@@ -59,7 +94,7 @@ namespace SDDTemplate.Site.Tests
 
         public static TheoryData<string> RequiredFiles()
         {
-            return [.. ScaffoldInfo.RequiredFiles];
+            return [.. TestScaffoldInfo.RequiredFiles];
         }
 
         private static DirectoryInfo FindRepositoryRoot()
@@ -72,6 +107,28 @@ namespace SDDTemplate.Site.Tests
             }
 
             return current ?? throw new DirectoryNotFoundException("Could not locate repository root.");
+        }
+
+        private static class TestScaffoldInfo
+        {
+            public const string TargetFramework = "net10.0";
+
+            public static IReadOnlyList<string> RequiredFiles { get; } =
+            [
+                "Program.cs",
+                "Components/App.razor",
+                "Components/Routes.razor",
+                "Components/Layout/MainLayout.razor",
+                "Components/Pages/Home.razor",
+                "HealthResponse.cs",
+                "wwwroot/app.css",
+            ];
+
+            public static bool IsTemplateSampleContent(string markup)
+            {
+                return markup.Contains("Hello, world!", StringComparison.Ordinal) ||
+                    markup.Contains("Welcome to your new app.", StringComparison.Ordinal);
+            }
         }
     }
 }

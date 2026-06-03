@@ -1,3 +1,36 @@
 {
-  "ticketKeyPattern": "E2EPROJECT-[0-9]+"
+  "ticketKeyPattern": "E2EPROJECT-[0-9]+",
+  "agentOptimization": {
+    "maxAutonomousIterations": 20,
+    "maxToolRetries": 2,
+    "promptCache": {
+      "enabled": true,
+      "staticContextFirst": true,
+      "dynamicRuntimeContextLast": true,
+      "trackCachedTokens": true
+    },
+    "telemetry": {
+      "enabled": true,
+      "localPath": ".codex/agent-telemetry.local.jsonl",
+      "requiredFields": [
+        "timestampUtc",
+        "workflowStage",
+        "agentRole",
+        "model",
+        "reasoningEffort",
+        "inputTokens",
+        "outputTokens",
+        "cachedTokens",
+        "toolCallCount",
+        "retryCount",
+        "elapsedMilliseconds",
+        "outcome"
+      ]
+    },
+    "workflowEvals": {
+      "casesPath": ".codex/agent-evals/workflow-cases.json",
+      "resultsPath": ".codex/agent-evals/results.local.json",
+      "requireEvalEvidenceBeforeNewAgentRole": true
+    }
+  }
 }

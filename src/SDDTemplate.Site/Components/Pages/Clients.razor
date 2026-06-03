@@ -1,0 +1,247 @@
+@page "/clients"
+@using System.Text.Json
+@attribute [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
+@inject IConfiguration Configuration
+
+<PageTitle>Clients</PageTitle>
+
+<main class="clients-page">
+    <header class="clients-header">
+        <div>
+            <h1>Clients</h1>
+            <p id="clients-summary">No clients loaded</p>
+        </div>
+    </header>
+
+    <section class="clients-grid" aria-label="Client management">
+        <form id="client-form" class="client-form">
+            <input type="hidden" id="client-id" />
+
+            <label>
+                <span>Name</span>
+                <input id="client-name" name="name" autocomplete="given-name" required maxlength="100" />
+            </label>
+
+            <label>
+                <span>Last Name</span>
+                <input id="client-last-name" name="lastName" autocomplete="family-name" required maxlength="100" />
+            </label>
+
+            <label class="full-width">
+                <span>Address</span>
+                <input id="client-address" name="address" autocomplete="street-address" required maxlength="200" />
+            </label>
+
+            <label>
+                <span>Born date</span>
+                <input id="client-born-date" name="bornDate" type="date" required />
+            </label>
+
+            <label>
+                <span>City</span>
+                <input id="client-city" name="city" autocomplete="address-level2" required maxlength="100" />
+            </label>
+
+            <label>
+                <span>Country</span>
+                <input id="client-country" name="country" autocomplete="country-name" required maxlength="100" />
+            </label>
+
+            <label>
+                <span>ZIP code</span>
+                <input id="client-zip-code" name="zipCode" autocomplete="postal-code" required maxlength="12" />
+            </label>
+
+            <div class="form-actions full-width">
+                <button type="submit">Save client</button>
+                <button type="button" id="client-reset">Clear</button>
+            </div>
+
+            <p id="client-errors" class="client-errors" role="alert"></p>
+        </form>
+
+        <div class="clients-list-wrap">
+            <table class="clients-table">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Location</th>
+                        <th>Born date</th>
+                        <th><span class="visually-hidden">Actions</span></th>
+                    </tr>
+                </thead>
+                <tbody id="clients-list">
+                    <tr>
+                        <td colspan="4">No clients exist yet.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+</main>
+
+<script>
+(() => {
+    const apiBaseUrl = @((MarkupString)JsonSerializer.Serialize(ApiBaseUrl));
+    const apiUrl = `${apiBaseUrl.replace(/\/$/, "")}/api/clients`;
+    const form = document.getElementById("client-form");
+    const resetButton = document.getElementById("client-reset");
+    const list = document.getElementById("clients-list");
+    const summary = document.getElementById("clients-summary");
+    const errors = document.getElementById("client-errors");
+
+    const fields = {
+        id: document.getElementById("client-id"),
+        name: document.getElementById("client-name"),
+        lastName: document.getElementById("client-last-name"),
+        address: document.getElementById("client-address"),
+        bornDate: document.getElementById("client-born-date"),
+        city: document.getElementById("client-city"),
+        country: document.getElementById("client-country"),
+        zipCode: document.getElementById("client-zip-code")
+    };
+
+    let clients = [];
+
+    const clientPayload = () => ({
+        name: fields.name.value,
+        lastName: fields.lastName.value,
+        address: fields.address.value,
+        bornDate: fields.bornDate.value,
+        city: fields.city.value,
+        country: fields.country.value,
+        zipCode: fields.zipCode.value
+    });
+
+    const clearForm = () => {
+        form.reset();
+        fields.id.value = "";
+        errors.textContent = "";
+    };
+
+    const showErrors = async response => {
+        const problem = await response.json();
+        errors.textContent = Object.values(problem.errors || {})
+            .flat()
+            .join(" ");
+    };
+
+    const renderClients = () => {
+        summary.textContent = clients.length === 1 ? "1 client" : `${clients.length} clients`;
+        list.innerHTML = "";
+
+        if (clients.length === 0) {
+            const row = document.createElement("tr");
+            row.innerHTML = '<td colspan="4">No clients exist yet.</td>';
+            list.append(row);
+            return;
+        }
+
+        for (const client of clients) {
+            const row = document.createElement("tr");
+            const nameCell = document.createElement("td");
+            const name = document.createElement("strong");
+            const address = document.createElement("span");
+            name.textContent = `${client.name} ${client.lastName}`;
+            address.textContent = client.address;
+            nameCell.append(name, address);
+
+            const locationCell = document.createElement("td");
+            const location = document.createTextNode(`${client.city}, ${client.country}`);
+            const zipCode = document.createElement("span");
+            zipCode.textContent = client.zipCode;
+            locationCell.append(location, zipCode);
+
+            const bornDateCell = document.createElement("td");
+            bornDateCell.textContent = client.bornDate;
+
+            const actionsCell = document.createElement("td");
+            actionsCell.className = "row-actions";
+            const editButton = document.createElement("button");
+            editButton.type = "button";
+            editButton.dataset.action = "edit";
+            editButton.dataset.id = client.id;
+            editButton.textContent = "Edit";
+            const deleteButton = document.createElement("button");
+            deleteButton.type = "button";
+            deleteButton.dataset.action = "delete";
+            deleteButton.dataset.id = client.id;
+            deleteButton.textContent = "Delete";
+            actionsCell.append(editButton, deleteButton);
+
+            row.append(nameCell, locationCell, bornDateCell, actionsCell);
+            list.append(row);
+        }
+    };
+
+    const loadClients = async () => {
+        const response = await fetch(apiUrl);
+        clients = response.ok ? await response.json() : [];
+        renderClients();
+    };
+
+    form.addEventListener("submit", async event => {
+        event.preventDefault();
+        errors.textContent = "";
+
+        const id = fields.id.value;
+        const response = await fetch(id ? `${apiUrl}/${id}` : apiUrl, {
+            method: id ? "PUT" : "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(clientPayload())
+        });
+
+        if (response.status === 400) {
+            await showErrors(response);
+            return;
+        }
+
+        if (!response.ok) {
+            errors.textContent = "The client could not be saved.";
+            return;
+        }
+
+        clearForm();
+        await loadClients();
+    });
+
+    list.addEventListener("click", async event => {
+        const button = event.target.closest("button[data-action]");
+        if (!button) {
+            return;
+        }
+
+        const client = clients.find(item => item.id === Number(button.dataset.id));
+        if (!client) {
+            return;
+        }
+
+        if (button.dataset.action === "edit") {
+            fields.id.value = client.id;
+            fields.name.value = client.name;
+            fields.lastName.value = client.lastName;
+            fields.address.value = client.address;
+            fields.bornDate.value = client.bornDate;
+            fields.city.value = client.city;
+            fields.country.value = client.country;
+            fields.zipCode.value = client.zipCode;
+            return;
+        }
+
+        const response = await fetch(`${apiUrl}/${client.id}`, { method: "DELETE" });
+        if (!response.ok) {
+            errors.textContent = "The client could not be deleted.";
+            return;
+        }
+
+        await loadClients();
+    });
+
+    resetButton.addEventListener("click", clearForm);
+    loadClients();
+})();
+</script>
+
+@code {
+    private string ApiBaseUrl => Configuration["Api:BaseUrl"] ?? string.Empty;
+}

@@ -15,7 +15,9 @@ feature branch -> dev -> DEV -> QA -> E2E QA OK -> main -> PROD
 
 PROD must reuse the QA-approved Nexus artifact. Never rebuild, republish, or rename the artifact during PROD promotion.
 
-Before promotion, read `.codex/skills/_shared/delivery-contract.md`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode ValidateReleaseManifest` when checking `release.json` and `-Mode ArtifactPaths` when verifying Nexus artifact paths. Enforce the ticket context lock before tagging, updating `main`, triggering PROD, or commenting success.
+## Shared Context
+
+Before promotion, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` helpers: `ValidateTicketLock` for `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, `ArtifactPaths`, `ValidateReleaseManifest`, `UpdateReleaseManifest`, and `RenderPlaneComment -Type ProdDeployment`.
 
 For push-triggered PROD deployment from `main`, the commit or merged PR title must start with the ticket key format configured in `.codex/delivery-policy.json`, such as `E2EPROJECT-123: ...`. Maintenance commits, `[SDD]` commits, and non-ticket PRs must not deploy PROD.
 
@@ -37,12 +39,14 @@ Optional environment variables override local JSON when present:
 - `GITEA_OWNER`
 - `GITEA_REPO`
 
-Never print, commit, paste into tickets, or write real API tokens, cookies, Nexus credentials, Azure credentials, or other secrets.
+## Workflow
+
+Run preflight, main/tag promotion, PROD deployment, PROD verification, Plane result, and release handoff steps in order. Do not continue to the next step until the prior validation evidence is present.
 
 ## Preflight
 
 1. Resolve the target Plane ticket, PR, QA-approved commit SHA, source RC version, and final release version from user input, Plane comments, Gitea PR metadata, tags, or Nexus artifact paths.
-2. Read `.codex/delivery-context.local.json` when present and verify the target Plane ticket, PR, QA-approved commit, source RC version when known, and final release version when known match the locked `ticketKey`. If anything resolves to another ticket, stop before tag or `main` mutation.
+2. Run `ValidateTicketLock` with the target Plane ticket, PR, QA-approved commit, source RC version when known, and final release version when known. If the result is invalid, stop before tag or `main` mutation.
 3. Require SemVer tags:
    - source RC: `vMAJOR.MINOR.PATCH-rc.N`
    - final release: `vMAJOR.MINOR.PATCH`
@@ -50,8 +54,9 @@ Never print, commit, paste into tickets, or write real API tokens, cookies, Nexu
 5. Read Plane comments and find `IA generated E2E QA: {ticketKey}` for the same commit/artifact.
 6. Verify the E2E QA comment includes pass result, PR URL, QA URL, Nexus artifact URL, QA evidence URL, and source RC version.
 7. Verify Nexus contains:
-   - `app/{commitSha}/app.zip`
-   - `app/{commitSha}/app.zip.sha256`
+   - `app/{commitSha}/deployable-apps.json`
+   - one `app/{commitSha}/{artifactName}` per topology app
+   - one `app/{commitSha}/{artifactName}.sha256` per topology app
    - `app/{commitSha}/commit.sha`
    - `app/{commitSha}/release.json`
 8. Download checksum metadata only as needed and verify `commit.sha` exactly matches the QA-approved commit.
@@ -77,7 +82,7 @@ Stop if any QA gate, tag gate, artifact gate, or checksum gate fails.
 PROD deployment can be triggered in two supported ways:
 
 - A push/merge to `main` deploys PROD only when the changed files include application/test/package source and the commit or merged PR title starts with the configured ticket key format from `.codex/delivery-policy.json`. It downloads the existing Nexus artifact for `GITHUB_SHA`.
-- Manual workflow dispatch with `environment=prod` deploys the artifact identified by `artifact_commit_sha`.
+- Manual workflow dispatch with `environment=prod` deploys the topology artifacts identified by `artifact_commit_sha`.
 
 For manual dispatch, trigger the Gitea package/deploy workflow with:
 
@@ -88,17 +93,17 @@ release_version={finalVersion}
 source_rc_version={sourceRcVersion}
 ```
 
-The PROD workflow must not run package, DEV, or QA jobs for a `main` push or `environment=prod` dispatch. Maintenance-only changes such as `.codex/**` or workflow-only edits must not deploy PROD. PROD must download `app/{artifact_commit_sha}/app.zip` from Nexus, verify `app.zip.sha256`, deploy to PROD, then run:
+The PROD workflow must not run package, DEV, or QA jobs for a `main` push or `environment=prod` dispatch. Maintenance-only changes such as `.codex/**` or workflow-only edits must not deploy PROD. PROD must download `app/{artifact_commit_sha}/deployable-apps.json` and every listed app ZIP from Nexus, verify each checksum, deploy each app to PROD, then run:
 
 - PROD page smoke check: HTTP 200, expected title/content, no Azure placeholder page.
-- PROD health check: `GET {prodWebUrl}/health` returns HTTP 200 and JSON `status=ok`.
+- PROD health checks: every topology app health path returns HTTP 200 and JSON `status=ok`.
 
 After dispatch, inspect the workflow run jobs and logs against the artifact-reuse contract. A successful PROD run must show that the workflow:
 
 - used `environment=prod`,
 - consumed `artifact_commit_sha={qaApprovedCommit}` for manual dispatch or `GITHUB_SHA` for a `main` push,
-- downloaded `app/{artifact_commit_sha}/app.zip` from Nexus,
-- verified `app.zip.sha256`,
+- downloaded `app/{artifact_commit_sha}/deployable-apps.json` and per-app ZIPs from Nexus,
+- verified every per-app checksum,
 - skipped rebuild/republish behavior,
 - skipped DEV and QA deployment behavior,
 - ran direct PROD page and `/health` checks.
@@ -110,14 +115,14 @@ Prefer named job checks such as `deploy-prod` when present, but do not rely only
 After the workflow succeeds, run direct verification before commenting success:
 
 1. Request the PROD web URL and assert HTTP 200 plus expected page title/content.
-2. Request `{prodWebUrl}/health` and assert HTTP 200 plus `status=ok`.
+2. Request every topology app health path and assert HTTP 200 plus `status=ok`.
 3. Query Prometheus targets at `http://localhost:9090/api/v1/targets` when local Prometheus is reachable.
 4. Verify the PROD web target is present and `health=up`.
 5. If a PROD API target is configured but this repo does not deploy an API, record it as an observability configuration note instead of a product failure.
 6. Query Grafana health at `http://localhost:3001/api/health` when local Grafana is reachable.
 7. If Prometheus or Grafana is unreachable, classify monitoring as unavailable. Direct HTTP and `/health` checks remain authoritative for app success.
 8. If direct page or `/health` checks fail, classify PROD verification as failed and do not claim success.
-9. When PROD verification passes, update `app/{commitSha}/release.json` with final release version, final tag, PROD URL, PROD page status, PROD `/health` status, workflow run URL, monitoring status, and PROD deployment timestamp. Upload the updated manifest to Nexus.
+9. When PROD verification passes, use `UpdateReleaseManifest` to update `app/{commitSha}/release.json` with final release version, final tag, PROD URL, PROD page status, PROD `/health` status, workflow run URL, monitoring status, and PROD deployment timestamp. Validate and upload the updated manifest to Nexus.
 
 PROD success must never be based on screenshots alone.
 
@@ -130,6 +135,8 @@ IA generated PROD deployment: {finalVersion}
 ```
 
 Do not duplicate a PROD result comment with the same marker, commit, artifact, and PROD URL unless the user explicitly asks for a fresh run.
+
+Keep the marker as the first line by itself. Use `RenderPlaneComment -Type ProdDeployment` with the resolved release, reference, evidence, and production validation data to format the readable Markdown body.
 
 The comment must include:
 
@@ -150,6 +157,10 @@ The comment must include:
 
 Only write a success result after the workflow passed and direct PROD page plus `/health` verification passed. If app checks fail, write a failure comment and stop. If only local monitoring is unavailable, deployment may still pass, but the comment must state monitoring verification was unavailable.
 
+## Output
+
+Report the final release version, PROD URL, final tag, deployed artifact commit, validation results, Plane comment status, and any handoff or monitoring gaps.
+
 ## Failure Rules
 
 - Missing Plane API config: stop before Plane reads or mutations.
@@ -164,7 +175,7 @@ Only write a success result after the workflow passed and direct PROD page plus 
 - Local-only release tag after failed push: delete the local tag before stopping unless the tag already exists on the remote.
 - Branch protection blocks `main`: open a release-blocking promotion PR and require rerunning this skill after merge.
 - PROD workflow violates the artifact-reuse contract: route to `$configure-artifact-delivery` or `$configure-dev-environment`, fix the workflow through PR, then rerun PROD dispatch only after the fix reaches `main`.
-- Missing `AZURE_PROD_RESOURCE_GROUP`, `AZURE_PROD_WEBAPP_NAME`, or `AZURE_PROD_WEBAPP_URL` Gitea Actions secrets: route to `$configure-azure-environments` or `$configure-dev-environment`, configure the secrets from Azure deployment outputs without exposing secret values, then rerun PROD dispatch.
+- Missing `AZURE_PROD_RESOURCE_GROUP` or any `AZURE_PROD_{APPID}_APP_NAME` / `AZURE_PROD_{APPID}_APP_URL` Gitea Actions secrets: route to `$configure-azure-environments` or `$configure-dev-environment`, configure the secrets from Azure deployment outputs without exposing secret values, then rerun PROD dispatch.
 - PROD workflow failure: comment failure and stop.
 - PROD page or `/health` failure: comment failure and stop.
 - Prometheus/Grafana unavailable: record as monitoring unavailable; do not fail the deployment when direct app checks pass.
