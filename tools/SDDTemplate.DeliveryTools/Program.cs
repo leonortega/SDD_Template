@@ -59,6 +59,19 @@ static void Run(string[] args)
                 Required(options, "plane-ticket-key"),
                 options.GetValueOrDefault("version-status", "unversioned"));
             break;
+        case "BuildDeploymentConfig":
+            DeploymentConfigBuildResult configResult = DeliveryWorkflowHelpers.BuildDeploymentConfig(
+                Required(options, "root"),
+                Required(options, "topology"),
+                Required(options, "mapping"),
+                Required(options, "output"));
+            Console.WriteLine(JsonSerializer.Serialize(configResult, new JsonSerializerOptions { WriteIndented = true }));
+            if (!configResult.Valid)
+            {
+                Environment.ExitCode = 1;
+            }
+
+            break;
         case "ClassifyTicketReadiness":
             Console.WriteLine(JsonSerializer.Serialize(
                 DeliveryWorkflowHelpers.ClassifyTicketReadiness(

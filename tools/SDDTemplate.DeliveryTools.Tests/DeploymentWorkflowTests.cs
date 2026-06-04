@@ -107,22 +107,30 @@ namespace SDDTemplate.DeliveryTools.Tests
             string packageJob = GetJobSection(workflow, "package");
 
             Assert.Contains("infra/deployment/apps.json", workflow);
+            Assert.Contains("infra/deployment/configuration.json", workflow);
+            Assert.Contains("BuildDeploymentConfig", workflow);
             Assert.Contains("jq -r '.apps[] | [.appId, .projectPath, .artifactName] | @tsv'", packageJob);
             Assert.Contains("dotnet publish \"$project_path\"", packageJob);
             Assert.Contains("artifacts/packages/$artifact_name", packageJob);
             Assert.Contains("deployable-apps.json", workflow);
+            Assert.Contains("deployment-config.json", workflow);
+            Assert.Contains("az webapp config appsettings set", workflow);
+            Assert.Contains("az webapp config appsettings list", workflow);
             Assert.Contains("az webapp deploy", workflow);
             Assert.Contains("AZURE_DEV_${app_upper}_APP_NAME", workflow);
             Assert.Contains("AZURE_QA_${app_upper}_APP_NAME", workflow);
             Assert.Contains("AZURE_PROD_${app_upper}_APP_NAME", workflow);
             Assert.Contains("- name: Publish topology apps\n        shell: bash", normalizedWorkflow);
             Assert.Contains("- name: Upload topology artifacts to Nexus\n        shell: bash", normalizedWorkflow);
+            Assert.Contains("- name: Apply and verify DEV deployment configuration\n        shell: bash", normalizedWorkflow);
             Assert.Contains("- name: Deploy DEV topology apps\n        shell: bash", normalizedWorkflow);
             Assert.Contains("- name: Smoke check DEV topology apps\n        shell: bash", normalizedWorkflow);
+            Assert.Contains("- name: Apply and verify QA deployment configuration\n        shell: bash", normalizedWorkflow);
             Assert.Contains("- name: Deploy QA topology apps\n        shell: bash", normalizedWorkflow);
             Assert.Contains("- name: Smoke check QA topology apps\n        shell: bash", normalizedWorkflow);
             Assert.DoesNotContain("\n  e2e-qa:\n", normalizedWorkflow);
             Assert.Contains("\n  e2e-qa-branch:\n", normalizedWorkflow);
+            Assert.Contains("- name: Apply and verify PROD deployment configuration\n        shell: bash", normalizedWorkflow);
             Assert.Contains("- name: Deploy PROD topology apps\n        shell: bash", normalizedWorkflow);
             Assert.Contains("- name: Smoke check PROD topology apps\n        shell: bash", normalizedWorkflow);
         }
@@ -300,9 +308,11 @@ namespace SDDTemplate.DeliveryTools.Tests
             string script = ReadConfigureScript();
 
             Assert.Contains("CreateReleaseManifest", script);
+            Assert.Contains("BuildDeploymentConfig", script);
             Assert.Contains("--plane-ticket-key \"$plane_ticket_key\"", script);
             Assert.Contains("--version-status unversioned", script);
             Assert.Contains("ValidateReleaseManifest", script);
+            Assert.Contains("deployment-config.json", script);
             Assert.Contains("app/${GITHUB_SHA}/release.json", script);
             Assert.Contains("Package/deploy workflow should upload a baseline Nexus release manifest next to the artifact.", script);
         }
@@ -337,11 +347,15 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.Contains("Deployment Topology Review", skill);
             Assert.Contains("infra/deployment/apps.json", skill);
+            Assert.Contains("infra/deployment/configuration.json", skill);
+            Assert.Contains("deployment-config.json", skill);
             Assert.Contains("Microsoft.NET.Sdk.Web", skill);
             Assert.Contains("Api:BaseUrl", skill);
             Assert.Contains("Api__BaseUrl", skill);
             Assert.Contains("Cors__AllowedOrigins__0", skill);
             Assert.Contains("ConnectionStrings__ClientsDb", skill);
+            Assert.Contains("fail closed", skill);
+            Assert.Contains("deployment-config.json", azureReference);
             Assert.Contains("Deployment Topology Review", azureReference);
             Assert.Contains("Deployment topology: updated/verified/no deployable app changes", implementation);
             Assert.Contains("Deployment Topology Review", feedbackLoop);

@@ -78,6 +78,7 @@ Apply this general QA quality bar before executing tests:
 - Verify the delivered environment, artifact, commit, or deployment being tested so a pass cannot accidentally apply to the wrong build.
 - Include lightweight performance observations for ticket-relevant paths. Record response time, browser timing, or API latency when the tool exposes it. Treat obvious major regressions as QA failures when the ticket is performance-sensitive or the latency breaks user-observable acceptance criteria; otherwise record them as warnings.
 - Treat evidence as data to validate, not decoration. Screenshots, logs, traces, and reports must be checked for contradictions such as blank captures, wrong environment, console errors, failed network calls, stale data, or misleading render artifacts.
+- For deployed multi-app topologies, verify configured cross-service browser calls use the intended configured service URL from the deployment configuration rather than an accidental same-origin fallback such as `/api/*` on the web app.
 - Record any assumptions used to fill gaps in weak requirements. If an assumption materially changes pass/fail meaning, classify the result as blocked or ask for clarification instead of passing by guesswork.
 - Prefer automated assertions for repeatable facts and use manual or visual evidence only where automation cannot express the expected behavior reliably.
 

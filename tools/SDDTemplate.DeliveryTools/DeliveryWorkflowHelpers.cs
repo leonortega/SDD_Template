@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
 
@@ -108,6 +109,101 @@ namespace SDDTemplate.DeliveryTools
             }
 
             File.WriteAllText(outputPath, JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true }));
+        }
+
+        public static DeploymentConfigBuildResult BuildDeploymentConfig(string root, string topologyPath, string mappingPath, string outputPath)
+        {
+            JsonArray apps = ReadRequiredArray(topologyPath, "apps");
+            JsonArray mappings = ReadRequiredArray(mappingPath, "settings");
+            Dictionary<string, JsonObject> mappingsByKey = [];
+            HashSet<string> ignoredPrefixes = ReadStringArray(mappingPath, "ignoredPrefixes");
+            List<string> errors = [];
+            JsonArray outputApps = [];
+
+            foreach (JsonNode? mappingNode in mappings)
+            {
+                JsonObject mapping = mappingNode?.AsObject() ?? throw new InvalidOperationException("configuration.json settings entries must be objects.");
+                string appId = RequiredString(mapping, "appId");
+                string name = RequiredString(mapping, "name");
+                mappingsByKey[$"{appId}:{name}"] = mapping;
+            }
+
+            foreach (JsonNode? appNode in apps)
+            {
+                JsonObject app = appNode?.AsObject() ?? throw new InvalidOperationException("apps.json app entries must be objects.");
+                string appId = RequiredString(app, "appId");
+                string role = RequiredString(app, "role");
+                string projectPath = RequiredString(app, "projectPath");
+                string projectDirectory = Path.GetDirectoryName(Path.Combine(root, projectPath))
+                    ?? throw new InvalidOperationException($"Could not resolve project directory for {projectPath}.");
+
+                SortedSet<string> discoveredSettings = DiscoverAppSettings(projectDirectory);
+                JsonArray appSettings = [];
+
+                foreach (string discovered in discoveredSettings)
+                {
+                    if (ignoredPrefixes.Any(prefix => discovered.StartsWith(prefix, StringComparison.Ordinal)))
+                    {
+                        continue;
+                    }
+
+                    if (!mappingsByKey.TryGetValue($"{appId}:{discovered}", out JsonObject? mapping))
+                    {
+                        errors.Add($"Missing deployment configuration mapping for {appId}:{discovered}.");
+                        continue;
+                    }
+
+                    appSettings.Add(CloneObject(mapping));
+                }
+
+                foreach (JsonObject mapping in mappingsByKey.Values
+                    .Where(mapping => RequiredString(mapping, "appId").Equals(appId, StringComparison.Ordinal)
+                        && ReadBool(mapping, "additionalSetting")))
+                {
+                    if (!appSettings.OfType<JsonObject>().Any(setting => RequiredString(setting, "name").Equals(RequiredString(mapping, "name"), StringComparison.Ordinal)))
+                    {
+                        appSettings.Add(CloneObject(mapping));
+                    }
+                }
+
+                foreach (JsonObject setting in appSettings.OfType<JsonObject>())
+                {
+                    string source = RequiredString(setting, "source");
+                    bool required = ReadBool(setting, "required", fallback: true);
+                    if (required && source.Equals("manualRequired", StringComparison.Ordinal))
+                    {
+                        errors.Add($"Required deployment configuration {appId}:{RequiredString(setting, "name")} is manualRequired. Run configure-azure-environments and map this value before deploying.");
+                    }
+                }
+
+                outputApps.Add(new JsonObject
+                {
+                    ["appId"] = appId,
+                    ["role"] = role,
+                    ["settings"] = appSettings,
+                });
+            }
+
+            if (errors.Count > 0)
+            {
+                return new DeploymentConfigBuildResult(outputPath, false, errors);
+            }
+
+            JsonObject artifact = new()
+            {
+                ["schemaVersion"] = 1,
+                ["generatedAtUtc"] = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture),
+                ["apps"] = outputApps,
+            };
+
+            string? parent = Path.GetDirectoryName(outputPath);
+            if (!string.IsNullOrWhiteSpace(parent))
+            {
+                _ = Directory.CreateDirectory(parent);
+            }
+
+            File.WriteAllText(outputPath, artifact.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+            return new DeploymentConfigBuildResult(outputPath, true, []);
         }
 
         public static TicketReadinessResult ClassifyTicketReadiness(string title, string description)
@@ -357,6 +453,84 @@ namespace SDDTemplate.DeliveryTools
             Match value = Regex.Match(frontmatter.Groups[1].Value, $"(?im)^\\s*{Regex.Escape(key)}\\s*:\\s*(.+?)\\s*$", RegexOptions.CultureInvariant);
             return value.Success ? value.Groups[1].Value.Trim().Trim('"', '\'') : null;
         }
+
+        private static SortedSet<string> DiscoverAppSettings(string projectDirectory)
+        {
+            SortedSet<string> settings = new(StringComparer.Ordinal);
+            if (!Directory.Exists(projectDirectory))
+            {
+                return settings;
+            }
+
+            foreach (string path in Directory.EnumerateFiles(projectDirectory, "appsettings*.json", SearchOption.TopDirectoryOnly).Order(StringComparer.Ordinal))
+            {
+                using JsonDocument document = JsonDocument.Parse(File.ReadAllText(path));
+                FlattenSettings(document.RootElement, string.Empty, settings);
+            }
+
+            return settings;
+        }
+
+        private static void FlattenSettings(JsonElement element, string prefix, ISet<string> settings)
+        {
+            if (element.ValueKind == JsonValueKind.Object)
+            {
+                foreach (JsonProperty property in element.EnumerateObject())
+                {
+                    string key = string.IsNullOrWhiteSpace(prefix) ? property.Name : $"{prefix}__{property.Name}";
+                    FlattenSettings(property.Value, key, settings);
+                }
+            }
+            else if (element.ValueKind == JsonValueKind.Array)
+            {
+                int index = 0;
+                foreach (JsonElement item in element.EnumerateArray())
+                {
+                    FlattenSettings(item, $"{prefix}__{index}", settings);
+                    index++;
+                }
+            }
+            else if (!string.IsNullOrWhiteSpace(prefix))
+            {
+                _ = settings.Add(prefix);
+            }
+        }
+
+        private static JsonArray ReadRequiredArray(string path, string propertyName)
+        {
+            JsonObject root = JsonNode.Parse(File.ReadAllText(path))?.AsObject()
+                ?? throw new InvalidOperationException($"{path} must contain a JSON object.");
+            return root[propertyName]?.AsArray()
+                ?? throw new InvalidOperationException($"{path} must define {propertyName}.");
+        }
+
+        private static HashSet<string> ReadStringArray(string path, string propertyName)
+        {
+            JsonObject root = JsonNode.Parse(File.ReadAllText(path))?.AsObject()
+                ?? throw new InvalidOperationException($"{path} must contain a JSON object.");
+            JsonArray? array = root[propertyName]?.AsArray();
+            return array is null
+                ? []
+                : [.. array.Select(item => item?.GetValue<string>() ?? string.Empty).Where(item => !string.IsNullOrWhiteSpace(item))];
+        }
+
+        private static JsonObject CloneObject(JsonObject source)
+        {
+            return JsonNode.Parse(source.ToJsonString())?.AsObject()
+                ?? throw new InvalidOperationException("Could not clone JSON object.");
+        }
+
+        private static string RequiredString(JsonObject source, string propertyName)
+        {
+            return source[propertyName]?.GetValue<string>() is { Length: > 0 } value
+                ? value
+                : throw new InvalidOperationException($"Configuration mapping must define {propertyName}.");
+        }
+
+        private static bool ReadBool(JsonObject source, string propertyName, bool fallback = false)
+        {
+            return source[propertyName]?.GetValue<bool>() ?? fallback;
+        }
     }
 
     public sealed record ReleaseManifestValidation(string Path, bool Valid, IReadOnlyList<string> Errors);
@@ -374,6 +548,8 @@ namespace SDDTemplate.DeliveryTools
         bool RequiresResolutionBeforeApply);
 
     public sealed record AdversarialReviewTrigger(bool Required, string Mode, IReadOnlyList<string> Reasons);
+
+    public sealed record DeploymentConfigBuildResult(string OutputPath, bool Valid, IReadOnlyList<string> Errors);
 
     public sealed record InstalledSkillEntry(
         string Name,
