@@ -375,6 +375,19 @@ app/{commitSha}/release.json
 
 `deployable-apps.json` is the packaged copy of `infra/deployment/apps.json` sorted for deployment. `commit.sha` must exactly match the artifact commit. Every `{artifactName}.sha256` listed by the topology must verify before deployment.
 
+## Deployment Configuration Drift
+
+Every deployable app configuration key must be discovered, mapped, applied, and verified before DEV, QA, or PROD deployment can be reported as successful.
+
+Rules:
+
+- `configure-azure-environments` owns `infra/deployment/configuration.json`, the tracked placeholder-safe mapping from flattened `appsettings*.json` keys to deploy-time App Service settings.
+- The package workflow must build `deployment-config.json` from `infra/deployment/apps.json`, `infra/deployment/configuration.json`, and each deployable project `appsettings*.json`, then publish it next to `deployable-apps.json` in Nexus.
+- Deployment jobs must apply and verify `deployment-config.json` for every target environment before claiming deployment success. Verification must check required keys exist, non-secret values match expected resolved values, and secret-backed keys exist without printing secret values.
+- Interactive configure or planning runs should infer known safe values from topology and environment metadata. When a required value cannot be inferred, ask the developer in chat for the mapping choice or tell them exactly where to create the needed secret or find the value. Never ask for raw secret values in chat.
+- Non-interactive CI and deploy automation must fail closed when a required key is unmapped, marked `manualRequired`, missing from the live App Service settings, or mismatched.
+- Removed keys are reported as drift. Automatic deletion from live App Service settings requires a separate explicit action because operational settings may still be in use.
+
 ## Release Manifest
 
 Validate `release.json` against `.codex/skills/_shared/release.schema.json` when reading or writing it. Preserve existing fields when adding stage-specific data.

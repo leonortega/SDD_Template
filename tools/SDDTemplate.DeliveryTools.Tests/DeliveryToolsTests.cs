@@ -170,6 +170,89 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
+        public void DeploymentConfigBuildsArtifactFromFlattenedAppsettingsAndMappings()
+        {
+            string root = CreateTempDirectory();
+            string site = Path.Combine(root, "src", "Example.Site");
+            string api = Path.Combine(root, "src", "Example.Api");
+            string infra = Path.Combine(root, "infra", "deployment");
+            _ = Directory.CreateDirectory(site);
+            _ = Directory.CreateDirectory(api);
+            _ = Directory.CreateDirectory(infra);
+
+            File.WriteAllText(Path.Combine(site, "appsettings.json"), JsonSerializer.Serialize(new
+            {
+                Api = new { BaseUrl = "" },
+                Feature = new { Enabled = true },
+            }));
+            File.WriteAllText(Path.Combine(api, "appsettings.json"), JsonSerializer.Serialize(new
+            {
+                Cors = new { AllowedOrigins = Array.Empty<string>() },
+            }));
+            File.WriteAllText(Path.Combine(infra, "apps.json"), JsonSerializer.Serialize(new
+            {
+                version = 1,
+                apps = new object[]
+                {
+                    new { appId = "site", role = "web", projectPath = "src/Example.Site/Example.Site.csproj" },
+                    new { appId = "api", role = "api", projectPath = "src/Example.Api/Example.Api.csproj" },
+                },
+            }));
+            File.WriteAllText(Path.Combine(infra, "configuration.json"), JsonSerializer.Serialize(new
+            {
+                version = 1,
+                settings = new object[]
+                {
+                    new { appId = "site", name = "Api__BaseUrl", source = "topologyReference", targetAppId = "api", targetProperty = "url", required = true, secret = false },
+                    new { appId = "site", name = "Feature__Enabled", source = "literal", value = "true", required = false, secret = false },
+                    new { appId = "api", name = "Cors__AllowedOrigins", source = "topologyReference", targetAppId = "site", targetProperty = "url", required = true, secret = false },
+                    new { appId = "api", name = "ConnectionStrings__ClientsDb", source = "sqliteDataPath", value = "Data Source=/home/data/app.db", required = true, secret = false, additionalSetting = true },
+                },
+            }));
+
+            string outputPath = Path.Combine(root, "artifacts", "deployment-config.json");
+            DeploymentConfigBuildResult result = DeliveryWorkflowHelpers.BuildDeploymentConfig(
+                root,
+                Path.Combine(infra, "apps.json"),
+                Path.Combine(infra, "configuration.json"),
+                outputPath);
+
+            Assert.True(result.Valid);
+            using JsonDocument artifact = JsonDocument.Parse(File.ReadAllText(outputPath));
+            JsonElement siteConfig = artifact.RootElement.GetProperty("apps").EnumerateArray().Single(item => item.GetProperty("appId").GetString() == "site");
+            JsonElement apiConfig = artifact.RootElement.GetProperty("apps").EnumerateArray().Single(item => item.GetProperty("appId").GetString() == "api");
+            Assert.Contains(siteConfig.GetProperty("settings").EnumerateArray(), item => item.GetProperty("name").GetString() == "Api__BaseUrl");
+            Assert.Contains(apiConfig.GetProperty("settings").EnumerateArray(), item => item.GetProperty("name").GetString() == "ConnectionStrings__ClientsDb");
+        }
+
+        [Fact]
+        public void DeploymentConfigFailsClosedForUnmappedRequiredSettings()
+        {
+            string root = CreateTempDirectory();
+            string site = Path.Combine(root, "src", "Example.Site");
+            string infra = Path.Combine(root, "infra", "deployment");
+            _ = Directory.CreateDirectory(site);
+            _ = Directory.CreateDirectory(infra);
+
+            File.WriteAllText(Path.Combine(site, "appsettings.json"), JsonSerializer.Serialize(new { NewSetting = new { Value = "missing" } }));
+            File.WriteAllText(Path.Combine(infra, "apps.json"), JsonSerializer.Serialize(new
+            {
+                version = 1,
+                apps = new[] { new { appId = "site", role = "web", projectPath = "src/Example.Site/Example.Site.csproj" } },
+            }));
+            File.WriteAllText(Path.Combine(infra, "configuration.json"), JsonSerializer.Serialize(new { version = 1, settings = Array.Empty<object>() }));
+
+            DeploymentConfigBuildResult result = DeliveryWorkflowHelpers.BuildDeploymentConfig(
+                root,
+                Path.Combine(infra, "apps.json"),
+                Path.Combine(infra, "configuration.json"),
+                Path.Combine(root, "deployment-config.json"));
+
+            Assert.False(result.Valid);
+            Assert.Contains(result.Errors, error => error.Contains("site:NewSetting__Value", StringComparison.Ordinal));
+        }
+
+        [Fact]
         public void AuditModesDoNotWriteLocalClientToolsConfigByDefault()
         {
             string root = CreateTempDirectory();

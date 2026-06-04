@@ -3,6 +3,8 @@
 Owns:
 
 - `infra/deployment/apps.json`.
+- `infra/deployment/configuration.json`.
+- `infra/deployment/configuration.schema.json`.
 - `infra/azure/main.bicep`.
 - `infra/azure/dev.parameters.json`.
 - `infra/azure/qa.parameters.json`.
@@ -10,6 +12,7 @@ Owns:
 - `infra/azure/deploy-environments.ps1`.
 - DEV/QA/PROD App Service runtime and outputs.
 - Deployment Topology Review for deployable apps and `appsettings*.json` to App Service setting mappings.
+- Deployment configuration drift prevention through the generated `deployment-config.json` Nexus artifact.
 
 ## Defaults
 
@@ -79,7 +82,10 @@ Run this review when changes touch deployable projects, `Program.cs`, `appsettin
 - Keep `infra/deployment/apps.json` aligned with app id, project path, role, artifact name, health path, deploy order, and dependencies.
 - Flatten appsettings keys into App Service settings using double underscores.
 - Infer known values between apps, including `Api__BaseUrl`, `Cors__AllowedOrigins__0`, and `ConnectionStrings__ClientsDb`.
-- Use placeholder-safe mappings or exact manual setup instructions for unknown values. Never write real secrets or environment hostnames into tracked appsettings files.
+- Record mappings in `infra/deployment/configuration.json` and generate `deployment-config.json` during packaging.
+- Use placeholder-safe mappings or exact manual setup instructions for unknown values. In chat, ask the developer for the mapping choice or tell them where to create the Gitea secret or find the Azure value; never ask for raw secret values.
+- CI deploys fail closed when a required discovered appsetting is unmapped, marked `manualRequired`, missing from live App Service settings, or mismatched.
+- Removed keys are drift findings only; do not automatically delete live App Service settings without an explicit operator request.
 
 ## Gitea Actions App Service Secrets
 

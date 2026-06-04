@@ -638,7 +638,7 @@ function Add-QualityGateAuditFindings {
   if (-not (Test-Path (Join-RootPath $releaseWorkflow))) {
     Add-Item $Result "findings" $releaseWorkflow "" "Missing package/deploy workflow for Nexus artifact publication and Azure promotion." "warning"
   } else {
-    foreach ($expected in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "az webapp deploy", "classify-changes", "app_changed", "deploy_allowed", ".codex/delivery-policy.json", "ticketKeyPattern", "BASH_REMATCH", "refs/heads/dev", "refs/heads/main", "qa/**", "deploy-qa", "e2e-qa-branch", "deploy-prod", "artifact_commit_sha", "PROD_ARTIFACT_COMMIT_SHA", "release_version", "source_rc_version", "release.json", "CreateReleaseManifest", "ValidateReleaseManifest", "infra/deployment/apps.json", "deployable-apps.json", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_SITE_APP_NAME", "AZURE_QA_SITE_APP_URL", "AZURE_QA_API_APP_NAME", "AZURE_QA_API_APP_URL", "E2E_SITE_URL", "E2E_API_URL", "E2E_ARTIFACT_COMMIT_SHA", "qa-e2e-evidence.zip", "AZURE_PROD_RESOURCE_GROUP", "AZURE_PROD_SITE_APP_NAME", "AZURE_PROD_SITE_APP_URL", "AZURE_PROD_API_APP_NAME", "AZURE_PROD_API_APP_URL", "/health")) {
+    foreach ($expected in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "az webapp deploy", "az webapp config appsettings set", "az webapp config appsettings list", "classify-changes", "app_changed", "deploy_allowed", ".codex/delivery-policy.json", "ticketKeyPattern", "BASH_REMATCH", "refs/heads/dev", "refs/heads/main", "qa/**", "deploy-qa", "e2e-qa-branch", "deploy-prod", "artifact_commit_sha", "PROD_ARTIFACT_COMMIT_SHA", "release_version", "source_rc_version", "release.json", "CreateReleaseManifest", "ValidateReleaseManifest", "BuildDeploymentConfig", "infra/deployment/apps.json", "infra/deployment/configuration.json", "deployable-apps.json", "deployment-config.json", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_SITE_APP_NAME", "AZURE_QA_SITE_APP_URL", "AZURE_QA_API_APP_NAME", "AZURE_QA_API_APP_URL", "E2E_SITE_URL", "E2E_API_URL", "E2E_ARTIFACT_COMMIT_SHA", "qa-e2e-evidence.zip", "AZURE_PROD_RESOURCE_GROUP", "AZURE_PROD_SITE_APP_NAME", "AZURE_PROD_SITE_APP_URL", "AZURE_PROD_API_APP_NAME", "AZURE_PROD_API_APP_URL", "/health")) {
       if (-not (Test-FileContains $releaseWorkflow ([regex]::Escape($expected)))) {
         Add-Item $Result "findings" $releaseWorkflow $expected "Package/deploy workflow does not mention $expected." "warning"
       }
@@ -739,12 +739,22 @@ function Add-QualityGateAuditFindings {
 
   $azureMain = "infra/azure/main.bicep"
   $topologyManifest = "infra/deployment/apps.json"
+  $configurationManifest = "infra/deployment/configuration.json"
   if (-not (Test-Path (Join-RootPath $topologyManifest))) {
     Add-Item $Result "findings" $topologyManifest "" "Missing deployable app topology manifest used by Azure Bicep and package/deploy workflow." "warning"
   } else {
     foreach ($expectedTopology in @('"appId"\s*:\s*"site"', '"appId"\s*:\s*"api"', '"projectPath"\s*:', '"artifactName"\s*:', '"healthPath"\s*:')) {
       if (-not (Test-FileContains $topologyManifest $expectedTopology)) {
         Add-Item $Result "findings" $topologyManifest $expectedTopology "Deployable app topology manifest is missing an expected app or field." "warning"
+      }
+    }
+  }
+  if (-not (Test-Path (Join-RootPath $configurationManifest))) {
+    Add-Item $Result "findings" $configurationManifest "" "Missing deployable configuration mapping manifest used to build deployment-config.json." "warning"
+  } else {
+    foreach ($expectedConfigurationMapping in @('"settings"\s*:', '"source"\s*:', '"required"\s*:', '"secret"\s*:')) {
+      if (-not (Test-FileContains $configurationManifest $expectedConfigurationMapping)) {
+        Add-Item $Result "findings" $configurationManifest $expectedConfigurationMapping "Deployable configuration manifest is missing expected mapping fields." "warning"
       }
     }
   }
@@ -2955,7 +2965,7 @@ Release flow:
 feature branch -> dev -> DEV -> QA -> Gitea E2E evidence -> Plane E2E QA -> main -> PROD
 ```
 
-The package workflow reads `infra/deployment/apps.json`, builds one ZIP per deployable app, and publishes from ticket-gated application changes on `dev`, including `app/{commitSha}/deployable-apps.json`, per-app ZIP/checksum files, and a baseline `app/{commitSha}/release.json`. DEV and QA must deploy the same Nexus app artifacts for the same commit SHA. After QA deploy and smoke checks, push a `qa/{ticketKey}` branch from current `dev`; the `e2e-qa-branch` job runs the committed Playwright suite against the deployed QA Site/API URLs without redeploying, resolves the artifact commit from the branch point with `dev`, and uploads `app/{commitSha}/qa-e2e-evidence.zip` plus a ticket/run evidence copy under `qa/{ticketKey}/{runId}/qa-e2e-evidence.zip`. This Gitea job is evidence-only; the `test-e2e` skill remains responsible for Plane Done state, RC tagging, and release manifest QA lineage. PROD must deploy the QA-approved Nexus app artifacts from an exact-commit `main` promotion or explicit dispatch by commit SHA and must pass each app health check.
+The package workflow reads `infra/deployment/apps.json`, builds one ZIP per deployable app, builds `deployment-config.json` from `infra/deployment/configuration.json` plus each app's `appsettings*.json`, and publishes from ticket-gated application changes on `dev`, including `app/{commitSha}/deployable-apps.json`, `app/{commitSha}/deployment-config.json`, per-app ZIP/checksum files, and a baseline `app/{commitSha}/release.json`. DEV, QA, and PROD must apply and verify deployment configuration before deployment success is claimed. DEV and QA must deploy the same Nexus app artifacts for the same commit SHA. After QA deploy and smoke checks, push a `qa/{ticketKey}` branch from current `dev`; the `e2e-qa-branch` job runs the committed Playwright suite against the deployed QA Site/API URLs without redeploying, resolves the artifact commit from the branch point with `dev`, and uploads `app/{commitSha}/qa-e2e-evidence.zip` plus a ticket/run evidence copy under `qa/{ticketKey}/{runId}/qa-e2e-evidence.zip`. This Gitea job is evidence-only; the `test-e2e` skill remains responsible for Plane Done state, RC tagging, and release manifest QA lineage. PROD must deploy the QA-approved Nexus app artifacts from an exact-commit `main` promotion or explicit dispatch by commit SHA and must pass deployment configuration verification plus each app health check.
 '@
 
   return $result
