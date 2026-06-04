@@ -91,6 +91,7 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.Contains("param deployableApps array", bicep);
             Assert.Contains("resource apps 'Microsoft.Web/sites@2023-12-01' = [for app in deployableApps", bicep);
+            Assert.Contains("resource appSettings 'Microsoft.Web/sites/config@2023-12-01'", bicep);
             Assert.Contains("Api__BaseUrl", bicep);
             Assert.Contains("Cors__AllowedOrigins__0", bicep);
             Assert.Contains("ConnectionStrings__ClientsDb", bicep);
@@ -117,6 +118,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("az webapp config appsettings set", workflow);
             Assert.Contains("az webapp config appsettings list", workflow);
             Assert.Contains("az webapp deploy", workflow);
+            Assert.Contains("const apiBaseUrl", workflow);
+            Assert.Contains("Access-Control-Allow-Origin", workflow);
             Assert.Contains("AZURE_DEV_${app_upper}_APP_NAME", workflow);
             Assert.Contains("AZURE_QA_${app_upper}_APP_NAME", workflow);
             Assert.Contains("AZURE_PROD_${app_upper}_APP_NAME", workflow);
@@ -313,6 +316,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("--version-status unversioned", script);
             Assert.Contains("ValidateReleaseManifest", script);
             Assert.Contains("deployment-config.json", script);
+            Assert.Contains("const apiBaseUrl", script);
+            Assert.Contains("Access-Control-Allow-Origin", script);
             Assert.Contains("app/${GITHUB_SHA}/release.json", script);
             Assert.Contains("Package/deploy workflow should upload a baseline Nexus release manifest next to the artifact.", script);
         }
@@ -331,6 +336,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("E2E_SITE_URL", script);
             Assert.Contains("E2E_API_URL", script);
             Assert.Contains("push a `qa/{ticketKey}` branch from current `dev`", deploymentDoc);
+            Assert.Contains("rendered web API-base-url verification", deploymentDoc);
+            Assert.Contains("API CORS preflight verification", deploymentDoc);
             Assert.Contains("tests/SDDTemplate.E2ETests", developmentDoc);
             Assert.Contains("deployed-QA regression suite", e2eSkill);
             Assert.Contains("qa/{ticketKey}", e2eSkill);
@@ -355,8 +362,11 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("Cors__AllowedOrigins__0", skill);
             Assert.Contains("ConnectionStrings__ClientsDb", skill);
             Assert.Contains("fail closed", skill);
+            Assert.Contains("rendered clients page contains the expected API base URL", ReadSkill("_shared", "delivery-contract.md"));
+            Assert.Contains("CORS preflight allows the matching web origin", ReadSkill("_shared", "delivery-contract.md"));
             Assert.Contains("deployment-config.json", azureReference);
             Assert.Contains("Deployment Topology Review", azureReference);
+            Assert.Contains("explicit App Service appsettings resources", azureReference);
             Assert.Contains("Deployment topology: updated/verified/no deployable app changes", implementation);
             Assert.Contains("Deployment Topology Review", feedbackLoop);
         }

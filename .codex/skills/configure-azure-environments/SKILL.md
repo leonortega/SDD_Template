@@ -34,13 +34,15 @@ Safety:
 7. Infer known non-secret values between apps, such as web `Api__BaseUrl` pointing to the API app URL, API `Cors__AllowedOrigins__0` pointing to the web app URL, API SQLite `ConnectionStrings__ClientsDb` pointing to `/home/data/app.db`, and environment name values.
 8. For unknown or secret-bearing values, ask the developer in chat for the mapping choice or give exact steps to create the needed Gitea secret, Azure App Service setting, or Azure CLI lookup. Never ask for raw secret values in chat and never write real secrets or environment hostnames into tracked `appsettings*.json`.
 9. Require CI to fail closed when `deployment-config.json` cannot be built, a required mapping is `manualRequired`, or live App Service settings do not match expected values.
-10. Keep `infra/azure/main.bicep`, `.gitea/workflows/package-deploy.yml`, `.gitea/workflows/README.md`, configure audits, and tests synchronized with the manifest and `deployment-config.json` artifact.
-11. Ask only for values that differ from defaults.
-12. Preview with `.\infra\azure\deploy-environments.ps1 -Location eastus -WhatIf`.
-13. Deploy only after approval.
-14. When `AZURE_CREDENTIALS` is missing, explain how to create the service principal JSON, where to store it in Gitea Actions secrets, official documentation links, and validation commands.
-15. When PROD deployment is enabled, verify the Gitea Actions secret names for every manifest app exist. Infer their non-secret values from Azure deployment outputs or `az webapp list`, then configure only after confirming the values.
-16. Pass Azure output hostnames to `$configure-observability` only when monitoring should be wired.
+10. Ensure Azure provisioning applies these settings on first deploy through explicit App Service appsettings resources, not only through package-time configuration repair.
+11. Smoke checks must verify browser-facing topology: rendered web pages must contain the expected API base URL and API preflight must allow the matching web origin.
+12. Keep `infra/azure/main.bicep`, `.gitea/workflows/package-deploy.yml`, `.gitea/workflows/README.md`, configure audits, and tests synchronized with the manifest and `deployment-config.json` artifact.
+13. Ask only for values that differ from defaults.
+14. Preview with `.\infra\azure\deploy-environments.ps1 -Location eastus -WhatIf`.
+15. Deploy only after approval.
+16. When `AZURE_CREDENTIALS` is missing, explain how to create the service principal JSON, where to store it in Gitea Actions secrets, official documentation links, and validation commands.
+17. When PROD deployment is enabled, verify the Gitea Actions secret names for every manifest app exist. Infer their non-secret values from Azure deployment outputs or `az webapp list`, then configure only after confirming the values.
+18. Pass Azure output hostnames to `$configure-observability` only when monitoring should be wired.
 
 ## Output
 
