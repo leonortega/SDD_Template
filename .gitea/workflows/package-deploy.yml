@@ -348,6 +348,22 @@ jobs:
               curl --fail --silent --show-error --location "$app_url" -o response.html
               grep -q "<title>SDD Template</title>" response.html
               ! grep -qi "Microsoft Azure" response.html
+              expected_api_url="${AZURE_DEV_API_APP_URL:-}"
+              test -n "$expected_api_url"
+              curl --fail --silent --show-error --location "${app_url}/clients" -o clients.html
+              grep -q "const apiBaseUrl = \"${expected_api_url}\";" clients.html
+            fi
+            if [ "$role" = "api" ]; then
+              site_origin="${AZURE_DEV_SITE_APP_URL:-}"
+              test -n "$site_origin"
+              curl --fail --silent --show-error --request OPTIONS \
+                --header "Origin: $site_origin" \
+                --header "Access-Control-Request-Method: POST" \
+                --header "Access-Control-Request-Headers: content-type" \
+                --dump-header cors.headers \
+                --output /dev/null \
+                "${app_url}/api/clients"
+              grep -iq "^Access-Control-Allow-Origin: ${site_origin}" cors.headers
             fi
             curl --fail --silent --show-error --location "${app_url}${health_path}" -o health.json
             grep -q '"status":"ok"' health.json
@@ -525,6 +541,22 @@ jobs:
               curl --fail --silent --show-error --location "$app_url" -o response.html
               grep -q "<title>SDD Template</title>" response.html
               ! grep -qi "Microsoft Azure" response.html
+              expected_api_url="${AZURE_QA_API_APP_URL:-}"
+              test -n "$expected_api_url"
+              curl --fail --silent --show-error --location "${app_url}/clients" -o clients.html
+              grep -q "const apiBaseUrl = \"${expected_api_url}\";" clients.html
+            fi
+            if [ "$role" = "api" ]; then
+              site_origin="${AZURE_QA_SITE_APP_URL:-}"
+              test -n "$site_origin"
+              curl --fail --silent --show-error --request OPTIONS \
+                --header "Origin: $site_origin" \
+                --header "Access-Control-Request-Method: POST" \
+                --header "Access-Control-Request-Headers: content-type" \
+                --dump-header cors.headers \
+                --output /dev/null \
+                "${app_url}/api/clients"
+              grep -iq "^Access-Control-Allow-Origin: ${site_origin}" cors.headers
             fi
             curl --fail --silent --show-error --location "${app_url}${health_path}" -o health.json
             grep -q '"status":"ok"' health.json
@@ -805,6 +837,22 @@ jobs:
               curl --fail --silent --show-error --location "$app_url" -o response.html
               grep -q "<title>SDD Template</title>" response.html
               ! grep -qi "Microsoft Azure" response.html
+              expected_api_url="${AZURE_PROD_API_APP_URL:-}"
+              test -n "$expected_api_url"
+              curl --fail --silent --show-error --location "${app_url}/clients" -o clients.html
+              grep -q "const apiBaseUrl = \"${expected_api_url}\";" clients.html
+            fi
+            if [ "$role" = "api" ]; then
+              site_origin="${AZURE_PROD_SITE_APP_URL:-}"
+              test -n "$site_origin"
+              curl --fail --silent --show-error --request OPTIONS \
+                --header "Origin: $site_origin" \
+                --header "Access-Control-Request-Method: POST" \
+                --header "Access-Control-Request-Headers: content-type" \
+                --dump-header cors.headers \
+                --output /dev/null \
+                "${app_url}/api/clients"
+              grep -iq "^Access-Control-Allow-Origin: ${site_origin}" cors.headers
             fi
             curl --fail --silent --show-error --location "${app_url}${health_path}" -o health.json
             grep -q '"status":"ok"' health.json

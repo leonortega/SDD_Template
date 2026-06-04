@@ -84,36 +84,6 @@ resource apps 'Microsoft.Web/sites@2023-12-01' = [for app in deployableApps: {
       linuxFxVersion: runtimeStack
       minTlsVersion: '1.2'
       ftpsState: 'Disabled'
-      appSettings: concat(
-        [
-          {
-            name: 'ASPNETCORE_ENVIRONMENT'
-            value: aspNetEnvironment
-          }
-        ],
-        app.role == 'web' && hasApiApp ? [
-          {
-            name: 'Api__BaseUrl'
-            value: apiAppUrl
-          }
-        ] : [],
-        app.role == 'api' && hasSiteApp ? [
-          {
-            name: 'Cors__AllowedOrigins__0'
-            value: siteAppUrl
-          }
-        ] : [],
-        app.role == 'api' ? [
-          {
-            name: 'ConnectionStrings__ClientsDb'
-            value: 'Data Source=${sqliteDbPath}'
-          }
-          {
-            name: 'WEBSITES_ENABLE_APP_SERVICE_STORAGE'
-            value: 'true'
-          }
-        ] : []
-      )
     }
   }
   tags: {
@@ -123,6 +93,26 @@ resource apps 'Microsoft.Web/sites@2023-12-01' = [for app in deployableApps: {
     appId: app.appId
     managedBy: 'bicep'
   }
+}]
+
+resource appSettings 'Microsoft.Web/sites/config@2023-12-01' = [for (app, i) in deployableApps: {
+  name: 'appsettings'
+  parent: apps[i]
+  properties: union(
+    {
+      ASPNETCORE_ENVIRONMENT: aspNetEnvironment
+    },
+    app.role == 'web' && hasApiApp ? {
+      Api__BaseUrl: apiAppUrl
+    } : {},
+    app.role == 'api' && hasSiteApp ? {
+      Cors__AllowedOrigins__0: siteAppUrl
+    } : {},
+    app.role == 'api' ? {
+      ConnectionStrings__ClientsDb: 'Data Source=${sqliteDbPath}'
+      WEBSITES_ENABLE_APP_SERVICE_STORAGE: 'true'
+    } : {}
+  )
 }]
 
 output environment string = environmentName
