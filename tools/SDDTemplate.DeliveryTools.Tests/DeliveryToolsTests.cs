@@ -62,6 +62,219 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
+        public void TicketReadinessClassifiesReadyEnrichableAndBlockedTickets()
+        {
+            TicketReadinessResult ready = DeliveryWorkflowHelpers.ClassifyTicketReadiness(
+                "Add client search",
+                """
+                Acceptance criteria:
+                - Searching by client name filters the list.
+                - Empty searches show all clients.
+                Validation: add tests for matching and empty search.
+                """);
+
+            TicketReadinessResult enrichable = DeliveryWorkflowHelpers.ClassifyTicketReadiness(
+                "Add client search",
+                "Users should be able to search clients by name from the client list.");
+
+            TicketReadinessResult blocked = DeliveryWorkflowHelpers.ClassifyTicketReadiness("Search", "Do thing");
+
+            Assert.Equal("ready", ready.Status);
+            Assert.Empty(ready.Missing);
+            Assert.Equal("enrichable", enrichable.Status);
+            Assert.Contains("validation expectation", enrichable.Missing);
+            Assert.Equal("blocked", blocked.Status);
+            Assert.Contains("user-visible goal", blocked.Missing);
+        }
+
+        [Fact]
+        public void DeliveryRiskClassifiesLowStandardAndHighWork()
+        {
+            DeliveryRiskResult low = DeliveryWorkflowHelpers.ClassifyDeliveryRisk(["docs/development.md"], "clarify setup text", 12);
+            DeliveryRiskResult standard = DeliveryWorkflowHelpers.ClassifyDeliveryRisk(["src/Feature.cs", "tests/FeatureTests.cs"], "normal feature", 120);
+            DeliveryRiskResult high = DeliveryWorkflowHelpers.ClassifyDeliveryRisk([".gitea/workflows/package-deploy.yml"], "deployment health check", 40);
+
+            Assert.Equal("low", low.Level);
+            Assert.Equal("standard", standard.Level);
+            Assert.Equal("high", high.Level);
+            Assert.Contains(high.Reasons, reason => reason.Contains("deployment", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public void WorkloadForecastParsesGuardLinesAndRequiresResolutionForOversizedWork()
+        {
+            const string markdown = """
+                ## Review Workload Forecast
+
+                Estimated changed lines: 650
+                400-line budget risk: High
+                Chained PRs recommended: Yes
+                Decision needed before apply: Yes
+                Delivery strategy: ask-on-risk
+                """;
+
+            WorkloadForecast forecast = DeliveryWorkflowHelpers.ParseWorkloadForecast(markdown);
+
+            Assert.Equal("650", forecast.EstimatedChangedLines);
+            Assert.Equal("High", forecast.BudgetRisk);
+            Assert.True(forecast.ChainedPrsRecommended);
+            Assert.True(forecast.DecisionNeededBeforeApply);
+            Assert.True(forecast.RequiresResolutionBeforeApply);
+        }
+
+        [Fact]
+        public void WorkloadForecastAllowsLowRiskSinglePrWork()
+        {
+            const string markdown = """
+                ## Review Workload Forecast
+
+                Estimated changed lines: 80-180
+                400-line budget risk: Low
+                Chained PRs recommended: No
+                Decision needed before apply: No
+                Delivery strategy: single-pr
+                """;
+
+            WorkloadForecast forecast = DeliveryWorkflowHelpers.ParseWorkloadForecast(markdown);
+
+            Assert.Equal("80-180", forecast.EstimatedChangedLines);
+            Assert.Equal("Low", forecast.BudgetRisk);
+            Assert.False(forecast.ChainedPrsRecommended);
+            Assert.False(forecast.DecisionNeededBeforeApply);
+            Assert.False(forecast.RequiresResolutionBeforeApply);
+        }
+
+        [Fact]
+        public void AdversarialReviewTriggerRequiresReviewForHighRiskOrExplicitRequests()
+        {
+            AdversarialReviewTrigger standard = DeliveryWorkflowHelpers.DetectAdversarialReviewTrigger(["docs/readme.md"], "docs only", 8, explicitRequest: false);
+            AdversarialReviewTrigger highRisk = DeliveryWorkflowHelpers.DetectAdversarialReviewTrigger(["src/SDDTemplate.Site/Program.cs"], "health endpoint", 30, explicitRequest: false);
+            AdversarialReviewTrigger explicitRequest = DeliveryWorkflowHelpers.DetectAdversarialReviewTrigger(["docs/readme.md"], "docs only", 8, explicitRequest: true);
+
+            Assert.False(standard.Required);
+            Assert.Equal("standard", standard.Mode);
+            Assert.True(highRisk.Required);
+            Assert.Equal("adversarial", highRisk.Mode);
+            Assert.True(explicitRequest.Required);
+            Assert.Contains("explicit user request", explicitRequest.Reasons);
+        }
+
+        [Fact]
+        public void InstalledSkillIndexIsDerivedCachedAndExcludesSharedHelpers()
+        {
+            string root = CreateTempDirectory();
+            string skill = Path.Combine(root, ".codex", "skills", "sample-skill");
+            string shared = Path.Combine(root, ".codex", "skills", "_shared");
+            _ = Directory.CreateDirectory(skill);
+            _ = Directory.CreateDirectory(shared);
+            File.WriteAllText(
+                Path.Combine(skill, "SKILL.md"),
+                """
+                ---
+                name: sample-skill
+                description: "Trigger: sample work. Does a sample task."
+                ---
+                # Sample
+                """);
+            File.WriteAllText(Path.Combine(shared, "SKILL.md"), "# Shared");
+
+            string indexPath = Path.Combine(root, ".codex", "installed-skill-index.local.json");
+            string cachePath = Path.Combine(root, ".codex", "installed-skill-index.cache.local.json");
+            SkillIndexWriteResult first = DeliveryWorkflowHelpers.WriteInstalledSkillIndex(root, indexPath, cachePath);
+            SkillIndexWriteResult second = DeliveryWorkflowHelpers.WriteInstalledSkillIndex(root, indexPath, cachePath);
+
+            Assert.False(first.CacheHit);
+            Assert.True(second.CacheHit);
+            Assert.Equal(1, first.SkillCount);
+            string index = File.ReadAllText(indexPath);
+            Assert.Contains("sample-skill", index);
+            Assert.DoesNotContain("_shared", index);
+        }
+
+        [Fact]
+        public void DeploymentConfigBuildsArtifactFromFlattenedAppsettingsAndMappings()
+        {
+            string root = CreateTempDirectory();
+            string site = Path.Combine(root, "src", "Example.Site");
+            string api = Path.Combine(root, "src", "Example.Api");
+            string infra = Path.Combine(root, "infra", "deployment");
+            _ = Directory.CreateDirectory(site);
+            _ = Directory.CreateDirectory(api);
+            _ = Directory.CreateDirectory(infra);
+
+            File.WriteAllText(Path.Combine(site, "appsettings.json"), JsonSerializer.Serialize(new
+            {
+                Api = new { BaseUrl = "" },
+                Feature = new { Enabled = true },
+            }));
+            File.WriteAllText(Path.Combine(api, "appsettings.json"), JsonSerializer.Serialize(new
+            {
+                Cors = new { AllowedOrigins = Array.Empty<string>() },
+            }));
+            File.WriteAllText(Path.Combine(infra, "apps.json"), JsonSerializer.Serialize(new
+            {
+                version = 1,
+                apps = new object[]
+                {
+                    new { appId = "site", role = "web", projectPath = "src/Example.Site/Example.Site.csproj" },
+                    new { appId = "api", role = "api", projectPath = "src/Example.Api/Example.Api.csproj" },
+                },
+            }));
+            File.WriteAllText(Path.Combine(infra, "configuration.json"), JsonSerializer.Serialize(new
+            {
+                version = 1,
+                settings = new object[]
+                {
+                    new { appId = "site", name = "Api__BaseUrl", source = "topologyReference", targetAppId = "api", targetProperty = "url", required = true, secret = false },
+                    new { appId = "site", name = "Feature__Enabled", source = "literal", value = "true", required = false, secret = false },
+                    new { appId = "api", name = "Cors__AllowedOrigins", source = "topologyReference", targetAppId = "site", targetProperty = "url", required = true, secret = false },
+                    new { appId = "api", name = "ConnectionStrings__ClientsDb", source = "sqliteDataPath", value = "Data Source=/home/data/app.db", required = true, secret = false, additionalSetting = true },
+                },
+            }));
+
+            string outputPath = Path.Combine(root, "artifacts", "deployment-config.json");
+            DeploymentConfigBuildResult result = DeliveryWorkflowHelpers.BuildDeploymentConfig(
+                root,
+                Path.Combine(infra, "apps.json"),
+                Path.Combine(infra, "configuration.json"),
+                outputPath);
+
+            Assert.True(result.Valid);
+            using JsonDocument artifact = JsonDocument.Parse(File.ReadAllText(outputPath));
+            JsonElement siteConfig = artifact.RootElement.GetProperty("apps").EnumerateArray().Single(item => item.GetProperty("appId").GetString() == "site");
+            JsonElement apiConfig = artifact.RootElement.GetProperty("apps").EnumerateArray().Single(item => item.GetProperty("appId").GetString() == "api");
+            Assert.Contains(siteConfig.GetProperty("settings").EnumerateArray(), item => item.GetProperty("name").GetString() == "Api__BaseUrl");
+            Assert.Contains(apiConfig.GetProperty("settings").EnumerateArray(), item => item.GetProperty("name").GetString() == "ConnectionStrings__ClientsDb");
+        }
+
+        [Fact]
+        public void DeploymentConfigFailsClosedForUnmappedRequiredSettings()
+        {
+            string root = CreateTempDirectory();
+            string site = Path.Combine(root, "src", "Example.Site");
+            string infra = Path.Combine(root, "infra", "deployment");
+            _ = Directory.CreateDirectory(site);
+            _ = Directory.CreateDirectory(infra);
+
+            File.WriteAllText(Path.Combine(site, "appsettings.json"), JsonSerializer.Serialize(new { NewSetting = new { Value = "missing" } }));
+            File.WriteAllText(Path.Combine(infra, "apps.json"), JsonSerializer.Serialize(new
+            {
+                version = 1,
+                apps = new[] { new { appId = "site", role = "web", projectPath = "src/Example.Site/Example.Site.csproj" } },
+            }));
+            File.WriteAllText(Path.Combine(infra, "configuration.json"), JsonSerializer.Serialize(new { version = 1, settings = Array.Empty<object>() }));
+
+            DeploymentConfigBuildResult result = DeliveryWorkflowHelpers.BuildDeploymentConfig(
+                root,
+                Path.Combine(infra, "apps.json"),
+                Path.Combine(infra, "configuration.json"),
+                Path.Combine(root, "deployment-config.json"));
+
+            Assert.False(result.Valid);
+            Assert.Contains(result.Errors, error => error.Contains("site:NewSetting__Value", StringComparison.Ordinal));
+        }
+
+        [Fact]
         public void AuditModesDoNotWriteLocalClientToolsConfigByDefault()
         {
             string root = CreateTempDirectory();
@@ -790,6 +1003,55 @@ namespace SDDTemplate.DeliveryTools.Tests
                 JsonSerializer.Serialize(state));
 
             return JsonDocument.Parse(output);
+        }
+
+        [Fact]
+        public void RenderPlaneCommentRendersWorkflowTimingTable()
+        {
+            string script = Path.Combine(FindRepositoryRoot().FullName, ".codex", "skills", "_shared", "scripts", "delivery_tools.ps1");
+            string inputJson = JsonSerializer.Serialize(new
+            {
+                ticketKey = "E2EPROJECT-123",
+                status = "PASS - automatic route completed.",
+                currentRoute = "implement-ticket",
+                stages = new[]
+                {
+                    new
+                    {
+                        stage = "plane-start-ticket",
+                        outcome = "PASS",
+                        elapsedMilliseconds = 134000,
+                        startedUtc = "2026-06-03T10:00:00Z",
+                        finishedUtc = "2026-06-03T10:02:14Z",
+                    },
+                    new
+                    {
+                        stage = "implement-ticket",
+                        outcome = "BLOCKED",
+                        elapsedMilliseconds = 3605000,
+                        startedUtc = "2026-06-03T10:02:14Z",
+                        finishedUtc = "2026-06-03T11:02:19Z",
+                    },
+                },
+            });
+
+            string output = RunPowerShell(
+                script,
+                "-Mode",
+                "RenderPlaneComment",
+                "-Type",
+                "WorkflowTiming",
+                "-InputJson",
+                inputJson);
+
+            Assert.Contains("IA generated workflow timing: E2EPROJECT-123", output);
+            Assert.Contains("**Status:** PASS - automatic route completed.", output);
+            Assert.Contains("- Current route: `implement-ticket`", output);
+            Assert.Contains("- Total elapsed: 1h 02m 19s", output);
+            Assert.Contains("| Stage | Outcome | Duration | Started UTC | Finished UTC |", output);
+            Assert.Contains("| `plane-start-ticket` | PASS | 2m 14s | 2026-06-03T10:00:00Z | 2026-06-03T10:02:14Z |", output);
+            Assert.Contains("| `implement-ticket` | BLOCKED | 1h 00m 05s | 2026-06-03T10:02:14Z | 2026-06-03T11:02:19Z |", output);
+            Assert.DoesNotContain("token", output, StringComparison.OrdinalIgnoreCase);
         }
 
         private static string[] GetJsonErrors(JsonDocument document)

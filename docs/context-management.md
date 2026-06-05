@@ -80,7 +80,19 @@ Dynamic values belong near the end of the working context:
 - Nexus manifests, Azure health checks, QA evidence, and monitoring output
 - tool errors, retries, and latest observations
 
-Do not insert timestamps, random IDs, raw tool dumps, or refreshed status summaries into otherwise stable context blocks. If a run records model telemetry, write it to ignored local output such as `.codex/agent-telemetry.local.jsonl` and summarize only the useful optimization finding in handoff text.
+Do not insert timestamps, random IDs, raw tool dumps, or refreshed status summaries into otherwise stable context blocks. If a run records model telemetry, write it to ignored local output such as `.codex/agent-telemetry.local.jsonl` and summarize only useful optimization findings in handoff text. Automatic ticket delivery may also maintain a concise generated Plane timing comment for the active ticket, but only with per-stage outcome, duration, and UTC start/finish values; raw logs, token counts, prompts, and sensitive values stay out of Plane.
+
+## Risk-Adaptive Context Loading
+
+Strict gates do not require every run to load every long instruction body. Agents should classify delivery risk as `low`, `standard`, or `high` using the shared delivery contract and deterministic helpers when available.
+
+- `low` risk: use compact planning/review summaries and load only the relevant docs, skills, and files.
+- `standard` risk: use the normal stage context bundle.
+- `high` risk: load full acceptance/spec context, affected deployment/security/release guidance, and adversarial review evidence.
+
+Project guidance remains the broad catalog for skills, tools, references, practices, standards, MCPs, and plugins. The installed-skill runtime index is only an ignored cache of exact installed `SKILL.md` paths used to avoid repeated scans and pass precise skill paths during delegation.
+
+Avoid duplicate context systems. Ticket refinement belongs in the managed Plane block; implementation planning belongs in OpenSpec; recurring workflow learning belongs in `delivery-retrospective-audit`, docs, the shared contract, or `.codex/memory/` according to the existing authority order.
 
 ## Agent Telemetry
 

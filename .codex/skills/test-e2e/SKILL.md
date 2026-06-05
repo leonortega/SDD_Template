@@ -13,7 +13,9 @@ This skill is technology-agnostic. Inspect the repository first. Use an establis
 
 For Blazor or other rendered website changes, prefer `$frontend-testing-debugging` when the repo has `.codex/skills/frontend-testing-debugging/SKILL.md` and the ticket requires browser-visible validation, responsive layout checks, console health, screenshots, or interaction proof. Keep API and deployment health checks in the repo-native .NET/API path.
 
-When the repository contains `tests/SDDTemplate.E2ETests`, treat it as the reusable deployed-QA regression suite. The suite is executed by the Gitea `e2e-qa-branch` job against the deployed QA Site/API URLs, and the Gitea job is evidence-only. After `deploy-qa` succeeds, create a `qa/{ticketKey}` branch from current `dev`, add or update tests there when needed, and push that branch so Gitea runs the suite remotely without redeploying. This skill still owns QA acceptance: verify the Gitea E2E evidence bundle, run or rerun the suite manually only when remote execution is unavailable or diagnostic evidence is needed, publish final QA evidence, create or verify the RC tag, update release metadata, comment Plane, and move the ticket to Done only after all checks pass.
+When the repository contains `tests/SDDTemplate.E2ETests`, treat it as the reusable deployed-QA regression suite. The suite is executed by the Gitea `e2e-qa-branch` job against the deployed QA Site/API URLs, and the Gitea job is evidence-only. After `deploy-qa` succeeds, create a `qa/{ticketKey}` branch from current `dev`, add or update tests there when needed, and push that branch so Gitea runs the suite remotely without redeploying. This skill still owns QA acceptance: verify the Gitea E2E evidence bundle, run or rerun the suite manually only when remote execution is unavailable or diagnostic evidence is needed, publish final QA evidence, create or verify the RC tag, update release metadata, comment Plane, move the ticket to Done only after all checks pass, and delete the remote `qa/{ticketKey}` branch after durable evidence exists.
+
+After the evidence bundle is verified, the E2E QA Plane comment is verified, the RC tag is created or verified, release metadata is updated, and the ticket is moved to Done, delete the remote `qa/{ticketKey}` branch from Gitea. The branch is only a temporary evidence trigger; durable evidence is in Nexus, Plane, the release manifest, and tags. Keep the branch only when evidence publication, comment verification, RC tagging, or Done-state mutation is incomplete and the branch may need a rerun.
 
 Non-interactive context means the run has no available user-response channel, such as cron automation, CI, detached automation, or an explicit "do not ask" instruction.
 
@@ -78,6 +80,7 @@ Apply this general QA quality bar before executing tests:
 - Verify the delivered environment, artifact, commit, or deployment being tested so a pass cannot accidentally apply to the wrong build.
 - Include lightweight performance observations for ticket-relevant paths. Record response time, browser timing, or API latency when the tool exposes it. Treat obvious major regressions as QA failures when the ticket is performance-sensitive or the latency breaks user-observable acceptance criteria; otherwise record them as warnings.
 - Treat evidence as data to validate, not decoration. Screenshots, logs, traces, and reports must be checked for contradictions such as blank captures, wrong environment, console errors, failed network calls, stale data, or misleading render artifacts.
+- For deployed multi-app topologies, verify configured cross-service browser calls use the intended configured service URL from the deployment configuration rather than an accidental same-origin fallback such as `/api/*` on the web app.
 - Record any assumptions used to fill gaps in weak requirements. If an assumption materially changes pass/fail meaning, classify the result as blocked or ask for clarification instead of passing by guesswork.
 - Prefer automated assertions for repeatable facts and use manual or visual evidence only where automation cannot express the expected behavior reliably.
 
@@ -224,7 +227,7 @@ E2EPROJECT-123: add E2E regression tests
 - Reusable tests must reference secrets through environment variables or test configuration placeholders. Never hardcode real credentials, tokens, cookies, connection strings, or private payloads.
 - If reusable tests require new repo config, stage only intentional source/config files and leave screenshots, logs, reports, traces, videos, and ZIP evidence untracked.
 
-### 8. Plane Result
+### 8. Plane Result And QA Branch Cleanup
 
 Before commenting, read existing comments when the API allows it. Use this stable marker:
 
@@ -264,6 +267,14 @@ Move the ticket to `plane.doneState` only after:
 
 If any required QA scenario fails, add the result comment and leave the ticket in `plane.qaState`.
 
+After the verified E2E QA comment and Done-state mutation succeed, delete the remote `qa/{ticketKey}` branch from Gitea, for example:
+
+```powershell
+git push origin --delete qa/E2EPROJECT-123
+```
+
+Then verify the remote ref is gone. Do not delete the branch before Nexus evidence exists, release metadata is updated, the RC tag is created or verified, and Plane is Done.
+
 ### 9. OpenSpec Archival Handoff
 
 After every required QA scenario passes, evidence is published, the E2E QA comment is present, and the ticket has been moved to `plane.doneState`, check whether the completed ticket is linked to an active OpenSpec change.
@@ -281,6 +292,8 @@ If multiple active OpenSpec changes match, or no clear linked change can be reso
 
 If `$openspec-archive-change` reports incomplete artifacts, incomplete tasks, spec sync warnings, or needs user confirmation, stop the archival handoff and report the exact blocker. Do not undo the QA pass or move the Plane ticket back from Done.
 
+Do not report the QA workflow as fully complete while exactly one linked active OpenSpec change remains unarchived. The final handoff must include either `OpenSpec archived: <archive path>` or `OpenSpec archive blocker: <reason>`.
+
 ### 10. Durable Learning Capture Gate
 
 Before final handoff, apply `.codex/memory/retrieval-policy.md#update-process` to every blocker, environment repair, QA harness fix, deployment finding, and recurring workflow lesson discovered during the QA run.
@@ -294,7 +307,7 @@ Plane comments, QA evidence, and final chat summaries do not satisfy this gate b
 
 ## Output
 
-Report the ticket, QA environment, scenarios tested, validation assertions, evidence path or URL, RC version, Plane state/comment updates, OpenSpec archival handoff, `Memory updated: <files>` or `Memory updated: none`, and any blockers or residual risk.
+Report the ticket, QA environment, scenarios tested, validation assertions, evidence path or URL, RC version, Plane state/comment updates, OpenSpec archive path or explicit archive blocker, `Memory updated: <files>` or `Memory updated: none`, and any blockers or residual risk.
 
 ## Failure Rules
 

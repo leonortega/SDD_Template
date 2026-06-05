@@ -144,6 +144,7 @@ jobs:
           done
 
           git rev-parse HEAD > artifacts/commit.sha
+          dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- BuildDeploymentConfig --root . --topology infra/deployment/apps.json --mapping infra/deployment/configuration.json --output artifacts/deployment-config.json
 
       - name: Upload topology artifacts to Nexus
         shell: bash
@@ -169,6 +170,7 @@ jobs:
           done
 
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/deployable-apps.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/deployable-apps.json"
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/deployment-config.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/deployment-config.json"
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/commit.sha "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/commit.sha"
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/release.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/release.json"
         env:
@@ -195,6 +197,7 @@ jobs:
           set -euo pipefail
 
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o deployable-apps.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/deployable-apps.json"
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o deployment-config.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/deployment-config.json"
           jq -r '.[].artifactName' deployable-apps.json |
           while IFS= read -r artifact_name; do
             curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o "$artifact_name" "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/$artifact_name"
@@ -214,6 +217,102 @@ jobs:
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Apply and verify DEV deployment configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          resolve_setting() {
+            local source="$1"
+            local target_app_id="$2"
+            local target_property="$3"
+            local literal_value="$4"
+            local secret_name="$5"
+            case "$source" in
+              literal|sqliteDataPath)
+                printf '%s' "$literal_value"
+                ;;
+              environmentName)
+                printf '%s' "Development"
+                ;;
+              topologyReference)
+                target_upper="$(echo "$target_app_id" | tr '[:lower:]-' '[:upper:]_')"
+                case "$target_property" in
+                  url) var_name="AZURE_DEV_${target_upper}_APP_URL" ;;
+                  name) var_name="AZURE_DEV_${target_upper}_APP_NAME" ;;
+                  *) echo "Unsupported topology target property: $target_property" >&2; return 1 ;;
+                esac
+                test -n "${!var_name:-}"
+                printf '%s' "${!var_name}"
+                ;;
+              environmentSecret)
+                test -n "$secret_name"
+                test -n "${!secret_name:-}"
+                printf '%s' "${!secret_name}"
+                ;;
+              manualRequired)
+                echo "Manual required setting is not mapped for CI deployment." >&2
+                return 1
+                ;;
+              *)
+                echo "Unsupported deployment configuration source: $source" >&2
+                return 1
+                ;;
+            esac
+          }
+
+          jq -c '.apps[]' deployment-config.json |
+          while IFS= read -r app_config; do
+            app_id="$(jq -r '.appId' <<< "$app_config")"
+            app_upper="$(echo "$app_id" | tr '[:lower:]-' '[:upper:]_')"
+            app_name_var="AZURE_DEV_${app_upper}_APP_NAME"
+            app_name="${!app_name_var:-}"
+            test -n "$app_name"
+
+            settings_args=()
+            while IFS= read -r setting; do
+              name="$(jq -r '.name' <<< "$setting")"
+              source="$(jq -r '.source' <<< "$setting")"
+              target_app_id="$(jq -r '.targetAppId // ""' <<< "$setting")"
+              target_property="$(jq -r '.targetProperty // ""' <<< "$setting")"
+              literal_value="$(jq -r '.value // ""' <<< "$setting")"
+              secret_name="$(jq -r '.secretName // ""' <<< "$setting")"
+              value="$(resolve_setting "$source" "$target_app_id" "$target_property" "$literal_value" "$secret_name")"
+              settings_args+=("$name=$value")
+            done < <(jq -c '.settings[]' <<< "$app_config")
+
+            if [ "${#settings_args[@]}" -gt 0 ]; then
+              az webapp config appsettings set --resource-group "$AZURE_DEV_RESOURCE_GROUP" --name "$app_name" --settings "${settings_args[@]}" --output none
+            fi
+
+            while IFS= read -r setting; do
+              name="$(jq -r '.name' <<< "$setting")"
+              required="$(jq -r '.required' <<< "$setting")"
+              secret="$(jq -r '.secret' <<< "$setting")"
+              source="$(jq -r '.source' <<< "$setting")"
+              target_app_id="$(jq -r '.targetAppId // ""' <<< "$setting")"
+              target_property="$(jq -r '.targetProperty // ""' <<< "$setting")"
+              literal_value="$(jq -r '.value // ""' <<< "$setting")"
+              secret_name="$(jq -r '.secretName // ""' <<< "$setting")"
+              expected="$(resolve_setting "$source" "$target_app_id" "$target_property" "$literal_value" "$secret_name")"
+              actual="$(az webapp config appsettings list --resource-group "$AZURE_DEV_RESOURCE_GROUP" --name "$app_name" --query "[?name=='$name'].value | [0]" -o tsv)"
+              if [ "$required" = "true" ] && [ -z "$actual" ]; then
+                echo "Required deployment setting '$name' is missing for DEV app '$app_id'." >&2
+                exit 1
+              fi
+              if [ "$secret" != "true" ] && [ "$actual" != "$expected" ]; then
+                echo "Deployment setting '$name' does not match expected DEV value for app '$app_id'." >&2
+                exit 1
+              fi
+            done < <(jq -c '.settings[]' <<< "$app_config")
+          done
+        env:
+          AZURE_DEV_RESOURCE_GROUP: ${{ secrets.AZURE_DEV_RESOURCE_GROUP }}
+          AZURE_DEV_SITE_APP_NAME: ${{ secrets.AZURE_DEV_SITE_APP_NAME }}
+          AZURE_DEV_SITE_APP_URL: ${{ secrets.AZURE_DEV_SITE_APP_URL }}
+          AZURE_DEV_API_APP_NAME: ${{ secrets.AZURE_DEV_API_APP_NAME }}
+          AZURE_DEV_API_APP_URL: ${{ secrets.AZURE_DEV_API_APP_URL }}
 
       - name: Deploy DEV topology apps
         shell: bash
@@ -249,6 +348,22 @@ jobs:
               curl --fail --silent --show-error --location "$app_url" -o response.html
               grep -q "<title>SDD Template</title>" response.html
               ! grep -qi "Microsoft Azure" response.html
+              expected_api_url="${AZURE_DEV_API_APP_URL:-}"
+              test -n "$expected_api_url"
+              curl --fail --silent --show-error --location "${app_url}/clients" -o clients.html
+              grep -q "const apiBaseUrl = \"${expected_api_url}\";" clients.html
+            fi
+            if [ "$role" = "api" ]; then
+              site_origin="${AZURE_DEV_SITE_APP_URL:-}"
+              test -n "$site_origin"
+              curl --fail --silent --show-error --request OPTIONS \
+                --header "Origin: $site_origin" \
+                --header "Access-Control-Request-Method: POST" \
+                --header "Access-Control-Request-Headers: content-type" \
+                --dump-header cors.headers \
+                --output /dev/null \
+                "${app_url}/api/clients"
+              grep -iq "^Access-Control-Allow-Origin: ${site_origin}" cors.headers
             fi
             curl --fail --silent --show-error --location "${app_url}${health_path}" -o health.json
             grep -q '"status":"ok"' health.json
@@ -275,6 +390,7 @@ jobs:
           set -euo pipefail
 
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o deployable-apps.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/deployable-apps.json"
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o deployment-config.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/deployment-config.json"
           jq -r '.[].artifactName' deployable-apps.json |
           while IFS= read -r artifact_name; do
             curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o "$artifact_name" "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/$artifact_name"
@@ -294,6 +410,102 @@ jobs:
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Apply and verify QA deployment configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          resolve_setting() {
+            local source="$1"
+            local target_app_id="$2"
+            local target_property="$3"
+            local literal_value="$4"
+            local secret_name="$5"
+            case "$source" in
+              literal|sqliteDataPath)
+                printf '%s' "$literal_value"
+                ;;
+              environmentName)
+                printf '%s' "Staging"
+                ;;
+              topologyReference)
+                target_upper="$(echo "$target_app_id" | tr '[:lower:]-' '[:upper:]_')"
+                case "$target_property" in
+                  url) var_name="AZURE_QA_${target_upper}_APP_URL" ;;
+                  name) var_name="AZURE_QA_${target_upper}_APP_NAME" ;;
+                  *) echo "Unsupported topology target property: $target_property" >&2; return 1 ;;
+                esac
+                test -n "${!var_name:-}"
+                printf '%s' "${!var_name}"
+                ;;
+              environmentSecret)
+                test -n "$secret_name"
+                test -n "${!secret_name:-}"
+                printf '%s' "${!secret_name}"
+                ;;
+              manualRequired)
+                echo "Manual required setting is not mapped for CI deployment." >&2
+                return 1
+                ;;
+              *)
+                echo "Unsupported deployment configuration source: $source" >&2
+                return 1
+                ;;
+            esac
+          }
+
+          jq -c '.apps[]' deployment-config.json |
+          while IFS= read -r app_config; do
+            app_id="$(jq -r '.appId' <<< "$app_config")"
+            app_upper="$(echo "$app_id" | tr '[:lower:]-' '[:upper:]_')"
+            app_name_var="AZURE_QA_${app_upper}_APP_NAME"
+            app_name="${!app_name_var:-}"
+            test -n "$app_name"
+
+            settings_args=()
+            while IFS= read -r setting; do
+              name="$(jq -r '.name' <<< "$setting")"
+              source="$(jq -r '.source' <<< "$setting")"
+              target_app_id="$(jq -r '.targetAppId // ""' <<< "$setting")"
+              target_property="$(jq -r '.targetProperty // ""' <<< "$setting")"
+              literal_value="$(jq -r '.value // ""' <<< "$setting")"
+              secret_name="$(jq -r '.secretName // ""' <<< "$setting")"
+              value="$(resolve_setting "$source" "$target_app_id" "$target_property" "$literal_value" "$secret_name")"
+              settings_args+=("$name=$value")
+            done < <(jq -c '.settings[]' <<< "$app_config")
+
+            if [ "${#settings_args[@]}" -gt 0 ]; then
+              az webapp config appsettings set --resource-group "$AZURE_QA_RESOURCE_GROUP" --name "$app_name" --settings "${settings_args[@]}" --output none
+            fi
+
+            while IFS= read -r setting; do
+              name="$(jq -r '.name' <<< "$setting")"
+              required="$(jq -r '.required' <<< "$setting")"
+              secret="$(jq -r '.secret' <<< "$setting")"
+              source="$(jq -r '.source' <<< "$setting")"
+              target_app_id="$(jq -r '.targetAppId // ""' <<< "$setting")"
+              target_property="$(jq -r '.targetProperty // ""' <<< "$setting")"
+              literal_value="$(jq -r '.value // ""' <<< "$setting")"
+              secret_name="$(jq -r '.secretName // ""' <<< "$setting")"
+              expected="$(resolve_setting "$source" "$target_app_id" "$target_property" "$literal_value" "$secret_name")"
+              actual="$(az webapp config appsettings list --resource-group "$AZURE_QA_RESOURCE_GROUP" --name "$app_name" --query "[?name=='$name'].value | [0]" -o tsv)"
+              if [ "$required" = "true" ] && [ -z "$actual" ]; then
+                echo "Required deployment setting '$name' is missing for QA app '$app_id'." >&2
+                exit 1
+              fi
+              if [ "$secret" != "true" ] && [ "$actual" != "$expected" ]; then
+                echo "Deployment setting '$name' does not match expected QA value for app '$app_id'." >&2
+                exit 1
+              fi
+            done < <(jq -c '.settings[]' <<< "$app_config")
+          done
+        env:
+          AZURE_QA_RESOURCE_GROUP: ${{ secrets.AZURE_QA_RESOURCE_GROUP }}
+          AZURE_QA_SITE_APP_NAME: ${{ secrets.AZURE_QA_SITE_APP_NAME }}
+          AZURE_QA_SITE_APP_URL: ${{ secrets.AZURE_QA_SITE_APP_URL }}
+          AZURE_QA_API_APP_NAME: ${{ secrets.AZURE_QA_API_APP_NAME }}
+          AZURE_QA_API_APP_URL: ${{ secrets.AZURE_QA_API_APP_URL }}
 
       - name: Deploy QA topology apps
         shell: bash
@@ -329,6 +541,22 @@ jobs:
               curl --fail --silent --show-error --location "$app_url" -o response.html
               grep -q "<title>SDD Template</title>" response.html
               ! grep -qi "Microsoft Azure" response.html
+              expected_api_url="${AZURE_QA_API_APP_URL:-}"
+              test -n "$expected_api_url"
+              curl --fail --silent --show-error --location "${app_url}/clients" -o clients.html
+              grep -q "const apiBaseUrl = \"${expected_api_url}\";" clients.html
+            fi
+            if [ "$role" = "api" ]; then
+              site_origin="${AZURE_QA_SITE_APP_URL:-}"
+              test -n "$site_origin"
+              curl --fail --silent --show-error --request OPTIONS \
+                --header "Origin: $site_origin" \
+                --header "Access-Control-Request-Method: POST" \
+                --header "Access-Control-Request-Headers: content-type" \
+                --dump-header cors.headers \
+                --output /dev/null \
+                "${app_url}/api/clients"
+              grep -iq "^Access-Control-Allow-Origin: ${site_origin}" cors.headers
             fi
             curl --fail --silent --show-error --location "${app_url}${health_path}" -o health.json
             grep -q '"status":"ok"' health.json
@@ -458,6 +686,7 @@ jobs:
           set -euo pipefail
 
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o deployable-apps.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$PROD_ARTIFACT_COMMIT_SHA/deployable-apps.json"
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o deployment-config.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$PROD_ARTIFACT_COMMIT_SHA/deployment-config.json"
           jq -r '.[].artifactName' deployable-apps.json |
           while IFS= read -r artifact_name; do
             curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o "$artifact_name" "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$PROD_ARTIFACT_COMMIT_SHA/$artifact_name"
@@ -477,6 +706,102 @@ jobs:
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Apply and verify PROD deployment configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          resolve_setting() {
+            local source="$1"
+            local target_app_id="$2"
+            local target_property="$3"
+            local literal_value="$4"
+            local secret_name="$5"
+            case "$source" in
+              literal|sqliteDataPath)
+                printf '%s' "$literal_value"
+                ;;
+              environmentName)
+                printf '%s' "Production"
+                ;;
+              topologyReference)
+                target_upper="$(echo "$target_app_id" | tr '[:lower:]-' '[:upper:]_')"
+                case "$target_property" in
+                  url) var_name="AZURE_PROD_${target_upper}_APP_URL" ;;
+                  name) var_name="AZURE_PROD_${target_upper}_APP_NAME" ;;
+                  *) echo "Unsupported topology target property: $target_property" >&2; return 1 ;;
+                esac
+                test -n "${!var_name:-}"
+                printf '%s' "${!var_name}"
+                ;;
+              environmentSecret)
+                test -n "$secret_name"
+                test -n "${!secret_name:-}"
+                printf '%s' "${!secret_name}"
+                ;;
+              manualRequired)
+                echo "Manual required setting is not mapped for CI deployment." >&2
+                return 1
+                ;;
+              *)
+                echo "Unsupported deployment configuration source: $source" >&2
+                return 1
+                ;;
+            esac
+          }
+
+          jq -c '.apps[]' deployment-config.json |
+          while IFS= read -r app_config; do
+            app_id="$(jq -r '.appId' <<< "$app_config")"
+            app_upper="$(echo "$app_id" | tr '[:lower:]-' '[:upper:]_')"
+            app_name_var="AZURE_PROD_${app_upper}_APP_NAME"
+            app_name="${!app_name_var:-}"
+            test -n "$app_name"
+
+            settings_args=()
+            while IFS= read -r setting; do
+              name="$(jq -r '.name' <<< "$setting")"
+              source="$(jq -r '.source' <<< "$setting")"
+              target_app_id="$(jq -r '.targetAppId // ""' <<< "$setting")"
+              target_property="$(jq -r '.targetProperty // ""' <<< "$setting")"
+              literal_value="$(jq -r '.value // ""' <<< "$setting")"
+              secret_name="$(jq -r '.secretName // ""' <<< "$setting")"
+              value="$(resolve_setting "$source" "$target_app_id" "$target_property" "$literal_value" "$secret_name")"
+              settings_args+=("$name=$value")
+            done < <(jq -c '.settings[]' <<< "$app_config")
+
+            if [ "${#settings_args[@]}" -gt 0 ]; then
+              az webapp config appsettings set --resource-group "$AZURE_PROD_RESOURCE_GROUP" --name "$app_name" --settings "${settings_args[@]}" --output none
+            fi
+
+            while IFS= read -r setting; do
+              name="$(jq -r '.name' <<< "$setting")"
+              required="$(jq -r '.required' <<< "$setting")"
+              secret="$(jq -r '.secret' <<< "$setting")"
+              source="$(jq -r '.source' <<< "$setting")"
+              target_app_id="$(jq -r '.targetAppId // ""' <<< "$setting")"
+              target_property="$(jq -r '.targetProperty // ""' <<< "$setting")"
+              literal_value="$(jq -r '.value // ""' <<< "$setting")"
+              secret_name="$(jq -r '.secretName // ""' <<< "$setting")"
+              expected="$(resolve_setting "$source" "$target_app_id" "$target_property" "$literal_value" "$secret_name")"
+              actual="$(az webapp config appsettings list --resource-group "$AZURE_PROD_RESOURCE_GROUP" --name "$app_name" --query "[?name=='$name'].value | [0]" -o tsv)"
+              if [ "$required" = "true" ] && [ -z "$actual" ]; then
+                echo "Required deployment setting '$name' is missing for PROD app '$app_id'." >&2
+                exit 1
+              fi
+              if [ "$secret" != "true" ] && [ "$actual" != "$expected" ]; then
+                echo "Deployment setting '$name' does not match expected PROD value for app '$app_id'." >&2
+                exit 1
+              fi
+            done < <(jq -c '.settings[]' <<< "$app_config")
+          done
+        env:
+          AZURE_PROD_RESOURCE_GROUP: ${{ secrets.AZURE_PROD_RESOURCE_GROUP }}
+          AZURE_PROD_SITE_APP_NAME: ${{ secrets.AZURE_PROD_SITE_APP_NAME }}
+          AZURE_PROD_SITE_APP_URL: ${{ secrets.AZURE_PROD_SITE_APP_URL }}
+          AZURE_PROD_API_APP_NAME: ${{ secrets.AZURE_PROD_API_APP_NAME }}
+          AZURE_PROD_API_APP_URL: ${{ secrets.AZURE_PROD_API_APP_URL }}
 
       - name: Deploy PROD topology apps
         shell: bash
@@ -512,6 +837,22 @@ jobs:
               curl --fail --silent --show-error --location "$app_url" -o response.html
               grep -q "<title>SDD Template</title>" response.html
               ! grep -qi "Microsoft Azure" response.html
+              expected_api_url="${AZURE_PROD_API_APP_URL:-}"
+              test -n "$expected_api_url"
+              curl --fail --silent --show-error --location "${app_url}/clients" -o clients.html
+              grep -q "const apiBaseUrl = \"${expected_api_url}\";" clients.html
+            fi
+            if [ "$role" = "api" ]; then
+              site_origin="${AZURE_PROD_SITE_APP_URL:-}"
+              test -n "$site_origin"
+              curl --fail --silent --show-error --request OPTIONS \
+                --header "Origin: $site_origin" \
+                --header "Access-Control-Request-Method: POST" \
+                --header "Access-Control-Request-Headers: content-type" \
+                --dump-header cors.headers \
+                --output /dev/null \
+                "${app_url}/api/clients"
+              grep -iq "^Access-Control-Allow-Origin: ${site_origin}" cors.headers
             fi
             curl --fail --silent --show-error --location "${app_url}${health_path}" -o health.json
             grep -q '"status":"ok"' health.json

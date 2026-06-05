@@ -107,6 +107,7 @@ namespace SDDTemplate.Site.Tests
             return new WebApplicationFactory<ApiAssemblyMarker>()
                 .WithWebHostBuilder(builder =>
                 {
+                    _ = builder.UseSetting("ConnectionStrings:ClientsDb", $"Data Source={databasePath}");
                     _ = builder.ConfigureAppConfiguration((context, config) =>
                     {
                         _ = context;

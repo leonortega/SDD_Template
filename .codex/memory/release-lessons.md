@@ -80,8 +80,8 @@ Production hotfixes should remain expedited but gated. They still require ticket
 
 - Type: Pattern
 - Status: Active
-- Source: current conversation, `infra/deployment/apps.json`, `infra/azure/main.bicep`, E2EPROJECT-2 QA evidence
-- Last verified: 2026-06-02
+- Source: current conversation, `infra/deployment/apps.json`, `infra/azure/main.bicep`, E2EPROJECT-2 QA evidence, DEV/PROD Azure repair on 2026-06-04
+- Last verified: 2026-06-04
 
-When deployable app topology or `appsettings*.json` mappings change, it is not enough for the tracked manifest, Bicep, and workflow to be correct. The live DEV/QA/PROD App Service settings must also be deployed or repaired so non-secret inferred mappings such as web `Api__BaseUrl`, API `Cors__AllowedOrigins__0`, and API `ConnectionStrings__ClientsDb` are present. If QA shows the API works directly but the site cannot call it, compare the rendered site configuration and live Azure app settings against the topology manifest before treating the issue as product code.
+When deployable app topology or `appsettings*.json` mappings change, it is not enough for the tracked manifest, Bicep, and workflow to mention the settings. Initial Azure provisioning should apply non-secret inferred mappings through explicit App Service appsettings resources, and package deployment should reapply and verify `deployment-config.json`. Live DEV/QA/PROD App Service settings must contain web `Api__BaseUrl`, API `Cors__AllowedOrigins__0`, and API `ConnectionStrings__ClientsDb`; smoke checks should inspect rendered `const apiBaseUrl` and API CORS preflight. If the API works directly but the site cannot call it, compare rendered site configuration and live Azure app settings against the topology manifest before treating the issue as product code.
 
