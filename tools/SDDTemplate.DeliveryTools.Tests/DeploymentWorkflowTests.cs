@@ -479,16 +479,17 @@ namespace SDDTemplate.DeliveryTools.Tests
             string starter = ReadSkill("plane-start-ticket", "SKILL.md");
             string planeApi = ReadSkill("plane-start-ticket", Path.Combine("references", "plane-api.md"));
 
-            Assert.Contains("If the fetched Plane ticket has empty or null `estimate_point`", starter);
+            Assert.Contains("If the fetched Plane ticket has empty or null `point`", starter);
             Assert.Contains("preserve it exactly and do not overwrite a human estimate", starter);
             Assert.Contains("## Estimate Points", starter);
             Assert.Contains("`0`: explicitly no-op, research-only, or investigation ticket", starter);
             Assert.Contains("`7`: large or high-risk work requiring broad coordination", starter);
-            Assert.Contains("Patch the work item with only the resolved `estimate_point` value", starter);
+            Assert.Contains("Patch the work item with only the resolved `point` value", starter);
+            Assert.Contains("accepted mutable field for this workflow is `point`", starter);
 
-            Assert.Contains("\"estimate_point\": 3", planeApi);
-            Assert.Contains("Only send this patch when the fetched work item has null or empty `estimate_point`", planeApi);
-            Assert.Contains("Preserve any non-empty `estimate_point` value", planeApi);
+            Assert.Contains("\"point\": 3", planeApi);
+            Assert.Contains("Only send this patch when the fetched work item has null or empty `point` and `estimate_point`", planeApi);
+            Assert.Contains("Preserve any non-empty `point` or `estimate_point` value", planeApi);
         }
 
         [Fact]
@@ -1419,6 +1420,31 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("$frontend-testing-debugging", e2eSkill);
             Assert.Contains("Blazor", e2eSkill);
             Assert.Contains("browser-visible validation", e2eSkill);
+        }
+
+        [Fact]
+        public void TicketHandoffRequiresVerifiedHumanReviewers()
+        {
+            string contract = File.ReadAllText(Path.Combine(
+                FindRepositoryRoot().FullName,
+                ".codex",
+                "skills",
+                "_shared",
+                "delivery-contract.md"));
+            string implementSkill = ReadSkill("implement-ticket", "SKILL.md");
+            string openspecSkill = ReadSkill("openspec-implement-change", "SKILL.md");
+            string handoffReference = ReadSkill("openspec-implement-change", Path.Combine("references", "gitea-plane-handoff.md"));
+            string configureReference = ReadSkill("configure-dev-environment", Path.Combine("references", "gitea-pr.md"));
+
+            Assert.Contains("PR Reviewer Handoff", contract);
+            Assert.Contains("requested-reviewers endpoint", contract);
+            Assert.Contains("not treat the Codex review-agent comment", contract);
+            Assert.Contains("requested_reviewers", implementSkill);
+            Assert.Contains("Do not move the Plane ticket to review until human reviewers are requested and verified", implementSkill);
+            Assert.Contains("requested_reviewers", openspecSkill);
+            Assert.Contains("Re-fetch the PR and confirm the requested reviewers are present", openspecSkill);
+            Assert.Contains("POST {gitea.baseUrl}/api/v1/repos/{owner}/{repo}/pulls/{prNumber}/requested_reviewers", handoffReference);
+            Assert.Contains("Ticket handoff remains responsible for proving reviewers were actually requested", configureReference);
         }
 
         private static string ReadWorkflow()

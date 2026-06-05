@@ -17,8 +17,11 @@ namespace SDDTemplate.Site.Tests
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
             Assert.Contains("<h1>Clients</h1>", markup);
             Assert.Contains("id=\"client-form\"", markup);
+            Assert.Contains("onsubmit=\"return false\"", markup);
             Assert.Contains("id=\"clients-list\"", markup);
             Assert.Contains("/api/clients", markup);
+            Assert.Contains("fields.id.value.trim()", markup);
+            Assert.Contains("method: id ? \"PUT\" : \"POST\"", markup);
             Assert.Contains("const apiBaseUrl", markup);
         }
     }

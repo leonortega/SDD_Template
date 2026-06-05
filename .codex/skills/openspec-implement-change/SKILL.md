@@ -92,12 +92,16 @@ If implementation discovers durable knowledge, update the matching doc in the sa
    - If no reviewers can be resolved, create the PR without reviewers and document the gap in the PR body.
 3. Create configured PR labels if they do not exist and labels are enabled.
 4. Create the PR with title from the branch in human-readable text and a body containing all commit message change lists, `Context findings: added/updated/none`, `Docs updated: <files>` or `Docs: no durable context changes`, and `Assumptions recorded: <short list or none>`.
-5. Apply the configured reviewed label after the review agent completes. Apply `needs-tests` or `needs-changes` when the review agent reports those outcomes.
+5. Verify human reviewers before review handoff:
+   - If reviewers were resolved but the PR create response does not show them as requested, call `POST /api/v1/repos/{owner}/{repo}/pulls/{prNumber}/requested_reviewers` with the resolved reviewer usernames.
+   - Re-fetch the PR and confirm the requested reviewers are present.
+   - If Gitea rejects reviewer assignment or the verification still shows no requested reviewers, document the gap in the PR body, Plane handoff comment, and final summary before moving on.
+6. Apply the configured reviewed label after the review agent completes. Apply `needs-tests` or `needs-changes` when the review agent reports those outcomes.
 
 ### 6. Review And Update Plane
 
 1. Invoke the `gitea-pr-review-agent` skill against the newly created PR.
-2. Move the linked Plane work item to `plane.reviewState`, default `In Review`, only after PR creation and review-agent posting complete.
+2. Move the linked Plane work item to `plane.reviewState`, default `In Review`, only after PR creation, human reviewer request verification or documented reviewer gap, and review-agent posting complete.
 3. Add a Plane comment containing the PR link, `Context findings: added/updated/none`, `Docs updated: <files>` or `Docs: no durable context changes`, and `Assumptions recorded: <short list or none>`.
 4. If the configured Plane state is missing, stop after PR creation and review, report the missing state, and do not guess another state.
 

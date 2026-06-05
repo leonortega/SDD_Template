@@ -84,7 +84,7 @@ If the audit reports any `stack-context.*` warning, if `DiscoverProjectGuidance`
 8. Push the branch to Gitea with upstream tracking using `git push -u origin {branchName}`. If the upstream branch already exists and points to the same commit, treat it as complete; if the push is rejected or would require a non-fast-forward update, stop and report the branch issue.
 9. Analyze the ticket description in an OpenSpec explore style unless OpenSpec is explicitly skipped by policy below.
 10. Update only the managed generated block in the Plane ticket description.
-11. If the fetched Plane ticket has empty or null `estimate_point`, infer and patch `estimate_point` from the generated analysis using the rubric below. If `estimate_point` already has a value, preserve it exactly and do not overwrite a human estimate.
+11. If the fetched Plane ticket has empty or null `point`, infer and patch `point` from the generated analysis using the rubric below. If `point` or `estimate_point` already has a value, preserve it exactly and do not overwrite a human estimate.
 12. Add a Plane ticket comment with the branch name, base branch, pushed Gitea branch, and OpenSpec decision, unless a generated comment for the same branch already exists.
 13. Create or update `.codex/delivery-context.local.json` with `ticketKey`, `branch`, `openspecChange` when applicable, and any known PR/artifact/version fields. If an existing lock names a different ticket, stop and ask the user to clear or replace the lock.
 14. Move the Plane ticket to the configured in-progress state, unless it is already there.
@@ -169,7 +169,7 @@ Concrete examples:
 
 ## Estimate Points
 
-After the generated ticket block is complete, set Plane `estimate_point` only when the current ticket field is null or empty. Never overwrite a non-empty estimate because it may be a human planning value.
+After the generated ticket block is complete, set Plane `point` only when the current ticket `point` and `estimate_point` fields are null or empty. Never overwrite a non-empty estimate because it may be a human planning value.
 
 Use this rubric:
 
@@ -180,7 +180,7 @@ Use this rubric:
 - `5`: multi-area implementation, API/data/UI interaction, or deployment-sensitive change.
 - `7`: large or high-risk work requiring broad coordination.
 
-Patch the work item with only the resolved `estimate_point` value and any other fields required by Plane for a valid partial update. If Plane rejects the estimate patch after the generated description update succeeds, report the estimate update as blocked and continue only when no later workflow rule requires the estimate field.
+Patch the work item with only the resolved `point` value and any other fields required by Plane for a valid partial update. Current Plane work-item responses may include `estimate_point`, but the accepted mutable field for this workflow is `point`. If Plane rejects the estimate patch after the generated description update succeeds, report the estimate update as blocked and continue only when no later workflow rule requires the estimate field.
 
 ## Plane Access
 

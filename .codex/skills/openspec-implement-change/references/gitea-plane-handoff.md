@@ -56,6 +56,22 @@ Payload:
 
 If reviewers cannot be resolved, omit the `reviewers` property and document that in the body.
 
+After creating or reusing the PR, verify the requested reviewers on the PR response. If eligible reviewers were resolved but are missing from the response, request them explicitly:
+
+```text
+POST {gitea.baseUrl}/api/v1/repos/{owner}/{repo}/pulls/{prNumber}/requested_reviewers
+```
+
+Payload:
+
+```json
+{
+  "reviewers": ["developer1", "developer2"]
+}
+```
+
+Then re-fetch the PR and verify the requested reviewers are present before moving the Plane work item to review. If Gitea rejects the request, document the reviewer gap in the PR body, Plane handoff comment, and final summary.
+
 ## Reviewers
 
 When `pr.reviewers` is `"all"`, list repository collaborators:
