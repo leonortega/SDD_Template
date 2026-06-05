@@ -193,7 +193,6 @@ async function clearClients(api: APIRequestContext): Promise<Array<Omit<ClientRe
     const deleteResponse = await api.delete(`/api/clients/${client.id}`);
     await expect(deleteResponse).toBeOK();
   }
-
   return clients.map(({ id: _, ...client }) => client);
 }
 
