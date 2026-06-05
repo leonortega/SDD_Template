@@ -143,6 +143,12 @@ Ticket implementation handoff must request the configured human reviewers before
 
 Do not treat the Codex review-agent comment, `codex-reviewed` label, or passing PR validation as a substitute for human reviewer assignment. If no eligible reviewers can be resolved, or Gitea rejects reviewer assignment, keep the PR open but document the reviewer gap in the PR body, Plane handoff comment, and final summary.
 
+## QA Evidence Trigger Branch Cleanup
+
+`qa/{ticketKey}` branches are temporary Gitea Actions triggers for evidence-only E2E QA. After the branch run succeeds, Nexus evidence exists for the tested artifact, the E2E QA Plane comment is verified, the RC tag is created or verified, and the Plane ticket is moved to Done, delete the remote `qa/{ticketKey}` branch from Gitea. Durable QA evidence belongs in Nexus, Plane comments, release manifests, and tags, not in the trigger branch.
+
+If evidence publication, Plane comment verification, RC tagging, or Done-state mutation is incomplete, keep the branch until the blocking step is resolved or the branch is intentionally rerun.
+
 ## Installed Skill Runtime Index
 
 Project guidance remains the broad catalog for skills, tools, references, practices, standards, MCPs, and plugins. The installed-skill runtime index is only a derived cache of actual `.codex/skills/*/SKILL.md` files and exact paths for delegation.
