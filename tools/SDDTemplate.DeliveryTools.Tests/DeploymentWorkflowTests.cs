@@ -1477,6 +1477,38 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("deleting the remote `qa/{ticketKey}` branch after durable Nexus/Plane/release/tag evidence exists", configureScript);
         }
 
+        [Fact]
+        public void E2EQaRequiresLinkedOpenSpecArchiveBeforeCompleteHandoff()
+        {
+            string contract = File.ReadAllText(Path.Combine(
+                FindRepositoryRoot().FullName,
+                ".codex",
+                "skills",
+                "_shared",
+                "delivery-contract.md"));
+            string e2eSkill = ReadSkill("test-e2e", "SKILL.md");
+            string root = FindRepositoryRoot().FullName;
+            string activeChange = Path.Combine(
+                root,
+                "openspec",
+                "changes",
+                "feat-e2eproject-2-add-a-crud-view-por-a-client");
+            string archivedChange = Path.Combine(
+                root,
+                "openspec",
+                "changes",
+                "archive",
+                "2026-06-05-feat-e2eproject-2-add-a-crud-view-por-a-client");
+
+            Assert.Contains("OpenSpec Completion Archive Gate", contract);
+            Assert.Contains("must be archived before the workflow is reported complete", contract);
+            Assert.Contains("Do not report the QA workflow as fully complete while exactly one linked active OpenSpec change remains unarchived", e2eSkill);
+            Assert.Contains("OpenSpec archived: <archive path>", e2eSkill);
+            Assert.False(Directory.Exists(activeChange));
+            Assert.True(Directory.Exists(archivedChange));
+            Assert.True(File.Exists(Path.Combine(root, "openspec", "specs", "client-crud", "spec.md")));
+        }
+
         private static string ReadWorkflow()
         {
             return File.ReadAllText(Path.Combine(

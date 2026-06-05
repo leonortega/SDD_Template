@@ -149,6 +149,12 @@ Do not treat the Codex review-agent comment, `codex-reviewed` label, or passing 
 
 If evidence publication, Plane comment verification, RC tagging, or Done-state mutation is incomplete, keep the branch until the blocking step is resolved or the branch is intentionally rerun.
 
+## OpenSpec Completion Archive Gate
+
+After E2E QA passes and the Plane ticket is moved to Done, the linked active OpenSpec change must be archived before the workflow is reported complete. If exactly one active OpenSpec change clearly matches the ticket key, invoke `openspec-archive-change` and report the archive path. Do not leave a completed linked OpenSpec change active merely because Plane, Nexus, and tags are complete.
+
+If no matching active change can be resolved, multiple active changes match, artifact or task completion is incomplete, spec sync needs user confirmation, or archive movement fails, report the archive blocker explicitly in Plane or the final handoff and leave the ticket result intact.
+
 ## Installed Skill Runtime Index
 
 Project guidance remains the broad catalog for skills, tools, references, practices, standards, MCPs, and plugins. The installed-skill runtime index is only a derived cache of actual `.codex/skills/*/SKILL.md` files and exact paths for delegation.
