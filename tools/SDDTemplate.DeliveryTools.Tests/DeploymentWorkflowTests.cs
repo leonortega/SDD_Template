@@ -1447,6 +1447,36 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("Ticket handoff remains responsible for proving reviewers were actually requested", configureReference);
         }
 
+        [Fact]
+        public void E2EQaDeletesTemporaryTriggerBranchAfterDurableEvidence()
+        {
+            string contract = File.ReadAllText(Path.Combine(
+                FindRepositoryRoot().FullName,
+                ".codex",
+                "skills",
+                "_shared",
+                "delivery-contract.md"));
+            string e2eSkill = ReadSkill("test-e2e", "SKILL.md");
+            string deploymentDoc = ReadDoc("deployment.md");
+            string developmentDoc = ReadDoc("development.md");
+            string workflowReadme = File.ReadAllText(Path.Combine(
+                FindRepositoryRoot().FullName,
+                ".gitea",
+                "workflows",
+                "README.md"));
+            string configureScript = ReadConfigureScript();
+
+            Assert.Contains("QA Evidence Trigger Branch Cleanup", contract);
+            Assert.Contains("delete the remote `qa/{ticketKey}` branch from Gitea", contract);
+            Assert.Contains("Durable QA evidence belongs in Nexus, Plane comments, release manifests, and tags", contract);
+            Assert.Contains("git push origin --delete qa/E2EPROJECT-123", e2eSkill);
+            Assert.Contains("Do not delete the branch before Nexus evidence exists", e2eSkill);
+            Assert.Contains("delete the remote `qa/{ticketKey}` branch from Gitea", deploymentDoc);
+            Assert.Contains("delete the remote `qa/{ticketKey}` branch", developmentDoc);
+            Assert.Contains("deleting the remote `qa/{ticketKey}` branch after durable Nexus/Plane/release/tag evidence exists", workflowReadme);
+            Assert.Contains("deleting the remote `qa/{ticketKey}` branch after durable Nexus/Plane/release/tag evidence exists", configureScript);
+        }
+
         private static string ReadWorkflow()
         {
             return File.ReadAllText(Path.Combine(

@@ -47,7 +47,7 @@ git switch -c qa/E2EPROJECT-123 origin/dev
 git push origin qa/E2EPROJECT-123
 ```
 
-The `qa/{ticketKey}` branch workflow runs the committed Playwright suite remotely against `AZURE_QA_SITE_APP_URL` and `AZURE_QA_API_APP_URL`. Local runs are only for test authoring or diagnostics, not the official QA E2E gate.
+The `qa/{ticketKey}` branch workflow runs the committed Playwright suite remotely against `AZURE_QA_SITE_APP_URL` and `AZURE_QA_API_APP_URL`. Local runs are only for test authoring or diagnostics, not the official QA E2E gate. After the remote evidence exists and the QA workflow records Plane Done plus the RC/release metadata, delete the remote `qa/{ticketKey}` branch; it is only a temporary trigger, not the durable audit record.
 
 Verify formatting:
 
