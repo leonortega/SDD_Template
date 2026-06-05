@@ -98,6 +98,7 @@ test.describe("Client CRUD deployed QA E2E", () => {
 
     await assertApiHealth(api);
     await expect(await api.get("/api/clients")).toBeOK();
+    await clearClients(api);
 
     await page.goto("/clients");
     await expect(page).toHaveTitle(/Clients|SDD Template/);
@@ -114,7 +115,12 @@ test.describe("Client CRUD deployed QA E2E", () => {
     await expect(page.locator("#client-errors")).toContainText("Born date cannot be in the future.");
 
     await fillClientForm(page, testClient);
+    const createRequest = page.waitForRequest(requestInfo =>
+      requestInfo.method() === "POST" &&
+      requestInfo.url().replace(/\/$/, "") === `${apiUrl}/api/clients`);
+
     await page.getByRole("button", { name: "Save client" }).click();
+    await createRequest;
     await expect(page.locator("#client-errors")).toBeEmpty();
     await expect(page.locator("#clients-list")).toContainText(`${testClient.name} ${testClient.lastName}`);
     await expect(page.locator("#clients-list")).toContainText(testClient.city);
@@ -171,6 +177,17 @@ async function findClient(api: APIRequestContext, name: string, lastName: string
   const clients = await response.json() as ClientRecord[];
 
   return clients.find(client => client.name === name && client.lastName === lastName);
+}
+
+async function clearClients(api: APIRequestContext): Promise<void> {
+  const response = await api.get("/api/clients");
+  await expect(response).toBeOK();
+  const clients = await response.json() as ClientRecord[];
+
+  for (const client of clients) {
+    const deleteResponse = await api.delete(`/api/clients/${client.id}`);
+    await expect(deleteResponse).toBeOK();
+  }
 }
 
 function rowForClient(page: Page, name: string) {
