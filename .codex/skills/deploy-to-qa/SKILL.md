@@ -55,19 +55,22 @@ Run preflight, DEV/QA promotion, Plane updates, and handoff reporting in order. 
 8. Confirm the topology manifest, every app artifact, every checksum, and commit metadata exist in Nexus using the configured Nexus credentials. Treat missing Nexus local config, Nexus outage, or any missing file as blocking.
 9. Compare `commit.sha` with the resolved commit SHA. Treat mismatch as blocking.
 10. Read `release.json` when present and verify `planeTicketKey` matches the locked/resolved ticket key. Treat another ticket key as blocking cross-ticket promotion.
+11. Confirm Nexus contains `app/{commitSha}/deployment-config.json`. Treat a missing deployment configuration artifact as blocking workflow drift and route to `configure-azure-environments`.
 
 ## DEV And QA Promotion
 
 1. Confirm DEV deployment succeeded for the same commit. If DEV failed, add a Plane failure comment and stop.
 2. Validate the DEV URL using the workflow smoke-check result or a fresh `curl --fail` when the URL is available. For fresh checks, retry with backoff for Azure cold starts: 5 attempts with waits of 5, 10, 20, 30, and 60 seconds.
 3. Validate DEV `/health` using workflow output or a fresh request. It must return HTTP 200 and JSON `status=ok`. For fresh checks, use the same retry/backoff policy.
-4. Confirm QA deployment downloaded the same Nexus topology and app artifact paths used by DEV. Do not rebuild.
-5. Validate the QA URL using the workflow smoke-check result or a fresh `curl --fail` when the URL is available. For fresh checks, use the same retry/backoff policy.
-6. Validate QA `/health` using workflow output or a fresh request. It must return HTTP 200 and JSON `status=ok`. For fresh checks, use the same retry/backoff policy.
-7. If DEV or QA page or `/health` validation fails, add a Plane failure comment and do not move the ticket state.
-8. Use `UpdateReleaseManifest` to create or update `app/{commitSha}/release.json` with commit SHA, representative checksum/artifact URL, PR URL, Plane ticket key, DEV/QA URLs, DEV/QA status, per-app health status, workflow run URL, and `versionStatus=unversioned QA candidate` unless an RC tag already exists.
-9. Validate and upload `release.json` to Nexus next to the artifact.
-10. If QA passes, move the Plane work item to `plane.qaState`, default `QA`.
+4. Confirm DEV deployment applied and verified `deployment-config.json`; required live App Service settings must exist and non-secret values must match expected resolved values. Missing proof is blocking.
+5. Confirm QA deployment downloaded the same Nexus topology, deployment configuration, and app artifact paths used by DEV. Do not rebuild.
+6. Validate the QA URL using the workflow smoke-check result or a fresh `curl --fail` when the URL is available. For fresh checks, use the same retry/backoff policy.
+7. Validate QA `/health` using workflow output or a fresh request. It must return HTTP 200 and JSON `status=ok`. For fresh checks, use the same retry/backoff policy.
+8. Confirm QA deployment applied and verified `deployment-config.json`; required live App Service settings must exist and non-secret values must match expected resolved values. Missing proof is blocking.
+9. If DEV or QA page, `/health`, or deployment configuration validation fails, add a Plane failure comment and do not move the ticket state.
+10. Use `UpdateReleaseManifest` to create or update `app/{commitSha}/release.json` with commit SHA, representative checksum/artifact URL, PR URL, Plane ticket key, DEV/QA URLs, DEV/QA status, per-app health status, deployment configuration status, workflow run URL, and `versionStatus=unversioned QA candidate` unless an RC tag already exists.
+11. Validate and upload `release.json` to Nexus next to the artifact.
+12. If QA passes, move the Plane work item to `plane.qaState`, default `QA`.
 
 ## Plane Updates
 
@@ -112,6 +115,7 @@ Report the ticket, merged PR, artifact commit, DEV/QA URLs, health validation, N
 - Stop on DEV failure.
 - Stop on QA failure.
 - Stop on DEV or QA `/health` failure.
+- Stop when `deployment-config.json` is missing or live DEV/QA App Service setting verification is missing, failed, or mismatched.
 - Stop when merged PR still has `needs-changes` or `needs-tests`.
 - Stop when the ticket context lock or `release.json.planeTicketKey` points to a different ticket.
 - Stop when Nexus is unreachable; do not use a degraded artifact source.

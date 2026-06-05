@@ -47,6 +47,7 @@ Fetch:
 - existing inline review comments and review-thread replies when the configured Gitea version exposes them
 - relevant local source files for changed code
 - changed line count for diff-size classification
+- delivery risk and adversarial-review trigger using the shared delivery contract; prefer `tools/SDDTemplate.DeliveryTools DetectAdversarialReviewTrigger` when available
 
 If a comment contains `<!-- codex-review-agent:{headSha} -->`, skip posting another review for the same head SHA unless the user explicitly asks for a fresh review. The existing review still remains an implementation feedback source for `implement-ticket`.
 
@@ -78,6 +79,15 @@ Use deterministic diff scope:
 - 500 changed lines or more: perform a structured risk-based review and clearly state any areas not reviewed line-by-line.
 - Always fully inspect changes touching auth, authorization, persistence, migrations, deployment workflows, secrets, public APIs, tests, and health/deployment contracts.
 
+Run adversarial review mode when requested explicitly or when the shared delivery contract classifies the PR as high risk. In adversarial mode:
+
+1. Read Plane/OpenSpec acceptance criteria before judging the diff.
+2. For each requirement, ask how the implementation could fail through negative input, stale state, retries, idempotency, authorization, data loss, deployment mismatch, or missing test evidence.
+3. Treat spec/code mismatches and unproven high-risk behavior as first-class findings.
+4. End the review with verdict `PASS`, `PASS WITH GAPS`, or `FAIL`.
+
+Standard mode may use a compact review summary for low-risk PRs, but it must still inspect required tests and configured quality evidence.
+
 Restrict internet research to official documentation, primary source repositories, release notes, standards, or vendor docs unless those are insufficient for a concrete finding. Do not browse for general style opinions. Limit external research to findings where the source materially changes the conclusion.
 
 Do not leave vague style feedback. Every finding must include the affected file or behavior, why it matters, and the suggested correction.
@@ -91,6 +101,8 @@ Post one top-level Gitea PR comment. Include:
 - findings ordered by severity, each with a stable finding id
 - test gaps
 - diff scope reviewed and any large-diff sampling limits
+- review mode `standard` or `adversarial`
+- adversarial verdict `PASS`, `PASS WITH GAPS`, or `FAIL` when adversarial mode runs
 - sources consulted when applicable
 
 Stable finding ids must be deterministic for the same head SHA and finding target. Use compact ids such as `AI-001`, `AI-002`, or `AI-{shortHash}` and include them in the visible finding heading so `implement-ticket` can compute feedback batch ids and create OpenSpec feedback tasks.
@@ -127,3 +139,4 @@ Use a code-review stance. Lead with findings and severity. Keep summaries brief.
 - Duplicate review marker for the same head SHA: skip mutation unless explicitly asked to refresh.
 - Internet unavailable: continue with local review and note that external validation was skipped.
 - Large diffs: follow the threshold rules above and clearly state what was not reviewed line-by-line.
+- Required adversarial review without acceptance/spec context: stop or report `FAIL` when required behavior cannot be proven.
