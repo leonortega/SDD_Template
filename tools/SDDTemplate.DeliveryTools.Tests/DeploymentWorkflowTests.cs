@@ -1422,6 +1422,31 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("browser-visible validation", e2eSkill);
         }
 
+        [Fact]
+        public void TicketHandoffRequiresVerifiedHumanReviewers()
+        {
+            string contract = File.ReadAllText(Path.Combine(
+                FindRepositoryRoot().FullName,
+                ".codex",
+                "skills",
+                "_shared",
+                "delivery-contract.md"));
+            string implementSkill = ReadSkill("implement-ticket", "SKILL.md");
+            string openspecSkill = ReadSkill("openspec-implement-change", "SKILL.md");
+            string handoffReference = ReadSkill("openspec-implement-change", Path.Combine("references", "gitea-plane-handoff.md"));
+            string configureReference = ReadSkill("configure-dev-environment", Path.Combine("references", "gitea-pr.md"));
+
+            Assert.Contains("PR Reviewer Handoff", contract);
+            Assert.Contains("requested-reviewers endpoint", contract);
+            Assert.Contains("not treat the Codex review-agent comment", contract);
+            Assert.Contains("requested_reviewers", implementSkill);
+            Assert.Contains("Do not move the Plane ticket to review until human reviewers are requested and verified", implementSkill);
+            Assert.Contains("requested_reviewers", openspecSkill);
+            Assert.Contains("Re-fetch the PR and confirm the requested reviewers are present", openspecSkill);
+            Assert.Contains("POST {gitea.baseUrl}/api/v1/repos/{owner}/{repo}/pulls/{prNumber}/requested_reviewers", handoffReference);
+            Assert.Contains("Ticket handoff remains responsible for proving reviewers were actually requested", configureReference);
+        }
+
         private static string ReadWorkflow()
         {
             return File.ReadAllText(Path.Combine(

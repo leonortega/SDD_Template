@@ -159,6 +159,10 @@ If implementation discovers durable authoritative knowledge, update the matching
 
 Reuse an existing open PR for the branch when present. Otherwise create a PR targeting the configured base branch.
 
+Resolve configured human reviewers before PR handoff. When `pr.reviewers` is `"all"`, list current Gitea collaborators and exclude the PR author plus the authenticated automation user. When `pr.reviewers` is an array, use the configured usernames after trimming empty values. If eligible reviewers are resolved but the PR create or reuse response does not show them as requested, call `POST /api/v1/repos/{owner}/{repo}/pulls/{prNumber}/requested_reviewers`, then re-fetch the PR and verify the requested reviewers are present.
+
+Do not move the Plane ticket to review until human reviewers are requested and verified, or until the reviewer gap is documented in the PR body, Plane handoff comment, and final summary. The Codex review-agent comment, `codex-reviewed` label, and passing PR validation are not substitutes for requested human reviewers.
+
 The PR body must include:
 
 - Plane ticket id
@@ -175,6 +179,7 @@ The PR body must include:
 - `Memory updated: <files>` or `Memory updated: none`
 - Delivery risk: low/standard/high
 - Review workload forecast: low/medium/high and split/exception decision when applicable
+- Reviewers requested: <usernames> or reviewer gap: <reason>
 - Assumptions recorded: <short list or none>
 - remaining non-blocking infra notes
 - known non-blocking product risks or gaps
