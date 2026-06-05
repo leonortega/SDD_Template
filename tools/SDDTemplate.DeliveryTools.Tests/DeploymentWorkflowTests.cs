@@ -479,16 +479,17 @@ namespace SDDTemplate.DeliveryTools.Tests
             string starter = ReadSkill("plane-start-ticket", "SKILL.md");
             string planeApi = ReadSkill("plane-start-ticket", Path.Combine("references", "plane-api.md"));
 
-            Assert.Contains("If the fetched Plane ticket has empty or null `estimate_point`", starter);
+            Assert.Contains("If the fetched Plane ticket has empty or null `point`", starter);
             Assert.Contains("preserve it exactly and do not overwrite a human estimate", starter);
             Assert.Contains("## Estimate Points", starter);
             Assert.Contains("`0`: explicitly no-op, research-only, or investigation ticket", starter);
             Assert.Contains("`7`: large or high-risk work requiring broad coordination", starter);
-            Assert.Contains("Patch the work item with only the resolved `estimate_point` value", starter);
+            Assert.Contains("Patch the work item with only the resolved `point` value", starter);
+            Assert.Contains("accepted mutable field for this workflow is `point`", starter);
 
-            Assert.Contains("\"estimate_point\": 3", planeApi);
-            Assert.Contains("Only send this patch when the fetched work item has null or empty `estimate_point`", planeApi);
-            Assert.Contains("Preserve any non-empty `estimate_point` value", planeApi);
+            Assert.Contains("\"point\": 3", planeApi);
+            Assert.Contains("Only send this patch when the fetched work item has null or empty `point` and `estimate_point`", planeApi);
+            Assert.Contains("Preserve any non-empty `point` or `estimate_point` value", planeApi);
         }
 
         [Fact]

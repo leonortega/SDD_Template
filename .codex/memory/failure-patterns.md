@@ -126,6 +126,15 @@ Delivery-tool tests that invoke PowerShell must select `pwsh` on non-Windows and
 
 When coverage fails because generated EF migration files or CLI adapter entrypoints are counted at 0%, prefer targeted `ExcludeFromCodeCoverage` on generated/adapter boundaries rather than adding shallow tests. Confirm the underlying behavior is covered through meaningful tests, then rerun coverage threshold checks from fresh Cobertura reports.
 
+## Stale TestResults Can Spoof Coverage Failures
+
+- Type: Pattern
+- Status: Active
+- Source: E2EPROJECT-3 implementation, `dotnet test -c Release --no-build --logger trx --collect:"XPlat Code Coverage"` and coverage threshold check
+- Last verified: 2026-06-05
+
+Ignored `TestResults/` directories can retain older `coverage.cobertura.xml` files. A local threshold script that scans all Cobertura files may fail because stale reports are below the current threshold even when the latest run passes. Before enforcing local coverage from file discovery, remove ignored `tests/**/TestResults` and `tools/**/TestResults` directories or filter to the current run's report paths, then rerun tests with coverage and threshold parsing.
+
 ## Windows Line Endings Can Create Noisy Status Without Meaningful Diff
 
 - Type: Pattern
