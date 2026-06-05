@@ -41,7 +41,7 @@ Optional environment variables override local JSON when present:
 
 ## Workflow
 
-Run preflight, main/tag promotion, PROD deployment, PROD verification, Plane result, and release handoff steps in order. Do not continue to the next step until the prior validation evidence is present.
+Run preflight, main/tag promotion, PROD deployment, PROD verification, Plane result, post-PROD retrospective, and release handoff steps in order. Do not continue to the next step until the prior validation evidence is present.
 
 ## Preflight
 
@@ -55,6 +55,7 @@ Run preflight, main/tag promotion, PROD deployment, PROD verification, Plane res
 6. Verify the E2E QA comment includes pass result, PR URL, QA URL, Nexus artifact URL, QA evidence URL, and source RC version.
 7. Verify Nexus contains:
    - `app/{commitSha}/deployable-apps.json`
+   - `app/{commitSha}/deployment-config.json`
    - one `app/{commitSha}/{artifactName}` per topology app
    - one `app/{commitSha}/{artifactName}.sha256` per topology app
    - `app/{commitSha}/commit.sha`
@@ -107,6 +108,7 @@ After dispatch, inspect the workflow run jobs and logs against the artifact-reus
 - skipped rebuild/republish behavior,
 - skipped DEV and QA deployment behavior,
 - ran direct PROD page and `/health` checks.
+- applied and verified `deployment-config.json` against live PROD App Service settings before claiming success.
 
 Prefer named job checks such as `deploy-prod` when present, but do not rely only on job names. If the workflow rebuilds, republishes, downloads an artifact commit that does not match the approved commit, lacks a PROD deployment path, deploys DEV/QA during PROD promotion, or skips `/health`, treat it as blocking workflow drift.
 
@@ -116,13 +118,14 @@ After the workflow succeeds, run direct verification before commenting success:
 
 1. Request the PROD web URL and assert HTTP 200 plus expected page title/content.
 2. Request every topology app health path and assert HTTP 200 plus `status=ok`.
-3. Query Prometheus targets at `http://localhost:9090/api/v1/targets` when local Prometheus is reachable.
-4. Verify the PROD web target is present and `health=up`.
-5. If a PROD API target is configured but this repo does not deploy an API, record it as an observability configuration note instead of a product failure.
-6. Query Grafana health at `http://localhost:3001/api/health` when local Grafana is reachable.
-7. If Prometheus or Grafana is unreachable, classify monitoring as unavailable. Direct HTTP and `/health` checks remain authoritative for app success.
-8. If direct page or `/health` checks fail, classify PROD verification as failed and do not claim success.
-9. When PROD verification passes, use `UpdateReleaseManifest` to update `app/{commitSha}/release.json` with final release version, final tag, PROD URL, PROD page status, PROD `/health` status, workflow run URL, monitoring status, and PROD deployment timestamp. Validate and upload the updated manifest to Nexus.
+3. Verify the PROD workflow applied and verified `deployment-config.json`; required live App Service settings must exist and non-secret values must match expected resolved values. Missing proof is blocking.
+4. Query Prometheus targets at `http://localhost:9090/api/v1/targets` when local Prometheus is reachable.
+5. Verify the PROD web target is present and `health=up`.
+6. If a PROD API target is configured but this repo does not deploy an API, record it as an observability configuration note instead of a product failure.
+7. Query Grafana health at `http://localhost:3001/api/health` when local Grafana is reachable.
+8. If Prometheus or Grafana is unreachable, classify monitoring as unavailable. Direct HTTP, deployment configuration, and `/health` checks remain authoritative for app success.
+9. If direct page, deployment configuration, or `/health` checks fail, classify PROD verification as failed and do not claim success.
+10. When PROD verification passes, use `UpdateReleaseManifest` to update `app/{commitSha}/release.json` with final release version, final tag, PROD URL, PROD page status, PROD deployment configuration status, PROD `/health` status, workflow run URL, monitoring status, and PROD deployment timestamp. Validate and upload the updated manifest to Nexus.
 
 PROD success must never be based on screenshots alone.
 
@@ -157,9 +160,23 @@ The comment must include:
 
 Only write a success result after the workflow passed and direct PROD page plus `/health` verification passed. If app checks fail, write a failure comment and stop. If only local monitoring is unavailable, deployment may still pass, but the comment must state monitoring verification was unavailable.
 
+## Post-PROD Retrospective
+
+After a successful PROD result comment is recorded, automatically run `delivery-retrospective-audit` in read-only `post-prod-ticket-release` mode for the just-promoted ticket. Pass the resolved ticket key, artifact commit, final release version, PROD URL, and Nexus release manifest path or URL as the audit scope.
+
+This retrospective is a learning-evidence step, not a release gate. PROD success remains based on the artifact, workflow, direct PROD page, and `/health` validation above. If the retrospective cannot inspect optional evidence, report the evidence gap in the final handoff and keep the successful PROD result intact.
+
+The retrospective must persist compact, sanitized learning evidence:
+
+- append or update local audit result data in ignored `.codex/agent-evals/results.local.json`,
+- add or reuse a compact Plane comment with marker `IA generated post-PROD retrospective: {finalVersion}`,
+- include findings, recommended durable improvements, eval coverage gaps, residual evidence gaps, and follow-up ownership when applicable.
+
+The retrospective must not mutate Plane state, deploy, promote, tag, rewrite branches, update release manifests, create tickets, schedule automations, or apply docs, contract, skill, eval, or memory changes unless the user separately asks for apply mode. Do not include secrets, raw tool payloads, full prompts, tokens, cookies, or credential-bearing URLs in the local result or Plane comment.
+
 ## Output
 
-Report the final release version, PROD URL, final tag, deployed artifact commit, validation results, Plane comment status, and any handoff or monitoring gaps.
+Report the final release version, PROD URL, final tag, deployed artifact commit, validation results, Plane PROD comment status, post-PROD retrospective result path and Plane marker status, and any handoff, audit, or monitoring gaps.
 
 ## Failure Rules
 
@@ -170,6 +187,7 @@ Report the final release version, PROD URL, final tag, deployed artifact commit,
 - Missing source RC tag or wrong tag target: stop.
 - Existing final release tag: stop.
 - Missing Nexus artifact/checksum/commit metadata: stop.
+- Missing `deployment-config.json` or failed live PROD App Service setting verification: stop.
 - Checksum or commit metadata mismatch: stop.
 - Diverged `main`: stop.
 - Local-only release tag after failed push: delete the local tag before stopping unless the tag already exists on the remote.

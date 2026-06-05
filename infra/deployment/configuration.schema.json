@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Deployment configuration mapping",
+  "type": "object",
+  "required": [
+    "version",
+    "settings"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "ignoredPrefixes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "settings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "appId",
+          "name",
+          "source",
+          "required",
+          "secret"
+        ],
+        "properties": {
+          "appId": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_]+(__[A-Za-z0-9_]+)*$"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "literal",
+              "environmentSecret",
+              "topologyReference",
+              "environmentName",
+              "sqliteDataPath",
+              "manualRequired"
+            ]
+          },
+          "value": {
+            "type": "string"
+          },
+          "targetAppId": {
+            "type": "string"
+          },
+          "targetProperty": {
+            "type": "string",
+            "enum": [
+              "url",
+              "name"
+            ]
+          },
+          "secretName": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "secret": {
+            "type": "boolean"
+          },
+          "additionalSetting": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

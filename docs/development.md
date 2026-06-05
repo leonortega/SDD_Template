@@ -47,7 +47,7 @@ git switch -c qa/E2EPROJECT-123 origin/dev
 git push origin qa/E2EPROJECT-123
 ```
 
-The `qa/{ticketKey}` branch workflow runs the committed Playwright suite remotely against `AZURE_QA_SITE_APP_URL` and `AZURE_QA_API_APP_URL`. Local runs are only for test authoring or diagnostics, not the official QA E2E gate.
+The `qa/{ticketKey}` branch workflow runs the committed Playwright suite remotely against `AZURE_QA_SITE_APP_URL` and `AZURE_QA_API_APP_URL`. Local runs are only for test authoring or diagnostics, not the official QA E2E gate. After the remote evidence exists and the QA workflow records Plane Done plus the RC/release metadata, delete the remote `qa/{ticketKey}` branch; it is only a temporary trigger, not the durable audit record.
 
 Verify formatting:
 
@@ -74,6 +74,12 @@ Feature work starts from a Plane ticket and normally creates an OpenSpec proposa
 Before the first ticket starts, verify the repository tool set and tech stack are configured in `docs/architecture.md`, this file, `docs/deployment.md`, `openspec/config.yaml`, and the tracked `.codex/tool-recommendations.example.json` template. The ticket-start flow must run or inspect `AuditRecommendedTools` and stop before creating branches, Plane generated blocks, ticket locks, or OpenSpec proposals when stack context is missing or reports `stack-context.*` drift. Use `configure-dev-environment` to complete the docs, OpenSpec context, and recommendation catalog template first. After project guidance discovery is confirmed, ignored `.codex/tool-recommendations.local.json` may store the current project recommendations and `usedInSteps` so `project-guidance-mapper` can reuse the same verified skills and guidance for repeated implementation, review, QA, deployment, rollback, hotfix, and retrospective steps.
 
 Implementation is complete only when OpenSpec tasks are complete, PR review feedback tasks are complete, behavior is tested, quality gates pass or are handed off to CI as the authority, and a Gitea PR has review-agent coverage.
+
+Ticket start now includes a readiness gate before branch, Plane state, ticket-lock, or OpenSpec mutation. Tickets are classified as `ready`, `enrichable`, or `blocked`. Enrichable tickets keep moving only after the managed Plane block records concrete acceptance criteria, affected areas, validation expectations, risks, and definition of done. Blocked tickets stop before mutation when the product or technical intent is still too vague.
+
+OpenSpec `tasks.md` must include a compact Review Workload Forecast for ticketed work. The forecast records estimated changed lines, `400-line budget risk`, whether chained PRs are recommended, whether a decision is needed before apply, the delivery strategy, and suggested work units. High-risk or oversized work must record a split plan or `size:exception` before implementation begins. Work-unit commits keep code, tests, and docs for the same deliverable behavior together.
+
+Delivery depth is risk-adaptive but gates are not optional. Low-risk changes may use compact planning and review summaries. High-risk changes, including auth, persistence, migrations, deployment workflows, secrets, public APIs, `/health`, release manifests, rollback/hotfix, or large diffs, require full workload handling and adversarial review.
 
 PR review feedback has two timed loops owned by the repo-local `pr-review-feedback-loop` skill. The AI review loop runs immediately after PR creation and after every feedback fix; every AI finding becomes a `## PR Review Feedback` task in the active OpenSpec `tasks.md` before the PR is ready for human review. Human PR review happens later and reconnects only when the operator manually resumes the ticket, such as `automatically continue this ticket` or `continue E2EPROJECT-123`. Do not carry this local delivery behavior in external `openspec-*` skills.
 
@@ -102,9 +108,11 @@ Use `.codex/skills/delivery-retrospective-audit` to inspect recent delivery evid
 
 Retrospectives are read-only by default. Apply durable workflow changes only when the evidence shows a repeated pattern, a high-severity gap, direct drift from `.codex/skills/_shared/delivery-contract.md`, or a missing deterministic check for an already-required rule. The audit must not mutate Plane state, deploy, promote, tag, or create recurring automations unless the user explicitly requests that separate action.
 
+After a successful PROD deployment, `deploy-to-prod` automatically runs `delivery-retrospective-audit` in read-only `post-prod-ticket-release` mode. The audit writes sanitized learning evidence to ignored `.codex/agent-evals/results.local.json` and records a compact Plane marker, but it does not block or undo PROD success. Later retrospectives can use those results to identify repeated findings, eval coverage gaps, and recommended follow-up improvements.
+
 ## Agent Workflow Evals
 
-Agent behavior is evaluated separately from product behavior. The default workflow fixtures live in `.codex/agent-evals/workflow-cases.json` and cover ticket start, implementation, PR review, QA promotion, E2E QA, PROD promotion, and rollback.
+Agent behavior is evaluated separately from product behavior. The default workflow fixtures live in `.codex/agent-evals/workflow-cases.json` and cover ticket start, implementation, PR review, QA promotion, E2E QA, PROD promotion, post-PROD retrospective learning evidence, and rollback.
 
 Use these evals when changing delivery skills, adding new agent roles, changing model routing, or investigating repeated agent failures. Each case checks route selection, tool selection, argument precision, mutation gates, stop conditions, and handoff fields. New agent roles or routing complexity should be backed by eval evidence that the existing workflow struggled or became ambiguous.
 

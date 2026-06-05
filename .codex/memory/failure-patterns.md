@@ -126,6 +126,15 @@ Delivery-tool tests that invoke PowerShell must select `pwsh` on non-Windows and
 
 When coverage fails because generated EF migration files or CLI adapter entrypoints are counted at 0%, prefer targeted `ExcludeFromCodeCoverage` on generated/adapter boundaries rather than adding shallow tests. Confirm the underlying behavior is covered through meaningful tests, then rerun coverage threshold checks from fresh Cobertura reports.
 
+## Stale TestResults Can Spoof Coverage Failures
+
+- Type: Pattern
+- Status: Active
+- Source: E2EPROJECT-3 implementation, `dotnet test -c Release --no-build --logger trx --collect:"XPlat Code Coverage"` and coverage threshold check
+- Last verified: 2026-06-05
+
+Ignored `TestResults/` directories can retain older `coverage.cobertura.xml` files. A local threshold script that scans all Cobertura files may fail because stale reports are below the current threshold even when the latest run passes. Before enforcing local coverage from file discovery, remove ignored `tests/**/TestResults` and `tools/**/TestResults` directories or filter to the current run's report paths, then rerun tests with coverage and threshold parsing.
+
 ## Windows Line Endings Can Create Noisy Status Without Meaningful Diff
 
 - Type: Pattern
@@ -161,4 +170,13 @@ When merging `dev` into a ticket feature branch, Git's generated merge message c
 - Last verified: 2026-06-03
 
 If `npx playwright install` or `npm run install:browsers` times out locally, later Playwright commands may fail with an active lockfile at `%LOCALAPPDATA%\ms-playwright\__dirlock`. Before removing the lock, check for live `node.exe` processes whose command line still references Playwright install or download. Stop only those stale installer processes, then remove the lock. In this repository, official QA E2E should run remotely through Gitea against deployed QA apps; local Playwright execution is only for authoring diagnostics.
+
+## PowerShell Json Timestamps Need Explicit Formatting
+
+- Type: Pattern
+- Status: Active
+- Source: PR 16 CI failure in `RenderPlaneCommentRendersWorkflowTimingTable`, `.codex/skills/_shared/scripts/delivery_tools.ps1`
+- Last verified: 2026-06-03
+
+PowerShell `ConvertFrom-Json` can coerce ISO timestamp strings into `DateTime` values, and later string interpolation renders them with the host culture instead of the original `yyyy-MM-ddTHH:mm:ssZ` form. For Plane comments, workflow timing tables, or tests that assert exact UTC text, format timestamp values explicitly with invariant UTC formatting before interpolation. Reproduce failures with the CI-shaped command `dotnet test .\SDDTemplate.slnx -c Release --no-build --logger trx --collect:"XPlat Code Coverage"`.
 

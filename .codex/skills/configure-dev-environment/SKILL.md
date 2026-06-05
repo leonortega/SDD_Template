@@ -67,6 +67,7 @@ When setup needs values the user must supply manually, do not only ask for the v
 - Deployment promotion remains serialized because DEV, QA, PROD, RC tags, final release tags, and Nexus release manifests are shared surfaces.
 - `agentModelPolicy` is a cost-control policy for on-the-fly sub-agents. `model=inherit` means no explicit model override; unavailable model ids should fall back to inherited model behavior and be reported.
 - `ValidateParallelDeliveryDryRun` must pass before parallel Git, Plane, or Gitea mutation. Include required ignored local runtime files such as `.codex/client-tools.local.json` and `.codex/quality.local.json` when child skills need them.
+- The installed-skill runtime index is ignored local state derived from actual `.codex/skills/*/SKILL.md` files. It is not a project guidance catalog and must not duplicate `.codex/tool-recommendations.local.json`.
 - See `docs/parallel-delivery.md` for operator guidance, dry-run checklist, role contracts, and cleanup/recovery steps.
 
 ## Shared Script
@@ -90,6 +91,7 @@ Useful modes:
 - `SetClientTools`: update `.codex/client-tools.local.json`.
 - `SetRecommendedTools`: record accepted or dismissed recommendation ids in `.codex/client-tools.local.json`; it must not install skills, plugins, MCPs, or secrets.
 - `MapProjectGuidanceStep`: update `.codex/tool-recommendations.local.json` by appending the current workflow step to each used recommendation's `usedInSteps`.
+- `WriteInstalledSkillIndex` through `tools/SDDTemplate.DeliveryTools`: generate or reuse ignored `.codex/installed-skill-index.local.json` and `.codex/installed-skill-index.cache.local.json` from installed project skills.
 - `SyncWorktreeLocalConfig`: copy the allowlisted ignored local runtime config from the coordinator checkout into selected or discovered ticket worktrees without printing secret values.
 - `EnsureDeliveryContext`: create or repair the current worktree's `.codex/delivery-context.local.json` from explicit ticket, branch, OpenSpec, and PR context; never copy this file from another worktree.
 - `SetPlaneEnv`: update `infra/plane/variables.env`.
