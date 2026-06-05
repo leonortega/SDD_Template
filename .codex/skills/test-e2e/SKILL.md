@@ -292,6 +292,8 @@ If multiple active OpenSpec changes match, or no clear linked change can be reso
 
 If `$openspec-archive-change` reports incomplete artifacts, incomplete tasks, spec sync warnings, or needs user confirmation, stop the archival handoff and report the exact blocker. Do not undo the QA pass or move the Plane ticket back from Done.
 
+Do not report the QA workflow as fully complete while exactly one linked active OpenSpec change remains unarchived. The final handoff must include either `OpenSpec archived: <archive path>` or `OpenSpec archive blocker: <reason>`.
+
 ### 10. Durable Learning Capture Gate
 
 Before final handoff, apply `.codex/memory/retrieval-policy.md#update-process` to every blocker, environment repair, QA harness fix, deployment finding, and recurring workflow lesson discovered during the QA run.
@@ -305,7 +307,7 @@ Plane comments, QA evidence, and final chat summaries do not satisfy this gate b
 
 ## Output
 
-Report the ticket, QA environment, scenarios tested, validation assertions, evidence path or URL, RC version, Plane state/comment updates, OpenSpec archival handoff, `Memory updated: <files>` or `Memory updated: none`, and any blockers or residual risk.
+Report the ticket, QA environment, scenarios tested, validation assertions, evidence path or URL, RC version, Plane state/comment updates, OpenSpec archive path or explicit archive blocker, `Memory updated: <files>` or `Memory updated: none`, and any blockers or residual risk.
 
 ## Failure Rules
 
