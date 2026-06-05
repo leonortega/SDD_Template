@@ -13,7 +13,9 @@ This skill is technology-agnostic. Inspect the repository first. Use an establis
 
 For Blazor or other rendered website changes, prefer `$frontend-testing-debugging` when the repo has `.codex/skills/frontend-testing-debugging/SKILL.md` and the ticket requires browser-visible validation, responsive layout checks, console health, screenshots, or interaction proof. Keep API and deployment health checks in the repo-native .NET/API path.
 
-When the repository contains `tests/SDDTemplate.E2ETests`, treat it as the reusable deployed-QA regression suite. The suite is executed by the Gitea `e2e-qa-branch` job against the deployed QA Site/API URLs, and the Gitea job is evidence-only. After `deploy-qa` succeeds, create a `qa/{ticketKey}` branch from current `dev`, add or update tests there when needed, and push that branch so Gitea runs the suite remotely without redeploying. This skill still owns QA acceptance: verify the Gitea E2E evidence bundle, run or rerun the suite manually only when remote execution is unavailable or diagnostic evidence is needed, publish final QA evidence, create or verify the RC tag, update release metadata, comment Plane, and move the ticket to Done only after all checks pass.
+When the repository contains `tests/SDDTemplate.E2ETests`, treat it as the reusable deployed-QA regression suite. The suite is executed by the Gitea `e2e-qa-branch` job against the deployed QA Site/API URLs, and the Gitea job is evidence-only. After `deploy-qa` succeeds, create a `qa/{ticketKey}` branch from current `dev`, add or update tests there when needed, and push that branch so Gitea runs the suite remotely without redeploying. This skill still owns QA acceptance: verify the Gitea E2E evidence bundle, run or rerun the suite manually only when remote execution is unavailable or diagnostic evidence is needed, publish final QA evidence, create or verify the RC tag, update release metadata, comment Plane, move the ticket to Done only after all checks pass, and delete the remote `qa/{ticketKey}` branch after durable evidence exists.
+
+After the evidence bundle is verified, the E2E QA Plane comment is verified, the RC tag is created or verified, release metadata is updated, and the ticket is moved to Done, delete the remote `qa/{ticketKey}` branch from Gitea. The branch is only a temporary evidence trigger; durable evidence is in Nexus, Plane, the release manifest, and tags. Keep the branch only when evidence publication, comment verification, RC tagging, or Done-state mutation is incomplete and the branch may need a rerun.
 
 Non-interactive context means the run has no available user-response channel, such as cron automation, CI, detached automation, or an explicit "do not ask" instruction.
 
@@ -225,7 +227,7 @@ E2EPROJECT-123: add E2E regression tests
 - Reusable tests must reference secrets through environment variables or test configuration placeholders. Never hardcode real credentials, tokens, cookies, connection strings, or private payloads.
 - If reusable tests require new repo config, stage only intentional source/config files and leave screenshots, logs, reports, traces, videos, and ZIP evidence untracked.
 
-### 8. Plane Result
+### 8. Plane Result And QA Branch Cleanup
 
 Before commenting, read existing comments when the API allows it. Use this stable marker:
 
@@ -264,6 +266,14 @@ Move the ticket to `plane.doneState` only after:
 - the QA result comment was added or confirmed idempotently present.
 
 If any required QA scenario fails, add the result comment and leave the ticket in `plane.qaState`.
+
+After the verified E2E QA comment and Done-state mutation succeed, delete the remote `qa/{ticketKey}` branch from Gitea, for example:
+
+```powershell
+git push origin --delete qa/E2EPROJECT-123
+```
+
+Then verify the remote ref is gone. Do not delete the branch before Nexus evidence exists, release metadata is updated, the RC tag is created or verified, and Plane is Done.
 
 ### 9. OpenSpec Archival Handoff
 
