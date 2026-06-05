@@ -14,7 +14,7 @@
     </header>
 
     <section class="clients-grid" aria-label="Client management">
-        <form id="client-form" class="client-form">
+        <form id="client-form" class="client-form" onsubmit="return false">
             <input type="hidden" id="client-id" />
 
             <label>
@@ -184,7 +184,7 @@
         event.preventDefault();
         errors.textContent = "";
 
-        const id = fields.id.value;
+        const id = fields.id.value.trim();
         const response = await fetch(id ? `${apiUrl}/${id}` : apiUrl, {
             method: id ? "PUT" : "POST",
             headers: { "Content-Type": "application/json" },

@@ -304,7 +304,7 @@ namespace SDDTemplate.DeliveryTools
             bool requiresDecision = IsYes(decision)
                 || IsYes(chained)
                 || risk.Equals("High", StringComparison.OrdinalIgnoreCase)
-                || strategy.Equals("single-pr", StringComparison.OrdinalIgnoreCase);
+                || strategy.Equals("exception-ok", StringComparison.OrdinalIgnoreCase);
 
             return new WorkloadForecast(
                 string.IsNullOrWhiteSpace(estimated) ? "unknown" : estimated,

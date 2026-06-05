@@ -123,6 +123,28 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
+        public void WorkloadForecastAllowsLowRiskSinglePrWork()
+        {
+            const string markdown = """
+                ## Review Workload Forecast
+
+                Estimated changed lines: 80-180
+                400-line budget risk: Low
+                Chained PRs recommended: No
+                Decision needed before apply: No
+                Delivery strategy: single-pr
+                """;
+
+            WorkloadForecast forecast = DeliveryWorkflowHelpers.ParseWorkloadForecast(markdown);
+
+            Assert.Equal("80-180", forecast.EstimatedChangedLines);
+            Assert.Equal("Low", forecast.BudgetRisk);
+            Assert.False(forecast.ChainedPrsRecommended);
+            Assert.False(forecast.DecisionNeededBeforeApply);
+            Assert.False(forecast.RequiresResolutionBeforeApply);
+        }
+
+        [Fact]
         public void AdversarialReviewTriggerRequiresReviewForHighRiskOrExplicitRequests()
         {
             AdversarialReviewTrigger standard = DeliveryWorkflowHelpers.DetectAdversarialReviewTrigger(["docs/readme.md"], "docs only", 8, explicitRequest: false);
