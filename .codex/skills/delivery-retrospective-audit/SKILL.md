@@ -20,6 +20,7 @@ Default to read-only mode unless the user explicitly asks to apply changes.
 - `Read-only audit`: inspect evidence and report proposed improvements.
 - `Proposal mode`: draft exact skill/config/test changes without editing files.
 - `Apply mode`: edit skills, scripts, templates, or tests after evidence is clear and the user requested implementation.
+- `post-prod-ticket-release`: read-only audit mode invoked after successful `deploy-to-prod` for the just-promoted ticket; persist sanitized learning evidence without changing delivery state.
 
 Never silently rewrite workflow rules from one isolated failure. Apply the Agent Self-Improvement Gate in `.codex/skills/_shared/delivery-contract.md` before changing skills, workflow policy, configure templates, or quality gates from retrospective evidence.
 
@@ -35,6 +36,7 @@ Do not create recurring automations, scheduled jobs, Plane tickets, deployment a
 
 Run this audit after or between delivery work when one of these conditions occurs:
 
+- `deploy-to-prod` records a successful PROD deployment and invokes `post-prod-ticket-release` for the promoted ticket,
 - a QA bug is filed or E2E QA fails,
 - `gitea-pr-review-agent` misses a meaningful issue,
 - Gitea Actions, local quality gates, or runner tooling fail in a way that blocks handoff,
@@ -63,6 +65,7 @@ Inspect the smallest useful set first, then expand as needed:
 - `.codex/skills/configure-*` docs, references, scripts, templates, and tests when setup or generated behavior is implicated
 - `.codex/delivery-context.local.json` when present, without printing secrets
 - ignored `.codex/agent-telemetry.local.jsonl` and `.codex/agent-evals/results.local.json` when present, without printing prompts or sensitive payloads
+- prior Plane comments with marker `IA generated post-PROD retrospective: {finalVersion}` when auditing PROD release learning evidence
 - recent Git commits, branches, tags, PR labels, PR review comments, CI results, OpenSpec verification output, Plane comments, QA bug tickets, Nexus release manifests, and deployment evidence when available
 
 ## Workflow
@@ -76,8 +79,11 @@ Resolve what the user wants audited:
 - the latest delivery attempt,
 - a class of failures such as QA bugs, review misses, CI failures, or deployment blockers,
 - the skill workflow itself.
+- a post-PROD ticket release, using the ticket key, artifact commit, final release version, PROD URL, and release manifest supplied by `deploy-to-prod`.
 
 If the scope is ambiguous and local evidence clearly identifies a current locked ticket or PR, use that as the scope and say so. If several scopes are plausible, run a read-only summary instead of guessing.
+
+For `post-prod-ticket-release`, scope the audit to the just-promoted ticket from branch/OpenSpec start through PROD. Inspect existing generated markers and release evidence only; do not re-run deployment, QA, PROD, tag, or ticket-state mutations. If previous post-PROD retrospective markers or `.codex/agent-evals/results.local.json` entries exist for the same ticket or final version, read them as learning evidence and report repeated or superseded findings.
 
 ### 2. Reconstruct The Delivery Timeline
 
@@ -108,6 +114,7 @@ Group findings by the workflow layer that should improve:
 - `agency-risk`: an agent had too much write authority, used the wrong tool boundary, attempted unsafe mutation, or acted without sufficient confirmation.
 - `model-optimization`: model choice, reasoning effort, prompt-cache hygiene, tool-call count, retries, latency, or token use produced avoidable cost or delay.
 - `eval-coverage`: a repeated miss lacks a workflow eval case that would catch route selection, tool selection, argument precision, mutation gates, stop conditions, or handoff gaps.
+- `risk-depth`: delivery risk classification, compact path selection, workload forecast, adversarial review trigger, or installed-skill index behavior was missing, stale, too heavy for low-risk work, or too light for high-risk work.
 
 For each finding, include the evidence, why it matters, and the durable improvement that would prevent recurrence.
 
@@ -128,7 +135,11 @@ Apply one of these outcomes:
 - `Memory update`: reusable but non-authoritative findings should be added to `.codex/memory/` through the memory update process.
 - `Follow-up ticket`: the change is product work, infra work, or too large for the current retrospective.
 
+For `risk-depth` findings, prefer deterministic helpers or workflow evals over more prose. Examples: weak ticket started without refinement, high-risk PR skipped adversarial review, oversized tasks lacked a split/exception decision, low-risk work loaded unnecessary broad context, or installed-skill index was stale before delegation.
+
 Prefer tests or deterministic validation for enforceable rules. Prefer skill text only for judgment-heavy process rules.
+
+For automatic `post-prod-ticket-release`, recommendation outcomes are advisory only. Repeated or high-severity findings may recommend docs, delivery contract, skill, configure, test, memory, or workflow eval updates, but they must not be applied during the automatic audit. If implementation work is required, recommend a follow-up improvement ticket instead of creating it.
 
 Before choosing any outcome other than `No change`, confirm the Agent Self-Improvement Gate in `.codex/skills/_shared/delivery-contract.md` is satisfied.
 
@@ -150,6 +161,21 @@ When applying changes:
 
 Do not change OpenSpec-specific skills unless the requested improvement explicitly affects OpenSpec behavior.
 
+### 6. Persist Post-PROD Learning Evidence
+
+For `post-prod-ticket-release`, write only compact, sanitized evidence:
+
+1. Append or update the ignored `.codex/agent-evals/results.local.json` with a result for the final release version. Include schema version, timestamp, mode, ticket key, artifact commit, final release version, PROD URL host or safe URL, release manifest path or URL, inspected evidence categories, finding summaries, recommendation outcomes, eval coverage gaps, residual evidence gaps, and `appliedChanges: false`.
+2. Do not store secrets, tokens, cookies, credential-bearing URLs, raw prompts, raw tool payloads, large logs, private request/response bodies, or unredacted local config values.
+3. Add or reuse a compact Plane comment with marker:
+
+   ```text
+   IA generated post-PROD retrospective: {finalVersion}
+   ```
+
+   Keep the marker as the first line by itself. Summarize audit scope, inspected release evidence, findings, recommendations, eval coverage gaps, local result path, and residual gaps.
+4. Treat failure to write the local result or Plane marker as an audit evidence gap, not a PROD deployment failure, after PROD success was already recorded.
+
 ## Output
 
 For read-only audits, report:
@@ -160,6 +186,7 @@ For read-only audits, report:
 - findings grouped by layer,
 - recommended durable improvements,
 - risks or evidence gaps.
+- local result path and Plane marker status when the scope is `post-prod-ticket-release`.
 
 For applied improvements, report:
 

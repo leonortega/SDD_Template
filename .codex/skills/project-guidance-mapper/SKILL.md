@@ -18,6 +18,7 @@ Read `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.m
 ## Mapping Rules
 
 - Read `.codex/skills/` to verify which skills are actually present.
+- Prefer the ignored installed-skill runtime index when present and fresh for exact `SKILL.md` paths; fall back to scanning `.codex/skills/` when the index is missing or stale.
 - Read `.codex/tool-recommendations.local.json` when it exists. Prefer recommendations whose `usedInSteps` includes the current step, then verify listed skill targets still exist under `.codex/skills`.
 - Use `project-guidance-discover` when the user asks for project recommendations, base-code setup, first-ticket preflight, or missing expert skills/guidance.
 - Use `project-guidance-acquire` only after `project-guidance-discover` produces the final confirmed list.
@@ -46,6 +47,8 @@ Read `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.m
 ## Local Mapping State
 
 Use `.codex/tool-recommendations.local.json` as the local source for learned step mappings. It keeps the recommendation catalog shape, including source, target, validation, accepted/dismissed ids, `notRecommended`, and recommendation-level `usedInSteps`.
+
+The installed-skill runtime index is separate, derived state. It contains only installed skill names, descriptions, scopes, exact paths, and cache fingerprints. Do not store non-skill guidance, acquisition decisions, accepted/dismissed state, or standards in the installed-skill index.
 
 To persist a confirmed mapping:
 

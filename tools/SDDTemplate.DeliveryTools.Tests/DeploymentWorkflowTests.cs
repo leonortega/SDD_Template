@@ -91,6 +91,7 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.Contains("param deployableApps array", bicep);
             Assert.Contains("resource apps 'Microsoft.Web/sites@2023-12-01' = [for app in deployableApps", bicep);
+            Assert.Contains("resource appSettings 'Microsoft.Web/sites/config@2023-12-01'", bicep);
             Assert.Contains("Api__BaseUrl", bicep);
             Assert.Contains("Cors__AllowedOrigins__0", bicep);
             Assert.Contains("ConnectionStrings__ClientsDb", bicep);
@@ -107,22 +108,32 @@ namespace SDDTemplate.DeliveryTools.Tests
             string packageJob = GetJobSection(workflow, "package");
 
             Assert.Contains("infra/deployment/apps.json", workflow);
+            Assert.Contains("infra/deployment/configuration.json", workflow);
+            Assert.Contains("BuildDeploymentConfig", workflow);
             Assert.Contains("jq -r '.apps[] | [.appId, .projectPath, .artifactName] | @tsv'", packageJob);
             Assert.Contains("dotnet publish \"$project_path\"", packageJob);
             Assert.Contains("artifacts/packages/$artifact_name", packageJob);
             Assert.Contains("deployable-apps.json", workflow);
+            Assert.Contains("deployment-config.json", workflow);
+            Assert.Contains("az webapp config appsettings set", workflow);
+            Assert.Contains("az webapp config appsettings list", workflow);
             Assert.Contains("az webapp deploy", workflow);
+            Assert.Contains("const apiBaseUrl", workflow);
+            Assert.Contains("Access-Control-Allow-Origin", workflow);
             Assert.Contains("AZURE_DEV_${app_upper}_APP_NAME", workflow);
             Assert.Contains("AZURE_QA_${app_upper}_APP_NAME", workflow);
             Assert.Contains("AZURE_PROD_${app_upper}_APP_NAME", workflow);
             Assert.Contains("- name: Publish topology apps\n        shell: bash", normalizedWorkflow);
             Assert.Contains("- name: Upload topology artifacts to Nexus\n        shell: bash", normalizedWorkflow);
+            Assert.Contains("- name: Apply and verify DEV deployment configuration\n        shell: bash", normalizedWorkflow);
             Assert.Contains("- name: Deploy DEV topology apps\n        shell: bash", normalizedWorkflow);
             Assert.Contains("- name: Smoke check DEV topology apps\n        shell: bash", normalizedWorkflow);
+            Assert.Contains("- name: Apply and verify QA deployment configuration\n        shell: bash", normalizedWorkflow);
             Assert.Contains("- name: Deploy QA topology apps\n        shell: bash", normalizedWorkflow);
             Assert.Contains("- name: Smoke check QA topology apps\n        shell: bash", normalizedWorkflow);
             Assert.DoesNotContain("\n  e2e-qa:\n", normalizedWorkflow);
             Assert.Contains("\n  e2e-qa-branch:\n", normalizedWorkflow);
+            Assert.Contains("- name: Apply and verify PROD deployment configuration\n        shell: bash", normalizedWorkflow);
             Assert.Contains("- name: Deploy PROD topology apps\n        shell: bash", normalizedWorkflow);
             Assert.Contains("- name: Smoke check PROD topology apps\n        shell: bash", normalizedWorkflow);
         }
@@ -300,9 +311,13 @@ namespace SDDTemplate.DeliveryTools.Tests
             string script = ReadConfigureScript();
 
             Assert.Contains("CreateReleaseManifest", script);
+            Assert.Contains("BuildDeploymentConfig", script);
             Assert.Contains("--plane-ticket-key \"$plane_ticket_key\"", script);
             Assert.Contains("--version-status unversioned", script);
             Assert.Contains("ValidateReleaseManifest", script);
+            Assert.Contains("deployment-config.json", script);
+            Assert.Contains("const apiBaseUrl", script);
+            Assert.Contains("Access-Control-Allow-Origin", script);
             Assert.Contains("app/${GITHUB_SHA}/release.json", script);
             Assert.Contains("Package/deploy workflow should upload a baseline Nexus release manifest next to the artifact.", script);
         }
@@ -321,6 +336,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("E2E_SITE_URL", script);
             Assert.Contains("E2E_API_URL", script);
             Assert.Contains("push a `qa/{ticketKey}` branch from current `dev`", deploymentDoc);
+            Assert.Contains("rendered web API-base-url verification", deploymentDoc);
+            Assert.Contains("API CORS preflight verification", deploymentDoc);
             Assert.Contains("tests/SDDTemplate.E2ETests", developmentDoc);
             Assert.Contains("deployed-QA regression suite", e2eSkill);
             Assert.Contains("qa/{ticketKey}", e2eSkill);
@@ -337,12 +354,19 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.Contains("Deployment Topology Review", skill);
             Assert.Contains("infra/deployment/apps.json", skill);
+            Assert.Contains("infra/deployment/configuration.json", skill);
+            Assert.Contains("deployment-config.json", skill);
             Assert.Contains("Microsoft.NET.Sdk.Web", skill);
             Assert.Contains("Api:BaseUrl", skill);
             Assert.Contains("Api__BaseUrl", skill);
             Assert.Contains("Cors__AllowedOrigins__0", skill);
             Assert.Contains("ConnectionStrings__ClientsDb", skill);
+            Assert.Contains("fail closed", skill);
+            Assert.Contains("rendered clients page contains the expected API base URL", ReadSkill("_shared", "delivery-contract.md"));
+            Assert.Contains("CORS preflight allows the matching web origin", ReadSkill("_shared", "delivery-contract.md"));
+            Assert.Contains("deployment-config.json", azureReference);
             Assert.Contains("Deployment Topology Review", azureReference);
+            Assert.Contains("explicit App Service appsettings resources", azureReference);
             Assert.Contains("Deployment topology: updated/verified/no deployable app changes", implementation);
             Assert.Contains("Deployment Topology Review", feedbackLoop);
         }
@@ -402,6 +426,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("late-human-pr-feedback-manual-resume", caseIds);
             Assert.Contains("qa-promotion-artifact-lineage", caseIds);
             Assert.Contains("prod-explicit-artifact-promotion", caseIds);
+            Assert.Contains("post-prod-retrospective-learning-evidence", caseIds);
             Assert.Contains("rollback-no-main-rewrite", caseIds);
 
             Assert.Contains(".codex/agent-telemetry.local.jsonl", gitignore);
@@ -415,6 +440,122 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("eval-coverage", retrospective);
             Assert.Contains(".codex/delivery-policy.json", skillStartup);
             Assert.Contains("agentOptimization", skillStartup);
+        }
+
+        [Fact]
+        public void WorkflowTimingCommentsAreContractedForAutomaticDelivery()
+        {
+            string contract = ReadSkill("_shared", "delivery-contract.md");
+            string automatic = ReadSkill("automatic-implement-ticket", "SKILL.md");
+            string contextDocs = ReadDoc("context-management.md");
+            string script = File.ReadAllText(Path.Combine(
+                FindRepositoryRoot().FullName,
+                ".codex",
+                "skills",
+                "_shared",
+                "scripts",
+                "delivery_tools.ps1"));
+
+            Assert.Contains("IA generated workflow timing: {ticketKey}", contract);
+            Assert.Contains("RenderPlaneComment -Type WorkflowTiming", contract);
+            Assert.Contains("comment_html", contract);
+            Assert.Contains("comment_stripped", contract);
+            Assert.Contains("update or reuse the existing workflow timing marker comment", contract);
+
+            Assert.Contains(".codex/agent-telemetry.local.jsonl", automatic);
+            Assert.Contains("RenderPlaneComment -Type WorkflowTiming", automatic);
+            Assert.Contains("IA generated workflow timing: {ticketKey}", automatic);
+            Assert.Contains("patch that comment instead of creating a duplicate", automatic);
+            Assert.Contains("workflow timing marker", automatic);
+
+            Assert.Contains("concise generated Plane timing comment", contextDocs);
+            Assert.Contains("'WorkflowTiming'", script);
+            Assert.Contains("| Stage | Outcome | Duration | Started UTC | Finished UTC |", script);
+        }
+
+        [Fact]
+        public void PlaneStartTicketSetsEstimatePointOnlyWhenMissing()
+        {
+            string starter = ReadSkill("plane-start-ticket", "SKILL.md");
+            string planeApi = ReadSkill("plane-start-ticket", Path.Combine("references", "plane-api.md"));
+
+            Assert.Contains("If the fetched Plane ticket has empty or null `point`", starter);
+            Assert.Contains("preserve it exactly and do not overwrite a human estimate", starter);
+            Assert.Contains("## Estimate Points", starter);
+            Assert.Contains("`0`: explicitly no-op, research-only, or investigation ticket", starter);
+            Assert.Contains("`7`: large or high-risk work requiring broad coordination", starter);
+            Assert.Contains("Patch the work item with only the resolved `point` value", starter);
+            Assert.Contains("accepted mutable field for this workflow is `point`", starter);
+
+            Assert.Contains("\"point\": 3", planeApi);
+            Assert.Contains("Only send this patch when the fetched work item has null or empty `point` and `estimate_point`", planeApi);
+            Assert.Contains("Preserve any non-empty `point` or `estimate_point` value", planeApi);
+        }
+
+        [Fact]
+        public void DeployToProdRequiresPostProdRetrospectiveLearningEvidence()
+        {
+            string root = FindRepositoryRoot().FullName;
+            string deployToProd = ReadSkill("deploy-to-prod", "SKILL.md");
+            string retrospective = ReadSkill("delivery-retrospective-audit", "SKILL.md");
+            string gitignore = File.ReadAllText(Path.Combine(root, ".gitignore"));
+            string contract = ReadSkill("_shared", "delivery-contract.md");
+            string developmentDocs = ReadDoc("development.md");
+            string deploymentDocs = ReadDoc("deployment.md");
+            string qualityGates = File.ReadAllText(Path.Combine(
+                root,
+                ".codex",
+                "skills",
+                "configure-dev-environment",
+                "references",
+                "quality-gates.md"));
+
+            Assert.Contains("## Post-PROD Retrospective", deployToProd);
+            Assert.Contains("post-prod-ticket-release", deployToProd);
+            Assert.Contains("IA generated post-PROD retrospective: {finalVersion}", deployToProd);
+            Assert.Contains(".codex/agent-evals/results.local.json", deployToProd);
+            Assert.Contains("must not mutate Plane state", deployToProd);
+            Assert.Contains("release handoff", deployToProd);
+
+            Assert.Contains("post-prod-ticket-release", retrospective);
+            Assert.Contains("### 6. Persist Post-PROD Learning Evidence", retrospective);
+            Assert.Contains("appliedChanges: false", retrospective);
+            Assert.Contains("IA generated post-PROD retrospective: {finalVersion}", retrospective);
+            Assert.Contains("recommend a follow-up improvement ticket instead of creating it", retrospective);
+            Assert.Contains(".codex/agent-evals/results.local.json", gitignore);
+            Assert.Contains("Post-PROD retrospective: `IA generated post-PROD retrospective: {finalVersion}`", contract);
+            Assert.Contains("post-prod-ticket-release", developmentDocs);
+            Assert.Contains("post-PROD retrospective", deploymentDocs);
+            Assert.Contains("post-PROD retrospective", qualityGates);
+        }
+
+        [Fact]
+        public void WorkflowEvalRequiresPostProdRetrospectiveLearningEvidence()
+        {
+            string root = FindRepositoryRoot().FullName;
+            using JsonDocument cases = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, ".codex", "agent-evals", "workflow-cases.json")));
+            JsonElement postProdCase = cases.RootElement.GetProperty("cases").EnumerateArray().Single(item =>
+                string.Equals(item.GetProperty("id").GetString(), "post-prod-retrospective-learning-evidence", StringComparison.Ordinal));
+
+            Assert.Equal("deploy-to-prod", postProdCase.GetProperty("stage").GetString());
+            Assert.Equal("delivery-retrospective-audit", postProdCase.GetProperty("expectedRoute").GetString());
+
+            string[] evidence = [.. postProdCase.GetProperty("requiredEvidence").EnumerateArray().Select(item => item.GetString() ?? string.Empty)];
+            string[] expectations = [.. postProdCase.GetProperty("toolExpectations").EnumerateArray().Select(item => item.GetString() ?? string.Empty)];
+            string[] stopConditions = [.. postProdCase.GetProperty("stopConditions").EnumerateArray().Select(item => item.GetString() ?? string.Empty)];
+            string[] unsafeMutations = [.. postProdCase.GetProperty("unsafeMutations").EnumerateArray().Select(item => item.GetString() ?? string.Empty)];
+            string[] handoffFields = [.. postProdCase.GetProperty("handoffFields").EnumerateArray().Select(item => item.GetString() ?? string.Empty)];
+
+            Assert.Contains("successful PROD deployment marker", evidence);
+            Assert.Contains(".codex/agent-evals/results.local.json ignored path", evidence);
+            Assert.Contains("Invoke delivery-retrospective-audit in read-only post-prod-ticket-release mode", expectations);
+            Assert.Contains("Add or reuse Plane marker IA generated post-PROD retrospective: {finalVersion}", expectations);
+            Assert.Contains("PROD deployment has not succeeded", stopConditions);
+            Assert.Contains("move Plane ticket state", unsafeMutations);
+            Assert.Contains("apply docs, delivery contract, skill, eval, test, or memory changes automatically", unsafeMutations);
+            Assert.Contains("localResultPath", handoffFields);
+            Assert.Contains("planeRetrospectiveMarker", handoffFields);
+            Assert.Contains("appliedChanges", handoffFields);
         }
 
         [Fact]
@@ -1100,6 +1241,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                 "ValidateDeploymentLane",
                 "ValidateParallelDeliveryDryRun",
                 "RenderPlaneComment",
+                "WorkflowTiming",
                 "UpdateReleaseManifest"
             })
             {
@@ -1278,6 +1420,93 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("$frontend-testing-debugging", e2eSkill);
             Assert.Contains("Blazor", e2eSkill);
             Assert.Contains("browser-visible validation", e2eSkill);
+        }
+
+        [Fact]
+        public void TicketHandoffRequiresVerifiedHumanReviewers()
+        {
+            string contract = File.ReadAllText(Path.Combine(
+                FindRepositoryRoot().FullName,
+                ".codex",
+                "skills",
+                "_shared",
+                "delivery-contract.md"));
+            string implementSkill = ReadSkill("implement-ticket", "SKILL.md");
+            string openspecSkill = ReadSkill("openspec-implement-change", "SKILL.md");
+            string handoffReference = ReadSkill("openspec-implement-change", Path.Combine("references", "gitea-plane-handoff.md"));
+            string configureReference = ReadSkill("configure-dev-environment", Path.Combine("references", "gitea-pr.md"));
+
+            Assert.Contains("PR Reviewer Handoff", contract);
+            Assert.Contains("requested-reviewers endpoint", contract);
+            Assert.Contains("not treat the Codex review-agent comment", contract);
+            Assert.Contains("requested_reviewers", implementSkill);
+            Assert.Contains("Do not move the Plane ticket to review until human reviewers are requested and verified", implementSkill);
+            Assert.Contains("requested_reviewers", openspecSkill);
+            Assert.Contains("Re-fetch the PR and confirm the requested reviewers are present", openspecSkill);
+            Assert.Contains("POST {gitea.baseUrl}/api/v1/repos/{owner}/{repo}/pulls/{prNumber}/requested_reviewers", handoffReference);
+            Assert.Contains("Ticket handoff remains responsible for proving reviewers were actually requested", configureReference);
+        }
+
+        [Fact]
+        public void E2EQaDeletesTemporaryTriggerBranchAfterDurableEvidence()
+        {
+            string contract = File.ReadAllText(Path.Combine(
+                FindRepositoryRoot().FullName,
+                ".codex",
+                "skills",
+                "_shared",
+                "delivery-contract.md"));
+            string e2eSkill = ReadSkill("test-e2e", "SKILL.md");
+            string deploymentDoc = ReadDoc("deployment.md");
+            string developmentDoc = ReadDoc("development.md");
+            string workflowReadme = File.ReadAllText(Path.Combine(
+                FindRepositoryRoot().FullName,
+                ".gitea",
+                "workflows",
+                "README.md"));
+            string configureScript = ReadConfigureScript();
+
+            Assert.Contains("QA Evidence Trigger Branch Cleanup", contract);
+            Assert.Contains("delete the remote `qa/{ticketKey}` branch from Gitea", contract);
+            Assert.Contains("Durable QA evidence belongs in Nexus, Plane comments, release manifests, and tags", contract);
+            Assert.Contains("git push origin --delete qa/E2EPROJECT-123", e2eSkill);
+            Assert.Contains("Do not delete the branch before Nexus evidence exists", e2eSkill);
+            Assert.Contains("delete the remote `qa/{ticketKey}` branch from Gitea", deploymentDoc);
+            Assert.Contains("delete the remote `qa/{ticketKey}` branch", developmentDoc);
+            Assert.Contains("deleting the remote `qa/{ticketKey}` branch after durable Nexus/Plane/release/tag evidence exists", workflowReadme);
+            Assert.Contains("deleting the remote `qa/{ticketKey}` branch after durable Nexus/Plane/release/tag evidence exists", configureScript);
+        }
+
+        [Fact]
+        public void E2EQaRequiresLinkedOpenSpecArchiveBeforeCompleteHandoff()
+        {
+            string contract = File.ReadAllText(Path.Combine(
+                FindRepositoryRoot().FullName,
+                ".codex",
+                "skills",
+                "_shared",
+                "delivery-contract.md"));
+            string e2eSkill = ReadSkill("test-e2e", "SKILL.md");
+            string root = FindRepositoryRoot().FullName;
+            string activeChange = Path.Combine(
+                root,
+                "openspec",
+                "changes",
+                "feat-e2eproject-2-add-a-crud-view-por-a-client");
+            string archivedChange = Path.Combine(
+                root,
+                "openspec",
+                "changes",
+                "archive",
+                "2026-06-05-feat-e2eproject-2-add-a-crud-view-por-a-client");
+
+            Assert.Contains("OpenSpec Completion Archive Gate", contract);
+            Assert.Contains("must be archived before the workflow is reported complete", contract);
+            Assert.Contains("Do not report the QA workflow as fully complete while exactly one linked active OpenSpec change remains unarchived", e2eSkill);
+            Assert.Contains("OpenSpec archived: <archive path>", e2eSkill);
+            Assert.False(Directory.Exists(activeChange));
+            Assert.True(Directory.Exists(archivedChange));
+            Assert.True(File.Exists(Path.Combine(root, "openspec", "specs", "client-crud", "spec.md")));
         }
 
         private static string ReadWorkflow()

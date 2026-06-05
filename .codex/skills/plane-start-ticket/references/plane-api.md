@@ -52,6 +52,22 @@ Update generated ticket description block:
 PATCH {baseUrl}/api/v1/workspaces/{workspaceSlug}/projects/{projectUuid}/work-items/{workItemUuid}/
 ```
 
+Set generated estimate when missing:
+
+```text
+PATCH {baseUrl}/api/v1/workspaces/{workspaceSlug}/projects/{projectUuid}/work-items/{workItemUuid}/
+```
+
+Payload:
+
+```json
+{
+  "point": 3
+}
+```
+
+Only send this patch when the fetched work item has null or empty `point` and `estimate_point`. Preserve any non-empty `point` or `estimate_point` value.
+
 Add branch comment:
 
 ```text
@@ -88,3 +104,4 @@ Payload must set the state to the resolved state id. Resolve states by project b
 - Before adding a branch comment, read existing comments if the API allows it and skip if the same `IA generated branch: {branchName}` marker already exists.
 - Before moving state, compare the current state name/id to the target state.
 - Before updating description, replace only the block between `<!-- ia-generated:start -->` and `<!-- ia-generated:end -->`.
+- Before setting `point`, compare the current `point` and `estimate_point` values and skip the patch when either is already non-empty.

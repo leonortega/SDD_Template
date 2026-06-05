@@ -1,0 +1,92 @@
+{
+  "$schema": "./configuration.schema.json",
+  "version": 1,
+  "ignoredPrefixes": [],
+  "settings": [
+    {
+      "appId": "site",
+      "name": "Api__BaseUrl",
+      "source": "topologyReference",
+      "targetAppId": "api",
+      "targetProperty": "url",
+      "required": true,
+      "secret": false,
+      "description": "Base URL for the API app used by the web app."
+    },
+    {
+      "appId": "site",
+      "name": "AllowedHosts",
+      "source": "literal",
+      "value": "*",
+      "required": false,
+      "secret": false,
+      "description": "ASP.NET Core host filtering setting."
+    },
+    {
+      "appId": "site",
+      "name": "Logging__LogLevel__Default",
+      "source": "literal",
+      "value": "Information",
+      "required": false,
+      "secret": false,
+      "description": "Default application log level."
+    },
+    {
+      "appId": "site",
+      "name": "Logging__LogLevel__Microsoft.AspNetCore",
+      "source": "literal",
+      "value": "Warning",
+      "required": false,
+      "secret": false,
+      "description": "ASP.NET Core framework log level."
+    },
+    {
+      "appId": "api",
+      "name": "AllowedHosts",
+      "source": "literal",
+      "value": "*",
+      "required": false,
+      "secret": false,
+      "description": "ASP.NET Core host filtering setting."
+    },
+    {
+      "appId": "api",
+      "name": "Cors__AllowedOrigins__0",
+      "source": "topologyReference",
+      "targetAppId": "site",
+      "targetProperty": "url",
+      "required": true,
+      "secret": false,
+      "additionalSetting": true,
+      "description": "Allowed browser origin for the matching web app."
+    },
+    {
+      "appId": "api",
+      "name": "ConnectionStrings__ClientsDb",
+      "source": "sqliteDataPath",
+      "value": "Data Source=/home/data/app.db",
+      "required": true,
+      "secret": false,
+      "additionalSetting": true,
+      "description": "SQLite database path for deployed API apps."
+    },
+    {
+      "appId": "api",
+      "name": "Logging__LogLevel__Default",
+      "source": "literal",
+      "value": "Information",
+      "required": false,
+      "secret": false,
+      "description": "Default application log level."
+    },
+    {
+      "appId": "api",
+      "name": "Logging__LogLevel__Microsoft.AspNetCore",
+      "source": "literal",
+      "value": "Warning",
+      "required": false,
+      "secret": false,
+      "description": "ASP.NET Core framework log level."
+    }
+  ]
+}
