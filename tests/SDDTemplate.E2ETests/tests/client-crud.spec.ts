@@ -1,4 +1,9 @@
 import { expect, request, test, type APIRequestContext, type Page } from "@playwright/test";
+import {
+  assertDeployedQaTarget,
+  assertSeparateServiceTargets,
+  createQaEvidenceRecorder
+} from "../support/qa-evidence";
 
 type ClientRecord = {
   id: number;
@@ -11,10 +16,9 @@ type ClientRecord = {
   zipCode: string;
 };
 
-const apiUrl = process.env.E2E_API_URL?.replace(/\/$/, "");
-if (!apiUrl) {
-  throw new Error("E2E_API_URL is required.");
-}
+const siteUrl = assertDeployedQaTarget("E2E_SITE_URL", process.env.E2E_SITE_URL);
+const apiUrl = assertDeployedQaTarget("E2E_API_URL", process.env.E2E_API_URL);
+assertSeparateServiceTargets(siteUrl, apiUrl);
 
 const uniqueSuffix = `${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 const testClient = {
@@ -56,50 +60,7 @@ test.describe("Client CRUD deployed QA E2E", () => {
   });
 
   test("validates deployed API health and client CRUD through the QA site", async ({ page }) => {
-    const consoleErrors: string[] = [];
-    const failedRequests: string[] = [];
-    const unexpectedResponses: string[] = [];
-    let expectedValidationConsoleErrors = 0;
-    let expectedDeleteRequestAborts = 0;
-
-    page.on("console", message => {
-      if (message.type() === "error") {
-        const text = message.text();
-        if (expectedValidationConsoleErrors > 0 && text.includes("status of 400")) {
-          expectedValidationConsoleErrors--;
-          return;
-        }
-
-        consoleErrors.push(message.text());
-      }
-    });
-
-    page.on("requestfailed", requestInfo => {
-      const failureText = requestInfo.failure()?.errorText ?? "";
-      if (
-        expectedDeleteRequestAborts > 0 &&
-        requestInfo.method() === "DELETE" &&
-        requestInfo.url().includes("/api/clients/") &&
-        failureText.includes("ERR_ABORTED")
-      ) {
-        expectedDeleteRequestAborts--;
-        return;
-      }
-
-      failedRequests.push(`${requestInfo.method()} ${requestInfo.url()} ${requestInfo.failure()?.errorText ?? ""}`.trim());
-    });
-
-    page.on("response", response => {
-      const requestInfo = response.request();
-      const isExpectedValidationProblem =
-        response.status() === 400 &&
-        requestInfo.method() === "POST" &&
-        response.url().includes("/api/clients");
-
-      if (response.status() >= 400 && !isExpectedValidationProblem) {
-        unexpectedResponses.push(`${response.status()} ${requestInfo.method()} ${response.url()}`);
-      }
-    });
+    const evidence = createQaEvidenceRecorder(page);
 
     await assertApiHealth(api);
     await expect(await api.get("/api/clients")).toBeOK();
@@ -115,7 +76,11 @@ test.describe("Client CRUD deployed QA E2E", () => {
       ...testClient,
       bornDate: futureDate()
     });
-    expectedValidationConsoleErrors++;
+    evidence.allowConsoleError(text => text.includes("status of 400"));
+    evidence.allowResponse(response =>
+      response.status() === 400 &&
+      response.request().method() === "POST" &&
+      response.url().includes("/api/clients"));
     await page.getByRole("button", { name: "Save client" }).click();
     await expect(page.locator("#client-errors")).toContainText("Born date cannot be in the future.");
 
@@ -147,15 +112,16 @@ test.describe("Client CRUD deployed QA E2E", () => {
     expect(updated?.zipCode).toBe(updatedClient.zipCode);
 
     const updatedRow = rowForClient(page, updatedClient.name);
-    expectedDeleteRequestAborts++;
+    evidence.allowRequestFailure((requestInfo, failureText) =>
+      requestInfo.method() === "DELETE" &&
+      requestInfo.url().includes("/api/clients/") &&
+      failureText.includes("ERR_ABORTED"));
     await updatedRow.getByRole("button", { name: "Delete" }).click();
     await expect(page.locator("#clients-list")).not.toContainText(updatedClient.name);
     await expect(await api.get(`/api/clients/${created!.id}`)).not.toBeOK();
     createdIds.splice(createdIds.indexOf(created!.id), 1);
 
-    expect(consoleErrors, "unexpected browser console errors").toEqual([]);
-    expect(failedRequests, "unexpected browser request failures").toEqual([]);
-    expect(unexpectedResponses, "unexpected non-success browser API responses").toEqual([]);
+    evidence.assertClean();
   });
 });
 

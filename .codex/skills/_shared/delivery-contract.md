@@ -68,7 +68,7 @@ Default Plane states:
 - In Progress: branch and implementation are active.
 - In Review: PR exists and awaits review/merge.
 - QA: artifact is deployed to QA and awaits E2E validation.
-- Done: E2E QA passed and the artifact is eligible for explicit PROD promotion.
+- Done: E2E QA passed with acceptance criteria proven by executable assertions against the deployed QA artifact, and the artifact is eligible for explicit PROD promotion.
 
 Delivery flow:
 
@@ -78,9 +78,40 @@ Plane Todo -> branch/OpenSpec -> implementation -> PR review -> dev -> DEV/QA ->
 
 Before starting the first ticket, and before any Todo ticket is moved into implementation when stack context is missing, verify that the project tool set and tech stack are defined in `docs/architecture.md`, `docs/development.md`, `docs/deployment.md`, and `openspec/config.yaml`. The `plane-start-ticket` path must run or inspect `AuditRecommendedTools` and stop before Git, Plane, or OpenSpec mutation when the audit reports `stack-context.*` drift or the stack/tooling files are missing. Route the operator to `configure-dev-environment` to define the stack context and recommendation catalog first. When project guidance coverage is missing, use `project-guidance-discover` to show suggested skills, tools, references, practices, and standards, ask for additional desired guidance, then use `project-guidance-acquire` only after the final skill-copy list is confirmed. Ignored `.codex/tool-recommendations.local.json` may preserve catalog-shaped discovery state and recommendation-level `usedInSteps` for `project-guidance-mapper`, but it must never override the active ticket, this delivery contract, validation gates, or current repo files.
 
-PROD promotion is explicit. Do not promote to PROD only because QA passed unless the user asks for PROD promotion or a non-`[SDD]` merge to `main` triggers the PROD-only workflow.
+PROD promotion is explicit. Do not promote to PROD only because QA passed unless the user asks for PROD promotion or a ticket-named `src/**` or `tests/**` merge to `main` triggers the PROD-only workflow.
 
-Push-triggered environment deployment is allowed only for ticket-named work. The ticket key pattern is configured in `.codex/delivery-policy.json`. The commit message must start with the configured ticket key format, such as `E2EPROJECT-123: ...`, or be a Gitea merge commit whose PR title starts with that ticket key format. `[SDD]`, `openspec/...`, and maintenance-only commits do not deploy environments.
+Push-triggered environment deployment is allowed only for ticket-named work that changes `src/**` or `tests/**`. The ticket key pattern is configured in `.codex/delivery-policy.json`. The commit message must start with the configured ticket key format, such as `E2EPROJECT-123: ...`, or be a Gitea merge commit whose PR title starts with that ticket key format. Non-code changes outside `src/**` and `tests/**` do not run automatic CI/deployment work.
+
+## QA Evidence Contract
+
+E2E QA is an acceptance-evidence gate, not a screenshot, smoke, or page-load gate. The rule is: `QA Done = acceptance criteria proven by executable assertions against the deployed QA artifact`.
+
+Before `test-e2e` may move a ticket to Done, it must:
+
+- resolve the Plane/OpenSpec acceptance criteria and validation expectations for the ticket,
+- map each criterion to at least one explicit test oracle or mark the criterion blocked,
+- execute the relevant checks against the exact deployed QA artifact commit and tested QA URLs,
+- record assertion evidence, not only navigation steps, screenshots, traces, logs, or HTTP 200 smoke checks,
+- fail closed when any acceptance criterion lacks proof, when evidence targets the wrong artifact/environment, or when evidence contradicts the pass result.
+
+Ticket-scoped QA scenarios should use this reusable taxonomy when relevant:
+
+- Navigation/rendering: page, route, component, and state render correctly.
+- User workflow: the intended user action can be completed end to end.
+- API/backend effect: changed behavior reaches the deployed backend when the feature depends on data, services, persistence, jobs, or integrations.
+- State verification: created, changed, removed, or computed state is observable from an independent source, not only the initiating UI.
+- Validation and boundaries: changed business rules include valid, invalid, and boundary inputs.
+- Error handling: expected failures show correct UI/API errors and do not corrupt state.
+- Environment correctness: browser and API calls target the configured QA service URLs, not localhost, mocks, stale DEV endpoints, or accidental same-origin fallbacks.
+- Evidence integrity: screenshots, traces, logs, API summaries, and reports are checked for blank captures, console errors, failed network calls, wrong environment, stale data, or other contradictions.
+
+QA outcomes are:
+
+- `PASS`: every required ticket-scoped assertion passed and every acceptance criterion is proven.
+- `PASS WITH GAPS`: the deployed artifact appears usable but a non-blocking evidence weakness, warning, or assumption remains; record the gap and keep the ticket out of Done until the gap is resolved or explicitly accepted as non-blocking in the ticket.
+- `FAIL`: a required assertion failed, a required oracle is missing, evidence is contradictory, the wrong artifact/environment was tested, or a product defect was found.
+
+Only `PASS` can move Plane to Done. `PASS WITH GAPS` and `FAIL` must leave the ticket in QA unless a separate explicit user decision changes the ticket's acceptance expectations.
 
 ## Risk-Adaptive Workflow Depth
 

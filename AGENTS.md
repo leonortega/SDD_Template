@@ -60,6 +60,14 @@ If a gate cannot be run, document the reason and the residual risk.
 - Treat `*.local.*`, `.local` config files, and environment files as sensitive unless the repository explicitly marks them as examples.
 - Prefer example files for documented configuration values.
 
+## Repo-Local Token Saving
+
+Use the repo-local `.codex/skills/caveman` guidance for normal assistant chat in this repository. Default to Caveman full for commentary, direct answers, status updates, and final summaries: terse fragments, no filler, exact technical terms.
+
+This applies only to assistant communication. Write normal complete prose for authored artifacts, including documentation, README files, OpenSpec artifacts, skill content, code, comments where clarity matters, commit messages, PR bodies, Plane/Gitea comments, QA evidence, formal reports, generated files, user-facing copy, and any user-requested long-form text.
+
+Keep code blocks, commands, paths, API names, error messages, quoted text, and file content exact. Temporarily use normal prose for security warnings, irreversible actions, precise multi-step instructions, ambiguous order of operations, or clarification. Resume terse chat after the clear section. Do not run upstream caveman installers or caveman-compress on this repository unless the user explicitly asks.
+
 ## Agent Guidance
 
 When in doubt, first inspect the applicable skill under `.codex/skills/` and follow its workflow. This file is only the entry point; detailed delivery behavior belongs in the skills, OpenSpec artifacts, and configured local tools.

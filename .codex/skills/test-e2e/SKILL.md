@@ -13,7 +13,7 @@ This skill is technology-agnostic. Inspect the repository first. Use an establis
 
 For Blazor or other rendered website changes, prefer `$frontend-testing-debugging` when the repo has `.codex/skills/frontend-testing-debugging/SKILL.md` and the ticket requires browser-visible validation, responsive layout checks, console health, screenshots, or interaction proof. Keep API and deployment health checks in the repo-native .NET/API path.
 
-When the repository contains `tests/SDDTemplate.E2ETests`, treat it as the reusable deployed-QA regression suite. The suite is executed by the Gitea `e2e-qa-branch` job against the deployed QA Site/API URLs, and the Gitea job is evidence-only. After `deploy-qa` succeeds, create a `qa/{ticketKey}` branch from current `dev`, add or update tests there when needed, and push that branch so Gitea runs the suite remotely without redeploying. This skill still owns QA acceptance: verify the Gitea E2E evidence bundle, run or rerun the suite manually only when remote execution is unavailable or diagnostic evidence is needed, publish final QA evidence, create or verify the RC tag, update release metadata, comment Plane, move the ticket to Done only after all checks pass, and delete the remote `qa/{ticketKey}` branch after durable evidence exists.
+When the repository contains `tests/SDDTemplate.E2ETests`, treat it as the reusable deployed-QA regression suite. The suite is executed by the Gitea `e2e-qa-branch` job against the deployed QA Site/API URLs, and the Gitea job is evidence-only. After `deploy-qa` succeeds, create a `qa/{ticketKey}` branch from current `dev`, add or update tests there when needed, and push that branch so Gitea runs the suite remotely without redeploying. This skill still owns QA acceptance: verify the Gitea E2E evidence bundle, run or rerun the suite manually only when remote execution is unavailable or diagnostic evidence is needed, publish final QA evidence, create or verify the RC tag, update release metadata, comment Plane, move the ticket to Done only after the QA result is `PASS`, and delete the remote `qa/{ticketKey}` branch after durable evidence exists.
 
 After the evidence bundle is verified, the E2E QA Plane comment is verified, the RC tag is created or verified, release metadata is updated, and the ticket is moved to Done, delete the remote `qa/{ticketKey}` branch from Gitea. The branch is only a temporary evidence trigger; durable evidence is in Nexus, Plane, the release manifest, and tags. Keep the branch only when evidence publication, comment verification, RC tagging, or Done-state mutation is incomplete and the branch may need a rerun.
 
@@ -62,20 +62,33 @@ Use Plane API only. Do not use Plane MCP, Docker containers, or direct database 
 
 Build a scoped QA checklist from the ticket only. Include categories only when they are relevant to the delivered change:
 
-- website happy path
-- website edge and negative cases
-- API happy path
-- API edge and negative cases
-- accessibility checks
-- responsive checks
-- deployment/environment checks tied to the ticket
+- navigation/rendering: page, route, component, and state render correctly
+- user workflow: the intended user action can be completed end to end
+- API/backend effect: changed behavior reaches the deployed backend when the feature depends on data, services, persistence, jobs, or integrations
+- state verification: created, changed, removed, or computed state is observable from an independent source, not only the initiating UI
+- validation and boundaries: changed business rules include valid, invalid, and boundary inputs
+- error handling: expected failures show correct UI/API errors and do not corrupt state
+- environment correctness: browser and API calls target the configured QA service URLs, not localhost, mocks, stale DEV endpoints, or accidental same-origin fallbacks
+- evidence integrity: screenshots, traces, logs, API summaries, and reports are checked for blank captures, console errors, failed network calls, wrong environment, stale data, or other contradictions
+- accessibility checks when forms, navigation, labels, focus, keyboard flow, or semantics changed
+- responsive checks when layout or viewport behavior changed
 
-If the ticket's test expectations are weak, complete them in the QA result comment by listing the concrete scenarios you created and executed. Do not broaden into unrelated regression testing unless the ticket explicitly asks for it.
+If the ticket's test expectations are weak, complete them in the QA result comment by listing the concrete scenarios you created and executed. Do not broaden into unrelated regression testing unless the ticket explicitly asks for it. If an acceptance criterion cannot be converted into an observable oracle, classify the QA result as blocked or `FAIL`; do not pass by assumption.
+
+Use these QA result classifications:
+
+- `PASS`: every required ticket-scoped assertion passed and every acceptance criterion is proven.
+- `PASS WITH GAPS`: the deployed artifact appears usable but a non-blocking evidence weakness, warning, or assumption remains; record the gap and keep the ticket in QA until the gap is resolved or explicitly accepted as non-blocking in the ticket.
+- `FAIL`: a required assertion failed, a required oracle is missing, evidence is contradictory, the wrong artifact/environment was tested, or a product defect was found.
+
+Only `PASS` can move Plane to `plane.doneState`.
 
 Apply this general QA quality bar before executing tests:
 
 - Define the test oracle: what observable behavior proves the ticket works, what observable behavior proves it is broken, and which source establishes that expectation.
+- Build an acceptance-to-assertion map before testing. Every acceptance criterion must list the scenario category, assertion, tool, expected observable result, and evidence location.
 - Translate acceptance criteria into explicit assertions, not just navigation steps or screenshots. A passing test must check status, content, state, side effects, errors, visual state, or data changes as applicable.
+- Treat screenshots, traces, logs, and HTTP 200 smoke checks as supporting evidence only. They cannot prove acceptance unless tied to executable assertions.
 - Cover the highest-risk boundary and negative cases implied by the change, even when the ticket only describes the happy path. Keep the scope ticket-specific.
 - Verify the delivered environment, artifact, commit, or deployment being tested so a pass cannot accidentally apply to the wrong build.
 - Include lightweight performance observations for ticket-relevant paths. Record response time, browser timing, or API latency when the tool exposes it. Treat obvious major regressions as QA failures when the ticket is performance-sensitive or the latency breaks user-observable acceptance criteria; otherwise record them as warnings.
@@ -93,6 +106,8 @@ Inspect the repo before choosing tools:
 - Existing helper APIs, fixtures, auth setup, seeded users, environment variable conventions
 
 Use an established tool when the repo clearly already has one. For this repository's committed QA E2E suite, run Playwright remotely through Gitea Actions against deployed QA URLs; do not start local web servers for QA acceptance. Local Playwright execution is only a fallback for authoring diagnostics and must still target deployed QA URLs with `E2E_SITE_URL` and `E2E_API_URL`.
+
+Tool choice is secondary to the evidence contract. Playwright, API tests, Postman/Newman, k6, repo-native integration tests, or manual browser evidence are acceptable only when the resulting QA record proves the same ticket-scoped assertions against the deployed QA artifact.
 
 If no tool is configured, or several valid technology-dependent choices exist, ask the user before proceeding. Present concrete choices with a recommendation:
 
@@ -161,7 +176,7 @@ Useful evidence includes:
 - console or network error summaries when relevant
 - generated one-off QA scripts that explain how the evidence was produced
 
-Create `qa-summary.md` with the result, tested URLs, selected tools, commit/artifact, scenario list, evidence inventory, and failure classification. Create `test-plan.md` with the derived checklist, especially when the ticket's original test expectations were weak.
+Create `qa-summary.md` with the result, tested URLs, selected tools, commit/artifact, scenario categories, acceptance-to-assertion map, evidence inventory, gaps, assumptions, and failure classification. Create `test-plan.md` with the derived checklist, especially when the ticket's original test expectations were weak.
 
 Prefer durable links in Plane comments. Use this evidence publication order:
 
@@ -248,8 +263,12 @@ The comment must include:
 - RC tag URL or tag name and the verified tag target commit
 - release lineage: `artifact commit -> source RC version -> pending final PROD version`
 - selected test tool and why
+- acceptance criteria covered
+- scenario categories used
+- executable assertions executed
 - scenarios executed
 - pass/fail result
+- gaps, assumptions, or blocked criteria
 - Nexus evidence URL, Plane attachment link, or local fallback evidence path
 - report links, screenshots, traces, or logs included in the evidence bundle
 - defects, blockers, or environment/tooling issues found
@@ -258,8 +277,11 @@ The comment must include:
 Move the ticket to `plane.doneState` only after:
 
 - the ticket was in `plane.qaState` or the user explicitly overrode the state check,
+- the QA result is `PASS`, not `PASS WITH GAPS`,
 - every required ticket-scoped QA scenario passed,
+- every acceptance criterion is mapped to at least one explicit assertion or is removed from scope by explicit ticket evidence,
 - the QA result includes the test oracle, explicit assertions, risk-based negative or boundary checks where applicable, and any assumptions used to fill weak requirements,
+- the QA result includes API/backend-effect, state-verification, validation/boundary, error-handling, and environment-correctness checks whenever the delivered change makes those categories relevant,
 - evidence was validated against the assertions and does not contradict the pass result,
 - the source RC version was recorded and any RC tag used for PROD promotion points to the tested commit,
 - evidence was collected and published to Nexus, attached to Plane, or documented as a local-only fallback,
@@ -319,6 +341,11 @@ Report the ticket, QA environment, scenarios tested, validation assertions, evid
 - Non-interactive ambiguous tool choice: stop with `tool choice required`.
 - QA evidence path is not ignored by Git: stop before generating evidence.
 - RC version cannot be supplied or derived: comment available evidence, leave ticket in QA, and ask for the RC version.
+- Missing acceptance-to-assertion mapping: comment the gap and leave the ticket in QA.
+- Screenshot-only, trace-only, log-only, page-load-only, or smoke-only evidence: classify as `PASS WITH GAPS` or `FAIL` and do not move the ticket to Done.
+- Data-changing ticket without independent state/API verification when such verification is possible: classify as `PASS WITH GAPS` or `FAIL` and do not move the ticket to Done.
+- Validation-changing ticket without relevant invalid or boundary cases: classify as `PASS WITH GAPS` or `FAIL` and do not move the ticket to Done.
+- Wrong artifact, wrong QA URL, localhost, stale DEV endpoint, mock endpoint, or accidental same-origin fallback: fail closed and do not move the ticket to Done.
 - QA test failure: comment evidence and do not move the ticket to Done.
 - Product defect after QA: invoke `file-qa-bug`; do not fix product code inside this skill unless the user changes the task.
 - Missing evidence upload support: include local evidence paths or links in the Plane comment.

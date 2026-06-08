@@ -221,14 +221,23 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
-        public void ConfigOnlyAndSddChangesDoNotDeployOnPush()
+        public void NonSrcAndNonTestsChangesDoNotDeployOnPush()
         {
             string workflow = ReadWorkflow();
             string classifyJob = GetJobSection(workflow, "classify-changes");
 
             Assert.Contains("app_changed=false", classifyJob);
+            Assert.Contains("src/*|tests/*", classifyJob);
+            Assert.DoesNotContain("infra/deployment/*", classifyJob);
+            Assert.DoesNotContain("infra/azure/*", classifyJob);
             Assert.DoesNotContain(".codex/*", classifyJob);
             Assert.DoesNotContain(".gitea/*", classifyJob);
+            Assert.DoesNotContain("*.sln", classifyJob);
+            Assert.DoesNotContain("*.slnx", classifyJob);
+            Assert.DoesNotContain("*.csproj", classifyJob);
+            Assert.DoesNotContain("Directory.Build.props", classifyJob);
+            Assert.DoesNotContain("Directory.Build.targets", classifyJob);
+            Assert.DoesNotContain("global.json", classifyJob);
             Assert.Contains("deploy_allowed=false", classifyJob);
             Assert.Contains("ticketKeyPattern", classifyJob);
             Assert.Contains("BASH_REMATCH", classifyJob);
@@ -236,12 +245,17 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
-        public void SolutionFileChangesIncludeSlnxAsAppAffecting()
+        public void PrValidationRunsOnlyForSrcAndTestsChanges()
         {
-            string workflow = ReadWorkflow();
-            string classifyJob = GetJobSection(workflow, "classify-changes");
+            string workflow = ReadPrValidationWorkflow();
+            string configureTemplate = ReadConfigureScript();
 
-            Assert.Contains("*.slnx", classifyJob);
+            Assert.Contains("paths:", workflow);
+            Assert.Contains("- src/**", workflow);
+            Assert.Contains("- tests/**", workflow);
+            Assert.Contains("paths:", configureTemplate);
+            Assert.Contains("- src/**", configureTemplate);
+            Assert.Contains("- tests/**", configureTemplate);
         }
 
         [Fact]
@@ -328,6 +342,11 @@ namespace SDDTemplate.DeliveryTools.Tests
             string script = ReadConfigureScript();
             string deploymentDoc = ReadDoc("deployment.md");
             string developmentDoc = ReadDoc("development.md");
+            string workflowReadme = File.ReadAllText(Path.Combine(
+                FindRepositoryRoot().FullName,
+                ".gitea",
+                "workflows",
+                "README.md"));
             string e2eSkill = ReadSkill("test-e2e", "SKILL.md");
 
             Assert.Contains("  e2e-qa-branch:", script);
@@ -342,6 +361,72 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("deployed-QA regression suite", e2eSkill);
             Assert.Contains("qa/{ticketKey}", e2eSkill);
             Assert.Contains("app/{commitSha}/qa-e2e-evidence.zip", e2eSkill);
+            Assert.Contains("acceptance-to-assertion QA proof", script);
+            Assert.Contains("acceptance criteria proven by executable assertions", developmentDoc);
+            Assert.Contains("Only full `PASS` can move Plane to Done", workflowReadme);
+        }
+
+        [Fact]
+        public void E2EQaEvidenceContractIsGeneralAndBlocksWeakEvidence()
+        {
+            string contract = ReadSkill("_shared", "delivery-contract.md");
+            string e2eSkill = ReadSkill("test-e2e", "SKILL.md");
+            string deploymentDoc = ReadDoc("deployment.md");
+            string qualityGates = File.ReadAllText(Path.Combine(
+                FindRepositoryRoot().FullName,
+                ".codex",
+                "skills",
+                "configure-dev-environment",
+                "references",
+                "quality-gates.md"));
+
+            Assert.Contains("QA Evidence Contract", contract);
+            Assert.Contains("QA Done = acceptance criteria proven by executable assertions against the deployed QA artifact", contract);
+            Assert.Contains("Navigation/rendering", contract);
+            Assert.Contains("API/backend effect", contract);
+            Assert.Contains("State verification", contract);
+            Assert.Contains("Validation and boundaries", contract);
+            Assert.Contains("Environment correctness", contract);
+            Assert.Contains("Evidence integrity", contract);
+            Assert.Contains("Only `PASS` can move Plane to Done", contract);
+
+            Assert.Contains("acceptance-to-assertion map", e2eSkill);
+            Assert.Contains("scenario categories used", e2eSkill);
+            Assert.Contains("executable assertions executed", e2eSkill);
+            Assert.Contains("Screenshot-only, trace-only, log-only, page-load-only, or smoke-only evidence", e2eSkill);
+            Assert.Contains("Data-changing ticket without independent state/API verification", e2eSkill);
+            Assert.Contains("Validation-changing ticket without relevant invalid or boundary cases", e2eSkill);
+            Assert.Contains("Wrong artifact, wrong QA URL, localhost, stale DEV endpoint", e2eSkill);
+            Assert.Contains("Only `PASS` can move Plane to `plane.doneState`", e2eSkill);
+
+            Assert.Contains("PASS WITH GAPS", deploymentDoc);
+            Assert.Contains("PASS WITH GAPS", qualityGates);
+        }
+
+        [Fact]
+        public void PlaywrightQaEvidenceHelpersEnforceDeployedTargetsAndBrowserEvidenceIntegrity()
+        {
+            string root = FindRepositoryRoot().FullName;
+            string helper = File.ReadAllText(Path.Combine(root, "tests", "SDDTemplate.E2ETests", "support", "qa-evidence.ts"));
+            string spec = File.ReadAllText(Path.Combine(root, "tests", "SDDTemplate.E2ETests", "tests", "client-crud.spec.ts"));
+
+            Assert.Contains("qaScenarioCategories", helper);
+            Assert.Contains("navigation-rendering", helper);
+            Assert.Contains("api-backend-effect", helper);
+            Assert.Contains("validation-boundaries", helper);
+            Assert.Contains("environment-correctness", helper);
+            Assert.Contains("evidence-integrity", helper);
+            Assert.Contains("assertDeployedQaTarget", helper);
+            Assert.Contains("assertSeparateServiceTargets", helper);
+            Assert.Contains("createQaEvidenceRecorder", helper);
+            Assert.Contains("localhost", helper);
+            Assert.Contains("DEV", helper);
+            Assert.Contains("unexpected browser console errors", helper);
+            Assert.Contains("unexpected non-success browser API responses", helper);
+
+            Assert.Contains("assertDeployedQaTarget", spec);
+            Assert.Contains("assertSeparateServiceTargets", spec);
+            Assert.Contains("createQaEvidenceRecorder", spec);
         }
 
         [Fact]
@@ -730,6 +815,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("\"installMethod\": \"manual-copy\"", catalog);
             Assert.Contains("\"installMethod\": \"manual-config\"", catalog);
             Assert.Contains("\"installMethod\": \"manual-reference\"", catalog);
+            Assert.Contains("\"sourceKind\": \"repo-local\"", catalog);
+            Assert.Contains("\"sourceKind\": \"technology-owner\"", catalog);
             Assert.Contains("\"officialSources\"", catalog);
             Assert.Contains("\"searchQueries\"", catalog);
             Assert.DoesNotContain("installCommand", catalog);
@@ -761,6 +848,11 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("project-guidance-search-plan", discoveryScript);
             Assert.Contains("guidance-search-plan", discoveryScript);
             Assert.Contains("research-then-manual-copy", discoveryScript);
+            Assert.Contains("Get-ProjectGuidanceDiscoverySourcePriority", discoveryScript);
+            Assert.Contains("\"repo-local\"", discoveryScript);
+            Assert.Contains("\"skills-cli\"", discoveryScript);
+            Assert.Contains("\"marketplace\"", discoveryScript);
+            Assert.Contains("sourceKind", discoveryScript);
             Assert.Contains("\"dotnet\"", discoveryScript);
             Assert.Contains("\"dotnet-10\"", discoveryScript);
             Assert.Contains("\"aspnet-core\"", discoveryScript);
@@ -805,6 +897,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("requiresUserConfirmation", discoveryScript);
             Assert.Contains("github.com/openai/skills", discoveryScript);
             Assert.Contains("github.com/dotnet/skills", discoveryScript);
+            Assert.Contains("skills.sh", discoveryScript);
             Assert.Contains("dotnet-10-platform-guidance", catalog);
             Assert.Contains("clean-code-practice-guidance", catalog);
             Assert.Contains("qa-automation-practice-guidance", catalog);
@@ -882,6 +975,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("final confirmed list from `project-guidance-discover`", acquire);
             Assert.Contains("Do not use command-based skill installers", acquire);
             Assert.Contains("Do not install into `$CODEX_HOME`", acquire);
+            Assert.Contains("sourceKind", acquire);
+            Assert.Contains("skills.sh", acquire);
             Assert.Contains("Test-Path", acquire);
             Assert.Contains("Do not copy secrets", acquire);
             Assert.Contains("Refresh `.codex/tool-recommendations.local.json`", acquire);
