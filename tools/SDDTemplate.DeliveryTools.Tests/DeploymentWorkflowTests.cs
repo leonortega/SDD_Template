@@ -328,6 +328,11 @@ namespace SDDTemplate.DeliveryTools.Tests
             string script = ReadConfigureScript();
             string deploymentDoc = ReadDoc("deployment.md");
             string developmentDoc = ReadDoc("development.md");
+            string workflowReadme = File.ReadAllText(Path.Combine(
+                FindRepositoryRoot().FullName,
+                ".gitea",
+                "workflows",
+                "README.md"));
             string e2eSkill = ReadSkill("test-e2e", "SKILL.md");
 
             Assert.Contains("  e2e-qa-branch:", script);
@@ -342,6 +347,72 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("deployed-QA regression suite", e2eSkill);
             Assert.Contains("qa/{ticketKey}", e2eSkill);
             Assert.Contains("app/{commitSha}/qa-e2e-evidence.zip", e2eSkill);
+            Assert.Contains("acceptance-to-assertion QA proof", script);
+            Assert.Contains("acceptance criteria proven by executable assertions", developmentDoc);
+            Assert.Contains("Only full `PASS` can move Plane to Done", workflowReadme);
+        }
+
+        [Fact]
+        public void E2EQaEvidenceContractIsGeneralAndBlocksWeakEvidence()
+        {
+            string contract = ReadSkill("_shared", "delivery-contract.md");
+            string e2eSkill = ReadSkill("test-e2e", "SKILL.md");
+            string deploymentDoc = ReadDoc("deployment.md");
+            string qualityGates = File.ReadAllText(Path.Combine(
+                FindRepositoryRoot().FullName,
+                ".codex",
+                "skills",
+                "configure-dev-environment",
+                "references",
+                "quality-gates.md"));
+
+            Assert.Contains("QA Evidence Contract", contract);
+            Assert.Contains("QA Done = acceptance criteria proven by executable assertions against the deployed QA artifact", contract);
+            Assert.Contains("Navigation/rendering", contract);
+            Assert.Contains("API/backend effect", contract);
+            Assert.Contains("State verification", contract);
+            Assert.Contains("Validation and boundaries", contract);
+            Assert.Contains("Environment correctness", contract);
+            Assert.Contains("Evidence integrity", contract);
+            Assert.Contains("Only `PASS` can move Plane to Done", contract);
+
+            Assert.Contains("acceptance-to-assertion map", e2eSkill);
+            Assert.Contains("scenario categories used", e2eSkill);
+            Assert.Contains("executable assertions executed", e2eSkill);
+            Assert.Contains("Screenshot-only, trace-only, log-only, page-load-only, or smoke-only evidence", e2eSkill);
+            Assert.Contains("Data-changing ticket without independent state/API verification", e2eSkill);
+            Assert.Contains("Validation-changing ticket without relevant invalid or boundary cases", e2eSkill);
+            Assert.Contains("Wrong artifact, wrong QA URL, localhost, stale DEV endpoint", e2eSkill);
+            Assert.Contains("Only `PASS` can move Plane to `plane.doneState`", e2eSkill);
+
+            Assert.Contains("PASS WITH GAPS", deploymentDoc);
+            Assert.Contains("PASS WITH GAPS", qualityGates);
+        }
+
+        [Fact]
+        public void PlaywrightQaEvidenceHelpersEnforceDeployedTargetsAndBrowserEvidenceIntegrity()
+        {
+            string root = FindRepositoryRoot().FullName;
+            string helper = File.ReadAllText(Path.Combine(root, "tests", "SDDTemplate.E2ETests", "support", "qa-evidence.ts"));
+            string spec = File.ReadAllText(Path.Combine(root, "tests", "SDDTemplate.E2ETests", "tests", "client-crud.spec.ts"));
+
+            Assert.Contains("qaScenarioCategories", helper);
+            Assert.Contains("navigation-rendering", helper);
+            Assert.Contains("api-backend-effect", helper);
+            Assert.Contains("validation-boundaries", helper);
+            Assert.Contains("environment-correctness", helper);
+            Assert.Contains("evidence-integrity", helper);
+            Assert.Contains("assertDeployedQaTarget", helper);
+            Assert.Contains("assertSeparateServiceTargets", helper);
+            Assert.Contains("createQaEvidenceRecorder", helper);
+            Assert.Contains("localhost", helper);
+            Assert.Contains("DEV", helper);
+            Assert.Contains("unexpected browser console errors", helper);
+            Assert.Contains("unexpected non-success browser API responses", helper);
+
+            Assert.Contains("assertDeployedQaTarget", spec);
+            Assert.Contains("assertSeparateServiceTargets", spec);
+            Assert.Contains("createQaEvidenceRecorder", spec);
         }
 
         [Fact]
