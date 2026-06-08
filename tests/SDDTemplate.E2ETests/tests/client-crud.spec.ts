@@ -66,7 +66,8 @@ test.describe("Client CRUD deployed QA E2E", () => {
     await expect(await api.get("/api/clients")).toBeOK();
     initialClients = await clearClients(api);
 
-    await page.goto("/clients");
+    await page.goto("/");
+    await page.getByRole("link", { name: "Clients" }).click();
     await expect(page).toHaveTitle(/Clients|SDD Template/);
     await expect(page.getByRole("heading", { name: "Clients" })).toBeVisible();
     await expect(page.locator("#client-form")).toBeVisible();
