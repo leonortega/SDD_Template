@@ -1533,13 +1533,19 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.Contains("PR Reviewer Handoff", contract);
             Assert.Contains("requested-reviewers endpoint", contract);
+            Assert.Contains("both a JSON array and a single collaborator object", contract);
+            Assert.Contains("login` first, then `username", contract);
             Assert.Contains("not treat the Codex review-agent comment", contract);
             Assert.Contains("requested_reviewers", implementSkill);
+            Assert.Contains("Gitea may return either an array or a single object", implementSkill);
             Assert.Contains("Do not move the Plane ticket to review until human reviewers are requested and verified", implementSkill);
             Assert.Contains("requested_reviewers", openspecSkill);
+            Assert.Contains("normalize the response to a candidate list", openspecSkill);
             Assert.Contains("Re-fetch the PR and confirm the requested reviewers are present", openspecSkill);
             Assert.Contains("POST {gitea.baseUrl}/api/v1/repos/{owner}/{repo}/pulls/{prNumber}/requested_reviewers", handoffReference);
+            Assert.Contains("single collaborator object", handoffReference);
             Assert.Contains("Ticket handoff remains responsible for proving reviewers were actually requested", configureReference);
+            Assert.Contains("single collaborator object", configureReference);
         }
 
         [Fact]

@@ -24,5 +24,19 @@ namespace SDDTemplate.Site.Tests
             Assert.Contains("method: id ? \"PUT\" : \"POST\"", markup);
             Assert.Contains("const apiBaseUrl", markup);
         }
+
+        [Fact]
+        public async Task MainNavigationLoadsClientsPageAsFullDocument()
+        {
+            await using WebApplicationFactory<SiteAssemblyMarker> factory = new();
+            using HttpClient client = factory.CreateClient();
+
+            HttpResponseMessage response = await client.GetAsync("/");
+            string markup = await response.Content.ReadAsStringAsync();
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Contains("href=\"/clients\"", markup);
+            Assert.Contains("data-enhance-nav=\"false\"", markup, StringComparison.OrdinalIgnoreCase);
+        }
     }
 }

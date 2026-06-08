@@ -80,7 +80,7 @@ When `pr.reviewers` is `"all"`, list repository collaborators:
 GET {gitea.baseUrl}/api/v1/repos/{owner}/{repo}/collaborators
 ```
 
-Use the returned usernames as the developer list. Exclude:
+Normalize the response before filtering because Gitea may return either a JSON array or a single collaborator object. Use each collaborator's `login` value first, then `username`, as the developer list. Exclude:
 
 - PR author
 - authenticated automation user
