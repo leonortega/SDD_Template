@@ -1188,7 +1188,7 @@ function ConvertTo-CatalogRecommendation {
     accepted = ($Accepted -contains $Entry.id)
   }
 
-  foreach ($optionalField in @("requires", "researchTopics", "officialSources", "searchQueries", "notes")) {
+  foreach ($optionalField in @("sourceKind", "requires", "researchTopics", "officialSources", "searchQueries", "notes")) {
     if ($Entry.PSObject.Properties.Name -contains $optionalField) {
       $recommendation[$optionalField] = $Entry.$optionalField
     }
@@ -1390,8 +1390,10 @@ function New-ProjectGuidanceLocalState {
       detected = $true
       requiresUserConfirmation = $true
       sourceDiscovery = "official-first-internet-search"
+      discoverySourcePriority = Get-ProjectGuidanceDiscoverySourcePriority
+      discoverySourceNotes = Get-ProjectGuidanceDiscoverySourceNotes
       topics = @($report.researchTopics)
-      nextStep = "Use project-guidance-discover to show suggested missing skills and guidance, ask for additional desired items, then pass confirmed skill items to project-guidance-acquire."
+      nextStep = "Use project-guidance-discover to search OpenAI official catalogs/docs, official tool repositories/docs, technology-owner sources, skills.sh/skills or marketplace repository leads, and trusted public sources; show suggested missing skills and guidance; ask for additional desired items; then pass confirmed skill items to project-guidance-acquire."
     }
   }
 
@@ -1517,6 +1519,47 @@ function Test-RepoRelativeTarget {
   return $true
 }
 
+function Get-RequiredSkillAcquisitionFields {
+  return @("name", "type", "installMethod", "source", "target", "validation", "sourceKind")
+}
+
+function Test-ValidProjectGuidanceSourceKind {
+  param([string]$SourceKind)
+
+  if ([string]::IsNullOrWhiteSpace($SourceKind)) { return $false }
+  return @(Get-ProjectGuidanceDiscoverySourcePriority) -contains $SourceKind
+}
+
+function Test-ConfirmedSkillAcquisitionContract {
+  param(
+    $Result,
+    $Item,
+    [string]$DisplayName
+  )
+
+  foreach ($field in Get-RequiredSkillAcquisitionFields) {
+    if ($Item.PSObject.Properties.Name -notcontains $field -or [string]::IsNullOrWhiteSpace([string]$Item.$field)) {
+      Add-Item $Result "warnings" $DisplayName $field "Skipping skill because confirmed manual-copy skill items must include '$field'." "warning"
+      return $false
+    }
+  }
+
+  if ([string]$Item.type -ne "skill") {
+    Add-Item $Result "warnings" $DisplayName "type" "Skipping skill because type must be 'skill'." "warning"
+    return $false
+  }
+  if ([string]$Item.installMethod -ne "manual-copy") {
+    Add-Item $Result "warnings" $DisplayName "installMethod" "Skipping skill because installMethod is '$($Item.installMethod)', not manual-copy." "warning"
+    return $false
+  }
+  if (-not (Test-ValidProjectGuidanceSourceKind ([string]$Item.sourceKind))) {
+    Add-Item $Result "warnings" $DisplayName "sourceKind" "Skipping skill because sourceKind must be one of: $((Get-ProjectGuidanceDiscoverySourcePriority) -join ', ')." "warning"
+    return $false
+  }
+
+  return $true
+}
+
 function Invoke-AcquireProjectGuidance {
   $result = New-Result
   $items = Get-ConfirmedGuidanceItemsFromJson $ValuesJson
@@ -1524,26 +1567,25 @@ function Invoke-AcquireProjectGuidance {
   foreach ($item in @($items)) {
     $type = if ($item.PSObject.Properties.Name -contains "type") { [string]$item.type } else { "skill" }
     $name = if ($item.PSObject.Properties.Name -contains "name") { [string]$item.name } elseif ($item.PSObject.Properties.Name -contains "id") { [string]$item.id } else { "unnamed-guidance" }
-    $installMethod = if ($item.PSObject.Properties.Name -contains "installMethod") { [string]$item.installMethod } elseif ($type -eq "skill") { "manual-copy" } else { "manual-reference" }
 
     if ($type -ne "skill") {
       Add-Item $result "findings" $name "non-skill-guidance" "Non-skill guidance remains in .codex/tool-recommendations.local.json; no file copy is required." "info"
       continue
     }
-    if ($installMethod -ne "manual-copy") {
-      Add-Item $result "warnings" $name "installMethod" "Skipping skill because installMethod is '$installMethod', not manual-copy." "warning"
+
+    if (-not (Test-ConfirmedSkillAcquisitionContract $result $item $name)) {
       continue
     }
 
-    $source = if ($item.PSObject.Properties.Name -contains "source") { [string]$item.source } else { "" }
-    $targetRelative = if ($item.PSObject.Properties.Name -contains "target") { [string]$item.target } else { ".codex/skills/$name/SKILL.md" }
+    $source = [string]$item.source
+    $targetRelative = [string]$item.target
     if (-not (Test-RepoRelativeTarget $targetRelative)) {
       Add-Item $result "warnings" $targetRelative "target" "Skipping skill because target must be under .codex/skills/{skill-name}/SKILL.md." "warning"
       continue
     }
 
     if (-not $source.StartsWith("repo:")) {
-      Add-Item $result "warnings" $name "source" "Source '$source' is not a repo: path. Read the source SKILL.md manually, then run acquisition with a repo: source or copy through the project-guidance-acquire skill." "warning"
+      Add-Item $result "warnings" $name "source" "Source '$source' is not a repo: path. Use skills.sh/skills, marketplace, or remote URLs only to identify and verify a source repository/ref/path; then provide a repo: source for this deterministic copy step or copy through the project-guidance-acquire skill." "warning"
       continue
     }
 
@@ -1559,7 +1601,7 @@ function Invoke-AcquireProjectGuidance {
       continue
     }
 
-    Add-Item $result "actions" $targetRelative "manual-copy" "Copy confirmed SKILL.md from $source."
+    Add-Item $result "actions" $targetRelative "manual-copy" "Copy confirmed SKILL.md from $source with sourceKind '$($item.sourceKind)'."
     if (Test-ConfigWritesEnabled) {
       $targetDirectory = Split-Path -Parent $targetPath
       if (-not (Test-Path $targetDirectory)) {
@@ -1568,8 +1610,7 @@ function Invoke-AcquireProjectGuidance {
       Copy-Item -Path $sourcePath -Destination $targetPath
     }
 
-    $validation = if ($item.PSObject.Properties.Name -contains "validation") { [string]$item.validation } else { "Test-Path $targetRelative" }
-    Add-Item $result "findings" $targetRelative "validation" "Validate with: $validation" "info"
+    Add-Item $result "findings" $targetRelative "validation" "Validate with: $($item.validation)" "info"
   }
 
   return $result
@@ -1779,7 +1820,7 @@ function Invoke-AuditRecommendedTools {
       accepted = ($accepted -contains $entry.id)
     }
 
-    foreach ($optionalField in @("requires", "researchTopics", "officialSources", "searchQueries", "notes")) {
+    foreach ($optionalField in @("sourceKind", "requires", "researchTopics", "officialSources", "searchQueries", "notes")) {
       if ($entry.PSObject.Properties.Name -contains $optionalField) {
         $recommendation[$optionalField] = $entry.$optionalField
       }
@@ -1851,6 +1892,8 @@ function Invoke-DiscoverProjectGuidance {
     userAddedRequestedSkills = $report.userAddedRequestedSkills
     finalConfirmedGuidance = $report.finalConfirmedGuidance
     finalConfirmedSkills = $report.finalConfirmedSkills
+    discoverySourcePriority = $report.discoverySourcePriority
+    discoverySourceNotes = $report.discoverySourceNotes
     localRecommendationsPath = ".codex/tool-recommendations.local.json"
     nextUserQuestion = $report.nextUserQuestion
   }
