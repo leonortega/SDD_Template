@@ -1,0 +1,7 @@
+interface:
+  display_name: "Caveman"
+  short_description: "Reduce chat output tokens"
+  default_prompt: "Use $caveman to keep Codex chat terse while preserving complete prose for authored files."
+
+policy:
+  allow_implicit_invocation: true
