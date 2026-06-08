@@ -221,14 +221,23 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
-        public void ConfigOnlyAndSddChangesDoNotDeployOnPush()
+        public void NonSrcAndNonTestsChangesDoNotDeployOnPush()
         {
             string workflow = ReadWorkflow();
             string classifyJob = GetJobSection(workflow, "classify-changes");
 
             Assert.Contains("app_changed=false", classifyJob);
+            Assert.Contains("src/*|tests/*", classifyJob);
+            Assert.DoesNotContain("infra/deployment/*", classifyJob);
+            Assert.DoesNotContain("infra/azure/*", classifyJob);
             Assert.DoesNotContain(".codex/*", classifyJob);
             Assert.DoesNotContain(".gitea/*", classifyJob);
+            Assert.DoesNotContain("*.sln", classifyJob);
+            Assert.DoesNotContain("*.slnx", classifyJob);
+            Assert.DoesNotContain("*.csproj", classifyJob);
+            Assert.DoesNotContain("Directory.Build.props", classifyJob);
+            Assert.DoesNotContain("Directory.Build.targets", classifyJob);
+            Assert.DoesNotContain("global.json", classifyJob);
             Assert.Contains("deploy_allowed=false", classifyJob);
             Assert.Contains("ticketKeyPattern", classifyJob);
             Assert.Contains("BASH_REMATCH", classifyJob);
@@ -236,12 +245,17 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
-        public void SolutionFileChangesIncludeSlnxAsAppAffecting()
+        public void PrValidationRunsOnlyForSrcAndTestsChanges()
         {
-            string workflow = ReadWorkflow();
-            string classifyJob = GetJobSection(workflow, "classify-changes");
+            string workflow = ReadPrValidationWorkflow();
+            string configureTemplate = ReadConfigureScript();
 
-            Assert.Contains("*.slnx", classifyJob);
+            Assert.Contains("paths:", workflow);
+            Assert.Contains("- src/**", workflow);
+            Assert.Contains("- tests/**", workflow);
+            Assert.Contains("paths:", configureTemplate);
+            Assert.Contains("- src/**", configureTemplate);
+            Assert.Contains("- tests/**", configureTemplate);
         }
 
         [Fact]

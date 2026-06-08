@@ -5,6 +5,9 @@ on:
     branches:
       - main
       - dev
+    paths:
+      - src/**
+      - tests/**
 
 jobs:
   validate:
