@@ -87,7 +87,7 @@ If implementation discovers durable knowledge, update the matching doc in the sa
 
 1. Resolve `owner` and `repo` from config or the `origin` remote.
 2. Resolve reviewers:
-   - If `pr.reviewers` equals `"all"`, list repository collaborators/developers from Gitea and exclude the PR author plus the automation user.
+   - If `pr.reviewers` equals `"all"`, list repository collaborators/developers from Gitea, normalize the response to a candidate list even when Gitea returns a single object, resolve each reviewer from `login` first and `username` second, then exclude the PR author plus the automation user.
    - If `pr.reviewers` is an array, use that username list exactly.
    - If no reviewers can be resolved, create the PR without reviewers and document the gap in the PR body.
 3. Create configured PR labels if they do not exist and labels are enabled.
