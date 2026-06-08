@@ -84,6 +84,8 @@ Push-triggered deployments are gated by `.codex/delivery-policy.json`. The workf
 
 DEV and QA deploy only from `dev` when application/test/package source changed. PROD deploys only from `main` when `main` points to the exact QA-approved packaged commit for the same ticket-gated application change. Manual workflow dispatch remains available for explicit promotion with `artifact_commit_sha`.
 
+E2E QA is an acceptance-evidence gate. `test-e2e` may move a Plane ticket to Done only when the deployed QA artifact receives a full `PASS`: ticket acceptance criteria are mapped to executable assertions, relevant user workflow/API/backend/state/validation/error/environment/evidence-integrity scenarios are covered, and screenshots or smoke checks support rather than replace assertions. `PASS WITH GAPS` and `FAIL` must remain in QA.
+
 ## Release Branching
 
 Use this release path:
