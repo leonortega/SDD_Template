@@ -176,3 +176,12 @@ Compatibility alias skills should route immediately to the current authoritative
 - Last verified: 2026-06-02
 
 Tracked tool recommendation examples are templates, not the active project stack source of truth. Durable stack context belongs in docs and OpenSpec config; ignored `.codex/tool-recommendations.local.json` preserves learned guidance/catalog state such as accepted/dismissed guidance and `usedInSteps`. Acquisition refreshes should preserve that local state instead of resetting it.
+
+## Gitea Merge Commit Resolution After API Merge
+
+- Type: Pattern
+- Status: Active
+- Source: Gitea PR 23 merge response and `origin/dev` fetch during `E2EPROJECT-4` post-merge deployment
+- Last verified: 2026-06-08
+
+After a successful Gitea PR merge API call, the PR response may report `merged=true` while `merged_commit_id` and `merged_commit_sha` are still null. For post-merge deployment, verify the target branch and resolve the artifact commit from the updated target ref such as `origin/dev`, then validate the ticket lock and Nexus `commit.sha` against that resolved commit.
