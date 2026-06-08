@@ -75,11 +75,22 @@ When creating or reusing a ticket worktree, do not assume ignored local config f
 ## Gitea Reviewers Must Be Repository Collaborators
 
 - Type: Pattern
-- Status: Active
+- Status: Superseded
 - Source: current conversation, Gitea reviewer setup for user `robert`
-- Last verified: 2026-06-02
+- Last verified: 2026-06-08
 
 Automatic PR reviewer assignment depends on Gitea users being repository collaborators. If a configured reviewer such as `robert` is not returned by `GET /api/v1/repos/{owner}/{repo}/collaborators`, reviewer assignment may fail or skip even when the username exists. Fix by adding the user as a collaborator in Gitea repository settings, then verify through the same collaborators API used by the source-control skill before retrying PR automation.
+
+Superseded note: E2EPROJECT-4 showed `robert` was returned by the collaborators API, but the resolver treated a single-object response as empty. Use the active entry below.
+
+## Normalize Gitea Collaborator Responses For All Reviewers
+
+- Type: Pattern
+- Status: Active
+- Source: E2EPROJECT-4 PR #23 reviewer correction, Gitea collaborators API readback, `.codex/skills/_shared/delivery-contract.md`
+- Last verified: 2026-06-08
+
+When `pr.reviewers` is `"all"`, normalize `GET /api/v1/repos/{owner}/{repo}/collaborators` before filtering because Gitea may return a JSON array or a single collaborator object. Resolve each reviewer username from `login` first and `username` second, then exclude the PR author and authenticated automation user. If reviewers are resolved but not shown in the PR response, call `POST /api/v1/repos/{owner}/{repo}/pulls/{prNumber}/requested_reviewers` and re-fetch the PR before moving Plane to review.
 
 ## Gitea Actions Runner May Lack Dotnet In Early Utility Jobs
 

@@ -43,7 +43,7 @@ Validate:
 
 - Token can access the current user endpoint.
 - Owner/repo exists.
-- If `pr.reviewers = "all"`, collaborators can be listed and at least one reviewer is resolvable.
+- If `pr.reviewers = "all"`, collaborators can be listed and at least one reviewer is resolvable after normalizing either an array response or a single collaborator object, using `login` first and `username` second.
 - If labels are enabled, labels can be listed. Missing labels may be created later by the review workflow; do not create labels during configuration unless explicitly requested.
 
 Configuration validation proves that reviewers can be resolved. Ticket handoff remains responsible for proving reviewers were actually requested on each PR, including using the Gitea requested-reviewers endpoint when the PR create response omits resolved reviewers.

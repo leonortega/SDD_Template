@@ -132,6 +132,15 @@ Use `.codex/memory/search_memory.ps1 -Query <symptom>` during debugging and pref
 
 Generated Plane comments must send both `comment_html` and `comment_stripped`; Gitea-style fields such as `comment` or `body` can produce blank rendered comments. After posting or patching a generated marker, read the comment back and verify `comment_stripped` starts with the marker before reporting the comment as added.
 
+## Plane Descriptions Strip Raw Html Comments
+
+- Type: Pattern
+- Status: Active
+- Source: E2EPROJECT-4 ticket start, Plane work-item description PATCH/readback
+- Last verified: 2026-06-08
+
+Plane work-item descriptions can strip raw HTML comments such as `<!-- ia-generated:start -->` from `description_html` during sanitization. When writing the managed generated block through Plane API, read the description back and verify marker persistence; escaped marker text such as `&lt;!-- ia-generated:start --&gt;` remains detectable in `description_html` and `description_stripped`.
+
 ## Repo-Owned Skills Carry Local Delivery Behavior
 
 - Type: Decision
