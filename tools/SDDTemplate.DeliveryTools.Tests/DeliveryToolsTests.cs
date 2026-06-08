@@ -595,6 +595,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains(officialSources, source => source.Contains("learn.microsoft.com", StringComparison.Ordinal));
             Assert.Contains(searchQueries, query => query.Contains("site:learn.microsoft.com", StringComparison.Ordinal));
             Assert.Equal("manual-reference", dotnetGuidance.GetProperty("installMethod").GetString());
+            Assert.Equal("technology-owner", dotnetGuidance.GetProperty("sourceKind").GetString());
             Assert.Contains(audit.RootElement.GetProperty("recommendations").EnumerateArray(),
                 item => item.GetProperty("id").GetString() == "nexus-artifact-api-guidance");
 
@@ -603,6 +604,12 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Equal("guidance-search-plan", searchPlan.GetProperty("type").GetString());
             Assert.Equal("research-then-manual-copy", searchPlan.GetProperty("installMethod").GetString());
             Assert.Equal("official-first-internet-search", searchPlan.GetProperty("sourceDiscovery").GetString());
+            string[] sourcePriority = [.. searchPlan.GetProperty("discoverySourcePriority").EnumerateArray()
+                .Select(item => item.GetString() ?? string.Empty)];
+            Assert.Contains("repo-local", sourcePriority);
+            Assert.Contains("openai-official", sourcePriority);
+            Assert.Contains("skills-cli", sourcePriority);
+            Assert.Contains("marketplace", sourcePriority);
             string[] topicIds = [.. searchPlan.GetProperty("topics").EnumerateArray()
                 .Select(item => item.GetProperty("id").GetString() ?? string.Empty)];
             Assert.Contains("dotnet-aspnet", topicIds);
@@ -629,6 +636,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.True(securitySkill.GetProperty("requiresUserConfirmation").GetBoolean());
             Assert.Equal("proposed", securitySkill.GetProperty("installStatus").GetString());
             Assert.Equal("official-first-internet-search", securitySkill.GetProperty("sourceDiscovery").GetString());
+            Assert.Equal("openai-official", securitySkill.GetProperty("sourceKind").GetString());
             Assert.Contains(securitySkill.GetProperty("officialSources").EnumerateArray(),
                 source => (source.GetString() ?? string.Empty).Contains("owasp.org", StringComparison.Ordinal));
             Assert.Contains(securitySkill.GetProperty("officialSkillSources").EnumerateArray(),
@@ -725,11 +733,15 @@ namespace SDDTemplate.DeliveryTools.Tests
                 .Select(item => item.GetProperty("id").GetString() ?? string.Empty)];
             string[] missingSkillIds = [.. report.RootElement.GetProperty("suggestedMissingSkills").EnumerateArray()
                 .Select(item => item.GetProperty("id").GetString() ?? string.Empty)];
+            string[] sourcePriority = [.. report.RootElement.GetProperty("discoverySourcePriority").EnumerateArray()
+                .Select(item => item.GetString() ?? string.Empty)];
 
             Assert.Equal("DiscoverProjectGuidance", report.RootElement.GetProperty("mode").GetString());
             Assert.False(report.RootElement.GetProperty("writeEnabled").GetBoolean());
             Assert.Contains("dotnet-10", detectedTags);
             Assert.Contains("qa-testing", topicIds);
+            Assert.Contains("repo-local", sourcePriority);
+            Assert.Contains("skills-cli", sourcePriority);
             Assert.Contains("openai-aspnet-core-skill", missingSkillIds);
             Assert.Contains("openai-playwright-skill", missingSkillIds);
             Assert.Contains("additional desired skills or guidance", report.RootElement.GetProperty("nextUserQuestion").GetString() ?? string.Empty);
@@ -820,6 +832,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Equal("https://github.com/openai/skills/tree/main/skills/.curated/aspnet-core", aspNetSkill.GetProperty("source").GetString());
             Assert.Equal(".codex/skills/aspnet-core/SKILL.md", aspNetSkill.GetProperty("target").GetString());
             Assert.Equal("manual-copy", aspNetSkill.GetProperty("installMethod").GetString());
+            Assert.Equal("openai-official", aspNetSkill.GetProperty("sourceKind").GetString());
 
             Assert.Contains(rootElement.GetProperty("notRecommended").EnumerateArray(),
                 item => item.GetProperty("id").GetString() == "plane-mcp-for-ticket-delivery");
@@ -910,6 +923,37 @@ namespace SDDTemplate.DeliveryTools.Tests
             string error = RunPowerShellScriptExpectFailure("-Mode", "AcquireProjectGuidance", "-Root", root, "-ValuesJson", valuesJson);
 
             Assert.Contains("rejects installCommand", error);
+        }
+
+        [Fact]
+        public void AcquireProjectGuidanceRequiresManualCopySourceKindContract()
+        {
+            string root = CreateTempDirectory();
+            _ = Directory.CreateDirectory(Path.Combine(root, ".codex"));
+            File.Copy(
+                Path.Combine(FindRepositoryRoot().FullName, ".codex", "tool-recommendations.example.json"),
+                Path.Combine(root, ".codex", "tool-recommendations.example.json"));
+
+            string valuesJson = JsonSerializer.Serialize(new
+            {
+                finalConfirmedGuidance = new[]
+                {
+                    new
+                    {
+                        name = "missing-contract-skill",
+                        type = "skill",
+                        installMethod = "manual-copy",
+                        source = "repo:.codex/source-skills/missing-contract-skill/SKILL.md",
+                        target = ".codex/skills/missing-contract-skill/SKILL.md",
+                    },
+                },
+            });
+
+            string output = RunPowerShellScript("-Mode", "AcquireProjectGuidance", "-Root", root, "-ValuesJson", valuesJson);
+            using JsonDocument result = JsonDocument.Parse(output);
+
+            Assert.Contains(result.RootElement.GetProperty("warnings").EnumerateArray(),
+                item => item.GetProperty("key").GetString() == "validation");
         }
 
         [Fact]

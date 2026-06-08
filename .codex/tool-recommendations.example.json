@@ -15,7 +15,8 @@
       "researchTopics": [ "Gitea pull request API", "review comments", "status checks", "review labels" ],
       "officialSources": [ "https://docs.gitea.com/api/", "https://docs.gitea.com/usage/actions/overview" ],
       "searchQueries": [ "site:docs.gitea.com Gitea pull request reviews API", "site:docs.gitea.com Gitea Actions status checks" ],
-      "notes": "Copy from the repository skill source; do not install by command."
+      "notes": "Copy from the repository skill source; do not install by command.",
+      "sourceKind": "repo-local"
     },
     {
       "id": "browser-e2e-qa-plugin",
@@ -30,7 +31,8 @@
       "researchTopics": [ "browser-visible QA", "screenshots", "console errors", "responsive checks" ],
       "officialSources": [ "https://playwright.dev/docs/best-practices" ],
       "searchQueries": [ "site:playwright.dev/docs Playwright best practices user visible assertions" ],
-      "notes": "Manual plugin configuration only; do not write secrets or install plugins automatically."
+      "notes": "Manual plugin configuration only; do not write secrets or install plugins automatically.",
+      "sourceKind": "tool-official"
     },
     {
       "id": "playwright-frontend-testing-skill",
@@ -45,7 +47,8 @@
       "researchTopics": [ "Playwright locators", "test isolation", "web-first assertions", "trace evidence" ],
       "officialSources": [ "https://playwright.dev/docs/best-practices", "https://playwright.dev/docs/test-agents" ],
       "searchQueries": [ "site:playwright.dev/docs Playwright best practices", "site:playwright.dev/docs Playwright test agents skills" ],
-      "notes": "Copy from the repository skill source; do not install by command."
+      "notes": "Copy from the repository skill source; do not install by command.",
+      "sourceKind": "repo-local"
     },
     {
       "id": "dotnet-10-platform-guidance",
@@ -60,7 +63,8 @@
       "researchTopics": [ ".NET 10 SDK", "ASP.NET Core", "global.json", "CLI behavior" ],
       "officialSources": [ "https://learn.microsoft.com/en-us/dotnet/core/whats-new/dotnet-10/overview", "https://learn.microsoft.com/en-us/dotnet/core/tools/global-json" ],
       "searchQueries": [ "site:learn.microsoft.com .NET 10 overview", "site:learn.microsoft.com global.json .NET 10 rollForward" ],
-      "notes": "Use for research and docs alignment; no tool installation is implied."
+      "notes": "Use for research and docs alignment; no tool installation is implied.",
+      "sourceKind": "technology-owner"
     },
     {
       "id": "blazor-app-practices-guidance",
@@ -75,7 +79,8 @@
       "researchTopics": [ "Blazor components", "routing", "rendered UI testing", "ASP.NET Core hosting" ],
       "officialSources": [ "https://learn.microsoft.com/en-us/aspnet/core/blazor/" ],
       "searchQueries": [ "site:learn.microsoft.com aspnet core Blazor components routing .NET 10" ],
-      "notes": "Prefer generated framework conventions over hand-crafted framework plumbing."
+      "notes": "Prefer generated framework conventions over hand-crafted framework plumbing.",
+      "sourceKind": "technology-owner"
     },
     {
       "id": "modern-dotnet-architecture-guidance",
@@ -90,7 +95,8 @@
       "researchTopics": [ "clean architecture", "modern web app architecture", "separation of concerns", "testable boundaries" ],
       "officialSources": [ "https://learn.microsoft.com/en-us/dotnet/architecture/modern-web-apps-azure/common-web-application-architectures" ],
       "searchQueries": [ "site:learn.microsoft.com .NET clean architecture ASP.NET Core", "site:learn.microsoft.com modern web applications ASP.NET Core Azure architecture" ],
-      "notes": "Apply proportionally to this repo's size; avoid broad refactors unless a ticket requires them."
+      "notes": "Apply proportionally to this repo's size; avoid broad refactors unless a ticket requires them.",
+      "sourceKind": "technology-owner"
     },
     {
       "id": "clean-code-practice-guidance",
@@ -105,7 +111,8 @@
       "researchTopics": [ "clean code", "C# coding conventions", "maintainability", "code review", "refactoring boundaries" ],
       "officialSources": [ "https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/coding-style/coding-conventions", "https://learn.microsoft.com/en-us/dotnet/architecture/modern-web-apps-azure/common-web-application-architectures" ],
       "searchQueries": [ "site:learn.microsoft.com C# coding conventions clean code", "site:learn.microsoft.com .NET architecture separation of concerns" ],
-      "notes": "Use as a general engineering standard; no tool installation is implied."
+      "notes": "Use as a general engineering standard; no tool installation is implied.",
+      "sourceKind": "technology-owner"
     },
     {
       "id": "rest-api-design-practice-guidance",
@@ -120,7 +127,8 @@
       "researchTopics": [ "ASP.NET Core Web API", "ProblemDetails", "OpenAPI", "HTTP semantics", "integration tests" ],
       "officialSources": [ "https://learn.microsoft.com/en-us/aspnet/core/web-api/", "https://learn.microsoft.com/en-us/aspnet/core/fundamentals/error-handling-api" ],
       "searchQueries": [ "site:learn.microsoft.com ASP.NET Core Web API ProblemDetails", "site:learn.microsoft.com ASP.NET Core OpenAPI integration tests" ],
-      "notes": "Pair with dotnet-webapi when that skill exists locally."
+      "notes": "Pair with dotnet-webapi when that skill exists locally.",
+      "sourceKind": "technology-owner"
     },
     {
       "id": "qa-automation-practice-guidance",
@@ -135,7 +143,8 @@
       "researchTopics": [ "QA automation", "test strategy", "assertion quality", "coverage", "Playwright best practices", "E2E evidence" ],
       "officialSources": [ "https://learn.microsoft.com/en-us/dotnet/core/testing/", "https://playwright.dev/docs/best-practices" ],
       "searchQueries": [ "site:learn.microsoft.com dotnet test best practices", "site:playwright.dev/docs Playwright best practices assertions traces" ],
-      "notes": "Use with assertion-quality and Playwright skills when present."
+      "notes": "Use with assertion-quality and Playwright skills when present.",
+      "sourceKind": "technology-owner"
     },
     {
       "id": "security-review-standard-guidance",
@@ -150,7 +159,8 @@
       "researchTopics": [ "OWASP ASVS", "OWASP Top 10", "ASP.NET Core security", "secrets handling", "dependency scanning" ],
       "officialSources": [ "https://owasp.org/www-project-application-security-verification-standard/", "https://owasp.org/www-project-top-ten/", "https://learn.microsoft.com/en-us/aspnet/core/security/" ],
       "searchQueries": [ "site:owasp.org ASVS application security verification", "site:learn.microsoft.com ASP.NET Core security authentication authorization" ],
-      "notes": "Pair with security-best-practices when that skill exists locally."
+      "notes": "Pair with security-best-practices when that skill exists locally.",
+      "sourceKind": "technology-owner"
     },
     {
       "id": "pr-review-practice-guidance",
@@ -165,7 +175,8 @@
       "researchTopics": [ "Gitea pull request reviews", "review comments", "status checks", "review labels", "code review quality" ],
       "officialSources": [ "https://docs.gitea.com/api/", "https://docs.gitea.com/usage/actions/overview" ],
       "searchQueries": [ "site:docs.gitea.com Gitea pull request review comments API", "site:docs.gitea.com Gitea Actions status checks" ],
-      "notes": "Use with gitea-pr-review-agent and review-feedback workflow skills."
+      "notes": "Use with gitea-pr-review-agent and review-feedback workflow skills.",
+      "sourceKind": "technology-owner"
     },
     {
       "id": "release-practice-guidance",
@@ -180,7 +191,8 @@
       "researchTopics": [ "artifact promotion", "release manifest", "Azure App Service ZIP deploy", "Nexus raw artifacts", "PROD promotion" ],
       "officialSources": [ "https://learn.microsoft.com/en-us/azure/app-service/deploy-zip", "https://help.sonatype.com/en/api-reference.html" ],
       "searchQueries": [ "site:learn.microsoft.com Azure App Service zip deploy", "site:help.sonatype.com Nexus Repository REST API raw hosted" ],
-      "notes": "Use for deploy and PROD promotion decisions; credentials remain local-only."
+      "notes": "Use for deploy and PROD promotion decisions; credentials remain local-only.",
+      "sourceKind": "technology-owner"
     },
     {
       "id": "rollback-practice-guidance",
@@ -195,7 +207,8 @@
       "researchTopics": [ "rollback", "known-good artifact", "release lineage", "Azure App Service ZIP deploy", "production incident recovery" ],
       "officialSources": [ "https://learn.microsoft.com/en-us/azure/app-service/deploy-zip", "https://help.sonatype.com/en/api-reference.html" ],
       "searchQueries": [ "site:learn.microsoft.com Azure App Service zip deploy rollback", "site:help.sonatype.com Nexus Repository REST API raw hosted checksum" ],
-      "notes": "Use rollback before hotfix when a known-good artifact exists."
+      "notes": "Use rollback before hotfix when a known-good artifact exists.",
+      "sourceKind": "technology-owner"
     },
     {
       "id": "gitea-actions-api-guidance",
@@ -210,7 +223,8 @@
       "researchTopics": [ "Gitea Actions", "runner registration", "status checks", "API tokens", "pull request reviews" ],
       "officialSources": [ "https://docs.gitea.com/usage/actions/overview", "https://docs.gitea.com/api/" ],
       "searchQueries": [ "site:docs.gitea.com Gitea Actions runner", "site:docs.gitea.com Gitea API pull requests reviews" ],
-      "notes": "Use Gitea API through configured local client tools; do not read secrets from containers."
+      "notes": "Use Gitea API through configured local client tools; do not read secrets from containers.",
+      "sourceKind": "technology-owner"
     },
     {
       "id": "nexus-artifact-api-guidance",
@@ -225,7 +239,8 @@
       "researchTopics": [ "Nexus Repository REST API", "raw hosted repositories", "checksum files", "artifact promotion" ],
       "officialSources": [ "https://help.sonatype.com/en/api-reference.html" ],
       "searchQueries": [ "site:help.sonatype.com Nexus Repository REST API raw hosted upload checksum" ],
-      "notes": "Nexus is mandatory for DEV, QA, PROD, and rollback artifact lineage."
+      "notes": "Nexus is mandatory for DEV, QA, PROD, and rollback artifact lineage.",
+      "sourceKind": "technology-owner"
     },
     {
       "id": "azure-app-service-zip-deploy-guidance",
@@ -240,7 +255,8 @@
       "researchTopics": [ "Azure App Service ZIP deploy", "az webapp deploy", "Kudu publish API", "health checks" ],
       "officialSources": [ "https://learn.microsoft.com/en-us/azure/app-service/deploy-zip" ],
       "searchQueries": [ "site:learn.microsoft.com Azure App Service deploy zip az webapp deploy" ],
-      "notes": "Use for deployment guidance only; Azure credentials remain user-supplied secrets."
+      "notes": "Use for deployment guidance only; Azure credentials remain user-supplied secrets.",
+      "sourceKind": "technology-owner"
     },
     {
       "id": "prometheus-config-guidance",
@@ -255,7 +271,8 @@
       "researchTopics": [ "Prometheus scrape configs", "targets API", "health checks", "labeling" ],
       "officialSources": [ "https://prometheus.io/docs/prometheus/latest/configuration/" ],
       "searchQueries": [ "site:prometheus.io/docs/prometheus/latest/configuration scrape_config targets" ],
-      "notes": "Do not write real Azure hostnames into tracked Prometheus templates."
+      "notes": "Do not write real Azure hostnames into tracked Prometheus templates.",
+      "sourceKind": "technology-owner"
     },
     {
       "id": "grafana-provisioning-guidance",
@@ -270,7 +287,8 @@
       "researchTopics": [ "Grafana provisioning", "datasources", "dashboards", "Prometheus datasource" ],
       "officialSources": [ "https://grafana.com/docs/grafana/latest/administration/provisioning/" ],
       "searchQueries": [ "site:grafana.com/docs/grafana/latest provisioning datasources dashboards Prometheus" ],
-      "notes": "Provisioned dashboard JSON should visualize Prometheus data without embedding credentials."
+      "notes": "Provisioned dashboard JSON should visualize Prometheus data without embedding credentials.",
+      "sourceKind": "technology-owner"
     }
   ],
   "notRecommended": [
