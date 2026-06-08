@@ -2,9 +2,7 @@
 
 ## Purpose
 Defines the persisted Client data model, validation rules, dedicated REST API, and Blazor CRUD experience used to manage client records.
-
 ## Requirements
-
 ### Requirement: Client data model
 The system SHALL define a persisted Client record with Name, Last Name, Address, Born date, City, Country, and ZIP code fields in a data project that owns EF Core entities, DbContext, migrations, and database setup.
 
@@ -48,3 +46,15 @@ The system SHALL provide a Blazor CRUD view for managing Client records.
 #### Scenario: Manage client records
 - **WHEN** a user creates, edits, or deletes a Client through the CRUD view
 - **THEN** the UI MUST call the configured REST API base URL and reflect the resulting Client list state.
+
+### Requirement: Client create works after routed navigation
+The system SHALL allow a user to create a Client from the Clients CRUD view on the first save attempt after navigating to the view from another application page.
+
+#### Scenario: Save client after main-page navigation
+- **WHEN** a user opens the main page, navigates to the Clients CRUD view through application navigation, completes all required Client fields, and clicks `Save Client` once
+- **THEN** the UI MUST submit the create request and reflect the created Client without requiring a browser refresh.
+
+#### Scenario: Invalid client after main-page navigation
+- **WHEN** a user opens the main page, navigates to the Clients CRUD view through application navigation, leaves required Client fields missing or invalid, and clicks `Save Client`
+- **THEN** the UI MUST show validation errors and MUST NOT create a Client record.
+
