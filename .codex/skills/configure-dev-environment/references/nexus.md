@@ -167,4 +167,4 @@ Default release path:
 feature branch -> dev -> DEV -> QA -> main -> PROD
 ```
 
-If updating `main` creates a new merge commit, ensure that exact merge commit already has the QA-approved Nexus artifact before allowing push-triggered PROD deployment. Otherwise, use explicit dispatch with the original QA-passed artifact commit SHA. Maintenance-only `[SDD]`, OpenSpec, chore, and ops changes must not deploy automatically.
+If updating `main` creates a new merge commit, ensure that exact merge commit already has the QA-approved Nexus artifact before allowing push-triggered PROD deployment. Otherwise, use explicit dispatch with the original QA-passed artifact commit SHA. Non-code changes outside `src/**` and `tests/**` must not deploy automatically.

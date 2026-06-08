@@ -16,6 +16,30 @@ function Get-StackContextContent {
   return ($parts -join [Environment]::NewLine)
 }
 
+function Get-ProjectGuidanceDiscoverySourcePriority {
+  return @(
+    "repo-local",
+    "openai-official",
+    "tool-official",
+    "technology-owner",
+    "skills-cli",
+    "marketplace",
+    "community"
+  )
+}
+
+function Get-ProjectGuidanceDiscoverySourceNotes {
+  return [ordered]@{
+    "repo-local" = "Repository-local workflow skills, scripts, templates, and docs that are already tracked in this project."
+    "openai-official" = "OpenAI skill catalogs or docs."
+    "tool-official" = "Official repository or documentation for the target tool, framework, product, or plugin."
+    "technology-owner" = "Technology-owner repositories or docs, such as Microsoft, .NET, Playwright, Azure, Gitea, Nexus, Prometheus, Grafana, Docker, Kubernetes, or OWASP."
+    "skills-cli" = "skills.sh or skills command output that identifies a repository, ref, skill name, and likely SKILL.md path."
+    "marketplace" = "Marketplace or directory pages that identify a repository, ref, skill name, and likely SKILL.md path."
+    "community" = "Well-used public sources only when no stronger source exists; label clearly as community-maintained."
+  }
+}
+
 function Add-StackContextDriftFindings {
   param(
     $Result,
@@ -176,6 +200,7 @@ function Get-ProjectGuidanceResearchTopics {
       area = ".NET / ASP.NET Core"
       purpose = "Find skills for .NET SDK, ASP.NET Core architecture, dependency injection, middleware, hosting, and maintainable code."
       officialFirstSources = @("https://github.com/openai/skills", "https://github.com/dotnet/skills", "https://learn.microsoft.com/en-us/aspnet/core/")
+      discoverySourcePriority = Get-ProjectGuidanceDiscoverySourcePriority
       searchQueries = @("site:github.com/openai/skills aspnet-core SKILL.md", "site:github.com/dotnet/skills ASP.NET Core skills", "site:learn.microsoft.com ASP.NET Core architecture dependency injection")
     },
     [pscustomobject]@{
@@ -184,6 +209,7 @@ function Get-ProjectGuidanceResearchTopics {
       area = "Web UI"
       purpose = "Find skills for component architecture, accessibility, responsive behavior, browser-visible UI quality, and user workflow design."
       officialFirstSources = @("https://github.com/openai/skills", "https://github.com/dotnet/skills", "https://www.w3.org/WAI/standards-guidelines/wcag/")
+      discoverySourcePriority = Get-ProjectGuidanceDiscoverySourcePriority
       searchQueries = @("site:github.com/openai/skills web UI skill", "site:github.com/dotnet/skills Blazor UI skill", "site:w3.org/WAI WCAG accessibility")
     },
     [pscustomobject]@{
@@ -192,6 +218,7 @@ function Get-ProjectGuidanceResearchTopics {
       area = "REST/API"
       purpose = "Find skills for route design, validation, ProblemDetails/error responses, authentication boundaries, OpenAPI, and API integration tests."
       officialFirstSources = @("https://github.com/openai/skills", "https://github.com/dotnet/skills", "https://learn.microsoft.com/en-us/aspnet/core/web-api/")
+      discoverySourcePriority = Get-ProjectGuidanceDiscoverySourcePriority
       searchQueries = @("site:github.com/openai/skills API skill", "site:github.com/dotnet/skills webapi skill", "official REST API design skill SKILL.md")
     },
     [pscustomobject]@{
@@ -200,6 +227,7 @@ function Get-ProjectGuidanceResearchTopics {
       area = "QA / Testing"
       purpose = "Find skills for test strategy, assertion quality, coverage analysis, browser automation, test-gap analysis, and QA evidence."
       officialFirstSources = @("https://github.com/openai/skills", "https://github.com/dotnet/skills", "https://playwright.dev/docs/best-practices")
+      discoverySourcePriority = Get-ProjectGuidanceDiscoverySourcePriority
       searchQueries = @("site:github.com/openai/skills playwright skill", "site:github.com/dotnet/skills assertion-quality coverage-analysis", "official test strategy skill SKILL.md")
     },
     [pscustomobject]@{
@@ -208,6 +236,7 @@ function Get-ProjectGuidanceResearchTopics {
       area = "Security"
       purpose = "Find skills for application security review, threat modeling, secrets handling, dependency risk, authorization, logging, and OWASP review."
       officialFirstSources = @("https://github.com/openai/skills", "https://owasp.org/www-project-top-ten/", "https://owasp.org/www-project-application-security-verification-standard/")
+      discoverySourcePriority = Get-ProjectGuidanceDiscoverySourcePriority
       searchQueries = @("site:github.com/openai/skills security-best-practices SKILL.md", "site:github.com/openai/skills security-threat-model SKILL.md", "OWASP application security skill SKILL.md")
     },
     [pscustomobject]@{
@@ -216,6 +245,7 @@ function Get-ProjectGuidanceResearchTopics {
       area = "Delivery tools and environments"
       purpose = "Find skills for ticket workflow, source control/review, CI runner behavior, artifact promotion, cloud deployment, and observability."
       officialFirstSources = @("https://github.com/openai/skills", "https://docs.gitea.com/", "https://learn.microsoft.com/en-us/azure/app-service/", "https://prometheus.io/docs/", "https://grafana.com/docs/")
+      discoverySourcePriority = Get-ProjectGuidanceDiscoverySourcePriority
       searchQueries = @("official Gitea Actions skill SKILL.md", "official Azure App Service deploy skill SKILL.md", "official Prometheus Grafana skill SKILL.md")
     },
     [pscustomobject]@{
@@ -224,6 +254,7 @@ function Get-ProjectGuidanceResearchTopics {
       area = "Containers / IaC"
       purpose = "Find skills for Docker, Compose, infrastructure as code, Kubernetes manifests, cloud resource templates, and environment drift checks."
       officialFirstSources = @("https://github.com/openai/skills", "https://docs.docker.com/", "https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/", "https://developer.hashicorp.com/terraform/docs", "https://kubernetes.io/docs/")
+      discoverySourcePriority = Get-ProjectGuidanceDiscoverySourcePriority
       searchQueries = @("site:github.com/openai/skills Docker skill", "official Bicep skill SKILL.md", "official Terraform Kubernetes skill SKILL.md")
     },
     [pscustomobject]@{
@@ -232,6 +263,7 @@ function Get-ProjectGuidanceResearchTopics {
       area = "Code standards and architecture"
       purpose = "Find skills for clean code, maintainability, architecture reviews, code smells, refactoring boundaries, and project-specific engineering standards."
       officialFirstSources = @("https://github.com/openai/skills", "https://learn.microsoft.com/en-us/dotnet/architecture/")
+      discoverySourcePriority = Get-ProjectGuidanceDiscoverySourcePriority
       searchQueries = @("site:github.com/openai/skills code architecture skill", "official clean code architecture skill SKILL.md", "site:learn.microsoft.com clean architecture web application")
     }
   )
@@ -246,6 +278,7 @@ function Get-ProjectGuidanceResearchTopics {
       matchedTags = @($matchedTags)
       purpose = $definition.purpose
       officialFirstSources = $definition.officialFirstSources
+      discoverySourcePriority = $definition.discoverySourcePriority
       searchQueries = $definition.searchQueries
     }
   }
@@ -260,6 +293,7 @@ function Get-DetectedSkillDefinitions {
       name = "OpenAI ASP.NET Core skill"
       requires = @("dotnet-10", "aspnet-core", "clean-code", "architecture-guidance")
       purpose = "Use OpenAI's curated ASP.NET Core skill for ASP.NET Core architecture, Blazor, Minimal APIs, Web APIs, middleware, DI, testing, deployment, and security guidance."
+      sourceKind = "openai-official"
       source = "https://github.com/openai/skills/tree/main/skills/.curated/aspnet-core"
       target = ".codex/skills/aspnet-core/SKILL.md"
       candidateSkillSources = @("https://github.com/openai/skills/tree/main/skills/.curated/aspnet-core", "https://github.com/dotnet/skills/tree/main/plugins/dotnet-aspnet")
@@ -273,6 +307,7 @@ function Get-DetectedSkillDefinitions {
       name = ".NET Blazor plan UI change skill"
       requires = @("blazor", "web-ui", "browser-e2e")
       purpose = "Use the .NET team's Blazor UI planning skill for Blazor page/component changes, user-visible behavior, accessibility, and responsive design decisions."
+      sourceKind = "technology-owner"
       source = "https://github.com/dotnet/skills/tree/main/plugins/dotnet-blazor/skills/plan-ui-change"
       target = ".codex/skills/plan-ui-change/SKILL.md"
       candidateSkillSources = @("https://github.com/dotnet/skills/tree/main/plugins/dotnet-blazor/skills/plan-ui-change", "https://github.com/dotnet/skills/tree/main/plugins/dotnet-blazor/skills/author-component", "https://github.com/openai/skills/tree/main/skills/.curated/aspnet-core")
@@ -286,6 +321,7 @@ function Get-DetectedSkillDefinitions {
       name = ".NET Web API skill"
       requires = @("aspnet-core", "rest-api")
       purpose = "Use the .NET team's Web API skill for ASP.NET Core REST/minimal API design, route shape, validation, ProblemDetails, auth boundaries, OpenAPI, and integration tests."
+      sourceKind = "technology-owner"
       source = "https://github.com/dotnet/skills/tree/main/plugins/dotnet-aspnet/skills/dotnet-webapi"
       target = ".codex/skills/dotnet-webapi/SKILL.md"
       candidateSkillSources = @("https://github.com/dotnet/skills/tree/main/plugins/dotnet-aspnet/skills/dotnet-webapi", "https://github.com/openai/skills/tree/main/skills/.curated/aspnet-core")
@@ -299,6 +335,7 @@ function Get-DetectedSkillDefinitions {
       name = "OpenAI security best practices skill"
       requires = @("security", "aspnet-core")
       purpose = "Use OpenAI's curated security best practices skill for security review, secrets, authentication, authorization, input validation, dependency risk, logging, headers, and OWASP risks."
+      sourceKind = "openai-official"
       source = "https://github.com/openai/skills/tree/main/skills/.curated/security-best-practices"
       target = ".codex/skills/security-best-practices/SKILL.md"
       candidateSkillSources = @("https://github.com/openai/skills/tree/main/skills/.curated/security-best-practices", "https://github.com/openai/skills/tree/main/skills/.curated/security-threat-model", "https://github.com/openai/skills/tree/main/skills/.curated/aspnet-core")
@@ -312,6 +349,7 @@ function Get-DetectedSkillDefinitions {
       name = "OpenAI Playwright skill"
       requires = @("browser-e2e", "playwright-guidance")
       purpose = "Use OpenAI's curated Playwright skill for browser automation, user-visible assertions, traces, and repeatable UI QA support."
+      sourceKind = "openai-official"
       source = "https://github.com/openai/skills/tree/main/skills/.curated/playwright"
       target = ".codex/skills/playwright/SKILL.md"
       candidateSkillSources = @("https://github.com/openai/skills/tree/main/skills/.curated/playwright", "https://github.com/openai/skills/tree/main/skills/.curated/playwright-interactive")
@@ -325,6 +363,7 @@ function Get-DetectedSkillDefinitions {
       name = ".NET assertion quality skill"
       requires = @("dotnet-10", "xunit", "coverage")
       purpose = "Use the .NET team's assertion-quality skill for stronger test assertions, cleaner QA evidence, and better regression tests."
+      sourceKind = "technology-owner"
       source = "https://github.com/dotnet/skills/tree/main/plugins/dotnet-test/skills/assertion-quality"
       target = ".codex/skills/assertion-quality/SKILL.md"
       candidateSkillSources = @("https://github.com/dotnet/skills/tree/main/plugins/dotnet-test/skills/assertion-quality", "https://github.com/dotnet/skills/tree/main/plugins/dotnet-test/skills/test-gap-analysis", "https://github.com/dotnet/skills/tree/main/plugins/dotnet-test/skills/coverage-analysis")
@@ -366,6 +405,7 @@ function ConvertTo-SkillSuggestion {
     type = "skill"
     purpose = $Recommendation.purpose
     installMethod = "manual-copy"
+    sourceKind = $Recommendation.sourceKind
     source = $Recommendation.source
     target = $Recommendation.target
     validation = "Test-Path $($Recommendation.target)"
@@ -375,6 +415,8 @@ function ConvertTo-SkillSuggestion {
     installStatus = $(if ($targetExists) { "present" } else { "proposed" })
     requiresUserConfirmation = (-not $targetExists)
     sourceDiscovery = "official-first-internet-search"
+    discoverySourcePriority = Get-ProjectGuidanceDiscoverySourcePriority
+    discoverySourceNotes = Get-ProjectGuidanceDiscoverySourceNotes
     officialSkillSources = @(
       "https://github.com/openai/skills",
       "https://help.openai.com/en/articles/20001066-skills-in-chatgpt",
@@ -430,8 +472,10 @@ function Add-ProjectGuidanceSearchPlanRecommendation {
     detected = $true
     requiresUserConfirmation = $true
     sourceDiscovery = "official-first-internet-search"
+    discoverySourcePriority = Get-ProjectGuidanceDiscoverySourcePriority
+    discoverySourceNotes = Get-ProjectGuidanceDiscoverySourceNotes
     topics = [object[]]$topics
-    nextStep = "Use project-guidance-discover: search official skill catalogs, technology-owner docs, and trusted public sources for each topic, check .codex/skills for existing SKILL.md files, show suggested missing skills and guidance, ask for additional desired items, then pass confirmed skill items to project-guidance-acquire."
+    nextStep = "Use project-guidance-discover: search OpenAI official catalogs/docs, official tool repositories/docs, technology-owner sources, skills.sh/skills or marketplace repository leads, and trusted public sources for each topic; check .codex/skills for existing SKILL.md files; show suggested missing skills and guidance; ask for additional desired items; then pass confirmed skill items to project-guidance-acquire."
   })
 }
 
@@ -497,6 +541,7 @@ function ConvertTo-RequestedGuidance {
       name = $Guidance
       type = "skill"
       installMethod = "manual-copy"
+      sourceKind = $null
       source = $null
       target = ".codex/skills/$Guidance/SKILL.md"
       status = "needs-research"
@@ -508,11 +553,13 @@ function ConvertTo-RequestedGuidance {
   $installMethod = if ($Guidance.PSObject.Properties.Name -contains "installMethod") { [string]$Guidance.installMethod } elseif ($type -eq "skill") { "manual-copy" } else { "manual-reference" }
   $target = if ($Guidance.PSObject.Properties.Name -contains "target") { [string]$Guidance.target } elseif ($type -eq "skill") { ".codex/skills/$name/SKILL.md" } else { $null }
   $source = if ($Guidance.PSObject.Properties.Name -contains "source") { [string]$Guidance.source } else { $null }
+  $sourceKind = if ($Guidance.PSObject.Properties.Name -contains "sourceKind") { [string]$Guidance.sourceKind } else { $null }
 
   return [ordered]@{
     name = $name
     type = $type
     installMethod = $installMethod
+    sourceKind = $sourceKind
     source = $source
     target = $target
     status = $(if ([string]::IsNullOrWhiteSpace($source)) { "needs-research" } else { "source-provided" })
@@ -598,6 +645,8 @@ function Get-ProjectGuidanceDiscoveryReport {
     userAddedRequestedSkills = @($userAdded)
     finalConfirmedGuidance = @($confirmedGuidance)
     finalConfirmedSkills = @($confirmedSkills)
+    discoverySourcePriority = Get-ProjectGuidanceDiscoverySourcePriority
+    discoverySourceNotes = Get-ProjectGuidanceDiscoverySourceNotes
     nextUserQuestion = "Do you want to add any additional desired skills or guidance before project-guidance-acquire copies confirmed skill items and the local catalog records the rest?"
   }
 }
