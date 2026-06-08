@@ -29,4 +29,4 @@ Suggested work units: Fix Clients first-save routed navigation regression with t
 
 - [x] 4.1 Run Context Findings Review and update docs only if durable project or workflow context changed.
 - [x] 4.2 Update OpenSpec task completion state and prepare implementation handoff with validation evidence.
-- [ ] 4.3 Create the Gitea PR, request configured reviewers, run Codex PR review, and move Plane to review only after required handoff gates pass.
+- [x] 4.3 Create the Gitea PR, request configured reviewers, run Codex PR review, and move Plane to review only after required handoff gates pass.
