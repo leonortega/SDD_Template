@@ -801,6 +801,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("\"installMethod\": \"manual-copy\"", catalog);
             Assert.Contains("\"installMethod\": \"manual-config\"", catalog);
             Assert.Contains("\"installMethod\": \"manual-reference\"", catalog);
+            Assert.Contains("\"sourceKind\": \"repo-local\"", catalog);
+            Assert.Contains("\"sourceKind\": \"technology-owner\"", catalog);
             Assert.Contains("\"officialSources\"", catalog);
             Assert.Contains("\"searchQueries\"", catalog);
             Assert.DoesNotContain("installCommand", catalog);
@@ -832,6 +834,11 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("project-guidance-search-plan", discoveryScript);
             Assert.Contains("guidance-search-plan", discoveryScript);
             Assert.Contains("research-then-manual-copy", discoveryScript);
+            Assert.Contains("Get-ProjectGuidanceDiscoverySourcePriority", discoveryScript);
+            Assert.Contains("\"repo-local\"", discoveryScript);
+            Assert.Contains("\"skills-cli\"", discoveryScript);
+            Assert.Contains("\"marketplace\"", discoveryScript);
+            Assert.Contains("sourceKind", discoveryScript);
             Assert.Contains("\"dotnet\"", discoveryScript);
             Assert.Contains("\"dotnet-10\"", discoveryScript);
             Assert.Contains("\"aspnet-core\"", discoveryScript);
@@ -876,6 +883,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("requiresUserConfirmation", discoveryScript);
             Assert.Contains("github.com/openai/skills", discoveryScript);
             Assert.Contains("github.com/dotnet/skills", discoveryScript);
+            Assert.Contains("skills.sh", discoveryScript);
             Assert.Contains("dotnet-10-platform-guidance", catalog);
             Assert.Contains("clean-code-practice-guidance", catalog);
             Assert.Contains("qa-automation-practice-guidance", catalog);
@@ -953,6 +961,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("final confirmed list from `project-guidance-discover`", acquire);
             Assert.Contains("Do not use command-based skill installers", acquire);
             Assert.Contains("Do not install into `$CODEX_HOME`", acquire);
+            Assert.Contains("sourceKind", acquire);
+            Assert.Contains("skills.sh", acquire);
             Assert.Contains("Test-Path", acquire);
             Assert.Contains("Do not copy secrets", acquire);
             Assert.Contains("Refresh `.codex/tool-recommendations.local.json`", acquire);
