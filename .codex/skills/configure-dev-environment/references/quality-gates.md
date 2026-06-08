@@ -43,6 +43,8 @@ Use Lefthook by default:
 
 Use a pinned .NET 10 SDK runner image that has been validated on the local runner, for example `mcr.microsoft.com/dotnet/sdk:10.0.300`.
 
+PR validation runs only for pull request changes under `src/**` or `tests/**`. Non-code PRs outside those folders skip automatic CI.
+
 When a workflow uses a job `container:` based on the .NET SDK image, avoid JavaScript-based `uses:` actions inside that job unless the container also includes `node`. Prefer shell steps for checkout and scanner execution:
 
 - Shell checkout that rewrites local Gitea hostnames (`localhost` and `gitea`) to `host.docker.internal`.
@@ -80,7 +82,7 @@ Ask the user to configure Gitea branch protection:
 
 ## Deployment Gating
 
-Push-triggered deployments are gated by `.codex/delivery-policy.json`. The workflow reads `ticketKeyPattern` and deploys only when the commit message or merged PR title starts with that ticket key. The same policy file carries `agentOptimization` defaults used by delivery agents when the platform exposes retry, prompt-cache, telemetry, or eval data. `[SDD]`, OpenSpec, chore, and ops-only maintenance commits are accepted by local hooks where appropriate but must not deploy automatically.
+Push-triggered deployments are gated by `.codex/delivery-policy.json` and changed paths. The workflow reads `ticketKeyPattern` and deploys only when the commit message or merged PR title starts with that ticket key and the change touches `src/**` or `tests/**`. The same policy file carries `agentOptimization` defaults used by delivery agents when the platform exposes retry, prompt-cache, telemetry, or eval data. Non-code changes outside `src/**` and `tests/**` skip automatic CI/deployment work.
 
 DEV and QA deploy only from `dev` when application/test/package source changed. PROD deploys only from `main` when `main` points to the exact QA-approved packaged commit for the same ticket-gated application change. Manual workflow dispatch remains available for explicit promotion with `artifact_commit_sha`.
 

@@ -8,7 +8,7 @@ Deployment is ticket-gated and artifact-based. The workflow promotes one immutab
 feature branch -> dev -> DEV -> QA -> main -> PROD
 ```
 
-Push-triggered deployment is allowed only for ticket-named application changes. The ticket key pattern is configured in `.codex/delivery-policy.json`. `[SDD]`, OpenSpec-only, chore, and ops-only maintenance commits do not deploy environments automatically.
+Push-triggered deployment is allowed only for ticket-named application changes under `src/**` or `tests/**`. The ticket key pattern is configured in `.codex/delivery-policy.json`; non-code changes outside those folders do not run automatic CI/deployment work.
 
 ## Technology Stack And Tool Set
 

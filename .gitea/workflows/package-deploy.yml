@@ -73,7 +73,7 @@ jobs:
           app_changed=false
           while IFS= read -r path; do
             case "$path" in
-              src/*|tests/*|infra/deployment/*|infra/azure/*|*.sln|*.slnx|*.csproj|Directory.Build.props|Directory.Build.targets|global.json)
+              src/*|tests/*)
                 app_changed=true
                 ;;
             esac
