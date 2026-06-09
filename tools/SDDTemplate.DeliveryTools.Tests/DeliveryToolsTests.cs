@@ -433,6 +433,44 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
+        public void EnsureDeliveryContextCanReplaceExistingTicketLockWhenExplicitlyAllowed()
+        {
+            string root = CreateTempDirectory();
+            _ = Directory.CreateDirectory(Path.Combine(root, ".codex"));
+            string lockPath = Path.Combine(root, ".codex", "delivery-context.local.json");
+            File.WriteAllText(
+                lockPath,
+                JsonSerializer.Serialize(new
+                {
+                    ticketKey = "E2EPROJECT-1",
+                    branch = "feat/e2eproject-1",
+                    artifactCommitSha = "abc123",
+                    sourceRcVersion = "v1.2.3-rc.1",
+                }));
+
+            string output = RunPowerShellScript(
+                "-Mode",
+                "EnsureDeliveryContext",
+                "-Root",
+                root,
+                "-ValuesJson",
+                JsonSerializer.Serialize(new
+                {
+                    ticketKey = "E2EPROJECT-2",
+                    branch = "feat/e2eproject-2",
+                    replaceExisting = true,
+                }));
+
+            using JsonDocument context = JsonDocument.Parse(File.ReadAllText(lockPath));
+            Assert.Equal("E2EPROJECT-2", context.RootElement.GetProperty("ticketKey").GetString());
+            Assert.Equal("feat/e2eproject-2", context.RootElement.GetProperty("branch").GetString());
+            Assert.False(context.RootElement.TryGetProperty("artifactCommitSha", out _));
+            Assert.False(context.RootElement.TryGetProperty("sourceRcVersion", out _));
+            Assert.Contains("Create or update ticket context lock", output);
+            Assert.Contains("E2EPROJECT-2", output);
+        }
+
+        [Fact]
         public void AuditReportsRecordedTicketWorktreesMissingLocalRuntimeConfig()
         {
             string root = CreateTempDirectory();

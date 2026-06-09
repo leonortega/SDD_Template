@@ -74,9 +74,9 @@ Use these markers for idempotency:
 - Type: Fact
 - Status: Active
 - Source: `.codex/skills/_shared/delivery-contract.md`, `docs/architecture.md`
-- Last verified: 2026-05-29
+- Last verified: 2026-06-09
 
-Normal automatic delivery stays locked to one Plane ticket through ignored `.codex/delivery-context.local.json`. Parallel delivery uses one worktree and one local ticket lock per active ticket. Child skills must verify ticket, branch, PR, artifact commit, QA evidence, RC tag, and PROD lineage match the lock before mutation.
+Normal automatic delivery stays locked to one Plane ticket through ignored `.codex/delivery-context.local.json`. Keep the lock after QA Done because explicit PROD promotion may still need artifact and RC context. `plane-start-ticket` may lazily replace the lock when starting another ticket only after the locked ticket is verified in the configured Done state. Parallel delivery uses one worktree and one local ticket lock per active ticket. Child skills must verify ticket, branch, PR, artifact commit, QA evidence, RC tag, and PROD lineage match the lock before mutation.
 
 ## Parallel Delivery
 
