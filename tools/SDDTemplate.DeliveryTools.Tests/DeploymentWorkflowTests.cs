@@ -572,6 +572,7 @@ namespace SDDTemplate.DeliveryTools.Tests
         {
             string contract = ReadSkill("_shared", "delivery-contract.md");
             string automatic = ReadSkill("automatic-implement-ticket", "SKILL.md");
+            string starter = ReadSkill("plane-start-ticket", "SKILL.md");
             string contextDocs = ReadDoc("context-management.md");
             string script = File.ReadAllText(Path.Combine(
                 FindRepositoryRoot().FullName,
@@ -585,16 +586,30 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("RenderPlaneComment -Type WorkflowTiming", contract);
             Assert.Contains("comment_html", contract);
             Assert.Contains("comment_stripped", contract);
+            Assert.Contains("InitializeWorkflowTelemetry", contract);
+            Assert.Contains("AppendWorkflowTelemetry", contract);
+            Assert.Contains("ReadWorkflowTelemetry", contract);
+            Assert.Contains("Do not derive workflow timing from Plane generated marker timestamps", contract);
             Assert.Contains("update or reuse the existing workflow timing marker comment", contract);
 
+            Assert.Contains("InitializeWorkflowTelemetry", starter);
+            Assert.Contains("Do not initialize telemetry when only listing Todo tickets", starter);
             Assert.Contains(".codex/agent-telemetry.local.jsonl", automatic);
+            Assert.Contains("AppendWorkflowTelemetry", automatic);
+            Assert.Contains("ReadWorkflowTelemetry", automatic);
             Assert.Contains("RenderPlaneComment -Type WorkflowTiming", automatic);
             Assert.Contains("IA generated workflow timing: {ticketKey}", automatic);
+            Assert.Contains("do not derive timing from Plane generated marker timestamps", automatic);
             Assert.Contains("patch that comment instead of creating a duplicate", automatic);
             Assert.Contains("workflow timing marker", automatic);
 
             Assert.Contains("concise generated Plane timing comment", contextDocs);
+            Assert.Contains("from that telemetry file", contextDocs);
+            Assert.DoesNotContain("retroactive marker-derived timing", contextDocs);
             Assert.Contains("'WorkflowTiming'", script);
+            Assert.Contains("'InitializeWorkflowTelemetry'", script);
+            Assert.Contains("'AppendWorkflowTelemetry'", script);
+            Assert.Contains("'ReadWorkflowTelemetry'", script);
             Assert.Contains("| Stage | Outcome | Duration | Started UTC | Finished UTC |", script);
         }
 

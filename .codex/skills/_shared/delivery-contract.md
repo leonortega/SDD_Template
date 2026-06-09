@@ -345,7 +345,7 @@ Use this structure unless a workflow-specific skill requires more detail:
 
 Prefer Markdown links for long URLs, short commit display text such as ``8acc4d4`` with the full SHA recorded in a field when needed, and grouped sections over long flat `Label: value` lists. Keep automation-critical values present and searchable; do not hide the stable marker, commit SHA, ticket key, release version, artifact URL, or evidence URL inside prose only.
 
-Workflow timing comments use marker `IA generated workflow timing: {ticketKey}` and a compact Markdown table with stage, outcome, duration, started UTC, and finished UTC. Raw telemetry stays in ignored `.codex/agent-telemetry.local.jsonl`; Plane timing comments must not include token counts, raw logs, full prompts, credential-bearing URLs, secrets, or noisy tool details. On rerun, update or reuse the existing workflow timing marker comment for the same ticket instead of creating duplicates. Render the comment with `RenderPlaneComment -Type WorkflowTiming`, send both `comment_html` and `comment_stripped`, and verify `comment_stripped` starts with the marker after posting or patching.
+Workflow timing comments use marker `IA generated workflow timing: {ticketKey}` and a compact Markdown table with stage, outcome, duration, started UTC, and finished UTC. At the beginning of a selected ticket, `plane-start-ticket` must create or clear ignored `.codex/agent-telemetry.local.jsonl` with `InitializeWorkflowTelemetry`. Automatic delivery must append one row per routed stage with `AppendWorkflowTelemetry`, read rows for the active ticket with `ReadWorkflowTelemetry`, and render the Plane timing comment with `RenderPlaneComment -Type WorkflowTiming`. Raw telemetry stays in the ignored JSONL file; Plane timing comments must not include token counts, raw logs, full prompts, credential-bearing URLs, secrets, or noisy tool details. If telemetry cannot be written or read, report the workflow timing comment as blocked. Do not derive workflow timing from Plane generated marker timestamps. On rerun, update or reuse the existing workflow timing marker comment for the same ticket instead of creating duplicates. Send both `comment_html` and `comment_stripped`, and verify `comment_stripped` starts with the marker after posting or patching.
 
 ## Reusable Delivery Tools
 
@@ -367,6 +367,7 @@ Use `.codex/skills/_shared/scripts/delivery_tools.ps1` for deterministic deliver
 - `ParseWorkloadForecast`: parse required `Review Workload Forecast` guard lines from OpenSpec tasks.
 - `DetectAdversarialReviewTrigger`: determine whether PR review needs adversarial mode.
 - `WriteInstalledSkillIndex`: write or reuse the ignored installed-skill runtime index and cache.
+- `InitializeWorkflowTelemetry`, `AppendWorkflowTelemetry`, and `ReadWorkflowTelemetry`: create or clear the per-ticket ignored telemetry JSONL file, append stage timing rows, and prepare timing data for Plane comments.
 - `RenderPlaneComment`: render standard Markdown Plane comments for QA deployment, E2E QA, PROD deployment, and workflow timing.
 - `UpdateReleaseManifest`: merge stage-specific fields into `release.json` while preserving existing metadata, then validate the result.
 

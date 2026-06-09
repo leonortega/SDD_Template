@@ -199,3 +199,12 @@ When Docker Desktop is installed but its backend is unhealthy, `docker version`,
 - Last verified: 2026-06-03
 
 PowerShell `ConvertFrom-Json` can coerce ISO timestamp strings into `DateTime` values, and later string interpolation renders them with the host culture instead of the original `yyyy-MM-ddTHH:mm:ssZ` form. For Plane comments, workflow timing tables, or tests that assert exact UTC text, format timestamp values explicitly with invariant UTC formatting before interpolation. Reproduce failures with the CI-shaped command `dotnet test .\SDDTemplate.slnx -c Release --no-build --logger trx --collect:"XPlat Code Coverage"`.
+
+## Missing Workflow Timing Comments Need Ticket Telemetry Initialization
+
+- Type: Pattern
+- Status: Active
+- Source: E2EPROJECT-3 and E2EPROJECT-4 Done tickets missing `IA generated workflow timing` comments while other generated Plane markers existed
+- Last verified: 2026-06-09
+
+When `.codex/agent-telemetry.local.jsonl` is absent or a delivery run missed telemetry writes, treat that as a workflow instrumentation failure. Initialize or clear telemetry at selected ticket start with `InitializeWorkflowTelemetry`, append stage rows with `AppendWorkflowTelemetry`, read active ticket rows with `ReadWorkflowTelemetry`, then render `IA generated workflow timing: {ticketKey}` with `RenderPlaneComment -Type WorkflowTiming`. Do not derive workflow timing from generated Plane marker timestamps. Verify the posted comment by reading Plane comments back and matching the timing marker.
