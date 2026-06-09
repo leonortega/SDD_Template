@@ -1,8 +1,14 @@
+using Serilog;
 using SDDTemplate.Api;
 using SDDTemplate.Api.Clients;
 using SDDTemplate.Data;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
+
+_ = builder.Host.UseSerilog((context, services, loggerConfiguration) => loggerConfiguration
+    .ReadFrom.Configuration(context.Configuration)
+    .ReadFrom.Services(services)
+    .Enrich.FromLogContext());
 
 _ = builder.Services.AddApplicationDatabase(builder.Configuration, builder.Environment);
 string[] allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
