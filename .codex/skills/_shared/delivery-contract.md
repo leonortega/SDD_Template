@@ -86,6 +86,8 @@ Push-triggered environment deployment is allowed only for ticket-named work that
 
 E2E QA is an acceptance-evidence gate, not a screenshot, smoke, or page-load gate. The rule is: `QA Done = acceptance criteria proven by executable assertions against the deployed QA artifact`.
 
+Create reusable QA E2E tests during implementation when ticket acceptance criteria are stable enough to encode as repeatable assertions. Store those tests in the normal test tree, such as `tests/SDDTemplate.E2ETests`, and review them with the implementation PR. After QA deployment, use a temporary `qa/{ticketKey}` branch from the tested `dev` commit to run the committed suite remotely against the deployed QA URLs and publish evidence. During QA execution, keep one-off exploratory scripts, probes, screenshots, traces, logs, and reports under ignored `artifacts/qa/**`; do not commit them as regression tests unless a follow-up implementation workflow intentionally promotes them.
+
 Before `test-e2e` may move a ticket to Done, it must:
 
 - resolve the Plane/OpenSpec acceptance criteria and validation expectations for the ticket,
@@ -179,6 +181,14 @@ Do not treat the Codex review-agent comment, `codex-reviewed` label, or passing 
 `qa/{ticketKey}` branches are temporary Gitea Actions triggers for evidence-only E2E QA. After the branch run succeeds, Nexus evidence exists for the tested artifact, the E2E QA Plane comment is verified, the RC tag is created or verified, and the Plane ticket is moved to Done, delete the remote `qa/{ticketKey}` branch from Gitea. Durable QA evidence belongs in Nexus, Plane comments, release manifests, and tags, not in the trigger branch.
 
 If evidence publication, Plane comment verification, RC tagging, or Done-state mutation is incomplete, keep the branch until the blocking step is resolved or the branch is intentionally rerun.
+
+## Local And CI Quality Split
+
+Local validation is for fast feedback and test authoring. Agents should run targeted builds, tests, and cheap checks that correspond to the touched behavior and risk, then hand off the full required gate to Gitea PR validation. Do not require a full local duplicate of restore, format, release build, coverage, dependency audit, full secret scan, and filesystem scanner before opening or updating a PR unless the ticket or risk explicitly requires it.
+
+Gitea PR validation is authoritative for restore, formatting verification, release build, tests with coverage, coverage threshold, dependency vulnerability audit, full secret scanning, and filesystem scanning in a clean pinned runner. Merge and deployment jobs should focus on immutable artifact packaging, deployment configuration verification, and environment smoke checks; they should not rerun the same unit test suite unless package or artifact inputs changed outside the already-validated PR path.
+
+`config infra` owns building and validating repo-owned Gitea Actions job images. Workflows should consume pinned local images for common CI tools instead of installing Gitleaks, Trivy, Azure CLI, jq, zip, Node, or Playwright browser dependencies during every run. Job containers remain disposable; do not switch normal ticket CI to host-mode runner execution to preserve tool persistence.
 
 ## OpenSpec Completion Archive Gate
 

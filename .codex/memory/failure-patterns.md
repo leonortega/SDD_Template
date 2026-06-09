@@ -182,6 +182,15 @@ When merging `dev` into a ticket feature branch, Git's generated merge message c
 
 If `npx playwright install` or `npm run install:browsers` times out locally, later Playwright commands may fail with an active lockfile at `%LOCALAPPDATA%\ms-playwright\__dirlock`. Before removing the lock, check for live `node.exe` processes whose command line still references Playwright install or download. Stop only those stale installer processes, then remove the lock. In this repository, official QA E2E should run remotely through Gitea against deployed QA apps; local Playwright execution is only for authoring diagnostics.
 
+## Docker Backend Timeout Blocks Gitea Actions Image Validation
+
+- Type: Pattern
+- Status: Active
+- Source: current conversation, `BuildGiteaActionsImages` while adding repo-owned Gitea Actions images
+- Last verified: 2026-06-09
+
+When Docker Desktop is installed but its backend is unhealthy, `docker version`, `docker image inspect`, or `docker build` can fail with `failed to connect to the backend: timed out dialing Hyper-V socket`. Treat this as a live Docker blocker, not a workflow or Dockerfile failure. `configure_infra_tools.ps1` must check `$LASTEXITCODE` after native `docker` commands because PowerShell may otherwise continue and report false success. After Docker Desktop is restarted or repaired, rerun `BuildGiteaActionsImages` and then `ValidateGiteaActionsRunner`.
+
 ## PowerShell Json Timestamps Need Explicit Formatting
 
 - Type: Pattern
