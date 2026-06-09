@@ -626,7 +626,7 @@ function Add-QualityGateAuditFindings {
   if (-not (Test-Path (Join-RootPath $prWorkflow))) {
     Add-Item $Result "findings" $prWorkflow "" "Missing Gitea PR validation workflow." "warning"
   } else {
-    foreach ($expected in @("dotnet restore", "dotnet format", "dotnet build", "dotnet test", "ReadCoverageThreshold", "ReadCoberturaLineRate", "gitleaks", "trivy")) {
+    foreach ($expected in @("quality_projects", 'dotnet restore "$project"', 'dotnet format "$project"', 'dotnet build "$project"', "dotnet test tests/SDDTemplate.Site.Tests/SDDTemplate.Site.Tests.csproj", 'dotnet list "$project" package', "ReadCoverageThreshold", "ReadCoberturaLineRate", "gitleaks", "trivy")) {
       if (-not (Test-FileContains $prWorkflow ([regex]::Escape($expected)))) {
         Add-Item $Result "findings" $prWorkflow $expected "PR validation workflow does not mention $expected." "warning"
       }
@@ -659,6 +659,9 @@ function Add-QualityGateAuditFindings {
     $releaseContent = Get-Content -Path (Join-RootPath $releaseWorkflow) -Raw
     if (-not (Test-FileContains $releaseWorkflow "jq -r '\.apps\[\] \| \[\.appId, \.projectPath, \.artifactName\] \| @tsv'")) {
       Add-Item $Result "findings" $releaseWorkflow "topology.publish" "Package/deploy workflow should publish deployable apps from infra/deployment/apps.json." "warning"
+    }
+    if (-not (Test-FileContains $releaseWorkflow "projectPath must be under src/")) {
+      Add-Item $Result "findings" $releaseWorkflow "topology.publish.source-root" "Package/deploy workflow should reject deployable project paths outside application source roots." "warning"
     }
   }
 
@@ -706,10 +709,13 @@ function Add-QualityGateAuditFindings {
     }
   }
 
-  foreach ($qualityFile in @(".editorconfig", "Directory.Build.props", "lefthook.yml")) {
+  foreach ($qualityFile in @(".editorconfig", ".gitattributes", "Directory.Build.props", "lefthook.yml")) {
     if (-not (Test-Path (Join-RootPath $qualityFile))) {
       Add-Item $Result "findings" $qualityFile "" "Missing quality gate template." "warning"
     }
+  }
+  if ((Test-Path (Join-RootPath ".gitattributes")) -and -not (Test-FileContains ".gitattributes" "\*\s+text=auto\s+eol=lf")) {
+    Add-Item $Result "findings" ".gitattributes" "text.eol" "Missing repository LF normalization rule; Windows core.autocrlf checkouts can break dotnet format end_of_line checks." "warning"
   }
 
   $giteaCompose = "infra/gitea/compose.yml"
@@ -747,6 +753,17 @@ function Add-QualityGateAuditFindings {
       if (-not (Test-FileContains $topologyManifest $expectedTopology)) {
         Add-Item $Result "findings" $topologyManifest $expectedTopology "Deployable app topology manifest is missing an expected app or field." "warning"
       }
+    }
+    try {
+      $topology = Get-Content -Path (Join-RootPath $topologyManifest) -Raw | ConvertFrom-Json
+      foreach ($app in @($topology.apps)) {
+        $projectPath = [string]$app.projectPath
+        if ([string]::IsNullOrWhiteSpace($projectPath) -or -not $projectPath.StartsWith("src/")) {
+          Add-Item $Result "findings" $topologyManifest "projectPath" "Deployable app '$($app.appId)' projectPath must be under src/ and must not target SDD, infrastructure, OpenSpec, agent, workflow, or tool projects." "warning"
+        }
+      }
+    } catch {
+      Add-Item $Result "findings" $topologyManifest "" "Deployable app topology manifest could not be parsed as JSON." "warning"
     }
   }
   if (-not (Test-Path (Join-RootPath $configurationManifest))) {
@@ -2141,6 +2158,30 @@ dotnet_analyzer_diagnostic.category-Security.severity = warning
 dotnet_diagnostic.CA1822.severity = none
 '@
 
+  Write-TemplateFile $result ".gitattributes" @'
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.tar binary
+*.7z binary
+*.dll binary
+*.exe binary
+*.pdb binary
+*.db binary
+*.sqlite binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+'@
+
   Write-TemplateFile $result "Directory.Build.props" @'
 <Project>
   <PropertyGroup>
@@ -2387,34 +2428,50 @@ jobs:
           git fetch --depth 1 origin "$GITHUB_SHA"
           git checkout --force FETCH_HEAD
 
-      - name: Restore
-        run: dotnet restore
-
-      - name: Verify formatting
-        run: dotnet format --verify-no-changes --no-restore
-
-      - name: Build
-        run: dotnet build -c Release --no-restore
-
-      - name: Install PowerShell
+      - name: Restore application projects
         shell: bash
         run: |
           set -euo pipefail
 
-          apt-get update
-          apt-get install -y --no-install-recommends wget apt-transport-https ca-certificates gnupg
-          . /etc/os-release
-          case "${ID:-}" in
-            ubuntu|debian) package_os="$ID" ;;
-            *) echo "Unsupported PowerShell package OS: ${ID:-unknown}" && exit 1 ;;
-          esac
-          wget -q "https://packages.microsoft.com/config/${package_os}/${VERSION_ID}/packages-microsoft-prod.deb" -O /tmp/packages-microsoft-prod.deb
-          dpkg -i /tmp/packages-microsoft-prod.deb
-          apt-get update
-          apt-get install -y --no-install-recommends powershell
+          quality_projects=(
+            "src/SDDTemplate.Site/SDDTemplate.Site.csproj"
+            "src/SDDTemplate.Api/SDDTemplate.Api.csproj"
+            "tests/SDDTemplate.Site.Tests/SDDTemplate.Site.Tests.csproj"
+          )
+          for project in "${quality_projects[@]}"; do
+            dotnet restore "$project"
+          done
+
+      - name: Verify application formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          quality_projects=(
+            "src/SDDTemplate.Site/SDDTemplate.Site.csproj"
+            "src/SDDTemplate.Api/SDDTemplate.Api.csproj"
+            "tests/SDDTemplate.Site.Tests/SDDTemplate.Site.Tests.csproj"
+          )
+          for project in "${quality_projects[@]}"; do
+            dotnet format "$project" --verify-no-changes --no-restore
+          done
+
+      - name: Build application projects
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          quality_projects=(
+            "src/SDDTemplate.Site/SDDTemplate.Site.csproj"
+            "src/SDDTemplate.Api/SDDTemplate.Api.csproj"
+            "tests/SDDTemplate.Site.Tests/SDDTemplate.Site.Tests.csproj"
+          )
+          for project in "${quality_projects[@]}"; do
+            dotnet build "$project" -c Release --no-restore
+          done
 
       - name: Test
-        run: dotnet test -c Release --no-build --logger trx --collect:"XPlat Code Coverage"
+        run: dotnet test tests/SDDTemplate.Site.Tests/SDDTemplate.Site.Tests.csproj -c Release --no-build --logger trx --collect:"XPlat Code Coverage"
 
       - name: Enforce coverage threshold
         shell: bash
@@ -2443,7 +2500,18 @@ jobs:
           echo "Coverage ${actual}% meets required ${minimum}%."
 
       - name: Dependency vulnerability audit
-        run: dotnet list package --vulnerable --include-transitive
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          quality_projects=(
+            "src/SDDTemplate.Site/SDDTemplate.Site.csproj"
+            "src/SDDTemplate.Api/SDDTemplate.Api.csproj"
+            "tests/SDDTemplate.Site.Tests/SDDTemplate.Site.Tests.csproj"
+          )
+          for project in "${quality_projects[@]}"; do
+            dotnet list "$project" package --vulnerable --include-transitive
+          done
 
       - name: Install Gitleaks
         run: |
@@ -2604,6 +2672,11 @@ jobs:
           jq -c '.apps | sort_by(.deployOrder)' infra/deployment/apps.json > artifacts/deployable-apps.json
           jq -r '.apps[] | [.appId, .projectPath, .artifactName] | @tsv' infra/deployment/apps.json |
           while IFS=$'\t' read -r app_id project_path artifact_name; do
+            case "$project_path" in
+              src/*) ;;
+              *) echo "Deployable app '$app_id' projectPath must be under src/: $project_path" && exit 1 ;;
+            esac
+            test -f "$project_path"
             echo "Publishing $app_id from $project_path"
             dotnet publish "$project_path" -c Release -o "artifacts/$app_id"
             (cd "artifacts/$app_id" && zip -r "../packages/$artifact_name" .)
@@ -3336,7 +3409,7 @@ Gitea PR validation is the source of truth. Local hooks are only convenience che
 
 Coverage threshold defaults to `80%` from `.codex/quality.example.json`. Local development may override it with ignored `.codex/quality.local.json`; CI falls back to the tracked example when no local config is present.
 
-The local runner executes PR validation inside a pinned .NET SDK container. Keep checkout and security tools shell-based unless the job container explicitly includes `node`; JavaScript `uses:` actions can fail inside plain SDK containers. Validate runner compatibility after workflow changes:
+The local runner executes PR validation inside a pinned .NET SDK container. PR validation must target product/application projects specifically for restore, format, build, tests, coverage, and dependency audit. For this template, CI uses explicit `src/SDDTemplate.Site`, `src/SDDTemplate.Api`, and `tests/SDDTemplate.Site.Tests` project paths; SDD delivery-tool, workflow, agent, OpenSpec, infrastructure, and meta-tests remain local/template-maintenance checks and are not part of normal PR CI. Keep checkout and security tools shell-based unless the job container explicitly includes `node`; JavaScript `uses:` actions can fail inside plain SDK containers. Validate runner compatibility after workflow changes:
 
 ```powershell
 .\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode ValidateGiteaActionsRunner
@@ -3388,7 +3461,7 @@ Release flow:
 feature branch -> dev -> DEV -> QA -> Gitea E2E evidence -> Plane E2E QA -> main -> PROD
 ```
 
-The package workflow reads `infra/deployment/apps.json`, builds one ZIP per deployable app, builds `deployment-config.json` from `infra/deployment/configuration.json` plus each app's `appsettings*.json`, and publishes from ticket-gated application changes on `dev`, including `app/{commitSha}/deployable-apps.json`, `app/{commitSha}/deployment-config.json`, per-app ZIP/checksum files, and a baseline `app/{commitSha}/release.json`. DEV, QA, and PROD must apply and verify deployment configuration before deployment success is claimed. Smoke checks also verify that the clients page renders the expected API base URL and that API CORS preflight allows the matching web origin. DEV and QA must deploy the same Nexus app artifacts for the same commit SHA. After QA deploy and smoke checks, push a `qa/{ticketKey}` branch from current `dev`; the `e2e-qa-branch` job runs the committed Playwright suite against the deployed QA Site/API URLs without redeploying, resolves the artifact commit from the branch point with `dev`, and uploads `app/{commitSha}/qa-e2e-evidence.zip` plus a ticket/run evidence copy under `qa/{ticketKey}/{runId}/qa-e2e-evidence.zip`. This Gitea job is evidence-only; the `test-e2e` skill remains responsible for acceptance-to-assertion QA proof, Plane Done state, RC tagging, release manifest QA lineage, and deleting the remote `qa/{ticketKey}` branch after durable Nexus/Plane/release/tag evidence exists. Only full `PASS` can move Plane to Done; `PASS WITH GAPS` or `FAIL` remain in QA. PROD must deploy the QA-approved Nexus app artifacts from an exact-commit `main` promotion or explicit dispatch by commit SHA and must pass deployment configuration verification, rendered API base URL validation, CORS preflight validation, the web page smoke check, and every app `/health` check.
+The package workflow reads `infra/deployment/apps.json`, rejects deployable project paths outside `src/`, builds one ZIP per deployable app, builds `deployment-config.json` from `infra/deployment/configuration.json` plus each app's `appsettings*.json`, and publishes from ticket-gated application changes on `dev`, including `app/{commitSha}/deployable-apps.json`, `app/{commitSha}/deployment-config.json`, per-app ZIP/checksum files, and a baseline `app/{commitSha}/release.json`. DEV, QA, and PROD must apply and verify deployment configuration before deployment success is claimed. Smoke checks also verify that the clients page renders the expected API base URL and that API CORS preflight allows the matching web origin. DEV and QA must deploy the same Nexus app artifacts for the same commit SHA. After QA deploy and smoke checks, push a `qa/{ticketKey}` branch from current `dev`; the `e2e-qa-branch` job runs the committed Playwright suite against the deployed QA Site/API URLs without redeploying, resolves the artifact commit from the branch point with `dev`, and uploads `app/{commitSha}/qa-e2e-evidence.zip` plus a ticket/run evidence copy under `qa/{ticketKey}/{runId}/qa-e2e-evidence.zip`. This Gitea job is evidence-only; the `test-e2e` skill remains responsible for acceptance-to-assertion QA proof, Plane Done state, RC tagging, release manifest QA lineage, and deleting the remote `qa/{ticketKey}` branch after durable Nexus/Plane/release/tag evidence exists. Only full `PASS` can move Plane to Done; `PASS WITH GAPS` or `FAIL` remain in QA. PROD must deploy the QA-approved Nexus app artifacts from an exact-commit `main` promotion or explicit dispatch by commit SHA and must pass deployment configuration verification, rendered API base URL validation, CORS preflight validation, the web page smoke check, and every app `/health` check.
 '@
 
   return $result

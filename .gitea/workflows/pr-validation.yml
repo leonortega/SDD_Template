@@ -29,34 +29,50 @@ jobs:
           git fetch --depth 1 origin "$GITHUB_SHA"
           git checkout --force FETCH_HEAD
 
-      - name: Restore
-        run: dotnet restore
-
-      - name: Verify formatting
-        run: dotnet format --verify-no-changes --no-restore
-
-      - name: Build
-        run: dotnet build -c Release --no-restore
-
-      - name: Install PowerShell
+      - name: Restore application projects
         shell: bash
         run: |
           set -euo pipefail
 
-          apt-get update
-          apt-get install -y --no-install-recommends wget apt-transport-https ca-certificates gnupg
-          . /etc/os-release
-          case "${ID:-}" in
-            ubuntu|debian) package_os="$ID" ;;
-            *) echo "Unsupported PowerShell package OS: ${ID:-unknown}" && exit 1 ;;
-          esac
-          wget -q "https://packages.microsoft.com/config/${package_os}/${VERSION_ID}/packages-microsoft-prod.deb" -O /tmp/packages-microsoft-prod.deb
-          dpkg -i /tmp/packages-microsoft-prod.deb
-          apt-get update
-          apt-get install -y --no-install-recommends powershell
+          quality_projects=(
+            "src/SDDTemplate.Site/SDDTemplate.Site.csproj"
+            "src/SDDTemplate.Api/SDDTemplate.Api.csproj"
+            "tests/SDDTemplate.Site.Tests/SDDTemplate.Site.Tests.csproj"
+          )
+          for project in "${quality_projects[@]}"; do
+            dotnet restore "$project"
+          done
+
+      - name: Verify application formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          quality_projects=(
+            "src/SDDTemplate.Site/SDDTemplate.Site.csproj"
+            "src/SDDTemplate.Api/SDDTemplate.Api.csproj"
+            "tests/SDDTemplate.Site.Tests/SDDTemplate.Site.Tests.csproj"
+          )
+          for project in "${quality_projects[@]}"; do
+            dotnet format "$project" --verify-no-changes --no-restore
+          done
+
+      - name: Build application projects
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          quality_projects=(
+            "src/SDDTemplate.Site/SDDTemplate.Site.csproj"
+            "src/SDDTemplate.Api/SDDTemplate.Api.csproj"
+            "tests/SDDTemplate.Site.Tests/SDDTemplate.Site.Tests.csproj"
+          )
+          for project in "${quality_projects[@]}"; do
+            dotnet build "$project" -c Release --no-restore
+          done
 
       - name: Test
-        run: dotnet test -c Release --no-build --logger trx --collect:"XPlat Code Coverage"
+        run: dotnet test tests/SDDTemplate.Site.Tests/SDDTemplate.Site.Tests.csproj -c Release --no-build --logger trx --collect:"XPlat Code Coverage"
 
       - name: Enforce coverage threshold
         shell: bash
@@ -85,7 +101,18 @@ jobs:
           echo "Coverage ${actual}% meets required ${minimum}%."
 
       - name: Dependency vulnerability audit
-        run: dotnet list package --vulnerable --include-transitive
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          quality_projects=(
+            "src/SDDTemplate.Site/SDDTemplate.Site.csproj"
+            "src/SDDTemplate.Api/SDDTemplate.Api.csproj"
+            "tests/SDDTemplate.Site.Tests/SDDTemplate.Site.Tests.csproj"
+          )
+          for project in "${quality_projects[@]}"; do
+            dotnet list "$project" package --vulnerable --include-transitive
+          done
 
       - name: Install Gitleaks
         run: |
