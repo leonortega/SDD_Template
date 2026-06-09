@@ -137,6 +137,11 @@ jobs:
           jq -c '.apps | sort_by(.deployOrder)' infra/deployment/apps.json > artifacts/deployable-apps.json
           jq -r '.apps[] | [.appId, .projectPath, .artifactName] | @tsv' infra/deployment/apps.json |
           while IFS=$'\t' read -r app_id project_path artifact_name; do
+            case "$project_path" in
+              src/*) ;;
+              *) echo "Deployable app '$app_id' projectPath must be under src/: $project_path" && exit 1 ;;
+            esac
+            test -f "$project_path"
             echo "Publishing $app_id from $project_path"
             dotnet publish "$project_path" -c Release -o "artifacts/$app_id"
             (cd "artifacts/$app_id" && zip -r "../packages/$artifact_name" .)

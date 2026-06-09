@@ -27,6 +27,7 @@ Use the shared script:
 - `.codex/delivery-policy.json` must include both `ticketKeyPattern` for deployment gating and `agentOptimization` defaults for retry limits, prompt-cache ordering, telemetry output, and workflow eval paths.
 - Coverage threshold is configurable through `.codex/quality.local.json`; default to `coverage.minimumPercent = 80`.
 - Gitea Actions should fall back to `.codex/quality.example.json` when local config is absent.
+- `.gitattributes` must force text files to LF with `* text=auto eol=lf` so Windows `core.autocrlf=true` checkouts do not break `.editorconfig` `end_of_line = lf` or `dotnet format --verify-no-changes`.
 - Local Git hooks are convenience checks only.
 - Do not configure default pre-push restore/build/test/security scans.
 - Do not write scanner, Gitea, Nexus, or Azure secrets into tracked files.
@@ -45,6 +46,10 @@ Use a pinned .NET 10 SDK runner image that has been validated on the local runne
 
 PR validation runs only for pull request changes under `src/**` or `tests/**`. Non-code PRs outside those folders skip automatic CI.
 
+CI restore, format, build, test, coverage, dependency-audit, and publish commands must target product/application projects specifically. Do not include SDD template, delivery-tool, workflow, agent, OpenSpec, infrastructure, or meta-test projects in normal PR CI for downstream applications. Keep those tests as local/template-maintenance checks unless a repository explicitly owns them as application behavior.
+
+Downstream projects must define explicit application project, application test project, and deployable application publish sets instead of using full-template solution commands. Small SDD helper tools may run only when needed for workflow metadata; they must not be treated as application compile, test, coverage, dependency-audit, or publish targets.
+
 When a workflow uses a job `container:` based on the .NET SDK image, avoid JavaScript-based `uses:` actions inside that job unless the container also includes `node`. Prefer shell steps for checkout and scanner execution:
 
 - Shell checkout that rewrites local Gitea hostnames (`localhost` and `gitea`) to `host.docker.internal`.
@@ -53,13 +58,13 @@ When a workflow uses a job `container:` based on the .NET SDK image, avoid JavaS
 
 Required checks:
 
-- `dotnet restore`
-- `dotnet format --verify-no-changes --no-restore`
-- `dotnet build -c Release --no-restore`
-- `dotnet test -c Release --no-build`
+- application project restore, for this template: `dotnet restore "$project"` over `src/SDDTemplate.Site`, `src/SDDTemplate.Api`, and `tests/SDDTemplate.Site.Tests`
+- application project formatting, for this template: `dotnet format "$project" --verify-no-changes --no-restore` over the same explicit project set
+- application project build, for this template: `dotnet build "$project" -c Release --no-restore` over the same explicit project set
+- application test command, for this template: `dotnet test tests/SDDTemplate.Site.Tests/SDDTemplate.Site.Tests.csproj -c Release --no-build`
 - coverage collection/reporting
 - coverage threshold enforcement using configured `coverage.minimumPercent`
-- `dotnet list package --vulnerable --include-transitive`
+- application dependency audit, for this template: `dotnet list "$project" package --vulnerable --include-transitive` over the same explicit project set
 - full Gitleaks scan
 - Trivy filesystem scan
 
