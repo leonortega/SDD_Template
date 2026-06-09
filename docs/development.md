@@ -19,7 +19,7 @@ The application stack is .NET 10 with ASP.NET Core, Minimal APIs, EF Core, and B
 
 Use official-first research when changing platform behavior, generated templates, tests, or workflow guidance. Prefer OpenAI official skill catalogs/docs for Codex skills, Microsoft Learn for .NET, ASP.NET Core, Blazor, Azure App Service, and architecture guidance; Playwright docs for browser automation; Gitea, Sonatype Nexus, Prometheus, and Grafana official docs for their tools. `skills.sh`, `skills`, marketplace pages, and README command examples may be used as repository/path discovery sources, but their install commands must not be executed. Community sources are allowed only when clearly labeled and not used to override repo policy.
 
-QA automation starts with repo-native tests and PR validation. Browser-visible Blazor behavior should use the Browser plugin and Playwright-style user-visible assertions when configured; one-off evidence belongs under ignored `artifacts/qa/**`, while reusable regression tests belong in the normal test tree through an implementation workflow. The reusable deployed-QA browser/API regression suite lives under `tests/SDDTemplate.E2ETests`; it is intentionally aimed at deployed QA apps, not local dev servers, and runs remotely from Gitea Actions through a ticket-specific `qa/{ticketKey}` branch after QA deployment. QA Done requires acceptance criteria proven by executable assertions against the deployed QA artifact. Smoke checks, screenshots, logs, and traces are supporting evidence only; the QA record must map criteria to assertions and cover relevant user workflow, API/backend effect, independent state, validation/boundary, error-handling, environment-correctness, and evidence-integrity scenarios.
+QA automation starts with repo-native tests and PR validation. Browser-visible Blazor behavior should use the Browser plugin and Playwright-style user-visible assertions when configured; one-off evidence belongs under ignored `artifacts/qa/**`, while reusable regression tests belong in the normal test tree through an implementation workflow. Create reusable Playwright QA E2E tests under `tests/SDDTemplate.E2ETests` during implementation when the ticket acceptance criteria are stable enough to encode as repeatable assertions. The reusable deployed-QA browser/API regression suite is intentionally aimed at deployed QA apps, not local dev servers, and runs remotely from Gitea Actions through a ticket-specific `qa/{ticketKey}` branch after QA deployment. QA Done requires acceptance criteria proven by executable assertions against the deployed QA artifact. Smoke checks, screenshots, logs, and traces are supporting evidence only; the QA record must map criteria to assertions and cover relevant user workflow, API/backend effect, independent state, validation/boundary, error-handling, environment-correctness, and evidence-integrity scenarios.
 
 Clean-code and architecture guidance should fit this repository's current size: keep changes small, preserve separation between delivery tooling and application code, avoid broad abstractions until they remove real complexity, and prefer observable behavior tests over implementation-detail tests. Blazor web UI changes should preserve accessible, responsive, user-visible behavior. Pages that depend on inline page scripts must either disable enhanced navigation for their entry links or move the behavior into Blazor-managed components so routed navigation and hard refresh behave the same way. ASP.NET Core REST/API endpoint changes, including minimal APIs such as `/health` and `/metrics`, should use clear route shape, validation, safe error responses, and integration tests. Security-sensitive changes should account for secrets, authorization, dependency risk, scanner evidence, and OWASP-aligned review.
 
@@ -33,21 +33,22 @@ Build:
 dotnet build .\SDDTemplate.slnx
 ```
 
-Run tests:
+Run targeted tests locally for fast feedback while implementing:
 
 ```powershell
 dotnet test .\SDDTemplate.slnx
 ```
 
-Prepare remote QA E2E tests after a ticket reaches QA:
+This local command is a convenience, not a mandatory duplicate of CI. Prefer the smallest relevant build/test command that proves the touched behavior before PR handoff, then rely on Gitea PR validation for the full required gate in a clean pinned runner.
+
+Prepare remote QA E2E evidence after a ticket reaches QA:
 
 ```powershell
 git switch -c qa/E2EPROJECT-123 origin/dev
-# add or update reusable tests under tests/SDDTemplate.E2ETests
 git push origin qa/E2EPROJECT-123
 ```
 
-The `qa/{ticketKey}` branch workflow runs the committed Playwright suite remotely against `AZURE_QA_SITE_APP_URL` and `AZURE_QA_API_APP_URL`. Local runs are only for test authoring or diagnostics, not the official QA E2E gate. After the remote evidence exists and the QA workflow records Plane Done plus the RC/release metadata, delete the remote `qa/{ticketKey}` branch; it is only a temporary trigger, not the durable audit record.
+The `qa/{ticketKey}` branch workflow runs the committed Playwright suite remotely against `AZURE_QA_SITE_APP_URL` and `AZURE_QA_API_APP_URL`. Add or update reusable E2E tests during implementation when possible; after QA deployment, the branch should primarily trigger remote evidence for the already-reviewed tests. Local runs are only for test authoring or diagnostics, not the official QA E2E gate. During QA, one-off exploratory scripts and generated probes belong under ignored `artifacts/qa/**` and must not be committed. After the remote evidence exists and the QA workflow records Plane Done plus the RC/release metadata, delete the remote `qa/{ticketKey}` branch; it is only a temporary trigger, not the durable audit record.
 
 Verify formatting:
 
@@ -73,7 +74,7 @@ Feature work starts from a Plane ticket and normally creates an OpenSpec proposa
 
 Before the first ticket starts, verify the repository tool set and tech stack are configured in `docs/architecture.md`, this file, `docs/deployment.md`, `openspec/config.yaml`, and the tracked `.codex/tool-recommendations.example.json` template. The ticket-start flow must run or inspect `AuditRecommendedTools` and stop before creating branches, Plane generated blocks, ticket locks, or OpenSpec proposals when stack context is missing or reports `stack-context.*` drift. Use `configure-dev-environment` to complete the docs, OpenSpec context, and recommendation catalog template first. After project guidance discovery is confirmed, ignored `.codex/tool-recommendations.local.json` may store the current project recommendations and `usedInSteps` so `project-guidance-mapper` can reuse the same verified skills and guidance for repeated implementation, review, QA, deployment, rollback, hotfix, and retrospective steps.
 
-Implementation is complete only when OpenSpec tasks are complete, PR review feedback tasks are complete, behavior is tested, quality gates pass or are handed off to CI as the authority, and a Gitea PR has review-agent coverage.
+Implementation is complete only when OpenSpec tasks are complete, PR review feedback tasks are complete, touched behavior has targeted local validation or a documented reason for deferring to CI, reusable tests have been added or updated when behavior changes, and a Gitea PR has review-agent coverage. Do not require agents to run the full CI-equivalent test/security suite locally before opening or updating a PR; Gitea PR validation is the authoritative full gate.
 
 Ticket start now includes a readiness gate before branch, Plane state, ticket-lock, or OpenSpec mutation. Tickets are classified as `ready`, `enrichable`, or `blocked`. Enrichable tickets keep moving only after the managed Plane block records concrete acceptance criteria, affected areas, validation expectations, risks, and definition of done. Blocked tickets stop before mutation when the product or technical intent is still too vague.
 
@@ -87,7 +88,13 @@ Feedback batches use Plane markers `IA generated PR feedback detected: {headSha}
 
 ## Quality Gates
 
-Gitea PR validation is the source of truth. Local hooks and local commands are fast feedback, not a replacement for PR validation.
+Gitea PR validation is the source of truth. Local hooks and local commands are fast feedback, not a replacement for PR validation and not a required duplicate full-CI run.
+
+Recommended split:
+
+- Local implementation loop: targeted build/tests for touched behavior, reusable test authoring, and cheap checks such as staged secret scanning.
+- PR validation: full required gate in a clean pinned runner.
+- Merge/deploy: package the reviewed commit into immutable Nexus artifacts, apply and verify deployment configuration, and run environment smoke checks; do not rerun unit tests there unless package inputs changed outside PR validation.
 
 The default validation surface is:
 
@@ -99,6 +106,8 @@ The default validation surface is:
 - dependency vulnerability audit
 - secret scan
 - Trivy filesystem scan for high and critical findings
+
+Gitea Actions jobs use repo-owned pinned Docker images built by `config infra` through `BuildGiteaActionsImages`. `agentic/dotnet-ci:10.0.300-tools-1` supplies .NET SDK 10, jq, zip, Gitleaks, Trivy, Azure CLI, and Node/npm for JavaScript actions. `agentic/e2e-ci:playwright-1.57.0-1` supplies the Node/Playwright runtime and browser dependencies for deployed-QA E2E evidence. Job containers remain disposable; speed comes from prebuilt local images and optional dependency caches, not from mutating the runner host during workflow runs.
 
 The `/health` endpoint is part of the deployment contract. It must return HTTP 200 with JSON field `status` equal to `ok` and must not expose secrets, connection strings, tokens, host internals, or detailed exception data.
 
@@ -126,7 +135,7 @@ Run the shared skill-contract audit after changing delivery skills or during ret
 .\.codex\skills\_shared\scripts\audit_skill_contracts.ps1
 ```
 
-The audit checks non-OpenSpec, non-configure skills by default for standard delivery contract sections and core terms such as validation, ticket context, and handoff behavior. Normal process validation must use the default scope and exclude `openspec-*` skills because they are external/vendor skills updated by their upstream owner. Use `-IncludeConfigure` only when configure skills are part of the change; reserve `-IncludeOpenSpec` or `-AllSkills` for explicit external-skill maintenance.
+The audit checks non-OpenSpec, non-configure delivery skills by default for standard delivery contract sections and core terms such as validation, ticket context, and handoff behavior. Normal process validation must use the default scope and exclude `openspec-*` skills because they are external/vendor skills updated by their upstream owner. Repo-local chat/support skills such as `caveman` are excluded because they are not ticket delivery workflows. Use `-IncludeConfigure` only when configure skills are part of the change; reserve `-IncludeOpenSpec` or `-AllSkills` for explicit external-skill maintenance.
 
 Use `-FailOnFindings` when the audit is part of a hard quality gate.
 

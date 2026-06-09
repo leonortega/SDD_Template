@@ -1,6 +1,6 @@
 param(
   [Parameter(Mandatory = $true)]
-  [ValidateSet('ArtifactPaths', 'CheckGitIgnored', 'NextRcVersion', 'ReadDeliveryPolicy', 'ExtractTicketKey', 'ReadCoverageThreshold', 'ReadCoberturaLineRate', 'ValidateReleaseManifest', 'ValidateTicketLock', 'ValidateDeploymentLane', 'ValidateParallelDeliveryDryRun', 'RenderPlaneComment', 'UpdateReleaseManifest')]
+  [ValidateSet('ArtifactPaths', 'CheckGitIgnored', 'NextRcVersion', 'ReadDeliveryPolicy', 'ExtractTicketKey', 'ReadCoverageThreshold', 'ReadCoberturaLineRate', 'ValidateReleaseManifest', 'ValidateTicketLock', 'ValidateDeploymentLane', 'ValidateParallelDeliveryDryRun', 'InitializeWorkflowTelemetry', 'AppendWorkflowTelemetry', 'ReadWorkflowTelemetry', 'RenderPlaneComment', 'UpdateReleaseManifest')]
   [string] $Mode,
 
   [string] $CommitSha,
@@ -45,10 +45,21 @@ function Get-ObjectProperty($Object, [string] $Name) {
   if ($null -eq $Object) {
     return $null
   }
-  if ($Object.PSObject.Properties.Name -contains $Name) {
+  if (@($Object.PSObject.Properties | Select-Object -ExpandProperty Name) -contains $Name) {
     return $Object.$Name
   }
   return $null
+}
+
+function Resolve-RepoPath([string] $CandidatePath, [string] $DefaultRelativePath) {
+  $resolved = if ([string]::IsNullOrWhiteSpace($CandidatePath)) {
+    Join-Path $RepoRoot $DefaultRelativePath
+  } elseif ([System.IO.Path]::IsPathRooted($CandidatePath)) {
+    $CandidatePath
+  } else {
+    Join-Path $RepoRoot $CandidatePath
+  }
+  return [System.IO.Path]::GetFullPath($resolved)
 }
 
 function Test-ExpectedValue([System.Collections.Generic.List[string]] $Errors, [string] $Name, $Actual, [string] $Expected) {
@@ -452,6 +463,181 @@ function Get-LongProperty($Object, [string] $Name) {
   return [long]$value
 }
 
+function Get-WorkflowTelemetryPath {
+  Resolve-RepoPath $Path '.codex/agent-telemetry.local.jsonl'
+}
+
+function Get-RequiredTelemetryTicketKey {
+  if ([string]::IsNullOrWhiteSpace($TicketKey)) {
+    throw 'TicketKey is required for workflow telemetry.'
+  }
+  return $TicketKey
+}
+
+function ConvertTo-UtcDateTime($Value, [string] $Name) {
+  if ($null -eq $Value -or [string]::IsNullOrWhiteSpace([string]$Value)) {
+    throw "$Name is required for workflow telemetry."
+  }
+  if ($Value -is [datetime]) {
+    return $Value.ToUniversalTime()
+  }
+  return [DateTimeOffset]::Parse($Value).UtcDateTime
+}
+
+function Initialize-WorkflowTelemetry {
+  $ticket = Get-RequiredTelemetryTicketKey
+  $telemetryPath = Get-WorkflowTelemetryPath
+  $parent = Split-Path -Parent $telemetryPath
+  if (-not [string]::IsNullOrWhiteSpace($parent) -and -not (Test-Path -LiteralPath $parent)) {
+    New-Item -ItemType Directory -Path $parent | Out-Null
+  }
+
+  Set-Content -LiteralPath $telemetryPath -Value '' -NoNewline -Encoding UTF8
+  [pscustomobject]@{
+    path = $telemetryPath
+    ticketKey = $ticket
+    exists = Test-Path -LiteralPath $telemetryPath
+    cleared = $true
+  }
+}
+
+function Append-WorkflowTelemetry {
+  $ticket = Get-RequiredTelemetryTicketKey
+  $input = Get-InputObject
+  $telemetryPath = Get-WorkflowTelemetryPath
+  $parent = Split-Path -Parent $telemetryPath
+  if (-not [string]::IsNullOrWhiteSpace($parent) -and -not (Test-Path -LiteralPath $parent)) {
+    New-Item -ItemType Directory -Path $parent | Out-Null
+  }
+  if (-not (Test-Path -LiteralPath $telemetryPath)) {
+    New-Item -ItemType File -Path $telemetryPath | Out-Null
+  }
+
+  $workflowStage = [string](Get-ObjectProperty $input 'workflowStage')
+  if ([string]::IsNullOrWhiteSpace($workflowStage)) {
+    $workflowStage = [string](Get-ObjectProperty $input 'stage')
+  }
+  if ([string]::IsNullOrWhiteSpace($workflowStage)) {
+    throw 'workflowStage is required for workflow telemetry.'
+  }
+
+  $agentRole = [string](Get-ObjectProperty $input 'agentRole')
+  if ([string]::IsNullOrWhiteSpace($agentRole)) {
+    throw 'agentRole is required for workflow telemetry.'
+  }
+
+  $outcome = [string](Get-ObjectProperty $input 'outcome')
+  if ([string]::IsNullOrWhiteSpace($outcome)) {
+    throw 'outcome is required for workflow telemetry.'
+  }
+
+  $started = ConvertTo-UtcDateTime (Get-ObjectProperty $input 'startedUtc') 'startedUtc'
+  $finished = ConvertTo-UtcDateTime (Get-ObjectProperty $input 'finishedUtc') 'finishedUtc'
+  if ($finished -lt $started) {
+    throw 'finishedUtc must be greater than or equal to startedUtc.'
+  }
+
+  $elapsed = Get-LongProperty $input 'elapsedMilliseconds'
+  if ($null -eq $elapsed) {
+    $elapsed = [long]($finished - $started).TotalMilliseconds
+  }
+
+  $retryCount = Get-LongProperty $input 'retryCount'
+  if ($null -eq $retryCount) {
+    $retryCount = 0
+  }
+
+  $row = [ordered]@{
+    ticketKey = $ticket
+    timestampUtc = $finished.ToString('yyyy-MM-ddTHH:mm:ssZ', [System.Globalization.CultureInfo]::InvariantCulture)
+    workflowStage = $workflowStage
+    agentRole = $agentRole
+    model = Get-ObjectProperty $input 'model'
+    reasoningEffort = Get-ObjectProperty $input 'reasoningEffort'
+    inputTokens = Get-ObjectProperty $input 'inputTokens'
+    outputTokens = Get-ObjectProperty $input 'outputTokens'
+    reasoningTokens = Get-ObjectProperty $input 'reasoningTokens'
+    cachedTokens = Get-ObjectProperty $input 'cachedTokens'
+    toolCallCount = Get-ObjectProperty $input 'toolCallCount'
+    retryCount = [long]$retryCount
+    startedUtc = $started.ToString('yyyy-MM-ddTHH:mm:ssZ', [System.Globalization.CultureInfo]::InvariantCulture)
+    finishedUtc = $finished.ToString('yyyy-MM-ddTHH:mm:ssZ', [System.Globalization.CultureInfo]::InvariantCulture)
+    elapsedMilliseconds = [long]$elapsed
+    outcome = $outcome
+    blockerCategory = Get-ObjectProperty $input 'blockerCategory'
+  }
+
+  $line = $row | ConvertTo-Json -Depth 20 -Compress
+  Add-Content -LiteralPath $telemetryPath -Value $line -Encoding UTF8
+
+  [pscustomobject]@{
+    path = $telemetryPath
+    ticketKey = $ticket
+    appended = $true
+    workflowStage = $workflowStage
+    elapsedMilliseconds = [long]$elapsed
+  }
+}
+
+function Read-WorkflowTelemetry {
+  $ticket = Get-RequiredTelemetryTicketKey
+  $input = Get-InputObject
+  $telemetryPath = Get-WorkflowTelemetryPath
+  if (-not (Test-Path -LiteralPath $telemetryPath)) {
+    throw "Workflow telemetry file not found: $telemetryPath"
+  }
+
+  $rows = [System.Collections.Generic.List[object]]::new()
+  foreach ($line in (Get-Content -LiteralPath $telemetryPath)) {
+    if ([string]::IsNullOrWhiteSpace($line)) {
+      continue
+    }
+    $row = $line | ConvertFrom-Json
+    if ([string](Get-ObjectProperty $row 'ticketKey') -eq $ticket) {
+      $rows.Add($row)
+    }
+  }
+
+  if ($rows.Count -eq 0) {
+    throw "Workflow telemetry has no rows for ticket '$ticket'."
+  }
+
+  $stageRows = @($rows | ForEach-Object {
+    [pscustomobject]@{
+      stage = Get-ObjectProperty $_ 'workflowStage'
+      outcome = Get-ObjectProperty $_ 'outcome'
+      elapsedMilliseconds = Get-LongProperty $_ 'elapsedMilliseconds'
+      startedUtc = Format-UtcTimestamp (Get-ObjectProperty $_ 'startedUtc')
+      finishedUtc = Format-UtcTimestamp (Get-ObjectProperty $_ 'finishedUtc')
+    }
+  })
+
+  $totalElapsedMilliseconds = 0L
+  foreach ($stageRow in $stageRows) {
+    $elapsed = Get-LongProperty $stageRow 'elapsedMilliseconds'
+    if ($null -ne $elapsed -and $elapsed -gt 0) {
+      $totalElapsedMilliseconds += $elapsed
+    }
+  }
+
+  $status = [string](Get-ObjectProperty $input 'status')
+  if ([string]::IsNullOrWhiteSpace($status)) {
+    $status = 'PASS - timing generated from workflow telemetry.'
+  }
+  $currentRoute = [string](Get-ObjectProperty $input 'currentRoute')
+  if ([string]::IsNullOrWhiteSpace($currentRoute)) {
+    $currentRoute = [string](Get-ObjectProperty $stageRows[-1] 'stage')
+  }
+
+  [pscustomobject]@{
+    ticketKey = $ticket
+    status = $status
+    currentRoute = $currentRoute
+    totalElapsedMilliseconds = $totalElapsedMilliseconds
+    stages = $stageRows
+  }
+}
+
 function Get-InputObject {
   if ([string]::IsNullOrWhiteSpace($InputJson)) {
     return [pscustomobject]@{}
@@ -650,6 +836,9 @@ switch ($Mode) {
   'ValidateTicketLock' { Write-Json (Test-TicketLock) }
   'ValidateDeploymentLane' { Write-Json (Test-DeploymentLane) }
   'ValidateParallelDeliveryDryRun' { Write-Json (Test-ParallelDeliveryDryRun) }
+  'InitializeWorkflowTelemetry' { Write-Json (Initialize-WorkflowTelemetry) }
+  'AppendWorkflowTelemetry' { Write-Json (Append-WorkflowTelemetry) }
+  'ReadWorkflowTelemetry' { Write-Json (Read-WorkflowTelemetry) }
   'RenderPlaneComment' { Render-PlaneComment }
   'UpdateReleaseManifest' { Write-Json (Update-ReleaseManifest) }
 }

@@ -73,6 +73,7 @@ namespace SDDTemplate.DeliveryTools.Tests
         {
             string root = FindRepositoryRoot().FullName;
             string manifest = File.ReadAllText(Path.Combine(root, "infra", "deployment", "apps.json"));
+            using JsonDocument topology = JsonDocument.Parse(manifest);
 
             Assert.Contains("\"appId\": \"site\"", manifest);
             Assert.Contains("\"projectPath\": \"src/SDDTemplate.Site/SDDTemplate.Site.csproj\"", manifest);
@@ -82,6 +83,16 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("\"projectPath\": \"src/SDDTemplate.Api/SDDTemplate.Api.csproj\"", manifest);
             Assert.Contains("\"role\": \"api\"", manifest);
             Assert.Contains("\"artifactName\": \"api.zip\"", manifest);
+            foreach (JsonElement app in topology.RootElement.GetProperty("apps").EnumerateArray())
+            {
+                string projectPath = app.GetProperty("projectPath").GetString() ?? string.Empty;
+                Assert.StartsWith("src/", projectPath);
+                Assert.DoesNotContain("tools/", projectPath);
+                Assert.DoesNotContain(".codex/", projectPath);
+                Assert.DoesNotContain("infra/", projectPath);
+                Assert.DoesNotContain("openspec/", projectPath);
+                Assert.DoesNotContain("tests/", projectPath);
+            }
         }
 
         [Fact]
@@ -111,6 +122,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("infra/deployment/configuration.json", workflow);
             Assert.Contains("BuildDeploymentConfig", workflow);
             Assert.Contains("jq -r '.apps[] | [.appId, .projectPath, .artifactName] | @tsv'", packageJob);
+            Assert.Contains("projectPath must be under src/", packageJob);
+            Assert.Contains("test -f \"$project_path\"", packageJob);
             Assert.Contains("dotnet publish \"$project_path\"", packageJob);
             Assert.Contains("artifacts/packages/$artifact_name", packageJob);
             Assert.Contains("deployable-apps.json", workflow);
@@ -259,20 +272,41 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
-        public void PrValidationInstallsPowerShellFromContainerOsPackageFeed()
+        public void PrValidationRunsApplicationTestsWithoutPowerShellInstall()
         {
             string workflow = ReadPrValidationWorkflow();
-            string installStep = GetBetween(workflow, "      - name: Install PowerShell", "      - name: Test");
+            string workflowReadme = File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, ".gitea", "workflows", "README.md"));
             string configureTemplate = ReadConfigureScript();
 
-            Assert.Contains("case \"${ID:-}\" in", installStep);
-            Assert.Contains("ubuntu|debian) package_os=\"$ID\" ;;", installStep);
-            Assert.Contains("https://packages.microsoft.com/config/${package_os}/${VERSION_ID}/packages-microsoft-prod.deb", installStep);
-            Assert.DoesNotContain("config/debian/${VERSION_ID}", installStep);
+            Assert.DoesNotContain("Install PowerShell", workflow);
+            Assert.DoesNotContain("apt-get install -y --no-install-recommends powershell", workflow);
+            Assert.Contains("quality_projects=(", workflow);
+            Assert.Contains("src/SDDTemplate.Site/SDDTemplate.Site.csproj", workflow);
+            Assert.Contains("src/SDDTemplate.Api/SDDTemplate.Api.csproj", workflow);
+            Assert.Contains("dotnet test tests/SDDTemplate.Site.Tests/SDDTemplate.Site.Tests.csproj", workflow);
+            Assert.Contains("dotnet restore \"$project\"", workflow);
+            Assert.Contains("dotnet format \"$project\" --verify-no-changes --no-restore", workflow);
+            Assert.Contains("dotnet build \"$project\" -c Release --no-restore", workflow);
+            Assert.Contains("dotnet list \"$project\" package --vulnerable --include-transitive", workflow);
+            Assert.DoesNotContain("run: dotnet restore", workflow);
+            Assert.DoesNotContain("run: dotnet format --verify-no-changes --no-restore", workflow);
+            Assert.DoesNotContain("run: dotnet build -c Release --no-restore", workflow);
+            Assert.DoesNotContain("dotnet test -c Release --no-build", workflow);
+            Assert.DoesNotContain("dotnet test tools/", workflow);
+            Assert.DoesNotContain("dotnet build \"tools/", workflow);
+            Assert.DoesNotContain("dotnet restore \"tools/", workflow);
 
-            Assert.Contains("case \"${ID:-}\" in", configureTemplate);
-            Assert.Contains("https://packages.microsoft.com/config/${package_os}/${VERSION_ID}/packages-microsoft-prod.deb", configureTemplate);
-            Assert.DoesNotContain("config/debian/${VERSION_ID}", configureTemplate);
+            Assert.DoesNotContain("Install PowerShell", configureTemplate);
+            Assert.DoesNotContain("apt-get install -y --no-install-recommends powershell", configureTemplate);
+            Assert.Contains("dotnet test tests/SDDTemplate.Site.Tests/SDDTemplate.Site.Tests.csproj", configureTemplate);
+            Assert.Contains("dotnet restore \"$project\"", configureTemplate);
+            Assert.Contains("dotnet format \"$project\" --verify-no-changes --no-restore", configureTemplate);
+            Assert.Contains("dotnet build \"$project\" -c Release --no-restore", configureTemplate);
+            Assert.Contains("dotnet list \"$project\" package --vulnerable --include-transitive", configureTemplate);
+            Assert.Contains("PR validation must target product/application projects specifically", workflowReadme);
+            Assert.Contains("OpenSpec, infrastructure, and meta-tests remain local/template-maintenance checks", workflowReadme);
+            Assert.Contains("PR validation must target product/application projects specifically", configureTemplate);
+            Assert.Contains("rejects deployable project paths outside `src/`", configureTemplate);
         }
 
         [Fact]
@@ -460,11 +494,17 @@ namespace SDDTemplate.DeliveryTools.Tests
         public void ConfigureAuditRequiresDeliveryContextLockGitignoreEntry()
         {
             string script = ReadConfigureScript();
+            string attributes = File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, ".gitattributes"));
 
             Assert.Contains(".codex/delivery-context.local.json", script);
             Assert.Contains("Local ticket context lock must be ignored", script);
             Assert.Contains(".codex/parallel-delivery.local.json", script);
             Assert.Contains("Parallel delivery runtime state must be ignored", script);
+            Assert.Contains(".gitattributes", script);
+            Assert.Contains("text=auto eol=lf", script);
+            Assert.Contains("Windows core.autocrlf checkouts can break dotnet format", script);
+            Assert.Contains("* text=auto eol=lf", attributes);
+            Assert.Contains("*.zip binary", attributes);
         }
 
         [Fact]
@@ -532,6 +572,7 @@ namespace SDDTemplate.DeliveryTools.Tests
         {
             string contract = ReadSkill("_shared", "delivery-contract.md");
             string automatic = ReadSkill("automatic-implement-ticket", "SKILL.md");
+            string starter = ReadSkill("plane-start-ticket", "SKILL.md");
             string contextDocs = ReadDoc("context-management.md");
             string script = File.ReadAllText(Path.Combine(
                 FindRepositoryRoot().FullName,
@@ -545,16 +586,30 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("RenderPlaneComment -Type WorkflowTiming", contract);
             Assert.Contains("comment_html", contract);
             Assert.Contains("comment_stripped", contract);
+            Assert.Contains("InitializeWorkflowTelemetry", contract);
+            Assert.Contains("AppendWorkflowTelemetry", contract);
+            Assert.Contains("ReadWorkflowTelemetry", contract);
+            Assert.Contains("Do not derive workflow timing from Plane generated marker timestamps", contract);
             Assert.Contains("update or reuse the existing workflow timing marker comment", contract);
 
+            Assert.Contains("InitializeWorkflowTelemetry", starter);
+            Assert.Contains("Do not initialize telemetry when only listing Todo tickets", starter);
             Assert.Contains(".codex/agent-telemetry.local.jsonl", automatic);
+            Assert.Contains("AppendWorkflowTelemetry", automatic);
+            Assert.Contains("ReadWorkflowTelemetry", automatic);
             Assert.Contains("RenderPlaneComment -Type WorkflowTiming", automatic);
             Assert.Contains("IA generated workflow timing: {ticketKey}", automatic);
+            Assert.Contains("do not derive timing from Plane generated marker timestamps", automatic);
             Assert.Contains("patch that comment instead of creating a duplicate", automatic);
             Assert.Contains("workflow timing marker", automatic);
 
             Assert.Contains("concise generated Plane timing comment", contextDocs);
+            Assert.Contains("from that telemetry file", contextDocs);
+            Assert.DoesNotContain("retroactive marker-derived timing", contextDocs);
             Assert.Contains("'WorkflowTiming'", script);
+            Assert.Contains("'InitializeWorkflowTelemetry'", script);
+            Assert.Contains("'AppendWorkflowTelemetry'", script);
+            Assert.Contains("'ReadWorkflowTelemetry'", script);
             Assert.Contains("| Stage | Outcome | Duration | Started UTC | Finished UTC |", script);
         }
 
@@ -1502,6 +1557,32 @@ namespace SDDTemplate.DeliveryTools.Tests
                 string skill = ReadSkill(skillName, "SKILL.md");
                 Assert.Contains("delivery-context.local.json", skill);
             }
+        }
+
+        [Fact]
+        public void TicketStartCanLazilyReplaceCompletedDeliveryContextLock()
+        {
+            string contract = ReadSkill("_shared", "delivery-contract.md");
+            string startSkill = ReadSkill("plane-start-ticket", "SKILL.md");
+            string configureRouter = ReadSkill("configure-dev-environment", "SKILL.md");
+            string architecture = ReadDoc("architecture.md");
+            string parallelDocs = ReadDoc("parallel-delivery.md");
+
+            Assert.Contains("Do not delete the lock merely because E2E QA moved a ticket to `Done`", contract);
+            Assert.Contains("fetch the locked ticket from Plane", contract);
+            Assert.Contains("If the locked ticket is `Done`, replace the lock", contract);
+            Assert.Contains("active, missing, ambiguous, or cannot be verified", contract);
+            Assert.Contains("lazy cleanup on next ticket start", contract);
+
+            Assert.Contains("fetch the locked ticket through the Plane API", startSkill);
+            Assert.Contains("configured `plane.doneState` or default `Done`", startSkill);
+            Assert.Contains("replaceExisting=true", startSkill);
+            Assert.Contains("Do not delete the lock merely because the old ticket is QA Done or ready for PROD", startSkill);
+
+            Assert.Contains("Use `replaceExisting=true` only after `plane-start-ticket` confirms", configureRouter);
+            Assert.Contains("QA Done does not require immediate lock deletion", configureRouter);
+            Assert.Contains("retained after QA Done", architecture);
+            Assert.Contains("Do not copy `.codex/delivery-context.local.json`", parallelDocs);
         }
 
         [Fact]

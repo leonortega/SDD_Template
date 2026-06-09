@@ -433,6 +433,44 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
+        public void EnsureDeliveryContextCanReplaceExistingTicketLockWhenExplicitlyAllowed()
+        {
+            string root = CreateTempDirectory();
+            _ = Directory.CreateDirectory(Path.Combine(root, ".codex"));
+            string lockPath = Path.Combine(root, ".codex", "delivery-context.local.json");
+            File.WriteAllText(
+                lockPath,
+                JsonSerializer.Serialize(new
+                {
+                    ticketKey = "E2EPROJECT-1",
+                    branch = "feat/e2eproject-1",
+                    artifactCommitSha = "abc123",
+                    sourceRcVersion = "v1.2.3-rc.1",
+                }));
+
+            string output = RunPowerShellScript(
+                "-Mode",
+                "EnsureDeliveryContext",
+                "-Root",
+                root,
+                "-ValuesJson",
+                JsonSerializer.Serialize(new
+                {
+                    ticketKey = "E2EPROJECT-2",
+                    branch = "feat/e2eproject-2",
+                    replaceExisting = true,
+                }));
+
+            using JsonDocument context = JsonDocument.Parse(File.ReadAllText(lockPath));
+            Assert.Equal("E2EPROJECT-2", context.RootElement.GetProperty("ticketKey").GetString());
+            Assert.Equal("feat/e2eproject-2", context.RootElement.GetProperty("branch").GetString());
+            Assert.False(context.RootElement.TryGetProperty("artifactCommitSha", out _));
+            Assert.False(context.RootElement.TryGetProperty("sourceRcVersion", out _));
+            Assert.Contains("Create or update ticket context lock", output);
+            Assert.Contains("E2EPROJECT-2", output);
+        }
+
+        [Fact]
         public void AuditReportsRecordedTicketWorktreesMissingLocalRuntimeConfig()
         {
             string root = CreateTempDirectory();
@@ -1096,6 +1134,130 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("| `plane-start-ticket` | PASS | 2m 14s | 2026-06-03T10:00:00Z | 2026-06-03T10:02:14Z |", output);
             Assert.Contains("| `implement-ticket` | BLOCKED | 1h 00m 05s | 2026-06-03T10:02:14Z | 2026-06-03T11:02:19Z |", output);
             Assert.DoesNotContain("token", output, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        public void WorkflowTelemetryInitializeCreatesAndClearsJsonlFile()
+        {
+            string root = CreateTempDirectory();
+            string script = Path.Combine(FindRepositoryRoot().FullName, ".codex", "skills", "_shared", "scripts", "delivery_tools.ps1");
+            string telemetryPath = Path.Combine(root, ".codex", "agent-telemetry.local.jsonl");
+            _ = Directory.CreateDirectory(Path.GetDirectoryName(telemetryPath)!);
+            File.WriteAllText(telemetryPath, "{\"ticketKey\":\"OLD\"}");
+
+            string output = RunPowerShell(
+                script,
+                "-Mode",
+                "InitializeWorkflowTelemetry",
+                "-RepoRoot",
+                root,
+                "-TicketKey",
+                "E2EPROJECT-123");
+
+            using JsonDocument document = JsonDocument.Parse(output);
+            Assert.True(document.RootElement.GetProperty("exists").GetBoolean());
+            Assert.True(document.RootElement.GetProperty("cleared").GetBoolean());
+            Assert.Equal("E2EPROJECT-123", document.RootElement.GetProperty("ticketKey").GetString());
+            Assert.True(File.Exists(telemetryPath));
+            Assert.Equal(string.Empty, File.ReadAllText(telemetryPath));
+        }
+
+        [Fact]
+        public void WorkflowTelemetryAppendWritesValidJsonlWithRequiredFields()
+        {
+            string root = CreateTempDirectory();
+            string script = Path.Combine(FindRepositoryRoot().FullName, ".codex", "skills", "_shared", "scripts", "delivery_tools.ps1");
+            _ = RunPowerShell(script, "-Mode", "InitializeWorkflowTelemetry", "-RepoRoot", root, "-TicketKey", "E2EPROJECT-123");
+            string inputJson = JsonSerializer.Serialize(new
+            {
+                workflowStage = "implement-ticket",
+                agentRole = "implementation",
+                startedUtc = "2026-06-09T10:00:00Z",
+                finishedUtc = "2026-06-09T10:03:05Z",
+                retryCount = 1,
+                outcome = "PASS",
+            });
+
+            string output = RunPowerShell(
+                script,
+                "-Mode",
+                "AppendWorkflowTelemetry",
+                "-RepoRoot",
+                root,
+                "-TicketKey",
+                "E2EPROJECT-123",
+                "-InputJson",
+                inputJson);
+
+            using JsonDocument result = JsonDocument.Parse(output);
+            Assert.True(result.RootElement.GetProperty("appended").GetBoolean());
+            string telemetryPath = Path.Combine(root, ".codex", "agent-telemetry.local.jsonl");
+            string line = Assert.Single(File.ReadAllLines(telemetryPath), static value => !string.IsNullOrWhiteSpace(value));
+            using JsonDocument row = JsonDocument.Parse(line);
+            Assert.Equal("E2EPROJECT-123", row.RootElement.GetProperty("ticketKey").GetString());
+            Assert.Equal("implement-ticket", row.RootElement.GetProperty("workflowStage").GetString());
+            Assert.Equal("implementation", row.RootElement.GetProperty("agentRole").GetString());
+            Assert.Equal("2026-06-09T10:00:00Z", row.RootElement.GetProperty("startedUtc").GetString());
+            Assert.Equal("2026-06-09T10:03:05Z", row.RootElement.GetProperty("finishedUtc").GetString());
+            Assert.Equal(185000, row.RootElement.GetProperty("elapsedMilliseconds").GetInt64());
+            Assert.Equal(1, row.RootElement.GetProperty("retryCount").GetInt64());
+            Assert.Equal("PASS", row.RootElement.GetProperty("outcome").GetString());
+        }
+
+        [Fact]
+        public void WorkflowTelemetryReadFiltersByTicketAndReturnsRenderableStages()
+        {
+            string root = CreateTempDirectory();
+            string script = Path.Combine(FindRepositoryRoot().FullName, ".codex", "skills", "_shared", "scripts", "delivery_tools.ps1");
+            _ = RunPowerShell(script, "-Mode", "InitializeWorkflowTelemetry", "-RepoRoot", root, "-TicketKey", "E2EPROJECT-123");
+            foreach (var row in new[]
+            {
+                new { ticket = "E2EPROJECT-123", stage = "plane-start-ticket", agent = "ticketStarter", start = "2026-06-09T10:00:00Z", finish = "2026-06-09T10:01:00Z" },
+                new { ticket = "E2EPROJECT-999", stage = "ignored-ticket", agent = "implementation", start = "2026-06-09T10:01:00Z", finish = "2026-06-09T10:02:00Z" },
+                new { ticket = "E2EPROJECT-123", stage = "implement-ticket", agent = "implementation", start = "2026-06-09T10:01:00Z", finish = "2026-06-09T10:04:30Z" },
+            })
+            {
+                string appendJson = JsonSerializer.Serialize(new
+                {
+                    workflowStage = row.stage,
+                    agentRole = row.agent,
+                    startedUtc = row.start,
+                    finishedUtc = row.finish,
+                    outcome = "PASS",
+                });
+                _ = RunPowerShell(script, "-Mode", "AppendWorkflowTelemetry", "-RepoRoot", root, "-TicketKey", row.ticket, "-InputJson", appendJson);
+            }
+
+            string readJson = RunPowerShell(
+                script,
+                "-Mode",
+                "ReadWorkflowTelemetry",
+                "-RepoRoot",
+                root,
+                "-TicketKey",
+                "E2EPROJECT-123",
+                "-InputJson",
+                JsonSerializer.Serialize(new { status = "PASS - telemetry.", currentRoute = "implement-ticket" }));
+
+            using JsonDocument document = JsonDocument.Parse(readJson);
+            Assert.Equal("E2EPROJECT-123", document.RootElement.GetProperty("ticketKey").GetString());
+            Assert.Equal(270000, document.RootElement.GetProperty("totalElapsedMilliseconds").GetInt64());
+            JsonElement stages = document.RootElement.GetProperty("stages");
+            Assert.Equal(2, stages.GetArrayLength());
+            Assert.Equal("plane-start-ticket", stages[0].GetProperty("stage").GetString());
+            Assert.Equal("implement-ticket", stages[1].GetProperty("stage").GetString());
+
+            string comment = RunPowerShell(
+                script,
+                "-Mode",
+                "RenderPlaneComment",
+                "-Type",
+                "WorkflowTiming",
+                "-InputJson",
+                readJson);
+            Assert.Contains("IA generated workflow timing: E2EPROJECT-123", comment);
+            Assert.Contains("- Total elapsed: 4m 30s", comment);
+            Assert.Contains("| `implement-ticket` | PASS | 3m 30s | 2026-06-09T10:01:00Z | 2026-06-09T10:04:30Z |", comment);
         }
 
         private static string[] GetJsonErrors(JsonDocument document)
