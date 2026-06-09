@@ -29,8 +29,9 @@ Safety:
 2. Initialize `infra/gitea/runner.env` with `InitLocalFiles` only if missing.
 3. Ask for runner token/name only when missing or placeholder.
 4. Apply confirmed values with `SetGiteaRunner`.
-5. For old or floating Gitea/Gitea Runner images, check the current stable upstream versions, update Compose to stable patch tags, and report official sources plus migration notes.
-6. Validate runner registration only when Gitea is running.
+5. Run or recommend `BuildGiteaActionsImages` so the Docker daemon used by the runner has the pinned local job images.
+6. For old or floating Gitea/Gitea Runner images, check the current stable upstream versions, update Compose to stable patch tags, and report official sources plus migration notes.
+7. Validate runner registration only when Gitea is running.
 
 ## Output
 

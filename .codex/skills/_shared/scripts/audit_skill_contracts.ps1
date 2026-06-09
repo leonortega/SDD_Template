@@ -25,6 +25,10 @@ $requiredTerms = @(
   "handoff"
 )
 
+$supportSkillNames = @(
+  "caveman"
+)
+
 $skillRoot = Join-Path $Root ".codex/skills"
 if (-not (Test-Path $skillRoot)) {
   throw "Missing skill root: $skillRoot"
@@ -35,6 +39,8 @@ $results = @()
 Get-ChildItem -Path $skillRoot -Recurse -Filter "SKILL.md" |
   Where-Object {
     if ($AllSkills) { return $true }
+    $skillName = Split-Path -Leaf (Split-Path -Parent $_.FullName)
+    if ($supportSkillNames -contains $skillName) { return $false }
     if (-not $IncludeOpenSpec -and $_.FullName -match "\\openspec-") { return $false }
     if (-not $IncludeConfigure -and $_.FullName -match "\\configure-") { return $false }
     return $true
