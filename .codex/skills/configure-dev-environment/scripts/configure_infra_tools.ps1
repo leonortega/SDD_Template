@@ -3603,7 +3603,7 @@ function Invoke-EnsureDeliveryContext {
       $existing = Get-Content -Path $target -Raw | ConvertFrom-Json
       $existingTicket = [string]$existing.ticketKey
       if (-not [string]::IsNullOrWhiteSpace($existingTicket) -and $existingTicket -ne $ticketKey -and -not $replaceExisting) {
-        throw "Existing $targetRelative points to '$existingTicket'. Pass replaceExisting=true only after confirming the current worktree belongs to '$ticketKey'."
+        throw "Existing $targetRelative points to '$existingTicket'. Pass replaceExisting=true only after plane-start-ticket confirms '$existingTicket' is in the configured Done state, or after explicit operator confirmation for a known-safe repair to '$ticketKey'."
       }
     } catch {
       if (-not $replaceExisting) {

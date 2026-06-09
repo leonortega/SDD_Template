@@ -1545,6 +1545,32 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
+        public void TicketStartCanLazilyReplaceCompletedDeliveryContextLock()
+        {
+            string contract = ReadSkill("_shared", "delivery-contract.md");
+            string startSkill = ReadSkill("plane-start-ticket", "SKILL.md");
+            string configureRouter = ReadSkill("configure-dev-environment", "SKILL.md");
+            string architecture = ReadDoc("architecture.md");
+            string parallelDocs = ReadDoc("parallel-delivery.md");
+
+            Assert.Contains("Do not delete the lock merely because E2E QA moved a ticket to `Done`", contract);
+            Assert.Contains("fetch the locked ticket from Plane", contract);
+            Assert.Contains("If the locked ticket is `Done`, replace the lock", contract);
+            Assert.Contains("active, missing, ambiguous, or cannot be verified", contract);
+            Assert.Contains("lazy cleanup on next ticket start", contract);
+
+            Assert.Contains("fetch the locked ticket through the Plane API", startSkill);
+            Assert.Contains("configured `plane.doneState` or default `Done`", startSkill);
+            Assert.Contains("replaceExisting=true", startSkill);
+            Assert.Contains("Do not delete the lock merely because the old ticket is QA Done or ready for PROD", startSkill);
+
+            Assert.Contains("Use `replaceExisting=true` only after `plane-start-ticket` confirms", configureRouter);
+            Assert.Contains("QA Done does not require immediate lock deletion", configureRouter);
+            Assert.Contains("retained after QA Done", architecture);
+            Assert.Contains("Do not copy `.codex/delivery-context.local.json`", parallelDocs);
+        }
+
+        [Fact]
         public void FrontendTestingDebuggingSkillIsInstalledAndPreferredForWebsiteQa()
         {
             string frontendSkill = ReadSkill("frontend-testing-debugging", "SKILL.md");

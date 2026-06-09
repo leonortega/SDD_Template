@@ -203,7 +203,7 @@ Do not create parallel catalogs, planning artifacts, review workflows, or qualit
 
 ## Ticket Context Lock
 
-Normal automatic delivery must stay locked to one Plane ticket. Use ignored `.codex/delivery-context.local.json` as the local ticket context lock. Never commit it.
+Normal automatic delivery must stay locked to one Plane ticket. Use ignored `.codex/delivery-context.local.json` as the local active delivery context lock. Never commit it. Do not delete the lock merely because E2E QA moved a ticket to `Done`; the lock can still carry QA-approved artifact, RC, and release context needed for explicit PROD promotion.
 
 Parallel delivery keeps the same lock shape, but scopes it to the ticket worktree. Each active ticket worktree must contain its own `.codex/delivery-context.local.json`, and role agents must run only from the worktree assigned to that ticket. Do not share one checkout, one lock file, or one active implementation branch across multiple active tickets.
 
@@ -225,10 +225,10 @@ Rules:
 
 - `automatic-implement-ticket` resolves or creates the lock before delegating. If no ticket is selected, it must ask or route to `pipeline-status` instead of guessing.
 - `parallel-ticket-coordinator` creates or reuses one Git worktree per active ticket, records that assignment in ignored `.codex/parallel-delivery.local.json`, and delegates child skills only inside the assigned worktree.
-- `plane-start-ticket` creates or updates the lock after the selected ticket, branch, and OpenSpec decision are known.
+- `plane-start-ticket` creates or updates the lock after the selected ticket, branch, and OpenSpec decision are known. If an existing lock names a different ticket, fetch the locked ticket from Plane and compare it with the configured Done state. If the locked ticket is `Done`, replace the lock for the new selected ticket. If the locked ticket is active, missing, ambiguous, or cannot be verified, stop before branch, Plane, or OpenSpec mutation and report the lock blocker. This is lazy cleanup on next ticket start, not immediate deletion after QA Done.
 - Child skills must verify their resolved ticket, branch, PR, artifact `release.json.planeTicketKey`, QA evidence path, RC tag, and PROD release lineage match the locked `ticketKey` before mutating or promoting.
 - If the lock exists and a child skill resolves a different ticket key, stop and report the mismatch. Do not deploy, test, move state, tag, or comment the other ticket.
-- If the lock is stale but all durable checkpoints clearly identify one different ticket, stop and ask the user to clear or replace the lock; do not silently rewrite it.
+- If the lock is stale outside the `plane-start-ticket` terminal-ticket replacement path, or all durable checkpoints clearly identify one different active ticket, stop and ask the user to clear or replace the lock; do not silently rewrite it.
 - `pipeline-status` may read and report the lock plus mismatches. `rollback-prod` may operate by incident/release target, but must report when it differs from the active lock and require explicit user confirmation before mutation.
 
 ## Parallel Delivery
