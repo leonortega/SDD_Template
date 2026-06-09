@@ -20,7 +20,7 @@ Deployment tooling is intentionally local-first except for the application runti
 - Prometheus scrapes local infrastructure and configured Azure app `/health` targets.
 - Grafana Alloy collects Azure logs from separate DEV, QA, and PROD Azure Event Hubs consumers and writes them to Loki.
 - Grafana dashboards are provisioned from tracked files and should visualize Prometheus or Loki data without embedding secrets.
-- Azure log ingestion validation is executable through `infra/monitoring/validate-azure-log-ingestion.ps1` after environment-specific Event Hubs values, Azure identity environment variables, and the local Loki endpoint are configured. The script fails closed when required variables are absent or logs for any environment are not observed in Loki.
+- Azure log ingestion validation is executable through `infra/monitoring/validate-azure-log-ingestion.ps1` after environment-specific Event Hubs values, Azure service-principal environment variables (`AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`), and the local Loki endpoint are configured. The script fails closed when required variables are absent or logs for any environment are not observed in Loki.
 - QA evidence is retained locally under ignored paths and preferably published to Nexus under `qa/{ticketKey}/{runId}/qa-evidence.zip`.
 - Deployment guidance is mapped through `project-guidance-mapper`; missing deployment, observability, QA, security, release, or rollback skills and references are discovered by `project-guidance-discover`, copied only through `project-guidance-acquire` when they are confirmed skill items, and otherwise kept as local catalog guidance.
 

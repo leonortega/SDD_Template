@@ -67,6 +67,7 @@ services:
       AZURE_PROD_EVENTHUB_NAME: ${AZURE_PROD_EVENTHUB_NAME:-}
       AZURE_CLIENT_ID: ${AZURE_CLIENT_ID:-}
       AZURE_TENANT_ID: ${AZURE_TENANT_ID:-}
+      AZURE_CLIENT_SECRET: ${AZURE_CLIENT_SECRET:-}
     volumes:
       - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
     networks:

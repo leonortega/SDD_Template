@@ -6,6 +6,7 @@ logging {
 loki.source.azure_event_hubs "dev" {
   fully_qualified_namespace = sys.env("AZURE_DEV_EVENTHUB_NAMESPACE") + ".servicebus.windows.net:9093"
   event_hubs                = [sys.env("AZURE_DEV_EVENTHUB_NAME")]
+  group_id                  = "grafana-alloy-dev"
 
   authentication {
     mechanism = "oauth"
@@ -22,6 +23,7 @@ loki.source.azure_event_hubs "dev" {
 loki.source.azure_event_hubs "qa" {
   fully_qualified_namespace = sys.env("AZURE_QA_EVENTHUB_NAMESPACE") + ".servicebus.windows.net:9093"
   event_hubs                = [sys.env("AZURE_QA_EVENTHUB_NAME")]
+  group_id                  = "grafana-alloy-qa"
 
   authentication {
     mechanism = "oauth"
@@ -38,6 +40,7 @@ loki.source.azure_event_hubs "qa" {
 loki.source.azure_event_hubs "prod" {
   fully_qualified_namespace = sys.env("AZURE_PROD_EVENTHUB_NAMESPACE") + ".servicebus.windows.net:9093"
   event_hubs                = [sys.env("AZURE_PROD_EVENTHUB_NAME")]
+  group_id                  = "grafana-alloy-prod"
 
   authentication {
     mechanism = "oauth"

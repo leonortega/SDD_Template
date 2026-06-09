@@ -83,6 +83,9 @@ namespace SDDTemplate.Site.Tests
             Assert.Contains("environment = \"dev\"", alloy);
             Assert.Contains("environment = \"qa\"", alloy);
             Assert.Contains("environment = \"prod\"", alloy);
+            Assert.Contains("group_id                  = \"grafana-alloy-dev\"", alloy);
+            Assert.Contains("group_id                  = \"grafana-alloy-qa\"", alloy);
+            Assert.Contains("group_id                  = \"grafana-alloy-prod\"", alloy);
             Assert.Contains("loki.write \"local\"", alloy);
         }
 
@@ -100,6 +103,7 @@ namespace SDDTemplate.Site.Tests
             Assert.Contains("AZURE_PROD_EVENTHUB_NAME", script);
             Assert.Contains("AZURE_CLIENT_ID", script);
             Assert.Contains("AZURE_TENANT_ID", script);
+            Assert.Contains("AZURE_CLIENT_SECRET", script);
             Assert.Contains("/loki/api/v1/query_range", script);
             Assert.Contains("dev", script);
             Assert.Contains("qa", script);
