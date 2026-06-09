@@ -1143,7 +1143,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             string script = Path.Combine(FindRepositoryRoot().FullName, ".codex", "skills", "_shared", "scripts", "delivery_tools.ps1");
             string telemetryPath = Path.Combine(root, ".codex", "agent-telemetry.local.jsonl");
             _ = Directory.CreateDirectory(Path.GetDirectoryName(telemetryPath)!);
-            File.WriteAllText(telemetryPath, "{\"ticketKey\":\"OLD\"}");
+            File.WriteAllText(telemetryPath, JsonSerializer.Serialize(new { ticketKey = "OLD" }));
 
             string output = RunPowerShell(
                 script,

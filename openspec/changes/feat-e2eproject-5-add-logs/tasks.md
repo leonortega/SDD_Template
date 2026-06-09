@@ -39,3 +39,8 @@ Suggested work units: single PR covering Serilog configuration, Alloy/Loki/Grafa
 
 - [x] 5.1 Run Context Findings Review and update docs if durable observability guidance changes.
 - [x] 5.2 Update Plane/Gitea handoff with validation, assumptions, docs status, and memory status.
+
+## PR Review Feedback
+
+- [x] PRF-1 Source: Gitea review 21, head b28a1e6e0e420635a877e20c2f507bfc5c0a7a4c, severity BLOCKER, review mode human, requested change: add an executable validation path for Azure Event Hubs -> Grafana Alloy -> Loki ingestion instead of leaving live ingestion as an unaddressed QA gap.
+- [x] PRF-2 Source: Gitea review 21, head b28a1e6e0e420635a877e20c2f507bfc5c0a7a4c, severity BLOCKER, review mode human, requested change: fix full-solution dotnet format JSON002 in tools/SDDTemplate.DeliveryTools.Tests/DeliveryToolsTests.cs:1146.
