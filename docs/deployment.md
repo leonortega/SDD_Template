@@ -12,13 +12,14 @@ Push-triggered deployment is allowed only for ticket-named application changes u
 
 ## Technology Stack And Tool Set
 
-Deployment tooling is intentionally local-first except for the application runtimes. Gitea Actions packages and deploys ticket-gated application changes, Nexus stores the exact artifact and `release.json`, Azure App Service hosts DEV/QA/PROD web and API runtimes, and Prometheus/Grafana verify configured health visibility.
+Deployment tooling is intentionally local-first except for the application runtimes. Gitea Actions packages and deploys ticket-gated application changes, Nexus stores the exact artifact and `release.json`, Azure App Service hosts DEV/QA/PROD web and API runtimes, Prometheus plus Grafana verify configured health visibility, and Grafana Alloy plus Loki plus Grafana provide configured log visibility.
 
 - Nexus paths under `app/{commitSha}/` are the durable artifact identity; environments must promote that same ZIP and checksum instead of rebuilding.
 - Azure deployment uses App Service ZIP deployment from the existing Nexus artifact.
 - The Blazor site project (`src/SDDTemplate.Site`) and REST API project (`src/SDDTemplate.Api`) are separated so Azure environments can host web and API App Service apps independently. The API references `src/SDDTemplate.Data` for EF Core entities, DbContext, migrations, and database setup.
 - Prometheus scrapes local infrastructure and configured Azure app `/health` targets.
-- Grafana dashboards are provisioned from tracked files and should visualize Prometheus data without embedding secrets.
+- Grafana Alloy collects Azure logs from separate DEV, QA, and PROD Azure Event Hubs consumers and writes them to Loki.
+- Grafana dashboards are provisioned from tracked files and should visualize Prometheus or Loki data without embedding secrets.
 - QA evidence is retained locally under ignored paths and preferably published to Nexus under `qa/{ticketKey}/{runId}/qa-evidence.zip`.
 - Deployment guidance is mapped through `project-guidance-mapper`; missing deployment, observability, QA, security, release, or rollback skills and references are discovered by `project-guidance-discover`, copied only through `project-guidance-acquire` when they are confirmed skill items, and otherwise kept as local catalog guidance.
 
