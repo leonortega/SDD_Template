@@ -86,6 +86,19 @@ namespace SDDTemplate.Site.Tests
             Assert.Contains("loki.write \"local\"", alloy);
         }
 
+        [Fact]
+        public void GrafanaDatasourceProvisioningDefinesStableUidsForDashboardReferences()
+        {
+            string root = FindRepositoryRoot();
+            string datasourcePath = Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "datasources", "prometheus.yml");
+            string datasources = File.ReadAllText(datasourcePath);
+
+            Assert.Contains("name: Prometheus", datasources);
+            Assert.Contains("uid: Prometheus", datasources);
+            Assert.Contains("name: Loki", datasources);
+            Assert.Contains("uid: Loki", datasources);
+        }
+
         [Theory]
         [InlineData("dev", "DEV")]
         [InlineData("qa", "QA")]
