@@ -38,7 +38,7 @@ The intended delivery tool set is tracked here so agents can distinguish project
 
 ## Ticket And Worktree Isolation
 
-Normal delivery is locked to one active ticket with ignored `.codex/delivery-context.local.json`. Child skills must verify that resolved ticket, branch, PR, artifact commit, QA evidence, RC tag, and PROD lineage match the locked ticket before mutation.
+Normal delivery is locked to one active ticket with ignored `.codex/delivery-context.local.json`. Child skills must verify that resolved ticket, branch, PR, artifact commit, QA evidence, RC tag, and PROD lineage match the locked ticket before mutation. The lock is retained after QA Done so explicit PROD promotion can reuse artifact and RC context; `plane-start-ticket` may replace it lazily only when starting another ticket and the previous locked ticket is verified in the configured Done state.
 
 Parallel delivery uses one Git worktree and one `.codex/delivery-context.local.json` per active ticket. The coordinator records active worktrees and deployment-lane ownership in ignored `.codex/parallel-delivery.local.json`.
 

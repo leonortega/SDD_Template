@@ -1,5 +1,5 @@
 param(
-  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetPlaneEnv", "SetGiteaRunner", "SetPrometheusAzureTargets", "AuditQualityGates", "AuditRecommendedTools", "DiscoverProjectGuidance", "AcquireProjectGuidance", "SetRecommendedTools", "MapProjectGuidanceStep", "ValidateGiteaActionsRunner", "InitQualityGateTemplates", "SetQualityConfig", "SyncWorktreeLocalConfig", "EnsureDeliveryContext")]
+  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetPlaneEnv", "SetGiteaRunner", "SetPrometheusAzureTargets", "AuditQualityGates", "AuditRecommendedTools", "DiscoverProjectGuidance", "AcquireProjectGuidance", "SetRecommendedTools", "MapProjectGuidanceStep", "BuildGiteaActionsImages", "ValidateGiteaActionsRunner", "InitQualityGateTemplates", "SetQualityConfig", "SyncWorktreeLocalConfig", "EnsureDeliveryContext")]
   [string]$Mode = "Audit",
 
   [string]$Root = (Resolve-Path ".").Path,
@@ -59,6 +59,38 @@ function Test-ConfigWritesEnabled {
   if ($Mode -eq "DiscoverProjectGuidance") { return (Test-ValuesJsonFlag "persistLocal") }
   if ($Mode -like "Audit*" -and -not $AllowAuditWrites) { return $false }
   return $true
+}
+
+function Get-GiteaActionsImages {
+  return @(
+    [ordered]@{
+      id = "dotnet-ci"
+      image = "agentic/dotnet-ci:10.0.300-tools-1"
+      dockerfile = "infra/gitea/actions-images/dotnet-ci/Dockerfile"
+      context = "infra/gitea/actions-images/dotnet-ci"
+      requiredTools = @("bash", "git", "curl", "tar", "dotnet", "jq", "zip", "gitleaks", "trivy", "az", "node", "npm")
+    },
+    [ordered]@{
+      id = "e2e-ci"
+      image = "agentic/e2e-ci:playwright-1.57.0-1"
+      dockerfile = "infra/gitea/actions-images/e2e-ci/Dockerfile"
+      context = "infra/gitea/actions-images/e2e-ci"
+      requiredTools = @("bash", "git", "curl", "node", "npm", "zip")
+      extraCheck = "test -d /ms-playwright"
+    }
+  )
+}
+
+function Test-LocalImageTag {
+  param([string]$Image)
+  return $Image -match "^agentic/"
+}
+
+function Assert-NativeCommandSucceeded {
+  param([string]$Action)
+  if ($LASTEXITCODE -ne 0) {
+    throw "$Action failed with exit code $LASTEXITCODE."
+  }
 }
 
 function Add-Item {
@@ -512,7 +544,8 @@ function Add-GiteaActionsRunnerCompatibilityFindings {
     Add-Item $Result "findings" $WorkflowRelativePath "gitleaks.install" "Workflow installs Gitleaks from a moving raw install script URL. Pin a Gitleaks release archive so CI does not break when install paths change." "warning"
   }
 
-  if ($workflow -match "zip\s+-r" -and $workflow -notmatch "apt-get install .*zip") {
+  $usesRepoOwnedToolImage = $workflow -match "agentic/(dotnet-ci|e2e-ci):"
+  if ($workflow -match "zip\s+-r" -and $workflow -notmatch "apt-get install .*zip" -and -not $usesRepoOwnedToolImage) {
     Add-Item $Result "findings" $WorkflowRelativePath "zip.install" "Workflow creates ZIP artifacts inside a container but does not install zip. The .NET SDK container does not include zip by default." "warning"
   }
 
@@ -626,7 +659,7 @@ function Add-QualityGateAuditFindings {
   if (-not (Test-Path (Join-RootPath $prWorkflow))) {
     Add-Item $Result "findings" $prWorkflow "" "Missing Gitea PR validation workflow." "warning"
   } else {
-    foreach ($expected in @("dotnet restore", "dotnet format", "dotnet build", "dotnet test", "ReadCoverageThreshold", "ReadCoberturaLineRate", "gitleaks", "trivy")) {
+    foreach ($expected in @("quality_projects", 'dotnet restore "$project"', 'dotnet format "$project"', 'dotnet build "$project"', "dotnet test tests/SDDTemplate.Site.Tests/SDDTemplate.Site.Tests.csproj", 'dotnet list "$project" package', "ReadCoverageThreshold", "ReadCoberturaLineRate", "gitleaks", "trivy")) {
       if (-not (Test-FileContains $prWorkflow ([regex]::Escape($expected)))) {
         Add-Item $Result "findings" $prWorkflow $expected "PR validation workflow does not mention $expected." "warning"
       }
@@ -659,6 +692,9 @@ function Add-QualityGateAuditFindings {
     $releaseContent = Get-Content -Path (Join-RootPath $releaseWorkflow) -Raw
     if (-not (Test-FileContains $releaseWorkflow "jq -r '\.apps\[\] \| \[\.appId, \.projectPath, \.artifactName\] \| @tsv'")) {
       Add-Item $Result "findings" $releaseWorkflow "topology.publish" "Package/deploy workflow should publish deployable apps from infra/deployment/apps.json." "warning"
+    }
+    if (-not (Test-FileContains $releaseWorkflow "projectPath must be under src/")) {
+      Add-Item $Result "findings" $releaseWorkflow "topology.publish.source-root" "Package/deploy workflow should reject deployable project paths outside application source roots." "warning"
     }
   }
 
@@ -706,10 +742,13 @@ function Add-QualityGateAuditFindings {
     }
   }
 
-  foreach ($qualityFile in @(".editorconfig", "Directory.Build.props", "lefthook.yml")) {
+  foreach ($qualityFile in @(".editorconfig", ".gitattributes", "Directory.Build.props", "lefthook.yml")) {
     if (-not (Test-Path (Join-RootPath $qualityFile))) {
       Add-Item $Result "findings" $qualityFile "" "Missing quality gate template." "warning"
     }
+  }
+  if ((Test-Path (Join-RootPath ".gitattributes")) -and -not (Test-FileContains ".gitattributes" "\*\s+text=auto\s+eol=lf")) {
+    Add-Item $Result "findings" ".gitattributes" "text.eol" "Missing repository LF normalization rule; Windows core.autocrlf checkouts can break dotnet format end_of_line checks." "warning"
   }
 
   $giteaCompose = "infra/gitea/compose.yml"
@@ -720,6 +759,40 @@ function Add-QualityGateAuditFindings {
     }
     if ($compose -match "gitea/act_runner:latest") {
       Add-Item $Result "findings" $giteaCompose "runner.image" "Gitea runner image uses floating latest tag; pin a known runner version." "warning" "pre-start"
+    }
+  }
+
+  foreach ($imageInfo in Get-GiteaActionsImages) {
+    if (-not (Test-Path (Join-RootPath $imageInfo.dockerfile))) {
+      Add-Item $Result "findings" $imageInfo.dockerfile "" "Missing repo-owned Gitea Actions image Dockerfile for $($imageInfo.id)." "warning" "pre-start"
+    }
+  }
+
+  $prWorkflow = ".gitea/workflows/pr-validation.yml"
+  if (Test-Path (Join-RootPath $prWorkflow)) {
+    $prWorkflowContent = Get-Content -Path (Join-RootPath $prWorkflow) -Raw
+    if ($prWorkflowContent -notmatch [regex]::Escape("agentic/dotnet-ci:10.0.300-tools-1")) {
+      Add-Item $Result "findings" $prWorkflow "container.image" "PR validation should use the pinned repo-owned dotnet-ci image." "warning"
+    }
+    foreach ($installPattern in @("Install Gitleaks", "Install Trivy")) {
+      if ($prWorkflowContent -match [regex]::Escape($installPattern)) {
+        Add-Item $Result "findings" $prWorkflow $installPattern "PR validation still installs tools at run time; move required tools into dotnet-ci." "warning"
+      }
+    }
+  }
+
+  $deployWorkflow = ".gitea/workflows/package-deploy.yml"
+  if (Test-Path (Join-RootPath $deployWorkflow)) {
+    $deployWorkflowContent = Get-Content -Path (Join-RootPath $deployWorkflow) -Raw
+    foreach ($image in @("agentic/dotnet-ci:10.0.300-tools-1", "agentic/e2e-ci:playwright-1.57.0-1")) {
+      if ($deployWorkflowContent -notmatch [regex]::Escape($image)) {
+        Add-Item $Result "findings" $deployWorkflow "container.image" "Package/deploy workflow should use pinned image $image where relevant." "warning"
+      }
+    }
+    foreach ($installPattern in @("Install packaging tools", "Install deployment tools", "Install Azure CLI", "npm run install:browsers", "deb.nodesource.com/setup_22.x")) {
+      if ($deployWorkflowContent -match [regex]::Escape($installPattern)) {
+        Add-Item $Result "findings" $deployWorkflow $installPattern "Package/deploy workflow still installs tools at run time; move required tools into repo-owned CI images." "warning"
+      }
     }
   }
 
@@ -747,6 +820,17 @@ function Add-QualityGateAuditFindings {
       if (-not (Test-FileContains $topologyManifest $expectedTopology)) {
         Add-Item $Result "findings" $topologyManifest $expectedTopology "Deployable app topology manifest is missing an expected app or field." "warning"
       }
+    }
+    try {
+      $topology = Get-Content -Path (Join-RootPath $topologyManifest) -Raw | ConvertFrom-Json
+      foreach ($app in @($topology.apps)) {
+        $projectPath = [string]$app.projectPath
+        if ([string]::IsNullOrWhiteSpace($projectPath) -or -not $projectPath.StartsWith("src/")) {
+          Add-Item $Result "findings" $topologyManifest "projectPath" "Deployable app '$($app.appId)' projectPath must be under src/ and must not target SDD, infrastructure, OpenSpec, agent, workflow, or tool projects." "warning"
+        }
+      }
+    } catch {
+      Add-Item $Result "findings" $topologyManifest "" "Deployable app topology manifest could not be parsed as JSON." "warning"
     }
   }
   if (-not (Test-Path (Join-RootPath $configurationManifest))) {
@@ -2041,26 +2125,36 @@ function Invoke-ValidateGiteaActionsRunner {
 
   try {
     & docker version | Out-Null
+    Assert-NativeCommandSucceeded "docker version"
     Add-Item $result "actions" "docker" "" "Docker CLI is available."
   } catch {
     Add-Item $result "findings" "docker" "" "Docker CLI is installed but not usable: $($_.Exception.Message)" "error"
     return $result
   }
 
-  try {
-    & docker pull $containerImage | Out-Null
-    Add-Item $result "actions" $workflowRelativePath "container.image" "Pulled runner job image $containerImage successfully."
-  } catch {
-    Add-Item $result "findings" $workflowRelativePath "container.image" "Could not pull runner job image $containerImage. Pin a pullable stable patch image before enabling PR validation." "error"
-    return $result
-  }
+  foreach ($imageInfo in Get-GiteaActionsImages) {
+    $image = [string]$imageInfo.image
+    try {
+      & docker image inspect $image | Out-Null
+      Assert-NativeCommandSucceeded "docker image inspect $image"
+      Add-Item $result "actions" $imageInfo.dockerfile "image" "Found local Gitea Actions image $image."
+    } catch {
+      Add-Item $result "findings" $imageInfo.dockerfile "image" "Missing local Gitea Actions image $image. Run -Mode BuildGiteaActionsImages before relying on workflows." "error"
+      continue
+    }
 
-  $toolCheck = "for tool in bash git curl tar dotnet; do command -v `$tool >/dev/null || { echo missing:`$tool; exit 1; }; done"
-  try {
-    & docker run --rm --entrypoint /bin/sh $containerImage -lc $toolCheck | Out-Null
-    Add-Item $result "actions" $workflowRelativePath "container.tools" "Runner job image includes bash, git, curl, tar, and dotnet."
-  } catch {
-    Add-Item $result "findings" $workflowRelativePath "container.tools" "Runner job image is missing a tool required by shell-based PR validation. Required: bash, git, curl, tar, dotnet." "error"
+    $tools = @($imageInfo.requiredTools)
+    $toolCheck = "for tool in $($tools -join ' '); do command -v `$tool >/dev/null || { echo missing:`$tool; exit 1; }; done"
+    if (-not [string]::IsNullOrWhiteSpace([string]$imageInfo.extraCheck)) {
+      $toolCheck = "$toolCheck; $($imageInfo.extraCheck)"
+    }
+    try {
+      & docker run --rm --entrypoint /bin/sh $image -lc $toolCheck | Out-Null
+      Assert-NativeCommandSucceeded "docker run tool check for $image"
+      Add-Item $result "actions" $imageInfo.dockerfile "container.tools" "Image $image includes required tools: $($tools -join ', ')."
+    } catch {
+      Add-Item $result "findings" $imageInfo.dockerfile "container.tools" "Image $image is missing one or more required tools: $($tools -join ', ')." "error"
+    }
   }
 
   $origin = $null
@@ -2075,9 +2169,69 @@ function Invoke-ValidateGiteaActionsRunner {
     $repoUrl = $repoUrl -replace "gitea", "host.docker.internal"
     try {
       & docker run --rm -e "REPO_URL=$repoUrl" --entrypoint /bin/sh $containerImage -lc 'git ls-remote "$REPO_URL" HEAD >/dev/null' | Out-Null
+      Assert-NativeCommandSucceeded "docker run checkout network check"
       Add-Item $result "actions" $workflowRelativePath "checkout.network" "Runner job image can reach the repository origin through host.docker.internal."
     } catch {
       Add-Item $result "findings" $workflowRelativePath "checkout.network" "Runner job image cannot reach the repository origin through host.docker.internal. Check Gitea URL rewriting, Docker host networking, and GITEA_INSTANCE_URL." "error"
+    }
+  }
+
+  return $result
+}
+
+function Invoke-BuildGiteaActionsImages {
+  $result = New-Result
+  $docker = Get-Command docker -ErrorAction SilentlyContinue
+  if ($null -eq $docker) {
+    Add-Item $result "findings" "docker" "" "Docker CLI is missing; install Docker Desktop or Docker Engine before building Gitea Actions images." "error"
+    return $result
+  }
+
+  try {
+    & docker version | Out-Null
+    Assert-NativeCommandSucceeded "docker version"
+    Add-Item $result "actions" "docker" "" "Docker CLI is available."
+  } catch {
+    Add-Item $result "findings" "docker" "" "Docker CLI is installed but not usable: $($_.Exception.Message)" "error"
+    return $result
+  }
+
+  foreach ($imageInfo in Get-GiteaActionsImages) {
+    $dockerfile = Join-RootPath $imageInfo.dockerfile
+    $context = Join-RootPath $imageInfo.context
+    $image = [string]$imageInfo.image
+
+    if (-not (Test-Path $dockerfile)) {
+      Add-Item $result "findings" $imageInfo.dockerfile "" "Missing Dockerfile for $image." "error"
+      continue
+    }
+
+    if ($DryRun) {
+      Add-Item $result "actions" $imageInfo.dockerfile "docker build" "Would build $image from $($imageInfo.context)."
+      continue
+    }
+
+    try {
+      & docker build --pull -t $image -f $dockerfile $context | Out-Null
+      Assert-NativeCommandSucceeded "docker build $image"
+      Add-Item $result "actions" $imageInfo.dockerfile "docker build" "Built $image."
+    } catch {
+      Add-Item $result "findings" $imageInfo.dockerfile "docker build" "Failed to build $image`: $($_.Exception.Message)" "error"
+      continue
+    }
+
+    $tools = @($imageInfo.requiredTools)
+    $toolCheck = "for tool in $($tools -join ' '); do command -v `$tool >/dev/null || { echo missing:`$tool; exit 1; }; done"
+    if (-not [string]::IsNullOrWhiteSpace([string]$imageInfo.extraCheck)) {
+      $toolCheck = "$toolCheck; $($imageInfo.extraCheck)"
+    }
+
+    try {
+      & docker run --rm --entrypoint /bin/sh $image -lc $toolCheck | Out-Null
+      Assert-NativeCommandSucceeded "docker run tool check for $image"
+      Add-Item $result "actions" $imageInfo.dockerfile "container.tools" "Validated $image required tools: $($tools -join ', ')."
+    } catch {
+      Add-Item $result "findings" $imageInfo.dockerfile "container.tools" "Built $image but required tool validation failed: $($tools -join ', ')." "error"
     }
   }
 
@@ -2139,6 +2293,30 @@ dotnet_analyzer_diagnostic.category-Style.severity = warning
 dotnet_analyzer_diagnostic.category-Design.severity = warning
 dotnet_analyzer_diagnostic.category-Security.severity = warning
 dotnet_diagnostic.CA1822.severity = none
+'@
+
+  Write-TemplateFile $result ".gitattributes" @'
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.tar binary
+*.7z binary
+*.dll binary
+*.exe binary
+*.pdb binary
+*.db binary
+*.sqlite binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
 '@
 
   Write-TemplateFile $result "Directory.Build.props" @'
@@ -2371,7 +2549,7 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     container:
-      image: mcr.microsoft.com/dotnet/sdk:10.0.300
+      image: agentic/dotnet-ci:10.0.300-tools-1
     steps:
       - name: Checkout
         shell: bash
@@ -2387,34 +2565,50 @@ jobs:
           git fetch --depth 1 origin "$GITHUB_SHA"
           git checkout --force FETCH_HEAD
 
-      - name: Restore
-        run: dotnet restore
-
-      - name: Verify formatting
-        run: dotnet format --verify-no-changes --no-restore
-
-      - name: Build
-        run: dotnet build -c Release --no-restore
-
-      - name: Install PowerShell
+      - name: Restore application projects
         shell: bash
         run: |
           set -euo pipefail
 
-          apt-get update
-          apt-get install -y --no-install-recommends wget apt-transport-https ca-certificates gnupg
-          . /etc/os-release
-          case "${ID:-}" in
-            ubuntu|debian) package_os="$ID" ;;
-            *) echo "Unsupported PowerShell package OS: ${ID:-unknown}" && exit 1 ;;
-          esac
-          wget -q "https://packages.microsoft.com/config/${package_os}/${VERSION_ID}/packages-microsoft-prod.deb" -O /tmp/packages-microsoft-prod.deb
-          dpkg -i /tmp/packages-microsoft-prod.deb
-          apt-get update
-          apt-get install -y --no-install-recommends powershell
+          quality_projects=(
+            "src/SDDTemplate.Site/SDDTemplate.Site.csproj"
+            "src/SDDTemplate.Api/SDDTemplate.Api.csproj"
+            "tests/SDDTemplate.Site.Tests/SDDTemplate.Site.Tests.csproj"
+          )
+          for project in "${quality_projects[@]}"; do
+            dotnet restore "$project"
+          done
+
+      - name: Verify application formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          quality_projects=(
+            "src/SDDTemplate.Site/SDDTemplate.Site.csproj"
+            "src/SDDTemplate.Api/SDDTemplate.Api.csproj"
+            "tests/SDDTemplate.Site.Tests/SDDTemplate.Site.Tests.csproj"
+          )
+          for project in "${quality_projects[@]}"; do
+            dotnet format "$project" --verify-no-changes --no-restore
+          done
+
+      - name: Build application projects
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          quality_projects=(
+            "src/SDDTemplate.Site/SDDTemplate.Site.csproj"
+            "src/SDDTemplate.Api/SDDTemplate.Api.csproj"
+            "tests/SDDTemplate.Site.Tests/SDDTemplate.Site.Tests.csproj"
+          )
+          for project in "${quality_projects[@]}"; do
+            dotnet build "$project" -c Release --no-restore
+          done
 
       - name: Test
-        run: dotnet test -c Release --no-build --logger trx --collect:"XPlat Code Coverage"
+        run: dotnet test tests/SDDTemplate.Site.Tests/SDDTemplate.Site.Tests.csproj -c Release --no-build --logger trx --collect:"XPlat Code Coverage"
 
       - name: Enforce coverage threshold
         shell: bash
@@ -2443,20 +2637,21 @@ jobs:
           echo "Coverage ${actual}% meets required ${minimum}%."
 
       - name: Dependency vulnerability audit
-        run: dotnet list package --vulnerable --include-transitive
-
-      - name: Install Gitleaks
+        shell: bash
         run: |
-          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz \
-            | tar -xz -C /usr/local/bin gitleaks
+          set -euo pipefail
+
+          quality_projects=(
+            "src/SDDTemplate.Site/SDDTemplate.Site.csproj"
+            "src/SDDTemplate.Api/SDDTemplate.Api.csproj"
+            "tests/SDDTemplate.Site.Tests/SDDTemplate.Site.Tests.csproj"
+          )
+          for project in "${quality_projects[@]}"; do
+            dotnet list "$project" package --vulnerable --include-transitive
+          done
 
       - name: Secret scan
         run: gitleaks detect --source . --redact --no-git
-
-      - name: Install Trivy
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
-            | sh -s -- -b /usr/local/bin v0.70.0
 
       - name: Trivy filesystem scan
         run: trivy fs --severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed .
@@ -2574,7 +2769,7 @@ jobs:
     if: (github.event_name == 'push' && github.ref == 'refs/heads/dev' && needs.classify-changes.outputs.app_changed == 'true' && needs.classify-changes.outputs.deploy_allowed == 'true') || github.event.inputs.environment == 'dev' || github.event.inputs.environment == 'qa'
     runs-on: ubuntu-latest
     container:
-      image: mcr.microsoft.com/dotnet/sdk:10.0.300
+      image: agentic/dotnet-ci:10.0.300-tools-1
     steps:
       - name: Checkout
         shell: bash
@@ -2590,11 +2785,6 @@ jobs:
           git fetch --depth 1 origin "$GITHUB_SHA"
           git checkout --force FETCH_HEAD
 
-      - name: Install packaging tools
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends jq zip
-
       - name: Publish topology apps
         shell: bash
         run: |
@@ -2604,6 +2794,11 @@ jobs:
           jq -c '.apps | sort_by(.deployOrder)' infra/deployment/apps.json > artifacts/deployable-apps.json
           jq -r '.apps[] | [.appId, .projectPath, .artifactName] | @tsv' infra/deployment/apps.json |
           while IFS=$'\t' read -r app_id project_path artifact_name; do
+            case "$project_path" in
+              src/*) ;;
+              *) echo "Deployable app '$app_id' projectPath must be under src/: $project_path" && exit 1 ;;
+            esac
+            test -f "$project_path"
             echo "Publishing $app_id from $project_path"
             dotnet publish "$project_path" -c Release -o "artifacts/$app_id"
             (cd "artifacts/$app_id" && zip -r "../packages/$artifact_name" .)
@@ -2651,13 +2846,10 @@ jobs:
       - classify-changes
       - package
     runs-on: ubuntu-latest
+    container:
+      image: agentic/dotnet-ci:10.0.300-tools-1
     if: (github.event_name == 'push' && github.ref == 'refs/heads/dev' && needs.classify-changes.outputs.app_changed == 'true' && needs.classify-changes.outputs.deploy_allowed == 'true') || github.event.inputs.environment == 'dev' || github.event.inputs.environment == 'qa'
     steps:
-      - name: Install deployment tools
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends jq
-
       - name: Download topology artifacts from Nexus
         shell: bash
         run: |
@@ -2676,9 +2868,6 @@ jobs:
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
           NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
           NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
-
-      - name: Install Azure CLI
-        run: curl -sL https://aka.ms/InstallAzureCLIDeb | bash
 
       - name: Azure login
         uses: azure/login@v2
@@ -2844,13 +3033,10 @@ jobs:
       - classify-changes
       - deploy-dev
     runs-on: ubuntu-latest
+    container:
+      image: agentic/dotnet-ci:10.0.300-tools-1
     if: (github.event_name == 'push' && github.ref == 'refs/heads/dev' && needs.classify-changes.outputs.app_changed == 'true' && needs.classify-changes.outputs.deploy_allowed == 'true') || github.event.inputs.environment == 'qa'
     steps:
-      - name: Install deployment tools
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends jq
-
       - name: Download topology artifacts from Nexus
         shell: bash
         run: |
@@ -2869,9 +3055,6 @@ jobs:
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
           NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
           NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
-
-      - name: Install Azure CLI
-        run: curl -sL https://aka.ms/InstallAzureCLIDeb | bash
 
       - name: Azure login
         uses: azure/login@v2
@@ -3034,6 +3217,8 @@ jobs:
 
   e2e-qa-branch:
     runs-on: ubuntu-latest
+    container:
+      image: agentic/e2e-ci:playwright-1.57.0-1
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/qa/')
     steps:
       - name: Checkout QA E2E branch
@@ -3066,18 +3251,13 @@ jobs:
           test -n "$plane_ticket_key"
           echo "E2E_PLANE_TICKET_KEY=$plane_ticket_key" >> "$GITHUB_ENV"
 
-      - name: Install E2E tools
+      - name: Install E2E dependencies
         shell: bash
         run: |
           set -euo pipefail
 
-          apt-get update
-          apt-get install -y --no-install-recommends ca-certificates curl zip
-          curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-          apt-get install -y --no-install-recommends nodejs
           cd tests/SDDTemplate.E2ETests
           npm ci
-          npm run install:browsers
 
       - name: Run QA branch E2E suite and upload evidence
         shell: bash
@@ -3120,6 +3300,8 @@ jobs:
   deploy-prod:
     needs: classify-changes
     runs-on: ubuntu-latest
+    container:
+      image: agentic/dotnet-ci:10.0.300-tools-1
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.classify-changes.outputs.app_changed == 'true' && needs.classify-changes.outputs.deploy_allowed == 'true') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod')
     steps:
       - name: Resolve PROD promotion inputs
@@ -3142,11 +3324,6 @@ jobs:
           RELEASE_VERSION: ${{ github.event.inputs.release_version }}
           SOURCE_RC_VERSION: ${{ github.event.inputs.source_rc_version }}
 
-      - name: Install deployment tools
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends jq
-
       - name: Download topology artifacts from Nexus
         shell: bash
         run: |
@@ -3165,9 +3342,6 @@ jobs:
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
           NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
           NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
-
-      - name: Install Azure CLI
-        run: curl -sL https://aka.ms/InstallAzureCLIDeb | bash
 
       - name: Azure login
         uses: azure/login@v2
@@ -3336,7 +3510,7 @@ Gitea PR validation is the source of truth. Local hooks are only convenience che
 
 Coverage threshold defaults to `80%` from `.codex/quality.example.json`. Local development may override it with ignored `.codex/quality.local.json`; CI falls back to the tracked example when no local config is present.
 
-The local runner executes PR validation inside a pinned .NET SDK container. Keep checkout and security tools shell-based unless the job container explicitly includes `node`; JavaScript `uses:` actions can fail inside plain SDK containers. Validate runner compatibility after workflow changes:
+The local runner executes PR validation inside a pinned .NET SDK container. PR validation must target product/application projects specifically for restore, format, build, tests, coverage, and dependency audit. For this template, CI uses explicit `src/SDDTemplate.Site`, `src/SDDTemplate.Api`, and `tests/SDDTemplate.Site.Tests` project paths; SDD delivery-tool, workflow, agent, OpenSpec, infrastructure, and meta-tests remain local/template-maintenance checks and are not part of normal PR CI. Keep checkout and security tools shell-based unless the job container explicitly includes `node`; JavaScript `uses:` actions can fail inside plain SDK containers. Validate runner compatibility after workflow changes:
 
 ```powershell
 .\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode ValidateGiteaActionsRunner
@@ -3388,7 +3562,7 @@ Release flow:
 feature branch -> dev -> DEV -> QA -> Gitea E2E evidence -> Plane E2E QA -> main -> PROD
 ```
 
-The package workflow reads `infra/deployment/apps.json`, builds one ZIP per deployable app, builds `deployment-config.json` from `infra/deployment/configuration.json` plus each app's `appsettings*.json`, and publishes from ticket-gated application changes on `dev`, including `app/{commitSha}/deployable-apps.json`, `app/{commitSha}/deployment-config.json`, per-app ZIP/checksum files, and a baseline `app/{commitSha}/release.json`. DEV, QA, and PROD must apply and verify deployment configuration before deployment success is claimed. Smoke checks also verify that the clients page renders the expected API base URL and that API CORS preflight allows the matching web origin. DEV and QA must deploy the same Nexus app artifacts for the same commit SHA. After QA deploy and smoke checks, push a `qa/{ticketKey}` branch from current `dev`; the `e2e-qa-branch` job runs the committed Playwright suite against the deployed QA Site/API URLs without redeploying, resolves the artifact commit from the branch point with `dev`, and uploads `app/{commitSha}/qa-e2e-evidence.zip` plus a ticket/run evidence copy under `qa/{ticketKey}/{runId}/qa-e2e-evidence.zip`. This Gitea job is evidence-only; the `test-e2e` skill remains responsible for acceptance-to-assertion QA proof, Plane Done state, RC tagging, release manifest QA lineage, and deleting the remote `qa/{ticketKey}` branch after durable Nexus/Plane/release/tag evidence exists. Only full `PASS` can move Plane to Done; `PASS WITH GAPS` or `FAIL` remain in QA. PROD must deploy the QA-approved Nexus app artifacts from an exact-commit `main` promotion or explicit dispatch by commit SHA and must pass deployment configuration verification, rendered API base URL validation, CORS preflight validation, the web page smoke check, and every app `/health` check.
+The package workflow reads `infra/deployment/apps.json`, rejects deployable project paths outside `src/`, builds one ZIP per deployable app, builds `deployment-config.json` from `infra/deployment/configuration.json` plus each app's `appsettings*.json`, and publishes from ticket-gated application changes on `dev`, including `app/{commitSha}/deployable-apps.json`, `app/{commitSha}/deployment-config.json`, per-app ZIP/checksum files, and a baseline `app/{commitSha}/release.json`. DEV, QA, and PROD must apply and verify deployment configuration before deployment success is claimed. Smoke checks also verify that the clients page renders the expected API base URL and that API CORS preflight allows the matching web origin. DEV and QA must deploy the same Nexus app artifacts for the same commit SHA. After QA deploy and smoke checks, push a `qa/{ticketKey}` branch from current `dev`; the `e2e-qa-branch` job runs the committed Playwright suite against the deployed QA Site/API URLs without redeploying, resolves the artifact commit from the branch point with `dev`, and uploads `app/{commitSha}/qa-e2e-evidence.zip` plus a ticket/run evidence copy under `qa/{ticketKey}/{runId}/qa-e2e-evidence.zip`. This Gitea job is evidence-only; the `test-e2e` skill remains responsible for acceptance-to-assertion QA proof, Plane Done state, RC tagging, release manifest QA lineage, and deleting the remote `qa/{ticketKey}` branch after durable Nexus/Plane/release/tag evidence exists. Only full `PASS` can move Plane to Done; `PASS WITH GAPS` or `FAIL` remain in QA. PROD must deploy the QA-approved Nexus app artifacts from an exact-commit `main` promotion or explicit dispatch by commit SHA and must pass deployment configuration verification, rendered API base URL validation, CORS preflight validation, the web page smoke check, and every app `/health` check.
 '@
 
   return $result
@@ -3530,7 +3704,7 @@ function Invoke-EnsureDeliveryContext {
       $existing = Get-Content -Path $target -Raw | ConvertFrom-Json
       $existingTicket = [string]$existing.ticketKey
       if (-not [string]::IsNullOrWhiteSpace($existingTicket) -and $existingTicket -ne $ticketKey -and -not $replaceExisting) {
-        throw "Existing $targetRelative points to '$existingTicket'. Pass replaceExisting=true only after confirming the current worktree belongs to '$ticketKey'."
+        throw "Existing $targetRelative points to '$existingTicket'. Pass replaceExisting=true only after plane-start-ticket confirms '$existingTicket' is in the configured Done state, or after explicit operator confirmation for a known-safe repair to '$ticketKey'."
       }
     } catch {
       if (-not $replaceExisting) {
@@ -3651,6 +3825,7 @@ switch ($Mode) {
   "SetClientTools" { $result = Invoke-SetClientTools }
   "SetRecommendedTools" { $result = Invoke-SetRecommendedTools }
   "MapProjectGuidanceStep" { $result = Invoke-MapProjectGuidanceStep }
+  "BuildGiteaActionsImages" { $result = Invoke-BuildGiteaActionsImages }
   "SyncWorktreeLocalConfig" { $result = Invoke-SyncWorktreeLocalConfig }
   "EnsureDeliveryContext" { $result = Invoke-EnsureDeliveryContext }
   "SetPlaneEnv" { $result = Invoke-SetEnvMode -TargetRelative "infra/plane/variables.env" }

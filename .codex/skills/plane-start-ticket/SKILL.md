@@ -15,7 +15,7 @@ For setup details and branch pattern options, read `references/configuration.md`
 
 Before mutating Plane or Git, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md`, with `docs/architecture.md` as the stage-specific doc.
 
-This skill owns initial creation of ignored `.codex/delivery-context.local.json` for automatic delivery. Never commit that file.
+This skill owns initial creation of ignored `.codex/delivery-context.local.json` and ignored `.codex/agent-telemetry.local.jsonl` for automatic delivery. Never commit those files.
 
 ## Configuration
 
@@ -75,22 +75,23 @@ If the audit reports any `stack-context.*` warning, if `DiscoverProjectGuidance`
    - `blocked`: stop before branch creation, Plane state updates, comments, ticket-lock writes, or OpenSpec proposal creation. Report the missing product or technical intent.
 3. Run the Stack Context Preflight. If stack/tooling docs, OpenSpec config, local project guidance catalog, or project guidance discovery review are missing or drifted, stop and route to `configure-dev-environment` and `project-guidance-discover` before mutating Git, Plane, or OpenSpec.
 4. Check `git status --porcelain`. If any output exists, stop and report changed files.
-5. Switch to the configured base branch and run `git pull --ff-only`.
-6. Create or reuse the configured branch name.
-7. Pre-scan branch conflicts before creating or switching branches:
+5. Initialize and clear `.codex/agent-telemetry.local.jsonl` for the selected ticket with `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode InitializeWorkflowTelemetry -TicketKey {ticketKey}`. Do not initialize telemetry when only listing Todo tickets.
+6. Switch to the configured base branch and run `git pull --ff-only`.
+7. Create or reuse the configured branch name.
+8. Pre-scan branch conflicts before creating or switching branches:
    - `git show-ref --verify refs/heads/{branchName}` for a local branch.
    - `git ls-remote --heads origin {branchName}` for a remote branch.
    If both exist and point to different commits, stop and report the conflict. If the remote branch exists and the local branch is missing, create the local branch from the remote only when it descends from the configured base branch.
-8. Push the branch to Gitea with upstream tracking using `git push -u origin {branchName}`. If the upstream branch already exists and points to the same commit, treat it as complete; if the push is rejected or would require a non-fast-forward update, stop and report the branch issue.
-9. Analyze the ticket description in an OpenSpec explore style unless OpenSpec is explicitly skipped by policy below.
-10. Update only the managed generated block in the Plane ticket description.
-11. If the fetched Plane ticket has empty or null `point`, infer and patch `point` from the generated analysis using the rubric below. If `point` or `estimate_point` already has a value, preserve it exactly and do not overwrite a human estimate.
-12. Add a Plane ticket comment with the branch name, base branch, pushed Gitea branch, and OpenSpec decision, unless a generated comment for the same branch already exists.
-13. Create or update `.codex/delivery-context.local.json` with `ticketKey`, `branch`, `openspecChange` when applicable, and any known PR/artifact/version fields. If an existing lock names a different ticket, stop and ask the user to clear or replace the lock.
-14. Move the Plane ticket to the configured in-progress state, unless it is already there.
-15. Create an OpenSpec proposal using the `openspec-propose` skill (`/opsx:propose`) with a change name matching the branch name as closely as OpenSpec allows, unless OpenSpec is explicitly skipped.
+9. Push the branch to Gitea with upstream tracking using `git push -u origin {branchName}`. If the upstream branch already exists and points to the same commit, treat it as complete; if the push is rejected or would require a non-fast-forward update, stop and report the branch issue.
+10. Analyze the ticket description in an OpenSpec explore style unless OpenSpec is explicitly skipped by policy below.
+11. Update only the managed generated block in the Plane ticket description.
+12. If the fetched Plane ticket has empty or null `point`, infer and patch `point` from the generated analysis using the rubric below. If `point` or `estimate_point` already has a value, preserve it exactly and do not overwrite a human estimate.
+13. Add a Plane ticket comment with the branch name, base branch, pushed Gitea branch, and OpenSpec decision, unless a generated comment for the same branch already exists.
+14. Create or update `.codex/delivery-context.local.json` with `ticketKey`, `branch`, `openspecChange` when applicable, and any known PR/artifact/version fields. If an existing lock names a different ticket, fetch the locked ticket through the Plane API and compare its state with configured `plane.doneState` or default `Done`. If the locked ticket is `Done`, call `EnsureDeliveryContext` with `replaceExisting=true` for the new selected ticket. If the locked ticket is active, missing, ambiguous, or cannot be verified, stop and report the stale-lock blocker. Do not delete the lock merely because the old ticket is QA Done or ready for PROD; replacement is lazy on the next ticket start.
+15. Move the Plane ticket to the configured in-progress state, unless it is already there.
+16. Create an OpenSpec proposal using the `openspec-propose` skill (`/opsx:propose`) with a change name matching the branch name as closely as OpenSpec allows, unless OpenSpec is explicitly skipped.
 
-For step 15, if the branch name contains `/`, convert it to a filesystem-safe kebab-case OpenSpec change id by replacing `/` with `-`. Example: branch `feat/e2eproject-1-create-files-and-folders-for-a-site` becomes OpenSpec change `feat-e2eproject-1-create-files-and-folders-for-a-site`. Use the Plane ticket title and generated planning block as proposal input.
+For step 16, if the branch name contains `/`, convert it to a filesystem-safe kebab-case OpenSpec change id by replacing `/` with `-`. Example: branch `feat/e2eproject-1-create-files-and-folders-for-a-site` becomes OpenSpec change `feat-e2eproject-1-create-files-and-folders-for-a-site`. Use the Plane ticket title and generated planning block as proposal input.
 
 Only move the ticket to the in-progress state after branch creation, Gitea push, generated description update, and branch comment all succeed or are confirmed idempotently already complete. Only create the OpenSpec proposal after the ticket is in the in-progress state.
 
@@ -196,7 +197,7 @@ Use `IA generated branch: {branchName}` as the stable branch comment marker. If 
 
 ## Output
 
-Report the selected ticket, branch, OpenSpec change or explicit no-OpenSpec rationale, ticket lock path, validation performed, Plane comment marker, and handoff to `implement-ticket`.
+Report the selected ticket, branch, OpenSpec change or explicit no-OpenSpec rationale, ticket lock path, telemetry initialization, validation performed, Plane comment marker, and handoff to `implement-ticket`.
 
 ## Failure Rules
 

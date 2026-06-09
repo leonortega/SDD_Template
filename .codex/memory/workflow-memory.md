@@ -74,9 +74,9 @@ Use these markers for idempotency:
 - Type: Fact
 - Status: Active
 - Source: `.codex/skills/_shared/delivery-contract.md`, `docs/architecture.md`
-- Last verified: 2026-05-29
+- Last verified: 2026-06-09
 
-Normal automatic delivery stays locked to one Plane ticket through ignored `.codex/delivery-context.local.json`. Parallel delivery uses one worktree and one local ticket lock per active ticket. Child skills must verify ticket, branch, PR, artifact commit, QA evidence, RC tag, and PROD lineage match the lock before mutation.
+Normal automatic delivery stays locked to one Plane ticket through ignored `.codex/delivery-context.local.json`. Keep the lock after QA Done because explicit PROD promotion may still need artifact and RC context. `plane-start-ticket` may lazily replace the lock when starting another ticket only after the locked ticket is verified in the configured Done state. Parallel delivery uses one worktree and one local ticket lock per active ticket. Child skills must verify ticket, branch, PR, artifact commit, QA evidence, RC tag, and PROD lineage match the lock before mutation.
 
 ## Parallel Delivery
 
@@ -176,3 +176,12 @@ Compatibility alias skills should route immediately to the current authoritative
 - Last verified: 2026-06-02
 
 Tracked tool recommendation examples are templates, not the active project stack source of truth. Durable stack context belongs in docs and OpenSpec config; ignored `.codex/tool-recommendations.local.json` preserves learned guidance/catalog state such as accepted/dismissed guidance and `usedInSteps`. Acquisition refreshes should preserve that local state instead of resetting it.
+
+## Gitea Merge Commit Resolution After API Merge
+
+- Type: Pattern
+- Status: Active
+- Source: Gitea PR 23 merge response and `origin/dev` fetch during `E2EPROJECT-4` post-merge deployment
+- Last verified: 2026-06-08
+
+After a successful Gitea PR merge API call, the PR response may report `merged=true` while `merged_commit_id` and `merged_commit_sha` are still null. For post-merge deployment, verify the target branch and resolve the artifact commit from the updated target ref such as `origin/dev`, then validate the ticket lock and Nexus `commit.sha` against that resolved commit.

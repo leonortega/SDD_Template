@@ -93,11 +93,12 @@ Useful modes:
 - `MapProjectGuidanceStep`: update `.codex/tool-recommendations.local.json` by appending the current workflow step to each used recommendation's `usedInSteps`.
 - `WriteInstalledSkillIndex` through `tools/SDDTemplate.DeliveryTools`: generate or reuse ignored `.codex/installed-skill-index.local.json` and `.codex/installed-skill-index.cache.local.json` from installed project skills.
 - `SyncWorktreeLocalConfig`: copy the allowlisted ignored local runtime config from the coordinator checkout into selected or discovered ticket worktrees without printing secret values.
-- `EnsureDeliveryContext`: create or repair the current worktree's `.codex/delivery-context.local.json` from explicit ticket, branch, OpenSpec, and PR context; never copy this file from another worktree.
+- `EnsureDeliveryContext`: create or repair the current worktree's `.codex/delivery-context.local.json` from explicit ticket, branch, OpenSpec, and PR context; never copy this file from another worktree. Use `replaceExisting=true` only after `plane-start-ticket` confirms the existing lock's ticket is in the configured Done state, or after explicit operator confirmation for a known-safe repair. QA Done does not require immediate lock deletion because explicit PROD promotion may still need artifact and RC context.
 - `SetPlaneEnv`: update `infra/plane/variables.env`.
 - `SetGiteaRunner`: update `infra/gitea/runner.env`.
 - `AuditQualityGates`: inspect quality and CI/CD templates without writing local config by default.
-- `ValidateGiteaActionsRunner`: live-check Docker runner prerequisites for PR validation containers, including image pull, required tools, and local Gitea checkout reachability.
+- `BuildGiteaActionsImages`: build and validate pinned local Gitea Actions job images used by PR validation, package/deploy, and QA E2E workflows.
+- `ValidateGiteaActionsRunner`: live-check Docker runner prerequisites for PR validation containers, including local image presence, required tools, and local Gitea checkout reachability.
 - `InitQualityGateTemplates`: create tracked quality-gate templates.
 - `SetPrometheusAzureTargets`: update ignored Prometheus Azure targets.
 - `SetQualityConfig`: create or update `.codex/quality.local.json`, including `coverage.minimumPercent` (default `80`).

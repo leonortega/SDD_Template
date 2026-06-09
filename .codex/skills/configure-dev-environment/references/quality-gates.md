@@ -24,11 +24,15 @@ Use the shared script:
 ## Strategy
 
 - Gitea PR validation is the source of truth for formatting, build, tests, coverage, dependency audit, full secret scanning, and filesystem security scanning.
+- Local validation is for fast feedback and test authoring: run targeted builds/tests for touched behavior and cheap checks such as staged secret scanning, then let PR validation run the full required gate in the pinned runner.
+- Repo-owned Gitea Actions images are the source of reusable CI tooling. Use `BuildGiteaActionsImages` during `config infra` to build `agentic/dotnet-ci:10.0.300-tools-1` and `agentic/e2e-ci:playwright-1.57.0-1` into the Docker daemon used by the runner.
 - `.codex/delivery-policy.json` must include both `ticketKeyPattern` for deployment gating and `agentOptimization` defaults for retry limits, prompt-cache ordering, telemetry output, and workflow eval paths.
 - Coverage threshold is configurable through `.codex/quality.local.json`; default to `coverage.minimumPercent = 80`.
 - Gitea Actions should fall back to `.codex/quality.example.json` when local config is absent.
+- `.gitattributes` must force text files to LF with `* text=auto eol=lf` so Windows `core.autocrlf=true` checkouts do not break `.editorconfig` `end_of_line = lf` or `dotnet format --verify-no-changes`.
 - Local Git hooks are convenience checks only.
 - Do not configure default pre-push restore/build/test/security scans.
+- Do not require agents to duplicate the full PR validation suite locally before opening or updating a PR unless the ticket or risk explicitly asks for it.
 - Do not write scanner, Gitea, Nexus, or Azure secrets into tracked files.
 
 ## Local Hooks
@@ -41,29 +45,35 @@ Use Lefthook by default:
 
 ## PR Validation
 
-Use a pinned .NET 10 SDK runner image that has been validated on the local runner, for example `mcr.microsoft.com/dotnet/sdk:10.0.300`.
+Use the pinned repo-owned .NET 10 runner image that has been validated on the local runner: `agentic/dotnet-ci:10.0.300-tools-1`.
 
 PR validation runs only for pull request changes under `src/**` or `tests/**`. Non-code PRs outside those folders skip automatic CI.
 
-When a workflow uses a job `container:` based on the .NET SDK image, avoid JavaScript-based `uses:` actions inside that job unless the container also includes `node`. Prefer shell steps for checkout and scanner execution:
+CI restore, format, build, test, coverage, dependency-audit, and publish commands must target product/application projects specifically. Do not include SDD template, delivery-tool, workflow, agent, OpenSpec, infrastructure, or meta-test projects in normal PR CI for downstream applications. Keep those tests as local/template-maintenance checks unless a repository explicitly owns them as application behavior.
 
-- Shell checkout that rewrites local Gitea hostnames (`localhost` and `gitea`) to `host.docker.internal`.
-- Pinned Gitleaks release archive installation.
-- Shell Trivy installation and `trivy fs` execution.
+Downstream projects must define explicit application project, application test project, and deployable application publish sets instead of using full-template solution commands. Small SDD helper tools may run only when needed for workflow metadata; they must not be treated as application compile, test, coverage, dependency-audit, or publish targets.
+
+When a workflow uses a job `container:`, keep the image pinned and locally buildable. Prefer the repo-owned images under `infra/gitea/actions-images/` so workflows do not reinstall common tools every run:
+
+- `agentic/dotnet-ci:10.0.300-tools-1`: .NET SDK 10, git, curl, tar, jq, zip, Gitleaks, Trivy, Azure CLI, Node/npm for JavaScript `uses:` actions.
+- `agentic/e2e-ci:playwright-1.57.0-1`: Node/Playwright runtime, browser dependencies, git, curl, and zip.
+- Shell checkout still rewrites local Gitea hostnames (`localhost` and `gitea`) to `host.docker.internal`.
 
 Required checks:
 
-- `dotnet restore`
-- `dotnet format --verify-no-changes --no-restore`
-- `dotnet build -c Release --no-restore`
-- `dotnet test -c Release --no-build`
+- application project restore, for this template: `dotnet restore "$project"` over `src/SDDTemplate.Site`, `src/SDDTemplate.Api`, and `tests/SDDTemplate.Site.Tests`
+- application project formatting, for this template: `dotnet format "$project" --verify-no-changes --no-restore` over the same explicit project set
+- application project build, for this template: `dotnet build "$project" -c Release --no-restore` over the same explicit project set
+- application test command, for this template: `dotnet test tests/SDDTemplate.Site.Tests/SDDTemplate.Site.Tests.csproj -c Release --no-build`
 - coverage collection/reporting
 - coverage threshold enforcement using configured `coverage.minimumPercent`
-- `dotnet list package --vulnerable --include-transitive`
+- application dependency audit, for this template: `dotnet list "$project" package --vulnerable --include-transitive` over the same explicit project set
 - full Gitleaks scan
 - Trivy filesystem scan
 
-Run `ValidateGiteaActionsRunner` after changing workflow container images or checkout/scanner setup. It validates Docker availability, pulls the configured PR validation image, checks required tools inside the image, and verifies the job container can reach the repository origin through `host.docker.internal`.
+Merge and deployment jobs should not rerun the same unit test suite that PR validation already ran for the reviewed commit. They should focus on immutable artifact packaging, deployment configuration verification, checksum validation, and environment smoke checks unless package or artifact inputs changed outside the PR validation path.
+
+Run `BuildGiteaActionsImages` after changing image Dockerfiles, tool versions, or workflow image tags. Then run `ValidateGiteaActionsRunner`; it validates Docker availability, local image presence, required tools inside each image, and that the PR validation job image can reach the repository origin through `host.docker.internal`.
 
 Semgrep is optional. Default to skipping it until the first real application code exists.
 
@@ -86,7 +96,7 @@ Push-triggered deployments are gated by `.codex/delivery-policy.json` and change
 
 DEV and QA deploy only from `dev` when application/test/package source changed. PROD deploys only from `main` when `main` points to the exact QA-approved packaged commit for the same ticket-gated application change. Manual workflow dispatch remains available for explicit promotion with `artifact_commit_sha`.
 
-E2E QA is an acceptance-evidence gate. `test-e2e` may move a Plane ticket to Done only when the deployed QA artifact receives a full `PASS`: ticket acceptance criteria are mapped to executable assertions, relevant user workflow/API/backend/state/validation/error/environment/evidence-integrity scenarios are covered, and screenshots or smoke checks support rather than replace assertions. `PASS WITH GAPS` and `FAIL` must remain in QA.
+E2E QA is an acceptance-evidence gate. Reusable Playwright tests should be created under `tests/SDDTemplate.E2ETests` during implementation when acceptance criteria are stable, then executed officially after QA deployment through the temporary `qa/{ticketKey}` branch. During QA, one-off exploratory scripts and generated probes stay under ignored `artifacts/qa/**` and are evidence, not committed regression coverage. `test-e2e` may move a Plane ticket to Done only when the deployed QA artifact receives a full `PASS`: ticket acceptance criteria are mapped to executable assertions, relevant user workflow/API/backend/state/validation/error/environment/evidence-integrity scenarios are covered, and screenshots or smoke checks support rather than replace assertions. `PASS WITH GAPS` and `FAIL` must remain in QA.
 
 ## Release Branching
 

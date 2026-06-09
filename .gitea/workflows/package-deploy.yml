@@ -107,7 +107,7 @@ jobs:
     if: (github.event_name == 'push' && github.ref == 'refs/heads/dev' && needs.classify-changes.outputs.app_changed == 'true' && needs.classify-changes.outputs.deploy_allowed == 'true') || github.event.inputs.environment == 'dev' || github.event.inputs.environment == 'qa'
     runs-on: ubuntu-latest
     container:
-      image: mcr.microsoft.com/dotnet/sdk:10.0.300
+      image: agentic/dotnet-ci:10.0.300-tools-1
     steps:
       - name: Checkout
         shell: bash
@@ -123,11 +123,6 @@ jobs:
           git fetch --depth 1 origin "$GITHUB_SHA"
           git checkout --force FETCH_HEAD
 
-      - name: Install packaging tools
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends jq zip
-
       - name: Publish topology apps
         shell: bash
         run: |
@@ -137,6 +132,11 @@ jobs:
           jq -c '.apps | sort_by(.deployOrder)' infra/deployment/apps.json > artifacts/deployable-apps.json
           jq -r '.apps[] | [.appId, .projectPath, .artifactName] | @tsv' infra/deployment/apps.json |
           while IFS=$'\t' read -r app_id project_path artifact_name; do
+            case "$project_path" in
+              src/*) ;;
+              *) echo "Deployable app '$app_id' projectPath must be under src/: $project_path" && exit 1 ;;
+            esac
+            test -f "$project_path"
             echo "Publishing $app_id from $project_path"
             dotnet publish "$project_path" -c Release -o "artifacts/$app_id"
             (cd "artifacts/$app_id" && zip -r "../packages/$artifact_name" .)
@@ -184,13 +184,10 @@ jobs:
       - classify-changes
       - package
     runs-on: ubuntu-latest
+    container:
+      image: agentic/dotnet-ci:10.0.300-tools-1
     if: (github.event_name == 'push' && github.ref == 'refs/heads/dev' && needs.classify-changes.outputs.app_changed == 'true' && needs.classify-changes.outputs.deploy_allowed == 'true') || github.event.inputs.environment == 'dev' || github.event.inputs.environment == 'qa'
     steps:
-      - name: Install deployment tools
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends jq
-
       - name: Download topology artifacts from Nexus
         shell: bash
         run: |
@@ -209,9 +206,6 @@ jobs:
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
           NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
           NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
-
-      - name: Install Azure CLI
-        run: curl -sL https://aka.ms/InstallAzureCLIDeb | bash
 
       - name: Azure login
         uses: azure/login@v2
@@ -377,13 +371,10 @@ jobs:
       - classify-changes
       - deploy-dev
     runs-on: ubuntu-latest
+    container:
+      image: agentic/dotnet-ci:10.0.300-tools-1
     if: (github.event_name == 'push' && github.ref == 'refs/heads/dev' && needs.classify-changes.outputs.app_changed == 'true' && needs.classify-changes.outputs.deploy_allowed == 'true') || github.event.inputs.environment == 'qa'
     steps:
-      - name: Install deployment tools
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends jq
-
       - name: Download topology artifacts from Nexus
         shell: bash
         run: |
@@ -402,9 +393,6 @@ jobs:
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
           NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
           NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
-
-      - name: Install Azure CLI
-        run: curl -sL https://aka.ms/InstallAzureCLIDeb | bash
 
       - name: Azure login
         uses: azure/login@v2
@@ -567,6 +555,8 @@ jobs:
 
   e2e-qa-branch:
     runs-on: ubuntu-latest
+    container:
+      image: agentic/e2e-ci:playwright-1.57.0-1
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/qa/')
     steps:
       - name: Checkout QA E2E branch
@@ -599,18 +589,13 @@ jobs:
           test -n "$plane_ticket_key"
           echo "E2E_PLANE_TICKET_KEY=$plane_ticket_key" >> "$GITHUB_ENV"
 
-      - name: Install E2E tools
+      - name: Install E2E dependencies
         shell: bash
         run: |
           set -euo pipefail
 
-          apt-get update
-          apt-get install -y --no-install-recommends ca-certificates curl zip
-          curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-          apt-get install -y --no-install-recommends nodejs
           cd tests/SDDTemplate.E2ETests
           npm ci
-          npm run install:browsers
 
       - name: Run QA branch E2E suite and upload evidence
         shell: bash
@@ -653,6 +638,8 @@ jobs:
   deploy-prod:
     needs: classify-changes
     runs-on: ubuntu-latest
+    container:
+      image: agentic/dotnet-ci:10.0.300-tools-1
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.classify-changes.outputs.app_changed == 'true' && needs.classify-changes.outputs.deploy_allowed == 'true') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod')
     steps:
       - name: Resolve PROD promotion inputs
@@ -675,11 +662,6 @@ jobs:
           RELEASE_VERSION: ${{ github.event.inputs.release_version }}
           SOURCE_RC_VERSION: ${{ github.event.inputs.source_rc_version }}
 
-      - name: Install deployment tools
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends jq
-
       - name: Download topology artifacts from Nexus
         shell: bash
         run: |
@@ -698,9 +680,6 @@ jobs:
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
           NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
           NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
-
-      - name: Install Azure CLI
-        run: curl -sL https://aka.ms/InstallAzureCLIDeb | bash
 
       - name: Azure login
         uses: azure/login@v2

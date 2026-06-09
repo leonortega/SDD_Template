@@ -5,9 +5,9 @@
 - Type: Pattern
 - Status: Active
 - Source: `.codex/skills/_shared/delivery-contract.md`
-- Last verified: 2026-05-29
+- Last verified: 2026-06-09
 
-If a child skill resolves a ticket key that differs from `.codex/delivery-context.local.json`, stop and report the mismatch. Do not deploy, test, move state, tag, or comment the other ticket. If the lock is stale but durable checkpoints identify a different ticket, stop and ask the user to clear or replace the lock.
+If a child skill resolves a ticket key that differs from `.codex/delivery-context.local.json`, stop and report the mismatch. Do not deploy, test, move state, tag, or comment the other ticket. `plane-start-ticket` is the only lazy cleanup path: when starting another ticket, it may replace a different existing lock only after the locked Plane ticket is verified in the configured Done state. Active, missing, ambiguous, or unverifiable locks still block.
 
 ## Deployment Lane Conflict
 
@@ -182,6 +182,15 @@ When merging `dev` into a ticket feature branch, Git's generated merge message c
 
 If `npx playwright install` or `npm run install:browsers` times out locally, later Playwright commands may fail with an active lockfile at `%LOCALAPPDATA%\ms-playwright\__dirlock`. Before removing the lock, check for live `node.exe` processes whose command line still references Playwright install or download. Stop only those stale installer processes, then remove the lock. In this repository, official QA E2E should run remotely through Gitea against deployed QA apps; local Playwright execution is only for authoring diagnostics.
 
+## Docker Backend Timeout Blocks Gitea Actions Image Validation
+
+- Type: Pattern
+- Status: Active
+- Source: current conversation, `BuildGiteaActionsImages` while adding repo-owned Gitea Actions images
+- Last verified: 2026-06-09
+
+When Docker Desktop is installed but its backend is unhealthy, `docker version`, `docker image inspect`, or `docker build` can fail with `failed to connect to the backend: timed out dialing Hyper-V socket`. Treat this as a live Docker blocker, not a workflow or Dockerfile failure. `configure_infra_tools.ps1` must check `$LASTEXITCODE` after native `docker` commands because PowerShell may otherwise continue and report false success. After Docker Desktop is restarted or repaired, rerun `BuildGiteaActionsImages` and then `ValidateGiteaActionsRunner`.
+
 ## PowerShell Json Timestamps Need Explicit Formatting
 
 - Type: Pattern
@@ -191,3 +200,11 @@ If `npx playwright install` or `npm run install:browsers` times out locally, lat
 
 PowerShell `ConvertFrom-Json` can coerce ISO timestamp strings into `DateTime` values, and later string interpolation renders them with the host culture instead of the original `yyyy-MM-ddTHH:mm:ssZ` form. For Plane comments, workflow timing tables, or tests that assert exact UTC text, format timestamp values explicitly with invariant UTC formatting before interpolation. Reproduce failures with the CI-shaped command `dotnet test .\SDDTemplate.slnx -c Release --no-build --logger trx --collect:"XPlat Code Coverage"`.
 
+## Missing Workflow Timing Comments Need Ticket Telemetry Initialization
+
+- Type: Pattern
+- Status: Active
+- Source: E2EPROJECT-3 and E2EPROJECT-4 Done tickets missing `IA generated workflow timing` comments while other generated Plane markers existed
+- Last verified: 2026-06-09
+
+When `.codex/agent-telemetry.local.jsonl` is absent or a delivery run missed telemetry writes, treat that as a workflow instrumentation failure. Initialize or clear telemetry at selected ticket start with `InitializeWorkflowTelemetry`, append stage rows with `AppendWorkflowTelemetry`, read active ticket rows with `ReadWorkflowTelemetry`, then render `IA generated workflow timing: {ticketKey}` with `RenderPlaneComment -Type WorkflowTiming`. Do not derive workflow timing from generated Plane marker timestamps. Verify the posted comment by reading Plane comments back and matching the timing marker.

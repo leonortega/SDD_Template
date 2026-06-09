@@ -86,6 +86,8 @@ Push-triggered environment deployment is allowed only for ticket-named work that
 
 E2E QA is an acceptance-evidence gate, not a screenshot, smoke, or page-load gate. The rule is: `QA Done = acceptance criteria proven by executable assertions against the deployed QA artifact`.
 
+Create reusable QA E2E tests during implementation when ticket acceptance criteria are stable enough to encode as repeatable assertions. Store those tests in the normal test tree, such as `tests/SDDTemplate.E2ETests`, and review them with the implementation PR. After QA deployment, use a temporary `qa/{ticketKey}` branch from the tested `dev` commit to run the committed suite remotely against the deployed QA URLs and publish evidence. During QA execution, keep one-off exploratory scripts, probes, screenshots, traces, logs, and reports under ignored `artifacts/qa/**`; do not commit them as regression tests unless a follow-up implementation workflow intentionally promotes them.
+
 Before `test-e2e` may move a ticket to Done, it must:
 
 - resolve the Plane/OpenSpec acceptance criteria and validation expectations for the ticket,
@@ -180,6 +182,14 @@ Do not treat the Codex review-agent comment, `codex-reviewed` label, or passing 
 
 If evidence publication, Plane comment verification, RC tagging, or Done-state mutation is incomplete, keep the branch until the blocking step is resolved or the branch is intentionally rerun.
 
+## Local And CI Quality Split
+
+Local validation is for fast feedback and test authoring. Agents should run targeted builds, tests, and cheap checks that correspond to the touched behavior and risk, then hand off the full required gate to Gitea PR validation. Do not require a full local duplicate of restore, format, release build, coverage, dependency audit, full secret scan, and filesystem scanner before opening or updating a PR unless the ticket or risk explicitly requires it.
+
+Gitea PR validation is authoritative for restore, formatting verification, release build, tests with coverage, coverage threshold, dependency vulnerability audit, full secret scanning, and filesystem scanning in a clean pinned runner. Merge and deployment jobs should focus on immutable artifact packaging, deployment configuration verification, and environment smoke checks; they should not rerun the same unit test suite unless package or artifact inputs changed outside the already-validated PR path.
+
+`config infra` owns building and validating repo-owned Gitea Actions job images. Workflows should consume pinned local images for common CI tools instead of installing Gitleaks, Trivy, Azure CLI, jq, zip, Node, or Playwright browser dependencies during every run. Job containers remain disposable; do not switch normal ticket CI to host-mode runner execution to preserve tool persistence.
+
 ## OpenSpec Completion Archive Gate
 
 After E2E QA passes and the Plane ticket is moved to Done, the linked active OpenSpec change must be archived before the workflow is reported complete. If exactly one active OpenSpec change clearly matches the ticket key, invoke `openspec-archive-change` and report the archive path. Do not leave a completed linked OpenSpec change active merely because Plane, Nexus, and tags are complete.
@@ -203,7 +213,7 @@ Do not create parallel catalogs, planning artifacts, review workflows, or qualit
 
 ## Ticket Context Lock
 
-Normal automatic delivery must stay locked to one Plane ticket. Use ignored `.codex/delivery-context.local.json` as the local ticket context lock. Never commit it.
+Normal automatic delivery must stay locked to one Plane ticket. Use ignored `.codex/delivery-context.local.json` as the local active delivery context lock. Never commit it. Do not delete the lock merely because E2E QA moved a ticket to `Done`; the lock can still carry QA-approved artifact, RC, and release context needed for explicit PROD promotion.
 
 Parallel delivery keeps the same lock shape, but scopes it to the ticket worktree. Each active ticket worktree must contain its own `.codex/delivery-context.local.json`, and role agents must run only from the worktree assigned to that ticket. Do not share one checkout, one lock file, or one active implementation branch across multiple active tickets.
 
@@ -225,10 +235,10 @@ Rules:
 
 - `automatic-implement-ticket` resolves or creates the lock before delegating. If no ticket is selected, it must ask or route to `pipeline-status` instead of guessing.
 - `parallel-ticket-coordinator` creates or reuses one Git worktree per active ticket, records that assignment in ignored `.codex/parallel-delivery.local.json`, and delegates child skills only inside the assigned worktree.
-- `plane-start-ticket` creates or updates the lock after the selected ticket, branch, and OpenSpec decision are known.
+- `plane-start-ticket` creates or updates the lock after the selected ticket, branch, and OpenSpec decision are known. If an existing lock names a different ticket, fetch the locked ticket from Plane and compare it with the configured Done state. If the locked ticket is `Done`, replace the lock for the new selected ticket. If the locked ticket is active, missing, ambiguous, or cannot be verified, stop before branch, Plane, or OpenSpec mutation and report the lock blocker. This is lazy cleanup on next ticket start, not immediate deletion after QA Done.
 - Child skills must verify their resolved ticket, branch, PR, artifact `release.json.planeTicketKey`, QA evidence path, RC tag, and PROD release lineage match the locked `ticketKey` before mutating or promoting.
 - If the lock exists and a child skill resolves a different ticket key, stop and report the mismatch. Do not deploy, test, move state, tag, or comment the other ticket.
-- If the lock is stale but all durable checkpoints clearly identify one different ticket, stop and ask the user to clear or replace the lock; do not silently rewrite it.
+- If the lock is stale outside the `plane-start-ticket` terminal-ticket replacement path, or all durable checkpoints clearly identify one different active ticket, stop and ask the user to clear or replace the lock; do not silently rewrite it.
 - `pipeline-status` may read and report the lock plus mismatches. `rollback-prod` may operate by incident/release target, but must report when it differs from the active lock and require explicit user confirmation before mutation.
 
 ## Parallel Delivery
@@ -335,7 +345,7 @@ Use this structure unless a workflow-specific skill requires more detail:
 
 Prefer Markdown links for long URLs, short commit display text such as ``8acc4d4`` with the full SHA recorded in a field when needed, and grouped sections over long flat `Label: value` lists. Keep automation-critical values present and searchable; do not hide the stable marker, commit SHA, ticket key, release version, artifact URL, or evidence URL inside prose only.
 
-Workflow timing comments use marker `IA generated workflow timing: {ticketKey}` and a compact Markdown table with stage, outcome, duration, started UTC, and finished UTC. Raw telemetry stays in ignored `.codex/agent-telemetry.local.jsonl`; Plane timing comments must not include token counts, raw logs, full prompts, credential-bearing URLs, secrets, or noisy tool details. On rerun, update or reuse the existing workflow timing marker comment for the same ticket instead of creating duplicates. Render the comment with `RenderPlaneComment -Type WorkflowTiming`, send both `comment_html` and `comment_stripped`, and verify `comment_stripped` starts with the marker after posting or patching.
+Workflow timing comments use marker `IA generated workflow timing: {ticketKey}` and a compact Markdown table with stage, outcome, duration, started UTC, and finished UTC. At the beginning of a selected ticket, `plane-start-ticket` must create or clear ignored `.codex/agent-telemetry.local.jsonl` with `InitializeWorkflowTelemetry`. Automatic delivery must append one row per routed stage with `AppendWorkflowTelemetry`, read rows for the active ticket with `ReadWorkflowTelemetry`, and render the Plane timing comment with `RenderPlaneComment -Type WorkflowTiming`. Raw telemetry stays in the ignored JSONL file; Plane timing comments must not include token counts, raw logs, full prompts, credential-bearing URLs, secrets, or noisy tool details. If telemetry cannot be written or read, report the workflow timing comment as blocked. Do not derive workflow timing from Plane generated marker timestamps. On rerun, update or reuse the existing workflow timing marker comment for the same ticket instead of creating duplicates. Send both `comment_html` and `comment_stripped`, and verify `comment_stripped` starts with the marker after posting or patching.
 
 ## Reusable Delivery Tools
 
@@ -357,6 +367,7 @@ Use `.codex/skills/_shared/scripts/delivery_tools.ps1` for deterministic deliver
 - `ParseWorkloadForecast`: parse required `Review Workload Forecast` guard lines from OpenSpec tasks.
 - `DetectAdversarialReviewTrigger`: determine whether PR review needs adversarial mode.
 - `WriteInstalledSkillIndex`: write or reuse the ignored installed-skill runtime index and cache.
+- `InitializeWorkflowTelemetry`, `AppendWorkflowTelemetry`, and `ReadWorkflowTelemetry`: create or clear the per-ticket ignored telemetry JSONL file, append stage timing rows, and prepare timing data for Plane comments.
 - `RenderPlaneComment`: render standard Markdown Plane comments for QA deployment, E2E QA, PROD deployment, and workflow timing.
 - `UpdateReleaseManifest`: merge stage-specific fields into `release.json` while preserving existing metadata, then validate the result.
 
