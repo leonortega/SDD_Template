@@ -14,7 +14,8 @@ $requiredEnvironmentVariables = @(
     "AZURE_PROD_EVENTHUB_NAMESPACE",
     "AZURE_PROD_EVENTHUB_NAME",
     "AZURE_CLIENT_ID",
-    "AZURE_TENANT_ID"
+    "AZURE_TENANT_ID",
+    "AZURE_CLIENT_SECRET"
 )
 
 $missing = @(
