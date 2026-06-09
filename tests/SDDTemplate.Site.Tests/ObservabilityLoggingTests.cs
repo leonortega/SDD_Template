@@ -87,6 +87,26 @@ namespace SDDTemplate.Site.Tests
         }
 
         [Fact]
+        public void AzureLogIngestionValidationScriptRequiresEveryEnvironment()
+        {
+            string root = FindRepositoryRoot();
+            string script = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "validate-azure-log-ingestion.ps1"));
+
+            Assert.Contains("AZURE_DEV_EVENTHUB_NAMESPACE", script);
+            Assert.Contains("AZURE_DEV_EVENTHUB_NAME", script);
+            Assert.Contains("AZURE_QA_EVENTHUB_NAMESPACE", script);
+            Assert.Contains("AZURE_QA_EVENTHUB_NAME", script);
+            Assert.Contains("AZURE_PROD_EVENTHUB_NAMESPACE", script);
+            Assert.Contains("AZURE_PROD_EVENTHUB_NAME", script);
+            Assert.Contains("AZURE_CLIENT_ID", script);
+            Assert.Contains("AZURE_TENANT_ID", script);
+            Assert.Contains("/loki/api/v1/query_range", script);
+            Assert.Contains("dev", script);
+            Assert.Contains("qa", script);
+            Assert.Contains("prod", script);
+        }
+
+        [Fact]
         public void GrafanaDatasourceProvisioningDefinesStableUidsForDashboardReferences()
         {
             string root = FindRepositoryRoot();
