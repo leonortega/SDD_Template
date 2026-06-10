@@ -1,5 +1,5 @@
 param(
-  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetPlaneEnv", "SetGiteaRunner", "SetPrometheusAzureTargets", "AuditQualityGates", "AuditRecommendedTools", "DiscoverProjectGuidance", "AcquireProjectGuidance", "SetRecommendedTools", "MapProjectGuidanceStep", "BuildGiteaActionsImages", "ValidateGiteaActionsRunner", "InitQualityGateTemplates", "SetQualityConfig", "SyncWorktreeLocalConfig", "EnsureDeliveryContext")]
+  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetPlaneEnv", "SetGiteaRunner", "SetPrometheusAzureTargets", "SetAzureLogIngestion", "AuditQualityGates", "AuditRecommendedTools", "DiscoverProjectGuidance", "AcquireProjectGuidance", "SetRecommendedTools", "MapProjectGuidanceStep", "BuildGiteaActionsImages", "ValidateGiteaActionsRunner", "InitQualityGateTemplates", "SetQualityConfig", "SyncWorktreeLocalConfig", "EnsureDeliveryContext")]
   [string]$Mode = "Audit",
 
   [string]$Root = (Resolve-Path ".").Path,
@@ -249,6 +249,52 @@ function Set-PrometheusAzureTargets {
   if (-not $DryRun) {
     Set-Content -Path $Path -Value $updated -Encoding UTF8
   }
+}
+
+function Invoke-AzJson {
+  param([string[]]$Arguments)
+
+  $output = & az @Arguments --output json 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    throw "Azure CLI command failed: az $($Arguments -join ' ')`n$output"
+  }
+
+  $text = ($output | Out-String).Trim()
+  if ([string]::IsNullOrWhiteSpace($text)) { return $null }
+  $jsonStart = $text.IndexOf("{")
+  $arrayStart = $text.IndexOf("[")
+  $starts = @($jsonStart, $arrayStart) | Where-Object { $_ -ge 0 } | Sort-Object
+  if ($starts.Count -gt 0 -and $starts[0] -gt 0) {
+    $text = $text.Substring($starts[0])
+  }
+  return $text | ConvertFrom-Json
+}
+
+function Invoke-AzTsv {
+  param([string[]]$Arguments)
+
+  $output = & az @Arguments --output tsv 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    throw "Azure CLI command failed: az $($Arguments -join ' ')`n$output"
+  }
+
+  return ($output | Out-String).Trim()
+}
+
+function ConvertTo-Array {
+  param($Value)
+
+  if ($null -eq $Value) { return @() }
+  if ($Value -is [array]) { return @($Value) }
+  return @($Value)
+}
+
+function Get-AgenticEnvironmentResourceGroups {
+  return @(
+    [ordered]@{ env = "dev"; resourceGroup = "rg-agentic-dev" },
+    [ordered]@{ env = "qa"; resourceGroup = "rg-agentic-qa" },
+    [ordered]@{ env = "prod"; resourceGroup = "rg-agentic-prod" }
+  )
 }
 
 function Convert-ObjectToHashtable {
@@ -1837,6 +1883,82 @@ function Invoke-Audit {
     }
   }
 
+  $logDashboards = @(
+    "infra/monitoring/grafana/dashboards/dev-azure-logs.json",
+    "infra/monitoring/grafana/dashboards/qa-azure-logs.json",
+    "infra/monitoring/grafana/dashboards/prod-azure-logs.json"
+  )
+  foreach ($dashboardFile in $logDashboards) {
+    if (-not (Test-Path (Join-RootPath $dashboardFile))) {
+      Add-Item $result "findings" $dashboardFile "grafana-loki-dashboard-provisioning" "Missing Grafana Azure log dashboard provisioning artifact." "warning" "post-start"
+    }
+  }
+
+  $requiredLogIngestionEnv = @(
+    "AZURE_DEV_EVENTHUB_NAMESPACE",
+    "AZURE_DEV_EVENTHUB_NAME",
+    "AZURE_DEV_EVENTHUB_CONNECTION_STRING",
+    "AZURE_QA_EVENTHUB_NAMESPACE",
+    "AZURE_QA_EVENTHUB_NAME",
+    "AZURE_QA_EVENTHUB_CONNECTION_STRING",
+    "AZURE_PROD_EVENTHUB_NAMESPACE",
+    "AZURE_PROD_EVENTHUB_NAME",
+    "AZURE_PROD_EVENTHUB_CONNECTION_STRING",
+    "AZURE_CLIENT_ID",
+    "AZURE_TENANT_ID",
+    "AZURE_CLIENT_SECRET"
+  )
+  foreach ($name in $requiredLogIngestionEnv) {
+    if (-not $plane.Contains($name) -or [string]::IsNullOrWhiteSpace($plane[$name])) {
+      Add-Item $result "findings" $planeLocal $name "Missing Azure log ingestion value for Grafana Alloy." "warning" "pre-start"
+    }
+  }
+
+  foreach ($monitoringFile in @("infra/monitoring/loki.yml", "infra/monitoring/alloy/config.alloy")) {
+    if (-not (Test-Path (Join-RootPath $monitoringFile))) {
+      Add-Item $result "findings" $monitoringFile "" "Missing monitoring configuration file." "warning" "pre-start"
+    }
+  }
+
+  try {
+    $containers = @(& docker ps --format "{{.Names}}" 2>$null)
+    if ($LASTEXITCODE -eq 0) {
+      if ($containers -contains "agentic-loki") {
+        Add-Item $result "actions" "docker" "agentic-loki" "Loki container is running."
+        try {
+          $ready = Invoke-WebRequest -Uri "http://localhost:3100/ready" -UseBasicParsing -TimeoutSec 5
+          if ($ready.StatusCode -eq 200) {
+            Add-Item $result "actions" "loki" "ready" "Loki readiness endpoint is healthy."
+          }
+        } catch {
+          Add-Item $result "findings" "loki" "ready" "Loki container is running but readiness endpoint failed: $($_.Exception.Message)" "warning" "post-start"
+        }
+      } else {
+        Add-Item $result "findings" "docker" "agentic-loki" "Loki container is not running; Grafana log panels cannot query Azure logs." "warning" "post-start"
+      }
+
+      if ($containers -contains "agentic-alloy") {
+        Add-Item $result "actions" "docker" "agentic-alloy" "Grafana Alloy container is running."
+        try {
+          $ready = Invoke-WebRequest -Uri "http://localhost:12345/-/ready" -UseBasicParsing -TimeoutSec 5
+          if ($ready.StatusCode -eq 200) {
+            Add-Item $result "actions" "alloy" "ready" "Grafana Alloy readiness endpoint is healthy."
+          }
+        } catch {
+          Add-Item $result "findings" "alloy" "ready" "Grafana Alloy container is running but readiness endpoint failed: $($_.Exception.Message)" "warning" "post-start"
+        }
+        $alloyLogErrors = @(& docker logs --since 5m agentic-alloy 2>&1 | Select-String -Pattern "azure_event_hubs|run out of available brokers|could not perform the initial load")
+        if ($alloyLogErrors.Count -gt 0) {
+          Add-Item $result "findings" "docker" "agentic-alloy.logs" "Recent Grafana Alloy logs contain Azure Event Hubs startup errors; check Event Hubs Kafka endpoint reachability on port 9093 and local env values." "warning" "post-start"
+        }
+      } else {
+        Add-Item $result "findings" "docker" "agentic-alloy" "Grafana Alloy container is not running; Azure Event Hubs logs are not being ingested into Loki." "warning" "post-start"
+      }
+    }
+  } catch {
+    Add-Item $result "findings" "docker" "monitoring" "Could not inspect Loki/Alloy container state: $($_.Exception.Message)" "info" "post-start"
+  }
+
   Add-QualityGateAuditFindings $result
   Add-WorktreeLocalConfigAuditFindings $result
 
@@ -3258,6 +3380,7 @@ jobs:
 
           cd tests/SDDTemplate.E2ETests
           npm ci
+          npm run install:browsers
 
       - name: Run QA branch E2E suite and upload evidence
         shell: bash
@@ -3813,6 +3936,107 @@ function Invoke-SetPrometheusAzureTargets {
   return $result
 }
 
+function Invoke-SetAzureLogIngestion {
+  $result = New-Result
+  $targetRelative = "infra/plane/variables.env"
+  $target = Join-RootPath $targetRelative
+  if (-not (Test-Path $target)) {
+    throw "Missing $targetRelative. Run -Mode InitLocalFiles first."
+  }
+
+  $values = Convert-JsonToHashtable $ValuesJson
+  $servicePrincipalName = "sp-agentic-e2e-alloy-logs"
+  if ($values.Contains("servicePrincipalName") -and -not [string]::IsNullOrWhiteSpace($values["servicePrincipalName"])) {
+    $servicePrincipalName = [string]$values["servicePrincipalName"]
+  }
+
+  $account = Invoke-AzJson @("account", "show")
+  Add-Item $result "actions" "az" "account" "Resolved Azure subscription '$($account.name)' and tenant '$($account.tenantId)'."
+
+  $envValues = @{}
+  foreach ($environment in Get-AgenticEnvironmentResourceGroups) {
+    $envName = $environment.env
+    $resourceGroup = $environment.resourceGroup
+    $prefix = "evhns-agentice2e-$envName-"
+    $namespaces = ConvertTo-Array (Invoke-AzJson @("eventhubs", "namespace", "list", "--resource-group", $resourceGroup))
+    $namespace = @($namespaces | Where-Object { $_.name -like "$prefix*" } | Sort-Object name | Select-Object -First 1)
+    if ($namespace.Count -eq 0) {
+      throw "No Event Hubs namespace matching '$prefix*' found in '$resourceGroup'. Run infra/azure/deploy-environments.ps1 first."
+    }
+
+    $namespaceName = $namespace[0].name
+    $eventHubs = ConvertTo-Array (Invoke-AzJson @("eventhubs", "eventhub", "list", "--resource-group", $resourceGroup, "--namespace-name", $namespaceName))
+    if (-not (@($eventHubs | Where-Object { $_.name -eq "appservice-logs" }).Count -gt 0)) {
+      throw "Event Hub 'appservice-logs' was not found in namespace '$namespaceName'."
+    }
+
+    $consumerGroups = ConvertTo-Array (Invoke-AzJson @("eventhubs", "eventhub", "consumer-group", "list", "--resource-group", $resourceGroup, "--namespace-name", $namespaceName, "--eventhub-name", "appservice-logs"))
+    if (-not (@($consumerGroups | Where-Object { $_.name -eq "grafana-alloy-$envName" }).Count -gt 0)) {
+      throw "Consumer group 'grafana-alloy-$envName' was not found in namespace '$namespaceName'."
+    }
+
+    $upper = $envName.ToUpperInvariant()
+    $envValues["AZURE_${upper}_EVENTHUB_NAMESPACE"] = $namespaceName
+    $envValues["AZURE_${upper}_EVENTHUB_NAME"] = "appservice-logs"
+    $listenKeys = Invoke-AzJson @("eventhubs", "eventhub", "authorization-rule", "keys", "list", "--resource-group", $resourceGroup, "--namespace-name", $namespaceName, "--eventhub-name", "appservice-logs", "--name", "alloy-listen")
+    if ($null -eq $listenKeys.primaryConnectionString -or [string]::IsNullOrWhiteSpace([string]$listenKeys.primaryConnectionString)) {
+      throw "Event Hubs authorization rule 'alloy-listen' in namespace '$namespaceName' did not return a connection string."
+    }
+    $envValues["AZURE_${upper}_EVENTHUB_CONNECTION_STRING"] = [string]$listenKeys.primaryConnectionString
+
+    $namespaceId = Invoke-AzTsv @("eventhubs", "namespace", "show", "--resource-group", $resourceGroup, "--name", $namespaceName, "--query", "id")
+    Add-Item $result "actions" "azure-eventhubs" $namespaceName "Resolved $envName Event Hubs namespace, appservice-logs hub, and local-only Alloy listen connection string."
+
+    $webApps = ConvertTo-Array (Invoke-AzJson @("webapp", "list", "--resource-group", $resourceGroup))
+    foreach ($app in @($webApps | Where-Object { $_.name -like "app-agentice2e-$envName-*" })) {
+      $settings = ConvertTo-Array (Invoke-AzJson @("monitor", "diagnostic-settings", "list", "--resource", $app.id))
+      if (@($settings | Where-Object { $_.name -eq "send-appservice-logs-to-eventhub" }).Count -gt 0) {
+        Add-Item $result "actions" "azure-diagnostic-settings" $app.name "Diagnostic setting for Azure Event Hubs logs exists."
+      } else {
+        Add-Item $result "findings" "azure-diagnostic-settings" $app.name "Missing App Service diagnostic setting for Azure Event Hubs logs." "warning" "post-start"
+      }
+    }
+
+    if (-not $envValues.ContainsKey("_namespaceIds")) {
+      $envValues["_namespaceIds"] = @()
+    }
+    $envValues["_namespaceIds"] += $namespaceId
+  }
+
+  $servicePrincipals = ConvertTo-Array (Invoke-AzJson @("ad", "sp", "list", "--display-name", $servicePrincipalName))
+  if ($servicePrincipals.Count -gt 0) {
+    $appId = $servicePrincipals[0].appId
+    $credential = Invoke-AzJson @("ad", "sp", "credential", "reset", "--id", $appId, "--append", "--display-name", "grafana-alloy-local", "--years", "1")
+    Add-Item $result "actions" "azure-ad" $servicePrincipalName "Reused service principal and created a local-only Alloy client secret."
+  } else {
+    $credential = Invoke-AzJson @("ad", "sp", "create-for-rbac", "--name", $servicePrincipalName, "--skip-assignment")
+    $appId = $credential.appId
+    Add-Item $result "actions" "azure-ad" $servicePrincipalName "Created service principal for Grafana Alloy log ingestion."
+  }
+
+  foreach ($scope in @($envValues["_namespaceIds"])) {
+    $assignments = ConvertTo-Array (Invoke-AzJson @("role", "assignment", "list", "--assignee", $appId, "--scope", $scope, "--role", "Azure Event Hubs Data Receiver"))
+    if ($assignments.Count -eq 0) {
+      $null = Invoke-AzJson @("role", "assignment", "create", "--assignee", $appId, "--scope", $scope, "--role", "Azure Event Hubs Data Receiver")
+      Add-Item $result "actions" "azure-rbac" "Azure Event Hubs Data Receiver" "Assigned Alloy service principal to Event Hubs namespace scope."
+    } else {
+      Add-Item $result "actions" "azure-rbac" "Azure Event Hubs Data Receiver" "Alloy service principal already has Event Hubs Data Receiver on namespace scope."
+    }
+  }
+  $envValues.Remove("_namespaceIds")
+
+  $envValues["AZURE_CLIENT_ID"] = $appId
+  $envValues["AZURE_TENANT_ID"] = $account.tenantId
+  $envValues["AZURE_CLIENT_SECRET"] = $credential.password
+
+  Set-EnvValues -Path $target -Values $envValues
+  foreach ($key in $envValues.Keys) {
+    Add-Item $result "actions" $targetRelative $key "Set Azure log ingestion value."
+  }
+
+  return $result
+}
+
 switch ($Mode) {
   "Audit" { $result = Invoke-Audit }
   "AuditQualityGates" { $result = Invoke-AuditQualityGates }
@@ -3831,6 +4055,7 @@ switch ($Mode) {
   "SetPlaneEnv" { $result = Invoke-SetEnvMode -TargetRelative "infra/plane/variables.env" }
   "SetGiteaRunner" { $result = Invoke-SetEnvMode -TargetRelative "infra/gitea/runner.env" }
   "SetPrometheusAzureTargets" { $result = Invoke-SetPrometheusAzureTargets }
+  "SetAzureLogIngestion" { $result = Invoke-SetAzureLogIngestion }
   "SetQualityConfig" { $result = Invoke-SetQualityConfig }
 }
 

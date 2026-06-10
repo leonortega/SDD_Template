@@ -1,7 +1,9 @@
 {
   "$schema": "./configuration.schema.json",
   "version": 1,
-  "ignoredPrefixes": [],
+  "ignoredPrefixes": [
+    "Serilog"
+  ],
   "settings": [
     {
       "appId": "site",
