@@ -596,6 +596,7 @@ jobs:
 
           cd tests/SDDTemplate.E2ETests
           npm ci
+          npm run install:browsers
 
       - name: Run QA branch E2E suite and upload evidence
         shell: bash

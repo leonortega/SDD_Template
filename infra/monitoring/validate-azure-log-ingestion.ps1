@@ -6,13 +6,31 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+$localEnvPath = Join-Path $repoRoot "infra\plane\variables.env"
+if (Test-Path $localEnvPath) {
+    foreach ($line in Get-Content -Path $localEnvPath) {
+        if ($line -match '^\s*#' -or [string]::IsNullOrWhiteSpace($line)) {
+            continue
+        }
+
+        $parts = $line -split '=', 2
+        if ($parts.Count -eq 2 -and [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($parts[0]))) {
+            [Environment]::SetEnvironmentVariable($parts[0], $parts[1], "Process")
+        }
+    }
+}
+
 $requiredEnvironmentVariables = @(
     "AZURE_DEV_EVENTHUB_NAMESPACE",
     "AZURE_DEV_EVENTHUB_NAME",
+    "AZURE_DEV_EVENTHUB_CONNECTION_STRING",
     "AZURE_QA_EVENTHUB_NAMESPACE",
     "AZURE_QA_EVENTHUB_NAME",
+    "AZURE_QA_EVENTHUB_CONNECTION_STRING",
     "AZURE_PROD_EVENTHUB_NAMESPACE",
     "AZURE_PROD_EVENTHUB_NAME",
+    "AZURE_PROD_EVENTHUB_CONNECTION_STRING",
     "AZURE_CLIENT_ID",
     "AZURE_TENANT_ID",
     "AZURE_CLIENT_SECRET"

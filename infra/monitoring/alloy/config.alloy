@@ -9,7 +9,8 @@ loki.source.azure_event_hubs "dev" {
   group_id                  = "grafana-alloy-dev"
 
   authentication {
-    mechanism = "oauth"
+    mechanism         = "connection_string"
+    connection_string = sys.env("AZURE_DEV_EVENTHUB_CONNECTION_STRING")
   }
 
   use_incoming_timestamp = true
@@ -26,7 +27,8 @@ loki.source.azure_event_hubs "qa" {
   group_id                  = "grafana-alloy-qa"
 
   authentication {
-    mechanism = "oauth"
+    mechanism         = "connection_string"
+    connection_string = sys.env("AZURE_QA_EVENTHUB_CONNECTION_STRING")
   }
 
   use_incoming_timestamp = true
@@ -43,7 +45,8 @@ loki.source.azure_event_hubs "prod" {
   group_id                  = "grafana-alloy-prod"
 
   authentication {
-    mechanism = "oauth"
+    mechanism         = "connection_string"
+    connection_string = sys.env("AZURE_PROD_EVENTHUB_CONNECTION_STRING")
   }
 
   use_incoming_timestamp = true
