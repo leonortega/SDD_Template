@@ -20,7 +20,7 @@
     {
       "datasource": {
         "type": "loki",
-        "uid": "Loki"
+        "uid": "loki"
       },
       "gridPos": {
         "h": 18,
@@ -71,7 +71,7 @@
         },
         "datasource": {
           "type": "loki",
-          "uid": "Loki"
+          "uid": "loki"
         },
         "definition": "label_values({environment=\"dev\"}, category)",
         "hide": 0,

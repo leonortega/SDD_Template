@@ -57,3 +57,39 @@ Validation:
 Invoke-RestMethod -Uri 'http://localhost:3001/api/health'
 docker logs --since 2m agentic-grafana 2>&1 | Select-String -Pattern 'provisioning.dashboard|finished to provision dashboards|level=error'
 ```
+
+## Loki And Grafana Alloy
+
+Azure App Service logs flow through Azure diagnostic settings to Event Hubs, then Grafana Alloy reads those hubs and writes to Loki. The tracked Azure Bicep provisions one Event Hubs namespace per environment, an `appservice-logs` hub, a `grafana-alloy-{env}` consumer group, a send-only diagnostic authorization rule, a listen-only Alloy authorization rule, and App Service diagnostic settings. The namespace must be Standard or higher with Kafka enabled; Alloy uses the Event Hubs Kafka endpoint.
+
+Use the shared script after Bicep deployment has created Event Hubs:
+
+```powershell
+.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode SetAzureLogIngestion
+```
+
+The mode infers the current Azure subscription, tenant, default resource groups, Event Hubs namespaces, and App Service diagnostic settings. It creates or reuses `sp-agentic-e2e-alloy-logs`, assigns `Azure Event Hubs Data Receiver`, and writes only ignored local values to `infra/plane/variables.env`. Alloy reads from listen-only Event Hubs connection strings so local ingestion remains independent of Azure CLI login state:
+
+- `AZURE_DEV_EVENTHUB_NAMESPACE`
+- `AZURE_DEV_EVENTHUB_NAME`
+- `AZURE_DEV_EVENTHUB_CONNECTION_STRING`
+- `AZURE_QA_EVENTHUB_NAMESPACE`
+- `AZURE_QA_EVENTHUB_NAME`
+- `AZURE_QA_EVENTHUB_CONNECTION_STRING`
+- `AZURE_PROD_EVENTHUB_NAMESPACE`
+- `AZURE_PROD_EVENTHUB_NAME`
+- `AZURE_PROD_EVENTHUB_CONNECTION_STRING`
+- `AZURE_CLIENT_ID`
+- `AZURE_TENANT_ID`
+- `AZURE_CLIENT_SECRET`
+
+Validation:
+
+```powershell
+docker compose --env-file .\infra\plane\variables.env -f .\infra\compose.yml up -d loki alloy
+Invoke-RestMethod -Uri 'http://localhost:3100/ready'
+Invoke-RestMethod -Uri 'http://localhost:12345/-/ready'
+.\infra\monitoring\validate-azure-log-ingestion.ps1
+```
+
+Do not print service principal secrets or Event Hubs connection strings. If Alloy logs show `kafka: client has run out of available brokers to talk to: EOF`, verify the namespace has `kafkaEnabled: true`, the namespace is Standard or higher, the container can reach `*.servicebus.windows.net:9093`, and `AZURE_{ENV}_EVENTHUB_CONNECTION_STRING` was loaded when Alloy was recreated.
