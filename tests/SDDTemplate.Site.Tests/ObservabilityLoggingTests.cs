@@ -118,9 +118,9 @@ namespace SDDTemplate.Site.Tests
             string datasources = File.ReadAllText(datasourcePath);
 
             Assert.Contains("name: Prometheus", datasources);
-            Assert.Contains("uid: Prometheus", datasources);
+            Assert.Contains("uid: prometheus", datasources);
             Assert.Contains("name: Loki", datasources);
-            Assert.Contains("uid: Loki", datasources);
+            Assert.Contains("uid: loki", datasources);
         }
 
         [Theory]
