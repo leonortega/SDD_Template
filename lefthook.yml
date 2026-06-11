@@ -1,5 +1,8 @@
 pre-commit:
   commands:
+    dotnet-format-verify:
+      run: dotnet format SDDTemplate.slnx --verify-no-changes
+      glob: "**/*.{cs,csproj,sln,slnx,props,targets}"
     gitleaks-staged:
       run: gitleaks protect --staged --redact
 

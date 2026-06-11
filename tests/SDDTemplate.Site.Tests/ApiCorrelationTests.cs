@@ -1,12 +1,13 @@
 using System.Net;
+using ApiProgram = SDDTemplate.Api.Program;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace SDDTemplate.Site.Tests
 {
-    public sealed class ApiCorrelationTests(WebApplicationFactory<SDDTemplate.Api.Program> factory) : IClassFixture<WebApplicationFactory<SDDTemplate.Api.Program>>
+    public sealed class ApiCorrelationTests(WebApplicationFactory<ApiProgram> factory) : IClassFixture<WebApplicationFactory<ApiProgram>>
     {
-        private readonly WebApplicationFactory<SDDTemplate.Api.Program> _factory = factory;
+        private readonly WebApplicationFactory<ApiProgram> _factory = factory;
 
         [Fact]
         public async Task ApiHealthGeneratesCorrelationIdWhenMissing()
@@ -40,7 +41,7 @@ namespace SDDTemplate.Site.Tests
         [Fact]
         public async Task ApiExceptionPathReusesIncomingCorrelationId()
         {
-            await using WebApplicationFactory<SDDTemplate.Api.Program> factory = _factory.WithWebHostBuilder(builder =>
+            await using WebApplicationFactory<ApiProgram> factory = _factory.WithWebHostBuilder(builder =>
             {
                 _ = builder.UseEnvironment("Testing");
             });
