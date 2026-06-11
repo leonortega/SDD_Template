@@ -568,12 +568,19 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
-        public void WorkflowTimingCommentsAreContractedForAutomaticDelivery()
+        public void WorkflowTimingCommentsAreContractedForDeliveryStagesAndE2EQa()
         {
             string contract = ReadSkill("_shared", "delivery-contract.md");
             string automatic = ReadSkill("automatic-implement-ticket", "SKILL.md");
             string starter = ReadSkill("plane-start-ticket", "SKILL.md");
+            string implementation = ReadSkill("implement-ticket", "SKILL.md");
+            string feedbackLoop = ReadSkill("pr-review-feedback-loop", "SKILL.md");
+            string reviewAgent = ReadSkill("gitea-pr-review-agent", "SKILL.md");
+            string postMergeDeploy = ReadSkill("post-merge-deploy", "SKILL.md");
+            string deployToQa = ReadSkill("deploy-to-qa", "SKILL.md");
+            string testE2E = ReadSkill("test-e2e", "SKILL.md");
             string contextDocs = ReadDoc("context-management.md");
+            string deploymentDocs = ReadDoc("deployment.md");
             string script = File.ReadAllText(Path.Combine(
                 FindRepositoryRoot().FullName,
                 ".codex",
@@ -589,22 +596,45 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("InitializeWorkflowTelemetry", contract);
             Assert.Contains("AppendWorkflowTelemetry", contract);
             Assert.Contains("ReadWorkflowTelemetry", contract);
+            Assert.Contains("Each non-OpenSpec delivery stage must capture UTC start and finish times and append one row", contract);
+            Assert.Contains("test-e2e` must read rows for the active ticket with `ReadWorkflowTelemetry`", contract);
             Assert.Contains("Do not derive workflow timing from Plane generated marker timestamps", contract);
             Assert.Contains("update or reuse the existing workflow timing marker comment", contract);
 
             Assert.Contains("InitializeWorkflowTelemetry", starter);
+            Assert.Contains("workflowStage=plane-start-ticket", starter);
+            Assert.Contains("AppendWorkflowTelemetry", starter);
             Assert.Contains("Do not initialize telemetry when only listing Todo tickets", starter);
+            Assert.Contains("workflowStage=implement-ticket", implementation);
+            Assert.Contains("AppendWorkflowTelemetry", implementation);
+            Assert.Contains("workflowStage=pr-review-feedback-loop", feedbackLoop);
+            Assert.Contains("AppendWorkflowTelemetry", feedbackLoop);
+            Assert.Contains("workflowStage=gitea-pr-review-agent", reviewAgent);
+            Assert.Contains("AppendWorkflowTelemetry", reviewAgent);
+            Assert.Contains("workflowStage=post-merge-deploy", postMergeDeploy);
+            Assert.Contains("AppendWorkflowTelemetry", postMergeDeploy);
+            Assert.Contains("workflowStage=deploy-to-qa", deployToQa);
+            Assert.Contains("AppendWorkflowTelemetry", deployToQa);
+            Assert.Contains("workflowStage=test-e2e", testE2E);
+            Assert.Contains("AppendWorkflowTelemetry", testE2E);
+            Assert.Contains("ReadWorkflowTelemetry", testE2E);
+            Assert.Contains("RenderPlaneComment -Type WorkflowTiming", testE2E);
+            Assert.Contains("patch that comment instead of creating a duplicate", testE2E);
+            Assert.Contains("comment_html", testE2E);
+            Assert.Contains("comment_stripped", testE2E);
             Assert.Contains(".codex/agent-telemetry.local.jsonl", automatic);
+            Assert.Contains("Do not append telemetry for a delegated child stage", automatic);
             Assert.Contains("AppendWorkflowTelemetry", automatic);
-            Assert.Contains("ReadWorkflowTelemetry", automatic);
-            Assert.Contains("RenderPlaneComment -Type WorkflowTiming", automatic);
             Assert.Contains("IA generated workflow timing: {ticketKey}", automatic);
             Assert.Contains("do not derive timing from Plane generated marker timestamps", automatic);
-            Assert.Contains("patch that comment instead of creating a duplicate", automatic);
             Assert.Contains("workflow timing marker", automatic);
 
+            Assert.Contains("Delivery stages maintain a concise generated Plane timing comment", contextDocs);
+            Assert.Contains("E2E QA posts or patches the final timing comment", contextDocs);
             Assert.Contains("concise generated Plane timing comment", contextDocs);
             Assert.Contains("from that telemetry file", contextDocs);
+            Assert.Contains("E2E QA posts or patches the workflow timing comment", deploymentDocs);
+            Assert.Contains("PROD timing and PROD deployment comments remain part of the separate explicit PROD promotion step", deploymentDocs);
             Assert.DoesNotContain("retroactive marker-derived timing", contextDocs);
             Assert.Contains("'WorkflowTiming'", script);
             Assert.Contains("'InitializeWorkflowTelemetry'", script);

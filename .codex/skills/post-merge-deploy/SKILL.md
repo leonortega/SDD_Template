@@ -15,6 +15,10 @@ Do not perform DEV/QA validation inside this skill. `deploy-to-qa` owns artifact
 
 Before running, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` helpers: `ValidateTicketLock` for `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, and `ArtifactPaths`.
 
+## Workflow Telemetry
+
+Capture UTC start time after resolving the ticket key and before post-merge validation or artifact waiting. Append one `post-merge-deploy` row with `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` when the bridge succeeds, blocks, fails, or is skipped idempotently because QA deployment is already complete. Include `workflowStage=post-merge-deploy`, `agentRole=deployment`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. Do not duplicate the `deploy-to-qa` row; `deploy-to-qa` records its own stage when invoked.
+
 ## Configuration
 
 Read `.codex/client-tools.local.json` first. Required values are Plane, Gitea, and Nexus settings used by `deploy-to-qa`.

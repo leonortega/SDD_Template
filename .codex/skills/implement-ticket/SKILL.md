@@ -13,6 +13,10 @@ Use this skill after `plane-start-ticket` has created or reused the implementati
 
 Before implementation, handoff, or review work, follow `.codex/skills/_shared/skill-startup.md` with `docs/development.md` as the stage-specific doc.
 
+## Workflow Telemetry
+
+Capture UTC start time after resolving the ticket key and before implementation or PR handoff work. Append one `implement-ticket` row with `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` when the stage succeeds, blocks, fails, or is skipped idempotently. Include `workflowStage=implement-ticket`, `agentRole=implementation`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If telemetry append fails, report workflow timing as blocked and continue only when the underlying implementation handoff rules still allow it.
+
 ## Configuration
 
 Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.example.json` only for defaults and setup guidance.
