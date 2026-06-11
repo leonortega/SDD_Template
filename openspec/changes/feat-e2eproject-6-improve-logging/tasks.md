@@ -32,3 +32,8 @@ Suggested work units: single PR covering Site/API logging changes, tests, and do
 - [ ] 4.1 Confirm PR validation remains authoritative for full quality/security gates.
 - [ ] 4.2 Run Context Findings Review and update docs if durable logging conventions changed.
 - [ ] 4.3 Update implementation handoff with validation evidence, assumptions, docs status, and memory status.
+
+## PR Review Feedback
+
+- [x] PRF-1 (source: gitea review 23, severity: actionable): Extract duplicated correlation middleware into a shared common project consumed by both Site and API.
+- [x] PRF-2 (source: gitea review 23, severity: actionable): Add Info/Debug logs in relevant API and Site startup/process/validation paths.
