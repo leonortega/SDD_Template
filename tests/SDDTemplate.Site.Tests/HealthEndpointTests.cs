@@ -36,5 +36,34 @@ namespace SDDTemplate.Site.Tests
             Assert.DoesNotContain("token", response, StringComparison.OrdinalIgnoreCase);
         }
 
+        [Fact]
+        public async Task HealthEndpointGeneratesCorrelationIdWhenMissing()
+        {
+            await using WebApplicationFactory<SiteAssemblyMarker> factory = new();
+            using HttpClient client = factory.CreateClient();
+
+            using HttpResponseMessage response = await client.GetAsync("/health");
+
+            Assert.True(response.Headers.TryGetValues("X-Correlation-ID", out IEnumerable<string>? values));
+            string? correlationId = values.SingleOrDefault();
+            Assert.False(string.IsNullOrWhiteSpace(correlationId));
+        }
+
+        [Fact]
+        public async Task HealthEndpointReusesIncomingCorrelationId()
+        {
+            await using WebApplicationFactory<SiteAssemblyMarker> factory = new();
+            using HttpClient client = factory.CreateClient();
+            const string correlationId = "test-correlation-id";
+
+            using HttpRequestMessage request = new(HttpMethod.Get, "/health");
+            _ = request.Headers.TryAddWithoutValidation("X-Correlation-ID", correlationId);
+
+            using HttpResponseMessage response = await client.SendAsync(request);
+
+            Assert.True(response.Headers.TryGetValues("X-Correlation-ID", out IEnumerable<string>? values));
+            Assert.Equal(correlationId, values.Single());
+        }
+
     }
 }
