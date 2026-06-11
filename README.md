@@ -4,7 +4,7 @@ This repository is a template for a local, agent-driven software delivery lab. I
 
 The lab keeps delivery tooling local and deployment targets remote:
 
-- Local Docker Compose runs Plane, Gitea, the Gitea Actions runner, Nexus, Dozzle, Prometheus, and Grafana.
+- Local Docker Compose runs Plane, Gitea, the Gitea Actions runner, Nexus, Dozzle, and Grafana. Azure App Service diagnostics flow to Log Analytics, and local Grafana reads them through the built-in Azure Monitor datasource.
 - Azure hosts only the DEV, QA, and PROD application runtimes.
 - Nexus stores the immutable build artifact promoted across DEV, QA, PROD, and rollback.
 - Plane is the source of ticket state, generated workflow markers, and delivery comments.
@@ -143,7 +143,7 @@ That routes through `.codex/skills/configure-dev-environment`, which delegates t
 Configuration order:
 
 ```text
-Plane -> Gitea -> Gitea Actions runner -> quality gates -> Nexus -> Azure DEV -> Azure QA -> Azure PROD -> Prometheus -> Grafana
+Plane -> Gitea -> Gitea Actions runner -> quality gates -> Nexus -> Azure DEV -> Azure QA -> Azure PROD -> Grafana Azure Monitor
 ```
 
 During full setup or base-code creation, the configurator can also run a recommended tooling and skill audit:
@@ -165,7 +165,6 @@ The main local files are:
 .codex/tool-recommendations.local.json
 infra/plane/variables.env
 infra/gitea/runner.env
-infra/monitoring/prometheus.local.yml
 ```
 
 Tracked example files remain placeholder-safe. Real tokens, local secrets, generated Plane secrets, local Azure hostnames, and delivery locks belong only in ignored local files.

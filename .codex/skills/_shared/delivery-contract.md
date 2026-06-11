@@ -68,7 +68,7 @@ Default Plane states:
 - In Progress: branch and implementation are active.
 - In Review: PR exists and awaits review/merge.
 - QA: artifact is deployed to QA and awaits E2E validation.
-- Done: E2E QA passed with acceptance criteria proven by executable assertions against the deployed QA artifact, and the artifact is eligible for explicit PROD promotion.
+- Done: E2E QA passed with acceptance criteria proven by executable assertions against the deployed QA artifact, and the ticket is closed as QA accepted and eligible for a later explicit PROD release.
 
 Delivery flow:
 
@@ -78,7 +78,7 @@ Plane Todo -> branch/OpenSpec -> implementation -> PR review -> dev -> DEV/QA ->
 
 Before starting the first ticket, and before any Todo ticket is moved into implementation when stack context is missing, verify that the project tool set and tech stack are defined in `docs/architecture.md`, `docs/development.md`, `docs/deployment.md`, and `openspec/config.yaml`. The `plane-start-ticket` path must run or inspect `AuditRecommendedTools` and stop before Git, Plane, or OpenSpec mutation when the audit reports `stack-context.*` drift or the stack/tooling files are missing. Route the operator to `configure-dev-environment` to define the stack context and recommendation catalog first. When project guidance coverage is missing, use `project-guidance-discover` to show suggested skills, tools, references, practices, and standards, ask for additional desired guidance, then use `project-guidance-acquire` only after the final skill-copy list is confirmed. Ignored `.codex/tool-recommendations.local.json` may preserve catalog-shaped discovery state and recommendation-level `usedInSteps` for `project-guidance-mapper`, but it must never override the active ticket, this delivery contract, validation gates, or current repo files.
 
-PROD promotion is explicit. Do not promote to PROD only because QA passed unless the user asks for PROD promotion or a ticket-named `src/**` or `tests/**` merge to `main` triggers the PROD-only workflow.
+PROD promotion is explicit and release-centric. Do not promote to PROD only because QA passed unless the user asks for PROD promotion or a ticket-named `src/**` or `tests/**` merge to `main` triggers the PROD-only workflow. A PROD release may include one or more Done tickets; the release promotes one QA-approved artifact commit once, then records the PROD result on every included ticket without changing Plane state.
 
 Push-triggered environment deployment is allowed only for ticket-named work that changes `src/**` or `tests/**`. The ticket key pattern is configured in `.codex/delivery-policy.json`. The commit message must start with the configured ticket key format, such as `E2EPROJECT-123: ...`, or be a Gitea merge commit whose PR title starts with that ticket key format. Non-code changes outside `src/**` and `tests/**` do not run automatic CI/deployment work.
 
@@ -236,7 +236,7 @@ Rules:
 - `automatic-implement-ticket` resolves or creates the lock before delegating. If no ticket is selected, it must ask or route to `pipeline-status` instead of guessing.
 - `parallel-ticket-coordinator` creates or reuses one Git worktree per active ticket, records that assignment in ignored `.codex/parallel-delivery.local.json`, and delegates child skills only inside the assigned worktree.
 - `plane-start-ticket` creates or updates the lock after the selected ticket, branch, and OpenSpec decision are known. If an existing lock names a different ticket, fetch the locked ticket from Plane and compare it with the configured Done state. If the locked ticket is `Done`, replace the lock for the new selected ticket. If the locked ticket is active, missing, ambiguous, or cannot be verified, stop before branch, Plane, or OpenSpec mutation and report the lock blocker. This is lazy cleanup on next ticket start, not immediate deletion after QA Done.
-- Child skills must verify their resolved ticket, branch, PR, artifact `release.json.planeTicketKey`, QA evidence path, RC tag, and PROD release lineage match the locked `ticketKey` before mutating or promoting.
+- Child skills must verify their resolved ticket, branch, PR, artifact `release.json.planeTicketKey`, QA evidence path, RC tag, and PROD release lineage match the locked `ticketKey` before mutating or promoting. For PROD batch releases, `includedTickets` is authoritative when present: do not block only because the promoted commit includes multiple ticket keys, but stop when any explicitly included ticket lacks Done state, E2E QA PASS evidence, source RC lineage, or release membership proof.
 - If the lock exists and a child skill resolves a different ticket key, stop and report the mismatch. Do not deploy, test, move state, tag, or comment the other ticket.
 - If the lock is stale outside the `plane-start-ticket` terminal-ticket replacement path, or all durable checkpoints clearly identify one different active ticket, stop and ask the user to clear or replace the lock; do not silently rewrite it.
 - `pipeline-status` may read and report the lock plus mismatches. `rollback-prod` may operate by incident/release target, but must report when it differs from the active lock and require explicit user confirmation before mutation.
@@ -327,7 +327,7 @@ Use these exact markers for idempotency:
 
 Before adding generated comments or moving states, read existing comments when the API allows it and treat matching markers as already completed.
 
-After a successful PROD deployment marker is recorded, `deploy-to-prod` runs a read-only `delivery-retrospective-audit` with `post-prod-ticket-release` scope. This audit stores sanitized learning evidence in ignored `.codex/agent-evals/results.local.json` and records the post-PROD retrospective marker on Plane. It is not a release gate and must not mutate Plane state, deploy, promote, tag, rewrite branches, update release manifests, create tickets, or apply docs, contract, skill, eval, test, or memory changes without a separate user request.
+After a successful PROD deployment marker is recorded on every included ticket, `deploy-to-prod` runs a read-only `delivery-retrospective-audit` with `post-prod-ticket-release` scope for the just-promoted release. This audit stores sanitized learning evidence in ignored `.codex/agent-evals/results.local.json` and records the post-PROD retrospective marker on Plane. It is not a release gate and must not mutate Plane state, deploy, promote, tag, rewrite branches, update release manifests, create tickets, or apply docs, contract, skill, eval, test, or memory changes without a separate user request.
 
 ## Plane Comment Format
 
@@ -345,7 +345,7 @@ Use this structure unless a workflow-specific skill requires more detail:
 
 Prefer Markdown links for long URLs, short commit display text such as ``8acc4d4`` with the full SHA recorded in a field when needed, and grouped sections over long flat `Label: value` lists. Keep automation-critical values present and searchable; do not hide the stable marker, commit SHA, ticket key, release version, artifact URL, or evidence URL inside prose only.
 
-Workflow timing comments use marker `IA generated workflow timing: {ticketKey}` and a compact Markdown table with stage, outcome, duration, started UTC, and finished UTC. At the beginning of a selected ticket, `plane-start-ticket` must create or clear ignored `.codex/agent-telemetry.local.jsonl` with `InitializeWorkflowTelemetry`. Automatic delivery must append one row per routed stage with `AppendWorkflowTelemetry`, read rows for the active ticket with `ReadWorkflowTelemetry`, and render the Plane timing comment with `RenderPlaneComment -Type WorkflowTiming`. Raw telemetry stays in the ignored JSONL file; Plane timing comments must not include token counts, raw logs, full prompts, credential-bearing URLs, secrets, or noisy tool details. If telemetry cannot be written or read, report the workflow timing comment as blocked. Do not derive workflow timing from Plane generated marker timestamps. On rerun, update or reuse the existing workflow timing marker comment for the same ticket instead of creating duplicates. Send both `comment_html` and `comment_stripped`, and verify `comment_stripped` starts with the marker after posting or patching.
+Workflow timing comments use marker `IA generated workflow timing: {ticketKey}` and a compact Markdown table with stage, outcome, duration, started UTC, and finished UTC. At the beginning of a selected ticket, `plane-start-ticket` must create or clear ignored `.codex/agent-telemetry.local.jsonl` with `InitializeWorkflowTelemetry`. Each non-OpenSpec delivery stage must capture UTC start and finish times and append one row for its own stage with `AppendWorkflowTelemetry` on `PASS`, `BLOCKED`, `FAIL`, or idempotent `SKIP`; this includes `plane-start-ticket`, `implement-ticket`, `pr-review-feedback-loop`, `gitea-pr-review-agent`, `post-merge-deploy`, `deploy-to-qa`, and `test-e2e`. `automatic-implement-ticket` may append only its own routing row when it performs meaningful routing work, but it must not duplicate child stage rows. After the E2E QA Plane comment is verified and before final QA handoff, `test-e2e` must read rows for the active ticket with `ReadWorkflowTelemetry`, render the Plane timing comment with `RenderPlaneComment -Type WorkflowTiming`, then create or patch the timing marker comment. Raw telemetry stays in the ignored JSONL file; Plane timing comments must not include token counts, raw logs, full prompts, credential-bearing URLs, secrets, or noisy tool details. If telemetry cannot be written or read, report the workflow timing comment as blocked. Do not derive workflow timing from Plane generated marker timestamps. On rerun, update or reuse the existing workflow timing marker comment for the same ticket instead of creating duplicates. Send both `comment_html` and `comment_stripped`, and verify `comment_stripped` starts with the marker after posting or patching.
 
 ## Reusable Delivery Tools
 
@@ -460,6 +460,7 @@ Required baseline fields:
 - `checksum`
 - `artifactUrl`
 - `planeTicketKey`
+- Optional `includedTickets` records the Done tickets included in a PROD release. `planeTicketKey` remains the primary or representative ticket for backward compatibility; when `includedTickets` exists, PROD skills must use it as the release membership list.
 - `versionStatus`
 
 Stage-specific fields are added by the responsible skill:

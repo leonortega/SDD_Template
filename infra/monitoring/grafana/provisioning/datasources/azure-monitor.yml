@@ -1,0 +1,17 @@
+apiVersion: 1
+
+datasources:
+  - name: Azure Monitor
+    uid: azure-monitor
+    type: grafana-azure-monitor-datasource
+    access: proxy
+    isDefault: true
+    editable: true
+    jsonData:
+      azureAuthType: clientsecret
+      cloudName: azuremonitor
+      tenantId: ${GRAFANA_AZURE_TENANT_ID}
+      clientId: ${GRAFANA_AZURE_CLIENT_ID}
+      subscriptionId: ${GRAFANA_AZURE_SUBSCRIPTION_ID}
+    secureJsonData:
+      clientSecret: ${GRAFANA_AZURE_CLIENT_SECRET}

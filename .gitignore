@@ -115,7 +115,7 @@ infra/plane/plane/
 .codex/client-tools.local.json
 .codex/quality.local.json
 .codex/azure-login.local.json
-infra/monitoring/prometheus.local.yml
+infra/monitoring/grafana/dashboards.local/
 
 # OS/editor noise
 .DS_Store

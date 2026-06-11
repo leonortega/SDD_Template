@@ -80,7 +80,7 @@ Dynamic values belong near the end of the working context:
 - Nexus manifests, Azure health checks, QA evidence, and monitoring output
 - tool errors, retries, and latest observations
 
-Do not insert timestamps, random IDs, raw tool dumps, or refreshed status summaries into otherwise stable context blocks. If a run records model telemetry, write it to ignored local output such as `.codex/agent-telemetry.local.jsonl` and summarize only useful optimization findings in handoff text. Automatic ticket delivery maintains a concise generated Plane timing comment for the active ticket from that telemetry file, but only with per-stage outcome, duration, and UTC start/finish values; raw logs, token counts, prompts, and sensitive values stay out of Plane.
+Do not insert timestamps, random IDs, raw tool dumps, or refreshed status summaries into otherwise stable context blocks. If a run records model telemetry, write it to ignored local output such as `.codex/agent-telemetry.local.jsonl` and summarize only useful optimization findings in handoff text. Delivery stages maintain a concise generated Plane timing comment for the active ticket from that telemetry file, but only with per-stage outcome, duration, and UTC start/finish values; raw logs, token counts, prompts, and sensitive values stay out of Plane. E2E QA posts or patches the final timing comment after the E2E QA comment is verified because PROD promotion is a separate explicit release step.
 
 ## Risk-Adaptive Context Loading
 
