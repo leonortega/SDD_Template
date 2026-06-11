@@ -32,7 +32,7 @@ Collect what is relevant to the request:
 - Nexus artifacts and `release.json` for relevant commits.
 - Git branches and SemVer tags.
 - DEV/QA/PROD URLs and `/health` status when available.
-- Prometheus/Grafana availability when relevant to PROD status.
+- Grafana Azure Monitor availability when relevant to PROD status.
 
 ## Output
 

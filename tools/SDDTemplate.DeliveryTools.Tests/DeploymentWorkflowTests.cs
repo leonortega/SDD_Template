@@ -163,7 +163,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("git merge-base HEAD origin/dev", e2eJob);
             Assert.Contains("tests/SDDTemplate.E2ETests", e2eJob);
             Assert.Contains("npm ci", e2eJob);
-            Assert.Contains("npm run install:browsers", e2eJob);
+            Assert.DoesNotContain("npm run install:browsers", e2eJob);
             Assert.Contains("npm test || test_exit=$?", e2eJob);
             Assert.Contains("E2E_SITE_URL: ${{ secrets.AZURE_QA_SITE_APP_URL }}", e2eJob);
             Assert.Contains("E2E_API_URL: ${{ secrets.AZURE_QA_API_APP_URL }}", e2eJob);
@@ -568,12 +568,19 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
-        public void WorkflowTimingCommentsAreContractedForAutomaticDelivery()
+        public void WorkflowTimingCommentsAreContractedForDeliveryStagesAndE2EQa()
         {
             string contract = ReadSkill("_shared", "delivery-contract.md");
             string automatic = ReadSkill("automatic-implement-ticket", "SKILL.md");
             string starter = ReadSkill("plane-start-ticket", "SKILL.md");
+            string implementation = ReadSkill("implement-ticket", "SKILL.md");
+            string feedbackLoop = ReadSkill("pr-review-feedback-loop", "SKILL.md");
+            string reviewAgent = ReadSkill("gitea-pr-review-agent", "SKILL.md");
+            string postMergeDeploy = ReadSkill("post-merge-deploy", "SKILL.md");
+            string deployToQa = ReadSkill("deploy-to-qa", "SKILL.md");
+            string testE2E = ReadSkill("test-e2e", "SKILL.md");
             string contextDocs = ReadDoc("context-management.md");
+            string deploymentDocs = ReadDoc("deployment.md");
             string script = File.ReadAllText(Path.Combine(
                 FindRepositoryRoot().FullName,
                 ".codex",
@@ -589,22 +596,45 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("InitializeWorkflowTelemetry", contract);
             Assert.Contains("AppendWorkflowTelemetry", contract);
             Assert.Contains("ReadWorkflowTelemetry", contract);
+            Assert.Contains("Each non-OpenSpec delivery stage must capture UTC start and finish times and append one row", contract);
+            Assert.Contains("test-e2e` must read rows for the active ticket with `ReadWorkflowTelemetry`", contract);
             Assert.Contains("Do not derive workflow timing from Plane generated marker timestamps", contract);
             Assert.Contains("update or reuse the existing workflow timing marker comment", contract);
 
             Assert.Contains("InitializeWorkflowTelemetry", starter);
+            Assert.Contains("workflowStage=plane-start-ticket", starter);
+            Assert.Contains("AppendWorkflowTelemetry", starter);
             Assert.Contains("Do not initialize telemetry when only listing Todo tickets", starter);
+            Assert.Contains("workflowStage=implement-ticket", implementation);
+            Assert.Contains("AppendWorkflowTelemetry", implementation);
+            Assert.Contains("workflowStage=pr-review-feedback-loop", feedbackLoop);
+            Assert.Contains("AppendWorkflowTelemetry", feedbackLoop);
+            Assert.Contains("workflowStage=gitea-pr-review-agent", reviewAgent);
+            Assert.Contains("AppendWorkflowTelemetry", reviewAgent);
+            Assert.Contains("workflowStage=post-merge-deploy", postMergeDeploy);
+            Assert.Contains("AppendWorkflowTelemetry", postMergeDeploy);
+            Assert.Contains("workflowStage=deploy-to-qa", deployToQa);
+            Assert.Contains("AppendWorkflowTelemetry", deployToQa);
+            Assert.Contains("workflowStage=test-e2e", testE2E);
+            Assert.Contains("AppendWorkflowTelemetry", testE2E);
+            Assert.Contains("ReadWorkflowTelemetry", testE2E);
+            Assert.Contains("RenderPlaneComment -Type WorkflowTiming", testE2E);
+            Assert.Contains("patch that comment instead of creating a duplicate", testE2E);
+            Assert.Contains("comment_html", testE2E);
+            Assert.Contains("comment_stripped", testE2E);
             Assert.Contains(".codex/agent-telemetry.local.jsonl", automatic);
+            Assert.Contains("Do not append telemetry for a delegated child stage", automatic);
             Assert.Contains("AppendWorkflowTelemetry", automatic);
-            Assert.Contains("ReadWorkflowTelemetry", automatic);
-            Assert.Contains("RenderPlaneComment -Type WorkflowTiming", automatic);
             Assert.Contains("IA generated workflow timing: {ticketKey}", automatic);
             Assert.Contains("do not derive timing from Plane generated marker timestamps", automatic);
-            Assert.Contains("patch that comment instead of creating a duplicate", automatic);
             Assert.Contains("workflow timing marker", automatic);
 
+            Assert.Contains("Delivery stages maintain a concise generated Plane timing comment", contextDocs);
+            Assert.Contains("E2E QA posts or patches the final timing comment", contextDocs);
             Assert.Contains("concise generated Plane timing comment", contextDocs);
             Assert.Contains("from that telemetry file", contextDocs);
+            Assert.Contains("E2E QA posts or patches the workflow timing comment", deploymentDocs);
+            Assert.Contains("PROD timing and PROD deployment comments remain part of the separate explicit PROD promotion step", deploymentDocs);
             Assert.DoesNotContain("retroactive marker-derived timing", contextDocs);
             Assert.Contains("'WorkflowTiming'", script);
             Assert.Contains("'InitializeWorkflowTelemetry'", script);
@@ -670,6 +700,48 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
+        public void ProdPromotionSupportsBatchReleaseAfterTicketsAreDone()
+        {
+            string contract = ReadSkill("_shared", "delivery-contract.md");
+            string deploymentDocs = ReadDoc("deployment.md");
+            string deployToProd = ReadSkill("deploy-to-prod", "SKILL.md");
+            string retrospective = ReadSkill("delivery-retrospective-audit", "SKILL.md");
+            string schema = File.ReadAllText(Path.Combine(
+                FindRepositoryRoot().FullName,
+                ".codex",
+                "skills",
+                "_shared",
+                "release.schema.json"));
+            string script = File.ReadAllText(Path.Combine(
+                FindRepositoryRoot().FullName,
+                ".codex",
+                "skills",
+                "_shared",
+                "scripts",
+                "delivery_tools.ps1"));
+
+            Assert.Contains("QA accepted and eligible for a later explicit PROD release", contract);
+            Assert.Contains("PROD promotion is explicit and release-centric", contract);
+            Assert.Contains("A PROD release may include one or more Done tickets", contract);
+            Assert.Contains("`includedTickets` is authoritative when present", contract);
+            Assert.Contains("do not block only because the promoted commit includes multiple ticket keys", contract);
+            Assert.Contains("record the same PROD release result on every included ticket", deployToProd);
+            Assert.Contains("If `release.json.includedTickets` exists, treat it as the authoritative release membership list", deployToProd);
+            Assert.Contains("Support single-ticket releases when includedTickets is absent", File.ReadAllText(Path.Combine(
+                FindRepositoryRoot().FullName,
+                ".codex",
+                "agent-evals",
+                "workflow-cases.json")));
+
+            Assert.Contains("E2E QA `PASS` closes each ticket as Done", deploymentDocs);
+            Assert.Contains("PROD is a later explicit release event that may include one or more Done tickets", deploymentDocs);
+            Assert.Contains("comments the PROD result on every included ticket", deploymentDocs);
+            Assert.Contains("just-promoted release", retrospective);
+            Assert.Contains("\"includedTickets\"", schema);
+            Assert.Contains("Included tickets", script);
+        }
+
+        [Fact]
         public void WorkflowEvalRequiresPostProdRetrospectiveLearningEvidence()
         {
             string root = FindRepositoryRoot().FullName;
@@ -687,12 +759,14 @@ namespace SDDTemplate.DeliveryTools.Tests
             string[] handoffFields = [.. postProdCase.GetProperty("handoffFields").EnumerateArray().Select(item => item.GetString() ?? string.Empty)];
 
             Assert.Contains("successful PROD deployment marker", evidence);
+            Assert.Contains("included ticket list", evidence);
             Assert.Contains(".codex/agent-evals/results.local.json ignored path", evidence);
             Assert.Contains("Invoke delivery-retrospective-audit in read-only post-prod-ticket-release mode", expectations);
             Assert.Contains("Add or reuse Plane marker IA generated post-PROD retrospective: {finalVersion}", expectations);
             Assert.Contains("PROD deployment has not succeeded", stopConditions);
             Assert.Contains("move Plane ticket state", unsafeMutations);
             Assert.Contains("apply docs, delivery contract, skill, eval, test, or memory changes automatically", unsafeMutations);
+            Assert.Contains("includedTickets", handoffFields);
             Assert.Contains("localResultPath", handoffFields);
             Assert.Contains("planeRetrospectiveMarker", handoffFields);
             Assert.Contains("appliedChanges", handoffFields);
@@ -929,7 +1003,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("\"nexus-artifacts\"", discoveryScript);
             Assert.Contains("\"azure\"", discoveryScript);
             Assert.Contains("\"azure-app-service\"", discoveryScript);
-            Assert.Contains("\"prometheus\"", discoveryScript);
+            Assert.Contains("\"azure-monitor\"", discoveryScript);
             Assert.Contains("\"grafana\"", discoveryScript);
             Assert.Contains("\"e2e\"", discoveryScript);
             Assert.Contains("\"browser-e2e\"", discoveryScript);
@@ -1064,7 +1138,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("Gitea Actions", architecture);
             Assert.Contains("Nexus", architecture);
             Assert.Contains("Azure App Service", architecture);
-            Assert.Contains("Prometheus", architecture);
+            Assert.Contains("Azure Monitor", architecture);
             Assert.Contains("Grafana", architecture);
             Assert.Contains("Skills are not installed by command", architecture);
             Assert.Contains("project-guidance-discover", architecture);
@@ -1085,7 +1159,7 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.Contains("## Technology Stack And Tool Set", deployment);
             Assert.Contains("Azure App Service", deployment);
-            Assert.Contains("Prometheus", deployment);
+            Assert.Contains("Azure Monitor", deployment);
             Assert.Contains("Grafana", deployment);
             Assert.Contains("qa/{ticketKey}/{runId}/qa-evidence.zip", deployment);
             Assert.Contains("project-guidance-mapper", deployment);

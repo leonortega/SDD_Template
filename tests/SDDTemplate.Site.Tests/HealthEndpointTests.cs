@@ -36,19 +36,5 @@ namespace SDDTemplate.Site.Tests
             Assert.DoesNotContain("token", response, StringComparison.OrdinalIgnoreCase);
         }
 
-        [Fact]
-        public async Task MetricsEndpointReturnsPrometheusGauge()
-        {
-            await using WebApplicationFactory<SiteAssemblyMarker> factory = new();
-            using HttpClient client = factory.CreateClient();
-
-            HttpResponseMessage response = await client.GetAsync("/metrics");
-            string metrics = await response.Content.ReadAsStringAsync();
-
-            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-            Assert.StartsWith("text/plain", response.Content.Headers.ContentType?.MediaType);
-            Assert.Contains("# TYPE sddtemplate_health gauge", metrics);
-            Assert.Contains("sddtemplate_health 1", metrics);
-        }
     }
 }

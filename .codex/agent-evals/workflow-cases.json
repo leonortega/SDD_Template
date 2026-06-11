@@ -151,7 +151,7 @@
       ],
       "stopConditions": [
         "PR has needs-tests or needs-changes",
-        "release.json planeTicketKey differs from the ticket lock",
+        "release.json planeTicketKey differs from the ticket lock and no includedTickets batch membership proves the release",
         "deployment lane is owned by another ticket"
       ],
       "handoffFields": [
@@ -196,28 +196,35 @@
     {
       "id": "prod-explicit-artifact-promotion",
       "stage": "deploy-to-prod",
-      "goal": "Promote only a QA-approved artifact to PROD after explicit user intent.",
+      "goal": "Promote one QA-approved artifact to PROD after explicit user intent, then record the release on every included Done ticket.",
       "expectedRoute": "deploy-to-prod",
       "requiredEvidence": [
-        "Plane Done state",
+        "Plane Done state for every included ticket",
         "QA-approved artifact commit",
         "source RC tag",
         "main target commit",
         "release.json",
+        "included ticket list",
         "PROD health checks"
       ],
       "toolExpectations": [
         "Require explicit PROD intent",
+        "Treat E2E QA PASS and Plane Done as ticket completion before PROD",
+        "Support single-ticket releases when includedTickets is absent",
+        "Use release.json includedTickets as authoritative release membership when present",
         "Validate RC and final tag lineage",
-        "Deploy the existing Nexus artifact without rebuilding"
+        "Deploy the existing Nexus artifact without rebuilding",
+        "Add or update the PROD marker on every included ticket"
       ],
       "stopConditions": [
         "main diverges from the intended QA-approved commit",
         "release manifest conflicts with Plane or tags",
-        "source RC version is ambiguous"
+        "source RC version is ambiguous",
+        "any included ticket lacks Done state, E2E QA PASS evidence, source RC lineage, or release membership proof"
       ],
       "handoffFields": [
-        "ticketKey",
+        "primaryTicketKey",
+        "includedTickets",
         "finalReleaseVersion",
         "finalTag",
         "prodUrl",
@@ -228,11 +235,12 @@
     {
       "id": "post-prod-retrospective-learning-evidence",
       "stage": "deploy-to-prod",
-      "goal": "After successful PROD promotion, run a read-only retrospective for the just-promoted ticket and persist sanitized learning evidence.",
+      "goal": "After successful PROD promotion, run a read-only retrospective for the just-promoted release and persist sanitized learning evidence.",
       "expectedRoute": "delivery-retrospective-audit",
       "requiredEvidence": [
         "successful PROD deployment marker",
-        "ticket key",
+        "primary ticket key",
+        "included ticket list",
         "artifact commit",
         "final release version",
         "PROD URL",
@@ -262,7 +270,8 @@
         "apply docs, delivery contract, skill, eval, test, or memory changes automatically"
       ],
       "handoffFields": [
-        "ticketKey",
+        "primaryTicketKey",
+        "includedTickets",
         "finalReleaseVersion",
         "artifactCommit",
         "prodUrl",

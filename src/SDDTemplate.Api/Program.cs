@@ -40,12 +40,6 @@ if (allowedOrigins.Length > 0)
 _ = app.MapGet("/health", (IHostEnvironment environment) =>
     Results.Ok(new HealthResponse("ok", environment.EnvironmentName, DateTimeOffset.UtcNow)));
 
-_ = app.MapGet("/metrics", () => Results.Text(
-    "# HELP sddtemplate_api_health Application API health status.`n" +
-    "# TYPE sddtemplate_api_health gauge`n" +
-    "sddtemplate_api_health 1`n",
-    "text/plain; version=0.0.4"));
-
 _ = app.MapClientEndpoints();
 
 app.Run();

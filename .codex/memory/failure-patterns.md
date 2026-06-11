@@ -45,6 +45,15 @@ Stop when release manifest fields conflict with Plane comments or tags. Validate
 
 Nexus is mandatory for DEV, QA, PROD, and rollback promotion. If Nexus is unavailable for promotion, stop instead of rebuilding locally or deploying from local files.
 
+## PROD Promotion Must Resolve Artifact SHA From Main Merge Parent
+
+- Type: Pattern
+- Status: Active
+- Source: current conversation, `.gitea/workflows/package-deploy.yml`
+- Last verified: 2026-06-11
+
+For `push` events on `main`, `GITHUB_SHA` is often the merge commit SHA, but Nexus artifacts are stored under the packaged commit SHA from the promoted branch. If PROD download steps use `app/${GITHUB_SHA}/...`, Nexus returns 404 for `deployable-apps.json`. Resolve the promotion artifact SHA from merge parent 2 (`$GITHUB_SHA^2`) when the commit has two parents, and fall back to `GITHUB_SHA` for non-merge pushes.
+
 ## Main Divergence
 
 - Type: Pattern

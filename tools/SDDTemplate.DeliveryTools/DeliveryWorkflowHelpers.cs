@@ -81,6 +81,32 @@ namespace SDDTemplate.DeliveryTools
                 errors.Add("finalReleaseVersion must use vMAJOR.MINOR.PATCH.");
             }
 
+            if (root.TryGetProperty("includedTickets", out JsonElement includedTickets))
+            {
+                if (includedTickets.ValueKind != JsonValueKind.Array)
+                {
+                    errors.Add("includedTickets must be an array when present.");
+                }
+                else
+                {
+                    if (includedTickets.GetArrayLength() == 0)
+                    {
+                        errors.Add("includedTickets must contain at least one ticket when present.");
+                    }
+
+                    int index = 0;
+                    foreach (JsonElement includedTicket in includedTickets.EnumerateArray())
+                    {
+                        if (includedTicket.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(includedTicket.GetString()))
+                        {
+                            errors.Add($"includedTickets[{index}] must be a non-empty string.");
+                        }
+
+                        index++;
+                    }
+                }
+            }
+
             return new ReleaseManifestValidation(path, errors.Count == 0, errors);
         }
 

@@ -596,7 +596,6 @@ jobs:
 
           cd tests/SDDTemplate.E2ETests
           npm ci
-          npm run install:browsers
 
       - name: Run QA branch E2E suite and upload evidence
         shell: bash
@@ -643,13 +642,33 @@ jobs:
       image: agentic/dotnet-ci:10.0.300-tools-1
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.classify-changes.outputs.app_changed == 'true' && needs.classify-changes.outputs.deploy_allowed == 'true') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod')
     steps:
+      - name: Checkout commit metadata
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          repo_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          repo_url="${repo_url/localhost/host.docker.internal}"
+          repo_url="${repo_url/gitea/host.docker.internal}"
+
+          git init .
+          git remote add origin "$repo_url"
+          git fetch --depth 2 origin "$GITHUB_SHA"
+          git checkout --force FETCH_HEAD
+
       - name: Resolve PROD promotion inputs
         shell: bash
         run: |
           set -euo pipefail
 
           if [ "$GITHUB_EVENT_NAME" = "push" ]; then
-            artifact_commit_sha="$GITHUB_SHA"
+            parent_count="$(git rev-list --parents -n 1 "$GITHUB_SHA" | awk '{print NF-1}')"
+            if [ "$parent_count" -ge 2 ]; then
+              artifact_commit_sha="$(git rev-parse "$GITHUB_SHA^2")"
+            else
+              artifact_commit_sha="$GITHUB_SHA"
+            fi
           else
             artifact_commit_sha="$ARTIFACT_COMMIT_SHA"
             test -n "$RELEASE_VERSION"
