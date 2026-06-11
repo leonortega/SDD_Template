@@ -30,26 +30,26 @@ Application logs SHALL include fields needed for operations filtering and SHALL 
 
 ### Requirement: Deployed log routing
 
-Azure-hosted API and Site logs SHALL be routed through Grafana Alloy. The system SHALL configure one log consumer for DEV, one for QA, and one for PROD.
+Azure-hosted API and Site logs SHALL be routed through App Service diagnostic settings to the matching Log Analytics workspace for DEV, QA, and PROD.
 
-#### Scenario: DEV logs use DEV consumer
+#### Scenario: DEV logs use DEV workspace
 
 - **WHEN** the API or Site emits logs in the Azure-hosted DEV environment
-- **THEN** Grafana Alloy consumes those logs through the DEV log consumer
+- **THEN** App Service diagnostics write those logs to the DEV Log Analytics workspace
 
-#### Scenario: QA logs use QA consumer
+#### Scenario: QA logs use QA workspace
 
 - **WHEN** the API or Site emits logs in the Azure-hosted QA environment
-- **THEN** Grafana Alloy consumes those logs through the QA log consumer
+- **THEN** App Service diagnostics write those logs to the QA Log Analytics workspace
 
-#### Scenario: PROD logs use PROD consumer
+#### Scenario: PROD logs use PROD workspace
 
 - **WHEN** the API or Site emits logs in the Azure-hosted PROD environment
-- **THEN** Grafana Alloy consumes those logs through the PROD log consumer
+- **THEN** App Service diagnostics write those logs to the PROD Log Analytics workspace
 
 ### Requirement: Environment-specific Grafana log boards
 
-Grafana SHALL provide separate log-focused boards for DEV, QA, and PROD. Each board SHALL let operators filter log records for its environment by text, date/time range, and category/source.
+Grafana SHALL provide separate Azure Monitor log-focused boards for DEV, QA, and PROD. Each board SHALL let operators filter log records for its environment by text, date/time range, and category/source.
 
 #### Scenario: Operator filters DEV logs
 

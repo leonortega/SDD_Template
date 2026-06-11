@@ -163,7 +163,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("git merge-base HEAD origin/dev", e2eJob);
             Assert.Contains("tests/SDDTemplate.E2ETests", e2eJob);
             Assert.Contains("npm ci", e2eJob);
-            Assert.Contains("npm run install:browsers", e2eJob);
+            Assert.DoesNotContain("npm run install:browsers", e2eJob);
             Assert.Contains("npm test || test_exit=$?", e2eJob);
             Assert.Contains("E2E_SITE_URL: ${{ secrets.AZURE_QA_SITE_APP_URL }}", e2eJob);
             Assert.Contains("E2E_API_URL: ${{ secrets.AZURE_QA_API_APP_URL }}", e2eJob);
@@ -929,7 +929,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("\"nexus-artifacts\"", discoveryScript);
             Assert.Contains("\"azure\"", discoveryScript);
             Assert.Contains("\"azure-app-service\"", discoveryScript);
-            Assert.Contains("\"prometheus\"", discoveryScript);
+            Assert.Contains("\"azure-monitor\"", discoveryScript);
             Assert.Contains("\"grafana\"", discoveryScript);
             Assert.Contains("\"e2e\"", discoveryScript);
             Assert.Contains("\"browser-e2e\"", discoveryScript);
@@ -1064,7 +1064,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("Gitea Actions", architecture);
             Assert.Contains("Nexus", architecture);
             Assert.Contains("Azure App Service", architecture);
-            Assert.Contains("Prometheus", architecture);
+            Assert.Contains("Azure Monitor", architecture);
             Assert.Contains("Grafana", architecture);
             Assert.Contains("Skills are not installed by command", architecture);
             Assert.Contains("project-guidance-discover", architecture);
@@ -1085,7 +1085,7 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.Contains("## Technology Stack And Tool Set", deployment);
             Assert.Contains("Azure App Service", deployment);
-            Assert.Contains("Prometheus", deployment);
+            Assert.Contains("Azure Monitor", deployment);
             Assert.Contains("Grafana", deployment);
             Assert.Contains("qa/{ticketKey}/{runId}/qa-evidence.zip", deployment);
             Assert.Contains("project-guidance-mapper", deployment);

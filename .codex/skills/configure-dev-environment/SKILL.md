@@ -1,6 +1,6 @@
 ---
 name: configure-dev-environment
-description: Router for configuring this repo's local development and delivery environment. Use when Codex needs to set up, audit, repair, or guide configuration for Plane, Gitea PR automation, Gitea Actions runner, code quality gates, Nexus artifacts, Azure DEV/QA/PROD environments, DEV-to-QA deployment promotion, Prometheus/Grafana monitoring, or when the user asks "config infra", "setup environment", or is unsure which setup area they need.
+description: Router for configuring this repo's local development and delivery environment. Use when Codex needs to set up, audit, repair, or guide configuration for Plane, Gitea PR automation, Gitea Actions runner, code quality gates, Nexus artifacts, Azure DEV/QA/PROD environments, DEV-to-QA deployment promotion, Grafana Azure Monitor observability, or when the user asks "config infra", "setup environment", or is unsure which setup area they need.
 ---
 
 # Configure Dev Environment
@@ -27,7 +27,6 @@ When setup needs values the user must supply manually, do not only ask for the v
   - `.codex/quality.local.json`
   - `infra/plane/variables.env`
   - `infra/gitea/runner.env`
-  - `infra/monitoring/prometheus.local.yml`
 - Keep tracked files as templates, workflows, or placeholder-safe documentation.
 - Do not read secrets from Docker containers, container shells, mounted volumes, service databases, or logs.
 - Do not start or stop local infra automatically. Ask first before running `.\infra\up.ps1` or `.\infra\down.ps1`.
@@ -100,8 +99,7 @@ Useful modes:
 - `BuildGiteaActionsImages`: build and validate pinned local Gitea Actions job images used by PR validation, package/deploy, and QA E2E workflows.
 - `ValidateGiteaActionsRunner`: live-check Docker runner prerequisites for PR validation containers, including local image presence, required tools, and local Gitea checkout reachability.
 - `InitQualityGateTemplates`: create tracked quality-gate templates.
-- `SetPrometheusAzureTargets`: update ignored Prometheus Azure targets.
-- `SetAzureLogIngestion`: infer deployed Event Hubs/App Service diagnostics, create or reuse the local Alloy service principal, assign Event Hubs Data Receiver, and write ignored Alloy env values to `infra/plane/variables.env` without printing secrets.
+- `SetGrafanaAzureMonitor`: infer deployed Log Analytics/App Service diagnostics, create or reuse the Grafana Azure Monitor service principal, assign `Reader` and `Log Analytics Reader`, and write ignored Grafana Azure env values to `infra/plane/variables.env` without printing secrets.
 - `SetQualityConfig`: create or update `.codex/quality.local.json`, including `coverage.minimumPercent` (default `80`).
 
 ## Workflow

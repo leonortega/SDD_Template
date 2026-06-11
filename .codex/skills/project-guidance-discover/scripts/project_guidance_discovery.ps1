@@ -33,7 +33,7 @@ function Get-ProjectGuidanceDiscoverySourceNotes {
     "repo-local" = "Repository-local workflow skills, scripts, templates, and docs that are already tracked in this project."
     "openai-official" = "OpenAI skill catalogs or docs."
     "tool-official" = "Official repository or documentation for the target tool, framework, product, or plugin."
-    "technology-owner" = "Technology-owner repositories or docs, such as Microsoft, .NET, Playwright, Azure, Gitea, Nexus, Prometheus, Grafana, Docker, Kubernetes, or OWASP."
+    "technology-owner" = "Technology-owner repositories or docs, such as Microsoft, .NET, Playwright, Azure, Azure Monitor, Gitea, Nexus, Grafana, Docker, Kubernetes, or OWASP."
     "skills-cli" = "skills.sh or skills command output that identifies a repository, ref, skill name, and likely SKILL.md path."
     "marketplace" = "Marketplace or directory pages that identify a repository, ref, skill name, and likely SKILL.md path."
     "community" = "Well-used public sources only when no stronger source exists; label clearly as community-maintained."
@@ -58,7 +58,7 @@ function Add-StackContextDriftFindings {
     [pscustomobject]@{ tag = "gitea-actions-runner"; pattern = "Gitea Actions"; label = "Gitea Actions" },
     [pscustomobject]@{ tag = "nexus-artifacts"; pattern = "Nexus"; label = "Nexus artifacts" },
     [pscustomobject]@{ tag = "azure-app-service"; pattern = "Azure App Service"; label = "Azure App Service" },
-    [pscustomobject]@{ tag = "prometheus"; pattern = "Prometheus"; label = "Prometheus" },
+    [pscustomobject]@{ tag = "azure-monitor"; pattern = "Azure Monitor|Log Analytics"; label = "Azure Monitor and Log Analytics" },
     [pscustomobject]@{ tag = "grafana"; pattern = "Grafana"; label = "Grafana" },
     [pscustomobject]@{ tag = "browser-e2e"; pattern = "Browser|Playwright"; label = "Browser or Playwright QA" },
     [pscustomobject]@{ tag = "playwright-guidance"; pattern = "Playwright"; label = "Playwright guidance" },
@@ -172,9 +172,9 @@ function Get-DetectedStackTags {
     $tags.Add("azure-app-service")
   }
   if (Test-Path (Join-RootPath "infra/monitoring")) { $tags.Add("observability") }
-  if ((Test-FileContains "infra/monitoring/prometheus.yml" "prometheus") -or
-      (Test-FileContains "infra/monitoring/prometheus.local.yml" "prometheus")) {
-    $tags.Add("prometheus")
+  if ((Test-FileContains "infra/monitoring/grafana/provisioning/datasources/azure-monitor.yml" "grafana-azure-monitor-datasource") -or
+      (Test-AnyRepoFileContains @("infra/azure", "docs", ".codex/skills") @("*.bicep", "*.md", "*.ps1") "Log Analytics|Azure Monitor")) {
+    $tags.Add("azure-monitor")
   }
   if (Test-Path (Join-RootPath "infra/monitoring/grafana")) { $tags.Add("grafana") }
   if ((Test-Path (Join-RootPath "artifacts/qa")) -or (Test-Path (Join-RootPath ".codex/skills/test-e2e/SKILL.md"))) {
@@ -241,12 +241,12 @@ function Get-ProjectGuidanceResearchTopics {
     },
     [pscustomobject]@{
       id = "delivery-tools"
-      tags = @("plane", "gitea", "gitea-actions-runner", "nexus-artifacts", "azure-app-service", "prometheus", "grafana")
+      tags = @("plane", "gitea", "gitea-actions-runner", "nexus-artifacts", "azure-app-service", "azure-monitor", "grafana")
       area = "Delivery tools and environments"
       purpose = "Find skills for ticket workflow, source control/review, CI runner behavior, artifact promotion, cloud deployment, and observability."
-      officialFirstSources = @("https://github.com/openai/skills", "https://docs.gitea.com/", "https://learn.microsoft.com/en-us/azure/app-service/", "https://prometheus.io/docs/", "https://grafana.com/docs/")
+      officialFirstSources = @("https://github.com/openai/skills", "https://docs.gitea.com/", "https://learn.microsoft.com/en-us/azure/app-service/", "https://learn.microsoft.com/en-us/azure/azure-monitor/", "https://grafana.com/docs/")
       discoverySourcePriority = Get-ProjectGuidanceDiscoverySourcePriority
-      searchQueries = @("official Gitea Actions skill SKILL.md", "official Azure App Service deploy skill SKILL.md", "official Prometheus Grafana skill SKILL.md")
+      searchQueries = @("official Gitea Actions skill SKILL.md", "official Azure App Service deploy skill SKILL.md", "official Azure Monitor Grafana skill SKILL.md")
     },
     [pscustomobject]@{
       id = "containers-iac"
@@ -650,4 +650,3 @@ function Get-ProjectGuidanceDiscoveryReport {
     nextUserQuestion = "Do you want to add any additional desired skills or guidance before project-guidance-acquire copies confirmed skill items and the local catalog records the rest?"
   }
 }
-

@@ -12,15 +12,14 @@ Push-triggered deployment is allowed only for ticket-named application changes u
 
 ## Technology Stack And Tool Set
 
-Deployment tooling is intentionally local-first except for the application runtimes. Gitea Actions packages and deploys ticket-gated application changes, Nexus stores the exact artifact and `release.json`, Azure App Service hosts DEV/QA/PROD web and API runtimes, Prometheus plus Grafana verify configured health visibility, and Grafana Alloy plus Loki plus Grafana provide configured log visibility.
+Deployment tooling is intentionally local-first except for the application runtimes. Gitea Actions packages and deploys ticket-gated application changes, Nexus stores the exact artifact and `release.json`, Azure App Service hosts DEV/QA/PROD web and API runtimes, and local Grafana uses Azure Monitor plus Log Analytics for configured log and health visibility.
 
 - Nexus paths under `app/{commitSha}/` are the durable artifact identity; environments must promote that same ZIP and checksum instead of rebuilding.
 - Azure deployment uses App Service ZIP deployment from the existing Nexus artifact.
 - The Blazor site project (`src/SDDTemplate.Site`) and REST API project (`src/SDDTemplate.Api`) are separated so Azure environments can host web and API App Service apps independently. The API references `src/SDDTemplate.Data` for EF Core entities, DbContext, migrations, and database setup.
-- Prometheus scrapes local infrastructure and configured Azure app `/health` targets.
-- Grafana Alloy collects Azure logs from separate DEV, QA, and PROD Azure Event Hubs consumers and writes them to Loki.
-- Grafana dashboards are provisioned from tracked files and should visualize Prometheus or Loki data without embedding secrets.
-- Azure log ingestion validation is executable through `infra/monitoring/validate-azure-log-ingestion.ps1` after environment-specific Event Hubs values, Azure service-principal environment variables (`AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`), and the local Loki endpoint are configured. The script fails closed when required variables are absent or logs for any environment are not observed in Loki.
+- App Service diagnostic settings send logs to the matching DEV, QA, or PROD Log Analytics workspace using dedicated resource tables.
+- Grafana dashboards are provisioned from tracked files and generated local-only dashboard files, and should query Azure Monitor without embedding secrets.
+- Azure Monitor log validation is executable through `infra/monitoring/validate-azure-monitor-logs.ps1` after Grafana Azure service-principal values and environment workspace IDs are configured in ignored local env files. The script fails closed when required variables are absent or recent logs for any environment are not observed in Log Analytics.
 - QA evidence is retained locally under ignored paths and preferably published to Nexus under `qa/{ticketKey}/{runId}/qa-evidence.zip`.
 - Deployment guidance is mapped through `project-guidance-mapper`; missing deployment, observability, QA, security, release, or rollback skills and references are discovered by `project-guidance-discover`, copied only through `project-guidance-acquire` when they are confirmed skill items, and otherwise kept as local catalog guidance.
 

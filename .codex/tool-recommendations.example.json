@@ -259,19 +259,19 @@
       "sourceKind": "technology-owner"
     },
     {
-      "id": "prometheus-config-guidance",
-      "name": "Prometheus configuration guidance",
+      "id": "azure-monitor-log-analytics-guidance",
+      "name": "Azure Monitor Log Analytics guidance",
       "type": "reference",
-      "requires": [ "prometheus" ],
-      "purpose": "Keep scrape target, health, and local monitoring configuration aligned with Prometheus documentation.",
+      "requires": [ "azure-monitor", "log-analytics", "grafana" ],
+      "purpose": "Keep Azure Monitor logs, Log Analytics workspace, RBAC, and Grafana datasource guidance aligned with official documentation.",
       "installMethod": "manual-reference",
-      "source": "official:https://prometheus.io/docs/prometheus/latest/configuration/",
+      "source": "official:https://learn.microsoft.com/en-us/azure/azure-monitor/logs/log-analytics-overview",
       "target": ".codex/skills/configure-dev-environment/references/observability.md",
-      "validation": "Confirm observability references keep tracked templates placeholder-safe and real Azure targets local-only.",
-      "researchTopics": [ "Prometheus scrape configs", "targets API", "health checks", "labeling" ],
-      "officialSources": [ "https://prometheus.io/docs/prometheus/latest/configuration/" ],
-      "searchQueries": [ "site:prometheus.io/docs/prometheus/latest/configuration scrape_config targets" ],
-      "notes": "Do not write real Azure hostnames into tracked Prometheus templates.",
+      "validation": "Confirm App Service diagnostics target Log Analytics and Grafana datasource provisioning uses ignored service-principal values.",
+      "researchTopics": [ "Azure Monitor Logs", "Log Analytics workspace", "App Service diagnostic settings", "Grafana Azure Monitor datasource" ],
+      "officialSources": [ "https://learn.microsoft.com/en-us/azure/azure-monitor/logs/log-analytics-overview", "https://grafana.com/docs/grafana/latest/datasources/azure-monitor/" ],
+      "searchQueries": [ "site:learn.microsoft.com Azure Monitor Logs Log Analytics App Service diagnostic settings", "site:grafana.com/docs/grafana/latest/datasources/azure-monitor Azure Monitor datasource" ],
+      "notes": "Do not write Grafana Azure service-principal secrets into tracked files.",
       "sourceKind": "technology-owner"
     },
     {
@@ -284,10 +284,10 @@
       "source": "official:https://grafana.com/docs/grafana/latest/administration/provisioning/",
       "target": ".codex/skills/configure-dev-environment/references/observability.md",
       "validation": "Confirm Grafana provisioning files remain tracked templates without secret-bearing values.",
-      "researchTopics": [ "Grafana provisioning", "datasources", "dashboards", "Prometheus datasource" ],
+      "researchTopics": [ "Grafana provisioning", "datasources", "dashboards", "Azure Monitor datasource" ],
       "officialSources": [ "https://grafana.com/docs/grafana/latest/administration/provisioning/" ],
-      "searchQueries": [ "site:grafana.com/docs/grafana/latest provisioning datasources dashboards Prometheus" ],
-      "notes": "Provisioned dashboard JSON should visualize Prometheus data without embedding credentials.",
+      "searchQueries": [ "site:grafana.com/docs/grafana/latest provisioning datasources dashboards Azure Monitor" ],
+      "notes": "Provisioned dashboard JSON should visualize Azure Monitor data without embedding credentials.",
       "sourceKind": "technology-owner"
     }
   ],
