@@ -82,6 +82,7 @@
 
 <script>
 (() => {
+    const correlationHeaderName = "X-Correlation-ID";
     const apiBaseUrl = @((MarkupString)JsonSerializer.Serialize(ApiBaseUrl));
     const apiUrl = `${apiBaseUrl.replace(/\/$/, "")}/api/clients`;
     const form = document.getElementById("client-form");
@@ -102,6 +103,25 @@
     };
 
     let clients = [];
+
+    const getCorrelationId = () => {
+        const existing = sessionStorage.getItem("correlationId");
+        if (existing) {
+            return existing;
+        }
+
+        const generated = (window.crypto && "randomUUID" in window.crypto)
+            ? window.crypto.randomUUID()
+            : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+        sessionStorage.setItem("correlationId", generated);
+        return generated;
+    };
+
+    const createHeaders = additional => ({
+        [correlationHeaderName]: getCorrelationId(),
+        ...additional
+    });
 
     const clientPayload = () => ({
         name: fields.name.value,
@@ -175,7 +195,9 @@
     };
 
     const loadClients = async () => {
-        const response = await fetch(apiUrl);
+        const response = await fetch(apiUrl, {
+            headers: createHeaders()
+        });
         clients = response.ok ? await response.json() : [];
         renderClients();
     };
@@ -187,7 +209,7 @@
         const id = fields.id.value.trim();
         const response = await fetch(id ? `${apiUrl}/${id}` : apiUrl, {
             method: id ? "PUT" : "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: createHeaders({ "Content-Type": "application/json" }),
             body: JSON.stringify(clientPayload())
         });
 
@@ -228,7 +250,10 @@
             return;
         }
 
-        const response = await fetch(`${apiUrl}/${client.id}`, { method: "DELETE" });
+        const response = await fetch(`${apiUrl}/${client.id}`, {
+            method: "DELETE",
+            headers: createHeaders()
+        });
         if (!response.ok) {
             errors.textContent = "The client could not be deleted.";
             return;

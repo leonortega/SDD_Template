@@ -226,7 +226,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             string prodJob = GetJobSection(workflow, "deploy-prod");
 
             Assert.Contains("github.ref == 'refs/heads/main'", prodJob);
-            Assert.Contains("artifact_commit_sha=\"$GITHUB_SHA\"", prodJob);
+            Assert.Contains("Resolve PROD promotion inputs", prodJob);
+            Assert.Contains("PROD_ARTIFACT_COMMIT_SHA=$artifact_commit_sha", prodJob);
             Assert.DoesNotContain("dotnet publish", prodJob);
             Assert.DoesNotContain("Upload artifact to Nexus", prodJob);
             Assert.DoesNotContain("deploy-dev", prodJob);
