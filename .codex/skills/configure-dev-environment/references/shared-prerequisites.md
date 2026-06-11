@@ -33,7 +33,7 @@ After install, reopen PowerShell and run `git --version`.
 
 ## Docker Desktop
 
-Required for `.\infra\up.ps1`, `.\infra\down.ps1`, local Plane/Gitea/Nexus/Prometheus/Grafana, and non-secret live checks.
+Required for `.\infra\up.ps1`, `.\infra\down.ps1`, local Plane/Gitea/Nexus/Grafana, and non-secret live checks.
 
 Check:
 

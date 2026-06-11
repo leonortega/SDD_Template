@@ -719,13 +719,20 @@ function Render-PlaneComment {
     'ProdDeployment' {
       $finalVersion = [string](Get-ObjectProperty $data 'finalReleaseVersion')
       $commitSha = [string](Get-ObjectProperty $data 'commitSha')
+      $includedTickets = @((Get-ObjectProperty $data 'includedTickets') | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+      $includedTicketText = if ($includedTickets.Count -gt 0) {
+        ($includedTickets | ForEach-Object { "``$($_)``" }) -join ', '
+      } else {
+        "``$((Get-ObjectProperty $data 'ticketKey'))``"
+      }
       $lines = @(
         "IA generated PROD deployment: $finalVersion",
         '',
         "**Status:** $((Get-ObjectProperty $data 'status'))",
         '',
         '**Release**',
-        "- Ticket: ``$((Get-ObjectProperty $data 'ticketKey'))`` ($((Get-ObjectProperty $data 'ticketState')))",
+        "- Primary ticket: ``$((Get-ObjectProperty $data 'ticketKey'))`` ($((Get-ObjectProperty $data 'ticketState')))",
+        "- Included tickets: $includedTicketText",
         "- Final version: ``$finalVersion``",
         "- Source RC: ``$((Get-ObjectProperty $data 'sourceRcVersion'))``",
         "- Lineage: ``$shortCommit`` -> ``$((Get-ObjectProperty $data 'sourceRcVersion'))`` -> ``$finalVersion``",

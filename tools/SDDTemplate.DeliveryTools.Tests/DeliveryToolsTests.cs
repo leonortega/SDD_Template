@@ -52,6 +52,21 @@ namespace SDDTemplate.DeliveryTools.Tests
             ReleaseManifestValidation valid = DeliveryWorkflowHelpers.ValidateReleaseManifest(validPath);
             Assert.True(valid.Valid);
 
+            string batchPath = Path.Combine(root, "batch-release.json");
+            File.WriteAllText(batchPath, JsonSerializer.Serialize(new
+            {
+                schemaVersion = 1,
+                commitSha = "abcdef1",
+                checksum = "abc123",
+                artifactUrl = "http://nexus/repository/raw-hosted/app/abcdef1/site.zip",
+                planeTicketKey = "E2EPROJECT-1",
+                includedTickets = new[] { "E2EPROJECT-1", "E2EPROJECT-2" },
+                versionStatus = "qa-approved",
+            }));
+
+            ReleaseManifestValidation batch = DeliveryWorkflowHelpers.ValidateReleaseManifest(batchPath);
+            Assert.True(batch.Valid);
+
             string invalidPath = Path.Combine(root, "invalid-release.json");
             File.WriteAllText(invalidPath, JsonSerializer.Serialize(new { schemaVersion = 1, commitSha = "not-a-sha" }));
 
@@ -59,6 +74,38 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.False(invalid.Valid);
             Assert.Contains(invalid.Errors, error => error.Contains("planeTicketKey", StringComparison.Ordinal));
             Assert.Contains(invalid.Errors, error => error.Contains("commitSha", StringComparison.Ordinal));
+
+            string invalidBatchPath = Path.Combine(root, "invalid-batch-release.json");
+            File.WriteAllText(invalidBatchPath, JsonSerializer.Serialize(new
+            {
+                schemaVersion = 1,
+                commitSha = "abcdef1",
+                checksum = "abc123",
+                artifactUrl = "http://nexus/repository/raw-hosted/app/abcdef1/site.zip",
+                planeTicketKey = "E2EPROJECT-1",
+                includedTickets = new[] { "E2EPROJECT-1", "" },
+                versionStatus = "qa-approved",
+            }));
+
+            ReleaseManifestValidation invalidBatch = DeliveryWorkflowHelpers.ValidateReleaseManifest(invalidBatchPath);
+            Assert.False(invalidBatch.Valid);
+            Assert.Contains(invalidBatch.Errors, error => error.Contains("includedTickets[1]", StringComparison.Ordinal));
+
+            string emptyBatchPath = Path.Combine(root, "empty-batch-release.json");
+            File.WriteAllText(emptyBatchPath, JsonSerializer.Serialize(new
+            {
+                schemaVersion = 1,
+                commitSha = "abcdef1",
+                checksum = "abc123",
+                artifactUrl = "http://nexus/repository/raw-hosted/app/abcdef1/site.zip",
+                planeTicketKey = "E2EPROJECT-1",
+                includedTickets = Array.Empty<string>(),
+                versionStatus = "qa-approved",
+            }));
+
+            ReleaseManifestValidation emptyBatch = DeliveryWorkflowHelpers.ValidateReleaseManifest(emptyBatchPath);
+            Assert.False(emptyBatch.Valid);
+            Assert.Contains(emptyBatch.Errors, error => error.Contains("at least one ticket", StringComparison.Ordinal));
         }
 
         [Fact]
@@ -507,15 +554,15 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
-        public void AuditReportsMissingAzureLogIngestionValues()
+        public void AuditReportsMissingGrafanaAzureMonitorValues()
         {
             string root = CreateTempDirectory();
             _ = Directory.CreateDirectory(Path.Combine(root, ".codex"));
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "plane"));
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "gitea"));
-            _ = Directory.CreateDirectory(Path.Combine(root, "infra", "monitoring", "alloy"));
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "monitoring", "grafana", "dashboards"));
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "dashboards"));
+            _ = Directory.CreateDirectory(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "datasources"));
 
             File.Copy(
                 Path.Combine(FindRepositoryRoot().FullName, ".codex", "client-tools.example.json"),
@@ -526,17 +573,10 @@ namespace SDDTemplate.DeliveryTools.Tests
             File.Copy(
                 Path.Combine(FindRepositoryRoot().FullName, ".codex", "quality.example.json"),
                 Path.Combine(root, ".codex", "quality.example.json"));
-            File.WriteAllText(Path.Combine(root, "infra", "plane", "variables.env"), "PROMETHEUS_CONFIG_FILE=./prometheus.local.yml");
+            File.WriteAllText(Path.Combine(root, "infra", "plane", "variables.env"), string.Empty);
             File.WriteAllText(Path.Combine(root, "infra", "gitea", "runner.env"), "GITEA_RUNNER_REGISTRATION_TOKEN=replace-with-token");
-            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "prometheus.local.yml"), "scrape_configs: []");
-            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "loki.yml"), "auth_enabled: false");
-            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "alloy", "config.alloy"), "logging { level = \"info\" }");
             File.WriteAllText(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "dashboards", "dashboards.yml"), "apiVersion: 1");
-            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "grafana", "dashboards", "local-infra-health.json"), "{}");
-            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "grafana", "dashboards", "azure-app-health.json"), "{}");
-            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "grafana", "dashboards", "dev-azure-logs.json"), "{}");
-            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "grafana", "dashboards", "qa-azure-logs.json"), "{}");
-            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "grafana", "dashboards", "prod-azure-logs.json"), "{}");
+            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "datasources", "azure-monitor.yml"), "uid: azure-monitor");
 
             string output = RunPowerShellScript("-Mode", "Audit", "-Root", root);
             using JsonDocument result = JsonDocument.Parse(output);
@@ -544,24 +584,23 @@ namespace SDDTemplate.DeliveryTools.Tests
                 .EnumerateArray()
                 .Select(item => item.GetProperty("key").GetString() ?? string.Empty)];
 
-            Assert.Contains("AZURE_DEV_EVENTHUB_NAMESPACE", keys);
-            Assert.Contains("AZURE_DEV_EVENTHUB_CONNECTION_STRING", keys);
-            Assert.Contains("AZURE_CLIENT_SECRET", keys);
+            Assert.Contains("GRAFANA_AZURE_TENANT_ID", keys);
+            Assert.Contains("GRAFANA_AZURE_CLIENT_ID", keys);
+            Assert.Contains("GRAFANA_AZURE_CLIENT_SECRET", keys);
+            Assert.Contains("GRAFANA_AZURE_DEV_LOG_ANALYTICS_WORKSPACE_ID", keys);
         }
 
         [Fact]
-        public void AzureBicepProvisionsEventHubsAndDiagnosticSettingsForLogs()
+        public void AzureBicepProvisionsLogAnalyticsAndDiagnosticSettingsForLogs()
         {
             string bicep = File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, "infra", "azure", "main.bicep"));
 
-            Assert.Contains("Microsoft.EventHub/namespaces@2024-01-01", bicep);
-            Assert.Contains("kafkaEnabled: true", bicep);
-            Assert.Contains("appservice-logs", bicep);
-            Assert.Contains("grafana-alloy-${environmentName}", bicep);
-            Assert.Contains("alloy-listen", bicep);
+            Assert.Contains("Microsoft.OperationalInsights/workspaces", bicep);
+            Assert.Contains("logAnalyticsWorkspaceName", bicep);
             Assert.Contains("Microsoft.Insights/diagnosticSettings@2021-05-01-preview", bicep);
             Assert.Contains("AppServiceConsoleLogs", bicep);
-            Assert.Contains("eventHubAuthorizationRuleId", bicep);
+            Assert.Contains("workspaceId: logAnalyticsWorkspace.id", bicep);
+            Assert.Contains("logAnalyticsDestinationType: 'Dedicated'", bicep);
         }
 
         [Fact]
@@ -666,7 +705,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                 "gitea-actions-runner",
                 "nexus-artifacts",
                 "azure-app-service",
-                "prometheus",
+                "azure-monitor",
                 "grafana",
                 "browser-e2e",
                 "playwright-guidance",
@@ -1195,6 +1234,46 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
+        public void RenderPlaneCommentRendersProdBatchIncludedTickets()
+        {
+            string script = Path.Combine(FindRepositoryRoot().FullName, ".codex", "skills", "_shared", "scripts", "delivery_tools.ps1");
+            string inputJson = JsonSerializer.Serialize(new
+            {
+                ticketKey = "E2EPROJECT-123",
+                ticketState = "Done",
+                includedTickets = new[] { "E2EPROJECT-123", "E2EPROJECT-456" },
+                finalReleaseVersion = "v1.2.3",
+                sourceRcVersion = "v1.2.3-rc.1",
+                commitSha = "abcdef1234567890",
+                status = "PASS - PROD deployed.",
+                mainUpdateResult = "fast-forwarded main",
+                releasePrUrl = "http://gitea/pr/7",
+                workflowRunUrl = "http://gitea/actions/9",
+                artifactUrl = "http://nexus/app.zip",
+                checksum = "abc123",
+                releaseManifestUrl = "http://nexus/release.json",
+                qaEvidenceUrl = "http://nexus/qa-evidence.zip",
+                validationMarkdown = "| Check | Result |\n| --- | --- |\n| Health | PASS |",
+                prodUrl = "https://prod.example.test",
+            });
+
+            string output = RunPowerShell(
+                script,
+                "-Mode",
+                "RenderPlaneComment",
+                "-Type",
+                "ProdDeployment",
+                "-InputJson",
+                inputJson);
+
+            Assert.Contains("IA generated PROD deployment: v1.2.3", output);
+            Assert.Contains("- Primary ticket: `E2EPROJECT-123` (Done)", output);
+            Assert.Contains("- Included tickets: `E2EPROJECT-123`, `E2EPROJECT-456`", output);
+            Assert.Contains("- Lineage: `abcdef1` -> `v1.2.3-rc.1` -> `v1.2.3`", output);
+            Assert.Contains("**PROD URL:** [open production](https://prod.example.test)", output);
+        }
+
+        [Fact]
         public void WorkflowTelemetryInitializeCreatesAndClearsJsonlFile()
         {
             string root = CreateTempDirectory();
@@ -1433,7 +1512,6 @@ namespace SDDTemplate.DeliveryTools.Tests
                 var builder = WebApplication.CreateBuilder(args);
                 var app = builder.Build();
                 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
-                app.MapGet("/metrics", () => Results.Text("metrics"));
                 app.Run();
                 """);
             File.WriteAllText(
@@ -1456,7 +1534,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "nexus"));
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "azure"));
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "monitoring", "grafana"));
-            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "prometheus.yml"), "prometheus:\nglobal:\n  scrape_interval: 15s\n");
+            _ = Directory.CreateDirectory(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "datasources"));
+            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "datasources", "azure-monitor.yml"), "type: grafana-azure-monitor-datasource\n");
 
             string workflowDirectory = Path.Combine(root, ".gitea", "workflows");
             _ = Directory.CreateDirectory(workflowDirectory);
@@ -1475,7 +1554,7 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             if (!includeContext) { return; }
 
-            string context = ".NET 10 ASP.NET Core Blazor xUnit coverage Plane Gitea Gitea Actions Nexus Azure App Service Prometheus Grafana Browser Playwright OpenSpec clean code architecture web UI REST API security OWASP";
+            string context = ".NET 10 ASP.NET Core Blazor xUnit coverage Plane Gitea Gitea Actions Nexus Azure App Service Azure Monitor Log Analytics Grafana Browser Playwright OpenSpec clean code architecture web UI REST API security OWASP";
             _ = Directory.CreateDirectory(Path.Combine(root, "docs"));
             File.WriteAllText(Path.Combine(root, "docs", "architecture.md"), context);
             File.WriteAllText(Path.Combine(root, "docs", "development.md"), context);

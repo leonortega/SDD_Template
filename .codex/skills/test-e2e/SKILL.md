@@ -23,6 +23,12 @@ Non-interactive context means the run has no available user-response channel, su
 
 Before QA state changes, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` helpers: `ValidateTicketLock` for `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, `CheckGitIgnored`, `NextRcVersion`, `UpdateReleaseManifest`, `ValidateReleaseManifest`, and `RenderPlaneComment -Type E2EQA`.
 
+## Workflow Telemetry
+
+Capture UTC start time after resolving the ticket key and before QA evidence checks. Append one `test-e2e` row with `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` when E2E QA succeeds, blocks, fails, or is skipped idempotently because the verified E2E QA comment and Done state already exist. Include `workflowStage=test-e2e`, `agentRole=qa`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`.
+
+After the E2E QA Plane comment is verified and before final QA handoff, read the active ticket rows with `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode ReadWorkflowTelemetry -TicketKey {ticketKey}`, render `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode RenderPlaneComment -Type WorkflowTiming`, then create or patch the Plane comment with stable marker `IA generated workflow timing: {ticketKey}`. Send both `comment_html` and `comment_stripped`, never `comment` or `body`, and verify `comment_stripped` starts with the marker after posting or patching. The timing comment must include only status, current route, total elapsed time, and the stage table; do not include token counts, prompts, raw logs, credential-bearing URLs, or noisy tool details. If telemetry cannot be written or read, report the workflow timing comment as blocked; do not derive timing from Plane generated marker timestamps.
+
 ## Configuration
 
 Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.example.json` only for structure and default names, then apply environment variable overrides when present.
@@ -297,6 +303,8 @@ git push origin --delete qa/E2EPROJECT-123
 ```
 
 Then verify the remote ref is gone. Do not delete the branch before Nexus evidence exists, release metadata is updated, the RC tag is created or verified, and Plane is Done.
+
+Before reporting final QA handoff, append the `test-e2e` telemetry row, read workflow telemetry, render `RenderPlaneComment -Type WorkflowTiming`, and create or patch the `IA generated workflow timing: {ticketKey}` Plane comment. If the timing marker already exists for the ticket, patch that comment instead of creating a duplicate.
 
 ### 9. OpenSpec Archival Handoff
 

@@ -156,7 +156,7 @@ Use `release.json` for automation and idempotency. It should carry commit SHA, c
 - Fast-forward the tested commit to `main` only after QA passes. Push-triggered PROD deployment is allowed only when `main` points to the exact QA-approved packaged commit, the commit or merged PR title starts with the configured ticket key pattern in `.codex/delivery-policy.json`, and application/test/package source changed.
 - Create the final annotated release tag such as `v1.2.0` on the same commit.
 - Deploy PROD from the QA-passed artifact commit by ticket-gated `main` push or explicit workflow dispatch inputs `artifact_commit_sha`, `release_version`, and `source_rc_version`.
-- Validate PROD page and all app `/health` checks; use Prometheus/Grafana as observability verification when available.
+- Validate PROD page and all app `/health` checks; use Grafana Azure Monitor as observability verification when available.
 - Record version lineage in Plane comments at each phase: QA deployment as unversioned candidate or known RC, E2E QA as `artifact commit -> source RC`, and PROD as `artifact commit -> source RC -> final release`.
 - For rollback, redeploy previous known-good `app/{commitSha}/deployable-apps.json` topology artifacts, verify checksums and `/health`, update `release.json`, and comment Plane with rollback lineage.
 - Do not rebuild between environments.
