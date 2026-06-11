@@ -17,6 +17,10 @@ Before mutating Plane or Git, follow `.codex/skills/_shared/skill-startup.md`, w
 
 This skill owns initial creation of ignored `.codex/delivery-context.local.json` and ignored `.codex/agent-telemetry.local.jsonl` for automatic delivery. Never commit those files.
 
+## Workflow Telemetry
+
+Capture UTC start time before the first ticket-specific mutation. After telemetry is initialized, append one `plane-start-ticket` row with `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` when ticket start succeeds, blocks, fails, or is skipped idempotently. Include `workflowStage=plane-start-ticket`, `agentRole=ticketStarter`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If a blocker happens before telemetry initialization or before a ticket key is selected, report that no telemetry row was possible.
+
 ## Configuration
 
 Read `.codex/client-tools.local.json` as the primary configuration file. Fall back to `.codex/client-tools.example.json` only for defaults and setup guidance, then apply environment variable overrides only when present. Defaults are:

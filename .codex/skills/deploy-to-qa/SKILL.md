@@ -21,6 +21,10 @@ Before promotion, follow `.codex/skills/_shared/skill-startup.md`, which reads `
 
 For push-triggered DEV/QA deployment, the commit or merged PR title must start with the ticket key format configured in `.codex/delivery-policy.json`, such as `E2EPROJECT-123: ...`, and the change must touch `src/**` or `tests/**`. Non-code changes outside those folders and non-ticket PRs must not deploy.
 
+## Workflow Telemetry
+
+Capture UTC start time after resolving the ticket key and before artifact promotion checks. Append one `deploy-to-qa` row with `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` when QA promotion succeeds, blocks, fails, or is skipped idempotently because the QA deployment marker already exists. Include `workflowStage=deploy-to-qa`, `agentRole=deployment`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`.
+
 ## Configuration
 
 Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.example.json` for structure only, then apply environment variable overrides when present.

@@ -4,9 +4,7 @@ networks:
   monitoring:
 
 volumes:
-  prometheus-data:
   grafana-data:
-  loki-data:
 
 services:
   dozzle:
@@ -20,75 +18,23 @@ services:
       - monitoring
     restart: unless-stopped
 
-  prometheus:
-    image: prom/prometheus:v3.11.3
-    container_name: agentic-prometheus
-    command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--storage.tsdb.path=/prometheus"
-    ports:
-      - "9090:9090"
-    volumes:
-      - ${PROMETHEUS_CONFIG_FILE:-./prometheus.yml}:/etc/prometheus/prometheus.yml:ro
-      - prometheus-data:/prometheus
-    networks:
-      - monitoring
-    restart: unless-stopped
-
-  loki:
-    image: grafana/loki:3.5.0
-    container_name: agentic-loki
-    command:
-      - "-config.file=/etc/loki/loki.yml"
-    ports:
-      - "3100:3100"
-    volumes:
-      - ./loki.yml:/etc/loki/loki.yml:ro
-      - loki-data:/loki
-    networks:
-      - monitoring
-    restart: unless-stopped
-
-  alloy:
-    image: grafana/alloy:v1.16.0
-    container_name: agentic-alloy
-    command:
-      - "run"
-      - "--server.http.listen-addr=0.0.0.0:12345"
-      - "/etc/alloy/config.alloy"
-    ports:
-      - "12345:12345"
-    environment:
-      AZURE_DEV_EVENTHUB_NAMESPACE: ${AZURE_DEV_EVENTHUB_NAMESPACE:-}
-      AZURE_DEV_EVENTHUB_NAME: ${AZURE_DEV_EVENTHUB_NAME:-}
-      AZURE_DEV_EVENTHUB_CONNECTION_STRING: ${AZURE_DEV_EVENTHUB_CONNECTION_STRING:-}
-      AZURE_QA_EVENTHUB_NAMESPACE: ${AZURE_QA_EVENTHUB_NAMESPACE:-}
-      AZURE_QA_EVENTHUB_NAME: ${AZURE_QA_EVENTHUB_NAME:-}
-      AZURE_QA_EVENTHUB_CONNECTION_STRING: ${AZURE_QA_EVENTHUB_CONNECTION_STRING:-}
-      AZURE_PROD_EVENTHUB_NAMESPACE: ${AZURE_PROD_EVENTHUB_NAMESPACE:-}
-      AZURE_PROD_EVENTHUB_NAME: ${AZURE_PROD_EVENTHUB_NAME:-}
-      AZURE_PROD_EVENTHUB_CONNECTION_STRING: ${AZURE_PROD_EVENTHUB_CONNECTION_STRING:-}
-      AZURE_CLIENT_ID: ${AZURE_CLIENT_ID:-}
-      AZURE_TENANT_ID: ${AZURE_TENANT_ID:-}
-      AZURE_CLIENT_SECRET: ${AZURE_CLIENT_SECRET:-}
-    volumes:
-      - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
-    networks:
-      - monitoring
-    restart: unless-stopped
-
   grafana:
     image: grafana/grafana-oss:13.0.1-security-01
     container_name: agentic-grafana
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
+      GRAFANA_AZURE_TENANT_ID: ${GRAFANA_AZURE_TENANT_ID:-}
+      GRAFANA_AZURE_CLIENT_ID: ${GRAFANA_AZURE_CLIENT_ID:-}
+      GRAFANA_AZURE_CLIENT_SECRET: ${GRAFANA_AZURE_CLIENT_SECRET:-}
+      GRAFANA_AZURE_SUBSCRIPTION_ID: ${GRAFANA_AZURE_SUBSCRIPTION_ID:-}
     ports:
       - "3001:3000"
     volumes:
       - grafana-data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./grafana/dashboards.local:/var/lib/grafana/dashboards.local:ro
     networks:
       - monitoring
     restart: unless-stopped
