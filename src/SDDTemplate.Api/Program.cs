@@ -1,9 +1,12 @@
 using Serilog;
 using SDDTemplate.Api;
 using SDDTemplate.Api.Clients;
+using SDDTemplate.Common.Observability;
 using SDDTemplate.Data;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
+
+Log.Logger.Information("Configuring API host");
 
 _ = builder.Host.UseSerilog((context, services, loggerConfiguration) => loggerConfiguration
     .ReadFrom.Configuration(context.Configuration)
@@ -23,7 +26,9 @@ if (allowedOrigins.Length > 0)
 }
 
 WebApplication app = builder.Build();
+Log.Logger.Information("Starting API app initialization");
 await app.Services.MigrateApplicationDatabaseAsync();
+Log.Logger.Debug("API database migration completed");
 
 if (!app.Environment.IsDevelopment())
 {
@@ -32,21 +37,47 @@ if (!app.Environment.IsDevelopment())
 }
 
 _ = app.UseHttpsRedirection();
+_ = app.UseCorrelationId();
+_ = app.UseSerilogRequestLogging(options =>
+{
+    options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
+    {
+        diagnosticContext.Set("CorrelationId", httpContext.GetCorrelationId());
+        diagnosticContext.Set("RequestPath", httpContext.Request.Path.Value ?? string.Empty);
+        diagnosticContext.Set("RequestMethod", httpContext.Request.Method);
+    };
+});
 if (allowedOrigins.Length > 0)
 {
     _ = app.UseCors("ConfiguredSiteOrigins");
+    Log.Logger.Information("API CORS enabled with {OriginCount} configured origins", allowedOrigins.Length);
 }
 
 _ = app.MapGet("/health", (IHostEnvironment environment) =>
     Results.Ok(new HealthResponse("ok", environment.EnvironmentName, DateTimeOffset.UtcNow)));
+Log.Logger.Debug("API health endpoint mapped");
+
+_ = app.Map("/error", errorApp =>
+    errorApp.Run(context =>
+        Results.Problem(statusCode: StatusCodes.Status500InternalServerError, title: "An unexpected error occurred.")
+            .ExecuteAsync(context)));
+
+if (app.Environment.IsEnvironment("Testing"))
+{
+    _ = app.MapGet("/__test/throw", _ => throw new InvalidOperationException("Intentional test exception."));
+}
 
 _ = app.MapClientEndpoints();
+Log.Logger.Information("API client endpoints mapped");
 
 app.Run();
 
 namespace SDDTemplate.Api
 {
     public sealed record HealthResponse(string Status, string Environment, DateTimeOffset Timestamp);
+
+    [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
+    public sealed partial class Program;
 
     [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
     public sealed class ApiAssemblyMarker;
