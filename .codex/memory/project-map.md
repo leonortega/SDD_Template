@@ -5,7 +5,7 @@
 - Type: Fact
 - Status: Active
 - Source: `README.md`, `docs/architecture.md`
-- Last verified: 2026-05-29
+- Last verified: 2026-06-11
 
 This repository is an agentic E2E development lab and SDD/SDLC template. It is designed for Codex-style agents to move a Plane ticket from idea to production using planning, implementation, review, artifact, QA, deployment, release, rollback, and hotfix checkpoints.
 
@@ -36,7 +36,8 @@ artifacts/qa/
 - Source: `README.md`, `docs/architecture.md`
 - Last verified: 2026-05-29
 
-- Local Docker Compose provides Plane, Gitea, Gitea Actions runner, Nexus, Dozzle, Prometheus, and Grafana.
+- Local Docker Compose provides Plane, Gitea, Gitea Actions runner, Nexus, Dozzle, and Grafana.
+- Grafana uses Azure Monitor and Log Analytics for Azure application logs and health visibility.
 - Azure hosts only DEV, QA, and PROD application runtimes.
 - Nexus stores immutable application artifacts and release manifests.
 - Plane records ticket state, generated workflow markers, and human-readable delivery comments.
@@ -48,7 +49,7 @@ artifacts/qa/
 - Type: Fact
 - Status: Active
 - Source: `README.md`
-- Last verified: 2026-05-29
+- Last verified: 2026-06-11
 
 - `docs/context-management.md`: context authority, freshness, conflict, and handoff rules.
 - `docs/architecture.md`: topology, sources of truth, ticket locks, and deployment-lane ownership.
@@ -69,7 +70,6 @@ Important local configuration files include:
 - `.codex/quality.local.json`
 - `infra/plane/variables.env`
 - `infra/gitea/runner.env`
-- `infra/monitoring/prometheus.local.yml`
+- `infra/monitoring/grafana/dashboards.local/`
 
 Tracked example files must remain placeholder-safe. Local secrets must stay in ignored local files.
-

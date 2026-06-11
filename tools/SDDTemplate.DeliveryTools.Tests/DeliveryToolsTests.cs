@@ -507,15 +507,15 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
-        public void AuditReportsMissingAzureLogIngestionValues()
+        public void AuditReportsMissingGrafanaAzureMonitorValues()
         {
             string root = CreateTempDirectory();
             _ = Directory.CreateDirectory(Path.Combine(root, ".codex"));
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "plane"));
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "gitea"));
-            _ = Directory.CreateDirectory(Path.Combine(root, "infra", "monitoring", "alloy"));
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "monitoring", "grafana", "dashboards"));
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "dashboards"));
+            _ = Directory.CreateDirectory(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "datasources"));
 
             File.Copy(
                 Path.Combine(FindRepositoryRoot().FullName, ".codex", "client-tools.example.json"),
@@ -526,17 +526,10 @@ namespace SDDTemplate.DeliveryTools.Tests
             File.Copy(
                 Path.Combine(FindRepositoryRoot().FullName, ".codex", "quality.example.json"),
                 Path.Combine(root, ".codex", "quality.example.json"));
-            File.WriteAllText(Path.Combine(root, "infra", "plane", "variables.env"), "PROMETHEUS_CONFIG_FILE=./prometheus.local.yml");
+            File.WriteAllText(Path.Combine(root, "infra", "plane", "variables.env"), string.Empty);
             File.WriteAllText(Path.Combine(root, "infra", "gitea", "runner.env"), "GITEA_RUNNER_REGISTRATION_TOKEN=replace-with-token");
-            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "prometheus.local.yml"), "scrape_configs: []");
-            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "loki.yml"), "auth_enabled: false");
-            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "alloy", "config.alloy"), "logging { level = \"info\" }");
             File.WriteAllText(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "dashboards", "dashboards.yml"), "apiVersion: 1");
-            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "grafana", "dashboards", "local-infra-health.json"), "{}");
-            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "grafana", "dashboards", "azure-app-health.json"), "{}");
-            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "grafana", "dashboards", "dev-azure-logs.json"), "{}");
-            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "grafana", "dashboards", "qa-azure-logs.json"), "{}");
-            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "grafana", "dashboards", "prod-azure-logs.json"), "{}");
+            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "datasources", "azure-monitor.yml"), "uid: azure-monitor");
 
             string output = RunPowerShellScript("-Mode", "Audit", "-Root", root);
             using JsonDocument result = JsonDocument.Parse(output);
@@ -544,24 +537,23 @@ namespace SDDTemplate.DeliveryTools.Tests
                 .EnumerateArray()
                 .Select(item => item.GetProperty("key").GetString() ?? string.Empty)];
 
-            Assert.Contains("AZURE_DEV_EVENTHUB_NAMESPACE", keys);
-            Assert.Contains("AZURE_DEV_EVENTHUB_CONNECTION_STRING", keys);
-            Assert.Contains("AZURE_CLIENT_SECRET", keys);
+            Assert.Contains("GRAFANA_AZURE_TENANT_ID", keys);
+            Assert.Contains("GRAFANA_AZURE_CLIENT_ID", keys);
+            Assert.Contains("GRAFANA_AZURE_CLIENT_SECRET", keys);
+            Assert.Contains("GRAFANA_AZURE_DEV_LOG_ANALYTICS_WORKSPACE_ID", keys);
         }
 
         [Fact]
-        public void AzureBicepProvisionsEventHubsAndDiagnosticSettingsForLogs()
+        public void AzureBicepProvisionsLogAnalyticsAndDiagnosticSettingsForLogs()
         {
             string bicep = File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, "infra", "azure", "main.bicep"));
 
-            Assert.Contains("Microsoft.EventHub/namespaces@2024-01-01", bicep);
-            Assert.Contains("kafkaEnabled: true", bicep);
-            Assert.Contains("appservice-logs", bicep);
-            Assert.Contains("grafana-alloy-${environmentName}", bicep);
-            Assert.Contains("alloy-listen", bicep);
+            Assert.Contains("Microsoft.OperationalInsights/workspaces", bicep);
+            Assert.Contains("logAnalyticsWorkspaceName", bicep);
             Assert.Contains("Microsoft.Insights/diagnosticSettings@2021-05-01-preview", bicep);
             Assert.Contains("AppServiceConsoleLogs", bicep);
-            Assert.Contains("eventHubAuthorizationRuleId", bicep);
+            Assert.Contains("workspaceId: logAnalyticsWorkspace.id", bicep);
+            Assert.Contains("logAnalyticsDestinationType: 'Dedicated'", bicep);
         }
 
         [Fact]
@@ -666,7 +658,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                 "gitea-actions-runner",
                 "nexus-artifacts",
                 "azure-app-service",
-                "prometheus",
+                "azure-monitor",
                 "grafana",
                 "browser-e2e",
                 "playwright-guidance",
@@ -1433,7 +1425,6 @@ namespace SDDTemplate.DeliveryTools.Tests
                 var builder = WebApplication.CreateBuilder(args);
                 var app = builder.Build();
                 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
-                app.MapGet("/metrics", () => Results.Text("metrics"));
                 app.Run();
                 """);
             File.WriteAllText(
@@ -1456,7 +1447,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "nexus"));
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "azure"));
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "monitoring", "grafana"));
-            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "prometheus.yml"), "prometheus:\nglobal:\n  scrape_interval: 15s\n");
+            _ = Directory.CreateDirectory(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "datasources"));
+            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "datasources", "azure-monitor.yml"), "type: grafana-azure-monitor-datasource\n");
 
             string workflowDirectory = Path.Combine(root, ".gitea", "workflows");
             _ = Directory.CreateDirectory(workflowDirectory);
@@ -1475,7 +1467,7 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             if (!includeContext) { return; }
 
-            string context = ".NET 10 ASP.NET Core Blazor xUnit coverage Plane Gitea Gitea Actions Nexus Azure App Service Prometheus Grafana Browser Playwright OpenSpec clean code architecture web UI REST API security OWASP";
+            string context = ".NET 10 ASP.NET Core Blazor xUnit coverage Plane Gitea Gitea Actions Nexus Azure App Service Azure Monitor Log Analytics Grafana Browser Playwright OpenSpec clean code architecture web UI REST API security OWASP";
             _ = Directory.CreateDirectory(Path.Combine(root, "docs"));
             File.WriteAllText(Path.Combine(root, "docs", "architecture.md"), context);
             File.WriteAllText(Path.Combine(root, "docs", "development.md"), context);

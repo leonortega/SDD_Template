@@ -1,6 +1,6 @@
 ---
 name: deploy-to-prod
-description: Promote a QA-approved release artifact to PROD after Plane E2E QA approval. Use when Codex needs to verify a Plane Done ticket, confirm the QA-approved Nexus artifact and checksum, ensure release/RC tag consistency, update main, trigger PROD deployment, validate PROD page and /health checks, verify Prometheus/Grafana monitoring when available, and comment the PROD result on Plane.
+description: Promote a QA-approved release artifact to PROD after Plane E2E QA approval. Use when Codex needs to verify a Plane Done ticket, confirm the QA-approved Nexus artifact and checksum, ensure release/RC tag consistency, update main, trigger PROD deployment, validate PROD page and /health checks, verify Grafana Azure Monitor observability when available, and comment the PROD result on Plane.
 ---
 
 # Deploy To PROD
@@ -119,13 +119,11 @@ After the workflow succeeds, run direct verification before commenting success:
 1. Request the PROD web URL and assert HTTP 200 plus expected page title/content.
 2. Request every topology app health path and assert HTTP 200 plus `status=ok`.
 3. Verify the PROD workflow applied and verified `deployment-config.json`; required live App Service settings must exist and non-secret values must match expected resolved values. Missing proof is blocking.
-4. Query Prometheus targets at `http://localhost:9090/api/v1/targets` when local Prometheus is reachable.
-5. Verify the PROD web target is present and `health=up`.
-6. If a PROD API target is configured but this repo does not deploy an API, record it as an observability configuration note instead of a product failure.
-7. Query Grafana health at `http://localhost:3001/api/health` when local Grafana is reachable.
-8. If Prometheus or Grafana is unreachable, classify monitoring as unavailable. Direct HTTP, deployment configuration, and `/health` checks remain authoritative for app success.
-9. If direct page, deployment configuration, or `/health` checks fail, classify PROD verification as failed and do not claim success.
-10. When PROD verification passes, use `UpdateReleaseManifest` to update `app/{commitSha}/release.json` with final release version, final tag, PROD URL, PROD page status, PROD deployment configuration status, PROD `/health` status, workflow run URL, monitoring status, and PROD deployment timestamp. Validate and upload the updated manifest to Nexus.
+4. Query Grafana health at `http://localhost:3001/api/health` when local Grafana is reachable.
+5. Run `infra/monitoring/validate-azure-monitor-logs.ps1` when Grafana Azure Monitor credentials and Log Analytics workspace IDs are configured.
+6. If Grafana or Azure Monitor validation is unavailable, classify monitoring as unavailable. Direct HTTP, deployment configuration, and `/health` checks remain authoritative for app success.
+7. If direct page, deployment configuration, or `/health` checks fail, classify PROD verification as failed and do not claim success.
+8. When PROD verification passes, use `UpdateReleaseManifest` to update `app/{commitSha}/release.json` with final release version, final tag, PROD URL, PROD page status, PROD deployment configuration status, PROD `/health` status, workflow run URL, monitoring status, and PROD deployment timestamp. Validate and upload the updated manifest to Nexus.
 
 PROD success must never be based on screenshots alone.
 
@@ -155,7 +153,7 @@ The comment must include:
 - main ref update result
 - workflow run URL
 - PROD URL, page smoke status, and `/health` status
-- Prometheus status and Grafana status, or monitoring unavailable/configuration notes
+- Grafana Azure Monitor status, or monitoring unavailable/configuration notes
 - pass/fail result
 
 Only write a success result after the workflow passed and direct PROD page plus `/health` verification passed. If app checks fail, write a failure comment and stop. If only local monitoring is unavailable, deployment may still pass, but the comment must state monitoring verification was unavailable.
@@ -196,5 +194,5 @@ Report the final release version, PROD URL, final tag, deployed artifact commit,
 - Missing `AZURE_PROD_RESOURCE_GROUP` or any `AZURE_PROD_{APPID}_APP_NAME` / `AZURE_PROD_{APPID}_APP_URL` Gitea Actions secrets: route to `$configure-azure-environments` or `$configure-dev-environment`, configure the secrets from Azure deployment outputs without exposing secret values, then rerun PROD dispatch.
 - PROD workflow failure: comment failure and stop.
 - PROD page or `/health` failure: comment failure and stop.
-- Prometheus/Grafana unavailable: record as monitoring unavailable; do not fail the deployment when direct app checks pass.
+- Grafana Azure Monitor unavailable: record as monitoring unavailable; do not fail the deployment when direct app checks pass.
 - Secrets in logs or comments: redact or discard before reporting.

@@ -69,42 +69,33 @@ namespace SDDTemplate.Site.Tests
         }
 
         [Fact]
-        public void AlloyConfigDefinesSeparateAzureConsumersForEachEnvironment()
+        public void AzureBicepDefinesLogAnalyticsWorkspacesAndDiagnostics()
         {
             string root = FindRepositoryRoot();
-            string alloy = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "alloy", "config.alloy"));
+            string bicep = File.ReadAllText(Path.Combine(root, "infra", "azure", "main.bicep"));
 
-            Assert.Contains("loki.source.azure_event_hubs \"dev\"", alloy);
-            Assert.Contains("loki.source.azure_event_hubs \"qa\"", alloy);
-            Assert.Contains("loki.source.azure_event_hubs \"prod\"", alloy);
-            Assert.Contains("AZURE_DEV_EVENTHUB_NAMESPACE", alloy);
-            Assert.Contains("AZURE_QA_EVENTHUB_NAMESPACE", alloy);
-            Assert.Contains("AZURE_PROD_EVENTHUB_NAMESPACE", alloy);
-            Assert.Contains("environment = \"dev\"", alloy);
-            Assert.Contains("environment = \"qa\"", alloy);
-            Assert.Contains("environment = \"prod\"", alloy);
-            Assert.Contains("group_id                  = \"grafana-alloy-dev\"", alloy);
-            Assert.Contains("group_id                  = \"grafana-alloy-qa\"", alloy);
-            Assert.Contains("group_id                  = \"grafana-alloy-prod\"", alloy);
-            Assert.Contains("loki.write \"local\"", alloy);
+            Assert.Contains("Microsoft.OperationalInsights/workspaces", bicep);
+            Assert.Contains("logAnalyticsWorkspaceName", bicep);
+            Assert.Contains("workspaceId: logAnalyticsWorkspace.id", bicep);
+            Assert.Contains("logAnalyticsDestinationType: 'Dedicated'", bicep);
+            Assert.Contains("AppServiceConsoleLogs", bicep);
+            Assert.Contains("AppServiceHTTPLogs", bicep);
         }
 
         [Fact]
-        public void AzureLogIngestionValidationScriptRequiresEveryEnvironment()
+        public void AzureMonitorValidationScriptRequiresEveryEnvironment()
         {
             string root = FindRepositoryRoot();
-            string script = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "validate-azure-log-ingestion.ps1"));
+            string script = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "validate-azure-monitor-logs.ps1"));
 
-            Assert.Contains("AZURE_DEV_EVENTHUB_NAMESPACE", script);
-            Assert.Contains("AZURE_DEV_EVENTHUB_NAME", script);
-            Assert.Contains("AZURE_QA_EVENTHUB_NAMESPACE", script);
-            Assert.Contains("AZURE_QA_EVENTHUB_NAME", script);
-            Assert.Contains("AZURE_PROD_EVENTHUB_NAMESPACE", script);
-            Assert.Contains("AZURE_PROD_EVENTHUB_NAME", script);
-            Assert.Contains("AZURE_CLIENT_ID", script);
-            Assert.Contains("AZURE_TENANT_ID", script);
-            Assert.Contains("AZURE_CLIENT_SECRET", script);
-            Assert.Contains("/loki/api/v1/query_range", script);
+            Assert.Contains("GRAFANA_AZURE_TENANT_ID", script);
+            Assert.Contains("GRAFANA_AZURE_CLIENT_ID", script);
+            Assert.Contains("GRAFANA_AZURE_CLIENT_SECRET", script);
+            Assert.Contains("GRAFANA_AZURE_SUBSCRIPTION_ID", script);
+            Assert.Contains("GRAFANA_AZURE_DEV_LOG_ANALYTICS_WORKSPACE_ID", script);
+            Assert.Contains("GRAFANA_AZURE_QA_LOG_ANALYTICS_WORKSPACE_ID", script);
+            Assert.Contains("GRAFANA_AZURE_PROD_LOG_ANALYTICS_WORKSPACE_ID", script);
+            Assert.Contains("az monitor log-analytics query", script);
             Assert.Contains("dev", script);
             Assert.Contains("qa", script);
             Assert.Contains("prod", script);
@@ -114,43 +105,23 @@ namespace SDDTemplate.Site.Tests
         public void GrafanaDatasourceProvisioningDefinesStableUidsForDashboardReferences()
         {
             string root = FindRepositoryRoot();
-            string datasourcePath = Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "datasources", "prometheus.yml");
+            string datasourcePath = Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "datasources", "azure-monitor.yml");
             string datasources = File.ReadAllText(datasourcePath);
 
-            Assert.Contains("name: Prometheus", datasources);
-            Assert.Contains("uid: prometheus", datasources);
-            Assert.Contains("name: Loki", datasources);
-            Assert.Contains("uid: loki", datasources);
+            Assert.Contains("name: Azure Monitor", datasources);
+            Assert.Contains("uid: azure-monitor", datasources);
+            Assert.Contains("type: grafana-azure-monitor-datasource", datasources);
+            Assert.Contains("GRAFANA_AZURE_CLIENT_SECRET", datasources);
         }
 
-        [Theory]
-        [InlineData("dev", "DEV")]
-        [InlineData("qa", "QA")]
-        [InlineData("prod", "PROD")]
-        public void GrafanaLogBoardsFilterByEnvironmentTextTimeAndCategory(string environment, string titlePrefix)
+        [Fact]
+        public void GrafanaDashboardProvisioningLoadsGeneratedLocalAzureMonitorDashboards()
         {
             string root = FindRepositoryRoot();
-            string dashboardPath = Path.Combine(root, "infra", "monitoring", "grafana", "dashboards", $"{environment}-azure-logs.json");
-            using JsonDocument document = JsonDocument.Parse(File.ReadAllText(dashboardPath));
-            JsonElement rootElement = document.RootElement;
+            string dashboards = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "dashboards", "dashboards.yml"));
 
-            Assert.Equal($"{titlePrefix} Azure Logs", rootElement.GetProperty("title").GetString());
-            Assert.True(rootElement.TryGetProperty("time", out JsonElement time));
-            Assert.Equal("now-6h", time.GetProperty("from").GetString());
-            Assert.Equal("now", time.GetProperty("to").GetString());
-
-            JsonElement variables = rootElement.GetProperty("templating").GetProperty("list");
-            Assert.Contains(variables.EnumerateArray(), variable => variable.GetProperty("name").GetString() == "text");
-            Assert.Contains(variables.EnumerateArray(), variable => variable.GetProperty("name").GetString() == "category");
-
-            string expression = rootElement.GetProperty("panels")[0]
-                .GetProperty("targets")[0]
-                .GetProperty("expr")
-                .GetString()!;
-
-            Assert.Contains($"environment=\"{environment}\"", expression);
-            Assert.Contains("category=~\"$category\"", expression);
-            Assert.Contains("|~ \"$text\"", expression);
+            Assert.Contains("Agentic E2E Local", dashboards);
+            Assert.Contains("/var/lib/grafana/dashboards.local", dashboards);
         }
 
         private static string ReadSerilogMinimumLevel(string path)

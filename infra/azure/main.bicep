@@ -54,9 +54,7 @@ var apiAppUrl = hasApiApp ? 'https://${apiAppName}.azurewebsites.net' : ''
 var siteAppUrl = hasSiteApp ? 'https://${siteAppName}.azurewebsites.net' : ''
 var aspNetEnvironment = environmentName == 'prod' ? 'Production' : environmentName == 'qa' ? 'Staging' : 'Development'
 var sqliteDbPath = '/home/data/${sqliteDatabaseFileName}'
-var eventHubNamespaceName = 'evhns-${normalizedProjectName}-${environmentName}-${uniqueSuffix}'
-var appServiceLogsEventHubName = 'appservice-logs'
-var alloyConsumerGroupName = 'grafana-alloy-${environmentName}'
+var logAnalyticsWorkspaceName = 'law-${normalizedProjectName}-${environmentName}-${uniqueSuffix}'
 var diagnosticLogCategories = [
   'AppServiceHTTPLogs'
   'AppServiceConsoleLogs'
@@ -127,68 +125,31 @@ resource appSettings 'Microsoft.Web/sites/config@2023-12-01' = [for (app, i) in 
   )
 }]
 
-resource eventHubNamespace 'Microsoft.EventHub/namespaces@2024-01-01' = {
-  name: eventHubNamespaceName
+resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2025-02-01' = {
+  name: logAnalyticsWorkspaceName
   location: location
-  sku: {
-    name: 'Standard'
-    tier: 'Standard'
-    capacity: 1
-  }
   properties: {
-    minimumTlsVersion: '1.2'
-    kafkaEnabled: true
-    publicNetworkAccess: 'Enabled'
-    disableLocalAuth: false
+    sku: {
+      name: 'PerGB2018'
+    }
+    retentionInDays: 30
+    publicNetworkAccessForIngestion: 'Enabled'
+    publicNetworkAccessForQuery: 'Enabled'
   }
   tags: {
     project: projectName
     env: environmentName
     managedBy: 'bicep'
-    purpose: 'app-service-log-ingestion'
-  }
-}
-
-resource appServiceLogsEventHub 'Microsoft.EventHub/namespaces/eventhubs@2024-01-01' = {
-  name: appServiceLogsEventHubName
-  parent: eventHubNamespace
-  properties: {
-    messageRetentionInDays: 1
-    partitionCount: 4
-  }
-}
-
-resource alloyConsumerGroup 'Microsoft.EventHub/namespaces/eventhubs/consumergroups@2024-01-01' = {
-  name: alloyConsumerGroupName
-  parent: appServiceLogsEventHub
-}
-
-resource diagnosticSendRule 'Microsoft.EventHub/namespaces/authorizationRules@2024-01-01' = {
-  name: 'diagnostic-send'
-  parent: eventHubNamespace
-  properties: {
-    rights: [
-      'Send'
-    ]
-  }
-}
-
-resource alloyListenRule 'Microsoft.EventHub/namespaces/eventhubs/authorizationRules@2024-01-01' = {
-  name: 'alloy-listen'
-  parent: appServiceLogsEventHub
-  properties: {
-    rights: [
-      'Listen'
-    ]
+    purpose: 'app-service-log-analytics'
   }
 }
 
 resource appLogDiagnosticSettings 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = [for (app, i) in deployableApps: {
-  name: 'send-appservice-logs-to-eventhub'
+  name: 'send-appservice-logs-to-log-analytics'
   scope: apps[i]
   properties: {
-    eventHubAuthorizationRuleId: diagnosticSendRule.id
-    eventHubName: appServiceLogsEventHub.name
+    workspaceId: logAnalyticsWorkspace.id
+    logAnalyticsDestinationType: 'Dedicated'
     logs: [for category in diagnosticLogCategories: {
       category: category
       enabled: true
@@ -225,10 +186,8 @@ output siteAppUrl string = siteAppUrl
 output apiAppName string = apiAppName
 output apiAppUrl string = apiAppUrl
 output sqliteDbPath string = sqliteDbPath
-output eventHubNamespace string = eventHubNamespace.name
-output eventHubName string = appServiceLogsEventHub.name
-output eventHubConsumerGroup string = alloyConsumerGroup.name
-output alloyListenAuthorizationRule string = alloyListenRule.name
+output logAnalyticsWorkspaceName string = logAnalyticsWorkspace.name
+output logAnalyticsWorkspaceId string = logAnalyticsWorkspace.id
 output diagnosticSettings array = [for (app, i) in deployableApps: {
   appId: app.appId
   appName: apps[i].name
