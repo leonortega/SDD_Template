@@ -101,6 +101,7 @@ Useful modes:
 - `ValidateGiteaActionsRunner`: live-check Docker runner prerequisites for PR validation containers, including local image presence, required tools, and local Gitea checkout reachability.
 - `InitQualityGateTemplates`: create tracked quality-gate templates.
 - `SetPrometheusAzureTargets`: update ignored Prometheus Azure targets.
+- `SetAzureLogIngestion`: infer deployed Event Hubs/App Service diagnostics, create or reuse the local Alloy service principal, assign Event Hubs Data Receiver, and write ignored Alloy env values to `infra/plane/variables.env` without printing secrets.
 - `SetQualityConfig`: create or update `.codex/quality.local.json`, including `coverage.minimumPercent` (default `80`).
 
 ## Workflow
