@@ -208,3 +208,12 @@ PowerShell `ConvertFrom-Json` can coerce ISO timestamp strings into `DateTime` v
 - Last verified: 2026-06-09
 
 When `.codex/agent-telemetry.local.jsonl` is absent or a delivery run missed telemetry writes, treat that as a workflow instrumentation failure. Initialize or clear telemetry at selected ticket start with `InitializeWorkflowTelemetry`, append stage rows with `AppendWorkflowTelemetry`, read active ticket rows with `ReadWorkflowTelemetry`, then render `IA generated workflow timing: {ticketKey}` with `RenderPlaneComment -Type WorkflowTiming`. Do not derive workflow timing from generated Plane marker timestamps. Verify the posted comment by reading Plane comments back and matching the timing marker.
+
+## Azure Event Hubs Kafka 9093 EOF Can Be Network-Side
+
+- Type: Pattern
+- Status: Active
+- Source: current conversation, Grafana Alloy Azure Event Hubs log ingestion setup
+- Last verified: 2026-06-10
+
+When Alloy `loki.source.azure_event_hubs` reports `kafka: client has run out of available brokers to talk to: EOF`, first verify the Event Hubs namespace is Standard or higher, Kafka is enabled, the listen rule is scoped correctly, and local env values are present without printing secrets. If those checks pass but `SslStream` or `kcat` to `<namespace>.servicebus.windows.net:9093` fails with connection reset or TLS handshake failure, treat it as a Kafka/TLS 9093 network or service endpoint blocker before changing repository configuration. Retry from a stable network or validate firewall/proxy rules for Event Hubs Kafka port 9093.

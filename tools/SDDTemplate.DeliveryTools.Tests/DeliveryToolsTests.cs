@@ -507,6 +507,64 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
+        public void AuditReportsMissingAzureLogIngestionValues()
+        {
+            string root = CreateTempDirectory();
+            _ = Directory.CreateDirectory(Path.Combine(root, ".codex"));
+            _ = Directory.CreateDirectory(Path.Combine(root, "infra", "plane"));
+            _ = Directory.CreateDirectory(Path.Combine(root, "infra", "gitea"));
+            _ = Directory.CreateDirectory(Path.Combine(root, "infra", "monitoring", "alloy"));
+            _ = Directory.CreateDirectory(Path.Combine(root, "infra", "monitoring", "grafana", "dashboards"));
+            _ = Directory.CreateDirectory(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "dashboards"));
+
+            File.Copy(
+                Path.Combine(FindRepositoryRoot().FullName, ".codex", "client-tools.example.json"),
+                Path.Combine(root, ".codex", "client-tools.local.json"));
+            File.Copy(
+                Path.Combine(FindRepositoryRoot().FullName, ".codex", "client-tools.example.json"),
+                Path.Combine(root, ".codex", "client-tools.example.json"));
+            File.Copy(
+                Path.Combine(FindRepositoryRoot().FullName, ".codex", "quality.example.json"),
+                Path.Combine(root, ".codex", "quality.example.json"));
+            File.WriteAllText(Path.Combine(root, "infra", "plane", "variables.env"), "PROMETHEUS_CONFIG_FILE=./prometheus.local.yml");
+            File.WriteAllText(Path.Combine(root, "infra", "gitea", "runner.env"), "GITEA_RUNNER_REGISTRATION_TOKEN=replace-with-token");
+            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "prometheus.local.yml"), "scrape_configs: []");
+            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "loki.yml"), "auth_enabled: false");
+            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "alloy", "config.alloy"), "logging { level = \"info\" }");
+            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "dashboards", "dashboards.yml"), "apiVersion: 1");
+            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "grafana", "dashboards", "local-infra-health.json"), "{}");
+            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "grafana", "dashboards", "azure-app-health.json"), "{}");
+            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "grafana", "dashboards", "dev-azure-logs.json"), "{}");
+            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "grafana", "dashboards", "qa-azure-logs.json"), "{}");
+            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "grafana", "dashboards", "prod-azure-logs.json"), "{}");
+
+            string output = RunPowerShellScript("-Mode", "Audit", "-Root", root);
+            using JsonDocument result = JsonDocument.Parse(output);
+            string[] keys = [.. result.RootElement.GetProperty("findings")
+                .EnumerateArray()
+                .Select(item => item.GetProperty("key").GetString() ?? string.Empty)];
+
+            Assert.Contains("AZURE_DEV_EVENTHUB_NAMESPACE", keys);
+            Assert.Contains("AZURE_DEV_EVENTHUB_CONNECTION_STRING", keys);
+            Assert.Contains("AZURE_CLIENT_SECRET", keys);
+        }
+
+        [Fact]
+        public void AzureBicepProvisionsEventHubsAndDiagnosticSettingsForLogs()
+        {
+            string bicep = File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, "infra", "azure", "main.bicep"));
+
+            Assert.Contains("Microsoft.EventHub/namespaces@2024-01-01", bicep);
+            Assert.Contains("kafkaEnabled: true", bicep);
+            Assert.Contains("appservice-logs", bicep);
+            Assert.Contains("grafana-alloy-${environmentName}", bicep);
+            Assert.Contains("alloy-listen", bicep);
+            Assert.Contains("Microsoft.Insights/diagnosticSettings@2021-05-01-preview", bicep);
+            Assert.Contains("AppServiceConsoleLogs", bicep);
+            Assert.Contains("eventHubAuthorizationRuleId", bicep);
+        }
+
+        [Fact]
         public void InitQualityGateTemplatesWritesCurrentDeliveryPolicyShape()
         {
             string root = CreateTempDirectory();
@@ -1143,7 +1201,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             string script = Path.Combine(FindRepositoryRoot().FullName, ".codex", "skills", "_shared", "scripts", "delivery_tools.ps1");
             string telemetryPath = Path.Combine(root, ".codex", "agent-telemetry.local.jsonl");
             _ = Directory.CreateDirectory(Path.GetDirectoryName(telemetryPath)!);
-            File.WriteAllText(telemetryPath, "{\"ticketKey\":\"OLD\"}");
+            File.WriteAllText(telemetryPath, JsonSerializer.Serialize(new { ticketKey = "OLD" }));
 
             string output = RunPowerShell(
                 script,

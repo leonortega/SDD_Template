@@ -1,7 +1,13 @@
+using Serilog;
 using SDDTemplate.Site;
 using SDDTemplate.Site.Components;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
+
+_ = builder.Host.UseSerilog((context, services, loggerConfiguration) => loggerConfiguration
+    .ReadFrom.Configuration(context.Configuration)
+    .ReadFrom.Services(services)
+    .Enrich.FromLogContext());
 
 // Add services to the container.
 _ = builder.Services.AddRazorComponents();
