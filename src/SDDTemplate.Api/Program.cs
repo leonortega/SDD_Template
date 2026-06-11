@@ -1,6 +1,7 @@
 using Serilog;
 using SDDTemplate.Api;
 using SDDTemplate.Api.Clients;
+using SDDTemplate.Api.Observability;
 using SDDTemplate.Data;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
@@ -32,6 +33,16 @@ if (!app.Environment.IsDevelopment())
 }
 
 _ = app.UseHttpsRedirection();
+_ = app.UseCorrelationId();
+_ = app.UseSerilogRequestLogging(options =>
+{
+    options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
+    {
+        diagnosticContext.Set("CorrelationId", httpContext.GetCorrelationId());
+        diagnosticContext.Set("RequestPath", httpContext.Request.Path.Value ?? string.Empty);
+        diagnosticContext.Set("RequestMethod", httpContext.Request.Method);
+    };
+});
 if (allowedOrigins.Length > 0)
 {
     _ = app.UseCors("ConfiguredSiteOrigins");
@@ -40,6 +51,16 @@ if (allowedOrigins.Length > 0)
 _ = app.MapGet("/health", (IHostEnvironment environment) =>
     Results.Ok(new HealthResponse("ok", environment.EnvironmentName, DateTimeOffset.UtcNow)));
 
+_ = app.Map("/error", errorApp =>
+    errorApp.Run(context =>
+        Results.Problem(statusCode: StatusCodes.Status500InternalServerError, title: "An unexpected error occurred.")
+            .ExecuteAsync(context)));
+
+if (app.Environment.IsEnvironment("Testing"))
+{
+    _ = app.MapGet("/__test/throw", _ => throw new InvalidOperationException("Intentional test exception."));
+}
+
 _ = app.MapClientEndpoints();
 
 app.Run();
@@ -47,6 +68,9 @@ app.Run();
 namespace SDDTemplate.Api
 {
     public sealed record HealthResponse(string Status, string Environment, DateTimeOffset Timestamp);
+
+    [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
+    public sealed partial class Program;
 
     [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
     public sealed class ApiAssemblyMarker;

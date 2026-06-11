@@ -1,6 +1,7 @@
 using Serilog;
 using SDDTemplate.Site;
 using SDDTemplate.Site.Components;
+using SDDTemplate.Site.Observability;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
@@ -25,6 +26,16 @@ _ = app.UseWhen(
     context => !context.Request.Path.StartsWithSegments("/api"),
     branch => branch.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true));
 _ = app.UseHttpsRedirection();
+_ = app.UseCorrelationId();
+_ = app.UseSerilogRequestLogging(options =>
+{
+    options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
+    {
+        diagnosticContext.Set("CorrelationId", httpContext.GetCorrelationId());
+        diagnosticContext.Set("RequestPath", httpContext.Request.Path.Value ?? string.Empty);
+        diagnosticContext.Set("RequestMethod", httpContext.Request.Method);
+    };
+});
 
 _ = app.UseAntiforgery();
 
