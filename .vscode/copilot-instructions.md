@@ -1,5 +1,35 @@
 # SDD Template Copilot Instructions
 
+## Skill-First Workflow
+
+**Always read the repository skills before acting independently:**
+
+1. When asked to implement a feature, configure tooling, deploy, or document patterns:
+   - Check `.codex/skills/` first to see if a skill already covers this area
+   - Check `.codex/skills/_shared/delivery-contract.md` for the authoritative policy
+   - Check referenced documents in the skill (`docs/`, `.codex/quality.local.json`, etc.)
+   
+2. **Source-of-truth hierarchy** (from delivery-contract.md):
+   - `.codex/skills/_shared/delivery-contract.md`
+   - `docs/context-management.md`, `docs/architecture.md`, `docs/development.md`, `docs/deployment.md`
+   - Non-OpenSpec delivery-flow skills
+   - Configure skills and generated templates
+
+3. **For memory decisions**, use `.codex/memory/retrieval-policy.md#update-process`:
+   - Authoritative rules → update `docs/` or skills, not memory
+   - Repeated failures → `failure-patterns.md` only if not already in skills
+   - Reusable non-authoritative context → memory files
+   - If instructions exist, do not duplicate in memory
+
+4. **Example workflow**:
+   - User asks: "Add formatting validation to pre-commit"
+   - Action: Check `configure-dev-environment` skill → read `quality-gates.md` → see lefthook rules already documented → add to lefthook.yml per skill guidance, not independently
+   - Result: Follow skill, don't add custom instruction to memory
+
+5. **When skills have gaps**: Document the gap in the final handoff (e.g., "Skill quality-gates.md does not cover X; added memory entry with ...") so the skill can be updated later.
+
+This ensures consistency, prevents duplicate documentation, and keeps you aligned with the repository's established patterns.
+
 ## Overview
 
 This is an agentic SDD/SDLC delivery lab. Work is driven from Plane tickets through OpenSpec planning, implementation, review, artifact promotion, deployment, QA, and production handoff. All delivery workflows, domain knowledge, and learnings are captured in `.codex/` without duplication.
