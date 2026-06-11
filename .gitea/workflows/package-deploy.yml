@@ -663,11 +663,37 @@ jobs:
           set -euo pipefail
 
           if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            candidates=()
             parent_count="$(git rev-list --parents -n 1 "$GITHUB_SHA" | awk '{print NF-1}')"
             if [ "$parent_count" -ge 2 ]; then
-              artifact_commit_sha="$(git rev-parse "$GITHUB_SHA^2")"
-            else
-              artifact_commit_sha="$GITHUB_SHA"
+              candidates+=("$(git rev-parse "$GITHUB_SHA^2")")
+
+              first_parent="$(git rev-parse "$GITHUB_SHA^1")"
+              first_parent_count="$(git rev-list --parents -n 1 "$first_parent" | awk '{print NF-1}')"
+              if [ "$first_parent_count" -ge 2 ]; then
+                candidates+=("$(git rev-parse "$first_parent^2")")
+              fi
+            fi
+            candidates+=("$GITHUB_SHA")
+
+            artifact_commit_sha=""
+            seen=":"
+            for candidate in "${candidates[@]}"; do
+              if [[ "$seen" == *":$candidate:"* ]]; then
+                continue
+              fi
+              seen+="$candidate:"
+
+              if curl --silent --show-error --fail --head --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" \
+                "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$candidate/deployable-apps.json" >/dev/null; then
+                artifact_commit_sha="$candidate"
+                break
+              fi
+            done
+
+            if [ -z "$artifact_commit_sha" ]; then
+              echo "Could not resolve a PROD artifact commit from candidates: ${candidates[*]}" >&2
+              exit 1
             fi
           else
             artifact_commit_sha="$ARTIFACT_COMMIT_SHA"
@@ -678,6 +704,10 @@ jobs:
           test -n "$artifact_commit_sha"
           echo "PROD_ARTIFACT_COMMIT_SHA=$artifact_commit_sha" >> "$GITHUB_ENV"
         env:
+          NEXUS_URL: ${{ secrets.NEXUS_URL }}
+          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+          NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
           ARTIFACT_COMMIT_SHA: ${{ github.event.inputs.artifact_commit_sha }}
           RELEASE_VERSION: ${{ github.event.inputs.release_version }}
           SOURCE_RC_VERSION: ${{ github.event.inputs.source_rc_version }}
