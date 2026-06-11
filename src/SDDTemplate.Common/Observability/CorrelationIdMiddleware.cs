@@ -1,17 +1,26 @@
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 using Serilog.Context;
 
-namespace SDDTemplate.Site.Observability
+namespace SDDTemplate.Common.Observability
 {
-    internal sealed class CorrelationIdMiddleware(RequestDelegate next)
+    public sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<CorrelationIdMiddleware> logger)
     {
         public const string CorrelationHeaderName = "X-Correlation-ID";
-        internal const string CorrelationItemKey = "CorrelationId";
+        public const string CorrelationItemKey = "CorrelationId";
 
         public async Task InvokeAsync(HttpContext context)
         {
             string correlationId = ResolveCorrelationId(context);
             context.Items[CorrelationItemKey] = correlationId;
             context.Response.Headers[CorrelationHeaderName] = correlationId;
+
+            logger.LogDebug(
+                "Correlation ID {CorrelationId} assigned for {Method} {Path}",
+                correlationId,
+                context.Request.Method,
+                context.Request.Path);
 
             using (LogContext.PushProperty("CorrelationId", correlationId))
             {
@@ -34,7 +43,7 @@ namespace SDDTemplate.Site.Observability
         }
     }
 
-    internal static class CorrelationIdMiddlewareExtensions
+    public static class CorrelationIdMiddlewareExtensions
     {
         public static IApplicationBuilder UseCorrelationId(this IApplicationBuilder app)
         {

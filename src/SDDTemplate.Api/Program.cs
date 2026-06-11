@@ -1,10 +1,12 @@
 using Serilog;
 using SDDTemplate.Api;
 using SDDTemplate.Api.Clients;
-using SDDTemplate.Api.Observability;
+using SDDTemplate.Common.Observability;
 using SDDTemplate.Data;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
+
+Log.Logger.Information("Configuring API host");
 
 _ = builder.Host.UseSerilog((context, services, loggerConfiguration) => loggerConfiguration
     .ReadFrom.Configuration(context.Configuration)
@@ -24,7 +26,9 @@ if (allowedOrigins.Length > 0)
 }
 
 WebApplication app = builder.Build();
+Log.Logger.Information("Starting API app initialization");
 await app.Services.MigrateApplicationDatabaseAsync();
+Log.Logger.Debug("API database migration completed");
 
 if (!app.Environment.IsDevelopment())
 {
@@ -46,10 +50,12 @@ _ = app.UseSerilogRequestLogging(options =>
 if (allowedOrigins.Length > 0)
 {
     _ = app.UseCors("ConfiguredSiteOrigins");
+    Log.Logger.Information("API CORS enabled with {OriginCount} configured origins", allowedOrigins.Length);
 }
 
 _ = app.MapGet("/health", (IHostEnvironment environment) =>
     Results.Ok(new HealthResponse("ok", environment.EnvironmentName, DateTimeOffset.UtcNow)));
+Log.Logger.Debug("API health endpoint mapped");
 
 _ = app.Map("/error", errorApp =>
     errorApp.Run(context =>
@@ -62,6 +68,7 @@ if (app.Environment.IsEnvironment("Testing"))
 }
 
 _ = app.MapClientEndpoints();
+Log.Logger.Information("API client endpoints mapped");
 
 app.Run();
 
