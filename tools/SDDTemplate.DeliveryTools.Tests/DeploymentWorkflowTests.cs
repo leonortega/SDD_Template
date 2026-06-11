@@ -670,6 +670,48 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
+        public void ProdPromotionSupportsBatchReleaseAfterTicketsAreDone()
+        {
+            string contract = ReadSkill("_shared", "delivery-contract.md");
+            string deploymentDocs = ReadDoc("deployment.md");
+            string deployToProd = ReadSkill("deploy-to-prod", "SKILL.md");
+            string retrospective = ReadSkill("delivery-retrospective-audit", "SKILL.md");
+            string schema = File.ReadAllText(Path.Combine(
+                FindRepositoryRoot().FullName,
+                ".codex",
+                "skills",
+                "_shared",
+                "release.schema.json"));
+            string script = File.ReadAllText(Path.Combine(
+                FindRepositoryRoot().FullName,
+                ".codex",
+                "skills",
+                "_shared",
+                "scripts",
+                "delivery_tools.ps1"));
+
+            Assert.Contains("QA accepted and eligible for a later explicit PROD release", contract);
+            Assert.Contains("PROD promotion is explicit and release-centric", contract);
+            Assert.Contains("A PROD release may include one or more Done tickets", contract);
+            Assert.Contains("`includedTickets` is authoritative when present", contract);
+            Assert.Contains("do not block only because the promoted commit includes multiple ticket keys", contract);
+            Assert.Contains("record the same PROD release result on every included ticket", deployToProd);
+            Assert.Contains("If `release.json.includedTickets` exists, treat it as the authoritative release membership list", deployToProd);
+            Assert.Contains("Support single-ticket releases when includedTickets is absent", File.ReadAllText(Path.Combine(
+                FindRepositoryRoot().FullName,
+                ".codex",
+                "agent-evals",
+                "workflow-cases.json")));
+
+            Assert.Contains("E2E QA `PASS` closes each ticket as Done", deploymentDocs);
+            Assert.Contains("PROD is a later explicit release event that may include one or more Done tickets", deploymentDocs);
+            Assert.Contains("comments the PROD result on every included ticket", deploymentDocs);
+            Assert.Contains("just-promoted release", retrospective);
+            Assert.Contains("\"includedTickets\"", schema);
+            Assert.Contains("Included tickets", script);
+        }
+
+        [Fact]
         public void WorkflowEvalRequiresPostProdRetrospectiveLearningEvidence()
         {
             string root = FindRepositoryRoot().FullName;
@@ -687,12 +729,14 @@ namespace SDDTemplate.DeliveryTools.Tests
             string[] handoffFields = [.. postProdCase.GetProperty("handoffFields").EnumerateArray().Select(item => item.GetString() ?? string.Empty)];
 
             Assert.Contains("successful PROD deployment marker", evidence);
+            Assert.Contains("included ticket list", evidence);
             Assert.Contains(".codex/agent-evals/results.local.json ignored path", evidence);
             Assert.Contains("Invoke delivery-retrospective-audit in read-only post-prod-ticket-release mode", expectations);
             Assert.Contains("Add or reuse Plane marker IA generated post-PROD retrospective: {finalVersion}", expectations);
             Assert.Contains("PROD deployment has not succeeded", stopConditions);
             Assert.Contains("move Plane ticket state", unsafeMutations);
             Assert.Contains("apply docs, delivery contract, skill, eval, test, or memory changes automatically", unsafeMutations);
+            Assert.Contains("includedTickets", handoffFields);
             Assert.Contains("localResultPath", handoffFields);
             Assert.Contains("planeRetrospectiveMarker", handoffFields);
             Assert.Contains("appliedChanges", handoffFields);

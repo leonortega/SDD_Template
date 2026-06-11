@@ -52,6 +52,21 @@ namespace SDDTemplate.DeliveryTools.Tests
             ReleaseManifestValidation valid = DeliveryWorkflowHelpers.ValidateReleaseManifest(validPath);
             Assert.True(valid.Valid);
 
+            string batchPath = Path.Combine(root, "batch-release.json");
+            File.WriteAllText(batchPath, JsonSerializer.Serialize(new
+            {
+                schemaVersion = 1,
+                commitSha = "abcdef1",
+                checksum = "abc123",
+                artifactUrl = "http://nexus/repository/raw-hosted/app/abcdef1/site.zip",
+                planeTicketKey = "E2EPROJECT-1",
+                includedTickets = new[] { "E2EPROJECT-1", "E2EPROJECT-2" },
+                versionStatus = "qa-approved",
+            }));
+
+            ReleaseManifestValidation batch = DeliveryWorkflowHelpers.ValidateReleaseManifest(batchPath);
+            Assert.True(batch.Valid);
+
             string invalidPath = Path.Combine(root, "invalid-release.json");
             File.WriteAllText(invalidPath, JsonSerializer.Serialize(new { schemaVersion = 1, commitSha = "not-a-sha" }));
 
@@ -59,6 +74,38 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.False(invalid.Valid);
             Assert.Contains(invalid.Errors, error => error.Contains("planeTicketKey", StringComparison.Ordinal));
             Assert.Contains(invalid.Errors, error => error.Contains("commitSha", StringComparison.Ordinal));
+
+            string invalidBatchPath = Path.Combine(root, "invalid-batch-release.json");
+            File.WriteAllText(invalidBatchPath, JsonSerializer.Serialize(new
+            {
+                schemaVersion = 1,
+                commitSha = "abcdef1",
+                checksum = "abc123",
+                artifactUrl = "http://nexus/repository/raw-hosted/app/abcdef1/site.zip",
+                planeTicketKey = "E2EPROJECT-1",
+                includedTickets = new[] { "E2EPROJECT-1", "" },
+                versionStatus = "qa-approved",
+            }));
+
+            ReleaseManifestValidation invalidBatch = DeliveryWorkflowHelpers.ValidateReleaseManifest(invalidBatchPath);
+            Assert.False(invalidBatch.Valid);
+            Assert.Contains(invalidBatch.Errors, error => error.Contains("includedTickets[1]", StringComparison.Ordinal));
+
+            string emptyBatchPath = Path.Combine(root, "empty-batch-release.json");
+            File.WriteAllText(emptyBatchPath, JsonSerializer.Serialize(new
+            {
+                schemaVersion = 1,
+                commitSha = "abcdef1",
+                checksum = "abc123",
+                artifactUrl = "http://nexus/repository/raw-hosted/app/abcdef1/site.zip",
+                planeTicketKey = "E2EPROJECT-1",
+                includedTickets = Array.Empty<string>(),
+                versionStatus = "qa-approved",
+            }));
+
+            ReleaseManifestValidation emptyBatch = DeliveryWorkflowHelpers.ValidateReleaseManifest(emptyBatchPath);
+            Assert.False(emptyBatch.Valid);
+            Assert.Contains(emptyBatch.Errors, error => error.Contains("at least one ticket", StringComparison.Ordinal));
         }
 
         [Fact]
@@ -1184,6 +1231,46 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("| `plane-start-ticket` | PASS | 2m 14s | 2026-06-03T10:00:00Z | 2026-06-03T10:02:14Z |", output);
             Assert.Contains("| `implement-ticket` | BLOCKED | 1h 00m 05s | 2026-06-03T10:02:14Z | 2026-06-03T11:02:19Z |", output);
             Assert.DoesNotContain("token", output, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        public void RenderPlaneCommentRendersProdBatchIncludedTickets()
+        {
+            string script = Path.Combine(FindRepositoryRoot().FullName, ".codex", "skills", "_shared", "scripts", "delivery_tools.ps1");
+            string inputJson = JsonSerializer.Serialize(new
+            {
+                ticketKey = "E2EPROJECT-123",
+                ticketState = "Done",
+                includedTickets = new[] { "E2EPROJECT-123", "E2EPROJECT-456" },
+                finalReleaseVersion = "v1.2.3",
+                sourceRcVersion = "v1.2.3-rc.1",
+                commitSha = "abcdef1234567890",
+                status = "PASS - PROD deployed.",
+                mainUpdateResult = "fast-forwarded main",
+                releasePrUrl = "http://gitea/pr/7",
+                workflowRunUrl = "http://gitea/actions/9",
+                artifactUrl = "http://nexus/app.zip",
+                checksum = "abc123",
+                releaseManifestUrl = "http://nexus/release.json",
+                qaEvidenceUrl = "http://nexus/qa-evidence.zip",
+                validationMarkdown = "| Check | Result |\n| --- | --- |\n| Health | PASS |",
+                prodUrl = "https://prod.example.test",
+            });
+
+            string output = RunPowerShell(
+                script,
+                "-Mode",
+                "RenderPlaneComment",
+                "-Type",
+                "ProdDeployment",
+                "-InputJson",
+                inputJson);
+
+            Assert.Contains("IA generated PROD deployment: v1.2.3", output);
+            Assert.Contains("- Primary ticket: `E2EPROJECT-123` (Done)", output);
+            Assert.Contains("- Included tickets: `E2EPROJECT-123`, `E2EPROJECT-456`", output);
+            Assert.Contains("- Lineage: `abcdef1` -> `v1.2.3-rc.1` -> `v1.2.3`", output);
+            Assert.Contains("**PROD URL:** [open production](https://prod.example.test)", output);
         }
 
         [Fact]

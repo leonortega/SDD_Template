@@ -20,7 +20,7 @@ Default to read-only mode unless the user explicitly asks to apply changes.
 - `Read-only audit`: inspect evidence and report proposed improvements.
 - `Proposal mode`: draft exact skill/config/test changes without editing files.
 - `Apply mode`: edit skills, scripts, templates, or tests after evidence is clear and the user requested implementation.
-- `post-prod-ticket-release`: read-only audit mode invoked after successful `deploy-to-prod` for the just-promoted ticket; persist sanitized learning evidence without changing delivery state.
+- `post-prod-ticket-release`: read-only audit mode invoked after successful `deploy-to-prod` for the just-promoted release; persist sanitized learning evidence without changing delivery state.
 
 Never silently rewrite workflow rules from one isolated failure. Apply the Agent Self-Improvement Gate in `.codex/skills/_shared/delivery-contract.md` before changing skills, workflow policy, configure templates, or quality gates from retrospective evidence.
 
@@ -36,7 +36,7 @@ Do not create recurring automations, scheduled jobs, Plane tickets, deployment a
 
 Run this audit after or between delivery work when one of these conditions occurs:
 
-- `deploy-to-prod` records a successful PROD deployment and invokes `post-prod-ticket-release` for the promoted ticket,
+- `deploy-to-prod` records a successful PROD deployment and invokes `post-prod-ticket-release` for the promoted release,
 - a QA bug is filed or E2E QA fails,
 - `gitea-pr-review-agent` misses a meaningful issue,
 - Gitea Actions, local quality gates, or runner tooling fail in a way that blocks handoff,
@@ -79,11 +79,11 @@ Resolve what the user wants audited:
 - the latest delivery attempt,
 - a class of failures such as QA bugs, review misses, CI failures, or deployment blockers,
 - the skill workflow itself.
-- a post-PROD ticket release, using the ticket key, artifact commit, final release version, PROD URL, and release manifest supplied by `deploy-to-prod`.
+- a post-PROD ticket release, using the primary ticket key, included ticket list, artifact commit, final release version, PROD URL, and release manifest supplied by `deploy-to-prod`.
 
 If the scope is ambiguous and local evidence clearly identifies a current locked ticket or PR, use that as the scope and say so. If several scopes are plausible, run a read-only summary instead of guessing.
 
-For `post-prod-ticket-release`, scope the audit to the just-promoted ticket from branch/OpenSpec start through PROD. Inspect existing generated markers and release evidence only; do not re-run deployment, QA, PROD, tag, or ticket-state mutations. If previous post-PROD retrospective markers or `.codex/agent-evals/results.local.json` entries exist for the same ticket or final version, read them as learning evidence and report repeated or superseded findings.
+For `post-prod-ticket-release`, scope the audit to the just-promoted release from included ticket branch/OpenSpec starts through PROD. Inspect existing generated markers and release evidence only; do not re-run deployment, QA, PROD, tag, or ticket-state mutations. If previous post-PROD retrospective markers or `.codex/agent-evals/results.local.json` entries exist for the same included ticket or final version, read them as learning evidence and report repeated or superseded findings. Report per-ticket findings when useful, but keep the release outcome anchored to the single promoted artifact commit and final version.
 
 ### 2. Reconstruct The Delivery Timeline
 
