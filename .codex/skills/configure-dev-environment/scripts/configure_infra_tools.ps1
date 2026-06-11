@@ -2441,12 +2441,13 @@ packages/
 *.sln.iml
 
 # VS Code
-.vscode/
+.vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
 !.vscode/*.code-snippets
+!.vscode/copilot-instructions.md
 
 # Node/frontend artifacts that may appear in web projects
 node_modules/
