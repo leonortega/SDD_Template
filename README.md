@@ -32,7 +32,7 @@ Every change should have a ticket, a plan, a review, a tested artifact, QA evide
 - Stronger quality control: Gitea pull requests, validation gates, Codex review, tests, and QA evidence are part of the normal flow.
 - Safer releases: Nexus stores immutable artifacts that are promoted across DEV, QA, PROD, and rollback without rebuilding.
 - Clearer accountability: production promotion is explicit, documented, and separated from QA approval.
-- Practical observability: Grafana, Dozzle, Azure diagnostics, and Log Analytics support delivery and runtime inspection.
+- Practical observability: Seq, Grafana, Dozzle, Azure diagnostics, and Log Analytics support delivery and runtime inspection.
 
 ## Who This Is For
 
@@ -64,7 +64,7 @@ In plain language:
 - Gitea manages source control, pull requests, and validation.
 - Nexus stores the exact build artifact used for deployment.
 - Azure hosts the DEV, QA, and PROD application runtimes.
-- Grafana and Dozzle help operators inspect logs, health, and delivery signals.
+- Seq helps operators search DEV/QA/PROD Azure application logs; Grafana and Dozzle help inspect health, delivery signals, and local container logs.
 - Codex skills under `.codex/skills/` guide the agent through each delivery stage.
 
 ## What Is Included
@@ -107,7 +107,8 @@ In plain language:
 ### Local Observability
 
 - Docker Compose platform for local delivery tools.
-- Grafana dashboards for Azure Monitor and Log Analytics.
+- Seq log search for Azure App Service logs imported from Log Analytics.
+- Grafana health/status dashboards for Azure Monitor and Log Analytics.
 - Dozzle for local container logs.
 - Azure App Service diagnostics for DEV, QA, and PROD runtimes.
 

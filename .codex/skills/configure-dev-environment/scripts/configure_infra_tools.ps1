@@ -1,5 +1,5 @@
 param(
-  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetPlaneEnv", "SetGiteaRunner", "SetGrafanaAzureMonitor", "AuditQualityGates", "AuditRecommendedTools", "DiscoverProjectGuidance", "AcquireProjectGuidance", "SetRecommendedTools", "MapProjectGuidanceStep", "BuildGiteaActionsImages", "ValidateGiteaActionsRunner", "InitQualityGateTemplates", "SetQualityConfig", "SyncWorktreeLocalConfig", "EnsureDeliveryContext")]
+  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetPlaneEnv", "SetGiteaRunner", "SetSeqAzureEventHubLogs", "AuditQualityGates", "AuditRecommendedTools", "DiscoverProjectGuidance", "AcquireProjectGuidance", "SetRecommendedTools", "MapProjectGuidanceStep", "BuildGiteaActionsImages", "ValidateGiteaActionsRunner", "InitQualityGateTemplates", "SetQualityConfig", "SyncWorktreeLocalConfig", "EnsureDeliveryContext")]
   [string]$Mode = "Audit",
 
   [string]$Root = (Resolve-Path ".").Path,
@@ -1823,8 +1823,7 @@ function Invoke-Audit {
   }
 
   $grafanaDashboards = @(
-    "infra/monitoring/grafana/provisioning/dashboards/dashboards.yml",
-    "infra/monitoring/grafana/provisioning/datasources/azure-monitor.yml"
+    "infra/monitoring/grafana/provisioning/dashboards/dashboards.yml"
   )
   foreach ($dashboardFile in $grafanaDashboards) {
     if (-not (Test-Path (Join-RootPath $dashboardFile))) {
@@ -1832,49 +1831,26 @@ function Invoke-Audit {
     }
   }
 
-  $requiredAzureMonitorEnv = @(
-    "GRAFANA_AZURE_TENANT_ID",
-    "GRAFANA_AZURE_CLIENT_ID",
-    "GRAFANA_AZURE_CLIENT_SECRET",
-    "GRAFANA_AZURE_SUBSCRIPTION_ID",
-    "GRAFANA_AZURE_DEV_LOG_ANALYTICS_WORKSPACE_ID",
-    "GRAFANA_AZURE_QA_LOG_ANALYTICS_WORKSPACE_ID",
-    "GRAFANA_AZURE_PROD_LOG_ANALYTICS_WORKSPACE_ID"
-  )
-  foreach ($name in $requiredAzureMonitorEnv) {
-    if (-not $plane.Contains($name) -or [string]::IsNullOrWhiteSpace($plane[$name])) {
-      Add-Item $result "findings" $planeLocal $name "Missing Grafana Azure Monitor value. Run SetGrafanaAzureMonitor after Azure environments are deployed." "warning" "pre-start"
+  foreach ($grafanaFile in @(
+    "infra/monitoring/grafana/provisioning/datasources/prometheus.yml",
+    "infra/monitoring/prometheus/prometheus.yml",
+    "infra/monitoring/prometheus/blackbox.yml",
+    "infra/monitoring/prometheus/targets.local.yml"
+  )) {
+    if (-not (Test-Path (Join-RootPath $grafanaFile))) {
+      Add-Item $result "findings" $grafanaFile "grafana-health-stack" "Missing Grafana health monitoring artifact required for Prometheus-based /health dashboards." "warning" "post-start"
     }
   }
 
-  $localDashboardDirectory = "infra/monitoring/grafana/dashboards.local"
-  if (-not (Test-Path (Join-RootPath $localDashboardDirectory))) {
-    Add-Item $result "findings" $localDashboardDirectory "azure-monitor-dashboards" "Generated local Azure Monitor dashboards are missing. Run SetGrafanaAzureMonitor after Azure environments are deployed." "info" "pre-start"
-  } else {
-    foreach ($envName in @("dev", "qa", "prod")) {
-      $dashboardFile = "$localDashboardDirectory/$envName-azure-monitor.json"
-      $dashboardPath = Join-RootPath $dashboardFile
-      if (-not (Test-Path $dashboardPath)) {
-        Add-Item $result "findings" $dashboardFile "azure-monitor-dashboard" "Generated $envName Azure Monitor dashboard is missing. Run SetGrafanaAzureMonitor after Azure environments are deployed." "info" "pre-start"
-        continue
-      }
-
-      $dashboardContent = Get-Content -Raw -Path $dashboardPath
-      if ($dashboardContent -notmatch "/health" -or $dashboardContent -notmatch "App Service Health") {
-        Add-Item $result "findings" $dashboardFile "azure-monitor-health-dashboard" "Generated Azure Monitor dashboard is stale and does not include App Service /health panels. Run SetGrafanaAzureMonitor to regenerate dashboards." "warning" "pre-start"
-      }
-
-      $healthDashboardFile = "$localDashboardDirectory/$envName-health-dashboard.json"
-      $healthDashboardPath = Join-RootPath $healthDashboardFile
-      if (-not (Test-Path $healthDashboardPath)) {
-        Add-Item $result "findings" $healthDashboardFile "health-dashboard" "Generated $envName health dashboard is missing. Run SetGrafanaAzureMonitor to regenerate dashboards." "warning" "pre-start"
-        continue
-      }
-
-      $healthDashboardContent = Get-Content -Raw -Path $healthDashboardPath
-      if ($healthDashboardContent -notmatch "/health" -or $healthDashboardContent -notmatch "Health Dashboard") {
-        Add-Item $result "findings" $healthDashboardFile "health-dashboard" "Generated health dashboard is stale. Run SetGrafanaAzureMonitor to regenerate dashboards." "warning" "pre-start"
-      }
+  $requiredOtelCollectorEnv = @(
+    "OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING",
+    "OTELCOL_AZURE_EVENT_HUB_QA_CONNECTION_STRING",
+    "OTELCOL_AZURE_EVENT_HUB_PROD_CONNECTION_STRING",
+    "OTELCOL_SEQ_OTLP_ENDPOINT"
+  )
+  foreach ($name in $requiredOtelCollectorEnv) {
+    if (-not $plane.Contains($name) -or [string]::IsNullOrWhiteSpace($plane[$name])) {
+      Add-Item $result "findings" $planeLocal $name "Missing required OpenTelemetry collector value for Event Hub to Seq ingestion. Run SetSeqAzureEventHubLogs and provide the missing value." "error" "pre-start"
     }
   }
 
@@ -1892,11 +1868,126 @@ function Invoke-Audit {
           Add-Item $result "findings" "grafana" "ready" "Grafana container is running but readiness endpoint failed: $($_.Exception.Message)" "warning" "post-start"
         }
       } else {
-        Add-Item $result "findings" "docker" "agentic-grafana" "Grafana container is not running; Azure Monitor dashboards are unavailable." "warning" "post-start"
+        Add-Item $result "findings" "docker" "agentic-grafana" "Grafana container is not running; dashboards are unavailable." "warning" "post-start"
+      }
+
+      if ($containers -contains "agentic-prometheus") {
+        Add-Item $result "actions" "docker" "agentic-prometheus" "Prometheus container is running for Grafana /health dashboards."
+        try {
+          $ready = Invoke-WebRequest -Uri "http://localhost:9091/-/ready" -UseBasicParsing -TimeoutSec 5
+          if ($ready.StatusCode -eq 200) {
+            Add-Item $result "actions" "prometheus" "ready" "Prometheus readiness endpoint is healthy."
+          }
+        } catch {
+          Add-Item $result "findings" "prometheus" "ready" "Prometheus container is running but readiness endpoint failed: $($_.Exception.Message)" "warning" "post-start"
+        }
+      } else {
+        Add-Item $result "findings" "docker" "agentic-prometheus" "Prometheus container is not running; Grafana /health dashboards cannot query probe data." "warning" "post-start"
+      }
+
+      if ($containers -contains "agentic-blackbox") {
+        Add-Item $result "actions" "docker" "agentic-blackbox" "Blackbox exporter container is running for /health probes."
+        try {
+          $ready = Invoke-WebRequest -Uri "http://localhost:9115/-/healthy" -UseBasicParsing -TimeoutSec 5
+          if ($ready.StatusCode -eq 200) {
+            Add-Item $result "actions" "blackbox" "ready" "Blackbox exporter health endpoint is healthy."
+          }
+        } catch {
+          Add-Item $result "findings" "blackbox" "ready" "Blackbox exporter container is running but health endpoint failed: $($_.Exception.Message)" "warning" "post-start"
+        }
+      } else {
+        Add-Item $result "findings" "docker" "agentic-blackbox" "Blackbox exporter container is not running; Prometheus cannot probe app /health endpoints." "warning" "post-start"
+      }
+
+      # Check Grafana datasource provisioning
+      try {
+        $datasources = Invoke-WebRequest -Uri "http://localhost:3001/api/datasources" -UseBasicParsing -TimeoutSec 5
+        $ds = $datasources.Content | ConvertFrom-Json
+        $promDs = $ds | Where-Object { $_.type -eq "prometheus" }
+        if ($promDs) {
+          Add-Item $result "actions" "grafana" "datasource.prometheus" "Prometheus datasource is provisioned in Grafana (uid: $($promDs.uid))."
+        } else {
+          Add-Item $result "findings" "grafana" "datasource.prometheus" "Prometheus datasource is not found in Grafana. Check provisioning YAML at infra/monitoring/grafana/provisioning/datasources/prometheus.yml." "warning" "post-start"
+        }
+      } catch {
+        # Check if it's an auth error (datasource exists but requires login) or connection error
+        if ($_.Exception.Message -match "401|Unauthorized|Invalid API key") {
+          Add-Item $result "findings" "grafana" "datasource.prometheus.auth" "Grafana datasource endpoint returned 401. Enable GF_AUTH_ANONYMOUS_ENABLED=true in compose.yml or ensure admin credentials are correct." "warning" "post-start"
+        } elseif ($_.Exception.Message -match "Connection|timeout|refused") {
+          Add-Item $result "findings" "grafana" "datasource.prometheus.connect" "Could not connect to Grafana API at localhost:3001; Prometheus datasource check skipped." "info" "post-start"
+        } else {
+          Add-Item $result "findings" "grafana" "datasource.prometheus" "Could not check Grafana datasources: $($_.Exception.Message)" "info" "post-start"
+        }
+      }
+
+      # Check Grafana health dashboards are provisioned
+      try {
+        $dashboards = Invoke-WebRequest -Uri "http://localhost:3001/api/search?query=health" -UseBasicParsing -TimeoutSec 5
+        $dbs = $dashboards.Content | ConvertFrom-Json
+        $healthDbs = $dbs | Where-Object { $_.title -match "Health|health" }
+        if ($healthDbs.Count -ge 3) {
+          Add-Item $result "actions" "grafana" "dashboards.health" "Found $($healthDbs.Count) health dashboards provisioned (dev, qa, prod expected)."
+        } elseif ($healthDbs.Count -gt 0) {
+          Add-Item $result "findings" "grafana" "dashboards.health.incomplete" "Found only $($healthDbs.Count) health dashboards; expected 3 (dev, qa, prod). Check infra/monitoring/grafana/dashboards.local/ for all three JSON files." "warning" "post-start"
+        } else {
+          Add-Item $result "findings" "grafana" "dashboards.health.missing" "No health dashboards found in Grafana. Check infra/monitoring/grafana/dashboards.local/ exists and dashboard provisioning is configured at infra/monitoring/grafana/provisioning/dashboards/dashboards.yml." "warning" "post-start"
+        }
+      } catch {
+        if ($_.Exception.Message -match "401|Unauthorized|Invalid API key") {
+          Add-Item $result "findings" "grafana" "dashboards.auth" "Grafana search endpoint returned 401. This is expected with anonymous access disabled. Health dashboards may still be available at /d/agentic-dev-health/dev-health-dashboard." "info" "post-start"
+        } else {
+          Add-Item $result "findings" "grafana" "dashboards.check" "Could not query Grafana dashboards: $($_.Exception.Message)" "info" "post-start"
+        }
+      }
+
+      # Check Prometheus scrape targets are discovering and UP
+      try {
+        $targets = Invoke-WebRequest -Uri "http://localhost:9091/api/v1/targets" -UseBasicParsing -TimeoutSec 5
+        $targetData = $targets.Content | ConvertFrom-Json
+        $upTargets = @($targetData.data.activeTargets | Where-Object { $_.health -eq "up" })
+        if ($upTargets.Count -gt 0) {
+          Add-Item $result "actions" "prometheus" "targets.up" "Prometheus scrape job 'blackbox_http_health' has $($upTargets.Count) targets UP and ready for probing."
+        } else {
+          Add-Item $result "findings" "prometheus" "targets.down" "Prometheus targets are not UP. Check Docker network connectivity from Prometheus to Azure app endpoints. Verify blackbox container is running and App Service /health endpoints are accessible." "warning" "post-start"
+        }
+      } catch {
+        Add-Item $result "findings" "prometheus" "targets.check" "Could not query Prometheus targets at localhost:9091: $($_.Exception.Message)" "info" "post-start"
+      }
+
+      # Check Prometheus has metrics for health probes
+      try {
+        $metrics = Invoke-WebRequest -Uri "http://localhost:9091/api/v1/query?query=probe_success" -UseBasicParsing -TimeoutSec 5
+        $metricData = $metrics.Content | ConvertFrom-Json
+        $results = @($metricData.data.result)
+        if ($results.Count -ge 6) {
+          $devResults = @($results | Where-Object { $_.metric.environment -eq "dev" })
+          Add-Item $result "actions" "prometheus" "metrics.probe_success" "Prometheus has $($results.Count) probe_success metrics. Dev environment has $($devResults.Count) metrics (web and api expected)."
+        } elseif ($results.Count -gt 0) {
+          Add-Item $result "findings" "prometheus" "metrics.probe_success.partial" "Prometheus has only $($results.Count) probe metrics; expected 6 (dev/qa/prod x web/api). Probes may still be initializing or encountering errors." "warning" "post-start"
+        } else {
+          Add-Item $result "findings" "prometheus" "metrics.probe_success.none" "No probe_success metrics found in Prometheus. Check Blackbox exporter logs: 'docker logs agentic-blackbox'. Verify Prometheus scrape config at infra/monitoring/prometheus/prometheus.yml includes blackbox_http_health job." "error" "post-start"
+        }
+      } catch {
+        Add-Item $result "findings" "prometheus" "metrics.check" "Could not query Prometheus metrics: $($_.Exception.Message)" "info" "post-start"
+      }
+
+      # Check Grafana anonymous access is enabled (fix for volume corruption issues)
+      try {
+        $dockerPath = Join-RootPath "infra/monitoring/compose.yml"
+        if (Test-Path $dockerPath) {
+          $composeContent = Get-Content -Path $dockerPath -Raw
+          if ($composeContent -match "GF_AUTH_ANONYMOUS_ENABLED.*true") {
+            Add-Item $result "actions" "grafana" "config.anonymous" "Grafana anonymous access is enabled in compose.yml (prevents volume corruption auth issues)."
+          } else {
+            Add-Item $result "findings" "grafana" "config.anonymous" "Grafana anonymous access is not enabled. Add GF_AUTH_ANONYMOUS_ENABLED: 'true' and GF_AUTH_ANONYMOUS_ORG_ROLE: 'Viewer' to infra/monitoring/compose.yml to prevent dashboard access issues." "warning" "post-start"
+          }
+        }
+      } catch {
+        Add-Item $result "findings" "grafana" "config.check" "Could not check Grafana anonymous access config: $($_.Exception.Message)" "info" "post-start"
       }
     }
   } catch {
-    Add-Item $result "findings" "docker" "monitoring" "Could not inspect Grafana container state: $($_.Exception.Message)" "info" "post-start"
+    Add-Item $result "findings" "docker" "monitoring" "Could not inspect monitoring containers: $($_.Exception.Message)" "info" "post-start"
   }
 
   Add-QualityGateAuditFindings $result
@@ -3880,380 +3971,7 @@ function Invoke-SetEnvMode {
   return $result
 }
 
-function New-AzureMonitorLogDashboard {
-  param(
-    [string]$EnvironmentName,
-    [string]$WorkspaceResourceId
-  )
-
-  $upper = $EnvironmentName.ToUpperInvariant()
-  $kql = @"
-union isfuzzy=true AppServiceConsoleLogs, AppServiceAppLogs, AppServiceHTTPLogs, AppServicePlatformLogs, AppServiceAuditLogs, AppServiceIPSecAuditLogs, AppServiceAuthenticationLogs
-| where TimeGenerated >= ago(6h)
-| extend Category = tostring(column_ifexists("Category", ""))
-| extend Message = coalesce(tostring(column_ifexists("Message", "")), tostring(column_ifexists("Details", "")), tostring(column_ifexists("ResultDescription", "")), tostring(column_ifexists("CsUriStem", "")))
-| project TimeGenerated, Category, ResourceId = tostring(column_ifexists("_ResourceId", "")), Message
-| order by TimeGenerated desc
-| take 200
-"@
-
-  $activityKql = @"
-union isfuzzy=true AppServiceConsoleLogs, AppServiceAppLogs, AppServiceHTTPLogs, AppServicePlatformLogs, AppServiceAuditLogs, AppServiceIPSecAuditLogs, AppServiceAuthenticationLogs
-| where TimeGenerated >= ago(6h)
-| summarize Count = count() by bin(TimeGenerated, 5m), ResourceId = tostring(column_ifexists("_ResourceId", ""))
-| order by TimeGenerated asc
-"@
-
-  $healthKql = @"
-AppServiceHTTPLogs
-| where TimeGenerated >= ago(6h)
-| extend Path = tostring(column_ifexists("CsUriStem", ""))
-| where Path == "/health" or Path endswith "/health"
-| extend StatusCode = toint(column_ifexists("ScStatus", int(null)))
-| summarize Checks = count(), Failures = countif(StatusCode < 200 or StatusCode >= 300) by bin(TimeGenerated, 5m), ResourceId = tostring(column_ifexists("_ResourceId", ""))
-| extend Healthy = Checks - Failures
-| order by TimeGenerated asc
-"@
-
-  $recentHealthKql = @"
-AppServiceHTTPLogs
-| where TimeGenerated >= ago(6h)
-| extend Path = tostring(column_ifexists("CsUriStem", ""))
-| where Path == "/health" or Path endswith "/health"
-| extend StatusCode = toint(column_ifexists("ScStatus", int(null)))
-| project TimeGenerated, ResourceId = tostring(column_ifexists("_ResourceId", "")), Path, StatusCode, Method = tostring(column_ifexists("CsMethod", "")), UserAgent = tostring(column_ifexists("UserAgent", ""))
-| order by TimeGenerated desc
-| take 100
-"@
-
-  $dashboard = [ordered]@{
-    annotations = [ordered]@{
-      list = @(
-        [ordered]@{
-          builtIn = 1
-          datasource = [ordered]@{ type = "grafana"; uid = "-- Grafana --" }
-          enable = $true
-          hide = $true
-          iconColor = "rgba(0, 211, 255, 1)"
-          name = "Annotations & Alerts"
-          type = "dashboard"
-        }
-      )
-    }
-    editable = $true
-    fiscalYearStartMonth = 0
-    graphTooltip = 0
-    id = $null
-    links = @()
-    liveNow = $false
-    panels = @(
-      [ordered]@{
-        datasource = [ordered]@{ type = "grafana-azure-monitor-datasource"; uid = "azure-monitor" }
-        fieldConfig = [ordered]@{ defaults = [ordered]@{}; overrides = @() }
-        gridPos = [ordered]@{ h = 8; w = 24; x = 0; y = 0 }
-        id = 1
-        options = [ordered]@{
-          legend = [ordered]@{ displayMode = "list"; placement = "bottom"; showLegend = $true }
-          tooltip = [ordered]@{ mode = "single"; sort = "none" }
-        }
-        targets = @(
-          [ordered]@{
-            azureLogAnalytics = [ordered]@{
-              query = $activityKql
-              resources = @($WorkspaceResourceId)
-              resultFormat = "time_series"
-            }
-            datasource = [ordered]@{ type = "grafana-azure-monitor-datasource"; uid = "azure-monitor" }
-            queryType = "Azure Log Analytics"
-            refId = "A"
-          }
-        )
-        title = "$upper Azure Log Activity"
-        type = "timeseries"
-      },
-      [ordered]@{
-        datasource = [ordered]@{ type = "grafana-azure-monitor-datasource"; uid = "azure-monitor" }
-        fieldConfig = [ordered]@{ defaults = [ordered]@{}; overrides = @() }
-        gridPos = [ordered]@{ h = 8; w = 24; x = 0; y = 8 }
-        id = 2
-        options = [ordered]@{
-          legend = [ordered]@{ displayMode = "list"; placement = "bottom"; showLegend = $true }
-          tooltip = [ordered]@{ mode = "single"; sort = "none" }
-        }
-        targets = @(
-          [ordered]@{
-            azureLogAnalytics = [ordered]@{
-              query = $healthKql
-              resources = @($WorkspaceResourceId)
-              resultFormat = "time_series"
-            }
-            datasource = [ordered]@{ type = "grafana-azure-monitor-datasource"; uid = "azure-monitor" }
-            queryType = "Azure Log Analytics"
-            refId = "A"
-          }
-        )
-        title = "$upper App Service Health"
-        type = "timeseries"
-      },
-      [ordered]@{
-        datasource = [ordered]@{ type = "grafana-azure-monitor-datasource"; uid = "azure-monitor" }
-        fieldConfig = [ordered]@{ defaults = [ordered]@{}; overrides = @() }
-        gridPos = [ordered]@{ h = 8; w = 24; x = 0; y = 16 }
-        id = 3
-        options = [ordered]@{
-          cellHeight = "sm"
-          footer = [ordered]@{ countRows = $false; fields = ""; reducer = @("sum"); show = $false }
-          showHeader = $true
-        }
-        targets = @(
-          [ordered]@{
-            azureLogAnalytics = [ordered]@{
-              query = $recentHealthKql
-              resources = @($WorkspaceResourceId)
-              resultFormat = "table"
-            }
-            datasource = [ordered]@{ type = "grafana-azure-monitor-datasource"; uid = "azure-monitor" }
-            queryType = "Azure Log Analytics"
-            refId = "A"
-          }
-        )
-        title = "$upper Recent Health Checks"
-        type = "table"
-      },
-      [ordered]@{
-        datasource = [ordered]@{ type = "grafana-azure-monitor-datasource"; uid = "azure-monitor" }
-        fieldConfig = [ordered]@{ defaults = [ordered]@{}; overrides = @() }
-        gridPos = [ordered]@{ h = 10; w = 24; x = 0; y = 24 }
-        id = 4
-        options = [ordered]@{
-          cellHeight = "sm"
-          footer = [ordered]@{ countRows = $false; fields = ""; reducer = @("sum"); show = $false }
-          showHeader = $true
-        }
-        targets = @(
-          [ordered]@{
-            azureLogAnalytics = [ordered]@{
-              query = $kql
-              resources = @($WorkspaceResourceId)
-              resultFormat = "table"
-            }
-            datasource = [ordered]@{ type = "grafana-azure-monitor-datasource"; uid = "azure-monitor" }
-            queryType = "Azure Log Analytics"
-            refId = "A"
-          }
-        )
-        title = "$upper Azure Logs"
-        type = "table"
-      }
-    )
-    refresh = "30s"
-    schemaVersion = 41
-    tags = @("agentic-e2e", "azure", "logs", $EnvironmentName)
-    templating = [ordered]@{ list = @() }
-    time = [ordered]@{ from = "now-6h"; to = "now" }
-    timepicker = [ordered]@{}
-    timezone = "browser"
-    title = "$upper Azure Monitor"
-    uid = "agentic-$EnvironmentName-azure-monitor"
-    version = 1
-    weekStart = ""
-  }
-
-  return ($dashboard | ConvertTo-Json -Depth 30)
-}
-
-function New-AzureMonitorHealthDashboard {
-  param(
-    [string]$EnvironmentName,
-    [string]$WorkspaceResourceId
-  )
-
-  $upper = $EnvironmentName.ToUpperInvariant()
-  $healthKql = @"
-AppServiceHTTPLogs
-| where TimeGenerated >= ago(7d)
-| extend Path = tostring(CsUriStem)
-| where Path == '/health' or Path endswith '/health'
-| extend StatusCode = toint(column_ifexists("ScStatus", int(null)))
-| summarize Checks = count(), Failures = countif(StatusCode < 200 or StatusCode >= 300) by bin(TimeGenerated, 5m), ResourceId = tostring(column_ifexists("_ResourceId", ""))
-| extend Healthy = Checks - Failures
-| order by TimeGenerated asc
-"@
-
-  $recentHealthKql = @"
-AppServiceHTTPLogs
-| where TimeGenerated >= ago(7d)
-| extend Path = tostring(CsUriStem)
-| where Path == '/health' or Path endswith '/health'
-| extend StatusCode = toint(column_ifexists("ScStatus", int(null)))
-| extend Result = iff(StatusCode >= 200 and StatusCode < 300, "ok", "failed")
-| project TimeGenerated, Result, StatusCode, ResourceId = tostring(column_ifexists("_ResourceId", "")), Path, Method = tostring(column_ifexists("CsMethod", "")), UserAgent = tostring(column_ifexists("UserAgent", ""))
-| order by TimeGenerated desc
-| take 200
-"@
-
-  $webStatusKql = @"
-AppServiceHTTPLogs
-| where TimeGenerated >= ago(7d)
-| where CsUriStem == '/health' or CsUriStem endswith '/health'
-| where CsHost contains 'web'
-| extend StatusCode = toint(ScStatus)
-| top 1 by TimeGenerated desc
-| extend Value = iff(StatusCode >= 200 and StatusCode < 300 and TimeGenerated >= ago(24h), 1, 0)
-| project TimeGenerated = now(), Value
-"@
-
-  $apiStatusKql = @"
-AppServiceHTTPLogs
-| where TimeGenerated >= ago(7d)
-| where CsUriStem == '/health' or CsUriStem endswith '/health'
-| where CsHost contains 'api'
-| extend StatusCode = toint(ScStatus)
-| top 1 by TimeGenerated desc
-| extend Value = iff(StatusCode >= 200 and StatusCode < 300 and TimeGenerated >= ago(24h), 1, 0)
-| project TimeGenerated = now(), Value
-"@
-
-  $dashboard = [ordered]@{
-    annotations = [ordered]@{
-      list = @(
-        [ordered]@{
-          builtIn = 1
-          datasource = [ordered]@{ type = "grafana"; uid = "-- Grafana --" }
-          enable = $true
-          hide = $true
-          iconColor = "rgba(0, 211, 255, 1)"
-          name = "Annotations & Alerts"
-          type = "dashboard"
-        }
-      )
-    }
-    editable = $true
-    fiscalYearStartMonth = 0
-    graphTooltip = 0
-    id = $null
-    links = @()
-    liveNow = $false
-    panels = @(
-      [ordered]@{
-        datasource = [ordered]@{ type = "grafana-azure-monitor-datasource"; uid = "azure-monitor" }
-        fieldConfig = [ordered]@{
-          defaults = [ordered]@{
-            color = [ordered]@{ mode = "thresholds" }
-            mappings = @(
-              [ordered]@{ options = [ordered]@{ "0" = [ordered]@{ color = "red"; text = "FAIL/STALE" }; "1" = [ordered]@{ color = "green"; text = "OK" } }; type = "value" }
-            )
-            thresholds = [ordered]@{ mode = "absolute"; steps = @([ordered]@{ color = "red"; value = $null }, [ordered]@{ color = "green"; value = 1 }) }
-          }
-          overrides = @()
-        }
-        gridPos = [ordered]@{ h = 8; w = 12; x = 0; y = 0 }
-        id = 1
-        options = [ordered]@{
-          colorMode = "background"
-          graphMode = "none"
-          justifyMode = "center"
-          orientation = "auto"
-          reduceOptions = [ordered]@{ calcs = @("lastNotNull"); fields = ""; values = $false }
-          textMode = "value_and_name"
-          wideLayout = $true
-        }
-        targets = @(
-          [ordered]@{
-            azureLogAnalytics = [ordered]@{
-              query = $webStatusKql
-              resources = @($WorkspaceResourceId)
-              resultFormat = "time_series"
-            }
-            datasource = [ordered]@{ type = "grafana-azure-monitor-datasource"; uid = "azure-monitor" }
-            queryType = "Azure Log Analytics"
-            refId = "A"
-          }
-        )
-        title = "$upper Web /health"
-        type = "stat"
-      },
-      [ordered]@{
-        datasource = [ordered]@{ type = "grafana-azure-monitor-datasource"; uid = "azure-monitor" }
-        fieldConfig = [ordered]@{
-          defaults = [ordered]@{
-            color = [ordered]@{ mode = "thresholds" }
-            mappings = @(
-              [ordered]@{ options = [ordered]@{ "0" = [ordered]@{ color = "red"; text = "FAIL/STALE" }; "1" = [ordered]@{ color = "green"; text = "OK" } }; type = "value" }
-            )
-            thresholds = [ordered]@{ mode = "absolute"; steps = @([ordered]@{ color = "red"; value = $null }, [ordered]@{ color = "green"; value = 1 }) }
-          }
-          overrides = @()
-        }
-        gridPos = [ordered]@{ h = 8; w = 12; x = 12; y = 0 }
-        id = 2
-        options = [ordered]@{
-          colorMode = "background"
-          graphMode = "none"
-          justifyMode = "center"
-          orientation = "auto"
-          reduceOptions = [ordered]@{ calcs = @("lastNotNull"); fields = ""; values = $false }
-          textMode = "value_and_name"
-          wideLayout = $true
-        }
-        targets = @(
-          [ordered]@{
-            azureLogAnalytics = [ordered]@{
-              query = $apiStatusKql
-              resources = @($WorkspaceResourceId)
-              resultFormat = "time_series"
-            }
-            datasource = [ordered]@{ type = "grafana-azure-monitor-datasource"; uid = "azure-monitor" }
-            queryType = "Azure Log Analytics"
-            refId = "A"
-          }
-        )
-        title = "$upper API /health"
-        type = "stat"
-      },
-      [ordered]@{
-        datasource = [ordered]@{ type = "grafana-azure-monitor-datasource"; uid = "azure-monitor" }
-        fieldConfig = [ordered]@{ defaults = [ordered]@{}; overrides = @() }
-        gridPos = [ordered]@{ h = 12; w = 24; x = 0; y = 8 }
-        id = 3
-        options = [ordered]@{
-          cellHeight = "sm"
-          footer = [ordered]@{ countRows = $false; fields = ""; reducer = @("sum"); show = $false }
-          showHeader = $true
-        }
-        targets = @(
-          [ordered]@{
-            azureLogAnalytics = [ordered]@{
-              query = $recentHealthKql
-              resources = @($WorkspaceResourceId)
-              resultFormat = "table"
-            }
-            datasource = [ordered]@{ type = "grafana-azure-monitor-datasource"; uid = "azure-monitor" }
-            queryType = "Azure Log Analytics"
-            refId = "A"
-          }
-        )
-        title = "$upper Recent /health Requests"
-        type = "table"
-      }
-    )
-    refresh = "30s"
-    schemaVersion = 41
-    tags = @("agentic-e2e", "azure", "health", $EnvironmentName)
-    templating = [ordered]@{ list = @() }
-    time = [ordered]@{ from = "now-7d"; to = "now" }
-    timepicker = [ordered]@{}
-    timezone = "browser"
-    title = "$upper Health Dashboard"
-    uid = "agentic-$EnvironmentName-health"
-    version = 1
-    weekStart = ""
-  }
-
-  return ($dashboard | ConvertTo-Json -Depth 30)
-}
-
-function Invoke-SetGrafanaAzureMonitor {
+function Invoke-SetSeqAzureEventHubLogs {
   $result = New-Result
   $targetRelative = "infra/plane/variables.env"
   $target = Join-RootPath $targetRelative
@@ -4261,97 +3979,102 @@ function Invoke-SetGrafanaAzureMonitor {
     throw "Missing $targetRelative. Run -Mode InitLocalFiles first."
   }
 
-  $values = Convert-JsonToHashtable $ValuesJson
-  $servicePrincipalName = "sp-agentic-e2e-grafana-monitor"
-  if ($values.Contains("servicePrincipalName") -and -not [string]::IsNullOrWhiteSpace($values["servicePrincipalName"])) {
-    $servicePrincipalName = [string]$values["servicePrincipalName"]
-  }
+  $composeRelative = "infra/monitoring/compose.yml"
+  $collectorRelative = "infra/monitoring/otelcol/collector.yaml"
+  $composePath = Join-RootPath $composeRelative
+  $collectorPath = Join-RootPath $collectorRelative
 
-  $account = Invoke-AzJson @("account", "show")
-  Add-Item $result "actions" "az" "account" "Resolved Azure subscription '$($account.name)' and tenant '$($account.tenantId)'."
-
-  $envValues = @{}
-  $workspaceIds = @()
-  foreach ($environment in Get-AgenticEnvironmentResourceGroups) {
-    $envName = $environment.env
-    $resourceGroup = $environment.resourceGroup
-    $prefix = "law-agentice2e-$envName-"
-    $workspaces = ConvertTo-Array (Invoke-AzJson @("monitor", "log-analytics", "workspace", "list", "--resource-group", $resourceGroup))
-    $workspace = @($workspaces | Where-Object { $_.name -like "$prefix*" } | Sort-Object name | Select-Object -First 1)
-    if ($workspace.Count -eq 0) {
-      throw "No Log Analytics workspace matching '$prefix*' found in '$resourceGroup'. Run infra/azure/deploy-environments.ps1 first."
-    }
-
-    $workspaceName = $workspace[0].name
-    $workspaceResourceId = [string]$workspace[0].id
-    $workspaceCustomerId = Invoke-AzTsv @("monitor", "log-analytics", "workspace", "show", "--resource-group", $resourceGroup, "--workspace-name", $workspaceName, "--query", "customerId")
-    $upper = $envName.ToUpperInvariant()
-    $envValues["GRAFANA_AZURE_${upper}_LOG_ANALYTICS_WORKSPACE_ID"] = $workspaceCustomerId
-    $envValues["GRAFANA_AZURE_${upper}_LOG_ANALYTICS_WORKSPACE_RESOURCE_ID"] = $workspaceResourceId
-    $workspaceIds += $workspaceResourceId
-    Add-Item $result "actions" "azure-log-analytics" $workspaceName "Resolved $envName Log Analytics workspace."
-
-    $webApps = ConvertTo-Array (Invoke-AzJson @("webapp", "list", "--resource-group", $resourceGroup))
-    foreach ($app in @($webApps | Where-Object { $_.name -like "app-agentice2e-$envName-*" })) {
-      $settings = ConvertTo-Array (Invoke-AzJson @("monitor", "diagnostic-settings", "list", "--resource", $app.id))
-      $matchingSettings = @($settings | Where-Object { $_.name -eq "send-appservice-logs-to-log-analytics" -and $_.workspaceId -eq $workspaceResourceId })
-      if ($matchingSettings.Count -gt 0) {
-        Add-Item $result "actions" "azure-diagnostic-settings" $app.name "Diagnostic setting for Azure Monitor Logs exists."
-      } else {
-        Add-Item $result "findings" "azure-diagnostic-settings" $app.name "Missing App Service diagnostic setting for Azure Monitor Logs." "warning" "post-start"
-      }
-    }
-
-    $dashboardDirectory = Join-RootPath "infra/monitoring/grafana/dashboards.local"
-    if (-not $DryRun -and -not (Test-Path $dashboardDirectory)) {
-      New-Item -ItemType Directory -Path $dashboardDirectory -Force | Out-Null
-    }
-    $dashboardPath = Join-Path $dashboardDirectory "$envName-azure-monitor.json"
-    Add-Item $result "actions" "infra/monitoring/grafana/dashboards.local/$envName-azure-monitor.json" "" "Generate local Grafana Azure Monitor dashboard."
-    if (-not $DryRun) {
-      New-AzureMonitorLogDashboard -EnvironmentName $envName -WorkspaceResourceId $workspaceResourceId | Set-Content -Path $dashboardPath -Encoding UTF8
-    }
-
-    $healthDashboardPath = Join-Path $dashboardDirectory "$envName-health-dashboard.json"
-    Add-Item $result "actions" "infra/monitoring/grafana/dashboards.local/$envName-health-dashboard.json" "" "Generate local Grafana health dashboard."
-    if (-not $DryRun) {
-      New-AzureMonitorHealthDashboard -EnvironmentName $envName -WorkspaceResourceId $workspaceResourceId | Set-Content -Path $healthDashboardPath -Encoding UTF8
-    }
-  }
-
-  $servicePrincipals = ConvertTo-Array (Invoke-AzJson @("ad", "sp", "list", "--display-name", $servicePrincipalName))
-  if ($servicePrincipals.Count -gt 0) {
-    $appId = $servicePrincipals[0].appId
-    $credential = Invoke-AzJson @("ad", "sp", "credential", "reset", "--id", $appId, "--append", "--display-name", "grafana-azure-monitor-local", "--years", "1")
-    Add-Item $result "actions" "azure-ad" $servicePrincipalName "Reused service principal and created a local-only Grafana Azure Monitor client secret."
+  if (-not (Test-Path $composePath)) {
+    Add-Item $result "findings" $composeRelative "monitoring-compose" "Missing monitoring compose file." "error" "pre-start"
   } else {
-    $credential = Invoke-AzJson @("ad", "sp", "create-for-rbac", "--name", $servicePrincipalName, "--skip-assignment")
-    $appId = $credential.appId
-    Add-Item $result "actions" "azure-ad" $servicePrincipalName "Created service principal for Grafana Azure Monitor."
-  }
-
-  foreach ($scope in @($workspaceIds)) {
-    foreach ($role in @("Reader", "Log Analytics Reader")) {
-      $assignments = ConvertTo-Array (Invoke-AzJson @("role", "assignment", "list", "--assignee", $appId, "--scope", $scope, "--role", $role))
-      if ($assignments.Count -eq 0) {
-        $null = Invoke-AzJson @("role", "assignment", "create", "--assignee", $appId, "--scope", $scope, "--role", $role)
-        Add-Item $result "actions" "azure-rbac" $role "Assigned Grafana service principal to Log Analytics workspace scope."
-      } else {
-        Add-Item $result "actions" "azure-rbac" $role "Grafana service principal already has role on Log Analytics workspace scope."
-      }
+    $compose = Get-Content -Path $composePath -Raw
+    if ($compose -notmatch 'name:\s*agentic-e2e' -or $compose -notmatch 'profiles:\s*\n\s*-\s*eventhub' -or $compose -notmatch 'agentic-otelcol' -or $compose -notmatch 'otel/opentelemetry-collector-contrib:0\.154\.0') {
+      Add-Item $result "findings" $composeRelative "otelcol-service" "Monitoring compose does not define the required Event Hub collector profile." "error" "pre-start"
+    } else {
+      Add-Item $result "actions" $composeRelative "" "Required Event Hub collector profile is present in the shared agentic-e2e compose collection."
     }
   }
 
-  $envValues["GRAFANA_AZURE_CLIENT_ID"] = $appId
-  $envValues["GRAFANA_AZURE_TENANT_ID"] = $account.tenantId
-  $envValues["GRAFANA_AZURE_CLIENT_SECRET"] = $credential.password
-  $envValues["GRAFANA_AZURE_SUBSCRIPTION_ID"] = $account.id
-
-  Set-EnvValues -Path $target -Values $envValues
-  foreach ($key in $envValues.Keys) {
-    Add-Item $result "actions" $targetRelative $key "Set Grafana Azure Monitor value."
+  if (-not (Test-Path $collectorPath)) {
+    Add-Item $result "findings" $collectorRelative "collector-config" "Missing OpenTelemetry Collector Contrib configuration." "error" "pre-start"
+  } else {
+    $collector = Get-Content -Path $collectorPath -Raw
+    foreach ($needle in @("azure_event_hub/dev", "azure_event_hub/qa", "azure_event_hub/prod", "otlphttp/seq")) {
+      if ($collector -notmatch [regex]::Escape($needle)) {
+        Add-Item $result "findings" $collectorRelative $needle "Collector configuration is missing expected Event Hub to Seq wiring." "error" "pre-start"
+      }
+    }
+    if ($collector -match "azure_event_hub/dev" -and $collector -match "otlphttp/seq") {
+      Add-Item $result "actions" $collectorRelative "" "OpenTelemetry Collector Contrib config is present for Azure Event Hub to Seq ingestion."
+    }
   }
 
+  $plane = Read-EnvFile $target
+  foreach ($name in @("OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING", "OTELCOL_AZURE_EVENT_HUB_QA_CONNECTION_STRING", "OTELCOL_AZURE_EVENT_HUB_PROD_CONNECTION_STRING")) {
+    if (-not $plane.Contains($name) -or [string]::IsNullOrWhiteSpace($plane[$name])) {
+      Add-Item $result "findings" $targetRelative $name "Missing Event Hub connection string required by the collector-based Seq ingestion path." "error" "pre-start"
+    } else {
+      Add-Item $result "actions" $targetRelative $name "Event Hub connection string is configured for collector-based Seq ingestion."
+    }
+  }
+
+  if (-not $plane.Contains("OTELCOL_SEQ_OTLP_ENDPOINT") -or [string]::IsNullOrWhiteSpace($plane["OTELCOL_SEQ_OTLP_ENDPOINT"])) {
+    Add-Item $result "findings" $targetRelative "OTELCOL_SEQ_OTLP_ENDPOINT" "Missing OTLP endpoint required by the collector-based Seq ingestion path." "error" "pre-start"
+  } else {
+    Add-Item $result "actions" $targetRelative "OTELCOL_SEQ_OTLP_ENDPOINT" "Collector OTLP export endpoint is configured."
+  }
+
+  try {
+    $containers = @(& docker ps --format "{{.Names}}" 2>$null)
+    if ($LASTEXITCODE -eq 0 -and $containers -contains "agentic-seq") {
+      $seqState = (& docker inspect -f "{{.State.Status}}" agentic-seq 2>$null | Out-String).Trim()
+      if ($seqState -ne "running") {
+        Add-Item $result "findings" "docker" "agentic-seq" "Seq container status is '$seqState' instead of 'running'." "error" "post-start"
+      } else {
+        $ready = Invoke-WebRequest -Uri "http://localhost:5341/api" -UseBasicParsing -TimeoutSec 5
+        if ($ready.StatusCode -eq 200) {
+          Add-Item $result "actions" "seq" "ready" "Seq API endpoint is healthy."
+        }
+      }
+    } else {
+      Add-Item $result "findings" "docker" "agentic-seq" "Seq container is not running; collector path cannot be validated." "error" "post-start"
+    }
+
+    if ($LASTEXITCODE -eq 0 -and $containers -contains "agentic-otelcol") {
+      $otelState = (& docker inspect -f "{{.State.Status}}" agentic-otelcol 2>$null | Out-String).Trim()
+      if ($otelState -eq "running") {
+        Add-Item $result "actions" "docker" "agentic-otelcol" "Event Hub collector container is running."
+
+        $otelEnv = (& docker inspect agentic-otelcol --format "{{range .Config.Env}}{{println .}}{{end}}" 2>$null | Out-String)
+        foreach ($name in @("OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING", "OTELCOL_AZURE_EVENT_HUB_QA_CONNECTION_STRING", "OTELCOL_AZURE_EVENT_HUB_PROD_CONNECTION_STRING", "OTELCOL_SEQ_OTLP_ENDPOINT")) {
+          $pattern = "(?m)^" + [regex]::Escape($name) + "=(.*)$"
+          $match = [regex]::Match($otelEnv, $pattern)
+          if (-not $match.Success) {
+            Add-Item $result "findings" "docker" $name "Running collector container is missing expected environment value '$name'. Recreate the collector container." "error" "post-start"
+            continue
+          }
+
+          $runningValue = $match.Groups[1].Value.Trim()
+          if ($plane.Contains($name) -and -not [string]::Equals($runningValue, $plane[$name], [System.StringComparison]::Ordinal)) {
+            Add-Item $result "findings" "docker" $name "Running collector container has a stale '$name' value that does not match infra/plane/variables.env. Recreate the collector container with --force-recreate." "error" "post-start"
+          }
+        }
+
+        $otelLogs = (& docker logs --tail 120 agentic-otelcol 2>&1 | Out-String)
+        if ($otelLogs -match "InvalidSignature|error receiving events|unauthorized") {
+          Add-Item $result "findings" "docker" "agentic-otelcol-runtime" "Collector logs show Event Hub authentication or ingestion failures. Verify Send/Listen auth rules and recreate the collector container after updating connection strings." "error" "post-start"
+        }
+      } else {
+        Add-Item $result "findings" "docker" "agentic-otelcol" "Event Hub collector container status is '$otelState'." "error" "post-start"
+      }
+    } else {
+      Add-Item $result "findings" "docker" "agentic-otelcol" "Event Hub collector container is not running. Start with --profile eventhub to complete observability setup." "error" "post-start"
+    }
+  } catch {
+    Add-Item $result "findings" "seq" "ready" "Could not validate Seq API endpoint: $($_.Exception.Message)" "error" "post-start"
+  }
+
+  Add-Item $result "actions" $composeRelative "" "Run `docker compose --profile eventhub --env-file .\infra\plane\variables.env -f .\infra\compose.yml --project-directory .\infra up -d --force-recreate otelcol` after Event Hub or OTEL env changes."
   return $result
 }
 
@@ -4372,8 +4095,9 @@ switch ($Mode) {
   "EnsureDeliveryContext" { $result = Invoke-EnsureDeliveryContext }
   "SetPlaneEnv" { $result = Invoke-SetEnvMode -TargetRelative "infra/plane/variables.env" }
   "SetGiteaRunner" { $result = Invoke-SetEnvMode -TargetRelative "infra/gitea/runner.env" }
-  "SetGrafanaAzureMonitor" { $result = Invoke-SetGrafanaAzureMonitor }
+  "SetSeqAzureEventHubLogs" { $result = Invoke-SetSeqAzureEventHubLogs }
   "SetQualityConfig" { $result = Invoke-SetQualityConfig }
 }
 
 $result | ConvertTo-Json -Depth 10
+

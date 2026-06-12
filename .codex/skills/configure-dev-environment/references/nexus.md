@@ -167,7 +167,7 @@ $NEXUS_URL/repository/$NEXUS_REPOSITORY/app/releases/${finalReleaseVersion}/rele
 - Create the final annotated release tag such as `v1.2.0` on the same commit.
 - Deploy PROD from the QA-passed artifact commit by ticket-gated `main` push through `app/qa-approved/latest.json` or explicit workflow dispatch inputs `artifact_commit_sha`, `release_version`, and `source_rc_version`.
 - After PROD passes, publish the final `app/releases/{finalReleaseVersion}/` alias metadata.
-- Validate PROD page and all app `/health` checks; use Grafana Azure Monitor as observability verification when available.
+- Validate PROD page and all app `/health` checks; use Seq log search as observability verification when available.
 - Record version lineage in Plane comments at each phase: QA deployment as unversioned candidate or known RC, E2E QA as `artifact commit -> source RC`, and PROD as `artifact commit -> source RC -> final release`.
 - For rollback, redeploy previous known-good `app/{commitSha}/deployable-apps.json` topology artifacts, verify checksums and `/health`, update `release.json`, and comment Plane with rollback lineage.
 - Do not rebuild between environments.

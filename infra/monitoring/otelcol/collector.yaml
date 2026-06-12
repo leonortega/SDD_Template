@@ -1,0 +1,64 @@
+receivers:
+  azure_event_hub/dev:
+    connection: ${env:OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING}
+    group: ${env:OTELCOL_AZURE_EVENT_HUB_DEV_CONSUMER_GROUP}
+    format: azure
+  azure_event_hub/qa:
+    connection: ${env:OTELCOL_AZURE_EVENT_HUB_QA_CONNECTION_STRING}
+    group: ${env:OTELCOL_AZURE_EVENT_HUB_QA_CONSUMER_GROUP}
+    format: azure
+  azure_event_hub/prod:
+    connection: ${env:OTELCOL_AZURE_EVENT_HUB_PROD_CONNECTION_STRING}
+    group: ${env:OTELCOL_AZURE_EVENT_HUB_PROD_CONSUMER_GROUP}
+    format: azure
+
+processors:
+  batch: {}
+  resource/dev:
+    attributes:
+      - key: Environment
+        value: DEV
+        action: upsert
+  resource/qa:
+    attributes:
+      - key: Environment
+        value: QA
+        action: upsert
+  resource/prod:
+    attributes:
+      - key: Environment
+        value: PROD
+        action: upsert
+
+exporters:
+  otlphttp/seq:
+    endpoint: ${env:OTELCOL_SEQ_OTLP_ENDPOINT}
+    tls:
+      insecure: true
+
+service:
+  pipelines:
+    logs/dev:
+      receivers:
+        - azure_event_hub/dev
+      processors:
+        - batch
+        - resource/dev
+      exporters:
+        - otlphttp/seq
+    logs/qa:
+      receivers:
+        - azure_event_hub/qa
+      processors:
+        - batch
+        - resource/qa
+      exporters:
+        - otlphttp/seq
+    logs/prod:
+      receivers:
+        - azure_event_hub/prod
+      processors:
+        - batch
+        - resource/prod
+      exporters:
+        - otlphttp/seq

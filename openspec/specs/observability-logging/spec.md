@@ -47,21 +47,35 @@ Azure-hosted API and Site logs SHALL be routed through App Service diagnostic se
 - **WHEN** the API or Site emits logs in the Azure-hosted PROD environment
 - **THEN** App Service diagnostics write those logs to the PROD Log Analytics workspace
 
-### Requirement: Environment-specific Grafana log boards
+### Requirement: Environment-specific Seq console log search
 
-Grafana SHALL provide separate Azure Monitor log-focused boards for DEV, QA, and PROD. Each board SHALL let operators filter log records for its environment by text, date/time range, and category/source.
+Seq SHALL provide searchable Azure-hosted application console logs for DEV, QA, and PROD through the optional Azure Event Hub collector path. Imported log events SHALL include environment, timestamp, category/source, resource, and message fields so operators can search each environment by text, date/time range, and category/source.
+
+### Requirement: Optional Event Hub collector ingestion
+
+When Azure Event Hub ingestion is configured, Seq SHALL support Azure-hosted application console logs through an OpenTelemetry Collector Contrib pipeline that consumes the DEV, QA, and PROD Event Hub inputs and exports logs into Seq.
 
 #### Scenario: Operator filters DEV logs
 
-- **WHEN** an operator opens the DEV Grafana log board
-- **THEN** the board exposes controls or query variables for text, date/time range, and category/source filtering over DEV logs
+- **WHEN** an operator searches Seq for DEV logs
+- **THEN** Seq contains DEV console events imported from the DEV Log Analytics workspace with environment, text, date/time, and category/source fields
 
 #### Scenario: Operator filters QA logs
 
-- **WHEN** an operator opens the QA Grafana log board
-- **THEN** the board exposes controls or query variables for text, date/time range, and category/source filtering over QA logs
+- **WHEN** an operator searches Seq for QA logs
+- **THEN** Seq contains QA console events imported from the QA Log Analytics workspace with environment, text, date/time, and category/source fields
 
-#### Scenario: Operator filters PROD logs
+#### Scenario: Collector ingests DEV Event Hub logs
 
-- **WHEN** an operator opens the PROD Grafana log board
-- **THEN** the board exposes controls or query variables for text, date/time range, and category/source filtering over PROD logs
+- **WHEN** the optional Event Hub collector profile is enabled for DEV
+- **THEN** the collector consumes DEV console log events from Azure Event Hub and exports them to Seq with environment labeling
+
+#### Scenario: Collector ingests QA Event Hub logs
+
+- **WHEN** the optional Event Hub collector profile is enabled for QA
+- **THEN** the collector consumes QA console log events from Azure Event Hub and exports them to Seq with environment labeling
+
+#### Scenario: Collector ingests PROD Event Hub logs
+
+- **WHEN** the optional Event Hub collector profile is enabled for PROD
+- **THEN** the collector consumes PROD console log events from Azure Event Hub and exports them to Seq with environment labeling

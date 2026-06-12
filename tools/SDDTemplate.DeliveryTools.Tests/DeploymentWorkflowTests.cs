@@ -1164,6 +1164,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("Azure App Service", architecture);
             Assert.Contains("Azure Monitor", architecture);
             Assert.Contains("Grafana", architecture);
+            Assert.Contains("Seq", architecture);
             Assert.Contains("Skills are not installed by command", architecture);
             Assert.Contains("project-guidance-discover", architecture);
             Assert.Contains("project-guidance-acquire", architecture);
@@ -1185,6 +1186,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("Azure App Service", deployment);
             Assert.Contains("Azure Monitor", deployment);
             Assert.Contains("Grafana", deployment);
+            Assert.Contains("Seq", deployment);
             Assert.Contains("qa/{ticketKey}/{runId}/qa-evidence.zip", deployment);
             Assert.Contains("project-guidance-mapper", deployment);
 

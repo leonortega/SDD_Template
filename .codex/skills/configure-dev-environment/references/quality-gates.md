@@ -21,6 +21,12 @@ Use the shared script:
 .\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode SetQualityConfig -ValuesJson '{"coverage":{"minimumPercent":80}}'
 ```
 
+If local Trivy scans report a stale vulnerability database, refresh it before scanning:
+
+```powershell
+trivy --download-db-only
+```
+
 ## Strategy
 
 - Gitea PR validation is the source of truth for formatting, build, tests, coverage, dependency audit, full secret scanning, and filesystem security scanning.
