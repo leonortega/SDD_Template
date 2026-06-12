@@ -69,7 +69,17 @@ Required/defaulted values:
    IA generated PR feedback fixes: {headSha}:{feedbackBatchId}
    ```
 
-   Include source ids or links addressed, OpenSpec tasks completed, commit SHA pushed, validation run, skipped comments, stash notes when relevant, and remaining blockers.
+   Keep the marker as the first line by itself, followed by a blank line and a reviewer-facing Markdown summary. The body must be human-readable, not only automation evidence, and must include:
+
+   - `**Status:** READY FOR REVIEW | BLOCKED | PARTIAL - short outcome`
+   - `**Reviewer feedback addressed:**` source ids or links plus a short human summary of each comment
+   - `**How IA resolved it:**` concrete changes in reviewer language, not only file names or task ids
+   - `**Changed:**` commit SHA pushed, PR link, and completed OpenSpec feedback tasks
+   - `**Validation:**` checks run and results
+   - `**Reviewer readiness:**` what the reviewer should re-check, plus remaining blockers or `None`
+   - `**Skipped comments:**` only when non-actionable, stale, duplicate, generated, ambiguous, or conflicting comments were skipped
+
+   Include stash notes when relevant without exposing secrets or noisy tool output.
    Use the Plane work-item comments API payload fields `comment_html` and `comment_stripped`; do not use Gitea-style `comment` or `body` fields. If a generated comment is accidentally blank, patch that comment id with the same payload shape and then read it back before handoff.
 12. Rerun the AI review loop on the new head before returning to human review or implementation handoff.
 

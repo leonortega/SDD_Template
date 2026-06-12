@@ -1317,6 +1317,11 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("top-level PR comments and inline code review comments", contract);
             Assert.Contains("IA generated PR feedback detected: {headSha}:{feedbackBatchId}", contract);
             Assert.Contains("IA generated PR feedback fixes: {headSha}:{feedbackBatchId}", contract);
+            Assert.Contains("as the first line by itself", contract);
+            Assert.Contains("reviewer-facing Markdown summary", contract);
+            Assert.Contains("**Reviewer feedback addressed:**", contract);
+            Assert.Contains("**How IA resolved it:**", contract);
+            Assert.Contains("**Reviewer readiness:**", contract);
             Assert.Contains("deterministic short id from the sorted source ids", contract);
             Assert.Contains("late human comments on the same `headSha`", contract);
             Assert.Contains("Commit and push", contract, StringComparison.OrdinalIgnoreCase);
@@ -1330,6 +1335,12 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("Commit with the ticket key", feedbackLoop);
             Assert.Contains("IA generated PR feedback detected: {headSha}:{feedbackBatchId}", feedbackLoop);
             Assert.Contains("IA generated PR feedback fixes: {headSha}:{feedbackBatchId}", feedbackLoop);
+            Assert.Contains("Keep the marker as the first line by itself", feedbackLoop);
+            Assert.Contains("**Reviewer feedback addressed:**", feedbackLoop);
+            Assert.Contains("**How IA resolved it:**", feedbackLoop);
+            Assert.Contains("**Changed:**", feedbackLoop);
+            Assert.Contains("**Validation:**", feedbackLoop);
+            Assert.Contains("**Reviewer readiness:**", feedbackLoop);
             Assert.Contains("comment_html", feedbackLoop);
             Assert.Contains("comment_stripped", feedbackLoop);
             Assert.Contains("verify `comment_stripped` starts with the marker", feedbackLoop);
@@ -1353,6 +1364,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("PR review feedback has two timed loops", developmentDocs);
             Assert.Contains("repo-local `pr-review-feedback-loop` skill", developmentDocs);
             Assert.Contains("Plane remains `In Review` while late human feedback fixes are applied", developmentDocs);
+            Assert.Contains("Feedback-fix Plane comments are reviewer-facing summaries", developmentDocs);
         }
 
         [Fact]
