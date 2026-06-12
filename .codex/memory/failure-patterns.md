@@ -72,6 +72,15 @@ Stop if `main` diverges from the intended QA-approved commit. Rollback does not 
 
 Do not read secrets from Docker containers, mounted volumes, databases, logs, or committed files. Do not store secrets in memory. Tracked examples must remain placeholder-safe.
 
+## Compose Secret Fallbacks Can Bypass Local Env Values
+
+- Type: Pattern
+- Status: Active
+- Source: current conversation, `infra/plane/compose.yml`, `infra/plane/variables.env.example`, `docker compose --env-file .\infra\plane\variables.env -f .\infra\compose.yml --project-directory .\infra config --quiet`
+- Last verified: 2026-06-12
+
+When hardening local infra Compose files, ensure service env interpolation uses the same variable names as `infra/plane/variables.env.example` and fail-fast `${VAR:?message}` checks for required secrets. A mismatch such as Compose reading `RABBITMQ_PASSWORD` while the template/local file defines `RABBITMQ_DEFAULT_PASS`, or URL defaults such as `postgresql://plane:plane@...`, can silently bypass generated local secrets. Validate changes with `docker compose --env-file .\infra\plane\variables.env -f .\infra\compose.yml --project-directory .\infra config --quiet` without printing secret values.
+
 ## Worktree Local Config Copy Can Leave Placeholders
 
 - Type: Pattern
