@@ -156,7 +156,31 @@ If the forecast says `400-line budget risk: High`, `Chained PRs recommended: Yes
 - `size:exception`,
 - `exception-ok`.
 
-Work units must be deliverable behavior slices. Keep code, tests, and docs for the same behavior together; do not split commits or PRs only by file type.
+Work units must be deliverable behavior slices. Keep code, tests, and docs for the same behavior together; do not split PRs only by file type.
+
+## Ticket Commit Strategy
+
+Default ticket implementation uses one PR with multiple ticket-prefixed commits. Chained PRs remain reserved for oversized or high-risk work when the Review Workload Forecast, OpenSpec artifacts, or explicit user direction records that split.
+
+Commit after each completed workflow step when the step produced tracked changes, then start the next step from a clean working tree. Stable commit checkpoints include:
+
+- OpenSpec task, spec, or design refinement.
+- Implementation changes.
+- Tests or reusable QA regression coverage.
+- Documentation, context, memory, or workflow policy updates.
+- PR review feedback fixes.
+- Tooling or configuration fixes scoped to the active ticket.
+
+For each commit checkpoint:
+
+1. Finish the step changes.
+2. Review `git status` and the relevant diff.
+3. Run the smallest relevant validation for that step, or record why validation is deferred to CI.
+4. Stage only files related to that step.
+5. Commit with a message that starts with the Plane ticket key or OpenSpec id.
+6. Continue the next workflow step only after the working tree is clean or remaining changes are intentionally unrelated and documented.
+
+Do not create empty commits. Do not intentionally leave broken intermediate commits; when two workflow steps must be committed together to keep the repository valid, combine them and record that reason in the handoff. Do not automatically stash normal ticket progress. Use stash only for unrelated local or user changes that block the current step, and never stash as a substitute for committing completed ticket work.
 
 ## Adversarial Review
 

@@ -106,7 +106,8 @@ Follow `openspec-apply-change`:
 5. Mark a task complete only after its code and related tests are updated.
 6. If implementation reveals extra required work, add a new OpenSpec task before doing that work.
 7. Keep OpenSpec specs, design notes, and tasks aligned with the latest implementation.
-8. Commit by deliverable work unit when practical: code, tests, and docs for the same behavior stay together. Do not split only by file type.
+8. Commit after each completed workflow step when tracked changes exist, then start the next step from a clean working tree. Use ticket- or OpenSpec-prefixed messages, skip empty commits, and keep code, tests, docs, and OpenSpec changes together when splitting them would leave a broken intermediate commit.
+9. Do not automatically stash normal ticket progress. Use stash only for unrelated local or user changes that block the current step.
 
 ### 4. Quality And Coverage Completion
 
@@ -145,13 +146,23 @@ When local hooks, configured quality tools, OpenSpec verification, PR review, or
 
 Run `openspec-verify-change` before PR handoff. Fix critical issues. Convert required follow-up into OpenSpec tasks and keep artifacts current with the final code state.
 
-### 7. Commit And Push
+### 7. Commit Checkpoints And Push
 
-1. Run Context Findings Review before staging.
-2. Stage only intentional files.
-3. Commit with a message that satisfies the configured commit hook and includes the Plane ticket or OpenSpec id.
-4. Let hooks run naturally. Do not bypass hooks unless the user explicitly requests that in the current chat.
-5. Push the branch.
+Use one PR with multiple commits as the default ticket shape. Chained PRs apply only when the Review Workload Forecast, OpenSpec artifacts, or user direction records that split.
+
+At each workflow-step checkpoint with tracked changes:
+
+1. Finish the step changes.
+2. Review `git status` and the relevant diff.
+3. Run the smallest relevant validation for that step, or document why validation is deferred to CI.
+4. Run Context Findings Review before staging docs, memory, or workflow-policy changes.
+5. Stage only files related to that completed step.
+6. Commit with a message that satisfies the configured commit hook and starts with the Plane ticket or OpenSpec id.
+7. Let hooks run naturally. Do not bypass hooks unless the user explicitly requests that in the current chat.
+
+Create checkpoint commits for OpenSpec refinement, implementation, tests or reusable QA coverage, docs/context/memory updates, review-feedback fixes, and ticket-scoped tooling/config fixes when those steps change tracked files. Skip empty commits. Do not intentionally leave broken intermediate commits; if two steps must stay together to keep the repository valid, combine them and report that reason in the handoff. Push the branch after the planned commit set is ready, and push again after each later feedback-fix commit.
+
+Do not automatically stash normal ticket progress. Use stash only for unrelated local or user changes that block the current step, and document the stash in the handoff when it affects delivery flow.
 
 ### Context Findings Review
 
