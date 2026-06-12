@@ -59,6 +59,14 @@ static void Run(string[] args)
                 Required(options, "plane-ticket-key"),
                 options.GetValueOrDefault("version-status", "unversioned"));
             break;
+        case "CreateArtifactPointer":
+            DeliveryWorkflowHelpers.CreateArtifactPointer(
+                Required(options, "output"),
+                Required(options, "version"),
+                Required(options, "artifact-commit-sha"),
+                Required(options, "plane-ticket-key"),
+                SplitList(options.GetValueOrDefault("included-tickets", string.Empty)));
+            break;
         case "BuildDeploymentConfig":
             DeploymentConfigBuildResult configResult = DeliveryWorkflowHelpers.BuildDeploymentConfig(
                 Required(options, "root"),

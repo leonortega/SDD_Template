@@ -137,6 +137,50 @@ namespace SDDTemplate.DeliveryTools
             File.WriteAllText(outputPath, JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true }));
         }
 
+        public static void CreateArtifactPointer(
+            string outputPath,
+            string version,
+            string artifactCommitSha,
+            string planeTicketKey,
+            IEnumerable<string> includedTickets,
+            DateTimeOffset? createdAtUtc = null)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(version);
+            ArgumentException.ThrowIfNullOrWhiteSpace(artifactCommitSha);
+            ArgumentException.ThrowIfNullOrWhiteSpace(planeTicketKey);
+
+            string[] normalizedTickets = [.. includedTickets
+                .Where(ticket => !string.IsNullOrWhiteSpace(ticket))
+                .Select(ticket => ticket.Trim())
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)];
+
+            if (normalizedTickets.Length == 0)
+            {
+                normalizedTickets = [planeTicketKey];
+            }
+
+            SortedDictionary<string, object?> pointer = new()
+            {
+                ["schemaVersion"] = 1,
+                ["version"] = version,
+                ["artifactCommitSha"] = artifactCommitSha,
+                ["canonicalPath"] = $"app/{artifactCommitSha}/",
+                ["releaseManifestPath"] = $"app/{artifactCommitSha}/release.json",
+                ["planeTicketKey"] = planeTicketKey,
+                ["includedTickets"] = normalizedTickets,
+                ["createdAtUtc"] = (createdAtUtc ?? DateTimeOffset.UtcNow).ToString("O", CultureInfo.InvariantCulture),
+            };
+
+            string? parent = Path.GetDirectoryName(outputPath);
+            if (!string.IsNullOrWhiteSpace(parent))
+            {
+                _ = Directory.CreateDirectory(parent);
+            }
+
+            File.WriteAllText(outputPath, JsonSerializer.Serialize(pointer, new JsonSerializerOptions { WriteIndented = true }));
+        }
+
         public static DeploymentConfigBuildResult BuildDeploymentConfig(string root, string topologyPath, string mappingPath, string outputPath)
         {
             JsonArray apps = ReadRequiredArray(topologyPath, "apps");

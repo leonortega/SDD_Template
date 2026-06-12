@@ -383,6 +383,7 @@ Use `.codex/skills/_shared/scripts/delivery_tools.ps1` for deterministic deliver
 - `ReadCoverageThreshold`: read the configured coverage minimum with the repo default fallback.
 - `ReadCoberturaLineRate`: read Cobertura coverage percent from XML without shell text parsing.
 - `ValidateReleaseManifest`: validate required `release.json` fields and version formats.
+- `CreateArtifactPointer`: write human-readable Nexus alias pointer JSON for QA-approved, RC, and final release metadata folders.
 - `ValidateTicketLock`: compare resolved ticket, branch, PR, artifact commit, RC, or final version against `.codex/delivery-context.local.json`.
 - `ValidateDeploymentLane`: enforce serialized deployment ownership from `.codex/parallel-delivery.local.json`.
 - `ValidateParallelDeliveryDryRun`: validate enabled state, planned ticket/worktree/branch uniqueness, serialized lane ownership, supported lane policy, and required ignored local runtime files without mutating Git, Plane, Gitea, Nexus, or Azure.
@@ -458,6 +459,8 @@ app/{commitSha}/release.json
 ```
 
 `deployable-apps.json` is the packaged copy of `infra/deployment/apps.json` sorted for deployment. `commit.sha` must exactly match the artifact commit. Every `{artifactName}.sha256` listed by the topology must verify before deployment.
+
+Human-readable Nexus version folders are aliases only. Do not move or rename canonical ZIP artifacts out of `app/{commitSha}/`. QA approval may publish `app/qa-approved/latest.json`, `app/rc/{sourceRcVersion}/artifact-pointer.json`, and `app/rc/{sourceRcVersion}/release.json`; PROD success may publish `app/releases/{finalReleaseVersion}/artifact-pointer.json` and `app/releases/{finalReleaseVersion}/release.json`. PROD push resolution must read `app/qa-approved/latest.json` and validate it against `commit.sha`, `release.json`, and the source RC tag before deploying.
 
 ## Deployment Configuration Drift
 

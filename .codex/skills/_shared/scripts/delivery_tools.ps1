@@ -1,12 +1,14 @@
 param(
   [Parameter(Mandatory = $true)]
-  [ValidateSet('ArtifactPaths', 'CheckGitIgnored', 'NextRcVersion', 'ReadDeliveryPolicy', 'ExtractTicketKey', 'ReadCoverageThreshold', 'ReadCoberturaLineRate', 'ValidateReleaseManifest', 'ValidateTicketLock', 'ValidateDeploymentLane', 'ValidateParallelDeliveryDryRun', 'InitializeWorkflowTelemetry', 'AppendWorkflowTelemetry', 'ReadWorkflowTelemetry', 'RenderPlaneComment', 'UpdateReleaseManifest')]
+  [ValidateSet('ArtifactPaths', 'CheckGitIgnored', 'NextRcVersion', 'ReadDeliveryPolicy', 'ExtractTicketKey', 'ReadCoverageThreshold', 'ReadCoberturaLineRate', 'ValidateReleaseManifest', 'CreateArtifactPointer', 'ValidateTicketLock', 'ValidateDeploymentLane', 'ValidateParallelDeliveryDryRun', 'InitializeWorkflowTelemetry', 'AppendWorkflowTelemetry', 'ReadWorkflowTelemetry', 'RenderPlaneComment', 'UpdateReleaseManifest')]
   [string] $Mode,
 
   [string] $CommitSha,
   [string] $Path,
   [string] $TargetVersion,
+  [string] $Version,
   [string] $TicketKey,
+  [string] $IncludedTickets,
   [string] $Branch,
   [string] $PrNumber,
   [string] $ArtifactCommitSha,
@@ -184,6 +186,39 @@ function Test-ReleaseManifest([string] $ManifestPath) {
     path = $ManifestPath
     valid = [bool]$validation.Valid
     errors = @($validation.Errors)
+  }
+}
+
+function New-ArtifactPointer([string] $OutputPath) {
+  if ([string]::IsNullOrWhiteSpace($OutputPath)) {
+    throw 'Path is required for CreateArtifactPointer.'
+  }
+  if ([string]::IsNullOrWhiteSpace($Version)) {
+    throw 'Version is required for CreateArtifactPointer.'
+  }
+  if ([string]::IsNullOrWhiteSpace($ArtifactCommitSha)) {
+    throw 'ArtifactCommitSha is required for CreateArtifactPointer.'
+  }
+  if ([string]::IsNullOrWhiteSpace($TicketKey)) {
+    throw 'TicketKey is required for CreateArtifactPointer.'
+  }
+
+  $arguments = @(
+    'CreateArtifactPointer',
+    '--output', $OutputPath,
+    '--version', $Version,
+    '--artifact-commit-sha', $ArtifactCommitSha,
+    '--plane-ticket-key', $TicketKey
+  )
+  if (-not [string]::IsNullOrWhiteSpace($IncludedTickets)) {
+    $arguments += @('--included-tickets', $IncludedTickets)
+  }
+
+  Invoke-DeliveryCli $arguments | Out-Null
+  [pscustomobject]@{
+    path = $OutputPath
+    version = $Version
+    artifactCommitSha = $ArtifactCommitSha
   }
 }
 
@@ -840,6 +875,7 @@ switch ($Mode) {
   'ReadCoverageThreshold' { Write-Json (Get-CoverageThreshold) }
   'ReadCoberturaLineRate' { Write-Json (Get-CoberturaLineRate) }
   'ValidateReleaseManifest' { Write-Json (Test-ReleaseManifest $Path) }
+  'CreateArtifactPointer' { Write-Json (New-ArtifactPointer $Path) }
   'ValidateTicketLock' { Write-Json (Test-TicketLock) }
   'ValidateDeploymentLane' { Write-Json (Test-DeploymentLane) }
   'ValidateParallelDeliveryDryRun' { Write-Json (Test-ParallelDeliveryDryRun) }

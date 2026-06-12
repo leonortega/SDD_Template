@@ -227,11 +227,32 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.Contains("github.ref == 'refs/heads/main'", prodJob);
             Assert.Contains("Resolve PROD promotion inputs", prodJob);
+            Assert.Contains("app/qa-approved/latest.json", prodJob);
+            Assert.Contains("test \"$artifact_commit_sha\" = \"$GITHUB_SHA\"", prodJob);
+            Assert.Contains("git fetch --depth 1 origin \"refs/tags/$source_rc_version:refs/tags/$source_rc_version\"", prodJob);
             Assert.Contains("PROD_ARTIFACT_COMMIT_SHA=$artifact_commit_sha", prodJob);
+            Assert.DoesNotContain("parent_count", prodJob);
+            Assert.DoesNotContain("candidates=()", prodJob);
             Assert.DoesNotContain("dotnet publish", prodJob);
             Assert.DoesNotContain("Upload artifact to Nexus", prodJob);
             Assert.DoesNotContain("deploy-dev", prodJob);
             Assert.DoesNotContain("deploy-qa", prodJob);
+        }
+
+        [Fact]
+        public void ReleaseWorkflowUsesHumanReadableNexusPointerAliases()
+        {
+            string workflow = ReadWorkflow();
+            string testE2eSkill = ReadSkill("test-e2e", "SKILL.md");
+            string deployToProdSkill = ReadSkill("deploy-to-prod", "SKILL.md");
+            string deploymentDoc = ReadDoc("deployment.md");
+
+            Assert.Contains("app/qa-approved/latest.json", workflow);
+            Assert.Contains("app/qa-approved/latest.json", testE2eSkill);
+            Assert.Contains("app/rc/{sourceRcVersion}/artifact-pointer.json", testE2eSkill);
+            Assert.Contains("app/releases/{finalReleaseVersion}/artifact-pointer.json", deployToProdSkill);
+            Assert.Contains("metadata aliases", deploymentDoc);
+            Assert.Contains("do not duplicate ZIP", deployToProdSkill);
         }
 
         [Fact]
@@ -368,6 +389,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("const apiBaseUrl", script);
             Assert.Contains("Access-Control-Allow-Origin", script);
             Assert.Contains("app/${GITHUB_SHA}/release.json", script);
+            Assert.Contains("app/qa-approved/latest.json", script);
+            Assert.Contains("test \"$artifact_commit_sha\" = \"$GITHUB_SHA\"", script);
             Assert.Contains("Package/deploy workflow should upload a baseline Nexus release manifest next to the artifact.", script);
         }
 
@@ -1467,7 +1490,8 @@ namespace SDDTemplate.DeliveryTools.Tests
                 "ValidateParallelDeliveryDryRun",
                 "RenderPlaneComment",
                 "WorkflowTiming",
-                "UpdateReleaseManifest"
+                "UpdateReleaseManifest",
+                "CreateArtifactPointer"
             })
             {
                 Assert.Contains(mode, contract);
@@ -1483,6 +1507,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("function Test-ParallelDeliveryDryRun", script);
             Assert.Contains("function Render-PlaneComment", script);
             Assert.Contains("function Update-ReleaseManifest", script);
+            Assert.Contains("function New-ArtifactPointer", script);
         }
 
         [Fact]
@@ -1502,6 +1527,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                     "ValidateTicketLock",
                     "ValidateDeploymentLane",
                     "UpdateReleaseManifest",
+                    "CreateArtifactPointer",
                     "RenderPlaneComment -Type E2EQA"
                 ],
                 ["deploy-to-prod"] =
@@ -1509,6 +1535,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                     "ValidateTicketLock",
                     "ValidateDeploymentLane",
                     "UpdateReleaseManifest",
+                    "CreateArtifactPointer",
                     "RenderPlaneComment -Type ProdDeployment"
                 ],
                 ["post-merge-deploy"] =

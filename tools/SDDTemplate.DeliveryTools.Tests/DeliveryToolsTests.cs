@@ -109,6 +109,35 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
+        public void CreateArtifactPointerWritesHumanReadableVersionAlias()
+        {
+            string root = CreateTempDirectory();
+            string pointerPath = Path.Combine(root, "artifact-pointer.json");
+
+            DeliveryWorkflowHelpers.CreateArtifactPointer(
+                pointerPath,
+                "v1.2.3-rc.1",
+                "abcdef1234567890",
+                "E2EPROJECT-1",
+                ["E2EPROJECT-2", "E2EPROJECT-1", "E2EPROJECT-1"],
+                DateTimeOffset.Parse("2026-06-12T10:15:30Z"));
+
+            using JsonDocument pointer = JsonDocument.Parse(File.ReadAllText(pointerPath));
+            JsonElement rootElement = pointer.RootElement;
+
+            Assert.Equal(1, rootElement.GetProperty("schemaVersion").GetInt32());
+            Assert.Equal("v1.2.3-rc.1", rootElement.GetProperty("version").GetString());
+            Assert.Equal("abcdef1234567890", rootElement.GetProperty("artifactCommitSha").GetString());
+            Assert.Equal("app/abcdef1234567890/", rootElement.GetProperty("canonicalPath").GetString());
+            Assert.Equal("app/abcdef1234567890/release.json", rootElement.GetProperty("releaseManifestPath").GetString());
+            Assert.Equal("E2EPROJECT-1", rootElement.GetProperty("planeTicketKey").GetString());
+            Assert.Equal("2026-06-12T10:15:30.0000000+00:00", rootElement.GetProperty("createdAtUtc").GetString());
+
+            string[] includedTickets = [.. rootElement.GetProperty("includedTickets").EnumerateArray().Select(item => item.GetString() ?? string.Empty)];
+            Assert.Equal(new[] { "E2EPROJECT-1", "E2EPROJECT-2" }, includedTickets);
+        }
+
+        [Fact]
         public void TicketReadinessClassifiesReadyEnrichableAndBlockedTickets()
         {
             TicketReadinessResult ready = DeliveryWorkflowHelpers.ClassifyTicketReadiness(

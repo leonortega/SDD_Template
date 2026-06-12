@@ -201,6 +201,7 @@ qa/{ticketKey}/{runId}/qa-evidence.zip
 7. If Nexus is unavailable but Plane attachments are configured and safe, attach evidence to Plane.
 8. If neither Nexus nor Plane attachments are available, include local evidence paths in the Plane comment and clearly label them as local-only fallback evidence.
 9. Use `UpdateReleaseManifest` after QA passes, adding source RC version, QA evidence URL, QA result, QA timestamp, tested URLs, and the E2E scenario summary while preserving existing artifact, checksum, PR, ticket, DEV, and QA deployment fields.
+10. Use `CreateArtifactPointer` to create `artifact-pointer.json` for the approved RC, then upload the pointer to `app/qa-approved/latest.json` and `app/rc/{sourceRcVersion}/artifact-pointer.json`; also upload the updated release manifest to `app/rc/{sourceRcVersion}/release.json`. These version paths are metadata aliases only; do not duplicate ZIP files there.
 
 Do not move a ticket to `plane.doneState` until the evidence link or fallback evidence path has been written to Plane. If evidence upload fails after tests pass, comment the upload failure, leave the ticket in QA, and report the blocking evidence publication issue.
 
@@ -223,6 +224,7 @@ Before moving a ticket to `plane.doneState`, establish a release-candidate marke
 6. Push the RC tag only after the QA result comment is ready and the tag target has been verified.
 7. Include the source RC version in the E2E QA Plane comment.
 8. Update the Nexus release manifest so `release.json` records `artifact commit -> source RC version -> pending final PROD version`.
+9. Upload human-readable Nexus aliases for the QA-approved artifact: `app/qa-approved/latest.json`, `app/rc/{sourceRcVersion}/artifact-pointer.json`, and `app/rc/{sourceRcVersion}/release.json`. Each pointer must name the source RC version, artifact commit SHA, canonical `app/{commitSha}/` path, release manifest path, primary Plane ticket, included ticket list, and creation timestamp.
 
 The RC tag is the human release-candidate identifier for the QA-approved artifact set. It must not replace the immutable Nexus identity under `app/{commitSha}/` from `deployable-apps.json` and each per-app ZIP/checksum pair.
 
