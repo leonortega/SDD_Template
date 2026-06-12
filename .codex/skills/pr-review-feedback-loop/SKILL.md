@@ -63,7 +63,7 @@ Required/defaulted values:
 8. Apply the requested code, test, documentation, or workflow change in the existing PR branch. Update OpenSpec specs or design artifacts when behavior changes.
 9. Run the relevant validation checks for changed files. Use the same quality-gate discovery and failure classification as `implement-ticket`. If feedback fixes touch `src/**.csproj`, `src/**/Program.cs`, `src/**/appsettings*.json`, `infra/deployment/**`, `infra/azure/**`, or `.gitea/workflows/package-deploy.yml`, run Deployment Topology Review through `configure-azure-environments` and report `Deployment topology: updated`, `Deployment topology: verified`, or `Deployment topology: no deployable app changes` in the Plane fix comment.
 10. Mark OpenSpec feedback tasks complete only after code and validation are complete.
-11. Commit the feedback batch as its own ticket-prefixed commit when tracked changes exist. Skip empty commits. Do not automatically stash normal ticket progress; use stash only for unrelated local or user changes that block the fix. Push the fix commit, then add a Plane comment with marker:
+11. Commit with the ticket key: commit the feedback batch as its own ticket-prefixed commit when tracked changes exist. Skip empty commits. Do not automatically stash normal ticket progress; use stash only for unrelated local or user changes that block the fix. Push the fix commit, then add a Plane comment with marker:
 
    ```text
    IA generated PR feedback fixes: {headSha}:{feedbackBatchId}

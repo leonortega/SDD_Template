@@ -680,7 +680,7 @@ function Add-QualityGateAuditFindings {
   if (-not (Test-Path (Join-RootPath $releaseWorkflow))) {
     Add-Item $Result "findings" $releaseWorkflow "" "Missing package/deploy workflow for Nexus artifact publication and Azure promotion." "warning"
   } else {
-    foreach ($expected in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "az webapp deploy", "az webapp config appsettings set", "az webapp config appsettings list", "classify-changes", "app_changed", "deploy_allowed", ".codex/delivery-policy.json", "ticketKeyPattern", "BASH_REMATCH", "refs/heads/dev", "refs/heads/main", "qa/**", "deploy-qa", "e2e-qa-branch", "deploy-prod", "artifact_commit_sha", "PROD_ARTIFACT_COMMIT_SHA", "release_version", "source_rc_version", "release.json", "CreateReleaseManifest", "ValidateReleaseManifest", "BuildDeploymentConfig", "infra/deployment/apps.json", "infra/deployment/configuration.json", "deployable-apps.json", "deployment-config.json", "const apiBaseUrl", "Access-Control-Allow-Origin", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_SITE_APP_NAME", "AZURE_QA_SITE_APP_URL", "AZURE_QA_API_APP_NAME", "AZURE_QA_API_APP_URL", "E2E_SITE_URL", "E2E_API_URL", "E2E_ARTIFACT_COMMIT_SHA", "qa-e2e-evidence.zip", "AZURE_PROD_RESOURCE_GROUP", "AZURE_PROD_SITE_APP_NAME", "AZURE_PROD_SITE_APP_URL", "AZURE_PROD_API_APP_NAME", "AZURE_PROD_API_APP_URL", "healthPath", '${app_url}${health_path}')) {
+    foreach ($expected in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "az webapp deploy", "az webapp config appsettings set", "az webapp config appsettings list", "classify-changes", "app_changed", "deploy_allowed", ".codex/delivery-policy.json", "ticketKeyPattern", "BASH_REMATCH", "refs/heads/dev", "refs/heads/main", "qa/**", "deploy-qa", "e2e-qa-branch", "deploy-prod", "artifact_commit_sha", "PROD_ARTIFACT_COMMIT_SHA", "release_version", "source_rc_version", "release.json", "CreateReleaseManifest", "ValidateReleaseManifest", "BuildDeploymentConfig", "infra/deployment/apps.json", "infra/deployment/configuration.json", "deployable-apps.json", "deployment-config.json", "app/qa-approved/latest.json", "const apiBaseUrl", "Access-Control-Allow-Origin", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_SITE_APP_NAME", "AZURE_QA_SITE_APP_URL", "AZURE_QA_API_APP_NAME", "AZURE_QA_API_APP_URL", "E2E_SITE_URL", "E2E_API_URL", "E2E_ARTIFACT_COMMIT_SHA", "qa-e2e-evidence.zip", "AZURE_PROD_RESOURCE_GROUP", "AZURE_PROD_SITE_APP_NAME", "AZURE_PROD_SITE_APP_URL", "AZURE_PROD_API_APP_NAME", "AZURE_PROD_API_APP_URL", "healthPath", '${app_url}${health_path}')) {
       if (-not (Test-FileContains $releaseWorkflow ([regex]::Escape($expected)))) {
         Add-Item $Result "findings" $releaseWorkflow $expected "Package/deploy workflow does not mention $expected." "warning"
       }
@@ -3373,7 +3373,28 @@ jobs:
           set -euo pipefail
 
           if [ "$GITHUB_EVENT_NAME" = "push" ]; then
-            artifact_commit_sha="$GITHUB_SHA"
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o qa-approved-latest.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/qa-approved/latest.json"
+            artifact_commit_sha="$(jq -r '.artifactCommitSha // empty' qa-approved-latest.json)"
+            source_rc_version="$(jq -r '.version // empty' qa-approved-latest.json)"
+            release_manifest_path="$(jq -r '.releaseManifestPath // empty' qa-approved-latest.json)"
+
+            test -n "$artifact_commit_sha"
+            test -n "$source_rc_version"
+            test "$release_manifest_path" = "app/$artifact_commit_sha/release.json"
+            [[ "$source_rc_version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]]
+            test "$artifact_commit_sha" = "$GITHUB_SHA"
+
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o commit.sha "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$artifact_commit_sha/commit.sha"
+            test "$(tr -d '[:space:]' < commit.sha)" = "$artifact_commit_sha"
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o release.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/$release_manifest_path"
+            test "$(jq -r '.commitSha // empty' release.json)" = "$artifact_commit_sha"
+            test "$(jq -r '.sourceRcVersion // empty' release.json)" = "$source_rc_version"
+            test "$(jq -r '.qaResult // empty' release.json)" = "PASS"
+            test -n "$(jq -r '.qaEvidenceUrl // empty' release.json)"
+            test "$(jq -c '(.includedTickets // [.planeTicketKey]) | sort' qa-approved-latest.json)" = "$(jq -c '(.includedTickets // [.planeTicketKey]) | sort' release.json)"
+
+            git fetch --depth 1 origin "refs/tags/$source_rc_version:refs/tags/$source_rc_version"
+            test "$(git rev-list -n 1 "$source_rc_version")" = "$artifact_commit_sha"
           else
             artifact_commit_sha="$ARTIFACT_COMMIT_SHA"
             test -n "$RELEASE_VERSION"
@@ -3383,6 +3404,10 @@ jobs:
           test -n "$artifact_commit_sha"
           echo "PROD_ARTIFACT_COMMIT_SHA=$artifact_commit_sha" >> "$GITHUB_ENV"
         env:
+          NEXUS_URL: ${{ secrets.NEXUS_URL }}
+          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+          NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
           ARTIFACT_COMMIT_SHA: ${{ github.event.inputs.artifact_commit_sha }}
           RELEASE_VERSION: ${{ github.event.inputs.release_version }}
           SOURCE_RC_VERSION: ${{ github.event.inputs.source_rc_version }}
