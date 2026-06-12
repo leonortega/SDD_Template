@@ -44,6 +44,16 @@ Repo-managed provisioning:
 - `infra/monitoring/grafana/provisioning/dashboards/dashboards.yml`
 
 Local generated dashboard files belong in ignored `infra/monitoring/grafana/dashboards.local/`.
+`SetGrafanaAzureMonitor` generates one Azure Monitor dashboard per environment with:
+
+- Azure log activity.
+- App Service `/health` check activity and failures.
+- Recent `/health` check rows.
+- Recent Azure App Service logs.
+
+It also generates one explicit health dashboard per environment named `DEV Health Dashboard`, `QA Health Dashboard`, and `PROD Health Dashboard`. Each health dashboard uses red/green stat blocks for the web and API App Service `/health` state. A block is green only when the latest `/health` row for that app returned HTTP 2xx within the last 24 hours; missing, stale, or non-2xx rows are red. The dashboard keeps a 7-day lookback so older health evidence still explains why a block is stale instead of showing an empty panel.
+
+`Audit` reports stale generated dashboards when the local dashboard JSON does not include the `/health` panels or explicit health dashboards.
 
 Default datasource:
 
