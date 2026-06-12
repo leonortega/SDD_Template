@@ -63,13 +63,13 @@ Required/defaulted values:
 8. Apply the requested code, test, documentation, or workflow change in the existing PR branch. Update OpenSpec specs or design artifacts when behavior changes.
 9. Run the relevant validation checks for changed files. Use the same quality-gate discovery and failure classification as `implement-ticket`. If feedback fixes touch `src/**.csproj`, `src/**/Program.cs`, `src/**/appsettings*.json`, `infra/deployment/**`, `infra/azure/**`, or `.gitea/workflows/package-deploy.yml`, run Deployment Topology Review through `configure-azure-environments` and report `Deployment topology: updated`, `Deployment topology: verified`, or `Deployment topology: no deployable app changes` in the Plane fix comment.
 10. Mark OpenSpec feedback tasks complete only after code and validation are complete.
-11. Commit with the ticket key, push the fix, and add a Plane comment with marker:
+11. Commit the feedback batch as its own ticket-prefixed commit when tracked changes exist. Skip empty commits. Do not automatically stash normal ticket progress; use stash only for unrelated local or user changes that block the fix. Push the fix commit, then add a Plane comment with marker:
 
    ```text
    IA generated PR feedback fixes: {headSha}:{feedbackBatchId}
    ```
 
-   Include source ids or links addressed, OpenSpec tasks completed, commit SHA pushed, validation run, skipped comments, and remaining blockers.
+   Include source ids or links addressed, OpenSpec tasks completed, commit SHA pushed, validation run, skipped comments, stash notes when relevant, and remaining blockers.
    Use the Plane work-item comments API payload fields `comment_html` and `comment_stripped`; do not use Gitea-style `comment` or `body` fields. If a generated comment is accidentally blank, patch that comment id with the same payload shape and then read it back before handoff.
 12. Rerun the AI review loop on the new head before returning to human review or implementation handoff.
 
