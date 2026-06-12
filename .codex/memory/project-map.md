@@ -33,11 +33,12 @@ artifacts/qa/
 
 - Type: Fact
 - Status: Active
-- Source: `README.md`, `docs/architecture.md`
-- Last verified: 2026-05-29
+- Source: `README.md`, `docs/architecture.md`, `docs/deployment.md`
+- Last verified: 2026-06-12
 
-- Local Docker Compose provides Plane, Gitea, Gitea Actions runner, Nexus, Dozzle, and Grafana.
-- Grafana uses Azure Monitor and Log Analytics for Azure application logs and health visibility.
+- Local Docker Compose provides Plane, Gitea, Gitea Actions runner, Nexus, Dozzle, Grafana, and Seq.
+- Seq imports DEV, QA, and PROD Azure App Service logs from Log Analytics for local log search.
+- Grafana uses Azure Monitor and Log Analytics for health/status dashboards.
 - Azure hosts only DEV, QA, and PROD application runtimes.
 - Nexus stores immutable application artifacts and release manifests.
 - Plane records ticket state, generated workflow markers, and human-readable delivery comments.

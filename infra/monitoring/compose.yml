@@ -1,10 +1,13 @@
-name: agentic-monitoring
+name: agentic-e2e
 
 networks:
   monitoring:
 
 volumes:
   grafana-data:
+  seq-data:
+  otelcol-data:
+  prometheus-data:
 
 services:
   dozzle:
@@ -24,10 +27,8 @@ services:
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
-      GRAFANA_AZURE_TENANT_ID: ${GRAFANA_AZURE_TENANT_ID:-}
-      GRAFANA_AZURE_CLIENT_ID: ${GRAFANA_AZURE_CLIENT_ID:-}
-      GRAFANA_AZURE_CLIENT_SECRET: ${GRAFANA_AZURE_CLIENT_SECRET:-}
-      GRAFANA_AZURE_SUBSCRIPTION_ID: ${GRAFANA_AZURE_SUBSCRIPTION_ID:-}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
     ports:
       - "3001:3000"
     volumes:
@@ -35,6 +36,79 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
       - ./grafana/dashboards.local:/var/lib/grafana/dashboards.local:ro
+    depends_on:
+      - prometheus
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: agentic-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    ports:
+      - "127.0.0.1:9091:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/targets.local.yml:/etc/prometheus/targets.local.yml:ro
+      - prometheus-data:/prometheus
+    depends_on:
+      - blackbox-exporter
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.26.0
+    container_name: agentic-blackbox
+    command:
+      - --config.file=/etc/blackbox_exporter/config.yml
+    ports:
+      - "127.0.0.1:9115:9115"
+    volumes:
+      - ./prometheus/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  seq:
+    image: datalust/seq:2025.2.16202
+    container_name: agentic-seq
+    environment:
+      ACCEPT_EULA: "Y"
+      SEQ_FIRSTRUN_NOAUTHENTICATION: "True"
+      SEQ_API_CANONICALURI: http://localhost:5341/
+    ports:
+      - "127.0.0.1:5341:80"
+    volumes:
+      - seq-data:/data
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  otelcol:
+    image: otel/opentelemetry-collector-contrib:0.154.0
+    container_name: agentic-otelcol
+    profiles:
+      - eventhub
+    command:
+      - --config=/etc/otelcol-contrib/collector.yaml
+    environment:
+      OTELCOL_SEQ_OTLP_ENDPOINT: ${OTELCOL_SEQ_OTLP_ENDPOINT:-http://seq:5341/ingest/otlp}
+      OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING: ${OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING:-}
+      OTELCOL_AZURE_EVENT_HUB_QA_CONNECTION_STRING: ${OTELCOL_AZURE_EVENT_HUB_QA_CONNECTION_STRING:-}
+      OTELCOL_AZURE_EVENT_HUB_PROD_CONNECTION_STRING: ${OTELCOL_AZURE_EVENT_HUB_PROD_CONNECTION_STRING:-}
+      OTELCOL_AZURE_EVENT_HUB_DEV_CONSUMER_GROUP: ${OTELCOL_AZURE_EVENT_HUB_DEV_CONSUMER_GROUP:-$$Default}
+      OTELCOL_AZURE_EVENT_HUB_QA_CONSUMER_GROUP: ${OTELCOL_AZURE_EVENT_HUB_QA_CONSUMER_GROUP:-$$Default}
+      OTELCOL_AZURE_EVENT_HUB_PROD_CONSUMER_GROUP: ${OTELCOL_AZURE_EVENT_HUB_PROD_CONSUMER_GROUP:-$$Default}
+    volumes:
+      - ./otelcol/collector.yaml:/etc/otelcol-contrib/collector.yaml:ro
+      - otelcol-data:/var/lib/otelcol-contrib
+    depends_on:
+      - seq
     networks:
       - monitoring
     restart: unless-stopped

@@ -12,14 +12,14 @@ Push-triggered deployment is allowed only for ticket-named application changes u
 
 ## Technology Stack And Tool Set
 
-Deployment tooling is intentionally local-first except for the application runtimes. Gitea Actions packages and deploys ticket-gated application changes, Nexus stores the exact artifact and `release.json`, Azure App Service hosts DEV/QA/PROD web and API runtimes, and local Grafana uses Azure Monitor plus Log Analytics for configured log and health visibility.
+Deployment tooling is intentionally local-first except for the application runtimes. Gitea Actions packages and deploys ticket-gated application changes, Nexus stores the exact artifact and `release.json`, Azure App Service hosts DEV/QA/PROD web and API runtimes, and local Seq consumes Azure Event Hub for DEV/QA/PROD log search.
 
 - Nexus paths under `app/{commitSha}/` are the durable artifact identity; environments must promote that same ZIP and checksum instead of rebuilding.
 - Azure deployment uses App Service ZIP deployment from the existing Nexus artifact.
 - The Blazor site project (`src/SDDTemplate.Site`) and REST API project (`src/SDDTemplate.Api`) are separated so Azure environments can host web and API App Service apps independently. The API references `src/SDDTemplate.Data` for EF Core entities, DbContext, migrations, and database setup.
-- App Service diagnostic settings send logs to the matching DEV, QA, or PROD Log Analytics workspace using dedicated resource tables.
-- Grafana dashboards are provisioned from tracked files and generated local-only dashboard files, and should query Azure Monitor without embedding secrets. Generated environment dashboards include Azure log activity plus App Service `/health` activity and recent health rows, and each environment also has an explicit health dashboard with red/green blocks per web/API app.
-- Azure Monitor log validation is executable through `infra/monitoring/validate-azure-monitor-logs.ps1` after Grafana Azure service-principal values and environment workspace IDs are configured in ignored local env files. The script fails closed when required variables are absent or recent logs for any environment are not observed in Log Analytics.
+- Seq runs locally at `http://localhost:5341` and imports Azure App Service console logs through the optional Event Hub profile and OpenTelemetry Collector Contrib into Seq. Imported events include environment, workspace, resource, category, source, timestamp, and message fields for DEV/QA/PROD search.
+- Grafana dashboards are provisioned from tracked files and generated local-only dashboard files.
+- Seq search validation is executable by starting local monitoring, enabling the `eventhub` compose profile for the collector path, then searching Seq for `Environment = 'DEV'`, `Environment = 'QA'`, and `Environment = 'PROD'`.
 - QA evidence is retained locally under ignored paths and preferably published to Nexus under `qa/{ticketKey}/{runId}/qa-evidence.zip`.
 - Deployment guidance is mapped through `project-guidance-mapper`; missing deployment, observability, QA, security, release, or rollback skills and references are discovered by `project-guidance-discover`, copied only through `project-guidance-acquire` when they are confirmed skill items, and otherwise kept as local catalog guidance.
 
