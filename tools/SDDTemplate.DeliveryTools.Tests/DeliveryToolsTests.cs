@@ -1259,6 +1259,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("| Stage | Outcome | Duration | Started UTC | Finished UTC |", output);
             Assert.Contains("| `plane-start-ticket` | PASS | 2m 14s | 2026-06-03T10:00:00Z | 2026-06-03T10:02:14Z |", output);
             Assert.Contains("| `implement-ticket` | BLOCKED | 1h 00m 05s | 2026-06-03T10:02:14Z | 2026-06-03T11:02:19Z |", output);
+            Assert.Contains("| `pr-review-feedback-loop` | NOT RUN / N/A | no time | - | - |", output);
+            Assert.Contains("| `test-e2e` | NOT RUN / N/A | no time | - | - |", output);
             Assert.DoesNotContain("token", output, StringComparison.OrdinalIgnoreCase);
         }
 
@@ -1424,6 +1426,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("IA generated workflow timing: E2EPROJECT-123", comment);
             Assert.Contains("- Total elapsed: 4m 30s", comment);
             Assert.Contains("| `implement-ticket` | PASS | 3m 30s | 2026-06-09T10:01:00Z | 2026-06-09T10:04:30Z |", comment);
+            Assert.Contains("| `post-merge-deploy` | NOT RUN / N/A | no time | - | - |", comment);
+            Assert.Contains("| `test-e2e` | NOT RUN / N/A | no time | - | - |", comment);
         }
 
         private static string[] GetJsonErrors(JsonDocument document)

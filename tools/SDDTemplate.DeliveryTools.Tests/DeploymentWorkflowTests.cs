@@ -144,8 +144,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("- name: Apply and verify QA deployment configuration\n        shell: bash", normalizedWorkflow);
             Assert.Contains("- name: Deploy QA topology apps\n        shell: bash", normalizedWorkflow);
             Assert.Contains("- name: Smoke check QA topology apps\n        shell: bash", normalizedWorkflow);
-            Assert.DoesNotContain("\n  e2e-qa:\n", normalizedWorkflow);
-            Assert.Contains("\n  e2e-qa-branch:\n", normalizedWorkflow);
+            Assert.Contains("\n  e2e-qa:\n", normalizedWorkflow);
+            Assert.DoesNotContain("\n  e2e-qa-branch:\n", normalizedWorkflow);
             Assert.Contains("- name: Apply and verify PROD deployment configuration\n        shell: bash", normalizedWorkflow);
             Assert.Contains("- name: Deploy PROD topology apps\n        shell: bash", normalizedWorkflow);
             Assert.Contains("- name: Smoke check PROD topology apps\n        shell: bash", normalizedWorkflow);
@@ -156,9 +156,9 @@ namespace SDDTemplate.DeliveryTools.Tests
         {
             string workflow = ReadWorkflow();
             string normalizedWorkflow = NormalizeLineEndings(workflow);
-            string e2eJob = GetJobSection(workflow, "e2e-qa-branch");
+            string e2eJob = GetJobSection(workflow, "e2e-qa");
 
-            Assert.DoesNotContain("\n  e2e-qa:\n", normalizedWorkflow);
+            Assert.DoesNotContain("\n  e2e-qa-branch:\n", normalizedWorkflow);
             Assert.Contains("startsWith(github.ref, 'refs/heads/qa/')", e2eJob);
             Assert.Contains("git merge-base HEAD origin/dev", e2eJob);
             Assert.Contains("tests/SDDTemplate.E2ETests", e2eJob);
@@ -176,7 +176,7 @@ namespace SDDTemplate.DeliveryTools.Tests
         public void PackageWorkflowRunsQaBranchE2eWithoutRedeploying()
         {
             string workflow = ReadWorkflow();
-            string branchJob = GetJobSection(workflow, "e2e-qa-branch");
+            string branchJob = GetJobSection(workflow, "e2e-qa");
 
             Assert.Contains("- qa/**", workflow);
             Assert.Contains("startsWith(github.ref, 'refs/heads/qa/')", branchJob);
@@ -407,8 +407,8 @@ namespace SDDTemplate.DeliveryTools.Tests
                 "README.md"));
             string e2eSkill = ReadSkill("test-e2e", "SKILL.md");
 
-            Assert.Contains("  e2e-qa-branch:", script);
-            Assert.DoesNotContain("\n  e2e-qa:\n", NormalizeLineEndings(script));
+            Assert.Contains("  e2e-qa:", script);
+            Assert.DoesNotContain("\n  e2e-qa-branch:\n", NormalizeLineEndings(script));
             Assert.Contains("qa-e2e-evidence.zip", script);
             Assert.Contains("E2E_SITE_URL", script);
             Assert.Contains("E2E_API_URL", script);

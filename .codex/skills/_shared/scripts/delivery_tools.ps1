@@ -498,6 +498,52 @@ function Get-LongProperty($Object, [string] $Name) {
   return [long]$value
 }
 
+function Get-WorkflowTimingStageRows($StageRows) {
+  $standardStages = @(
+    'plane-start-ticket',
+    'implement-ticket',
+    'pr-review-feedback-loop',
+    'gitea-pr-review-agent',
+    'post-merge-deploy',
+    'deploy-to-qa',
+    'test-e2e'
+  )
+
+  $inputRows = @($StageRows | Where-Object { $null -ne $_ })
+  $expandedRows = [System.Collections.Generic.List[object]]::new()
+  $includedIndexes = [System.Collections.Generic.HashSet[int]]::new()
+
+  foreach ($standardStage in $standardStages) {
+    $matched = $false
+    for ($index = 0; $index -lt $inputRows.Count; $index++) {
+      $stageName = [string](Get-ObjectProperty $inputRows[$index] 'stage')
+      if ($stageName -eq $standardStage) {
+        $expandedRows.Add($inputRows[$index])
+        [void]$includedIndexes.Add($index)
+        $matched = $true
+      }
+    }
+
+    if (-not $matched) {
+      $expandedRows.Add([pscustomobject]@{
+        stage = $standardStage
+        outcome = 'NOT RUN / N/A'
+        elapsedMilliseconds = $null
+        startedUtc = '-'
+        finishedUtc = '-'
+      })
+    }
+  }
+
+  for ($index = 0; $index -lt $inputRows.Count; $index++) {
+    if (-not $includedIndexes.Contains($index)) {
+      $expandedRows.Add($inputRows[$index])
+    }
+  }
+
+  return @($expandedRows)
+}
+
 function Get-WorkflowTelemetryPath {
   Resolve-RepoPath $Path '.codex/agent-telemetry.local.jsonl'
 }
@@ -795,7 +841,7 @@ function Render-PlaneComment {
         throw 'ticketKey is required for WorkflowTiming comments.'
       }
 
-      $stageRows = @((Get-ObjectProperty $data 'stages'))
+      $stageRows = Get-WorkflowTimingStageRows @((Get-ObjectProperty $data 'stages'))
       $totalElapsedMilliseconds = Get-LongProperty $data 'totalElapsedMilliseconds'
       if ($null -eq $totalElapsedMilliseconds) {
         $totalElapsedMilliseconds = 0
@@ -828,7 +874,8 @@ function Render-PlaneComment {
         if ([string]::IsNullOrWhiteSpace($stageName)) { $stageName = 'unknown' }
         if ([string]::IsNullOrWhiteSpace($outcome)) { $outcome = 'unknown' }
 
-        $lines += "| ``$stageName`` | $outcome | $(Format-Duration $elapsed) | $startedUtc | $finishedUtc |"
+        $duration = if ($outcome -eq 'NOT RUN / N/A') { 'no time' } else { Format-Duration $elapsed }
+        $lines += "| ``$stageName`` | $outcome | $duration | $startedUtc | $finishedUtc |"
       }
 
       return ($lines -join [Environment]::NewLine)
