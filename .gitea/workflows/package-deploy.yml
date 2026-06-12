@@ -553,7 +553,7 @@ jobs:
           AZURE_QA_SITE_APP_URL: ${{ secrets.AZURE_QA_SITE_APP_URL }}
           AZURE_QA_API_APP_URL: ${{ secrets.AZURE_QA_API_APP_URL }}
 
-  e2e-qa-branch:
+  e2e-qa:
     runs-on: ubuntu-latest
     container:
       image: agentic/e2e-ci:playwright-1.57.0-1

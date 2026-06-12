@@ -227,6 +227,15 @@ PowerShell `ConvertFrom-Json` can coerce ISO timestamp strings into `DateTime` v
 
 When `.codex/agent-telemetry.local.jsonl` is absent or a delivery run missed telemetry writes, treat that as a workflow instrumentation failure. Initialize or clear telemetry at selected ticket start with `InitializeWorkflowTelemetry`, append stage rows with `AppendWorkflowTelemetry`, read active ticket rows with `ReadWorkflowTelemetry`, then render `IA generated workflow timing: {ticketKey}` with `RenderPlaneComment -Type WorkflowTiming`. Do not derive workflow timing from generated Plane marker timestamps. Verify the posted comment by reading Plane comments back and matching the timing marker.
 
+## Noncanonical QA Evidence Marker Bypasses Timing Finalization
+
+- Type: Pattern
+- Status: Active
+- Source: E2EPROJECT-6 Plane comments and `.codex/agent-telemetry.local.jsonl`
+- Last verified: 2026-06-12
+
+If a ticket is moved to Done after a Gitea QA evidence run using a noncanonical marker such as `IA generated QA evidence: {ticketKey}` instead of the `test-e2e` marker `IA generated E2E QA: {ticketKey}`, the `test-e2e` finalization path may never append a `test-e2e` telemetry row or post `IA generated workflow timing: {ticketKey}`. Treat Done state plus QA evidence marker as insufficient; rerun or repair through `test-e2e` so the canonical E2E QA marker, workflow timing comment, and telemetry row are verified.
+
 ## Azure Event Hubs Kafka 9093 EOF Can Be Network-Side
 
 - Type: Pattern
