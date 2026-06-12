@@ -1850,6 +1850,32 @@ function Invoke-Audit {
   $localDashboardDirectory = "infra/monitoring/grafana/dashboards.local"
   if (-not (Test-Path (Join-RootPath $localDashboardDirectory))) {
     Add-Item $result "findings" $localDashboardDirectory "azure-monitor-dashboards" "Generated local Azure Monitor dashboards are missing. Run SetGrafanaAzureMonitor after Azure environments are deployed." "info" "pre-start"
+  } else {
+    foreach ($envName in @("dev", "qa", "prod")) {
+      $dashboardFile = "$localDashboardDirectory/$envName-azure-monitor.json"
+      $dashboardPath = Join-RootPath $dashboardFile
+      if (-not (Test-Path $dashboardPath)) {
+        Add-Item $result "findings" $dashboardFile "azure-monitor-dashboard" "Generated $envName Azure Monitor dashboard is missing. Run SetGrafanaAzureMonitor after Azure environments are deployed." "info" "pre-start"
+        continue
+      }
+
+      $dashboardContent = Get-Content -Raw -Path $dashboardPath
+      if ($dashboardContent -notmatch "/health" -or $dashboardContent -notmatch "App Service Health") {
+        Add-Item $result "findings" $dashboardFile "azure-monitor-health-dashboard" "Generated Azure Monitor dashboard is stale and does not include App Service /health panels. Run SetGrafanaAzureMonitor to regenerate dashboards." "warning" "pre-start"
+      }
+
+      $healthDashboardFile = "$localDashboardDirectory/$envName-health-dashboard.json"
+      $healthDashboardPath = Join-RootPath $healthDashboardFile
+      if (-not (Test-Path $healthDashboardPath)) {
+        Add-Item $result "findings" $healthDashboardFile "health-dashboard" "Generated $envName health dashboard is missing. Run SetGrafanaAzureMonitor to regenerate dashboards." "warning" "pre-start"
+        continue
+      }
+
+      $healthDashboardContent = Get-Content -Raw -Path $healthDashboardPath
+      if ($healthDashboardContent -notmatch "/health" -or $healthDashboardContent -notmatch "Health Dashboard") {
+        Add-Item $result "findings" $healthDashboardFile "health-dashboard" "Generated health dashboard is stale. Run SetGrafanaAzureMonitor to regenerate dashboards." "warning" "pre-start"
+      }
+    }
   }
 
   try {
@@ -3853,6 +3879,28 @@ union isfuzzy=true AppServiceConsoleLogs, AppServiceAppLogs, AppServiceHTTPLogs,
 | order by TimeGenerated asc
 "@
 
+  $healthKql = @"
+AppServiceHTTPLogs
+| where TimeGenerated >= ago(6h)
+| extend Path = tostring(column_ifexists("CsUriStem", ""))
+| where Path == "/health" or Path endswith "/health"
+| extend StatusCode = toint(column_ifexists("ScStatus", int(null)))
+| summarize Checks = count(), Failures = countif(StatusCode < 200 or StatusCode >= 300) by bin(TimeGenerated, 5m), ResourceId = tostring(column_ifexists("_ResourceId", ""))
+| extend Healthy = Checks - Failures
+| order by TimeGenerated asc
+"@
+
+  $recentHealthKql = @"
+AppServiceHTTPLogs
+| where TimeGenerated >= ago(6h)
+| extend Path = tostring(column_ifexists("CsUriStem", ""))
+| where Path == "/health" or Path endswith "/health"
+| extend StatusCode = toint(column_ifexists("ScStatus", int(null)))
+| project TimeGenerated, ResourceId = tostring(column_ifexists("_ResourceId", "")), Path, StatusCode, Method = tostring(column_ifexists("CsMethod", "")), UserAgent = tostring(column_ifexists("UserAgent", ""))
+| order by TimeGenerated desc
+| take 100
+"@
+
   $dashboard = [ordered]@{
     annotations = [ordered]@{
       list = @(
@@ -3901,8 +3949,57 @@ union isfuzzy=true AppServiceConsoleLogs, AppServiceAppLogs, AppServiceHTTPLogs,
       [ordered]@{
         datasource = [ordered]@{ type = "grafana-azure-monitor-datasource"; uid = "azure-monitor" }
         fieldConfig = [ordered]@{ defaults = [ordered]@{}; overrides = @() }
-        gridPos = [ordered]@{ h = 14; w = 24; x = 0; y = 8 }
+        gridPos = [ordered]@{ h = 8; w = 24; x = 0; y = 8 }
         id = 2
+        options = [ordered]@{
+          legend = [ordered]@{ displayMode = "list"; placement = "bottom"; showLegend = $true }
+          tooltip = [ordered]@{ mode = "single"; sort = "none" }
+        }
+        targets = @(
+          [ordered]@{
+            azureLogAnalytics = [ordered]@{
+              query = $healthKql
+              resources = @($WorkspaceResourceId)
+              resultFormat = "time_series"
+            }
+            datasource = [ordered]@{ type = "grafana-azure-monitor-datasource"; uid = "azure-monitor" }
+            queryType = "Azure Log Analytics"
+            refId = "A"
+          }
+        )
+        title = "$upper App Service Health"
+        type = "timeseries"
+      },
+      [ordered]@{
+        datasource = [ordered]@{ type = "grafana-azure-monitor-datasource"; uid = "azure-monitor" }
+        fieldConfig = [ordered]@{ defaults = [ordered]@{}; overrides = @() }
+        gridPos = [ordered]@{ h = 8; w = 24; x = 0; y = 16 }
+        id = 3
+        options = [ordered]@{
+          cellHeight = "sm"
+          footer = [ordered]@{ countRows = $false; fields = ""; reducer = @("sum"); show = $false }
+          showHeader = $true
+        }
+        targets = @(
+          [ordered]@{
+            azureLogAnalytics = [ordered]@{
+              query = $recentHealthKql
+              resources = @($WorkspaceResourceId)
+              resultFormat = "table"
+            }
+            datasource = [ordered]@{ type = "grafana-azure-monitor-datasource"; uid = "azure-monitor" }
+            queryType = "Azure Log Analytics"
+            refId = "A"
+          }
+        )
+        title = "$upper Recent Health Checks"
+        type = "table"
+      },
+      [ordered]@{
+        datasource = [ordered]@{ type = "grafana-azure-monitor-datasource"; uid = "azure-monitor" }
+        fieldConfig = [ordered]@{ defaults = [ordered]@{}; overrides = @() }
+        gridPos = [ordered]@{ h = 10; w = 24; x = 0; y = 24 }
+        id = 4
         options = [ordered]@{
           cellHeight = "sm"
           footer = [ordered]@{ countRows = $false; fields = ""; reducer = @("sum"); show = $false }
@@ -3933,6 +4030,197 @@ union isfuzzy=true AppServiceConsoleLogs, AppServiceAppLogs, AppServiceHTTPLogs,
     timezone = "browser"
     title = "$upper Azure Monitor"
     uid = "agentic-$EnvironmentName-azure-monitor"
+    version = 1
+    weekStart = ""
+  }
+
+  return ($dashboard | ConvertTo-Json -Depth 30)
+}
+
+function New-AzureMonitorHealthDashboard {
+  param(
+    [string]$EnvironmentName,
+    [string]$WorkspaceResourceId
+  )
+
+  $upper = $EnvironmentName.ToUpperInvariant()
+  $healthKql = @"
+AppServiceHTTPLogs
+| where TimeGenerated >= ago(7d)
+| extend Path = tostring(CsUriStem)
+| where Path == '/health' or Path endswith '/health'
+| extend StatusCode = toint(column_ifexists("ScStatus", int(null)))
+| summarize Checks = count(), Failures = countif(StatusCode < 200 or StatusCode >= 300) by bin(TimeGenerated, 5m), ResourceId = tostring(column_ifexists("_ResourceId", ""))
+| extend Healthy = Checks - Failures
+| order by TimeGenerated asc
+"@
+
+  $recentHealthKql = @"
+AppServiceHTTPLogs
+| where TimeGenerated >= ago(7d)
+| extend Path = tostring(CsUriStem)
+| where Path == '/health' or Path endswith '/health'
+| extend StatusCode = toint(column_ifexists("ScStatus", int(null)))
+| extend Result = iff(StatusCode >= 200 and StatusCode < 300, "ok", "failed")
+| project TimeGenerated, Result, StatusCode, ResourceId = tostring(column_ifexists("_ResourceId", "")), Path, Method = tostring(column_ifexists("CsMethod", "")), UserAgent = tostring(column_ifexists("UserAgent", ""))
+| order by TimeGenerated desc
+| take 200
+"@
+
+  $webStatusKql = @"
+AppServiceHTTPLogs
+| where TimeGenerated >= ago(7d)
+| where CsUriStem == '/health' or CsUriStem endswith '/health'
+| where CsHost contains 'web'
+| extend StatusCode = toint(ScStatus)
+| top 1 by TimeGenerated desc
+| extend Value = iff(StatusCode >= 200 and StatusCode < 300 and TimeGenerated >= ago(24h), 1, 0)
+| project TimeGenerated = now(), Value
+"@
+
+  $apiStatusKql = @"
+AppServiceHTTPLogs
+| where TimeGenerated >= ago(7d)
+| where CsUriStem == '/health' or CsUriStem endswith '/health'
+| where CsHost contains 'api'
+| extend StatusCode = toint(ScStatus)
+| top 1 by TimeGenerated desc
+| extend Value = iff(StatusCode >= 200 and StatusCode < 300 and TimeGenerated >= ago(24h), 1, 0)
+| project TimeGenerated = now(), Value
+"@
+
+  $dashboard = [ordered]@{
+    annotations = [ordered]@{
+      list = @(
+        [ordered]@{
+          builtIn = 1
+          datasource = [ordered]@{ type = "grafana"; uid = "-- Grafana --" }
+          enable = $true
+          hide = $true
+          iconColor = "rgba(0, 211, 255, 1)"
+          name = "Annotations & Alerts"
+          type = "dashboard"
+        }
+      )
+    }
+    editable = $true
+    fiscalYearStartMonth = 0
+    graphTooltip = 0
+    id = $null
+    links = @()
+    liveNow = $false
+    panels = @(
+      [ordered]@{
+        datasource = [ordered]@{ type = "grafana-azure-monitor-datasource"; uid = "azure-monitor" }
+        fieldConfig = [ordered]@{
+          defaults = [ordered]@{
+            color = [ordered]@{ mode = "thresholds" }
+            mappings = @(
+              [ordered]@{ options = [ordered]@{ "0" = [ordered]@{ color = "red"; text = "FAIL/STALE" }; "1" = [ordered]@{ color = "green"; text = "OK" } }; type = "value" }
+            )
+            thresholds = [ordered]@{ mode = "absolute"; steps = @([ordered]@{ color = "red"; value = $null }, [ordered]@{ color = "green"; value = 1 }) }
+          }
+          overrides = @()
+        }
+        gridPos = [ordered]@{ h = 8; w = 12; x = 0; y = 0 }
+        id = 1
+        options = [ordered]@{
+          colorMode = "background"
+          graphMode = "none"
+          justifyMode = "center"
+          orientation = "auto"
+          reduceOptions = [ordered]@{ calcs = @("lastNotNull"); fields = ""; values = $false }
+          textMode = "value_and_name"
+          wideLayout = $true
+        }
+        targets = @(
+          [ordered]@{
+            azureLogAnalytics = [ordered]@{
+              query = $webStatusKql
+              resources = @($WorkspaceResourceId)
+              resultFormat = "time_series"
+            }
+            datasource = [ordered]@{ type = "grafana-azure-monitor-datasource"; uid = "azure-monitor" }
+            queryType = "Azure Log Analytics"
+            refId = "A"
+          }
+        )
+        title = "$upper Web /health"
+        type = "stat"
+      },
+      [ordered]@{
+        datasource = [ordered]@{ type = "grafana-azure-monitor-datasource"; uid = "azure-monitor" }
+        fieldConfig = [ordered]@{
+          defaults = [ordered]@{
+            color = [ordered]@{ mode = "thresholds" }
+            mappings = @(
+              [ordered]@{ options = [ordered]@{ "0" = [ordered]@{ color = "red"; text = "FAIL/STALE" }; "1" = [ordered]@{ color = "green"; text = "OK" } }; type = "value" }
+            )
+            thresholds = [ordered]@{ mode = "absolute"; steps = @([ordered]@{ color = "red"; value = $null }, [ordered]@{ color = "green"; value = 1 }) }
+          }
+          overrides = @()
+        }
+        gridPos = [ordered]@{ h = 8; w = 12; x = 12; y = 0 }
+        id = 2
+        options = [ordered]@{
+          colorMode = "background"
+          graphMode = "none"
+          justifyMode = "center"
+          orientation = "auto"
+          reduceOptions = [ordered]@{ calcs = @("lastNotNull"); fields = ""; values = $false }
+          textMode = "value_and_name"
+          wideLayout = $true
+        }
+        targets = @(
+          [ordered]@{
+            azureLogAnalytics = [ordered]@{
+              query = $apiStatusKql
+              resources = @($WorkspaceResourceId)
+              resultFormat = "time_series"
+            }
+            datasource = [ordered]@{ type = "grafana-azure-monitor-datasource"; uid = "azure-monitor" }
+            queryType = "Azure Log Analytics"
+            refId = "A"
+          }
+        )
+        title = "$upper API /health"
+        type = "stat"
+      },
+      [ordered]@{
+        datasource = [ordered]@{ type = "grafana-azure-monitor-datasource"; uid = "azure-monitor" }
+        fieldConfig = [ordered]@{ defaults = [ordered]@{}; overrides = @() }
+        gridPos = [ordered]@{ h = 12; w = 24; x = 0; y = 8 }
+        id = 3
+        options = [ordered]@{
+          cellHeight = "sm"
+          footer = [ordered]@{ countRows = $false; fields = ""; reducer = @("sum"); show = $false }
+          showHeader = $true
+        }
+        targets = @(
+          [ordered]@{
+            azureLogAnalytics = [ordered]@{
+              query = $recentHealthKql
+              resources = @($WorkspaceResourceId)
+              resultFormat = "table"
+            }
+            datasource = [ordered]@{ type = "grafana-azure-monitor-datasource"; uid = "azure-monitor" }
+            queryType = "Azure Log Analytics"
+            refId = "A"
+          }
+        )
+        title = "$upper Recent /health Requests"
+        type = "table"
+      }
+    )
+    refresh = "30s"
+    schemaVersion = 41
+    tags = @("agentic-e2e", "azure", "health", $EnvironmentName)
+    templating = [ordered]@{ list = @() }
+    time = [ordered]@{ from = "now-7d"; to = "now" }
+    timepicker = [ordered]@{}
+    timezone = "browser"
+    title = "$upper Health Dashboard"
+    uid = "agentic-$EnvironmentName-health"
     version = 1
     weekStart = ""
   }
@@ -3997,6 +4285,12 @@ function Invoke-SetGrafanaAzureMonitor {
     Add-Item $result "actions" "infra/monitoring/grafana/dashboards.local/$envName-azure-monitor.json" "" "Generate local Grafana Azure Monitor dashboard."
     if (-not $DryRun) {
       New-AzureMonitorLogDashboard -EnvironmentName $envName -WorkspaceResourceId $workspaceResourceId | Set-Content -Path $dashboardPath -Encoding UTF8
+    }
+
+    $healthDashboardPath = Join-Path $dashboardDirectory "$envName-health-dashboard.json"
+    Add-Item $result "actions" "infra/monitoring/grafana/dashboards.local/$envName-health-dashboard.json" "" "Generate local Grafana health dashboard."
+    if (-not $DryRun) {
+      New-AzureMonitorHealthDashboard -EnvironmentName $envName -WorkspaceResourceId $workspaceResourceId | Set-Content -Path $healthDashboardPath -Encoding UTF8
     }
   }
 
