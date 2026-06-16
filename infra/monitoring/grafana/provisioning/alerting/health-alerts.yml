@@ -1,0 +1,59 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: Agentic E2E Health
+    folder: Agentic E2E
+    interval: 10s
+    rules:
+      - uid: agentic-e2e-health-down
+        title: App /health down
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            relativeTimeRange:
+              from: 60
+              to: 0
+            model:
+              editorMode: code
+              expr: probe_success{job="blackbox_http_health"} == 0
+              instant: true
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              expression: A
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 0
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - C
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              expression: B
+              refId: C
+              type: threshold
+        for: ${GRAFANA_HEALTH_ALERT_FOR}
+        noDataState: OK
+        execErrState: OK
+        annotations:
+          summary: '{{ $labels.environment }} {{ $labels.app }} /health has been down for the configured duration.'
+        labels:
+          service: agentic-e2e
+          signal: health

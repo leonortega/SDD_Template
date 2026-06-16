@@ -12,13 +12,14 @@ Push-triggered deployment is allowed only for ticket-named application changes u
 
 ## Technology Stack And Tool Set
 
-Deployment tooling is intentionally local-first except for the application runtimes. Gitea Actions packages and deploys ticket-gated application changes, Nexus stores the exact artifact and `release.json`, Azure App Service hosts DEV/QA/PROD web and API runtimes, and local Seq consumes Azure Event Hub for DEV/QA/PROD log search.
+Deployment tooling is intentionally local-first except for the application runtimes. Gitea Actions packages and deploys ticket-gated application changes, Nexus stores the exact artifact and `release.json`, Azure App Service hosts DEV/QA/PROD web and API runtimes, Azure Monitor and Log Analytics remain the Azure-side observability sources, and local Seq consumes Azure Event Hub for DEV/QA/PROD log search.
 
 - Nexus paths under `app/{commitSha}/` are the durable artifact identity; environments must promote that same ZIP and checksum instead of rebuilding.
 - Azure deployment uses App Service ZIP deployment from the existing Nexus artifact.
 - The Blazor site project (`src/SDDTemplate.Site`) and REST API project (`src/SDDTemplate.Api`) are separated so Azure environments can host web and API App Service apps independently. The API references `src/SDDTemplate.Data` for EF Core entities, DbContext, migrations, and database setup.
 - Seq runs locally at `http://localhost:5341` and imports Azure App Service console logs through the optional Event Hub profile and OpenTelemetry Collector Contrib into Seq. Imported events include environment, workspace, resource, category, source, timestamp, and message fields for DEV/QA/PROD search.
-- Grafana dashboards are provisioned from tracked files and generated local-only dashboard files.
+- Grafana dashboards and health alert rules are provisioned from tracked files and generated local-only dashboard files. Health alerts fire only when `probe_success{job="blackbox_http_health"} == 0` stays true for the configured pending duration, default `10s`, to avoid short deployment blips.
+- Seq uses a native alert named `Agentic E2E - Any Seq Error Logs` to flag any error or fatal log event in the configured window.
 - Seq search validation is executable by starting local monitoring, enabling the `eventhub` compose profile for the collector path, then searching Seq for `Environment = 'DEV'`, `Environment = 'QA'`, and `Environment = 'PROD'`.
 - QA evidence is retained locally under ignored paths and preferably published to Nexus under `qa/{ticketKey}/{runId}/qa-evidence.zip`.
 - Deployment guidance is mapped through `project-guidance-mapper`; missing deployment, observability, QA, security, release, or rollback skills and references are discovered by `project-guidance-discover`, copied only through `project-guidance-acquire` when they are confirmed skill items, and otherwise kept as local catalog guidance.

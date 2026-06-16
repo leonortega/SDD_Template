@@ -168,6 +168,104 @@ function Read-EnvFile {
   return $map
 }
 
+function Get-MapValueOrDefault {
+  param(
+    $Map,
+    [string]$Name,
+    [string]$Default
+  )
+
+  if ($Map.Contains($Name) -and -not [string]::IsNullOrWhiteSpace($Map[$Name])) {
+    return $Map[$Name]
+  }
+
+  return $Default
+}
+
+function Convert-SeqAlertWindow {
+  param([string]$Window)
+
+  if ($Window -match "^(\d+)m$") { return "00:$('{0:D2}' -f [int]$Matches[1]):00" }
+  if ($Window -match "^(\d+)s$") { return "00:00:$('{0:D2}' -f [int]$Matches[1])" }
+  return $Window
+}
+
+function Set-JsonProperty {
+  param(
+    $Object,
+    [string]$Name,
+    $Value
+  )
+
+  if ($Object.PSObject.Properties.Name -contains $Name) {
+    $Object.$Name = $Value
+  } else {
+    $Object | Add-Member -MemberType NoteProperty -Name $Name -Value $Value
+  }
+}
+
+function Set-SeqErrorAlertFields {
+  param(
+    $Alert,
+    [string]$Window,
+    [string]$Threshold
+  )
+
+  Set-JsonProperty $Alert "Title" "Agentic E2E - Any Seq Error Logs"
+  Set-JsonProperty $Alert "Where" "@Level = 'Error' or @Level = 'Fatal'"
+  Set-JsonProperty $Alert "TimeGrouping" (Convert-SeqAlertWindow $Window)
+  Set-JsonProperty $Alert "Having" "count > $Threshold"
+  Set-JsonProperty $Alert "NotificationLevel" "Error"
+  Set-JsonProperty $Alert "IsDisabled" $false
+  return $Alert
+}
+
+function Ensure-SeqErrorAlert {
+  param(
+    $Result,
+    $Monitoring,
+    [bool]$Write
+  )
+
+  $window = Get-MapValueOrDefault $Monitoring "SEQ_ERROR_ALERT_WINDOW" "1m"
+  $threshold = Get-MapValueOrDefault $Monitoring "SEQ_ERROR_ALERT_THRESHOLD" "0"
+  $title = "Agentic E2E - Any Seq Error Logs"
+
+  try {
+    $alertsResponse = Invoke-WebRequest -Uri "http://localhost:5341/api/alerts/?ownerId=user-admin&shared=true" -UseBasicParsing -TimeoutSec 5
+    $alerts = @($alertsResponse.Content | ConvertFrom-Json)
+    $existing = $alerts | Where-Object { $_.Title -eq $title -or $_.Name -eq $title } | Select-Object -First 1
+
+    if ($null -ne $existing) {
+      if ($Write) {
+        $updated = Set-SeqErrorAlertFields $existing $window $threshold
+        $id = $existing.Id
+        $body = $updated | ConvertTo-Json -Depth 20
+        Invoke-WebRequest -Uri "http://localhost:5341/api/alerts/$id" -Method Put -Body $body -ContentType "application/json" -UseBasicParsing -TimeoutSec 5 | Out-Null
+        Add-Item $Result "actions" "seq" "alerts.errorLogs" "Seq error-log alert exists and was updated."
+      } else {
+        Add-Item $Result "actions" "seq" "alerts.errorLogs" "Seq error-log alert is configured."
+      }
+      return
+    }
+
+    if (-not $Write) {
+      Add-Item $Result "findings" "seq" "alerts.errorLogs" "Seq error-log alert is missing. Run SetSeqAzureEventHubLogs after Seq is healthy." "warning" "post-start"
+      return
+    }
+
+    $templateResponse = Invoke-WebRequest -Uri "http://localhost:5341/api/alerts/template" -UseBasicParsing -TimeoutSec 5
+    $template = $templateResponse.Content | ConvertFrom-Json
+    $alert = Set-SeqErrorAlertFields $template $window $threshold
+    $body = $alert | ConvertTo-Json -Depth 20
+    Invoke-WebRequest -Uri "http://localhost:5341/api/alerts" -Method Post -Body $body -ContentType "application/json" -UseBasicParsing -TimeoutSec 5 | Out-Null
+    Add-Item $Result "actions" "seq" "alerts.errorLogs" "Seq error-log alert was created."
+  } catch {
+    $severity = if ($Write) { "error" } else { "info" }
+    Add-Item $Result "findings" "seq" "alerts.errorLogs" "Could not validate Seq error-log alert: $($_.Exception.Message)" $severity "post-start"
+  }
+}
+
 function Set-EnvValues {
   param(
     [string]$Path,
@@ -1897,18 +1995,26 @@ function Invoke-Audit {
 
   $monitoringLocal = "infra/monitoring/variables.env"
   $monitoring = Read-EnvFile (Join-RootPath $monitoringLocal)
+  $requiredOtelCollectorEnv = @(
+    "OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING",
+    "OTELCOL_AZURE_EVENT_HUB_QA_CONNECTION_STRING",
+    "OTELCOL_AZURE_EVENT_HUB_PROD_CONNECTION_STRING",
+    "OTELCOL_SEQ_OTLP_ENDPOINT"
+  )
   if ($monitoring.Count -eq 0) {
     Add-Item $result "findings" $monitoringLocal "" "Monitoring local env file is missing or empty. Run InitLocalFiles or SplitInfraEnv." "error" "pre-start"
+    foreach ($name in $requiredOtelCollectorEnv) {
+      Add-Item $result "findings" $monitoringLocal $name "Missing required OpenTelemetry collector value for Event Hub to Seq ingestion. Run SetSeqAzureEventHubLogs and provide the missing value." "error" "pre-start"
+    }
   } else {
-    $requiredOtelCollectorEnv = @(
-      "OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING",
-      "OTELCOL_AZURE_EVENT_HUB_QA_CONNECTION_STRING",
-      "OTELCOL_AZURE_EVENT_HUB_PROD_CONNECTION_STRING",
-      "OTELCOL_SEQ_OTLP_ENDPOINT"
-    )
     foreach ($name in $requiredOtelCollectorEnv) {
       if (-not $monitoring.Contains($name) -or [string]::IsNullOrWhiteSpace($monitoring[$name])) {
         Add-Item $result "findings" $monitoringLocal $name "Missing required OpenTelemetry collector value for Event Hub to Seq ingestion. Run SetSeqAzureEventHubLogs and provide the missing value." "error" "pre-start"
+      }
+    }
+    foreach ($name in @("GRAFANA_HEALTH_ALERT_FOR", "SEQ_ERROR_ALERT_WINDOW", "SEQ_ERROR_ALERT_THRESHOLD")) {
+      if (-not $monitoring.Contains($name) -or [string]::IsNullOrWhiteSpace($monitoring[$name])) {
+        Add-Item $result "findings" $monitoringLocal $name "Missing monitoring alert configuration value. Copy the default from infra/monitoring/variables.env.example." "warning" "pre-start"
       }
     }
   }
@@ -1928,11 +2034,20 @@ function Invoke-Audit {
   }
 
   $grafanaDashboards = @(
-    "infra/monitoring/grafana/provisioning/dashboards/dashboards.yml"
+    "infra/monitoring/grafana/provisioning/dashboards/dashboards.yml",
+    "infra/monitoring/grafana/provisioning/alerting/health-alerts.yml"
   )
   foreach ($dashboardFile in $grafanaDashboards) {
     if (-not (Test-Path (Join-RootPath $dashboardFile))) {
-      Add-Item $result "findings" $dashboardFile "grafana-dashboard-provisioning" "Missing Grafana dashboard provisioning artifact." "info" "post-start"
+      Add-Item $result "findings" $dashboardFile "grafana-provisioning" "Missing Grafana provisioning artifact." "warning" "post-start"
+    }
+  }
+
+  $healthAlertsPath = Join-RootPath "infra/monitoring/grafana/provisioning/alerting/health-alerts.yml"
+  if (Test-Path $healthAlertsPath) {
+    $healthAlerts = Get-Content -Path $healthAlertsPath -Raw
+    if ($healthAlerts -notmatch "probe_success\{job=""blackbox_http_health""\}\s*==\s*0" -or $healthAlerts -notmatch 'for:\s*\$\{GRAFANA_HEALTH_ALERT_FOR\}') {
+      Add-Item $result "findings" "infra/monitoring/grafana/provisioning/alerting/health-alerts.yml" "grafana-health-alerts" "Grafana health alert rule must trigger when probe_success stays 0 for the configured duration." "warning" "post-start"
     }
   }
 
@@ -2033,6 +2148,17 @@ function Invoke-Audit {
         }
       }
 
+      try {
+        $rules = Invoke-WebRequest -Uri "http://localhost:3001/api/ruler/grafana/api/v1/rules" -UseBasicParsing -TimeoutSec 5
+        if ($rules.Content -match "agentic-e2e-health-down") {
+          Add-Item $result "actions" "grafana" "alerts.health" "Grafana health alert rule is provisioned."
+        } else {
+          Add-Item $result "findings" "grafana" "alerts.health" "Grafana health alert rule is not found. Recreate Grafana after updating alert provisioning." "warning" "post-start"
+        }
+      } catch {
+        Add-Item $result "findings" "grafana" "alerts.health" "Could not query Grafana alert rules: $($_.Exception.Message)" "info" "post-start"
+      }
+
       # Check Prometheus scrape targets are discovering and UP
       try {
         $targets = Invoke-WebRequest -Uri "http://localhost:9091/api/v1/targets" -UseBasicParsing -TimeoutSec 5
@@ -2081,6 +2207,10 @@ function Invoke-Audit {
     }
   } catch {
     Add-Item $result "findings" "docker" "monitoring" "Could not inspect monitoring containers: $($_.Exception.Message)" "info" "post-start"
+  }
+
+  if ($monitoring.Count -gt 0) {
+    Ensure-SeqErrorAlert $result $monitoring $false
   }
 
   Add-QualityGateAuditFindings $result
@@ -4165,6 +4295,7 @@ function Invoke-SetSeqAzureEventHubLogs {
         $ready = Invoke-WebRequest -Uri "http://localhost:5341/api" -UseBasicParsing -TimeoutSec 5
         if ($ready.StatusCode -eq 200) {
           Add-Item $result "actions" "seq" "ready" "Seq API endpoint is healthy."
+          Ensure-SeqErrorAlert $result $monitoring $true
         }
       }
     } else {

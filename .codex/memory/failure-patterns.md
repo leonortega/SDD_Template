@@ -90,6 +90,15 @@ When hardening local infra Compose files, ensure service env interpolation uses 
 
 Docker Compose interpolates dollar-prefixed dotenv values. Azure Event Hub consumer group values such as `$Default` must be written as `$$Default` in `infra/monitoring/variables.env` and `infra/monitoring/variables.env.example`; otherwise Compose warns that `Default` is unset and passes a blank value to the collector configuration. Validate both local and example env files with `docker compose ... config --quiet`.
 
+## Grafana Health Alerts Need Scheduler-Aligned Blackbox Probes
+
+- Type: Pattern
+- Status: Active
+- Source: `infra/monitoring/grafana/provisioning/alerting/health-alerts.yml`, `infra/monitoring/compose.yml`, `infra/monitoring/prometheus/prometheus.yml`, `infra/monitoring/prometheus/blackbox.yml`, `configure_infra_tools.ps1 -Mode Audit`
+- Last verified: 2026-06-16
+
+Grafana alert rule groups reject intervals below the local scheduler interval; use a 10-second health alert pending duration by default. Prometheus health checks need blackbox exporter to listen on `0.0.0.0:9115`; otherwise Prometheus may time out on `blackbox-exporter:9115` even though the host port responds. Keep blackbox timeout below Prometheus scrape timeout so failed or slow `/health` endpoints still return `probe_success` metrics.
+
 ## Full Test Suite Can Fail On Canonical Docs And Event Hub Template Drift
 
 - Type: Pattern

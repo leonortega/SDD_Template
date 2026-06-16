@@ -29,6 +29,7 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: admin
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GRAFANA_HEALTH_ALERT_FOR: ${GRAFANA_HEALTH_ALERT_FOR:-10s}
     ports:
       - "3001:3000"
     volumes:
@@ -65,6 +66,7 @@ services:
     image: prom/blackbox-exporter:v0.26.0
     container_name: agentic-blackbox
     command:
+      - --web.listen-address=0.0.0.0:9115
       - --config.file=/etc/blackbox_exporter/config.yml
     ports:
       - "127.0.0.1:9115:9115"

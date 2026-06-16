@@ -162,6 +162,14 @@ dotnet format --verify-no-changes
 
 If these documents conflict, the delivery contract wins for automation behavior until the docs are corrected.
 
+## Canonical Context
+
+Before the first ticket starts, the workflow validates stack context and routes to `configure-dev-environment` when required docs, OpenSpec context, or recommendation catalogs are missing or drifted. `configure-dev-environment` scans stack, tooling, environments, test frameworks, and workflow files, reports suggested missing skills and guidance, and asks whether the operator wants to add additional desired skills or guidance.
+
+Project guidance is manual by default. Confirmed skills must read the source repository's `SKILL.md` and be copied into `.codex/skills`; Skills are not installed by command. `.codex/tool-recommendations.example.json` documents the tracked catalog shape, while ignored `.codex/tool-recommendations.local.json` stores local discovery state and `project-guidance-mapper` reads that local file for step mapping.
+
+Implementation handoffs must report context findings and either list updated docs or state `Docs: no durable context changes`.
+
 ## Operator Commands
 
 Common Codex chat requests:
