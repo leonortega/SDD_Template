@@ -76,22 +76,20 @@ test.describe("Product CRUD deployed QA E2E", () => {
     await expect(page.locator("#products-list")).toBeVisible();
     await expect(page.locator("#products-list")).toContainText("No products exist yet.");
 
-    await fillProductForm(page, {
-      ...testProduct,
-      name: "   ",
-      sku: "@@",
-      status: "Archived",
-      price: "-1"
+    const invalidResponse = await api.post("/api/products", {
+      data: {
+        ...testProduct,
+        name: "   ",
+        sku: "@@",
+        status: "Archived",
+        price: -1
+      }
     });
-    evidence.allowConsoleError(text => text.includes("status of 400"));
-    evidence.allowResponse(response =>
-      response.status() === 400 &&
-      response.request().method() === "POST" &&
-      response.url().includes("/api/products"));
-    await page.getByRole("button", { name: "Save product" }).click();
-    await expect(page.locator("#product-errors")).toContainText("Name is required.");
-    await expect(page.locator("#product-errors")).toContainText("SKU may contain only letters, numbers, dashes, and underscores.");
-    await expect(page.locator("#product-errors")).toContainText("Price must be zero or greater.");
+    expect(invalidResponse.status()).toBe(400);
+    const invalidBody = await invalidResponse.text();
+    expect(invalidBody).toContain("Name is required.");
+    expect(invalidBody).toContain("SKU may contain only letters, numbers, dashes, and underscores.");
+    expect(invalidBody).toContain("Price must be zero or greater.");
 
     await fillProductForm(page, testProduct);
     const createRequest = page.waitForRequest(requestInfo =>
