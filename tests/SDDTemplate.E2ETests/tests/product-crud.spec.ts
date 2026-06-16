@@ -68,10 +68,10 @@ test.describe("Product CRUD deployed QA E2E", () => {
     await expect(await api.get("/api/products")).toBeOK();
     initialProducts = await clearProducts(api);
 
-    const blazorConnected = waitForBlazorConnection(page);
     await page.goto("/");
-    await blazorConnected;
+    const blazorConnected = waitForBlazorConnection(page);
     await page.getByRole("link", { name: "Products" }).click();
+    await blazorConnected;
     await expect(page).toHaveTitle(/Products|SDD Template/);
     await expect(page.getByRole("heading", { name: "Products" })).toBeVisible();
     await expect(page.locator("#product-form")).toBeVisible();
