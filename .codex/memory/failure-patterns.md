@@ -90,6 +90,15 @@ When hardening local infra Compose files, ensure service env interpolation uses 
 
 Docker Compose interpolates dollar-prefixed dotenv values. Azure Event Hub consumer group values such as `$Default` must be written as `$$Default` in `infra/monitoring/variables.env` and `infra/monitoring/variables.env.example`; otherwise Compose warns that `Default` is unset and passes a blank value to the collector configuration. Validate both local and example env files with `docker compose ... config --quiet`.
 
+## Full Test Suite Can Fail On Canonical Docs And Event Hub Template Drift
+
+- Type: Pattern
+- Status: Active
+- Source: `dotnet test .\SDDTemplate.slnx --no-build`, `tests/SDDTemplate.Site.Tests/ObservabilityLoggingTests.cs`, `tools/SDDTemplate.DeliveryTools.Tests/DeploymentWorkflowTests.cs`, `tools/SDDTemplate.DeliveryTools.Tests/DeliveryToolsTests.cs`
+- Last verified: 2026-06-16
+
+When unrelated code changes run the full suite, existing fixture drift can fail tests that assert README/canonical docs text and Event Hub collector template values. Current known failures include missing `OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING` in the expected env surface, missing `Azure Monitor` in architecture context, and missing README phrases such as `## Canonical Context`, `Before the first ticket starts`, and `manual by default`. Treat these as repository guidance/configuration drift, not product-code regressions, unless the current change touched those docs or env templates.
+
 ## Worktree Local Config Copy Can Leave Placeholders
 
 - Type: Pattern
