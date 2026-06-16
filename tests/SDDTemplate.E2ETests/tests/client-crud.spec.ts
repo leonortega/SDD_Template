@@ -131,10 +131,10 @@ async function assertApiHealth(api: APIRequestContext): Promise<void> {
 }
 
 async function fillClientForm(page: Page, client: Omit<ClientRecord, "id">): Promise<void> {
+  await page.locator("#client-born-date").fill(client.bornDate);
   await page.locator("#client-name").fill(client.name);
   await page.locator("#client-last-name").fill(client.lastName);
   await page.locator("#client-address").fill(client.address);
-  await page.locator("#client-born-date").fill(client.bornDate);
   await page.locator("#client-city").fill(client.city);
   await page.locator("#client-country").fill(client.country);
   await page.locator("#client-zip-code").fill(client.zipCode);
