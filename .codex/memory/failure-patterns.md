@@ -108,6 +108,15 @@ Grafana alert rule groups reject intervals below the local scheduler interval; u
 
 When unrelated code changes run the full suite, existing fixture drift can fail tests that assert README/canonical docs text and Event Hub collector template values. Current known failures include missing `OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING` in the expected env surface, missing `Azure Monitor` in architecture context, and missing README phrases such as `## Canonical Context`, `Before the first ticket starts`, and `manual by default`. Treat these as repository guidance/configuration drift, not product-code regressions, unless the current change touched those docs or env templates.
 
+## Clean CI Lacks Ignored Grafana Dashboards Local Files
+
+- Type: Pattern
+- Status: Active
+- Source: PR #33 Gitea Actions run 194, `tests/SDDTemplate.Site.Tests/ObservabilityLoggingTests.cs`, `.gitignore`
+- Last verified: 2026-06-16
+
+`infra/monitoring/grafana/dashboards.local/` is ignored local runtime state. Tests that assert Grafana dashboard provisioning can require the tracked provisioning path, but must not require generated dashboard JSON files to exist in clean Gitea Actions checkouts. If a CI run fails with `DirectoryNotFoundException` for `infra/monitoring/grafana/dashboards.local/dev-health-dashboard.json`, classify it as test/tooling drift and make the test conditional on the local file before treating product code as broken.
+
 ## Worktree Local Config Copy Can Leave Placeholders
 
 - Type: Pattern
