@@ -201,12 +201,10 @@ namespace SDDTemplate.Site.Tests
         {
             string root = FindRepositoryRoot();
             string dashboards = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "dashboards", "dashboards.yml"));
-            string devDashboard = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "grafana", "dashboards.local", "dev-health-dashboard.json"));
 
             Assert.Contains("Agentic E2E Local", dashboards);
             Assert.Contains("/var/lib/grafana/dashboards.local", dashboards);
-            Assert.Contains("\"uid\": \"prometheus\"", devDashboard);
-            Assert.Contains("probe_success", devDashboard);
+            Assert.Contains("infra/monitoring/grafana/dashboards.local/", File.ReadAllText(Path.Combine(root, ".gitignore")));
         }
 
         [Fact]
