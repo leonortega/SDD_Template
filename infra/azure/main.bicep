@@ -54,16 +54,6 @@ var apiAppUrl = hasApiApp ? 'https://${apiAppName}.azurewebsites.net' : ''
 var siteAppUrl = hasSiteApp ? 'https://${siteAppName}.azurewebsites.net' : ''
 var aspNetEnvironment = environmentName == 'prod' ? 'Production' : environmentName == 'qa' ? 'Staging' : 'Development'
 var sqliteDbPath = '/home/data/${sqliteDatabaseFileName}'
-var logAnalyticsWorkspaceName = 'law-${normalizedProjectName}-${environmentName}-${uniqueSuffix}'
-var diagnosticLogCategories = [
-  'AppServiceHTTPLogs'
-  'AppServiceConsoleLogs'
-  'AppServiceAppLogs'
-  'AppServiceAuditLogs'
-  'AppServiceIPSecAuditLogs'
-  'AppServicePlatformLogs'
-  'AppServiceAuthenticationLogs'
-]
 
 resource appServicePlan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: planName
@@ -125,52 +115,6 @@ resource appSettings 'Microsoft.Web/sites/config@2023-12-01' = [for (app, i) in 
   )
 }]
 
-resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2025-02-01' = {
-  name: logAnalyticsWorkspaceName
-  location: location
-  properties: {
-    sku: {
-      name: 'PerGB2018'
-    }
-    retentionInDays: 30
-    publicNetworkAccessForIngestion: 'Enabled'
-    publicNetworkAccessForQuery: 'Enabled'
-  }
-  tags: {
-    project: projectName
-    env: environmentName
-    managedBy: 'bicep'
-    purpose: 'app-service-log-analytics'
-  }
-}
-
-resource appLogDiagnosticSettings 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = [for (app, i) in deployableApps: {
-  name: 'send-appservice-logs-to-log-analytics'
-  scope: apps[i]
-  properties: {
-    workspaceId: logAnalyticsWorkspace.id
-    logAnalyticsDestinationType: 'Dedicated'
-    logs: [for category in diagnosticLogCategories: {
-      category: category
-      enabled: true
-      retentionPolicy: {
-        enabled: false
-        days: 0
-      }
-    }]
-    metrics: [
-      {
-        category: 'AllMetrics'
-        enabled: false
-        retentionPolicy: {
-          enabled: false
-          days: 0
-        }
-      }
-    ]
-  }
-}]
-
 output environment string = environmentName
 output appServicePlanName string = appServicePlan.name
 output apps array = [for app in deployableApps: {
@@ -186,10 +130,3 @@ output siteAppUrl string = siteAppUrl
 output apiAppName string = apiAppName
 output apiAppUrl string = apiAppUrl
 output sqliteDbPath string = sqliteDbPath
-output logAnalyticsWorkspaceName string = logAnalyticsWorkspace.name
-output logAnalyticsWorkspaceId string = logAnalyticsWorkspace.id
-output diagnosticSettings array = [for (app, i) in deployableApps: {
-  appId: app.appId
-  appName: apps[i].name
-  name: appLogDiagnosticSettings[i].name
-}]

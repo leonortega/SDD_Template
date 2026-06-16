@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
+using SDDTemplate.Common.Observability;
+using SDDTemplate.Site.Components;
 
 namespace SDDTemplate.Site.Tests
 {
@@ -9,7 +11,7 @@ namespace SDDTemplate.Site.Tests
         [Fact]
         public async Task HealthEndpointReturnsOkStatus()
         {
-            await using WebApplicationFactory<SiteAssemblyMarker> factory = new();
+            await using WebApplicationFactory<App> factory = new();
             using HttpClient client = factory.CreateClient();
 
             HttpResponseMessage response = await client.GetAsync("/health");
@@ -25,7 +27,7 @@ namespace SDDTemplate.Site.Tests
         [Fact]
         public async Task HealthEndpointDoesNotExposeSensitiveConfiguration()
         {
-            await using WebApplicationFactory<SiteAssemblyMarker> factory = new();
+            await using WebApplicationFactory<App> factory = new();
             using HttpClient client = factory.CreateClient();
 
             string response = await client.GetStringAsync("/health");
@@ -39,7 +41,7 @@ namespace SDDTemplate.Site.Tests
         [Fact]
         public async Task HealthEndpointGeneratesCorrelationIdWhenMissing()
         {
-            await using WebApplicationFactory<SiteAssemblyMarker> factory = new();
+            await using WebApplicationFactory<App> factory = new();
             using HttpClient client = factory.CreateClient();
 
             using HttpResponseMessage response = await client.GetAsync("/health");
@@ -52,7 +54,7 @@ namespace SDDTemplate.Site.Tests
         [Fact]
         public async Task HealthEndpointReusesIncomingCorrelationId()
         {
-            await using WebApplicationFactory<SiteAssemblyMarker> factory = new();
+            await using WebApplicationFactory<App> factory = new();
             using HttpClient client = factory.CreateClient();
             const string correlationId = "test-correlation-id";
 

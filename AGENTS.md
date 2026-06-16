@@ -31,6 +31,7 @@ Prefer repository-specific skills and scripts over ad hoc process decisions.
 - Add or update tests when behavior changes.
 - Do not revert unrelated user or workspace changes.
 - Do not commit generated artifacts unless the workflow explicitly requires them.
+- Use Ponytail full mode for code changes, then run `ponytail-review` on the current diff, apply actionable simplification recommendations, and continue normal quality gates.
 
 ## Quality Gates
 

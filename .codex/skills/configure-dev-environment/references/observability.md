@@ -2,61 +2,52 @@
 
 Owns:
 
-- Grafana datasource and dashboard provisioning.
-- Azure Monitor and Log Analytics local configuration after Azure outputs exist.
-- `infra/monitoring/validate-azure-monitor-logs.ps1`.
+- Seq local log search for DEV, QA, and PROD Azure App Service logs via the required Azure Event Hub collector path.
+- Native Seq alerting when any error or fatal log event appears.
+- Grafana `/health` alerts for DEV, QA, and PROD web/API probes.
+- Required OpenTelemetry Collector Contrib ingestion from Azure Event Hub into Seq.
 
-Use the shared script after Azure Bicep deployment has created Log Analytics workspaces and App Service diagnostic settings:
-
-```powershell
-.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode SetGrafanaAzureMonitor
-```
-
-## Azure Monitor
-
-Azure App Service diagnostics flow directly to Log Analytics workspaces. Grafana queries those workspaces through the built-in Azure Monitor datasource. This repo does not use a local scrape store, log store, log collector, or streaming hub for observability.
-
-The Bicep template creates one Log Analytics workspace per environment and configures App Service diagnostics with:
-
-- `workspaceId`
-- `logAnalyticsDestinationType: Dedicated`
-
-The configure script infers the deployed workspaces and writes local-only values to ignored `infra/plane/variables.env`:
-
-- `GRAFANA_AZURE_TENANT_ID`
-- `GRAFANA_AZURE_CLIENT_ID`
-- `GRAFANA_AZURE_CLIENT_SECRET`
-- `GRAFANA_AZURE_SUBSCRIPTION_ID`
-- `GRAFANA_AZURE_DEV_LOG_ANALYTICS_WORKSPACE_ID`
-- `GRAFANA_AZURE_QA_LOG_ANALYTICS_WORKSPACE_ID`
-- `GRAFANA_AZURE_PROD_LOG_ANALYTICS_WORKSPACE_ID`
-- `GRAFANA_AZURE_DEV_LOG_ANALYTICS_WORKSPACE_RESOURCE_ID`
-- `GRAFANA_AZURE_QA_LOG_ANALYTICS_WORKSPACE_RESOURCE_ID`
-- `GRAFANA_AZURE_PROD_LOG_ANALYTICS_WORKSPACE_RESOURCE_ID`
-
-Do not print service-principal secrets or write them to tracked files.
-
-## Grafana
-
-Repo-managed provisioning:
-
-- `infra/monitoring/grafana/provisioning/datasources/azure-monitor.yml`
-- `infra/monitoring/grafana/provisioning/dashboards/dashboards.yml`
-
-Local generated dashboard files belong in ignored `infra/monitoring/grafana/dashboards.local/`.
-
-Default datasource:
-
-- `uid: azure-monitor`
-- `type: grafana-azure-monitor-datasource`
-- App Registration client-secret auth from ignored environment variables.
-
-Validation:
+Use the shared script for the required collector path:
 
 ```powershell
-Invoke-RestMethod -Uri 'http://localhost:3001/api/health'
-docker logs --since 2m agentic-grafana 2>&1 | Select-String -Pattern 'provisioning.dashboard|finished to provision dashboards|level=error|Azure Monitor'
-.\infra\monitoring\validate-azure-monitor-logs.ps1
+.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode SetSeqAzureEventHubLogs
 ```
 
-Direct app page and `/health` HTTP checks remain authoritative deployment gates. Grafana Azure Monitor is deployment evidence when configured and reachable.
+## Seq
+
+Repo-managed local log search:
+
+- `infra/monitoring/compose.yml` runs `datalust/seq:2025.2.16202` as `agentic-seq`.
+- Seq is bound to `http://localhost:5341` and uses explicit local no-auth first-run configuration.
+- Seq receives Azure-hosted console logs through the optional OpenTelemetry Collector Contrib Event Hub profile.
+- `SetSeqAzureEventHubLogs` creates or updates the native Seq alert `Agentic E2E - Any Seq Error Logs`.
+- The error alert uses `SEQ_ERROR_ALERT_WINDOW` and `SEQ_ERROR_ALERT_THRESHOLD` from `infra/monitoring/variables.env`; defaults are `1m` and `0`.
+
+## Grafana Health Alerts
+
+- `infra/monitoring/grafana/provisioning/alerting/health-alerts.yml` provisions a Grafana-managed alert over `probe_success{job="blackbox_http_health"} == 0`.
+- `GRAFANA_HEALTH_ALERT_FOR` controls how long a `/health` endpoint must remain down before firing; the default is `10s`, matching Grafana's local scheduler interval.
+- The blackbox exporter must listen on `0.0.0.0:9115` so Prometheus can scrape it over the Docker monitoring network.
+- `noDataState` and `execErrState` stay `OK` to avoid noisy startup or deploy gaps.
+
+Collector-based ingestion:
+
+- `infra/monitoring/compose.yml` defines the required `agentic-otelcol` service under the `eventhub` profile.
+- `infra/monitoring/otelcol/collector.yaml` configures separate DEV, QA, and PROD Azure Event Hub receivers and exports OTLP logs to Seq.
+- `infra/monitoring/variables.env` holds the required `OTELCOL_*` connection strings and OTLP endpoint values as ignored local secrets.
+
+Validation (required path):
+
+```powershell
+Invoke-RestMethod -Uri 'http://localhost:5341/api'
+docker compose --profile eventhub --env-file .\infra\plane\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml --project-directory .\infra config --quiet
+docker compose --profile eventhub --env-file .\infra\plane\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml --project-directory .\infra up -d otelcol
+```
+
+After the collector starts, search Seq for `Environment = 'DEV'`, `Environment = 'QA'`, and `Environment = 'PROD'`.
+
+`config infra` is not complete until Seq, the Seq error-log alert, Grafana health alerts, and `agentic-otelcol` are running and healthy, and required OTEL collector connection values are configured in ignored local env.
+
+When the collector profile is enabled, Azure-hosted console logs arrive from Azure Event Hub through the repo-managed collector path.
+
+Direct app page and `/health` HTTP checks remain authoritative deployment gates. Seq log search comes from the collector-based Event Hub path, and Dozzle is the place for local container log inspection.

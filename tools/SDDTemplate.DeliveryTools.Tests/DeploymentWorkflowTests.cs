@@ -144,8 +144,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("- name: Apply and verify QA deployment configuration\n        shell: bash", normalizedWorkflow);
             Assert.Contains("- name: Deploy QA topology apps\n        shell: bash", normalizedWorkflow);
             Assert.Contains("- name: Smoke check QA topology apps\n        shell: bash", normalizedWorkflow);
-            Assert.DoesNotContain("\n  e2e-qa:\n", normalizedWorkflow);
-            Assert.Contains("\n  e2e-qa-branch:\n", normalizedWorkflow);
+            Assert.Contains("\n  e2e-qa:\n", normalizedWorkflow);
+            Assert.DoesNotContain("\n  e2e-qa-branch:\n", normalizedWorkflow);
             Assert.Contains("- name: Apply and verify PROD deployment configuration\n        shell: bash", normalizedWorkflow);
             Assert.Contains("- name: Deploy PROD topology apps\n        shell: bash", normalizedWorkflow);
             Assert.Contains("- name: Smoke check PROD topology apps\n        shell: bash", normalizedWorkflow);
@@ -156,9 +156,9 @@ namespace SDDTemplate.DeliveryTools.Tests
         {
             string workflow = ReadWorkflow();
             string normalizedWorkflow = NormalizeLineEndings(workflow);
-            string e2eJob = GetJobSection(workflow, "e2e-qa-branch");
+            string e2eJob = GetJobSection(workflow, "e2e-qa");
 
-            Assert.DoesNotContain("\n  e2e-qa:\n", normalizedWorkflow);
+            Assert.DoesNotContain("\n  e2e-qa-branch:\n", normalizedWorkflow);
             Assert.Contains("startsWith(github.ref, 'refs/heads/qa/')", e2eJob);
             Assert.Contains("git merge-base HEAD origin/dev", e2eJob);
             Assert.Contains("tests/SDDTemplate.E2ETests", e2eJob);
@@ -176,7 +176,7 @@ namespace SDDTemplate.DeliveryTools.Tests
         public void PackageWorkflowRunsQaBranchE2eWithoutRedeploying()
         {
             string workflow = ReadWorkflow();
-            string branchJob = GetJobSection(workflow, "e2e-qa-branch");
+            string branchJob = GetJobSection(workflow, "e2e-qa");
 
             Assert.Contains("- qa/**", workflow);
             Assert.Contains("startsWith(github.ref, 'refs/heads/qa/')", branchJob);
@@ -227,11 +227,32 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.Contains("github.ref == 'refs/heads/main'", prodJob);
             Assert.Contains("Resolve PROD promotion inputs", prodJob);
+            Assert.Contains("app/qa-approved/latest.json", prodJob);
+            Assert.Contains("test \"$artifact_commit_sha\" = \"$GITHUB_SHA\"", prodJob);
+            Assert.Contains("git fetch --depth 1 origin \"refs/tags/$source_rc_version:refs/tags/$source_rc_version\"", prodJob);
             Assert.Contains("PROD_ARTIFACT_COMMIT_SHA=$artifact_commit_sha", prodJob);
+            Assert.DoesNotContain("parent_count", prodJob);
+            Assert.DoesNotContain("candidates=()", prodJob);
             Assert.DoesNotContain("dotnet publish", prodJob);
             Assert.DoesNotContain("Upload artifact to Nexus", prodJob);
             Assert.DoesNotContain("deploy-dev", prodJob);
             Assert.DoesNotContain("deploy-qa", prodJob);
+        }
+
+        [Fact]
+        public void ReleaseWorkflowUsesHumanReadableNexusPointerAliases()
+        {
+            string workflow = ReadWorkflow();
+            string testE2eSkill = ReadSkill("test-e2e", "SKILL.md");
+            string deployToProdSkill = ReadSkill("deploy-to-prod", "SKILL.md");
+            string deploymentDoc = ReadDoc("deployment.md");
+
+            Assert.Contains("app/qa-approved/latest.json", workflow);
+            Assert.Contains("app/qa-approved/latest.json", testE2eSkill);
+            Assert.Contains("app/rc/{sourceRcVersion}/artifact-pointer.json", testE2eSkill);
+            Assert.Contains("app/releases/{finalReleaseVersion}/artifact-pointer.json", deployToProdSkill);
+            Assert.Contains("metadata aliases", deploymentDoc);
+            Assert.Contains("do not duplicate ZIP", deployToProdSkill);
         }
 
         [Fact]
@@ -368,6 +389,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("const apiBaseUrl", script);
             Assert.Contains("Access-Control-Allow-Origin", script);
             Assert.Contains("app/${GITHUB_SHA}/release.json", script);
+            Assert.Contains("app/qa-approved/latest.json", script);
+            Assert.Contains("test \"$artifact_commit_sha\" = \"$GITHUB_SHA\"", script);
             Assert.Contains("Package/deploy workflow should upload a baseline Nexus release manifest next to the artifact.", script);
         }
 
@@ -384,8 +407,8 @@ namespace SDDTemplate.DeliveryTools.Tests
                 "README.md"));
             string e2eSkill = ReadSkill("test-e2e", "SKILL.md");
 
-            Assert.Contains("  e2e-qa-branch:", script);
-            Assert.DoesNotContain("\n  e2e-qa:\n", NormalizeLineEndings(script));
+            Assert.Contains("  e2e-qa:", script);
+            Assert.DoesNotContain("\n  e2e-qa-branch:\n", NormalizeLineEndings(script));
             Assert.Contains("qa-e2e-evidence.zip", script);
             Assert.Contains("E2E_SITE_URL", script);
             Assert.Contains("E2E_API_URL", script);
@@ -1141,6 +1164,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("Azure App Service", architecture);
             Assert.Contains("Azure Monitor", architecture);
             Assert.Contains("Grafana", architecture);
+            Assert.Contains("Seq", architecture);
             Assert.Contains("Skills are not installed by command", architecture);
             Assert.Contains("project-guidance-discover", architecture);
             Assert.Contains("project-guidance-acquire", architecture);
@@ -1162,6 +1186,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("Azure App Service", deployment);
             Assert.Contains("Azure Monitor", deployment);
             Assert.Contains("Grafana", deployment);
+            Assert.Contains("Seq", deployment);
             Assert.Contains("qa/{ticketKey}/{runId}/qa-evidence.zip", deployment);
             Assert.Contains("project-guidance-mapper", deployment);
 
@@ -1294,6 +1319,11 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("top-level PR comments and inline code review comments", contract);
             Assert.Contains("IA generated PR feedback detected: {headSha}:{feedbackBatchId}", contract);
             Assert.Contains("IA generated PR feedback fixes: {headSha}:{feedbackBatchId}", contract);
+            Assert.Contains("as the first line by itself", contract);
+            Assert.Contains("reviewer-facing Markdown summary", contract);
+            Assert.Contains("**Reviewer feedback addressed:**", contract);
+            Assert.Contains("**How IA resolved it:**", contract);
+            Assert.Contains("**Reviewer readiness:**", contract);
             Assert.Contains("deterministic short id from the sorted source ids", contract);
             Assert.Contains("late human comments on the same `headSha`", contract);
             Assert.Contains("Commit and push", contract, StringComparison.OrdinalIgnoreCase);
@@ -1307,6 +1337,12 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("Commit with the ticket key", feedbackLoop);
             Assert.Contains("IA generated PR feedback detected: {headSha}:{feedbackBatchId}", feedbackLoop);
             Assert.Contains("IA generated PR feedback fixes: {headSha}:{feedbackBatchId}", feedbackLoop);
+            Assert.Contains("Keep the marker as the first line by itself", feedbackLoop);
+            Assert.Contains("**Reviewer feedback addressed:**", feedbackLoop);
+            Assert.Contains("**How IA resolved it:**", feedbackLoop);
+            Assert.Contains("**Changed:**", feedbackLoop);
+            Assert.Contains("**Validation:**", feedbackLoop);
+            Assert.Contains("**Reviewer readiness:**", feedbackLoop);
             Assert.Contains("comment_html", feedbackLoop);
             Assert.Contains("comment_stripped", feedbackLoop);
             Assert.Contains("verify `comment_stripped` starts with the marker", feedbackLoop);
@@ -1330,6 +1366,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("PR review feedback has two timed loops", developmentDocs);
             Assert.Contains("repo-local `pr-review-feedback-loop` skill", developmentDocs);
             Assert.Contains("Plane remains `In Review` while late human feedback fixes are applied", developmentDocs);
+            Assert.Contains("Feedback-fix Plane comments are reviewer-facing summaries", developmentDocs);
         }
 
         [Fact]
@@ -1467,7 +1504,8 @@ namespace SDDTemplate.DeliveryTools.Tests
                 "ValidateParallelDeliveryDryRun",
                 "RenderPlaneComment",
                 "WorkflowTiming",
-                "UpdateReleaseManifest"
+                "UpdateReleaseManifest",
+                "CreateArtifactPointer"
             })
             {
                 Assert.Contains(mode, contract);
@@ -1483,6 +1521,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("function Test-ParallelDeliveryDryRun", script);
             Assert.Contains("function Render-PlaneComment", script);
             Assert.Contains("function Update-ReleaseManifest", script);
+            Assert.Contains("function New-ArtifactPointer", script);
         }
 
         [Fact]
@@ -1502,6 +1541,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                     "ValidateTicketLock",
                     "ValidateDeploymentLane",
                     "UpdateReleaseManifest",
+                    "CreateArtifactPointer",
                     "RenderPlaneComment -Type E2EQA"
                 ],
                 ["deploy-to-prod"] =
@@ -1509,6 +1549,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                     "ValidateTicketLock",
                     "ValidateDeploymentLane",
                     "UpdateReleaseManifest",
+                    "CreateArtifactPointer",
                     "RenderPlaneComment -Type ProdDeployment"
                 ],
                 ["post-merge-deploy"] =

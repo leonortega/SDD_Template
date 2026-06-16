@@ -1,6 +1,6 @@
 ---
 name: configure-dev-environment
-description: Router for configuring this repo's local development and delivery environment. Use when Codex needs to set up, audit, repair, or guide configuration for Plane, Gitea PR automation, Gitea Actions runner, code quality gates, Nexus artifacts, Azure DEV/QA/PROD environments, DEV-to-QA deployment promotion, Grafana Azure Monitor observability, or when the user asks "config infra", "setup environment", or is unsure which setup area they need.
+description: Router for configuring this repo's local development and delivery environment. Use when Codex needs to set up, audit, repair, or guide configuration for Plane, Gitea PR automation, Gitea Actions runner, code quality gates, Nexus artifacts, Azure DEV/QA/PROD environments, DEV-to-QA deployment promotion, Seq log search, and Azure Event Hub to Seq ingestion, or when the user asks "config infra", "setup environment", or is unsure which setup area they need.
 ---
 
 # Configure Dev Environment
@@ -26,10 +26,12 @@ When setup needs values the user must supply manually, do not only ask for the v
   - `.codex/client-tools.local.json`
   - `.codex/quality.local.json`
   - `infra/plane/variables.env`
+  - `infra/monitoring/variables.env`
+  - `infra/azure/variables.env`
   - `infra/gitea/runner.env`
 - Keep tracked files as templates, workflows, or placeholder-safe documentation.
 - Do not read secrets from Docker containers, container shells, mounted volumes, service databases, or logs.
-- Do not start or stop local infra automatically. Ask first before running `.\infra\up.ps1` or `.\infra\down.ps1`.
+- Do not start or stop local infra automatically. Ask first before running `.\infra\up.ps1` or `.\infra\down.ps1` unless the user explicitly asks for `config infra` or `setup environment`; those requests are approval to run the minimum infra commands needed to leave configuration working.
 - Use Docker only for non-secret operational checks such as service status, mounts, health, and non-sensitive provisioning logs.
 
 ## Version And Install Rules
@@ -94,33 +96,50 @@ Useful modes:
 - `SyncWorktreeLocalConfig`: copy the allowlisted ignored local runtime config from the coordinator checkout into selected or discovered ticket worktrees without printing secret values.
 - `EnsureDeliveryContext`: create or repair the current worktree's `.codex/delivery-context.local.json` from explicit ticket, branch, OpenSpec, and PR context; never copy this file from another worktree. Use `replaceExisting=true` only after `plane-start-ticket` confirms the existing lock's ticket is in the configured Done state, or after explicit operator confirmation for a known-safe repair. QA Done does not require immediate lock deletion because explicit PROD promotion may still need artifact and RC context.
 - `SetPlaneEnv`: update `infra/plane/variables.env`.
+- `SetMonitoringEnv`: update `infra/monitoring/variables.env`.
+- `SplitInfraEnv`: migrate old mixed `infra/plane/variables.env` values into tool-owned env files.
 - `SetGiteaRunner`: update `infra/gitea/runner.env`.
 - `AuditQualityGates`: inspect quality and CI/CD templates without writing local config by default.
 - `BuildGiteaActionsImages`: build and validate pinned local Gitea Actions job images used by PR validation, package/deploy, and QA E2E workflows.
 - `ValidateGiteaActionsRunner`: live-check Docker runner prerequisites for PR validation containers, including local image presence, required tools, and local Gitea checkout reachability.
 - `InitQualityGateTemplates`: create tracked quality-gate templates.
-- `SetGrafanaAzureMonitor`: infer deployed Log Analytics/App Service diagnostics, create or reuse the Grafana Azure Monitor service principal, assign `Reader` and `Log Analytics Reader`, and write ignored Grafana Azure env values to `infra/plane/variables.env` without printing secrets.
+- `SetSeqAzureEventHubLogs`: validate the required OpenTelemetry Collector Contrib Azure Event Hub path for Seq, including collector config, profile wiring, required connection strings, and the native Seq error-log alert.
 - `SetQualityConfig`: create or update `.codex/quality.local.json`, including `coverage.minimumPercent` (default `80`).
 
 ## Workflow
 
 1. Run `Audit` first unless the user asked for a very specific area and a narrower audit is enough.
-2. Summarize findings by domain without exposing secret values.
-3. For every missing prerequisite found during audit or validation, provide install, official link, and post-install validation/configuration commands.
-4. For every missing user-supplied value, provide source, destination, manual setup steps, official link, and validation command.
-5. Run `AuditRecommendedTools` when the user is doing full setup or base-code creation, then summarize relevant MCPs, plugins, tools, references, practices, detected stack tags, stack-context drift, and scan-derived guidance findings for tools, frameworks, code standards, web UI, REST/API design, security, and QA. Use `.codex/tool-recommendations.example.json` as example recommendation metadata, not as runtime project state or a substitute for scanning the repository.
-6. Treat `docs/` as the durable stack/tooling source of truth and `openspec/config.yaml` as the compact AI-facing summary. The recommendation audit verifies those against current repo files; when they differ, report the drift before recommending new tooling.
-7. Use `project-guidance-discover` for project guidance findings. Treat `project-guidance-search-plan` as the first step: build topics from scanned technologies, tools, environments, test frameworks, QA workflows, security gates, code standards, and other detected project signals; do not rely on a fixed catalog alone.
-8. `project-guidance-discover` must show suggested missing skills and guidance to the user and ask for additional desired skills or guidance before anything is copied. If the user says no, confirm the suggested list. If the user names more items, add them to the list, research and verify each source with the same multi-source, official-first policy, then confirm the full list. Valid source families include repo-local workflow sources, OpenAI official catalogs/docs, official tool repositories/docs, technology-owner repositories/docs, `skills.sh` or `skills` command examples, marketplace pages, and clearly labeled community repositories.
-9. After confirmation, persist the catalog-shaped local discovery state to ignored `.codex/tool-recommendations.local.json` with `DiscoverProjectGuidance` and `persistLocal=true`. This file should keep sources, targets, validation commands, accepted/dismissed ids, and recommendation-level `usedInSteps`; it is a local reference for `project-guidance-mapper`, not a tracked source of truth.
-10. Use `project-guidance-acquire` only after the final confirmed list exists. It manually copies confirmed skill `SKILL.md` files and required referenced resources into `.codex/skills`; it must not use command installers or global skill installation. Refresh `.codex/tool-recommendations.local.json` after copying so installed/present state is current.
-11. If `plane-start-ticket` or `automatic-implement-ticket` blocks the first ticket because stack context is missing, configure `docs/architecture.md`, `docs/development.md`, and `docs/deployment.md`, complete `openspec/config.yaml`, verify the tracked example catalog still describes the allowed shape, and write or refresh ignored `.codex/tool-recommendations.local.json` only after project guidance discovery is confirmed.
-12. For skills, use manual repo-based acquisition only: identify the source repo/path/ref, classify `sourceKind`, read the source `SKILL.md`, verify frontmatter matches the intended use, create `.codex/skills/{skill-name}/`, write `.codex/skills/{skill-name}/SKILL.md`, and copy only required referenced scripts/templates. Treat `skills.sh`, `skills`, marketplace, README, curl, or install commands as metadata for repository/path discovery only. Do not install skills by command. Do not copy secrets, local state, caches, generated artifacts, or unrelated files.
-13. For plugins and MCPs, prefer manual configuration instructions over installer commands. Show the exact files or UI fields to create or edit when known, ask before adding config, and never configure secrets automatically. Command installers are fallback-only after explicit approval.
-14. Use `project-guidance-mapper` when the operator asks which skills or guidance apply to the current delivery step or when a workflow needs to combine repo-local workflow skills with installed expert skills, tools, references, practices, and standards. Let `project-guidance-mapper` read and update `.codex/tool-recommendations.local.json` through `MapProjectGuidanceStep` after a step mapping is chosen, used, or inferred.
-15. Record accepted or dismissed recommendation ids with `SetRecommendedTools` only after user confirmation.
-16. Ask: `Which setup area do you want to work on now?`
-17. Offer these choices:
+2. For core compose status checks, always include the plane env file so variable resolution matches runtime expectations:
+
+```powershell
+docker compose --env-file .\infra\plane\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml ps
+```
+
+3. Summarize findings by domain without exposing secret values.
+4. Observability is mandatory for `config infra`: run `SetSeqAzureEventHubLogs`, then ensure Seq, the native Seq error-log alert, Grafana health alerts, and the collector are running and healthy.
+5. If all `OTELCOL_AZURE_EVENT_HUB_*_CONNECTION_STRING` values are present, enable collector ingestion with the `eventhub` profile and validate collector startup.
+6. Do not finish `config infra` successfully while observability findings remain unresolved.
+7. For every missing prerequisite found during audit or validation, provide install, official link, and post-install validation/configuration commands.
+8. For every missing user-supplied value, provide source, destination, manual setup steps, official link, and validation command.
+9. If local Trivy checks report a stale vulnerability database, refresh it before local scans:
+
+```powershell
+trivy --download-db-only
+```
+
+10. Run `AuditRecommendedTools` when the user is doing full setup or base-code creation, then summarize relevant MCPs, plugins, tools, references, practices, detected stack tags, stack-context drift, and scan-derived guidance findings for tools, frameworks, code standards, web UI, REST/API design, security, and QA. Use `.codex/tool-recommendations.example.json` as example recommendation metadata, not as runtime project state or a substitute for scanning the repository.
+11. Treat `docs/` as the durable stack/tooling source of truth and `openspec/config.yaml` as the compact AI-facing summary. The recommendation audit verifies those against current repo files; when they differ, report the drift before recommending new tooling.
+12. Use `project-guidance-discover` for project guidance findings. Treat `project-guidance-search-plan` as the first step: build topics from scanned technologies, tools, environments, test frameworks, QA workflows, security gates, code standards, and other detected project signals; do not rely on a fixed catalog alone.
+13. `project-guidance-discover` must show suggested missing skills and guidance to the user and ask for additional desired skills or guidance before anything is copied. If the user says no, confirm the suggested list. If the user names more items, add them to the list, research and verify each source with the same multi-source, official-first policy, then confirm the full list. Valid source families include repo-local workflow sources, OpenAI official catalogs/docs, official tool repositories/docs, technology-owner repositories/docs, `skills.sh` or `skills` command examples, marketplace pages, and clearly labeled community repositories.
+14. After confirmation, persist the catalog-shaped local discovery state to ignored `.codex/tool-recommendations.local.json` with `DiscoverProjectGuidance` and `persistLocal=true`. This file should keep sources, targets, validation commands, accepted/dismissed ids, and recommendation-level `usedInSteps`; it is a local reference for `project-guidance-mapper`, not a tracked source of truth.
+15. Use `project-guidance-acquire` only after the final confirmed list exists. It manually copies confirmed skill `SKILL.md` files and required referenced resources into `.codex/skills`; it must not use command installers or global skill installation. Refresh `.codex/tool-recommendations.local.json` after copying so installed/present state is current.
+16. If `plane-start-ticket` or `automatic-implement-ticket` blocks the first ticket because stack context is missing, configure `docs/architecture.md`, `docs/development.md`, and `docs/deployment.md`, complete `openspec/config.yaml`, verify the tracked example catalog still describes the allowed shape, and write or refresh ignored `.codex/tool-recommendations.local.json` only after project guidance discovery is confirmed.
+17. For skills, use manual repo-based acquisition only: identify the source repo/path/ref, classify `sourceKind`, read the source `SKILL.md`, verify frontmatter matches the intended use, create `.codex/skills/{skill-name}/`, write `.codex/skills/{skill-name}/SKILL.md`, and copy only required referenced scripts/templates. Treat `skills.sh`, `skills`, marketplace, README, curl, or install commands as metadata for repository/path discovery only. Do not install skills by command. Do not copy secrets, local state, caches, generated artifacts, or unrelated files.
+18. For plugins and MCPs, prefer manual configuration instructions over installer commands. Show the exact files or UI fields to create or edit when known, ask before adding config, and never configure secrets automatically. Command installers are fallback-only after explicit approval.
+19. Use `project-guidance-mapper` when the operator asks which skills or guidance apply to the current delivery step or when a workflow needs to combine repo-local workflow skills with installed expert skills, tools, references, practices, and standards. Let `project-guidance-mapper` read and update `.codex/tool-recommendations.local.json` through `MapProjectGuidanceStep` after a step mapping is chosen, used, or inferred.
+20. Record accepted or dismissed recommendation ids with `SetRecommendedTools` only after user confirmation.
+21. Ask: `Which setup area do you want to work on now?`
+22. Offer these choices:
    - Full guided setup
    - Plane tickets
    - Gitea PR automation
@@ -129,8 +148,9 @@ Useful modes:
    - Nexus artifacts and deployment promotion
    - Azure environments
    - Monitoring dashboards
-18. If the user is vague, default to full guided setup in this order:
-   Plane -> Gitea PR automation -> Gitea Actions runner -> Quality gates and CI -> Nexus artifacts and deployment promotion -> Azure environments -> Monitoring dashboards.
+   - Azure Event Hub to Seq ingestion
+23. If the user is vague, default to full guided setup in this order:
+   Plane -> Gitea PR automation -> Gitea Actions runner -> Quality gates and CI -> Nexus artifacts and deployment promotion -> Azure environments -> Monitoring dashboards -> Azure Event Hub to Seq ingestion.
 
 ## Domain Routing
 
@@ -141,6 +161,7 @@ Useful modes:
 - Nexus artifacts and deployment promotion: use `$configure-artifact-delivery`; read `references/nexus.md`.
 - Azure environments: use `$configure-azure-environments`; read `references/azure.md`.
 - Monitoring dashboards: use `$configure-observability`; read `references/observability.md`.
+- Azure Event Hub to Seq ingestion: use `$configure-observability`; read `references/observability.md`.
 
 For prerequisite installation guidance, read `references/shared-prerequisites.md` whenever a required executable is missing, incompatible, or a domain skill asks for it.
 
@@ -150,17 +171,19 @@ End setup work with:
 
 - Files created or updated, without secret values.
 - Values still missing or intentionally skipped.
+- Observability findings and status from the current run, including at minimum: Seq runtime health, Seq error-log alert status, Grafana `/health` alert status, OTEL collector endpoint + DEV/QA/PROD Event Hub connection-string presence, and runtime stack override status for `infra/azure/dev.parameters.json`, `infra/azure/qa.parameters.json`, and `infra/azure/prod.parameters.json`.
 - Missing tools with install command, official URL, and validation/configuration command.
 - Missing user-supplied values with source, destination, manual setup steps, official URL, and validation command.
 - Docker images or libraries pinned/updated, including the source used to confirm the current stable version.
 - Recommended MCPs, plugins, and skills shown, accepted, dismissed, or skipped. For accepted skills, state that manual copy from source `SKILL.md` is the default acquisition path.
 - Whether `.codex/tool-recommendations.local.json` was written or updated for local discovery/mapping state.
 - Whether validation was file-only or included live checks.
-- Reminder to run `.\infra\up.ps1` if live services were not started.
+- If setup was requested as `config infra` or full setup, report the live `docker compose ... ps` state instead of deferring with a reminder.
 
 ## Failure Rules
 
 - Stop when required user-supplied secrets, tokens, workspace IDs, project IDs, cloud IDs, or service account values are missing; provide source, destination, official setup path, validation command, and handoff impact.
+- Stop successful completion of `config infra` when observability is not working: missing Event Hub collector values, Seq unhealthy, or collector container not running when the `eventhub` profile is expected.
 - Stop before writing secrets to tracked files or reading secrets from containers, volumes, databases, or logs.
 - Stop before branch, Plane, ticket-lock, or OpenSpec mutation when first-ticket stack context, guidance discovery review, or recommendation audit context is missing or drifted.
 - Stop before using command installers for skills; route confirmed skill copying to `project-guidance-acquire`.

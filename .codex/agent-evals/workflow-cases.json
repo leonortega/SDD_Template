@@ -116,6 +116,7 @@
         "Derive a new feedbackBatchId from sorted late human comment source ids",
         "Create or update OpenSpec PR Review Feedback tasks before fixing",
         "Keep Plane In Review while applying late human feedback fixes",
+        "Post a human-readable Plane fix comment with reviewer readiness and how IA resolved each addressed comment",
         "Rerun AI review on the pushed fix before handoff"
       ],
       "stopConditions": [
@@ -128,6 +129,7 @@
         "prNumberOrUrl",
         "headSha",
         "feedbackBatchId",
+        "humanReadablePlaneFixComment",
         "openSpecFeedbackTasks",
         "validation"
       ]

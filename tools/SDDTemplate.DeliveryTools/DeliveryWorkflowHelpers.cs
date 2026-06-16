@@ -8,6 +8,8 @@ namespace SDDTemplate.DeliveryTools
 {
     public static partial class DeliveryWorkflowHelpers
     {
+        private static readonly JsonSerializerOptions IndentedJson = new() { WriteIndented = true };
+
         public static string ReadDeliveryPolicyTicketKeyPattern(string path)
         {
             using JsonDocument document = JsonDocument.Parse(File.ReadAllText(path));
@@ -134,7 +136,51 @@ namespace SDDTemplate.DeliveryTools
                 _ = Directory.CreateDirectory(parent);
             }
 
-            File.WriteAllText(outputPath, JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true }));
+            File.WriteAllText(outputPath, JsonSerializer.Serialize(manifest, IndentedJson));
+        }
+
+        public static void CreateArtifactPointer(
+            string outputPath,
+            string version,
+            string artifactCommitSha,
+            string planeTicketKey,
+            IEnumerable<string> includedTickets,
+            DateTimeOffset? createdAtUtc = null)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(version);
+            ArgumentException.ThrowIfNullOrWhiteSpace(artifactCommitSha);
+            ArgumentException.ThrowIfNullOrWhiteSpace(planeTicketKey);
+
+            string[] normalizedTickets = [.. includedTickets
+                .Where(ticket => !string.IsNullOrWhiteSpace(ticket))
+                .Select(ticket => ticket.Trim())
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)];
+
+            if (normalizedTickets.Length == 0)
+            {
+                normalizedTickets = [planeTicketKey];
+            }
+
+            SortedDictionary<string, object?> pointer = new()
+            {
+                ["schemaVersion"] = 1,
+                ["version"] = version,
+                ["artifactCommitSha"] = artifactCommitSha,
+                ["canonicalPath"] = $"app/{artifactCommitSha}/",
+                ["releaseManifestPath"] = $"app/{artifactCommitSha}/release.json",
+                ["planeTicketKey"] = planeTicketKey,
+                ["includedTickets"] = normalizedTickets,
+                ["createdAtUtc"] = (createdAtUtc ?? DateTimeOffset.UtcNow).ToString("O", CultureInfo.InvariantCulture),
+            };
+
+            string? parent = Path.GetDirectoryName(outputPath);
+            if (!string.IsNullOrWhiteSpace(parent))
+            {
+                _ = Directory.CreateDirectory(parent);
+            }
+
+            File.WriteAllText(outputPath, JsonSerializer.Serialize(pointer, IndentedJson));
         }
 
         public static DeploymentConfigBuildResult BuildDeploymentConfig(string root, string topologyPath, string mappingPath, string outputPath)
@@ -228,7 +274,7 @@ namespace SDDTemplate.DeliveryTools
                 _ = Directory.CreateDirectory(parent);
             }
 
-            File.WriteAllText(outputPath, artifact.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+            File.WriteAllText(outputPath, artifact.ToJsonString(IndentedJson));
             return new DeploymentConfigBuildResult(outputPath, true, []);
         }
 
@@ -394,8 +440,7 @@ namespace SDDTemplate.DeliveryTools
         {
             InstalledSkillIndex index = BuildInstalledSkillIndex(root);
             SkillIndexCache cache = new(1, [.. index.Skills.Select(skill => new SkillIndexFingerprint(skill.Path, skill.SizeBytes, skill.LastWriteTimeUtc))]);
-            JsonSerializerOptions options = new() { WriteIndented = true };
-            string cacheJson = JsonSerializer.Serialize(cache, options);
+            string cacheJson = JsonSerializer.Serialize(cache, IndentedJson);
             bool cacheHit = File.Exists(indexPath)
                 && File.Exists(cachePath)
                 && string.Equals(File.ReadAllText(cachePath), cacheJson, StringComparison.Ordinal);
@@ -404,7 +449,7 @@ namespace SDDTemplate.DeliveryTools
             {
                 _ = Directory.CreateDirectory(Path.GetDirectoryName(indexPath) ?? root);
                 _ = Directory.CreateDirectory(Path.GetDirectoryName(cachePath) ?? root);
-                File.WriteAllText(indexPath, JsonSerializer.Serialize(index, options));
+                File.WriteAllText(indexPath, JsonSerializer.Serialize(index, IndentedJson));
                 File.WriteAllText(cachePath, cacheJson);
             }
 
