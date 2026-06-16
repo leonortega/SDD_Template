@@ -103,11 +103,12 @@ Follow `openspec-apply-change`:
 2. If the forecast requires a decision before apply, stop before editing code unless a split/chained work-unit plan, `size:exception`, or `exception-ok` is recorded in the prompt or OpenSpec artifacts.
 3. Implement pending OpenSpec tasks one at a time.
 4. Add or update tests for changed behavior.
-5. Mark a task complete only after its code and related tests are updated.
-6. If implementation reveals extra required work, add a new OpenSpec task before doing that work.
-7. Keep OpenSpec specs, design notes, and tasks aligned with the latest implementation.
-8. Commit after each completed workflow step when tracked changes exist, then start the next step from a clean working tree. Use ticket- or OpenSpec-prefixed messages, skip empty commits, and keep code, tests, docs, and OpenSpec changes together when splitting them would leave a broken intermediate commit.
-9. Do not automatically stash normal ticket progress. Use stash only for unrelated local or user changes that block the current step.
+5. After code changes, run `ponytail-review` against the current diff and apply actionable simplification recommendations before marking implementation tasks complete.
+6. Mark a task complete only after its code, related tests, and applicable `ponytail-review` fixes are updated.
+7. If implementation reveals extra required work, add a new OpenSpec task before doing that work.
+8. Keep OpenSpec specs, design notes, and tasks aligned with the latest implementation.
+9. Commit after each completed workflow step when tracked changes exist, then start the next step from a clean working tree. Use ticket- or OpenSpec-prefixed messages, skip empty commits, and keep code, tests, docs, and OpenSpec changes together when splitting them would leave a broken intermediate commit.
+10. Do not automatically stash normal ticket progress. Use stash only for unrelated local or user changes that block the current step.
 
 ### 4. Quality And Coverage Completion
 
