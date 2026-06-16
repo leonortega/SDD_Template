@@ -141,7 +141,6 @@
         try
         {
             ProductRows = await HttpClientFactory.CreateClient().GetFromJsonAsync<List<ProductModel>>(ApiUrl) ?? [];
-            Message = string.Empty;
         }
         catch (Exception ex) when (ex is HttpRequestException or JsonException)
         {
