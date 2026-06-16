@@ -64,11 +64,6 @@ namespace SDDTemplate.Api.Products
                 CancellationToken cancellationToken) =>
             {
                 Dictionary<string, string[]> errors = request.Validate();
-                if (errors.Count == 0 && await SkuExists(db, request.NormalizedSku(), id, cancellationToken))
-                {
-                    errors[nameof(ProductRequest.Sku)] = ["SKU must be unique."];
-                }
-
                 if (errors.Count > 0)
                 {
                     Log.Debug("Product update validation failed for id {ProductId} with {ErrorCount} fields", id, errors.Count);
@@ -80,6 +75,15 @@ namespace SDDTemplate.Api.Products
                 {
                     Log.Debug("Product update requested for missing id {ProductId}", id);
                     return TypedResults.NotFound();
+                }
+
+                if (await SkuExists(db, request.NormalizedSku(), id, cancellationToken))
+                {
+                    Log.Debug("Product update duplicate SKU rejected for id {ProductId}", id);
+                    return TypedResults.ValidationProblem(new Dictionary<string, string[]>
+                    {
+                        [nameof(ProductRequest.Sku)] = ["SKU must be unique."],
+                    });
                 }
 
                 request.ApplyTo(product, DateTimeOffset.UtcNow);

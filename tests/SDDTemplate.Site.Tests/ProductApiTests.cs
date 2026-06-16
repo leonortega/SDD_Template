@@ -84,12 +84,27 @@ namespace SDDTemplate.Site.Tests
             Assert.Contains("Status", invalidBody);
             Assert.Contains("Price", invalidBody);
 
-            _ = await httpClient.PostAsJsonAsync("/api/products", ValidRequest(name: "Desk", sku: "desk-001"));
+            HttpResponseMessage createdResponse = await httpClient.PostAsJsonAsync("/api/products", ValidRequest(name: "Desk", sku: "desk-001"));
+            ProductResponse? created = await createdResponse.Content.ReadFromJsonAsync<ProductResponse>();
+            Assert.Equal(HttpStatusCode.Created, createdResponse.StatusCode);
+            Assert.NotNull(created);
+
             HttpResponseMessage duplicateResponse = await httpClient.PostAsJsonAsync("/api/products", ValidRequest(name: "Desk 2", sku: "DESK-001"));
             string duplicateBody = await duplicateResponse.Content.ReadAsStringAsync();
 
             Assert.Equal(HttpStatusCode.BadRequest, duplicateResponse.StatusCode);
             Assert.Contains("SKU must be unique.", duplicateBody);
+
+            HttpResponseMessage otherResponse = await httpClient.PostAsJsonAsync("/api/products", ValidRequest(name: "Lamp", sku: "lamp-001"));
+            ProductResponse? other = await otherResponse.Content.ReadFromJsonAsync<ProductResponse>();
+            Assert.Equal(HttpStatusCode.Created, otherResponse.StatusCode);
+            Assert.NotNull(other);
+
+            HttpResponseMessage duplicateUpdateResponse = await httpClient.PutAsJsonAsync($"/api/products/{other.Id}", ValidRequest(name: "Lamp", sku: "desk-001"));
+            string duplicateUpdateBody = await duplicateUpdateResponse.Content.ReadAsStringAsync();
+
+            Assert.Equal(HttpStatusCode.BadRequest, duplicateUpdateResponse.StatusCode);
+            Assert.Contains("SKU must be unique.", duplicateUpdateBody);
         }
 
         [Fact]
