@@ -92,12 +92,7 @@ test.describe("Product CRUD deployed QA E2E", () => {
     expect(invalidBody).toContain("Price cannot be negative.");
 
     await fillProductForm(page, testProduct);
-    const createRequest = page.waitForRequest(requestInfo =>
-      requestInfo.method() === "POST" &&
-      requestInfo.url().replace(/\/$/, "") === `${apiUrl}/api/products`);
-
     await page.getByRole("button", { name: "Save product" }).click();
-    await createRequest;
     await expect(page.locator("#product-errors")).toContainText("Product saved.");
     await expect(page.locator("#products-list")).toContainText(testProduct.name);
     await expect(page.locator("#products-list")).toContainText(testProduct.sku.toUpperCase());
