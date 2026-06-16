@@ -280,3 +280,12 @@ If a ticket is moved to Done after a Gitea QA evidence run using a noncanonical 
 - Last verified: 2026-06-10
 
 When Alloy `loki.source.azure_event_hubs` reports `kafka: client has run out of available brokers to talk to: EOF`, first verify the Event Hubs namespace is Standard or higher, Kafka is enabled, the listen rule is scoped correctly, and local env values are present without printing secrets. If those checks pass but `SslStream` or `kcat` to `<namespace>.servicebus.windows.net:9093` fails with connection reset or TLS handshake failure, treat it as a Kafka/TLS 9093 network or service endpoint blocker before changing repository configuration. Retry from a stable network or validate firewall/proxy rules for Event Hubs Kafka port 9093.
+
+## Azure App Service Smoke Can Beat Warm-Up
+
+- Type: Pattern
+- Status: Active
+- Source: E2EPROJECT-7 package/deploy run 204, DEV deploy succeeded but immediate smoke failed; fresh DEV `/health` checks passed shortly after.
+- Last verified: 2026-06-16
+
+When `az webapp deploy` reports `RuntimeSuccessful` but the immediate page, CORS, or `/health` smoke check fails, re-check live DEV/QA targets after a short delay before changing app code. If live checks pass, treat it as Azure App Service warm-up tolerance and add bounded retry/backoff to the workflow smoke checks. Keep `.gitea/workflows/package-deploy.yml` and the `configure_infra_tools.ps1` workflow generator synchronized.
