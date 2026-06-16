@@ -109,6 +109,35 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
+        public void CreateArtifactPointerWritesHumanReadableVersionAlias()
+        {
+            string root = CreateTempDirectory();
+            string pointerPath = Path.Combine(root, "artifact-pointer.json");
+
+            DeliveryWorkflowHelpers.CreateArtifactPointer(
+                pointerPath,
+                "v1.2.3-rc.1",
+                "abcdef1234567890",
+                "E2EPROJECT-1",
+                ["E2EPROJECT-2", "E2EPROJECT-1", "E2EPROJECT-1"],
+                DateTimeOffset.Parse("2026-06-12T10:15:30Z"));
+
+            using JsonDocument pointer = JsonDocument.Parse(File.ReadAllText(pointerPath));
+            JsonElement rootElement = pointer.RootElement;
+
+            Assert.Equal(1, rootElement.GetProperty("schemaVersion").GetInt32());
+            Assert.Equal("v1.2.3-rc.1", rootElement.GetProperty("version").GetString());
+            Assert.Equal("abcdef1234567890", rootElement.GetProperty("artifactCommitSha").GetString());
+            Assert.Equal("app/abcdef1234567890/", rootElement.GetProperty("canonicalPath").GetString());
+            Assert.Equal("app/abcdef1234567890/release.json", rootElement.GetProperty("releaseManifestPath").GetString());
+            Assert.Equal("E2EPROJECT-1", rootElement.GetProperty("planeTicketKey").GetString());
+            Assert.Equal("2026-06-12T10:15:30.0000000+00:00", rootElement.GetProperty("createdAtUtc").GetString());
+
+            string[] includedTickets = [.. rootElement.GetProperty("includedTickets").EnumerateArray().Select(item => item.GetString() ?? string.Empty)];
+            Assert.Equal(new[] { "E2EPROJECT-1", "E2EPROJECT-2" }, includedTickets);
+        }
+
+        [Fact]
         public void TicketReadinessClassifiesReadyEnrichableAndBlockedTickets()
         {
             TicketReadinessResult ready = DeliveryWorkflowHelpers.ClassifyTicketReadiness(
@@ -554,7 +583,7 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
-        public void AuditReportsMissingGrafanaAzureMonitorValues()
+        public void AuditReportsMissingEventHubCollectorValues()
         {
             string root = CreateTempDirectory();
             _ = Directory.CreateDirectory(Path.Combine(root, ".codex"));
@@ -563,6 +592,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "monitoring", "grafana", "dashboards"));
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "dashboards"));
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "datasources"));
+            _ = Directory.CreateDirectory(Path.Combine(root, "infra", "monitoring", "prometheus"));
 
             File.Copy(
                 Path.Combine(FindRepositoryRoot().FullName, ".codex", "client-tools.example.json"),
@@ -576,7 +606,10 @@ namespace SDDTemplate.DeliveryTools.Tests
             File.WriteAllText(Path.Combine(root, "infra", "plane", "variables.env"), string.Empty);
             File.WriteAllText(Path.Combine(root, "infra", "gitea", "runner.env"), "GITEA_RUNNER_REGISTRATION_TOKEN=replace-with-token");
             File.WriteAllText(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "dashboards", "dashboards.yml"), "apiVersion: 1");
-            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "datasources", "azure-monitor.yml"), "uid: azure-monitor");
+            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "datasources", "prometheus.yml"), "uid: prometheus");
+            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "prometheus", "prometheus.yml"), "global: {}\n");
+            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "prometheus", "blackbox.yml"), "modules: {}\n");
+            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "prometheus", "targets.local.yml"), "[]\n");
 
             string output = RunPowerShellScript("-Mode", "Audit", "-Root", root);
             using JsonDocument result = JsonDocument.Parse(output);
@@ -584,23 +617,69 @@ namespace SDDTemplate.DeliveryTools.Tests
                 .EnumerateArray()
                 .Select(item => item.GetProperty("key").GetString() ?? string.Empty)];
 
-            Assert.Contains("GRAFANA_AZURE_TENANT_ID", keys);
-            Assert.Contains("GRAFANA_AZURE_CLIENT_ID", keys);
-            Assert.Contains("GRAFANA_AZURE_CLIENT_SECRET", keys);
-            Assert.Contains("GRAFANA_AZURE_DEV_LOG_ANALYTICS_WORKSPACE_ID", keys);
+            Assert.Contains("OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING", keys);
+            Assert.Contains("OTELCOL_AZURE_EVENT_HUB_QA_CONNECTION_STRING", keys);
+            Assert.Contains("OTELCOL_AZURE_EVENT_HUB_PROD_CONNECTION_STRING", keys);
+            Assert.Contains("OTELCOL_SEQ_OTLP_ENDPOINT", keys);
         }
 
         [Fact]
-        public void AzureBicepProvisionsLogAnalyticsAndDiagnosticSettingsForLogs()
+        public void AuditReportsMissingGrafanaHealthAlertProvisioning()
+        {
+            string root = CreateTempDirectory();
+            _ = Directory.CreateDirectory(Path.Combine(root, ".codex"));
+            _ = Directory.CreateDirectory(Path.Combine(root, "infra", "plane"));
+            _ = Directory.CreateDirectory(Path.Combine(root, "infra", "gitea"));
+            _ = Directory.CreateDirectory(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "dashboards"));
+            _ = Directory.CreateDirectory(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "datasources"));
+            _ = Directory.CreateDirectory(Path.Combine(root, "infra", "monitoring", "prometheus"));
+
+            File.Copy(
+                Path.Combine(FindRepositoryRoot().FullName, ".codex", "client-tools.example.json"),
+                Path.Combine(root, ".codex", "client-tools.local.json"));
+            File.Copy(
+                Path.Combine(FindRepositoryRoot().FullName, ".codex", "client-tools.example.json"),
+                Path.Combine(root, ".codex", "client-tools.example.json"));
+            File.Copy(
+                Path.Combine(FindRepositoryRoot().FullName, ".codex", "quality.example.json"),
+                Path.Combine(root, ".codex", "quality.example.json"));
+            File.WriteAllText(Path.Combine(root, "infra", "plane", "variables.env"), string.Empty);
+            File.WriteAllText(Path.Combine(root, "infra", "gitea", "runner.env"), "GITEA_RUNNER_REGISTRATION_TOKEN=replace-with-token");
+            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "variables.env"), """
+                OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING=x
+                OTELCOL_AZURE_EVENT_HUB_QA_CONNECTION_STRING=x
+                OTELCOL_AZURE_EVENT_HUB_PROD_CONNECTION_STRING=x
+                OTELCOL_SEQ_OTLP_ENDPOINT=http://seq:5341/ingest/otlp
+                GRAFANA_HEALTH_ALERT_FOR=10s
+                SEQ_ERROR_ALERT_WINDOW=1m
+                SEQ_ERROR_ALERT_THRESHOLD=0
+                """);
+            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "dashboards", "dashboards.yml"), "apiVersion: 1");
+            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "datasources", "prometheus.yml"), "uid: prometheus");
+            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "prometheus", "prometheus.yml"), "global: {}\n");
+            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "prometheus", "blackbox.yml"), "modules: {}\n");
+            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "prometheus", "targets.local.yml"), "[]\n");
+
+            string output = RunPowerShellScript("-Mode", "Audit", "-Root", root);
+            using JsonDocument result = JsonDocument.Parse(output);
+            string[] paths = [.. result.RootElement.GetProperty("findings")
+                .EnumerateArray()
+                .Select(item => item.GetProperty("path").GetString() ?? string.Empty)];
+
+            Assert.Contains("infra/monitoring/grafana/provisioning/alerting/health-alerts.yml", paths);
+        }
+
+        [Fact]
+        public void AzureBicepDoesNotProvisionLogAnalyticsOrDiagnosticSettingsByDefault()
         {
             string bicep = File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, "infra", "azure", "main.bicep"));
 
-            Assert.Contains("Microsoft.OperationalInsights/workspaces", bicep);
-            Assert.Contains("logAnalyticsWorkspaceName", bicep);
-            Assert.Contains("Microsoft.Insights/diagnosticSettings@2021-05-01-preview", bicep);
-            Assert.Contains("AppServiceConsoleLogs", bicep);
-            Assert.Contains("workspaceId: logAnalyticsWorkspace.id", bicep);
-            Assert.Contains("logAnalyticsDestinationType: 'Dedicated'", bicep);
+            Assert.DoesNotContain("Microsoft.OperationalInsights/workspaces", bicep);
+            Assert.DoesNotContain("logAnalyticsWorkspaceName", bicep);
+            Assert.DoesNotContain("Microsoft.Insights/diagnosticSettings@2021-05-01-preview", bicep);
+            Assert.DoesNotContain("AppServiceConsoleLogs", bicep);
+            Assert.DoesNotContain("workspaceId: logAnalyticsWorkspace.id", bicep);
+            Assert.DoesNotContain("logAnalyticsDestinationType: 'Dedicated'", bicep);
         }
 
         [Fact]
@@ -1230,6 +1309,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("| Stage | Outcome | Duration | Started UTC | Finished UTC |", output);
             Assert.Contains("| `plane-start-ticket` | PASS | 2m 14s | 2026-06-03T10:00:00Z | 2026-06-03T10:02:14Z |", output);
             Assert.Contains("| `implement-ticket` | BLOCKED | 1h 00m 05s | 2026-06-03T10:02:14Z | 2026-06-03T11:02:19Z |", output);
+            Assert.Contains("| `pr-review-feedback-loop` | NOT RUN / N/A | no time | - | - |", output);
+            Assert.Contains("| `test-e2e` | NOT RUN / N/A | no time | - | - |", output);
             Assert.DoesNotContain("token", output, StringComparison.OrdinalIgnoreCase);
         }
 
@@ -1395,6 +1476,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("IA generated workflow timing: E2EPROJECT-123", comment);
             Assert.Contains("- Total elapsed: 4m 30s", comment);
             Assert.Contains("| `implement-ticket` | PASS | 3m 30s | 2026-06-09T10:01:00Z | 2026-06-09T10:04:30Z |", comment);
+            Assert.Contains("| `post-merge-deploy` | NOT RUN / N/A | no time | - | - |", comment);
+            Assert.Contains("| `test-e2e` | NOT RUN / N/A | no time | - | - |", comment);
         }
 
         private static string[] GetJsonErrors(JsonDocument document)
@@ -1554,7 +1637,7 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             if (!includeContext) { return; }
 
-            string context = ".NET 10 ASP.NET Core Blazor xUnit coverage Plane Gitea Gitea Actions Nexus Azure App Service Azure Monitor Log Analytics Grafana Browser Playwright OpenSpec clean code architecture web UI REST API security OWASP";
+            string context = ".NET 10 ASP.NET Core Blazor xUnit coverage Plane Gitea Gitea Actions Nexus Azure App Service Azure Monitor Log Analytics Grafana Seq Browser Playwright OpenSpec clean code architecture web UI REST API security OWASP";
             _ = Directory.CreateDirectory(Path.Combine(root, "docs"));
             File.WriteAllText(Path.Combine(root, "docs", "architecture.md"), context);
             File.WriteAllText(Path.Combine(root, "docs", "development.md"), context);

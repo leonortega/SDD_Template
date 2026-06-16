@@ -23,7 +23,7 @@ Read `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.m
    - Repository-local workflow skills, scripts, templates, and docs that are already tracked in this project.
    - OpenAI skill catalogs and docs.
    - Official repository or tool docs for the technology, framework, product, or plugin.
-   - Technology-owner skill repositories or docs, such as Microsoft, .NET, Playwright, Gitea, Sonatype Nexus, Azure, Azure Monitor, Grafana, Docker, Kubernetes, or OWASP.
+   - Technology-owner skill repositories or docs, such as Microsoft, .NET, Playwright, Gitea, Sonatype Nexus, Azure, Azure Monitor, Grafana, Seq, Docker, Kubernetes, or OWASP.
    - `skills.sh`, `skills`, marketplace pages, or command examples when they identify a repository, ref, skill name, and likely `SKILL.md` path.
    - Well-used public skills or references only when no official or technology-owner source exists; label them as community-maintained.
 4. Check whether each candidate skill already exists at `.codex/skills/{skill-name}/SKILL.md`.

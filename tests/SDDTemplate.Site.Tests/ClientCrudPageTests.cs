@@ -1,5 +1,6 @@
 using System.Net;
 using Microsoft.AspNetCore.Mvc.Testing;
+using SDDTemplate.Site.Components;
 
 namespace SDDTemplate.Site.Tests
 {
@@ -8,7 +9,7 @@ namespace SDDTemplate.Site.Tests
         [Fact]
         public async Task ClientsPageRendersCrudShell()
         {
-            await using WebApplicationFactory<SiteAssemblyMarker> factory = new();
+            await using WebApplicationFactory<App> factory = new();
             using HttpClient client = factory.CreateClient();
 
             HttpResponseMessage response = await client.GetAsync("/clients");
@@ -17,18 +18,15 @@ namespace SDDTemplate.Site.Tests
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
             Assert.Contains("<h1>Clients</h1>", markup);
             Assert.Contains("id=\"client-form\"", markup);
-            Assert.Contains("onsubmit=\"return false\"", markup);
             Assert.Contains("id=\"clients-list\"", markup);
-            Assert.Contains("/api/clients", markup);
-            Assert.Contains("fields.id.value.trim()", markup);
-            Assert.Contains("method: id ? \"PUT\" : \"POST\"", markup);
-            Assert.Contains("const apiBaseUrl", markup);
+            Assert.Contains("Save client", markup);
+            Assert.Contains("_framework/blazor.web.js", markup);
         }
 
         [Fact]
         public async Task MainNavigationLoadsClientsPageAsFullDocument()
         {
-            await using WebApplicationFactory<SiteAssemblyMarker> factory = new();
+            await using WebApplicationFactory<App> factory = new();
             using HttpClient client = factory.CreateClient();
 
             HttpResponseMessage response = await client.GetAsync("/");

@@ -17,7 +17,7 @@ Owns:
 ## Defaults
 
 - Resource groups: `rg-agentic-dev`, `rg-agentic-qa`, `rg-agentic-prod`.
-- Location: `eastus`.
+- Location: `westcentralus` (default). Use a different location only when explicitly required.
 - SKU/tier: `B1` / `Basic`.
 - SQLite path: `/home/data/app.db`.
 - Runtime stack: `DOTNETCORE|10.0`.
@@ -142,13 +142,13 @@ Preview first unless the user explicitly asks to deploy directly:
 
 ```powershell
 az account show
-.\infra\azure\deploy-environments.ps1 -Location eastus -WhatIf
+.\infra\azure\deploy-environments.ps1 -Location westcentralus -WhatIf
 ```
 
 Deploy after approval:
 
 ```powershell
-.\infra\azure\deploy-environments.ps1 -Location eastus
+.\infra\azure\deploy-environments.ps1 -Location westcentralus
 ```
 
 ## Validation

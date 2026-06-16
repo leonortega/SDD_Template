@@ -1,6 +1,6 @@
 ---
 name: deploy-to-prod
-description: Promote a QA-approved release artifact to PROD after Plane E2E QA approval. Use when Codex needs to verify one or more Plane Done tickets included in a release, confirm the QA-approved Nexus artifact and checksum, ensure release/RC tag consistency, update main, trigger PROD deployment, validate PROD page and /health checks, verify Grafana Azure Monitor observability when available, and comment the PROD result on every included Plane ticket.
+description: Promote a QA-approved release artifact to PROD after Plane E2E QA approval. Use when Codex needs to verify one or more Plane Done tickets included in a release, confirm the QA-approved Nexus artifact and checksum, ensure release/RC tag consistency, update main, trigger PROD deployment, validate PROD page and /health checks, verify Seq log search when available, and comment the PROD result on every included Plane ticket.
 ---
 
 # Deploy To PROD
@@ -45,7 +45,7 @@ Run preflight, main/tag promotion, PROD deployment, PROD verification, Plane res
 
 ## Preflight
 
-1. Resolve the primary Plane ticket, included Done ticket list, PRs, QA-approved commit SHA, source RC version, and final release version from user input, Plane comments, Gitea PR metadata, tags, or Nexus artifact paths. If `release.json.includedTickets` exists, treat it as the authoritative release membership list; otherwise default to the primary `planeTicketKey` for single-ticket compatibility.
+1. Resolve the primary Plane ticket, included Done ticket list, PRs, QA-approved commit SHA, source RC version, and final release version from user input, Plane comments, Gitea PR metadata, tags, `app/qa-approved/latest.json`, or Nexus artifact paths. If `release.json.includedTickets` exists, treat it as the authoritative release membership list; otherwise default to the primary `planeTicketKey` for single-ticket compatibility.
 2. Run `ValidateTicketLock` with the primary Plane ticket, representative PR, QA-approved commit, source RC version when known, and final release version when known. If the result is invalid, stop before tag or `main` mutation. Do not reject a valid batch release only because additional included tickets differ from the active ticket lock.
 3. Require SemVer tags:
    - source RC: `vMAJOR.MINOR.PATCH-rc.N`
@@ -64,6 +64,7 @@ Run preflight, main/tag promotion, PROD deployment, PROD verification, Plane res
 9. Read `release.json` and verify it references the same commit SHA, checksum, primary Plane ticket, QA evidence URL, and source RC version as the Plane E2E QA evidence. If `includedTickets` exists, every included ticket must have Done state, E2E QA PASS evidence, source RC lineage, and release membership proof. Treat a different `planeTicketKey` as blocking only when no `includedTickets` release membership proves the batch release.
 10. Verify the source RC tag exists and points to the QA-approved commit.
 11. Verify the final release tag does not already exist.
+12. If `app/qa-approved/latest.json` is used to resolve the commit, verify its `artifactCommitSha`, `version`, `canonicalPath`, `releaseManifestPath`, `planeTicketKey`, and `includedTickets` match the selected release context before any `main` or tag mutation.
 
 Stop if any QA gate, tag gate, artifact gate, or checksum gate fails.
 
@@ -82,7 +83,7 @@ Stop if any QA gate, tag gate, artifact gate, or checksum gate fails.
 
 PROD deployment can be triggered in two supported ways:
 
-- A push/merge to `main` deploys PROD only when the changed files include application/test/package source and the commit or merged PR title starts with the configured ticket key format from `.codex/delivery-policy.json`. It downloads the existing Nexus artifact for `GITHUB_SHA`.
+- A push/merge to `main` deploys PROD only when the changed files include application/test/package source and the commit or merged PR title starts with the configured ticket key format from `.codex/delivery-policy.json`. It resolves the artifact from `app/qa-approved/latest.json`, requires the pointer commit to equal `GITHUB_SHA`, then validates `commit.sha`, `release.json`, and the source RC tag before downloading the canonical `app/{commitSha}` ZIPs.
 - Manual workflow dispatch with `environment=prod` deploys the topology artifacts identified by `artifact_commit_sha`.
 
 For manual dispatch, trigger the Gitea package/deploy workflow with:
@@ -102,7 +103,7 @@ The PROD workflow must not run package, DEV, or QA jobs for a `main` push or `en
 After dispatch, inspect the workflow run jobs and logs against the artifact-reuse contract. A successful PROD run must show that the workflow:
 
 - used `environment=prod`,
-- consumed `artifact_commit_sha={qaApprovedCommit}` for manual dispatch or `GITHUB_SHA` for a `main` push,
+- consumed `artifact_commit_sha={qaApprovedCommit}` for manual dispatch or resolved the same commit from `app/qa-approved/latest.json` for a `main` push,
 - downloaded `app/{artifact_commit_sha}/deployable-apps.json` and per-app ZIPs from Nexus,
 - verified every per-app checksum,
 - skipped rebuild/republish behavior,
@@ -119,11 +120,10 @@ After the workflow succeeds, run direct verification before commenting success:
 1. Request the PROD web URL and assert HTTP 200 plus expected page title/content.
 2. Request every topology app health path and assert HTTP 200 plus `status=ok`.
 3. Verify the PROD workflow applied and verified `deployment-config.json`; required live App Service settings must exist and non-secret values must match expected resolved values. Missing proof is blocking.
-4. Query Grafana health at `http://localhost:3001/api/health` when local Grafana is reachable.
-5. Run `infra/monitoring/validate-azure-monitor-logs.ps1` when Grafana Azure Monitor credentials and Log Analytics workspace IDs are configured.
-6. If Grafana or Azure Monitor validation is unavailable, classify monitoring as unavailable. Direct HTTP, deployment configuration, and `/health` checks remain authoritative for app success.
-7. If direct page, deployment configuration, or `/health` checks fail, classify PROD verification as failed and do not claim success.
-8. When PROD verification passes, use `UpdateReleaseManifest` to update `app/{commitSha}/release.json` with final release version, final tag, included tickets, PROD URL, PROD page status, PROD deployment configuration status, PROD `/health` status, workflow run URL, monitoring status, and PROD deployment timestamp. Validate and upload the updated manifest to Nexus.
+4. If Seq log validation is unavailable, classify monitoring as unavailable. Direct HTTP, deployment configuration, and `/health` checks remain authoritative for app success.
+5. If direct page, deployment configuration, or `/health` checks fail, classify PROD verification as failed and do not claim success.
+6. When PROD verification passes, use `UpdateReleaseManifest` to update `app/{commitSha}/release.json` with final release version, final tag, included tickets, PROD URL, PROD page status, PROD deployment configuration status, PROD `/health` status, workflow run URL, monitoring status, and PROD deployment timestamp. Validate and upload the updated manifest to Nexus.
+7. Use `CreateArtifactPointer` to create the final release alias pointer, then upload `app/releases/{finalReleaseVersion}/artifact-pointer.json` and `app/releases/{finalReleaseVersion}/release.json`. The release alias must point back to canonical `app/{commitSha}/`; do not duplicate ZIP files into the version folder.
 
 PROD success must never be based on screenshots alone.
 
@@ -153,7 +153,7 @@ Add or update the PROD result on every included ticket. The comment must include
 - main ref update result
 - workflow run URL
 - PROD URL, page smoke status, and `/health` status
-- Grafana Azure Monitor status, or monitoring unavailable/configuration notes
+- Seq log search, or monitoring unavailable/configuration notes
 - pass/fail result
 
 Only write a success result after the workflow passed and direct PROD page plus `/health` verification passed. If app checks fail, write a failure comment on the primary ticket and stop. If only local monitoring is unavailable, deployment may still pass, but every included ticket comment must state monitoring verification was unavailable.
@@ -194,5 +194,5 @@ Report the final release version, included tickets, PROD URL, final tag, deploye
 - Missing `AZURE_PROD_RESOURCE_GROUP` or any `AZURE_PROD_{APPID}_APP_NAME` / `AZURE_PROD_{APPID}_APP_URL` Gitea Actions secrets: route to `$configure-azure-environments` or `$configure-dev-environment`, configure the secrets from Azure deployment outputs without exposing secret values, then rerun PROD dispatch.
 - PROD workflow failure: comment failure and stop.
 - PROD page or `/health` failure: comment failure and stop.
-- Grafana Azure Monitor unavailable: record as monitoring unavailable; do not fail the deployment when direct app checks pass.
+- Seq unavailable: record as monitoring unavailable; do not fail the deployment when direct app checks pass.
 - Secrets in logs or comments: redact or discard before reporting.

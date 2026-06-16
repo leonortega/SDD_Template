@@ -4,6 +4,7 @@ $infraDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 docker compose `
   --env-file (Join-Path $infraDir "plane\variables.env") `
+  --env-file (Join-Path $infraDir "monitoring\variables.env") `
   -f (Join-Path $infraDir "compose.yml") `
   --project-directory $infraDir `
   down
