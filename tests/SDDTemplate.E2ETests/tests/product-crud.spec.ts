@@ -78,7 +78,7 @@ test.describe("Product CRUD deployed QA E2E", () => {
 
     await fillProductForm(page, {
       ...testProduct,
-      name: "",
+      name: "   ",
       sku: "@@",
       status: "Archived",
       price: "-1"
