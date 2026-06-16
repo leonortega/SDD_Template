@@ -66,7 +66,9 @@ test.describe("Client CRUD deployed QA E2E", () => {
     await expect(await api.get("/api/clients")).toBeOK();
     initialClients = await clearClients(api);
 
+    const blazorConnected = waitForBlazorConnection(page);
     await page.goto("/");
+    await blazorConnected;
     await page.getByRole("link", { name: "Clients" }).click();
     await expect(page).toHaveTitle(/Clients|SDD Template/);
     await expect(page.getByRole("heading", { name: "Clients" })).toBeVisible();
@@ -157,6 +159,11 @@ async function clearClients(api: APIRequestContext): Promise<Array<Omit<ClientRe
 
 function rowForClient(page: Page, name: string) {
   return page.locator("#clients-list tr").filter({ hasText: name }).first();
+}
+
+async function waitForBlazorConnection(page: Page): Promise<void> {
+  await page.waitForEvent("websocket", websocket => websocket.url().includes("/_blazor"), { timeout: 15_000 });
+  await page.waitForTimeout(250);
 }
 
 function futureDate(): string {
