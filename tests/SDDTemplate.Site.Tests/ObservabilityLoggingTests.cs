@@ -129,7 +129,7 @@ namespace SDDTemplate.Site.Tests
             string root = FindRepositoryRoot();
             string compose = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "compose.yml"));
             string collector = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "otelcol", "collector.yaml"));
-            string envExample = File.ReadAllText(Path.Combine(root, "infra", "plane", "variables.env.example"));
+            string envExample = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "variables.env.example"));
 
             Assert.Contains("image: otel/opentelemetry-collector-contrib:0.154.0", compose);
             Assert.Contains("profiles:", compose);
@@ -137,6 +137,7 @@ namespace SDDTemplate.Site.Tests
             Assert.Contains("agentic-otelcol", compose);
             Assert.Contains("agentic-prometheus", compose);
             Assert.Contains("agentic-blackbox", compose);
+            Assert.Contains("--web.listen-address=0.0.0.0:9115", compose);
             Assert.Contains("azure_event_hub/dev", collector);
             Assert.Contains("azure_event_hub/qa", collector);
             Assert.Contains("azure_event_hub/prod", collector);
@@ -144,6 +145,43 @@ namespace SDDTemplate.Site.Tests
             Assert.Contains("OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING", envExample);
             Assert.Contains("OTELCOL_AZURE_EVENT_HUB_QA_CONNECTION_STRING", envExample);
             Assert.Contains("OTELCOL_AZURE_EVENT_HUB_PROD_CONNECTION_STRING", envExample);
+        }
+
+        [Fact]
+        public void GrafanaHealthAlertProvisioningUsesConfigurablePendingDuration()
+        {
+            string root = FindRepositoryRoot();
+            string compose = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "compose.yml"));
+            string prometheus = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "prometheus", "prometheus.yml"));
+            string blackbox = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "prometheus", "blackbox.yml"));
+            string envExample = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "variables.env.example"));
+            string alert = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "alerting", "health-alerts.yml"));
+
+            Assert.Contains("./grafana/provisioning:/etc/grafana/provisioning:ro", compose);
+            Assert.Contains("GRAFANA_HEALTH_ALERT_FOR: ${GRAFANA_HEALTH_ALERT_FOR:-10s}", compose);
+            Assert.Contains("scrape_interval: 10s", prometheus);
+            Assert.Contains("evaluation_interval: 10s", prometheus);
+            Assert.Contains("scrape_timeout: 10s", prometheus);
+            Assert.Contains("timeout: 9s", blackbox);
+            Assert.Contains("GRAFANA_HEALTH_ALERT_FOR=10s", envExample);
+            Assert.Contains("probe_success{job=\"blackbox_http_health\"} == 0", alert);
+            Assert.Contains("for: ${GRAFANA_HEALTH_ALERT_FOR}", alert);
+            Assert.Contains("noDataState: OK", alert);
+            Assert.Contains("execErrState: OK", alert);
+        }
+
+        [Fact]
+        public void SeqErrorAlertConfigurationUsesNativeSeqAlerting()
+        {
+            string root = FindRepositoryRoot();
+            string script = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "scripts", "configure_infra_tools.ps1"));
+            string envExample = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "variables.env.example"));
+
+            Assert.Contains("Agentic E2E - Any Seq Error Logs", script);
+            Assert.Contains("api/alerts/template", script);
+            Assert.Contains("api/alerts", script);
+            Assert.Contains("SEQ_ERROR_ALERT_WINDOW=1m", envExample);
+            Assert.Contains("SEQ_ERROR_ALERT_THRESHOLD=0", envExample);
         }
 
         [Fact]

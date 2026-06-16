@@ -103,7 +103,7 @@ Useful modes:
 - `BuildGiteaActionsImages`: build and validate pinned local Gitea Actions job images used by PR validation, package/deploy, and QA E2E workflows.
 - `ValidateGiteaActionsRunner`: live-check Docker runner prerequisites for PR validation containers, including local image presence, required tools, and local Gitea checkout reachability.
 - `InitQualityGateTemplates`: create tracked quality-gate templates.
-- `SetSeqAzureEventHubLogs`: validate the required OpenTelemetry Collector Contrib Azure Event Hub path for Seq, including collector config, profile wiring, and required connection strings.
+- `SetSeqAzureEventHubLogs`: validate the required OpenTelemetry Collector Contrib Azure Event Hub path for Seq, including collector config, profile wiring, required connection strings, and the native Seq error-log alert.
 - `SetQualityConfig`: create or update `.codex/quality.local.json`, including `coverage.minimumPercent` (default `80`).
 
 ## Workflow
@@ -116,7 +116,7 @@ docker compose --env-file .\infra\plane\variables.env --env-file .\infra\monitor
 ```
 
 3. Summarize findings by domain without exposing secret values.
-4. Observability is mandatory for `config infra`: run `SetSeqAzureEventHubLogs`, then ensure Seq and the collector are running and healthy.
+4. Observability is mandatory for `config infra`: run `SetSeqAzureEventHubLogs`, then ensure Seq, the native Seq error-log alert, Grafana health alerts, and the collector are running and healthy.
 5. If all `OTELCOL_AZURE_EVENT_HUB_*_CONNECTION_STRING` values are present, enable collector ingestion with the `eventhub` profile and validate collector startup.
 6. Do not finish `config infra` successfully while observability findings remain unresolved.
 7. For every missing prerequisite found during audit or validation, provide install, official link, and post-install validation/configuration commands.
@@ -171,7 +171,7 @@ End setup work with:
 
 - Files created or updated, without secret values.
 - Values still missing or intentionally skipped.
-- Observability findings and status from the current run, including at minimum: Seq runtime health, OTEL collector endpoint + DEV/QA/PROD Event Hub connection-string presence, and runtime stack override status for `infra/azure/dev.parameters.json`, `infra/azure/qa.parameters.json`, and `infra/azure/prod.parameters.json`.
+- Observability findings and status from the current run, including at minimum: Seq runtime health, Seq error-log alert status, Grafana `/health` alert status, OTEL collector endpoint + DEV/QA/PROD Event Hub connection-string presence, and runtime stack override status for `infra/azure/dev.parameters.json`, `infra/azure/qa.parameters.json`, and `infra/azure/prod.parameters.json`.
 - Missing tools with install command, official URL, and validation/configuration command.
 - Missing user-supplied values with source, destination, manual setup steps, official URL, and validation command.
 - Docker images or libraries pinned/updated, including the source used to confirm the current stable version.

@@ -624,6 +624,52 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
+        public void AuditReportsMissingGrafanaHealthAlertProvisioning()
+        {
+            string root = CreateTempDirectory();
+            _ = Directory.CreateDirectory(Path.Combine(root, ".codex"));
+            _ = Directory.CreateDirectory(Path.Combine(root, "infra", "plane"));
+            _ = Directory.CreateDirectory(Path.Combine(root, "infra", "gitea"));
+            _ = Directory.CreateDirectory(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "dashboards"));
+            _ = Directory.CreateDirectory(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "datasources"));
+            _ = Directory.CreateDirectory(Path.Combine(root, "infra", "monitoring", "prometheus"));
+
+            File.Copy(
+                Path.Combine(FindRepositoryRoot().FullName, ".codex", "client-tools.example.json"),
+                Path.Combine(root, ".codex", "client-tools.local.json"));
+            File.Copy(
+                Path.Combine(FindRepositoryRoot().FullName, ".codex", "client-tools.example.json"),
+                Path.Combine(root, ".codex", "client-tools.example.json"));
+            File.Copy(
+                Path.Combine(FindRepositoryRoot().FullName, ".codex", "quality.example.json"),
+                Path.Combine(root, ".codex", "quality.example.json"));
+            File.WriteAllText(Path.Combine(root, "infra", "plane", "variables.env"), string.Empty);
+            File.WriteAllText(Path.Combine(root, "infra", "gitea", "runner.env"), "GITEA_RUNNER_REGISTRATION_TOKEN=replace-with-token");
+            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "variables.env"), """
+                OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING=x
+                OTELCOL_AZURE_EVENT_HUB_QA_CONNECTION_STRING=x
+                OTELCOL_AZURE_EVENT_HUB_PROD_CONNECTION_STRING=x
+                OTELCOL_SEQ_OTLP_ENDPOINT=http://seq:5341/ingest/otlp
+                GRAFANA_HEALTH_ALERT_FOR=10s
+                SEQ_ERROR_ALERT_WINDOW=1m
+                SEQ_ERROR_ALERT_THRESHOLD=0
+                """);
+            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "dashboards", "dashboards.yml"), "apiVersion: 1");
+            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "datasources", "prometheus.yml"), "uid: prometheus");
+            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "prometheus", "prometheus.yml"), "global: {}\n");
+            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "prometheus", "blackbox.yml"), "modules: {}\n");
+            File.WriteAllText(Path.Combine(root, "infra", "monitoring", "prometheus", "targets.local.yml"), "[]\n");
+
+            string output = RunPowerShellScript("-Mode", "Audit", "-Root", root);
+            using JsonDocument result = JsonDocument.Parse(output);
+            string[] paths = [.. result.RootElement.GetProperty("findings")
+                .EnumerateArray()
+                .Select(item => item.GetProperty("path").GetString() ?? string.Empty)];
+
+            Assert.Contains("infra/monitoring/grafana/provisioning/alerting/health-alerts.yml", paths);
+        }
+
+        [Fact]
         public void AzureBicepDoesNotProvisionLogAnalyticsOrDiagnosticSettingsByDefault()
         {
             string bicep = File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, "infra", "azure", "main.bicep"));

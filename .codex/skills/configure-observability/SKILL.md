@@ -7,7 +7,7 @@ description: Configure Seq log search for this repo through Azure Event Hub to O
 
 ## Overview
 
-Configure Seq and Azure Event Hub to Seq ingestion used for deployment validation and ticket handoff evidence.
+Configure Seq, Grafana health alerts, and Azure Event Hub to Seq ingestion used for deployment validation and ticket handoff evidence.
 
 Observability is mandatory for `config infra` completion. Do not leave this step as optional.
 
@@ -30,12 +30,14 @@ Safety:
 3. Start or repair local monitoring services when needed so setup ends in a working state.
 4. Validate all required checks before completion:
 	- Seq API/health endpoint is `200`.
+	- Seq native error-log alert exists.
+	- Grafana `/health` alert rule exists and uses the configured pending duration.
 	- Event Hub collector profile is configured and running.
 	- Required Event Hub connection strings and OTLP endpoint exist in ignored local env.
 
 ## Output
 
-Report Seq API/health status, collector status, missing values, and ticket handoff evidence without exposing secrets.
+Report Seq API/health status, Seq alert status, Grafana health alert status, collector status, missing values, and ticket handoff evidence without exposing secrets.
 
 ## Failure Rules
 
