@@ -54,6 +54,27 @@ namespace SDDTemplate.Site.Tests
             Assert.Contains("{SourceContext}", template);
             Assert.Contains("{Message:lj}", template);
             Assert.Contains("{Exception}", template);
+            Assert.DoesNotContain("Authorization", template, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("password", template, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("token", template, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Theory]
+        [MemberData(nameof(ApplicationConfigPaths))]
+        public void ProgramConfiguresCorrelationAwareRequestLoggingWithoutSensitivePayloads(string appPath)
+        {
+            string root = FindRepositoryRoot();
+            string programPath = Path.Combine(root, appPath, "Program.cs");
+            string program = File.ReadAllText(programPath);
+
+            Assert.Contains("UseSerilogRequestLogging", program);
+            Assert.Contains("diagnosticContext.Set(\"CorrelationId\"", program);
+            Assert.Contains("diagnosticContext.Set(\"RequestPath\"", program);
+            Assert.Contains("diagnosticContext.Set(\"RequestMethod\"", program);
+            Assert.DoesNotContain("diagnosticContext.Set(\"Authorization\"", program, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("diagnosticContext.Set(\"RequestBody\"", program, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("diagnosticContext.Set(\"password\"", program, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("diagnosticContext.Set(\"token\"", program, StringComparison.OrdinalIgnoreCase);
         }
 
         [Fact]
