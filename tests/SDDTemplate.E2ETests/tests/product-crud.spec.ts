@@ -88,8 +88,8 @@ test.describe("Product CRUD deployed QA E2E", () => {
     expect(invalidResponse.status()).toBe(400);
     const invalidBody = await invalidResponse.text();
     expect(invalidBody).toContain("Name is required.");
-    expect(invalidBody).toContain("SKU may contain only letters, numbers, dashes, and underscores.");
-    expect(invalidBody).toContain("Price must be zero or greater.");
+    expect(invalidBody).toContain("SKU must be 3 to 40 letters, digits, dots, underscores, or hyphens.");
+    expect(invalidBody).toContain("Price cannot be negative.");
 
     await fillProductForm(page, testProduct);
     const createRequest = page.waitForRequest(requestInfo =>
@@ -145,10 +145,10 @@ async function assertApiHealth(api: APIRequestContext): Promise<void> {
 }
 
 async function fillProductForm(page: Page, product: ProductForm): Promise<void> {
-  await page.locator("#product-name").fill(product.name);
-  await page.locator("#product-sku").fill(product.sku);
   await page.locator("#product-status").selectOption(product.status);
   await page.locator("#product-price").fill(String(product.price));
+  await page.locator("#product-name").fill(product.name);
+  await page.locator("#product-sku").fill(product.sku);
   await page.locator("#product-category").fill(product.category);
 }
 
