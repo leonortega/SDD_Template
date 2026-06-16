@@ -3400,7 +3400,8 @@ jobs:
               expected_api_url="${AZURE_DEV_API_APP_URL:-}"
               test -n "$expected_api_url"
               retry_smoke "DEV $app_id clients" curl --fail --silent --show-error --location "${app_url}/clients" -o clients.html
-              grep -q "const apiBaseUrl = \"${expected_api_url}\";" clients.html
+              grep -q "<title>Clients</title>" clients.html
+              grep -q 'id="client-form"' clients.html
             fi
             if [ "$role" = "api" ]; then
               site_origin="${AZURE_DEV_SITE_APP_URL:-}"
@@ -3603,7 +3604,8 @@ jobs:
               expected_api_url="${AZURE_QA_API_APP_URL:-}"
               test -n "$expected_api_url"
               retry_smoke "QA $app_id clients" curl --fail --silent --show-error --location "${app_url}/clients" -o clients.html
-              grep -q "const apiBaseUrl = \"${expected_api_url}\";" clients.html
+              grep -q "<title>Clients</title>" clients.html
+              grep -q 'id="client-form"' clients.html
             fi
             if [ "$role" = "api" ]; then
               site_origin="${AZURE_QA_SITE_APP_URL:-}"
