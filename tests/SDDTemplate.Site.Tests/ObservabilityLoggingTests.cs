@@ -67,10 +67,7 @@ namespace SDDTemplate.Site.Tests
             string programPath = Path.Combine(root, appPath, "Program.cs");
             string program = File.ReadAllText(programPath);
 
-            Assert.Contains("UseSerilogRequestLogging", program);
-            Assert.Contains("diagnosticContext.Set(\"CorrelationId\"", program);
-            Assert.Contains("diagnosticContext.Set(\"RequestPath\"", program);
-            Assert.Contains("diagnosticContext.Set(\"RequestMethod\"", program);
+            Assert.Contains("UseCorrelationAwareRequestLogging", program);
             Assert.DoesNotContain("diagnosticContext.Set(\"Authorization\"", program, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("diagnosticContext.Set(\"RequestBody\"", program, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("diagnosticContext.Set(\"password\"", program, StringComparison.OrdinalIgnoreCase);
@@ -90,59 +87,145 @@ namespace SDDTemplate.Site.Tests
         }
 
         [Fact]
-        public void AzureBicepDefinesLogAnalyticsWorkspacesAndDiagnostics()
+        public void AzureBicepDoesNotProvisionLogAnalyticsByDefault()
         {
             string root = FindRepositoryRoot();
             string bicep = File.ReadAllText(Path.Combine(root, "infra", "azure", "main.bicep"));
 
-            Assert.Contains("Microsoft.OperationalInsights/workspaces", bicep);
-            Assert.Contains("logAnalyticsWorkspaceName", bicep);
-            Assert.Contains("workspaceId: logAnalyticsWorkspace.id", bicep);
-            Assert.Contains("logAnalyticsDestinationType: 'Dedicated'", bicep);
-            Assert.Contains("AppServiceConsoleLogs", bicep);
-            Assert.Contains("AppServiceHTTPLogs", bicep);
+            Assert.DoesNotContain("Microsoft.OperationalInsights/workspaces", bicep);
+            Assert.DoesNotContain("logAnalyticsWorkspaceName", bicep);
+            Assert.DoesNotContain("workspaceId: logAnalyticsWorkspace.id", bicep);
+            Assert.DoesNotContain("logAnalyticsDestinationType: 'Dedicated'", bicep);
+            Assert.Contains("Microsoft.Web/sites@2023-12-01", bicep);
         }
 
         [Fact]
-        public void AzureMonitorValidationScriptRequiresEveryEnvironment()
+        public void AzureMonitorValidationScriptIsRemovedFromOperationalPath()
         {
             string root = FindRepositoryRoot();
-            string script = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "validate-azure-monitor-logs.ps1"));
-
-            Assert.Contains("GRAFANA_AZURE_TENANT_ID", script);
-            Assert.Contains("GRAFANA_AZURE_CLIENT_ID", script);
-            Assert.Contains("GRAFANA_AZURE_CLIENT_SECRET", script);
-            Assert.Contains("GRAFANA_AZURE_SUBSCRIPTION_ID", script);
-            Assert.Contains("GRAFANA_AZURE_DEV_LOG_ANALYTICS_WORKSPACE_ID", script);
-            Assert.Contains("GRAFANA_AZURE_QA_LOG_ANALYTICS_WORKSPACE_ID", script);
-            Assert.Contains("GRAFANA_AZURE_PROD_LOG_ANALYTICS_WORKSPACE_ID", script);
-            Assert.Contains("az monitor log-analytics query", script);
-            Assert.Contains("dev", script);
-            Assert.Contains("qa", script);
-            Assert.Contains("prod", script);
+            string path = Path.Combine(root, "infra", "monitoring", "validate-azure-monitor-logs.ps1");
+            Assert.False(File.Exists(path));
         }
 
         [Fact]
-        public void GrafanaDatasourceProvisioningDefinesStableUidsForDashboardReferences()
+        public void SeqComposeServiceIsLocalhostBoundAndPinned()
         {
             string root = FindRepositoryRoot();
-            string datasourcePath = Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "datasources", "azure-monitor.yml");
-            string datasources = File.ReadAllText(datasourcePath);
+            string compose = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "compose.yml"));
 
-            Assert.Contains("name: Azure Monitor", datasources);
-            Assert.Contains("uid: azure-monitor", datasources);
-            Assert.Contains("type: grafana-azure-monitor-datasource", datasources);
-            Assert.Contains("GRAFANA_AZURE_CLIENT_SECRET", datasources);
+            Assert.Contains("seq-data:", compose);
+            Assert.Contains("seq:", compose);
+            Assert.Contains("image: datalust/seq:2025.2.16202", compose);
+            Assert.Contains("container_name: agentic-seq", compose);
+            Assert.Contains("ACCEPT_EULA: \"Y\"", compose);
+            Assert.Contains("SEQ_FIRSTRUN_NOAUTHENTICATION: \"True\"", compose);
+            Assert.Contains("\"127.0.0.1:5341:80\"", compose);
+            Assert.Contains("SEQ_API_CANONICALURI: http://localhost:5341/", compose);
         }
 
         [Fact]
-        public void GrafanaDashboardProvisioningLoadsGeneratedLocalAzureMonitorDashboards()
+        public void CollectorComposeDefinesOptionalEventHubProfile()
+        {
+            string root = FindRepositoryRoot();
+            string compose = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "compose.yml"));
+            string collector = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "otelcol", "collector.yaml"));
+            string envExample = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "variables.env.example"));
+
+            Assert.Contains("image: otel/opentelemetry-collector-contrib:0.154.0", compose);
+            Assert.Contains("profiles:", compose);
+            Assert.Contains("eventhub", compose);
+            Assert.Contains("agentic-otelcol", compose);
+            Assert.Contains("agentic-prometheus", compose);
+            Assert.Contains("agentic-blackbox", compose);
+            Assert.Contains("--web.listen-address=0.0.0.0:9115", compose);
+            Assert.Contains("azure_event_hub/dev", collector);
+            Assert.Contains("azure_event_hub/qa", collector);
+            Assert.Contains("azure_event_hub/prod", collector);
+            Assert.Contains("otlphttp/seq", collector);
+            Assert.Contains("OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING", envExample);
+            Assert.Contains("OTELCOL_AZURE_EVENT_HUB_QA_CONNECTION_STRING", envExample);
+            Assert.Contains("OTELCOL_AZURE_EVENT_HUB_PROD_CONNECTION_STRING", envExample);
+        }
+
+        [Fact]
+        public void GrafanaHealthAlertProvisioningUsesConfigurablePendingDuration()
+        {
+            string root = FindRepositoryRoot();
+            string compose = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "compose.yml"));
+            string prometheus = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "prometheus", "prometheus.yml"));
+            string blackbox = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "prometheus", "blackbox.yml"));
+            string envExample = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "variables.env.example"));
+            string alert = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "alerting", "health-alerts.yml"));
+
+            Assert.Contains("./grafana/provisioning:/etc/grafana/provisioning:ro", compose);
+            Assert.Contains("GRAFANA_HEALTH_ALERT_FOR: ${GRAFANA_HEALTH_ALERT_FOR:-10s}", compose);
+            Assert.Contains("scrape_interval: 10s", prometheus);
+            Assert.Contains("evaluation_interval: 10s", prometheus);
+            Assert.Contains("scrape_timeout: 10s", prometheus);
+            Assert.Contains("timeout: 9s", blackbox);
+            Assert.Contains("GRAFANA_HEALTH_ALERT_FOR=10s", envExample);
+            Assert.Contains("probe_success{job=\"blackbox_http_health\"} == 0", alert);
+            Assert.Contains("for: ${GRAFANA_HEALTH_ALERT_FOR}", alert);
+            Assert.Contains("noDataState: OK", alert);
+            Assert.Contains("execErrState: OK", alert);
+        }
+
+        [Fact]
+        public void SeqErrorAlertConfigurationUsesNativeSeqAlerting()
+        {
+            string root = FindRepositoryRoot();
+            string script = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "scripts", "configure_infra_tools.ps1"));
+            string envExample = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "variables.env.example"));
+
+            Assert.Contains("Agentic E2E - Any Seq Error Logs", script);
+            Assert.Contains("api/alerts/template", script);
+            Assert.Contains("api/alerts", script);
+            Assert.Contains("SEQ_ERROR_ALERT_WINDOW=1m", envExample);
+            Assert.Contains("SEQ_ERROR_ALERT_THRESHOLD=0", envExample);
+        }
+
+        [Fact]
+        public void GrafanaPrometheusDatasourceProvisioningExistsForHealthBoards()
+        {
+            string root = FindRepositoryRoot();
+            string datasourcePath = Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "datasources", "prometheus.yml");
+            string removedAzureMonitorPath = Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "datasources", "azure-monitor.yml");
+
+            Assert.True(File.Exists(datasourcePath));
+            Assert.False(File.Exists(removedAzureMonitorPath));
+            Assert.Contains("uid: prometheus", File.ReadAllText(datasourcePath));
+        }
+
+        [Fact]
+        public void GrafanaDashboardProvisioningLoadsGeneratedLocalHealthDashboards()
         {
             string root = FindRepositoryRoot();
             string dashboards = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "dashboards", "dashboards.yml"));
 
             Assert.Contains("Agentic E2E Local", dashboards);
             Assert.Contains("/var/lib/grafana/dashboards.local", dashboards);
+            Assert.Contains("infra/monitoring/grafana/dashboards.local/", File.ReadAllText(Path.Combine(root, ".gitignore")));
+        }
+
+        [Fact]
+        public void ConfigureInfraUsesCollectorBasedSeqIngestionOnly()
+        {
+            string root = FindRepositoryRoot();
+            string script = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "scripts", "configure_infra_tools.ps1"));
+
+            Assert.Contains("SetSeqAzureEventHubLogs", script);
+            Assert.DoesNotContain("SetSeqAzureLogs", script);
+            Assert.DoesNotContain("\"SetGrafanaAzureMonitor\"", script);
+        }
+
+        [Fact]
+        public void MonitoringComposeSharesTheAgenticE2eProjectCollection()
+        {
+            string root = FindRepositoryRoot();
+            string compose = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "compose.yml"));
+
+            Assert.Contains("name: agentic-e2e", compose);
+            Assert.DoesNotContain("name: agentic-monitoring", compose);
         }
 
         private static string ReadSerilogMinimumLevel(string path)

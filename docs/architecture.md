@@ -8,7 +8,7 @@ This repository is a local agentic delivery lab for a .NET Blazor site, ASP.NET 
 - The REST API application lives under `src/SDDTemplate.Api`.
 - The EF Core entities, DbContext, migrations, and database setup live under `src/SDDTemplate.Data`.
 - Application behavior is tested from `tests/SDDTemplate.Site.Tests`.
-- Local Docker Compose infrastructure provides Plane, Gitea, the Gitea Actions runner, Nexus, Dozzle, and Grafana. Azure App Service diagnostics flow to Log Analytics, and Grafana reads Azure logs and health signals through the built-in Azure Monitor datasource.
+- Local Docker Compose infrastructure provides Plane, Gitea, the Gitea Actions runner, Nexus, Dozzle, Grafana, and Seq. OpenTelemetry Collector Contrib consumes Azure Event Hub and forwards console logs into Seq.
 - Azure hosts only the remote DEV, QA, and PROD application runtimes. The web and API runtimes may be deployed as separate App Service apps per environment.
 - Nexus stores immutable application artifacts and release manifests.
 - Plane records ticket state, generated workflow markers, and human-readable delivery comments.
@@ -24,7 +24,7 @@ The intended delivery tool set is tracked here so agents can distinguish project
 - Gitea hosts source control and pull requests; Gitea Actions is the authoritative PR validation and deployment workflow runner.
 - Nexus stores immutable artifacts, checksums, release manifests, and preferred QA evidence bundles.
 - Azure App Service hosts only the DEV, QA, and PROD application runtimes.
-- Grafana uses the built-in Azure Monitor datasource for Azure application logs and health visibility from Log Analytics; Dozzle provides local container log inspection.
+- Azure Monitor and Log Analytics remain Azure-side observability sources. Seq provides local Azure application console log search for DEV, QA, and PROD by consuming Azure Event Hub through an OpenTelemetry Collector Contrib profile. Dozzle provides local container log inspection.
 - Repo-local Codex skills under `.codex/skills` are copied from verified repository sources when recommended. `project-guidance-discover` scans the project, checks repo-local workflow sources, searches OpenAI official sources, official tool and technology-owner sources, `skills.sh`/`skills` or marketplace repository leads, and clearly labeled community sources in that order, then asks the user for additional desired skills or guidance. `project-guidance-acquire` manually copies confirmed skill items with `sourceKind` attribution, and `project-guidance-mapper` maps delivery steps to workflow skills, expert skills, tools, references, practices, and standards through ignored `.codex/tool-recommendations.local.json` `usedInSteps`. Skills are not installed by command, and MCP/plugin setup is manual configuration unless a later explicit task authorizes otherwise.
 
 ## Sources Of Truth

@@ -72,6 +72,42 @@ Stop if `main` diverges from the intended QA-approved commit. Rollback does not 
 
 Do not read secrets from Docker containers, mounted volumes, databases, logs, or committed files. Do not store secrets in memory. Tracked examples must remain placeholder-safe.
 
+## Compose Secret Fallbacks Can Bypass Local Env Values
+
+- Type: Pattern
+- Status: Active
+- Source: current conversation, `infra/plane/compose.yml`, `infra/plane/variables.env.example`, `docker compose --env-file .\infra\plane\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml --project-directory .\infra config --quiet`
+- Last verified: 2026-06-12
+
+When hardening local infra Compose files, ensure service env interpolation uses the same variable names as the owning `variables.env.example` file and fail-fast `${VAR:?message}` checks for required secrets. A mismatch such as Compose reading `RABBITMQ_PASSWORD` while the template/local file defines `RABBITMQ_DEFAULT_PASS`, or URL defaults such as `postgresql://plane:plane@...`, can silently bypass generated local secrets. Validate changes with all required tool env files, such as `docker compose --env-file .\infra\plane\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml --project-directory .\infra config --quiet`, without printing secret values.
+
+## Docker Compose Dotenv Values Need Escaped Dollar Signs
+
+- Type: Pattern
+- Status: Active
+- Source: `infra/monitoring/variables.env.example`, `infra/monitoring/variables.env`, `docker compose --env-file .\infra\plane\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml --project-directory .\infra config --quiet`
+- Last verified: 2026-06-16
+
+Docker Compose interpolates dollar-prefixed dotenv values. Azure Event Hub consumer group values such as `$Default` must be written as `$$Default` in `infra/monitoring/variables.env` and `infra/monitoring/variables.env.example`; otherwise Compose warns that `Default` is unset and passes a blank value to the collector configuration. Validate both local and example env files with `docker compose ... config --quiet`.
+
+## Grafana Health Alerts Need Scheduler-Aligned Blackbox Probes
+
+- Type: Pattern
+- Status: Active
+- Source: `infra/monitoring/grafana/provisioning/alerting/health-alerts.yml`, `infra/monitoring/compose.yml`, `infra/monitoring/prometheus/prometheus.yml`, `infra/monitoring/prometheus/blackbox.yml`, `configure_infra_tools.ps1 -Mode Audit`
+- Last verified: 2026-06-16
+
+Grafana alert rule groups reject intervals below the local scheduler interval; use a 10-second health alert pending duration by default. Prometheus health checks need blackbox exporter to listen on `0.0.0.0:9115`; otherwise Prometheus may time out on `blackbox-exporter:9115` even though the host port responds. Keep blackbox timeout below Prometheus scrape timeout so failed or slow `/health` endpoints still return `probe_success` metrics.
+
+## Full Test Suite Can Fail On Canonical Docs And Event Hub Template Drift
+
+- Type: Pattern
+- Status: Active
+- Source: `dotnet test .\SDDTemplate.slnx --no-build`, `tests/SDDTemplate.Site.Tests/ObservabilityLoggingTests.cs`, `tools/SDDTemplate.DeliveryTools.Tests/DeploymentWorkflowTests.cs`, `tools/SDDTemplate.DeliveryTools.Tests/DeliveryToolsTests.cs`
+- Last verified: 2026-06-16
+
+When unrelated code changes run the full suite, existing fixture drift can fail tests that assert README/canonical docs text and Event Hub collector template values. Current known failures include missing `OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING` in the expected env surface, missing `Azure Monitor` in architecture context, and missing README phrases such as `## Canonical Context`, `Before the first ticket starts`, and `manual by default`. Treat these as repository guidance/configuration drift, not product-code regressions, unless the current change touched those docs or env templates.
+
 ## Worktree Local Config Copy Can Leave Placeholders
 
 - Type: Pattern
@@ -217,6 +253,15 @@ PowerShell `ConvertFrom-Json` can coerce ISO timestamp strings into `DateTime` v
 - Last verified: 2026-06-09
 
 When `.codex/agent-telemetry.local.jsonl` is absent or a delivery run missed telemetry writes, treat that as a workflow instrumentation failure. Initialize or clear telemetry at selected ticket start with `InitializeWorkflowTelemetry`, append stage rows with `AppendWorkflowTelemetry`, read active ticket rows with `ReadWorkflowTelemetry`, then render `IA generated workflow timing: {ticketKey}` with `RenderPlaneComment -Type WorkflowTiming`. Do not derive workflow timing from generated Plane marker timestamps. Verify the posted comment by reading Plane comments back and matching the timing marker.
+
+## Noncanonical QA Evidence Marker Bypasses Timing Finalization
+
+- Type: Pattern
+- Status: Active
+- Source: E2EPROJECT-6 Plane comments and `.codex/agent-telemetry.local.jsonl`
+- Last verified: 2026-06-12
+
+If a ticket is moved to Done after a Gitea QA evidence run using a noncanonical marker such as `IA generated QA evidence: {ticketKey}` instead of the `test-e2e` marker `IA generated E2E QA: {ticketKey}`, the `test-e2e` finalization path may never append a `test-e2e` telemetry row or post `IA generated workflow timing: {ticketKey}`. Treat Done state plus QA evidence marker as insufficient; rerun or repair through `test-e2e` so the canonical E2E QA marker, workflow timing comment, and telemetry row are verified.
 
 ## Azure Event Hubs Kafka 9093 EOF Can Be Network-Side
 

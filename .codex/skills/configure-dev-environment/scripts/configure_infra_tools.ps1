@@ -1,5 +1,5 @@
 param(
-  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetPlaneEnv", "SetGiteaRunner", "SetGrafanaAzureMonitor", "AuditQualityGates", "AuditRecommendedTools", "DiscoverProjectGuidance", "AcquireProjectGuidance", "SetRecommendedTools", "MapProjectGuidanceStep", "BuildGiteaActionsImages", "ValidateGiteaActionsRunner", "InitQualityGateTemplates", "SetQualityConfig", "SyncWorktreeLocalConfig", "EnsureDeliveryContext")]
+  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetPlaneEnv", "SetMonitoringEnv", "SetGiteaRunner", "SetSeqAzureEventHubLogs", "SplitInfraEnv", "AuditQualityGates", "AuditRecommendedTools", "DiscoverProjectGuidance", "AcquireProjectGuidance", "SetRecommendedTools", "MapProjectGuidanceStep", "BuildGiteaActionsImages", "ValidateGiteaActionsRunner", "InitQualityGateTemplates", "SetQualityConfig", "SyncWorktreeLocalConfig", "EnsureDeliveryContext")]
   [string]$Mode = "Audit",
 
   [string]$Root = (Resolve-Path ".").Path,
@@ -168,6 +168,104 @@ function Read-EnvFile {
   return $map
 }
 
+function Get-MapValueOrDefault {
+  param(
+    $Map,
+    [string]$Name,
+    [string]$Default
+  )
+
+  if ($Map.Contains($Name) -and -not [string]::IsNullOrWhiteSpace($Map[$Name])) {
+    return $Map[$Name]
+  }
+
+  return $Default
+}
+
+function Convert-SeqAlertWindow {
+  param([string]$Window)
+
+  if ($Window -match "^(\d+)m$") { return "00:$('{0:D2}' -f [int]$Matches[1]):00" }
+  if ($Window -match "^(\d+)s$") { return "00:00:$('{0:D2}' -f [int]$Matches[1])" }
+  return $Window
+}
+
+function Set-JsonProperty {
+  param(
+    $Object,
+    [string]$Name,
+    $Value
+  )
+
+  if ($Object.PSObject.Properties.Name -contains $Name) {
+    $Object.$Name = $Value
+  } else {
+    $Object | Add-Member -MemberType NoteProperty -Name $Name -Value $Value
+  }
+}
+
+function Set-SeqErrorAlertFields {
+  param(
+    $Alert,
+    [string]$Window,
+    [string]$Threshold
+  )
+
+  Set-JsonProperty $Alert "Title" "Agentic E2E - Any Seq Error Logs"
+  Set-JsonProperty $Alert "Where" "@Level = 'Error' or @Level = 'Fatal'"
+  Set-JsonProperty $Alert "TimeGrouping" (Convert-SeqAlertWindow $Window)
+  Set-JsonProperty $Alert "Having" "count > $Threshold"
+  Set-JsonProperty $Alert "NotificationLevel" "Error"
+  Set-JsonProperty $Alert "IsDisabled" $false
+  return $Alert
+}
+
+function Ensure-SeqErrorAlert {
+  param(
+    $Result,
+    $Monitoring,
+    [bool]$Write
+  )
+
+  $window = Get-MapValueOrDefault $Monitoring "SEQ_ERROR_ALERT_WINDOW" "1m"
+  $threshold = Get-MapValueOrDefault $Monitoring "SEQ_ERROR_ALERT_THRESHOLD" "0"
+  $title = "Agentic E2E - Any Seq Error Logs"
+
+  try {
+    $alertsResponse = Invoke-WebRequest -Uri "http://localhost:5341/api/alerts/?ownerId=user-admin&shared=true" -UseBasicParsing -TimeoutSec 5
+    $alerts = @($alertsResponse.Content | ConvertFrom-Json)
+    $existing = $alerts | Where-Object { $_.Title -eq $title -or $_.Name -eq $title } | Select-Object -First 1
+
+    if ($null -ne $existing) {
+      if ($Write) {
+        $updated = Set-SeqErrorAlertFields $existing $window $threshold
+        $id = $existing.Id
+        $body = $updated | ConvertTo-Json -Depth 20
+        Invoke-WebRequest -Uri "http://localhost:5341/api/alerts/$id" -Method Put -Body $body -ContentType "application/json" -UseBasicParsing -TimeoutSec 5 | Out-Null
+        Add-Item $Result "actions" "seq" "alerts.errorLogs" "Seq error-log alert exists and was updated."
+      } else {
+        Add-Item $Result "actions" "seq" "alerts.errorLogs" "Seq error-log alert is configured."
+      }
+      return
+    }
+
+    if (-not $Write) {
+      Add-Item $Result "findings" "seq" "alerts.errorLogs" "Seq error-log alert is missing. Run SetSeqAzureEventHubLogs after Seq is healthy." "warning" "post-start"
+      return
+    }
+
+    $templateResponse = Invoke-WebRequest -Uri "http://localhost:5341/api/alerts/template" -UseBasicParsing -TimeoutSec 5
+    $template = $templateResponse.Content | ConvertFrom-Json
+    $alert = Set-SeqErrorAlertFields $template $window $threshold
+    $body = $alert | ConvertTo-Json -Depth 20
+    Invoke-WebRequest -Uri "http://localhost:5341/api/alerts" -Method Post -Body $body -ContentType "application/json" -UseBasicParsing -TimeoutSec 5 | Out-Null
+    Add-Item $Result "actions" "seq" "alerts.errorLogs" "Seq error-log alert was created."
+  } catch {
+    $severity = if ($Write) { "error" } else { "info" }
+    Add-Item $Result "findings" "seq" "alerts.errorLogs" "Could not validate Seq error-log alert: $($_.Exception.Message)" $severity "post-start"
+  }
+}
+
 function Set-EnvValues {
   param(
     [string]$Path,
@@ -204,6 +302,81 @@ function Set-EnvValues {
 
   if (-not $DryRun) {
     Set-Content -Path $Path -Value $newLines -Encoding UTF8
+  }
+}
+
+function Get-EnvFileKeys {
+  param([string]$Path)
+  $map = Read-EnvFile $Path
+  return @($map.Keys)
+}
+
+function Get-EnvExamplePath {
+  param([string]$TargetPath)
+  return "$TargetPath.example"
+}
+
+function Assert-EnvKeysAllowed {
+  param(
+    [string]$TargetRelative,
+    [hashtable]$Values
+  )
+
+  $example = Join-RootPath (Get-EnvExamplePath $TargetRelative)
+  if (-not (Test-Path $example)) { return }
+
+  $allowed = @{}
+  foreach ($key in (Get-EnvFileKeys $example)) {
+    $allowed[$key] = $true
+  }
+
+  $invalid = @($Values.Keys | Where-Object { -not $allowed.ContainsKey($_) } | Sort-Object)
+  if ($invalid.Count -gt 0) {
+    throw "$Mode cannot set key(s) not owned by ${TargetRelative}: $($invalid -join ', ')."
+  }
+}
+
+function Write-EnvFromTemplate {
+  param(
+    [string]$TemplateRelative,
+    [string]$TargetRelative,
+    [hashtable]$PrimaryValues,
+    [hashtable]$FallbackValues,
+    $Result
+  )
+
+  $template = Join-RootPath $TemplateRelative
+  $target = Join-RootPath $TargetRelative
+  if (-not (Test-Path $template)) {
+    Add-Item $Result "findings" $TemplateRelative "" "Template file is missing." "error" "pre-start"
+    return
+  }
+
+  $targetDirectory = Split-Path -Parent $target
+  $newLines = foreach ($line in Get-Content -Path $template) {
+    if ($line -match "^\s*#" -or $line -notmatch "=") {
+      $line
+      continue
+    }
+
+    $idx = $line.IndexOf("=")
+    $key = $line.Substring(0, $idx).Trim()
+    $templateValue = $line.Substring($idx + 1)
+    if ($PrimaryValues.ContainsKey($key) -and -not (Test-Placeholder $PrimaryValues[$key])) {
+      "$key=$($PrimaryValues[$key])"
+    } elseif ($FallbackValues.ContainsKey($key)) {
+      "$key=$($FallbackValues[$key])"
+    } else {
+      "$key=$templateValue"
+    }
+  }
+
+  Add-Item $Result "actions" $TargetRelative "" "Write local env file from $TemplateRelative with matching existing values."
+  if (Test-ConfigWritesEnabled) {
+    if (-not (Test-Path -LiteralPath $targetDirectory)) {
+      New-Item -ItemType Directory -Path $targetDirectory -Force | Out-Null
+    }
+    Set-Content -Path $target -Value $newLines -Encoding UTF8
   }
 }
 
@@ -680,7 +853,7 @@ function Add-QualityGateAuditFindings {
   if (-not (Test-Path (Join-RootPath $releaseWorkflow))) {
     Add-Item $Result "findings" $releaseWorkflow "" "Missing package/deploy workflow for Nexus artifact publication and Azure promotion." "warning"
   } else {
-    foreach ($expected in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "az webapp deploy", "az webapp config appsettings set", "az webapp config appsettings list", "classify-changes", "app_changed", "deploy_allowed", ".codex/delivery-policy.json", "ticketKeyPattern", "BASH_REMATCH", "refs/heads/dev", "refs/heads/main", "qa/**", "deploy-qa", "e2e-qa-branch", "deploy-prod", "artifact_commit_sha", "PROD_ARTIFACT_COMMIT_SHA", "release_version", "source_rc_version", "release.json", "CreateReleaseManifest", "ValidateReleaseManifest", "BuildDeploymentConfig", "infra/deployment/apps.json", "infra/deployment/configuration.json", "deployable-apps.json", "deployment-config.json", "const apiBaseUrl", "Access-Control-Allow-Origin", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_SITE_APP_NAME", "AZURE_QA_SITE_APP_URL", "AZURE_QA_API_APP_NAME", "AZURE_QA_API_APP_URL", "E2E_SITE_URL", "E2E_API_URL", "E2E_ARTIFACT_COMMIT_SHA", "qa-e2e-evidence.zip", "AZURE_PROD_RESOURCE_GROUP", "AZURE_PROD_SITE_APP_NAME", "AZURE_PROD_SITE_APP_URL", "AZURE_PROD_API_APP_NAME", "AZURE_PROD_API_APP_URL", "healthPath", '${app_url}${health_path}')) {
+    foreach ($expected in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "az webapp deploy", "az webapp config appsettings set", "az webapp config appsettings list", "classify-changes", "app_changed", "deploy_allowed", ".codex/delivery-policy.json", "ticketKeyPattern", "BASH_REMATCH", "refs/heads/dev", "refs/heads/main", "qa/**", "deploy-qa", "e2e-qa", "deploy-prod", "artifact_commit_sha", "PROD_ARTIFACT_COMMIT_SHA", "release_version", "source_rc_version", "release.json", "CreateReleaseManifest", "ValidateReleaseManifest", "BuildDeploymentConfig", "infra/deployment/apps.json", "infra/deployment/configuration.json", "deployable-apps.json", "deployment-config.json", "app/qa-approved/latest.json", "const apiBaseUrl", "Access-Control-Allow-Origin", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_SITE_APP_NAME", "AZURE_QA_SITE_APP_URL", "AZURE_QA_API_APP_NAME", "AZURE_QA_API_APP_URL", "E2E_SITE_URL", "E2E_API_URL", "E2E_ARTIFACT_COMMIT_SHA", "qa-e2e-evidence.zip", "AZURE_PROD_RESOURCE_GROUP", "AZURE_PROD_SITE_APP_NAME", "AZURE_PROD_SITE_APP_URL", "AZURE_PROD_API_APP_NAME", "AZURE_PROD_API_APP_URL", "healthPath", '${app_url}${health_path}')) {
       if (-not (Test-FileContains $releaseWorkflow ([regex]::Escape($expected)))) {
         Add-Item $Result "findings" $releaseWorkflow $expected "Package/deploy workflow does not mention $expected." "warning"
       }
@@ -1812,6 +1985,44 @@ function Invoke-Audit {
     if ($plane.Contains("AMQP_URL") -and $plane["AMQP_URL"] -match "plane:plane@") {
       Add-Item $result "findings" $planeLocal "AMQP_URL" "Contains unsafe default RabbitMQ password." "warning" "pre-start"
     }
+
+    foreach ($key in @("OTELCOL_SEQ_OTLP_ENDPOINT", "OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING", "OTELCOL_AZURE_EVENT_HUB_QA_CONNECTION_STRING", "OTELCOL_AZURE_EVENT_HUB_PROD_CONNECTION_STRING", "GRAFANA_AZURE_SUBSCRIPTION_ID", "GRAFANA_AZURE_TENANT_ID", "GRAFANA_AZURE_CLIENT_ID", "GRAFANA_AZURE_CLIENT_SECRET", "AZURE_TENANT_ID", "AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET")) {
+      if ($plane.Contains($key)) {
+        Add-Item $result "findings" $planeLocal $key "Key belongs in a tool-specific env file; run SplitInfraEnv to migrate local values." "warning" "pre-start"
+      }
+    }
+  }
+
+  $monitoringLocal = "infra/monitoring/variables.env"
+  $monitoring = Read-EnvFile (Join-RootPath $monitoringLocal)
+  $requiredOtelCollectorEnv = @(
+    "OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING",
+    "OTELCOL_AZURE_EVENT_HUB_QA_CONNECTION_STRING",
+    "OTELCOL_AZURE_EVENT_HUB_PROD_CONNECTION_STRING",
+    "OTELCOL_SEQ_OTLP_ENDPOINT"
+  )
+  if ($monitoring.Count -eq 0) {
+    Add-Item $result "findings" $monitoringLocal "" "Monitoring local env file is missing or empty. Run InitLocalFiles or SplitInfraEnv." "error" "pre-start"
+    foreach ($name in $requiredOtelCollectorEnv) {
+      Add-Item $result "findings" $monitoringLocal $name "Missing required OpenTelemetry collector value for Event Hub to Seq ingestion. Run SetSeqAzureEventHubLogs and provide the missing value." "error" "pre-start"
+    }
+  } else {
+    foreach ($name in $requiredOtelCollectorEnv) {
+      if (-not $monitoring.Contains($name) -or [string]::IsNullOrWhiteSpace($monitoring[$name])) {
+        Add-Item $result "findings" $monitoringLocal $name "Missing required OpenTelemetry collector value for Event Hub to Seq ingestion. Run SetSeqAzureEventHubLogs and provide the missing value." "error" "pre-start"
+      }
+    }
+    foreach ($name in @("GRAFANA_HEALTH_ALERT_FOR", "SEQ_ERROR_ALERT_WINDOW", "SEQ_ERROR_ALERT_THRESHOLD")) {
+      if (-not $monitoring.Contains($name) -or [string]::IsNullOrWhiteSpace($monitoring[$name])) {
+        Add-Item $result "findings" $monitoringLocal $name "Missing monitoring alert configuration value. Copy the default from infra/monitoring/variables.env.example." "warning" "pre-start"
+      }
+    }
+  }
+
+  $azureLocal = "infra/azure/variables.env"
+  $azure = Read-EnvFile (Join-RootPath $azureLocal)
+  if ($azure.Count -eq 0) {
+    Add-Item $result "findings" $azureLocal "" "Optional Azure helper env file is missing or empty. Run InitLocalFiles or SplitInfraEnv when local Azure helper values are needed." "info" "pre-start"
   }
 
   $runnerLocal = "infra/gitea/runner.env"
@@ -1824,32 +2035,31 @@ function Invoke-Audit {
 
   $grafanaDashboards = @(
     "infra/monitoring/grafana/provisioning/dashboards/dashboards.yml",
-    "infra/monitoring/grafana/provisioning/datasources/azure-monitor.yml"
+    "infra/monitoring/grafana/provisioning/alerting/health-alerts.yml"
   )
   foreach ($dashboardFile in $grafanaDashboards) {
     if (-not (Test-Path (Join-RootPath $dashboardFile))) {
-      Add-Item $result "findings" $dashboardFile "grafana-dashboard-provisioning" "Missing Grafana dashboard provisioning artifact." "info" "post-start"
+      Add-Item $result "findings" $dashboardFile "grafana-provisioning" "Missing Grafana provisioning artifact." "warning" "post-start"
     }
   }
 
-  $requiredAzureMonitorEnv = @(
-    "GRAFANA_AZURE_TENANT_ID",
-    "GRAFANA_AZURE_CLIENT_ID",
-    "GRAFANA_AZURE_CLIENT_SECRET",
-    "GRAFANA_AZURE_SUBSCRIPTION_ID",
-    "GRAFANA_AZURE_DEV_LOG_ANALYTICS_WORKSPACE_ID",
-    "GRAFANA_AZURE_QA_LOG_ANALYTICS_WORKSPACE_ID",
-    "GRAFANA_AZURE_PROD_LOG_ANALYTICS_WORKSPACE_ID"
-  )
-  foreach ($name in $requiredAzureMonitorEnv) {
-    if (-not $plane.Contains($name) -or [string]::IsNullOrWhiteSpace($plane[$name])) {
-      Add-Item $result "findings" $planeLocal $name "Missing Grafana Azure Monitor value. Run SetGrafanaAzureMonitor after Azure environments are deployed." "warning" "pre-start"
+  $healthAlertsPath = Join-RootPath "infra/monitoring/grafana/provisioning/alerting/health-alerts.yml"
+  if (Test-Path $healthAlertsPath) {
+    $healthAlerts = Get-Content -Path $healthAlertsPath -Raw
+    if ($healthAlerts -notmatch "probe_success\{job=""blackbox_http_health""\}\s*==\s*0" -or $healthAlerts -notmatch 'for:\s*\$\{GRAFANA_HEALTH_ALERT_FOR\}') {
+      Add-Item $result "findings" "infra/monitoring/grafana/provisioning/alerting/health-alerts.yml" "grafana-health-alerts" "Grafana health alert rule must trigger when probe_success stays 0 for the configured duration." "warning" "post-start"
     }
   }
 
-  $localDashboardDirectory = "infra/monitoring/grafana/dashboards.local"
-  if (-not (Test-Path (Join-RootPath $localDashboardDirectory))) {
-    Add-Item $result "findings" $localDashboardDirectory "azure-monitor-dashboards" "Generated local Azure Monitor dashboards are missing. Run SetGrafanaAzureMonitor after Azure environments are deployed." "info" "pre-start"
+  foreach ($grafanaFile in @(
+    "infra/monitoring/grafana/provisioning/datasources/prometheus.yml",
+    "infra/monitoring/prometheus/prometheus.yml",
+    "infra/monitoring/prometheus/blackbox.yml",
+    "infra/monitoring/prometheus/targets.local.yml"
+  )) {
+    if (-not (Test-Path (Join-RootPath $grafanaFile))) {
+      Add-Item $result "findings" $grafanaFile "grafana-health-stack" "Missing Grafana health monitoring artifact required for Prometheus-based /health dashboards." "warning" "post-start"
+    }
   }
 
   try {
@@ -1866,11 +2076,141 @@ function Invoke-Audit {
           Add-Item $result "findings" "grafana" "ready" "Grafana container is running but readiness endpoint failed: $($_.Exception.Message)" "warning" "post-start"
         }
       } else {
-        Add-Item $result "findings" "docker" "agentic-grafana" "Grafana container is not running; Azure Monitor dashboards are unavailable." "warning" "post-start"
+        Add-Item $result "findings" "docker" "agentic-grafana" "Grafana container is not running; dashboards are unavailable." "warning" "post-start"
+      }
+
+      if ($containers -contains "agentic-prometheus") {
+        Add-Item $result "actions" "docker" "agentic-prometheus" "Prometheus container is running for Grafana /health dashboards."
+        try {
+          $ready = Invoke-WebRequest -Uri "http://localhost:9091/-/ready" -UseBasicParsing -TimeoutSec 5
+          if ($ready.StatusCode -eq 200) {
+            Add-Item $result "actions" "prometheus" "ready" "Prometheus readiness endpoint is healthy."
+          }
+        } catch {
+          Add-Item $result "findings" "prometheus" "ready" "Prometheus container is running but readiness endpoint failed: $($_.Exception.Message)" "warning" "post-start"
+        }
+      } else {
+        Add-Item $result "findings" "docker" "agentic-prometheus" "Prometheus container is not running; Grafana /health dashboards cannot query probe data." "warning" "post-start"
+      }
+
+      if ($containers -contains "agentic-blackbox") {
+        Add-Item $result "actions" "docker" "agentic-blackbox" "Blackbox exporter container is running for /health probes."
+        try {
+          $ready = Invoke-WebRequest -Uri "http://localhost:9115/-/healthy" -UseBasicParsing -TimeoutSec 5
+          if ($ready.StatusCode -eq 200) {
+            Add-Item $result "actions" "blackbox" "ready" "Blackbox exporter health endpoint is healthy."
+          }
+        } catch {
+          Add-Item $result "findings" "blackbox" "ready" "Blackbox exporter container is running but health endpoint failed: $($_.Exception.Message)" "warning" "post-start"
+        }
+      } else {
+        Add-Item $result "findings" "docker" "agentic-blackbox" "Blackbox exporter container is not running; Prometheus cannot probe app /health endpoints." "warning" "post-start"
+      }
+
+      # Check Grafana datasource provisioning
+      try {
+        $datasources = Invoke-WebRequest -Uri "http://localhost:3001/api/datasources" -UseBasicParsing -TimeoutSec 5
+        $ds = $datasources.Content | ConvertFrom-Json
+        $promDs = $ds | Where-Object { $_.type -eq "prometheus" }
+        if ($promDs) {
+          Add-Item $result "actions" "grafana" "datasource.prometheus" "Prometheus datasource is provisioned in Grafana (uid: $($promDs.uid))."
+        } else {
+          Add-Item $result "findings" "grafana" "datasource.prometheus" "Prometheus datasource is not found in Grafana. Check provisioning YAML at infra/monitoring/grafana/provisioning/datasources/prometheus.yml." "warning" "post-start"
+        }
+      } catch {
+        # Check if it's an auth error (datasource exists but requires login) or connection error
+        if ($_.Exception.Message -match "401|Unauthorized|Invalid API key") {
+          Add-Item $result "findings" "grafana" "datasource.prometheus.auth" "Grafana datasource endpoint returned 401. Enable GF_AUTH_ANONYMOUS_ENABLED=true in compose.yml or ensure admin credentials are correct." "warning" "post-start"
+        } elseif ($_.Exception.Message -match "Connection|timeout|refused") {
+          Add-Item $result "findings" "grafana" "datasource.prometheus.connect" "Could not connect to Grafana API at localhost:3001; Prometheus datasource check skipped." "info" "post-start"
+        } else {
+          Add-Item $result "findings" "grafana" "datasource.prometheus" "Could not check Grafana datasources: $($_.Exception.Message)" "info" "post-start"
+        }
+      }
+
+      # Check Grafana health dashboards are provisioned
+      try {
+        $dashboards = Invoke-WebRequest -Uri "http://localhost:3001/api/search?query=health" -UseBasicParsing -TimeoutSec 5
+        $dbs = $dashboards.Content | ConvertFrom-Json
+        $healthDbs = $dbs | Where-Object { $_.title -match "Health|health" }
+        if ($healthDbs.Count -ge 3) {
+          Add-Item $result "actions" "grafana" "dashboards.health" "Found $($healthDbs.Count) health dashboards provisioned (dev, qa, prod expected)."
+        } elseif ($healthDbs.Count -gt 0) {
+          Add-Item $result "findings" "grafana" "dashboards.health.incomplete" "Found only $($healthDbs.Count) health dashboards; expected 3 (dev, qa, prod). Check infra/monitoring/grafana/dashboards.local/ for all three JSON files." "warning" "post-start"
+        } else {
+          Add-Item $result "findings" "grafana" "dashboards.health.missing" "No health dashboards found in Grafana. Check infra/monitoring/grafana/dashboards.local/ exists and dashboard provisioning is configured at infra/monitoring/grafana/provisioning/dashboards/dashboards.yml." "warning" "post-start"
+        }
+      } catch {
+        if ($_.Exception.Message -match "401|Unauthorized|Invalid API key") {
+          Add-Item $result "findings" "grafana" "dashboards.auth" "Grafana search endpoint returned 401. This is expected with anonymous access disabled. Health dashboards may still be available at /d/agentic-dev-health/dev-health-dashboard." "info" "post-start"
+        } else {
+          Add-Item $result "findings" "grafana" "dashboards.check" "Could not query Grafana dashboards: $($_.Exception.Message)" "info" "post-start"
+        }
+      }
+
+      try {
+        $rules = Invoke-WebRequest -Uri "http://localhost:3001/api/ruler/grafana/api/v1/rules" -UseBasicParsing -TimeoutSec 5
+        if ($rules.Content -match "agentic-e2e-health-down") {
+          Add-Item $result "actions" "grafana" "alerts.health" "Grafana health alert rule is provisioned."
+        } else {
+          Add-Item $result "findings" "grafana" "alerts.health" "Grafana health alert rule is not found. Recreate Grafana after updating alert provisioning." "warning" "post-start"
+        }
+      } catch {
+        Add-Item $result "findings" "grafana" "alerts.health" "Could not query Grafana alert rules: $($_.Exception.Message)" "info" "post-start"
+      }
+
+      # Check Prometheus scrape targets are discovering and UP
+      try {
+        $targets = Invoke-WebRequest -Uri "http://localhost:9091/api/v1/targets" -UseBasicParsing -TimeoutSec 5
+        $targetData = $targets.Content | ConvertFrom-Json
+        $upTargets = @($targetData.data.activeTargets | Where-Object { $_.health -eq "up" })
+        if ($upTargets.Count -gt 0) {
+          Add-Item $result "actions" "prometheus" "targets.up" "Prometheus scrape job 'blackbox_http_health' has $($upTargets.Count) targets UP and ready for probing."
+        } else {
+          Add-Item $result "findings" "prometheus" "targets.down" "Prometheus targets are not UP. Check Docker network connectivity from Prometheus to Azure app endpoints. Verify blackbox container is running and App Service /health endpoints are accessible." "warning" "post-start"
+        }
+      } catch {
+        Add-Item $result "findings" "prometheus" "targets.check" "Could not query Prometheus targets at localhost:9091: $($_.Exception.Message)" "info" "post-start"
+      }
+
+      # Check Prometheus has metrics for health probes
+      try {
+        $metrics = Invoke-WebRequest -Uri "http://localhost:9091/api/v1/query?query=probe_success" -UseBasicParsing -TimeoutSec 5
+        $metricData = $metrics.Content | ConvertFrom-Json
+        $results = @($metricData.data.result)
+        if ($results.Count -ge 6) {
+          $devResults = @($results | Where-Object { $_.metric.environment -eq "dev" })
+          Add-Item $result "actions" "prometheus" "metrics.probe_success" "Prometheus has $($results.Count) probe_success metrics. Dev environment has $($devResults.Count) metrics (web and api expected)."
+        } elseif ($results.Count -gt 0) {
+          Add-Item $result "findings" "prometheus" "metrics.probe_success.partial" "Prometheus has only $($results.Count) probe metrics; expected 6 (dev/qa/prod x web/api). Probes may still be initializing or encountering errors." "warning" "post-start"
+        } else {
+          Add-Item $result "findings" "prometheus" "metrics.probe_success.none" "No probe_success metrics found in Prometheus. Check Blackbox exporter logs: 'docker logs agentic-blackbox'. Verify Prometheus scrape config at infra/monitoring/prometheus/prometheus.yml includes blackbox_http_health job." "error" "post-start"
+        }
+      } catch {
+        Add-Item $result "findings" "prometheus" "metrics.check" "Could not query Prometheus metrics: $($_.Exception.Message)" "info" "post-start"
+      }
+
+      # Check Grafana anonymous access is enabled (fix for volume corruption issues)
+      try {
+        $dockerPath = Join-RootPath "infra/monitoring/compose.yml"
+        if (Test-Path $dockerPath) {
+          $composeContent = Get-Content -Path $dockerPath -Raw
+          if ($composeContent -match "GF_AUTH_ANONYMOUS_ENABLED.*true") {
+            Add-Item $result "actions" "grafana" "config.anonymous" "Grafana anonymous access is enabled in compose.yml (prevents volume corruption auth issues)."
+          } else {
+            Add-Item $result "findings" "grafana" "config.anonymous" "Grafana anonymous access is not enabled. Add GF_AUTH_ANONYMOUS_ENABLED: 'true' and GF_AUTH_ANONYMOUS_ORG_ROLE: 'Viewer' to infra/monitoring/compose.yml to prevent dashboard access issues." "warning" "post-start"
+          }
+        }
+      } catch {
+        Add-Item $result "findings" "grafana" "config.check" "Could not check Grafana anonymous access config: $($_.Exception.Message)" "info" "post-start"
       }
     }
   } catch {
-    Add-Item $result "findings" "docker" "monitoring" "Could not inspect Grafana container state: $($_.Exception.Message)" "info" "post-start"
+    Add-Item $result "findings" "docker" "monitoring" "Could not inspect monitoring containers: $($_.Exception.Message)" "info" "post-start"
+  }
+
+  if ($monitoring.Count -gt 0) {
+    Ensure-SeqErrorAlert $result $monitoring $false
   }
 
   Add-QualityGateAuditFindings $result
@@ -3252,7 +3592,7 @@ jobs:
           AZURE_QA_SITE_APP_URL: ${{ secrets.AZURE_QA_SITE_APP_URL }}
           AZURE_QA_API_APP_URL: ${{ secrets.AZURE_QA_API_APP_URL }}
 
-  e2e-qa-branch:
+  e2e-qa:
     runs-on: ubuntu-latest
     container:
       image: agentic/e2e-ci:playwright-1.57.0-1
@@ -3347,7 +3687,28 @@ jobs:
           set -euo pipefail
 
           if [ "$GITHUB_EVENT_NAME" = "push" ]; then
-            artifact_commit_sha="$GITHUB_SHA"
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o qa-approved-latest.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/qa-approved/latest.json"
+            artifact_commit_sha="$(jq -r '.artifactCommitSha // empty' qa-approved-latest.json)"
+            source_rc_version="$(jq -r '.version // empty' qa-approved-latest.json)"
+            release_manifest_path="$(jq -r '.releaseManifestPath // empty' qa-approved-latest.json)"
+
+            test -n "$artifact_commit_sha"
+            test -n "$source_rc_version"
+            test "$release_manifest_path" = "app/$artifact_commit_sha/release.json"
+            [[ "$source_rc_version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]]
+            test "$artifact_commit_sha" = "$GITHUB_SHA"
+
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o commit.sha "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/$artifact_commit_sha/commit.sha"
+            test "$(tr -d '[:space:]' < commit.sha)" = "$artifact_commit_sha"
+            curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o release.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/$release_manifest_path"
+            test "$(jq -r '.commitSha // empty' release.json)" = "$artifact_commit_sha"
+            test "$(jq -r '.sourceRcVersion // empty' release.json)" = "$source_rc_version"
+            test "$(jq -r '.qaResult // empty' release.json)" = "PASS"
+            test -n "$(jq -r '.qaEvidenceUrl // empty' release.json)"
+            test "$(jq -c '(.includedTickets // [.planeTicketKey]) | sort' qa-approved-latest.json)" = "$(jq -c '(.includedTickets // [.planeTicketKey]) | sort' release.json)"
+
+            git fetch --depth 1 origin "refs/tags/$source_rc_version:refs/tags/$source_rc_version"
+            test "$(git rev-list -n 1 "$source_rc_version")" = "$artifact_commit_sha"
           else
             artifact_commit_sha="$ARTIFACT_COMMIT_SHA"
             test -n "$RELEASE_VERSION"
@@ -3357,6 +3718,10 @@ jobs:
           test -n "$artifact_commit_sha"
           echo "PROD_ARTIFACT_COMMIT_SHA=$artifact_commit_sha" >> "$GITHUB_ENV"
         env:
+          NEXUS_URL: ${{ secrets.NEXUS_URL }}
+          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+          NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
           ARTIFACT_COMMIT_SHA: ${{ github.event.inputs.artifact_commit_sha }}
           RELEASE_VERSION: ${{ github.event.inputs.release_version }}
           SOURCE_RC_VERSION: ${{ github.event.inputs.source_rc_version }}
@@ -3599,7 +3964,7 @@ Release flow:
 feature branch -> dev -> DEV -> QA -> Gitea E2E evidence -> Plane E2E QA -> main -> PROD
 ```
 
-The package workflow reads `infra/deployment/apps.json`, rejects deployable project paths outside `src/`, builds one ZIP per deployable app, builds `deployment-config.json` from `infra/deployment/configuration.json` plus each app's `appsettings*.json`, and publishes from ticket-gated application changes on `dev`, including `app/{commitSha}/deployable-apps.json`, `app/{commitSha}/deployment-config.json`, per-app ZIP/checksum files, and a baseline `app/{commitSha}/release.json`. DEV, QA, and PROD must apply and verify deployment configuration before deployment success is claimed. Smoke checks also verify that the clients page renders the expected API base URL and that API CORS preflight allows the matching web origin. DEV and QA must deploy the same Nexus app artifacts for the same commit SHA. After QA deploy and smoke checks, push a `qa/{ticketKey}` branch from current `dev`; the `e2e-qa-branch` job runs the committed Playwright suite against the deployed QA Site/API URLs without redeploying, resolves the artifact commit from the branch point with `dev`, and uploads `app/{commitSha}/qa-e2e-evidence.zip` plus a ticket/run evidence copy under `qa/{ticketKey}/{runId}/qa-e2e-evidence.zip`. This Gitea job is evidence-only; the `test-e2e` skill remains responsible for acceptance-to-assertion QA proof, Plane Done state, RC tagging, release manifest QA lineage, and deleting the remote `qa/{ticketKey}` branch after durable Nexus/Plane/release/tag evidence exists. Only full `PASS` can move Plane to Done; `PASS WITH GAPS` or `FAIL` remain in QA. PROD is an explicit release event that may include one or more Done tickets through `release.json.includedTickets`; it must deploy the QA-approved Nexus app artifacts from an exact-commit `main` promotion or explicit dispatch by commit SHA, pass deployment configuration verification, rendered API base URL validation, CORS preflight validation, the web page smoke check, and every app `/health` check, then record the PROD result on every included ticket.
+The package workflow reads `infra/deployment/apps.json`, rejects deployable project paths outside `src/`, builds one ZIP per deployable app, builds `deployment-config.json` from `infra/deployment/configuration.json` plus each app's `appsettings*.json`, and publishes from ticket-gated application changes on `dev`, including `app/{commitSha}/deployable-apps.json`, `app/{commitSha}/deployment-config.json`, per-app ZIP/checksum files, and a baseline `app/{commitSha}/release.json`. DEV, QA, and PROD must apply and verify deployment configuration before deployment success is claimed. Smoke checks also verify that the clients page renders the expected API base URL and that API CORS preflight allows the matching web origin. DEV and QA must deploy the same Nexus app artifacts for the same commit SHA. After QA deploy and smoke checks, push a `qa/{ticketKey}` branch from current `dev`; the `e2e-qa` job runs the committed Playwright suite against the deployed QA Site/API URLs without redeploying, resolves the artifact commit from the branch point with `dev`, and uploads `app/{commitSha}/qa-e2e-evidence.zip` plus a ticket/run evidence copy under `qa/{ticketKey}/{runId}/qa-e2e-evidence.zip`. This Gitea job is evidence-only; the `test-e2e` skill remains responsible for acceptance-to-assertion QA proof, Plane Done state, RC tagging, release manifest QA lineage, and deleting the remote `qa/{ticketKey}` branch after durable Nexus/Plane/release/tag evidence exists. Only full `PASS` can move Plane to Done; `PASS WITH GAPS` or `FAIL` remain in QA. PROD is an explicit release event that may include one or more Done tickets through `release.json.includedTickets`; it must deploy the QA-approved Nexus app artifacts from an exact-commit `main` promotion or explicit dispatch by commit SHA, pass deployment configuration verification, rendered API base URL validation, CORS preflight validation, the web page smoke check, and every app `/health` check, then record the PROD result on every included ticket.
 '@
 
   return $result
@@ -3653,6 +4018,8 @@ function Invoke-InitLocalFiles {
   Copy-LocalFile $result ".codex/client-tools.example.json" ".codex/client-tools.local.json"
   Copy-LocalFile $result ".codex/quality.example.json" ".codex/quality.local.json"
   Copy-LocalFile $result "infra/plane/variables.env.example" "infra/plane/variables.env"
+  Copy-LocalFile $result "infra/monitoring/variables.env.example" "infra/monitoring/variables.env"
+  Copy-LocalFile $result "infra/azure/variables.env.example" "infra/azure/variables.env"
   Copy-LocalFile $result "infra/gitea/runner.env.example" "infra/gitea/runner.env"
   return $result
 }
@@ -3822,6 +4189,7 @@ function Invoke-SetEnvMode {
     throw "ValuesJson is required for $Mode."
   }
 
+  Assert-EnvKeysAllowed -TargetRelative $TargetRelative -Values $values
   Set-EnvValues -Path $target -Values $values
   foreach ($key in $values.Keys) {
     Add-Item $result "actions" $TargetRelative $key "Set confirmed value."
@@ -3829,210 +4197,146 @@ function Invoke-SetEnvMode {
   return $result
 }
 
-function New-AzureMonitorLogDashboard {
-  param(
-    [string]$EnvironmentName,
-    [string]$WorkspaceResourceId
-  )
+function Invoke-SplitInfraEnv {
+  $result = New-Result
+  $planeRelative = "infra/plane/variables.env"
+  $monitoringRelative = "infra/monitoring/variables.env"
+  $azureRelative = "infra/azure/variables.env"
 
-  $upper = $EnvironmentName.ToUpperInvariant()
-  $kql = @"
-union isfuzzy=true AppServiceConsoleLogs, AppServiceAppLogs, AppServiceHTTPLogs, AppServicePlatformLogs, AppServiceAuditLogs, AppServiceIPSecAuditLogs, AppServiceAuthenticationLogs
-| where TimeGenerated >= ago(6h)
-| extend Category = tostring(column_ifexists("Category", ""))
-| extend Message = coalesce(tostring(column_ifexists("Message", "")), tostring(column_ifexists("Details", "")), tostring(column_ifexists("ResultDescription", "")), tostring(column_ifexists("CsUriStem", "")))
-| project TimeGenerated, Category, ResourceId = tostring(column_ifexists("_ResourceId", "")), Message
-| order by TimeGenerated desc
-| take 200
-"@
-
-  $activityKql = @"
-union isfuzzy=true AppServiceConsoleLogs, AppServiceAppLogs, AppServiceHTTPLogs, AppServicePlatformLogs, AppServiceAuditLogs, AppServiceIPSecAuditLogs, AppServiceAuthenticationLogs
-| where TimeGenerated >= ago(6h)
-| summarize Count = count() by bin(TimeGenerated, 5m), ResourceId = tostring(column_ifexists("_ResourceId", ""))
-| order by TimeGenerated asc
-"@
-
-  $dashboard = [ordered]@{
-    annotations = [ordered]@{
-      list = @(
-        [ordered]@{
-          builtIn = 1
-          datasource = [ordered]@{ type = "grafana"; uid = "-- Grafana --" }
-          enable = $true
-          hide = $true
-          iconColor = "rgba(0, 211, 255, 1)"
-          name = "Annotations & Alerts"
-          type = "dashboard"
-        }
-      )
-    }
-    editable = $true
-    fiscalYearStartMonth = 0
-    graphTooltip = 0
-    id = $null
-    links = @()
-    liveNow = $false
-    panels = @(
-      [ordered]@{
-        datasource = [ordered]@{ type = "grafana-azure-monitor-datasource"; uid = "azure-monitor" }
-        fieldConfig = [ordered]@{ defaults = [ordered]@{}; overrides = @() }
-        gridPos = [ordered]@{ h = 8; w = 24; x = 0; y = 0 }
-        id = 1
-        options = [ordered]@{
-          legend = [ordered]@{ displayMode = "list"; placement = "bottom"; showLegend = $true }
-          tooltip = [ordered]@{ mode = "single"; sort = "none" }
-        }
-        targets = @(
-          [ordered]@{
-            azureLogAnalytics = [ordered]@{
-              query = $activityKql
-              resources = @($WorkspaceResourceId)
-              resultFormat = "time_series"
-            }
-            datasource = [ordered]@{ type = "grafana-azure-monitor-datasource"; uid = "azure-monitor" }
-            queryType = "Azure Log Analytics"
-            refId = "A"
-          }
-        )
-        title = "$upper Azure Log Activity"
-        type = "timeseries"
-      },
-      [ordered]@{
-        datasource = [ordered]@{ type = "grafana-azure-monitor-datasource"; uid = "azure-monitor" }
-        fieldConfig = [ordered]@{ defaults = [ordered]@{}; overrides = @() }
-        gridPos = [ordered]@{ h = 14; w = 24; x = 0; y = 8 }
-        id = 2
-        options = [ordered]@{
-          cellHeight = "sm"
-          footer = [ordered]@{ countRows = $false; fields = ""; reducer = @("sum"); show = $false }
-          showHeader = $true
-        }
-        targets = @(
-          [ordered]@{
-            azureLogAnalytics = [ordered]@{
-              query = $kql
-              resources = @($WorkspaceResourceId)
-              resultFormat = "table"
-            }
-            datasource = [ordered]@{ type = "grafana-azure-monitor-datasource"; uid = "azure-monitor" }
-            queryType = "Azure Log Analytics"
-            refId = "A"
-          }
-        )
-        title = "$upper Azure Logs"
-        type = "table"
-      }
-    )
-    refresh = "30s"
-    schemaVersion = 41
-    tags = @("agentic-e2e", "azure", "logs", $EnvironmentName)
-    templating = [ordered]@{ list = @() }
-    time = [ordered]@{ from = "now-6h"; to = "now" }
-    timepicker = [ordered]@{}
-    timezone = "browser"
-    title = "$upper Azure Monitor"
-    uid = "agentic-$EnvironmentName-azure-monitor"
-    version = 1
-    weekStart = ""
+  $planePath = Join-RootPath $planeRelative
+  if (-not (Test-Path $planePath)) {
+    throw "Missing $planeRelative. Run -Mode InitLocalFiles first."
   }
 
-  return ($dashboard | ConvertTo-Json -Depth 30)
+  $source = Read-EnvFile $planePath
+  $monitoringExisting = Read-EnvFile (Join-RootPath $monitoringRelative)
+  $azureExisting = Read-EnvFile (Join-RootPath $azureRelative)
+
+  Write-EnvFromTemplate -TemplateRelative "infra/monitoring/variables.env.example" -TargetRelative $monitoringRelative -PrimaryValues $monitoringExisting -FallbackValues $source -Result $result
+  Write-EnvFromTemplate -TemplateRelative "infra/azure/variables.env.example" -TargetRelative $azureRelative -PrimaryValues $azureExisting -FallbackValues $source -Result $result
+  Write-EnvFromTemplate -TemplateRelative "infra/plane/variables.env.example" -TargetRelative $planeRelative -PrimaryValues $source -FallbackValues @{} -Result $result
+
+  $known = @{}
+  foreach ($templateRelative in @("infra/plane/variables.env.example", "infra/monitoring/variables.env.example", "infra/azure/variables.env.example")) {
+    foreach ($key in (Get-EnvFileKeys (Join-RootPath $templateRelative))) {
+      $known[$key] = $true
+    }
+  }
+
+  foreach ($key in @($source.Keys | Sort-Object)) {
+    if (-not $known.ContainsKey($key)) {
+      Add-Item $result "findings" $planeRelative $key "Existing key is not owned by the split env templates; value was left for manual review and not copied." "warning" "pre-start"
+    }
+  }
+
+  return $result
 }
 
-function Invoke-SetGrafanaAzureMonitor {
+function Invoke-SetSeqAzureEventHubLogs {
   $result = New-Result
-  $targetRelative = "infra/plane/variables.env"
+  $targetRelative = "infra/monitoring/variables.env"
   $target = Join-RootPath $targetRelative
   if (-not (Test-Path $target)) {
     throw "Missing $targetRelative. Run -Mode InitLocalFiles first."
   }
 
-  $values = Convert-JsonToHashtable $ValuesJson
-  $servicePrincipalName = "sp-agentic-e2e-grafana-monitor"
-  if ($values.Contains("servicePrincipalName") -and -not [string]::IsNullOrWhiteSpace($values["servicePrincipalName"])) {
-    $servicePrincipalName = [string]$values["servicePrincipalName"]
-  }
+  $composeRelative = "infra/monitoring/compose.yml"
+  $collectorRelative = "infra/monitoring/otelcol/collector.yaml"
+  $composePath = Join-RootPath $composeRelative
+  $collectorPath = Join-RootPath $collectorRelative
 
-  $account = Invoke-AzJson @("account", "show")
-  Add-Item $result "actions" "az" "account" "Resolved Azure subscription '$($account.name)' and tenant '$($account.tenantId)'."
-
-  $envValues = @{}
-  $workspaceIds = @()
-  foreach ($environment in Get-AgenticEnvironmentResourceGroups) {
-    $envName = $environment.env
-    $resourceGroup = $environment.resourceGroup
-    $prefix = "law-agentice2e-$envName-"
-    $workspaces = ConvertTo-Array (Invoke-AzJson @("monitor", "log-analytics", "workspace", "list", "--resource-group", $resourceGroup))
-    $workspace = @($workspaces | Where-Object { $_.name -like "$prefix*" } | Sort-Object name | Select-Object -First 1)
-    if ($workspace.Count -eq 0) {
-      throw "No Log Analytics workspace matching '$prefix*' found in '$resourceGroup'. Run infra/azure/deploy-environments.ps1 first."
-    }
-
-    $workspaceName = $workspace[0].name
-    $workspaceResourceId = [string]$workspace[0].id
-    $workspaceCustomerId = Invoke-AzTsv @("monitor", "log-analytics", "workspace", "show", "--resource-group", $resourceGroup, "--workspace-name", $workspaceName, "--query", "customerId")
-    $upper = $envName.ToUpperInvariant()
-    $envValues["GRAFANA_AZURE_${upper}_LOG_ANALYTICS_WORKSPACE_ID"] = $workspaceCustomerId
-    $envValues["GRAFANA_AZURE_${upper}_LOG_ANALYTICS_WORKSPACE_RESOURCE_ID"] = $workspaceResourceId
-    $workspaceIds += $workspaceResourceId
-    Add-Item $result "actions" "azure-log-analytics" $workspaceName "Resolved $envName Log Analytics workspace."
-
-    $webApps = ConvertTo-Array (Invoke-AzJson @("webapp", "list", "--resource-group", $resourceGroup))
-    foreach ($app in @($webApps | Where-Object { $_.name -like "app-agentice2e-$envName-*" })) {
-      $settings = ConvertTo-Array (Invoke-AzJson @("monitor", "diagnostic-settings", "list", "--resource", $app.id))
-      $matchingSettings = @($settings | Where-Object { $_.name -eq "send-appservice-logs-to-log-analytics" -and $_.workspaceId -eq $workspaceResourceId })
-      if ($matchingSettings.Count -gt 0) {
-        Add-Item $result "actions" "azure-diagnostic-settings" $app.name "Diagnostic setting for Azure Monitor Logs exists."
-      } else {
-        Add-Item $result "findings" "azure-diagnostic-settings" $app.name "Missing App Service diagnostic setting for Azure Monitor Logs." "warning" "post-start"
-      }
-    }
-
-    $dashboardDirectory = Join-RootPath "infra/monitoring/grafana/dashboards.local"
-    if (-not $DryRun -and -not (Test-Path $dashboardDirectory)) {
-      New-Item -ItemType Directory -Path $dashboardDirectory -Force | Out-Null
-    }
-    $dashboardPath = Join-Path $dashboardDirectory "$envName-azure-monitor.json"
-    Add-Item $result "actions" "infra/monitoring/grafana/dashboards.local/$envName-azure-monitor.json" "" "Generate local Grafana Azure Monitor dashboard."
-    if (-not $DryRun) {
-      New-AzureMonitorLogDashboard -EnvironmentName $envName -WorkspaceResourceId $workspaceResourceId | Set-Content -Path $dashboardPath -Encoding UTF8
-    }
-  }
-
-  $servicePrincipals = ConvertTo-Array (Invoke-AzJson @("ad", "sp", "list", "--display-name", $servicePrincipalName))
-  if ($servicePrincipals.Count -gt 0) {
-    $appId = $servicePrincipals[0].appId
-    $credential = Invoke-AzJson @("ad", "sp", "credential", "reset", "--id", $appId, "--append", "--display-name", "grafana-azure-monitor-local", "--years", "1")
-    Add-Item $result "actions" "azure-ad" $servicePrincipalName "Reused service principal and created a local-only Grafana Azure Monitor client secret."
+  if (-not (Test-Path $composePath)) {
+    Add-Item $result "findings" $composeRelative "monitoring-compose" "Missing monitoring compose file." "error" "pre-start"
   } else {
-    $credential = Invoke-AzJson @("ad", "sp", "create-for-rbac", "--name", $servicePrincipalName, "--skip-assignment")
-    $appId = $credential.appId
-    Add-Item $result "actions" "azure-ad" $servicePrincipalName "Created service principal for Grafana Azure Monitor."
-  }
-
-  foreach ($scope in @($workspaceIds)) {
-    foreach ($role in @("Reader", "Log Analytics Reader")) {
-      $assignments = ConvertTo-Array (Invoke-AzJson @("role", "assignment", "list", "--assignee", $appId, "--scope", $scope, "--role", $role))
-      if ($assignments.Count -eq 0) {
-        $null = Invoke-AzJson @("role", "assignment", "create", "--assignee", $appId, "--scope", $scope, "--role", $role)
-        Add-Item $result "actions" "azure-rbac" $role "Assigned Grafana service principal to Log Analytics workspace scope."
-      } else {
-        Add-Item $result "actions" "azure-rbac" $role "Grafana service principal already has role on Log Analytics workspace scope."
-      }
+    $compose = Get-Content -Path $composePath -Raw
+    if ($compose -notmatch 'name:\s*agentic-e2e' -or $compose -notmatch 'profiles:\s*\n\s*-\s*eventhub' -or $compose -notmatch 'agentic-otelcol' -or $compose -notmatch 'otel/opentelemetry-collector-contrib:0\.154\.0') {
+      Add-Item $result "findings" $composeRelative "otelcol-service" "Monitoring compose does not define the required Event Hub collector profile." "error" "pre-start"
+    } else {
+      Add-Item $result "actions" $composeRelative "" "Required Event Hub collector profile is present in the shared agentic-e2e compose collection."
     }
   }
 
-  $envValues["GRAFANA_AZURE_CLIENT_ID"] = $appId
-  $envValues["GRAFANA_AZURE_TENANT_ID"] = $account.tenantId
-  $envValues["GRAFANA_AZURE_CLIENT_SECRET"] = $credential.password
-  $envValues["GRAFANA_AZURE_SUBSCRIPTION_ID"] = $account.id
-
-  Set-EnvValues -Path $target -Values $envValues
-  foreach ($key in $envValues.Keys) {
-    Add-Item $result "actions" $targetRelative $key "Set Grafana Azure Monitor value."
+  if (-not (Test-Path $collectorPath)) {
+    Add-Item $result "findings" $collectorRelative "collector-config" "Missing OpenTelemetry Collector Contrib configuration." "error" "pre-start"
+  } else {
+    $collector = Get-Content -Path $collectorPath -Raw
+    foreach ($needle in @("azure_event_hub/dev", "azure_event_hub/qa", "azure_event_hub/prod", "otlphttp/seq")) {
+      if ($collector -notmatch [regex]::Escape($needle)) {
+        Add-Item $result "findings" $collectorRelative $needle "Collector configuration is missing expected Event Hub to Seq wiring." "error" "pre-start"
+      }
+    }
+    if ($collector -match "azure_event_hub/dev" -and $collector -match "otlphttp/seq") {
+      Add-Item $result "actions" $collectorRelative "" "OpenTelemetry Collector Contrib config is present for Azure Event Hub to Seq ingestion."
+    }
   }
 
+  $monitoring = Read-EnvFile $target
+  foreach ($name in @("OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING", "OTELCOL_AZURE_EVENT_HUB_QA_CONNECTION_STRING", "OTELCOL_AZURE_EVENT_HUB_PROD_CONNECTION_STRING")) {
+    if (-not $monitoring.Contains($name) -or [string]::IsNullOrWhiteSpace($monitoring[$name])) {
+      Add-Item $result "findings" $targetRelative $name "Missing Event Hub connection string required by the collector-based Seq ingestion path." "error" "pre-start"
+    } else {
+      Add-Item $result "actions" $targetRelative $name "Event Hub connection string is configured for collector-based Seq ingestion."
+    }
+  }
+
+  if (-not $monitoring.Contains("OTELCOL_SEQ_OTLP_ENDPOINT") -or [string]::IsNullOrWhiteSpace($monitoring["OTELCOL_SEQ_OTLP_ENDPOINT"])) {
+    Add-Item $result "findings" $targetRelative "OTELCOL_SEQ_OTLP_ENDPOINT" "Missing OTLP endpoint required by the collector-based Seq ingestion path." "error" "pre-start"
+  } else {
+    Add-Item $result "actions" $targetRelative "OTELCOL_SEQ_OTLP_ENDPOINT" "Collector OTLP export endpoint is configured."
+  }
+
+  try {
+    $containers = @(& docker ps --format "{{.Names}}" 2>$null)
+    if ($LASTEXITCODE -eq 0 -and $containers -contains "agentic-seq") {
+      $seqState = (& docker inspect -f "{{.State.Status}}" agentic-seq 2>$null | Out-String).Trim()
+      if ($seqState -ne "running") {
+        Add-Item $result "findings" "docker" "agentic-seq" "Seq container status is '$seqState' instead of 'running'." "error" "post-start"
+      } else {
+        $ready = Invoke-WebRequest -Uri "http://localhost:5341/api" -UseBasicParsing -TimeoutSec 5
+        if ($ready.StatusCode -eq 200) {
+          Add-Item $result "actions" "seq" "ready" "Seq API endpoint is healthy."
+          Ensure-SeqErrorAlert $result $monitoring $true
+        }
+      }
+    } else {
+      Add-Item $result "findings" "docker" "agentic-seq" "Seq container is not running; collector path cannot be validated." "error" "post-start"
+    }
+
+    if ($LASTEXITCODE -eq 0 -and $containers -contains "agentic-otelcol") {
+      $otelState = (& docker inspect -f "{{.State.Status}}" agentic-otelcol 2>$null | Out-String).Trim()
+      if ($otelState -eq "running") {
+        Add-Item $result "actions" "docker" "agentic-otelcol" "Event Hub collector container is running."
+
+        $otelEnv = (& docker inspect agentic-otelcol --format "{{range .Config.Env}}{{println .}}{{end}}" 2>$null | Out-String)
+        foreach ($name in @("OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING", "OTELCOL_AZURE_EVENT_HUB_QA_CONNECTION_STRING", "OTELCOL_AZURE_EVENT_HUB_PROD_CONNECTION_STRING", "OTELCOL_SEQ_OTLP_ENDPOINT")) {
+          $pattern = "(?m)^" + [regex]::Escape($name) + "=(.*)$"
+          $match = [regex]::Match($otelEnv, $pattern)
+          if (-not $match.Success) {
+            Add-Item $result "findings" "docker" $name "Running collector container is missing expected environment value '$name'. Recreate the collector container." "error" "post-start"
+            continue
+          }
+
+          $runningValue = $match.Groups[1].Value.Trim()
+          if ($monitoring.Contains($name) -and -not [string]::Equals($runningValue, $monitoring[$name], [System.StringComparison]::Ordinal)) {
+            Add-Item $result "findings" "docker" $name "Running collector container has a stale '$name' value that does not match infra/monitoring/variables.env. Recreate the collector container with --force-recreate." "error" "post-start"
+          }
+        }
+
+        $otelLogs = (& docker logs --tail 120 agentic-otelcol 2>&1 | Out-String)
+        if ($otelLogs -match "InvalidSignature|error receiving events|unauthorized") {
+          Add-Item $result "findings" "docker" "agentic-otelcol-runtime" "Collector logs show Event Hub authentication or ingestion failures. Verify Send/Listen auth rules and recreate the collector container after updating connection strings." "error" "post-start"
+        }
+      } else {
+        Add-Item $result "findings" "docker" "agentic-otelcol" "Event Hub collector container status is '$otelState'." "error" "post-start"
+      }
+    } else {
+      Add-Item $result "findings" "docker" "agentic-otelcol" "Event Hub collector container is not running. Start with --profile eventhub to complete observability setup." "error" "post-start"
+    }
+  } catch {
+    Add-Item $result "findings" "seq" "ready" "Could not validate Seq API endpoint: $($_.Exception.Message)" "error" "post-start"
+  }
+
+  Add-Item $result "actions" $composeRelative "" "Run `docker compose --profile eventhub --env-file .\infra\plane\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml --project-directory .\infra up -d --force-recreate otelcol` after Event Hub or OTEL env changes."
   return $result
 }
 
@@ -4052,9 +4356,12 @@ switch ($Mode) {
   "SyncWorktreeLocalConfig" { $result = Invoke-SyncWorktreeLocalConfig }
   "EnsureDeliveryContext" { $result = Invoke-EnsureDeliveryContext }
   "SetPlaneEnv" { $result = Invoke-SetEnvMode -TargetRelative "infra/plane/variables.env" }
+  "SetMonitoringEnv" { $result = Invoke-SetEnvMode -TargetRelative "infra/monitoring/variables.env" }
   "SetGiteaRunner" { $result = Invoke-SetEnvMode -TargetRelative "infra/gitea/runner.env" }
-  "SetGrafanaAzureMonitor" { $result = Invoke-SetGrafanaAzureMonitor }
+  "SetSeqAzureEventHubLogs" { $result = Invoke-SetSeqAzureEventHubLogs }
+  "SplitInfraEnv" { $result = Invoke-SplitInfraEnv }
   "SetQualityConfig" { $result = Invoke-SetQualityConfig }
 }
 
 $result | ConvertTo-Json -Depth 10
+

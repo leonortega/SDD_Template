@@ -1,12 +1,14 @@
 param(
   [Parameter(Mandatory = $true)]
-  [ValidateSet('ArtifactPaths', 'CheckGitIgnored', 'NextRcVersion', 'ReadDeliveryPolicy', 'ExtractTicketKey', 'ReadCoverageThreshold', 'ReadCoberturaLineRate', 'ValidateReleaseManifest', 'ValidateTicketLock', 'ValidateDeploymentLane', 'ValidateParallelDeliveryDryRun', 'InitializeWorkflowTelemetry', 'AppendWorkflowTelemetry', 'ReadWorkflowTelemetry', 'RenderPlaneComment', 'UpdateReleaseManifest')]
+  [ValidateSet('ArtifactPaths', 'CheckGitIgnored', 'NextRcVersion', 'ReadDeliveryPolicy', 'ExtractTicketKey', 'ReadCoverageThreshold', 'ReadCoberturaLineRate', 'ValidateReleaseManifest', 'CreateArtifactPointer', 'ValidateTicketLock', 'ValidateDeploymentLane', 'ValidateParallelDeliveryDryRun', 'InitializeWorkflowTelemetry', 'AppendWorkflowTelemetry', 'ReadWorkflowTelemetry', 'RenderPlaneComment', 'UpdateReleaseManifest')]
   [string] $Mode,
 
   [string] $CommitSha,
   [string] $Path,
   [string] $TargetVersion,
+  [string] $Version,
   [string] $TicketKey,
+  [string] $IncludedTickets,
   [string] $Branch,
   [string] $PrNumber,
   [string] $ArtifactCommitSha,
@@ -184,6 +186,39 @@ function Test-ReleaseManifest([string] $ManifestPath) {
     path = $ManifestPath
     valid = [bool]$validation.Valid
     errors = @($validation.Errors)
+  }
+}
+
+function New-ArtifactPointer([string] $OutputPath) {
+  if ([string]::IsNullOrWhiteSpace($OutputPath)) {
+    throw 'Path is required for CreateArtifactPointer.'
+  }
+  if ([string]::IsNullOrWhiteSpace($Version)) {
+    throw 'Version is required for CreateArtifactPointer.'
+  }
+  if ([string]::IsNullOrWhiteSpace($ArtifactCommitSha)) {
+    throw 'ArtifactCommitSha is required for CreateArtifactPointer.'
+  }
+  if ([string]::IsNullOrWhiteSpace($TicketKey)) {
+    throw 'TicketKey is required for CreateArtifactPointer.'
+  }
+
+  $arguments = @(
+    'CreateArtifactPointer',
+    '--output', $OutputPath,
+    '--version', $Version,
+    '--artifact-commit-sha', $ArtifactCommitSha,
+    '--plane-ticket-key', $TicketKey
+  )
+  if (-not [string]::IsNullOrWhiteSpace($IncludedTickets)) {
+    $arguments += @('--included-tickets', $IncludedTickets)
+  }
+
+  Invoke-DeliveryCli $arguments | Out-Null
+  [pscustomobject]@{
+    path = $OutputPath
+    version = $Version
+    artifactCommitSha = $ArtifactCommitSha
   }
 }
 
@@ -461,6 +496,52 @@ function Get-LongProperty($Object, [string] $Name) {
     return $null
   }
   return [long]$value
+}
+
+function Get-WorkflowTimingStageRows($StageRows) {
+  $standardStages = @(
+    'plane-start-ticket',
+    'implement-ticket',
+    'pr-review-feedback-loop',
+    'gitea-pr-review-agent',
+    'post-merge-deploy',
+    'deploy-to-qa',
+    'test-e2e'
+  )
+
+  $inputRows = @($StageRows | Where-Object { $null -ne $_ })
+  $expandedRows = [System.Collections.Generic.List[object]]::new()
+  $includedIndexes = [System.Collections.Generic.HashSet[int]]::new()
+
+  foreach ($standardStage in $standardStages) {
+    $matched = $false
+    for ($index = 0; $index -lt $inputRows.Count; $index++) {
+      $stageName = [string](Get-ObjectProperty $inputRows[$index] 'stage')
+      if ($stageName -eq $standardStage) {
+        $expandedRows.Add($inputRows[$index])
+        [void]$includedIndexes.Add($index)
+        $matched = $true
+      }
+    }
+
+    if (-not $matched) {
+      $expandedRows.Add([pscustomobject]@{
+        stage = $standardStage
+        outcome = 'NOT RUN / N/A'
+        elapsedMilliseconds = $null
+        startedUtc = '-'
+        finishedUtc = '-'
+      })
+    }
+  }
+
+  for ($index = 0; $index -lt $inputRows.Count; $index++) {
+    if (-not $includedIndexes.Contains($index)) {
+      $expandedRows.Add($inputRows[$index])
+    }
+  }
+
+  return @($expandedRows)
 }
 
 function Get-WorkflowTelemetryPath {
@@ -760,7 +841,7 @@ function Render-PlaneComment {
         throw 'ticketKey is required for WorkflowTiming comments.'
       }
 
-      $stageRows = @((Get-ObjectProperty $data 'stages'))
+      $stageRows = Get-WorkflowTimingStageRows @((Get-ObjectProperty $data 'stages'))
       $totalElapsedMilliseconds = Get-LongProperty $data 'totalElapsedMilliseconds'
       if ($null -eq $totalElapsedMilliseconds) {
         $totalElapsedMilliseconds = 0
@@ -793,7 +874,8 @@ function Render-PlaneComment {
         if ([string]::IsNullOrWhiteSpace($stageName)) { $stageName = 'unknown' }
         if ([string]::IsNullOrWhiteSpace($outcome)) { $outcome = 'unknown' }
 
-        $lines += "| ``$stageName`` | $outcome | $(Format-Duration $elapsed) | $startedUtc | $finishedUtc |"
+        $duration = if ($outcome -eq 'NOT RUN / N/A') { 'no time' } else { Format-Duration $elapsed }
+        $lines += "| ``$stageName`` | $outcome | $duration | $startedUtc | $finishedUtc |"
       }
 
       return ($lines -join [Environment]::NewLine)
@@ -840,6 +922,7 @@ switch ($Mode) {
   'ReadCoverageThreshold' { Write-Json (Get-CoverageThreshold) }
   'ReadCoberturaLineRate' { Write-Json (Get-CoberturaLineRate) }
   'ValidateReleaseManifest' { Write-Json (Test-ReleaseManifest $Path) }
+  'CreateArtifactPointer' { Write-Json (New-ArtifactPointer $Path) }
   'ValidateTicketLock' { Write-Json (Test-TicketLock) }
   'ValidateDeploymentLane' { Write-Json (Test-DeploymentLane) }
   'ValidateParallelDeliveryDryRun' { Write-Json (Test-ParallelDeliveryDryRun) }

@@ -1,6 +1,6 @@
 ---
 name: rollback-prod
-description: Roll back PROD to previously verified Nexus topology artifacts. Use when Codex needs to choose a known-good release from release.json metadata, redeploy app/{commitSha}/deployable-apps.json and per-app ZIPs to PROD without rebuilding, verify PROD page and all app /health checks, check Grafana Azure Monitor when available, and comment rollback evidence on Plane.
+description: Roll back PROD to previously verified Nexus topology artifacts. Use when Codex needs to choose a known-good release from release.json metadata, redeploy app/{commitSha}/deployable-apps.json and per-app ZIPs to PROD without rebuilding, verify PROD page and all app /health checks, check Seq log search when available, and comment rollback evidence on Plane.
 ---
 
 # Rollback PROD
@@ -58,10 +58,8 @@ The workflow must download `app/{artifact_commit_sha}/deployable-apps.json`, dow
 
 1. Verify PROD page returns HTTP 200 and expected title/content.
 2. Verify `{prodWebUrl}/health` returns HTTP 200 and JSON `status=ok`.
-3. Query Grafana health when local Grafana is reachable.
-4. Run `infra/monitoring/validate-azure-monitor-logs.ps1` when Grafana Azure Monitor credentials and Log Analytics workspace IDs are configured.
-5. If page or `/health` fails, comment rollback failure and stop.
-6. If only monitoring is unavailable, rollback may still pass but the Plane comment must record monitoring unavailable.
+3. If Seq log validation is unavailable, rollback may still pass but the Plane comment must record monitoring unavailable.
+4. If page or `/health` fails, comment rollback failure and stop.
 
 ## Plane Result
 
@@ -71,7 +69,7 @@ Add a Plane comment with marker:
 IA generated PROD rollback: {rollbackVersionOrCommit}
 ```
 
-Include current PROD version/commit, rollback target version/commit, Nexus artifact URL, checksum, release manifest URL, workflow run URL, PROD URL, page status, `/health` status, Grafana Azure Monitor status, and failure or success result.
+Include current PROD version/commit, rollback target version/commit, Nexus artifact URL, checksum, release manifest URL, workflow run URL, PROD URL, page status, `/health` status, Seq monitoring status, and failure or success result.
 
 Use `UpdateReleaseManifest` to update `app/{commitSha}/release.json` with rollback deployment timestamp, workflow run URL, PROD URL, and rollback source/current version relationship when rollback passes.
 

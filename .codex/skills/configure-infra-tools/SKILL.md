@@ -21,7 +21,19 @@ When this skill triggers:
 
 1. Read `.codex/skills/configure-dev-environment/SKILL.md`.
 2. Route immediately to `$configure-dev-environment` and follow its audit, safety, domain routing, and output rules.
-3. If the caller explicitly asked for the legacy script path, use the active shared script path instead:
+3. During infra status checks for the core stack, use the compose env file explicitly:
+
+```powershell
+docker compose --env-file .\infra\plane\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml ps
+```
+
+4. When local Trivy scans report a stale DB, refresh before scanning:
+
+```powershell
+trivy --download-db-only
+```
+
+5. If the caller explicitly asked for the legacy script path, use the active shared script path instead:
 
 ```powershell
 .\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode Audit

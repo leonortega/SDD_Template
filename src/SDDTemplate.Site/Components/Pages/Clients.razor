@@ -1,7 +1,11 @@
 @page "/clients"
+@rendermode InteractiveServer
+@using System.Net.Http.Json
 @using System.Text.Json
 @attribute [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
 @inject IConfiguration Configuration
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Navigation
 
 <PageTitle>Clients</PageTitle>
 
@@ -9,55 +13,55 @@
     <header class="clients-header">
         <div>
             <h1>Clients</h1>
-            <p id="clients-summary">No clients loaded</p>
+            <p id="clients-summary">@Summary</p>
         </div>
     </header>
 
     <section class="clients-grid" aria-label="Client management">
-        <form id="client-form" class="client-form" onsubmit="return false">
-            <input type="hidden" id="client-id" />
+        <form id="client-form" class="client-form" @onsubmit="SaveClient">
+            <input type="hidden" id="client-id" @bind="Form.Id" />
 
             <label>
                 <span>Name</span>
-                <input id="client-name" name="name" autocomplete="given-name" required maxlength="100" />
+                <input id="client-name" name="name" autocomplete="given-name" required maxlength="100" @bind="Form.Name" />
             </label>
 
             <label>
                 <span>Last Name</span>
-                <input id="client-last-name" name="lastName" autocomplete="family-name" required maxlength="100" />
+                <input id="client-last-name" name="lastName" autocomplete="family-name" required maxlength="100" @bind="Form.LastName" />
             </label>
 
             <label class="full-width">
                 <span>Address</span>
-                <input id="client-address" name="address" autocomplete="street-address" required maxlength="200" />
+                <input id="client-address" name="address" autocomplete="street-address" required maxlength="200" @bind="Form.Address" />
             </label>
 
             <label>
                 <span>Born date</span>
-                <input id="client-born-date" name="bornDate" type="date" required />
+                <input id="client-born-date" name="bornDate" type="date" required value="@Form.BornDate" @onchange="SetBornDate" />
             </label>
 
             <label>
                 <span>City</span>
-                <input id="client-city" name="city" autocomplete="address-level2" required maxlength="100" />
+                <input id="client-city" name="city" autocomplete="address-level2" required maxlength="100" @bind="Form.City" />
             </label>
 
             <label>
                 <span>Country</span>
-                <input id="client-country" name="country" autocomplete="country-name" required maxlength="100" />
+                <input id="client-country" name="country" autocomplete="country-name" required maxlength="100" @bind="Form.Country" />
             </label>
 
             <label>
                 <span>ZIP code</span>
-                <input id="client-zip-code" name="zipCode" autocomplete="postal-code" required maxlength="12" />
+                <input id="client-zip-code" name="zipCode" autocomplete="postal-code" required maxlength="12" @bind="Form.ZipCode" />
             </label>
 
             <div class="form-actions full-width">
                 <button type="submit">Save client</button>
-                <button type="button" id="client-reset">Clear</button>
+                <button type="button" id="client-reset" @onclick="ClearForm">Clear</button>
             </div>
 
-            <p id="client-errors" class="client-errors" role="alert"></p>
+            <p id="client-errors" class="client-errors" role="alert">@Errors</p>
         </form>
 
         <div class="clients-list-wrap">
@@ -71,202 +75,159 @@
                     </tr>
                 </thead>
                 <tbody id="clients-list">
-                    <tr>
-                        <td colspan="4">No clients exist yet.</td>
-                    </tr>
+                    @if (ClientRows.Count == 0)
+                    {
+                        <tr>
+                            <td colspan="4">No clients exist yet.</td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (ClientModel client in ClientRows)
+                        {
+                            <tr>
+                                <td>
+                                    <strong>@client.Name @client.LastName</strong>
+                                    <span>@client.Address</span>
+                                </td>
+                                <td>
+                                    @client.City, @client.Country
+                                    <span>@client.ZipCode</span>
+                                </td>
+                                <td>@client.BornDate</td>
+                                <td class="row-actions">
+                                    <button type="button" @onclick="() => EditClient(client)">Edit</button>
+                                    <button type="button" @onclick="() => DeleteClient(client)">Delete</button>
+                                </td>
+                            </tr>
+                        }
+                    }
                 </tbody>
             </table>
         </div>
     </section>
 </main>
 
-<script>
-(() => {
-    const correlationHeaderName = "X-Correlation-ID";
-    const apiBaseUrl = @((MarkupString)JsonSerializer.Serialize(ApiBaseUrl));
-    const apiUrl = `${apiBaseUrl.replace(/\/$/, "")}/api/clients`;
-    const form = document.getElementById("client-form");
-    const resetButton = document.getElementById("client-reset");
-    const list = document.getElementById("clients-list");
-    const summary = document.getElementById("clients-summary");
-    const errors = document.getElementById("client-errors");
-
-    const fields = {
-        id: document.getElementById("client-id"),
-        name: document.getElementById("client-name"),
-        lastName: document.getElementById("client-last-name"),
-        address: document.getElementById("client-address"),
-        bornDate: document.getElementById("client-born-date"),
-        city: document.getElementById("client-city"),
-        country: document.getElementById("client-country"),
-        zipCode: document.getElementById("client-zip-code")
-    };
-
-    let clients = [];
-
-    const getCorrelationId = () => {
-        const existing = sessionStorage.getItem("correlationId");
-        if (existing) {
-            return existing;
-        }
-
-        const generated = (window.crypto && "randomUUID" in window.crypto)
-            ? window.crypto.randomUUID()
-            : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
-        sessionStorage.setItem("correlationId", generated);
-        return generated;
-    };
-
-    const createHeaders = additional => ({
-        [correlationHeaderName]: getCorrelationId(),
-        ...additional
-    });
-
-    const clientPayload = () => ({
-        name: fields.name.value,
-        lastName: fields.lastName.value,
-        address: fields.address.value,
-        bornDate: fields.bornDate.value,
-        city: fields.city.value,
-        country: fields.country.value,
-        zipCode: fields.zipCode.value
-    });
-
-    const clearForm = () => {
-        form.reset();
-        fields.id.value = "";
-        errors.textContent = "";
-    };
-
-    const showErrors = async response => {
-        const problem = await response.json();
-        errors.textContent = Object.values(problem.errors || {})
-            .flat()
-            .join(" ");
-    };
-
-    const renderClients = () => {
-        summary.textContent = clients.length === 1 ? "1 client" : `${clients.length} clients`;
-        list.innerHTML = "";
-
-        if (clients.length === 0) {
-            const row = document.createElement("tr");
-            row.innerHTML = '<td colspan="4">No clients exist yet.</td>';
-            list.append(row);
-            return;
-        }
-
-        for (const client of clients) {
-            const row = document.createElement("tr");
-            const nameCell = document.createElement("td");
-            const name = document.createElement("strong");
-            const address = document.createElement("span");
-            name.textContent = `${client.name} ${client.lastName}`;
-            address.textContent = client.address;
-            nameCell.append(name, address);
-
-            const locationCell = document.createElement("td");
-            const location = document.createTextNode(`${client.city}, ${client.country}`);
-            const zipCode = document.createElement("span");
-            zipCode.textContent = client.zipCode;
-            locationCell.append(location, zipCode);
-
-            const bornDateCell = document.createElement("td");
-            bornDateCell.textContent = client.bornDate;
-
-            const actionsCell = document.createElement("td");
-            actionsCell.className = "row-actions";
-            const editButton = document.createElement("button");
-            editButton.type = "button";
-            editButton.dataset.action = "edit";
-            editButton.dataset.id = client.id;
-            editButton.textContent = "Edit";
-            const deleteButton = document.createElement("button");
-            deleteButton.type = "button";
-            deleteButton.dataset.action = "delete";
-            deleteButton.dataset.id = client.id;
-            deleteButton.textContent = "Delete";
-            actionsCell.append(editButton, deleteButton);
-
-            row.append(nameCell, locationCell, bornDateCell, actionsCell);
-            list.append(row);
-        }
-    };
-
-    const loadClients = async () => {
-        const response = await fetch(apiUrl, {
-            headers: createHeaders()
-        });
-        clients = response.ok ? await response.json() : [];
-        renderClients();
-    };
-
-    form.addEventListener("submit", async event => {
-        event.preventDefault();
-        errors.textContent = "";
-
-        const id = fields.id.value.trim();
-        const response = await fetch(id ? `${apiUrl}/${id}` : apiUrl, {
-            method: id ? "PUT" : "POST",
-            headers: createHeaders({ "Content-Type": "application/json" }),
-            body: JSON.stringify(clientPayload())
-        });
-
-        if (response.status === 400) {
-            await showErrors(response);
-            return;
-        }
-
-        if (!response.ok) {
-            errors.textContent = "The client could not be saved.";
-            return;
-        }
-
-        clearForm();
-        await loadClients();
-    });
-
-    list.addEventListener("click", async event => {
-        const button = event.target.closest("button[data-action]");
-        if (!button) {
-            return;
-        }
-
-        const client = clients.find(item => item.id === Number(button.dataset.id));
-        if (!client) {
-            return;
-        }
-
-        if (button.dataset.action === "edit") {
-            fields.id.value = client.id;
-            fields.name.value = client.name;
-            fields.lastName.value = client.lastName;
-            fields.address.value = client.address;
-            fields.bornDate.value = client.bornDate;
-            fields.city.value = client.city;
-            fields.country.value = client.country;
-            fields.zipCode.value = client.zipCode;
-            return;
-        }
-
-        const response = await fetch(`${apiUrl}/${client.id}`, {
-            method: "DELETE",
-            headers: createHeaders()
-        });
-        if (!response.ok) {
-            errors.textContent = "The client could not be deleted.";
-            return;
-        }
-
-        await loadClients();
-    });
-
-    resetButton.addEventListener("click", clearForm);
-    loadClients();
-})();
-</script>
-
 @code {
-    private string ApiBaseUrl => Configuration["Api:BaseUrl"] ?? string.Empty;
+    private List<ClientModel> ClientRows { get; set; } = [];
+
+    private ClientModel Form { get; set; } = new();
+
+    private string Errors { get; set; } = string.Empty;
+
+    private string Summary => ClientRows.Count == 1 ? "1 client" : $"{ClientRows.Count} clients";
+
+    private string ApiUrl => $"{(string.IsNullOrWhiteSpace(Configuration["Api:BaseUrl"]) ? Navigation.BaseUri : Configuration["Api:BaseUrl"])!.TrimEnd('/')}/api/clients";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadClients();
+    }
+
+    private async Task LoadClients()
+    {
+        try
+        {
+            ClientRows = await HttpClientFactory.CreateClient().GetFromJsonAsync<List<ClientModel>>(ApiUrl) ?? [];
+        }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException)
+        {
+            ClientRows = [];
+        }
+    }
+
+    private async Task SaveClient()
+    {
+        Errors = string.Empty;
+        HttpClient client = HttpClientFactory.CreateClient();
+        HttpResponseMessage response = Form.Id == 0
+            ? await client.PostAsJsonAsync(ApiUrl, Form)
+            : await client.PutAsJsonAsync($"{ApiUrl}/{Form.Id}", Form);
+
+        if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)
+        {
+            Errors = await ReadErrors(response);
+            return;
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            Errors = "The client could not be saved.";
+            return;
+        }
+
+        ClearForm();
+        await LoadClients();
+    }
+
+    private void EditClient(ClientModel client)
+    {
+        Form = new ClientModel(client);
+    }
+
+    private void SetBornDate(ChangeEventArgs args)
+    {
+        Form.BornDate = args.Value?.ToString() ?? string.Empty;
+    }
+
+    private async Task DeleteClient(ClientModel client)
+    {
+        HttpResponseMessage response = await HttpClientFactory.CreateClient().DeleteAsync($"{ApiUrl}/{client.Id}");
+        if (!response.IsSuccessStatusCode)
+        {
+            Errors = "The client could not be deleted.";
+            return;
+        }
+
+        await LoadClients();
+    }
+
+    private void ClearForm()
+    {
+        Form = new ClientModel();
+        Errors = string.Empty;
+    }
+
+    private static async Task<string> ReadErrors(HttpResponseMessage response)
+    {
+        using JsonDocument document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return document.RootElement.TryGetProperty("errors", out JsonElement errors)
+            ? string.Join(" ", errors.EnumerateObject().SelectMany(error => error.Value.EnumerateArray().Select(item => item.GetString())))
+            : "The client could not be saved.";
+    }
+
+    private sealed class ClientModel
+    {
+        public ClientModel()
+        {
+        }
+
+        public ClientModel(ClientModel client)
+        {
+            Id = client.Id;
+            Name = client.Name;
+            LastName = client.LastName;
+            Address = client.Address;
+            BornDate = client.BornDate;
+            City = client.City;
+            Country = client.Country;
+            ZipCode = client.ZipCode;
+        }
+
+        public int Id { get; set; }
+
+        public string Name { get; set; } = string.Empty;
+
+        public string LastName { get; set; } = string.Empty;
+
+        public string Address { get; set; } = string.Empty;
+
+        public string BornDate { get; set; } = string.Empty;
+
+        public string City { get; set; } = string.Empty;
+
+        public string Country { get; set; } = string.Empty;
+
+        public string ZipCode { get; set; } = string.Empty;
+    }
 }
