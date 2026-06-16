@@ -76,10 +76,19 @@ Do not read secrets from Docker containers, mounted volumes, databases, logs, or
 
 - Type: Pattern
 - Status: Active
-- Source: current conversation, `infra/plane/compose.yml`, `infra/plane/variables.env.example`, `docker compose --env-file .\infra\plane\variables.env -f .\infra\compose.yml --project-directory .\infra config --quiet`
+- Source: current conversation, `infra/plane/compose.yml`, `infra/plane/variables.env.example`, `docker compose --env-file .\infra\plane\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml --project-directory .\infra config --quiet`
 - Last verified: 2026-06-12
 
-When hardening local infra Compose files, ensure service env interpolation uses the same variable names as `infra/plane/variables.env.example` and fail-fast `${VAR:?message}` checks for required secrets. A mismatch such as Compose reading `RABBITMQ_PASSWORD` while the template/local file defines `RABBITMQ_DEFAULT_PASS`, or URL defaults such as `postgresql://plane:plane@...`, can silently bypass generated local secrets. Validate changes with `docker compose --env-file .\infra\plane\variables.env -f .\infra\compose.yml --project-directory .\infra config --quiet` without printing secret values.
+When hardening local infra Compose files, ensure service env interpolation uses the same variable names as the owning `variables.env.example` file and fail-fast `${VAR:?message}` checks for required secrets. A mismatch such as Compose reading `RABBITMQ_PASSWORD` while the template/local file defines `RABBITMQ_DEFAULT_PASS`, or URL defaults such as `postgresql://plane:plane@...`, can silently bypass generated local secrets. Validate changes with all required tool env files, such as `docker compose --env-file .\infra\plane\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml --project-directory .\infra config --quiet`, without printing secret values.
+
+## Docker Compose Dotenv Values Need Escaped Dollar Signs
+
+- Type: Pattern
+- Status: Active
+- Source: `infra/monitoring/variables.env.example`, `infra/monitoring/variables.env`, `docker compose --env-file .\infra\plane\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml --project-directory .\infra config --quiet`
+- Last verified: 2026-06-16
+
+Docker Compose interpolates dollar-prefixed dotenv values. Azure Event Hub consumer group values such as `$Default` must be written as `$$Default` in `infra/monitoring/variables.env` and `infra/monitoring/variables.env.example`; otherwise Compose warns that `Default` is unset and passes a blank value to the collector configuration. Validate both local and example env files with `docker compose ... config --quiet`.
 
 ## Worktree Local Config Copy Can Leave Placeholders
 

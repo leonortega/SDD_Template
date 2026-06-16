@@ -180,10 +180,10 @@ Run agent self-improvement audit
 Coordinate parallel Plane tickets
 ```
 
-Direct Docker Compose startup is also supported when the local Plane environment file is configured:
+Direct Docker Compose startup is also supported when the local Plane and monitoring environment files are configured:
 
 ```powershell
-docker compose --env-file .\infra\plane\variables.env -f .\infra\compose.yml up -d
+docker compose --env-file .\infra\plane\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml up -d
 ```
 
 ## Repository Shape
