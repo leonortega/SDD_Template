@@ -68,7 +68,9 @@ test.describe("Product CRUD deployed QA E2E", () => {
     await expect(await api.get("/api/products")).toBeOK();
     initialProducts = await clearProducts(api);
 
+    const blazorConnected = waitForBlazorConnection(page);
     await page.goto("/");
+    await blazorConnected;
     await page.getByRole("link", { name: "Products" }).click();
     await expect(page).toHaveTitle(/Products|SDD Template/);
     await expect(page.getByRole("heading", { name: "Products" })).toBeVisible();
@@ -170,4 +172,9 @@ async function clearProducts(api: APIRequestContext): Promise<Array<Omit<Product
 
 function rowForProduct(page: Page, name: string) {
   return page.locator("#products-list tr").filter({ hasText: name }).first();
+}
+
+async function waitForBlazorConnection(page: Page): Promise<void> {
+  await page.waitForEvent("websocket", websocket => websocket.url().includes("/_blazor"), { timeout: 15_000 });
+  await page.waitForTimeout(250);
 }
