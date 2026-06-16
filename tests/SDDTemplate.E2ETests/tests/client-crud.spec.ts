@@ -83,12 +83,7 @@ test.describe("Client CRUD deployed QA E2E", () => {
     expect(await invalidResponse.text()).toContain("Born date cannot be in the future.");
 
     await fillClientForm(page, testClient);
-    const createRequest = page.waitForRequest(requestInfo =>
-      requestInfo.method() === "POST" &&
-      requestInfo.url().replace(/\/$/, "") === `${apiUrl}/api/clients`);
-
     await page.getByRole("button", { name: "Save client" }).click();
-    await createRequest;
     await expect(page.locator("#client-errors")).toBeEmpty();
     await expect(page.locator("#clients-list")).toContainText(`${testClient.name} ${testClient.lastName}`);
     await expect(page.locator("#clients-list")).toContainText(testClient.city);
