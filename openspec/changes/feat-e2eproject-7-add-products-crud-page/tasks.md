@@ -18,7 +18,7 @@ Suggested work units: PR 1 data/API Product CRUD and tests -> PR 2 Blazor Produc
 - [x] 2.1 Add Product entity, DbContext mapping, and migration for Name, SKU, Status, Price, Category, and Last Updated.
 - [x] 2.2 Add Product DTOs and CRUD endpoints for list, read, create, update, and delete.
 - [x] 2.3 Add Product validation for required fields, invalid SKU/status/price values, missing records, and duplicate SKU if supported.
-- [ ] 2.4 Add or preserve Products API access-control behavior according to current app conventions.
+- [x] 2.4 Add or preserve Products API access-control behavior according to current app conventions.
 
 ## 3. Blazor UI
 
@@ -33,7 +33,7 @@ Suggested work units: PR 1 data/API Product CRUD and tests -> PR 2 Blazor Produc
 - [x] 4.1 Add migration/schema tests for Product storage.
 - [x] 4.2 Add API tests for Product list, read, create, update, delete, validation, and not-found behavior.
 - [x] 4.3 Add Blazor page tests for navigation and Products page shell rendering.
-- [ ] 4.4 Add or update reusable E2E QA coverage for deployed Products CRUD acceptance criteria where practical.
+- [x] 4.4 Add or update reusable E2E QA coverage for deployed Products CRUD acceptance criteria where practical.
 
 ## 5. Quality Gates And Handoff
 
