@@ -66,10 +66,10 @@ test.describe("Client CRUD deployed QA E2E", () => {
     await expect(await api.get("/api/clients")).toBeOK();
     initialClients = await clearClients(api);
 
-    const blazorConnected = waitForBlazorConnection(page);
     await page.goto("/");
-    await blazorConnected;
+    const blazorConnected = waitForBlazorConnection(page);
     await page.getByRole("link", { name: "Clients" }).click();
+    await blazorConnected;
     await expect(page).toHaveTitle(/Clients|SDD Template/);
     await expect(page.getByRole("heading", { name: "Clients" })).toBeVisible();
     await expect(page.locator("#client-form")).toBeVisible();
