@@ -1,5 +1,6 @@
 using Serilog;
 using SDDTemplate.Api.Clients;
+using SDDTemplate.Api.Products;
 using SDDTemplate.Common.Observability;
 using SDDTemplate.Data;
 
@@ -57,6 +58,8 @@ if (app.Environment.IsEnvironment("Testing"))
 
 _ = app.MapClientEndpoints();
 Log.Logger.Information("API client endpoints mapped");
+_ = app.MapProductEndpoints();
+Log.Logger.Information("API product endpoints mapped");
 
 app.Run();
 
