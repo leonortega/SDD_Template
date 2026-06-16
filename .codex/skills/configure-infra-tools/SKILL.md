@@ -24,7 +24,7 @@ When this skill triggers:
 3. During infra status checks for the core stack, use the compose env file explicitly:
 
 ```powershell
-docker compose --env-file .\infra\plane\variables.env -f .\infra\compose.yml ps
+docker compose --env-file .\infra\plane\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml ps
 ```
 
 4. When local Trivy scans report a stale DB, refresh before scanning:

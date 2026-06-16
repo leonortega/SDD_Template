@@ -23,14 +23,14 @@ Collector-based ingestion:
 
 - `infra/monitoring/compose.yml` defines the required `agentic-otelcol` service under the `eventhub` profile.
 - `infra/monitoring/otelcol/collector.yaml` configures separate DEV, QA, and PROD Azure Event Hub receivers and exports OTLP logs to Seq.
-- `infra/plane/variables.env` holds the required `OTELCOL_*` connection strings and OTLP endpoint values as ignored local secrets.
+- `infra/monitoring/variables.env` holds the required `OTELCOL_*` connection strings and OTLP endpoint values as ignored local secrets.
 
 Validation (required path):
 
 ```powershell
 Invoke-RestMethod -Uri 'http://localhost:5341/api'
-docker compose --profile eventhub --env-file .\infra\plane\variables.env -f .\infra\compose.yml --project-directory .\infra config --quiet
-docker compose --profile eventhub --env-file .\infra\plane\variables.env -f .\infra\compose.yml --project-directory .\infra up -d otelcol
+docker compose --profile eventhub --env-file .\infra\plane\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml --project-directory .\infra config --quiet
+docker compose --profile eventhub --env-file .\infra\plane\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml --project-directory .\infra up -d otelcol
 ```
 
 After the collector starts, search Seq for `Environment = 'DEV'`, `Environment = 'QA'`, and `Environment = 'PROD'`.

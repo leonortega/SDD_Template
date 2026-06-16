@@ -70,6 +70,8 @@ Important local configuration files include:
 - `.codex/client-tools.local.json`
 - `.codex/quality.local.json`
 - `infra/plane/variables.env`
+- `infra/monitoring/variables.env`
+- `infra/azure/variables.env`
 - `infra/gitea/runner.env`
 - `infra/monitoring/grafana/dashboards.local/`
 

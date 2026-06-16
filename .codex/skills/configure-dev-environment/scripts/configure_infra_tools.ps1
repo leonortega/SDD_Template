@@ -1,5 +1,5 @@
 param(
-  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetPlaneEnv", "SetGiteaRunner", "SetSeqAzureEventHubLogs", "AuditQualityGates", "AuditRecommendedTools", "DiscoverProjectGuidance", "AcquireProjectGuidance", "SetRecommendedTools", "MapProjectGuidanceStep", "BuildGiteaActionsImages", "ValidateGiteaActionsRunner", "InitQualityGateTemplates", "SetQualityConfig", "SyncWorktreeLocalConfig", "EnsureDeliveryContext")]
+  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetPlaneEnv", "SetMonitoringEnv", "SetGiteaRunner", "SetSeqAzureEventHubLogs", "SplitInfraEnv", "AuditQualityGates", "AuditRecommendedTools", "DiscoverProjectGuidance", "AcquireProjectGuidance", "SetRecommendedTools", "MapProjectGuidanceStep", "BuildGiteaActionsImages", "ValidateGiteaActionsRunner", "InitQualityGateTemplates", "SetQualityConfig", "SyncWorktreeLocalConfig", "EnsureDeliveryContext")]
   [string]$Mode = "Audit",
 
   [string]$Root = (Resolve-Path ".").Path,
@@ -204,6 +204,81 @@ function Set-EnvValues {
 
   if (-not $DryRun) {
     Set-Content -Path $Path -Value $newLines -Encoding UTF8
+  }
+}
+
+function Get-EnvFileKeys {
+  param([string]$Path)
+  $map = Read-EnvFile $Path
+  return @($map.Keys)
+}
+
+function Get-EnvExamplePath {
+  param([string]$TargetPath)
+  return "$TargetPath.example"
+}
+
+function Assert-EnvKeysAllowed {
+  param(
+    [string]$TargetRelative,
+    [hashtable]$Values
+  )
+
+  $example = Join-RootPath (Get-EnvExamplePath $TargetRelative)
+  if (-not (Test-Path $example)) { return }
+
+  $allowed = @{}
+  foreach ($key in (Get-EnvFileKeys $example)) {
+    $allowed[$key] = $true
+  }
+
+  $invalid = @($Values.Keys | Where-Object { -not $allowed.ContainsKey($_) } | Sort-Object)
+  if ($invalid.Count -gt 0) {
+    throw "$Mode cannot set key(s) not owned by ${TargetRelative}: $($invalid -join ', ')."
+  }
+}
+
+function Write-EnvFromTemplate {
+  param(
+    [string]$TemplateRelative,
+    [string]$TargetRelative,
+    [hashtable]$PrimaryValues,
+    [hashtable]$FallbackValues,
+    $Result
+  )
+
+  $template = Join-RootPath $TemplateRelative
+  $target = Join-RootPath $TargetRelative
+  if (-not (Test-Path $template)) {
+    Add-Item $Result "findings" $TemplateRelative "" "Template file is missing." "error" "pre-start"
+    return
+  }
+
+  $targetDirectory = Split-Path -Parent $target
+  $newLines = foreach ($line in Get-Content -Path $template) {
+    if ($line -match "^\s*#" -or $line -notmatch "=") {
+      $line
+      continue
+    }
+
+    $idx = $line.IndexOf("=")
+    $key = $line.Substring(0, $idx).Trim()
+    $templateValue = $line.Substring($idx + 1)
+    if ($PrimaryValues.ContainsKey($key) -and -not (Test-Placeholder $PrimaryValues[$key])) {
+      "$key=$($PrimaryValues[$key])"
+    } elseif ($FallbackValues.ContainsKey($key)) {
+      "$key=$($FallbackValues[$key])"
+    } else {
+      "$key=$templateValue"
+    }
+  }
+
+  Add-Item $Result "actions" $TargetRelative "" "Write local env file from $TemplateRelative with matching existing values."
+  if (Test-ConfigWritesEnabled) {
+    if (-not (Test-Path -LiteralPath $targetDirectory)) {
+      New-Item -ItemType Directory -Path $targetDirectory -Force | Out-Null
+    }
+    Set-Content -Path $target -Value $newLines -Encoding UTF8
   }
 }
 
@@ -1812,6 +1887,36 @@ function Invoke-Audit {
     if ($plane.Contains("AMQP_URL") -and $plane["AMQP_URL"] -match "plane:plane@") {
       Add-Item $result "findings" $planeLocal "AMQP_URL" "Contains unsafe default RabbitMQ password." "warning" "pre-start"
     }
+
+    foreach ($key in @("OTELCOL_SEQ_OTLP_ENDPOINT", "OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING", "OTELCOL_AZURE_EVENT_HUB_QA_CONNECTION_STRING", "OTELCOL_AZURE_EVENT_HUB_PROD_CONNECTION_STRING", "GRAFANA_AZURE_SUBSCRIPTION_ID", "GRAFANA_AZURE_TENANT_ID", "GRAFANA_AZURE_CLIENT_ID", "GRAFANA_AZURE_CLIENT_SECRET", "AZURE_TENANT_ID", "AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET")) {
+      if ($plane.Contains($key)) {
+        Add-Item $result "findings" $planeLocal $key "Key belongs in a tool-specific env file; run SplitInfraEnv to migrate local values." "warning" "pre-start"
+      }
+    }
+  }
+
+  $monitoringLocal = "infra/monitoring/variables.env"
+  $monitoring = Read-EnvFile (Join-RootPath $monitoringLocal)
+  if ($monitoring.Count -eq 0) {
+    Add-Item $result "findings" $monitoringLocal "" "Monitoring local env file is missing or empty. Run InitLocalFiles or SplitInfraEnv." "error" "pre-start"
+  } else {
+    $requiredOtelCollectorEnv = @(
+      "OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING",
+      "OTELCOL_AZURE_EVENT_HUB_QA_CONNECTION_STRING",
+      "OTELCOL_AZURE_EVENT_HUB_PROD_CONNECTION_STRING",
+      "OTELCOL_SEQ_OTLP_ENDPOINT"
+    )
+    foreach ($name in $requiredOtelCollectorEnv) {
+      if (-not $monitoring.Contains($name) -or [string]::IsNullOrWhiteSpace($monitoring[$name])) {
+        Add-Item $result "findings" $monitoringLocal $name "Missing required OpenTelemetry collector value for Event Hub to Seq ingestion. Run SetSeqAzureEventHubLogs and provide the missing value." "error" "pre-start"
+      }
+    }
+  }
+
+  $azureLocal = "infra/azure/variables.env"
+  $azure = Read-EnvFile (Join-RootPath $azureLocal)
+  if ($azure.Count -eq 0) {
+    Add-Item $result "findings" $azureLocal "" "Optional Azure helper env file is missing or empty. Run InitLocalFiles or SplitInfraEnv when local Azure helper values are needed." "info" "pre-start"
   }
 
   $runnerLocal = "infra/gitea/runner.env"
@@ -1839,18 +1944,6 @@ function Invoke-Audit {
   )) {
     if (-not (Test-Path (Join-RootPath $grafanaFile))) {
       Add-Item $result "findings" $grafanaFile "grafana-health-stack" "Missing Grafana health monitoring artifact required for Prometheus-based /health dashboards." "warning" "post-start"
-    }
-  }
-
-  $requiredOtelCollectorEnv = @(
-    "OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING",
-    "OTELCOL_AZURE_EVENT_HUB_QA_CONNECTION_STRING",
-    "OTELCOL_AZURE_EVENT_HUB_PROD_CONNECTION_STRING",
-    "OTELCOL_SEQ_OTLP_ENDPOINT"
-  )
-  foreach ($name in $requiredOtelCollectorEnv) {
-    if (-not $plane.Contains($name) -or [string]::IsNullOrWhiteSpace($plane[$name])) {
-      Add-Item $result "findings" $planeLocal $name "Missing required OpenTelemetry collector value for Event Hub to Seq ingestion. Run SetSeqAzureEventHubLogs and provide the missing value." "error" "pre-start"
     }
   }
 
@@ -3795,6 +3888,8 @@ function Invoke-InitLocalFiles {
   Copy-LocalFile $result ".codex/client-tools.example.json" ".codex/client-tools.local.json"
   Copy-LocalFile $result ".codex/quality.example.json" ".codex/quality.local.json"
   Copy-LocalFile $result "infra/plane/variables.env.example" "infra/plane/variables.env"
+  Copy-LocalFile $result "infra/monitoring/variables.env.example" "infra/monitoring/variables.env"
+  Copy-LocalFile $result "infra/azure/variables.env.example" "infra/azure/variables.env"
   Copy-LocalFile $result "infra/gitea/runner.env.example" "infra/gitea/runner.env"
   return $result
 }
@@ -3964,6 +4059,7 @@ function Invoke-SetEnvMode {
     throw "ValuesJson is required for $Mode."
   }
 
+  Assert-EnvKeysAllowed -TargetRelative $TargetRelative -Values $values
   Set-EnvValues -Path $target -Values $values
   foreach ($key in $values.Keys) {
     Add-Item $result "actions" $TargetRelative $key "Set confirmed value."
@@ -3971,9 +4067,44 @@ function Invoke-SetEnvMode {
   return $result
 }
 
+function Invoke-SplitInfraEnv {
+  $result = New-Result
+  $planeRelative = "infra/plane/variables.env"
+  $monitoringRelative = "infra/monitoring/variables.env"
+  $azureRelative = "infra/azure/variables.env"
+
+  $planePath = Join-RootPath $planeRelative
+  if (-not (Test-Path $planePath)) {
+    throw "Missing $planeRelative. Run -Mode InitLocalFiles first."
+  }
+
+  $source = Read-EnvFile $planePath
+  $monitoringExisting = Read-EnvFile (Join-RootPath $monitoringRelative)
+  $azureExisting = Read-EnvFile (Join-RootPath $azureRelative)
+
+  Write-EnvFromTemplate -TemplateRelative "infra/monitoring/variables.env.example" -TargetRelative $monitoringRelative -PrimaryValues $monitoringExisting -FallbackValues $source -Result $result
+  Write-EnvFromTemplate -TemplateRelative "infra/azure/variables.env.example" -TargetRelative $azureRelative -PrimaryValues $azureExisting -FallbackValues $source -Result $result
+  Write-EnvFromTemplate -TemplateRelative "infra/plane/variables.env.example" -TargetRelative $planeRelative -PrimaryValues $source -FallbackValues @{} -Result $result
+
+  $known = @{}
+  foreach ($templateRelative in @("infra/plane/variables.env.example", "infra/monitoring/variables.env.example", "infra/azure/variables.env.example")) {
+    foreach ($key in (Get-EnvFileKeys (Join-RootPath $templateRelative))) {
+      $known[$key] = $true
+    }
+  }
+
+  foreach ($key in @($source.Keys | Sort-Object)) {
+    if (-not $known.ContainsKey($key)) {
+      Add-Item $result "findings" $planeRelative $key "Existing key is not owned by the split env templates; value was left for manual review and not copied." "warning" "pre-start"
+    }
+  }
+
+  return $result
+}
+
 function Invoke-SetSeqAzureEventHubLogs {
   $result = New-Result
-  $targetRelative = "infra/plane/variables.env"
+  $targetRelative = "infra/monitoring/variables.env"
   $target = Join-RootPath $targetRelative
   if (-not (Test-Path $target)) {
     throw "Missing $targetRelative. Run -Mode InitLocalFiles first."
@@ -4009,16 +4140,16 @@ function Invoke-SetSeqAzureEventHubLogs {
     }
   }
 
-  $plane = Read-EnvFile $target
+  $monitoring = Read-EnvFile $target
   foreach ($name in @("OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING", "OTELCOL_AZURE_EVENT_HUB_QA_CONNECTION_STRING", "OTELCOL_AZURE_EVENT_HUB_PROD_CONNECTION_STRING")) {
-    if (-not $plane.Contains($name) -or [string]::IsNullOrWhiteSpace($plane[$name])) {
+    if (-not $monitoring.Contains($name) -or [string]::IsNullOrWhiteSpace($monitoring[$name])) {
       Add-Item $result "findings" $targetRelative $name "Missing Event Hub connection string required by the collector-based Seq ingestion path." "error" "pre-start"
     } else {
       Add-Item $result "actions" $targetRelative $name "Event Hub connection string is configured for collector-based Seq ingestion."
     }
   }
 
-  if (-not $plane.Contains("OTELCOL_SEQ_OTLP_ENDPOINT") -or [string]::IsNullOrWhiteSpace($plane["OTELCOL_SEQ_OTLP_ENDPOINT"])) {
+  if (-not $monitoring.Contains("OTELCOL_SEQ_OTLP_ENDPOINT") -or [string]::IsNullOrWhiteSpace($monitoring["OTELCOL_SEQ_OTLP_ENDPOINT"])) {
     Add-Item $result "findings" $targetRelative "OTELCOL_SEQ_OTLP_ENDPOINT" "Missing OTLP endpoint required by the collector-based Seq ingestion path." "error" "pre-start"
   } else {
     Add-Item $result "actions" $targetRelative "OTELCOL_SEQ_OTLP_ENDPOINT" "Collector OTLP export endpoint is configured."
@@ -4055,8 +4186,8 @@ function Invoke-SetSeqAzureEventHubLogs {
           }
 
           $runningValue = $match.Groups[1].Value.Trim()
-          if ($plane.Contains($name) -and -not [string]::Equals($runningValue, $plane[$name], [System.StringComparison]::Ordinal)) {
-            Add-Item $result "findings" "docker" $name "Running collector container has a stale '$name' value that does not match infra/plane/variables.env. Recreate the collector container with --force-recreate." "error" "post-start"
+          if ($monitoring.Contains($name) -and -not [string]::Equals($runningValue, $monitoring[$name], [System.StringComparison]::Ordinal)) {
+            Add-Item $result "findings" "docker" $name "Running collector container has a stale '$name' value that does not match infra/monitoring/variables.env. Recreate the collector container with --force-recreate." "error" "post-start"
           }
         }
 
@@ -4074,7 +4205,7 @@ function Invoke-SetSeqAzureEventHubLogs {
     Add-Item $result "findings" "seq" "ready" "Could not validate Seq API endpoint: $($_.Exception.Message)" "error" "post-start"
   }
 
-  Add-Item $result "actions" $composeRelative "" "Run `docker compose --profile eventhub --env-file .\infra\plane\variables.env -f .\infra\compose.yml --project-directory .\infra up -d --force-recreate otelcol` after Event Hub or OTEL env changes."
+  Add-Item $result "actions" $composeRelative "" "Run `docker compose --profile eventhub --env-file .\infra\plane\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml --project-directory .\infra up -d --force-recreate otelcol` after Event Hub or OTEL env changes."
   return $result
 }
 
@@ -4094,8 +4225,10 @@ switch ($Mode) {
   "SyncWorktreeLocalConfig" { $result = Invoke-SyncWorktreeLocalConfig }
   "EnsureDeliveryContext" { $result = Invoke-EnsureDeliveryContext }
   "SetPlaneEnv" { $result = Invoke-SetEnvMode -TargetRelative "infra/plane/variables.env" }
+  "SetMonitoringEnv" { $result = Invoke-SetEnvMode -TargetRelative "infra/monitoring/variables.env" }
   "SetGiteaRunner" { $result = Invoke-SetEnvMode -TargetRelative "infra/gitea/runner.env" }
   "SetSeqAzureEventHubLogs" { $result = Invoke-SetSeqAzureEventHubLogs }
+  "SplitInfraEnv" { $result = Invoke-SplitInfraEnv }
   "SetQualityConfig" { $result = Invoke-SetQualityConfig }
 }
 

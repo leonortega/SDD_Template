@@ -26,6 +26,8 @@ When setup needs values the user must supply manually, do not only ask for the v
   - `.codex/client-tools.local.json`
   - `.codex/quality.local.json`
   - `infra/plane/variables.env`
+  - `infra/monitoring/variables.env`
+  - `infra/azure/variables.env`
   - `infra/gitea/runner.env`
 - Keep tracked files as templates, workflows, or placeholder-safe documentation.
 - Do not read secrets from Docker containers, container shells, mounted volumes, service databases, or logs.
@@ -94,6 +96,8 @@ Useful modes:
 - `SyncWorktreeLocalConfig`: copy the allowlisted ignored local runtime config from the coordinator checkout into selected or discovered ticket worktrees without printing secret values.
 - `EnsureDeliveryContext`: create or repair the current worktree's `.codex/delivery-context.local.json` from explicit ticket, branch, OpenSpec, and PR context; never copy this file from another worktree. Use `replaceExisting=true` only after `plane-start-ticket` confirms the existing lock's ticket is in the configured Done state, or after explicit operator confirmation for a known-safe repair. QA Done does not require immediate lock deletion because explicit PROD promotion may still need artifact and RC context.
 - `SetPlaneEnv`: update `infra/plane/variables.env`.
+- `SetMonitoringEnv`: update `infra/monitoring/variables.env`.
+- `SplitInfraEnv`: migrate old mixed `infra/plane/variables.env` values into tool-owned env files.
 - `SetGiteaRunner`: update `infra/gitea/runner.env`.
 - `AuditQualityGates`: inspect quality and CI/CD templates without writing local config by default.
 - `BuildGiteaActionsImages`: build and validate pinned local Gitea Actions job images used by PR validation, package/deploy, and QA E2E workflows.
@@ -108,7 +112,7 @@ Useful modes:
 2. For core compose status checks, always include the plane env file so variable resolution matches runtime expectations:
 
 ```powershell
-docker compose --env-file .\infra\plane\variables.env -f .\infra\compose.yml ps
+docker compose --env-file .\infra\plane\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml ps
 ```
 
 3. Summarize findings by domain without exposing secret values.
