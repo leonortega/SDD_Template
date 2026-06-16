@@ -44,7 +44,7 @@ static void Run(string[] args)
             break;
         case "ValidateReleaseManifest":
             ReleaseManifestValidation validation = DeliveryWorkflowHelpers.ValidateReleaseManifest(Required(options, "path"));
-            Console.WriteLine(JsonSerializer.Serialize(validation, new JsonSerializerOptions { WriteIndented = true }));
+            Console.WriteLine(JsonSerializer.Serialize(validation, IndentedJson));
             if (!validation.Valid)
             {
                 Environment.ExitCode = 1;
@@ -73,7 +73,7 @@ static void Run(string[] args)
                 Required(options, "topology"),
                 Required(options, "mapping"),
                 Required(options, "output"));
-            Console.WriteLine(JsonSerializer.Serialize(configResult, new JsonSerializerOptions { WriteIndented = true }));
+            Console.WriteLine(JsonSerializer.Serialize(configResult, IndentedJson));
             if (!configResult.Valid)
             {
                 Environment.ExitCode = 1;
@@ -85,7 +85,7 @@ static void Run(string[] args)
                 DeliveryWorkflowHelpers.ClassifyTicketReadiness(
                     options.GetValueOrDefault("title", string.Empty),
                     options.GetValueOrDefault("description", string.Empty)),
-                new JsonSerializerOptions { WriteIndented = true }));
+                IndentedJson));
             break;
         case "ClassifyDeliveryRisk":
             Console.WriteLine(JsonSerializer.Serialize(
@@ -93,12 +93,12 @@ static void Run(string[] args)
                     SplitList(options.GetValueOrDefault("paths", string.Empty)),
                     options.GetValueOrDefault("context", string.Empty),
                     int.Parse(options.GetValueOrDefault("changed-lines", "0"), CultureInfo.InvariantCulture)),
-                new JsonSerializerOptions { WriteIndented = true }));
+                IndentedJson));
             break;
         case "ParseWorkloadForecast":
             Console.WriteLine(JsonSerializer.Serialize(
                 DeliveryWorkflowHelpers.ParseWorkloadForecast(Required(options, "markdown")),
-                new JsonSerializerOptions { WriteIndented = true }));
+                IndentedJson));
             break;
         case "DetectAdversarialReviewTrigger":
             Console.WriteLine(JsonSerializer.Serialize(
@@ -107,7 +107,7 @@ static void Run(string[] args)
                     options.GetValueOrDefault("context", string.Empty),
                     int.Parse(options.GetValueOrDefault("changed-lines", "0"), CultureInfo.InvariantCulture),
                     bool.Parse(options.GetValueOrDefault("explicit-request", "false"))),
-                new JsonSerializerOptions { WriteIndented = true }));
+                IndentedJson));
             break;
         case "WriteInstalledSkillIndex":
             string root = Required(options, "root");
@@ -116,7 +116,7 @@ static void Run(string[] args)
                     root,
                     options.GetValueOrDefault("index-path", Path.Combine(root, ".codex", "installed-skill-index.local.json")),
                     options.GetValueOrDefault("cache-path", Path.Combine(root, ".codex", "installed-skill-index.cache.local.json"))),
-                new JsonSerializerOptions { WriteIndented = true }));
+                IndentedJson));
             break;
         default:
             throw new ArgumentException($"Unsupported mode: {mode}");
@@ -158,4 +158,7 @@ static string[] SplitList(string value)
 }
 
 [ExcludeFromCodeCoverage]
-internal partial class Program;
+internal partial class Program
+{
+    private static readonly JsonSerializerOptions IndentedJson = new() { WriteIndented = true };
+}

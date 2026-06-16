@@ -67,10 +67,7 @@ namespace SDDTemplate.Site.Tests
             string programPath = Path.Combine(root, appPath, "Program.cs");
             string program = File.ReadAllText(programPath);
 
-            Assert.Contains("UseSerilogRequestLogging", program);
-            Assert.Contains("diagnosticContext.Set(\"CorrelationId\"", program);
-            Assert.Contains("diagnosticContext.Set(\"RequestPath\"", program);
-            Assert.Contains("diagnosticContext.Set(\"RequestMethod\"", program);
+            Assert.Contains("UseCorrelationAwareRequestLogging", program);
             Assert.DoesNotContain("diagnosticContext.Set(\"Authorization\"", program, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("diagnosticContext.Set(\"RequestBody\"", program, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("diagnosticContext.Set(\"password\"", program, StringComparison.OrdinalIgnoreCase);

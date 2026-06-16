@@ -1,5 +1,4 @@
 using Serilog;
-using SDDTemplate.Api;
 using SDDTemplate.Api.Clients;
 using SDDTemplate.Common.Observability;
 using SDDTemplate.Data;
@@ -8,10 +7,7 @@ WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
 Log.Logger.Information("Configuring API host");
 
-_ = builder.Host.UseSerilog((context, services, loggerConfiguration) => loggerConfiguration
-    .ReadFrom.Configuration(context.Configuration)
-    .ReadFrom.Services(services)
-    .Enrich.FromLogContext());
+_ = builder.Host.UseStandardSerilog();
 
 _ = builder.Services.AddApplicationDatabase(builder.Configuration, builder.Environment);
 string[] allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
@@ -38,15 +34,7 @@ if (!app.Environment.IsDevelopment())
 
 _ = app.UseHttpsRedirection();
 _ = app.UseCorrelationId();
-_ = app.UseSerilogRequestLogging(options =>
-{
-    options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
-    {
-        diagnosticContext.Set("CorrelationId", httpContext.GetCorrelationId());
-        diagnosticContext.Set("RequestPath", httpContext.Request.Path.Value ?? string.Empty);
-        diagnosticContext.Set("RequestMethod", httpContext.Request.Method);
-    };
-});
+_ = app.UseCorrelationAwareRequestLogging();
 if (allowedOrigins.Length > 0)
 {
     _ = app.UseCors("ConfiguredSiteOrigins");
@@ -74,11 +62,6 @@ app.Run();
 
 namespace SDDTemplate.Api
 {
-    public sealed record HealthResponse(string Status, string Environment, DateTimeOffset Timestamp);
-
     [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
     public sealed partial class Program;
-
-    [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
-    public sealed class ApiAssemblyMarker;
 }
