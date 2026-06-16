@@ -33,7 +33,7 @@ After install, reopen PowerShell and run `git --version`.
 
 ## Docker Desktop
 
-Required for `.\infra\up.ps1`, `.\infra\down.ps1`, local Plane/Gitea/Nexus/Grafana, and non-secret live checks.
+Required for `.\infra\up.ps1`, `.\infra\down.ps1`, local Plane/Gitea/Nexus/Grafana/Seq, and non-secret live checks.
 
 Check:
 
@@ -144,3 +144,9 @@ winget install --id AquaSecurity.Trivy -e --source winget
 ```
 
 Official URL: https://aquasecurity.github.io/trivy/
+
+When local scans report `Trivy DB stale`, refresh the local DB before running scans:
+
+```powershell
+trivy --download-db-only
+```

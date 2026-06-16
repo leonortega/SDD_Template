@@ -1,4 +1,4 @@
 interface:
   display_name: "Configure Observability"
   short_description: "Set up metrics and dashboards"
-  default_prompt: "Use $configure-observability to configure Grafana Azure Monitor and Log Analytics observability."
+  default_prompt: "Use $configure-observability to configure Seq log search, Grafana Azure Monitor health dashboards, and Log Analytics observability."

@@ -156,7 +156,31 @@ If the forecast says `400-line budget risk: High`, `Chained PRs recommended: Yes
 - `size:exception`,
 - `exception-ok`.
 
-Work units must be deliverable behavior slices. Keep code, tests, and docs for the same behavior together; do not split commits or PRs only by file type.
+Work units must be deliverable behavior slices. Keep code, tests, and docs for the same behavior together; do not split PRs only by file type.
+
+## Ticket Commit Strategy
+
+Default ticket implementation uses one PR with multiple ticket-prefixed commits. Chained PRs remain reserved for oversized or high-risk work when the Review Workload Forecast, OpenSpec artifacts, or explicit user direction records that split.
+
+Commit after each completed workflow step when the step produced tracked changes, then start the next step from a clean working tree. Stable commit checkpoints include:
+
+- OpenSpec task, spec, or design refinement.
+- Implementation changes.
+- Tests or reusable QA regression coverage.
+- Documentation, context, memory, or workflow policy updates.
+- PR review feedback fixes.
+- Tooling or configuration fixes scoped to the active ticket.
+
+For each commit checkpoint:
+
+1. Finish the step changes.
+2. Review `git status` and the relevant diff.
+3. Run the smallest relevant validation for that step, or record why validation is deferred to CI.
+4. Stage only files related to that step.
+5. Commit with a message that starts with the Plane ticket key or OpenSpec id.
+6. Continue the next workflow step only after the working tree is clean or remaining changes are intentionally unrelated and documented.
+
+Do not create empty commits. Do not intentionally leave broken intermediate commits; when two workflow steps must be committed together to keep the repository valid, combine them and record that reason in the handoff. Do not automatically stash normal ticket progress. Use stash only for unrelated local or user changes that block the current step, and never stash as a substitute for committing completed ticket work.
 
 ## Adversarial Review
 
@@ -345,7 +369,7 @@ Use this structure unless a workflow-specific skill requires more detail:
 
 Prefer Markdown links for long URLs, short commit display text such as ``8acc4d4`` with the full SHA recorded in a field when needed, and grouped sections over long flat `Label: value` lists. Keep automation-critical values present and searchable; do not hide the stable marker, commit SHA, ticket key, release version, artifact URL, or evidence URL inside prose only.
 
-Workflow timing comments use marker `IA generated workflow timing: {ticketKey}` and a compact Markdown table with stage, outcome, duration, started UTC, and finished UTC. At the beginning of a selected ticket, `plane-start-ticket` must create or clear ignored `.codex/agent-telemetry.local.jsonl` with `InitializeWorkflowTelemetry`. Each non-OpenSpec delivery stage must capture UTC start and finish times and append one row for its own stage with `AppendWorkflowTelemetry` on `PASS`, `BLOCKED`, `FAIL`, or idempotent `SKIP`; this includes `plane-start-ticket`, `implement-ticket`, `pr-review-feedback-loop`, `gitea-pr-review-agent`, `post-merge-deploy`, `deploy-to-qa`, and `test-e2e`. `automatic-implement-ticket` may append only its own routing row when it performs meaningful routing work, but it must not duplicate child stage rows. After the E2E QA Plane comment is verified and before final QA handoff, `test-e2e` must read rows for the active ticket with `ReadWorkflowTelemetry`, render the Plane timing comment with `RenderPlaneComment -Type WorkflowTiming`, then create or patch the timing marker comment. Raw telemetry stays in the ignored JSONL file; Plane timing comments must not include token counts, raw logs, full prompts, credential-bearing URLs, secrets, or noisy tool details. If telemetry cannot be written or read, report the workflow timing comment as blocked. Do not derive workflow timing from Plane generated marker timestamps. On rerun, update or reuse the existing workflow timing marker comment for the same ticket instead of creating duplicates. Send both `comment_html` and `comment_stripped`, and verify `comment_stripped` starts with the marker after posting or patching.
+Workflow timing comments use marker `IA generated workflow timing: {ticketKey}` and a compact Markdown table with stage, outcome, duration, started UTC, and finished UTC. At the beginning of a selected ticket, `plane-start-ticket` must create or clear ignored `.codex/agent-telemetry.local.jsonl` with `InitializeWorkflowTelemetry`. Each non-OpenSpec delivery stage must capture UTC start and finish times and append one row for its own stage with `AppendWorkflowTelemetry` on `PASS`, `BLOCKED`, `FAIL`, or idempotent `SKIP`; this includes `plane-start-ticket`, `implement-ticket`, `pr-review-feedback-loop`, `gitea-pr-review-agent`, `post-merge-deploy`, `deploy-to-qa`, and `test-e2e`. `automatic-implement-ticket` may append only its own routing row when it performs meaningful routing work, but it must not duplicate child stage rows. After the E2E QA Plane comment is verified and before final QA handoff, `test-e2e` must read rows for the active ticket with `ReadWorkflowTelemetry`, render the Plane timing comment with `RenderPlaneComment -Type WorkflowTiming`, then create or patch the timing marker comment. The timing table must list the standard stages even when a stage did not run or did not apply to the ticket; missing stages use outcome `NOT RUN / N/A`, duration `no time`, and `-` for start and finish. Raw telemetry stays in the ignored JSONL file; Plane timing comments must not include token counts, raw logs, full prompts, credential-bearing URLs, secrets, or noisy tool details. If telemetry cannot be written or read, report the workflow timing comment as blocked. Do not derive workflow timing from Plane generated marker timestamps. On rerun, update or reuse the existing workflow timing marker comment for the same ticket instead of creating duplicates. Send both `comment_html` and `comment_stripped`, and verify `comment_stripped` starts with the marker after posting or patching.
 
 ## Reusable Delivery Tools
 
@@ -359,6 +383,7 @@ Use `.codex/skills/_shared/scripts/delivery_tools.ps1` for deterministic deliver
 - `ReadCoverageThreshold`: read the configured coverage minimum with the repo default fallback.
 - `ReadCoberturaLineRate`: read Cobertura coverage percent from XML without shell text parsing.
 - `ValidateReleaseManifest`: validate required `release.json` fields and version formats.
+- `CreateArtifactPointer`: write human-readable Nexus alias pointer JSON for QA-approved, RC, and final release metadata folders.
 - `ValidateTicketLock`: compare resolved ticket, branch, PR, artifact commit, RC, or final version against `.codex/delivery-context.local.json`.
 - `ValidateDeploymentLane`: enforce serialized deployment ownership from `.codex/parallel-delivery.local.json`.
 - `ValidateParallelDeliveryDryRun`: validate enabled state, planned ticket/worktree/branch uniqueness, serialized lane ownership, supported lane policy, and required ignored local runtime files without mutating Git, Plane, Gitea, Nexus, or Azure.
@@ -410,7 +435,7 @@ When actionable AI or human feedback is found:
 - Run the relevant quality checks for the changed files.
 - Commit and push the fix to the existing PR branch.
 - Mark the OpenSpec feedback tasks complete only after the code and validation are complete.
-- Add a Plane ticket comment with marker `IA generated PR feedback fixes: {headSha}:{feedbackBatchId}` that lists the source ids or links addressed, the OpenSpec tasks completed, the commit pushed, validation run, and any comments skipped as non-actionable, stale, ambiguous, duplicate, generated, or conflicting.
+- Add a Plane ticket comment with marker `IA generated PR feedback fixes: {headSha}:{feedbackBatchId}` as the first line by itself, followed by a blank line and a reviewer-facing Markdown summary. The body must be human-readable, not only automation evidence, and must include `**Status:** READY FOR REVIEW | BLOCKED | PARTIAL - short outcome`, `**Reviewer feedback addressed:**` with source ids or links plus a short human summary of each comment, `**How IA resolved it:**` with concrete changes in reviewer language, `**Changed:**` with commit SHA, PR link, and completed OpenSpec feedback tasks, `**Validation:**` with checks run and results, `**Reviewer readiness:**` with what the reviewer should re-check and remaining blockers or `None`, and `**Skipped comments:**` only when non-actionable, stale, duplicate, generated, ambiguous, or conflicting comments were skipped.
 - Rerun the AI review loop on the new head before returning to human review.
 
 AI review findings must have stable finding ids in the PR review comment so `pr-review-feedback-loop` can convert them into deterministic feedback tasks and batch ids. Human-authored Gitea PR feedback includes top-level PR comments and inline code review comments, plus review-thread replies supported by the configured Gitea version.
@@ -434,6 +459,8 @@ app/{commitSha}/release.json
 ```
 
 `deployable-apps.json` is the packaged copy of `infra/deployment/apps.json` sorted for deployment. `commit.sha` must exactly match the artifact commit. Every `{artifactName}.sha256` listed by the topology must verify before deployment.
+
+Human-readable Nexus version folders are aliases only. Do not move or rename canonical ZIP artifacts out of `app/{commitSha}/`. QA approval may publish `app/qa-approved/latest.json`, `app/rc/{sourceRcVersion}/artifact-pointer.json`, and `app/rc/{sourceRcVersion}/release.json`; PROD success may publish `app/releases/{finalReleaseVersion}/artifact-pointer.json` and `app/releases/{finalReleaseVersion}/release.json`. PROD push resolution must read `app/qa-approved/latest.json` and validate it against `commit.sha`, `release.json`, and the source RC tag before deploying.
 
 ## Deployment Configuration Drift
 

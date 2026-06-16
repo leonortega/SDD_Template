@@ -39,21 +39,21 @@ x-proxy-env: &proxy-env
 
 x-pg-env: &pg-env
   POSTGRES_USER: ${POSTGRES_USER:-plane}
-  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-plane}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in infra/plane/variables.env}
   POSTGRES_DB: ${POSTGRES_DB:-plane}
   PGDATA: ${PGDATA:-/var/lib/postgresql/data}
-  PLANE_PI_DATABASE_URL: ${PLANE_PI_DATABASE_URL:-postgresql://plane:plane@plane-db/plane_pi}
-  DATABASE_URL: ${DATABASE_URL:-postgresql://plane:plane@plane-db/plane}
-  FOLLOWER_POSTGRES_URI: ${FOLLOWER_POSTGRES_URI:-postgresql://plane:plane@plane-db/plane}
+  PLANE_PI_DATABASE_URL: ${PLANE_PI_DATABASE_URL:-postgresql://plane:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in infra/plane/variables.env}@plane-db/plane_pi}
+  DATABASE_URL: ${DATABASE_URL:-postgresql://plane:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in infra/plane/variables.env}@plane-db/plane}
+  FOLLOWER_POSTGRES_URI: ${FOLLOWER_POSTGRES_URI:-postgresql://plane:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in infra/plane/variables.env}@plane-db/plane}
 
 x-rabbitmq-env: &rabbitmq-env
   RABBITMQ_HOST: ${RABBITMQ_HOST:-plane-mq}
   RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
-  RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-plane}
-  RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-plane}
+  RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-plane}
+  RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:?RABBITMQ_DEFAULT_PASS must be set in infra/plane/variables.env}
   RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-plane}
   RABBITMQ_VHOST: ${RABBITMQ_VHOST:-plane}
-  AMQP_URL: ${AMQP_URL:-amqp://plane:plane@plane-mq:5672/plane}
+  AMQP_URL: ${AMQP_URL:-amqp://plane:${RABBITMQ_DEFAULT_PASS:?RABBITMQ_DEFAULT_PASS must be set in infra/plane/variables.env}@plane-mq:5672/plane}
 
 x-redis-env: &redis-env
   REDIS_HOST: ${REDIS_HOST:-plane-redis}
@@ -63,13 +63,13 @@ x-redis-env: &redis-env
 x-docstore-env: &docstore-env
   USE_MINIO: ${USE_MINIO:-1}
   USE_STORAGE_PROXY: ${USE_STORAGE_PROXY:-0}
-  MINIO_ROOT_USER: ${MINIO_ROOT_USER:-access-key}
-  MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-secret-key}
+  MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set in infra/plane/variables.env}
+  MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set in infra/plane/variables.env}
   BUCKET_NAME: ${BUCKET_NAME:-uploads}
 
   AWS_REGION: ${AWS_REGION:-us-east-1}
-  AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-access-key}
-  AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-secret-key}
+  AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:?AWS_ACCESS_KEY_ID must be set in infra/plane/variables.env}
+  AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?AWS_SECRET_ACCESS_KEY must be set in infra/plane/variables.env}
   AWS_S3_ENDPOINT_URL: ${AWS_S3_ENDPOINT_URL:-http://plane-minio:9000}
   AWS_S3_BUCKET_NAME: ${AWS_S3_BUCKET_NAME:-uploads}
 
@@ -88,8 +88,8 @@ x-silo-env: &silo-env
   MQ_PREFETCH_COUNT: ${MQ_PREFETCH_COUNT:-10}
 
   # Authentication
-  SILO_HMAC_SECRET_KEY: ${SILO_HMAC_SECRET_KEY:-tnbbvj6ATPvze4zaygdujxg4dpk4hqx0WDW}
-  AES_SECRET_KEY: ${AES_SECRET_KEY:-wvRonyo2xksk00E2h0hAbR5pFETQwbBK}
+  SILO_HMAC_SECRET_KEY: ${SILO_HMAC_SECRET_KEY:?SILO_HMAC_SECRET_KEY must be set in infra/plane/variables.env}
+  AES_SECRET_KEY: ${AES_SECRET_KEY:?AES_SECRET_KEY must be set in infra/plane/variables.env}
 
   # Feature Flag Envs
   FEATURE_FLAG_SERVER_BASE_URL: ${FEATURE_FLAG_SERVER_BASE_URL}
@@ -130,22 +130,22 @@ x-app-env: &app-env
   # Gunicorn Workers
   GUNICORN_WORKERS: ${GUNICORN_WORKERS:-2}
   # Application secret
-  SECRET_KEY: ${SECRET_KEY:-60gp0byfz2dvffa45cxl20p1scy9xbpf6d8c5y0geejgkyp1b5}
+  SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set in infra/plane/variables.env}
   FILE_SIZE_LIMIT: ${FILE_SIZE_LIMIT:-5242880}
   SSL_VERIFY: ${SSL_VERIFY:-1}
   FEATURE_FLAG_SERVER_BASE_URL: ${FEATURE_FLAG_SERVER_BASE_URL:-http://monitor:8080}
   PAYMENT_SERVER_BASE_URL: ${PAYMENT_SERVER_BASE_URL:-http://monitor:8080}
   # Enternal Services Config
-  SILO_HMAC_SECRET_KEY: ${SILO_HMAC_SECRET_KEY:-tnbbvj6ATPvze4zaygdujxg4dpk4hqx0WDW}
-  AES_SECRET_KEY: ${AES_SECRET_KEY:-wvRonyo2xksk00E2h0hAbR5pFETQwbBK}
+  SILO_HMAC_SECRET_KEY: ${SILO_HMAC_SECRET_KEY:?SILO_HMAC_SECRET_KEY must be set in infra/plane/variables.env}
+  AES_SECRET_KEY: ${AES_SECRET_KEY:?AES_SECRET_KEY must be set in infra/plane/variables.env}
   # API key rate limit
   API_KEY_RATE_LIMIT: ${API_KEY_RATE_LIMIT:-60/minute}
   # Force HTTPS for handling SSL Termination
   MINIO_ENDPOINT_SSL: ${MINIO_ENDPOINT_SSL:-0}
   # Live Server Secret Key
-  LIVE_SERVER_SECRET_KEY: ${LIVE_SERVER_SECRET_KEY:-htbqvBJAgpm9bzvf3r4urJer0ENReatceh}
+  LIVE_SERVER_SECRET_KEY: ${LIVE_SERVER_SECRET_KEY:?LIVE_SERVER_SECRET_KEY must be set in infra/plane/variables.env}
   #Pi Internal Secret
-  PI_INTERNAL_SECRET: ${PI_INTERNAL_SECRET:-tyfvfqvBJAgpm9bzvf3r4urJer0Ehfdubk}
+  PI_INTERNAL_SECRET: ${PI_INTERNAL_SECRET:?PI_INTERNAL_SECRET must be set in infra/plane/variables.env}
   # Intake Email Domain
   INTAKE_EMAIL_DOMAIN: ${INTAKE_EMAIL_DOMAIN:-example.com}
   # OpenAPI / drf-spectacular toggle for API schema and docs
@@ -153,7 +153,7 @@ x-app-env: &app-env
 
 x-live-env: &live-env
   API_BASE_URL: ${API_BASE_URL:-http://api:8000}
-  LIVE_SERVER_SECRET_KEY: ${LIVE_SERVER_SECRET_KEY:-htbqvBJAgpm9bzvf3r4urJer0ENReatceh}
+  LIVE_SERVER_SECRET_KEY: ${LIVE_SERVER_SECRET_KEY:?LIVE_SERVER_SECRET_KEY must be set in infra/plane/variables.env}
   IFRAMELY_URL: ${IFRAMELY_URL:-http://iframely:8061}
 
 x-outbox-poller-env: &outbox-poller-env
@@ -182,7 +182,7 @@ x-pi-env: &pi-env
   FASTAPI_APP_WORKERS: ${FASTAPI_APP_WORKERS:-1}
   PLANE_FRONTEND_URL: ${WEB_URL:-http://localhost}
   PLANE_API_HOST: ${PLANE_API_HOST:-${WEB_URL:-http://localhost}}
-  PI_INTERNAL_SECRET: ${PI_INTERNAL_SECRET:-tyfvfqvBJAgpm9bzvf3r4urJer0Ehfdubk}
+  PI_INTERNAL_SECRET: ${PI_INTERNAL_SECRET:?PI_INTERNAL_SECRET must be set in infra/plane/variables.env}
   PI_BASE_PATH: ${PI_BASE_PATH:-/pi}
 
   PLANE_OAUTH_REDIRECT_URI: ${WEB_URL:-http://localhost}/pi/api/v1/oauth/callback/

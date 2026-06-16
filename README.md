@@ -1,115 +1,129 @@
 # Agentic E2E Development Lab
 
-This repository is a template for a local, agent-driven software delivery lab. Its goal is to let Codex-style agents take a Plane ticket from idea to production using the same checks, handoffs, artifacts, and promotion rules a real engineering team would use.
+![Platform](https://img.shields.io/badge/platform-Windows-0078D4)
+![Shell](https://img.shields.io/badge/shell-PowerShell-5391FE)
+![.NET](https://img.shields.io/badge/.NET-10.0-512BD4)
+![App](https://img.shields.io/badge/app-Blazor%20%2B%20ASP.NET%20Core-512BD4)
+![Data](https://img.shields.io/badge/data-EF%20Core%20%2B%20SQLite-4479A1)
+![Tests](https://img.shields.io/badge/tests-xUnit%20%2B%20Playwright-2EAD33)
+![Delivery](https://img.shields.io/badge/delivery-Plane%20%7C%20OpenSpec%20%7C%20Gitea%20%7C%20Nexus-0A66C2)
+![Cloud](https://img.shields.io/badge/cloud-Azure%20DEV%20%7C%20QA%20%7C%20PROD-0078D4)
+![Release](https://img.shields.io/badge/release-explicit%20PROD%20promotion-6A5ACD)
+![Coverage](https://img.shields.io/badge/coverage%20gate-80%25-brightgreen)
 
-The lab keeps delivery tooling local and deployment targets remote:
+An executive-ready software delivery template for teams that want AI agents to move work from idea to production with the same traceability, quality checks, and release discipline expected from a professional engineering organization.
 
-- Local Docker Compose runs Plane, Gitea, the Gitea Actions runner, Nexus, Dozzle, and Grafana. Azure App Service diagnostics flow to Log Analytics, and local Grafana reads them through the built-in Azure Monitor datasource.
-- Azure hosts only the DEV, QA, and PROD application runtimes.
-- Nexus stores the immutable build artifact promoted across DEV, QA, PROD, and rollback.
-- Plane is the source of ticket state, generated workflow markers, and delivery comments.
-- OpenSpec records the planned behavior before implementation.
+## What This Template Does
 
-## Current Workflow
+This repository packages a complete software delivery lab. It shows how a Codex-style agent can take a product request, plan it, implement it, review it, test it, deploy it, and prepare it for production without losing the human controls that make delivery trustworthy.
 
-The current delivery flow is:
+It is designed for teams that want to evaluate or sell an agent-assisted SDLC model, not just run a demo. The template combines local delivery tools with remote application environments so the process stays inspectable, repeatable, and close to real-world delivery.
+
+The core idea is simple:
 
 ```text
-Plane Todo
-  -> branch + OpenSpec proposal
-  -> implementation + tests
-  -> Gitea PR
-  -> PR validation + Codex review agent
-  -> merge to dev
-  -> Nexus package + Azure DEV + Azure QA
-  -> E2E QA evidence
-  -> Plane Done
-  -> explicit PROD promotion to main/PROD
-  -> rollback or hotfix when needed
+Every change should have a ticket, a plan, a review, a tested artifact, QA evidence, and an explicit production decision.
 ```
 
-Normal ticket work is driven from Codex chat. The high-level entry point is:
+## Why It Matters
+
+- Faster controlled delivery: agents can continue work through known checkpoints instead of restarting from scratch.
+- Better leadership visibility: Plane records the ticket state, workflow markers, handoffs, and evidence.
+- Stronger quality control: Gitea pull requests, validation gates, Codex review, tests, and QA evidence are part of the normal flow.
+- Safer releases: Nexus stores immutable artifacts that are promoted across DEV, QA, PROD, and rollback without rebuilding.
+- Clearer accountability: production promotion is explicit, documented, and separated from QA approval.
+- Practical observability: Seq, Grafana, Dozzle, Azure diagnostics, and Log Analytics support delivery and runtime inspection.
+
+## Who This Is For
+
+- Engineering leaders evaluating agentic software delivery.
+- Product and operations teams that need visible ticket-to-production progress.
+- Delivery teams building repeatable SDLC automation.
+- Consultants or vendors packaging a professional agent-assisted delivery model.
+- Technical operators who need a local lab for Plane, Gitea, Nexus, Azure, QA, release, rollback, and hotfix workflows.
+
+## How The Delivery Flow Works
+
+```text
+Idea in Plane
+  -> Plan the change with OpenSpec
+  -> Implement and test the work
+  -> Review through Gitea pull requests
+  -> Package an immutable artifact in Nexus
+  -> Deploy the same artifact to DEV and QA
+  -> Prove acceptance with E2E QA evidence
+  -> Mark the ticket Done
+  -> Promote explicitly to PROD
+  -> Roll back or hotfix when needed
+```
+
+In plain language:
+
+- Plane is the work tracker and delivery record.
+- OpenSpec captures the planned behavior before implementation.
+- Gitea manages source control, pull requests, and validation.
+- Nexus stores the exact build artifact used for deployment.
+- Azure hosts the DEV, QA, and PROD application runtimes.
+- Seq helps operators search DEV/QA/PROD Azure application logs; Grafana and Dozzle help inspect health, delivery signals, and local container logs.
+- Codex skills under `.codex/skills/` guide the agent through each delivery stage.
+
+## What Is Included
+
+### Planning And Ticket Control
+
+- Plane-based ticket workflow.
+- OpenSpec planning before implementation.
+- Checkpoint-based reruns that continue from existing branches, PRs, artifacts, QA evidence, tags, and release manifests.
+- Ticket locks and delivery context rules to prevent work from crossing the wrong branch, PR, artifact, or environment.
+
+### Review And Quality Gates
+
+- Gitea pull request flow.
+- Gitea Actions validation.
+- Codex review-agent workflow.
+- Build, test, coverage, formatting, dependency, secret, and container scanning guidance.
+- Durable context review so reusable project knowledge is captured in the right docs.
+
+### Artifact Promotion
+
+- Nexus artifact storage by commit SHA.
+- DEV, QA, PROD, and rollback promotion from the same immutable artifact.
+- Release manifests and checksums for traceability.
+- Explicit separation between QA approval and production release.
+
+### QA Evidence
+
+- E2E QA workflow for deployed QA environments.
+- Evidence stored under ignored local paths and preferably published to Nexus.
+- Acceptance criteria proven through executable assertions, not only screenshots or smoke checks.
+
+### Production, Rollback, And Hotfix
+
+- Explicit PROD promotion from QA-approved artifacts.
+- Final release metadata and production evidence.
+- Rollback path for known-good artifacts.
+- Hotfix workflow for urgent production corrections.
+
+### Local Observability
+
+- Docker Compose platform for local delivery tools.
+- Seq log search for Azure App Service logs imported from Log Analytics.
+- Grafana health/status dashboards for Azure Monitor and Log Analytics.
+- Dozzle for local container logs.
+- Azure App Service diagnostics for DEV, QA, and PROD runtimes.
+
+## Quick Start
+
+Configure the local delivery platform through Codex chat:
+
+```text
+config infra
+```
+
+Continue the current ticket through the next valid workflow stage:
 
 ```text
 automatically continue this ticket
-```
-
-or any equivalent request to continue, resume, implement, deploy, QA, or hand off a ticket. That routes through `.codex/skills/automatic-implement-ticket`, which inspects Plane, Git, Gitea, Nexus, OpenSpec, QA evidence, tags, and PROD state, then delegates to the next focused workflow skill.
-
-Before the first ticket starts, the workflow verifies that the tool set and tech stack are configured in `docs/`, `openspec/config.yaml`, and the tracked `.codex/tool-recommendations.example.json` template. Project-specific recommendation state is written only to ignored `.codex/tool-recommendations.local.json`. If required context is missing or the recommendation audit reports stack-context drift, ticket start stops before branch, Plane, ticket-lock, or OpenSpec mutation and routes to `configure-dev-environment`.
-
-The workflow is intentionally checkpoint-based. Reruns continue from existing Plane comments, branch names, PRs, Nexus artifacts, QA evidence, tags, and release manifests instead of restarting from the beginning.
-
-## Repository Layout
-
-```text
-SDDTemplate.slnx
-docs/
-|-- architecture.md
-|-- context-management.md
-|-- deployment.md
-`-- development.md
-src/
-|-- SDDTemplate.Api/
-|-- SDDTemplate.Data/
-`-- SDDTemplate.Site/
-tests/
-`-- SDDTemplate.Site.Tests/
-openspec/
-`-- changes/
-infra/
-|-- compose.yml
-|-- up.ps1
-|-- down.ps1
-|-- plane/
-|-- gitea/
-|-- nexus/
-|-- monitoring/
-`-- azure/
-.gitea/
-`-- workflows/
-.codex/
-|-- skills/
-|-- client-tools.example.json
-|-- quality.example.json
-`-- delivery-policy.json
-artifacts/
-`-- qa/
-```
-
-Use `compose.yml` consistently for Docker Compose files.
-
-## Canonical Context
-
-Durable project context lives in `docs/`:
-
-- `docs/context-management.md`: context authority, freshness, conflict, and handoff rules.
-- `docs/architecture.md`: system topology, sources of truth, ticket locks, and deployment-lane ownership.
-- `docs/development.md`: implementation workflow, local commands, OpenSpec usage, and quality gates.
-- `docs/deployment.md`: artifact promotion, QA evidence, versions, PROD, rollback, and hotfix rules.
-
-The shared delivery contract remains `.codex/skills/_shared/delivery-contract.md`. It is the agent-enforced operational policy. If docs and the delivery contract conflict, the delivery contract wins for automation behavior until the docs are corrected.
-
-Every implementation must run a Context Findings Review. Durable findings update the matching `docs/` file in the same PR. If no durable context changed, the PR body and Plane handoff comment must state `Docs: no durable context changes`.
-
-## Local Development
-
-Build the solution from the repository root:
-
-```powershell
-dotnet build .\SDDTemplate.slnx
-```
-
-Run tests:
-
-```powershell
-dotnet test .\SDDTemplate.slnx
-```
-
-Run formatting verification:
-
-```powershell
-dotnet format --verify-no-changes
 ```
 
 Start the local delivery platform:
@@ -124,56 +138,41 @@ Stop it:
 .\infra\down.ps1
 ```
 
-The same stack can be started directly with Docker Compose:
+Build and test the solution:
 
 ```powershell
-docker compose --env-file .\infra\plane\variables.env -f .\infra\compose.yml up -d
+dotnet build .\SDDTemplate.slnx
+dotnet test .\SDDTemplate.slnx
 ```
 
-## Configuration Workflow
-
-Configure the lab through Codex chat:
-
-```text
-config infra
-```
-
-That routes through `.codex/skills/configure-dev-environment`, which delegates to the specific setup skills for Plane, Gitea, the Gitea Actions runner, Nexus, Azure, quality gates, and observability.
-
-Configuration order:
-
-```text
-Plane -> Gitea -> Gitea Actions runner -> quality gates -> Nexus -> Azure DEV -> Azure QA -> Azure PROD -> Grafana Azure Monitor
-```
-
-During full setup or base-code creation, the configurator can also run a recommended tooling and skill audit:
+Verify formatting:
 
 ```powershell
-.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode AuditRecommendedTools
-.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode DiscoverProjectGuidance
+dotnet format --verify-no-changes
 ```
 
-The audit scans the current repository for stack, tooling, environments, test frameworks, QA workflows, code standards, web UI, REST/API, and security signals. `project-guidance-discover` owns the project-guidance flow: it builds a `project-guidance-search-plan` from detected signals, reports existing skills, suggested missing skills, and non-skill guidance such as tools, references, practices, and standards. For missing skills, the agent checks repo-local workflow sources, then researches OpenAI official catalogs/docs, then official tool repositories/docs and technology-owner sources, then `skills.sh`, `skills`, marketplace pages, or command examples that identify a repository/path, and finally clearly labeled community sources when no stronger source exists. It verifies whether the skill already exists in `.codex/skills/`, shows the suggested list with `sourceKind`, asks whether the operator wants to add additional desired skills or guidance, and only then hands confirmed skill items to `project-guidance-acquire`. After confirmation, discovery can write ignored `.codex/tool-recommendations.local.json`, shaped like the tracked example catalog but enriched with current detected tags, sources, source kinds, targets, validation commands, accepted/dismissed state, and recommendation-level `usedInSteps`. `project-guidance-mapper` reads that local file, verifies listed skill targets still exist, and can append a workflow step to `usedInSteps` after a guidance item is used, confirmed, or inferred. `.codex/tool-recommendations.example.json` remains a placeholder-safe example/template, not runtime project state. The intended stack is defined in `docs/` and summarized in `openspec/config.yaml`; the audit verifies that intent against current files and reports drift when they disagree.
+## Documentation Map
 
-Skill acquisition is manual by default: read the source repository's `SKILL.md`, verify the source repository/ref/path and frontmatter, create `.codex/skills/{skill-name}/`, write the new `SKILL.md`, and copy only required referenced scripts or templates. Commands from `skills.sh`, `skills`, marketplaces, README snippets, or curl examples are discovery metadata only. Skills are not installed by command in this workflow. Plugin and MCP setup should prefer manual configuration instructions over installer commands, and secrets must never be configured automatically.
+- [Architecture](docs/architecture.md): system topology, sources of truth, ticket locks, and deployment-lane ownership.
+- [Development](docs/development.md): implementation workflow, local commands, OpenSpec usage, and quality gates.
+- [Deployment](docs/deployment.md): artifact promotion, QA evidence, versions, PROD, rollback, and hotfix rules.
+- [Context Management](docs/context-management.md): context authority, freshness, conflict handling, and handoff rules.
+- [Parallel Delivery](docs/parallel-delivery.md): optional multi-ticket coordination, worktree isolation, and serialized deployment lanes.
+- [Delivery Contract](.codex/skills/_shared/delivery-contract.md): agent-enforced operational policy.
 
-The main local files are:
+If these documents conflict, the delivery contract wins for automation behavior until the docs are corrected.
 
-```text
-.codex/client-tools.local.json
-.codex/quality.local.json
-.codex/tool-recommendations.local.json
-infra/plane/variables.env
-infra/gitea/runner.env
-```
+## Canonical Context
 
-Tracked example files remain placeholder-safe. Real tokens, local secrets, generated Plane secrets, local Azure hostnames, and delivery locks belong only in ignored local files.
+Before the first ticket starts, the workflow validates stack context and routes to `configure-dev-environment` when required docs, OpenSpec context, or recommendation catalogs are missing or drifted. `configure-dev-environment` scans stack, tooling, environments, test frameworks, and workflow files, reports suggested missing skills and guidance, and asks whether the operator wants to add additional desired skills or guidance.
 
-Credentials must be supplied through supported UI/API/CLI paths. The workflow must not read secrets from Docker containers, mounted volumes, databases, logs, or committed files.
+Project guidance is manual by default. Confirmed skills must read the source repository's `SKILL.md` and be copied into `.codex/skills`; Skills are not installed by command. `.codex/tool-recommendations.example.json` documents the tracked catalog shape, while ignored `.codex/tool-recommendations.local.json` stores local discovery state and `project-guidance-mapper` reads that local file for step mapping.
 
-## Workflow References
+Implementation handoffs must report context findings and either list updated docs or state `Docs: no durable context changes`.
 
-Useful chat requests:
+## Operator Commands
+
+Common Codex chat requests:
 
 ```text
 List Plane Todo tickets
@@ -186,48 +185,30 @@ Promote E2EPROJECT-1 to PROD
 Audit recent delivery workflow
 Audit failed QA/review/CI run
 Run agent self-improvement audit
+Coordinate parallel Plane tickets
 ```
 
-Use `Coordinate parallel Plane tickets` when more than one ticket should be active at the same time. Read `docs/parallel-delivery.md` first for the dry-run checklist, worktree layout, role contracts, serialized deployment lane rules, and cleanup/recovery steps.
+Direct Docker Compose startup is also supported when the local Plane and monitoring environment files are configured:
 
-Detailed workflow references:
+```powershell
+docker compose --env-file .\infra\plane\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml up -d
+```
 
-- `docs/context-management.md`: ticket states, locks, context authority, freshness, conflict handling, and handoff rules.
-- `docs/architecture.md`: parallel worktree isolation, deployment-lane ownership, and source-of-truth topology.
-- `docs/development.md`: implementation flow, OpenSpec usage, quality gates, and local validation commands.
-- `docs/deployment.md`: artifact identity, release manifests, versioning, QA evidence, deployment, PROD, rollback, and hotfix rules.
-- `docs/parallel-delivery.md`: optional multi-ticket coordination, dry-run preflight, subagent role contracts, and cleanup/recovery.
-- `.codex/skills/_shared/delivery-contract.md`: agent-enforced operational rules.
+## Repository Shape
 
-## Operator Skills
+```text
+SDDTemplate.slnx
+docs/
+src/
+tests/
+openspec/
+infra/
+.gitea/
+.codex/
+artifacts/
+```
 
-The repo-local workflow is encoded as Codex skills under `.codex/skills/`.
-
-Common entry points:
-
-- `configure-dev-environment`: configure Plane, Gitea, runner, quality gates, Nexus, Azure, and observability.
-- `delivery-retrospective-audit`: inspect recent delivery evidence and propose evidence-gated workflow or agent self-improvements.
-- `pipeline-status`: read-only dashboard for tickets, PRs, artifacts, QA evidence, tags, and deployments.
-- `parallel-ticket-coordinator`: coordinate multiple active tickets across isolated Git worktrees while serializing deployment promotion.
-- `automatic-implement-ticket`: inspect state and route to the next valid delivery step.
-- `plane-start-ticket`: select a Plane ticket, create branch context, and create the OpenSpec proposal.
-- `implement-ticket`: implement an active ticket and hand off a PR.
-- `pr-review-feedback-loop`: process AI review findings and late human PR comments through OpenSpec feedback tasks, Plane batch comments, fixes, validation, and AI reruns.
-- `gitea-pr-review-agent`: review a specific Gitea PR and apply review labels.
-- `post-merge-deploy`: continue after a PR merges to `dev`.
-- `deploy-to-qa`: verify the merged PR artifact and promote through DEV/QA.
-- `test-e2e`: run QA checks, store evidence, and move passing tickets to `Done`.
-- `deploy-to-prod`: promote a QA-approved artifact to PROD.
-- `rollback-prod`: restore PROD to a previously verified artifact.
-- `hotfix-prod`: run an expedited, gated production hotfix.
-
-The shared delivery contract is `.codex/skills/_shared/delivery-contract.md`. When delivery behavior changes, update the related skills, configuration docs, workflow files, and regression tests together.
-
-## Quality: Audit Agents & Self-Improvement
-
-The delivery lab includes a manual quality lane for improving agent behavior from evidence. Use `delivery-retrospective-audit` after QA bugs, meaningful review misses, CI/tooling blockers, deployment blockers, delivery/configure skill drift, or as a periodic manual review after several completed tickets.
-
-The audit is read-only by default. It can recommend skill, contract, docs, template, quality-gate, memory, or follow-up ticket changes, but durable workflow changes require repeated evidence, a high-severity gap, direct delivery-contract drift, or a missing deterministic check for an already-required rule. Recurring scheduled audits should be introduced through a separate follow-up ticket that defines cadence, ownership, output location, and allowed mutations.
+Detailed structure is documented in [Architecture](docs/architecture.md) and [Development](docs/development.md).
 
 ## Key Principle
 

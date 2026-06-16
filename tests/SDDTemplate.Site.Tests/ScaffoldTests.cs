@@ -120,7 +120,6 @@ namespace SDDTemplate.Site.Tests
                 "Components/Routes.razor",
                 "Components/Layout/MainLayout.razor",
                 "Components/Pages/Home.razor",
-                "HealthResponse.cs",
                 "wwwroot/app.css",
             ];
 
