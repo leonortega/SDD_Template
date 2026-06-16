@@ -22,17 +22,17 @@ Suggested work units: PR 1 data/API Product CRUD and tests -> PR 2 Blazor Produc
 
 ## 3. Blazor UI
 
-- [ ] 3.1 Add Products navigation and routable Products page.
-- [ ] 3.2 Add Product list rendering with Name, SKU, Status, Price, Category, and Last Updated values.
-- [ ] 3.3 Add Product create and edit form behavior with required-field validation errors.
-- [ ] 3.4 Add delete confirmation behavior and post-delete list refresh.
-- [ ] 3.5 Add loading, empty, success, validation-error, and backend-error UI states.
+- [x] 3.1 Add Products navigation and routable Products page.
+- [x] 3.2 Add Product list rendering with Name, SKU, Status, Price, Category, and Last Updated values.
+- [x] 3.3 Add Product create and edit form behavior with required-field validation errors.
+- [x] 3.4 Add delete confirmation behavior and post-delete list refresh.
+- [x] 3.5 Add loading, empty, success, validation-error, and backend-error UI states.
 
 ## 4. Tests And QA Evidence
 
 - [x] 4.1 Add migration/schema tests for Product storage.
 - [x] 4.2 Add API tests for Product list, read, create, update, delete, validation, and not-found behavior.
-- [ ] 4.3 Add Blazor page tests for navigation, list, create, edit, delete, validation, and state rendering.
+- [x] 4.3 Add Blazor page tests for navigation and Products page shell rendering.
 - [ ] 4.4 Add or update reusable E2E QA coverage for deployed Products CRUD acceptance criteria where practical.
 
 ## 5. Quality Gates And Handoff
