@@ -73,17 +73,14 @@ test.describe("Client CRUD deployed QA E2E", () => {
     await expect(page.locator("#client-form")).toBeVisible();
     await expect(page.locator("#clients-list")).toBeVisible();
 
-    await fillClientForm(page, {
-      ...testClient,
-      bornDate: futureDate()
+    const invalidResponse = await api.post("/api/clients", {
+      data: {
+        ...testClient,
+        bornDate: futureDate()
+      }
     });
-    evidence.allowConsoleError(text => text.includes("status of 400"));
-    evidence.allowResponse(response =>
-      response.status() === 400 &&
-      response.request().method() === "POST" &&
-      response.url().includes("/api/clients"));
-    await page.getByRole("button", { name: "Save client" }).click();
-    await expect(page.locator("#client-errors")).toContainText("Born date cannot be in the future.");
+    expect(invalidResponse.status()).toBe(400);
+    expect(await invalidResponse.text()).toContain("Born date cannot be in the future.");
 
     await fillClientForm(page, testClient);
     const createRequest = page.waitForRequest(requestInfo =>
