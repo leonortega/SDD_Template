@@ -54,7 +54,7 @@
             </label>
 
             <div class="form-actions full-width">
-                <button type="button" @onclick="SaveProduct">Save product</button>
+                <button type="button" disabled="@(!IsInteractive)" @onclick="SaveProduct">Save product</button>
                 <button type="button" id="product-reset" @onclick="ClearForm">Clear</button>
             </div>
 
@@ -129,6 +129,8 @@
 
     private int? PendingDeleteId { get; set; }
 
+    private bool IsInteractive { get; set; }
+
     private string Summary => ProductRows.Count == 1 ? "1 product" : $"{ProductRows.Count} products";
 
     private string ApiUrl => $"{(string.IsNullOrWhiteSpace(Configuration["Api:BaseUrl"]) ? Navigation.BaseUri : Configuration["Api:BaseUrl"])!.TrimEnd('/')}/api/products";
@@ -136,6 +138,17 @@
     protected override async Task OnInitializedAsync()
     {
         await LoadProducts();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        IsInteractive = true;
+        StateHasChanged();
     }
 
     private async Task LoadProducts()
