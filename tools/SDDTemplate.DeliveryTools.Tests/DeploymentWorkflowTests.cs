@@ -206,9 +206,36 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("client-tools.local.json", config);
             Assert.DoesNotContain("webServer", config);
             Assert.Contains("\"@playwright/test\"", package);
+            Assert.Contains("\"test:docker\"", package);
+            Assert.Contains("run-local-docker.ps1", package);
+            Assert.True(File.Exists(Path.Combine(root, "tests", "SDDTemplate.E2ETests", "run-local-docker.ps1")));
             Assert.Contains("Client CRUD deployed QA E2E", spec);
             Assert.Contains("/api/clients", spec);
             Assert.Contains("Born date cannot be in the future.", spec);
+        }
+
+        [Fact]
+        public void PlaywrightQaE2eUsesSameVersionLocallyAndInGitea()
+        {
+            const string expectedPlaywrightVersion = "1.57.0";
+            const string expectedImage = "agentic/e2e-ci:playwright-1.57.0-1";
+
+            string root = FindRepositoryRoot().FullName;
+            string workflow = ReadWorkflow();
+            string dockerfile = File.ReadAllText(Path.Combine(root, "infra", "gitea", "actions-images", "e2e-ci", "Dockerfile"));
+            string localRunner = File.ReadAllText(Path.Combine(root, "tests", "SDDTemplate.E2ETests", "run-local-docker.ps1"));
+            string packageLock = File.ReadAllText(Path.Combine(root, "tests", "SDDTemplate.E2ETests", "package-lock.json"));
+
+            using JsonDocument lockJson = JsonDocument.Parse(packageLock);
+            JsonElement packages = lockJson.RootElement.GetProperty("packages");
+
+            Assert.Contains($"image: {expectedImage}", workflow);
+            Assert.Contains($"$image = '{expectedImage}'", localRunner);
+            Assert.Contains($"FROM mcr.microsoft.com/playwright:v{expectedPlaywrightVersion}-noble", dockerfile);
+            Assert.Equal(expectedPlaywrightVersion, packages.GetProperty("").GetProperty("devDependencies").GetProperty("@playwright/test").GetString());
+            Assert.Equal(expectedPlaywrightVersion, packages.GetProperty("node_modules/@playwright/test").GetProperty("version").GetString());
+            Assert.Equal(expectedPlaywrightVersion, packages.GetProperty("node_modules/playwright").GetProperty("version").GetString());
+            Assert.Equal(expectedPlaywrightVersion, packages.GetProperty("node_modules/playwright-core").GetProperty("version").GetString());
         }
 
         [Fact]
