@@ -1391,7 +1391,7 @@ function Ensure-InferredClientToolsConfig {
   Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "hotfixProd", "model") "gpt-5.3-codex"
   Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "hotfixProd", "reasoningEffort") "high"
   Set-InferredClientValue $Result $client @("recommendedTools", "enabled") $true
-  Set-InferredClientValue $Result $client @("recommendedTools", "mode") "guided-manual"
+  Set-InferredClientValue $Result $client @("recommendedTools", "mode") "guarded-auto"
   Set-InferredClientValue $Result $client @("recommendedTools", "accepted") @()
   Set-InferredClientValue $Result $client @("recommendedTools", "dismissed") @()
 
@@ -1454,7 +1454,7 @@ function ConvertTo-CatalogRecommendation {
     accepted = ($Accepted -contains $Entry.id)
   }
 
-  foreach ($optionalField in @("sourceKind", "requires", "researchTopics", "officialSources", "searchQueries", "notes")) {
+  foreach ($optionalField in @("sourceKind", "requires", "researchTopics", "officialSources", "searchQueries", "notes", "installScope", "installerKind", "requiresIdeRestart", "requiresSystemReboot", "userActionRequired", "importantMessage")) {
     if ($Entry.PSObject.Properties.Name -contains $optionalField) {
       $recommendation[$optionalField] = $Entry.$optionalField
     }
@@ -1651,7 +1651,12 @@ function New-ProjectGuidanceLocalState {
       name = "Project guidance search plan"
       type = "guidance-search-plan"
       purpose = "Research skills, tools, references, practices, standards, MCPs, and plugins from detected project technologies, environments, tests, security gates, and code standards before proposing local guidance updates."
-      installMethod = "research-then-manual-copy"
+      installMethod = "research-then-guarded-install"
+      installScope = "repo-local"
+      installerKind = "none"
+      requiresIdeRestart = $false
+      requiresSystemReboot = $false
+      userActionRequired = $true
       accepted = $false
       detected = $true
       requiresUserConfirmation = $true
@@ -1659,7 +1664,7 @@ function New-ProjectGuidanceLocalState {
       discoverySourcePriority = Get-ProjectGuidanceDiscoverySourcePriority
       discoverySourceNotes = Get-ProjectGuidanceDiscoverySourceNotes
       topics = @($report.researchTopics)
-      nextStep = "Use project-guidance-discover to search OpenAI official catalogs/docs, official tool repositories/docs, technology-owner sources, skills.sh/skills or marketplace repository leads, and trusted public sources; show suggested missing skills and guidance; ask for additional desired items; then pass confirmed skill items to project-guidance-acquire."
+      nextStep = "Use project-guidance-discover to search OpenAI official catalogs/docs, official tool repositories/docs, technology-owner sources, skills.sh/skills or marketplace repository leads, and trusted public sources; research extra useful skills, MCPs, plugins, tools, references, practices, standards, and Codex-applicable IDE helpers; show suggested missing guidance; ask only for confirmation, dismissals, or omissions; then record and install/configure supported confirmed items through project-guidance-acquire without a second install prompt."
     }
   }
 
@@ -1700,7 +1705,7 @@ function New-ProjectGuidanceLocalState {
 
   return [ordered]@{
     schemaVersion = 1
-    mode = "guided-manual"
+    mode = "guarded-auto"
     sourceCatalog = ".codex/tool-recommendations.example.json"
     localStatePath = ".codex/tool-recommendations.local.json"
     generatedBy = "project-guidance-discover"
@@ -1760,7 +1765,7 @@ function Get-ConfirmedGuidanceItemsFromJson {
     throw "ValuesJson is required for AcquireProjectGuidance."
   }
   if ($Json -match '"installCommand"\s*:') {
-    throw "AcquireProjectGuidance rejects installCommand; project skills must use manual-copy only."
+    throw "AcquireProjectGuidance rejects installCommand; use guarded install metadata instead of arbitrary installer snippets."
   }
 
   $data = $Json | ConvertFrom-Json
@@ -1787,6 +1792,71 @@ function Test-RepoRelativeTarget {
 
 function Get-RequiredSkillAcquisitionFields {
   return @("name", "type", "installMethod", "source", "target", "validation", "sourceKind")
+}
+
+function Get-ItemBooleanProperty {
+  param(
+    $Item,
+    [string]$Name
+  )
+
+  if ($Item.PSObject.Properties.Name -notcontains $Name) { return $false }
+  return [bool]$Item.$Name
+}
+
+function Get-ItemStringProperty {
+  param(
+    $Item,
+    [string]$Name,
+    [string]$Default = ""
+  )
+
+  if ($Item.PSObject.Properties.Name -notcontains $Name) { return $Default }
+  if ($null -eq $Item.$Name) { return $Default }
+  return [string]$Item.$Name
+}
+
+function Add-RestartRequirement {
+  param(
+    $RestartRequirements,
+    $Item,
+    [string]$Name
+  )
+
+  $requiresIdeRestart = Get-ItemBooleanProperty $Item "requiresIdeRestart"
+  $requiresSystemReboot = Get-ItemBooleanProperty $Item "requiresSystemReboot"
+  if (-not $requiresIdeRestart -and -not $requiresSystemReboot) { return }
+
+  $RestartRequirements.Add([ordered]@{
+    name = $Name
+    type = if ($requiresSystemReboot) { "system-reboot" } else { "ide-restart" }
+    reason = Get-ItemStringProperty $Item "importantMessage" "Restart is required before this item is fully active."
+    validation = Get-ItemStringProperty $Item "validation" "Run the recommendation validation command after restart."
+  }) | Out-Null
+}
+
+function Add-AggregateRestartFinding {
+  param(
+    $Result,
+    $RestartRequirements
+  )
+
+  if ($RestartRequirements.Count -eq 0) { return }
+
+  $parts = foreach ($requirement in @($RestartRequirements)) {
+    "$($requirement.name) [$($requirement.type)]: $($requirement.reason) Validate after restart with: $($requirement.validation)"
+  }
+  Add-Item $Result "findings" "project-guidance-acquire" "important.restart-summary" "Important: complete all feasible installs first, then perform one restart/reboot pass. $($parts -join ' | ')" "warning"
+}
+
+function Test-GuardedInstallNeedsConfirmation {
+  param($Item)
+
+  $scope = Get-ItemStringProperty $Item "installScope" "repo-local"
+  $userActionRequired = Get-ItemBooleanProperty $Item "userActionRequired"
+  $requiresIdeRestart = Get-ItemBooleanProperty $Item "requiresIdeRestart"
+  $requiresSystemReboot = Get-ItemBooleanProperty $Item "requiresSystemReboot"
+  return $userActionRequired -or $requiresIdeRestart -or $requiresSystemReboot -or ($scope -in @("global", "ide", "system"))
 }
 
 function Test-ValidProjectGuidanceSourceKind {
@@ -1829,13 +1899,23 @@ function Test-ConfirmedSkillAcquisitionContract {
 function Invoke-AcquireProjectGuidance {
   $result = New-Result
   $items = Get-ConfirmedGuidanceItemsFromJson $ValuesJson
+  $restartRequirements = [System.Collections.Generic.List[object]]::new()
 
   foreach ($item in @($items)) {
     $type = if ($item.PSObject.Properties.Name -contains "type") { [string]$item.type } else { "skill" }
     $name = if ($item.PSObject.Properties.Name -contains "name") { [string]$item.name } elseif ($item.PSObject.Properties.Name -contains "id") { [string]$item.id } else { "unnamed-guidance" }
+    Add-RestartRequirement $restartRequirements $item $name
 
     if ($type -ne "skill") {
-      Add-Item $result "findings" $name "non-skill-guidance" "Non-skill guidance remains in .codex/tool-recommendations.local.json; no file copy is required." "info"
+      $installMethod = Get-ItemStringProperty $item "installMethod" "manual-reference"
+      $installScope = Get-ItemStringProperty $item "installScope" "repo-local"
+      $installerKind = Get-ItemStringProperty $item "installerKind" "none"
+      $validation = Get-ItemStringProperty $item "validation" "No validation command provided."
+      if (Test-GuardedInstallNeedsConfirmation $item) {
+        Add-Item $result "warnings" $name "guarded-install-plan" "Confirmed $type acquisition uses installMethod '$installMethod', installScope '$installScope', installerKind '$installerKind'. Install/configure now through a platform-supported tool when available; otherwise keep the item as a guarded plan. Validate with: $validation" "warning"
+      } else {
+        Add-Item $result "actions" $name "guarded-safe-plan" "Safe repo-local/non-secret $type guidance may be applied when a deterministic repo-local config step exists. installMethod '$installMethod', installerKind '$installerKind'. Validate with: $validation"
+      }
       continue
     }
 
@@ -1878,6 +1958,8 @@ function Invoke-AcquireProjectGuidance {
 
     Add-Item $result "findings" $targetRelative "validation" "Validate with: $($item.validation)" "info"
   }
+
+  Add-AggregateRestartFinding $result $restartRequirements
 
   return $result
 }
@@ -2382,7 +2464,7 @@ function Invoke-SetRecommendedTools {
   $config = Get-Content -Path $target -Raw | ConvertFrom-Json
   Ensure-ObjectProperty -Object $config -Name "recommendedTools"
   Set-ObjectValue -Object $config -Path @("recommendedTools", "enabled") -Value $true
-  Set-ObjectValue -Object $config -Path @("recommendedTools", "mode") -Value "guided-manual"
+  Set-ObjectValue -Object $config -Path @("recommendedTools", "mode") -Value "guarded-auto"
 
   foreach ($key in @("accepted", "dismissed")) {
     if ($values.Contains($key)) {

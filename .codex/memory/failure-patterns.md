@@ -112,10 +112,10 @@ Grafana alert rule groups reject intervals below the local scheduler interval; u
 
 - Type: Pattern
 - Status: Active
-- Source: `dotnet test .\SDDTemplate.slnx --no-build`, `tests/SDDTemplate.Site.Tests/ObservabilityLoggingTests.cs`, `tools/SDDTemplate.DeliveryTools.Tests/DeploymentWorkflowTests.cs`, `tools/SDDTemplate.DeliveryTools.Tests/DeliveryToolsTests.cs`
-- Last verified: 2026-06-16
+- Source: `dotnet test .\tools\SDDTemplate.DeliveryTools.Tests`, `tests/SDDTemplate.Site.Tests/ObservabilityLoggingTests.cs`, `tools/SDDTemplate.DeliveryTools.Tests/DeploymentWorkflowTests.cs`, `tools/SDDTemplate.DeliveryTools.Tests/DeliveryToolsTests.cs`
+- Last verified: 2026-06-17
 
-When unrelated code changes run the full suite, existing fixture drift can fail tests that assert README/canonical docs text and Event Hub collector template values. Current known failures include missing `OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING` in the expected env surface, missing `Azure Monitor` in architecture context, and missing README phrases such as `## Canonical Context`, `Before the first ticket starts`, and `manual by default`. Treat these as repository guidance/configuration drift, not product-code regressions, unless the current change touched those docs or env templates.
+When unrelated code changes run the full suite, existing fixture drift can fail tests that assert README/canonical docs text and Event Hub collector template values. Current known failures include missing `OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING` in the expected env surface, missing `Azure Monitor` in architecture context, and missing README phrases such as `## Canonical Context` or `Before the first ticket starts`. The old `manual by default` recommendation wording is superseded by guarded-auto acquisition. Treat these as repository guidance/configuration drift, not product-code regressions, unless the current change touched those docs or env templates.
 
 ## Clean CI Lacks Ignored Grafana Dashboards Local Files
 
@@ -298,3 +298,12 @@ When Alloy `loki.source.azure_event_hubs` reports `kafka: client has run out of 
 - Last verified: 2026-06-16
 
 When `az webapp deploy` reports `RuntimeSuccessful` but the immediate page, CORS, or `/health` smoke check fails, re-check live DEV/QA targets after a short delay before changing app code. If live checks pass, treat it as Azure App Service warm-up tolerance and add bounded retry/backoff to the workflow smoke checks. Keep `.gitea/workflows/package-deploy.yml` and the `configure_infra_tools.ps1` workflow generator synchronized.
+
+## Docker MCP Toolkit Requires Docker MCP CLI Support
+
+- Type: Pattern
+- Status: Active
+- Source: project guidance MCP install pass
+- Last verified: 2026-06-17
+
+Docker MCP Toolkit cannot be enabled through plain Docker CLI when `docker mcp` is unavailable. On this workstation, `docker --version` reports Rancher Desktop `29.1.4-rd`, and `docker mcp` falls back to generic Docker help with no MCP subcommand. Treat Docker MCP Toolkit as blocked until Docker Desktop or another Docker distribution exposes the official Docker MCP catalog/toolkit commands. Do not add a broken Codex MCP entry that calls `docker mcp ...`; keep the recommendation status as blocked and report one Codex restart only for MCPs that were actually configured.
