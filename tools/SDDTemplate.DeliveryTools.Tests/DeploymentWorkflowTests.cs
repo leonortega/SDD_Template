@@ -1817,6 +1817,8 @@ namespace SDDTemplate.DeliveryTools.Tests
                 "_shared",
                 "delivery-contract.md"));
             string e2eSkill = ReadSkill("test-e2e", "SKILL.md");
+            string implementationSkill = ReadSkill("implement-ticket", "SKILL.md");
+            string archiveSkill = ReadSkill("openspec-archive-change", "SKILL.md");
             string root = FindRepositoryRoot().FullName;
             string activeChange = Path.Combine(
                 root,
@@ -1832,6 +1834,21 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.Contains("OpenSpec Completion Archive Gate", contract);
             Assert.Contains("must be archived before the workflow is reported complete", contract);
+            Assert.Contains("OPENSPEC_TELEMETRY=0", contract);
+            Assert.Contains("zero unchecked tasks", contract);
+            Assert.Contains("lacks the canonical `IA generated E2E QA: {ticketKey}` marker", contract);
+            Assert.Contains("`openspec-archive-change` must fail closed", contract);
+            Assert.Contains("Do not allow confirmation prompts to override incomplete work", contract);
+            Assert.Contains("OPENSPEC_TELEMETRY=0", e2eSkill);
+            Assert.Contains("openspec list --json", e2eSkill);
+            Assert.Contains("openspec status --change \"<change>\" --json", e2eSkill);
+            Assert.Contains("noncanonical QA marker", e2eSkill);
+            Assert.Contains("stop if any `- [ ]` task remains", implementationSkill);
+            Assert.Contains("Unchecked OpenSpec tasks at PR handoff", implementationSkill);
+            Assert.Contains("Incomplete artifacts, incomplete tasks, missing tasks.md, failed spec sync, or failed archive movement are blockers", archiveSkill);
+            Assert.Contains("Do not ask for confirmation to continue", archiveSkill);
+            Assert.Contains("sync is mandatory before archive", archiveSkill);
+            Assert.Contains("Never report archive success unless the active change is gone from `openspec list --json`", archiveSkill);
             Assert.Contains("Do not report the QA workflow as fully complete while exactly one linked active OpenSpec change remains unarchived", e2eSkill);
             Assert.Contains("OpenSpec archived: <archive path>", e2eSkill);
             Assert.False(Directory.Exists(activeChange));

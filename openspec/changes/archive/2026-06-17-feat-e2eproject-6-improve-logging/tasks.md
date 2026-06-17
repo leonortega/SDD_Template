@@ -29,9 +29,9 @@ Suggested work units: single PR covering Site/API logging changes, tests, and do
 
 ## 4. Quality Gates and Handoff
 
-- [ ] 4.1 Confirm PR validation remains authoritative for full quality/security gates.
-- [ ] 4.2 Run Context Findings Review and update docs if durable logging conventions changed.
-- [ ] 4.3 Update implementation handoff with validation evidence, assumptions, docs status, and memory status.
+- [x] 4.1 Confirm PR validation remains authoritative for full quality/security gates.
+- [x] 4.2 Run Context Findings Review and update docs if durable logging conventions changed.
+- [x] 4.3 Update implementation handoff with validation evidence, assumptions, docs status, and memory status.
 
 ## PR Review Feedback
 

@@ -1,5 +1,14 @@
 # Failure Pattern Memory
 
+## OpenSpec CLI Telemetry Can Slow List And Status
+
+- Type: Pattern
+- Status: Active
+- Source: `openspec list --json`, `openspec status --change feat-e2eproject-6-improve-logging --json`, `OPENSPEC_TELEMETRY=0`
+- Last verified: 2026-06-17
+
+The global `@fission-ai/openspec` CLI initializes PostHog telemetry before commands. On this workstation, `openspec list --json` and `openspec status --change ... --json` can take 5-8 seconds or time out under short automation limits when telemetry is enabled. Set user or process environment variable `OPENSPEC_TELEMETRY=0` before running OpenSpec automation; this reduced both commands to roughly 1.3-2.3 seconds in live verification.
+
 ## Ambiguous Ticket Or Stale Lock
 
 - Type: Pattern

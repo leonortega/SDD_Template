@@ -1,3 +1,8 @@
+# product-crud Specification
+
+## Purpose
+Defines the persisted Product data model, validation rules, REST API, Blazor CRUD page, page states, and access restrictions for product management.
+
 ## Requirements
 
 ### Requirement: Product data model
