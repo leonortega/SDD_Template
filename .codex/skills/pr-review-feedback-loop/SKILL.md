@@ -40,7 +40,7 @@ Required/defaulted values:
 1. Resolve the Plane ticket, active branch, OpenSpec change, PR number, current head SHA, latest Gitea Actions status, and current PR labels.
 2. Invoke or reuse `gitea-pr-review-agent` for the current head SHA. The AI review comment must use `<!-- codex-review-agent:{headSha} -->` and stable finding ids for every finding.
 3. Read current PR feedback sources:
-   - AI review findings from the latest current-head review-agent comment, including adversarial review findings and verdict when present,
+   - AI review findings from the latest current-head review-agent comment, including adversarial review findings, `ponytail-review` simplification findings, and verdict when present,
    - human top-level PR comments from the issue comments endpoint,
    - human inline code review comments and review-thread replies from Gitea pull review/comment endpoints,
    - existing OpenSpec `## PR Review Feedback` tasks,
@@ -50,8 +50,8 @@ Required/defaulted values:
    - `non-actionable`: praise, FYI, already-answered questions, generated output, or source ids already covered by a completed feedback batch.
    - `stale`: outdated diff-line feedback or older-head feedback already satisfied by current code.
    - `ambiguous/conflicting`: unclear request, ticket/OpenSpec/security conflict, or conflict with another human comment.
-5. For every actionable AI finding and actionable human comment, including AI `BLOCKER`, `WARNING`, and `SUGGESTION` severities, compute `feedbackBatchId` as a deterministic short id from sorted source ids such as AI finding ids, Gitea top-level comment ids, and inline review comment ids.
-6. Add or update a `## PR Review Feedback` section in the active OpenSpec `tasks.md`. Add one task per feedback item, recording source type, source id or link, head SHA, severity, review mode, adversarial verdict when present, and requested change.
+5. For every actionable AI finding and actionable human comment, including AI `BLOCKER`, `WARNING`, `SUGGESTION`, and `ponytail-review` simplification findings, compute `feedbackBatchId` as a deterministic short id from sorted source ids such as AI finding ids, Gitea top-level comment ids, and inline review comment ids.
+6. Add or update a `## PR Review Feedback` section in the active OpenSpec `tasks.md`. Add one task per feedback item, recording source type, source id or link, head SHA, severity, review mode, `ponytail-review` source when applicable, adversarial verdict when present, and requested change.
 7. Before applying fixes, add a Plane comment with marker:
 
    ```text

@@ -26,7 +26,12 @@ $requiredTerms = @(
 )
 
 $supportSkillNames = @(
-  "caveman"
+  "caveman",
+  "ponytail",
+  "ponytail-audit",
+  "ponytail-debt",
+  "ponytail-help",
+  "ponytail-review"
 )
 
 $skillRoot = Join-Path $Root ".codex/skills"

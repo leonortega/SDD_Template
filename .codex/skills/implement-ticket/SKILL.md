@@ -101,10 +101,10 @@ Follow `openspec-apply-change`:
 
 1. Verify the active `tasks.md` contains the Review Workload Forecast required by the shared delivery contract. Prefer `tools/SDDTemplate.DeliveryTools ParseWorkloadForecast` when available.
 2. If the forecast requires a decision before apply, stop before editing code unless a split/chained work-unit plan, `size:exception`, or `exception-ok` is recorded in the prompt or OpenSpec artifacts.
-3. Implement pending OpenSpec tasks one at a time.
-4. Add or update tests for changed behavior.
-5. After code changes, run `ponytail-review` against the current diff and apply actionable simplification recommendations before marking implementation tasks complete.
-6. Mark a task complete only after its code, related tests, and applicable `ponytail-review` fixes are updated.
+3. Apply `ponytail full` before adding or changing project code: use the smallest working change, prefer standard library and native framework features, and avoid speculative abstractions or dependencies.
+4. Implement pending OpenSpec tasks one at a time.
+5. Add or update tests for changed behavior.
+6. Mark a task complete only after its code, related tests, and validation evidence are updated.
 7. If implementation reveals extra required work, add a new OpenSpec task before doing that work.
 8. Keep OpenSpec specs, design notes, and tasks aligned with the latest implementation.
 9. Commit after each completed workflow step when tracked changes exist, then start the next step from a clean working tree. Use ticket- or OpenSpec-prefixed messages, skip empty commits, and keep code, tests, docs, and OpenSpec changes together when splitting them would leave a broken intermediate commit.
