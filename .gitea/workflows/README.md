@@ -7,6 +7,15 @@ Workflow jobs use repo-owned pinned images built by `config infra`:
 - `agentic/dotnet-ci:10.0.300-tools-1` for PR validation, package, DEV/QA/PROD deployment, scanners, and Azure CLI work.
 - `agentic/e2e-ci:playwright-1.57.0-1` for deployed-QA Playwright evidence runs.
 
+Use the same E2E image for local QA diagnosis from `tests/SDDTemplate.E2ETests`:
+
+```powershell
+npm run test:docker
+npm run test:docker:list
+```
+
+The Docker runner reads `E2E_SITE_URL`/`E2E_API_URL` or the ignored `.codex/client-tools.local.json` QA URL values and avoids host-level browser installs.
+
 Run this after changing image Dockerfiles, image tags, or a runner machine:
 
 ```powershell
