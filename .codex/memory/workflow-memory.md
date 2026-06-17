@@ -114,6 +114,8 @@ Non-OpenSpec, non-configure delivery skills share a startup sequence through `.c
 
 Before final handoff for any non-trivial repository work, agents must classify whether an error, issue, blocker, fix, configuration repair, local tooling correction, or debugging result is reusable. The result must be reported as `Memory updated: <files>` or `Memory updated: none`. Plane comments, PR comments, QA evidence, logs, and chat summaries do not replace durable learning capture.
 
+Agent-caused or tool-discovered failures are memory candidates by default. If a command fails, a hook rejects the agent's action, a required local tool is missing, or the agent repeats a workflow mistake, search memory with the concrete symptom and persist a small update unless the issue is already covered or clearly one-off. Do not use `Memory updated: none` for a newly diagnosed repeatable agent/tooling failure.
+
 ## Symptom-Driven Memory Search
 
 - Type: Pattern

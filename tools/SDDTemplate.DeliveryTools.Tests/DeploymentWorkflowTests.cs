@@ -1271,6 +1271,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("AuditRecommendedTools", contract);
             Assert.Contains("stack-context.*", contract);
             Assert.Contains("Route the operator to `configure-dev-environment`", contract);
+            Assert.Contains("direct SDD maintenance must use `[SDD]`", contract);
 
             Assert.Contains("## Stack Context Preflight", starter);
             Assert.Contains("docs/architecture.md`, `docs/development.md`, and `docs/deployment.md` contain `Technology Stack And Tool Set`", starter);
@@ -1455,6 +1456,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("Memory updated: <files>", contract);
             Assert.Contains("Memory updated: none", contract);
             Assert.Contains("Do not treat Plane comments, PR comments, QA evidence, logs, or chat summaries as a substitute", contract);
+            Assert.Contains("When the agent itself hits a failed command", contract);
+            Assert.Contains("Do not report `Memory updated: none` for a newly diagnosed repeatable agent/tooling failure", contract);
 
             Assert.Contains("## Durable Learning Capture", skillStartup);
             Assert.Contains("This is not limited to QA or ticket delivery", skillStartup);
@@ -1470,6 +1473,7 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.Contains("## Update Process", memoryPolicy);
             Assert.Contains("Reusable but non-authoritative workflow knowledge belongs in `.codex/memory/`", memoryPolicy);
+            Assert.Contains("agent itself encounters a failed command", memoryPolicy);
         }
 
         [Fact]
