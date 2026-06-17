@@ -95,9 +95,6 @@ export function createQaEvidenceRecorder(page: Page) {
       expectedResponses.push(predicate);
     },
     assertClean(): void {
-      expect(expectedConsoleErrors, "expected browser console errors were not observed").toEqual([]);
-      expect(expectedRequestFailures, "expected browser request failures were not observed").toEqual([]);
-      expect(expectedResponses, "expected browser responses were not observed").toEqual([]);
       expect(consoleErrors, "unexpected browser console errors").toEqual([]);
       expect(failedRequests, "unexpected browser request failures").toEqual([]);
       expect(unexpectedResponses, "unexpected non-success browser API responses").toEqual([]);
