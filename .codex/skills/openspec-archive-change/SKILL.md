@@ -26,16 +26,17 @@ Archive a completed change in the experimental workflow.
 
 2. **Check artifact completion status**
 
-   Run `openspec status --change "<name>" --json` to check artifact completion.
+   Run `openspec status --change "<name>" --json` with process environment `OPENSPEC_TELEMETRY=0` to check artifact completion.
 
    Parse the JSON to understand:
    - `schemaName`: The workflow being used
    - `artifacts`: List of artifacts with their status (`done` or other)
 
    **If any artifacts are not `done`:**
-   - Display warning listing incomplete artifacts
-   - Use **AskUserQuestion tool** to confirm user wants to proceed
-   - Proceed if user confirms
+   - Stop. This is an archive blocker.
+   - List incomplete artifacts.
+   - Do not ask for confirmation to continue.
+   - Do not move the change directory.
 
 3. **Check task completion status**
 
@@ -44,11 +45,12 @@ Archive a completed change in the experimental workflow.
    Count tasks marked with `- [ ]` (incomplete) vs `- [x]` (complete).
 
    **If incomplete tasks found:**
-   - Display warning showing count of incomplete tasks
-   - Use **AskUserQuestion tool** to confirm user wants to proceed
-   - Proceed if user confirms
+   - Stop. This is an archive blocker.
+   - List or count incomplete tasks.
+   - Do not ask for confirmation to continue.
+   - Do not move the change directory.
 
-   **If no tasks file exists:** Proceed without task-related warning.
+   **If no tasks file exists:** Stop and report `OpenSpec archive blocker: missing tasks.md`.
 
 4. **Assess delta spec sync state**
 
@@ -60,10 +62,12 @@ Archive a completed change in the experimental workflow.
    - Show a combined summary before prompting
 
    **Prompt options:**
-   - If changes needed: "Sync now (recommended)", "Archive without syncing"
+   - If changes needed: "Sync now"
    - If already synced: "Archive now", "Sync anyway", "Cancel"
 
-   If user chooses sync, use Task tool (subagent_type: "general-purpose", prompt: "Use Skill tool to invoke openspec-sync-specs for change '<name>'. Delta spec analysis: <include the analyzed delta spec summary>"). Proceed to archive regardless of choice.
+   If changes are needed, sync is mandatory before archive. Use Task tool (subagent_type: "general-purpose", prompt: "Use Skill tool to invoke openspec-sync-specs for change '<name>'. Delta spec analysis: <include the analyzed delta spec summary>"). Proceed to archive only after sync succeeds.
+
+   If sync fails validation, cannot write the main specs, or leaves the delta specs unapplied, stop and report `OpenSpec archive blocker: spec sync failed`. Do not move the change directory.
 
 5. **Perform the archive**
 
@@ -81,6 +85,8 @@ Archive a completed change in the experimental workflow.
    ```bash
    mv openspec/changes/<name> openspec/changes/archive/YYYY-MM-DD-<name>
    ```
+
+   After moving, run `openspec list --json` with `OPENSPEC_TELEMETRY=0` and verify `<change-name>` is absent from active changes. If it is still active, report `OpenSpec archive blocker: change still active after archive`.
 
 6. **Display summary**
 
@@ -107,8 +113,9 @@ All artifacts complete. All tasks complete.
 **Guardrails**
 - Always prompt for change selection if not provided
 - Use artifact graph (openspec status --json) for completion checking
-- Don't block archive on warnings - just inform and confirm
+- Incomplete artifacts, incomplete tasks, missing tasks.md, failed spec sync, or failed archive movement are blockers. Never archive by confirmation when work is incomplete.
 - Preserve .openspec.yaml when moving to archive (it moves with the directory)
 - Show clear summary of what happened
 - If sync is requested, use openspec-sync-specs approach (agent-driven)
 - If delta specs exist, always run the sync assessment and show the combined summary before prompting
+- Never report archive success unless the active change is gone from `openspec list --json`.

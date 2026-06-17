@@ -120,6 +120,8 @@ Implementation is not complete until:
 - Gitea PR validation passes,
 - coverage meets `coverage.minimumPercent`.
 
+Before PR and Plane review handoff, re-read the active OpenSpec `tasks.md` and stop if any `- [ ]` task remains, including final quality, Context Findings, PR review feedback, validation, or handoff tasks. Mark a task complete only when the matching evidence is present in the PR body, Plane handoff comment, validation output, docs/context review result, or memory status.
+
 For web/API application work, preserve the delivery health contract required by deployment promotion:
 
 - The app must expose `/health` with HTTP 200 and JSON `status=ok`.
@@ -260,6 +262,7 @@ Report the ticket, branch, OpenSpec change, PR URL, commits pushed, validation a
 - Failing coverage: add/update OpenSpec task and tests before completion.
 - Missing local coverage command: report the gap; do not invent a command when CI is the only configured coverage source.
 - Missing Review Workload Forecast: update OpenSpec tasks before implementation, or stop if the forecast cannot be derived safely.
+- Unchecked OpenSpec tasks at PR handoff: stop before moving Plane to review; complete the task evidence or report the blocker.
 - Oversized/high workload without split or `size:exception`: stop before implementation and request or record the required decision.
 - Flaky test or CI failure: rerun once before classifying; do not edit product code solely for an unconfirmed intermittent failure.
 - Gitea Actions infra/tooling failure: route through `configure-dev-environment`, `configure-gitea-actions-runner`, or `configure-quality-gates`; run `ValidateGiteaActionsRunner` when runner/container compatibility is implicated; do not classify it as a product implementation defect.

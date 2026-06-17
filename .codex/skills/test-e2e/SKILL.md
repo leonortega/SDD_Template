@@ -310,9 +310,13 @@ Then verify the remote ref is gone. Do not delete the branch before Nexus eviden
 
 Before reporting final QA handoff, append the `test-e2e` telemetry row, read workflow telemetry, render `RenderPlaneComment -Type WorkflowTiming`, and create or patch the `IA generated workflow timing: {ticketKey}` Plane comment. If the timing marker already exists for the ticket, patch that comment instead of creating a duplicate.
 
+If the ticket is already in Done or has QA evidence but only a noncanonical QA marker is present, such as `IA generated QA evidence: {ticketKey}`, do not skip finalization. Repair or add the canonical `IA generated E2E QA: {ticketKey}` marker, verify the workflow timing marker, and continue to the OpenSpec archival handoff.
+
 ### 9. OpenSpec Archival Handoff
 
 After every required QA scenario passes, evidence is published, the E2E QA comment is present, and the ticket has been moved to `plane.doneState`, check whether the completed ticket is linked to an active OpenSpec change.
+
+Run all OpenSpec CLI checks in this section with process environment `OPENSPEC_TELEMETRY=0`, then run `openspec list --json` and `openspec status --change "<change>" --json` before invoking `$openspec-archive-change`.
 
 Resolve the OpenSpec change id from, in order:
 

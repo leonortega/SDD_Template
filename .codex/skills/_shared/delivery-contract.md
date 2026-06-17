@@ -220,7 +220,11 @@ Gitea PR validation is authoritative for restore, formatting verification, relea
 
 After E2E QA passes and the Plane ticket is moved to Done, the linked active OpenSpec change must be archived before the workflow is reported complete. If exactly one active OpenSpec change clearly matches the ticket key, invoke `openspec-archive-change` and report the archive path. Do not leave a completed linked OpenSpec change active merely because Plane, Nexus, and tags are complete.
 
-If no matching active change can be resolved, multiple active changes match, artifact or task completion is incomplete, spec sync needs user confirmation, or archive movement fails, report the archive blocker explicitly in Plane or the final handoff and leave the ticket result intact.
+Run OpenSpec automation with `OPENSPEC_TELEMETRY=0` in the process environment so `openspec list`, `openspec status`, and archive preflights do not time out on telemetry startup or flush. Before moving a ticket to review, implementation handoff must leave the active OpenSpec `tasks.md` with zero unchecked tasks. Before reporting QA completion, `test-e2e` must re-check `openspec list --json` and the linked change status, then either archive the change or report `OpenSpec archive blocker: <reason>`.
+
+If a ticket is already in Done or has QA evidence but lacks the canonical `IA generated E2E QA: {ticketKey}` marker, treat the QA finalization as incomplete, not as an idempotent success. Repair the canonical E2E QA marker, workflow timing marker, and OpenSpec archive gate before reporting the ticket workflow complete.
+
+`openspec-archive-change` must fail closed: incomplete artifacts, incomplete tasks, missing `tasks.md`, failed spec sync, failed archive movement, or a still-active change after archive are blockers. Do not allow confirmation prompts to override incomplete work. If no matching active change can be resolved, multiple active changes match, artifact or task completion is incomplete, spec sync fails, or archive movement fails, report the archive blocker explicitly in Plane or the final handoff and leave the ticket result intact.
 
 ## Installed Skill Runtime Index
 
