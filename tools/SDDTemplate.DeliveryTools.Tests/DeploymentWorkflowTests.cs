@@ -992,11 +992,17 @@ namespace SDDTemplate.DeliveryTools.Tests
             string catalog = ReadToolRecommendationsCatalog();
 
             Assert.Contains("\"recommendedTools\"", config);
-            Assert.Contains("\"mode\": \"guided-manual\"", config);
+            Assert.Contains("\"mode\": \"guarded-auto\"", config);
             Assert.Contains("\"accepted\": []", config);
             Assert.Contains("\"dismissed\": []", config);
             Assert.Contains(".codex/tool-recommendations.local.json", File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, ".gitignore")));
-            Assert.Contains("\"mode\": \"guided-manual\"", catalog);
+            Assert.Contains("\"mode\": \"guarded-auto\"", catalog);
+            Assert.Contains("\"installScope\"", catalog);
+            Assert.Contains("\"installerKind\"", catalog);
+            Assert.Contains("\"requiresIdeRestart\"", catalog);
+            Assert.Contains("\"requiresSystemReboot\"", catalog);
+            Assert.Contains("\"userActionRequired\"", catalog);
+            Assert.Contains("\"importantMessage\"", catalog);
             Assert.Contains("\"installMethod\": \"manual-copy\"", catalog);
             Assert.Contains("\"installMethod\": \"manual-config\"", catalog);
             Assert.Contains("\"installMethod\": \"manual-reference\"", catalog);
@@ -1032,7 +1038,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("function Get-ProjectGuidanceDiscoveryReport", discoveryScript);
             Assert.Contains("project-guidance-search-plan", discoveryScript);
             Assert.Contains("guidance-search-plan", discoveryScript);
-            Assert.Contains("research-then-manual-copy", discoveryScript);
+            Assert.Contains("research-then-guarded-install", discoveryScript);
             Assert.Contains("Get-ProjectGuidanceDiscoverySourcePriority", discoveryScript);
             Assert.Contains("\"repo-local\"", discoveryScript);
             Assert.Contains("\"skills-cli\"", discoveryScript);
@@ -1112,26 +1118,29 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("project-guidance-mapper", configureRouter);
             Assert.Contains("read the source `SKILL.md`", configureRouter);
             Assert.Contains("create `.codex/skills/{skill-name}/`", configureRouter);
-            Assert.Contains("manual repo-based acquisition", configureRouter);
-            Assert.Contains("Do not install skills by command", configureRouter);
+            Assert.Contains("guarded repo-based acquisition", configureRouter);
+            Assert.Contains("one Important restart/reboot message", configureRouter);
             Assert.Contains("stack-context drift", configureRouter);
             Assert.Contains("scan-derived guidance findings", configureRouter);
             Assert.Contains("project-guidance-search-plan", configureRouter);
             Assert.Contains("detected project signals", configureRouter);
-            Assert.Contains("additional desired skills or guidance", configureRouter);
+            Assert.Contains("research extra useful skills, MCPs, plugins, tools", configureRouter);
             Assert.Contains("persistLocal=true", configureRouter);
             Assert.Contains("MapProjectGuidanceStep", configureRouter);
             Assert.Contains(".codex/tool-recommendations.local.json", configureRouter);
-            Assert.Contains("asks whether the user wants to add additional desired items", File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, "docs", "development.md")));
-            Assert.Contains("usedInSteps", File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, "docs", "development.md")));
-            Assert.Contains("manual by default", readme);
-            Assert.Contains("suggested missing skills", readme);
+            string development = File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, "docs", "development.md"));
+            Assert.Contains("asks the user only to confirm, dismiss, or name omissions", development);
+            Assert.Contains("without a second install prompt", development);
+            Assert.Contains("usedInSteps", development);
+            Assert.Contains("guarded auto acquisition", readme);
+            Assert.Contains("reports suggested missing guidance", readme);
             Assert.Contains("stack, tooling, environments, test frameworks", readme);
-            Assert.Contains("asks whether the operator wants to add additional desired skills or guidance", readme);
+            Assert.Contains("asks the operator only to confirm, dismiss, or name omissions", readme);
+            Assert.Contains("there is no second install prompt", readme);
             Assert.Contains(".codex/tool-recommendations.local.json", readme);
             Assert.Contains("project-guidance-mapper` reads that local file", readme);
-            Assert.Contains("read the source repository's `SKILL.md`", readme);
-            Assert.Contains("Skills are not installed by command", readme);
+            Assert.Contains("verified `SKILL.md` sources", readme);
+            Assert.Contains("Restart requirements are collected", readme);
             Assert.Contains(".codex/tool-recommendations.example.json", readme);
         }
 
@@ -1145,9 +1154,10 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.Contains("name: project-guidance-discover", discover);
             Assert.Contains("suggested missing skills and guidance", discover);
-            Assert.Contains("additional desired skills or guidance", discover);
+            Assert.Contains("research extra useful skills, MCPs, plugins, tools", discover);
+            Assert.Contains("Do not ask a second \"install?\" question", discover);
             Assert.Contains("final confirmed list", discover);
-            Assert.Contains("Do not copy anything from this skill", discover);
+            Assert.Contains("Do not copy, install, or configure anything from this skill", discover);
             Assert.Contains("function Get-ProjectGuidanceDiscoveryReport", discoveryScript);
             Assert.Contains("suggestedMissingSkills", discoveryScript);
             Assert.Contains("userAddedRequestedGuidance", discoveryScript);
@@ -1158,8 +1168,10 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.Contains("name: project-guidance-acquire", acquire);
             Assert.Contains("final confirmed list from `project-guidance-discover`", acquire);
-            Assert.Contains("Do not use command-based skill installers", acquire);
+            Assert.Contains("do not ask a second install confirmation", acquire);
+            Assert.Contains("Do not run arbitrary command installers", acquire);
             Assert.Contains("Do not install into `$CODEX_HOME`", acquire);
+            Assert.Contains("aggregate IDE restart/system reboot notices", acquire);
             Assert.Contains("sourceKind", acquire);
             Assert.Contains("skills.sh", acquire);
             Assert.Contains("Test-Path", acquire);
@@ -1179,6 +1191,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("Rollback", mapper);
             Assert.Contains("Hotfix", mapper);
             Assert.Contains("missingUsefulGuidance", mapper);
+            Assert.Contains("toolingRecommendations", mapper);
         }
 
         [Fact]
@@ -1197,7 +1210,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("Azure Monitor", architecture);
             Assert.Contains("Grafana", architecture);
             Assert.Contains("Seq", architecture);
-            Assert.Contains("Skills are not installed by command", architecture);
+            Assert.Contains("guarded auto acquisition", architecture);
             Assert.Contains("project-guidance-discover", architecture);
             Assert.Contains("project-guidance-acquire", architecture);
             Assert.Contains("project-guidance-mapper", architecture);
@@ -1225,7 +1238,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("context: |", openSpecConfig);
             Assert.Contains("Delivery tool set:", openSpecConfig);
             Assert.Contains("Application stack: .NET 10, ASP.NET Core, Blazor", openSpecConfig);
-            Assert.Contains("Recommended skills are copied manually", openSpecConfig);
+            Assert.Contains("Recommended skills are copied through guarded repo-local acquisition", openSpecConfig);
             Assert.Contains("project-guidance-discover", openSpecConfig);
             Assert.Contains("project-guidance-acquire", openSpecConfig);
             Assert.Contains("project-guidance-mapper", openSpecConfig);

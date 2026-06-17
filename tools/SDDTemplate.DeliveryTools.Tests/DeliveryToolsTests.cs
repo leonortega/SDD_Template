@@ -734,7 +734,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                     recommendedTools = new
                     {
                         enabled = true,
-                        mode = "guided-manual",
+                        mode = "guarded-auto",
                         accepted = new[] { "browser-e2e-qa-plugin" },
                         dismissed = new[] { "playwright-frontend-testing-skill" },
                     },
@@ -816,7 +816,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             JsonElement searchPlan = audit.RootElement.GetProperty("recommendations").EnumerateArray().Single(
                 item => item.GetProperty("id").GetString() == "project-guidance-search-plan");
             Assert.Equal("guidance-search-plan", searchPlan.GetProperty("type").GetString());
-            Assert.Equal("research-then-manual-copy", searchPlan.GetProperty("installMethod").GetString());
+            Assert.Equal("research-then-guarded-install", searchPlan.GetProperty("installMethod").GetString());
             Assert.Equal("official-first-internet-search", searchPlan.GetProperty("sourceDiscovery").GetString());
             string[] sourcePriority = [.. searchPlan.GetProperty("discoverySourcePriority").EnumerateArray()
                 .Select(item => item.GetString() ?? string.Empty)];
@@ -929,7 +929,7 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
-        public void DiscoverProjectGuidanceShowsSuggestionsAndAsksForAdditionalDesiredGuidance()
+        public void DiscoverProjectGuidanceResearchesExtraGuidanceBeforeConfirmation()
         {
             string root = CreateTempDirectory();
             _ = Directory.CreateDirectory(Path.Combine(root, ".codex"));
@@ -947,6 +947,8 @@ namespace SDDTemplate.DeliveryTools.Tests
                 .Select(item => item.GetProperty("id").GetString() ?? string.Empty)];
             string[] missingSkillIds = [.. report.RootElement.GetProperty("suggestedMissingSkills").EnumerateArray()
                 .Select(item => item.GetProperty("id").GetString() ?? string.Empty)];
+            string[] guidanceIds = [.. report.RootElement.GetProperty("suggestedGuidance").EnumerateArray()
+                .Select(item => item.GetProperty("id").GetString() ?? string.Empty)];
             string[] sourcePriority = [.. report.RootElement.GetProperty("discoverySourcePriority").EnumerateArray()
                 .Select(item => item.GetString() ?? string.Empty)];
 
@@ -958,7 +960,15 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("skills-cli", sourcePriority);
             Assert.Contains("openai-aspnet-core-skill", missingSkillIds);
             Assert.Contains("openai-playwright-skill", missingSkillIds);
-            Assert.Contains("additional desired skills or guidance", report.RootElement.GetProperty("nextUserQuestion").GetString() ?? string.Empty);
+            Assert.Contains("microsoft-learn-mcp", guidanceIds);
+            Assert.Contains("playwright-mcp", guidanceIds);
+            Assert.Contains("azure-mcp-server", guidanceIds);
+            Assert.Contains("bicep-mcp-server", guidanceIds);
+            Assert.Contains("docker-mcp-toolkit", guidanceIds);
+            string nextQuestion = report.RootElement.GetProperty("nextUserQuestion").GetString() ?? string.Empty;
+            Assert.Contains("I researched extra useful skills, MCPs, plugins, tools", nextQuestion);
+            Assert.Contains("Confirm these suggestions to record and install/configure supported items now", nextQuestion);
+            Assert.DoesNotContain("Do you want to add any additional desired", nextQuestion);
             Assert.Empty(report.RootElement.GetProperty("finalConfirmedSkills").EnumerateArray());
         }
 
@@ -1034,7 +1044,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             using JsonDocument local = JsonDocument.Parse(File.ReadAllText(localPath));
             JsonElement rootElement = local.RootElement;
             Assert.Equal(1, rootElement.GetProperty("schemaVersion").GetInt32());
-            Assert.Equal("guided-manual", rootElement.GetProperty("mode").GetString());
+            Assert.Equal("guarded-auto", rootElement.GetProperty("mode").GetString());
             Assert.Equal(".codex/tool-recommendations.example.json", rootElement.GetProperty("sourceCatalog").GetString());
 
             string[] detectedTags = [.. rootElement.GetProperty("detectedTags").EnumerateArray().Select(item => item.GetString() ?? string.Empty)];
@@ -1137,6 +1147,61 @@ namespace SDDTemplate.DeliveryTools.Tests
             string error = RunPowerShellScriptExpectFailure("-Mode", "AcquireProjectGuidance", "-Root", root, "-ValuesJson", valuesJson);
 
             Assert.Contains("rejects installCommand", error);
+        }
+
+        [Fact]
+        public void AcquireProjectGuidanceAggregatesRestartRequirementsForGuardedInstalls()
+        {
+            string root = CreateTempDirectory();
+            _ = Directory.CreateDirectory(Path.Combine(root, ".codex"));
+            File.Copy(
+                Path.Combine(FindRepositoryRoot().FullName, ".codex", "tool-recommendations.example.json"),
+                Path.Combine(root, ".codex", "tool-recommendations.example.json"));
+
+            string valuesJson = JsonSerializer.Serialize(new
+            {
+                finalConfirmedGuidance = new object[]
+                {
+                    new
+                    {
+                        name = "Browser E2E QA plugin",
+                        type = "plugin",
+                        installMethod = "manual-config",
+                        installScope = "ide",
+                        installerKind = "codex-plugin-config",
+                        requiresIdeRestart = true,
+                        requiresSystemReboot = false,
+                        userActionRequired = true,
+                        validation = "Open the target site in the in-app browser.",
+                        importantMessage = "Restart Codex after plugin configuration.",
+                    },
+                    new
+                    {
+                        name = "Example system scanner",
+                        type = "tool",
+                        installMethod = "package-manager",
+                        installScope = "system",
+                        installerKind = "winget",
+                        requiresIdeRestart = false,
+                        requiresSystemReboot = true,
+                        userActionRequired = true,
+                        validation = "example-scanner --version",
+                        importantMessage = "Reboot Windows after driver install.",
+                    },
+                },
+            });
+
+            string output = RunPowerShellScript("-Mode", "AcquireProjectGuidance", "-Root", root, "-ValuesJson", valuesJson);
+            using JsonDocument result = JsonDocument.Parse(output);
+
+            Assert.Contains(result.RootElement.GetProperty("warnings").EnumerateArray(),
+                item => item.GetProperty("key").GetString() == "guarded-install-plan");
+            JsonElement restart = result.RootElement.GetProperty("findings").EnumerateArray().Single(
+                item => item.GetProperty("key").GetString() == "important.restart-summary");
+            string message = restart.GetProperty("message").GetString() ?? string.Empty;
+            Assert.Contains("Browser E2E QA plugin [ide-restart]", message);
+            Assert.Contains("Example system scanner [system-reboot]", message);
+            Assert.Contains("complete all feasible installs first", message);
         }
 
         [Fact]
@@ -1616,6 +1681,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "gitea"));
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "nexus"));
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "azure"));
+            File.WriteAllText(Path.Combine(root, "Dockerfile"), "FROM mcr.microsoft.com/dotnet/aspnet:10.0\n");
+            File.WriteAllText(Path.Combine(root, "infra", "azure", "main.bicep"), "resource app 'Microsoft.Web/sites@2024-04-01' = { name: 'app-example' location: resourceGroup().location }\n");
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "monitoring", "grafana"));
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "datasources"));
             File.WriteAllText(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "datasources", "azure-monitor.yml"), "type: grafana-azure-monitor-datasource\n");
@@ -1637,7 +1704,7 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             if (!includeContext) { return; }
 
-            string context = ".NET 10 ASP.NET Core Blazor xUnit coverage Plane Gitea Gitea Actions Nexus Azure App Service Azure Monitor Log Analytics Grafana Seq Browser Playwright OpenSpec clean code architecture web UI REST API security OWASP";
+            string context = ".NET 10 ASP.NET Core Blazor xUnit coverage Plane Gitea Gitea Actions Nexus Azure App Service Azure Monitor Log Analytics Grafana Seq Browser Playwright Bicep OpenSpec clean code architecture web UI REST API security OWASP";
             _ = Directory.CreateDirectory(Path.Combine(root, "docs"));
             File.WriteAllText(Path.Combine(root, "docs", "architecture.md"), context);
             File.WriteAllText(Path.Combine(root, "docs", "development.md"), context);

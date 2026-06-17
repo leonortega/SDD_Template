@@ -24,7 +24,7 @@ Read `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.m
 - Use `project-guidance-acquire` only after `project-guidance-discover` produces the final confirmed list.
 - When a step uses, confirms, or infers a guidance item, persist that mapping with `MapProjectGuidanceStep` so the recommendation receives the current step in `usedInSteps`.
 - If a recommendation has no `usedInSteps`, infer fit from `type`, `requires`, `researchTopics`, `tags`, `purpose`, and current workflow context; then persist the inferred step only after it is used or confirmed.
-- Use tool/framework expert guidance as supporting context for implementation, review, QA, deploy, and security; do not let it override the repo delivery contract.
+- Use tool/framework expert guidance, MCPs, plugins, and IDE/tool availability as supporting context for implementation, review, QA, deploy, and security; do not let them override the repo delivery contract.
 - Keep Plane ticket delivery on repo-local skills and the configured Plane API; do not recommend Plane MCP for ticket delivery.
 
 ## Workflow
@@ -66,6 +66,7 @@ When asked to map guidance, answer with:
 - `primarySkills`
 - `supportingSkills`
 - `guidanceRecommendations`
+- `toolingRecommendations`
 - `missingUsefulGuidance`
 - `why`
 - `nextAction`

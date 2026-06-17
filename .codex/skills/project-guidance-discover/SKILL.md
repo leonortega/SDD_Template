@@ -1,13 +1,13 @@
 ---
 name: project-guidance-discover
-description: Discover project-relevant guidance from the current repository. Use when Codex needs to scan tech stack, tools, environments, QA/test setup, security gates, code standards, architecture, web UI, REST/API needs, MCP/plugin/tool/reference needs, or "config infra" guidance findings; show suggested missing skills and guidance to the user; ask for additional desired skills or guidance; and prepare confirmed items for local acquisition or mapping.
+description: Discover project-relevant guidance from the current repository. Use when Codex needs to scan tech stack, tools, environments, QA/test setup, security gates, code standards, architecture, web UI, REST/API needs, MCP/plugin/tool/reference/IDE-extension needs, or "config infra" guidance findings; research extra useful skills, MCPs, plugins, tools, references, practices, standards, and Codex-applicable IDE helpers from detected project signals; show suggested missing guidance with guarded install metadata; and prepare confirmed items for local acquisition or mapping.
 ---
 
 # Project Guidance Discover
 
 ## Overview
 
-Use this skill before acquiring project expert skills or persisting project guidance. Discovery is read-only until the user confirms the final list.
+Use this skill before acquiring project expert skills, MCPs, plugins, tools, IDE extensions, or persisting project guidance. Discovery is read-only until the user confirms the final list.
 
 Use it for first-ticket setup, base-code setup, `config infra`, or any handoff where missing framework, tool, QA, security, architecture, code-standard, documentation, MCP, plugin, or general engineering guidance could make the next ticket less reliable.
 
@@ -27,11 +27,12 @@ Read `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.m
    - `skills.sh`, `skills`, marketplace pages, or command examples when they identify a repository, ref, skill name, and likely `SKILL.md` path.
    - Well-used public skills or references only when no official or technology-owner source exists; label them as community-maintained.
 4. Check whether each candidate skill already exists at `.codex/skills/{skill-name}/SKILL.md`.
-5. Show suggested missing skills and guidance with source, `sourceKind`, target, detected need, validation command, and whether the item is a `skill`, `mcp`, `plugin`, `tool`, `reference`, `practice`, or `standard`.
-6. Ask the user which additional desired skills or guidance to add.
-7. If the user adds items, research and validate those sources with the same multi-source, official-first policy.
-8. Produce the final confirmed list for `project-guidance-acquire`. Do not copy anything from this skill.
-9. After confirmation, persist the catalog-shaped local discovery state to `.codex/tool-recommendations.local.json` when requested. The local file keeps source, target, validation, accepted/dismissed state, detected tags, research topics, and recommendation entries with optional `usedInSteps`.
+5. Research extra useful skills, MCPs, plugins, tools, references, practices, standards, and Codex-applicable IDE helpers for the detected topics before presenting the result. Do not make the user name the extra tools first.
+6. Show suggested missing skills and guidance with source, `sourceKind`, target, detected need, validation command, install metadata, and whether the item is a `skill`, `mcp`, `plugin`, `tool`, `reference`, `practice`, `standard`, or `ide-extension`.
+7. Ask the user only to confirm, dismiss, or add omissions after Codex has already done the extra research. Make the action clear: a confirmation means Codex will record the accepted guidance and immediately run `project-guidance-acquire` plus any supported guarded installer/configuration path. Do not ask a second "install?" question.
+8. If the user adds omissions, research and validate those sources with the same multi-source, official-first policy.
+9. Produce the final confirmed list for `project-guidance-acquire`. Do not copy, install, or configure anything from this skill.
+10. After confirmation, persist the catalog-shaped local discovery state to `.codex/tool-recommendations.local.json` when requested. The local file keeps source, target, validation, accepted/dismissed state, detected tags, research topics, and recommendation entries with optional `usedInSteps`.
 
 ## Deterministic Script
 
@@ -77,17 +78,17 @@ I found these missing project guidance items:
 - aspnet-core skill: detected .NET/ASP.NET Core; source <url>; target .codex/skills/aspnet-core/SKILL.md
 - Playwright reference: detected browser QA; source <url>; type reference
 
-Do you want to add any other desired skills or guidance before I prepare the final acquisition/mapping list?
+Confirm these to record and install/configure what is supported now, dismiss any you do not want, or name anything I missed.
 ```
 
-If the user says no, pass only the suggested confirmed list to `project-guidance-acquire`. If the user adds items, append researched and validated entries, show the updated final list, then pass the confirmed skill items to `project-guidance-acquire` and keep non-skill guidance in the local catalog.
+If the user confirms the researched list, immediately record accepted ids, persist the local catalog, pass the final list to `project-guidance-acquire`, and install/configure supported MCP/plugin/tool/IDE items through platform-supported tools. If the user adds omissions, append researched and validated entries, show the updated final list, then use the same confirm-means-record-and-install flow.
 
 ## Safety
 
-- Do not install, copy, or configure skills.
+- Do not install, copy, or configure skills, MCPs, plugins, tools, or IDE extensions.
 - Treat installer commands from `skills.sh`, `skills`, marketplace pages, or README examples as discovery metadata only. Extract the repository, ref, skill name, and likely `SKILL.md` path; do not execute the command.
 - Confirm every skill source resolves to a readable repository `SKILL.md` before adding it to the final confirmed acquisition list.
-- Do not use command installers.
+- Treat command installers as metadata only unless `project-guidance-acquire` later has explicit user confirmation and a supported guarded install path.
 - Do not read or print secrets.
 - Do not recommend Plane MCP for ticket delivery; repo-local skills use the configured Plane API.
 - Record accepted or dismissed recommendation ids only with `SetRecommendedTools` after explicit user confirmation.
@@ -98,5 +99,5 @@ If the user says no, pass only the suggested confirmed list to `project-guidance
 
 - Stop when the detected project stack conflicts with docs/OpenSpec context; route to `configure-dev-environment`.
 - Stop when a source cannot be verified from an official, technology-owner, or clearly labeled community source.
-- Stop when the user has not answered the additional desired skills/guidance prompt.
-- Stop before any copy operation; copying belongs to `project-guidance-acquire`.
+- Stop when the user has not confirmed or dismissed the researched guidance list.
+- Stop before any acquisition operation; copying and guarded install planning belong to `project-guidance-acquire`.

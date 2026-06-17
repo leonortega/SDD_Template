@@ -95,7 +95,7 @@
   },
   "recommendedTools": {
     "enabled": true,
-    "mode": "guided-manual",
+    "mode": "guarded-auto",
     "accepted": [],
     "dismissed": []
   }
