@@ -96,6 +96,14 @@ Restrict internet research to official documentation, primary source repositorie
 
 Do not leave vague style feedback. Every finding must include the affected file or behavior, why it matters, and the suggested correction.
 
+### 2.5 Ponytail Complexity Pass
+
+After the normal review findings are identified, run `ponytail-review` on the PR diff as a separate complexity-only pass. This pass hunts unnecessary code, hand-rolled standard-library behavior, unneeded dependencies, speculative abstractions, dead flexibility, and same-behavior-smaller rewrites.
+
+Keep `ponytail-review` findings grouped separately as simplification findings. Do not use this pass to replace correctness, test, security, compatibility, adversarial, PR validation, or human-review requirements.
+
+When a `ponytail-review` finding is actionable and scoped to the PR, include it in the PR comment with a stable finding id so `pr-review-feedback-loop` can convert it into OpenSpec PR review feedback. Use the normal review severity labels based on delivery risk: usually `SUGGESTION`, or `WARNING` when the complexity creates meaningful maintainability or validation risk.
+
 ### 3. Post The Review
 
 Post one top-level Gitea PR comment. Include:
@@ -103,6 +111,7 @@ Post one top-level Gitea PR comment. Include:
 - marker `<!-- codex-review-agent:{headSha} -->`
 - short review summary
 - findings ordered by severity, each with a stable finding id
+- separate `ponytail-review` simplification findings, each actionable item with a stable finding id
 - test gaps
 - diff scope reviewed and any large-diff sampling limits
 - review mode `standard` or `adversarial`

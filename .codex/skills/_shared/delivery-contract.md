@@ -129,6 +129,14 @@ Classify delivery risk as:
 
 Use `.codex/skills/_shared/scripts/delivery_tools.ps1` or `tools/SDDTemplate.DeliveryTools` deterministic helpers when available. Low-risk work may use compact planning and review summaries, but must still preserve ticket context, branch/PR handoff, validation evidence, docs/memory classification, and configured quality gates. High-risk work requires full workload forecast handling, adversarial review, deployment topology checks when applicable, and explicit evidence in PR and Plane handoff comments.
 
+## Ponytail Implementation And Review
+
+When adding or changing project code, implementation agents must apply `ponytail full`: use the smallest working change, prefer standard library and native framework features, avoid speculative abstractions or dependencies, and keep tests focused on changed behavior.
+
+`ponytail-review` runs during PR review as an additive complexity pass. It complements normal correctness, test, security, compatibility, and adversarial review; it does not replace the review-agent pass, configured human reviewers, PR validation, or any label rule.
+
+Actionable `ponytail-review` findings are AI review findings and feed the same `pr-review-feedback-loop` as other current-head AI findings.
+
 ## Ticket Refinement Gate
 
 Before `plane-start-ticket` mutates Git, Plane state, the delivery lock, or OpenSpec, classify the ticket as:
