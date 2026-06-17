@@ -184,14 +184,14 @@
 
     private async Task ReadCurrentForm()
     {
-        ProductFormValues values = await JavaScript.InvokeAsync<ProductFormValues>("sddTemplateForms.read", "#product-form");
-        Form.Name = values.Name ?? string.Empty;
-        Form.Sku = values.Sku ?? string.Empty;
-        Form.Status = values.Status ?? string.Empty;
-        Form.Price = decimal.TryParse(values.Price, NumberStyles.Number, CultureInfo.InvariantCulture, out decimal price)
+        Dictionary<string, string> values = await JavaScript.InvokeAsync<Dictionary<string, string>>("sddTemplateForms.read", "#product-form");
+        Form.Name = values.GetValueOrDefault("name", string.Empty);
+        Form.Sku = values.GetValueOrDefault("sku", string.Empty);
+        Form.Status = values.GetValueOrDefault("status", string.Empty);
+        Form.Price = decimal.TryParse(values.GetValueOrDefault("price", string.Empty), NumberStyles.Number, CultureInfo.InvariantCulture, out decimal price)
             ? price
             : 0;
-        Form.Category = values.Category ?? string.Empty;
+        Form.Category = values.GetValueOrDefault("category", string.Empty);
     }
 
     private void EditProduct(ProductModel product)
@@ -258,18 +258,5 @@
         public string Category { get; set; } = string.Empty;
 
         public DateTimeOffset LastUpdated { get; set; }
-    }
-
-    private sealed class ProductFormValues
-    {
-        public string? Name { get; set; }
-
-        public string? Sku { get; set; }
-
-        public string? Status { get; set; }
-
-        public string? Price { get; set; }
-
-        public string? Category { get; set; }
     }
 }
