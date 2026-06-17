@@ -18,7 +18,7 @@
     </header>
 
     <section class="clients-grid" aria-label="Client management">
-        <form id="client-form" class="client-form" @onsubmit="SaveClient" @onsubmit:preventDefault="true">
+        <form id="client-form" class="client-form" onsubmit="return false">
             <input type="hidden" id="client-id" @bind="Form.Id" />
 
             <label>
@@ -57,7 +57,7 @@
             </label>
 
             <div class="form-actions full-width">
-                <button type="submit">Save client</button>
+                <button type="button" @onclick="SaveClient">Save client</button>
                 <button type="button" id="client-reset" @onclick="ClearForm">Clear</button>
             </div>
 
