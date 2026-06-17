@@ -72,10 +72,17 @@ select {
 .product-form {
     border: 1px solid #d9dde5;
     border-radius: 8px;
+    padding: 1rem;
+}
+
+.form-fields {
+    border: 0;
     display: grid;
     gap: 1rem;
     grid-template-columns: 1fr 1fr;
-    padding: 1rem;
+    margin: 0;
+    min-inline-size: 0;
+    padding: 0;
 }
 
 .client-form label,
@@ -184,8 +191,7 @@ select {
 }
 
 @media (max-width: 560px) {
-    .client-form,
-    .product-form {
+    .form-fields {
         grid-template-columns: 1fr;
     }
 }

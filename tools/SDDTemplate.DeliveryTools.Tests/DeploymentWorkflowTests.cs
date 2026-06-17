@@ -168,6 +168,10 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("E2E_SITE_URL: ${{ secrets.AZURE_QA_SITE_APP_URL }}", e2eJob);
             Assert.Contains("E2E_API_URL: ${{ secrets.AZURE_QA_API_APP_URL }}", e2eJob);
             Assert.Contains("app/${E2E_ARTIFACT_COMMIT_SHA}/qa-e2e-evidence.zip", e2eJob);
+
+            Assert.Contains("Publish QA target metadata", workflow);
+            Assert.Contains("qa-targets.json", workflow);
+            Assert.Contains("app/${GITHUB_SHA}/qa-targets.json", workflow);
             Assert.Contains("qa/${E2E_PLANE_TICKET_KEY}/${run_id}/qa-e2e-evidence.zip", e2eJob);
             Assert.Contains("exit \"$test_exit\"", e2eJob);
         }
@@ -199,6 +203,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             string spec = File.ReadAllText(Path.Combine(root, "tests", "SDDTemplate.E2ETests", "tests", "client-crud.spec.ts"));
 
             Assert.Contains("E2E_SITE_URL and E2E_API_URL are required", config);
+            Assert.Contains("client-tools.local.json", config);
             Assert.DoesNotContain("webServer", config);
             Assert.Contains("\"@playwright/test\"", package);
             Assert.Contains("Client CRUD deployed QA E2E", spec);
@@ -1177,7 +1182,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("xUnit", development);
             Assert.Contains("coverlet", development);
             Assert.Contains("official-first research", development);
-            Assert.Contains("Browser plugin and Playwright-style", development);
+            Assert.Contains("Playwright MCP", development);
             Assert.Contains("project-guidance-discover", development);
             Assert.Contains("project-guidance-acquire", development);
             Assert.Contains("project-guidance-mapper", development);
