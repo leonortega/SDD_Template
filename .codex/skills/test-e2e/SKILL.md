@@ -113,6 +113,8 @@ Inspect the repo before choosing tools:
 
 Use an established tool when the repo clearly already has one. For this repository's committed QA E2E suite, run Playwright remotely through Gitea Actions against deployed QA URLs; do not start local web servers for QA acceptance. Local Playwright execution is only a fallback for authoring diagnostics and must still target deployed QA URLs with `E2E_SITE_URL` and `E2E_API_URL`.
 
+For any deployed browser E2E failure, Playwright MCP or the configured Browser/Playwright tool is the first diagnostic source before source-code changes. Reproduce the failing user flow against the real QA URL or a production-like local target, inspect console, network, websocket, DOM readiness, screenshots, and trace/video evidence, and classify the failure as product defect, E2E harness issue, deployment/environment issue, or workflow gate gap. Do not change app code to add E2E-only JavaScript, hidden hooks, test ids, bypasses, timing shims, or Playwright-specific behavior. If the failure is a harness issue, update only the E2E tests, evidence capture, or workflow. If the failure is a real product defect, route to implementation and require a product-valid fix.
+
 Tool choice is secondary to the evidence contract. Playwright, API tests, Postman/Newman, k6, repo-native integration tests, or manual browser evidence are acceptable only when the resulting QA record proves the same ticket-scoped assertions against the deployed QA artifact.
 
 If no tool is configured, or several valid technology-dependent choices exist, ask the user before proceeding. Present concrete choices with a recommendation:
@@ -359,6 +361,8 @@ Report the ticket, QA environment, scenarios tested, validation assertions, evid
 - Wrong artifact, wrong QA URL, localhost, stale DEV endpoint, mock endpoint, or accidental same-origin fallback: fail closed and do not move the ticket to Done.
 - QA test failure: comment evidence and do not move the ticket to Done.
 - Product defect after QA: invoke `file-qa-bug`; do not fix product code inside this skill unless the user changes the task.
+- E2E failure without Playwright MCP or Browser/Playwright diagnostic classification: stop before app-code changes and record the missing classification.
+- Proposed app-code change that exists only for Playwright/E2E: stop; update the E2E harness or workflow instead.
 - Missing evidence upload support: include local evidence paths or links in the Plane comment.
 - Secrets in logs or screenshots: redact or discard the evidence before commenting.
 
