@@ -18,7 +18,7 @@
     </header>
 
     <section class="products-grid" aria-label="Product management">
-        <form id="product-form" class="product-form" @onsubmit="SaveProduct" @onsubmit:preventDefault="true">
+        <form id="product-form" class="product-form" onsubmit="return false">
             <input type="hidden" id="product-id" @bind="Form.Id" />
 
             <label>
@@ -51,7 +51,7 @@
             </label>
 
             <div class="form-actions full-width">
-                <button type="submit">Save product</button>
+                <button type="button" @onclick="SaveProduct">Save product</button>
                 <button type="button" id="product-reset" @onclick="ClearForm">Clear</button>
             </div>
 
