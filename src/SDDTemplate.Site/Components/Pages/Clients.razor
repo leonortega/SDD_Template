@@ -2,9 +2,11 @@
 @rendermode InteractiveServer
 @using System.Net.Http.Json
 @using System.Text.Json
+@using Microsoft.JSInterop
 @attribute [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
 @inject IConfiguration Configuration
 @inject IHttpClientFactory HttpClientFactory
+@inject IJSRuntime JavaScript
 @inject NavigationManager Navigation
 
 <PageTitle>Clients</PageTitle>
@@ -139,6 +141,7 @@
     private async Task SaveClient()
     {
         Errors = string.Empty;
+        await ReadCurrentForm();
         HttpClient client = HttpClientFactory.CreateClient();
         HttpResponseMessage response = Form.Id == 0
             ? await client.PostAsJsonAsync(ApiUrl, Form)
@@ -158,6 +161,18 @@
 
         ClearForm();
         await LoadClients();
+    }
+
+    private async Task ReadCurrentForm()
+    {
+        ClientFormValues values = await JavaScript.InvokeAsync<ClientFormValues>("sddTemplateForms.read", "#client-form");
+        Form.Name = values.Name ?? string.Empty;
+        Form.LastName = values.LastName ?? string.Empty;
+        Form.Address = values.Address ?? string.Empty;
+        Form.BornDate = values.BornDate ?? string.Empty;
+        Form.City = values.City ?? string.Empty;
+        Form.Country = values.Country ?? string.Empty;
+        Form.ZipCode = values.ZipCode ?? string.Empty;
     }
 
     private void EditClient(ClientModel client)
@@ -229,5 +244,22 @@
         public string Country { get; set; } = string.Empty;
 
         public string ZipCode { get; set; } = string.Empty;
+    }
+
+    private sealed class ClientFormValues
+    {
+        public string? Name { get; set; }
+
+        public string? LastName { get; set; }
+
+        public string? Address { get; set; }
+
+        public string? BornDate { get; set; }
+
+        public string? City { get; set; }
+
+        public string? Country { get; set; }
+
+        public string? ZipCode { get; set; }
     }
 }
