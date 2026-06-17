@@ -45,6 +45,8 @@ This gate is mandatory even when no memory update is needed. The final handoff m
 
 Do not treat Plane comments, PR comments, QA evidence, logs, or chat summaries as a substitute for this gate. If a run fixes or diagnoses a blocker that could recur across tickets, first decide whether it belongs in canonical docs, this delivery contract plus related skills/tests, or `.codex/memory/`, then update the selected durable surface before reporting completion.
 
+When the agent itself hits a failed command, hook rejection, configuration mismatch, missing local tool, wrong tool boundary, or other repeatable workflow mistake while doing the task, treat it as a durable learning candidate by default. Search memory with the concrete symptom, apply the immediate fix, and update memory, docs, skills, or tests unless the issue is already covered or clearly one-off. Do not report `Memory updated: none` for a newly diagnosed repeatable agent/tooling failure.
+
 ## Agent Self-Improvement Gate
 
 Agent self-improvement is a controlled quality lane, not an automatic permission to rewrite workflow behavior.
@@ -81,6 +83,8 @@ Before starting the first ticket, and before any Todo ticket is moved into imple
 PROD promotion is explicit and release-centric. Do not promote to PROD only because QA passed unless the user asks for PROD promotion or a ticket-named `src/**` or `tests/**` merge to `main` triggers the PROD-only workflow. A PROD release may include one or more Done tickets; the release promotes one QA-approved artifact commit once, then records the PROD result on every included ticket without changing Plane state.
 
 Push-triggered environment deployment is allowed only for ticket-named work that changes `src/**` or `tests/**`. The ticket key pattern is configured in `.codex/delivery-policy.json`. The commit message must start with the configured ticket key format, such as `E2EPROJECT-123: ...`, or be a Gitea merge commit whose PR title starts with that ticket key format. Non-code changes outside `src/**` and `tests/**` do not run automatic CI/deployment work.
+
+Before committing, classify the change as ticketed work, an OpenSpec maintenance change, or direct SDD repository maintenance. Ticketed work uses the configured ticket prefix such as `E2EPROJECT-123: ...`; OpenSpec maintenance uses the OpenSpec id prefix; direct SDD maintenance must use `[SDD]`, for example `[SDD] Improve project guidance acquisition flow`. Do this before invoking `git commit` so the `require-ticket` hook does not fail on a preventable prefix issue.
 
 ## QA Evidence Contract
 

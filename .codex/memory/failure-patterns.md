@@ -236,6 +236,15 @@ If `git` is unavailable in a Codex PowerShell session, first check whether Git i
 
 When merging `dev` into a ticket feature branch, Git's generated merge message can fail the commit-message hook. Complete the merge with a ticket-prefixed message such as `E2EPROJECT-2: merge dev updates into feature` so hooks and deployment gating recognize the commit correctly.
 
+## Direct SDD Maintenance Commits Need `[SDD]` Prefix
+
+- Type: Pattern
+- Status: Active
+- Source: repeated local commit hook failures, latest during project guidance acquisition flow commit
+- Last verified: 2026-06-17
+
+When committing direct repository maintenance that is not tied to a Plane ticket or OpenSpec change, start the commit message with `[SDD]`, for example `[SDD] Improve project guidance acquisition flow`. The `.githooks/require-ticket.ps1` commit-msg hook rejects ordinary messages that do not start with a configured ticket key, an OpenSpec id, or `[SDD]`. Before running `git commit` in this repository, classify the work as ticketed, OpenSpec, or direct SDD maintenance and choose the prefix first.
+
 ## Timed-Out Playwright Installs Can Leave A Cache Lock
 
 - Type: Pattern

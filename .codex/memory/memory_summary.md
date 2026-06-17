@@ -51,6 +51,7 @@ dotnet format --verify-no-changes
 - Use `.codex/memory/search_memory.ps1 -Query <symptom>` when debugging concrete errors, blockers, failed commands, deployment issues, PR feedback, QA failures, configuration mismatches, or local tooling problems.
 - Write memory only for reusable, source-backed knowledge.
 - Follow `retrieval-policy.md#update-process` when updating memory.
+- Treat agent-caused or tool-discovered failures as memory candidates by default; if a command fails, a hook rejects an action, or a local tool/config mismatch is diagnosed, search memory with the symptom and persist a small update unless already covered or clearly one-off.
 - Prefer updating canonical docs when the finding is authoritative workflow or architecture context.
 - Keep secrets, tokens, local credentials, and ignored local runtime state out of memory.
 - Before final handoff for any non-trivial repository work, report `Memory updated: <files>` or `Memory updated: none` after classifying reusable errors, blockers, fixes, configuration repairs, tooling corrections, and debugging results.
