@@ -1,10 +1,13 @@
 @page "/products"
 @rendermode InteractiveServer
+@using System.Globalization
 @using System.Net.Http.Json
 @using System.Text.Json
+@using Microsoft.JSInterop
 @attribute [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
 @inject IConfiguration Configuration
 @inject IHttpClientFactory HttpClientFactory
+@inject IJSRuntime JavaScript
 @inject NavigationManager Navigation
 
 <PageTitle>Products</PageTitle>
@@ -156,6 +159,7 @@
     private async Task SaveProduct()
     {
         Message = string.Empty;
+        await ReadCurrentForm();
         HttpClient client = HttpClientFactory.CreateClient();
         HttpResponseMessage response = Form.Id == 0
             ? await client.PostAsJsonAsync(ApiUrl, Form)
@@ -176,6 +180,18 @@
         ClearForm();
         Message = "Product saved.";
         await LoadProducts();
+    }
+
+    private async Task ReadCurrentForm()
+    {
+        ProductFormValues values = await JavaScript.InvokeAsync<ProductFormValues>("sddTemplateForms.read", "#product-form");
+        Form.Name = values.Name ?? string.Empty;
+        Form.Sku = values.Sku ?? string.Empty;
+        Form.Status = values.Status ?? string.Empty;
+        Form.Price = decimal.TryParse(values.Price, NumberStyles.Number, CultureInfo.InvariantCulture, out decimal price)
+            ? price
+            : 0;
+        Form.Category = values.Category ?? string.Empty;
     }
 
     private void EditProduct(ProductModel product)
@@ -242,5 +258,18 @@
         public string Category { get; set; } = string.Empty;
 
         public DateTimeOffset LastUpdated { get; set; }
+    }
+
+    private sealed class ProductFormValues
+    {
+        public string? Name { get; set; }
+
+        public string? Sku { get; set; }
+
+        public string? Status { get; set; }
+
+        public string? Price { get; set; }
+
+        public string? Category { get; set; }
     }
 }
