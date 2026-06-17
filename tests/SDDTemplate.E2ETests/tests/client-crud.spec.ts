@@ -74,6 +74,7 @@ test.describe("Client CRUD deployed QA E2E", () => {
     await expect(page.getByRole("heading", { name: "Clients" })).toBeVisible();
     await expect(page.locator("#client-form")).toBeVisible();
     await expect(page.locator("#clients-list")).toBeVisible();
+    await expect(saveClientButton(page)).toBeEnabled();
 
     const invalidResponse = await api.post("/api/clients", {
       data: {
@@ -85,7 +86,7 @@ test.describe("Client CRUD deployed QA E2E", () => {
     expect(await invalidResponse.text()).toContain("Born date cannot be in the future.");
 
     await fillClientForm(page, testClient);
-    await page.getByRole("button", { name: "Save client" }).click();
+    await saveClientButton(page).click();
     await expect(page.locator("#client-errors")).toBeEmpty();
     await expect(page.locator("#clients-list")).toContainText(`${testClient.name} ${testClient.lastName}`);
     await expect(page.locator("#clients-list")).toContainText(testClient.city);
@@ -98,7 +99,7 @@ test.describe("Client CRUD deployed QA E2E", () => {
     await createdRow.getByRole("button", { name: "Edit" }).click();
     await expect(page.locator("#client-id")).toHaveValue(String(created!.id));
     await fillClientForm(page, updatedClient);
-    await page.getByRole("button", { name: "Save client" }).click();
+    await saveClientButton(page).click();
     await expect(page.locator("#clients-list")).toContainText(updatedClient.address);
     await expect(page.locator("#clients-list")).toContainText(updatedClient.city);
 
@@ -159,6 +160,10 @@ async function clearClients(api: APIRequestContext): Promise<Array<Omit<ClientRe
 
 function rowForClient(page: Page, name: string) {
   return page.locator("#clients-list tr").filter({ hasText: name }).first();
+}
+
+function saveClientButton(page: Page) {
+  return page.getByRole("button", { name: "Save client" });
 }
 
 async function waitForBlazorConnection(page: Page): Promise<void> {

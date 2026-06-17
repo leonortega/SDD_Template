@@ -3626,6 +3626,36 @@ jobs:
           AZURE_QA_SITE_APP_URL: ${{ secrets.AZURE_QA_SITE_APP_URL }}
           AZURE_QA_API_APP_URL: ${{ secrets.AZURE_QA_API_APP_URL }}
 
+      - name: Publish QA target metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          jq -n \
+            --arg environment "QA" \
+            --arg commitSha "$GITHUB_SHA" \
+            --arg siteUrl "$AZURE_QA_SITE_APP_URL" \
+            --arg apiUrl "$AZURE_QA_API_APP_URL" \
+            --arg workflowRunUrl "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --arg publishedAtUtc "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{
+              environment: $environment,
+              commitSha: $commitSha,
+              siteUrl: $siteUrl,
+              apiUrl: $apiUrl,
+              workflowRunUrl: $workflowRunUrl,
+              publishedAtUtc: $publishedAtUtc
+            }' > qa-targets.json
+
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file qa-targets.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/qa-targets.json"
+        env:
+          AZURE_QA_SITE_APP_URL: ${{ secrets.AZURE_QA_SITE_APP_URL }}
+          AZURE_QA_API_APP_URL: ${{ secrets.AZURE_QA_API_APP_URL }}
+          NEXUS_URL: ${{ secrets.NEXUS_URL }}
+          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+          NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
+
   e2e-qa:
     runs-on: ubuntu-latest
     container:

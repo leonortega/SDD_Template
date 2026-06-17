@@ -77,6 +77,7 @@ test.describe("Product CRUD deployed QA E2E", () => {
     await expect(page.locator("#product-form")).toBeVisible();
     await expect(page.locator("#products-list")).toBeVisible();
     await expect(page.locator("#products-list")).toContainText("No products exist yet.");
+    await expect(saveProductButton(page)).toBeEnabled();
 
     const invalidResponse = await api.post("/api/products", {
       data: {
@@ -94,7 +95,7 @@ test.describe("Product CRUD deployed QA E2E", () => {
     expect(invalidBody).toContain("Price cannot be negative.");
 
     await fillProductForm(page, testProduct);
-    await page.getByRole("button", { name: "Save product" }).click();
+    await saveProductButton(page).click();
     await expect(page.locator("#product-errors")).toContainText("Product saved.");
     await expect(page.locator("#products-list")).toContainText(testProduct.name);
     await expect(page.locator("#products-list")).toContainText(testProduct.sku.toUpperCase());
@@ -108,7 +109,7 @@ test.describe("Product CRUD deployed QA E2E", () => {
     await createdRow.getByRole("button", { name: "Edit" }).click();
     await expect(page.locator("#product-id")).toHaveValue(String(created!.id));
     await fillProductForm(page, updatedProduct);
-    await page.getByRole("button", { name: "Save product" }).click();
+    await saveProductButton(page).click();
     await expect(page.locator("#products-list")).toContainText(updatedProduct.name);
     await expect(page.locator("#products-list")).toContainText(updatedProduct.status);
     await expect(page.locator("#products-list")).toContainText(updatedProduct.category);
@@ -172,6 +173,10 @@ async function clearProducts(api: APIRequestContext): Promise<Array<Omit<Product
 
 function rowForProduct(page: Page, name: string) {
   return page.locator("#products-list tr").filter({ hasText: name }).first();
+}
+
+function saveProductButton(page: Page) {
+  return page.getByRole("button", { name: "Save product" });
 }
 
 async function waitForBlazorConnection(page: Page): Promise<void> {

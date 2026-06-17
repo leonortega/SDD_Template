@@ -1,13 +1,10 @@
 @page "/products"
 @rendermode InteractiveServer
-@using System.Globalization
 @using System.Net.Http.Json
 @using System.Text.Json
-@using Microsoft.JSInterop
 @attribute [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
 @inject IConfiguration Configuration
 @inject IHttpClientFactory HttpClientFactory
-@inject IJSRuntime JavaScript
 @inject NavigationManager Navigation
 
 <PageTitle>Products</PageTitle>
@@ -21,42 +18,44 @@
     </header>
 
     <section class="products-grid" aria-label="Product management">
-        <form id="product-form" class="product-form" onsubmit="return false">
-            <input type="hidden" id="product-id" @bind="Form.Id" />
+        <form id="product-form" class="product-form" @onsubmit="SaveProduct" @onsubmit:preventDefault="true">
+            <fieldset class="form-fields" disabled="@(!IsInteractive)">
+                <input type="hidden" id="product-id" @bind="Form.Id" />
 
-            <label>
-                <span>Name</span>
-                <input id="product-name" name="name" required maxlength="100" @bind="Form.Name" @bind:event="oninput" />
-            </label>
+                <label>
+                    <span>Name</span>
+                    <input id="product-name" name="name" required maxlength="100" @bind="Form.Name" @bind:event="oninput" />
+                </label>
 
-            <label>
-                <span>SKU</span>
-                <input id="product-sku" name="sku" required maxlength="40" @bind="Form.Sku" @bind:event="oninput" />
-            </label>
+                <label>
+                    <span>SKU</span>
+                    <input id="product-sku" name="sku" required maxlength="40" @bind="Form.Sku" @bind:event="oninput" />
+                </label>
 
-            <label>
-                <span>Status</span>
-                <select id="product-status" name="status" required @bind="Form.Status">
-                    <option value="Active">Active</option>
-                    <option value="Inactive">Inactive</option>
-                    <option value="Archived">Archived</option>
-                </select>
-            </label>
+                <label>
+                    <span>Status</span>
+                    <select id="product-status" name="status" required @bind="Form.Status">
+                        <option value="Active">Active</option>
+                        <option value="Inactive">Inactive</option>
+                        <option value="Archived">Archived</option>
+                    </select>
+                </label>
 
-            <label>
-                <span>Price</span>
-                <input id="product-price" name="price" type="number" min="0" step="0.01" required @bind="Form.Price" @bind:event="oninput" />
-            </label>
+                <label>
+                    <span>Price</span>
+                    <input id="product-price" name="price" type="number" min="0" step="0.01" required @bind="Form.Price" @bind:event="oninput" />
+                </label>
 
-            <label class="full-width">
-                <span>Category</span>
-                <input id="product-category" name="category" required maxlength="100" @bind="Form.Category" @bind:event="oninput" />
-            </label>
+                <label class="full-width">
+                    <span>Category</span>
+                    <input id="product-category" name="category" required maxlength="100" @bind="Form.Category" @bind:event="oninput" />
+                </label>
 
-            <div class="form-actions full-width">
-                <button type="button" @onclick="SaveProduct">Save product</button>
-                <button type="button" id="product-reset" @onclick="ClearForm">Clear</button>
-            </div>
+                <div class="form-actions full-width">
+                    <button type="submit">Save product</button>
+                    <button type="button" id="product-reset" @onclick="ClearForm">Clear</button>
+                </div>
+            </fieldset>
 
             <p id="product-errors" class="product-errors" role="alert">@Message</p>
         </form>
@@ -129,6 +128,8 @@
 
     private int? PendingDeleteId { get; set; }
 
+    private bool IsInteractive { get; set; }
+
     private string Summary => ProductRows.Count == 1 ? "1 product" : $"{ProductRows.Count} products";
 
     private string ApiUrl => $"{(string.IsNullOrWhiteSpace(Configuration["Api:BaseUrl"]) ? Navigation.BaseUri : Configuration["Api:BaseUrl"])!.TrimEnd('/')}/api/products";
@@ -136,6 +137,17 @@
     protected override async Task OnInitializedAsync()
     {
         await LoadProducts();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        IsInteractive = true;
+        StateHasChanged();
     }
 
     private async Task LoadProducts()
@@ -159,7 +171,6 @@
     private async Task SaveProduct()
     {
         Message = string.Empty;
-        await ReadCurrentForm();
         HttpClient client = HttpClientFactory.CreateClient();
         HttpResponseMessage response = Form.Id == 0
             ? await client.PostAsJsonAsync(ApiUrl, Form)
@@ -180,18 +191,6 @@
         ClearForm();
         Message = "Product saved.";
         await LoadProducts();
-    }
-
-    private async Task ReadCurrentForm()
-    {
-        Dictionary<string, string> values = await JavaScript.InvokeAsync<Dictionary<string, string>>("sddTemplateForms.read", "#product-form");
-        Form.Name = values.GetValueOrDefault("name", string.Empty);
-        Form.Sku = values.GetValueOrDefault("sku", string.Empty);
-        Form.Status = values.GetValueOrDefault("status", string.Empty);
-        Form.Price = decimal.TryParse(values.GetValueOrDefault("price", string.Empty), NumberStyles.Number, CultureInfo.InvariantCulture, out decimal price)
-            ? price
-            : 0;
-        Form.Category = values.GetValueOrDefault("category", string.Empty);
     }
 
     private void EditProduct(ProductModel product)

@@ -2,11 +2,9 @@
 @rendermode InteractiveServer
 @using System.Net.Http.Json
 @using System.Text.Json
-@using Microsoft.JSInterop
 @attribute [System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverage]
 @inject IConfiguration Configuration
 @inject IHttpClientFactory HttpClientFactory
-@inject IJSRuntime JavaScript
 @inject NavigationManager Navigation
 
 <PageTitle>Clients</PageTitle>
@@ -20,48 +18,50 @@
     </header>
 
     <section class="clients-grid" aria-label="Client management">
-        <form id="client-form" class="client-form" onsubmit="return false">
-            <input type="hidden" id="client-id" @bind="Form.Id" />
+        <form id="client-form" class="client-form" @onsubmit="SaveClient" @onsubmit:preventDefault="true">
+            <fieldset class="form-fields" disabled="@(!IsInteractive)">
+                <input type="hidden" id="client-id" @bind="Form.Id" />
 
-            <label>
-                <span>Name</span>
-                <input id="client-name" name="name" autocomplete="given-name" required maxlength="100" @bind="Form.Name" @bind:event="oninput" />
-            </label>
+                <label>
+                    <span>Name</span>
+                    <input id="client-name" name="name" autocomplete="given-name" required maxlength="100" @bind="Form.Name" @bind:event="oninput" />
+                </label>
 
-            <label>
-                <span>Last Name</span>
-                <input id="client-last-name" name="lastName" autocomplete="family-name" required maxlength="100" @bind="Form.LastName" @bind:event="oninput" />
-            </label>
+                <label>
+                    <span>Last Name</span>
+                    <input id="client-last-name" name="lastName" autocomplete="family-name" required maxlength="100" @bind="Form.LastName" @bind:event="oninput" />
+                </label>
 
-            <label class="full-width">
-                <span>Address</span>
-                <input id="client-address" name="address" autocomplete="street-address" required maxlength="200" @bind="Form.Address" @bind:event="oninput" />
-            </label>
+                <label class="full-width">
+                    <span>Address</span>
+                    <input id="client-address" name="address" autocomplete="street-address" required maxlength="200" @bind="Form.Address" @bind:event="oninput" />
+                </label>
 
-            <label>
-                <span>Born date</span>
-                <input id="client-born-date" name="bornDate" type="date" required value="@Form.BornDate" @onchange="SetBornDate" />
-            </label>
+                <label>
+                    <span>Born date</span>
+                    <input id="client-born-date" name="bornDate" type="date" required value="@Form.BornDate" @onchange="SetBornDate" />
+                </label>
 
-            <label>
-                <span>City</span>
-                <input id="client-city" name="city" autocomplete="address-level2" required maxlength="100" @bind="Form.City" @bind:event="oninput" />
-            </label>
+                <label>
+                    <span>City</span>
+                    <input id="client-city" name="city" autocomplete="address-level2" required maxlength="100" @bind="Form.City" @bind:event="oninput" />
+                </label>
 
-            <label>
-                <span>Country</span>
-                <input id="client-country" name="country" autocomplete="country-name" required maxlength="100" @bind="Form.Country" @bind:event="oninput" />
-            </label>
+                <label>
+                    <span>Country</span>
+                    <input id="client-country" name="country" autocomplete="country-name" required maxlength="100" @bind="Form.Country" @bind:event="oninput" />
+                </label>
 
-            <label>
-                <span>ZIP code</span>
-                <input id="client-zip-code" name="zipCode" autocomplete="postal-code" required maxlength="12" @bind="Form.ZipCode" @bind:event="oninput" />
-            </label>
+                <label>
+                    <span>ZIP code</span>
+                    <input id="client-zip-code" name="zipCode" autocomplete="postal-code" required maxlength="12" @bind="Form.ZipCode" @bind:event="oninput" />
+                </label>
 
-            <div class="form-actions full-width">
-                <button type="button" @onclick="SaveClient">Save client</button>
-                <button type="button" id="client-reset" @onclick="ClearForm">Clear</button>
-            </div>
+                <div class="form-actions full-width">
+                    <button type="submit">Save client</button>
+                    <button type="button" id="client-reset" @onclick="ClearForm">Clear</button>
+                </div>
+            </fieldset>
 
             <p id="client-errors" class="client-errors" role="alert">@Errors</p>
         </form>
@@ -117,6 +117,8 @@
 
     private string Errors { get; set; } = string.Empty;
 
+    private bool IsInteractive { get; set; }
+
     private string Summary => ClientRows.Count == 1 ? "1 client" : $"{ClientRows.Count} clients";
 
     private string ApiUrl => $"{(string.IsNullOrWhiteSpace(Configuration["Api:BaseUrl"]) ? Navigation.BaseUri : Configuration["Api:BaseUrl"])!.TrimEnd('/')}/api/clients";
@@ -124,6 +126,17 @@
     protected override async Task OnInitializedAsync()
     {
         await LoadClients();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        IsInteractive = true;
+        StateHasChanged();
     }
 
     private async Task LoadClients()
@@ -141,7 +154,6 @@
     private async Task SaveClient()
     {
         Errors = string.Empty;
-        await ReadCurrentForm();
         HttpClient client = HttpClientFactory.CreateClient();
         HttpResponseMessage response = Form.Id == 0
             ? await client.PostAsJsonAsync(ApiUrl, Form)
@@ -161,18 +173,6 @@
 
         ClearForm();
         await LoadClients();
-    }
-
-    private async Task ReadCurrentForm()
-    {
-        Dictionary<string, string> values = await JavaScript.InvokeAsync<Dictionary<string, string>>("sddTemplateForms.read", "#client-form");
-        Form.Name = values.GetValueOrDefault("name", string.Empty);
-        Form.LastName = values.GetValueOrDefault("lastName", string.Empty);
-        Form.Address = values.GetValueOrDefault("address", string.Empty);
-        Form.BornDate = values.GetValueOrDefault("bornDate", string.Empty);
-        Form.City = values.GetValueOrDefault("city", string.Empty);
-        Form.Country = values.GetValueOrDefault("country", string.Empty);
-        Form.ZipCode = values.GetValueOrDefault("zipCode", string.Empty);
     }
 
     private void EditClient(ClientModel client)
