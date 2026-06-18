@@ -89,3 +89,12 @@ For `qa/{ticketKey}` E2E reruns, push a ref that contains the current `.gitea/wo
 - Last verified: 2026-06-03
 
 In Playwright CRUD QA flows, expected negative-path browser activity can surface as console or request noise even when the app behavior is correct. For E2EPROJECT-2, an intentional validation POST returned HTTP 400 and Chromium logged `Failed to load resource`, while a successful delete could emit a browser-side `DELETE ... net::ERR_ABORTED` even though API verification confirmed the record was removed. Keep console and request-failure assertions strict, but add narrow allowances around expected validation and delete actions instead of accepting all 400s or all aborted requests.
+
+## Local E2E Diagnostics Use Docker Browser Image
+
+- Type: Decision
+- Status: Active
+- Source: E2EPROJECT-7 Docker local runner change, `tests/SDDTemplate.E2ETests/run-local-docker.ps1`, `.codex/skills/quality-test-e2e/SKILL.md`
+- Last verified: 2026-06-17
+
+For local Playwright diagnosis against deployed QA, use `npm run test:docker` from `tests/SDDTemplate.E2ETests`. The runner uses the pinned `agentic/e2e-ci:playwright-1.57.0-1` image, reads `E2E_SITE_URL`/`E2E_API_URL` or ignored `.codex/client-tools.local.json` QA URLs, and avoids repeated host Chromium installs. Browser/E2E diagnosis stays outside product code; if failures are harness-only, patch tests/workflow/evidence capture rather than adding app-only E2E helpers.

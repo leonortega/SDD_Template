@@ -31,7 +31,7 @@ Prefer repository-specific skills and scripts over ad hoc process decisions.
 - Add or update tests when behavior changes.
 - Do not revert unrelated user or workspace changes.
 - Do not commit generated artifacts unless the workflow explicitly requires them.
-- Use Ponytail full mode for code changes, then run `ponytail-review` on the current diff, apply actionable simplification recommendations, and continue normal quality gates.
+- Use Ponytail full mode for code changes. Run `ponytail-review` during PR review as an extra complexity pass, not during implementation, and do not replace current reviewers or normal quality gates.
 
 ## Quality Gates
 
@@ -72,6 +72,8 @@ Keep code blocks, commands, paths, API names, error messages, quoted text, and f
 ## Agent Guidance
 
 When in doubt, first inspect the applicable skill under `.codex/skills/` and follow its workflow. This file is only the entry point; detailed delivery behavior belongs in the skills, OpenSpec artifacts, and configured local tools.
+
+When a required repo skill, command, memory rule, definition, or configured tool/install path cannot be applied, stop the affected flow instead of silently using an alternative. Report the failed required item, why it is required, the current-flow fix, the viable alternative, and the alternative's risk or impact, then ask the user whether to fix the current flow or continue with the alternative.
 
 Use `.codex/memory/` as a reviewable repository memory layer. Memory is guidance only and must be verified against the current user request, Plane, OpenSpec, the shared delivery contract, canonical docs, current files, and live tool output before acting on it.
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rollback PROD"
+  short_description: "Rollback PROD to a known-good artifact"
+  default_prompt: "Use $dev-ops-rollback-prod to redeploy a previously verified PROD artifact and record rollback evidence."

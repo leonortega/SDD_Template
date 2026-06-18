@@ -1,5 +1,5 @@
 param(
-  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetPlaneEnv", "SetMonitoringEnv", "SetGiteaRunner", "SetSeqAzureEventHubLogs", "SplitInfraEnv", "AuditQualityGates", "AuditRecommendedTools", "DiscoverProjectGuidance", "AcquireProjectGuidance", "SetRecommendedTools", "MapProjectGuidanceStep", "BuildGiteaActionsImages", "ValidateGiteaActionsRunner", "InitQualityGateTemplates", "SetQualityConfig", "SyncWorktreeLocalConfig", "EnsureDeliveryContext")]
+  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetGiteaBranchProtection", "SetPlaneEnv", "SetMonitoringEnv", "SetGiteaRunner", "SetSeqAzureEventHubLogs", "SplitInfraEnv", "AuditQualityGates", "AuditRecommendedTools", "DiscoverProjectGuidance", "AcquireProjectGuidance", "SetRecommendedTools", "MapProjectGuidanceStep", "BuildGiteaActionsImages", "ValidateGiteaActionsRunner", "InitProjectProfile", "InitQualityGateTemplates", "SetQualityConfig", "SyncWorktreeLocalConfig", "EnsureDeliveryContext")]
   [string]$Mode = "Audit",
 
   [string]$Root = (Resolve-Path ".").Path,
@@ -127,6 +127,8 @@ function Ensure-ObjectProperty {
 
   if ($null -eq $Object.$Name) {
     $Object | Add-Member -MemberType NoteProperty -Name $Name -Value ([pscustomobject]@{})
+  } elseif (-not ($Object.$Name -is [pscustomobject]) -and -not ($Object.$Name -is [System.Collections.IDictionary])) {
+    $Object.$Name = [pscustomobject]@{}
   }
 }
 
@@ -148,6 +150,101 @@ function Set-ObjectValue {
     $cursor.$leaf = $Value
   } else {
     $cursor | Add-Member -MemberType NoteProperty -Name $leaf -Value $Value
+  }
+}
+
+function Get-PrMinimumApprovals {
+  param(
+    $Client,
+    [string]$Branch,
+    [int]$Fallback = 1
+  )
+
+  if ($null -eq $Client.pr -or $null -eq $Client.pr.minimumApprovals) { return $Fallback }
+  $minimum = $Client.pr.minimumApprovals
+
+  if ($minimum -is [int] -or $minimum -is [long] -or $minimum -is [double] -or $minimum -is [decimal] -or $minimum -is [string]) {
+    $value = 0
+    if ([int]::TryParse([string]$minimum, [ref]$value) -and $value -ge 0) { return $value }
+    return $Fallback
+  }
+
+  if ($minimum.PSObject.Properties.Name -contains $Branch) {
+    $value = 0
+    if ([int]::TryParse([string]$minimum.$Branch, [ref]$value) -and $value -ge 0) { return $value }
+  }
+
+  return $Fallback
+}
+
+function Add-PrMinimumApprovalValidationFindings {
+  param(
+    $Result,
+    $Client,
+    [string]$ClientLocal
+  )
+
+  if ($null -eq $Client.pr.minimumApprovals) {
+    Add-Item $Result "findings" $ClientLocal "pr.minimumApprovals.dev" "Missing PR approval minimum; default should be 1." "warning"
+    Add-Item $Result "findings" $ClientLocal "pr.minimumApprovals.main" "Missing PR approval minimum; default should be 1." "warning"
+    return
+  }
+
+  $minimum = $Client.pr.minimumApprovals
+  if ($minimum -is [int] -or $minimum -is [long] -or $minimum -is [double] -or $minimum -is [decimal] -or $minimum -is [string]) {
+    $legacyValue = 0
+    if (-not [int]::TryParse([string]$minimum, [ref]$legacyValue) -or $legacyValue -lt 0) {
+      Add-Item $Result "findings" $ClientLocal "pr.minimumApprovals" "Legacy PR approval minimum must be an integer greater than or equal to 0." "warning"
+    }
+    return
+  }
+
+  foreach ($branch in @("dev", "main")) {
+    if ($minimum.PSObject.Properties.Name -notcontains $branch) {
+      Add-Item $Result "findings" $ClientLocal "pr.minimumApprovals.$branch" "Missing PR approval minimum; default should be 1." "warning"
+      continue
+    }
+
+    $branchValue = 0
+    if (-not [int]::TryParse([string]$minimum.$branch, [ref]$branchValue) -or $branchValue -lt 0) {
+      Add-Item $Result "findings" $ClientLocal "pr.minimumApprovals.$branch" "PR approval minimum must be an integer greater than or equal to 0." "warning"
+    }
+  }
+}
+
+function Get-GiteaBranchProtectionConfig {
+  param($Result)
+
+  $clientLocal = ".codex/client-tools.local.json"
+  $clientPath = Join-RootPath $clientLocal
+  if (-not (Test-Path $clientPath)) {
+    Add-Item $Result "findings" $clientLocal "" "Local client tool config is missing." "error"
+    return $null
+  }
+
+  try {
+    $client = Get-Content -Path $clientPath -Raw | ConvertFrom-Json
+  } catch {
+    Add-Item $Result "findings" $clientLocal "" "Could not parse local client tool config for branch protection configuration." "error"
+    return $null
+  }
+
+  if (Test-Placeholder $client.gitea.apiToken -or $null -eq $client.gitea.baseUrl -or $null -eq $client.gitea.owner -or $null -eq $client.gitea.repo) {
+    Add-Item $Result "findings" $clientLocal "gitea" "Cannot configure Gitea branch protection because Gitea API config is missing or placeholder." "error"
+    return $null
+  }
+
+  Add-PrMinimumApprovalValidationFindings $Result $client $clientLocal
+  if (@($Result["findings"] | Where-Object { $_.path -eq $clientLocal -and $_.key -like "pr.minimumApprovals*" -and $_.severity -ne "info" }).Count -gt 0) {
+    return $null
+  }
+
+  return [pscustomobject]@{
+    client = $client
+    headers = @{ Authorization = "token $($client.gitea.apiToken)"; Accept = "application/json" }
+    baseUrl = ([string]$client.gitea.baseUrl).TrimEnd("/")
+    owner = $client.gitea.owner
+    repo = $client.gitea.repo
   }
 }
 
@@ -771,6 +868,7 @@ function Add-GiteaBranchProtectionAuditFindings {
   $targetBranches = @("main", "dev")
 
   foreach ($branch in $targetBranches) {
+    $expectedApprovals = Get-PrMinimumApprovals -Client $client -Branch $branch
     try {
       $protection = Invoke-RestMethod -Method Get -Uri "$baseUrl/api/v1/repos/$($client.gitea.owner)/$($client.gitea.repo)/branch_protections/$branch" -Headers $headers
     } catch {
@@ -780,6 +878,10 @@ function Add-GiteaBranchProtectionAuditFindings {
 
     if ($protection.enable_status_check -and (@($protection.status_check_contexts) -notcontains $expectedContext)) {
       Add-Item $Result "findings" ".gitea/workflows/README.md" "branch-protection.$branch" "Gitea branch protection for '$branch' requires status contexts '$(@($protection.status_check_contexts) -join ', ')', but PR validation reports '$expectedContext'. Update branch protection to require the emitted context." "warning"
+    }
+
+    if ($null -ne $protection.required_approvals -and [int]$protection.required_approvals -ne $expectedApprovals) {
+      Add-Item $Result "findings" ".gitea/workflows/README.md" "branch-protection.$branch.required_approvals" "Gitea branch protection for '$branch' requires $($protection.required_approvals) approval(s), but pr.minimumApprovals.$branch is $expectedApprovals. Update branch protection or local PR config so they match." "warning"
     }
   }
 }
@@ -853,7 +955,7 @@ function Add-QualityGateAuditFindings {
   if (-not (Test-Path (Join-RootPath $releaseWorkflow))) {
     Add-Item $Result "findings" $releaseWorkflow "" "Missing package/deploy workflow for Nexus artifact publication and Azure promotion." "warning"
   } else {
-    foreach ($expected in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "az webapp deploy", "az webapp config appsettings set", "az webapp config appsettings list", "classify-changes", "app_changed", "deploy_allowed", ".codex/delivery-policy.json", "ticketKeyPattern", "BASH_REMATCH", "refs/heads/dev", "refs/heads/main", "qa/**", "deploy-qa", "e2e-qa", "deploy-prod", "artifact_commit_sha", "PROD_ARTIFACT_COMMIT_SHA", "release_version", "source_rc_version", "release.json", "CreateReleaseManifest", "ValidateReleaseManifest", "BuildDeploymentConfig", "infra/deployment/apps.json", "infra/deployment/configuration.json", "deployable-apps.json", "deployment-config.json", "app/qa-approved/latest.json", "const apiBaseUrl", "Access-Control-Allow-Origin", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_SITE_APP_NAME", "AZURE_QA_SITE_APP_URL", "AZURE_QA_API_APP_NAME", "AZURE_QA_API_APP_URL", "E2E_SITE_URL", "E2E_API_URL", "E2E_ARTIFACT_COMMIT_SHA", "qa-e2e-evidence.zip", "AZURE_PROD_RESOURCE_GROUP", "AZURE_PROD_SITE_APP_NAME", "AZURE_PROD_SITE_APP_URL", "AZURE_PROD_API_APP_NAME", "AZURE_PROD_API_APP_URL", "healthPath", '${app_url}${health_path}')) {
+    foreach ($expected in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "az webapp deploy", "az webapp config appsettings set", "az webapp config appsettings list", "classify-changes", "app_changed", "deploy_allowed", ".codex/project-profile.json", "workflow.ticketKeyPattern", "BASH_REMATCH", "refs/heads/dev", "refs/heads/main", "qa/**", "deploy-qa", "e2e-qa", "deploy-prod", "artifact_commit_sha", "PROD_ARTIFACT_COMMIT_SHA", "release_version", "source_rc_version", "release.json", "CreateReleaseManifest", "ValidateReleaseManifest", "BuildDeploymentConfig", "infra/deployment/apps.json", "infra/deployment/configuration.json", "deployable-apps.json", "deployment-config.json", "app/qa-approved/latest.json", "const apiBaseUrl", "Access-Control-Allow-Origin", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_SITE_APP_NAME", "AZURE_QA_SITE_APP_URL", "AZURE_QA_API_APP_NAME", "AZURE_QA_API_APP_URL", "E2E_SITE_URL", "E2E_API_URL", "E2E_ARTIFACT_COMMIT_SHA", "qa-targets.json", "qa-e2e-evidence.zip", "AZURE_PROD_RESOURCE_GROUP", "AZURE_PROD_SITE_APP_NAME", "AZURE_PROD_SITE_APP_URL", "AZURE_PROD_API_APP_NAME", "AZURE_PROD_API_APP_URL", "healthPath", '${app_url}${health_path}')) {
       if (-not (Test-FileContains $releaseWorkflow ([regex]::Escape($expected)))) {
         Add-Item $Result "findings" $releaseWorkflow $expected "Package/deploy workflow does not mention $expected." "warning"
       }
@@ -880,11 +982,52 @@ function Add-QualityGateAuditFindings {
     }
   }
 
+  $projectProfile = ".codex/project-profile.json"
+  $projectProfileSchema = ".codex/project-profile.schema.json"
+  if (-not (Test-Path (Join-RootPath $projectProfile))) {
+    Add-Item $Result "findings" $projectProfile "InitProjectProfile" "Missing project profile; run InitProjectProfile before provider, quality, CI, deployment, or ticket setup." "error" "pre-start"
+  } else {
+    if (-not (Test-FileContains $projectProfile '"ticketKeyPattern"\s*:')) {
+      Add-Item $Result "findings" $projectProfile "workflow.ticketKeyPattern" "Project profile must define workflow.ticketKeyPattern for deployment gating." "error" "pre-start"
+    }
+    try {
+      $profile = Get-Content -Path (Join-RootPath $projectProfile) -Raw | ConvertFrom-Json
+      if ($null -eq $profile.adapters) {
+        Add-Item $Result "findings" $projectProfile "adapters" "Project profile must define adapter paths before provider setup." "error" "pre-start"
+      } else {
+        foreach ($adapter in $profile.adapters.PSObject.Properties) {
+          $adapterPath = [string]$adapter.Value
+          if ([string]::IsNullOrWhiteSpace($adapterPath)) {
+            Add-Item $Result "findings" $projectProfile "adapters.$($adapter.Name)" "Project profile adapter path is empty." "error" "pre-start"
+            continue
+          }
+          if ([System.IO.Path]::IsPathRooted($adapterPath)) {
+            Add-Item $Result "findings" $projectProfile "adapters.$($adapter.Name)" "Project profile adapter path must be repo-relative: $adapterPath." "error" "pre-start"
+            continue
+          }
+
+          $resolvedRoot = [System.IO.Path]::GetFullPath($Root).TrimEnd("\", "/") + [System.IO.Path]::DirectorySeparatorChar
+          $resolvedAdapter = [System.IO.Path]::GetFullPath((Join-Path $Root $adapterPath))
+          if (-not $resolvedAdapter.StartsWith($resolvedRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+            Add-Item $Result "findings" $projectProfile "adapters.$($adapter.Name)" "Project profile adapter path resolves outside the repository: $adapterPath." "error" "pre-start"
+            continue
+          }
+          if (-not (Test-Path -LiteralPath $resolvedAdapter)) {
+            Add-Item $Result "findings" $adapterPath "adapters.$($adapter.Name)" "Configured adapter file is missing; run InitProjectProfile or the selected provider configure skill before provider mutation." "error" "pre-start"
+          }
+        }
+      }
+    } catch {
+      Add-Item $Result "findings" $projectProfile "json" "Could not parse project profile: $($_.Exception.Message)" "error" "pre-start"
+    }
+  }
+  if (-not (Test-Path (Join-RootPath $projectProfileSchema))) {
+    Add-Item $Result "findings" $projectProfileSchema "InitProjectProfile" "Missing project profile schema; run InitProjectProfile before setup continues." "error" "pre-start"
+  }
+
   $deliveryPolicy = ".codex/delivery-policy.json"
   if (-not (Test-Path (Join-RootPath $deliveryPolicy))) {
-    Add-Item $Result "findings" $deliveryPolicy "ticketKeyPattern" "Missing delivery policy used by commit hooks and deployment gating." "warning"
-  } elseif (-not (Test-FileContains $deliveryPolicy '"ticketKeyPattern"\s*:')) {
-    Add-Item $Result "findings" $deliveryPolicy "ticketKeyPattern" "Delivery policy must define ticketKeyPattern for deployment gating." "warning"
+    Add-Item $Result "findings" $deliveryPolicy "agentOptimization" "Missing delivery policy used for agent optimization defaults." "warning"
   } else {
     foreach ($expectedPolicyKey in @(
       '"agentOptimization"\s*:',
@@ -1357,6 +1500,10 @@ function Ensure-InferredClientToolsConfig {
   Set-InferredClientValue $Result $client @("nexus", "repository") "raw-hosted"
 
   Set-InferredClientValue $Result $client @("pr", "reviewers") "all"
+  if ($null -eq $client.pr -or $null -eq $client.pr.minimumApprovals -or -not ($client.pr.minimumApprovals -is [int] -or $client.pr.minimumApprovals -is [long] -or $client.pr.minimumApprovals -is [double] -or $client.pr.minimumApprovals -is [decimal] -or $client.pr.minimumApprovals -is [string])) {
+    Set-InferredClientValue $Result $client @("pr", "minimumApprovals", "dev") 1
+    Set-InferredClientValue $Result $client @("pr", "minimumApprovals", "main") 1
+  }
   Set-InferredClientValue $Result $client @("pr", "labels", "enabled") $true
   Set-InferredClientValue $Result $client @("pr", "labels", "reviewed") "codex-reviewed"
   Set-InferredClientValue $Result $client @("pr", "labels", "needsTests") "needs-tests"
@@ -1391,7 +1538,7 @@ function Ensure-InferredClientToolsConfig {
   Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "hotfixProd", "model") "gpt-5.3-codex"
   Set-InferredClientValue $Result $client @("parallelDelivery", "agentModelPolicy", "hotfixProd", "reasoningEffort") "high"
   Set-InferredClientValue $Result $client @("recommendedTools", "enabled") $true
-  Set-InferredClientValue $Result $client @("recommendedTools", "mode") "guided-manual"
+  Set-InferredClientValue $Result $client @("recommendedTools", "mode") "guarded-auto"
   Set-InferredClientValue $Result $client @("recommendedTools", "accepted") @()
   Set-InferredClientValue $Result $client @("recommendedTools", "dismissed") @()
 
@@ -1454,7 +1601,7 @@ function ConvertTo-CatalogRecommendation {
     accepted = ($Accepted -contains $Entry.id)
   }
 
-  foreach ($optionalField in @("sourceKind", "requires", "researchTopics", "officialSources", "searchQueries", "notes")) {
+  foreach ($optionalField in @("sourceKind", "requires", "researchTopics", "officialSources", "searchQueries", "notes", "installScope", "installerKind", "requiresIdeRestart", "requiresSystemReboot", "userActionRequired", "importantMessage", "installPreference", "dockerAlternative")) {
     if ($Entry.PSObject.Properties.Name -contains $optionalField) {
       $recommendation[$optionalField] = $Entry.$optionalField
     }
@@ -1471,7 +1618,7 @@ function Get-CanonicalWorkflowSteps {
     "implementation",
     "pr-review",
     "review-feedback",
-    "post-merge-deploy",
+    "dev-ops-post-merge-deploy",
     "e2e-qa",
     "prod-promotion",
     "rollback",
@@ -1485,17 +1632,17 @@ function Get-DefaultPrimarySkillsForWorkflowStep {
 
   switch ($WorkflowStep) {
     "config-infra" { return @("configure-dev-environment") }
-    "first-ticket-setup" { return @("plane-start-ticket") }
-    "planning" { return @("openspec-propose", "openspec-explore") }
-    "implementation" { return @("implement-ticket") }
-    "pr-review" { return @("gitea-pr-review-agent") }
-    "review-feedback" { return @("pr-review-feedback-loop") }
-    "post-merge-deploy" { return @("post-merge-deploy", "deploy-to-qa") }
-    "e2e-qa" { return @("test-e2e") }
-    "prod-promotion" { return @("deploy-to-prod") }
-    "rollback" { return @("rollback-prod") }
-    "hotfix" { return @("hotfix-prod") }
-    "retrospective" { return @("delivery-retrospective-audit") }
+    "first-ticket-setup" { return @("dev-flow-start-ticket") }
+    "planning" { return @("dev-flow-propose-change", "dev-flow-explore-change") }
+    "implementation" { return @("dev-flow-implement-ticket") }
+    "pr-review" { return @("dev-flow-pr-review-agent") }
+    "review-feedback" { return @("dev-flow-pr-review-feedback-loop") }
+    "dev-ops-post-merge-deploy" { return @("dev-ops-post-merge-deploy", "dev-ops-deploy-qa") }
+    "e2e-qa" { return @("quality-test-e2e") }
+    "prod-promotion" { return @("dev-ops-deploy-prod") }
+    "rollback" { return @("dev-ops-rollback-prod") }
+    "hotfix" { return @("dev-ops-hotfix-prod") }
+    "retrospective" { return @("dev-flow-retrospective-audit") }
     default { return @() }
   }
 }
@@ -1510,10 +1657,10 @@ function Get-DefaultSupportingSkillsForWorkflowStep {
     "implementation" { return @("aspnet-core", "plan-ui-change", "dotnet-webapi", "security-best-practices", "assertion-quality") }
     "pr-review" { return @("aspnet-core", "dotnet-webapi", "security-best-practices", "assertion-quality", "playwright") }
     "review-feedback" { return @("aspnet-core", "plan-ui-change", "dotnet-webapi", "security-best-practices", "assertion-quality") }
-    "post-merge-deploy" { return @("configure-artifact-delivery", "configure-azure-environments", "configure-observability") }
-    "e2e-qa" { return @("frontend-testing-debugging", "playwright", "assertion-quality") }
-    "prod-promotion" { return @("configure-artifact-delivery", "configure-azure-environments", "configure-observability") }
-    "rollback" { return @("configure-artifact-delivery", "configure-azure-environments", "security-best-practices") }
+    "dev-ops-post-merge-deploy" { return @("configure-artifact-repository", "configure-cloud-environments", "configure-observability") }
+    "e2e-qa" { return @("quality-frontend-testing-debugging", "playwright", "assertion-quality") }
+    "prod-promotion" { return @("configure-artifact-repository", "configure-cloud-environments", "configure-observability") }
+    "rollback" { return @("configure-artifact-repository", "configure-cloud-environments", "security-best-practices") }
     "hotfix" { return @("security-best-practices", "assertion-quality", "aspnet-core") }
     "retrospective" { return @("project-guidance-discover", "project-guidance-mapper", "configure-dev-environment") }
     default { return @() }
@@ -1528,9 +1675,9 @@ function Get-DefaultRecommendationIdsForWorkflowStep {
     "first-ticket-setup" { return @("project-guidance-search-plan") }
     "planning" { return @("openai-aspnet-core-skill", "dotnet-blazor-plan-ui-change-skill", "dotnet-webapi-skill", "openai-security-best-practices-skill", "clean-code-practice-guidance", "modern-dotnet-architecture-guidance") }
     "implementation" { return @("openai-aspnet-core-skill", "dotnet-blazor-plan-ui-change-skill", "dotnet-webapi-skill", "openai-security-best-practices-skill", "dotnet-assertion-quality-skill", "clean-code-practice-guidance", "modern-dotnet-architecture-guidance", "rest-api-design-practice-guidance") }
-    "pr-review" { return @("gitea-pr-review-agent-skill", "openai-aspnet-core-skill", "dotnet-webapi-skill", "openai-security-best-practices-skill", "dotnet-assertion-quality-skill", "pr-review-practice-guidance") }
+    "pr-review" { return @("dev-flow-pr-review-agent-skill", "openai-aspnet-core-skill", "dotnet-webapi-skill", "openai-security-best-practices-skill", "dotnet-assertion-quality-skill", "pr-review-practice-guidance") }
     "review-feedback" { return @("openai-aspnet-core-skill", "dotnet-blazor-plan-ui-change-skill", "dotnet-webapi-skill", "openai-security-best-practices-skill", "dotnet-assertion-quality-skill", "clean-code-practice-guidance") }
-    "post-merge-deploy" { return @("nexus-artifact-api-guidance", "azure-app-service-zip-deploy-guidance", "azure-monitor-log-analytics-guidance", "grafana-provisioning-guidance", "release-practice-guidance") }
+    "dev-ops-post-merge-deploy" { return @("nexus-artifact-api-guidance", "azure-app-service-zip-deploy-guidance", "azure-monitor-log-analytics-guidance", "grafana-provisioning-guidance", "release-practice-guidance") }
     "e2e-qa" { return @("browser-e2e-qa-plugin", "playwright-frontend-testing-skill", "openai-playwright-skill", "dotnet-assertion-quality-skill", "qa-automation-practice-guidance") }
     "prod-promotion" { return @("nexus-artifact-api-guidance", "azure-app-service-zip-deploy-guidance", "azure-monitor-log-analytics-guidance", "grafana-provisioning-guidance", "release-practice-guidance") }
     "rollback" { return @("nexus-artifact-api-guidance", "azure-app-service-zip-deploy-guidance", "azure-monitor-log-analytics-guidance", "grafana-provisioning-guidance", "rollback-practice-guidance") }
@@ -1609,7 +1756,7 @@ function Test-RecommendationFitsWorkflowStep {
     "implementation" { return $text -match "aspnet|blazor|api|rest|security|clean|architecture|assertion|test|code" }
     "pr-review" { return $text -match "review|security|assertion|api|rest|clean|architecture|gitea" }
     "review-feedback" { return $text -match "feedback|review|security|assertion|api|rest|clean|architecture" }
-    "post-merge-deploy" { return $text -match "nexus|azure|deploy|release|monitor|log analytics|grafana|observability" }
+    "dev-ops-post-merge-deploy" { return $text -match "nexus|azure|deploy|release|monitor|log analytics|grafana|observability" }
     "e2e-qa" { return $text -match "qa|e2e|browser|playwright|test|assertion" }
     "prod-promotion" { return $text -match "prod|release|nexus|azure|deploy|monitor|log analytics|grafana|observability" }
     "rollback" { return $text -match "rollback|nexus|azure|prod|release|artifact|monitoring" }
@@ -1651,7 +1798,12 @@ function New-ProjectGuidanceLocalState {
       name = "Project guidance search plan"
       type = "guidance-search-plan"
       purpose = "Research skills, tools, references, practices, standards, MCPs, and plugins from detected project technologies, environments, tests, security gates, and code standards before proposing local guidance updates."
-      installMethod = "research-then-manual-copy"
+      installMethod = "research-then-guarded-install"
+      installScope = "repo-local"
+      installerKind = "none"
+      requiresIdeRestart = $false
+      requiresSystemReboot = $false
+      userActionRequired = $true
       accepted = $false
       detected = $true
       requiresUserConfirmation = $true
@@ -1659,7 +1811,7 @@ function New-ProjectGuidanceLocalState {
       discoverySourcePriority = Get-ProjectGuidanceDiscoverySourcePriority
       discoverySourceNotes = Get-ProjectGuidanceDiscoverySourceNotes
       topics = @($report.researchTopics)
-      nextStep = "Use project-guidance-discover to search OpenAI official catalogs/docs, official tool repositories/docs, technology-owner sources, skills.sh/skills or marketplace repository leads, and trusted public sources; show suggested missing skills and guidance; ask for additional desired items; then pass confirmed skill items to project-guidance-acquire."
+      nextStep = "Use project-guidance-discover to search OpenAI official catalogs/docs, official tool repositories/docs, technology-owner sources, skills.sh/skills or marketplace repository leads, and trusted public sources; research extra useful skills, MCPs, plugins, tools, references, practices, standards, and Codex-applicable IDE helpers; show suggested missing guidance; ask only for confirmation, dismissals, or omissions; then record and install/configure supported confirmed items through project-guidance-acquire without a second install prompt."
     }
   }
 
@@ -1700,7 +1852,7 @@ function New-ProjectGuidanceLocalState {
 
   return [ordered]@{
     schemaVersion = 1
-    mode = "guided-manual"
+    mode = "guarded-auto"
     sourceCatalog = ".codex/tool-recommendations.example.json"
     localStatePath = ".codex/tool-recommendations.local.json"
     generatedBy = "project-guidance-discover"
@@ -1760,7 +1912,7 @@ function Get-ConfirmedGuidanceItemsFromJson {
     throw "ValuesJson is required for AcquireProjectGuidance."
   }
   if ($Json -match '"installCommand"\s*:') {
-    throw "AcquireProjectGuidance rejects installCommand; project skills must use manual-copy only."
+    throw "AcquireProjectGuidance rejects installCommand; use guarded install metadata instead of arbitrary installer snippets."
   }
 
   $data = $Json | ConvertFrom-Json
@@ -1787,6 +1939,107 @@ function Test-RepoRelativeTarget {
 
 function Get-RequiredSkillAcquisitionFields {
   return @("name", "type", "installMethod", "source", "target", "validation", "sourceKind")
+}
+
+function Get-ItemBooleanProperty {
+  param(
+    $Item,
+    [string]$Name
+  )
+
+  if ($Item.PSObject.Properties.Name -notcontains $Name) { return $false }
+  return [bool]$Item.$Name
+}
+
+function Get-ItemStringProperty {
+  param(
+    $Item,
+    [string]$Name,
+    [string]$Default = ""
+  )
+
+  if ($Item.PSObject.Properties.Name -notcontains $Name) { return $Default }
+  if ($null -eq $Item.$Name) { return $Default }
+  return [string]$Item.$Name
+}
+
+function Add-RestartRequirement {
+  param(
+    $RestartRequirements,
+    $Item,
+    [string]$Name
+  )
+
+  $requiresIdeRestart = Get-ItemBooleanProperty $Item "requiresIdeRestart"
+  $requiresSystemReboot = Get-ItemBooleanProperty $Item "requiresSystemReboot"
+  if (-not $requiresIdeRestart -and -not $requiresSystemReboot) { return }
+
+  $RestartRequirements.Add([ordered]@{
+    name = $Name
+    type = if ($requiresSystemReboot) { "system-reboot" } else { "ide-restart" }
+    reason = Get-ItemStringProperty $Item "importantMessage" "Restart is required before this item is fully active."
+    validation = Get-ItemStringProperty $Item "validation" "Run the recommendation validation command after restart."
+  }) | Out-Null
+}
+
+function Add-AggregateRestartFinding {
+  param(
+    $Result,
+    $RestartRequirements
+  )
+
+  if ($RestartRequirements.Count -eq 0) { return }
+
+  $parts = foreach ($requirement in @($RestartRequirements)) {
+    "$($requirement.name) [$($requirement.type)]: $($requirement.reason) Validate after restart with: $($requirement.validation)"
+  }
+  Add-Item $Result "findings" "project-guidance-acquire" "important.restart-summary" "Important: complete all feasible installs first, then perform one restart/reboot pass. $($parts -join ' | ')" "warning"
+}
+
+function Test-GuardedInstallNeedsConfirmation {
+  param($Item)
+
+  $scope = Get-ItemStringProperty $Item "installScope" "repo-local"
+  $userActionRequired = Get-ItemBooleanProperty $Item "userActionRequired"
+  $requiresIdeRestart = Get-ItemBooleanProperty $Item "requiresIdeRestart"
+  $requiresSystemReboot = Get-ItemBooleanProperty $Item "requiresSystemReboot"
+  return $userActionRequired -or $requiresIdeRestart -or $requiresSystemReboot -or ($scope -in @("global", "ide", "system"))
+}
+
+function Test-DockerPreferredGuidance {
+  param($Item)
+
+  if ($Item.PSObject.Properties.Name -notcontains "dockerAlternative") { return $false }
+  if ($null -eq $Item.dockerAlternative) { return $false }
+  $preference = Get-ItemStringProperty $Item "installPreference" ""
+  return $preference -eq "docker-preferred"
+}
+
+function Add-DockerPreferredGuidance {
+  param(
+    $Result,
+    $Item,
+    [string]$Name,
+    [string]$Type,
+    [string]$Validation
+  )
+
+  $docker = $Item.dockerAlternative
+  $image = if ($docker.PSObject.Properties.Name -contains "image") { [string]$docker.image } else { "" }
+  $runTemplate = if ($docker.PSObject.Properties.Name -contains "runTemplate") { [string]$docker.runTemplate } else { "" }
+  $buildCommand = if ($docker.PSObject.Properties.Name -contains "buildCommand") { [string]$docker.buildCommand } else { "" }
+  $fallback = Get-ItemStringProperty $Item "validation" $Validation
+  $details = "Confirmed $type guidance is docker-preferred. Use pinned image '$image'."
+  if (-not [string]::IsNullOrWhiteSpace($buildCommand)) { $details += " Build/refresh with: $buildCommand." }
+  if (-not [string]::IsNullOrWhiteSpace($runTemplate)) { $details += " Run with: $runTemplate." }
+  $details += " Validate with: $Validation"
+
+  if ($null -eq (Get-Command docker -ErrorAction SilentlyContinue)) {
+    Add-Item $Result "warnings" $Name "docker-preferred.blocked" "Docker CLI is missing; cannot use docker-preferred $type guidance for '$Name'. Install Docker first, then use pinned image '$image'. Fallback host validation if explicitly accepted: $fallback" "warning"
+    return
+  }
+
+  Add-Item $Result "actions" $Name "docker-preferred" $details
 }
 
 function Test-ValidProjectGuidanceSourceKind {
@@ -1829,13 +2082,27 @@ function Test-ConfirmedSkillAcquisitionContract {
 function Invoke-AcquireProjectGuidance {
   $result = New-Result
   $items = Get-ConfirmedGuidanceItemsFromJson $ValuesJson
+  $restartRequirements = [System.Collections.Generic.List[object]]::new()
 
   foreach ($item in @($items)) {
     $type = if ($item.PSObject.Properties.Name -contains "type") { [string]$item.type } else { "skill" }
     $name = if ($item.PSObject.Properties.Name -contains "name") { [string]$item.name } elseif ($item.PSObject.Properties.Name -contains "id") { [string]$item.id } else { "unnamed-guidance" }
+    Add-RestartRequirement $restartRequirements $item $name
 
     if ($type -ne "skill") {
-      Add-Item $result "findings" $name "non-skill-guidance" "Non-skill guidance remains in .codex/tool-recommendations.local.json; no file copy is required." "info"
+      $installMethod = Get-ItemStringProperty $item "installMethod" "manual-reference"
+      $installScope = Get-ItemStringProperty $item "installScope" "repo-local"
+      $installerKind = Get-ItemStringProperty $item "installerKind" "none"
+      $validation = Get-ItemStringProperty $item "validation" "No validation command provided."
+      if (Test-DockerPreferredGuidance $item) {
+        Add-DockerPreferredGuidance $result $item $name $type $validation
+        continue
+      }
+      if (Test-GuardedInstallNeedsConfirmation $item) {
+        Add-Item $result "warnings" $name "guarded-install-plan" "Confirmed $type acquisition uses installMethod '$installMethod', installScope '$installScope', installerKind '$installerKind'. Install/configure now through a platform-supported tool when available; otherwise keep the item as a guarded plan. Validate with: $validation" "warning"
+      } else {
+        Add-Item $result "actions" $name "guarded-safe-plan" "Safe repo-local/non-secret $type guidance may be applied when a deterministic repo-local config step exists. installMethod '$installMethod', installerKind '$installerKind'. Validate with: $validation"
+      }
       continue
     }
 
@@ -1878,6 +2145,8 @@ function Invoke-AcquireProjectGuidance {
 
     Add-Item $result "findings" $targetRelative "validation" "Validate with: $($item.validation)" "info"
   }
+
+  Add-AggregateRestartFinding $result $restartRequirements
 
   return $result
 }
@@ -1940,6 +2209,8 @@ function Invoke-Audit {
       } elseif (($client.pr.reviewers -is [string]) -and [string]::IsNullOrWhiteSpace($client.pr.reviewers)) {
         Add-Item $result "findings" $clientLocal "pr.reviewers" "Empty reviewer config; use all or an explicit developer username array." "warning"
       }
+
+      Add-PrMinimumApprovalValidationFindings $result $client $clientLocal
 
       if ($null -eq $client.pr.labels) {
         Add-Item $result "findings" $clientLocal "pr.labels" "Missing PR label config; defaults should enable codex-reviewed, needs-tests, and needs-changes." "warning"
@@ -2280,7 +2551,7 @@ function Invoke-AuditRecommendedTools {
       accepted = ($accepted -contains $entry.id)
     }
 
-    foreach ($optionalField in @("sourceKind", "requires", "researchTopics", "officialSources", "searchQueries", "notes")) {
+    foreach ($optionalField in @("sourceKind", "requires", "researchTopics", "officialSources", "searchQueries", "notes", "installScope", "installerKind", "requiresIdeRestart", "requiresSystemReboot", "userActionRequired", "importantMessage", "installPreference", "dockerAlternative")) {
       if ($entry.PSObject.Properties.Name -contains $optionalField) {
         $recommendation[$optionalField] = $entry.$optionalField
       }
@@ -2382,7 +2653,7 @@ function Invoke-SetRecommendedTools {
   $config = Get-Content -Path $target -Raw | ConvertFrom-Json
   Ensure-ObjectProperty -Object $config -Name "recommendedTools"
   Set-ObjectValue -Object $config -Path @("recommendedTools", "enabled") -Value $true
-  Set-ObjectValue -Object $config -Path @("recommendedTools", "mode") -Value "guided-manual"
+  Set-ObjectValue -Object $config -Path @("recommendedTools", "mode") -Value "guarded-auto"
 
   foreach ($key in @("accepted", "dismissed")) {
     if ($values.Contains($key)) {
@@ -2618,7 +2889,8 @@ function Write-TemplateFile {
   param(
     $Result,
     [string]$RelativePath,
-    [string]$Content
+    [string]$Content,
+    [string]$ActionMessage = "Create template."
   )
 
   $target = Join-RootPath $RelativePath
@@ -2628,11 +2900,280 @@ function Write-TemplateFile {
   }
 
   $parent = Split-Path -Path $target -Parent
-  Add-Item $Result "actions" $RelativePath "" "Create quality gate template."
+  Add-Item $Result "actions" $RelativePath "" $ActionMessage
   if (-not $DryRun) {
     New-Item -ItemType Directory -Path $parent -Force | Out-Null
     Set-Content -Path $target -Value $Content -Encoding UTF8
   }
+}
+
+function Write-ProviderAdapterExample {
+  param(
+    $Result,
+    [string]$RelativePath,
+    [string]$AdapterType,
+    [string]$Operations
+  )
+
+  Write-TemplateFile $Result $RelativePath @"
+# $AdapterType Provider Adapter Example
+
+This adapter is a provider-neutral scaffold. Replace this file with a selected provider adapter for a concrete project, or copy it to a provider-specific adapter path and fill in project-specific behavior.
+
+## Operations
+
+$Operations
+
+## Configuration Boundary
+
+- Keep credentials, tokens, endpoint secrets, and local-only values in ignored local config.
+- Keep exact executable commands, image tags, SDK versions, and provider field names in provider-specific adapters or executable workflow files.
+- Generic delivery skills call the operation names; this adapter translates them to the selected provider.
+"@
+}
+
+function Invoke-InitProjectProfile {
+  $result = New-Result
+
+  Write-TemplateFile $result ".codex/project-profile.schema.json" @'
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Codex Project Profile",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "stack",
+    "providers",
+    "workflow",
+    "quality",
+    "adapters"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "stack": {
+      "type": "object",
+      "required": [
+        "languages",
+        "frameworks",
+        "testFrameworks"
+      ],
+      "properties": {
+        "languages": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "frameworks": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "testFrameworks": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "providers": {
+      "type": "object",
+      "required": [
+        "ticket",
+        "repository",
+        "review",
+        "artifact",
+        "deployment",
+        "observability"
+      ],
+      "properties": {
+        "ticket": { "$ref": "#/$defs/providerRef" },
+        "repository": { "$ref": "#/$defs/providerRef" },
+        "review": { "$ref": "#/$defs/providerRef" },
+        "artifact": { "$ref": "#/$defs/providerRef" },
+        "deployment": { "$ref": "#/$defs/providerRef" },
+        "observability": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/providerRef" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "workflow": {
+      "type": "object",
+      "required": [
+        "ticketKeyPattern",
+        "baseBranch",
+        "branchPrefix",
+        "branchPattern",
+        "environments",
+        "releasePolicy"
+      ],
+      "properties": {
+        "ticketKeyPattern": { "type": "string", "minLength": 1 },
+        "baseBranch": { "type": "string", "minLength": 1 },
+        "branchPrefix": { "type": "string", "minLength": 1 },
+        "branchPattern": { "type": "string", "minLength": 1 },
+        "environments": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "releasePolicy": {
+          "type": "object",
+          "required": [
+            "buildOncePromoteSameArtifact",
+            "explicitProductionPromotion"
+          ],
+          "properties": {
+            "buildOncePromoteSameArtifact": { "type": "boolean" },
+            "explicitProductionPromotion": { "type": "boolean" }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "quality": {
+      "type": "object",
+      "required": [
+        "gates"
+      ],
+      "properties": {
+        "gates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [ "id", "type" ],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "type": { "type": "string", "minLength": 1 },
+              "command": { "type": "string" },
+              "workflowJob": { "type": "string" },
+              "required": { "type": "boolean" }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "adapters": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "providerRef": {
+      "type": "object",
+      "required": [ "id" ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "adapter": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    }
+  }
+}
+'@
+
+  Write-ProviderAdapterExample $result ".codex/providers/ticket.example.md" "Ticket" "- `list`: list candidate work items.
+- `read`: read one work item and acceptance criteria.
+- `enrich`: update planning or delivery metadata.
+- `move-state`: transition workflow state.
+- `comment`: add durable workflow evidence.
+- `verify-marker`: confirm a generated marker exists."
+
+  Write-ProviderAdapterExample $result ".codex/providers/repo.example.md" "Repository And Review" "- `branch`: create or inspect a branch.
+- `push`: publish branch changes.
+- `pull-request`: create or update a review request.
+- `status`: read validation state.
+- `label`: add or remove review labels.
+- `comment`: add review evidence.
+- `request-reviewers`: request human review."
+
+  Write-ProviderAdapterExample $result ".codex/providers/artifact.example.md" "Artifact" "- `publish`: store immutable build output.
+- `retrieve`: download an existing artifact.
+- `verify`: check checksum and manifest integrity.
+- `promote-alias`: move an environment or release alias to an existing artifact.
+- `publish-evidence`: store QA or release evidence."
+
+  Write-ProviderAdapterExample $result ".codex/providers/deploy.example.md" "Deployment" "- `deploy-artifact`: deploy an immutable artifact to an environment.
+- `apply-config`: apply environment configuration.
+- `verify-config`: compare required runtime settings.
+- `health`: run health or smoke checks.
+- `record`: capture deployment evidence."
+
+  Write-ProviderAdapterExample $result ".codex/providers/stack.example.md" "Stack" "- `restore`: restore dependencies.
+- `format`: check formatting or linting.
+- `build`: compile or package source.
+- `test`: run configured tests.
+- `coverage`: read coverage evidence.
+- `dependency-scan`: run configured dependency checks."
+
+  Write-ProviderAdapterExample $result ".codex/providers/e2e.example.md" "E2E" "- `discover-targets`: resolve deployed QA targets.
+- `run`: execute acceptance checks.
+- `diagnose`: classify failed evidence.
+- `publish-evidence`: store screenshots, traces, logs, or reports."
+
+  Write-TemplateFile $result ".codex/project-profile.json" @'
+{
+  "$schema": "./project-profile.schema.json",
+  "schemaVersion": 1,
+  "stack": {
+    "languages": [],
+    "frameworks": [],
+    "testFrameworks": []
+  },
+  "providers": {
+    "ticket": { "id": "example-ticket", "adapter": ".codex/providers/ticket.example.md" },
+    "repository": { "id": "example-repository", "adapter": ".codex/providers/repo.example.md" },
+    "review": { "id": "example-review", "adapter": ".codex/providers/repo.example.md" },
+    "artifact": { "id": "example-artifact", "adapter": ".codex/providers/artifact.example.md" },
+    "deployment": { "id": "example-deployment", "adapter": ".codex/providers/deploy.example.md" },
+    "observability": []
+  },
+  "workflow": {
+    "ticketKeyPattern": "TICKET-[0-9]+",
+    "baseBranch": "main",
+    "branchPrefix": "codex",
+    "branchPattern": "{prefix}/{ticketKeySlug}-{titleSlug}",
+    "environments": [ "dev", "qa", "prod" ],
+    "releasePolicy": {
+      "buildOncePromoteSameArtifact": true,
+      "explicitProductionPromotion": true
+    }
+  },
+  "quality": {
+    "coverageMinimumPercent": 80,
+    "gates": [
+      { "id": "restore", "type": "build-prep", "required": true },
+      { "id": "format", "type": "format", "required": true },
+      { "id": "build", "type": "build", "required": true },
+      { "id": "tests", "type": "test", "required": true },
+      { "id": "dependency-scan", "type": "security", "required": true }
+    ]
+  },
+  "adapters": {
+    "ticket": ".codex/providers/ticket.example.md",
+    "repository": ".codex/providers/repo.example.md",
+    "review": ".codex/providers/repo.example.md",
+    "artifact": ".codex/providers/artifact.example.md",
+    "deployment": ".codex/providers/deploy.example.md",
+    "stack": ".codex/providers/stack.example.md",
+    "e2e": ".codex/providers/e2e.example.md"
+  }
+}
+'@
+
+  return $result
 }
 
 function Invoke-InitQualityGateTemplates {
@@ -2833,7 +3374,6 @@ $RECYCLE.BIN/
 
   Write-TemplateFile $result ".codex/delivery-policy.json" @'
 {
-  "ticketKeyPattern": "E2EPROJECT-[0-9]+",
   "agentOptimization": {
     "maxAutonomousIterations": 20,
     "maxToolRetries": 2,
@@ -2892,10 +3432,17 @@ $ErrorActionPreference = "Stop"
 
 $message = Get-Content -Path $MessagePath -Raw
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+$profilePath = Join-Path $repoRoot ".codex/project-profile.json"
 $policyPath = Join-Path $repoRoot ".codex/delivery-policy.json"
 $ticketKeyPattern = "E2EPROJECT-[0-9]+"
 
-if (Test-Path -LiteralPath $policyPath) {
+if (Test-Path -LiteralPath $profilePath) {
+  $profile = Get-Content -LiteralPath $profilePath -Raw | ConvertFrom-Json
+  if ($profile.workflow.ticketKeyPattern) {
+    $ticketKeyPattern = [string]$profile.workflow.ticketKeyPattern
+  }
+}
+elseif (Test-Path -LiteralPath $policyPath) {
   $policy = Get-Content -LiteralPath $policyPath -Raw | ConvertFrom-Json
   if ($policy.ticketKeyPattern) {
     $ticketKeyPattern = [string]$policy.ticketKeyPattern
@@ -2919,6 +3466,14 @@ on:
       - main
       - dev
     paths:
+      - .editorconfig
+      - Directory.Build.props
+      - Directory.Build.targets
+      - Directory.Packages.props
+      - global.json
+      - NuGet.config
+      - SDDTemplate.slnx
+      - dotnet-tools.json
       - src/**
       - tests/**
 
@@ -3120,9 +3675,9 @@ jobs:
           $changed_files
           EOF
 
-          ticket_key_pattern="$(sed -nE 's/.*"ticketKeyPattern"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' .codex/delivery-policy.json | head -n 1)"
+          ticket_key_pattern="$(jq -r '.workflow.ticketKeyPattern // empty' .codex/project-profile.json)"
           if [ -z "$ticket_key_pattern" ]; then
-            echo "Could not read ticketKeyPattern from .codex/delivery-policy.json."
+            echo "Could not read workflow.ticketKeyPattern from .codex/project-profile.json."
             exit 1
           fi
 
@@ -3193,7 +3748,7 @@ jobs:
           commit_sha="$(cat artifacts/commit.sha)"
           first_artifact_name="$(jq -r '.apps | sort_by(.deployOrder) | .[0].artifactName' infra/deployment/apps.json)"
           first_artifact_checksum="$(cut -d ' ' -f1 "artifacts/packages/$first_artifact_name.sha256")"
-          ticket_key_pattern="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ReadDeliveryPolicy --path .codex/delivery-policy.json)"
+          ticket_key_pattern="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ReadProjectProfile --path .codex/project-profile.json)"
 
           commit_message="$(git log -1 --pretty=%B)"
           plane_ticket_key="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ExtractTicketKey --pattern "$ticket_key_pattern" --message "$commit_message" --fallback manual-dispatch)"
@@ -3371,6 +3926,22 @@ jobs:
         run: |
           set -euo pipefail
 
+          retry_smoke() {
+            label="$1"
+            shift
+            for delay in 0 5 10 20 30 60; do
+              if [ "$delay" != "0" ]; then
+                sleep "$delay"
+              fi
+              if "$@"; then
+                return 0
+              fi
+              echo "Smoke check '$label' failed; retrying after Azure warm-up." >&2
+            done
+            echo "Smoke check '$label' failed after retries." >&2
+            return 1
+          }
+
           jq -r '.[] | [.appId, .role, .healthPath] | @tsv' deployable-apps.json |
           while IFS=$'\t' read -r app_id role health_path; do
             app_upper="$(echo "$app_id" | tr '[:lower:]-' '[:upper:]_')"
@@ -3378,18 +3949,19 @@ jobs:
             app_url="${!url_var:-}"
             test -n "$app_url"
             if [ "$role" = "web" ]; then
-              curl --fail --silent --show-error --location "$app_url" -o response.html
+              retry_smoke "DEV $app_id root" curl --fail --silent --show-error --location "$app_url" -o response.html
               grep -q "<title>SDD Template</title>" response.html
               ! grep -qi "Microsoft Azure" response.html
               expected_api_url="${AZURE_DEV_API_APP_URL:-}"
               test -n "$expected_api_url"
-              curl --fail --silent --show-error --location "${app_url}/clients" -o clients.html
-              grep -q "const apiBaseUrl = \"${expected_api_url}\";" clients.html
+              retry_smoke "DEV $app_id clients" curl --fail --silent --show-error --location "${app_url}/clients" -o clients.html
+              grep -q "<title>Clients</title>" clients.html
+              grep -q 'id="client-form"' clients.html
             fi
             if [ "$role" = "api" ]; then
               site_origin="${AZURE_DEV_SITE_APP_URL:-}"
               test -n "$site_origin"
-              curl --fail --silent --show-error --request OPTIONS \
+              retry_smoke "DEV $app_id CORS" curl --fail --silent --show-error --request OPTIONS \
                 --header "Origin: $site_origin" \
                 --header "Access-Control-Request-Method: POST" \
                 --header "Access-Control-Request-Headers: content-type" \
@@ -3398,7 +3970,7 @@ jobs:
                 "${app_url}/api/clients"
               grep -iq "^Access-Control-Allow-Origin: ${site_origin}" cors.headers
             fi
-            curl --fail --silent --show-error --location "${app_url}${health_path}" -o health.json
+            retry_smoke "DEV $app_id health" curl --fail --silent --show-error --location "${app_url}${health_path}" -o health.json
             grep -q '"status":"ok"' health.json
           done
         env:
@@ -3558,6 +4130,22 @@ jobs:
         run: |
           set -euo pipefail
 
+          retry_smoke() {
+            label="$1"
+            shift
+            for delay in 0 5 10 20 30 60; do
+              if [ "$delay" != "0" ]; then
+                sleep "$delay"
+              fi
+              if "$@"; then
+                return 0
+              fi
+              echo "Smoke check '$label' failed; retrying after Azure warm-up." >&2
+            done
+            echo "Smoke check '$label' failed after retries." >&2
+            return 1
+          }
+
           jq -r '.[] | [.appId, .role, .healthPath] | @tsv' deployable-apps.json |
           while IFS=$'\t' read -r app_id role health_path; do
             app_upper="$(echo "$app_id" | tr '[:lower:]-' '[:upper:]_')"
@@ -3565,18 +4153,19 @@ jobs:
             app_url="${!url_var:-}"
             test -n "$app_url"
             if [ "$role" = "web" ]; then
-              curl --fail --silent --show-error --location "$app_url" -o response.html
+              retry_smoke "QA $app_id root" curl --fail --silent --show-error --location "$app_url" -o response.html
               grep -q "<title>SDD Template</title>" response.html
               ! grep -qi "Microsoft Azure" response.html
               expected_api_url="${AZURE_QA_API_APP_URL:-}"
               test -n "$expected_api_url"
-              curl --fail --silent --show-error --location "${app_url}/clients" -o clients.html
-              grep -q "const apiBaseUrl = \"${expected_api_url}\";" clients.html
+              retry_smoke "QA $app_id clients" curl --fail --silent --show-error --location "${app_url}/clients" -o clients.html
+              grep -q "<title>Clients</title>" clients.html
+              grep -q 'id="client-form"' clients.html
             fi
             if [ "$role" = "api" ]; then
               site_origin="${AZURE_QA_SITE_APP_URL:-}"
               test -n "$site_origin"
-              curl --fail --silent --show-error --request OPTIONS \
+              retry_smoke "QA $app_id CORS" curl --fail --silent --show-error --request OPTIONS \
                 --header "Origin: $site_origin" \
                 --header "Access-Control-Request-Method: POST" \
                 --header "Access-Control-Request-Headers: content-type" \
@@ -3585,12 +4174,42 @@ jobs:
                 "${app_url}/api/clients"
               grep -iq "^Access-Control-Allow-Origin: ${site_origin}" cors.headers
             fi
-            curl --fail --silent --show-error --location "${app_url}${health_path}" -o health.json
+            retry_smoke "QA $app_id health" curl --fail --silent --show-error --location "${app_url}${health_path}" -o health.json
             grep -q '"status":"ok"' health.json
           done
         env:
           AZURE_QA_SITE_APP_URL: ${{ secrets.AZURE_QA_SITE_APP_URL }}
           AZURE_QA_API_APP_URL: ${{ secrets.AZURE_QA_API_APP_URL }}
+
+      - name: Publish QA target metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          jq -n \
+            --arg environment "QA" \
+            --arg commitSha "$GITHUB_SHA" \
+            --arg siteUrl "$AZURE_QA_SITE_APP_URL" \
+            --arg apiUrl "$AZURE_QA_API_APP_URL" \
+            --arg workflowRunUrl "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --arg publishedAtUtc "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{
+              environment: $environment,
+              commitSha: $commitSha,
+              siteUrl: $siteUrl,
+              apiUrl: $apiUrl,
+              workflowRunUrl: $workflowRunUrl,
+              publishedAtUtc: $publishedAtUtc
+            }' > qa-targets.json
+
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file qa-targets.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/qa-targets.json"
+        env:
+          AZURE_QA_SITE_APP_URL: ${{ secrets.AZURE_QA_SITE_APP_URL }}
+          AZURE_QA_API_APP_URL: ${{ secrets.AZURE_QA_API_APP_URL }}
+          NEXUS_URL: ${{ secrets.NEXUS_URL }}
+          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+          NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
 
   e2e-qa:
     runs-on: ubuntu-latest
@@ -3622,7 +4241,7 @@ jobs:
           test -n "$artifact_commit_sha"
           echo "E2E_ARTIFACT_COMMIT_SHA=$artifact_commit_sha" >> "$GITHUB_ENV"
 
-          ticket_key_pattern="$(sed -nE 's/.*"ticketKeyPattern"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' .codex/delivery-policy.json | head -n 1)"
+          ticket_key_pattern="$(jq -r '.workflow.ticketKeyPattern // empty' .codex/project-profile.json)"
           branch_name="${GITHUB_REF#refs/heads/}"
           plane_ticket_key="$(printf '%s\n' "$branch_name" | sed -nE "s#^qa/($ticket_key_pattern)(/.*)?\$#\1#p" | head -n 1)"
           test -n "$plane_ticket_key"
@@ -3912,7 +4531,7 @@ Gitea PR validation is the source of truth. Local hooks are only convenience che
 
 Coverage threshold defaults to `80%` from `.codex/quality.example.json`. Local development may override it with ignored `.codex/quality.local.json`; CI falls back to the tracked example when no local config is present.
 
-The local runner executes PR validation inside a pinned .NET SDK container. PR validation must target product/application projects specifically for restore, format, build, tests, coverage, and dependency audit. For this template, CI uses explicit `src/SDDTemplate.Site`, `src/SDDTemplate.Api`, and `tests/SDDTemplate.Site.Tests` project paths; SDD delivery-tool, workflow, agent, OpenSpec, infrastructure, and meta-tests remain local/template-maintenance checks and are not part of normal PR CI. Keep checkout and security tools shell-based unless the job container explicitly includes `node`; JavaScript `uses:` actions can fail inside plain SDK containers. Validate runner compatibility after workflow changes:
+The local runner executes PR validation inside a pinned .NET SDK container. PR validation triggers only for application code, tests, and root app build inputs such as `.editorconfig`, `Directory.Build.props`, `Directory.Build.targets`, `Directory.Packages.props`, `global.json`, `NuGet.config`, `SDDTemplate.slnx`, and `dotnet-tools.json`. It must target product/application projects specifically for restore, format, build, tests, coverage, and dependency audit. For this template, CI uses explicit `src/SDDTemplate.Site`, `src/SDDTemplate.Api`, and `tests/SDDTemplate.Site.Tests` project paths; SDD delivery-tool, workflow, agent, OpenSpec, infrastructure, workflow files, docs, and meta-tests remain local/template-maintenance checks and are not part of normal PR CI. Keep checkout and security tools shell-based unless the job container explicitly includes `node`; JavaScript `uses:` actions can fail inside plain SDK containers. Validate runner compatibility after workflow changes:
 
 ```powershell
 .\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode ValidateGiteaActionsRunner
@@ -3943,7 +4562,7 @@ Required repository secrets:
 - `AZURE_PROD_API_APP_NAME`
 - `AZURE_PROD_API_APP_URL`
 
-Push-triggered deployments are ticket-gated by `.codex/delivery-policy.json`. Only commits or merged PR titles that start with the configured ticket key pattern may deploy, and automatic CI/deployment work is skipped when the change does not touch `src/**` or `tests/**`.
+Push-triggered deployments are ticket-gated by `.codex/project-profile.json` `workflow.ticketKeyPattern`. Only commits or merged PR titles that start with the configured ticket key pattern may deploy, and automatic CI/deployment work is skipped when the change does not touch `src/**` or `tests/**`.
 
 DEV and QA deploy only from `dev` when application/test/package source changed. PROD deploys only from `main` when `main` points to the exact QA-approved packaged commit for the same ticket-gated application change. Manual workflow dispatch remains available for explicit DEV/QA/PROD promotion; PROD dispatch must pass an existing `artifact_commit_sha`, `release_version`, and `source_rc_version`. The PROD job downloads the existing Nexus artifact and does not rebuild.
 
@@ -3955,7 +4574,7 @@ Recommended branch protection:
 - Require the PR validation workflow to pass.
 - Require the exact emitted status check context: `PR validation / validate (pull_request)`.
 - Require coverage to meet the configured threshold.
-- Require review approval or the configured review label.
+- Require `pr.minimumApprovals.dev/main` review approval(s), default `1` per branch, or the configured review label.
 - Block merge while `needs-changes` is present.
 
 Release flow:
@@ -3964,7 +4583,7 @@ Release flow:
 feature branch -> dev -> DEV -> QA -> Gitea E2E evidence -> Plane E2E QA -> main -> PROD
 ```
 
-The package workflow reads `infra/deployment/apps.json`, rejects deployable project paths outside `src/`, builds one ZIP per deployable app, builds `deployment-config.json` from `infra/deployment/configuration.json` plus each app's `appsettings*.json`, and publishes from ticket-gated application changes on `dev`, including `app/{commitSha}/deployable-apps.json`, `app/{commitSha}/deployment-config.json`, per-app ZIP/checksum files, and a baseline `app/{commitSha}/release.json`. DEV, QA, and PROD must apply and verify deployment configuration before deployment success is claimed. Smoke checks also verify that the clients page renders the expected API base URL and that API CORS preflight allows the matching web origin. DEV and QA must deploy the same Nexus app artifacts for the same commit SHA. After QA deploy and smoke checks, push a `qa/{ticketKey}` branch from current `dev`; the `e2e-qa` job runs the committed Playwright suite against the deployed QA Site/API URLs without redeploying, resolves the artifact commit from the branch point with `dev`, and uploads `app/{commitSha}/qa-e2e-evidence.zip` plus a ticket/run evidence copy under `qa/{ticketKey}/{runId}/qa-e2e-evidence.zip`. This Gitea job is evidence-only; the `test-e2e` skill remains responsible for acceptance-to-assertion QA proof, Plane Done state, RC tagging, release manifest QA lineage, and deleting the remote `qa/{ticketKey}` branch after durable Nexus/Plane/release/tag evidence exists. Only full `PASS` can move Plane to Done; `PASS WITH GAPS` or `FAIL` remain in QA. PROD is an explicit release event that may include one or more Done tickets through `release.json.includedTickets`; it must deploy the QA-approved Nexus app artifacts from an exact-commit `main` promotion or explicit dispatch by commit SHA, pass deployment configuration verification, rendered API base URL validation, CORS preflight validation, the web page smoke check, and every app `/health` check, then record the PROD result on every included ticket.
+The package workflow reads `infra/deployment/apps.json`, rejects deployable project paths outside `src/`, builds one ZIP per deployable app, builds `deployment-config.json` from `infra/deployment/configuration.json` plus each app's `appsettings*.json`, and publishes from ticket-gated application changes on `dev`, including `app/{commitSha}/deployable-apps.json`, `app/{commitSha}/deployment-config.json`, per-app ZIP/checksum files, and a baseline `app/{commitSha}/release.json`. DEV, QA, and PROD must apply and verify deployment configuration before deployment success is claimed. Smoke checks also verify that the clients page renders the expected API base URL and that API CORS preflight allows the matching web origin. DEV and QA must deploy the same Nexus app artifacts for the same commit SHA. After QA deploy and smoke checks, push a `qa/{ticketKey}` branch from current `dev`; the `e2e-qa` job runs the committed Playwright suite against the deployed QA Site/API URLs without redeploying, resolves the artifact commit from the branch point with `dev`, and uploads `app/{commitSha}/qa-e2e-evidence.zip` plus a ticket/run evidence copy under `qa/{ticketKey}/{runId}/qa-e2e-evidence.zip`. Implementation records E2E expectations; `quality-test-e2e` owns Playwright E2E creation, repair, rerun, and evidence when existing committed tests cannot prove acceptance. This Gitea job is evidence-only; the `quality-test-e2e` skill remains responsible for acceptance-to-assertion QA proof, Plane Done state, RC tagging, release manifest QA lineage, and deleting the remote `qa/{ticketKey}` branch after durable Nexus/Plane/release/tag evidence exists. Only full `PASS` can move Plane to Done; `PASS WITH GAPS` or `FAIL` remain in QA. PROD is an explicit release event that may include one or more Done tickets through `release.json.includedTickets`; it must deploy the QA-approved Nexus app artifacts from an exact-commit `main` promotion or explicit dispatch by commit SHA, pass deployment configuration verification, rendered API base URL validation, CORS preflight validation, the web page smoke check, and every app `/health` check, then record the PROD result on every included ticket.
 '@
 
   return $result
@@ -4107,7 +4726,7 @@ function Invoke-EnsureDeliveryContext {
       $existing = Get-Content -Path $target -Raw | ConvertFrom-Json
       $existingTicket = [string]$existing.ticketKey
       if (-not [string]::IsNullOrWhiteSpace($existingTicket) -and $existingTicket -ne $ticketKey -and -not $replaceExisting) {
-        throw "Existing $targetRelative points to '$existingTicket'. Pass replaceExisting=true only after plane-start-ticket confirms '$existingTicket' is in the configured Done state, or after explicit operator confirmation for a known-safe repair to '$ticketKey'."
+        throw "Existing $targetRelative points to '$existingTicket'. Pass replaceExisting=true only after dev-flow-start-ticket confirms '$existingTicket' is in the configured Done state, or after explicit operator confirmation for a known-safe repair to '$ticketKey'."
       }
     } catch {
       if (-not $replaceExisting) {
@@ -4170,6 +4789,52 @@ function Invoke-SetClientTools {
   if (-not $DryRun) {
     $config | ConvertTo-Json -Depth 20 | Set-Content -Path $target -Encoding UTF8
   }
+  return $result
+}
+
+function Invoke-SetGiteaBranchProtection {
+  $result = New-Result
+  $config = Get-GiteaBranchProtectionConfig $result
+  if ($null -eq $config) { return $result }
+
+  foreach ($branch in @("dev", "main")) {
+    $expectedApprovals = Get-PrMinimumApprovals -Client $config.client -Branch $branch
+    $uri = "$($config.baseUrl)/api/v1/repos/$($config.owner)/$($config.repo)/branch_protections/$branch"
+
+    try {
+      $current = Invoke-RestMethod -Method Get -Uri $uri -Headers $config.headers
+    } catch {
+      Add-Item $result "findings" ".gitea/workflows/README.md" "branch-protection.$branch" "Could not read Gitea branch protection for '$branch'; configure the protected branch first or verify repository admin token permissions." "error"
+      continue
+    }
+
+    if ($null -ne $current.required_approvals -and [int]$current.required_approvals -eq $expectedApprovals) {
+      Add-Item $result "actions" ".gitea/workflows/README.md" "branch-protection.$branch.required_approvals" "Gitea branch protection already requires $expectedApprovals approval(s)."
+      continue
+    }
+
+    $body = @{ required_approvals = $expectedApprovals } | ConvertTo-Json -Depth 5
+    try {
+      Invoke-RestMethod -Method Patch -Uri $uri -Headers $config.headers -ContentType "application/json" -Body $body | Out-Null
+    } catch {
+      Add-Item $result "findings" ".gitea/workflows/README.md" "branch-protection.$branch.required_approvals" "Could not update Gitea branch protection for '$branch' to $expectedApprovals approval(s)." "error"
+      continue
+    }
+
+    try {
+      $updated = Invoke-RestMethod -Method Get -Uri $uri -Headers $config.headers
+    } catch {
+      Add-Item $result "findings" ".gitea/workflows/README.md" "branch-protection.$branch.required_approvals" "Updated Gitea branch protection for '$branch', but could not verify the final value." "error"
+      continue
+    }
+
+    if ($null -ne $updated.required_approvals -and [int]$updated.required_approvals -eq $expectedApprovals) {
+      Add-Item $result "actions" ".gitea/workflows/README.md" "branch-protection.$branch.required_approvals" "Set Gitea branch protection to require $expectedApprovals approval(s)."
+    } else {
+      Add-Item $result "findings" ".gitea/workflows/README.md" "branch-protection.$branch.required_approvals" "Gitea branch protection for '$branch' still reports $($updated.required_approvals) approval(s); expected $expectedApprovals." "error"
+    }
+  }
+
   return $result
 }
 
@@ -4348,8 +5013,10 @@ switch ($Mode) {
   "AcquireProjectGuidance" { $result = Invoke-AcquireProjectGuidance }
   "ValidateGiteaActionsRunner" { $result = Invoke-ValidateGiteaActionsRunner }
   "InitLocalFiles" { $result = Invoke-InitLocalFiles }
+  "InitProjectProfile" { $result = Invoke-InitProjectProfile }
   "InitQualityGateTemplates" { $result = Invoke-InitQualityGateTemplates }
   "SetClientTools" { $result = Invoke-SetClientTools }
+  "SetGiteaBranchProtection" { $result = Invoke-SetGiteaBranchProtection }
   "SetRecommendedTools" { $result = Invoke-SetRecommendedTools }
   "MapProjectGuidanceStep" { $result = Invoke-MapProjectGuidanceStep }
   "BuildGiteaActionsImages" { $result = Invoke-BuildGiteaActionsImages }
@@ -4364,4 +5031,3 @@ switch ($Mode) {
 }
 
 $result | ConvertTo-Json -Depth 10
-

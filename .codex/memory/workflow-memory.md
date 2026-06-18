@@ -38,7 +38,7 @@ Plane Todo
 
 - Type: Fact
 - Status: Active
-- Source: `.codex/delivery-policy.json`
+- Source: `.codex/project-profile.json`
 - Last verified: 2026-05-29
 
 Ticket keys must match:
@@ -76,7 +76,7 @@ Use these markers for idempotency:
 - Source: `.codex/skills/_shared/delivery-contract.md`, `docs/architecture.md`
 - Last verified: 2026-06-09
 
-Normal automatic delivery stays locked to one Plane ticket through ignored `.codex/delivery-context.local.json`. Keep the lock after QA Done because explicit PROD promotion may still need artifact and RC context. `plane-start-ticket` may lazily replace the lock when starting another ticket only after the locked ticket is verified in the configured Done state. Parallel delivery uses one worktree and one local ticket lock per active ticket. Child skills must verify ticket, branch, PR, artifact commit, QA evidence, RC tag, and PROD lineage match the lock before mutation.
+Normal automatic delivery stays locked to one Plane ticket through ignored `.codex/delivery-context.local.json`. Keep the lock after QA Done because explicit PROD promotion may still need artifact and RC context. `dev-flow-start-ticket` may lazily replace the lock when starting another ticket only after the locked ticket is verified in the configured Done state. Parallel delivery uses one worktree and one local ticket lock per active ticket. Child skills must verify ticket, branch, PR, artifact commit, QA evidence, RC tag, and PROD lineage match the lock before mutation.
 
 ## Parallel Delivery
 
@@ -114,6 +114,8 @@ Non-OpenSpec, non-configure delivery skills share a startup sequence through `.c
 
 Before final handoff for any non-trivial repository work, agents must classify whether an error, issue, blocker, fix, configuration repair, local tooling correction, or debugging result is reusable. The result must be reported as `Memory updated: <files>` or `Memory updated: none`. Plane comments, PR comments, QA evidence, logs, and chat summaries do not replace durable learning capture.
 
+Agent-caused or tool-discovered failures are memory candidates by default. If a command fails, a hook rejects the agent's action, a required local tool is missing, or the agent repeats a workflow mistake, search memory with the concrete symptom and persist a small update unless the issue is already covered or clearly one-off. Do not use `Memory updated: none` for a newly diagnosed repeatable agent/tooling failure.
+
 ## Symptom-Driven Memory Search
 
 - Type: Pattern
@@ -145,10 +147,10 @@ Plane work-item descriptions can strip raw HTML comments such as `<!-- ia-genera
 
 - Type: Decision
 - Status: Active
-- Source: Codex thread `019e83a6-433d-7fa2-8ff0-852d74d2eb21`, `.codex/skills/pr-review-feedback-loop/SKILL.md`
+- Source: Codex thread `019e83a6-433d-7fa2-8ff0-852d74d2eb21`, `.codex/skills/dev-flow-pr-review-feedback-loop/SKILL.md`
 - Last verified: 2026-06-02
 
-Repo-specific delivery behavior should live in repo-owned skills, not external `openspec-*` skills. The reconnectable PR feedback loop for AI findings and late human PR comments belongs in `pr-review-feedback-loop`, with `implement-ticket` and `automatic-implement-ticket` delegating to it. External OpenSpec skills should remain generic and free of local Plane/Gitea feedback markers or batch-id rules.
+Repo-specific delivery behavior should live in repo-owned skills. The reconnectable PR feedback loop for AI findings and late human PR comments belongs in `dev-flow-pr-review-feedback-loop`, with `dev-flow-implement-ticket` and `dev-flow-continue-implementation` delegating to it. OpenSpec-derived dev-flow skills may carry local ticket, validation, and handoff context when they are tracked in this repository.
 
 ## PR Feedback Batches Are Reconnectable Work
 

@@ -46,7 +46,7 @@ namespace SDDTemplate.DeliveryTools.Tests
         {
             string workflow = ReadWorkflow();
 
-            Assert.Contains("ticketKeyPattern", workflow);
+            Assert.Contains("workflow.ticketKeyPattern", workflow);
             Assert.Contains("BASH_REMATCH", workflow);
             Assert.Contains("deploy_allowed=$deploy_allowed", workflow);
             Assert.Contains("needs.classify-changes.outputs.deploy_allowed == 'true'", workflow);
@@ -168,6 +168,10 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("E2E_SITE_URL: ${{ secrets.AZURE_QA_SITE_APP_URL }}", e2eJob);
             Assert.Contains("E2E_API_URL: ${{ secrets.AZURE_QA_API_APP_URL }}", e2eJob);
             Assert.Contains("app/${E2E_ARTIFACT_COMMIT_SHA}/qa-e2e-evidence.zip", e2eJob);
+
+            Assert.Contains("Publish QA target metadata", workflow);
+            Assert.Contains("qa-targets.json", workflow);
+            Assert.Contains("app/${GITHUB_SHA}/qa-targets.json", workflow);
             Assert.Contains("qa/${E2E_PLANE_TICKET_KEY}/${run_id}/qa-e2e-evidence.zip", e2eJob);
             Assert.Contains("exit \"$test_exit\"", e2eJob);
         }
@@ -199,11 +203,39 @@ namespace SDDTemplate.DeliveryTools.Tests
             string spec = File.ReadAllText(Path.Combine(root, "tests", "SDDTemplate.E2ETests", "tests", "client-crud.spec.ts"));
 
             Assert.Contains("E2E_SITE_URL and E2E_API_URL are required", config);
+            Assert.Contains("client-tools.local.json", config);
             Assert.DoesNotContain("webServer", config);
             Assert.Contains("\"@playwright/test\"", package);
+            Assert.Contains("\"test:docker\"", package);
+            Assert.Contains("run-local-docker.ps1", package);
+            Assert.True(File.Exists(Path.Combine(root, "tests", "SDDTemplate.E2ETests", "run-local-docker.ps1")));
             Assert.Contains("Client CRUD deployed QA E2E", spec);
             Assert.Contains("/api/clients", spec);
             Assert.Contains("Born date cannot be in the future.", spec);
+        }
+
+        [Fact]
+        public void PlaywrightQaE2eUsesSameVersionLocallyAndInGitea()
+        {
+            const string expectedPlaywrightVersion = "1.57.0";
+            const string expectedImage = "agentic/e2e-ci:playwright-1.57.0-1";
+
+            string root = FindRepositoryRoot().FullName;
+            string workflow = ReadWorkflow();
+            string dockerfile = File.ReadAllText(Path.Combine(root, "infra", "gitea", "actions-images", "e2e-ci", "Dockerfile"));
+            string localRunner = File.ReadAllText(Path.Combine(root, "tests", "SDDTemplate.E2ETests", "run-local-docker.ps1"));
+            string packageLock = File.ReadAllText(Path.Combine(root, "tests", "SDDTemplate.E2ETests", "package-lock.json"));
+
+            using JsonDocument lockJson = JsonDocument.Parse(packageLock);
+            JsonElement packages = lockJson.RootElement.GetProperty("packages");
+
+            Assert.Contains($"image: {expectedImage}", workflow);
+            Assert.Contains($"$image = '{expectedImage}'", localRunner);
+            Assert.Contains($"FROM mcr.microsoft.com/playwright:v{expectedPlaywrightVersion}-noble", dockerfile);
+            Assert.Equal(expectedPlaywrightVersion, packages.GetProperty("").GetProperty("devDependencies").GetProperty("@playwright/test").GetString());
+            Assert.Equal(expectedPlaywrightVersion, packages.GetProperty("node_modules/@playwright/test").GetProperty("version").GetString());
+            Assert.Equal(expectedPlaywrightVersion, packages.GetProperty("node_modules/playwright").GetProperty("version").GetString());
+            Assert.Equal(expectedPlaywrightVersion, packages.GetProperty("node_modules/playwright-core").GetProperty("version").GetString());
         }
 
         [Fact]
@@ -243,8 +275,8 @@ namespace SDDTemplate.DeliveryTools.Tests
         public void ReleaseWorkflowUsesHumanReadableNexusPointerAliases()
         {
             string workflow = ReadWorkflow();
-            string testE2eSkill = ReadSkill("test-e2e", "SKILL.md");
-            string deployToProdSkill = ReadSkill("deploy-to-prod", "SKILL.md");
+            string testE2eSkill = ReadSkill("quality-test-e2e", "SKILL.md");
+            string deployToProdSkill = ReadSkill("dev-ops-deploy-prod", "SKILL.md");
             string deploymentDoc = ReadDoc("deployment.md");
 
             Assert.Contains("app/qa-approved/latest.json", workflow);
@@ -274,23 +306,43 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.DoesNotContain("Directory.Build.targets", classifyJob);
             Assert.DoesNotContain("global.json", classifyJob);
             Assert.Contains("deploy_allowed=false", classifyJob);
-            Assert.Contains("ticketKeyPattern", classifyJob);
+            Assert.Contains("workflow.ticketKeyPattern", classifyJob);
             Assert.Contains("BASH_REMATCH", classifyJob);
             Assert.DoesNotContain("dotnet run", classifyJob);
         }
 
         [Fact]
-        public void PrValidationRunsOnlyForSrcAndTestsChanges()
+        public void PrValidationRunsOnlyForAppTestAndBuildInputChanges()
         {
             string workflow = ReadPrValidationWorkflow();
             string configureTemplate = ReadConfigureScript();
 
+            string[] includedPaths =
+            [
+                "- .editorconfig",
+                "- Directory.Build.props",
+                "- Directory.Build.targets",
+                "- Directory.Packages.props",
+                "- global.json",
+                "- NuGet.config",
+                "- SDDTemplate.slnx",
+                "- dotnet-tools.json",
+                "- src/**",
+                "- tests/**"
+            ];
+
             Assert.Contains("paths:", workflow);
-            Assert.Contains("- src/**", workflow);
-            Assert.Contains("- tests/**", workflow);
             Assert.Contains("paths:", configureTemplate);
-            Assert.Contains("- src/**", configureTemplate);
-            Assert.Contains("- tests/**", configureTemplate);
+            foreach (string path in includedPaths)
+            {
+                Assert.Contains(path, workflow);
+                Assert.Contains(path, configureTemplate);
+            }
+
+            Assert.DoesNotContain("- .codex/skills/**", workflow);
+            Assert.DoesNotContain("- .gitea/workflows/**", workflow);
+            Assert.DoesNotContain("- .codex/skills/**", configureTemplate);
+            Assert.DoesNotContain("- .gitea/workflows/**", configureTemplate);
         }
 
         [Fact]
@@ -325,9 +377,9 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("dotnet format \"$project\" --verify-no-changes --no-restore", configureTemplate);
             Assert.Contains("dotnet build \"$project\" -c Release --no-restore", configureTemplate);
             Assert.Contains("dotnet list \"$project\" package --vulnerable --include-transitive", configureTemplate);
-            Assert.Contains("PR validation must target product/application projects specifically", workflowReadme);
-            Assert.Contains("OpenSpec, infrastructure, and meta-tests remain local/template-maintenance checks", workflowReadme);
-            Assert.Contains("PR validation must target product/application projects specifically", configureTemplate);
+            Assert.Contains("PR validation triggers only for application code, tests, and root app build inputs", workflowReadme);
+            Assert.Contains("OpenSpec, infrastructure, workflow files, docs, and meta-tests remain local/template-maintenance checks", workflowReadme);
+            Assert.Contains("PR validation triggers only for application code, tests, and root app build inputs", configureTemplate);
             Assert.Contains("rejects deployable project paths outside `src/`", configureTemplate);
         }
 
@@ -405,7 +457,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                 ".gitea",
                 "workflows",
                 "README.md"));
-            string e2eSkill = ReadSkill("test-e2e", "SKILL.md");
+            string e2eSkill = ReadSkill("quality-test-e2e", "SKILL.md");
 
             Assert.Contains("  e2e-qa:", script);
             Assert.DoesNotContain("\n  e2e-qa-branch:\n", NormalizeLineEndings(script));
@@ -428,7 +480,7 @@ namespace SDDTemplate.DeliveryTools.Tests
         public void E2EQaEvidenceContractIsGeneralAndBlocksWeakEvidence()
         {
             string contract = ReadSkill("_shared", "delivery-contract.md");
-            string e2eSkill = ReadSkill("test-e2e", "SKILL.md");
+            string e2eSkill = ReadSkill("quality-test-e2e", "SKILL.md");
             string deploymentDoc = ReadDoc("deployment.md");
             string qualityGates = File.ReadAllText(Path.Combine(
                 FindRepositoryRoot().FullName,
@@ -490,10 +542,10 @@ namespace SDDTemplate.DeliveryTools.Tests
         [Fact]
         public void ConfigureAzureSkillOwnsDeploymentTopologyReview()
         {
-            string skill = ReadSkill("configure-azure-environments", "SKILL.md");
+            string skill = ReadSkill("configure-cloud-environments", "SKILL.md");
             string azureReference = ReadSkill("configure-dev-environment", Path.Combine("references", "azure.md"));
-            string implementation = ReadSkill("implement-ticket", "SKILL.md");
-            string feedbackLoop = ReadSkill("pr-review-feedback-loop", "SKILL.md");
+            string implementation = ReadSkill("dev-flow-implement-ticket", "SKILL.md");
+            string feedbackLoop = ReadSkill("dev-flow-pr-review-feedback-loop", "SKILL.md");
 
             Assert.Contains("Deployment Topology Review", skill);
             Assert.Contains("infra/deployment/apps.json", skill);
@@ -547,7 +599,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("serialized", contract);
             Assert.Contains("\"ticketKey\": \"E2EPROJECT-123\"", contract);
             Assert.Contains("release.json.planeTicketKey", contract);
-            Assert.Contains("rollback-prod", contract);
+            Assert.Contains("dev-ops-rollback-prod", contract);
         }
 
         [Fact]
@@ -558,7 +610,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             string gitignore = File.ReadAllText(Path.Combine(root, ".gitignore"));
             string contextDocs = ReadDoc("context-management.md");
             string developmentDocs = ReadDoc("development.md");
-            string retrospective = ReadSkill("delivery-retrospective-audit", "SKILL.md");
+            string retrospective = ReadSkill("dev-flow-retrospective-audit", "SKILL.md");
             string skillStartup = ReadSkill("_shared", "skill-startup.md");
 
             using JsonDocument policy = JsonDocument.Parse(deliveryPolicy);
@@ -574,6 +626,9 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("implementation-quality-gated", caseIds);
             Assert.Contains("late-human-pr-feedback-manual-resume", caseIds);
             Assert.Contains("qa-promotion-artifact-lineage", caseIds);
+            Assert.Contains("qa-ticket-missing-deploy-telemetry-reroutes", caseIds);
+            Assert.Contains("done-ticket-missing-e2e-telemetry-reroutes", caseIds);
+            Assert.Contains("review-marker-missing-review-telemetry-reroutes", caseIds);
             Assert.Contains("prod-explicit-artifact-promotion", caseIds);
             Assert.Contains("post-prod-retrospective-learning-evidence", caseIds);
             Assert.Contains("rollback-no-main-rewrite", caseIds);
@@ -584,7 +639,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("## Agent Telemetry", contextDocs);
             Assert.Contains("## Agent Workflow Evals", developmentDocs);
             Assert.Contains("audit_skill_contracts.ps1", developmentDocs);
-            Assert.Contains("Normal process validation must use the default scope and exclude `openspec-*` skills", developmentDocs);
+            Assert.Contains("The audit checks repo-owned delivery skills by default", developmentDocs);
             Assert.Contains("model-optimization", retrospective);
             Assert.Contains("eval-coverage", retrospective);
             Assert.Contains(".codex/delivery-policy.json", skillStartup);
@@ -595,14 +650,14 @@ namespace SDDTemplate.DeliveryTools.Tests
         public void WorkflowTimingCommentsAreContractedForDeliveryStagesAndE2EQa()
         {
             string contract = ReadSkill("_shared", "delivery-contract.md");
-            string automatic = ReadSkill("automatic-implement-ticket", "SKILL.md");
-            string starter = ReadSkill("plane-start-ticket", "SKILL.md");
-            string implementation = ReadSkill("implement-ticket", "SKILL.md");
-            string feedbackLoop = ReadSkill("pr-review-feedback-loop", "SKILL.md");
-            string reviewAgent = ReadSkill("gitea-pr-review-agent", "SKILL.md");
-            string postMergeDeploy = ReadSkill("post-merge-deploy", "SKILL.md");
-            string deployToQa = ReadSkill("deploy-to-qa", "SKILL.md");
-            string testE2E = ReadSkill("test-e2e", "SKILL.md");
+            string automatic = ReadSkill("dev-flow-continue-implementation", "SKILL.md");
+            string starter = ReadSkill("dev-flow-start-ticket", "SKILL.md");
+            string implementation = ReadSkill("dev-flow-implement-ticket", "SKILL.md");
+            string feedbackLoop = ReadSkill("dev-flow-pr-review-feedback-loop", "SKILL.md");
+            string reviewAgent = ReadSkill("dev-flow-pr-review-agent", "SKILL.md");
+            string postMergeDeploy = ReadSkill("dev-ops-post-merge-deploy", "SKILL.md");
+            string deployToQa = ReadSkill("dev-ops-deploy-qa", "SKILL.md");
+            string testE2E = ReadSkill("quality-test-e2e", "SKILL.md");
             string contextDocs = ReadDoc("context-management.md");
             string deploymentDocs = ReadDoc("deployment.md");
             string script = File.ReadAllText(Path.Combine(
@@ -620,28 +675,38 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("InitializeWorkflowTelemetry", contract);
             Assert.Contains("AppendWorkflowTelemetry", contract);
             Assert.Contains("ReadWorkflowTelemetry", contract);
-            Assert.Contains("Each non-OpenSpec delivery stage must capture UTC start and finish times and append one row", contract);
-            Assert.Contains("test-e2e` must read rows for the active ticket with `ReadWorkflowTelemetry`", contract);
-            Assert.Contains("Do not derive workflow timing from Plane generated marker timestamps", contract);
+            Assert.Contains("Each non-OpenSpec delivery stage must capture UTC start and finish times and append one row for its own stage with `AppendWorkflowTelemetry` on every run, resume", contract);
+            Assert.Contains("collapse repeated rows for the same ticket and stage into one rendered stage row", contract);
+            Assert.Contains("required predecessor telemetry must exist", contract);
+            Assert.Contains("quality-test-e2e` must read rows for the active ticket with `ReadWorkflowTelemetry`", contract);
+            Assert.DoesNotContain("MISSING TELEMETRY", contract);
+            Assert.Contains("Gitea Actions job duration", contract);
             Assert.Contains("update or reuse the existing workflow timing marker comment", contract);
 
             Assert.Contains("InitializeWorkflowTelemetry", starter);
-            Assert.Contains("workflowStage=plane-start-ticket", starter);
+            Assert.Contains("workflowStage=dev-flow-start-ticket", starter);
             Assert.Contains("AppendWorkflowTelemetry", starter);
+            Assert.Contains("workflow timing rendering collapses repeated stage rows", starter);
             Assert.Contains("Do not initialize telemetry when only listing Todo tickets", starter);
-            Assert.Contains("workflowStage=implement-ticket", implementation);
+            Assert.Contains("workflowStage=dev-flow-implement-ticket", implementation);
             Assert.Contains("AppendWorkflowTelemetry", implementation);
-            Assert.Contains("workflowStage=pr-review-feedback-loop", feedbackLoop);
+            Assert.Contains("workflow timing rendering collapses repeated stage rows", implementation);
+            Assert.Contains("workflowStage=dev-flow-pr-review-feedback-loop", feedbackLoop);
             Assert.Contains("AppendWorkflowTelemetry", feedbackLoop);
-            Assert.Contains("workflowStage=gitea-pr-review-agent", reviewAgent);
+            Assert.Contains("workflow timing rendering collapses repeated stage rows", feedbackLoop);
+            Assert.Contains("workflowStage=dev-flow-pr-review-agent", reviewAgent);
             Assert.Contains("AppendWorkflowTelemetry", reviewAgent);
-            Assert.Contains("workflowStage=post-merge-deploy", postMergeDeploy);
+            Assert.Contains("workflow timing rendering collapses repeated stage rows", reviewAgent);
+            Assert.Contains("workflowStage=dev-ops-post-merge-deploy", postMergeDeploy);
             Assert.Contains("AppendWorkflowTelemetry", postMergeDeploy);
-            Assert.Contains("workflowStage=deploy-to-qa", deployToQa);
+            Assert.Contains("invoke `dev-ops-deploy-qa` in idempotent verification mode", postMergeDeploy);
+            Assert.Contains("workflowStage=dev-ops-deploy-qa", deployToQa);
             Assert.Contains("AppendWorkflowTelemetry", deployToQa);
-            Assert.Contains("workflowStage=test-e2e", testE2E);
+            Assert.Contains("In idempotent verification mode", deployToQa);
+            Assert.Contains("workflowStage=quality-test-e2e", testE2E);
             Assert.Contains("AppendWorkflowTelemetry", testE2E);
             Assert.Contains("ReadWorkflowTelemetry", testE2E);
+            Assert.Contains("repeated rows for a stage are collapsed", testE2E);
             Assert.Contains("RenderPlaneComment -Type WorkflowTiming", testE2E);
             Assert.Contains("patch that comment instead of creating a duplicate", testE2E);
             Assert.Contains("comment_html", testE2E);
@@ -652,6 +717,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("IA generated workflow timing: {ticketKey}", automatic);
             Assert.Contains("do not derive timing from Plane generated marker timestamps", automatic);
             Assert.Contains("workflow timing marker", automatic);
+            Assert.Contains("Required predecessor rows", automatic);
+            Assert.Contains("route through that predecessor in idempotent verification mode", automatic);
 
             Assert.Contains("Delivery stages maintain a concise generated Plane timing comment", contextDocs);
             Assert.Contains("E2E QA posts or patches the final timing comment", contextDocs);
@@ -664,14 +731,15 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("'InitializeWorkflowTelemetry'", script);
             Assert.Contains("'AppendWorkflowTelemetry'", script);
             Assert.Contains("'ReadWorkflowTelemetry'", script);
+            Assert.Contains("stageGroups", script);
             Assert.Contains("| Stage | Outcome | Duration | Started UTC | Finished UTC |", script);
         }
 
         [Fact]
         public void PlaneStartTicketSetsEstimatePointOnlyWhenMissing()
         {
-            string starter = ReadSkill("plane-start-ticket", "SKILL.md");
-            string planeApi = ReadSkill("plane-start-ticket", Path.Combine("references", "plane-api.md"));
+            string starter = ReadSkill("dev-flow-start-ticket", "SKILL.md");
+            string planeApi = ReadSkill("dev-flow-start-ticket", Path.Combine("references", "plane-api.md"));
 
             Assert.Contains("If the fetched Plane ticket has empty or null `point`", starter);
             Assert.Contains("preserve it exactly and do not overwrite a human estimate", starter);
@@ -687,11 +755,46 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
+        public void PlaneStartTicketUsesScrumReadyGeneratedDescriptionBlock()
+        {
+            string starter = ReadSkill("dev-flow-start-ticket", "SKILL.md");
+            string contract = ReadSkill("_shared", "delivery-contract.md");
+            string development = ReadDoc("development.md");
+
+            Assert.Contains("`ready`, `refinable`, or `blocked`", contract);
+            Assert.Contains("`refinable`: generate Scrum-ready planning details", starter);
+            Assert.Contains("Scrum-ready planning details", contract);
+            Assert.Contains("Refinable tickets", development);
+
+            foreach (string heading in new[]
+            {
+                "Problem / opportunity:",
+                "User story:",
+                "Acceptance criteria:",
+                "Scope / affected areas:",
+                "Dependencies / assumptions:",
+                "Validation expectations:",
+                "Risks:",
+                "Definition of done:",
+            })
+            {
+                Assert.Contains(heading, starter);
+            }
+
+            Assert.Contains("IA generated", starter);
+            Assert.Contains("<!-- ia-generated:start -->", starter);
+            Assert.Contains("<!-- ia-generated:end -->", starter);
+            Assert.DoesNotContain("enrichable", starter);
+            Assert.DoesNotContain("Expected files/components affected:", starter);
+            Assert.DoesNotContain("Validation command or test expectation:", starter);
+        }
+
+        [Fact]
         public void DeployToProdRequiresPostProdRetrospectiveLearningEvidence()
         {
             string root = FindRepositoryRoot().FullName;
-            string deployToProd = ReadSkill("deploy-to-prod", "SKILL.md");
-            string retrospective = ReadSkill("delivery-retrospective-audit", "SKILL.md");
+            string deployToProd = ReadSkill("dev-ops-deploy-prod", "SKILL.md");
+            string retrospective = ReadSkill("dev-flow-retrospective-audit", "SKILL.md");
             string gitignore = File.ReadAllText(Path.Combine(root, ".gitignore"));
             string contract = ReadSkill("_shared", "delivery-contract.md");
             string developmentDocs = ReadDoc("development.md");
@@ -728,8 +831,8 @@ namespace SDDTemplate.DeliveryTools.Tests
         {
             string contract = ReadSkill("_shared", "delivery-contract.md");
             string deploymentDocs = ReadDoc("deployment.md");
-            string deployToProd = ReadSkill("deploy-to-prod", "SKILL.md");
-            string retrospective = ReadSkill("delivery-retrospective-audit", "SKILL.md");
+            string deployToProd = ReadSkill("dev-ops-deploy-prod", "SKILL.md");
+            string retrospective = ReadSkill("dev-flow-retrospective-audit", "SKILL.md");
             string schema = File.ReadAllText(Path.Combine(
                 FindRepositoryRoot().FullName,
                 ".codex",
@@ -773,8 +876,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             JsonElement postProdCase = cases.RootElement.GetProperty("cases").EnumerateArray().Single(item =>
                 string.Equals(item.GetProperty("id").GetString(), "post-prod-retrospective-learning-evidence", StringComparison.Ordinal));
 
-            Assert.Equal("deploy-to-prod", postProdCase.GetProperty("stage").GetString());
-            Assert.Equal("delivery-retrospective-audit", postProdCase.GetProperty("expectedRoute").GetString());
+            Assert.Equal("dev-ops-deploy-prod", postProdCase.GetProperty("stage").GetString());
+            Assert.Equal("dev-flow-retrospective-audit", postProdCase.GetProperty("expectedRoute").GetString());
 
             string[] evidence = [.. postProdCase.GetProperty("requiredEvidence").EnumerateArray().Select(item => item.GetString() ?? string.Empty)];
             string[] expectations = [.. postProdCase.GetProperty("toolExpectations").EnumerateArray().Select(item => item.GetString() ?? string.Empty)];
@@ -785,7 +888,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("successful PROD deployment marker", evidence);
             Assert.Contains("included ticket list", evidence);
             Assert.Contains(".codex/agent-evals/results.local.json ignored path", evidence);
-            Assert.Contains("Invoke delivery-retrospective-audit in read-only post-prod-ticket-release mode", expectations);
+            Assert.Contains("Invoke dev-flow-retrospective-audit in read-only post-prod-ticket-release mode", expectations);
             Assert.Contains("Add or reuse Plane marker IA generated post-PROD retrospective: {finalVersion}", expectations);
             Assert.Contains("PROD deployment has not succeeded", stopConditions);
             Assert.Contains("move Plane ticket state", unsafeMutations);
@@ -804,8 +907,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             JsonElement lateFeedbackCase = cases.RootElement.GetProperty("cases").EnumerateArray().Single(item =>
                 string.Equals(item.GetProperty("id").GetString(), "late-human-pr-feedback-manual-resume", StringComparison.Ordinal));
 
-            Assert.Equal("automatic-implement-ticket", lateFeedbackCase.GetProperty("stage").GetString());
-            Assert.Equal("implement-ticket", lateFeedbackCase.GetProperty("expectedRoute").GetString());
+            Assert.Equal("dev-flow-continue-implementation", lateFeedbackCase.GetProperty("stage").GetString());
+            Assert.Equal("dev-flow-implement-ticket", lateFeedbackCase.GetProperty("expectedRoute").GetString());
 
             string[] evidence = [.. lateFeedbackCase.GetProperty("requiredEvidence").EnumerateArray().Select(item => item.GetString() ?? string.Empty)];
             string[] expectations = [.. lateFeedbackCase.GetProperty("toolExpectations").EnumerateArray().Select(item => item.GetString() ?? string.Empty)];
@@ -813,7 +916,7 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.Contains("new human top-level or inline PR comment ids", evidence);
             Assert.Contains("Manual resume scans PR comments instead of relying on webhook or polling", expectations);
-            Assert.Contains("Delegate feedback processing to pr-review-feedback-loop", expectations);
+            Assert.Contains("Delegate feedback processing to dev-flow-pr-review-feedback-loop", expectations);
             Assert.Contains("Derive a new feedbackBatchId from sorted late human comment source ids", expectations);
             Assert.Contains("Keep Plane In Review while applying late human feedback fixes", expectations);
             Assert.Contains("late human comment source ids are already covered by a completed feedback batch", stopConditions);
@@ -837,21 +940,21 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("requiredSections", script);
             Assert.Contains("requiredTerms", script);
             Assert.Contains("ConvertTo-Json -Depth 10", script);
-            Assert.Contains("if ($FailOnFindings -and $summary.failed -gt 0)", script);
+            Assert.Contains("if ($FailOnFindings -and ($summary.failed -gt 0 -or $profileFindings.Count -gt 0))", script);
         }
 
         [Fact]
         public void ParallelTicketCoordinatorSkillAndAgentAreDefined()
         {
-            string skill = ReadSkill("parallel-ticket-coordinator", "SKILL.md");
-            string agent = ReadSkill("parallel-ticket-coordinator", Path.Combine("agents", "openai.yaml"));
+            string skill = ReadSkill("dev-flow-parallel-ticket-coordinator", "SKILL.md");
+            string agent = ReadSkill("dev-flow-parallel-ticket-coordinator", Path.Combine("agents", "openai.yaml"));
 
-            Assert.Contains("name: parallel-ticket-coordinator", skill);
+            Assert.Contains("name: dev-flow-parallel-ticket-coordinator", skill);
             Assert.Contains("one Git worktree per active ticket", skill);
             Assert.Contains(".codex/parallel-delivery.local.json", skill);
             Assert.Contains("serialized deployment lane", skill);
             Assert.Contains("Parallel Ticket Coordinator", agent);
-            Assert.Contains("$parallel-ticket-coordinator", agent);
+            Assert.Contains("$dev-flow-parallel-ticket-coordinator", agent);
         }
 
         [Fact]
@@ -860,7 +963,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             string readme = File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, "README.md"));
             string docs = ReadDoc("parallel-delivery.md");
             string contract = ReadSkill("_shared", "delivery-contract.md");
-            string coordinator = ReadSkill("parallel-ticket-coordinator", "SKILL.md");
+            string coordinator = ReadSkill("dev-flow-parallel-ticket-coordinator", "SKILL.md");
             string configureRouter = ReadSkill("configure-dev-environment", "SKILL.md");
 
             Assert.Contains("docs/parallel-delivery.md", readme);
@@ -927,6 +1030,9 @@ namespace SDDTemplate.DeliveryTools.Tests
                 ".codex",
                 "client-tools.example.json"));
 
+            Assert.Contains("\"minimumApprovals\"", config);
+            Assert.Contains("\"dev\": 1", config);
+            Assert.Contains("\"main\": 1", config);
             Assert.Contains("\"parallelDelivery\"", config);
             Assert.Contains("\"enabled\": false", config);
             Assert.Contains("\"maxActiveTickets\": 2", config);
@@ -945,9 +1051,26 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("\"reasoningEffort\": \"high\"", config);
 
             string script = ReadConfigureScript();
+            Assert.Contains("pr\", \"minimumApprovals\", \"dev", script);
+            Assert.Contains("SetGiteaBranchProtection", script);
             Assert.Contains("parallelDelivery\", \"agentModelPolicy\", \"pipelineStatus\", \"model", script);
             Assert.Contains("parallelDelivery\", \"agentModelPolicy\", \"implementation\", \"model", script);
             Assert.Contains("parallelDelivery\", \"agentModelPolicy\", \"deployToProd\", \"reasoningEffort", script);
+        }
+
+        [Fact]
+        public void BranchProtectionDocsUseConfigurableApprovalMinimum()
+        {
+            string workflowReadme = File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, ".gitea", "workflows", "README.md"));
+            string qualityReference = ReadSkill("configure-dev-environment", Path.Combine("references", "quality-gates.md"));
+            string giteaReference = ReadSkill("configure-dev-environment", Path.Combine("references", "gitea-pr.md"));
+            string script = ReadConfigureScript();
+
+            Assert.Contains("`pr.minimumApprovals.dev/main` review approval(s), default `1` per branch", workflowReadme);
+            Assert.Contains("`pr.minimumApprovals.dev/main` review approval(s), default `1` per branch", qualityReference);
+            Assert.Contains("`pr.minimumApprovals.dev`: default `1`", giteaReference);
+            Assert.Contains("`pr.minimumApprovals.main`: default `1`", giteaReference);
+            Assert.Contains("required_approvals", script);
         }
 
         [Fact]
@@ -960,11 +1083,17 @@ namespace SDDTemplate.DeliveryTools.Tests
             string catalog = ReadToolRecommendationsCatalog();
 
             Assert.Contains("\"recommendedTools\"", config);
-            Assert.Contains("\"mode\": \"guided-manual\"", config);
+            Assert.Contains("\"mode\": \"guarded-auto\"", config);
             Assert.Contains("\"accepted\": []", config);
             Assert.Contains("\"dismissed\": []", config);
             Assert.Contains(".codex/tool-recommendations.local.json", File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, ".gitignore")));
-            Assert.Contains("\"mode\": \"guided-manual\"", catalog);
+            Assert.Contains("\"mode\": \"guarded-auto\"", catalog);
+            Assert.Contains("\"installScope\"", catalog);
+            Assert.Contains("\"installerKind\"", catalog);
+            Assert.Contains("\"requiresIdeRestart\"", catalog);
+            Assert.Contains("\"requiresSystemReboot\"", catalog);
+            Assert.Contains("\"userActionRequired\"", catalog);
+            Assert.Contains("\"importantMessage\"", catalog);
             Assert.Contains("\"installMethod\": \"manual-copy\"", catalog);
             Assert.Contains("\"installMethod\": \"manual-config\"", catalog);
             Assert.Contains("\"installMethod\": \"manual-reference\"", catalog);
@@ -1000,7 +1129,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("function Get-ProjectGuidanceDiscoveryReport", discoveryScript);
             Assert.Contains("project-guidance-search-plan", discoveryScript);
             Assert.Contains("guidance-search-plan", discoveryScript);
-            Assert.Contains("research-then-manual-copy", discoveryScript);
+            Assert.Contains("research-then-guarded-install", discoveryScript);
             Assert.Contains("Get-ProjectGuidanceDiscoverySourcePriority", discoveryScript);
             Assert.Contains("\"repo-local\"", discoveryScript);
             Assert.Contains("\"skills-cli\"", discoveryScript);
@@ -1056,7 +1185,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("qa-automation-practice-guidance", catalog);
             Assert.Contains("security-review-standard-guidance", catalog);
             Assert.Contains("manual-copy", catalog);
-            Assert.Contains("repo:.codex/skills/frontend-testing-debugging/SKILL.md", catalog);
+            Assert.Contains("repo:.codex/skills/quality-frontend-testing-debugging/SKILL.md", catalog);
             Assert.Contains("https://playwright.dev/docs/best-practices", catalog);
             Assert.Contains("Plane MCP is intentionally not recommended", catalog);
             Assert.Contains("repo-local skills must use the configured Plane API", catalog);
@@ -1080,27 +1209,56 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("project-guidance-mapper", configureRouter);
             Assert.Contains("read the source `SKILL.md`", configureRouter);
             Assert.Contains("create `.codex/skills/{skill-name}/`", configureRouter);
-            Assert.Contains("manual repo-based acquisition", configureRouter);
-            Assert.Contains("Do not install skills by command", configureRouter);
+            Assert.Contains("guarded repo-based acquisition", configureRouter);
+            Assert.Contains("one Important restart/reboot message", configureRouter);
             Assert.Contains("stack-context drift", configureRouter);
             Assert.Contains("scan-derived guidance findings", configureRouter);
             Assert.Contains("project-guidance-search-plan", configureRouter);
             Assert.Contains("detected project signals", configureRouter);
-            Assert.Contains("additional desired skills or guidance", configureRouter);
+            Assert.Contains("research extra useful skills, MCPs, plugins, tools", configureRouter);
             Assert.Contains("persistLocal=true", configureRouter);
             Assert.Contains("MapProjectGuidanceStep", configureRouter);
             Assert.Contains(".codex/tool-recommendations.local.json", configureRouter);
-            Assert.Contains("asks whether the user wants to add additional desired items", File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, "docs", "development.md")));
-            Assert.Contains("usedInSteps", File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, "docs", "development.md")));
-            Assert.Contains("manual by default", readme);
-            Assert.Contains("suggested missing skills", readme);
+            string development = File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, "docs", "development.md"));
+            Assert.Contains("asks the user only to confirm, dismiss, or name omissions", development);
+            Assert.Contains("without a second install prompt", development);
+            Assert.Contains("usedInSteps", development);
+            Assert.Contains("guarded auto acquisition", readme);
+            Assert.Contains("reports suggested missing guidance", readme);
             Assert.Contains("stack, tooling, environments, test frameworks", readme);
-            Assert.Contains("asks whether the operator wants to add additional desired skills or guidance", readme);
+            Assert.Contains("asks the operator only to confirm, dismiss, or name omissions", readme);
+            Assert.Contains("there is no second install prompt", readme);
             Assert.Contains(".codex/tool-recommendations.local.json", readme);
             Assert.Contains("project-guidance-mapper` reads that local file", readme);
-            Assert.Contains("read the source repository's `SKILL.md`", readme);
-            Assert.Contains("Skills are not installed by command", readme);
+            Assert.Contains("verified `SKILL.md` sources", readme);
+            Assert.Contains("Restart requirements are collected", readme);
             Assert.Contains(".codex/tool-recommendations.example.json", readme);
+        }
+
+        [Fact]
+        public void ConfigInfraRequiresProjectProfileInitializationBeforeProviderSetup()
+        {
+            string configureRouter = ReadSkill("configure-dev-environment", "SKILL.md");
+            string qualityReference = ReadSkill("configure-dev-environment", Path.Combine("references", "quality-gates.md"));
+            string compatibilityRouter = ReadSkill("configure-infra-tools", "SKILL.md");
+            string readme = File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, "README.md"));
+            string configureScript = ReadConfigureScript();
+
+            Assert.Contains("InitProjectProfile", configureRouter);
+            Assert.Contains("required first-class step for full `config infra`", configureRouter);
+            Assert.Contains("run `InitProjectProfile` first", configureRouter);
+            Assert.Contains("InitProjectProfile -> Audit -> Plane", configureRouter);
+            Assert.Contains("Stop before provider-specific mutation", configureRouter);
+
+            Assert.Contains("InitProjectProfile", qualityReference);
+            Assert.Contains("before full `config infra` quality/provider setup", qualityReference);
+            Assert.Contains("follow its `InitProjectProfile`, audit", compatibilityRouter);
+            Assert.Contains("Full `config infra` runs `InitProjectProfile` first", readme);
+
+            Assert.Contains("\"InitProjectProfile\"", configureScript);
+            Assert.Contains("function Invoke-InitProjectProfile", configureScript);
+            Assert.Contains(".codex/project-profile.schema.json", configureScript);
+            Assert.Contains(".codex/providers/ticket.example.md", configureScript);
         }
 
         [Fact]
@@ -1113,9 +1271,10 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.Contains("name: project-guidance-discover", discover);
             Assert.Contains("suggested missing skills and guidance", discover);
-            Assert.Contains("additional desired skills or guidance", discover);
+            Assert.Contains("research extra useful skills, MCPs, plugins, tools", discover);
+            Assert.Contains("Do not ask a second \"install?\" question", discover);
             Assert.Contains("final confirmed list", discover);
-            Assert.Contains("Do not copy anything from this skill", discover);
+            Assert.Contains("Do not copy, install, or configure anything from this skill", discover);
             Assert.Contains("function Get-ProjectGuidanceDiscoveryReport", discoveryScript);
             Assert.Contains("suggestedMissingSkills", discoveryScript);
             Assert.Contains("userAddedRequestedGuidance", discoveryScript);
@@ -1126,8 +1285,10 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.Contains("name: project-guidance-acquire", acquire);
             Assert.Contains("final confirmed list from `project-guidance-discover`", acquire);
-            Assert.Contains("Do not use command-based skill installers", acquire);
+            Assert.Contains("do not ask a second install confirmation", acquire);
+            Assert.Contains("Do not run arbitrary command installers", acquire);
             Assert.Contains("Do not install into `$CODEX_HOME`", acquire);
+            Assert.Contains("aggregate IDE restart/system reboot notices", acquire);
             Assert.Contains("sourceKind", acquire);
             Assert.Contains("skills.sh", acquire);
             Assert.Contains("Test-Path", acquire);
@@ -1147,6 +1308,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("Rollback", mapper);
             Assert.Contains("Hotfix", mapper);
             Assert.Contains("missingUsefulGuidance", mapper);
+            Assert.Contains("toolingRecommendations", mapper);
         }
 
         [Fact]
@@ -1165,19 +1327,19 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("Azure Monitor", architecture);
             Assert.Contains("Grafana", architecture);
             Assert.Contains("Seq", architecture);
-            Assert.Contains("Skills are not installed by command", architecture);
+            Assert.Contains("guarded auto acquisition", architecture);
             Assert.Contains("project-guidance-discover", architecture);
             Assert.Contains("project-guidance-acquire", architecture);
             Assert.Contains("project-guidance-mapper", architecture);
 
             Assert.Contains("## Technology Stack And Tool Set", development);
-            Assert.Contains(".NET 10", development);
+            Assert.Contains("current profile", development);
             Assert.Contains("ASP.NET Core", development);
             Assert.Contains("Blazor", development);
             Assert.Contains("xUnit", development);
             Assert.Contains("coverlet", development);
             Assert.Contains("official-first research", development);
-            Assert.Contains("Browser plugin and Playwright-style", development);
+            Assert.Contains("Playwright MCP", development);
             Assert.Contains("project-guidance-discover", development);
             Assert.Contains("project-guidance-acquire", development);
             Assert.Contains("project-guidance-mapper", development);
@@ -1193,7 +1355,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("context: |", openSpecConfig);
             Assert.Contains("Delivery tool set:", openSpecConfig);
             Assert.Contains("Application stack: .NET 10, ASP.NET Core, Blazor", openSpecConfig);
-            Assert.Contains("Recommended skills are copied manually", openSpecConfig);
+            Assert.Contains("Recommended skills are copied through guarded repo-local acquisition", openSpecConfig);
             Assert.Contains("project-guidance-discover", openSpecConfig);
             Assert.Contains("project-guidance-acquire", openSpecConfig);
             Assert.Contains("project-guidance-mapper", openSpecConfig);
@@ -1213,19 +1375,20 @@ namespace SDDTemplate.DeliveryTools.Tests
             string readme = File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, "README.md"));
             string development = ReadDoc("development.md");
             string contract = ReadSkill("_shared", "delivery-contract.md");
-            string starter = ReadSkill("plane-start-ticket", "SKILL.md");
-            string automatic = ReadSkill("automatic-implement-ticket", "SKILL.md");
+            string starter = ReadSkill("dev-flow-start-ticket", "SKILL.md");
+            string automatic = ReadSkill("dev-flow-continue-implementation", "SKILL.md");
             string configure = ReadSkill("configure-dev-environment", "SKILL.md");
 
             Assert.Contains("Before the first ticket starts", readme);
             Assert.Contains("routes to `configure-dev-environment`", readme);
             Assert.Contains("Before the first ticket starts", development);
-            Assert.Contains("stop before creating branches, Plane generated blocks, ticket locks, or OpenSpec proposals", development);
+            Assert.Contains("stop before creating branches, generated ticket blocks, ticket locks, or OpenSpec proposals", development);
 
             Assert.Contains("Before starting the first ticket", contract);
-            Assert.Contains("AuditRecommendedTools", contract);
+            Assert.Contains("configured guidance audit", contract);
             Assert.Contains("stack-context.*", contract);
             Assert.Contains("Route the operator to `configure-dev-environment`", contract);
+            Assert.Contains("direct SDD maintenance must use `[SDD]`", contract);
 
             Assert.Contains("## Stack Context Preflight", starter);
             Assert.Contains("docs/architecture.md`, `docs/development.md`, and `docs/deployment.md` contain `Technology Stack And Tool Set`", starter);
@@ -1294,7 +1457,7 @@ namespace SDDTemplate.DeliveryTools.Tests
         [Fact]
         public void ImplementationSkillsRequireContextFindingsReview()
         {
-            string skill = ReadSkill("implement-ticket", "SKILL.md");
+            string skill = ReadSkill("dev-flow-implement-ticket", "SKILL.md");
 
             Assert.Contains("Context Findings Review", skill);
             Assert.Contains("docs/context-management.md", skill);
@@ -1307,12 +1470,12 @@ namespace SDDTemplate.DeliveryTools.Tests
         public void ImplementationReviewLoopRequiresReconnectablePrFeedbackBatches()
         {
             string contract = ReadSkill("_shared", "delivery-contract.md");
-            string implementation = ReadSkill("implement-ticket", "SKILL.md");
-            string feedbackLoop = ReadSkill("pr-review-feedback-loop", "SKILL.md");
-            string reviewAgent = ReadSkill("gitea-pr-review-agent", "SKILL.md");
-            string autoRouter = ReadSkill("automatic-implement-ticket", "SKILL.md");
+            string implementation = ReadSkill("dev-flow-implement-ticket", "SKILL.md");
+            string feedbackLoop = ReadSkill("dev-flow-pr-review-feedback-loop", "SKILL.md");
+            string reviewAgent = ReadSkill("dev-flow-pr-review-agent", "SKILL.md");
+            string autoRouter = ReadSkill("dev-flow-continue-implementation", "SKILL.md");
             string developmentDocs = ReadDoc("development.md");
-            string giteaApiReference = ReadSkill("gitea-pr-review-agent", Path.Combine("references", "gitea-review-api.md"));
+            string giteaApiReference = ReadSkill("dev-flow-pr-review-agent", Path.Combine("references", "gitea-review-api.md"));
             string apiHelpers = ReadSkill("_shared", "api-helpers.md");
 
             Assert.Contains("PR Review Feedback", contract);
@@ -1328,8 +1491,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("late human comments on the same `headSha`", contract);
             Assert.Contains("Commit and push", contract, StringComparison.OrdinalIgnoreCase);
 
-            Assert.Contains("pr-review-feedback-loop", implementation);
-            Assert.Contains("Do not put this local delivery behavior in external `openspec-*` skills", implementation);
+            Assert.Contains("dev-flow-pr-review-feedback-loop", implementation);
+            Assert.Contains("That skill owns AI review findings, late human PR comments, feedback batch ids", implementation);
 
             Assert.Contains("OpenSpec `## PR Review Feedback` tasks", feedbackLoop);
             Assert.Contains("including AI `BLOCKER`, `WARNING`, and `SUGGESTION` severities", feedbackLoop);
@@ -1355,8 +1518,8 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.Contains("Plane PR feedback detection/fix batch markers", autoRouter);
             Assert.Contains("later human comment on the same PR head SHA", autoRouter);
-            Assert.Contains("route to `implement-ticket`", autoRouter);
-            Assert.Contains("pr-review-feedback-loop", autoRouter);
+            Assert.Contains("route to `dev-flow-implement-ticket`", autoRouter);
+            Assert.Contains("dev-flow-pr-review-feedback-loop", autoRouter);
 
             Assert.Contains("Human-authored comments are implementation inputs", reviewAgent);
             Assert.Contains("stable finding id", reviewAgent);
@@ -1364,7 +1527,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("pulls/{index}/reviews/{reviewId}/comments", giteaApiReference);
             Assert.Contains("Every AI finding in the review body must include a stable finding id", giteaApiReference);
             Assert.Contains("PR review feedback has two timed loops", developmentDocs);
-            Assert.Contains("repo-local `pr-review-feedback-loop` skill", developmentDocs);
+            Assert.Contains("repo-local `dev-flow-pr-review-feedback-loop` skill", developmentDocs);
             Assert.Contains("Plane remains `In Review` while late human feedback fixes are applied", developmentDocs);
             Assert.Contains("Feedback-fix Plane comments are reviewer-facing summaries", developmentDocs);
         }
@@ -1374,8 +1537,8 @@ namespace SDDTemplate.DeliveryTools.Tests
         {
             string contract = ReadSkill("_shared", "delivery-contract.md");
             string contextDocs = ReadDoc("context-management.md");
-            string retrospective = ReadSkill("delivery-retrospective-audit", "SKILL.md");
-            string implementation = ReadSkill("implement-ticket", "SKILL.md");
+            string retrospective = ReadSkill("dev-flow-retrospective-audit", "SKILL.md");
+            string implementation = ReadSkill("dev-flow-implement-ticket", "SKILL.md");
             string contextFindings = GetSection(contextDocs, "## Context Findings");
 
             Assert.Contains("docs/architecture.md", contextFindings);
@@ -1396,7 +1559,7 @@ namespace SDDTemplate.DeliveryTools.Tests
         {
             string contract = ReadSkill("_shared", "delivery-contract.md");
             string skillStartup = ReadSkill("_shared", "skill-startup.md");
-            string e2eSkill = ReadSkill("test-e2e", "SKILL.md");
+            string e2eSkill = ReadSkill("quality-test-e2e", "SKILL.md");
             string agents = File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, "AGENTS.md"));
             string memoryPolicy = File.ReadAllText(Path.Combine(
                 FindRepositoryRoot().FullName,
@@ -1410,6 +1573,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("Memory updated: <files>", contract);
             Assert.Contains("Memory updated: none", contract);
             Assert.Contains("Do not treat Plane comments, PR comments, QA evidence, logs, or chat summaries as a substitute", contract);
+            Assert.Contains("When the agent itself hits a failed command", contract);
+            Assert.Contains("Do not report `Memory updated: none` for a newly diagnosed repeatable agent/tooling failure", contract);
 
             Assert.Contains("## Durable Learning Capture", skillStartup);
             Assert.Contains("This is not limited to QA or ticket delivery", skillStartup);
@@ -1425,6 +1590,37 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.Contains("## Update Process", memoryPolicy);
             Assert.Contains("Reusable but non-authoritative workflow knowledge belongs in `.codex/memory/`", memoryPolicy);
+            Assert.Contains("agent itself encounters a failed command", memoryPolicy);
+        }
+
+        [Fact]
+        public void RequiredToolAndSkillBlockersRequireExplicitConsentBeforeAlternativeFlow()
+        {
+            string root = FindRepositoryRoot().FullName;
+            string contract = ReadSkill("_shared", "delivery-contract.md");
+            string skillStartup = ReadSkill("_shared", "skill-startup.md");
+            string contextDocs = ReadDoc("context-management.md");
+            string configure = ReadSkill("configure-dev-environment", "SKILL.md");
+            string acquire = ReadSkill("project-guidance-acquire", "SKILL.md");
+            string discover = ReadSkill("project-guidance-discover", "SKILL.md");
+            string agents = File.ReadAllText(Path.Combine(root, "AGENTS.md"));
+            string decisions = File.ReadAllText(Path.Combine(root, ".codex", "memory", "decisions.md"));
+
+            Assert.Contains("## Tool And Skill Blocker Consent", contract);
+            Assert.Contains("failed required item", contract);
+            Assert.Contains("current-flow fix", contract);
+            Assert.Contains("alternative path", contract);
+            Assert.Contains("risk/impact of alternative", contract);
+            Assert.Contains("explicit user choice required before continuing", contract);
+            Assert.Contains("must not mutate repository files, Plane, Git, Gitea, Nexus, Azure", contract);
+
+            Assert.Contains("Tool And Skill Blocker Consent", skillStartup);
+            Assert.Contains("Silent fallback from a required configured repo flow is invalid", contextDocs);
+            Assert.Contains("do not silently switch to an ad hoc setup path", configure);
+            Assert.Contains("do not silently use another installer or copy source", acquire);
+            Assert.Contains("do not silently substitute another source family or installer path", discover);
+            Assert.Contains("cannot be applied, stop the affected flow instead of silently using an alternative", agents);
+            Assert.Contains("## Explicit Consent Before Alternative Flow", decisions);
         }
 
         [Fact]
@@ -1495,6 +1691,7 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             foreach (string mode in new[]
             {
+                "ReadProjectProfile",
                 "ReadDeliveryPolicy",
                 "ExtractTicketKey",
                 "ReadCoverageThreshold",
@@ -1529,14 +1726,14 @@ namespace SDDTemplate.DeliveryTools.Tests
         {
             Dictionary<string, string[]> expectations = new()
             {
-                ["deploy-to-qa"] =
+                ["dev-ops-deploy-qa"] =
                 [
                     "ValidateTicketLock",
                     "ValidateDeploymentLane",
                     "UpdateReleaseManifest",
                     "RenderPlaneComment -Type QADeployment"
                 ],
-                ["test-e2e"] =
+                ["quality-test-e2e"] =
                 [
                     "ValidateTicketLock",
                     "ValidateDeploymentLane",
@@ -1544,7 +1741,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                     "CreateArtifactPointer",
                     "RenderPlaneComment -Type E2EQA"
                 ],
-                ["deploy-to-prod"] =
+                ["dev-ops-deploy-prod"] =
                 [
                     "ValidateTicketLock",
                     "ValidateDeploymentLane",
@@ -1552,13 +1749,13 @@ namespace SDDTemplate.DeliveryTools.Tests
                     "CreateArtifactPointer",
                     "RenderPlaneComment -Type ProdDeployment"
                 ],
-                ["post-merge-deploy"] =
+                ["dev-ops-post-merge-deploy"] =
                 [
                     "ValidateTicketLock",
                     "ValidateDeploymentLane",
                     "ArtifactPaths"
                 ],
-                ["rollback-prod"] =
+                ["dev-ops-rollback-prod"] =
                 [
                     "ValidateTicketLock",
                     "UpdateReleaseManifest",
@@ -1583,21 +1780,21 @@ namespace SDDTemplate.DeliveryTools.Tests
         {
             string[] deliverySkills =
             [
-                "automatic-implement-ticket",
-                "delivery-retrospective-audit",
-                "deploy-to-prod",
-                "deploy-to-qa",
-                "file-qa-bug",
-                "gitea-pr-review-agent",
-                "hotfix-prod",
-                "implement-ticket",
-                "parallel-ticket-coordinator",
-                "pipeline-status",
-                "plane-start-ticket",
-                "pr-review-feedback-loop",
-                "post-merge-deploy",
-                "rollback-prod",
-                "test-e2e"
+                "dev-flow-continue-implementation",
+                "dev-flow-retrospective-audit",
+                "dev-ops-deploy-prod",
+                "dev-ops-deploy-qa",
+                "dev-flow-file-qa-bug",
+                "dev-flow-pr-review-agent",
+                "dev-ops-hotfix-prod",
+                "dev-flow-implement-ticket",
+                "dev-flow-parallel-ticket-coordinator",
+                "dev-flow-pipeline-status",
+                "dev-flow-start-ticket",
+                "dev-flow-pr-review-feedback-loop",
+                "dev-ops-post-merge-deploy",
+                "dev-ops-rollback-prod",
+                "quality-test-e2e"
             ];
 
             foreach (string skillName in deliverySkills)
@@ -1609,13 +1806,13 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             foreach (string skillName in new[]
             {
-                "post-merge-deploy",
-                "deploy-to-qa",
-                "test-e2e",
-                "deploy-to-prod",
-                "rollback-prod",
-                "hotfix-prod",
-                "file-qa-bug"
+                "dev-ops-post-merge-deploy",
+                "dev-ops-deploy-qa",
+                "quality-test-e2e",
+                "dev-ops-deploy-prod",
+                "dev-ops-rollback-prod",
+                "dev-ops-hotfix-prod",
+                "dev-flow-file-qa-bug"
             })
             {
                 Assert.Contains("docs/deployment.md", ReadSkill(skillName, "SKILL.md"));
@@ -1623,12 +1820,12 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             foreach (string skillName in new[]
             {
-                "implement-ticket",
-                "pr-review-feedback-loop",
-                "gitea-pr-review-agent",
-                "hotfix-prod",
-                "file-qa-bug",
-                "delivery-retrospective-audit"
+                "dev-flow-implement-ticket",
+                "dev-flow-pr-review-feedback-loop",
+                "dev-flow-pr-review-agent",
+                "dev-ops-hotfix-prod",
+                "dev-flow-file-qa-bug",
+                "dev-flow-retrospective-audit"
             })
             {
                 Assert.Contains("docs/development.md", ReadSkill(skillName, "SKILL.md"));
@@ -1636,11 +1833,11 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             foreach (string skillName in new[]
             {
-                "automatic-implement-ticket",
-                "parallel-ticket-coordinator",
-                "pipeline-status",
-                "plane-start-ticket",
-                "delivery-retrospective-audit"
+                "dev-flow-continue-implementation",
+                "dev-flow-parallel-ticket-coordinator",
+                "dev-flow-pipeline-status",
+                "dev-flow-start-ticket",
+                "dev-flow-retrospective-audit"
             })
             {
                 Assert.Contains("docs/architecture.md", ReadSkill(skillName, "SKILL.md"));
@@ -1652,20 +1849,20 @@ namespace SDDTemplate.DeliveryTools.Tests
         {
             string[] skillNames =
             [
-                "automatic-implement-ticket",
-                "parallel-ticket-coordinator",
-                "plane-start-ticket",
-                "implement-ticket",
-                "pr-review-feedback-loop",
-                "gitea-pr-review-agent",
-                "post-merge-deploy",
-                "deploy-to-qa",
-                "test-e2e",
-                "deploy-to-prod",
-                "file-qa-bug",
-                "pipeline-status",
-                "hotfix-prod",
-                "rollback-prod"
+                "dev-flow-continue-implementation",
+                "dev-flow-parallel-ticket-coordinator",
+                "dev-flow-start-ticket",
+                "dev-flow-implement-ticket",
+                "dev-flow-pr-review-feedback-loop",
+                "dev-flow-pr-review-agent",
+                "dev-ops-post-merge-deploy",
+                "dev-ops-deploy-qa",
+                "quality-test-e2e",
+                "dev-ops-deploy-prod",
+                "dev-flow-file-qa-bug",
+                "dev-flow-pipeline-status",
+                "dev-ops-hotfix-prod",
+                "dev-ops-rollback-prod"
             ];
 
             foreach (string skillName in skillNames)
@@ -1679,7 +1876,7 @@ namespace SDDTemplate.DeliveryTools.Tests
         public void TicketStartCanLazilyReplaceCompletedDeliveryContextLock()
         {
             string contract = ReadSkill("_shared", "delivery-contract.md");
-            string startSkill = ReadSkill("plane-start-ticket", "SKILL.md");
+            string startSkill = ReadSkill("dev-flow-start-ticket", "SKILL.md");
             string configureRouter = ReadSkill("configure-dev-environment", "SKILL.md");
             string architecture = ReadDoc("architecture.md");
             string parallelDocs = ReadDoc("parallel-delivery.md");
@@ -1695,7 +1892,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("replaceExisting=true", startSkill);
             Assert.Contains("Do not delete the lock merely because the old ticket is QA Done or ready for PROD", startSkill);
 
-            Assert.Contains("Use `replaceExisting=true` only after `plane-start-ticket` confirms", configureRouter);
+            Assert.Contains("Use `replaceExisting=true` only after `dev-flow-start-ticket` confirms", configureRouter);
             Assert.Contains("QA Done does not require immediate lock deletion", configureRouter);
             Assert.Contains("retained after QA Done", architecture);
             Assert.Contains("Do not copy `.codex/delivery-context.local.json`", parallelDocs);
@@ -1704,12 +1901,12 @@ namespace SDDTemplate.DeliveryTools.Tests
         [Fact]
         public void FrontendTestingDebuggingSkillIsInstalledAndPreferredForWebsiteQa()
         {
-            string frontendSkill = ReadSkill("frontend-testing-debugging", "SKILL.md");
-            string e2eSkill = ReadSkill("test-e2e", "SKILL.md");
+            string frontendSkill = ReadSkill("quality-frontend-testing-debugging", "SKILL.md");
+            string e2eSkill = ReadSkill("quality-test-e2e", "SKILL.md");
 
-            Assert.Contains("name: frontend-testing-debugging", frontendSkill);
+            Assert.Contains("name: quality-frontend-testing-debugging", frontendSkill);
             Assert.Contains("Prefer the Browser plugin", frontendSkill);
-            Assert.Contains("$frontend-testing-debugging", e2eSkill);
+            Assert.Contains("$quality-frontend-testing-debugging", e2eSkill);
             Assert.Contains("Blazor", e2eSkill);
             Assert.Contains("browser-visible validation", e2eSkill);
         }
@@ -1723,9 +1920,9 @@ namespace SDDTemplate.DeliveryTools.Tests
                 "skills",
                 "_shared",
                 "delivery-contract.md"));
-            string implementSkill = ReadSkill("implement-ticket", "SKILL.md");
-            string openspecSkill = ReadSkill("openspec-implement-change", "SKILL.md");
-            string handoffReference = ReadSkill("openspec-implement-change", Path.Combine("references", "gitea-plane-handoff.md"));
+            string implementSkill = ReadSkill("dev-flow-implement-ticket", "SKILL.md");
+            string openspecSkill = ReadSkill("dev-flow-implement-change", "SKILL.md");
+            string handoffReference = ReadSkill("dev-flow-implement-change", Path.Combine("references", "gitea-plane-handoff.md"));
             string configureReference = ReadSkill("configure-dev-environment", Path.Combine("references", "gitea-pr.md"));
 
             Assert.Contains("PR Reviewer Handoff", contract);
@@ -1754,7 +1951,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                 "skills",
                 "_shared",
                 "delivery-contract.md"));
-            string e2eSkill = ReadSkill("test-e2e", "SKILL.md");
+            string e2eSkill = ReadSkill("quality-test-e2e", "SKILL.md");
             string deploymentDoc = ReadDoc("deployment.md");
             string developmentDoc = ReadDoc("development.md");
             string workflowReadme = File.ReadAllText(Path.Combine(
@@ -1784,7 +1981,9 @@ namespace SDDTemplate.DeliveryTools.Tests
                 "skills",
                 "_shared",
                 "delivery-contract.md"));
-            string e2eSkill = ReadSkill("test-e2e", "SKILL.md");
+            string e2eSkill = ReadSkill("quality-test-e2e", "SKILL.md");
+            string implementationSkill = ReadSkill("dev-flow-implement-ticket", "SKILL.md");
+            string archiveSkill = ReadSkill("dev-flow-archive-change", "SKILL.md");
             string root = FindRepositoryRoot().FullName;
             string activeChange = Path.Combine(
                 root,
@@ -1800,6 +1999,21 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.Contains("OpenSpec Completion Archive Gate", contract);
             Assert.Contains("must be archived before the workflow is reported complete", contract);
+            Assert.Contains("OPENSPEC_TELEMETRY=0", contract);
+            Assert.Contains("zero unchecked tasks", contract);
+            Assert.Contains("lacks the canonical `IA generated E2E QA: {ticketKey}` marker", contract);
+            Assert.Contains("`dev-flow-archive-change` must fail closed", contract);
+            Assert.Contains("Do not allow confirmation prompts to override incomplete work", contract);
+            Assert.Contains("OPENSPEC_TELEMETRY=0", e2eSkill);
+            Assert.Contains("openspec list --json", e2eSkill);
+            Assert.Contains("openspec status --change \"<change>\" --json", e2eSkill);
+            Assert.Contains("noncanonical QA marker", e2eSkill);
+            Assert.Contains("stop if any `- [ ]` task remains", implementationSkill);
+            Assert.Contains("Unchecked OpenSpec tasks at PR handoff", implementationSkill);
+            Assert.Contains("Incomplete artifacts, incomplete tasks, missing tasks.md, failed spec sync, or failed archive movement are blockers", archiveSkill);
+            Assert.Contains("Do not ask for confirmation to continue", archiveSkill);
+            Assert.Contains("sync is mandatory before archive", archiveSkill);
+            Assert.Contains("Never report archive success unless the active change is gone from `openspec list --json`", archiveSkill);
             Assert.Contains("Do not report the QA workflow as fully complete while exactly one linked active OpenSpec change remains unarchived", e2eSkill);
             Assert.Contains("OpenSpec archived: <archive path>", e2eSkill);
             Assert.False(Directory.Exists(activeChange));

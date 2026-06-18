@@ -6,7 +6,7 @@ Memory is not an authority source. Use it to find relevant context quickly, then
 
 ## Authority Reminder
 
-When sources disagree, follow the authority order in `docs/context-management.md`. Do not duplicate that list here; this memory index is intentionally subordinate to current user intent, Plane, OpenSpec, the shared delivery contract, canonical docs, current files, durable evidence, and only then memory.
+When sources disagree, follow the authority order in `docs/context-management.md`. Do not duplicate that list here; this memory index is intentionally subordinate to current user intent, configured ticket provider state, OpenSpec, `.codex/project-profile.json`, the shared delivery contract, canonical docs, current files, durable evidence, and only then memory.
 
 ## Memory Files
 
@@ -35,14 +35,16 @@ Then follow `retrieval-policy.md#update-process`. Memory updates must include a 
 ### SDD/SDLC Delivery Model
 
 - This repository is a local agent-driven software delivery lab.
-- Plane is the source of ticket state, generated workflow markers, and delivery comments.
+- `.codex/project-profile.json` is the source of non-secret stack, provider, ticket key, branch, environment, quality gate, and adapter-path selection.
+- `.codex/providers/` contains provider-specific adapter behavior that generic skills should not hard-code.
+- The configured ticket provider is the source of ticket state, generated workflow markers, and delivery comments.
 - OpenSpec records planned behavior before implementation.
-- Gitea handles PR review and validation.
-- Nexus stores immutable build artifacts.
-- Azure hosts DEV, QA, and PROD application runtimes.
+- The configured review provider handles PR review and validation.
+- The configured artifact provider stores immutable build artifacts.
+- The configured deployment provider hosts DEV, QA, and PROD application runtimes.
 - PROD promotion is explicit and artifact-based.
 
-Sources: `README.md`, `docs/architecture.md`, `.codex/skills/_shared/delivery-contract.md`.
+Sources: `README.md`, `docs/architecture.md`, `.codex/project-profile.json`, `.codex/skills/_shared/delivery-contract.md`.
 
 ### Context Management
 
@@ -56,10 +58,10 @@ Sources: `README.md`, `docs/context-management.md`, `docs/development.md`.
 
 ### Agent Entry Points
 
-- `automatic-implement-ticket` is the high-level workflow router for continuing, resuming, implementing, deploying, QA, or handoff work.
-- `configure-dev-environment` is the setup router for Plane, Gitea, runner, quality gates, Nexus, Azure, and observability.
-- `pipeline-status` is the read-only status dashboard.
-- `parallel-ticket-coordinator` coordinates multiple Plane tickets with one worktree and one local context lock per active ticket.
+- `dev-flow-continue-implementation` is the high-level workflow router for continuing, resuming, implementing, deploying, QA, or handoff work.
+- `configure-dev-environment` is the setup router for the project profile, selected provider adapters, runner, quality gates, and observability.
+- `dev-flow-pipeline-status` is the read-only status dashboard.
+- `dev-flow-parallel-ticket-coordinator` coordinates multiple configured tickets with one worktree and one local context lock per active ticket.
 
 Sources: `README.md`, `.codex/skills/`.
 
