@@ -1,6 +1,6 @@
 # Deployment
 
-Deployment is ticket-gated and artifact-based. The workflow promotes one immutable Nexus artifact through DEV, QA, PROD, and rollback paths without rebuilding between environments.
+Deployment is ticket-gated and artifact-based. The selected providers and environments are declared in `.codex/project-profile.json`; this repository's current adapters promote one immutable artifact through DEV, QA, PROD, and rollback paths without rebuilding between environments.
 
 ## Flow
 
@@ -8,11 +8,13 @@ Deployment is ticket-gated and artifact-based. The workflow promotes one immutab
 feature branch -> dev -> DEV -> QA -> main -> PROD
 ```
 
-Push-triggered deployment is allowed only for ticket-named application changes under `src/**` or `tests/**`. The ticket key pattern is configured in `.codex/delivery-policy.json`; non-code changes outside those folders do not run automatic CI/deployment work.
+Push-triggered deployment is allowed only for ticket-named application changes under configured application or test paths. The ticket key pattern is configured in `.codex/project-profile.json` at `workflow.ticketKeyPattern`; non-code changes outside those folders do not run automatic CI/deployment work.
 
 ## Technology Stack And Tool Set
 
-Deployment tooling is intentionally local-first except for the application runtimes. Gitea Actions packages and deploys ticket-gated application changes, Nexus stores the exact artifact and `release.json`, Azure App Service hosts DEV/QA/PROD web and API runtimes, Azure Monitor and Log Analytics remain the Azure-side observability sources, and local Seq consumes Azure Event Hub for DEV/QA/PROD log search.
+Deployment tooling is intentionally local-first except for the application runtimes. Generic skills load the selected artifact, deployment, review, ticket, and observability adapters from `.codex/project-profile.json`; provider-specific names, endpoints, and commands belong in `.codex/providers/`, `.codex/client-tools.local.json`, workflow files, and infrastructure files.
+
+The current profile uses Azure App Service for deployed runtimes, Azure Monitor and Log Analytics for cloud-side observability, and local Grafana/Seq views for operator checks.
 
 - Nexus paths under `app/{commitSha}/` are the durable artifact identity; environments must promote that same ZIP and checksum instead of rebuilding.
 - Azure deployment uses App Service ZIP deployment from the existing Nexus artifact.

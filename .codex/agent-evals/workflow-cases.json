@@ -15,7 +15,7 @@
       ],
       "toolExpectations": [
         "Read existing generated Plane markers before adding new generated comments",
-        "Validate ticket key against .codex/delivery-policy.json",
+        "Validate ticket key against .codex/project-profile.json",
         "Create or reuse exactly one branch for the ticket"
       ],
       "stopConditions": [

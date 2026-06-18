@@ -1,6 +1,6 @@
 ---
 name: deploy-to-prod
-description: Promote a QA-approved release artifact to PROD after Plane E2E QA approval. Use when Codex needs to verify one or more Plane Done tickets included in a release, confirm the QA-approved Nexus artifact and checksum, ensure release/RC tag consistency, update main, trigger PROD deployment, validate PROD page and /health checks, verify Seq log search when available, and comment the PROD result on every included Plane ticket.
+description: Promote a QA-approved release artifact to production after configured ticket E2E QA approval. Use when Codex needs to verify one or more Done tickets included in a release, confirm the QA-approved artifact and checksum, ensure release/RC tag consistency, update the release branch, trigger production deployment, validate production page and health checks, verify configured observability when available, and comment the production result on every included ticket.
 ---
 
 # Deploy To PROD
@@ -17,9 +17,9 @@ PROD must reuse the QA-approved Nexus artifact. Never rebuild, republish, or ren
 
 ## Shared Context
 
-Before promotion, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` helpers: `ValidateTicketLock` for `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, `ArtifactPaths`, `ValidateReleaseManifest`, `UpdateReleaseManifest`, and `RenderPlaneComment -Type ProdDeployment`.
+Before production promotion, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Load selected ticket, repository/review, artifact, deployment, and observability adapters. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` helpers: `ValidateTicketLock` for `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, `ArtifactPaths`, `ValidateReleaseManifest`, `UpdateReleaseManifest`, and `RenderPlaneComment -Type ProdDeployment`.
 
-For push-triggered PROD deployment from `main`, the commit or merged PR title must start with the ticket key format configured in `.codex/delivery-policy.json`, such as `E2EPROJECT-123: ...`, and the change must touch `src/**` or `tests/**`. Non-code changes outside those folders and non-ticket PRs must not deploy PROD.
+For push-triggered production deployment from the release branch, the commit or merged PR title must start with the ticket key format configured in `.codex/project-profile.json` at `workflow.ticketKeyPattern`, and the change must touch configured application or test paths. Non-code changes outside those paths and non-ticket PRs must not deploy production.
 
 ## Configuration
 
@@ -83,7 +83,7 @@ Stop if any QA gate, tag gate, artifact gate, or checksum gate fails.
 
 PROD deployment can be triggered in two supported ways:
 
-- A push/merge to `main` deploys PROD only when the changed files include application/test/package source and the commit or merged PR title starts with the configured ticket key format from `.codex/delivery-policy.json`. It resolves the artifact from `app/qa-approved/latest.json`, requires the pointer commit to equal `GITHUB_SHA`, then validates `commit.sha`, `release.json`, and the source RC tag before downloading the canonical `app/{commitSha}` ZIPs.
+- A push/merge to `main` deploys PROD only when the changed files include application/test/package source and the commit or merged PR title starts with the configured ticket key format from `.codex/project-profile.json`. It resolves the artifact from `app/qa-approved/latest.json`, requires the pointer commit to equal `GITHUB_SHA`, then validates `commit.sha`, `release.json`, and the source RC tag before downloading the canonical `app/{commitSha}` ZIPs.
 - Manual workflow dispatch with `environment=prod` deploys the topology artifacts identified by `artifact_commit_sha`.
 
 For manual dispatch, trigger the Gitea package/deploy workflow with:

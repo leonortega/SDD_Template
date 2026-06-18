@@ -1,6 +1,6 @@
 # Architecture
 
-This repository is a local agentic delivery lab for a .NET Blazor site, ASP.NET Core API, and shared data layer. The repo is designed so Codex-style agents can move a Plane ticket from idea to production through explicit planning, implementation, review, artifact promotion, QA, and release checkpoints.
+This repository is a local agentic delivery lab. Its current profile is a .NET Blazor site, ASP.NET Core API, and shared data layer, but the delivery skills are designed to route through `.codex/project-profile.json` and provider adapters instead of hard-coding one stack or toolchain. The repo is designed so Codex-style agents can move a configured ticket from idea to production through explicit planning, implementation, review, artifact promotion, QA, and release checkpoints.
 
 ## System Topology
 
@@ -17,7 +17,7 @@ This repository is a local agentic delivery lab for a .NET Blazor site, ASP.NET 
 
 ## Technology Stack And Tool Set
 
-The intended delivery tool set is tracked here so agents can distinguish project intent from accidental local drift. Configuration audits should verify this intent against current files such as `global.json`, `.csproj` files, `infra/**`, `.gitea/workflows/**`, monitoring provisioning, and OpenSpec context.
+The canonical non-secret stack and tool declaration is `.codex/project-profile.json`. This document explains the current repository profile for humans; agents must read the profile first, then load the selected adapter files under `.codex/providers/`. Configuration audits should verify the profile against current files such as `global.json`, `.csproj` files, `infra/**`, `.gitea/workflows/**`, monitoring provisioning, and OpenSpec context.
 
 - Plane is the ticket system and records generated delivery markers, state transitions, and handoff comments.
 - OpenSpec captures planned behavior, requirements, design decisions, and task checklists before implementation and after review feedback.
@@ -29,12 +29,14 @@ The intended delivery tool set is tracked here so agents can distinguish project
 
 ## Sources Of Truth
 
-- Plane is authoritative for ticket state and generated checkpoint comments.
+- `.codex/project-profile.json` is authoritative for selected stack, providers, ticket key pattern, branch policy, environments, quality gates, and adapter paths.
+- Selected `.codex/providers/*.md` files are authoritative for project-specific provider behavior that generic skills should not hard-code.
+- The configured ticket provider is authoritative for ticket state and generated checkpoint comments.
 - OpenSpec is authoritative for planned feature behavior while a change is active.
 - `.codex/skills/_shared/delivery-contract.md` is authoritative for agent-enforced delivery behavior.
 - `docs/` holds durable human-readable project context.
-- Gitea PR validation is authoritative for PR quality gates.
-- Nexus `app/{commitSha}/release.json` is authoritative for artifact lineage across environments.
+- The configured review provider validation is authoritative for PR quality gates.
+- The configured artifact provider `app/{commitSha}/release.json` is authoritative for artifact lineage across environments.
 
 ## Ticket And Worktree Isolation
 

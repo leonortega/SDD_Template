@@ -1,6 +1,6 @@
 param(
   [Parameter(Mandatory = $true)]
-  [ValidateSet('ArtifactPaths', 'CheckGitIgnored', 'NextRcVersion', 'ReadDeliveryPolicy', 'ExtractTicketKey', 'ReadCoverageThreshold', 'ReadCoberturaLineRate', 'ValidateReleaseManifest', 'CreateArtifactPointer', 'ValidateTicketLock', 'ValidateDeploymentLane', 'ValidateParallelDeliveryDryRun', 'InitializeWorkflowTelemetry', 'AppendWorkflowTelemetry', 'ReadWorkflowTelemetry', 'RenderPlaneComment', 'UpdateReleaseManifest')]
+  [ValidateSet('ArtifactPaths', 'CheckGitIgnored', 'NextRcVersion', 'ReadProjectProfile', 'ReadDeliveryPolicy', 'ExtractTicketKey', 'ReadCoverageThreshold', 'ReadCoberturaLineRate', 'ValidateReleaseManifest', 'CreateArtifactPointer', 'ValidateTicketLock', 'ValidateDeploymentLane', 'ValidateParallelDeliveryDryRun', 'InitializeWorkflowTelemetry', 'AppendWorkflowTelemetry', 'ReadWorkflowTelemetry', 'RenderPlaneComment', 'UpdateReleaseManifest')]
   [string] $Mode,
 
   [string] $CommitSha,
@@ -222,7 +222,25 @@ function New-ArtifactPointer([string] $OutputPath) {
   }
 }
 
+function Get-ProjectProfile {
+  $profilePath = Join-Path $RepoRoot '.codex/project-profile.json'
+  if (-not (Test-Path -LiteralPath $profilePath)) {
+    throw "Project profile not found: $profilePath"
+  }
+  $ticketKeyPattern = Invoke-DeliveryCli @('ReadProjectProfile', '--path', $profilePath)
+
+  [pscustomobject]@{
+    path = $profilePath
+    ticketKeyPattern = $ticketKeyPattern
+  }
+}
+
 function Get-DeliveryPolicy {
+  $profilePath = Join-Path $RepoRoot '.codex/project-profile.json'
+  if (Test-Path -LiteralPath $profilePath) {
+    return Get-ProjectProfile
+  }
+
   $policyPath = Join-Path $RepoRoot '.codex/delivery-policy.json'
   $ticketKeyPattern = Invoke-DeliveryCli @('ReadDeliveryPolicy', '--path', $policyPath)
 
@@ -917,6 +935,7 @@ switch ($Mode) {
   'ArtifactPaths' { Write-Json (Get-ArtifactPaths $CommitSha) }
   'CheckGitIgnored' { Write-Json (Test-GitIgnored $Path) }
   'NextRcVersion' { Write-Json (Get-NextRcVersion $TargetVersion) }
+  'ReadProjectProfile' { Write-Json (Get-ProjectProfile) }
   'ReadDeliveryPolicy' { Write-Json (Get-DeliveryPolicy) }
   'ExtractTicketKey' { Write-Json (Get-ExtractedTicketKey) }
   'ReadCoverageThreshold' { Write-Json (Get-CoverageThreshold) }

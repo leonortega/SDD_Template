@@ -1,6 +1,6 @@
 ---
 name: configure-dev-environment
-description: Router for configuring this repo's local development and delivery environment. Use when Codex needs to set up, audit, repair, or guide configuration for Plane, Gitea PR automation, Gitea Actions runner, code quality gates, Nexus artifacts, Azure DEV/QA/PROD environments, DEV-to-QA deployment promotion, Seq log search, and Azure Event Hub to Seq ingestion, or when the user asks "config infra", "setup environment", or is unsure which setup area they need.
+description: Router for configuring this repo's local development and delivery environment from `.codex/project-profile.json`. Use when Codex needs to set up, audit, repair, or guide configuration for selected ticket, repository/review, quality, artifact, deployment, observability, stack, and E2E adapters, or when the user asks "config infra", "setup environment", or is unsure which setup area they need.
 ---
 
 # Configure Dev Environment
@@ -11,7 +11,7 @@ Use this skill as the entrypoint for the repo-local delivery lab. Keep this file
 
 ## Shared Context
 
-Before changing configure behavior or finishing any non-OpenSpec delivery skill change, read `.codex/skills/_shared/delivery-contract.md` and apply its Skill Synchronization Rule. Keep configure docs, templates, audits, and tests synchronized with the non-OpenSpec delivery-flow skills; when behavior differs, delivery-flow skills are authoritative. If a delivery skill change affects repo setup, generated files, workflow YAML, secrets, ignored local files, labels, ticket gates, artifact paths, release manifests, QA/PROD promotion, rollback, or audit/repair behavior, update the matching configure skill and tests in the same change. If no configure update is needed, say that explicitly in the final response.
+Before changing configure behavior or finishing any non-OpenSpec delivery skill change, read `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, and `.codex/skills/_shared/delivery-contract.md`, then apply the Skill Synchronization Rule. Keep configure docs, templates, audits, and tests synchronized with the non-OpenSpec delivery-flow skills; when behavior differs, delivery-flow skills are authoritative. If a delivery skill change affects repo setup, generated files, workflow YAML, secrets, ignored local files, labels, ticket gates, artifact paths, release manifests, QA/PROD promotion, rollback, profile/adapters, or audit/repair behavior, update the matching configure skill and tests in the same change. If no configure update is needed, say that explicitly in the final response.
 
 Read `docs/context-management.md` before deciding whether setup findings belong in durable docs, skills, tests, memory, a ticket handoff, or local-only config.
 
@@ -102,13 +102,15 @@ Useful modes:
 - `AuditQualityGates`: inspect quality and CI/CD templates without writing local config by default.
 - `BuildGiteaActionsImages`: build and validate pinned local Gitea Actions job images used by PR validation, package/deploy, and QA E2E workflows.
 - `ValidateGiteaActionsRunner`: live-check Docker runner prerequisites for PR validation containers, including local image presence, required tools, and local Gitea checkout reachability.
+- `InitProjectProfile`: create the canonical project profile, schema, and neutral provider adapter examples. This is a required first-class step for full `config infra`.
 - `InitQualityGateTemplates`: create tracked quality-gate templates.
 - `SetSeqAzureEventHubLogs`: validate the required OpenTelemetry Collector Contrib Azure Event Hub path for Seq, including collector config, profile wiring, required connection strings, and the native Seq error-log alert.
 - `SetQualityConfig`: create or update `.codex/quality.local.json`, including `coverage.minimumPercent` (default `80`).
 
 ## Workflow
 
-1. Run `Audit` first unless the user asked for a very specific area and a narrower audit is enough.
+1. For full `config infra` or full guided setup, run `InitProjectProfile` first. If the profile, schema, or selected adapters already exist, treat the mode as idempotent and continue from its `Template already exists` findings.
+2. Run `Audit` after `InitProjectProfile` unless the user asked for a very specific area and a narrower audit is enough.
 2. For core compose status checks, always include the plane env file so variable resolution matches runtime expectations:
 
 ```powershell
@@ -150,7 +152,7 @@ trivy --download-db-only
    - Monitoring dashboards
    - Azure Event Hub to Seq ingestion
 23. If the user is vague, default to full guided setup in this order:
-   Plane -> Gitea PR automation -> Gitea Actions runner -> Quality gates and CI -> Nexus artifacts and deployment promotion -> Azure environments -> Monitoring dashboards -> Azure Event Hub to Seq ingestion.
+   InitProjectProfile -> Audit -> Plane -> Gitea PR automation -> Gitea Actions runner -> Quality gates and CI -> Nexus artifacts and deployment promotion -> Azure environments -> Monitoring dashboards -> Azure Event Hub to Seq ingestion -> final Audit.
 
 ## Domain Routing
 
@@ -183,6 +185,7 @@ End setup work with:
 ## Failure Rules
 
 - Stop when required user-supplied secrets, tokens, workspace IDs, project IDs, cloud IDs, or service account values are missing; provide source, destination, official setup path, validation command, and handoff impact.
+- Stop before provider-specific mutation when `.codex/project-profile.json`, `.codex/project-profile.schema.json`, or any selected adapter path is missing; run `InitProjectProfile` or the focused provider configure skill first.
 - Stop successful completion of `config infra` when observability is not working: missing Event Hub collector values, Seq unhealthy, or collector container not running when the `eventhub` profile is expected.
 - Stop before writing secrets to tracked files or reading secrets from containers, volumes, databases, or logs.
 - Stop before branch, Plane, ticket-lock, or OpenSpec mutation when first-ticket stack context, guidance discovery review, or recommendation audit context is missing or drifted.

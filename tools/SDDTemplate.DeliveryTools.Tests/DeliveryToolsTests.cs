@@ -23,6 +23,23 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
+        public void TicketKeyPatternReadsProjectProfileAndLegacyDeliveryPolicy()
+        {
+            string root = CreateTempDirectory();
+            string profilePath = Path.Combine(root, "project-profile.json");
+            string policyPath = Path.Combine(root, "delivery-policy.json");
+            File.WriteAllText(profilePath, JsonSerializer.Serialize(new
+            {
+                workflow = new { ticketKeyPattern = "ABC-[0-9]+" },
+            }));
+            File.WriteAllText(policyPath, JsonSerializer.Serialize(new { ticketKeyPattern = "LEGACY-[0-9]+" }));
+
+            Assert.Equal("ABC-[0-9]+", DeliveryWorkflowHelpers.ReadProjectProfileTicketKeyPattern(profilePath));
+            Assert.Equal("ABC-[0-9]+", DeliveryWorkflowHelpers.ReadDeliveryPolicyTicketKeyPattern(profilePath));
+            Assert.Equal("LEGACY-[0-9]+", DeliveryWorkflowHelpers.ReadDeliveryPolicyTicketKeyPattern(policyPath));
+        }
+
+        [Fact]
         public void CoverageHelpersReadJsonThresholdAndCoberturaLineRate()
         {
             string root = CreateTempDirectory();
@@ -692,6 +709,7 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.True(File.Exists(policyPath));
             Assert.Contains(".codex/delivery-policy.json", output);
+            Assert.False(File.Exists(Path.Combine(root, ".codex", "project-profile.json")));
             using JsonDocument policy = JsonDocument.Parse(File.ReadAllText(policyPath));
             JsonElement optimization = policy.RootElement.GetProperty("agentOptimization");
             Assert.Equal(20, optimization.GetProperty("maxAutonomousIterations").GetInt32());
@@ -699,6 +717,132 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.True(optimization.GetProperty("promptCache").GetProperty("trackCachedTokens").GetBoolean());
             Assert.Equal(".codex/agent-telemetry.local.jsonl", optimization.GetProperty("telemetry").GetProperty("localPath").GetString());
             Assert.Equal(".codex/agent-evals/results.local.json", optimization.GetProperty("workflowEvals").GetProperty("resultsPath").GetString());
+        }
+
+        [Fact]
+        public void InitProjectProfileCreatesSchemaProfileAndGenericAdapters()
+        {
+            string root = CreateTempDirectory();
+
+            string output = RunPowerShellScript("-Mode", "InitProjectProfile", "-Root", root);
+            string profilePath = Path.Combine(root, ".codex", "project-profile.json");
+            string schemaPath = Path.Combine(root, ".codex", "project-profile.schema.json");
+
+            Assert.True(File.Exists(profilePath));
+            Assert.True(File.Exists(schemaPath));
+            Assert.Contains(".codex/project-profile.json", output);
+            Assert.Contains(".codex/project-profile.schema.json", output);
+
+            using JsonDocument profile = JsonDocument.Parse(File.ReadAllText(profilePath));
+            Assert.Equal("TICKET-[0-9]+", profile.RootElement.GetProperty("workflow").GetProperty("ticketKeyPattern").GetString());
+            Assert.Equal("example-ticket", profile.RootElement.GetProperty("providers").GetProperty("ticket").GetProperty("id").GetString());
+
+            foreach (JsonProperty adapter in profile.RootElement.GetProperty("adapters").EnumerateObject())
+            {
+                string adapterPath = adapter.Value.GetString() ?? string.Empty;
+                Assert.False(Path.IsPathRooted(adapterPath));
+                Assert.True(File.Exists(Path.Combine(root, adapterPath.Replace('/', Path.DirectorySeparatorChar))));
+            }
+
+            string[] adapterFiles = Directory.GetFiles(Path.Combine(root, ".codex", "providers"), "*.example.md");
+            Assert.Equal(6, adapterFiles.Length);
+            Assert.All(adapterFiles, file => Assert.Contains("provider-neutral scaffold", File.ReadAllText(file)));
+        }
+
+        [Fact]
+        public void InitProjectProfileIsIdempotentAndDoesNotOverwriteExistingAdapters()
+        {
+            string root = CreateTempDirectory();
+            string adapterPath = Path.Combine(root, ".codex", "providers", "ticket.example.md");
+            _ = Directory.CreateDirectory(Path.GetDirectoryName(adapterPath)!);
+            File.WriteAllText(adapterPath, "custom adapter content");
+
+            _ = RunPowerShellScript("-Mode", "InitProjectProfile", "-Root", root);
+            string secondOutput = RunPowerShellScript("-Mode", "InitProjectProfile", "-Root", root);
+
+            Assert.Equal("custom adapter content", File.ReadAllText(adapterPath));
+            Assert.Contains("Template already exists", secondOutput);
+        }
+
+        [Fact]
+        public void InitProjectProfileGeneratedFilesDoNotContainSecretPlaceholders()
+        {
+            string root = CreateTempDirectory();
+            _ = RunPowerShellScript("-Mode", "InitProjectProfile", "-Root", root);
+
+            string[] forbidden = ["apiToken", "password", "clientSecret", "connectionString", "replace-with-"];
+            string[] files = Directory.GetFiles(Path.Combine(root, ".codex"), "*", SearchOption.AllDirectories);
+
+            foreach (string file in files)
+            {
+                string text = File.ReadAllText(file);
+                foreach (string needle in forbidden)
+                {
+                    Assert.DoesNotContain(needle, text, StringComparison.OrdinalIgnoreCase);
+                }
+            }
+        }
+
+        [Fact]
+        public void AuditSkillContractsValidatesGeneratedProjectProfileAndAdapters()
+        {
+            string root = CreateTempDirectory();
+            WriteMinimalSkillForAudit(root);
+            _ = RunPowerShellScript("-Mode", "InitProjectProfile", "-Root", root);
+
+            string output = RunSkillAuditScript("-Root", root, "-AsJson");
+
+            using JsonDocument document = JsonDocument.Parse(output);
+            Assert.True(document.RootElement.GetProperty("profilePassed").GetBoolean());
+        }
+
+        [Fact]
+        public void AuditSkillContractsReportsMissingAndEscapingAdapterPaths()
+        {
+            string root = CreateTempDirectory();
+            WriteMinimalSkillForAudit(root);
+            _ = Directory.CreateDirectory(Path.Combine(root, ".codex"));
+            File.WriteAllText(Path.Combine(root, ".codex", "project-profile.schema.json"), "{}");
+            File.WriteAllText(
+                Path.Combine(root, ".codex", "project-profile.json"),
+                JsonSerializer.Serialize(new
+                {
+                    schemaVersion = 1,
+                    workflow = new { ticketKeyPattern = "TICKET-[0-9]+" },
+                    providers = new { },
+                    adapters = new
+                    {
+                        ticket = "../outside.md",
+                        repository = ".codex/providers/missing.md",
+                    },
+                }));
+
+            string output = RunSkillAuditScript("-Root", root, "-AsJson");
+
+            using JsonDocument document = JsonDocument.Parse(output);
+            string[] findings = [.. document.RootElement.GetProperty("profileFindings").EnumerateArray().Select(item => item.GetString() ?? string.Empty)];
+            Assert.Contains(findings, finding => finding.Contains("resolves outside the repository", StringComparison.Ordinal));
+            Assert.Contains(findings, finding => finding.Contains("path does not exist", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public void ConfigureAuditReportsProjectProfileGapsAsBlockingSetupFindings()
+        {
+            string root = CreateTempDirectory();
+
+            string output = RunPowerShellScript("-Mode", "Audit", "-Root", root);
+
+            using JsonDocument document = JsonDocument.Parse(output);
+            JsonElement[] findings = [.. document.RootElement.GetProperty("findings").EnumerateArray()];
+            Assert.Contains(findings, finding =>
+                finding.GetProperty("path").GetString() == ".codex/project-profile.json"
+                && finding.GetProperty("key").GetString() == "InitProjectProfile"
+                && finding.GetProperty("severity").GetString() == "error"
+                && finding.GetProperty("phase").GetString() == "pre-start");
+            Assert.Contains(findings, finding =>
+                finding.GetProperty("path").GetString() == ".codex/project-profile.schema.json"
+                && finding.GetProperty("severity").GetString() == "error"
+                && finding.GetProperty("phase").GetString() == "pre-start");
         }
 
         [Fact]
@@ -1596,6 +1740,19 @@ namespace SDDTemplate.DeliveryTools.Tests
             return stdout + stderr;
         }
 
+        private static string RunSkillAuditScript(params string[] args)
+        {
+            string script = Path.Combine(
+                FindRepositoryRoot().FullName,
+                ".codex",
+                "skills",
+                "_shared",
+                "scripts",
+                "audit_skill_contracts.ps1");
+
+            return RunPowerShell(script, args);
+        }
+
         private static string RunPowerShell(string script, params string[] args)
         {
             ProcessStartInfo startInfo = new()
@@ -1631,6 +1788,37 @@ namespace SDDTemplate.DeliveryTools.Tests
             string path = Path.Combine(Path.GetTempPath(), "sdd-template-tests", Guid.NewGuid().ToString("N"));
             _ = Directory.CreateDirectory(path);
             return path;
+        }
+
+        private static void WriteMinimalSkillForAudit(string root)
+        {
+            string skillDirectory = Path.Combine(root, ".codex", "skills", "example");
+            _ = Directory.CreateDirectory(skillDirectory);
+            File.WriteAllText(
+                Path.Combine(skillDirectory, "SKILL.md"),
+                """
+                # Example
+
+                ## Overview
+
+                Uses `.codex/skills/_shared/delivery-contract.md`.
+
+                ## Shared Context
+
+                Read docs/context-management.md before ticket work.
+
+                ## Workflow
+
+                Run validation.
+
+                ## Output
+
+                Report handoff.
+
+                ## Failure Rules
+
+                Stop on blocker.
+                """);
         }
 
         private static void WriteExpandedStackFixture(string root, bool includeContext)

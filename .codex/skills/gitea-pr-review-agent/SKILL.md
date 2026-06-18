@@ -1,6 +1,6 @@
 ---
 name: gitea-pr-review-agent
-description: Review a specific Gitea pull request and post actionable findings. Use when Codex is asked to review a Gitea PR, review the PR just created by the implementation workflow, inspect PR diffs, use internet research to validate code quality, post review comments, or apply review outcome labels such as codex-reviewed, needs-tests, or needs-changes.
+description: Review a specific pull request through the selected review adapter and post actionable findings. Use when Codex is asked to review a PR, review the PR just created by the implementation workflow, inspect PR diffs, use internet research to validate code quality, post review comments, or apply configured review outcome labels.
 ---
 
 # Gitea PR Review Agent
@@ -13,7 +13,7 @@ For exact Gitea API endpoint guidance, read `references/gitea-review-api.md` bef
 
 ## Shared Context
 
-Before posting review output, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md`, with `docs/development.md` as the stage-specific doc.
+Before posting review output, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/development.md` as the stage-specific doc. Load the selected review adapter for API endpoints, comment fields, status checks, and labels.
 
 ## Workflow Telemetry
 

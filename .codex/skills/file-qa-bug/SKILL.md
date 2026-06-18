@@ -1,6 +1,6 @@
 ---
 name: file-qa-bug
-description: Create a linked Plane bug from failed QA evidence, preserve failure context, and start a focused fix workflow when code changes are required. Use when test-e2e finds a product defect, QA fails after deployment, or Codex needs to create a follow-up bug ticket from QA evidence.
+description: Create a linked bug through the selected ticket adapter from failed QA evidence, preserve failure context, and start a focused fix workflow when code changes are required. Use when test-e2e finds a product defect, QA fails after deployment, or Codex needs to create a follow-up bug ticket from QA evidence.
 ---
 
 # File QA Bug
@@ -11,11 +11,11 @@ Use this skill when QA finds a product defect after a ticket has reached QA. The
 
 ## Shared Context
 
-Before filing or linking tickets, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md`, with `docs/development.md` and `docs/deployment.md` as stage-specific docs.
+Before filing or linking tickets, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/development.md` and `docs/deployment.md` as stage-specific docs. Load selected ticket, repository, artifact, deployment, and E2E adapters as needed.
 
 ## Configuration
 
-Read `.codex/client-tools.local.json` first. Required values are Plane settings and Git settings when a fix branch is needed.
+Read `.codex/project-profile.json` first. Read `.codex/client-tools.local.json` only for selected adapter runtime values when a ticket mutation or fix branch is needed.
 
 ## Workflow
 

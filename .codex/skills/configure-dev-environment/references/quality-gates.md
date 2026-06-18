@@ -17,6 +17,7 @@ Use the shared script:
 ```powershell
 .\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode AuditQualityGates
 .\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode ValidateGiteaActionsRunner
+.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode InitProjectProfile
 .\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode InitQualityGateTemplates
 .\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode SetQualityConfig -ValuesJson '{"coverage":{"minimumPercent":80}}'
 ```
@@ -32,7 +33,9 @@ trivy --download-db-only
 - Gitea PR validation is the source of truth for formatting, build, tests, coverage, dependency audit, full secret scanning, and filesystem security scanning.
 - Local validation is for fast feedback and test authoring: run targeted builds/tests for touched behavior and cheap checks such as staged secret scanning, then let PR validation run the full required gate in the pinned runner.
 - Repo-owned Gitea Actions images are the source of reusable CI tooling. Use `BuildGiteaActionsImages` during `config infra` to build `agentic/dotnet-ci:10.0.300-tools-1` and `agentic/e2e-ci:playwright-1.57.0-1` into the Docker daemon used by the runner.
-- `.codex/delivery-policy.json` must include both `ticketKeyPattern` for deployment gating and `agentOptimization` defaults for retry limits, prompt-cache ordering, telemetry output, and workflow eval paths.
+- `.codex/project-profile.json` and selected provider adapter files are initialized by `InitProjectProfile`, which must run before full `config infra` quality/provider setup.
+- `.codex/project-profile.json` must include `workflow.ticketKeyPattern` for deployment gating.
+- `.codex/delivery-policy.json` must include `agentOptimization` defaults for retry limits, prompt-cache ordering, telemetry output, and workflow eval paths.
 - Coverage threshold is configurable through `.codex/quality.local.json`; default to `coverage.minimumPercent = 80`.
 - Gitea Actions should fall back to `.codex/quality.example.json` when local config is absent.
 - `.gitattributes` must force text files to LF with `* text=auto eol=lf` so Windows `core.autocrlf=true` checkouts do not break `.editorconfig` `end_of_line = lf` or `dotnet format --verify-no-changes`.
@@ -98,7 +101,7 @@ Ask the user to configure Gitea branch protection:
 
 ## Deployment Gating
 
-Push-triggered deployments are gated by `.codex/delivery-policy.json` and changed paths. The workflow reads `ticketKeyPattern` and deploys only when the commit message or merged PR title starts with that ticket key and the change touches `src/**` or `tests/**`. The same policy file carries `agentOptimization` defaults used by delivery agents when the platform exposes retry, prompt-cache, telemetry, or eval data. Non-code changes outside `src/**` and `tests/**` skip automatic CI/deployment work.
+Push-triggered deployments are gated by `.codex/project-profile.json` `workflow.ticketKeyPattern` and changed paths. The workflow deploys only when the commit message or merged PR title starts with that ticket key and the change touches `src/**` or `tests/**`. `.codex/delivery-policy.json` carries `agentOptimization` defaults used by delivery agents when the platform exposes retry, prompt-cache, telemetry, or eval data. Non-code changes outside `src/**` and `tests/**` skip automatic CI/deployment work.
 
 DEV and QA deploy only from `dev` when application/test/package source changed. PROD deploys only from `main` when `main` points to the exact QA-approved packaged commit for the same ticket-gated application change and `app/qa-approved/latest.json` points to that same commit. Manual workflow dispatch remains available for explicit promotion with `artifact_commit_sha`.
 

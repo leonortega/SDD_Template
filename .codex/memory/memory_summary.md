@@ -1,8 +1,8 @@
 # Memory Summary
 
-This repository is an agentic SDD/SDLC delivery lab for moving Plane tickets through OpenSpec planning, implementation, Gitea review, Nexus artifact promotion, Azure DEV/QA/PROD deployment, E2E QA, explicit PROD promotion, rollback, and hotfix workflows.
+This repository is an agentic SDD/SDLC delivery lab. `.codex/project-profile.json` is the canonical non-secret stack/provider declaration, and `.codex/providers/` holds selected provider adapter behavior. The current profile moves tickets through OpenSpec planning, implementation, review, artifact promotion, deployment, E2E QA, explicit PROD promotion, rollback, and hotfix workflows.
 
-Memory is guidance only. It must never override the latest user request, active Plane ticket, active OpenSpec change, `.codex/skills/_shared/delivery-contract.md`, canonical docs, current code, tests, workflow files, or live tool output.
+Memory is guidance only. It must never override the latest user request, active ticket, active OpenSpec change, `.codex/project-profile.json`, `.codex/skills/_shared/delivery-contract.md`, canonical docs, current code, tests, workflow files, or live tool output.
 
 ## High-Signal Operating Context
 
@@ -14,22 +14,24 @@ Memory is guidance only. It must never override the latest user request, active 
 - Durable docs: `docs/context-management.md`, `docs/architecture.md`, `docs/development.md`, and `docs/deployment.md`.
 - Agent skills: `.codex/skills/`.
 - Shared delivery contract: `.codex/skills/_shared/delivery-contract.md`.
+- Project profile: `.codex/project-profile.json`.
+- Provider adapters: `.codex/providers/`.
 - OpenSpec changes: `openspec/changes`.
-- Ticket key pattern: `E2EPROJECT-[0-9]+`.
+- Ticket key pattern: read from `.codex/project-profile.json`.
 - Coverage threshold: `80%`.
 
 ## Core Workflow
 
 ```text
-Plane Todo
+Configured Todo ticket
   -> branch + OpenSpec proposal
   -> implementation + tests
-  -> Gitea PR
+  -> configured review PR
   -> PR validation + Codex review agent
   -> merge to dev
-  -> Nexus package + Azure DEV + Azure QA
+  -> configured artifact package + DEV + QA
   -> E2E QA evidence
-  -> Plane Done
+  -> configured ticket Done
   -> explicit PROD promotion to main/PROD
   -> rollback or hotfix when needed
 ```

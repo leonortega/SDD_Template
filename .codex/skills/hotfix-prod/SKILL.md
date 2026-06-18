@@ -1,6 +1,6 @@
 ---
 name: hotfix-prod
-description: Run an expedited but gated production hotfix workflow for urgent targeted code fixes, including Plane incident/hotfix ticket creation, branch and PR handling, review, immutable artifact deployment, QA evidence, and explicit PROD promotion. Use when rollback is insufficient and a production regression needs a small code fix.
+description: Run an expedited but gated production hotfix workflow for urgent targeted code fixes, including incident/hotfix ticket creation, branch and PR handling, review, immutable artifact deployment, QA evidence, and explicit production promotion through selected project-profile adapters. Use when rollback is insufficient and a production regression needs a small code fix.
 ---
 
 # Hotfix PROD
@@ -13,11 +13,11 @@ Prefer `rollback-prod` when restoring a known-good artifact is enough.
 
 ## Shared Context
 
-Before starting, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md`, with `docs/development.md` and `docs/deployment.md` as stage-specific docs.
+Before starting, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/development.md` and `docs/deployment.md` as stage-specific docs. Load selected ticket, repository/review, artifact, deployment, observability, stack, and E2E adapters for the current step.
 
 ## Configuration
 
-Read `.codex/client-tools.local.json` first. Required values are Plane, Git, Gitea, Nexus, and deployment settings used by the normal delivery skills.
+Read `.codex/project-profile.json` first. Read `.codex/client-tools.local.json` only for selected adapter runtime values used by the normal delivery skills.
 
 ## Workflow
 

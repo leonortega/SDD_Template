@@ -1,6 +1,6 @@
 ---
 name: deploy-to-qa
-description: Promote merged pull request topology artifacts through Nexus, Azure DEV, and Azure QA, then update Plane. Use when Codex needs to verify a merged Gitea PR, locate the linked Plane ticket, confirm immutable Nexus per-app ZIP artifacts and checksums, validate Azure DEV and QA page plus all app /health checks, comment artifact and deployment links on the ticket, and move the ticket to QA.
+description: Promote merged pull request artifacts through the selected artifact and deployment adapters into configured pre-production environments, then update the ticket adapter. Use when Codex needs to verify a merged PR, locate the linked ticket, confirm immutable artifacts and checksums, validate configured environment health checks, comment artifact and deployment links, and move the ticket to QA.
 ---
 
 # Deploy To QA
@@ -17,9 +17,9 @@ feature branch -> dev -> DEV -> QA -> main -> PROD
 
 ## Shared Context
 
-Before promotion, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` helpers: `ArtifactPaths`, `ValidateTicketLock` for `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, `UpdateReleaseManifest`, `ValidateReleaseManifest`, and `RenderPlaneComment -Type QADeployment`.
+Before promotion, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Load selected artifact, deployment, repository/review, and ticket adapters. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` helpers: `ArtifactPaths`, `ValidateTicketLock` for `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, `UpdateReleaseManifest`, `ValidateReleaseManifest`, and `RenderPlaneComment -Type QADeployment`.
 
-For push-triggered DEV/QA deployment, the commit or merged PR title must start with the ticket key format configured in `.codex/delivery-policy.json`, such as `E2EPROJECT-123: ...`, and the change must touch `src/**` or `tests/**`. Non-code changes outside those folders and non-ticket PRs must not deploy.
+For push-triggered pre-production deployment, the commit or merged PR title must start with the ticket key format configured in `.codex/project-profile.json` at `workflow.ticketKeyPattern`, and the change must touch configured application or test paths. Non-code changes outside those paths and non-ticket PRs must not deploy.
 
 ## Workflow Telemetry
 

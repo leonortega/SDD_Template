@@ -1,6 +1,6 @@
 ---
 name: rollback-prod
-description: Roll back PROD to previously verified Nexus topology artifacts. Use when Codex needs to choose a known-good release from release.json metadata, redeploy app/{commitSha}/deployable-apps.json and per-app ZIPs to PROD without rebuilding, verify PROD page and all app /health checks, check Seq log search when available, and comment rollback evidence on Plane.
+description: Roll back production to previously verified immutable artifacts through selected project-profile artifact, deployment, observability, and ticket adapters. Use when Codex needs to choose a known-good release from release metadata, redeploy existing artifacts without rebuilding, verify production page and health checks, check configured observability when available, and comment rollback evidence on the ticket system.
 ---
 
 # Rollback PROD
@@ -11,7 +11,7 @@ Use this skill when PROD must be restored to a previous known-good artifact. Rol
 
 ## Shared Context
 
-Before rollback, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` helpers: `ArtifactPaths`, `ValidateReleaseManifest`, `ValidateTicketLock`, and `UpdateReleaseManifest`. Rollback may target an incident/release rather than the active ticket lock, but a mismatch must be explicit.
+Before rollback, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Load selected artifact, deployment, observability, repository, and ticket adapters. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` helpers: `ArtifactPaths`, `ValidateReleaseManifest`, `ValidateTicketLock`, and `UpdateReleaseManifest`. Rollback may target an incident/release rather than the active ticket lock, but a mismatch must be explicit.
 
 ## Configuration
 

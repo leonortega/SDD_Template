@@ -1,0 +1,123 @@
+{
+  "$schema": "./project-profile.schema.json",
+  "schemaVersion": 1,
+  "stack": {
+    "languages": [
+      "csharp",
+      "typescript"
+    ],
+    "frameworks": [
+      "dotnet",
+      "aspnet-core",
+      "blazor"
+    ],
+    "testFrameworks": [
+      "xunit",
+      "playwright"
+    ]
+  },
+  "providers": {
+    "ticket": {
+      "id": "plane",
+      "adapter": ".codex/providers/ticket.plane.md"
+    },
+    "repository": {
+      "id": "gitea",
+      "adapter": ".codex/providers/repo.gitea.md"
+    },
+    "review": {
+      "id": "gitea",
+      "adapter": ".codex/providers/repo.gitea.md"
+    },
+    "artifact": {
+      "id": "nexus",
+      "adapter": ".codex/providers/artifact.nexus.md"
+    },
+    "deployment": {
+      "id": "azure-appservice",
+      "adapter": ".codex/providers/deploy.azure-appservice.md"
+    },
+    "observability": [
+      {
+        "id": "seq"
+      },
+      {
+        "id": "grafana"
+      },
+      {
+        "id": "dozzle"
+      }
+    ]
+  },
+  "workflow": {
+    "ticketKeyPattern": "E2EPROJECT-[0-9]+",
+    "baseBranch": "dev",
+    "branchPrefix": "codex",
+    "branchPattern": "{prefix}/{ticketKeySlug}-{titleSlug}",
+    "environments": [
+      "dev",
+      "qa",
+      "prod"
+    ],
+    "releasePolicy": {
+      "buildOncePromoteSameArtifact": true,
+      "explicitProductionPromotion": true
+    }
+  },
+  "quality": {
+    "coverageMinimumPercent": 80,
+    "gates": [
+      {
+        "id": "restore",
+        "type": "build-prep",
+        "workflowJob": "pr-validation",
+        "required": true
+      },
+      {
+        "id": "format",
+        "type": "format",
+        "workflowJob": "pr-validation",
+        "required": true
+      },
+      {
+        "id": "build",
+        "type": "build",
+        "workflowJob": "pr-validation",
+        "required": true
+      },
+      {
+        "id": "tests",
+        "type": "test",
+        "workflowJob": "pr-validation",
+        "required": true
+      },
+      {
+        "id": "coverage",
+        "type": "coverage",
+        "workflowJob": "pr-validation",
+        "required": true
+      },
+      {
+        "id": "dependency-scan",
+        "type": "security",
+        "workflowJob": "pr-validation",
+        "required": true
+      },
+      {
+        "id": "e2e-qa",
+        "type": "e2e",
+        "workflowJob": "e2e-qa",
+        "required": true
+      }
+    ]
+  },
+  "adapters": {
+    "ticket": ".codex/providers/ticket.plane.md",
+    "repository": ".codex/providers/repo.gitea.md",
+    "review": ".codex/providers/repo.gitea.md",
+    "artifact": ".codex/providers/artifact.nexus.md",
+    "deployment": ".codex/providers/deploy.azure-appservice.md",
+    "stack": ".codex/providers/stack.dotnet.md",
+    "e2e": ".codex/providers/e2e.playwright.md"
+  }
+}

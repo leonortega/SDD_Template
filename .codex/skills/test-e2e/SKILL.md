@@ -1,6 +1,6 @@
 ---
 name: test-e2e
-description: Run post-deploy E2E QA for Plane tickets that are already in QA, including "test qa automation", "test qa deploy", "run QA tests", "complete QA", "E2E test a QA ticket", "validate QA and move to Done", and "run ticket-specific website/API QA". Use when Codex needs to inspect ticket expectations, choose or ask for the right website/API test tool, execute scoped QA checks, collect evidence, comment results on Plane, and move the ticket to the configured Done state only when all checks pass.
+description: Run post-deploy E2E QA for configured tickets that are already in QA, including "test qa automation", "test qa deploy", "run QA tests", "complete QA", "E2E test a QA ticket", "validate QA and move to Done", and "run ticket-specific website/API QA". Use when Codex needs to inspect ticket expectations, choose the configured E2E adapter, execute scoped QA checks, collect evidence, comment results through the ticket adapter, and move the ticket to the configured Done state only when all checks pass.
 ---
 
 # Test E2E
@@ -21,7 +21,7 @@ Non-interactive context means the run has no available user-response channel, su
 
 ## Shared Context
 
-Before QA state changes, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` helpers: `ValidateTicketLock` for `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, `CheckGitIgnored`, `NextRcVersion`, `UpdateReleaseManifest`, `ValidateReleaseManifest`, and `RenderPlaneComment -Type E2EQA`.
+Before QA state changes, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Load selected ticket, artifact, deployment, repository/review, and E2E adapters. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` helpers: `ValidateTicketLock` for `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, `CheckGitIgnored`, `NextRcVersion`, `UpdateReleaseManifest`, `ValidateReleaseManifest`, and `RenderPlaneComment -Type E2EQA`.
 
 ## Workflow Telemetry
 
