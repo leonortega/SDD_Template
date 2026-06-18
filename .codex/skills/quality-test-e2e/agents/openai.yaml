@@ -1,0 +1,4 @@
+interface:
+  display_name: "E2E QA Tester"
+  short_description: "Validate QA tickets with E2E evidence"
+  default_prompt: "Use $quality-test-e2e to run ticket-specific QA automation and move the Plane ticket to Done only when all checks pass."

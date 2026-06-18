@@ -94,7 +94,7 @@ In Playwright CRUD QA flows, expected negative-path browser activity can surface
 
 - Type: Decision
 - Status: Active
-- Source: E2EPROJECT-7 Docker local runner change, `tests/SDDTemplate.E2ETests/run-local-docker.ps1`, `.codex/skills/test-e2e/SKILL.md`
+- Source: E2EPROJECT-7 Docker local runner change, `tests/SDDTemplate.E2ETests/run-local-docker.ps1`, `.codex/skills/quality-test-e2e/SKILL.md`
 - Last verified: 2026-06-17
 
 For local Playwright diagnosis against deployed QA, use `npm run test:docker` from `tests/SDDTemplate.E2ETests`. The runner uses the pinned `agentic/e2e-ci:playwright-1.57.0-1` image, reads `E2E_SITE_URL`/`E2E_API_URL` or ignored `.codex/client-tools.local.json` QA URLs, and avoids repeated host Chromium installs. Browser/E2E diagnosis stays outside product code; if failures are harness-only, patch tests/workflow/evidence capture rather than adding app-only E2E helpers.

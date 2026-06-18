@@ -1,0 +1,4 @@
+interface:
+  display_name: "File QA Bug"
+  short_description: "Create linked bugs from QA failures."
+  default_prompt: "Use $dev-flow-file-qa-bug to file a linked bug from this QA failure."

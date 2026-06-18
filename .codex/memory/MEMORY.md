@@ -58,10 +58,10 @@ Sources: `README.md`, `docs/context-management.md`, `docs/development.md`.
 
 ### Agent Entry Points
 
-- `automatic-implement-ticket` is the high-level workflow router for continuing, resuming, implementing, deploying, QA, or handoff work.
+- `dev-flow-continue-implementation` is the high-level workflow router for continuing, resuming, implementing, deploying, QA, or handoff work.
 - `configure-dev-environment` is the setup router for the project profile, selected provider adapters, runner, quality gates, and observability.
-- `pipeline-status` is the read-only status dashboard.
-- `parallel-ticket-coordinator` coordinates multiple configured tickets with one worktree and one local context lock per active ticket.
+- `dev-flow-pipeline-status` is the read-only status dashboard.
+- `dev-flow-parallel-ticket-coordinator` coordinates multiple configured tickets with one worktree and one local context lock per active ticket.
 
 Sources: `README.md`, `.codex/skills/`.
 

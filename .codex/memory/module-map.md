@@ -35,18 +35,18 @@
 Common workflow entry points:
 
 - `configure-dev-environment`
-- `pipeline-status`
-- `parallel-ticket-coordinator`
-- `automatic-implement-ticket`
-- `plane-start-ticket`
-- `implement-ticket`
-- `gitea-pr-review-agent`
-- `post-merge-deploy`
-- `deploy-to-qa`
-- `test-e2e`
-- `deploy-to-prod`
-- `rollback-prod`
-- `hotfix-prod`
+- `dev-flow-pipeline-status`
+- `dev-flow-parallel-ticket-coordinator`
+- `dev-flow-continue-implementation`
+- `dev-flow-start-ticket`
+- `dev-flow-implement-ticket`
+- `dev-flow-pr-review-agent`
+- `dev-ops-post-merge-deploy`
+- `dev-ops-deploy-qa`
+- `quality-test-e2e`
+- `dev-ops-deploy-prod`
+- `dev-ops-rollback-prod`
+- `dev-ops-hotfix-prod`
 
 ## Shared Delivery Helpers
 

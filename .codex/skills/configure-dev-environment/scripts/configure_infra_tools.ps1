@@ -1618,7 +1618,7 @@ function Get-CanonicalWorkflowSteps {
     "implementation",
     "pr-review",
     "review-feedback",
-    "post-merge-deploy",
+    "dev-ops-post-merge-deploy",
     "e2e-qa",
     "prod-promotion",
     "rollback",
@@ -1632,17 +1632,17 @@ function Get-DefaultPrimarySkillsForWorkflowStep {
 
   switch ($WorkflowStep) {
     "config-infra" { return @("configure-dev-environment") }
-    "first-ticket-setup" { return @("plane-start-ticket") }
-    "planning" { return @("openspec-propose", "openspec-explore") }
-    "implementation" { return @("implement-ticket") }
-    "pr-review" { return @("gitea-pr-review-agent") }
-    "review-feedback" { return @("pr-review-feedback-loop") }
-    "post-merge-deploy" { return @("post-merge-deploy", "deploy-to-qa") }
-    "e2e-qa" { return @("test-e2e") }
-    "prod-promotion" { return @("deploy-to-prod") }
-    "rollback" { return @("rollback-prod") }
-    "hotfix" { return @("hotfix-prod") }
-    "retrospective" { return @("delivery-retrospective-audit") }
+    "first-ticket-setup" { return @("dev-flow-start-ticket") }
+    "planning" { return @("dev-flow-propose-change", "dev-flow-explore-change") }
+    "implementation" { return @("dev-flow-implement-ticket") }
+    "pr-review" { return @("dev-flow-pr-review-agent") }
+    "review-feedback" { return @("dev-flow-pr-review-feedback-loop") }
+    "dev-ops-post-merge-deploy" { return @("dev-ops-post-merge-deploy", "dev-ops-deploy-qa") }
+    "e2e-qa" { return @("quality-test-e2e") }
+    "prod-promotion" { return @("dev-ops-deploy-prod") }
+    "rollback" { return @("dev-ops-rollback-prod") }
+    "hotfix" { return @("dev-ops-hotfix-prod") }
+    "retrospective" { return @("dev-flow-retrospective-audit") }
     default { return @() }
   }
 }
@@ -1657,10 +1657,10 @@ function Get-DefaultSupportingSkillsForWorkflowStep {
     "implementation" { return @("aspnet-core", "plan-ui-change", "dotnet-webapi", "security-best-practices", "assertion-quality") }
     "pr-review" { return @("aspnet-core", "dotnet-webapi", "security-best-practices", "assertion-quality", "playwright") }
     "review-feedback" { return @("aspnet-core", "plan-ui-change", "dotnet-webapi", "security-best-practices", "assertion-quality") }
-    "post-merge-deploy" { return @("configure-artifact-delivery", "configure-azure-environments", "configure-observability") }
-    "e2e-qa" { return @("frontend-testing-debugging", "playwright", "assertion-quality") }
-    "prod-promotion" { return @("configure-artifact-delivery", "configure-azure-environments", "configure-observability") }
-    "rollback" { return @("configure-artifact-delivery", "configure-azure-environments", "security-best-practices") }
+    "dev-ops-post-merge-deploy" { return @("configure-artifact-repository", "configure-cloud-environments", "configure-observability") }
+    "e2e-qa" { return @("quality-frontend-testing-debugging", "playwright", "assertion-quality") }
+    "prod-promotion" { return @("configure-artifact-repository", "configure-cloud-environments", "configure-observability") }
+    "rollback" { return @("configure-artifact-repository", "configure-cloud-environments", "security-best-practices") }
     "hotfix" { return @("security-best-practices", "assertion-quality", "aspnet-core") }
     "retrospective" { return @("project-guidance-discover", "project-guidance-mapper", "configure-dev-environment") }
     default { return @() }
@@ -1675,9 +1675,9 @@ function Get-DefaultRecommendationIdsForWorkflowStep {
     "first-ticket-setup" { return @("project-guidance-search-plan") }
     "planning" { return @("openai-aspnet-core-skill", "dotnet-blazor-plan-ui-change-skill", "dotnet-webapi-skill", "openai-security-best-practices-skill", "clean-code-practice-guidance", "modern-dotnet-architecture-guidance") }
     "implementation" { return @("openai-aspnet-core-skill", "dotnet-blazor-plan-ui-change-skill", "dotnet-webapi-skill", "openai-security-best-practices-skill", "dotnet-assertion-quality-skill", "clean-code-practice-guidance", "modern-dotnet-architecture-guidance", "rest-api-design-practice-guidance") }
-    "pr-review" { return @("gitea-pr-review-agent-skill", "openai-aspnet-core-skill", "dotnet-webapi-skill", "openai-security-best-practices-skill", "dotnet-assertion-quality-skill", "pr-review-practice-guidance") }
+    "pr-review" { return @("dev-flow-pr-review-agent-skill", "openai-aspnet-core-skill", "dotnet-webapi-skill", "openai-security-best-practices-skill", "dotnet-assertion-quality-skill", "pr-review-practice-guidance") }
     "review-feedback" { return @("openai-aspnet-core-skill", "dotnet-blazor-plan-ui-change-skill", "dotnet-webapi-skill", "openai-security-best-practices-skill", "dotnet-assertion-quality-skill", "clean-code-practice-guidance") }
-    "post-merge-deploy" { return @("nexus-artifact-api-guidance", "azure-app-service-zip-deploy-guidance", "azure-monitor-log-analytics-guidance", "grafana-provisioning-guidance", "release-practice-guidance") }
+    "dev-ops-post-merge-deploy" { return @("nexus-artifact-api-guidance", "azure-app-service-zip-deploy-guidance", "azure-monitor-log-analytics-guidance", "grafana-provisioning-guidance", "release-practice-guidance") }
     "e2e-qa" { return @("browser-e2e-qa-plugin", "playwright-frontend-testing-skill", "openai-playwright-skill", "dotnet-assertion-quality-skill", "qa-automation-practice-guidance") }
     "prod-promotion" { return @("nexus-artifact-api-guidance", "azure-app-service-zip-deploy-guidance", "azure-monitor-log-analytics-guidance", "grafana-provisioning-guidance", "release-practice-guidance") }
     "rollback" { return @("nexus-artifact-api-guidance", "azure-app-service-zip-deploy-guidance", "azure-monitor-log-analytics-guidance", "grafana-provisioning-guidance", "rollback-practice-guidance") }
@@ -1756,7 +1756,7 @@ function Test-RecommendationFitsWorkflowStep {
     "implementation" { return $text -match "aspnet|blazor|api|rest|security|clean|architecture|assertion|test|code" }
     "pr-review" { return $text -match "review|security|assertion|api|rest|clean|architecture|gitea" }
     "review-feedback" { return $text -match "feedback|review|security|assertion|api|rest|clean|architecture" }
-    "post-merge-deploy" { return $text -match "nexus|azure|deploy|release|monitor|log analytics|grafana|observability" }
+    "dev-ops-post-merge-deploy" { return $text -match "nexus|azure|deploy|release|monitor|log analytics|grafana|observability" }
     "e2e-qa" { return $text -match "qa|e2e|browser|playwright|test|assertion" }
     "prod-promotion" { return $text -match "prod|release|nexus|azure|deploy|monitor|log analytics|grafana|observability" }
     "rollback" { return $text -match "rollback|nexus|azure|prod|release|artifact|monitoring" }
@@ -4543,7 +4543,7 @@ Release flow:
 feature branch -> dev -> DEV -> QA -> Gitea E2E evidence -> Plane E2E QA -> main -> PROD
 ```
 
-The package workflow reads `infra/deployment/apps.json`, rejects deployable project paths outside `src/`, builds one ZIP per deployable app, builds `deployment-config.json` from `infra/deployment/configuration.json` plus each app's `appsettings*.json`, and publishes from ticket-gated application changes on `dev`, including `app/{commitSha}/deployable-apps.json`, `app/{commitSha}/deployment-config.json`, per-app ZIP/checksum files, and a baseline `app/{commitSha}/release.json`. DEV, QA, and PROD must apply and verify deployment configuration before deployment success is claimed. Smoke checks also verify that the clients page renders the expected API base URL and that API CORS preflight allows the matching web origin. DEV and QA must deploy the same Nexus app artifacts for the same commit SHA. After QA deploy and smoke checks, push a `qa/{ticketKey}` branch from current `dev`; the `e2e-qa` job runs the committed Playwright suite against the deployed QA Site/API URLs without redeploying, resolves the artifact commit from the branch point with `dev`, and uploads `app/{commitSha}/qa-e2e-evidence.zip` plus a ticket/run evidence copy under `qa/{ticketKey}/{runId}/qa-e2e-evidence.zip`. Implementation records E2E expectations; `test-e2e` owns Playwright E2E creation, repair, rerun, and evidence when existing committed tests cannot prove acceptance. This Gitea job is evidence-only; the `test-e2e` skill remains responsible for acceptance-to-assertion QA proof, Plane Done state, RC tagging, release manifest QA lineage, and deleting the remote `qa/{ticketKey}` branch after durable Nexus/Plane/release/tag evidence exists. Only full `PASS` can move Plane to Done; `PASS WITH GAPS` or `FAIL` remain in QA. PROD is an explicit release event that may include one or more Done tickets through `release.json.includedTickets`; it must deploy the QA-approved Nexus app artifacts from an exact-commit `main` promotion or explicit dispatch by commit SHA, pass deployment configuration verification, rendered API base URL validation, CORS preflight validation, the web page smoke check, and every app `/health` check, then record the PROD result on every included ticket.
+The package workflow reads `infra/deployment/apps.json`, rejects deployable project paths outside `src/`, builds one ZIP per deployable app, builds `deployment-config.json` from `infra/deployment/configuration.json` plus each app's `appsettings*.json`, and publishes from ticket-gated application changes on `dev`, including `app/{commitSha}/deployable-apps.json`, `app/{commitSha}/deployment-config.json`, per-app ZIP/checksum files, and a baseline `app/{commitSha}/release.json`. DEV, QA, and PROD must apply and verify deployment configuration before deployment success is claimed. Smoke checks also verify that the clients page renders the expected API base URL and that API CORS preflight allows the matching web origin. DEV and QA must deploy the same Nexus app artifacts for the same commit SHA. After QA deploy and smoke checks, push a `qa/{ticketKey}` branch from current `dev`; the `e2e-qa` job runs the committed Playwright suite against the deployed QA Site/API URLs without redeploying, resolves the artifact commit from the branch point with `dev`, and uploads `app/{commitSha}/qa-e2e-evidence.zip` plus a ticket/run evidence copy under `qa/{ticketKey}/{runId}/qa-e2e-evidence.zip`. Implementation records E2E expectations; `quality-test-e2e` owns Playwright E2E creation, repair, rerun, and evidence when existing committed tests cannot prove acceptance. This Gitea job is evidence-only; the `quality-test-e2e` skill remains responsible for acceptance-to-assertion QA proof, Plane Done state, RC tagging, release manifest QA lineage, and deleting the remote `qa/{ticketKey}` branch after durable Nexus/Plane/release/tag evidence exists. Only full `PASS` can move Plane to Done; `PASS WITH GAPS` or `FAIL` remain in QA. PROD is an explicit release event that may include one or more Done tickets through `release.json.includedTickets`; it must deploy the QA-approved Nexus app artifacts from an exact-commit `main` promotion or explicit dispatch by commit SHA, pass deployment configuration verification, rendered API base URL validation, CORS preflight validation, the web page smoke check, and every app `/health` check, then record the PROD result on every included ticket.
 '@
 
   return $result
@@ -4686,7 +4686,7 @@ function Invoke-EnsureDeliveryContext {
       $existing = Get-Content -Path $target -Raw | ConvertFrom-Json
       $existingTicket = [string]$existing.ticketKey
       if (-not [string]::IsNullOrWhiteSpace($existingTicket) -and $existingTicket -ne $ticketKey -and -not $replaceExisting) {
-        throw "Existing $targetRelative points to '$existingTicket'. Pass replaceExisting=true only after plane-start-ticket confirms '$existingTicket' is in the configured Done state, or after explicit operator confirmation for a known-safe repair to '$ticketKey'."
+        throw "Existing $targetRelative points to '$existingTicket'. Pass replaceExisting=true only after dev-flow-start-ticket confirms '$existingTicket' is in the configured Done state, or after explicit operator confirmation for a known-safe repair to '$ticketKey'."
       }
     } catch {
       if (-not $replaceExisting) {

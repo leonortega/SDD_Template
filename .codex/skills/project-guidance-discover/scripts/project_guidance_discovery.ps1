@@ -177,12 +177,12 @@ function Get-DetectedStackTags {
     $tags.Add("azure-monitor")
   }
   if (Test-Path (Join-RootPath "infra/monitoring/grafana")) { $tags.Add("grafana") }
-  if ((Test-Path (Join-RootPath "artifacts/qa")) -or (Test-Path (Join-RootPath ".codex/skills/test-e2e/SKILL.md"))) {
+  if ((Test-Path (Join-RootPath "artifacts/qa")) -or (Test-Path (Join-RootPath ".codex/skills/quality-test-e2e/SKILL.md"))) {
     $tags.Add("e2e")
     $tags.Add("browser-e2e")
   }
-  if ((Test-Path (Join-RootPath ".codex/skills/frontend-testing-debugging/SKILL.md")) -or
-      (Test-FileContains ".codex/skills/test-e2e/SKILL.md" "Playwright")) {
+  if ((Test-Path (Join-RootPath ".codex/skills/quality-frontend-testing-debugging/SKILL.md")) -or
+      (Test-FileContains ".codex/skills/quality-test-e2e/SKILL.md" "Playwright")) {
     $tags.Add("playwright-guidance")
   }
   if (Test-Path (Join-RootPath "openspec")) { $tags.Add("openspec") }
@@ -356,7 +356,7 @@ function Get-DetectedSkillDefinitions {
       researchTopics = @("Playwright locators", "web-first assertions", "browser automation", "trace evidence", "responsive UI checks")
       officialSources = @("https://playwright.dev/docs/best-practices", "https://playwright.dev/docs/test-agents")
       searchQueries = @("site:github.com/openai/skills playwright skill", "site:playwright.dev/docs Playwright best practices")
-      notes = "Dynamic skill finding from browser/Playwright QA signals. This complements the repo-local frontend-testing-debugging skill with an official curated Playwright skill."
+      notes = "Dynamic skill finding from browser/Playwright QA signals. This complements the repo-local quality-frontend-testing-debugging skill with an official curated Playwright skill."
     },
     [pscustomobject]@{
       id = "dotnet-assertion-quality-skill"
