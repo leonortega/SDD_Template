@@ -246,6 +246,193 @@
       "sourceKind": "technology-owner"
     },
     {
+      "id": "dotnet-sdk-docker-tool",
+      "name": ".NET SDK Docker toolchain",
+      "type": "tool",
+      "requires": [
+        "dotnet-10",
+        "gitea-actions-runner"
+      ],
+      "purpose": "Use the repo-owned CI image for repeated .NET restore, format, build, test, coverage, packaging, and deployment helper runs instead of installing the SDK/tooling during every workflow.",
+      "installMethod": "package-manager",
+      "installPreference": "docker-preferred",
+      "installScope": "repo-local",
+      "installerKind": "docker-image",
+      "requiresIdeRestart": false,
+      "requiresSystemReboot": false,
+      "userActionRequired": false,
+      "source": "official:https://learn.microsoft.com/en-us/dotnet/architecture/microservices/net-core-net-framework-containers/official-net-docker-images",
+      "target": "infra/gitea/actions-images/dotnet-ci/Dockerfile",
+      "validation": ".\\.codex\\skills\\configure-dev-environment\\scripts\\configure_infra_tools.ps1 -Mode ValidateGiteaActionsRunner",
+      "researchTopics": [
+        ".NET SDK Docker image",
+        "Gitea Actions job image",
+        "repeatable CI tooling"
+      ],
+      "officialSources": [
+        "https://learn.microsoft.com/en-us/dotnet/architecture/microservices/net-core-net-framework-containers/official-net-docker-images",
+        "https://mcr.microsoft.com/en-us/artifact/mar/dotnet/sdk/about"
+      ],
+      "searchQueries": [
+        "site:learn.microsoft.com official .NET SDK Docker images",
+        "site:mcr.microsoft.com dotnet sdk container image"
+      ],
+      "notes": "Build the pinned repo image once with BuildGiteaActionsImages; do not install SDK/tools during every job.",
+      "sourceKind": "technology-owner",
+      "dockerAlternative": {
+        "image": "agentic/dotnet-ci:10.0.300-tools-1",
+        "sourceUrl": "https://learn.microsoft.com/en-us/dotnet/architecture/microservices/net-core-net-framework-containers/official-net-docker-images",
+        "versionPin": "10.0.300-tools-1",
+        "validationCommand": ".\\.codex\\skills\\configure-dev-environment\\scripts\\configure_infra_tools.ps1 -Mode ValidateGiteaActionsRunner",
+        "buildCommand": ".\\.codex\\skills\\configure-dev-environment\\scripts\\configure_infra_tools.ps1 -Mode BuildGiteaActionsImages",
+        "runTemplate": "docker run --rm -v ${PWD}:/workspace -w /workspace agentic/dotnet-ci:10.0.300-tools-1 dotnet --info",
+        "cacheMounts": [
+          "NuGet package cache"
+        ],
+        "limits": "Requires a usable local Docker daemon and the repo-owned pinned image."
+      }
+    },
+    {
+      "id": "gitleaks-docker-tool",
+      "name": "Gitleaks Docker scanner",
+      "type": "tool",
+      "requires": [
+        "security",
+        "gitea-actions-runner"
+      ],
+      "purpose": "Run repeated secret scans from the repo-owned CI image instead of installing Gitleaks on every host or job.",
+      "installMethod": "package-manager",
+      "installPreference": "docker-preferred",
+      "installScope": "repo-local",
+      "installerKind": "docker-image",
+      "requiresIdeRestart": false,
+      "requiresSystemReboot": false,
+      "userActionRequired": false,
+      "source": "official:https://github.com/gitleaks/gitleaks",
+      "target": "infra/gitea/actions-images/dotnet-ci/Dockerfile",
+      "validation": ".\\.codex\\skills\\configure-dev-environment\\scripts\\configure_infra_tools.ps1 -Mode ValidateGiteaActionsRunner",
+      "researchTopics": [
+        "Gitleaks Docker",
+        "secret scanning",
+        "CI security gate"
+      ],
+      "officialSources": [
+        "https://github.com/gitleaks/gitleaks",
+        "https://hub.docker.com/r/zricethezav/gitleaks"
+      ],
+      "searchQueries": [
+        "github.com gitleaks Docker official image",
+        "Docker Hub zricethezav gitleaks"
+      ],
+      "notes": "Use the pinned repo CI image that already contains Gitleaks; external image is discovery metadata only.",
+      "sourceKind": "tool-official",
+      "dockerAlternative": {
+        "image": "agentic/dotnet-ci:10.0.300-tools-1",
+        "sourceUrl": "https://github.com/gitleaks/gitleaks",
+        "versionPin": "10.0.300-tools-1",
+        "validationCommand": ".\\.codex\\skills\\configure-dev-environment\\scripts\\configure_infra_tools.ps1 -Mode ValidateGiteaActionsRunner",
+        "buildCommand": ".\\.codex\\skills\\configure-dev-environment\\scripts\\configure_infra_tools.ps1 -Mode BuildGiteaActionsImages",
+        "runTemplate": "docker run --rm -v ${PWD}:/workspace -w /workspace agentic/dotnet-ci:10.0.300-tools-1 gitleaks version",
+        "cacheMounts": [],
+        "limits": "Requires a usable local Docker daemon and the repo-owned pinned image."
+      }
+    },
+    {
+      "id": "trivy-docker-tool",
+      "name": "Trivy Docker scanner",
+      "type": "tool",
+      "requires": [
+        "security",
+        "gitea-actions-runner"
+      ],
+      "purpose": "Run repeated dependency/container scans from the repo-owned CI image instead of reinstalling Trivy during every workflow.",
+      "installMethod": "package-manager",
+      "installPreference": "docker-preferred",
+      "installScope": "repo-local",
+      "installerKind": "docker-image",
+      "requiresIdeRestart": false,
+      "requiresSystemReboot": false,
+      "userActionRequired": false,
+      "source": "official:https://trivy.dev/docs/latest/getting-started/installation/",
+      "target": "infra/gitea/actions-images/dotnet-ci/Dockerfile",
+      "validation": ".\\.codex\\skills\\configure-dev-environment\\scripts\\configure_infra_tools.ps1 -Mode ValidateGiteaActionsRunner",
+      "researchTopics": [
+        "Trivy Docker",
+        "dependency scanning",
+        "container scanning"
+      ],
+      "officialSources": [
+        "https://trivy.dev/docs/latest/getting-started/installation/",
+        "https://hub.docker.com/r/aquasec/trivy"
+      ],
+      "searchQueries": [
+        "site:trivy.dev Docker Trivy installation",
+        "Docker Hub aquasec trivy"
+      ],
+      "notes": "Use the pinned repo CI image and refresh the Trivy database cache before scans when stale.",
+      "sourceKind": "tool-official",
+      "dockerAlternative": {
+        "image": "agentic/dotnet-ci:10.0.300-tools-1",
+        "sourceUrl": "https://trivy.dev/docs/latest/getting-started/installation/",
+        "versionPin": "10.0.300-tools-1",
+        "validationCommand": ".\\.codex\\skills\\configure-dev-environment\\scripts\\configure_infra_tools.ps1 -Mode ValidateGiteaActionsRunner",
+        "buildCommand": ".\\.codex\\skills\\configure-dev-environment\\scripts\\configure_infra_tools.ps1 -Mode BuildGiteaActionsImages",
+        "runTemplate": "docker run --rm -v ${PWD}:/workspace -w /workspace agentic/dotnet-ci:10.0.300-tools-1 trivy --version",
+        "cacheMounts": [
+          "Trivy vulnerability database cache"
+        ],
+        "limits": "Requires a usable local Docker daemon and the repo-owned pinned image."
+      }
+    },
+    {
+      "id": "playwright-docker-tool",
+      "name": "Playwright Docker E2E runtime",
+      "type": "tool",
+      "requires": [
+        "browser-e2e",
+        "playwright-guidance"
+      ],
+      "purpose": "Run repeated browser E2E diagnostics from the pinned Playwright image instead of installing browsers on the host.",
+      "installMethod": "package-manager",
+      "installPreference": "docker-preferred",
+      "installScope": "repo-local",
+      "installerKind": "docker-image",
+      "requiresIdeRestart": false,
+      "requiresSystemReboot": false,
+      "userActionRequired": false,
+      "source": "official:https://playwright.dev/docs/docker",
+      "target": "tests/SDDTemplate.E2ETests/run-local-docker.ps1",
+      "validation": "npm run test:docker:list --prefix tests/SDDTemplate.E2ETests",
+      "researchTopics": [
+        "Playwright Docker",
+        "browser E2E",
+        "QA evidence"
+      ],
+      "officialSources": [
+        "https://playwright.dev/docs/docker",
+        "https://hub.docker.com/r/microsoft/playwright"
+      ],
+      "searchQueries": [
+        "site:playwright.dev/docs Docker Playwright",
+        "Docker Hub microsoft playwright"
+      ],
+      "notes": "Use npm run test:docker so the pinned repo E2E image supplies browsers and system dependencies.",
+      "sourceKind": "technology-owner",
+      "dockerAlternative": {
+        "image": "agentic/e2e-ci:playwright-1.57.0-1",
+        "sourceUrl": "https://playwright.dev/docs/docker",
+        "versionPin": "playwright-1.57.0-1",
+        "validationCommand": "npm run test:docker:list --prefix tests/SDDTemplate.E2ETests",
+        "buildCommand": ".\\.codex\\skills\\configure-dev-environment\\scripts\\configure_infra_tools.ps1 -Mode BuildGiteaActionsImages",
+        "runTemplate": "npm run test:docker --prefix tests/SDDTemplate.E2ETests",
+        "cacheMounts": [
+          "npm cache",
+          "Playwright test output"
+        ],
+        "limits": "Requires Docker and the pinned E2E image; local runs are diagnostics, not official QA evidence."
+      }
+    },
+    {
       "id": "playwright-frontend-testing-skill",
       "name": "Playwright frontend testing skill",
       "type": "skill",

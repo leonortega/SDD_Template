@@ -44,6 +44,8 @@ Test-Path .\.codex\skills\{skill-name}\SKILL.md
 ```
 
 8. Install or configure confirmed non-skill items when a platform-supported installer/configuration tool is available, such as `codex mcp add` for Codex MCP servers. Do not run arbitrary installer snippets.
+   - When a confirmed non-skill item has `installPreference: docker-preferred` and `dockerAlternative`, emit the pinned Docker image build/run/validation path instead of a package-manager install plan.
+   - If Docker is missing or unusable, report Docker as the blocker and keep the host package-manager path as an explicit fallback requiring the normal guarded choice.
 9. Report copied files, skipped files, installed/configured items, guarded install plans that could not be executed automatically, validation results, and any source limitations.
 10. Refresh `.codex/tool-recommendations.local.json` by rerunning `DiscoverProjectGuidance` with `persistLocal=true` so future `project-guidance-mapper` decisions can see installed skills, source URLs, targets, validation commands, and current `usedInSteps`. Preserve existing accepted/dismissed state and `usedInSteps` unless the user explicitly resets the local catalog.
 11. Aggregate all `requiresIdeRestart` and `requiresSystemReboot` items. Finish all independent acquisition work first, then show one Important message listing affected items, restart/reboot type, reason, and post-restart validation commands.
@@ -55,6 +57,7 @@ Test-Path .\.codex\skills\{skill-name}\SKILL.md
 - Require explicit confirmation before global, IDE, privileged, MCP/plugin, secret-bearing, or reboot-required installs. The final confirmed list from `project-guidance-discover` is that confirmation for listed non-secret items; ask again only when a concrete installer would introduce new scope, privilege, secrets, destructive behavior, or different items.
 - Do not reboot automatically. Report one aggregate IDE restart/system reboot notice after all feasible work finishes.
 - Use platform-supported plugin/connector install tools only when available and only for the exact requested or confirmed item.
+- Do not convert MCPs, IDE plugins, Docker itself, secret-bearing tools, interactive-auth tools, or unverified images into Docker-preferred installs.
 - Use `codex mcp add` for confirmed Codex MCP entries when source and command/URL are known from official/vendor metadata.
 - Do not copy secrets, tokens, `.local` files, caches, generated artifacts, build outputs, logs, local state, `.git`, or unrelated files.
 - Do not overwrite an existing repo-local skill unless the user explicitly confirms replacement.
