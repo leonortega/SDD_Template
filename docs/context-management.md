@@ -11,14 +11,15 @@ For practical lookup, use `.codex/memory/search_memory.ps1 -Query <symptom>` wit
 When sources disagree, use this order until the conflict is resolved:
 
 1. Latest explicit user request in the current conversation.
-2. Active Plane ticket state, description, acceptance criteria, and generated markers.
+2. Active ticket-provider state, description, acceptance criteria, and generated markers.
 3. Active OpenSpec proposal, design, specs, and tasks.
-4. `.codex/skills/_shared/delivery-contract.md` for agent-enforced delivery behavior.
-5. Canonical docs in `docs/`.
-6. Current code, tests, workflow files, and configuration templates.
-7. Historical Plane comments, PR comments, QA evidence, release manifests, and tags.
-8. `.codex/memory/` entries.
-9. Agent assumptions.
+4. `.codex/project-profile.json` and selected `.codex/providers/*.md` adapter files for project stack/provider selection.
+5. `.codex/skills/_shared/delivery-contract.md` for agent-enforced delivery behavior.
+6. Canonical docs in `docs/`.
+7. Current code, tests, workflow files, and configuration templates.
+8. Historical ticket comments, PR comments, QA evidence, release manifests, and tags.
+9. `.codex/memory/` entries.
+10. Agent assumptions.
 
 Assumptions must never override a concrete source. If an assumption is required to continue, record it in the handoff summary.
 
@@ -26,8 +27,8 @@ Assumptions must never override a concrete source. If an assumption is required 
 
 Load only the context needed for the workflow stage.
 
-- Ticket start: Plane ticket, current Plane state, base branch, branch policy, OpenSpec decision rules, and existing generated markers.
-- Implementation: ticket lock, Plane ticket, OpenSpec apply context files, relevant code, relevant tests, quality gates, and local docs for architecture/development/deployment constraints.
+- Ticket start: project profile, selected ticket/repository adapters, ticket, current ticket state, base branch, branch policy, OpenSpec decision rules, and existing generated markers.
+- Implementation: project profile, selected stack/repository/review adapters, ticket lock, ticket, OpenSpec apply context files, relevant code, relevant tests, quality gates, and local docs for architecture/development/deployment constraints.
 - PR review: PR diff, ticket, OpenSpec artifacts, relevant tests, CI status, review labels, and current head SHA.
 - QA and deploy: ticket lock, merged PR, artifact commit, Nexus paths, `release.json`, workflow run, DEV/QA URLs, health checks, and QA evidence rules.
 - PROD: QA-approved artifact, source RC tag, final version, `main` target commit, release manifest, PROD health checks, and monitoring status.
@@ -49,6 +50,8 @@ Use durable checkpoints for reruns. Do not restart a completed stage when the ma
 ## Conflict Rules
 
 Stop instead of guessing when a resolved ticket, branch, PR, artifact commit, source RC version, final release version, QA evidence path, or deployment lane owner does not match the active context lock or durable checkpoints.
+
+Silent fallback from a required configured repo flow is invalid. When a required repo skill, command, memory rule, definition, or configured tool/install path cannot be applied, use the delivery contract's Tool And Skill Blocker Consent rule: report the blocker, current-flow fix, viable alternative, and risk, then get explicit user choice before continuing through the alternative.
 
 If docs conflict with `.codex/skills/_shared/delivery-contract.md`, the delivery contract wins for automation behavior until the docs are corrected.
 
@@ -92,7 +95,7 @@ Strict gates do not require every run to load every long instruction body. Agent
 
 Project guidance remains the broad catalog for skills, tools, references, practices, standards, MCPs, and plugins. The installed-skill runtime index is only an ignored cache of exact installed `SKILL.md` paths used to avoid repeated scans and pass precise skill paths during delegation.
 
-Avoid duplicate context systems. Ticket refinement belongs in the managed Plane block; implementation planning belongs in OpenSpec; recurring workflow learning belongs in `delivery-retrospective-audit`, docs, the shared contract, or `.codex/memory/` according to the existing authority order.
+Avoid duplicate context systems. Ticket refinement belongs in the managed Plane block; implementation planning belongs in OpenSpec; recurring workflow learning belongs in `dev-flow-retrospective-audit`, docs, the shared contract, or `.codex/memory/` according to the existing authority order.
 
 ## Agent Telemetry
 

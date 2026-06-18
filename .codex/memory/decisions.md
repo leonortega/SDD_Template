@@ -62,3 +62,12 @@ Durable project knowledge belongs in tracked documentation and workflow contract
 - Last verified: 2026-05-29
 
 Non-OpenSpec, non-configure delivery skills should use `.codex/skills/_shared/skill-startup.md` for common startup behavior: memory summary/index reads, delivery contract reads, context authority, secret handling, and memory update classification. Individual skills should keep only their stage-specific docs, helper functions, mutation gates, and stop rules.
+
+## Explicit Consent Before Alternative Flow
+
+- Type: Decision
+- Status: Active
+- Source: current conversation, `AGENTS.md`, `.codex/skills/_shared/delivery-contract.md`
+- Last verified: 2026-06-18
+
+When a required repo skill, command, memory rule, definition, or configured tool/install path cannot be applied, agents must stop the affected flow instead of silently using an alternative. The agent must report the blocker, current-flow fix, viable alternative, and risk or impact, then ask the user whether to fix the current flow or continue with the alternative.

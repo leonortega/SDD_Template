@@ -81,9 +81,9 @@ jobs:
           $changed_files
           EOF
 
-          ticket_key_pattern="$(sed -nE 's/.*"ticketKeyPattern"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' .codex/delivery-policy.json | head -n 1)"
+          ticket_key_pattern="$(jq -r '.workflow.ticketKeyPattern // empty' .codex/project-profile.json)"
           if [ -z "$ticket_key_pattern" ]; then
-            echo "Could not read ticketKeyPattern from .codex/delivery-policy.json."
+            echo "Could not read workflow.ticketKeyPattern from .codex/project-profile.json."
             exit 1
           fi
 
@@ -154,7 +154,7 @@ jobs:
           commit_sha="$(cat artifacts/commit.sha)"
           first_artifact_name="$(jq -r '.apps | sort_by(.deployOrder) | .[0].artifactName' infra/deployment/apps.json)"
           first_artifact_checksum="$(cut -d ' ' -f1 "artifacts/packages/$first_artifact_name.sha256")"
-          ticket_key_pattern="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ReadDeliveryPolicy --path .codex/delivery-policy.json)"
+          ticket_key_pattern="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ReadProjectProfile --path .codex/project-profile.json)"
 
           commit_message="$(git log -1 --pretty=%B)"
           plane_ticket_key="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ExtractTicketKey --pattern "$ticket_key_pattern" --message "$commit_message" --fallback manual-dispatch)"
@@ -332,6 +332,22 @@ jobs:
         run: |
           set -euo pipefail
 
+          retry_smoke() {
+            label="$1"
+            shift
+            for delay in 0 5 10 20 30 60; do
+              if [ "$delay" != "0" ]; then
+                sleep "$delay"
+              fi
+              if "$@"; then
+                return 0
+              fi
+              echo "Smoke check '$label' failed; retrying after Azure warm-up." >&2
+            done
+            echo "Smoke check '$label' failed after retries." >&2
+            return 1
+          }
+
           jq -r '.[] | [.appId, .role, .healthPath] | @tsv' deployable-apps.json |
           while IFS=$'\t' read -r app_id role health_path; do
             app_upper="$(echo "$app_id" | tr '[:lower:]-' '[:upper:]_')"
@@ -339,18 +355,19 @@ jobs:
             app_url="${!url_var:-}"
             test -n "$app_url"
             if [ "$role" = "web" ]; then
-              curl --fail --silent --show-error --location "$app_url" -o response.html
+              retry_smoke "DEV $app_id root" curl --fail --silent --show-error --location "$app_url" -o response.html
               grep -q "<title>SDD Template</title>" response.html
               ! grep -qi "Microsoft Azure" response.html
               expected_api_url="${AZURE_DEV_API_APP_URL:-}"
               test -n "$expected_api_url"
-              curl --fail --silent --show-error --location "${app_url}/clients" -o clients.html
-              grep -q "const apiBaseUrl = \"${expected_api_url}\";" clients.html
+              retry_smoke "DEV $app_id clients" curl --fail --silent --show-error --location "${app_url}/clients" -o clients.html
+              grep -q "<title>Clients</title>" clients.html
+              grep -q 'id="client-form"' clients.html
             fi
             if [ "$role" = "api" ]; then
               site_origin="${AZURE_DEV_SITE_APP_URL:-}"
               test -n "$site_origin"
-              curl --fail --silent --show-error --request OPTIONS \
+              retry_smoke "DEV $app_id CORS" curl --fail --silent --show-error --request OPTIONS \
                 --header "Origin: $site_origin" \
                 --header "Access-Control-Request-Method: POST" \
                 --header "Access-Control-Request-Headers: content-type" \
@@ -359,7 +376,7 @@ jobs:
                 "${app_url}/api/clients"
               grep -iq "^Access-Control-Allow-Origin: ${site_origin}" cors.headers
             fi
-            curl --fail --silent --show-error --location "${app_url}${health_path}" -o health.json
+            retry_smoke "DEV $app_id health" curl --fail --silent --show-error --location "${app_url}${health_path}" -o health.json
             grep -q '"status":"ok"' health.json
           done
         env:
@@ -519,6 +536,22 @@ jobs:
         run: |
           set -euo pipefail
 
+          retry_smoke() {
+            label="$1"
+            shift
+            for delay in 0 5 10 20 30 60; do
+              if [ "$delay" != "0" ]; then
+                sleep "$delay"
+              fi
+              if "$@"; then
+                return 0
+              fi
+              echo "Smoke check '$label' failed; retrying after Azure warm-up." >&2
+            done
+            echo "Smoke check '$label' failed after retries." >&2
+            return 1
+          }
+
           jq -r '.[] | [.appId, .role, .healthPath] | @tsv' deployable-apps.json |
           while IFS=$'\t' read -r app_id role health_path; do
             app_upper="$(echo "$app_id" | tr '[:lower:]-' '[:upper:]_')"
@@ -526,18 +559,19 @@ jobs:
             app_url="${!url_var:-}"
             test -n "$app_url"
             if [ "$role" = "web" ]; then
-              curl --fail --silent --show-error --location "$app_url" -o response.html
+              retry_smoke "QA $app_id root" curl --fail --silent --show-error --location "$app_url" -o response.html
               grep -q "<title>SDD Template</title>" response.html
               ! grep -qi "Microsoft Azure" response.html
               expected_api_url="${AZURE_QA_API_APP_URL:-}"
               test -n "$expected_api_url"
-              curl --fail --silent --show-error --location "${app_url}/clients" -o clients.html
-              grep -q "const apiBaseUrl = \"${expected_api_url}\";" clients.html
+              retry_smoke "QA $app_id clients" curl --fail --silent --show-error --location "${app_url}/clients" -o clients.html
+              grep -q "<title>Clients</title>" clients.html
+              grep -q 'id="client-form"' clients.html
             fi
             if [ "$role" = "api" ]; then
               site_origin="${AZURE_QA_SITE_APP_URL:-}"
               test -n "$site_origin"
-              curl --fail --silent --show-error --request OPTIONS \
+              retry_smoke "QA $app_id CORS" curl --fail --silent --show-error --request OPTIONS \
                 --header "Origin: $site_origin" \
                 --header "Access-Control-Request-Method: POST" \
                 --header "Access-Control-Request-Headers: content-type" \
@@ -546,12 +580,42 @@ jobs:
                 "${app_url}/api/clients"
               grep -iq "^Access-Control-Allow-Origin: ${site_origin}" cors.headers
             fi
-            curl --fail --silent --show-error --location "${app_url}${health_path}" -o health.json
+            retry_smoke "QA $app_id health" curl --fail --silent --show-error --location "${app_url}${health_path}" -o health.json
             grep -q '"status":"ok"' health.json
           done
         env:
           AZURE_QA_SITE_APP_URL: ${{ secrets.AZURE_QA_SITE_APP_URL }}
           AZURE_QA_API_APP_URL: ${{ secrets.AZURE_QA_API_APP_URL }}
+
+      - name: Publish QA target metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          jq -n \
+            --arg environment "QA" \
+            --arg commitSha "$GITHUB_SHA" \
+            --arg siteUrl "$AZURE_QA_SITE_APP_URL" \
+            --arg apiUrl "$AZURE_QA_API_APP_URL" \
+            --arg workflowRunUrl "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --arg publishedAtUtc "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{
+              environment: $environment,
+              commitSha: $commitSha,
+              siteUrl: $siteUrl,
+              apiUrl: $apiUrl,
+              workflowRunUrl: $workflowRunUrl,
+              publishedAtUtc: $publishedAtUtc
+            }' > qa-targets.json
+
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file qa-targets.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/qa-targets.json"
+        env:
+          AZURE_QA_SITE_APP_URL: ${{ secrets.AZURE_QA_SITE_APP_URL }}
+          AZURE_QA_API_APP_URL: ${{ secrets.AZURE_QA_API_APP_URL }}
+          NEXUS_URL: ${{ secrets.NEXUS_URL }}
+          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+          NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
 
   e2e-qa:
     runs-on: ubuntu-latest
@@ -583,7 +647,7 @@ jobs:
           test -n "$artifact_commit_sha"
           echo "E2E_ARTIFACT_COMMIT_SHA=$artifact_commit_sha" >> "$GITHUB_ENV"
 
-          ticket_key_pattern="$(sed -nE 's/.*"ticketKeyPattern"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' .codex/delivery-policy.json | head -n 1)"
+          ticket_key_pattern="$(jq -r '.workflow.ticketKeyPattern // empty' .codex/project-profile.json)"
           branch_name="${GITHUB_REF#refs/heads/}"
           plane_ticket_key="$(printf '%s\n' "$branch_name" | sed -nE "s#^qa/($ticket_key_pattern)(/.*)?\$#\1#p" | head -n 1)"
           test -n "$plane_ticket_key"

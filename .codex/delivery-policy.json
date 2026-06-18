@@ -1,5 +1,4 @@
 {
-  "ticketKeyPattern": "E2EPROJECT-[0-9]+",
   "agentOptimization": {
     "maxAutonomousIterations": 20,
     "maxToolRetries": 2,

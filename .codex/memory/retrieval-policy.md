@@ -39,6 +39,8 @@ Use memory as a practical loop during repository work:
 3. Verify: treat memory as a lead, then confirm against current files and live state.
 4. Finish: run the durable learning capture gate and report `Memory updated: <files>` or `Memory updated: none`.
 
+If the agent itself encounters a failed command, hook rejection, configuration mismatch, missing local tool, or repeated correction while doing the work, treat it as a memory candidate by default. Search existing memory with the concrete symptom, fix the immediate issue, then persist a small update unless the failure is clearly one-off, already covered by current memory, or not useful outside the current turn. Do not use `Memory updated: none` for a repeatable agent/tooling failure that was newly diagnosed.
+
 Search helper:
 
 ```powershell
@@ -56,6 +58,7 @@ Agents may propose or write memory updates only when the information is reusable
 Good memory candidates:
 
 - repeated CI, QA, deploy, or review failures
+- agent-caused workflow mistakes that are likely to recur, such as hook rejections, wrong commit prefixes, wrong tool boundaries, or skipped required preflight steps
 - durable command or setup corrections
 - module ownership or behavior discovered during implementation
 - release, rollback, artifact, or QA lessons
