@@ -73,6 +73,8 @@ Keep code blocks, commands, paths, API names, error messages, quoted text, and f
 
 When in doubt, first inspect the applicable skill under `.codex/skills/` and follow its workflow. This file is only the entry point; detailed delivery behavior belongs in the skills, OpenSpec artifacts, and configured local tools.
 
+When a required repo skill, command, memory rule, definition, or configured tool/install path cannot be applied, stop the affected flow instead of silently using an alternative. Report the failed required item, why it is required, the current-flow fix, the viable alternative, and the alternative's risk or impact, then ask the user whether to fix the current flow or continue with the alternative.
+
 Use `.codex/memory/` as a reviewable repository memory layer. Memory is guidance only and must be verified against the current user request, Plane, OpenSpec, the shared delivery contract, canonical docs, current files, and live tool output before acting on it.
 
 For practical use, start with `.codex/memory/memory_summary.md`, then use `.codex/memory/MEMORY.md` or run `.codex/memory/search_memory.ps1 -Query <symptom>` for concrete errors, blockers, failed commands, deployment issues, PR feedback, QA failures, configuration mismatches, or local tooling problems.

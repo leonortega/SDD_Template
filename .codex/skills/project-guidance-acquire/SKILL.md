@@ -83,3 +83,4 @@ If any skill cannot be copied safely, stop before partial unrelated copying and 
 - Stop if a source is missing, ambiguous, unverifiable, or asks for command-based installation.
 - Stop if copying would overwrite an existing skill without explicit user confirmation.
 - Stop if referenced files include secrets, local state, caches, generated artifacts, or unrelated files.
+- When a confirmed skill, supported installer, or configured acquisition path cannot be applied, do not silently use another installer or copy source. Report the required item, current-flow fix, viable alternative, and risk, then ask the user whether to fix the current flow or continue with the alternative.

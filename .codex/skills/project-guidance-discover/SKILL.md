@@ -101,3 +101,4 @@ If the user confirms the researched list, immediately record accepted ids, persi
 - Stop when a source cannot be verified from an official, technology-owner, or clearly labeled community source.
 - Stop when the user has not confirmed or dismissed the researched guidance list.
 - Stop before any acquisition operation; copying and guarded install planning belong to `project-guidance-acquire`.
+- When required discovery, verification, memory, or configured acquisition guidance cannot be applied, do not silently substitute another source family or installer path. Report the failed requirement, current-flow fix, viable alternative, and risk, then ask the user whether to fix the current flow or continue with the alternative.

@@ -10,6 +10,21 @@ For common delivery-skill startup, memory read behavior, and memory update class
 
 For durable context policy, read `docs/context-management.md`. The docs are the human-readable context layer; this delivery contract is the agent-enforced operational layer. If the docs and this contract conflict, the delivery contract wins for automation behavior until the docs are corrected.
 
+## Tool And Skill Blocker Consent
+
+When an agent cannot apply a required repository skill, command, memory rule, definition, or configured tool/install path, it must stop the affected workflow step instead of silently falling back to an alternative. This applies to repo-local skills, selected provider adapters, shared helper scripts, configured quality gates, memory update rules, project-guidance acquisition, and platform-supported installers.
+
+The blocker response must include:
+
+- failed required item
+- why it is required
+- current-flow fix
+- alternative path
+- risk/impact of alternative
+- explicit user choice required before continuing
+
+The agent may continue unrelated read-only investigation, but must not mutate repository files, Plane, Git, Gitea, Nexus, Azure, tags, releases, or local workflow state through the alternative until the user chooses that path or fixes the current flow.
+
 ## Skill Synchronization Rule
 
 When changing any non-OpenSpec delivery skill or any `configure-*` skill, check for policy drift across related skills before finishing.
