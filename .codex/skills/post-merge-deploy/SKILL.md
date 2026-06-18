@@ -17,7 +17,7 @@ Before running, follow `.codex/skills/_shared/skill-startup.md`, which reads `.c
 
 ## Workflow Telemetry
 
-Capture UTC start time after resolving the ticket key and before post-merge validation or artifact waiting. Append one `post-merge-deploy` row with `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` when the bridge succeeds, blocks, fails, or is skipped idempotently because QA deployment is already complete. Include `workflowStage=post-merge-deploy`, `agentRole=deployment`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. Do not duplicate the `deploy-to-qa` row; `deploy-to-qa` records its own stage when invoked.
+Capture UTC start time after resolving the ticket key and before post-merge validation or artifact waiting. Append a `post-merge-deploy` row with `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` when the bridge succeeds, blocks, fails, or is skipped idempotently because QA deployment is already complete. On resume or idempotent reuse, append another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=post-merge-deploy`, `agentRole=deployment`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. Do not duplicate the `deploy-to-qa` row; `deploy-to-qa` records its own stage when invoked.
 
 ## Configuration
 
@@ -40,11 +40,11 @@ Read `.codex/client-tools.local.json` first. Required values are Plane, Gitea, a
 8. Use bounded waiting: check immediately, then retry with backoff for up to 10 minutes unless the user asked for a shorter wait.
 9. Verify `commit.sha` matches the merge commit before delegating.
 10. If `release.json` exists, verify `planeTicketKey` matches the locked/resolved ticket key.
-11. Invoke `deploy-to-qa` with the resolved PR, ticket key, and merge commit.
+11. Invoke `deploy-to-qa` with the resolved PR, ticket key, and merge commit. If QA deployment is already complete, invoke `deploy-to-qa` in idempotent verification mode so that stage records its own telemetry row without duplicating Plane comments or state changes.
 
 ## Idempotency
 
-- If the QA deployment marker `IA generated QA deployment: {commitSha}` already exists and the ticket is in QA, report that QA promotion is already complete.
+- If the QA deployment marker `IA generated QA deployment: {commitSha}` already exists and the ticket is in QA, append `post-merge-deploy` telemetry, invoke `deploy-to-qa` idempotently, and report that QA promotion is already complete.
 - If the artifact exists, skip waiting and delegate immediately.
 - If labels were stale but have since been removed, continue.
 

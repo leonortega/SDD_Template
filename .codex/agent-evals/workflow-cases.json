@@ -196,6 +196,91 @@
       ]
     },
     {
+      "id": "qa-ticket-missing-deploy-telemetry-reroutes",
+      "stage": "automatic-implement-ticket",
+      "goal": "Prevent a QA ticket from jumping to E2E when deployment telemetry is missing.",
+      "expectedRoute": "post-merge-deploy",
+      "requiredEvidence": [
+        "Plane ticket is QA",
+        "QA deployment marker exists",
+        "artifact commit and release manifest exist",
+        "missing post-merge-deploy or deploy-to-qa telemetry row"
+      ],
+      "toolExpectations": [
+        "Read active ticket workflow telemetry before routing to test-e2e",
+        "Route through post-merge-deploy in idempotent verification mode",
+        "post-merge-deploy invokes deploy-to-qa idempotently",
+        "Do not duplicate QA deployment Plane comments"
+      ],
+      "stopConditions": [
+        "QA deployment evidence conflicts with ticket lock",
+        "artifact commit cannot be resolved",
+        "deployment lane is owned by another ticket"
+      ],
+      "handoffFields": [
+        "ticketKey",
+        "artifactCommit",
+        "missingTelemetryStages",
+        "nextRoute"
+      ]
+    },
+    {
+      "id": "done-ticket-missing-e2e-telemetry-reroutes",
+      "stage": "automatic-implement-ticket",
+      "goal": "Repair missing E2E telemetry through idempotent test-e2e finalization before reporting timing complete.",
+      "expectedRoute": "test-e2e",
+      "requiredEvidence": [
+        "Plane ticket is Done",
+        "canonical E2E QA marker exists",
+        "QA evidence and RC lineage exist",
+        "missing test-e2e telemetry row"
+      ],
+      "toolExpectations": [
+        "Route through test-e2e in idempotent verification mode",
+        "Append a test-e2e telemetry row without duplicating QA comments",
+        "Patch or reuse the workflow timing marker"
+      ],
+      "stopConditions": [
+        "canonical E2E QA marker is missing",
+        "QA evidence cannot be verified",
+        "RC lineage conflicts with artifact commit"
+      ],
+      "handoffFields": [
+        "ticketKey",
+        "qaResult",
+        "missingTelemetryStages",
+        "workflowTimingMarker"
+      ]
+    },
+    {
+      "id": "review-marker-missing-review-telemetry-reroutes",
+      "stage": "automatic-implement-ticket",
+      "goal": "Repair missing PR review telemetry before later PR handoff or QA promotion.",
+      "expectedRoute": "gitea-pr-review-agent",
+      "requiredEvidence": [
+        "open or recently merged PR",
+        "current-head PR review marker exists",
+        "missing gitea-pr-review-agent telemetry row",
+        "ticket context can be resolved"
+      ],
+      "toolExpectations": [
+        "Route through gitea-pr-review-agent in idempotent verification mode",
+        "Append a gitea-pr-review-agent telemetry row without duplicating review comments",
+        "Continue normal routing only after review telemetry exists"
+      ],
+      "stopConditions": [
+        "PR head SHA changed during inspection",
+        "ticket context cannot be resolved",
+        "review marker does not match current head"
+      ],
+      "handoffFields": [
+        "ticketKey",
+        "prNumber",
+        "headSha",
+        "missingTelemetryStages"
+      ]
+    },
+    {
       "id": "prod-explicit-artifact-promotion",
       "stage": "deploy-to-prod",
       "goal": "Promote one QA-approved artifact to PROD after explicit user intent, then record the release on every included Done ticket.",

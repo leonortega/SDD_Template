@@ -1606,6 +1606,74 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
+        public void WorkflowTelemetryReadAggregatesResumedStageRows()
+        {
+            string root = CreateTempDirectory();
+            string script = Path.Combine(FindRepositoryRoot().FullName, ".codex", "skills", "_shared", "scripts", "delivery_tools.ps1");
+            _ = RunPowerShell(script, "-Mode", "InitializeWorkflowTelemetry", "-RepoRoot", root, "-TicketKey", "E2EPROJECT-123");
+            foreach (var row in new[]
+            {
+                new { ticket = "E2EPROJECT-123", stage = "implement-ticket", agent = "implementation", start = "2026-06-09T10:00:00Z", finish = "2026-06-09T10:30:00Z", outcome = "PASS", retryCount = 1 },
+                new { ticket = "E2EPROJECT-999", stage = "implement-ticket", agent = "implementation", start = "2026-06-09T10:05:00Z", finish = "2026-06-09T10:06:00Z", outcome = "PASS", retryCount = 0 },
+                new { ticket = "E2EPROJECT-123", stage = "test-e2e", agent = "qa", start = "2026-06-09T11:00:00Z", finish = "2026-06-09T11:20:00Z", outcome = "BLOCKED", retryCount = 0 },
+                new { ticket = "E2EPROJECT-123", stage = "implement-ticket", agent = "implementation", start = "2026-06-09T12:00:00Z", finish = "2026-06-09T12:15:00Z", outcome = "PASS", retryCount = 2 },
+                new { ticket = "E2EPROJECT-123", stage = "test-e2e", agent = "qa", start = "2026-06-09T13:00:00Z", finish = "2026-06-09T14:00:00Z", outcome = "PASS", retryCount = 1 },
+            })
+            {
+                string appendJson = JsonSerializer.Serialize(new
+                {
+                    workflowStage = row.stage,
+                    agentRole = row.agent,
+                    startedUtc = row.start,
+                    finishedUtc = row.finish,
+                    row.retryCount,
+                    row.outcome,
+                });
+                _ = RunPowerShell(script, "-Mode", "AppendWorkflowTelemetry", "-RepoRoot", root, "-TicketKey", row.ticket, "-InputJson", appendJson);
+            }
+
+            string readJson = RunPowerShell(
+                script,
+                "-Mode",
+                "ReadWorkflowTelemetry",
+                "-RepoRoot",
+                root,
+                "-TicketKey",
+                "E2EPROJECT-123",
+                "-InputJson",
+                JsonSerializer.Serialize(new { status = "PASS - telemetry.", currentRoute = "test-e2e" }));
+
+            using JsonDocument document = JsonDocument.Parse(readJson);
+            JsonElement stages = document.RootElement.GetProperty("stages");
+            Assert.Equal(2, stages.GetArrayLength());
+            Assert.Equal("implement-ticket", stages[0].GetProperty("stage").GetString());
+            Assert.Equal("2026-06-09T10:00:00Z", stages[0].GetProperty("startedUtc").GetString());
+            Assert.Equal("2026-06-09T12:15:00Z", stages[0].GetProperty("finishedUtc").GetString());
+            Assert.Equal(8_100_000, stages[0].GetProperty("elapsedMilliseconds").GetInt64());
+            Assert.Equal("PASS", stages[0].GetProperty("outcome").GetString());
+            Assert.Equal(3, stages[0].GetProperty("retryCount").GetInt64());
+            Assert.Equal("test-e2e", stages[1].GetProperty("stage").GetString());
+            Assert.Equal("2026-06-09T11:00:00Z", stages[1].GetProperty("startedUtc").GetString());
+            Assert.Equal("2026-06-09T14:00:00Z", stages[1].GetProperty("finishedUtc").GetString());
+            Assert.Equal(10_800_000, stages[1].GetProperty("elapsedMilliseconds").GetInt64());
+            Assert.Equal("PASS", stages[1].GetProperty("outcome").GetString());
+
+            string comment = RunPowerShell(
+                script,
+                "-Mode",
+                "RenderPlaneComment",
+                "-Type",
+                "WorkflowTiming",
+                "-InputJson",
+                readJson);
+            Assert.Contains("- Total elapsed: 5h 15m 00s", comment);
+            Assert.Contains("| `implement-ticket` | PASS | 2h 15m 00s | 2026-06-09T10:00:00Z | 2026-06-09T12:15:00Z |", comment);
+            Assert.Contains("| `test-e2e` | PASS | 3h 00m 00s | 2026-06-09T11:00:00Z | 2026-06-09T14:00:00Z |", comment);
+            Assert.Contains("| `pr-review-feedback-loop` | NOT RUN / N/A | no time | - | - |", comment);
+            Assert.DoesNotContain("MISSING TELEMETRY", comment);
+        }
+
+        [Fact]
         public void RenderPlaneCommentRendersProdBatchIncludedTickets()
         {
             string script = Path.Combine(FindRepositoryRoot().FullName, ".codex", "skills", "_shared", "scripts", "delivery_tools.ps1");

@@ -17,7 +17,7 @@ Before posting review output, follow `.codex/skills/_shared/skill-startup.md`, w
 
 ## Workflow Telemetry
 
-When this skill runs as part of a ticket workflow and a Plane ticket key is resolved, capture UTC start time before PR review reads. Append one `gitea-pr-review-agent` row with `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` when the review succeeds, blocks, fails, or is skipped idempotently because a current-head review marker already exists. Include `workflowStage=gitea-pr-review-agent`, `agentRole=prReview`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If the review is explicitly standalone and no ticket key can be safely resolved, report that workflow telemetry was skipped.
+When this skill runs as part of a ticket workflow and a Plane ticket key is resolved, capture UTC start time before PR review reads. Append a `gitea-pr-review-agent` row with `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` when the review succeeds, blocks, fails, or is skipped idempotently because a current-head review marker already exists. On resume or idempotent reuse, append another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=gitea-pr-review-agent`, `agentRole=prReview`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If the review is explicitly standalone and no ticket key can be safely resolved, report that workflow telemetry was skipped.
 
 ## Configuration
 
