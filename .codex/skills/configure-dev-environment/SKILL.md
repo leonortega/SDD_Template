@@ -191,3 +191,4 @@ End setup work with:
 - Stop before writing secrets to tracked files or reading secrets from containers, volumes, databases, or logs.
 - Stop before branch, Plane, ticket-lock, or OpenSpec mutation when first-ticket stack context, guidance discovery review, or recommendation audit context is missing or drifted.
 - Stop before using arbitrary command installers; route confirmed acquisition and guarded install planning to `project-guidance-acquire`.
+- If a required repo skill, command, memory rule, definition, or configured tool/install path cannot be applied, do not silently switch to an ad hoc setup path. Report the failed required item, why it is required, the current-flow fix, the viable alternative, and the alternative's risk or impact, then ask the user whether to fix the current flow or continue with the alternative.

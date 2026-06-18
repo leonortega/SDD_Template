@@ -18,6 +18,7 @@ Use memory only for recall and discovery. Verify task-critical facts against the
 ## Common Rules
 
 - Apply the authority order in `docs/context-management.md`.
+- Apply Tool And Skill Blocker Consent from `.codex/skills/_shared/delivery-contract.md`: if a required repo skill, command, memory rule, definition, or configured tool/install path cannot be applied, stop the affected flow, report the current-flow fix and viable alternative with risk, and ask the user before continuing through the alternative.
 - Treat `.codex/project-profile.json` as the canonical non-secret declaration of stack, providers, workflow gates, environments, and adapter paths.
 - Load only the provider adapters selected by `.codex/project-profile.json` for the current stage. Keep provider-specific API calls, CLI commands, field names, versions, and images out of generic skill reasoning unless the selected adapter requires them.
 - Use `.codex/memory/search_memory.ps1` for symptom-driven memory lookup when a task mentions or reveals an error, blocker, failed command, deploy issue, PR feedback, QA failure, configuration mismatch, or local tooling problem.

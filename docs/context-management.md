@@ -51,6 +51,8 @@ Use durable checkpoints for reruns. Do not restart a completed stage when the ma
 
 Stop instead of guessing when a resolved ticket, branch, PR, artifact commit, source RC version, final release version, QA evidence path, or deployment lane owner does not match the active context lock or durable checkpoints.
 
+Silent fallback from a required configured repo flow is invalid. When a required repo skill, command, memory rule, definition, or configured tool/install path cannot be applied, use the delivery contract's Tool And Skill Blocker Consent rule: report the blocker, current-flow fix, viable alternative, and risk, then get explicit user choice before continuing through the alternative.
+
 If docs conflict with `.codex/skills/_shared/delivery-contract.md`, the delivery contract wins for automation behavior until the docs are corrected.
 
 ## Handoff Compression

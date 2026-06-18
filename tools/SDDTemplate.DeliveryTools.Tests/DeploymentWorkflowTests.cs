@@ -1594,6 +1594,36 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
+        public void RequiredToolAndSkillBlockersRequireExplicitConsentBeforeAlternativeFlow()
+        {
+            string root = FindRepositoryRoot().FullName;
+            string contract = ReadSkill("_shared", "delivery-contract.md");
+            string skillStartup = ReadSkill("_shared", "skill-startup.md");
+            string contextDocs = ReadDoc("context-management.md");
+            string configure = ReadSkill("configure-dev-environment", "SKILL.md");
+            string acquire = ReadSkill("project-guidance-acquire", "SKILL.md");
+            string discover = ReadSkill("project-guidance-discover", "SKILL.md");
+            string agents = File.ReadAllText(Path.Combine(root, "AGENTS.md"));
+            string decisions = File.ReadAllText(Path.Combine(root, ".codex", "memory", "decisions.md"));
+
+            Assert.Contains("## Tool And Skill Blocker Consent", contract);
+            Assert.Contains("failed required item", contract);
+            Assert.Contains("current-flow fix", contract);
+            Assert.Contains("alternative path", contract);
+            Assert.Contains("risk/impact of alternative", contract);
+            Assert.Contains("explicit user choice required before continuing", contract);
+            Assert.Contains("must not mutate repository files, Plane, Git, Gitea, Nexus, Azure", contract);
+
+            Assert.Contains("Tool And Skill Blocker Consent", skillStartup);
+            Assert.Contains("Silent fallback from a required configured repo flow is invalid", contextDocs);
+            Assert.Contains("do not silently switch to an ad hoc setup path", configure);
+            Assert.Contains("do not silently use another installer or copy source", acquire);
+            Assert.Contains("do not silently substitute another source family or installer path", discover);
+            Assert.Contains("cannot be applied, stop the affected flow instead of silently using an alternative", agents);
+            Assert.Contains("## Explicit Consent Before Alternative Flow", decisions);
+        }
+
+        [Fact]
         public void MemorySearchHelperSupportsSymptomDrivenLookup()
         {
             string root = FindRepositoryRoot().FullName;
