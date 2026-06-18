@@ -6,12 +6,12 @@ Defines application logging behavior, safe structured log content, deployed log 
 ## Requirements
 ### Requirement: Environment-specific Serilog levels
 
-The API and Site SHALL initialize Serilog with environment-specific minimum levels. DEV and QA SHALL allow verbose troubleshooting logs, while PROD SHALL emit only Warning and Error application logs unless a higher-severity override is configured.
+The API and Site SHALL initialize Serilog with environment-specific minimum levels. DEV and QA SHALL allow Debug-or-higher troubleshooting logs, while PROD SHALL emit only Warning and Error application logs unless a higher-severity override is configured.
 
-#### Scenario: DEV and QA logging is verbose
+#### Scenario: DEV and QA logging is debug
 
 - **WHEN** the API or Site runs with the DEV or QA environment configuration
-- **THEN** Serilog accepts verbose troubleshooting-level application events with timestamp, level, category/source, message, and exception details when present
+- **THEN** Serilog accepts Debug-or-higher troubleshooting-level application events with timestamp, level, category/source, message, and exception details when present
 
 #### Scenario: PROD logging is restricted
 
