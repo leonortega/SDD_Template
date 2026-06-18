@@ -36,7 +36,7 @@ Safety:
 7. Run or recommend `BuildGiteaActionsImages` so Gitleaks, Trivy, Azure CLI, jq, zip, Node, and Playwright runtime dependencies are supplied by pinned local CI images instead of installed during every workflow run.
 8. Run `ValidateGiteaActionsRunner` when Docker is available to catch missing local job images, missing shell tools, JavaScript action/node mismatches, and local Gitea checkout networking before a PR depends on CI.
 9. Ask whether Semgrep should be enabled only after real app code exists or the user explicitly wants it.
-10. Guide the user to configure Gitea branch protection and required status checks.
+10. Guide the user to configure Gitea branch protection, `pr.minimumApprovals`, and required status checks.
 
 ## Output
 
