@@ -68,36 +68,36 @@ Plane Ticket (Todo)
 Domain-specific workflows for each delivery stage. Load these based on task type:
 
 #### Ticket Implementation
-- [`automatic-implement-ticket`](.codex/skills/automatic-implement-ticket/) – Main entry point; inspects state, routes to next workflow
-- [`implement-ticket`](.codex/skills/implement-ticket/) – Core ticket implementation workflow
-- [`plane-start-ticket`](.codex/skills/plane-start-ticket/) – Initialize new ticket from Plane
+- [`dev-flow-continue-implementation`](.codex/skills/dev-flow-continue-implementation/) – Main entry point; inspects state, routes to next workflow
+- [`dev-flow-implement-ticket`](.codex/skills/dev-flow-implement-ticket/) – Core ticket implementation workflow
+- [`dev-flow-start-ticket`](.codex/skills/dev-flow-start-ticket/) – Initialize new ticket from Plane
 
 #### OpenSpec Planning & Changes
-- [`openspec-explore`](.codex/skills/openspec-explore/) – Explore change requirements
-- [`openspec-propose`](.codex/skills/openspec-propose/) – Create OpenSpec change proposal
-- [`openspec-implement-change`](.codex/skills/openspec-implement-change/) – Implement proposed change
-- [`openspec-verify-change`](.codex/skills/openspec-verify-change/) – Verify implementation matches spec
-- [`openspec-archive-change`](.codex/skills/openspec-archive-change/) – Archive completed change
+- [`dev-flow-explore-change`](.codex/skills/dev-flow-explore-change/) – Explore change requirements
+- [`dev-flow-propose-change`](.codex/skills/dev-flow-propose-change/) – Create OpenSpec change proposal
+- [`dev-flow-implement-change`](.codex/skills/dev-flow-implement-change/) – Implement proposed change
+- [`dev-flow-verify-change`](.codex/skills/dev-flow-verify-change/) – Verify implementation matches spec
+- [`dev-flow-archive-change`](.codex/skills/dev-flow-archive-change/) – Archive completed change
 
 #### Deployment & Release
-- [`deploy-to-prod`](.codex/skills/deploy-to-prod/) – Promote to production
-- [`post-merge-deploy`](.codex/skills/post-merge-deploy/) – Deploy after merge
-- [`hotfix-prod`](.codex/skills/hotfix-prod/) – Emergency hotfix workflow
-- [`rollback-prod`](.codex/skills/rollback-prod/) – Rollback production
+- [`dev-ops-deploy-prod`](.codex/skills/dev-ops-deploy-prod/) – Promote to production
+- [`dev-ops-post-merge-deploy`](.codex/skills/dev-ops-post-merge-deploy/) – Deploy after merge
+- [`dev-ops-hotfix-prod`](.codex/skills/dev-ops-hotfix-prod/) – Emergency hotfix workflow
+- [`dev-ops-rollback-prod`](.codex/skills/dev-ops-rollback-prod/) – Rollback production
 
 #### Infrastructure & Configuration
 - [`configure-dev-environment`](.codex/skills/configure-dev-environment/) – Setup local environment
-- [`configure-azure-environments`](.codex/skills/configure-azure-environments/) – Configure DEV/QA/PROD
-- [`configure-plane-workflow`](.codex/skills/configure-plane-workflow/) – Setup Plane
-- [`configure-gitea-source-control`](.codex/skills/configure-gitea-source-control/) – Setup Git
+- [`configure-cloud-environments`](.codex/skills/configure-cloud-environments/) – Configure DEV/QA/PROD
+- [`configure-ticket-workflow`](.codex/skills/configure-ticket-workflow/) – Setup Plane
+- [`configure-source-control`](.codex/skills/configure-source-control/) – Setup Git
 - [`configure-infra-tools`](.codex/skills/configure-infra-tools/) – Docker Compose, Nexus, etc.
 - [`configure-observability`](.codex/skills/configure-observability/) – Monitoring & logging
 
 #### Quality & Review
-- [`file-qa-bug`](.codex/skills/file-qa-bug/) – Log QA failures
-- [`gitea-pr-review-agent`](.codex/skills/gitea-pr-review-agent/) – Automated PR review
-- [`pr-review-feedback-loop`](.codex/skills/pr-review-feedback-loop/) – Handle PR feedback
-- [`test-e2e`](.codex/skills/test-e2e/) – Run E2E tests
+- [`dev-flow-file-qa-bug`](.codex/skills/dev-flow-file-qa-bug/) – Log QA failures
+- [`dev-flow-pr-review-agent`](.codex/skills/dev-flow-pr-review-agent/) – Automated PR review
+- [`dev-flow-pr-review-feedback-loop`](.codex/skills/dev-flow-pr-review-feedback-loop/) – Handle PR feedback
+- [`quality-test-e2e`](.codex/skills/quality-test-e2e/) – Run E2E tests
 - [`test-analysis-extensions`](.codex/skills/test-analysis-extensions/) – Analyze test results
 
 #### Development Guidance
@@ -145,27 +145,27 @@ Persistent learning and context. Consulted automatically at session start.
 ### Continuing a Ticket
 ```
 "automatically continue this ticket"
-→ .codex/skills/automatic-implement-ticket
+→ .codex/skills/dev-flow-continue-implementation
 → Inspects Plane, Git, Gitea, Nexus, OpenSpec, QA state
 → Routes to next focused skill
 ```
 
 ### Starting Fresh
 Choose based on task:
-- **New Ticket**: `"create ticket E2EPROJECT-123 for [feature]"` → `plane-start-ticket`
-- **OpenSpec Planning**: `"propose change for [feature]"` → `openspec-propose`
-- **Implementation**: `"implement ticket E2EPROJECT-123"` → `implement-ticket`
-- **PR Review**: `"review PR #42"` → `gitea-pr-review-agent`
-- **Deployment**: `"deploy to QA"` → `post-merge-deploy` or `"promote to PROD"` → `deploy-to-prod`
-- **QA**: `"run E2E tests"` → `test-e2e`
-- **Hotfix**: `"create hotfix for issue [X]"` → `hotfix-prod`
+- **New Ticket**: `"create ticket E2EPROJECT-123 for [feature]"` → `dev-flow-start-ticket`
+- **OpenSpec Planning**: `"propose change for [feature]"` → `dev-flow-propose-change`
+- **Implementation**: `"implement ticket E2EPROJECT-123"` → `dev-flow-implement-ticket`
+- **PR Review**: `"review PR #42"` → `dev-flow-pr-review-agent`
+- **Deployment**: `"deploy to QA"` → `dev-ops-post-merge-deploy` or `"promote to PROD"` → `dev-ops-deploy-prod`
+- **QA**: `"run E2E tests"` → `quality-test-e2e`
+- **Hotfix**: `"create hotfix for issue [X]"` → `dev-ops-hotfix-prod`
 
 ## How Copilot Discovers & Uses Resources
 
 ### Pattern 1: Reference by File Path
 In chat, you can directly reference files:
 ```
-@.codex/skills/implement-ticket/SKILL.md
+@.codex/skills/dev-flow-implement-ticket/SKILL.md
 @.codex/memory/memory_summary.md
 @.codex/delivery-policy.json
 ```
@@ -244,13 +244,13 @@ See `.codex/quality.local.json` for the authoritative gate configuration.
 | Situation | Consult |
 |-----------|---------|
 | Starting new task | `memory_summary.md` + matching skill |
-| Unclear next step | `automatic-implement-ticket` or `workflow-memory.md` |
+| Unclear next step | `dev-flow-continue-implementation` or `workflow-memory.md` |
 | Build/test failure | `failure-patterns.md` + `quality.local.json` |
 | Deployment issue | `deploy-*.md` skills + `release-lessons.md` |
 | Architecture question | `project-map.md` + `docs/architecture.md` |
 | Setup needed | `configure-*.md` skills |
-| QA failure | `qa-findings.md` + `file-qa-bug` skill |
-| Production problem | `rollback-prod` or `hotfix-prod` skills |
+| QA failure | `qa-findings.md` + `dev-flow-file-qa-bug` skill |
+| Production problem | `dev-ops-rollback-prod` or `dev-ops-hotfix-prod` skills |
 
 ## Summary
 

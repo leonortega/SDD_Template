@@ -1,4 +1,0 @@
-interface:
-  display_name: "Pipeline Status"
-  short_description: "Show delivery state and blockers."
-  default_prompt: "Use $pipeline-status to show where this ticket or release stands."

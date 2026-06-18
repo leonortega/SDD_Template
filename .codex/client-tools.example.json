@@ -30,6 +30,10 @@
   },
   "pr": {
     "reviewers": "replace-with-reviewers",
+    "minimumApprovals": {
+      "dev": 1,
+      "main": 1
+    },
     "labels": {
       "enabled": true,
       "reviewed": "replace-with-reviewed-label",
@@ -95,7 +99,7 @@
   },
   "recommendedTools": {
     "enabled": true,
-    "mode": "guided-manual",
+    "mode": "guarded-auto",
     "accepted": [],
     "dismissed": []
   }

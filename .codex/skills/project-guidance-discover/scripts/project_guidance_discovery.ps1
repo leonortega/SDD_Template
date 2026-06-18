@@ -177,12 +177,12 @@ function Get-DetectedStackTags {
     $tags.Add("azure-monitor")
   }
   if (Test-Path (Join-RootPath "infra/monitoring/grafana")) { $tags.Add("grafana") }
-  if ((Test-Path (Join-RootPath "artifacts/qa")) -or (Test-Path (Join-RootPath ".codex/skills/test-e2e/SKILL.md"))) {
+  if ((Test-Path (Join-RootPath "artifacts/qa")) -or (Test-Path (Join-RootPath ".codex/skills/quality-test-e2e/SKILL.md"))) {
     $tags.Add("e2e")
     $tags.Add("browser-e2e")
   }
-  if ((Test-Path (Join-RootPath ".codex/skills/frontend-testing-debugging/SKILL.md")) -or
-      (Test-FileContains ".codex/skills/test-e2e/SKILL.md" "Playwright")) {
+  if ((Test-Path (Join-RootPath ".codex/skills/quality-frontend-testing-debugging/SKILL.md")) -or
+      (Test-FileContains ".codex/skills/quality-test-e2e/SKILL.md" "Playwright")) {
     $tags.Add("playwright-guidance")
   }
   if (Test-Path (Join-RootPath "openspec")) { $tags.Add("openspec") }
@@ -356,7 +356,7 @@ function Get-DetectedSkillDefinitions {
       researchTopics = @("Playwright locators", "web-first assertions", "browser automation", "trace evidence", "responsive UI checks")
       officialSources = @("https://playwright.dev/docs/best-practices", "https://playwright.dev/docs/test-agents")
       searchQueries = @("site:github.com/openai/skills playwright skill", "site:playwright.dev/docs Playwright best practices")
-      notes = "Dynamic skill finding from browser/Playwright QA signals. This complements the repo-local frontend-testing-debugging skill with an official curated Playwright skill."
+      notes = "Dynamic skill finding from browser/Playwright QA signals. This complements the repo-local quality-frontend-testing-debugging skill with an official curated Playwright skill."
     },
     [pscustomobject]@{
       id = "dotnet-assertion-quality-skill"
@@ -405,6 +405,11 @@ function ConvertTo-SkillSuggestion {
     type = "skill"
     purpose = $Recommendation.purpose
     installMethod = "manual-copy"
+    installScope = "repo-local"
+    installerKind = "file-copy"
+    requiresIdeRestart = $false
+    requiresSystemReboot = $false
+    userActionRequired = (-not $targetExists)
     sourceKind = $Recommendation.sourceKind
     source = $Recommendation.source
     target = $Recommendation.target
@@ -460,14 +465,19 @@ function Add-ProjectGuidanceSearchPlanRecommendation {
     return
   }
 
-  Add-Item $Result "actions" "project-guidance-discover" "guidanceSearchPlan" "Prepared $($topics.Count) project guidance search topics from detected project signals. Use project-guidance-discover to show suggested skills and guidance, ask for additional desired items, then pass confirmed skill items to project-guidance-acquire."
+  Add-Item $Result "actions" "project-guidance-discover" "guidanceSearchPlan" "Prepared $($topics.Count) project guidance search topics from detected project signals. Use project-guidance-discover to research extra useful skills, MCPs, plugins, tools, references, practices, standards, and Codex-applicable IDE helpers before presenting suggestions, then pass confirmed items to project-guidance-acquire."
 
   Add-Recommendation $Result ([ordered]@{
     id = "project-guidance-search-plan"
     name = "Project guidance search plan"
     type = "guidance-search-plan"
     purpose = "Research skills, tools, references, practices, standards, MCPs, and plugins from detected project technologies, environments, tests, security gates, and code standards before proposing local guidance updates."
-    installMethod = "research-then-manual-copy"
+    installMethod = "research-then-guarded-install"
+    installScope = "repo-local"
+    installerKind = "none"
+    requiresIdeRestart = $false
+    requiresSystemReboot = $false
+    userActionRequired = $true
     accepted = $false
     detected = $true
     requiresUserConfirmation = $true
@@ -475,7 +485,7 @@ function Add-ProjectGuidanceSearchPlanRecommendation {
     discoverySourcePriority = Get-ProjectGuidanceDiscoverySourcePriority
     discoverySourceNotes = Get-ProjectGuidanceDiscoverySourceNotes
     topics = [object[]]$topics
-    nextStep = "Use project-guidance-discover: search OpenAI official catalogs/docs, official tool repositories/docs, technology-owner sources, skills.sh/skills or marketplace repository leads, and trusted public sources for each topic; check .codex/skills for existing SKILL.md files; show suggested missing skills and guidance; ask for additional desired items; then pass confirmed skill items to project-guidance-acquire."
+    nextStep = "Use project-guidance-discover: search OpenAI official catalogs/docs, official tool repositories/docs, technology-owner sources, skills.sh/skills or marketplace repository leads, and trusted public sources for each topic; check .codex/skills for existing SKILL.md files; research extra useful skills, MCPs, plugins, tools, references, practices, standards, and Codex-applicable IDE helpers; show suggested missing skills and guidance; ask only for confirmation, dismissals, or omissions; then record and install/configure supported confirmed items through project-guidance-acquire without a second install prompt."
   })
 }
 
@@ -495,7 +505,7 @@ function Add-DetectedSkillRecommendation {
   $message = if ($item.targetExists) {
     "Detected project signals for '$($Recommendation.name)' and the repo-local skill target already exists. Record acceptance with SetRecommendedTools if this skill should be part of the active project tool set."
   } else {
-    "Detected project signals for '$($Recommendation.name)' but no repo-local skill exists at $($Recommendation.target). project-guidance-discover must show this suggestion, ask for additional desired skills or guidance, then project-guidance-acquire may manually copy the confirmed source SKILL.md."
+    "Detected project signals for '$($Recommendation.name)' but no repo-local skill exists at $($Recommendation.target). project-guidance-discover must show this suggestion, research extra useful guidance first, then project-guidance-acquire may copy the confirmed source SKILL.md through guarded acquisition."
   }
   $keyPrefix = if ($item.targetExists) { "skill-present" } else { "skill-gap" }
   $severity = if ($item.targetExists) { "info" } else { "warning" }
@@ -551,19 +561,39 @@ function ConvertTo-RequestedGuidance {
   $name = if ($Guidance.PSObject.Properties.Name -contains "name") { [string]$Guidance.name } else { [string]$Guidance.id }
   $type = if ($Guidance.PSObject.Properties.Name -contains "type") { [string]$Guidance.type } else { "skill" }
   $installMethod = if ($Guidance.PSObject.Properties.Name -contains "installMethod") { [string]$Guidance.installMethod } elseif ($type -eq "skill") { "manual-copy" } else { "manual-reference" }
+  $installScope = if ($Guidance.PSObject.Properties.Name -contains "installScope") { [string]$Guidance.installScope } elseif ($type -in @("mcp", "plugin", "ide-extension")) { "ide" } else { "repo-local" }
+  $installerKind = if ($Guidance.PSObject.Properties.Name -contains "installerKind") { [string]$Guidance.installerKind } elseif ($type -eq "skill") { "file-copy" } else { "manual" }
+  $requiresIdeRestart = if ($Guidance.PSObject.Properties.Name -contains "requiresIdeRestart") { [bool]$Guidance.requiresIdeRestart } else { $type -in @("mcp", "plugin", "ide-extension") }
+  $requiresSystemReboot = if ($Guidance.PSObject.Properties.Name -contains "requiresSystemReboot") { [bool]$Guidance.requiresSystemReboot } else { $false }
+  $userActionRequired = if ($Guidance.PSObject.Properties.Name -contains "userActionRequired") { [bool]$Guidance.userActionRequired } else { $installScope -ne "repo-local" }
   $target = if ($Guidance.PSObject.Properties.Name -contains "target") { [string]$Guidance.target } elseif ($type -eq "skill") { ".codex/skills/$name/SKILL.md" } else { $null }
   $source = if ($Guidance.PSObject.Properties.Name -contains "source") { [string]$Guidance.source } else { $null }
   $sourceKind = if ($Guidance.PSObject.Properties.Name -contains "sourceKind") { [string]$Guidance.sourceKind } else { $null }
+  $installPreference = if ($Guidance.PSObject.Properties.Name -contains "installPreference") { [string]$Guidance.installPreference } else { $null }
 
-  return [ordered]@{
+  $request = [ordered]@{
     name = $name
     type = $type
     installMethod = $installMethod
+    installScope = $installScope
+    installerKind = $installerKind
+    requiresIdeRestart = $requiresIdeRestart
+    requiresSystemReboot = $requiresSystemReboot
+    userActionRequired = $userActionRequired
     sourceKind = $sourceKind
     source = $source
     target = $target
     status = $(if ([string]::IsNullOrWhiteSpace($source)) { "needs-research" } else { "source-provided" })
   }
+
+  if (-not [string]::IsNullOrWhiteSpace($installPreference)) {
+    $request["installPreference"] = $installPreference
+  }
+  if ($Guidance.PSObject.Properties.Name -contains "dockerAlternative") {
+    $request["dockerAlternative"] = $Guidance.dockerAlternative
+  }
+
+  return $request
 }
 
 function Get-AdditionalGuidanceRequestsFromJson {
@@ -647,6 +677,6 @@ function Get-ProjectGuidanceDiscoveryReport {
     finalConfirmedSkills = @($confirmedSkills)
     discoverySourcePriority = Get-ProjectGuidanceDiscoverySourcePriority
     discoverySourceNotes = Get-ProjectGuidanceDiscoverySourceNotes
-    nextUserQuestion = "Do you want to add any additional desired skills or guidance before project-guidance-acquire copies confirmed skill items and the local catalog records the rest?"
+    nextUserQuestion = "I researched extra useful skills, MCPs, plugins, tools, references, practices, standards, and Codex-applicable IDE helpers from the detected stack. Confirm these suggestions to record and install/configure supported items now, dismiss any you do not want, or name omissions."
   }
 }

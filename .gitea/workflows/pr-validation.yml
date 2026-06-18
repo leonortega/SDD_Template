@@ -6,6 +6,14 @@ on:
       - main
       - dev
     paths:
+      - .editorconfig
+      - Directory.Build.props
+      - Directory.Build.targets
+      - Directory.Packages.props
+      - global.json
+      - NuGet.config
+      - SDDTemplate.slnx
+      - dotnet-tools.json
       - src/**
       - tests/**
 

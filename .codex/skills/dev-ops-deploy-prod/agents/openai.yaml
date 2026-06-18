@@ -1,0 +1,4 @@
+interface:
+  display_name: "Deploy to PROD"
+  short_description: "Promote QA-approved releases to PROD"
+  default_prompt: "Use $dev-ops-deploy-prod to promote a QA-approved artifact to PROD with release verification."

@@ -71,7 +71,7 @@ Rollback restores PROD to a previously verified Nexus artifact. Rollback does no
 
 - Type: Fact
 - Status: Active
-- Source: `.codex/skills/_shared/delivery-contract.md`, `.codex/skills/hotfix-prod/`
+- Source: `.codex/skills/_shared/delivery-contract.md`, `.codex/skills/dev-ops-hotfix-prod/`
 - Last verified: 2026-05-29
 
 Production hotfixes should remain expedited but gated. They still require ticket/incident context, branch and PR handling, review, immutable artifact deployment, QA evidence, and explicit PROD promotion.
