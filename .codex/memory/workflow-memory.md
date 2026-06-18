@@ -38,7 +38,7 @@ Plane Todo
 
 - Type: Fact
 - Status: Active
-- Source: `.codex/delivery-policy.json`
+- Source: `.codex/project-profile.json`
 - Last verified: 2026-05-29
 
 Ticket keys must match:

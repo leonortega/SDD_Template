@@ -1,6 +1,6 @@
 ---
 name: post-merge-deploy
-description: Coordinate the post-merge transition from a Gitea PR merged to dev into QA deployment by validating PR labels, resolving the merge commit, waiting for Nexus artifact metadata, and delegating promotion to deploy-to-qa. Use after a PR merges or when Codex is asked to trigger or continue QA deployment for merged work.
+description: Coordinate the post-merge transition from a merged pull request into QA deployment by validating review labels, resolving the merge commit, waiting for artifact metadata, and delegating promotion to deploy-to-qa through selected project-profile adapters. Use after a PR merges or when Codex is asked to trigger or continue QA deployment for merged work.
 ---
 
 # Post Merge Deploy
@@ -13,7 +13,7 @@ Do not perform DEV/QA validation inside this skill. `deploy-to-qa` owns artifact
 
 ## Shared Context
 
-Before running, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` helpers: `ValidateTicketLock` for `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, and `ArtifactPaths`.
+Before running, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Load selected repository/review, artifact, deployment, and ticket adapters. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` helpers: `ValidateTicketLock` for `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, and `ArtifactPaths`.
 
 ## Workflow Telemetry
 

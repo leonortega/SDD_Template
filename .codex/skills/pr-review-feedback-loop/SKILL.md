@@ -1,13 +1,13 @@
 ---
 name: pr-review-feedback-loop
-description: Process AI review findings and later human PR comments for an active ticket PR by creating OpenSpec feedback tasks, recording Plane feedback batches, applying fixes, validating, pushing, and rerunning AI review before handoff.
+description: Process AI review findings and later human PR comments for an active ticket pull request through selected ticket and review adapters by creating OpenSpec feedback tasks, recording feedback batches, applying fixes, validating, pushing, and rerunning AI review before handoff.
 ---
 
 # PR Review Feedback Loop
 
 ## Overview
 
-Use this repo-owned delivery skill after a Gitea PR exists for an active Plane ticket. It owns the reconnectable PR feedback loop that must not live in external `openspec-*` skills.
+Use this repo-owned delivery skill after a pull request exists for an active ticket. It owns the reconnectable PR feedback loop that must not live in external `openspec-*` skills.
 
 The loop has two timed phases:
 
@@ -16,7 +16,7 @@ The loop has two timed phases:
 
 ## Shared Context
 
-Before reading or mutating review feedback, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md`, with `docs/development.md` as the stage-specific doc.
+Before reading or mutating review feedback, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/development.md` as the stage-specific doc. Load selected ticket, repository, and review adapters.
 
 Read `.codex/delivery-context.local.json` when present and verify the resolved ticket, branch, PR, and current head SHA match the locked ticket context before mutation.
 

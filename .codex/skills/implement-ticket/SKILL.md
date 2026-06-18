@@ -1,6 +1,6 @@
 ---
 name: implement-ticket
-description: Implement an already-started Plane ticket through OpenSpec tasks, configured quality and coverage gates, Gitea PR handoff, review-agent fixes, and Plane review-state update. Use when a Plane ticket already has an implementation branch and OpenSpec change, or when Codex is asked to continue, finish, validate, or hand off ticket implementation work.
+description: Implement an already-started configured ticket through OpenSpec tasks, project-profile quality gates, repository/review adapter handoff, review-agent fixes, and ticket adapter review-state update. Use when a ticket already has an implementation branch and OpenSpec change, or when Codex is asked to continue, finish, validate, or hand off ticket implementation work.
 ---
 
 # Implement Ticket
@@ -11,7 +11,7 @@ Use this skill after `plane-start-ticket` has created or reused the implementati
 
 ## Shared Context
 
-Before implementation, handoff, or review work, follow `.codex/skills/_shared/skill-startup.md` with `docs/development.md` as the stage-specific doc.
+Before implementation, handoff, or review work, follow `.codex/skills/_shared/skill-startup.md` with `docs/development.md` as the stage-specific doc. Read `.codex/project-profile.json`, then load the selected ticket, repository/review, stack, and E2E adapters only when the current step needs them.
 
 ## Workflow Telemetry
 
@@ -19,7 +19,7 @@ Capture UTC start time after resolving the ticket key and before implementation 
 
 ## Configuration
 
-Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.example.json` only for defaults and setup guidance.
+Read `.codex/project-profile.json` first for stack, provider, branch, ticket-key, and quality-gate policy. Read `.codex/client-tools.local.json` only for selected adapter runtime values. Fall back to `.codex/client-tools.example.json` only for defaults and setup guidance.
 
 Read coverage config from `.codex/quality.local.json` when present. If it is missing, invalid, or missing `coverage.minimumPercent`, use `80` and report the configuration gap. The safe tracked template is `.codex/quality.example.json`.
 

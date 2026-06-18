@@ -1,21 +1,21 @@
 ---
 name: pipeline-status
-description: Produce a read-only operator dashboard for Plane tickets, Gitea PRs, Nexus artifacts, QA evidence, tags, DEV/QA/PROD release state, and blockers. Use when the user asks where a ticket or release stands, what is deployed, what is blocked, or which workflow step should run next.
+description: Produce a read-only operator dashboard for configured tickets, pull requests, artifacts, QA evidence, tags, environments, release state, and blockers through selected project-profile adapters. Use when the user asks where a ticket or release stands, what is deployed, what is blocked, or which workflow step should run next.
 ---
 
 # Pipeline Status
 
 ## Overview
 
-Use this skill for read-only delivery visibility. It must not mutate Plane, Git, Gitea, Nexus, Azure, or local repo files.
+Use this skill for read-only delivery visibility. It must not mutate ticket, repository, review, artifact, deployment, observability, or local repo state.
 
 ## Shared Context
 
-Before reporting, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md`, with `docs/architecture.md` as the stage-specific doc. This remains a read-only skill; do not update memory unless the user explicitly asks for a workflow-memory correction.
+Before reporting, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/architecture.md` as the stage-specific doc. Load only adapters needed for read-only status. This remains a read-only skill; do not update memory unless the user explicitly asks for a workflow-memory correction.
 
 ## Configuration
 
-Read `.codex/client-tools.local.json` first. Use available Plane, Gitea, Nexus, and monitoring settings. If a system is unconfigured or unreachable, record it as unavailable instead of failing the whole status.
+Read `.codex/project-profile.json` first. Use available selected adapter runtime settings from `.codex/client-tools.local.json`. If a system is unconfigured or unreachable, record it as unavailable instead of failing the whole status.
 
 ## Workflow
 

@@ -81,9 +81,9 @@ jobs:
           $changed_files
           EOF
 
-          ticket_key_pattern="$(sed -nE 's/.*"ticketKeyPattern"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' .codex/delivery-policy.json | head -n 1)"
+          ticket_key_pattern="$(jq -r '.workflow.ticketKeyPattern // empty' .codex/project-profile.json)"
           if [ -z "$ticket_key_pattern" ]; then
-            echo "Could not read ticketKeyPattern from .codex/delivery-policy.json."
+            echo "Could not read workflow.ticketKeyPattern from .codex/project-profile.json."
             exit 1
           fi
 
@@ -154,7 +154,7 @@ jobs:
           commit_sha="$(cat artifacts/commit.sha)"
           first_artifact_name="$(jq -r '.apps | sort_by(.deployOrder) | .[0].artifactName' infra/deployment/apps.json)"
           first_artifact_checksum="$(cut -d ' ' -f1 "artifacts/packages/$first_artifact_name.sha256")"
-          ticket_key_pattern="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ReadDeliveryPolicy --path .codex/delivery-policy.json)"
+          ticket_key_pattern="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ReadProjectProfile --path .codex/project-profile.json)"
 
           commit_message="$(git log -1 --pretty=%B)"
           plane_ticket_key="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ExtractTicketKey --pattern "$ticket_key_pattern" --message "$commit_message" --fallback manual-dispatch)"
@@ -647,7 +647,7 @@ jobs:
           test -n "$artifact_commit_sha"
           echo "E2E_ARTIFACT_COMMIT_SHA=$artifact_commit_sha" >> "$GITHUB_ENV"
 
-          ticket_key_pattern="$(sed -nE 's/.*"ticketKeyPattern"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' .codex/delivery-policy.json | head -n 1)"
+          ticket_key_pattern="$(jq -r '.workflow.ticketKeyPattern // empty' .codex/project-profile.json)"
           branch_name="${GITHUB_REF#refs/heads/}"
           plane_ticket_key="$(printf '%s\n' "$branch_name" | sed -nE "s#^qa/($ticket_key_pattern)(/.*)?\$#\1#p" | head -n 1)"
           test -n "$plane_ticket_key"

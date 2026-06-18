@@ -316,3 +316,21 @@ When `az webapp deploy` reports `RuntimeSuccessful` but the immediate page, CORS
 - Last verified: 2026-06-17
 
 Docker MCP Toolkit cannot be enabled through plain Docker CLI when `docker mcp` is unavailable. On this workstation, `docker --version` reports Rancher Desktop `29.1.4-rd`, and `docker mcp` falls back to generic Docker help with no MCP subcommand. Treat Docker MCP Toolkit as blocked until Docker Desktop or another Docker distribution exposes the official Docker MCP catalog/toolkit commands. Do not add a broken Codex MCP entry that calls `docker mcp ...`; keep the recommendation status as blocked and report one Codex restart only for MCPs that were actually configured.
+
+## Parallel Dotnet Gates Can Lock Build Outputs
+
+- Type: Pattern
+- Status: Active
+- Source: current project-profile generalization validation, parallel `dotnet build`, `dotnet test`, and `dotnet format` run
+- Last verified: 2026-06-18
+
+Do not run repo-wide `dotnet build`, `dotnet test`, and `dotnet format` concurrently in this repository on Windows. Parallel execution can leave MSBuild/VSTest processes holding `obj/**` or `bin/**` assemblies, causing `CS2012` file-lock failures such as `Cannot open ... for writing` and sometimes implicating Microsoft Defender. Run .NET quality gates sequentially. If a run is interrupted or times out, inspect live `dotnet.exe` command lines, stop only stale `vstest.console.dll` test runners, then run `dotnet build-server shutdown` before retrying.
+
+## Package Updates Need Release Deps Refresh Before Trivy
+
+- Type: Pattern
+- Status: Active
+- Source: package update validation, `dotnet list .\SDDTemplate.slnx package --vulnerable --include-transitive`, `trivy fs --scanners vuln,secret --exit-code 1 --severity HIGH,CRITICAL .`, `dotnet build .\SDDTemplate.slnx -c Release --no-restore`
+- Last verified: 2026-06-18
+
+After NuGet package updates, `dotnet list package --vulnerable --include-transitive` can be clean while Trivy still reports vulnerabilities from stale generated `bin/Release/**/*.deps.json` files. Rebuild Release with `dotnet build .\SDDTemplate.slnx -c Release --no-restore` before rerunning Trivy, or clean ignored build outputs if a full rebuild is not needed. Do not treat stale Release deps findings as unresolved package graph drift until the generated deps files are refreshed.

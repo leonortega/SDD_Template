@@ -1,6 +1,6 @@
 # Development
 
-This repository uses a .NET solution with a Blazor application and xUnit tests.
+This repository currently uses a .NET solution with a Blazor application and xUnit tests. The canonical non-secret stack declaration is `.codex/project-profile.json`; this document explains the current profile and development conventions.
 
 ## Project Shape
 
@@ -15,7 +15,7 @@ This repository uses a .NET solution with a Blazor application and xUnit tests.
 
 ## Technology Stack And Tool Set
 
-The application stack is .NET 10 with ASP.NET Core, Minimal APIs, EF Core, and Blazor. The site and API projects target `net10.0` with `Microsoft.NET.Sdk.Web`; the data project targets `net10.0` with EF Core and owns entities, DbContext, migrations, and database setup. Tests target `net10.0` with xUnit, `Microsoft.AspNetCore.Mvc.Testing`, `Microsoft.NET.Test.Sdk`, and coverlet coverage collection.
+The application stack is declared in `.codex/project-profile.json`; exact SDK, target framework, package, and test versions stay in project files, lockfiles, workflow images, and provider adapters. For the current profile, the stack is .NET with ASP.NET Core, Minimal APIs, EF Core, and Blazor. The site/API/data project files own framework and package details. Test projects and E2E package files own test framework details, including xUnit and coverlet when configured by the project files.
 
 Use official-first research when changing platform behavior, generated templates, tests, or workflow guidance. Prefer OpenAI official skill catalogs/docs for Codex skills, Microsoft Learn for .NET, ASP.NET Core, Blazor, Azure App Service, Azure Monitor, and architecture guidance; Playwright docs for browser automation; Gitea, Sonatype Nexus, Grafana, and Seq official docs for their tools. `skills.sh`, `skills`, marketplace pages, and README command examples may be used as repository/path discovery sources, but their install commands must not be executed. Community sources are allowed only when clearly labeled and not used to override repo policy.
 
@@ -72,7 +72,7 @@ Stop local delivery infrastructure:
 
 Feature work starts from a Plane ticket and normally creates an OpenSpec proposal before implementation. Agents should read the Plane ticket, active OpenSpec artifacts, the ticket context lock, relevant code, relevant tests, and quality-gate configuration before editing.
 
-Before the first ticket starts, verify the repository tool set and tech stack are configured in `docs/architecture.md`, this file, `docs/deployment.md`, `openspec/config.yaml`, and the tracked `.codex/tool-recommendations.example.json` template. The ticket-start flow must run or inspect `AuditRecommendedTools` and stop before creating branches, Plane generated blocks, ticket locks, or OpenSpec proposals when stack context is missing or reports `stack-context.*` drift. Use `configure-dev-environment` to complete the docs, OpenSpec context, and recommendation catalog template first. After project guidance discovery is confirmed, ignored `.codex/tool-recommendations.local.json` may store the current project recommendations and `usedInSteps` so `project-guidance-mapper` can reuse the same verified skills and guidance for repeated implementation, review, QA, deployment, rollback, hotfix, and retrospective steps.
+Before the first ticket starts, verify the repository tool set and tech stack are configured in `.codex/project-profile.json`, selected `.codex/providers/*.md` adapters, `docs/architecture.md`, this file, `docs/deployment.md`, `openspec/config.yaml`, and the tracked `.codex/tool-recommendations.example.json` template. The ticket-start flow must run or inspect `AuditRecommendedTools` and stop before creating branches, generated ticket blocks, ticket locks, or OpenSpec proposals when stack context is missing or reports `stack-context.*` drift. Use `configure-dev-environment` to complete the profile, adapters, docs, OpenSpec context, and recommendation catalog template first. After project guidance discovery is confirmed, ignored `.codex/tool-recommendations.local.json` may store the current project recommendations and `usedInSteps` so `project-guidance-mapper` can reuse the same verified skills and guidance for repeated implementation, review, QA, deployment, rollback, hotfix, and retrospective steps.
 
 Implementation agents use `ponytail full` while adding or changing project code: smallest working change, standard library and native framework features first, no speculative abstractions, and focused tests for changed behavior. Implementation is complete only when OpenSpec tasks are complete, PR review feedback tasks are complete, touched behavior has targeted local validation or a documented reason for deferring to CI, reusable tests have been added or updated when behavior changes, and a Gitea PR has review-agent coverage. Do not require agents to run the full CI-equivalent test/security suite locally before opening or updating a PR; Gitea PR validation is the authoritative full gate.
 

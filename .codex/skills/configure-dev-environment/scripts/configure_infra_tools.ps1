@@ -1,5 +1,5 @@
 param(
-  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetPlaneEnv", "SetMonitoringEnv", "SetGiteaRunner", "SetSeqAzureEventHubLogs", "SplitInfraEnv", "AuditQualityGates", "AuditRecommendedTools", "DiscoverProjectGuidance", "AcquireProjectGuidance", "SetRecommendedTools", "MapProjectGuidanceStep", "BuildGiteaActionsImages", "ValidateGiteaActionsRunner", "InitQualityGateTemplates", "SetQualityConfig", "SyncWorktreeLocalConfig", "EnsureDeliveryContext")]
+  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetPlaneEnv", "SetMonitoringEnv", "SetGiteaRunner", "SetSeqAzureEventHubLogs", "SplitInfraEnv", "AuditQualityGates", "AuditRecommendedTools", "DiscoverProjectGuidance", "AcquireProjectGuidance", "SetRecommendedTools", "MapProjectGuidanceStep", "BuildGiteaActionsImages", "ValidateGiteaActionsRunner", "InitProjectProfile", "InitQualityGateTemplates", "SetQualityConfig", "SyncWorktreeLocalConfig", "EnsureDeliveryContext")]
   [string]$Mode = "Audit",
 
   [string]$Root = (Resolve-Path ".").Path,
@@ -853,7 +853,7 @@ function Add-QualityGateAuditFindings {
   if (-not (Test-Path (Join-RootPath $releaseWorkflow))) {
     Add-Item $Result "findings" $releaseWorkflow "" "Missing package/deploy workflow for Nexus artifact publication and Azure promotion." "warning"
   } else {
-    foreach ($expected in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "az webapp deploy", "az webapp config appsettings set", "az webapp config appsettings list", "classify-changes", "app_changed", "deploy_allowed", ".codex/delivery-policy.json", "ticketKeyPattern", "BASH_REMATCH", "refs/heads/dev", "refs/heads/main", "qa/**", "deploy-qa", "e2e-qa", "deploy-prod", "artifact_commit_sha", "PROD_ARTIFACT_COMMIT_SHA", "release_version", "source_rc_version", "release.json", "CreateReleaseManifest", "ValidateReleaseManifest", "BuildDeploymentConfig", "infra/deployment/apps.json", "infra/deployment/configuration.json", "deployable-apps.json", "deployment-config.json", "app/qa-approved/latest.json", "const apiBaseUrl", "Access-Control-Allow-Origin", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_SITE_APP_NAME", "AZURE_QA_SITE_APP_URL", "AZURE_QA_API_APP_NAME", "AZURE_QA_API_APP_URL", "E2E_SITE_URL", "E2E_API_URL", "E2E_ARTIFACT_COMMIT_SHA", "qa-targets.json", "qa-e2e-evidence.zip", "AZURE_PROD_RESOURCE_GROUP", "AZURE_PROD_SITE_APP_NAME", "AZURE_PROD_SITE_APP_URL", "AZURE_PROD_API_APP_NAME", "AZURE_PROD_API_APP_URL", "healthPath", '${app_url}${health_path}')) {
+    foreach ($expected in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "az webapp deploy", "az webapp config appsettings set", "az webapp config appsettings list", "classify-changes", "app_changed", "deploy_allowed", ".codex/project-profile.json", "workflow.ticketKeyPattern", "BASH_REMATCH", "refs/heads/dev", "refs/heads/main", "qa/**", "deploy-qa", "e2e-qa", "deploy-prod", "artifact_commit_sha", "PROD_ARTIFACT_COMMIT_SHA", "release_version", "source_rc_version", "release.json", "CreateReleaseManifest", "ValidateReleaseManifest", "BuildDeploymentConfig", "infra/deployment/apps.json", "infra/deployment/configuration.json", "deployable-apps.json", "deployment-config.json", "app/qa-approved/latest.json", "const apiBaseUrl", "Access-Control-Allow-Origin", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_SITE_APP_NAME", "AZURE_QA_SITE_APP_URL", "AZURE_QA_API_APP_NAME", "AZURE_QA_API_APP_URL", "E2E_SITE_URL", "E2E_API_URL", "E2E_ARTIFACT_COMMIT_SHA", "qa-targets.json", "qa-e2e-evidence.zip", "AZURE_PROD_RESOURCE_GROUP", "AZURE_PROD_SITE_APP_NAME", "AZURE_PROD_SITE_APP_URL", "AZURE_PROD_API_APP_NAME", "AZURE_PROD_API_APP_URL", "healthPath", '${app_url}${health_path}')) {
       if (-not (Test-FileContains $releaseWorkflow ([regex]::Escape($expected)))) {
         Add-Item $Result "findings" $releaseWorkflow $expected "Package/deploy workflow does not mention $expected." "warning"
       }
@@ -880,11 +880,52 @@ function Add-QualityGateAuditFindings {
     }
   }
 
+  $projectProfile = ".codex/project-profile.json"
+  $projectProfileSchema = ".codex/project-profile.schema.json"
+  if (-not (Test-Path (Join-RootPath $projectProfile))) {
+    Add-Item $Result "findings" $projectProfile "InitProjectProfile" "Missing project profile; run InitProjectProfile before provider, quality, CI, deployment, or ticket setup." "error" "pre-start"
+  } else {
+    if (-not (Test-FileContains $projectProfile '"ticketKeyPattern"\s*:')) {
+      Add-Item $Result "findings" $projectProfile "workflow.ticketKeyPattern" "Project profile must define workflow.ticketKeyPattern for deployment gating." "error" "pre-start"
+    }
+    try {
+      $profile = Get-Content -Path (Join-RootPath $projectProfile) -Raw | ConvertFrom-Json
+      if ($null -eq $profile.adapters) {
+        Add-Item $Result "findings" $projectProfile "adapters" "Project profile must define adapter paths before provider setup." "error" "pre-start"
+      } else {
+        foreach ($adapter in $profile.adapters.PSObject.Properties) {
+          $adapterPath = [string]$adapter.Value
+          if ([string]::IsNullOrWhiteSpace($adapterPath)) {
+            Add-Item $Result "findings" $projectProfile "adapters.$($adapter.Name)" "Project profile adapter path is empty." "error" "pre-start"
+            continue
+          }
+          if ([System.IO.Path]::IsPathRooted($adapterPath)) {
+            Add-Item $Result "findings" $projectProfile "adapters.$($adapter.Name)" "Project profile adapter path must be repo-relative: $adapterPath." "error" "pre-start"
+            continue
+          }
+
+          $resolvedRoot = [System.IO.Path]::GetFullPath($Root).TrimEnd("\", "/") + [System.IO.Path]::DirectorySeparatorChar
+          $resolvedAdapter = [System.IO.Path]::GetFullPath((Join-Path $Root $adapterPath))
+          if (-not $resolvedAdapter.StartsWith($resolvedRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+            Add-Item $Result "findings" $projectProfile "adapters.$($adapter.Name)" "Project profile adapter path resolves outside the repository: $adapterPath." "error" "pre-start"
+            continue
+          }
+          if (-not (Test-Path -LiteralPath $resolvedAdapter)) {
+            Add-Item $Result "findings" $adapterPath "adapters.$($adapter.Name)" "Configured adapter file is missing; run InitProjectProfile or the selected provider configure skill before provider mutation." "error" "pre-start"
+          }
+        }
+      }
+    } catch {
+      Add-Item $Result "findings" $projectProfile "json" "Could not parse project profile: $($_.Exception.Message)" "error" "pre-start"
+    }
+  }
+  if (-not (Test-Path (Join-RootPath $projectProfileSchema))) {
+    Add-Item $Result "findings" $projectProfileSchema "InitProjectProfile" "Missing project profile schema; run InitProjectProfile before setup continues." "error" "pre-start"
+  }
+
   $deliveryPolicy = ".codex/delivery-policy.json"
   if (-not (Test-Path (Join-RootPath $deliveryPolicy))) {
-    Add-Item $Result "findings" $deliveryPolicy "ticketKeyPattern" "Missing delivery policy used by commit hooks and deployment gating." "warning"
-  } elseif (-not (Test-FileContains $deliveryPolicy '"ticketKeyPattern"\s*:')) {
-    Add-Item $Result "findings" $deliveryPolicy "ticketKeyPattern" "Delivery policy must define ticketKeyPattern for deployment gating." "warning"
+    Add-Item $Result "findings" $deliveryPolicy "agentOptimization" "Missing delivery policy used for agent optimization defaults." "warning"
   } else {
     foreach ($expectedPolicyKey in @(
       '"agentOptimization"\s*:',
@@ -2700,7 +2741,8 @@ function Write-TemplateFile {
   param(
     $Result,
     [string]$RelativePath,
-    [string]$Content
+    [string]$Content,
+    [string]$ActionMessage = "Create template."
   )
 
   $target = Join-RootPath $RelativePath
@@ -2710,11 +2752,280 @@ function Write-TemplateFile {
   }
 
   $parent = Split-Path -Path $target -Parent
-  Add-Item $Result "actions" $RelativePath "" "Create quality gate template."
+  Add-Item $Result "actions" $RelativePath "" $ActionMessage
   if (-not $DryRun) {
     New-Item -ItemType Directory -Path $parent -Force | Out-Null
     Set-Content -Path $target -Value $Content -Encoding UTF8
   }
+}
+
+function Write-ProviderAdapterExample {
+  param(
+    $Result,
+    [string]$RelativePath,
+    [string]$AdapterType,
+    [string]$Operations
+  )
+
+  Write-TemplateFile $Result $RelativePath @"
+# $AdapterType Provider Adapter Example
+
+This adapter is a provider-neutral scaffold. Replace this file with a selected provider adapter for a concrete project, or copy it to a provider-specific adapter path and fill in project-specific behavior.
+
+## Operations
+
+$Operations
+
+## Configuration Boundary
+
+- Keep credentials, tokens, endpoint secrets, and local-only values in ignored local config.
+- Keep exact executable commands, image tags, SDK versions, and provider field names in provider-specific adapters or executable workflow files.
+- Generic delivery skills call the operation names; this adapter translates them to the selected provider.
+"@
+}
+
+function Invoke-InitProjectProfile {
+  $result = New-Result
+
+  Write-TemplateFile $result ".codex/project-profile.schema.json" @'
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Codex Project Profile",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "stack",
+    "providers",
+    "workflow",
+    "quality",
+    "adapters"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "stack": {
+      "type": "object",
+      "required": [
+        "languages",
+        "frameworks",
+        "testFrameworks"
+      ],
+      "properties": {
+        "languages": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "frameworks": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "testFrameworks": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "providers": {
+      "type": "object",
+      "required": [
+        "ticket",
+        "repository",
+        "review",
+        "artifact",
+        "deployment",
+        "observability"
+      ],
+      "properties": {
+        "ticket": { "$ref": "#/$defs/providerRef" },
+        "repository": { "$ref": "#/$defs/providerRef" },
+        "review": { "$ref": "#/$defs/providerRef" },
+        "artifact": { "$ref": "#/$defs/providerRef" },
+        "deployment": { "$ref": "#/$defs/providerRef" },
+        "observability": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/providerRef" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "workflow": {
+      "type": "object",
+      "required": [
+        "ticketKeyPattern",
+        "baseBranch",
+        "branchPrefix",
+        "branchPattern",
+        "environments",
+        "releasePolicy"
+      ],
+      "properties": {
+        "ticketKeyPattern": { "type": "string", "minLength": 1 },
+        "baseBranch": { "type": "string", "minLength": 1 },
+        "branchPrefix": { "type": "string", "minLength": 1 },
+        "branchPattern": { "type": "string", "minLength": 1 },
+        "environments": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "releasePolicy": {
+          "type": "object",
+          "required": [
+            "buildOncePromoteSameArtifact",
+            "explicitProductionPromotion"
+          ],
+          "properties": {
+            "buildOncePromoteSameArtifact": { "type": "boolean" },
+            "explicitProductionPromotion": { "type": "boolean" }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "quality": {
+      "type": "object",
+      "required": [
+        "gates"
+      ],
+      "properties": {
+        "gates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [ "id", "type" ],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "type": { "type": "string", "minLength": 1 },
+              "command": { "type": "string" },
+              "workflowJob": { "type": "string" },
+              "required": { "type": "boolean" }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "adapters": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "providerRef": {
+      "type": "object",
+      "required": [ "id" ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "adapter": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    }
+  }
+}
+'@
+
+  Write-ProviderAdapterExample $result ".codex/providers/ticket.example.md" "Ticket" "- `list`: list candidate work items.
+- `read`: read one work item and acceptance criteria.
+- `enrich`: update planning or delivery metadata.
+- `move-state`: transition workflow state.
+- `comment`: add durable workflow evidence.
+- `verify-marker`: confirm a generated marker exists."
+
+  Write-ProviderAdapterExample $result ".codex/providers/repo.example.md" "Repository And Review" "- `branch`: create or inspect a branch.
+- `push`: publish branch changes.
+- `pull-request`: create or update a review request.
+- `status`: read validation state.
+- `label`: add or remove review labels.
+- `comment`: add review evidence.
+- `request-reviewers`: request human review."
+
+  Write-ProviderAdapterExample $result ".codex/providers/artifact.example.md" "Artifact" "- `publish`: store immutable build output.
+- `retrieve`: download an existing artifact.
+- `verify`: check checksum and manifest integrity.
+- `promote-alias`: move an environment or release alias to an existing artifact.
+- `publish-evidence`: store QA or release evidence."
+
+  Write-ProviderAdapterExample $result ".codex/providers/deploy.example.md" "Deployment" "- `deploy-artifact`: deploy an immutable artifact to an environment.
+- `apply-config`: apply environment configuration.
+- `verify-config`: compare required runtime settings.
+- `health`: run health or smoke checks.
+- `record`: capture deployment evidence."
+
+  Write-ProviderAdapterExample $result ".codex/providers/stack.example.md" "Stack" "- `restore`: restore dependencies.
+- `format`: check formatting or linting.
+- `build`: compile or package source.
+- `test`: run configured tests.
+- `coverage`: read coverage evidence.
+- `dependency-scan`: run configured dependency checks."
+
+  Write-ProviderAdapterExample $result ".codex/providers/e2e.example.md" "E2E" "- `discover-targets`: resolve deployed QA targets.
+- `run`: execute acceptance checks.
+- `diagnose`: classify failed evidence.
+- `publish-evidence`: store screenshots, traces, logs, or reports."
+
+  Write-TemplateFile $result ".codex/project-profile.json" @'
+{
+  "$schema": "./project-profile.schema.json",
+  "schemaVersion": 1,
+  "stack": {
+    "languages": [],
+    "frameworks": [],
+    "testFrameworks": []
+  },
+  "providers": {
+    "ticket": { "id": "example-ticket", "adapter": ".codex/providers/ticket.example.md" },
+    "repository": { "id": "example-repository", "adapter": ".codex/providers/repo.example.md" },
+    "review": { "id": "example-review", "adapter": ".codex/providers/repo.example.md" },
+    "artifact": { "id": "example-artifact", "adapter": ".codex/providers/artifact.example.md" },
+    "deployment": { "id": "example-deployment", "adapter": ".codex/providers/deploy.example.md" },
+    "observability": []
+  },
+  "workflow": {
+    "ticketKeyPattern": "TICKET-[0-9]+",
+    "baseBranch": "main",
+    "branchPrefix": "codex",
+    "branchPattern": "{prefix}/{ticketKeySlug}-{titleSlug}",
+    "environments": [ "dev", "qa", "prod" ],
+    "releasePolicy": {
+      "buildOncePromoteSameArtifact": true,
+      "explicitProductionPromotion": true
+    }
+  },
+  "quality": {
+    "coverageMinimumPercent": 80,
+    "gates": [
+      { "id": "restore", "type": "build-prep", "required": true },
+      { "id": "format", "type": "format", "required": true },
+      { "id": "build", "type": "build", "required": true },
+      { "id": "tests", "type": "test", "required": true },
+      { "id": "dependency-scan", "type": "security", "required": true }
+    ]
+  },
+  "adapters": {
+    "ticket": ".codex/providers/ticket.example.md",
+    "repository": ".codex/providers/repo.example.md",
+    "review": ".codex/providers/repo.example.md",
+    "artifact": ".codex/providers/artifact.example.md",
+    "deployment": ".codex/providers/deploy.example.md",
+    "stack": ".codex/providers/stack.example.md",
+    "e2e": ".codex/providers/e2e.example.md"
+  }
+}
+'@
+
+  return $result
 }
 
 function Invoke-InitQualityGateTemplates {
@@ -2915,7 +3226,6 @@ $RECYCLE.BIN/
 
   Write-TemplateFile $result ".codex/delivery-policy.json" @'
 {
-  "ticketKeyPattern": "E2EPROJECT-[0-9]+",
   "agentOptimization": {
     "maxAutonomousIterations": 20,
     "maxToolRetries": 2,
@@ -2974,10 +3284,17 @@ $ErrorActionPreference = "Stop"
 
 $message = Get-Content -Path $MessagePath -Raw
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+$profilePath = Join-Path $repoRoot ".codex/project-profile.json"
 $policyPath = Join-Path $repoRoot ".codex/delivery-policy.json"
 $ticketKeyPattern = "E2EPROJECT-[0-9]+"
 
-if (Test-Path -LiteralPath $policyPath) {
+if (Test-Path -LiteralPath $profilePath) {
+  $profile = Get-Content -LiteralPath $profilePath -Raw | ConvertFrom-Json
+  if ($profile.workflow.ticketKeyPattern) {
+    $ticketKeyPattern = [string]$profile.workflow.ticketKeyPattern
+  }
+}
+elseif (Test-Path -LiteralPath $policyPath) {
   $policy = Get-Content -LiteralPath $policyPath -Raw | ConvertFrom-Json
   if ($policy.ticketKeyPattern) {
     $ticketKeyPattern = [string]$policy.ticketKeyPattern
@@ -3202,9 +3519,9 @@ jobs:
           $changed_files
           EOF
 
-          ticket_key_pattern="$(sed -nE 's/.*"ticketKeyPattern"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' .codex/delivery-policy.json | head -n 1)"
+          ticket_key_pattern="$(jq -r '.workflow.ticketKeyPattern // empty' .codex/project-profile.json)"
           if [ -z "$ticket_key_pattern" ]; then
-            echo "Could not read ticketKeyPattern from .codex/delivery-policy.json."
+            echo "Could not read workflow.ticketKeyPattern from .codex/project-profile.json."
             exit 1
           fi
 
@@ -3275,7 +3592,7 @@ jobs:
           commit_sha="$(cat artifacts/commit.sha)"
           first_artifact_name="$(jq -r '.apps | sort_by(.deployOrder) | .[0].artifactName' infra/deployment/apps.json)"
           first_artifact_checksum="$(cut -d ' ' -f1 "artifacts/packages/$first_artifact_name.sha256")"
-          ticket_key_pattern="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ReadDeliveryPolicy --path .codex/delivery-policy.json)"
+          ticket_key_pattern="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ReadProjectProfile --path .codex/project-profile.json)"
 
           commit_message="$(git log -1 --pretty=%B)"
           plane_ticket_key="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ExtractTicketKey --pattern "$ticket_key_pattern" --message "$commit_message" --fallback manual-dispatch)"
@@ -3768,7 +4085,7 @@ jobs:
           test -n "$artifact_commit_sha"
           echo "E2E_ARTIFACT_COMMIT_SHA=$artifact_commit_sha" >> "$GITHUB_ENV"
 
-          ticket_key_pattern="$(sed -nE 's/.*"ticketKeyPattern"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' .codex/delivery-policy.json | head -n 1)"
+          ticket_key_pattern="$(jq -r '.workflow.ticketKeyPattern // empty' .codex/project-profile.json)"
           branch_name="${GITHUB_REF#refs/heads/}"
           plane_ticket_key="$(printf '%s\n' "$branch_name" | sed -nE "s#^qa/($ticket_key_pattern)(/.*)?\$#\1#p" | head -n 1)"
           test -n "$plane_ticket_key"
@@ -4089,7 +4406,7 @@ Required repository secrets:
 - `AZURE_PROD_API_APP_NAME`
 - `AZURE_PROD_API_APP_URL`
 
-Push-triggered deployments are ticket-gated by `.codex/delivery-policy.json`. Only commits or merged PR titles that start with the configured ticket key pattern may deploy, and automatic CI/deployment work is skipped when the change does not touch `src/**` or `tests/**`.
+Push-triggered deployments are ticket-gated by `.codex/project-profile.json` `workflow.ticketKeyPattern`. Only commits or merged PR titles that start with the configured ticket key pattern may deploy, and automatic CI/deployment work is skipped when the change does not touch `src/**` or `tests/**`.
 
 DEV and QA deploy only from `dev` when application/test/package source changed. PROD deploys only from `main` when `main` points to the exact QA-approved packaged commit for the same ticket-gated application change. Manual workflow dispatch remains available for explicit DEV/QA/PROD promotion; PROD dispatch must pass an existing `artifact_commit_sha`, `release_version`, and `source_rc_version`. The PROD job downloads the existing Nexus artifact and does not rebuild.
 
@@ -4494,6 +4811,7 @@ switch ($Mode) {
   "AcquireProjectGuidance" { $result = Invoke-AcquireProjectGuidance }
   "ValidateGiteaActionsRunner" { $result = Invoke-ValidateGiteaActionsRunner }
   "InitLocalFiles" { $result = Invoke-InitLocalFiles }
+  "InitProjectProfile" { $result = Invoke-InitProjectProfile }
   "InitQualityGateTemplates" { $result = Invoke-InitQualityGateTemplates }
   "SetClientTools" { $result = Invoke-SetClientTools }
   "SetRecommendedTools" { $result = Invoke-SetRecommendedTools }

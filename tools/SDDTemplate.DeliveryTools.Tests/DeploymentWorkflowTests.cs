@@ -46,7 +46,7 @@ namespace SDDTemplate.DeliveryTools.Tests
         {
             string workflow = ReadWorkflow();
 
-            Assert.Contains("ticketKeyPattern", workflow);
+            Assert.Contains("workflow.ticketKeyPattern", workflow);
             Assert.Contains("BASH_REMATCH", workflow);
             Assert.Contains("deploy_allowed=$deploy_allowed", workflow);
             Assert.Contains("needs.classify-changes.outputs.deploy_allowed == 'true'", workflow);
@@ -306,7 +306,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.DoesNotContain("Directory.Build.targets", classifyJob);
             Assert.DoesNotContain("global.json", classifyJob);
             Assert.Contains("deploy_allowed=false", classifyJob);
-            Assert.Contains("ticketKeyPattern", classifyJob);
+            Assert.Contains("workflow.ticketKeyPattern", classifyJob);
             Assert.Contains("BASH_REMATCH", classifyJob);
             Assert.DoesNotContain("dotnet run", classifyJob);
         }
@@ -869,7 +869,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("requiredSections", script);
             Assert.Contains("requiredTerms", script);
             Assert.Contains("ConvertTo-Json -Depth 10", script);
-            Assert.Contains("if ($FailOnFindings -and $summary.failed -gt 0)", script);
+            Assert.Contains("if ($FailOnFindings -and ($summary.failed -gt 0 -or $profileFindings.Count -gt 0))", script);
         }
 
         [Fact]
@@ -1145,6 +1145,32 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
+        public void ConfigInfraRequiresProjectProfileInitializationBeforeProviderSetup()
+        {
+            string configureRouter = ReadSkill("configure-dev-environment", "SKILL.md");
+            string qualityReference = ReadSkill("configure-dev-environment", Path.Combine("references", "quality-gates.md"));
+            string compatibilityRouter = ReadSkill("configure-infra-tools", "SKILL.md");
+            string readme = File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, "README.md"));
+            string configureScript = ReadConfigureScript();
+
+            Assert.Contains("InitProjectProfile", configureRouter);
+            Assert.Contains("required first-class step for full `config infra`", configureRouter);
+            Assert.Contains("run `InitProjectProfile` first", configureRouter);
+            Assert.Contains("InitProjectProfile -> Audit -> Plane", configureRouter);
+            Assert.Contains("Stop before provider-specific mutation", configureRouter);
+
+            Assert.Contains("InitProjectProfile", qualityReference);
+            Assert.Contains("before full `config infra` quality/provider setup", qualityReference);
+            Assert.Contains("follow its `InitProjectProfile`, audit", compatibilityRouter);
+            Assert.Contains("Full `config infra` runs `InitProjectProfile` first", readme);
+
+            Assert.Contains("\"InitProjectProfile\"", configureScript);
+            Assert.Contains("function Invoke-InitProjectProfile", configureScript);
+            Assert.Contains(".codex/project-profile.schema.json", configureScript);
+            Assert.Contains(".codex/providers/ticket.example.md", configureScript);
+        }
+
+        [Fact]
         public void ProjectGuidanceDiscoveryAcquisitionAndMapperSkillsAreDefined()
         {
             string discover = ReadSkill("project-guidance-discover", "SKILL.md");
@@ -1216,7 +1242,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("project-guidance-mapper", architecture);
 
             Assert.Contains("## Technology Stack And Tool Set", development);
-            Assert.Contains(".NET 10", development);
+            Assert.Contains("current profile", development);
             Assert.Contains("ASP.NET Core", development);
             Assert.Contains("Blazor", development);
             Assert.Contains("xUnit", development);
@@ -1265,10 +1291,10 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("Before the first ticket starts", readme);
             Assert.Contains("routes to `configure-dev-environment`", readme);
             Assert.Contains("Before the first ticket starts", development);
-            Assert.Contains("stop before creating branches, Plane generated blocks, ticket locks, or OpenSpec proposals", development);
+            Assert.Contains("stop before creating branches, generated ticket blocks, ticket locks, or OpenSpec proposals", development);
 
             Assert.Contains("Before starting the first ticket", contract);
-            Assert.Contains("AuditRecommendedTools", contract);
+            Assert.Contains("configured guidance audit", contract);
             Assert.Contains("stack-context.*", contract);
             Assert.Contains("Route the operator to `configure-dev-environment`", contract);
             Assert.Contains("direct SDD maintenance must use `[SDD]`", contract);
@@ -1544,6 +1570,7 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             foreach (string mode in new[]
             {
+                "ReadProjectProfile",
                 "ReadDeliveryPolicy",
                 "ExtractTicketKey",
                 "ReadCoverageThreshold",

@@ -1,6 +1,6 @@
 ---
 name: automatic-implement-ticket
-description: Orchestrate the full Plane ticket delivery lifecycle by inspecting current Plane, Git, Gitea, Nexus, OpenSpec, QA, tag, and PROD state, then delegating to the correct focused skill. Use when Codex is asked to automatically continue, resume, implement, deploy, QA, or hand off a ticket without the user knowing the current workflow step.
+description: Orchestrate the full configured ticket delivery lifecycle by inspecting current ticket, repository, review, artifact, OpenSpec, QA, tag, and production state through the selected project-profile adapters, then delegating to the correct focused skill. Use when Codex is asked to automatically continue, resume, implement, deploy, QA, or hand off a ticket without the user knowing the current workflow step.
 ---
 
 # Automatic Implement Ticket
@@ -13,7 +13,7 @@ PROD promotion remains explicit. Do not invoke `deploy-to-prod` only because QA 
 
 ## Shared Context
 
-Before routing, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md`, with `docs/architecture.md` as the stage-specific doc.
+Before routing, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/architecture.md` as the stage-specific doc. Load only selected adapters needed to inspect the current route.
 
 ## Configuration
 

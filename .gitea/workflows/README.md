@@ -56,7 +56,7 @@ Required repository secrets:
 - `AZURE_PROD_API_APP_NAME`
 - `AZURE_PROD_API_APP_URL`
 
-Push-triggered deployments are ticket-gated by `.codex/delivery-policy.json`. Only commits or merged PR titles that start with the configured ticket key pattern may deploy, and automatic CI/deployment work is skipped when the change does not touch `src/**` or `tests/**`.
+Push-triggered deployments are ticket-gated by `.codex/project-profile.json` `workflow.ticketKeyPattern`. Only commits or merged PR titles that start with the configured ticket key pattern may deploy, and automatic CI/deployment work is skipped when the change does not touch `src/**` or `tests/**`.
 
 DEV and QA deploy only from `dev` when application/test/package source changed. PROD deploys only from `main` when `main` points to the exact QA-approved packaged commit for the same ticket-gated application change. Manual workflow dispatch remains available for explicit DEV/QA/PROD promotion; PROD dispatch must pass an existing `artifact_commit_sha`, `release_version`, and `source_rc_version`. The PROD job downloads the existing Nexus artifact and does not rebuild.
 

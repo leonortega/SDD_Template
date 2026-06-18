@@ -1,6 +1,6 @@
 ---
 name: parallel-ticket-coordinator
-description: Coordinate multiple Plane tickets through role-specialized delivery agents by assigning one Git worktree and one local ticket lock per active ticket while serializing shared deployment lanes.
+description: Coordinate multiple configured tickets through role-specialized delivery agents by assigning one repository worktree and one local ticket lock per active ticket while serializing shared deployment lanes through selected project-profile adapters.
 ---
 
 # Parallel Ticket Coordinator
@@ -15,7 +15,7 @@ The coordinator owns preflight, routing, runtime-state synthesis, deployment lan
 
 ## Shared Context
 
-Before routing, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md`, with `docs/architecture.md` as the stage-specific doc.
+Before routing, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/architecture.md` as the stage-specific doc. Load selected ticket, repository, artifact, deployment, and QA adapters for lane decisions.
 
 ## Configuration
 

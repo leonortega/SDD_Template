@@ -1,6 +1,6 @@
 ---
 name: plane-start-ticket
-description: Start Plane work items from chat by listing Todo tickets, preparing safe Git branches, pushing new branches to Gitea, generating OpenSpec-style planning notes, updating the Plane ticket description, and commenting with the branch. Use when the user asks to start the next Plane ticket, start a specific ticket such as E2EPROJECT-1, list Todo Plane tickets, prepare a ticket branch, or connect Plane ticket work to the local Git/OpenSpec workflow.
+description: Start configured work items from chat by listing Todo tickets, preparing safe repository branches, pushing new branches, generating OpenSpec-style planning notes, updating the ticket description, and commenting with the branch through selected project-profile adapters. Use when the user asks to start the next ticket, start a specific ticket key, list Todo tickets, prepare a ticket branch, or connect ticket work to the local repository/OpenSpec workflow.
 ---
 
 # Plane Start Ticket
@@ -13,7 +13,7 @@ For setup details and branch pattern options, read `references/configuration.md`
 
 ## Shared Context
 
-Before mutating Plane or Git, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md`, with `docs/architecture.md` as the stage-specific doc.
+Before mutating ticket or repository state, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/architecture.md` as the stage-specific doc. Load selected ticket and repository adapters before any mutation.
 
 This skill owns initial creation of ignored `.codex/delivery-context.local.json` and ignored `.codex/agent-telemetry.local.jsonl` for automatic delivery. Never commit those files.
 

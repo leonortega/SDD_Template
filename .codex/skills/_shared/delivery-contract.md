@@ -2,7 +2,9 @@
 
 Use this reference before running non-config delivery skills. Skill-local instructions may add stricter checks, but must not weaken this contract.
 
-For repeated Plane, Gitea, Nexus, and Git endpoint patterns, read `.codex/skills/_shared/api-helpers.md`.
+Generic delivery skills must remain provider-neutral. Read `.codex/project-profile.json` for the selected providers, stack, ticket key pattern, branch policy, environments, quality gates, and adapter paths. Then read `.codex/skills/_shared/provider-adapter-contract.md` and only the selected adapter files needed for the current stage. Concrete provider details belong in `.codex/providers/`, `.codex/client-tools.local.json`, executable workflow files, infrastructure files, or stack-specific skills.
+
+For repeated provider endpoint patterns, read the selected adapter file and `.codex/skills/_shared/api-helpers.md` when the current adapter needs HTTP API mechanics.
 
 For common delivery-skill startup, memory read behavior, and memory update classification, read `.codex/skills/_shared/skill-startup.md`.
 
@@ -15,9 +17,10 @@ When changing any non-OpenSpec delivery skill or any `configure-*` skill, check 
 Source-of-truth order:
 
 1. `_shared/delivery-contract.md`
-2. `docs/context-management.md`, `docs/architecture.md`, `docs/development.md`, and `docs/deployment.md` for durable human-readable context
-3. Non-OpenSpec delivery-flow skills: `parallel-ticket-coordinator`, `automatic-implement-ticket`, `plane-start-ticket`, `implement-ticket`, `pr-review-feedback-loop`, `gitea-pr-review-agent`, `post-merge-deploy`, `deploy-to-qa`, `test-e2e`, `deploy-to-prod`, `rollback-prod`, `file-qa-bug`, `pipeline-status`, and `hotfix-prod`
-4. Configure skills and generated templates: `configure-dev-environment`, `configure-artifact-delivery`, `configure-quality-gates`, and related `configure-*` skills
+2. `.codex/project-profile.json` and selected `.codex/providers/*.md` adapter files for project-specific provider and stack selection
+3. `docs/context-management.md`, `docs/architecture.md`, `docs/development.md`, and `docs/deployment.md` for durable human-readable context
+4. Non-OpenSpec delivery-flow skills: `parallel-ticket-coordinator`, `automatic-implement-ticket`, `plane-start-ticket`, `implement-ticket`, `pr-review-feedback-loop`, `gitea-pr-review-agent`, `post-merge-deploy`, `deploy-to-qa`, `test-e2e`, `deploy-to-prod`, `rollback-prod`, `file-qa-bug`, `pipeline-status`, and `hotfix-prod`
+5. Configure skills and generated templates: `configure-dev-environment`, `configure-artifact-delivery`, `configure-quality-gates`, and related `configure-*` skills
 
 If configure skills differ from delivery-flow skills, update configure docs, templates, audits, and tests to match the delivery-flow rule. Do not update OpenSpec-specific skills unless the requested change explicitly affects OpenSpec behavior.
 
@@ -78,11 +81,11 @@ Delivery flow:
 Plane Todo -> branch/OpenSpec -> implementation -> PR review -> dev -> DEV/QA -> E2E QA -> main -> PROD -> rollback/hotfix when needed
 ```
 
-Before starting the first ticket, and before any Todo ticket is moved into implementation when stack context is missing, verify that the project tool set and tech stack are defined in `docs/architecture.md`, `docs/development.md`, `docs/deployment.md`, and `openspec/config.yaml`. The `plane-start-ticket` path must run or inspect `AuditRecommendedTools` and stop before Git, Plane, or OpenSpec mutation when the audit reports `stack-context.*` drift or the stack/tooling files are missing. Route the operator to `configure-dev-environment` to define the stack context and recommendation catalog first. When project guidance coverage is missing, use `project-guidance-discover` to research extra useful skills, MCPs, plugins, tools, references, practices, standards, and Codex-applicable IDE helpers, show suggested guidance, and ask only for confirmation, dismissals, or omissions. A confirmation must record accepted ids, persist the local catalog, run `project-guidance-acquire`, and install/configure supported confirmed items without a second install prompt. `project-guidance-acquire` may auto-copy safe repo-local, non-secret skills; global, IDE, secret-bearing, privileged, MCP/plugin, or reboot-required installs require explicit confirmation, and the confirmed discovery list satisfies that requirement for listed non-secret items unless the installer introduces new scope, secrets, or different items. Restart and reboot requirements must be aggregated and reported once after all feasible acquisition steps finish; do not reboot automatically. Ignored `.codex/tool-recommendations.local.json` may preserve catalog-shaped discovery state and recommendation-level `usedInSteps` for `project-guidance-mapper`, but it must never override the active ticket, this delivery contract, validation gates, or current repo files.
+Before starting the first ticket, and before any Todo ticket is moved into implementation when stack context is missing, verify that the project tool set and tech stack are defined in `.codex/project-profile.json`, that every selected adapter path exists, and that docs/OpenSpec context points to the profile instead of duplicating canonical provider facts. The ticket-start path must run or inspect the configured guidance audit and stop before repository, ticket, or OpenSpec mutation when the audit reports `stack-context.*` drift or missing profile/adapter files. Route the operator to `configure-dev-environment` to define the project profile and recommendation catalog first. When project guidance coverage is missing, use `project-guidance-discover` to research extra useful skills, MCPs, plugins, tools, references, practices, standards, and Codex-applicable IDE helpers, show suggested guidance, and ask only for confirmation, dismissals, or omissions. A confirmation must record accepted ids, persist the local catalog, run `project-guidance-acquire`, and install/configure supported confirmed items without a second install prompt. `project-guidance-acquire` may auto-copy safe repo-local, non-secret skills; global, IDE, secret-bearing, privileged, MCP/plugin, or reboot-required installs require explicit confirmation, and the confirmed discovery list satisfies that requirement for listed non-secret items unless the installer introduces new scope, secrets, or different items. Restart and reboot requirements must be aggregated and reported once after all feasible acquisition steps finish; do not reboot automatically. Ignored `.codex/tool-recommendations.local.json` may preserve catalog-shaped discovery state and recommendation-level `usedInSteps` for `project-guidance-mapper`, but it must never override the active ticket, this delivery contract, validation gates, or current repo files.
 
 PROD promotion is explicit and release-centric. Do not promote to PROD only because QA passed unless the user asks for PROD promotion or a ticket-named `src/**` or `tests/**` merge to `main` triggers the PROD-only workflow. A PROD release may include one or more Done tickets; the release promotes one QA-approved artifact commit once, then records the PROD result on every included ticket without changing Plane state.
 
-Push-triggered environment deployment is allowed only for ticket-named work that changes `src/**` or `tests/**`. The ticket key pattern is configured in `.codex/delivery-policy.json`. The commit message must start with the configured ticket key format, such as `E2EPROJECT-123: ...`, or be a Gitea merge commit whose PR title starts with that ticket key format. Non-code changes outside `src/**` and `tests/**` do not run automatic CI/deployment work.
+Push-triggered environment deployment is allowed only for ticket-named work that changes configured application or test paths. The ticket key pattern is configured in `.codex/project-profile.json` at `workflow.ticketKeyPattern`. The commit message must start with the configured ticket key format, or be a repository-adapter merge commit whose PR title starts with that ticket key format. Non-code changes outside configured deploy-trigger paths do not run automatic CI/deployment work.
 
 Before committing, classify the change as ticketed work, an OpenSpec maintenance change, or direct SDD repository maintenance. Ticketed work uses the configured ticket prefix such as `E2EPROJECT-123: ...`; OpenSpec maintenance uses the OpenSpec id prefix; direct SDD maintenance must use `[SDD]`, for example `[SDD] Improve project guidance acquisition flow`. Do this before invoking `git commit` so the `require-ticket` hook does not fail on a preventable prefix issue.
 
@@ -396,7 +399,8 @@ Use `.codex/skills/_shared/scripts/delivery_tools.ps1` for deterministic deliver
 - `ArtifactPaths`: derive Nexus artifact paths for `app/{commitSha}`.
 - `CheckGitIgnored`: verify evidence or local runtime paths are ignored before writing generated files.
 - `NextRcVersion`: derive the next RC version from existing Git tags.
-- `ReadDeliveryPolicy`: read `.codex/delivery-policy.json` and return the configured ticket key pattern.
+- `ReadProjectProfile`: read `.codex/project-profile.json` and return configured workflow values such as the ticket key pattern.
+- `ReadDeliveryPolicy`: compatibility wrapper that reads `.codex/project-profile.json` first, then legacy `.codex/delivery-policy.json` when the profile is absent.
 - `ExtractTicketKey`: extract ticket keys from ticket-prefixed commits or Gitea merge commit titles.
 - `ReadCoverageThreshold`: read the configured coverage minimum with the repo default fallback.
 - `ReadCoberturaLineRate`: read Cobertura coverage percent from XML without shell text parsing.
