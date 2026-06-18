@@ -75,7 +75,7 @@ If the audit reports any `stack-context.*` warning, if `DiscoverProjectGuidance`
 2. Run the Ticket Refinement Gate from the shared delivery contract before mutating Git, Plane state, the ticket lock, or OpenSpec:
    - Prefer `tools/SDDTemplate.DeliveryTools ClassifyTicketReadiness` when available.
    - `ready`: continue.
-   - `enrichable`: generate concrete acceptance criteria, expected files/components affected, validation expectations, risks, and definition of done in the managed Plane block, then continue.
+   - `refinable`: generate Scrum-ready planning details with a problem or opportunity, user story, concrete acceptance criteria, scope or affected areas, dependencies or assumptions, validation expectations, risks, and definition of done in the managed Plane block, then continue.
    - `blocked`: stop before branch creation, Plane state updates, comments, ticket-lock writes, or OpenSpec proposal creation. Report the missing product or technical intent.
 3. Run the Stack Context Preflight. If stack/tooling docs, OpenSpec config, local project guidance catalog, or project guidance discovery review are missing or drifted, stop and route to `configure-dev-environment` and `project-guidance-discover` before mutating Git, Plane, or OpenSpec.
 4. Check `git status --porcelain`. If any output exists, stop and report changed files.
@@ -143,13 +143,24 @@ IA generated
 
 <!-- ia-generated:start -->
 
+Problem / opportunity:
+...
+
+User story:
+- As a ...
+- I want ...
+- So that ...
+
 Acceptance criteria:
 - ...
 
-Expected files/components affected:
+Scope / affected areas:
 - ...
 
-Validation command or test expectation:
+Dependencies / assumptions:
+- ...
+
+Validation expectations:
 - ...
 
 Risks:

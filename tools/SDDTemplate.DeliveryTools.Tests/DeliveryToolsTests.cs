@@ -155,7 +155,7 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
-        public void TicketReadinessClassifiesReadyEnrichableAndBlockedTickets()
+        public void TicketReadinessClassifiesReadyRefinableAndBlockedTickets()
         {
             TicketReadinessResult ready = DeliveryWorkflowHelpers.ClassifyTicketReadiness(
                 "Add client search",
@@ -166,7 +166,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                 Validation: add tests for matching and empty search.
                 """);
 
-            TicketReadinessResult enrichable = DeliveryWorkflowHelpers.ClassifyTicketReadiness(
+            TicketReadinessResult refinable = DeliveryWorkflowHelpers.ClassifyTicketReadiness(
                 "Add client search",
                 "Users should be able to search clients by name from the client list.");
 
@@ -174,8 +174,8 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.Equal("ready", ready.Status);
             Assert.Empty(ready.Missing);
-            Assert.Equal("enrichable", enrichable.Status);
-            Assert.Contains("validation expectation", enrichable.Missing);
+            Assert.Equal("refinable", refinable.Status);
+            Assert.Contains("validation expectation", refinable.Missing);
             Assert.Equal("blocked", blocked.Status);
             Assert.Contains("user-visible goal", blocked.Missing);
         }

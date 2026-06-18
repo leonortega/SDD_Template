@@ -755,6 +755,41 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
+        public void PlaneStartTicketUsesScrumReadyGeneratedDescriptionBlock()
+        {
+            string starter = ReadSkill("plane-start-ticket", "SKILL.md");
+            string contract = ReadSkill("_shared", "delivery-contract.md");
+            string development = ReadDoc("development.md");
+
+            Assert.Contains("`ready`, `refinable`, or `blocked`", contract);
+            Assert.Contains("`refinable`: generate Scrum-ready planning details", starter);
+            Assert.Contains("Scrum-ready planning details", contract);
+            Assert.Contains("Refinable tickets", development);
+
+            foreach (string heading in new[]
+            {
+                "Problem / opportunity:",
+                "User story:",
+                "Acceptance criteria:",
+                "Scope / affected areas:",
+                "Dependencies / assumptions:",
+                "Validation expectations:",
+                "Risks:",
+                "Definition of done:",
+            })
+            {
+                Assert.Contains(heading, starter);
+            }
+
+            Assert.Contains("IA generated", starter);
+            Assert.Contains("<!-- ia-generated:start -->", starter);
+            Assert.Contains("<!-- ia-generated:end -->", starter);
+            Assert.DoesNotContain("enrichable", starter);
+            Assert.DoesNotContain("Expected files/components affected:", starter);
+            Assert.DoesNotContain("Validation command or test expectation:", starter);
+        }
+
+        [Fact]
         public void DeployToProdRequiresPostProdRetrospectiveLearningEvidence()
         {
             string root = FindRepositoryRoot().FullName;
