@@ -3,7 +3,7 @@
   "mode": "guarded-auto",
   "recommendations": [
     {
-      "id": "gitea-pr-review-agent-skill",
+      "id": "dev-flow-pr-review-agent-skill",
       "name": "Gitea PR review skill",
       "type": "skill",
       "requires": [
@@ -17,9 +17,9 @@
       "requiresIdeRestart": false,
       "requiresSystemReboot": false,
       "userActionRequired": false,
-      "source": "repo:.codex/skills/gitea-pr-review-agent/SKILL.md",
-      "target": ".codex/skills/gitea-pr-review-agent/SKILL.md",
-      "validation": "Test-Path .\\.codex\\skills\\gitea-pr-review-agent\\SKILL.md",
+      "source": "repo:.codex/skills/dev-flow-pr-review-agent/SKILL.md",
+      "target": ".codex/skills/dev-flow-pr-review-agent/SKILL.md",
+      "validation": "Test-Path .\\.codex\\skills\\dev-flow-pr-review-agent\\SKILL.md",
       "researchTopics": [
         "Gitea pull request API",
         "review comments",
@@ -260,9 +260,9 @@
       "requiresIdeRestart": false,
       "requiresSystemReboot": false,
       "userActionRequired": false,
-      "source": "repo:.codex/skills/frontend-testing-debugging/SKILL.md",
-      "target": ".codex/skills/frontend-testing-debugging/SKILL.md",
-      "validation": "Test-Path .\\.codex\\skills\\frontend-testing-debugging\\SKILL.md",
+      "source": "repo:.codex/skills/quality-frontend-testing-debugging/SKILL.md",
+      "target": ".codex/skills/quality-frontend-testing-debugging/SKILL.md",
+      "validation": "Test-Path .\\.codex\\skills\\quality-frontend-testing-debugging\\SKILL.md",
       "researchTopics": [
         "Playwright locators",
         "test isolation",
@@ -552,7 +552,7 @@
         "site:docs.gitea.com Gitea pull request review comments API",
         "site:docs.gitea.com Gitea Actions status checks"
       ],
-      "notes": "Use with gitea-pr-review-agent and review-feedback workflow skills.",
+      "notes": "Use with dev-flow-pr-review-agent and review-feedback workflow skills.",
       "sourceKind": "technology-owner",
       "installScope": "repo-local",
       "installerKind": "none",

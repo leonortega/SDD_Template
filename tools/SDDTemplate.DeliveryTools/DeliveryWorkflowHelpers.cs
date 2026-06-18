@@ -254,7 +254,7 @@ namespace SDDTemplate.DeliveryTools
                     bool required = ReadBool(setting, "required", fallback: true);
                     if (required && source.Equals("manualRequired", StringComparison.Ordinal))
                     {
-                        errors.Add($"Required deployment configuration {appId}:{RequiredString(setting, "name")} is manualRequired. Run configure-azure-environments and map this value before deploying.");
+                        errors.Add($"Required deployment configuration {appId}:{RequiredString(setting, "name")} is manualRequired. Run configure-cloud-environments and map this value before deploying.");
                     }
                 }
 

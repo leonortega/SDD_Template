@@ -1,4 +1,0 @@
-interface:
-  display_name: "Configure Gitea PRs"
-  short_description: "Set up Gitea PR automation"
-  default_prompt: "Use $configure-gitea-source-control to configure Gitea repository and PR automation."

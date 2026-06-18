@@ -93,7 +93,7 @@ Strict gates do not require every run to load every long instruction body. Agent
 
 Project guidance remains the broad catalog for skills, tools, references, practices, standards, MCPs, and plugins. The installed-skill runtime index is only an ignored cache of exact installed `SKILL.md` paths used to avoid repeated scans and pass precise skill paths during delegation.
 
-Avoid duplicate context systems. Ticket refinement belongs in the managed Plane block; implementation planning belongs in OpenSpec; recurring workflow learning belongs in `delivery-retrospective-audit`, docs, the shared contract, or `.codex/memory/` according to the existing authority order.
+Avoid duplicate context systems. Ticket refinement belongs in the managed Plane block; implementation planning belongs in OpenSpec; recurring workflow learning belongs in `dev-flow-retrospective-audit`, docs, the shared contract, or `.codex/memory/` according to the existing authority order.
 
 ## Agent Telemetry
 

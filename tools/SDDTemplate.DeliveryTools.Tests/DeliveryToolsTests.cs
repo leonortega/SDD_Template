@@ -971,9 +971,9 @@ namespace SDDTemplate.DeliveryTools.Tests
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "azure"));
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "monitoring"));
             _ = Directory.CreateDirectory(Path.Combine(root, ".gitea", "workflows"));
-            _ = Directory.CreateDirectory(Path.Combine(root, ".codex", "skills", "test-e2e"));
+            _ = Directory.CreateDirectory(Path.Combine(root, ".codex", "skills", "quality-test-e2e"));
             File.WriteAllText(Path.Combine(root, "Example.slnx"), "<Solution />");
-            File.WriteAllText(Path.Combine(root, ".codex", "skills", "test-e2e", "SKILL.md"), "# Test E2E");
+            File.WriteAllText(Path.Combine(root, ".codex", "skills", "quality-test-e2e", "SKILL.md"), "# Test E2E");
             _ = Directory.CreateDirectory(Path.Combine(root, "openspec"));
 
             string output = RunPowerShellScript("-Mode", "AuditRecommendedTools", "-Root", root);
@@ -1307,7 +1307,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             string firstMapping = JsonSerializer.Serialize(new
             {
                 workflowStep = "implementation",
-                primarySkills = new[] { "implement-ticket" },
+                primarySkills = new[] { "dev-flow-implement-ticket" },
                 supportingSkills = new[] { "aspnet-core", "assertion-quality" },
                 recommendationIds = new[] { "openai-aspnet-core-skill", "dotnet-assertion-quality-skill" },
                 why = "Ticket implementation touched ASP.NET Core code and xUnit tests.",
@@ -1319,7 +1319,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             string secondMapping = JsonSerializer.Serialize(new
             {
                 workflowStep = "implementation",
-                primarySkills = new[] { "implement-ticket" },
+                primarySkills = new[] { "dev-flow-implement-ticket" },
                 supportingSkills = new[] { "aspnet-core", "security-best-practices", "assertion-quality" },
                 recommendationIds = new[] { "openai-aspnet-core-skill", "openai-security-best-practices-skill", "dotnet-assertion-quality-skill" },
                 why = "Implementation mapping now includes security review for API changes.",
@@ -1470,7 +1470,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                 enabled = true,
                 maxActiveTickets = 2,
                 deploymentLanePolicy = "serialized",
-                deploymentLaneOwner = new { ticketKey = "E2EPROJECT-1", stage = "deploy-to-qa" },
+                deploymentLaneOwner = new { ticketKey = "E2EPROJECT-1", stage = "dev-ops-deploy-qa" },
                 tickets = new[]
                 {
                     new { ticketKey = "E2EPROJECT-1", branch = "codex/e2eproject-1-a", worktreePath = "../ticket-worktrees/e2eproject-1" },
@@ -1492,7 +1492,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                 enabled = false,
                 maxActiveTickets = 2,
                 deploymentLanePolicy = "serialized",
-                deploymentLaneOwner = new { ticketKey = "E2EPROJECT-999", stage = "deploy-to-qa" },
+                deploymentLaneOwner = new { ticketKey = "E2EPROJECT-999", stage = "dev-ops-deploy-qa" },
                 tickets = new[]
                 {
                     new { ticketKey = "E2EPROJECT-1", branch = "codex/e2eproject-1-a", worktreePath = "../ticket-worktrees/e2eproject-1" },
@@ -1562,12 +1562,12 @@ namespace SDDTemplate.DeliveryTools.Tests
             {
                 ticketKey = "E2EPROJECT-123",
                 status = "PASS - automatic route completed.",
-                currentRoute = "implement-ticket",
+                currentRoute = "dev-flow-implement-ticket",
                 stages = new[]
                 {
                     new
                     {
-                        stage = "plane-start-ticket",
+                        stage = "dev-flow-start-ticket",
                         outcome = "PASS",
                         elapsedMilliseconds = 134000,
                         startedUtc = "2026-06-03T10:00:00Z",
@@ -1575,7 +1575,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                     },
                     new
                     {
-                        stage = "implement-ticket",
+                        stage = "dev-flow-implement-ticket",
                         outcome = "BLOCKED",
                         elapsedMilliseconds = 3605000,
                         startedUtc = "2026-06-03T10:02:14Z",
@@ -1595,13 +1595,13 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.Contains("IA generated workflow timing: E2EPROJECT-123", output);
             Assert.Contains("**Status:** PASS - automatic route completed.", output);
-            Assert.Contains("- Current route: `implement-ticket`", output);
+            Assert.Contains("- Current route: `dev-flow-implement-ticket`", output);
             Assert.Contains("- Total elapsed: 1h 02m 19s", output);
             Assert.Contains("| Stage | Outcome | Duration | Started UTC | Finished UTC |", output);
-            Assert.Contains("| `plane-start-ticket` | PASS | 2m 14s | 2026-06-03T10:00:00Z | 2026-06-03T10:02:14Z |", output);
-            Assert.Contains("| `implement-ticket` | BLOCKED | 1h 00m 05s | 2026-06-03T10:02:14Z | 2026-06-03T11:02:19Z |", output);
-            Assert.Contains("| `pr-review-feedback-loop` | NOT RUN / N/A | no time | - | - |", output);
-            Assert.Contains("| `test-e2e` | NOT RUN / N/A | no time | - | - |", output);
+            Assert.Contains("| `dev-flow-start-ticket` | PASS | 2m 14s | 2026-06-03T10:00:00Z | 2026-06-03T10:02:14Z |", output);
+            Assert.Contains("| `dev-flow-implement-ticket` | BLOCKED | 1h 00m 05s | 2026-06-03T10:02:14Z | 2026-06-03T11:02:19Z |", output);
+            Assert.Contains("| `dev-flow-pr-review-feedback-loop` | NOT RUN / N/A | no time | - | - |", output);
+            Assert.Contains("| `quality-test-e2e` | NOT RUN / N/A | no time | - | - |", output);
             Assert.DoesNotContain("token", output, StringComparison.OrdinalIgnoreCase);
         }
 
@@ -1613,11 +1613,11 @@ namespace SDDTemplate.DeliveryTools.Tests
             _ = RunPowerShell(script, "-Mode", "InitializeWorkflowTelemetry", "-RepoRoot", root, "-TicketKey", "E2EPROJECT-123");
             foreach (var row in new[]
             {
-                new { ticket = "E2EPROJECT-123", stage = "implement-ticket", agent = "implementation", start = "2026-06-09T10:00:00Z", finish = "2026-06-09T10:30:00Z", outcome = "PASS", retryCount = 1 },
-                new { ticket = "E2EPROJECT-999", stage = "implement-ticket", agent = "implementation", start = "2026-06-09T10:05:00Z", finish = "2026-06-09T10:06:00Z", outcome = "PASS", retryCount = 0 },
-                new { ticket = "E2EPROJECT-123", stage = "test-e2e", agent = "qa", start = "2026-06-09T11:00:00Z", finish = "2026-06-09T11:20:00Z", outcome = "BLOCKED", retryCount = 0 },
-                new { ticket = "E2EPROJECT-123", stage = "implement-ticket", agent = "implementation", start = "2026-06-09T12:00:00Z", finish = "2026-06-09T12:15:00Z", outcome = "PASS", retryCount = 2 },
-                new { ticket = "E2EPROJECT-123", stage = "test-e2e", agent = "qa", start = "2026-06-09T13:00:00Z", finish = "2026-06-09T14:00:00Z", outcome = "PASS", retryCount = 1 },
+                new { ticket = "E2EPROJECT-123", stage = "dev-flow-implement-ticket", agent = "implementation", start = "2026-06-09T10:00:00Z", finish = "2026-06-09T10:30:00Z", outcome = "PASS", retryCount = 1 },
+                new { ticket = "E2EPROJECT-999", stage = "dev-flow-implement-ticket", agent = "implementation", start = "2026-06-09T10:05:00Z", finish = "2026-06-09T10:06:00Z", outcome = "PASS", retryCount = 0 },
+                new { ticket = "E2EPROJECT-123", stage = "quality-test-e2e", agent = "qa", start = "2026-06-09T11:00:00Z", finish = "2026-06-09T11:20:00Z", outcome = "BLOCKED", retryCount = 0 },
+                new { ticket = "E2EPROJECT-123", stage = "dev-flow-implement-ticket", agent = "implementation", start = "2026-06-09T12:00:00Z", finish = "2026-06-09T12:15:00Z", outcome = "PASS", retryCount = 2 },
+                new { ticket = "E2EPROJECT-123", stage = "quality-test-e2e", agent = "qa", start = "2026-06-09T13:00:00Z", finish = "2026-06-09T14:00:00Z", outcome = "PASS", retryCount = 1 },
             })
             {
                 string appendJson = JsonSerializer.Serialize(new
@@ -1641,18 +1641,18 @@ namespace SDDTemplate.DeliveryTools.Tests
                 "-TicketKey",
                 "E2EPROJECT-123",
                 "-InputJson",
-                JsonSerializer.Serialize(new { status = "PASS - telemetry.", currentRoute = "test-e2e" }));
+                JsonSerializer.Serialize(new { status = "PASS - telemetry.", currentRoute = "quality-test-e2e" }));
 
             using JsonDocument document = JsonDocument.Parse(readJson);
             JsonElement stages = document.RootElement.GetProperty("stages");
             Assert.Equal(2, stages.GetArrayLength());
-            Assert.Equal("implement-ticket", stages[0].GetProperty("stage").GetString());
+            Assert.Equal("dev-flow-implement-ticket", stages[0].GetProperty("stage").GetString());
             Assert.Equal("2026-06-09T10:00:00Z", stages[0].GetProperty("startedUtc").GetString());
             Assert.Equal("2026-06-09T12:15:00Z", stages[0].GetProperty("finishedUtc").GetString());
             Assert.Equal(8_100_000, stages[0].GetProperty("elapsedMilliseconds").GetInt64());
             Assert.Equal("PASS", stages[0].GetProperty("outcome").GetString());
             Assert.Equal(3, stages[0].GetProperty("retryCount").GetInt64());
-            Assert.Equal("test-e2e", stages[1].GetProperty("stage").GetString());
+            Assert.Equal("quality-test-e2e", stages[1].GetProperty("stage").GetString());
             Assert.Equal("2026-06-09T11:00:00Z", stages[1].GetProperty("startedUtc").GetString());
             Assert.Equal("2026-06-09T14:00:00Z", stages[1].GetProperty("finishedUtc").GetString());
             Assert.Equal(10_800_000, stages[1].GetProperty("elapsedMilliseconds").GetInt64());
@@ -1667,9 +1667,9 @@ namespace SDDTemplate.DeliveryTools.Tests
                 "-InputJson",
                 readJson);
             Assert.Contains("- Total elapsed: 5h 15m 00s", comment);
-            Assert.Contains("| `implement-ticket` | PASS | 2h 15m 00s | 2026-06-09T10:00:00Z | 2026-06-09T12:15:00Z |", comment);
-            Assert.Contains("| `test-e2e` | PASS | 3h 00m 00s | 2026-06-09T11:00:00Z | 2026-06-09T14:00:00Z |", comment);
-            Assert.Contains("| `pr-review-feedback-loop` | NOT RUN / N/A | no time | - | - |", comment);
+            Assert.Contains("| `dev-flow-implement-ticket` | PASS | 2h 15m 00s | 2026-06-09T10:00:00Z | 2026-06-09T12:15:00Z |", comment);
+            Assert.Contains("| `quality-test-e2e` | PASS | 3h 00m 00s | 2026-06-09T11:00:00Z | 2026-06-09T14:00:00Z |", comment);
+            Assert.Contains("| `dev-flow-pr-review-feedback-loop` | NOT RUN / N/A | no time | - | - |", comment);
             Assert.DoesNotContain("MISSING TELEMETRY", comment);
         }
 
@@ -1747,7 +1747,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             _ = RunPowerShell(script, "-Mode", "InitializeWorkflowTelemetry", "-RepoRoot", root, "-TicketKey", "E2EPROJECT-123");
             string inputJson = JsonSerializer.Serialize(new
             {
-                workflowStage = "implement-ticket",
+                workflowStage = "dev-flow-implement-ticket",
                 agentRole = "implementation",
                 startedUtc = "2026-06-09T10:00:00Z",
                 finishedUtc = "2026-06-09T10:03:05Z",
@@ -1772,7 +1772,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             string line = Assert.Single(File.ReadAllLines(telemetryPath), static value => !string.IsNullOrWhiteSpace(value));
             using JsonDocument row = JsonDocument.Parse(line);
             Assert.Equal("E2EPROJECT-123", row.RootElement.GetProperty("ticketKey").GetString());
-            Assert.Equal("implement-ticket", row.RootElement.GetProperty("workflowStage").GetString());
+            Assert.Equal("dev-flow-implement-ticket", row.RootElement.GetProperty("workflowStage").GetString());
             Assert.Equal("implementation", row.RootElement.GetProperty("agentRole").GetString());
             Assert.Equal("2026-06-09T10:00:00Z", row.RootElement.GetProperty("startedUtc").GetString());
             Assert.Equal("2026-06-09T10:03:05Z", row.RootElement.GetProperty("finishedUtc").GetString());
@@ -1789,9 +1789,9 @@ namespace SDDTemplate.DeliveryTools.Tests
             _ = RunPowerShell(script, "-Mode", "InitializeWorkflowTelemetry", "-RepoRoot", root, "-TicketKey", "E2EPROJECT-123");
             foreach (var row in new[]
             {
-                new { ticket = "E2EPROJECT-123", stage = "plane-start-ticket", agent = "ticketStarter", start = "2026-06-09T10:00:00Z", finish = "2026-06-09T10:01:00Z" },
+                new { ticket = "E2EPROJECT-123", stage = "dev-flow-start-ticket", agent = "ticketStarter", start = "2026-06-09T10:00:00Z", finish = "2026-06-09T10:01:00Z" },
                 new { ticket = "E2EPROJECT-999", stage = "ignored-ticket", agent = "implementation", start = "2026-06-09T10:01:00Z", finish = "2026-06-09T10:02:00Z" },
-                new { ticket = "E2EPROJECT-123", stage = "implement-ticket", agent = "implementation", start = "2026-06-09T10:01:00Z", finish = "2026-06-09T10:04:30Z" },
+                new { ticket = "E2EPROJECT-123", stage = "dev-flow-implement-ticket", agent = "implementation", start = "2026-06-09T10:01:00Z", finish = "2026-06-09T10:04:30Z" },
             })
             {
                 string appendJson = JsonSerializer.Serialize(new
@@ -1814,15 +1814,15 @@ namespace SDDTemplate.DeliveryTools.Tests
                 "-TicketKey",
                 "E2EPROJECT-123",
                 "-InputJson",
-                JsonSerializer.Serialize(new { status = "PASS - telemetry.", currentRoute = "implement-ticket" }));
+                JsonSerializer.Serialize(new { status = "PASS - telemetry.", currentRoute = "dev-flow-implement-ticket" }));
 
             using JsonDocument document = JsonDocument.Parse(readJson);
             Assert.Equal("E2EPROJECT-123", document.RootElement.GetProperty("ticketKey").GetString());
             Assert.Equal(270000, document.RootElement.GetProperty("totalElapsedMilliseconds").GetInt64());
             JsonElement stages = document.RootElement.GetProperty("stages");
             Assert.Equal(2, stages.GetArrayLength());
-            Assert.Equal("plane-start-ticket", stages[0].GetProperty("stage").GetString());
-            Assert.Equal("implement-ticket", stages[1].GetProperty("stage").GetString());
+            Assert.Equal("dev-flow-start-ticket", stages[0].GetProperty("stage").GetString());
+            Assert.Equal("dev-flow-implement-ticket", stages[1].GetProperty("stage").GetString());
 
             string comment = RunPowerShell(
                 script,
@@ -1834,9 +1834,9 @@ namespace SDDTemplate.DeliveryTools.Tests
                 readJson);
             Assert.Contains("IA generated workflow timing: E2EPROJECT-123", comment);
             Assert.Contains("- Total elapsed: 4m 30s", comment);
-            Assert.Contains("| `implement-ticket` | PASS | 3m 30s | 2026-06-09T10:01:00Z | 2026-06-09T10:04:30Z |", comment);
-            Assert.Contains("| `post-merge-deploy` | NOT RUN / N/A | no time | - | - |", comment);
-            Assert.Contains("| `test-e2e` | NOT RUN / N/A | no time | - | - |", comment);
+            Assert.Contains("| `dev-flow-implement-ticket` | PASS | 3m 30s | 2026-06-09T10:01:00Z | 2026-06-09T10:04:30Z |", comment);
+            Assert.Contains("| `dev-ops-post-merge-deploy` | NOT RUN / N/A | no time | - | - |", comment);
+            Assert.Contains("| `quality-test-e2e` | NOT RUN / N/A | no time | - | - |", comment);
         }
 
         private static string[] GetJsonErrors(JsonDocument document)
@@ -2031,8 +2031,8 @@ namespace SDDTemplate.DeliveryTools.Tests
                 Path.Combine(workflowDirectory, "package-deploy.yml"),
                 "steps:\n  - run: echo $NEXUS_URL && az webapp deploy\n");
 
-            string e2eSkillDirectory = Path.Combine(root, ".codex", "skills", "test-e2e");
-            string frontendSkillDirectory = Path.Combine(root, ".codex", "skills", "frontend-testing-debugging");
+            string e2eSkillDirectory = Path.Combine(root, ".codex", "skills", "quality-test-e2e");
+            string frontendSkillDirectory = Path.Combine(root, ".codex", "skills", "quality-frontend-testing-debugging");
             _ = Directory.CreateDirectory(e2eSkillDirectory);
             _ = Directory.CreateDirectory(frontendSkillDirectory);
             File.WriteAllText(Path.Combine(e2eSkillDirectory, "SKILL.md"), "Use Playwright for rendered browser QA.");

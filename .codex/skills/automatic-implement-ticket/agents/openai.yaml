@@ -1,4 +1,0 @@
-interface:
-  display_name: "Automatic Implement Ticket"
-  short_description: "Route a Plane ticket through the delivery lifecycle."
-  default_prompt: "Use $automatic-implement-ticket to continue this Plane ticket from its current state."

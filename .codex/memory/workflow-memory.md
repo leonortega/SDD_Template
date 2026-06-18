@@ -76,7 +76,7 @@ Use these markers for idempotency:
 - Source: `.codex/skills/_shared/delivery-contract.md`, `docs/architecture.md`
 - Last verified: 2026-06-09
 
-Normal automatic delivery stays locked to one Plane ticket through ignored `.codex/delivery-context.local.json`. Keep the lock after QA Done because explicit PROD promotion may still need artifact and RC context. `plane-start-ticket` may lazily replace the lock when starting another ticket only after the locked ticket is verified in the configured Done state. Parallel delivery uses one worktree and one local ticket lock per active ticket. Child skills must verify ticket, branch, PR, artifact commit, QA evidence, RC tag, and PROD lineage match the lock before mutation.
+Normal automatic delivery stays locked to one Plane ticket through ignored `.codex/delivery-context.local.json`. Keep the lock after QA Done because explicit PROD promotion may still need artifact and RC context. `dev-flow-start-ticket` may lazily replace the lock when starting another ticket only after the locked ticket is verified in the configured Done state. Parallel delivery uses one worktree and one local ticket lock per active ticket. Child skills must verify ticket, branch, PR, artifact commit, QA evidence, RC tag, and PROD lineage match the lock before mutation.
 
 ## Parallel Delivery
 
@@ -147,10 +147,10 @@ Plane work-item descriptions can strip raw HTML comments such as `<!-- ia-genera
 
 - Type: Decision
 - Status: Active
-- Source: Codex thread `019e83a6-433d-7fa2-8ff0-852d74d2eb21`, `.codex/skills/pr-review-feedback-loop/SKILL.md`
+- Source: Codex thread `019e83a6-433d-7fa2-8ff0-852d74d2eb21`, `.codex/skills/dev-flow-pr-review-feedback-loop/SKILL.md`
 - Last verified: 2026-06-02
 
-Repo-specific delivery behavior should live in repo-owned skills, not external `openspec-*` skills. The reconnectable PR feedback loop for AI findings and late human PR comments belongs in `pr-review-feedback-loop`, with `implement-ticket` and `automatic-implement-ticket` delegating to it. External OpenSpec skills should remain generic and free of local Plane/Gitea feedback markers or batch-id rules.
+Repo-specific delivery behavior should live in repo-owned skills. The reconnectable PR feedback loop for AI findings and late human PR comments belongs in `dev-flow-pr-review-feedback-loop`, with `dev-flow-implement-ticket` and `dev-flow-continue-implementation` delegating to it. OpenSpec-derived dev-flow skills may carry local ticket, validation, and handoff context when they are tracked in this repository.
 
 ## PR Feedback Batches Are Reconnectable Work
 

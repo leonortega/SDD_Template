@@ -59,6 +59,7 @@ Test-Path .\.codex\skills\{skill-name}\SKILL.md
 - Do not copy secrets, tokens, `.local` files, caches, generated artifacts, build outputs, logs, local state, `.git`, or unrelated files.
 - Do not overwrite an existing repo-local skill unless the user explicitly confirms replacement.
 - Keep source attribution in the handoff so later agents know where the skill came from.
+- For every external skill copied into `.codex/skills`, keep the upstream skill name unless the user explicitly approves a rename, mark it as `External` in `.codex/skills/README.md`, and cite the source repository in the root `README.md`.
 - Label community-maintained sources as `sourceKind: community`; prefer repo-local, official, tool-owner, or technology-owner sources when available.
 - Do not copy OpenSpec or configure skills as recommended/acquired expert skills.
 

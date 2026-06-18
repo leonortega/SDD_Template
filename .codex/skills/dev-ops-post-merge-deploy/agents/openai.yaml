@@ -1,0 +1,4 @@
+interface:
+  display_name: "Post Merge Deploy"
+  short_description: "Bridge merged PRs into QA deployment."
+  default_prompt: "Use $dev-ops-post-merge-deploy to promote this merged PR toward QA."

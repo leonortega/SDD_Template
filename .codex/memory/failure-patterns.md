@@ -16,7 +16,7 @@ The global `@fission-ai/openspec` CLI initializes PostHog telemetry before comma
 - Source: `.codex/skills/_shared/delivery-contract.md`
 - Last verified: 2026-06-09
 
-If a child skill resolves a ticket key that differs from `.codex/delivery-context.local.json`, stop and report the mismatch. Do not deploy, test, move state, tag, or comment the other ticket. `plane-start-ticket` is the only lazy cleanup path: when starting another ticket, it may replace a different existing lock only after the locked Plane ticket is verified in the configured Done state. Active, missing, ambiguous, or unverifiable locks still block.
+If a child skill resolves a ticket key that differs from `.codex/delivery-context.local.json`, stop and report the mismatch. Do not deploy, test, move state, tag, or comment the other ticket. `dev-flow-start-ticket` is the only lazy cleanup path: when starting another ticket, it may replace a different existing lock only after the locked Plane ticket is verified in the configured Done state. Active, missing, ambiguous, or unverifiable locks still block.
 
 ## Deployment Lane Conflict
 
@@ -288,7 +288,7 @@ When `.codex/agent-telemetry.local.jsonl` is absent or a delivery run missed tel
 - Source: E2EPROJECT-6 Plane comments and `.codex/agent-telemetry.local.jsonl`
 - Last verified: 2026-06-12
 
-If a ticket is moved to Done after a Gitea QA evidence run using a noncanonical marker such as `IA generated QA evidence: {ticketKey}` instead of the `test-e2e` marker `IA generated E2E QA: {ticketKey}`, the `test-e2e` finalization path may never append a `test-e2e` telemetry row or post `IA generated workflow timing: {ticketKey}`. Treat Done state plus QA evidence marker as insufficient; rerun or repair through `test-e2e` so the canonical E2E QA marker, workflow timing comment, and telemetry row are verified.
+If a ticket is moved to Done after a Gitea QA evidence run using a noncanonical marker such as `IA generated QA evidence: {ticketKey}` instead of the `quality-test-e2e` marker `IA generated E2E QA: {ticketKey}`, the `quality-test-e2e` finalization path may never append a `quality-test-e2e` telemetry row or post `IA generated workflow timing: {ticketKey}`. Treat Done state plus QA evidence marker as insufficient; rerun or repair through `quality-test-e2e` so the canonical E2E QA marker, workflow timing comment, and telemetry row are verified.
 
 ## Azure Event Hubs Kafka 9093 EOF Can Be Network-Side
 

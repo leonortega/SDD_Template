@@ -518,13 +518,13 @@ function Get-LongProperty($Object, [string] $Name) {
 
 function Get-WorkflowTimingStageRows($StageRows) {
   $standardStages = @(
-    'plane-start-ticket',
-    'implement-ticket',
-    'pr-review-feedback-loop',
-    'gitea-pr-review-agent',
-    'post-merge-deploy',
-    'deploy-to-qa',
-    'test-e2e'
+    'dev-flow-start-ticket',
+    'dev-flow-implement-ticket',
+    'dev-flow-pr-review-feedback-loop',
+    'dev-flow-pr-review-agent',
+    'dev-ops-post-merge-deploy',
+    'dev-ops-deploy-qa',
+    'quality-test-e2e'
   )
 
   $inputRows = @($StageRows | Where-Object { $null -ne $_ })
