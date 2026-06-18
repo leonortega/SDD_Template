@@ -107,8 +107,9 @@ Follow `openspec-apply-change`:
 6. Mark a task complete only after its code, related tests, and validation evidence are updated.
 7. If implementation reveals extra required work, add a new OpenSpec task before doing that work.
 8. Keep OpenSpec specs, design notes, and tasks aligned with the latest implementation.
-9. Commit after each completed workflow step when tracked changes exist, then start the next step from a clean working tree. Use ticket- or OpenSpec-prefixed messages, skip empty commits, and keep code, tests, docs, and OpenSpec changes together when splitting them would leave a broken intermediate commit.
-10. Do not automatically stash normal ticket progress. Use stash only for unrelated local or user changes that block the current step.
+9. Do not treat Playwright E2E creation as a required implementation task. Record browser E2E expectations and acceptance oracles for `test-e2e`; add E2E in implementation only when the user, Plane ticket, or OpenSpec artifacts explicitly make implementation-owned E2E part of the PR scope.
+10. Commit after each completed workflow step when tracked changes exist, then start the next step from a clean working tree. Use ticket- or OpenSpec-prefixed messages, skip empty commits, and keep code, tests, docs, and OpenSpec changes together when splitting them would leave a broken intermediate commit.
+11. Do not automatically stash normal ticket progress. Use stash only for unrelated local or user changes that block the current step.
 
 ### 4. Quality And Coverage Completion
 
@@ -187,6 +188,7 @@ The PR body must include:
 - OpenSpec change id
 - implementation summary
 - tests added or updated
+- E2E expectations for QA when browser acceptance is relevant, or `E2E expectations for QA: none`
 - coverage threshold used
 - configured quality gates expected to run
 - feature fixes applied
@@ -230,6 +232,7 @@ Add a Plane comment with:
 - infra validation fixes applied
 - improvements applied
 - tests added or updated
+- E2E expectations for QA when browser acceptance is relevant, or `E2E expectations for QA: none`
 - Context findings: added/updated/none
 - Docs updated: <files> or Docs: no durable context changes
 - `Memory updated: <files>` or `Memory updated: none`

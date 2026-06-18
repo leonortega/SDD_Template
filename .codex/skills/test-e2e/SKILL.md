@@ -13,7 +13,7 @@ This skill is technology-agnostic. Inspect the repository first. Use an establis
 
 For Blazor or other rendered website changes, prefer `$frontend-testing-debugging` when the repo has `.codex/skills/frontend-testing-debugging/SKILL.md` and the ticket requires browser-visible validation, responsive layout checks, console health, screenshots, or interaction proof. Keep API and deployment health checks in the repo-native .NET/API path.
 
-When the repository contains `tests/SDDTemplate.E2ETests`, treat it as the reusable deployed-QA regression suite. Reusable tests should be created or updated during the implementation PR when acceptance criteria are stable enough to encode as repeatable assertions. The suite is executed by the Gitea `e2e-qa` job against the deployed QA Site/API URLs, and the Gitea job is evidence-only. After `deploy-qa` succeeds, create a `qa/{ticketKey}` branch from current `dev` and push it so Gitea runs the committed suite remotely without redeploying. Add or update reusable tests on the QA branch only when the existing suite cannot prove a required acceptance criterion and record the reason in the QA result. This skill still owns QA acceptance: verify the Gitea E2E evidence bundle, run or rerun the suite manually only when remote execution is unavailable or diagnostic evidence is needed, publish final QA evidence, create or verify the RC tag, update release metadata, comment Plane, move the ticket to Done only after the QA result is `PASS`, and delete the remote `qa/{ticketKey}` branch after durable evidence exists.
+When the repository contains `tests/SDDTemplate.E2ETests`, treat it as the reusable deployed-QA regression suite. Implementation records browser E2E expectations and acceptance oracles, but Playwright E2E creation and repair are owned by this QA skill unless the user, Plane ticket, or OpenSpec artifacts explicitly made E2E part of implementation PR scope. The suite is executed by the Gitea `e2e-qa` job against the deployed QA Site/API URLs, and the Gitea job is evidence-only. After `deploy-qa` succeeds, create a `qa/{ticketKey}` branch from current `dev` and push it so Gitea runs the committed suite remotely without redeploying. Create or update reusable tests on the QA branch when the existing suite cannot prove a required acceptance criterion, record the reason in the QA result, and route those test changes through the normal reviewed follow-up path unless the configured QA workflow rule explicitly allows committing them in the QA workflow. This skill still owns QA acceptance: verify the Gitea E2E evidence bundle, run or rerun the suite manually only when remote execution is unavailable or diagnostic evidence is needed, publish final QA evidence, create or verify the RC tag, update release metadata, comment Plane, move the ticket to Done only after the QA result is `PASS`, and delete the remote `qa/{ticketKey}` branch after durable evidence exists.
 
 After the evidence bundle is verified, the E2E QA Plane comment is verified, the RC tag is created or verified, release metadata is updated, and the ticket is moved to Done, delete the remote `qa/{ticketKey}` branch from Gitea. The branch is only a temporary evidence trigger; durable evidence is in Nexus, Plane, the release manifest, and tags. Keep the branch only when evidence publication, comment verification, RC tagging, or Done-state mutation is incomplete and the branch may need a rerun.
 
@@ -150,7 +150,7 @@ If a failure is clearly product behavior, report it as QA failure. If a failure 
 
 Classify generated tests before deciding where to save them:
 
-- Reusable regression tests belong in the repository's normal test structure and should be committed through a follow-up implementation workflow when appropriate.
+- Reusable regression tests belong in the repository's normal test structure. Create or update them during QA when existing coverage cannot prove acceptance, then route them through the normal reviewed follow-up path unless the configured QA workflow rule explicitly allows committing them in the QA workflow.
 - One-off exploratory QA scripts, ad hoc generated tests, screenshots, traces, logs, and reports belong in the QA evidence bundle.
 - Never stage or commit `artifacts/qa/**`; this path is for ignored run evidence only.
 - During QA, do not promote one-off generated scripts directly into committed regression tests. If the exploratory check should become permanent coverage, create a scoped implementation or follow-up ticket so it receives normal review and PR validation.
@@ -189,7 +189,7 @@ Create `qa-summary.md` with the result, tested URLs, selected tools, commit/arti
 
 Prefer durable links in Plane comments. Use this evidence publication order:
 
-1. Commit reusable tests to the repo only when they are intended to become part of regression coverage.
+1. Commit reusable tests to the repo only when the configured QA workflow rule explicitly allows it; otherwise preserve the generated test changes as QA evidence and create or route a reviewed follow-up implementation workflow for permanent regression coverage.
 2. When the Gitea `e2e-qa` job has already run the committed suite, verify the Nexus bundle at `app/{commitSha}/qa-e2e-evidence.zip` and prefer reusing it as supporting evidence instead of rerunning the same test without cause.
 3. Save all run evidence locally under `artifacts/qa/{ticketKey}/{runId}/`.
 4. Zip the run folder as `qa-evidence.zip`.
@@ -237,7 +237,7 @@ Respect the repo's hooks when QA creates files:
 - Before writing evidence, verify `artifacts/qa/**` or a broader `artifacts/` rule is ignored by Git. If it is not ignored, stop and route to workflow maintenance before generating screenshots, traces, logs, reports, or ZIP evidence.
 - `gitleaks protect --staged --redact` scans staged files. Keep raw QA evidence ignored under `artifacts/qa/**` and do not stage it.
 - The commit message hook requires messages to start with a Plane ticket key, an OpenSpec id, or `[SDD]`.
-- Commit reusable ticket-specific tests with the ticket key when available, for example:
+- Commit reusable ticket-specific tests with the ticket key only when the configured QA workflow rule explicitly allows committing them in the QA workflow, for example:
 
 ```text
 E2EPROJECT-123: add E2E regression tests
