@@ -29,6 +29,8 @@ Read `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.m
 4. Check whether each candidate skill already exists at `.codex/skills/{skill-name}/SKILL.md`.
 5. Research extra useful skills, MCPs, plugins, tools, references, practices, standards, and Codex-applicable IDE helpers for the detected topics before presenting the result. Do not make the user name the extra tools first.
 6. Show suggested missing skills and guidance with source, `sourceKind`, target, detected need, validation command, install metadata, and whether the item is a `skill`, `mcp`, `plugin`, `tool`, `reference`, `practice`, `standard`, or `ide-extension`.
+   - For repeated tools used by CI/QA/security gates, include `installPreference: docker-preferred` and `dockerAlternative` metadata when an official/vendor or repo-owned pinned image exists.
+   - Do not mark MCPs, IDE plugins, Docker itself, secret-interactive tools, or tools without verified images as Docker-preferred.
 7. Ask the user only to confirm, dismiss, or add omissions after Codex has already done the extra research. Make the action clear: a confirmation means Codex will record the accepted guidance and immediately run `project-guidance-acquire` plus any supported guarded installer/configuration path. Do not ask a second "install?" question.
 8. If the user adds omissions, research and validate those sources with the same multi-source, official-first policy.
 9. Produce the final confirmed list for `project-guidance-acquire`. Do not copy, install, or configure anything from this skill.
@@ -89,6 +91,7 @@ If the user confirms the researched list, immediately record accepted ids, persi
 - Treat installer commands from `skills.sh`, `skills`, marketplace pages, or README examples as discovery metadata only. Extract the repository, ref, skill name, and likely `SKILL.md` path; do not execute the command.
 - Confirm every skill source resolves to a readable repository `SKILL.md` before adding it to the final confirmed acquisition list.
 - Treat command installers as metadata only unless `project-guidance-acquire` later has explicit user confirmation and a supported guarded install path.
+- Prefer pinned Docker alternatives over package-manager installs for recurring tools when the metadata proves the tool can run from the mounted workspace/cache without host secrets or interactive auth.
 - Do not read or print secrets.
 - Do not recommend Plane MCP for ticket delivery; repo-local skills use the configured Plane API.
 - Record accepted or dismissed recommendation ids only with `SetRecommendedTools` after explicit user confirmation.

@@ -1601,7 +1601,7 @@ function ConvertTo-CatalogRecommendation {
     accepted = ($Accepted -contains $Entry.id)
   }
 
-  foreach ($optionalField in @("sourceKind", "requires", "researchTopics", "officialSources", "searchQueries", "notes", "installScope", "installerKind", "requiresIdeRestart", "requiresSystemReboot", "userActionRequired", "importantMessage")) {
+  foreach ($optionalField in @("sourceKind", "requires", "researchTopics", "officialSources", "searchQueries", "notes", "installScope", "installerKind", "requiresIdeRestart", "requiresSystemReboot", "userActionRequired", "importantMessage", "installPreference", "dockerAlternative")) {
     if ($Entry.PSObject.Properties.Name -contains $optionalField) {
       $recommendation[$optionalField] = $Entry.$optionalField
     }
@@ -2006,6 +2006,42 @@ function Test-GuardedInstallNeedsConfirmation {
   return $userActionRequired -or $requiresIdeRestart -or $requiresSystemReboot -or ($scope -in @("global", "ide", "system"))
 }
 
+function Test-DockerPreferredGuidance {
+  param($Item)
+
+  if ($Item.PSObject.Properties.Name -notcontains "dockerAlternative") { return $false }
+  if ($null -eq $Item.dockerAlternative) { return $false }
+  $preference = Get-ItemStringProperty $Item "installPreference" ""
+  return $preference -eq "docker-preferred"
+}
+
+function Add-DockerPreferredGuidance {
+  param(
+    $Result,
+    $Item,
+    [string]$Name,
+    [string]$Type,
+    [string]$Validation
+  )
+
+  $docker = $Item.dockerAlternative
+  $image = if ($docker.PSObject.Properties.Name -contains "image") { [string]$docker.image } else { "" }
+  $runTemplate = if ($docker.PSObject.Properties.Name -contains "runTemplate") { [string]$docker.runTemplate } else { "" }
+  $buildCommand = if ($docker.PSObject.Properties.Name -contains "buildCommand") { [string]$docker.buildCommand } else { "" }
+  $fallback = Get-ItemStringProperty $Item "validation" $Validation
+  $details = "Confirmed $type guidance is docker-preferred. Use pinned image '$image'."
+  if (-not [string]::IsNullOrWhiteSpace($buildCommand)) { $details += " Build/refresh with: $buildCommand." }
+  if (-not [string]::IsNullOrWhiteSpace($runTemplate)) { $details += " Run with: $runTemplate." }
+  $details += " Validate with: $Validation"
+
+  if ($null -eq (Get-Command docker -ErrorAction SilentlyContinue)) {
+    Add-Item $Result "warnings" $Name "docker-preferred.blocked" "Docker CLI is missing; cannot use docker-preferred $type guidance for '$Name'. Install Docker first, then use pinned image '$image'. Fallback host validation if explicitly accepted: $fallback" "warning"
+    return
+  }
+
+  Add-Item $Result "actions" $Name "docker-preferred" $details
+}
+
 function Test-ValidProjectGuidanceSourceKind {
   param([string]$SourceKind)
 
@@ -2058,6 +2094,10 @@ function Invoke-AcquireProjectGuidance {
       $installScope = Get-ItemStringProperty $item "installScope" "repo-local"
       $installerKind = Get-ItemStringProperty $item "installerKind" "none"
       $validation = Get-ItemStringProperty $item "validation" "No validation command provided."
+      if (Test-DockerPreferredGuidance $item) {
+        Add-DockerPreferredGuidance $result $item $name $type $validation
+        continue
+      }
       if (Test-GuardedInstallNeedsConfirmation $item) {
         Add-Item $result "warnings" $name "guarded-install-plan" "Confirmed $type acquisition uses installMethod '$installMethod', installScope '$installScope', installerKind '$installerKind'. Install/configure now through a platform-supported tool when available; otherwise keep the item as a guarded plan. Validate with: $validation" "warning"
       } else {
@@ -2511,7 +2551,7 @@ function Invoke-AuditRecommendedTools {
       accepted = ($accepted -contains $entry.id)
     }
 
-    foreach ($optionalField in @("sourceKind", "requires", "researchTopics", "officialSources", "searchQueries", "notes")) {
+    foreach ($optionalField in @("sourceKind", "requires", "researchTopics", "officialSources", "searchQueries", "notes", "installScope", "installerKind", "requiresIdeRestart", "requiresSystemReboot", "userActionRequired", "importantMessage", "installPreference", "dockerAlternative")) {
       if ($entry.PSObject.Properties.Name -contains $optionalField) {
         $recommendation[$optionalField] = $entry.$optionalField
       }
