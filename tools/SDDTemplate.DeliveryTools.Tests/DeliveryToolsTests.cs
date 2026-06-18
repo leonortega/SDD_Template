@@ -1068,6 +1068,20 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("openai-security-best-practices-skill", recommendationIds);
             Assert.Contains("openai-playwright-skill", recommendationIds);
             Assert.Contains("dotnet-assertion-quality-skill", recommendationIds);
+            Assert.Contains("dotnet-sdk-docker-tool", recommendationIds);
+            Assert.Contains("gitleaks-docker-tool", recommendationIds);
+            Assert.Contains("trivy-docker-tool", recommendationIds);
+            Assert.Contains("playwright-docker-tool", recommendationIds);
+
+            JsonElement dotnetDockerTool = audit.RootElement.GetProperty("recommendations").EnumerateArray().Single(
+                item => item.GetProperty("id").GetString() == "dotnet-sdk-docker-tool");
+            Assert.Equal("docker-preferred", dotnetDockerTool.GetProperty("installPreference").GetString());
+            Assert.Equal("agentic/dotnet-ci:10.0.300-tools-1", dotnetDockerTool.GetProperty("dockerAlternative").GetProperty("image").GetString());
+            Assert.Equal("10.0.300-tools-1", dotnetDockerTool.GetProperty("dockerAlternative").GetProperty("versionPin").GetString());
+
+            JsonElement playwrightDockerTool = audit.RootElement.GetProperty("recommendations").EnumerateArray().Single(
+                item => item.GetProperty("id").GetString() == "playwright-docker-tool");
+            Assert.Equal("agentic/e2e-ci:playwright-1.57.0-1", playwrightDockerTool.GetProperty("dockerAlternative").GetProperty("image").GetString());
 
             JsonElement securitySkill = audit.RootElement.GetProperty("recommendations").EnumerateArray().Single(
                 item => item.GetProperty("id").GetString() == "openai-security-best-practices-skill");
@@ -1428,6 +1442,71 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("Browser E2E QA plugin [ide-restart]", message);
             Assert.Contains("Example system scanner [system-reboot]", message);
             Assert.Contains("complete all feasible installs first", message);
+        }
+
+        [Fact]
+        public void AcquireProjectGuidancePrefersDockerAlternativeForRepeatedTools()
+        {
+            string root = CreateTempDirectory();
+            _ = Directory.CreateDirectory(Path.Combine(root, ".codex"));
+            File.Copy(
+                Path.Combine(FindRepositoryRoot().FullName, ".codex", "tool-recommendations.example.json"),
+                Path.Combine(root, ".codex", "tool-recommendations.example.json"));
+
+            string valuesJson = JsonSerializer.Serialize(new
+            {
+                finalConfirmedGuidance = new object[]
+                {
+                    new
+                    {
+                        name = "Example repeated scanner",
+                        type = "tool",
+                        installMethod = "package-manager",
+                        installPreference = "docker-preferred",
+                        installScope = "repo-local",
+                        installerKind = "docker-image",
+                        requiresIdeRestart = false,
+                        requiresSystemReboot = false,
+                        userActionRequired = false,
+                        validation = "example-scanner --version",
+                        dockerAlternative = new
+                        {
+                            image = "agentic/dotnet-ci:10.0.300-tools-1",
+                            versionPin = "10.0.300-tools-1",
+                            buildCommand = ".\\.codex\\skills\\configure-dev-environment\\scripts\\configure_infra_tools.ps1 -Mode BuildGiteaActionsImages",
+                            runTemplate = "docker run --rm agentic/dotnet-ci:10.0.300-tools-1 example-scanner --version",
+                        },
+                    },
+                    new
+                    {
+                        name = "Example IDE plugin",
+                        type = "plugin",
+                        installMethod = "manual-config",
+                        installPreference = "host-required",
+                        installScope = "ide",
+                        installerKind = "codex-plugin-config",
+                        requiresIdeRestart = true,
+                        requiresSystemReboot = false,
+                        userActionRequired = true,
+                        validation = "Open plugin UI.",
+                    },
+                },
+            });
+
+            string output = RunPowerShellScript("-Mode", "AcquireProjectGuidance", "-Root", root, "-ValuesJson", valuesJson);
+            using JsonDocument result = JsonDocument.Parse(output);
+            JsonElement actions = result.RootElement.GetProperty("actions");
+            JsonElement warnings = result.RootElement.GetProperty("warnings");
+
+            bool dockerAction = actions.EnumerateArray().Any(item => item.GetProperty("key").GetString() == "docker-preferred");
+            bool dockerBlocked = warnings.EnumerateArray().Any(item => item.GetProperty("key").GetString() == "docker-preferred.blocked");
+            Assert.True(dockerAction || dockerBlocked);
+            Assert.DoesNotContain(warnings.EnumerateArray(),
+                item => item.GetProperty("path").GetString() == "Example repeated scanner" &&
+                        item.GetProperty("key").GetString() == "guarded-install-plan");
+            Assert.Contains(warnings.EnumerateArray(),
+                item => item.GetProperty("path").GetString() == "Example IDE plugin" &&
+                        item.GetProperty("key").GetString() == "guarded-install-plan");
         }
 
         [Fact]

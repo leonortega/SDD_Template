@@ -111,6 +111,8 @@ The default validation surface is:
 
 Gitea Actions jobs use repo-owned pinned Docker images built by `config infra` through `BuildGiteaActionsImages`. `agentic/dotnet-ci:10.0.300-tools-1` supplies .NET SDK 10, jq, zip, Gitleaks, Trivy, Azure CLI, and Node/npm for JavaScript actions. `agentic/e2e-ci:playwright-1.57.0-1` supplies the Node/Playwright runtime and browser dependencies for deployed-QA E2E evidence. Job containers remain disposable; speed comes from prebuilt local images and optional dependency caches, not from mutating the runner host during workflow runs.
 
+Project guidance treats repeated CI, QA, and security tools as Docker-preferred when an official/vendor or repo-owned pinned image can run with mounted workspace/cache. Host installs remain the fallback for Docker itself, MCPs, IDE plugins, secret-bearing tools, interactive-auth tools, and tools without a verified image.
+
 The `/health` endpoint is part of the deployment contract. It must return HTTP 200 with JSON field `status` equal to `ok` and must not expose secrets, connection strings, tokens, host internals, or detailed exception data.
 
 ## Agent Retrospective Quality Lane

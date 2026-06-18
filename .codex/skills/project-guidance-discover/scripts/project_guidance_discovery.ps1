@@ -569,8 +569,9 @@ function ConvertTo-RequestedGuidance {
   $target = if ($Guidance.PSObject.Properties.Name -contains "target") { [string]$Guidance.target } elseif ($type -eq "skill") { ".codex/skills/$name/SKILL.md" } else { $null }
   $source = if ($Guidance.PSObject.Properties.Name -contains "source") { [string]$Guidance.source } else { $null }
   $sourceKind = if ($Guidance.PSObject.Properties.Name -contains "sourceKind") { [string]$Guidance.sourceKind } else { $null }
+  $installPreference = if ($Guidance.PSObject.Properties.Name -contains "installPreference") { [string]$Guidance.installPreference } else { $null }
 
-  return [ordered]@{
+  $request = [ordered]@{
     name = $name
     type = $type
     installMethod = $installMethod
@@ -584,6 +585,15 @@ function ConvertTo-RequestedGuidance {
     target = $target
     status = $(if ([string]::IsNullOrWhiteSpace($source)) { "needs-research" } else { "source-provided" })
   }
+
+  if (-not [string]::IsNullOrWhiteSpace($installPreference)) {
+    $request["installPreference"] = $installPreference
+  }
+  if ($Guidance.PSObject.Properties.Name -contains "dockerAlternative") {
+    $request["dockerAlternative"] = $Guidance.dockerAlternative
+  }
+
+  return $request
 }
 
 function Get-AdditionalGuidanceRequestsFromJson {
