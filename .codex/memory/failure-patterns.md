@@ -72,6 +72,15 @@ For `push` events on `main`, `GITHUB_SHA` is often the merge commit SHA, but Nex
 
 Stop if `main` diverges from the intended QA-approved commit. Rollback does not rewrite `main`; after rollback, require a hotfix PR, revert PR, or explicit temporary divergence note with owner and expected resolution.
 
+## Main Sync Requires PR Approval
+
+- Type: Pattern
+- Status: Active
+- Source: Gitea PR #51 and `git push origin main` pre-receive rejection
+- Last verified: 2026-06-18
+
+Direct pushes to protected `main` are rejected with `Not allowed to push to protected branch main`. For `dev` to `main` syncs, push a `codex/...` branch, open a PR, wait for required status checks, and stop at `Does not have enough approvals` until a configured human approval is present.
+
 ## Secret Exposure Risk
 
 - Type: Risk
