@@ -48,6 +48,7 @@
               "environmentSecret",
               "topologyReference",
               "environmentName",
+              "environmentLogLevel",
               "sqliteDataPath",
               "manualRequired"
             ]

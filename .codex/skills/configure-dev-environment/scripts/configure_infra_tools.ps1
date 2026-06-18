@@ -3824,6 +3824,9 @@ jobs:
               environmentName)
                 printf '%s' "Development"
                 ;;
+              environmentLogLevel)
+                printf '%s' "Debug"
+                ;;
               topologyReference)
                 target_upper="$(echo "$target_app_id" | tr '[:lower:]-' '[:upper:]_')"
                 case "$target_property" in
@@ -4027,6 +4030,9 @@ jobs:
                 ;;
               environmentName)
                 printf '%s' "Staging"
+                ;;
+              environmentLogLevel)
+                printf '%s' "Debug"
                 ;;
               topologyReference)
                 target_upper="$(echo "$target_app_id" | tr '[:lower:]-' '[:upper:]_')"
@@ -4386,6 +4392,9 @@ jobs:
                 ;;
               environmentName)
                 printf '%s' "Production"
+                ;;
+              environmentLogLevel)
+                printf '%s' "Warning"
                 ;;
               topologyReference)
                 target_upper="$(echo "$target_app_id" | tr '[:lower:]-' '[:upper:]_')"
