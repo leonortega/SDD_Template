@@ -562,6 +562,16 @@ function Get-WorkflowTimingStageRows($StageRows) {
   return @($expandedRows)
 }
 
+function ConvertTo-OptionalUtcDateTime($Value) {
+  if ($null -eq $Value -or [string]::IsNullOrWhiteSpace([string]$Value) -or [string]$Value -eq '-') {
+    return $null
+  }
+  if ($Value -is [datetime]) {
+    return $Value.ToUniversalTime()
+  }
+  return [DateTimeOffset]::Parse([string]$Value).UtcDateTime
+}
+
 function Get-WorkflowTelemetryPath {
   Resolve-RepoPath $Path '.codex/agent-telemetry.local.jsonl'
 }
@@ -701,13 +711,53 @@ function Read-WorkflowTelemetry {
     throw "Workflow telemetry has no rows for ticket '$ticket'."
   }
 
-  $stageRows = @($rows | ForEach-Object {
+  $stageGroups = [ordered]@{}
+  foreach ($row in $rows) {
+    $stage = [string](Get-ObjectProperty $row 'workflowStage')
+    if ([string]::IsNullOrWhiteSpace($stage)) {
+      continue
+    }
+
+    $started = ConvertTo-OptionalUtcDateTime (Get-ObjectProperty $row 'startedUtc')
+    $finished = ConvertTo-OptionalUtcDateTime (Get-ObjectProperty $row 'finishedUtc')
+    if ($null -eq $started -or $null -eq $finished) {
+      continue
+    }
+
+    if (-not $stageGroups.Contains($stage)) {
+      $stageGroups[$stage] = [pscustomobject]@{
+        stage = $stage
+        outcome = Get-ObjectProperty $row 'outcome'
+        started = $started
+        finished = $finished
+        retryCount = 0L
+      }
+    } else {
+      $group = $stageGroups[$stage]
+      if ($started -lt $group.started) {
+        $group.started = $started
+      }
+      if ($finished -gt $group.finished) {
+        $group.finished = $finished
+      }
+      $group.outcome = Get-ObjectProperty $row 'outcome'
+    }
+
+    $retryCount = Get-LongProperty $row 'retryCount'
+    if ($null -ne $retryCount) {
+      $stageGroups[$stage].retryCount += $retryCount
+    }
+  }
+
+  $stageRows = @($stageGroups.Values | ForEach-Object {
+    $elapsed = [long]($_.finished - $_.started).TotalMilliseconds
     [pscustomobject]@{
-      stage = Get-ObjectProperty $_ 'workflowStage'
-      outcome = Get-ObjectProperty $_ 'outcome'
-      elapsedMilliseconds = Get-LongProperty $_ 'elapsedMilliseconds'
-      startedUtc = Format-UtcTimestamp (Get-ObjectProperty $_ 'startedUtc')
-      finishedUtc = Format-UtcTimestamp (Get-ObjectProperty $_ 'finishedUtc')
+      stage = $_.stage
+      outcome = $_.outcome
+      elapsedMilliseconds = $elapsed
+      startedUtc = Format-UtcTimestamp $_.started
+      finishedUtc = Format-UtcTimestamp $_.finished
+      retryCount = $_.retryCount
     }
   })
 

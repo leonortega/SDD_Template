@@ -19,7 +19,7 @@ This skill owns initial creation of ignored `.codex/delivery-context.local.json`
 
 ## Workflow Telemetry
 
-Capture UTC start time before the first ticket-specific mutation. After telemetry is initialized, append one `plane-start-ticket` row with `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` when ticket start succeeds, blocks, fails, or is skipped idempotently. Include `workflowStage=plane-start-ticket`, `agentRole=ticketStarter`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If a blocker happens before telemetry initialization or before a ticket key is selected, report that no telemetry row was possible.
+Capture UTC start time before the first ticket-specific mutation. After telemetry is initialized, append a `plane-start-ticket` row with `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` when ticket start succeeds, blocks, fails, or is skipped idempotently. On resume or idempotent reuse, append another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=plane-start-ticket`, `agentRole=ticketStarter`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If a blocker happens before telemetry initialization or before a ticket key is selected, report that no telemetry row was possible.
 
 ## Configuration
 

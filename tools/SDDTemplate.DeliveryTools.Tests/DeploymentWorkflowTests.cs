@@ -626,6 +626,9 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("implementation-quality-gated", caseIds);
             Assert.Contains("late-human-pr-feedback-manual-resume", caseIds);
             Assert.Contains("qa-promotion-artifact-lineage", caseIds);
+            Assert.Contains("qa-ticket-missing-deploy-telemetry-reroutes", caseIds);
+            Assert.Contains("done-ticket-missing-e2e-telemetry-reroutes", caseIds);
+            Assert.Contains("review-marker-missing-review-telemetry-reroutes", caseIds);
             Assert.Contains("prod-explicit-artifact-promotion", caseIds);
             Assert.Contains("post-prod-retrospective-learning-evidence", caseIds);
             Assert.Contains("rollback-no-main-rewrite", caseIds);
@@ -672,28 +675,38 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("InitializeWorkflowTelemetry", contract);
             Assert.Contains("AppendWorkflowTelemetry", contract);
             Assert.Contains("ReadWorkflowTelemetry", contract);
-            Assert.Contains("Each non-OpenSpec delivery stage must capture UTC start and finish times and append one row", contract);
+            Assert.Contains("Each non-OpenSpec delivery stage must capture UTC start and finish times and append one row for its own stage with `AppendWorkflowTelemetry` on every run, resume", contract);
+            Assert.Contains("collapse repeated rows for the same ticket and stage into one rendered stage row", contract);
+            Assert.Contains("required predecessor telemetry must exist", contract);
             Assert.Contains("test-e2e` must read rows for the active ticket with `ReadWorkflowTelemetry`", contract);
-            Assert.Contains("Do not derive workflow timing from Plane generated marker timestamps", contract);
+            Assert.DoesNotContain("MISSING TELEMETRY", contract);
+            Assert.Contains("Gitea Actions job duration", contract);
             Assert.Contains("update or reuse the existing workflow timing marker comment", contract);
 
             Assert.Contains("InitializeWorkflowTelemetry", starter);
             Assert.Contains("workflowStage=plane-start-ticket", starter);
             Assert.Contains("AppendWorkflowTelemetry", starter);
+            Assert.Contains("workflow timing rendering collapses repeated stage rows", starter);
             Assert.Contains("Do not initialize telemetry when only listing Todo tickets", starter);
             Assert.Contains("workflowStage=implement-ticket", implementation);
             Assert.Contains("AppendWorkflowTelemetry", implementation);
+            Assert.Contains("workflow timing rendering collapses repeated stage rows", implementation);
             Assert.Contains("workflowStage=pr-review-feedback-loop", feedbackLoop);
             Assert.Contains("AppendWorkflowTelemetry", feedbackLoop);
+            Assert.Contains("workflow timing rendering collapses repeated stage rows", feedbackLoop);
             Assert.Contains("workflowStage=gitea-pr-review-agent", reviewAgent);
             Assert.Contains("AppendWorkflowTelemetry", reviewAgent);
+            Assert.Contains("workflow timing rendering collapses repeated stage rows", reviewAgent);
             Assert.Contains("workflowStage=post-merge-deploy", postMergeDeploy);
             Assert.Contains("AppendWorkflowTelemetry", postMergeDeploy);
+            Assert.Contains("invoke `deploy-to-qa` in idempotent verification mode", postMergeDeploy);
             Assert.Contains("workflowStage=deploy-to-qa", deployToQa);
             Assert.Contains("AppendWorkflowTelemetry", deployToQa);
+            Assert.Contains("In idempotent verification mode", deployToQa);
             Assert.Contains("workflowStage=test-e2e", testE2E);
             Assert.Contains("AppendWorkflowTelemetry", testE2E);
             Assert.Contains("ReadWorkflowTelemetry", testE2E);
+            Assert.Contains("repeated rows for a stage are collapsed", testE2E);
             Assert.Contains("RenderPlaneComment -Type WorkflowTiming", testE2E);
             Assert.Contains("patch that comment instead of creating a duplicate", testE2E);
             Assert.Contains("comment_html", testE2E);
@@ -704,6 +717,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("IA generated workflow timing: {ticketKey}", automatic);
             Assert.Contains("do not derive timing from Plane generated marker timestamps", automatic);
             Assert.Contains("workflow timing marker", automatic);
+            Assert.Contains("Required predecessor rows", automatic);
+            Assert.Contains("route through that predecessor in idempotent verification mode", automatic);
 
             Assert.Contains("Delivery stages maintain a concise generated Plane timing comment", contextDocs);
             Assert.Contains("E2E QA posts or patches the final timing comment", contextDocs);
@@ -716,6 +731,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("'InitializeWorkflowTelemetry'", script);
             Assert.Contains("'AppendWorkflowTelemetry'", script);
             Assert.Contains("'ReadWorkflowTelemetry'", script);
+            Assert.Contains("stageGroups", script);
             Assert.Contains("| Stage | Outcome | Duration | Started UTC | Finished UTC |", script);
         }
 

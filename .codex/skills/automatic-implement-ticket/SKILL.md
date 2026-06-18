@@ -36,6 +36,8 @@ Each child delivery skill owns its own workflow telemetry row. Do not append tel
 
 Workflow timing comments use stable marker `IA generated workflow timing: {ticketKey}` and are finalized by `test-e2e` after the E2E QA Plane comment is verified. During routing, read existing Plane comments when the API allows it and report whether the workflow timing marker is present, missing, or blocked; do not derive timing from Plane generated marker timestamps.
 
+Before routing to a later workflow stage, read active ticket telemetry when `.codex/agent-telemetry.local.jsonl` exists and compare it with durable checkpoints. Required predecessor rows are `plane-start-ticket`, `implement-ticket`, `gitea-pr-review-agent`, `post-merge-deploy`, `deploy-to-qa`, and `test-e2e`; `pr-review-feedback-loop` is required only when unresolved PR feedback exists or feedback markers/tasks show it ran. If durable evidence says a predecessor stage completed but its telemetry row is missing, route through that predecessor in idempotent verification mode before advancing. Do not route directly to `test-e2e` for a QA ticket when `post-merge-deploy` or `deploy-to-qa` telemetry is missing; first route through `post-merge-deploy`, which must invoke `deploy-to-qa` idempotently. Do not route directly to later PR handoff when an existing current-head review marker lacks `gitea-pr-review-agent` telemetry; route through idempotent `gitea-pr-review-agent`.
+
 ## State Inspection
 
 Before delegating, inspect as much context as is safely available:
@@ -61,7 +63,8 @@ If the state is ambiguous, invoke `pipeline-status` or produce a read-only statu
 - Ticket in In Progress with active branch/OpenSpec but no PR: invoke `implement-ticket`.
 - Open PR exists: route to `implement-ticket`; it delegates immediate AI review feedback fixes and late human PR feedback fixes to the repo-owned `pr-review-feedback-loop` skill.
 - PR merged to `dev` and artifact is not yet promoted to QA: invoke `post-merge-deploy`.
-- Ticket in QA: invoke `test-e2e`.
+- PR merged to `dev`, QA deployment evidence already exists, but `post-merge-deploy` or `deploy-to-qa` telemetry is missing: invoke `post-merge-deploy` in idempotent verification mode before `test-e2e`.
+- Ticket in QA: invoke `test-e2e` only after required predecessor telemetry exists.
 - QA failed with product defect: invoke `file-qa-bug`.
 - Ticket in Done with QA-approved RC but no PROD release: stop unless the user explicitly requested PROD; if requested, invoke `deploy-to-prod`.
 - PROD incident or regression: invoke `rollback-prod` when restore is needed, or `hotfix-prod` when a targeted code fix is needed.

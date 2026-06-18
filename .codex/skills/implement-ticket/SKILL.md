@@ -15,7 +15,7 @@ Before implementation, handoff, or review work, follow `.codex/skills/_shared/sk
 
 ## Workflow Telemetry
 
-Capture UTC start time after resolving the ticket key and before implementation or PR handoff work. Append one `implement-ticket` row with `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` when the stage succeeds, blocks, fails, or is skipped idempotently. Include `workflowStage=implement-ticket`, `agentRole=implementation`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If telemetry append fails, report workflow timing as blocked and continue only when the underlying implementation handoff rules still allow it.
+Capture UTC start time after resolving the ticket key and before implementation or PR handoff work. Append an `implement-ticket` row with `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` when the stage succeeds, blocks, fails, or is skipped idempotently. On resume or idempotent reuse, append another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=implement-ticket`, `agentRole=implementation`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If telemetry append fails, report workflow timing as blocked and continue only when the underlying implementation handoff rules still allow it.
 
 ## Configuration
 

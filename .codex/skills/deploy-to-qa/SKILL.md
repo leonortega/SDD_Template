@@ -23,7 +23,7 @@ For push-triggered pre-production deployment, the commit or merged PR title must
 
 ## Workflow Telemetry
 
-Capture UTC start time after resolving the ticket key and before artifact promotion checks. Append one `deploy-to-qa` row with `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` when QA promotion succeeds, blocks, fails, or is skipped idempotently because the QA deployment marker already exists. Include `workflowStage=deploy-to-qa`, `agentRole=deployment`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`.
+Capture UTC start time after resolving the ticket key and before artifact promotion checks. Append a `deploy-to-qa` row with `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` when QA promotion succeeds, blocks, fails, or is skipped idempotently because the QA deployment marker already exists. On resume or idempotent reuse, append another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=deploy-to-qa`, `agentRole=deployment`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`.
 
 ## Configuration
 
@@ -41,6 +41,8 @@ Optional environment variables override local JSON when present: `PLANE_QA_STATE
 ## Workflow
 
 Run preflight, DEV/QA promotion, Plane updates, and handoff reporting in order. Do not move the ticket to QA until deployment validation and release manifest validation pass.
+
+In idempotent verification mode, do not redeploy or duplicate Plane comments. Re-verify the resolved ticket, PR, artifact commit, QA deployment marker, QA state, release manifest, and available DEV/QA validation evidence, then append the `deploy-to-qa` telemetry row and hand off to E2E QA.
 
 ## Preflight
 
