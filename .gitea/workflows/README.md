@@ -68,7 +68,7 @@ Recommended branch protection:
 - Require the PR validation workflow to pass.
 - Require the exact emitted status check context: `PR validation / validate (pull_request)`.
 - Require coverage to meet the configured threshold.
-- Require review approval or the configured review label.
+- Require `pr.minimumApprovals.dev/main` review approval(s), default `1` per branch, or the configured review label.
 - Block merge while `needs-changes` is present.
 
 Release flow:

@@ -1,5 +1,5 @@
 param(
-  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetPlaneEnv", "SetMonitoringEnv", "SetGiteaRunner", "SetSeqAzureEventHubLogs", "SplitInfraEnv", "AuditQualityGates", "AuditRecommendedTools", "DiscoverProjectGuidance", "AcquireProjectGuidance", "SetRecommendedTools", "MapProjectGuidanceStep", "BuildGiteaActionsImages", "ValidateGiteaActionsRunner", "InitProjectProfile", "InitQualityGateTemplates", "SetQualityConfig", "SyncWorktreeLocalConfig", "EnsureDeliveryContext")]
+  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetGiteaBranchProtection", "SetPlaneEnv", "SetMonitoringEnv", "SetGiteaRunner", "SetSeqAzureEventHubLogs", "SplitInfraEnv", "AuditQualityGates", "AuditRecommendedTools", "DiscoverProjectGuidance", "AcquireProjectGuidance", "SetRecommendedTools", "MapProjectGuidanceStep", "BuildGiteaActionsImages", "ValidateGiteaActionsRunner", "InitProjectProfile", "InitQualityGateTemplates", "SetQualityConfig", "SyncWorktreeLocalConfig", "EnsureDeliveryContext")]
   [string]$Mode = "Audit",
 
   [string]$Root = (Resolve-Path ".").Path,
@@ -127,6 +127,8 @@ function Ensure-ObjectProperty {
 
   if ($null -eq $Object.$Name) {
     $Object | Add-Member -MemberType NoteProperty -Name $Name -Value ([pscustomobject]@{})
+  } elseif (-not ($Object.$Name -is [pscustomobject]) -and -not ($Object.$Name -is [System.Collections.IDictionary])) {
+    $Object.$Name = [pscustomobject]@{}
   }
 }
 
@@ -148,6 +150,101 @@ function Set-ObjectValue {
     $cursor.$leaf = $Value
   } else {
     $cursor | Add-Member -MemberType NoteProperty -Name $leaf -Value $Value
+  }
+}
+
+function Get-PrMinimumApprovals {
+  param(
+    $Client,
+    [string]$Branch,
+    [int]$Fallback = 1
+  )
+
+  if ($null -eq $Client.pr -or $null -eq $Client.pr.minimumApprovals) { return $Fallback }
+  $minimum = $Client.pr.minimumApprovals
+
+  if ($minimum -is [int] -or $minimum -is [long] -or $minimum -is [double] -or $minimum -is [decimal] -or $minimum -is [string]) {
+    $value = 0
+    if ([int]::TryParse([string]$minimum, [ref]$value) -and $value -ge 0) { return $value }
+    return $Fallback
+  }
+
+  if ($minimum.PSObject.Properties.Name -contains $Branch) {
+    $value = 0
+    if ([int]::TryParse([string]$minimum.$Branch, [ref]$value) -and $value -ge 0) { return $value }
+  }
+
+  return $Fallback
+}
+
+function Add-PrMinimumApprovalValidationFindings {
+  param(
+    $Result,
+    $Client,
+    [string]$ClientLocal
+  )
+
+  if ($null -eq $Client.pr.minimumApprovals) {
+    Add-Item $Result "findings" $ClientLocal "pr.minimumApprovals.dev" "Missing PR approval minimum; default should be 1." "warning"
+    Add-Item $Result "findings" $ClientLocal "pr.minimumApprovals.main" "Missing PR approval minimum; default should be 1." "warning"
+    return
+  }
+
+  $minimum = $Client.pr.minimumApprovals
+  if ($minimum -is [int] -or $minimum -is [long] -or $minimum -is [double] -or $minimum -is [decimal] -or $minimum -is [string]) {
+    $legacyValue = 0
+    if (-not [int]::TryParse([string]$minimum, [ref]$legacyValue) -or $legacyValue -lt 0) {
+      Add-Item $Result "findings" $ClientLocal "pr.minimumApprovals" "Legacy PR approval minimum must be an integer greater than or equal to 0." "warning"
+    }
+    return
+  }
+
+  foreach ($branch in @("dev", "main")) {
+    if ($minimum.PSObject.Properties.Name -notcontains $branch) {
+      Add-Item $Result "findings" $ClientLocal "pr.minimumApprovals.$branch" "Missing PR approval minimum; default should be 1." "warning"
+      continue
+    }
+
+    $branchValue = 0
+    if (-not [int]::TryParse([string]$minimum.$branch, [ref]$branchValue) -or $branchValue -lt 0) {
+      Add-Item $Result "findings" $ClientLocal "pr.minimumApprovals.$branch" "PR approval minimum must be an integer greater than or equal to 0." "warning"
+    }
+  }
+}
+
+function Get-GiteaBranchProtectionConfig {
+  param($Result)
+
+  $clientLocal = ".codex/client-tools.local.json"
+  $clientPath = Join-RootPath $clientLocal
+  if (-not (Test-Path $clientPath)) {
+    Add-Item $Result "findings" $clientLocal "" "Local client tool config is missing." "error"
+    return $null
+  }
+
+  try {
+    $client = Get-Content -Path $clientPath -Raw | ConvertFrom-Json
+  } catch {
+    Add-Item $Result "findings" $clientLocal "" "Could not parse local client tool config for branch protection configuration." "error"
+    return $null
+  }
+
+  if (Test-Placeholder $client.gitea.apiToken -or $null -eq $client.gitea.baseUrl -or $null -eq $client.gitea.owner -or $null -eq $client.gitea.repo) {
+    Add-Item $Result "findings" $clientLocal "gitea" "Cannot configure Gitea branch protection because Gitea API config is missing or placeholder." "error"
+    return $null
+  }
+
+  Add-PrMinimumApprovalValidationFindings $Result $client $clientLocal
+  if (@($Result["findings"] | Where-Object { $_.path -eq $clientLocal -and $_.key -like "pr.minimumApprovals*" -and $_.severity -ne "info" }).Count -gt 0) {
+    return $null
+  }
+
+  return [pscustomobject]@{
+    client = $client
+    headers = @{ Authorization = "token $($client.gitea.apiToken)"; Accept = "application/json" }
+    baseUrl = ([string]$client.gitea.baseUrl).TrimEnd("/")
+    owner = $client.gitea.owner
+    repo = $client.gitea.repo
   }
 }
 
@@ -771,6 +868,7 @@ function Add-GiteaBranchProtectionAuditFindings {
   $targetBranches = @("main", "dev")
 
   foreach ($branch in $targetBranches) {
+    $expectedApprovals = Get-PrMinimumApprovals -Client $client -Branch $branch
     try {
       $protection = Invoke-RestMethod -Method Get -Uri "$baseUrl/api/v1/repos/$($client.gitea.owner)/$($client.gitea.repo)/branch_protections/$branch" -Headers $headers
     } catch {
@@ -780,6 +878,10 @@ function Add-GiteaBranchProtectionAuditFindings {
 
     if ($protection.enable_status_check -and (@($protection.status_check_contexts) -notcontains $expectedContext)) {
       Add-Item $Result "findings" ".gitea/workflows/README.md" "branch-protection.$branch" "Gitea branch protection for '$branch' requires status contexts '$(@($protection.status_check_contexts) -join ', ')', but PR validation reports '$expectedContext'. Update branch protection to require the emitted context." "warning"
+    }
+
+    if ($null -ne $protection.required_approvals -and [int]$protection.required_approvals -ne $expectedApprovals) {
+      Add-Item $Result "findings" ".gitea/workflows/README.md" "branch-protection.$branch.required_approvals" "Gitea branch protection for '$branch' requires $($protection.required_approvals) approval(s), but pr.minimumApprovals.$branch is $expectedApprovals. Update branch protection or local PR config so they match." "warning"
     }
   }
 }
@@ -1398,6 +1500,10 @@ function Ensure-InferredClientToolsConfig {
   Set-InferredClientValue $Result $client @("nexus", "repository") "raw-hosted"
 
   Set-InferredClientValue $Result $client @("pr", "reviewers") "all"
+  if ($null -eq $client.pr -or $null -eq $client.pr.minimumApprovals -or -not ($client.pr.minimumApprovals -is [int] -or $client.pr.minimumApprovals -is [long] -or $client.pr.minimumApprovals -is [double] -or $client.pr.minimumApprovals -is [decimal] -or $client.pr.minimumApprovals -is [string])) {
+    Set-InferredClientValue $Result $client @("pr", "minimumApprovals", "dev") 1
+    Set-InferredClientValue $Result $client @("pr", "minimumApprovals", "main") 1
+  }
   Set-InferredClientValue $Result $client @("pr", "labels", "enabled") $true
   Set-InferredClientValue $Result $client @("pr", "labels", "reviewed") "codex-reviewed"
   Set-InferredClientValue $Result $client @("pr", "labels", "needsTests") "needs-tests"
@@ -2063,6 +2169,8 @@ function Invoke-Audit {
       } elseif (($client.pr.reviewers -is [string]) -and [string]::IsNullOrWhiteSpace($client.pr.reviewers)) {
         Add-Item $result "findings" $clientLocal "pr.reviewers" "Empty reviewer config; use all or an explicit developer username array." "warning"
       }
+
+      Add-PrMinimumApprovalValidationFindings $result $client $clientLocal
 
       if ($null -eq $client.pr.labels) {
         Add-Item $result "findings" $clientLocal "pr.labels" "Missing PR label config; defaults should enable codex-reviewed, needs-tests, and needs-changes." "warning"
@@ -4426,7 +4534,7 @@ Recommended branch protection:
 - Require the PR validation workflow to pass.
 - Require the exact emitted status check context: `PR validation / validate (pull_request)`.
 - Require coverage to meet the configured threshold.
-- Require review approval or the configured review label.
+- Require `pr.minimumApprovals.dev/main` review approval(s), default `1` per branch, or the configured review label.
 - Block merge while `needs-changes` is present.
 
 Release flow:
@@ -4644,6 +4752,52 @@ function Invoke-SetClientTools {
   return $result
 }
 
+function Invoke-SetGiteaBranchProtection {
+  $result = New-Result
+  $config = Get-GiteaBranchProtectionConfig $result
+  if ($null -eq $config) { return $result }
+
+  foreach ($branch in @("dev", "main")) {
+    $expectedApprovals = Get-PrMinimumApprovals -Client $config.client -Branch $branch
+    $uri = "$($config.baseUrl)/api/v1/repos/$($config.owner)/$($config.repo)/branch_protections/$branch"
+
+    try {
+      $current = Invoke-RestMethod -Method Get -Uri $uri -Headers $config.headers
+    } catch {
+      Add-Item $result "findings" ".gitea/workflows/README.md" "branch-protection.$branch" "Could not read Gitea branch protection for '$branch'; configure the protected branch first or verify repository admin token permissions." "error"
+      continue
+    }
+
+    if ($null -ne $current.required_approvals -and [int]$current.required_approvals -eq $expectedApprovals) {
+      Add-Item $result "actions" ".gitea/workflows/README.md" "branch-protection.$branch.required_approvals" "Gitea branch protection already requires $expectedApprovals approval(s)."
+      continue
+    }
+
+    $body = @{ required_approvals = $expectedApprovals } | ConvertTo-Json -Depth 5
+    try {
+      Invoke-RestMethod -Method Patch -Uri $uri -Headers $config.headers -ContentType "application/json" -Body $body | Out-Null
+    } catch {
+      Add-Item $result "findings" ".gitea/workflows/README.md" "branch-protection.$branch.required_approvals" "Could not update Gitea branch protection for '$branch' to $expectedApprovals approval(s)." "error"
+      continue
+    }
+
+    try {
+      $updated = Invoke-RestMethod -Method Get -Uri $uri -Headers $config.headers
+    } catch {
+      Add-Item $result "findings" ".gitea/workflows/README.md" "branch-protection.$branch.required_approvals" "Updated Gitea branch protection for '$branch', but could not verify the final value." "error"
+      continue
+    }
+
+    if ($null -ne $updated.required_approvals -and [int]$updated.required_approvals -eq $expectedApprovals) {
+      Add-Item $result "actions" ".gitea/workflows/README.md" "branch-protection.$branch.required_approvals" "Set Gitea branch protection to require $expectedApprovals approval(s)."
+    } else {
+      Add-Item $result "findings" ".gitea/workflows/README.md" "branch-protection.$branch.required_approvals" "Gitea branch protection for '$branch' still reports $($updated.required_approvals) approval(s); expected $expectedApprovals." "error"
+    }
+  }
+
+  return $result
+}
+
 function Invoke-SetEnvMode {
   param(
     [string]$TargetRelative
@@ -4822,6 +4976,7 @@ switch ($Mode) {
   "InitProjectProfile" { $result = Invoke-InitProjectProfile }
   "InitQualityGateTemplates" { $result = Invoke-InitQualityGateTemplates }
   "SetClientTools" { $result = Invoke-SetClientTools }
+  "SetGiteaBranchProtection" { $result = Invoke-SetGiteaBranchProtection }
   "SetRecommendedTools" { $result = Invoke-SetRecommendedTools }
   "MapProjectGuidanceStep" { $result = Invoke-MapProjectGuidanceStep }
   "BuildGiteaActionsImages" { $result = Invoke-BuildGiteaActionsImages }

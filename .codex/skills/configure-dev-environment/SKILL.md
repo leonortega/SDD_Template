@@ -90,6 +90,7 @@ Useful modes:
 - `AcquireProjectGuidance`: auto-copy safe confirmed `manual-copy` `repo:` skill sources into `.codex/skills`; prepare guarded install plans for MCPs, plugins, tools, IDE/global installs, secrets, or restart-required items; aggregate IDE restart/system reboot notices once at the end; require source attribution including `sourceKind`; leave non-skill guidance in the local catalog unless deterministic repo-local config is supported.
 - `InitLocalFiles`: create ignored local files from tracked templates.
 - `SetClientTools`: update `.codex/client-tools.local.json`.
+- `SetGiteaBranchProtection`: apply `pr.minimumApprovals.dev/main` to live Gitea branch protection.
 - `SetRecommendedTools`: record accepted or dismissed recommendation ids in `.codex/client-tools.local.json`; it must not install skills, plugins, MCPs, or secrets.
 - `MapProjectGuidanceStep`: update `.codex/tool-recommendations.local.json` by appending the current workflow step to each used recommendation's `usedInSteps`.
 - `WriteInstalledSkillIndex` through `tools/SDDTemplate.DeliveryTools`: generate or reuse ignored `.codex/installed-skill-index.local.json` and `.codex/installed-skill-index.cache.local.json` from installed project skills.

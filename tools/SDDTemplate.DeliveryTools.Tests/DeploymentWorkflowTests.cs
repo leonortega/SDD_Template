@@ -979,6 +979,9 @@ namespace SDDTemplate.DeliveryTools.Tests
                 ".codex",
                 "client-tools.example.json"));
 
+            Assert.Contains("\"minimumApprovals\"", config);
+            Assert.Contains("\"dev\": 1", config);
+            Assert.Contains("\"main\": 1", config);
             Assert.Contains("\"parallelDelivery\"", config);
             Assert.Contains("\"enabled\": false", config);
             Assert.Contains("\"maxActiveTickets\": 2", config);
@@ -997,9 +1000,26 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("\"reasoningEffort\": \"high\"", config);
 
             string script = ReadConfigureScript();
+            Assert.Contains("pr\", \"minimumApprovals\", \"dev", script);
+            Assert.Contains("SetGiteaBranchProtection", script);
             Assert.Contains("parallelDelivery\", \"agentModelPolicy\", \"pipelineStatus\", \"model", script);
             Assert.Contains("parallelDelivery\", \"agentModelPolicy\", \"implementation\", \"model", script);
             Assert.Contains("parallelDelivery\", \"agentModelPolicy\", \"deployToProd\", \"reasoningEffort", script);
+        }
+
+        [Fact]
+        public void BranchProtectionDocsUseConfigurableApprovalMinimum()
+        {
+            string workflowReadme = File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, ".gitea", "workflows", "README.md"));
+            string qualityReference = ReadSkill("configure-dev-environment", Path.Combine("references", "quality-gates.md"));
+            string giteaReference = ReadSkill("configure-dev-environment", Path.Combine("references", "gitea-pr.md"));
+            string script = ReadConfigureScript();
+
+            Assert.Contains("`pr.minimumApprovals.dev/main` review approval(s), default `1` per branch", workflowReadme);
+            Assert.Contains("`pr.minimumApprovals.dev/main` review approval(s), default `1` per branch", qualityReference);
+            Assert.Contains("`pr.minimumApprovals.dev`: default `1`", giteaReference);
+            Assert.Contains("`pr.minimumApprovals.main`: default `1`", giteaReference);
+            Assert.Contains("required_approvals", script);
         }
 
         [Fact]

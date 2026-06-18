@@ -96,7 +96,7 @@ Ask the user to configure Gitea branch protection:
 - Require the PR validation workflow to pass.
 - Require coverage to meet the configured threshold.
 - Require the exact emitted PR validation status context: `PR validation / validate (pull_request)`.
-- Require review approval or the configured review label.
+- Require `pr.minimumApprovals.dev/main` review approval(s), default `1` per branch, or the configured review label.
 - Block merge while `needs-changes` is present.
 
 ## Deployment Gating

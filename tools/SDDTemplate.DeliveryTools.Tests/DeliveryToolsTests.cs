@@ -393,6 +393,88 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
+        public void AuditReportsMissingOrInvalidPrMinimumApprovals()
+        {
+            string root = CreateTempDirectory();
+            _ = Directory.CreateDirectory(Path.Combine(root, ".codex"));
+            File.Copy(
+                Path.Combine(FindRepositoryRoot().FullName, ".codex", "quality.example.json"),
+                Path.Combine(root, ".codex", "quality.example.json"));
+            File.WriteAllText(
+                Path.Combine(root, ".codex", "client-tools.local.json"),
+                JsonSerializer.Serialize(new
+                {
+                    plane = new { baseUrl = "http://localhost:8080", apiToken = "replace-with-plane-api-token" },
+                    gitea = new { baseUrl = "http://localhost:3000", apiToken = "replace-with-gitea-api-token" },
+                    pr = new { reviewers = "all", minimumApprovals = new { dev = -1, main = "bad" } },
+                }));
+
+            string output = RunPowerShellScript("-Mode", "Audit", "-Root", root);
+
+            using JsonDocument audit = JsonDocument.Parse(output);
+            JsonElement[] findings = [.. audit.RootElement.GetProperty("findings").EnumerateArray().Where(
+                item => item.GetProperty("path").GetString() == ".codex/client-tools.local.json"
+                    && (item.GetProperty("key").GetString() == "pr.minimumApprovals.dev"
+                        || item.GetProperty("key").GetString() == "pr.minimumApprovals.main"))];
+
+            Assert.Equal(2, findings.Length);
+            Assert.All(findings, finding =>
+            {
+                Assert.Equal("warning", finding.GetProperty("severity").GetString());
+                Assert.Contains("greater than or equal to 0", finding.GetProperty("message").GetString());
+            });
+        }
+
+        [Fact]
+        public void AuditAcceptsLegacyScalarPrMinimumApprovals()
+        {
+            string root = CreateTempDirectory();
+            _ = Directory.CreateDirectory(Path.Combine(root, ".codex"));
+            File.Copy(
+                Path.Combine(FindRepositoryRoot().FullName, ".codex", "quality.example.json"),
+                Path.Combine(root, ".codex", "quality.example.json"));
+            File.WriteAllText(
+                Path.Combine(root, ".codex", "client-tools.local.json"),
+                JsonSerializer.Serialize(new
+                {
+                    plane = new { baseUrl = "http://localhost:8080", apiToken = "replace-with-plane-api-token" },
+                    gitea = new { baseUrl = "http://localhost:3000", apiToken = "replace-with-gitea-api-token" },
+                    pr = new { reviewers = "all", minimumApprovals = 1 },
+                }));
+
+            string output = RunPowerShellScript("-Mode", "Audit", "-Root", root);
+
+            using JsonDocument audit = JsonDocument.Parse(output);
+            Assert.DoesNotContain(
+                audit.RootElement.GetProperty("findings").EnumerateArray(),
+                item => (item.GetProperty("key").GetString() ?? string.Empty).StartsWith("pr.minimumApprovals", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public void SetClientToolsMigratesScalarPrMinimumApprovalsToBranchMap()
+        {
+            string root = CreateTempDirectory();
+            _ = Directory.CreateDirectory(Path.Combine(root, ".codex"));
+            File.WriteAllText(
+                Path.Combine(root, ".codex", "client-tools.local.json"),
+                JsonSerializer.Serialize(new { pr = new { minimumApprovals = 1 } }));
+
+            _ = RunPowerShellScript(
+                "-Mode",
+                "SetClientTools",
+                "-Root",
+                root,
+                "-ValuesJson",
+                JsonSerializer.Serialize(new { pr = new { minimumApprovals = new { dev = 1, main = 1 } } }));
+
+            using JsonDocument config = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, ".codex", "client-tools.local.json")));
+            JsonElement minimumApprovals = config.RootElement.GetProperty("pr").GetProperty("minimumApprovals");
+            Assert.Equal(JsonValueKind.Object, minimumApprovals.ValueKind);
+            Assert.Equal(1, minimumApprovals.GetProperty("dev").GetInt32());
+            Assert.Equal(1, minimumApprovals.GetProperty("main").GetInt32());
+        }
+
+        [Fact]
         public void SyncWorktreeLocalConfigCopiesOnlyAllowlistedLocalRuntimeFiles()
         {
             string root = CreateTempDirectory();
