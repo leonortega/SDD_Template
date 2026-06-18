@@ -13,10 +13,20 @@ namespace SDDTemplate.DeliveryTools
         public static string ReadDeliveryPolicyTicketKeyPattern(string path)
         {
             using JsonDocument document = JsonDocument.Parse(File.ReadAllText(path));
-            return document.RootElement.TryGetProperty("ticketKeyPattern", out JsonElement pattern)
+            return TryReadTicketKeyPattern(document.RootElement, out string? profilePattern)
+                ? profilePattern
+                : document.RootElement.TryGetProperty("ticketKeyPattern", out JsonElement pattern)
                 && !string.IsNullOrWhiteSpace(pattern.GetString())
                     ? pattern.GetString()!
                     : throw new InvalidOperationException("delivery-policy.json must define ticketKeyPattern.");
+        }
+
+        public static string ReadProjectProfileTicketKeyPattern(string path)
+        {
+            using JsonDocument document = JsonDocument.Parse(File.ReadAllText(path));
+            return TryReadTicketKeyPattern(document.RootElement, out string? pattern)
+                ? pattern
+                : throw new InvalidOperationException("project-profile.json must define workflow.ticketKeyPattern.");
         }
 
         public static string ExtractTicketKey(string commitMessage, string ticketKeyPattern, string fallback = "")
@@ -244,7 +254,7 @@ namespace SDDTemplate.DeliveryTools
                     bool required = ReadBool(setting, "required", fallback: true);
                     if (required && source.Equals("manualRequired", StringComparison.Ordinal))
                     {
-                        errors.Add($"Required deployment configuration {appId}:{RequiredString(setting, "name")} is manualRequired. Run configure-azure-environments and map this value before deploying.");
+                        errors.Add($"Required deployment configuration {appId}:{RequiredString(setting, "name")} is manualRequired. Run configure-cloud-environments and map this value before deploying.");
                     }
                 }
 
@@ -307,7 +317,7 @@ namespace SDDTemplate.DeliveryTools
                 ? new TicketReadinessResult("blocked", missing)
                 : missing.Count == 0
                     ? new TicketReadinessResult("ready", [])
-                    : new TicketReadinessResult("enrichable", missing);
+                    : new TicketReadinessResult("refinable", missing);
         }
 
         public static DeliveryRiskResult ClassifyDeliveryRisk(IEnumerable<string> changedPaths, string contextText, int estimatedChangedLines)
@@ -470,6 +480,20 @@ namespace SDDTemplate.DeliveryTools
         {
             return value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined
                 || (value.ValueKind == JsonValueKind.String && string.IsNullOrWhiteSpace(value.GetString()));
+        }
+
+        private static bool TryReadTicketKeyPattern(JsonElement root, out string pattern)
+        {
+            pattern = string.Empty;
+            if (root.TryGetProperty("workflow", out JsonElement workflow)
+                && workflow.TryGetProperty("ticketKeyPattern", out JsonElement workflowPattern)
+                && !string.IsNullOrWhiteSpace(workflowPattern.GetString()))
+            {
+                pattern = workflowPattern.GetString()!;
+                return true;
+            }
+
+            return false;
         }
 
         private static bool HasAny(string text, params string[] needles)

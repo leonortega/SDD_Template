@@ -1,5 +1,14 @@
 # Failure Pattern Memory
 
+## OpenSpec CLI Telemetry Can Slow List And Status
+
+- Type: Pattern
+- Status: Active
+- Source: `openspec list --json`, `openspec status --change feat-e2eproject-6-improve-logging --json`, `OPENSPEC_TELEMETRY=0`
+- Last verified: 2026-06-17
+
+The global `@fission-ai/openspec` CLI initializes PostHog telemetry before commands. On this workstation, `openspec list --json` and `openspec status --change ... --json` can take 5-8 seconds or time out under short automation limits when telemetry is enabled. Set user or process environment variable `OPENSPEC_TELEMETRY=0` before running OpenSpec automation; this reduced both commands to roughly 1.3-2.3 seconds in live verification.
+
 ## Ambiguous Ticket Or Stale Lock
 
 - Type: Pattern
@@ -7,7 +16,7 @@
 - Source: `.codex/skills/_shared/delivery-contract.md`
 - Last verified: 2026-06-09
 
-If a child skill resolves a ticket key that differs from `.codex/delivery-context.local.json`, stop and report the mismatch. Do not deploy, test, move state, tag, or comment the other ticket. `plane-start-ticket` is the only lazy cleanup path: when starting another ticket, it may replace a different existing lock only after the locked Plane ticket is verified in the configured Done state. Active, missing, ambiguous, or unverifiable locks still block.
+If a child skill resolves a ticket key that differs from `.codex/delivery-context.local.json`, stop and report the mismatch. Do not deploy, test, move state, tag, or comment the other ticket. `dev-flow-start-ticket` is the only lazy cleanup path: when starting another ticket, it may replace a different existing lock only after the locked Plane ticket is verified in the configured Done state. Active, missing, ambiguous, or unverifiable locks still block.
 
 ## Deployment Lane Conflict
 
@@ -103,10 +112,19 @@ Grafana alert rule groups reject intervals below the local scheduler interval; u
 
 - Type: Pattern
 - Status: Active
-- Source: `dotnet test .\SDDTemplate.slnx --no-build`, `tests/SDDTemplate.Site.Tests/ObservabilityLoggingTests.cs`, `tools/SDDTemplate.DeliveryTools.Tests/DeploymentWorkflowTests.cs`, `tools/SDDTemplate.DeliveryTools.Tests/DeliveryToolsTests.cs`
+- Source: `dotnet test .\tools\SDDTemplate.DeliveryTools.Tests`, `tests/SDDTemplate.Site.Tests/ObservabilityLoggingTests.cs`, `tools/SDDTemplate.DeliveryTools.Tests/DeploymentWorkflowTests.cs`, `tools/SDDTemplate.DeliveryTools.Tests/DeliveryToolsTests.cs`
+- Last verified: 2026-06-17
+
+When unrelated code changes run the full suite, existing fixture drift can fail tests that assert README/canonical docs text and Event Hub collector template values. Current known failures include missing `OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING` in the expected env surface, missing `Azure Monitor` in architecture context, and missing README phrases such as `## Canonical Context` or `Before the first ticket starts`. The old `manual by default` recommendation wording is superseded by guarded-auto acquisition. Treat these as repository guidance/configuration drift, not product-code regressions, unless the current change touched those docs or env templates.
+
+## Clean CI Lacks Ignored Grafana Dashboards Local Files
+
+- Type: Pattern
+- Status: Active
+- Source: PR #33 Gitea Actions run 194, `tests/SDDTemplate.Site.Tests/ObservabilityLoggingTests.cs`, `.gitignore`
 - Last verified: 2026-06-16
 
-When unrelated code changes run the full suite, existing fixture drift can fail tests that assert README/canonical docs text and Event Hub collector template values. Current known failures include missing `OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING` in the expected env surface, missing `Azure Monitor` in architecture context, and missing README phrases such as `## Canonical Context`, `Before the first ticket starts`, and `manual by default`. Treat these as repository guidance/configuration drift, not product-code regressions, unless the current change touched those docs or env templates.
+`infra/monitoring/grafana/dashboards.local/` is ignored local runtime state. Tests that assert Grafana dashboard provisioning can require the tracked provisioning path, but must not require generated dashboard JSON files to exist in clean Gitea Actions checkouts. If a CI run fails with `DirectoryNotFoundException` for `infra/monitoring/grafana/dashboards.local/dev-health-dashboard.json`, classify it as test/tooling drift and make the test conditional on the local file before treating product code as broken.
 
 ## Worktree Local Config Copy Can Leave Placeholders
 
@@ -218,6 +236,15 @@ If `git` is unavailable in a Codex PowerShell session, first check whether Git i
 
 When merging `dev` into a ticket feature branch, Git's generated merge message can fail the commit-message hook. Complete the merge with a ticket-prefixed message such as `E2EPROJECT-2: merge dev updates into feature` so hooks and deployment gating recognize the commit correctly.
 
+## Direct SDD Maintenance Commits Need `[SDD]` Prefix
+
+- Type: Pattern
+- Status: Active
+- Source: repeated local commit hook failures, latest during project guidance acquisition flow commit
+- Last verified: 2026-06-17
+
+When committing direct repository maintenance that is not tied to a Plane ticket or OpenSpec change, start the commit message with `[SDD]`, for example `[SDD] Improve project guidance acquisition flow`. The `.githooks/require-ticket.ps1` commit-msg hook rejects ordinary messages that do not start with a configured ticket key, an OpenSpec id, or `[SDD]`. Before running `git commit` in this repository, classify the work as ticketed, OpenSpec, or direct SDD maintenance and choose the prefix first.
+
 ## Timed-Out Playwright Installs Can Leave A Cache Lock
 
 - Type: Pattern
@@ -261,7 +288,7 @@ When `.codex/agent-telemetry.local.jsonl` is absent or a delivery run missed tel
 - Source: E2EPROJECT-6 Plane comments and `.codex/agent-telemetry.local.jsonl`
 - Last verified: 2026-06-12
 
-If a ticket is moved to Done after a Gitea QA evidence run using a noncanonical marker such as `IA generated QA evidence: {ticketKey}` instead of the `test-e2e` marker `IA generated E2E QA: {ticketKey}`, the `test-e2e` finalization path may never append a `test-e2e` telemetry row or post `IA generated workflow timing: {ticketKey}`. Treat Done state plus QA evidence marker as insufficient; rerun or repair through `test-e2e` so the canonical E2E QA marker, workflow timing comment, and telemetry row are verified.
+If a ticket is moved to Done after a Gitea QA evidence run using a noncanonical marker such as `IA generated QA evidence: {ticketKey}` instead of the `quality-test-e2e` marker `IA generated E2E QA: {ticketKey}`, the `quality-test-e2e` finalization path may never append a `quality-test-e2e` telemetry row or post `IA generated workflow timing: {ticketKey}`. Treat Done state plus QA evidence marker as insufficient; rerun or repair through `quality-test-e2e` so the canonical E2E QA marker, workflow timing comment, and telemetry row are verified.
 
 ## Azure Event Hubs Kafka 9093 EOF Can Be Network-Side
 
@@ -271,3 +298,39 @@ If a ticket is moved to Done after a Gitea QA evidence run using a noncanonical 
 - Last verified: 2026-06-10
 
 When Alloy `loki.source.azure_event_hubs` reports `kafka: client has run out of available brokers to talk to: EOF`, first verify the Event Hubs namespace is Standard or higher, Kafka is enabled, the listen rule is scoped correctly, and local env values are present without printing secrets. If those checks pass but `SslStream` or `kcat` to `<namespace>.servicebus.windows.net:9093` fails with connection reset or TLS handshake failure, treat it as a Kafka/TLS 9093 network or service endpoint blocker before changing repository configuration. Retry from a stable network or validate firewall/proxy rules for Event Hubs Kafka port 9093.
+
+## Azure App Service Smoke Can Beat Warm-Up
+
+- Type: Pattern
+- Status: Active
+- Source: E2EPROJECT-7 package/deploy run 204, DEV deploy succeeded but immediate smoke failed; fresh DEV `/health` checks passed shortly after.
+- Last verified: 2026-06-16
+
+When `az webapp deploy` reports `RuntimeSuccessful` but the immediate page, CORS, or `/health` smoke check fails, re-check live DEV/QA targets after a short delay before changing app code. If live checks pass, treat it as Azure App Service warm-up tolerance and add bounded retry/backoff to the workflow smoke checks. Keep `.gitea/workflows/package-deploy.yml` and the `configure_infra_tools.ps1` workflow generator synchronized.
+
+## Docker MCP Toolkit Requires Docker MCP CLI Support
+
+- Type: Pattern
+- Status: Active
+- Source: project guidance MCP install pass
+- Last verified: 2026-06-17
+
+Docker MCP Toolkit cannot be enabled through plain Docker CLI when `docker mcp` is unavailable. On this workstation, `docker --version` reports Rancher Desktop `29.1.4-rd`, and `docker mcp` falls back to generic Docker help with no MCP subcommand. Treat Docker MCP Toolkit as blocked until Docker Desktop or another Docker distribution exposes the official Docker MCP catalog/toolkit commands. Do not add a broken Codex MCP entry that calls `docker mcp ...`; keep the recommendation status as blocked and report one Codex restart only for MCPs that were actually configured.
+
+## Parallel Dotnet Gates Can Lock Build Outputs
+
+- Type: Pattern
+- Status: Active
+- Source: current project-profile generalization validation, parallel `dotnet build`, `dotnet test`, and `dotnet format` run
+- Last verified: 2026-06-18
+
+Do not run repo-wide `dotnet build`, `dotnet test`, and `dotnet format` concurrently in this repository on Windows. Parallel execution can leave MSBuild/VSTest processes holding `obj/**` or `bin/**` assemblies, causing `CS2012` file-lock failures such as `Cannot open ... for writing` and sometimes implicating Microsoft Defender. Run .NET quality gates sequentially. If a run is interrupted or times out, inspect live `dotnet.exe` command lines, stop only stale `vstest.console.dll` test runners, then run `dotnet build-server shutdown` before retrying.
+
+## Package Updates Need Release Deps Refresh Before Trivy
+
+- Type: Pattern
+- Status: Active
+- Source: package update validation, `dotnet list .\SDDTemplate.slnx package --vulnerable --include-transitive`, `trivy fs --scanners vuln,secret --exit-code 1 --severity HIGH,CRITICAL .`, `dotnet build .\SDDTemplate.slnx -c Release --no-restore`
+- Last verified: 2026-06-18
+
+After NuGet package updates, `dotnet list package --vulnerable --include-transitive` can be clean while Trivy still reports vulnerabilities from stale generated `bin/Release/**/*.deps.json` files. Rebuild Release with `dotnet build .\SDDTemplate.slnx -c Release --no-restore` before rerunning Trivy, or clean ignored build outputs if a full rebuild is not needed. Do not treat stale Release deps findings as unresolved package graph drift until the generated deps files are refreshed.

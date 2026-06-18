@@ -28,6 +28,9 @@ static void Run(string[] args)
         case "ReadDeliveryPolicy":
             Console.WriteLine(DeliveryWorkflowHelpers.ReadDeliveryPolicyTicketKeyPattern(Required(options, "path")));
             break;
+        case "ReadProjectProfile":
+            Console.WriteLine(DeliveryWorkflowHelpers.ReadProjectProfileTicketKeyPattern(Required(options, "path")));
+            break;
         case "ExtractTicketKey":
             Console.WriteLine(DeliveryWorkflowHelpers.ExtractTicketKey(
                 Required(options, "message"),

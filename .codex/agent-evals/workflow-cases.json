@@ -3,9 +3,9 @@
   "cases": [
     {
       "id": "ticket-start-lock-created",
-      "stage": "plane-start-ticket",
+      "stage": "dev-flow-start-ticket",
       "goal": "Start one Plane Todo ticket and prepare implementation context.",
-      "expectedRoute": "plane-start-ticket",
+      "expectedRoute": "dev-flow-start-ticket",
       "requiredEvidence": [
         "Plane ticket key and current state",
         "base branch",
@@ -15,7 +15,7 @@
       ],
       "toolExpectations": [
         "Read existing generated Plane markers before adding new generated comments",
-        "Validate ticket key against .codex/delivery-policy.json",
+        "Validate ticket key against .codex/project-profile.json",
         "Create or reuse exactly one branch for the ticket"
       ],
       "stopConditions": [
@@ -33,9 +33,9 @@
     },
     {
       "id": "implementation-quality-gated",
-      "stage": "implement-ticket",
+      "stage": "dev-flow-implement-ticket",
       "goal": "Implement scoped ticket work and hand off a reviewable PR.",
-      "expectedRoute": "implement-ticket",
+      "expectedRoute": "dev-flow-implement-ticket",
       "requiredEvidence": [
         "ticket lock",
         "Plane acceptance criteria",
@@ -68,9 +68,9 @@
     },
     {
       "id": "pr-review-labels-and-findings",
-      "stage": "gitea-pr-review-agent",
+      "stage": "dev-flow-pr-review-agent",
       "goal": "Review a Gitea PR and apply review labels consistently.",
-      "expectedRoute": "gitea-pr-review-agent",
+      "expectedRoute": "dev-flow-pr-review-agent",
       "requiredEvidence": [
         "PR diff",
         "head SHA",
@@ -99,9 +99,9 @@
     },
     {
       "id": "late-human-pr-feedback-manual-resume",
-      "stage": "automatic-implement-ticket",
+      "stage": "dev-flow-continue-implementation",
       "goal": "Reconnect automation after humans add PR comments after the AI review loop already completed.",
-      "expectedRoute": "implement-ticket",
+      "expectedRoute": "dev-flow-implement-ticket",
       "requiredEvidence": [
         "Plane ticket is In Review",
         "open PR with current head SHA",
@@ -112,7 +112,7 @@
       ],
       "toolExpectations": [
         "Manual resume scans PR comments instead of relying on webhook or polling",
-        "Delegate feedback processing to pr-review-feedback-loop",
+        "Delegate feedback processing to dev-flow-pr-review-feedback-loop",
         "Derive a new feedbackBatchId from sorted late human comment source ids",
         "Create or update OpenSpec PR Review Feedback tasks before fixing",
         "Keep Plane In Review while applying late human feedback fixes",
@@ -136,9 +136,9 @@
     },
     {
       "id": "qa-promotion-artifact-lineage",
-      "stage": "deploy-to-qa",
+      "stage": "dev-ops-deploy-qa",
       "goal": "Promote a merged PR artifact through DEV and QA without rebuilding.",
-      "expectedRoute": "deploy-to-qa",
+      "expectedRoute": "dev-ops-deploy-qa",
       "requiredEvidence": [
         "merged PR",
         "merge commit SHA",
@@ -167,9 +167,9 @@
     },
     {
       "id": "e2e-qa-evidence-done",
-      "stage": "test-e2e",
+      "stage": "quality-test-e2e",
       "goal": "Run ticket-specific QA and move only passing tickets to Done.",
-      "expectedRoute": "test-e2e",
+      "expectedRoute": "quality-test-e2e",
       "requiredEvidence": [
         "QA Plane state",
         "QA deployment marker",
@@ -196,10 +196,95 @@
       ]
     },
     {
+      "id": "qa-ticket-missing-deploy-telemetry-reroutes",
+      "stage": "dev-flow-continue-implementation",
+      "goal": "Prevent a QA ticket from jumping to E2E when deployment telemetry is missing.",
+      "expectedRoute": "dev-ops-post-merge-deploy",
+      "requiredEvidence": [
+        "Plane ticket is QA",
+        "QA deployment marker exists",
+        "artifact commit and release manifest exist",
+        "missing dev-ops-post-merge-deploy or dev-ops-deploy-qa telemetry row"
+      ],
+      "toolExpectations": [
+        "Read active ticket workflow telemetry before routing to quality-test-e2e",
+        "Route through dev-ops-post-merge-deploy in idempotent verification mode",
+        "dev-ops-post-merge-deploy invokes dev-ops-deploy-qa idempotently",
+        "Do not duplicate QA deployment Plane comments"
+      ],
+      "stopConditions": [
+        "QA deployment evidence conflicts with ticket lock",
+        "artifact commit cannot be resolved",
+        "deployment lane is owned by another ticket"
+      ],
+      "handoffFields": [
+        "ticketKey",
+        "artifactCommit",
+        "missingTelemetryStages",
+        "nextRoute"
+      ]
+    },
+    {
+      "id": "done-ticket-missing-e2e-telemetry-reroutes",
+      "stage": "dev-flow-continue-implementation",
+      "goal": "Repair missing E2E telemetry through idempotent quality-test-e2e finalization before reporting timing complete.",
+      "expectedRoute": "quality-test-e2e",
+      "requiredEvidence": [
+        "Plane ticket is Done",
+        "canonical E2E QA marker exists",
+        "QA evidence and RC lineage exist",
+        "missing quality-test-e2e telemetry row"
+      ],
+      "toolExpectations": [
+        "Route through quality-test-e2e in idempotent verification mode",
+        "Append a quality-test-e2e telemetry row without duplicating QA comments",
+        "Patch or reuse the workflow timing marker"
+      ],
+      "stopConditions": [
+        "canonical E2E QA marker is missing",
+        "QA evidence cannot be verified",
+        "RC lineage conflicts with artifact commit"
+      ],
+      "handoffFields": [
+        "ticketKey",
+        "qaResult",
+        "missingTelemetryStages",
+        "workflowTimingMarker"
+      ]
+    },
+    {
+      "id": "review-marker-missing-review-telemetry-reroutes",
+      "stage": "dev-flow-continue-implementation",
+      "goal": "Repair missing PR review telemetry before later PR handoff or QA promotion.",
+      "expectedRoute": "dev-flow-pr-review-agent",
+      "requiredEvidence": [
+        "open or recently merged PR",
+        "current-head PR review marker exists",
+        "missing dev-flow-pr-review-agent telemetry row",
+        "ticket context can be resolved"
+      ],
+      "toolExpectations": [
+        "Route through dev-flow-pr-review-agent in idempotent verification mode",
+        "Append a dev-flow-pr-review-agent telemetry row without duplicating review comments",
+        "Continue normal routing only after review telemetry exists"
+      ],
+      "stopConditions": [
+        "PR head SHA changed during inspection",
+        "ticket context cannot be resolved",
+        "review marker does not match current head"
+      ],
+      "handoffFields": [
+        "ticketKey",
+        "prNumber",
+        "headSha",
+        "missingTelemetryStages"
+      ]
+    },
+    {
       "id": "prod-explicit-artifact-promotion",
-      "stage": "deploy-to-prod",
+      "stage": "dev-ops-deploy-prod",
       "goal": "Promote one QA-approved artifact to PROD after explicit user intent, then record the release on every included Done ticket.",
-      "expectedRoute": "deploy-to-prod",
+      "expectedRoute": "dev-ops-deploy-prod",
       "requiredEvidence": [
         "Plane Done state for every included ticket",
         "QA-approved artifact commit",
@@ -236,9 +321,9 @@
     },
     {
       "id": "post-prod-retrospective-learning-evidence",
-      "stage": "deploy-to-prod",
+      "stage": "dev-ops-deploy-prod",
       "goal": "After successful PROD promotion, run a read-only retrospective for the just-promoted release and persist sanitized learning evidence.",
-      "expectedRoute": "delivery-retrospective-audit",
+      "expectedRoute": "dev-flow-retrospective-audit",
       "requiredEvidence": [
         "successful PROD deployment marker",
         "primary ticket key",
@@ -251,7 +336,7 @@
         ".codex/agent-evals/results.local.json ignored path"
       ],
       "toolExpectations": [
-        "Invoke delivery-retrospective-audit in read-only post-prod-ticket-release mode",
+        "Invoke dev-flow-retrospective-audit in read-only post-prod-ticket-release mode",
         "Append or update sanitized local result data in .codex/agent-evals/results.local.json",
         "Add or reuse Plane marker IA generated post-PROD retrospective: {finalVersion}",
         "Read prior post-PROD markers or local results as learning evidence when present",
@@ -289,9 +374,9 @@
     },
     {
       "id": "weak-ticket-refinement-before-mutation",
-      "stage": "plane-start-ticket",
+      "stage": "dev-flow-start-ticket",
       "goal": "Classify a weak Plane Todo ticket before branch, Plane state, lock, or OpenSpec mutation.",
-      "expectedRoute": "plane-start-ticket",
+      "expectedRoute": "dev-flow-start-ticket",
       "requiredEvidence": [
         "Plane ticket title and description",
         "ticket readiness classification",
@@ -318,9 +403,9 @@
     },
     {
       "id": "low-risk-compact-path-keeps-gates",
-      "stage": "automatic-implement-ticket",
+      "stage": "dev-flow-continue-implementation",
       "goal": "Use compact context for low-risk work without skipping required delivery gates.",
-      "expectedRoute": "implement-ticket",
+      "expectedRoute": "dev-flow-implement-ticket",
       "requiredEvidence": [
         "delivery risk classification low",
         "ticket lock",
@@ -348,9 +433,9 @@
     },
     {
       "id": "oversized-workload-requires-split-or-exception",
-      "stage": "implement-ticket",
+      "stage": "dev-flow-implement-ticket",
       "goal": "Stop before implementation when OpenSpec tasks forecast oversized work without a split or exception decision.",
-      "expectedRoute": "implement-ticket",
+      "expectedRoute": "dev-flow-implement-ticket",
       "requiredEvidence": [
         "OpenSpec tasks.md",
         "Review Workload Forecast",
@@ -378,9 +463,9 @@
     },
     {
       "id": "high-risk-pr-requires-adversarial-review",
-      "stage": "gitea-pr-review-agent",
+      "stage": "dev-flow-pr-review-agent",
       "goal": "Run adversarial review for high-risk PR surfaces.",
-      "expectedRoute": "gitea-pr-review-agent",
+      "expectedRoute": "dev-flow-pr-review-agent",
       "requiredEvidence": [
         "PR diff",
         "delivery risk classification high",
@@ -409,9 +494,9 @@
     },
     {
       "id": "stale-installed-skill-index-before-delegation",
-      "stage": "automatic-implement-ticket",
+      "stage": "dev-flow-continue-implementation",
       "goal": "Report stale installed-skill runtime index before delegating child work.",
-      "expectedRoute": "automatic-implement-ticket",
+      "expectedRoute": "dev-flow-continue-implementation",
       "requiredEvidence": [
         ".codex/skills/*/SKILL.md",
         ".codex/installed-skill-index.local.json",
@@ -437,9 +522,9 @@
     },
     {
       "id": "rollback-no-main-rewrite",
-      "stage": "rollback-prod",
+      "stage": "dev-ops-rollback-prod",
       "goal": "Roll PROD back to a known-good artifact without rewriting main.",
-      "expectedRoute": "rollback-prod",
+      "expectedRoute": "dev-ops-rollback-prod",
       "requiredEvidence": [
         "current PROD release",
         "known-good artifact",

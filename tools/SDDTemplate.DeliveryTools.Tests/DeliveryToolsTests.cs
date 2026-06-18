@@ -23,6 +23,23 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
+        public void TicketKeyPatternReadsProjectProfileAndLegacyDeliveryPolicy()
+        {
+            string root = CreateTempDirectory();
+            string profilePath = Path.Combine(root, "project-profile.json");
+            string policyPath = Path.Combine(root, "delivery-policy.json");
+            File.WriteAllText(profilePath, JsonSerializer.Serialize(new
+            {
+                workflow = new { ticketKeyPattern = "ABC-[0-9]+" },
+            }));
+            File.WriteAllText(policyPath, JsonSerializer.Serialize(new { ticketKeyPattern = "LEGACY-[0-9]+" }));
+
+            Assert.Equal("ABC-[0-9]+", DeliveryWorkflowHelpers.ReadProjectProfileTicketKeyPattern(profilePath));
+            Assert.Equal("ABC-[0-9]+", DeliveryWorkflowHelpers.ReadDeliveryPolicyTicketKeyPattern(profilePath));
+            Assert.Equal("LEGACY-[0-9]+", DeliveryWorkflowHelpers.ReadDeliveryPolicyTicketKeyPattern(policyPath));
+        }
+
+        [Fact]
         public void CoverageHelpersReadJsonThresholdAndCoberturaLineRate()
         {
             string root = CreateTempDirectory();
@@ -138,7 +155,7 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
-        public void TicketReadinessClassifiesReadyEnrichableAndBlockedTickets()
+        public void TicketReadinessClassifiesReadyRefinableAndBlockedTickets()
         {
             TicketReadinessResult ready = DeliveryWorkflowHelpers.ClassifyTicketReadiness(
                 "Add client search",
@@ -149,7 +166,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                 Validation: add tests for matching and empty search.
                 """);
 
-            TicketReadinessResult enrichable = DeliveryWorkflowHelpers.ClassifyTicketReadiness(
+            TicketReadinessResult refinable = DeliveryWorkflowHelpers.ClassifyTicketReadiness(
                 "Add client search",
                 "Users should be able to search clients by name from the client list.");
 
@@ -157,8 +174,8 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.Equal("ready", ready.Status);
             Assert.Empty(ready.Missing);
-            Assert.Equal("enrichable", enrichable.Status);
-            Assert.Contains("validation expectation", enrichable.Missing);
+            Assert.Equal("refinable", refinable.Status);
+            Assert.Contains("validation expectation", refinable.Missing);
             Assert.Equal("blocked", blocked.Status);
             Assert.Contains("user-visible goal", blocked.Missing);
         }
@@ -373,6 +390,88 @@ namespace SDDTemplate.DeliveryTools.Tests
             using JsonDocument audit = JsonDocument.Parse(output);
             Assert.False(audit.RootElement.GetProperty("writeEnabled").GetBoolean());
             Assert.Contains("Would set inferred local client tool value", output);
+        }
+
+        [Fact]
+        public void AuditReportsMissingOrInvalidPrMinimumApprovals()
+        {
+            string root = CreateTempDirectory();
+            _ = Directory.CreateDirectory(Path.Combine(root, ".codex"));
+            File.Copy(
+                Path.Combine(FindRepositoryRoot().FullName, ".codex", "quality.example.json"),
+                Path.Combine(root, ".codex", "quality.example.json"));
+            File.WriteAllText(
+                Path.Combine(root, ".codex", "client-tools.local.json"),
+                JsonSerializer.Serialize(new
+                {
+                    plane = new { baseUrl = "http://localhost:8080", apiToken = "replace-with-plane-api-token" },
+                    gitea = new { baseUrl = "http://localhost:3000", apiToken = "replace-with-gitea-api-token" },
+                    pr = new { reviewers = "all", minimumApprovals = new { dev = -1, main = "bad" } },
+                }));
+
+            string output = RunPowerShellScript("-Mode", "Audit", "-Root", root);
+
+            using JsonDocument audit = JsonDocument.Parse(output);
+            JsonElement[] findings = [.. audit.RootElement.GetProperty("findings").EnumerateArray().Where(
+                item => item.GetProperty("path").GetString() == ".codex/client-tools.local.json"
+                    && (item.GetProperty("key").GetString() == "pr.minimumApprovals.dev"
+                        || item.GetProperty("key").GetString() == "pr.minimumApprovals.main"))];
+
+            Assert.Equal(2, findings.Length);
+            Assert.All(findings, finding =>
+            {
+                Assert.Equal("warning", finding.GetProperty("severity").GetString());
+                Assert.Contains("greater than or equal to 0", finding.GetProperty("message").GetString());
+            });
+        }
+
+        [Fact]
+        public void AuditAcceptsLegacyScalarPrMinimumApprovals()
+        {
+            string root = CreateTempDirectory();
+            _ = Directory.CreateDirectory(Path.Combine(root, ".codex"));
+            File.Copy(
+                Path.Combine(FindRepositoryRoot().FullName, ".codex", "quality.example.json"),
+                Path.Combine(root, ".codex", "quality.example.json"));
+            File.WriteAllText(
+                Path.Combine(root, ".codex", "client-tools.local.json"),
+                JsonSerializer.Serialize(new
+                {
+                    plane = new { baseUrl = "http://localhost:8080", apiToken = "replace-with-plane-api-token" },
+                    gitea = new { baseUrl = "http://localhost:3000", apiToken = "replace-with-gitea-api-token" },
+                    pr = new { reviewers = "all", minimumApprovals = 1 },
+                }));
+
+            string output = RunPowerShellScript("-Mode", "Audit", "-Root", root);
+
+            using JsonDocument audit = JsonDocument.Parse(output);
+            Assert.DoesNotContain(
+                audit.RootElement.GetProperty("findings").EnumerateArray(),
+                item => (item.GetProperty("key").GetString() ?? string.Empty).StartsWith("pr.minimumApprovals", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public void SetClientToolsMigratesScalarPrMinimumApprovalsToBranchMap()
+        {
+            string root = CreateTempDirectory();
+            _ = Directory.CreateDirectory(Path.Combine(root, ".codex"));
+            File.WriteAllText(
+                Path.Combine(root, ".codex", "client-tools.local.json"),
+                JsonSerializer.Serialize(new { pr = new { minimumApprovals = 1 } }));
+
+            _ = RunPowerShellScript(
+                "-Mode",
+                "SetClientTools",
+                "-Root",
+                root,
+                "-ValuesJson",
+                JsonSerializer.Serialize(new { pr = new { minimumApprovals = new { dev = 1, main = 1 } } }));
+
+            using JsonDocument config = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, ".codex", "client-tools.local.json")));
+            JsonElement minimumApprovals = config.RootElement.GetProperty("pr").GetProperty("minimumApprovals");
+            Assert.Equal(JsonValueKind.Object, minimumApprovals.ValueKind);
+            Assert.Equal(1, minimumApprovals.GetProperty("dev").GetInt32());
+            Assert.Equal(1, minimumApprovals.GetProperty("main").GetInt32());
         }
 
         [Fact]
@@ -692,6 +791,7 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.True(File.Exists(policyPath));
             Assert.Contains(".codex/delivery-policy.json", output);
+            Assert.False(File.Exists(Path.Combine(root, ".codex", "project-profile.json")));
             using JsonDocument policy = JsonDocument.Parse(File.ReadAllText(policyPath));
             JsonElement optimization = policy.RootElement.GetProperty("agentOptimization");
             Assert.Equal(20, optimization.GetProperty("maxAutonomousIterations").GetInt32());
@@ -699,6 +799,132 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.True(optimization.GetProperty("promptCache").GetProperty("trackCachedTokens").GetBoolean());
             Assert.Equal(".codex/agent-telemetry.local.jsonl", optimization.GetProperty("telemetry").GetProperty("localPath").GetString());
             Assert.Equal(".codex/agent-evals/results.local.json", optimization.GetProperty("workflowEvals").GetProperty("resultsPath").GetString());
+        }
+
+        [Fact]
+        public void InitProjectProfileCreatesSchemaProfileAndGenericAdapters()
+        {
+            string root = CreateTempDirectory();
+
+            string output = RunPowerShellScript("-Mode", "InitProjectProfile", "-Root", root);
+            string profilePath = Path.Combine(root, ".codex", "project-profile.json");
+            string schemaPath = Path.Combine(root, ".codex", "project-profile.schema.json");
+
+            Assert.True(File.Exists(profilePath));
+            Assert.True(File.Exists(schemaPath));
+            Assert.Contains(".codex/project-profile.json", output);
+            Assert.Contains(".codex/project-profile.schema.json", output);
+
+            using JsonDocument profile = JsonDocument.Parse(File.ReadAllText(profilePath));
+            Assert.Equal("TICKET-[0-9]+", profile.RootElement.GetProperty("workflow").GetProperty("ticketKeyPattern").GetString());
+            Assert.Equal("example-ticket", profile.RootElement.GetProperty("providers").GetProperty("ticket").GetProperty("id").GetString());
+
+            foreach (JsonProperty adapter in profile.RootElement.GetProperty("adapters").EnumerateObject())
+            {
+                string adapterPath = adapter.Value.GetString() ?? string.Empty;
+                Assert.False(Path.IsPathRooted(adapterPath));
+                Assert.True(File.Exists(Path.Combine(root, adapterPath.Replace('/', Path.DirectorySeparatorChar))));
+            }
+
+            string[] adapterFiles = Directory.GetFiles(Path.Combine(root, ".codex", "providers"), "*.example.md");
+            Assert.Equal(6, adapterFiles.Length);
+            Assert.All(adapterFiles, file => Assert.Contains("provider-neutral scaffold", File.ReadAllText(file)));
+        }
+
+        [Fact]
+        public void InitProjectProfileIsIdempotentAndDoesNotOverwriteExistingAdapters()
+        {
+            string root = CreateTempDirectory();
+            string adapterPath = Path.Combine(root, ".codex", "providers", "ticket.example.md");
+            _ = Directory.CreateDirectory(Path.GetDirectoryName(adapterPath)!);
+            File.WriteAllText(adapterPath, "custom adapter content");
+
+            _ = RunPowerShellScript("-Mode", "InitProjectProfile", "-Root", root);
+            string secondOutput = RunPowerShellScript("-Mode", "InitProjectProfile", "-Root", root);
+
+            Assert.Equal("custom adapter content", File.ReadAllText(adapterPath));
+            Assert.Contains("Template already exists", secondOutput);
+        }
+
+        [Fact]
+        public void InitProjectProfileGeneratedFilesDoNotContainSecretPlaceholders()
+        {
+            string root = CreateTempDirectory();
+            _ = RunPowerShellScript("-Mode", "InitProjectProfile", "-Root", root);
+
+            string[] forbidden = ["apiToken", "password", "clientSecret", "connectionString", "replace-with-"];
+            string[] files = Directory.GetFiles(Path.Combine(root, ".codex"), "*", SearchOption.AllDirectories);
+
+            foreach (string file in files)
+            {
+                string text = File.ReadAllText(file);
+                foreach (string needle in forbidden)
+                {
+                    Assert.DoesNotContain(needle, text, StringComparison.OrdinalIgnoreCase);
+                }
+            }
+        }
+
+        [Fact]
+        public void AuditSkillContractsValidatesGeneratedProjectProfileAndAdapters()
+        {
+            string root = CreateTempDirectory();
+            WriteMinimalSkillForAudit(root);
+            _ = RunPowerShellScript("-Mode", "InitProjectProfile", "-Root", root);
+
+            string output = RunSkillAuditScript("-Root", root, "-AsJson");
+
+            using JsonDocument document = JsonDocument.Parse(output);
+            Assert.True(document.RootElement.GetProperty("profilePassed").GetBoolean());
+        }
+
+        [Fact]
+        public void AuditSkillContractsReportsMissingAndEscapingAdapterPaths()
+        {
+            string root = CreateTempDirectory();
+            WriteMinimalSkillForAudit(root);
+            _ = Directory.CreateDirectory(Path.Combine(root, ".codex"));
+            File.WriteAllText(Path.Combine(root, ".codex", "project-profile.schema.json"), "{}");
+            File.WriteAllText(
+                Path.Combine(root, ".codex", "project-profile.json"),
+                JsonSerializer.Serialize(new
+                {
+                    schemaVersion = 1,
+                    workflow = new { ticketKeyPattern = "TICKET-[0-9]+" },
+                    providers = new { },
+                    adapters = new
+                    {
+                        ticket = "../outside.md",
+                        repository = ".codex/providers/missing.md",
+                    },
+                }));
+
+            string output = RunSkillAuditScript("-Root", root, "-AsJson");
+
+            using JsonDocument document = JsonDocument.Parse(output);
+            string[] findings = [.. document.RootElement.GetProperty("profileFindings").EnumerateArray().Select(item => item.GetString() ?? string.Empty)];
+            Assert.Contains(findings, finding => finding.Contains("resolves outside the repository", StringComparison.Ordinal));
+            Assert.Contains(findings, finding => finding.Contains("path does not exist", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public void ConfigureAuditReportsProjectProfileGapsAsBlockingSetupFindings()
+        {
+            string root = CreateTempDirectory();
+
+            string output = RunPowerShellScript("-Mode", "Audit", "-Root", root);
+
+            using JsonDocument document = JsonDocument.Parse(output);
+            JsonElement[] findings = [.. document.RootElement.GetProperty("findings").EnumerateArray()];
+            Assert.Contains(findings, finding =>
+                finding.GetProperty("path").GetString() == ".codex/project-profile.json"
+                && finding.GetProperty("key").GetString() == "InitProjectProfile"
+                && finding.GetProperty("severity").GetString() == "error"
+                && finding.GetProperty("phase").GetString() == "pre-start");
+            Assert.Contains(findings, finding =>
+                finding.GetProperty("path").GetString() == ".codex/project-profile.schema.json"
+                && finding.GetProperty("severity").GetString() == "error"
+                && finding.GetProperty("phase").GetString() == "pre-start");
         }
 
         [Fact]
@@ -734,7 +960,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                     recommendedTools = new
                     {
                         enabled = true,
-                        mode = "guided-manual",
+                        mode = "guarded-auto",
                         accepted = new[] { "browser-e2e-qa-plugin" },
                         dismissed = new[] { "playwright-frontend-testing-skill" },
                     },
@@ -745,9 +971,9 @@ namespace SDDTemplate.DeliveryTools.Tests
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "azure"));
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "monitoring"));
             _ = Directory.CreateDirectory(Path.Combine(root, ".gitea", "workflows"));
-            _ = Directory.CreateDirectory(Path.Combine(root, ".codex", "skills", "test-e2e"));
+            _ = Directory.CreateDirectory(Path.Combine(root, ".codex", "skills", "quality-test-e2e"));
             File.WriteAllText(Path.Combine(root, "Example.slnx"), "<Solution />");
-            File.WriteAllText(Path.Combine(root, ".codex", "skills", "test-e2e", "SKILL.md"), "# Test E2E");
+            File.WriteAllText(Path.Combine(root, ".codex", "skills", "quality-test-e2e", "SKILL.md"), "# Test E2E");
             _ = Directory.CreateDirectory(Path.Combine(root, "openspec"));
 
             string output = RunPowerShellScript("-Mode", "AuditRecommendedTools", "-Root", root);
@@ -816,7 +1042,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             JsonElement searchPlan = audit.RootElement.GetProperty("recommendations").EnumerateArray().Single(
                 item => item.GetProperty("id").GetString() == "project-guidance-search-plan");
             Assert.Equal("guidance-search-plan", searchPlan.GetProperty("type").GetString());
-            Assert.Equal("research-then-manual-copy", searchPlan.GetProperty("installMethod").GetString());
+            Assert.Equal("research-then-guarded-install", searchPlan.GetProperty("installMethod").GetString());
             Assert.Equal("official-first-internet-search", searchPlan.GetProperty("sourceDiscovery").GetString());
             string[] sourcePriority = [.. searchPlan.GetProperty("discoverySourcePriority").EnumerateArray()
                 .Select(item => item.GetString() ?? string.Empty)];
@@ -842,6 +1068,20 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("openai-security-best-practices-skill", recommendationIds);
             Assert.Contains("openai-playwright-skill", recommendationIds);
             Assert.Contains("dotnet-assertion-quality-skill", recommendationIds);
+            Assert.Contains("dotnet-sdk-docker-tool", recommendationIds);
+            Assert.Contains("gitleaks-docker-tool", recommendationIds);
+            Assert.Contains("trivy-docker-tool", recommendationIds);
+            Assert.Contains("playwright-docker-tool", recommendationIds);
+
+            JsonElement dotnetDockerTool = audit.RootElement.GetProperty("recommendations").EnumerateArray().Single(
+                item => item.GetProperty("id").GetString() == "dotnet-sdk-docker-tool");
+            Assert.Equal("docker-preferred", dotnetDockerTool.GetProperty("installPreference").GetString());
+            Assert.Equal("agentic/dotnet-ci:10.0.300-tools-1", dotnetDockerTool.GetProperty("dockerAlternative").GetProperty("image").GetString());
+            Assert.Equal("10.0.300-tools-1", dotnetDockerTool.GetProperty("dockerAlternative").GetProperty("versionPin").GetString());
+
+            JsonElement playwrightDockerTool = audit.RootElement.GetProperty("recommendations").EnumerateArray().Single(
+                item => item.GetProperty("id").GetString() == "playwright-docker-tool");
+            Assert.Equal("agentic/e2e-ci:playwright-1.57.0-1", playwrightDockerTool.GetProperty("dockerAlternative").GetProperty("image").GetString());
 
             JsonElement securitySkill = audit.RootElement.GetProperty("recommendations").EnumerateArray().Single(
                 item => item.GetProperty("id").GetString() == "openai-security-best-practices-skill");
@@ -929,7 +1169,7 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
-        public void DiscoverProjectGuidanceShowsSuggestionsAndAsksForAdditionalDesiredGuidance()
+        public void DiscoverProjectGuidanceResearchesExtraGuidanceBeforeConfirmation()
         {
             string root = CreateTempDirectory();
             _ = Directory.CreateDirectory(Path.Combine(root, ".codex"));
@@ -947,6 +1187,8 @@ namespace SDDTemplate.DeliveryTools.Tests
                 .Select(item => item.GetProperty("id").GetString() ?? string.Empty)];
             string[] missingSkillIds = [.. report.RootElement.GetProperty("suggestedMissingSkills").EnumerateArray()
                 .Select(item => item.GetProperty("id").GetString() ?? string.Empty)];
+            string[] guidanceIds = [.. report.RootElement.GetProperty("suggestedGuidance").EnumerateArray()
+                .Select(item => item.GetProperty("id").GetString() ?? string.Empty)];
             string[] sourcePriority = [.. report.RootElement.GetProperty("discoverySourcePriority").EnumerateArray()
                 .Select(item => item.GetString() ?? string.Empty)];
 
@@ -958,7 +1200,15 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("skills-cli", sourcePriority);
             Assert.Contains("openai-aspnet-core-skill", missingSkillIds);
             Assert.Contains("openai-playwright-skill", missingSkillIds);
-            Assert.Contains("additional desired skills or guidance", report.RootElement.GetProperty("nextUserQuestion").GetString() ?? string.Empty);
+            Assert.Contains("microsoft-learn-mcp", guidanceIds);
+            Assert.Contains("playwright-mcp", guidanceIds);
+            Assert.Contains("azure-mcp-server", guidanceIds);
+            Assert.Contains("bicep-mcp-server", guidanceIds);
+            Assert.Contains("docker-mcp-toolkit", guidanceIds);
+            string nextQuestion = report.RootElement.GetProperty("nextUserQuestion").GetString() ?? string.Empty;
+            Assert.Contains("I researched extra useful skills, MCPs, plugins, tools", nextQuestion);
+            Assert.Contains("Confirm these suggestions to record and install/configure supported items now", nextQuestion);
+            Assert.DoesNotContain("Do you want to add any additional desired", nextQuestion);
             Assert.Empty(report.RootElement.GetProperty("finalConfirmedSkills").EnumerateArray());
         }
 
@@ -1034,7 +1284,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             using JsonDocument local = JsonDocument.Parse(File.ReadAllText(localPath));
             JsonElement rootElement = local.RootElement;
             Assert.Equal(1, rootElement.GetProperty("schemaVersion").GetInt32());
-            Assert.Equal("guided-manual", rootElement.GetProperty("mode").GetString());
+            Assert.Equal("guarded-auto", rootElement.GetProperty("mode").GetString());
             Assert.Equal(".codex/tool-recommendations.example.json", rootElement.GetProperty("sourceCatalog").GetString());
 
             string[] detectedTags = [.. rootElement.GetProperty("detectedTags").EnumerateArray().Select(item => item.GetString() ?? string.Empty)];
@@ -1071,7 +1321,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             string firstMapping = JsonSerializer.Serialize(new
             {
                 workflowStep = "implementation",
-                primarySkills = new[] { "implement-ticket" },
+                primarySkills = new[] { "dev-flow-implement-ticket" },
                 supportingSkills = new[] { "aspnet-core", "assertion-quality" },
                 recommendationIds = new[] { "openai-aspnet-core-skill", "dotnet-assertion-quality-skill" },
                 why = "Ticket implementation touched ASP.NET Core code and xUnit tests.",
@@ -1083,7 +1333,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             string secondMapping = JsonSerializer.Serialize(new
             {
                 workflowStep = "implementation",
-                primarySkills = new[] { "implement-ticket" },
+                primarySkills = new[] { "dev-flow-implement-ticket" },
                 supportingSkills = new[] { "aspnet-core", "security-best-practices", "assertion-quality" },
                 recommendationIds = new[] { "openai-aspnet-core-skill", "openai-security-best-practices-skill", "dotnet-assertion-quality-skill" },
                 why = "Implementation mapping now includes security review for API changes.",
@@ -1140,6 +1390,126 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
+        public void AcquireProjectGuidanceAggregatesRestartRequirementsForGuardedInstalls()
+        {
+            string root = CreateTempDirectory();
+            _ = Directory.CreateDirectory(Path.Combine(root, ".codex"));
+            File.Copy(
+                Path.Combine(FindRepositoryRoot().FullName, ".codex", "tool-recommendations.example.json"),
+                Path.Combine(root, ".codex", "tool-recommendations.example.json"));
+
+            string valuesJson = JsonSerializer.Serialize(new
+            {
+                finalConfirmedGuidance = new object[]
+                {
+                    new
+                    {
+                        name = "Browser E2E QA plugin",
+                        type = "plugin",
+                        installMethod = "manual-config",
+                        installScope = "ide",
+                        installerKind = "codex-plugin-config",
+                        requiresIdeRestart = true,
+                        requiresSystemReboot = false,
+                        userActionRequired = true,
+                        validation = "Open the target site in the in-app browser.",
+                        importantMessage = "Restart Codex after plugin configuration.",
+                    },
+                    new
+                    {
+                        name = "Example system scanner",
+                        type = "tool",
+                        installMethod = "package-manager",
+                        installScope = "system",
+                        installerKind = "winget",
+                        requiresIdeRestart = false,
+                        requiresSystemReboot = true,
+                        userActionRequired = true,
+                        validation = "example-scanner --version",
+                        importantMessage = "Reboot Windows after driver install.",
+                    },
+                },
+            });
+
+            string output = RunPowerShellScript("-Mode", "AcquireProjectGuidance", "-Root", root, "-ValuesJson", valuesJson);
+            using JsonDocument result = JsonDocument.Parse(output);
+
+            Assert.Contains(result.RootElement.GetProperty("warnings").EnumerateArray(),
+                item => item.GetProperty("key").GetString() == "guarded-install-plan");
+            JsonElement restart = result.RootElement.GetProperty("findings").EnumerateArray().Single(
+                item => item.GetProperty("key").GetString() == "important.restart-summary");
+            string message = restart.GetProperty("message").GetString() ?? string.Empty;
+            Assert.Contains("Browser E2E QA plugin [ide-restart]", message);
+            Assert.Contains("Example system scanner [system-reboot]", message);
+            Assert.Contains("complete all feasible installs first", message);
+        }
+
+        [Fact]
+        public void AcquireProjectGuidancePrefersDockerAlternativeForRepeatedTools()
+        {
+            string root = CreateTempDirectory();
+            _ = Directory.CreateDirectory(Path.Combine(root, ".codex"));
+            File.Copy(
+                Path.Combine(FindRepositoryRoot().FullName, ".codex", "tool-recommendations.example.json"),
+                Path.Combine(root, ".codex", "tool-recommendations.example.json"));
+
+            string valuesJson = JsonSerializer.Serialize(new
+            {
+                finalConfirmedGuidance = new object[]
+                {
+                    new
+                    {
+                        name = "Example repeated scanner",
+                        type = "tool",
+                        installMethod = "package-manager",
+                        installPreference = "docker-preferred",
+                        installScope = "repo-local",
+                        installerKind = "docker-image",
+                        requiresIdeRestart = false,
+                        requiresSystemReboot = false,
+                        userActionRequired = false,
+                        validation = "example-scanner --version",
+                        dockerAlternative = new
+                        {
+                            image = "agentic/dotnet-ci:10.0.300-tools-1",
+                            versionPin = "10.0.300-tools-1",
+                            buildCommand = ".\\.codex\\skills\\configure-dev-environment\\scripts\\configure_infra_tools.ps1 -Mode BuildGiteaActionsImages",
+                            runTemplate = "docker run --rm agentic/dotnet-ci:10.0.300-tools-1 example-scanner --version",
+                        },
+                    },
+                    new
+                    {
+                        name = "Example IDE plugin",
+                        type = "plugin",
+                        installMethod = "manual-config",
+                        installPreference = "host-required",
+                        installScope = "ide",
+                        installerKind = "codex-plugin-config",
+                        requiresIdeRestart = true,
+                        requiresSystemReboot = false,
+                        userActionRequired = true,
+                        validation = "Open plugin UI.",
+                    },
+                },
+            });
+
+            string output = RunPowerShellScript("-Mode", "AcquireProjectGuidance", "-Root", root, "-ValuesJson", valuesJson);
+            using JsonDocument result = JsonDocument.Parse(output);
+            JsonElement actions = result.RootElement.GetProperty("actions");
+            JsonElement warnings = result.RootElement.GetProperty("warnings");
+
+            bool dockerAction = actions.EnumerateArray().Any(item => item.GetProperty("key").GetString() == "docker-preferred");
+            bool dockerBlocked = warnings.EnumerateArray().Any(item => item.GetProperty("key").GetString() == "docker-preferred.blocked");
+            Assert.True(dockerAction || dockerBlocked);
+            Assert.DoesNotContain(warnings.EnumerateArray(),
+                item => item.GetProperty("path").GetString() == "Example repeated scanner" &&
+                        item.GetProperty("key").GetString() == "guarded-install-plan");
+            Assert.Contains(warnings.EnumerateArray(),
+                item => item.GetProperty("path").GetString() == "Example IDE plugin" &&
+                        item.GetProperty("key").GetString() == "guarded-install-plan");
+        }
+
+        [Fact]
         public void AcquireProjectGuidanceRequiresManualCopySourceKindContract()
         {
             string root = CreateTempDirectory();
@@ -1179,7 +1549,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                 enabled = true,
                 maxActiveTickets = 2,
                 deploymentLanePolicy = "serialized",
-                deploymentLaneOwner = new { ticketKey = "E2EPROJECT-1", stage = "deploy-to-qa" },
+                deploymentLaneOwner = new { ticketKey = "E2EPROJECT-1", stage = "dev-ops-deploy-qa" },
                 tickets = new[]
                 {
                     new { ticketKey = "E2EPROJECT-1", branch = "codex/e2eproject-1-a", worktreePath = "../ticket-worktrees/e2eproject-1" },
@@ -1201,7 +1571,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                 enabled = false,
                 maxActiveTickets = 2,
                 deploymentLanePolicy = "serialized",
-                deploymentLaneOwner = new { ticketKey = "E2EPROJECT-999", stage = "deploy-to-qa" },
+                deploymentLaneOwner = new { ticketKey = "E2EPROJECT-999", stage = "dev-ops-deploy-qa" },
                 tickets = new[]
                 {
                     new { ticketKey = "E2EPROJECT-1", branch = "codex/e2eproject-1-a", worktreePath = "../ticket-worktrees/e2eproject-1" },
@@ -1271,12 +1641,12 @@ namespace SDDTemplate.DeliveryTools.Tests
             {
                 ticketKey = "E2EPROJECT-123",
                 status = "PASS - automatic route completed.",
-                currentRoute = "implement-ticket",
+                currentRoute = "dev-flow-implement-ticket",
                 stages = new[]
                 {
                     new
                     {
-                        stage = "plane-start-ticket",
+                        stage = "dev-flow-start-ticket",
                         outcome = "PASS",
                         elapsedMilliseconds = 134000,
                         startedUtc = "2026-06-03T10:00:00Z",
@@ -1284,7 +1654,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                     },
                     new
                     {
-                        stage = "implement-ticket",
+                        stage = "dev-flow-implement-ticket",
                         outcome = "BLOCKED",
                         elapsedMilliseconds = 3605000,
                         startedUtc = "2026-06-03T10:02:14Z",
@@ -1304,14 +1674,82 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.Contains("IA generated workflow timing: E2EPROJECT-123", output);
             Assert.Contains("**Status:** PASS - automatic route completed.", output);
-            Assert.Contains("- Current route: `implement-ticket`", output);
+            Assert.Contains("- Current route: `dev-flow-implement-ticket`", output);
             Assert.Contains("- Total elapsed: 1h 02m 19s", output);
             Assert.Contains("| Stage | Outcome | Duration | Started UTC | Finished UTC |", output);
-            Assert.Contains("| `plane-start-ticket` | PASS | 2m 14s | 2026-06-03T10:00:00Z | 2026-06-03T10:02:14Z |", output);
-            Assert.Contains("| `implement-ticket` | BLOCKED | 1h 00m 05s | 2026-06-03T10:02:14Z | 2026-06-03T11:02:19Z |", output);
-            Assert.Contains("| `pr-review-feedback-loop` | NOT RUN / N/A | no time | - | - |", output);
-            Assert.Contains("| `test-e2e` | NOT RUN / N/A | no time | - | - |", output);
+            Assert.Contains("| `dev-flow-start-ticket` | PASS | 2m 14s | 2026-06-03T10:00:00Z | 2026-06-03T10:02:14Z |", output);
+            Assert.Contains("| `dev-flow-implement-ticket` | BLOCKED | 1h 00m 05s | 2026-06-03T10:02:14Z | 2026-06-03T11:02:19Z |", output);
+            Assert.Contains("| `dev-flow-pr-review-feedback-loop` | NOT RUN / N/A | no time | - | - |", output);
+            Assert.Contains("| `quality-test-e2e` | NOT RUN / N/A | no time | - | - |", output);
             Assert.DoesNotContain("token", output, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        public void WorkflowTelemetryReadAggregatesResumedStageRows()
+        {
+            string root = CreateTempDirectory();
+            string script = Path.Combine(FindRepositoryRoot().FullName, ".codex", "skills", "_shared", "scripts", "delivery_tools.ps1");
+            _ = RunPowerShell(script, "-Mode", "InitializeWorkflowTelemetry", "-RepoRoot", root, "-TicketKey", "E2EPROJECT-123");
+            foreach (var row in new[]
+            {
+                new { ticket = "E2EPROJECT-123", stage = "dev-flow-implement-ticket", agent = "implementation", start = "2026-06-09T10:00:00Z", finish = "2026-06-09T10:30:00Z", outcome = "PASS", retryCount = 1 },
+                new { ticket = "E2EPROJECT-999", stage = "dev-flow-implement-ticket", agent = "implementation", start = "2026-06-09T10:05:00Z", finish = "2026-06-09T10:06:00Z", outcome = "PASS", retryCount = 0 },
+                new { ticket = "E2EPROJECT-123", stage = "quality-test-e2e", agent = "qa", start = "2026-06-09T11:00:00Z", finish = "2026-06-09T11:20:00Z", outcome = "BLOCKED", retryCount = 0 },
+                new { ticket = "E2EPROJECT-123", stage = "dev-flow-implement-ticket", agent = "implementation", start = "2026-06-09T12:00:00Z", finish = "2026-06-09T12:15:00Z", outcome = "PASS", retryCount = 2 },
+                new { ticket = "E2EPROJECT-123", stage = "quality-test-e2e", agent = "qa", start = "2026-06-09T13:00:00Z", finish = "2026-06-09T14:00:00Z", outcome = "PASS", retryCount = 1 },
+            })
+            {
+                string appendJson = JsonSerializer.Serialize(new
+                {
+                    workflowStage = row.stage,
+                    agentRole = row.agent,
+                    startedUtc = row.start,
+                    finishedUtc = row.finish,
+                    row.retryCount,
+                    row.outcome,
+                });
+                _ = RunPowerShell(script, "-Mode", "AppendWorkflowTelemetry", "-RepoRoot", root, "-TicketKey", row.ticket, "-InputJson", appendJson);
+            }
+
+            string readJson = RunPowerShell(
+                script,
+                "-Mode",
+                "ReadWorkflowTelemetry",
+                "-RepoRoot",
+                root,
+                "-TicketKey",
+                "E2EPROJECT-123",
+                "-InputJson",
+                JsonSerializer.Serialize(new { status = "PASS - telemetry.", currentRoute = "quality-test-e2e" }));
+
+            using JsonDocument document = JsonDocument.Parse(readJson);
+            JsonElement stages = document.RootElement.GetProperty("stages");
+            Assert.Equal(2, stages.GetArrayLength());
+            Assert.Equal("dev-flow-implement-ticket", stages[0].GetProperty("stage").GetString());
+            Assert.Equal("2026-06-09T10:00:00Z", stages[0].GetProperty("startedUtc").GetString());
+            Assert.Equal("2026-06-09T12:15:00Z", stages[0].GetProperty("finishedUtc").GetString());
+            Assert.Equal(8_100_000, stages[0].GetProperty("elapsedMilliseconds").GetInt64());
+            Assert.Equal("PASS", stages[0].GetProperty("outcome").GetString());
+            Assert.Equal(3, stages[0].GetProperty("retryCount").GetInt64());
+            Assert.Equal("quality-test-e2e", stages[1].GetProperty("stage").GetString());
+            Assert.Equal("2026-06-09T11:00:00Z", stages[1].GetProperty("startedUtc").GetString());
+            Assert.Equal("2026-06-09T14:00:00Z", stages[1].GetProperty("finishedUtc").GetString());
+            Assert.Equal(10_800_000, stages[1].GetProperty("elapsedMilliseconds").GetInt64());
+            Assert.Equal("PASS", stages[1].GetProperty("outcome").GetString());
+
+            string comment = RunPowerShell(
+                script,
+                "-Mode",
+                "RenderPlaneComment",
+                "-Type",
+                "WorkflowTiming",
+                "-InputJson",
+                readJson);
+            Assert.Contains("- Total elapsed: 5h 15m 00s", comment);
+            Assert.Contains("| `dev-flow-implement-ticket` | PASS | 2h 15m 00s | 2026-06-09T10:00:00Z | 2026-06-09T12:15:00Z |", comment);
+            Assert.Contains("| `quality-test-e2e` | PASS | 3h 00m 00s | 2026-06-09T11:00:00Z | 2026-06-09T14:00:00Z |", comment);
+            Assert.Contains("| `dev-flow-pr-review-feedback-loop` | NOT RUN / N/A | no time | - | - |", comment);
+            Assert.DoesNotContain("MISSING TELEMETRY", comment);
         }
 
         [Fact]
@@ -1388,7 +1826,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             _ = RunPowerShell(script, "-Mode", "InitializeWorkflowTelemetry", "-RepoRoot", root, "-TicketKey", "E2EPROJECT-123");
             string inputJson = JsonSerializer.Serialize(new
             {
-                workflowStage = "implement-ticket",
+                workflowStage = "dev-flow-implement-ticket",
                 agentRole = "implementation",
                 startedUtc = "2026-06-09T10:00:00Z",
                 finishedUtc = "2026-06-09T10:03:05Z",
@@ -1413,7 +1851,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             string line = Assert.Single(File.ReadAllLines(telemetryPath), static value => !string.IsNullOrWhiteSpace(value));
             using JsonDocument row = JsonDocument.Parse(line);
             Assert.Equal("E2EPROJECT-123", row.RootElement.GetProperty("ticketKey").GetString());
-            Assert.Equal("implement-ticket", row.RootElement.GetProperty("workflowStage").GetString());
+            Assert.Equal("dev-flow-implement-ticket", row.RootElement.GetProperty("workflowStage").GetString());
             Assert.Equal("implementation", row.RootElement.GetProperty("agentRole").GetString());
             Assert.Equal("2026-06-09T10:00:00Z", row.RootElement.GetProperty("startedUtc").GetString());
             Assert.Equal("2026-06-09T10:03:05Z", row.RootElement.GetProperty("finishedUtc").GetString());
@@ -1430,9 +1868,9 @@ namespace SDDTemplate.DeliveryTools.Tests
             _ = RunPowerShell(script, "-Mode", "InitializeWorkflowTelemetry", "-RepoRoot", root, "-TicketKey", "E2EPROJECT-123");
             foreach (var row in new[]
             {
-                new { ticket = "E2EPROJECT-123", stage = "plane-start-ticket", agent = "ticketStarter", start = "2026-06-09T10:00:00Z", finish = "2026-06-09T10:01:00Z" },
+                new { ticket = "E2EPROJECT-123", stage = "dev-flow-start-ticket", agent = "ticketStarter", start = "2026-06-09T10:00:00Z", finish = "2026-06-09T10:01:00Z" },
                 new { ticket = "E2EPROJECT-999", stage = "ignored-ticket", agent = "implementation", start = "2026-06-09T10:01:00Z", finish = "2026-06-09T10:02:00Z" },
-                new { ticket = "E2EPROJECT-123", stage = "implement-ticket", agent = "implementation", start = "2026-06-09T10:01:00Z", finish = "2026-06-09T10:04:30Z" },
+                new { ticket = "E2EPROJECT-123", stage = "dev-flow-implement-ticket", agent = "implementation", start = "2026-06-09T10:01:00Z", finish = "2026-06-09T10:04:30Z" },
             })
             {
                 string appendJson = JsonSerializer.Serialize(new
@@ -1455,15 +1893,15 @@ namespace SDDTemplate.DeliveryTools.Tests
                 "-TicketKey",
                 "E2EPROJECT-123",
                 "-InputJson",
-                JsonSerializer.Serialize(new { status = "PASS - telemetry.", currentRoute = "implement-ticket" }));
+                JsonSerializer.Serialize(new { status = "PASS - telemetry.", currentRoute = "dev-flow-implement-ticket" }));
 
             using JsonDocument document = JsonDocument.Parse(readJson);
             Assert.Equal("E2EPROJECT-123", document.RootElement.GetProperty("ticketKey").GetString());
             Assert.Equal(270000, document.RootElement.GetProperty("totalElapsedMilliseconds").GetInt64());
             JsonElement stages = document.RootElement.GetProperty("stages");
             Assert.Equal(2, stages.GetArrayLength());
-            Assert.Equal("plane-start-ticket", stages[0].GetProperty("stage").GetString());
-            Assert.Equal("implement-ticket", stages[1].GetProperty("stage").GetString());
+            Assert.Equal("dev-flow-start-ticket", stages[0].GetProperty("stage").GetString());
+            Assert.Equal("dev-flow-implement-ticket", stages[1].GetProperty("stage").GetString());
 
             string comment = RunPowerShell(
                 script,
@@ -1475,9 +1913,9 @@ namespace SDDTemplate.DeliveryTools.Tests
                 readJson);
             Assert.Contains("IA generated workflow timing: E2EPROJECT-123", comment);
             Assert.Contains("- Total elapsed: 4m 30s", comment);
-            Assert.Contains("| `implement-ticket` | PASS | 3m 30s | 2026-06-09T10:01:00Z | 2026-06-09T10:04:30Z |", comment);
-            Assert.Contains("| `post-merge-deploy` | NOT RUN / N/A | no time | - | - |", comment);
-            Assert.Contains("| `test-e2e` | NOT RUN / N/A | no time | - | - |", comment);
+            Assert.Contains("| `dev-flow-implement-ticket` | PASS | 3m 30s | 2026-06-09T10:01:00Z | 2026-06-09T10:04:30Z |", comment);
+            Assert.Contains("| `dev-ops-post-merge-deploy` | NOT RUN / N/A | no time | - | - |", comment);
+            Assert.Contains("| `quality-test-e2e` | NOT RUN / N/A | no time | - | - |", comment);
         }
 
         private static string[] GetJsonErrors(JsonDocument document)
@@ -1531,6 +1969,19 @@ namespace SDDTemplate.DeliveryTools.Tests
             return stdout + stderr;
         }
 
+        private static string RunSkillAuditScript(params string[] args)
+        {
+            string script = Path.Combine(
+                FindRepositoryRoot().FullName,
+                ".codex",
+                "skills",
+                "_shared",
+                "scripts",
+                "audit_skill_contracts.ps1");
+
+            return RunPowerShell(script, args);
+        }
+
         private static string RunPowerShell(string script, params string[] args)
         {
             ProcessStartInfo startInfo = new()
@@ -1566,6 +2017,37 @@ namespace SDDTemplate.DeliveryTools.Tests
             string path = Path.Combine(Path.GetTempPath(), "sdd-template-tests", Guid.NewGuid().ToString("N"));
             _ = Directory.CreateDirectory(path);
             return path;
+        }
+
+        private static void WriteMinimalSkillForAudit(string root)
+        {
+            string skillDirectory = Path.Combine(root, ".codex", "skills", "example");
+            _ = Directory.CreateDirectory(skillDirectory);
+            File.WriteAllText(
+                Path.Combine(skillDirectory, "SKILL.md"),
+                """
+                # Example
+
+                ## Overview
+
+                Uses `.codex/skills/_shared/delivery-contract.md`.
+
+                ## Shared Context
+
+                Read docs/context-management.md before ticket work.
+
+                ## Workflow
+
+                Run validation.
+
+                ## Output
+
+                Report handoff.
+
+                ## Failure Rules
+
+                Stop on blocker.
+                """);
         }
 
         private static void WriteExpandedStackFixture(string root, bool includeContext)
@@ -1616,6 +2098,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "gitea"));
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "nexus"));
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "azure"));
+            File.WriteAllText(Path.Combine(root, "Dockerfile"), "FROM mcr.microsoft.com/dotnet/aspnet:10.0\n");
+            File.WriteAllText(Path.Combine(root, "infra", "azure", "main.bicep"), "resource app 'Microsoft.Web/sites@2024-04-01' = { name: 'app-example' location: resourceGroup().location }\n");
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "monitoring", "grafana"));
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "datasources"));
             File.WriteAllText(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "datasources", "azure-monitor.yml"), "type: grafana-azure-monitor-datasource\n");
@@ -1626,8 +2110,8 @@ namespace SDDTemplate.DeliveryTools.Tests
                 Path.Combine(workflowDirectory, "package-deploy.yml"),
                 "steps:\n  - run: echo $NEXUS_URL && az webapp deploy\n");
 
-            string e2eSkillDirectory = Path.Combine(root, ".codex", "skills", "test-e2e");
-            string frontendSkillDirectory = Path.Combine(root, ".codex", "skills", "frontend-testing-debugging");
+            string e2eSkillDirectory = Path.Combine(root, ".codex", "skills", "quality-test-e2e");
+            string frontendSkillDirectory = Path.Combine(root, ".codex", "skills", "quality-frontend-testing-debugging");
             _ = Directory.CreateDirectory(e2eSkillDirectory);
             _ = Directory.CreateDirectory(frontendSkillDirectory);
             File.WriteAllText(Path.Combine(e2eSkillDirectory, "SKILL.md"), "Use Playwright for rendered browser QA.");
@@ -1637,7 +2121,7 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             if (!includeContext) { return; }
 
-            string context = ".NET 10 ASP.NET Core Blazor xUnit coverage Plane Gitea Gitea Actions Nexus Azure App Service Azure Monitor Log Analytics Grafana Seq Browser Playwright OpenSpec clean code architecture web UI REST API security OWASP";
+            string context = ".NET 10 ASP.NET Core Blazor xUnit coverage Plane Gitea Gitea Actions Nexus Azure App Service Azure Monitor Log Analytics Grafana Seq Browser Playwright Bicep OpenSpec clean code architecture web UI REST API security OWASP";
             _ = Directory.CreateDirectory(Path.Combine(root, "docs"));
             File.WriteAllText(Path.Combine(root, "docs", "architecture.md"), context);
             File.WriteAllText(Path.Combine(root, "docs", "development.md"), context);

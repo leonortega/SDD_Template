@@ -1,4 +1,0 @@
-interface:
-  display_name: "Hotfix PROD"
-  short_description: "Run a gated production hotfix."
-  default_prompt: "Use $hotfix-prod to fix this production regression with the expedited gated flow."

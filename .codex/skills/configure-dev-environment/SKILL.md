@@ -1,6 +1,6 @@
 ---
 name: configure-dev-environment
-description: Router for configuring this repo's local development and delivery environment. Use when Codex needs to set up, audit, repair, or guide configuration for Plane, Gitea PR automation, Gitea Actions runner, code quality gates, Nexus artifacts, Azure DEV/QA/PROD environments, DEV-to-QA deployment promotion, Seq log search, and Azure Event Hub to Seq ingestion, or when the user asks "config infra", "setup environment", or is unsure which setup area they need.
+description: Router for configuring this repo's local development and delivery environment from `.codex/project-profile.json`. Use when Codex needs to set up, audit, repair, or guide configuration for selected ticket, repository/review, quality, artifact, deployment, observability, stack, and E2E adapters, or when the user asks "config infra", "setup environment", or is unsure which setup area they need.
 ---
 
 # Configure Dev Environment
@@ -11,7 +11,7 @@ Use this skill as the entrypoint for the repo-local delivery lab. Keep this file
 
 ## Shared Context
 
-Before changing configure behavior or finishing any non-OpenSpec delivery skill change, read `.codex/skills/_shared/delivery-contract.md` and apply its Skill Synchronization Rule. Keep configure docs, templates, audits, and tests synchronized with the non-OpenSpec delivery-flow skills; when behavior differs, delivery-flow skills are authoritative. If a delivery skill change affects repo setup, generated files, workflow YAML, secrets, ignored local files, labels, ticket gates, artifact paths, release manifests, QA/PROD promotion, rollback, or audit/repair behavior, update the matching configure skill and tests in the same change. If no configure update is needed, say that explicitly in the final response.
+Before changing configure behavior or finishing any non-OpenSpec delivery skill change, read `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, and `.codex/skills/_shared/delivery-contract.md`, then apply the Skill Synchronization Rule. Keep configure docs, templates, audits, and tests synchronized with the non-OpenSpec delivery-flow skills; when behavior differs, delivery-flow skills are authoritative. If a delivery skill change affects repo setup, generated files, workflow YAML, secrets, ignored local files, labels, ticket gates, artifact paths, release manifests, QA/PROD promotion, rollback, profile/adapters, or audit/repair behavior, update the matching configure skill and tests in the same change. If no configure update is needed, say that explicitly in the final response.
 
 Read `docs/context-management.md` before deciding whether setup findings belong in durable docs, skills, tests, memory, a ticket handoff, or local-only config.
 
@@ -38,6 +38,7 @@ When setup needs values the user must supply manually, do not only ask for the v
 
 - When a tool, SDK, CLI, runtime, scanner, or required local dependency is missing, read `references/shared-prerequisites.md`, then report: what is missing, why it is required, the install command, the official URL, and the exact command to validate/configure it after install.
 - If a required item is not covered in `shared-prerequisites.md`, look up the official install documentation before advising the user. Prefer official vendor docs, release pages, or package-manager pages.
+- When a recurring tool can run from an official/vendor or repo-owned pinned Docker image, prefer the Docker path over repeated package-manager installation. Record `installPreference: docker-preferred` plus `dockerAlternative` metadata, validate Docker availability, and keep host install guidance as the explicit fallback only.
 - For Docker images and library/package versions, check the current upstream stable version before editing templates or compose files. Use official release notes, official docs, GitHub releases, Docker Hub/registry metadata, or vendor lifecycle pages.
 - Do not use `latest`, `main`, `nightly`, release-candidate, preview, or floating major/minor-only tags in Compose files or generated templates unless the user explicitly requests floating tags.
 - Pin Docker images to the current stable patch tag when configuring infra, and update the Compose file directly when the existing tag is old or floating.
@@ -87,14 +88,15 @@ Useful modes:
 - `AuditRecommendedTools`: read-only stack detection and MCP/plugin/skill/tool/reference/practice recommendation report.
 - `DiscoverProjectGuidance`: read-only project-guidance-discover report with detected tags, research topics, existing skills, suggested missing skills, suggested guidance, user-added requested guidance, and final confirmed guidance when supplied.
 - `DiscoverProjectGuidance` with `persistLocal=true`: write ignored `.codex/tool-recommendations.local.json` with catalog-shaped project recommendations and recommendation-level `usedInSteps` for later `project-guidance-mapper` use.
-- `AcquireProjectGuidance`: copy confirmed `manual-copy` `repo:` skill sources into `.codex/skills` without command installers; require source attribution including `sourceKind`; leave non-skill guidance in the local catalog.
+- `AcquireProjectGuidance`: auto-copy safe confirmed `manual-copy` `repo:` skill sources into `.codex/skills`; prepare guarded install plans for MCPs, plugins, tools, IDE/global installs, secrets, or restart-required items; aggregate IDE restart/system reboot notices once at the end; require source attribution including `sourceKind`; leave non-skill guidance in the local catalog unless deterministic repo-local config is supported.
 - `InitLocalFiles`: create ignored local files from tracked templates.
 - `SetClientTools`: update `.codex/client-tools.local.json`.
+- `SetGiteaBranchProtection`: apply `pr.minimumApprovals.dev/main` to live Gitea branch protection.
 - `SetRecommendedTools`: record accepted or dismissed recommendation ids in `.codex/client-tools.local.json`; it must not install skills, plugins, MCPs, or secrets.
 - `MapProjectGuidanceStep`: update `.codex/tool-recommendations.local.json` by appending the current workflow step to each used recommendation's `usedInSteps`.
 - `WriteInstalledSkillIndex` through `tools/SDDTemplate.DeliveryTools`: generate or reuse ignored `.codex/installed-skill-index.local.json` and `.codex/installed-skill-index.cache.local.json` from installed project skills.
 - `SyncWorktreeLocalConfig`: copy the allowlisted ignored local runtime config from the coordinator checkout into selected or discovered ticket worktrees without printing secret values.
-- `EnsureDeliveryContext`: create or repair the current worktree's `.codex/delivery-context.local.json` from explicit ticket, branch, OpenSpec, and PR context; never copy this file from another worktree. Use `replaceExisting=true` only after `plane-start-ticket` confirms the existing lock's ticket is in the configured Done state, or after explicit operator confirmation for a known-safe repair. QA Done does not require immediate lock deletion because explicit PROD promotion may still need artifact and RC context.
+- `EnsureDeliveryContext`: create or repair the current worktree's `.codex/delivery-context.local.json` from explicit ticket, branch, OpenSpec, and PR context; never copy this file from another worktree. Use `replaceExisting=true` only after `dev-flow-start-ticket` confirms the existing lock's ticket is in the configured Done state, or after explicit operator confirmation for a known-safe repair. QA Done does not require immediate lock deletion because explicit PROD promotion may still need artifact and RC context.
 - `SetPlaneEnv`: update `infra/plane/variables.env`.
 - `SetMonitoringEnv`: update `infra/monitoring/variables.env`.
 - `SplitInfraEnv`: migrate old mixed `infra/plane/variables.env` values into tool-owned env files.
@@ -102,13 +104,15 @@ Useful modes:
 - `AuditQualityGates`: inspect quality and CI/CD templates without writing local config by default.
 - `BuildGiteaActionsImages`: build and validate pinned local Gitea Actions job images used by PR validation, package/deploy, and QA E2E workflows.
 - `ValidateGiteaActionsRunner`: live-check Docker runner prerequisites for PR validation containers, including local image presence, required tools, and local Gitea checkout reachability.
+- `InitProjectProfile`: create the canonical project profile, schema, and neutral provider adapter examples. This is a required first-class step for full `config infra`.
 - `InitQualityGateTemplates`: create tracked quality-gate templates.
 - `SetSeqAzureEventHubLogs`: validate the required OpenTelemetry Collector Contrib Azure Event Hub path for Seq, including collector config, profile wiring, required connection strings, and the native Seq error-log alert.
 - `SetQualityConfig`: create or update `.codex/quality.local.json`, including `coverage.minimumPercent` (default `80`).
 
 ## Workflow
 
-1. Run `Audit` first unless the user asked for a very specific area and a narrower audit is enough.
+1. For full `config infra` or full guided setup, run `InitProjectProfile` first. If the profile, schema, or selected adapters already exist, treat the mode as idempotent and continue from its `Template already exists` findings.
+2. Run `Audit` after `InitProjectProfile` unless the user asked for a very specific area and a narrower audit is enough.
 2. For core compose status checks, always include the plane env file so variable resolution matches runtime expectations:
 
 ```powershell
@@ -130,12 +134,12 @@ trivy --download-db-only
 10. Run `AuditRecommendedTools` when the user is doing full setup or base-code creation, then summarize relevant MCPs, plugins, tools, references, practices, detected stack tags, stack-context drift, and scan-derived guidance findings for tools, frameworks, code standards, web UI, REST/API design, security, and QA. Use `.codex/tool-recommendations.example.json` as example recommendation metadata, not as runtime project state or a substitute for scanning the repository.
 11. Treat `docs/` as the durable stack/tooling source of truth and `openspec/config.yaml` as the compact AI-facing summary. The recommendation audit verifies those against current repo files; when they differ, report the drift before recommending new tooling.
 12. Use `project-guidance-discover` for project guidance findings. Treat `project-guidance-search-plan` as the first step: build topics from scanned technologies, tools, environments, test frameworks, QA workflows, security gates, code standards, and other detected project signals; do not rely on a fixed catalog alone.
-13. `project-guidance-discover` must show suggested missing skills and guidance to the user and ask for additional desired skills or guidance before anything is copied. If the user says no, confirm the suggested list. If the user names more items, add them to the list, research and verify each source with the same multi-source, official-first policy, then confirm the full list. Valid source families include repo-local workflow sources, OpenAI official catalogs/docs, official tool repositories/docs, technology-owner repositories/docs, `skills.sh` or `skills` command examples, marketplace pages, and clearly labeled community repositories.
-14. After confirmation, persist the catalog-shaped local discovery state to ignored `.codex/tool-recommendations.local.json` with `DiscoverProjectGuidance` and `persistLocal=true`. This file should keep sources, targets, validation commands, accepted/dismissed ids, and recommendation-level `usedInSteps`; it is a local reference for `project-guidance-mapper`, not a tracked source of truth.
-15. Use `project-guidance-acquire` only after the final confirmed list exists. It manually copies confirmed skill `SKILL.md` files and required referenced resources into `.codex/skills`; it must not use command installers or global skill installation. Refresh `.codex/tool-recommendations.local.json` after copying so installed/present state is current.
-16. If `plane-start-ticket` or `automatic-implement-ticket` blocks the first ticket because stack context is missing, configure `docs/architecture.md`, `docs/development.md`, and `docs/deployment.md`, complete `openspec/config.yaml`, verify the tracked example catalog still describes the allowed shape, and write or refresh ignored `.codex/tool-recommendations.local.json` only after project guidance discovery is confirmed.
-17. For skills, use manual repo-based acquisition only: identify the source repo/path/ref, classify `sourceKind`, read the source `SKILL.md`, verify frontmatter matches the intended use, create `.codex/skills/{skill-name}/`, write `.codex/skills/{skill-name}/SKILL.md`, and copy only required referenced scripts/templates. Treat `skills.sh`, `skills`, marketplace, README, curl, or install commands as metadata for repository/path discovery only. Do not install skills by command. Do not copy secrets, local state, caches, generated artifacts, or unrelated files.
-18. For plugins and MCPs, prefer manual configuration instructions over installer commands. Show the exact files or UI fields to create or edit when known, ask before adding config, and never configure secrets automatically. Command installers are fallback-only after explicit approval.
+13. `project-guidance-discover` must research extra useful skills, MCPs, plugins, tools, references, practices, standards, and Codex-applicable IDE helpers before it shows suggested missing guidance to the user. Ask only for confirmation, dismissals, or omissions before anything is copied. Make confirmation mean "record and install/configure supported items now"; do not ask a second install question. If the user names omissions, add them to the list, research and verify each source with the same multi-source, official-first policy, then confirm the full list. Valid source families include repo-local workflow sources, OpenAI official catalogs/docs, official tool repositories/docs, technology-owner repositories/docs, `skills.sh` or `skills` command examples, marketplace pages, and clearly labeled community repositories.
+14. After confirmation, persist the catalog-shaped local discovery state to ignored `.codex/tool-recommendations.local.json` with `DiscoverProjectGuidance` and `persistLocal=true`, record accepted ids with `SetRecommendedTools`, then run `project-guidance-acquire` and any supported guarded installer/configuration path for the same confirmed items. This file should keep sources, targets, validation commands, accepted/dismissed ids, and recommendation-level `usedInSteps`; it is a local reference for `project-guidance-mapper`, not a tracked source of truth.
+15. Use `project-guidance-acquire` only after the final confirmed list exists. It auto-copies safe repo-local confirmed skill `SKILL.md` files and required referenced resources into `.codex/skills`, and installs/configures confirmed non-skill items when a platform-supported path exists; it must not run arbitrary command installers. Refresh `.codex/tool-recommendations.local.json` after acquisition so installed/present state is current.
+16. If `dev-flow-start-ticket` or `dev-flow-continue-implementation` blocks the first ticket because stack context is missing, configure `docs/architecture.md`, `docs/development.md`, and `docs/deployment.md`, complete `openspec/config.yaml`, verify the tracked example catalog still describes the allowed shape, and write or refresh ignored `.codex/tool-recommendations.local.json` only after project guidance discovery is confirmed.
+17. For skills, use guarded repo-based acquisition: identify the source repo/path/ref, classify `sourceKind`, read the source `SKILL.md`, verify frontmatter matches the intended use, create `.codex/skills/{skill-name}/`, write `.codex/skills/{skill-name}/SKILL.md`, and copy only required referenced scripts/templates. Treat `skills.sh`, `skills`, marketplace, README, curl, or install commands as metadata for repository/path discovery only. Do not copy secrets, local state, caches, generated artifacts, or unrelated files. When adding an external skill, keep its upstream name unless the user explicitly approves a rename, mark it as `External` in `.codex/skills/README.md`, and cite the source repository in the root `README.md`.
+18. For plugins, MCPs, tools, and IDE extensions, prefer platform-supported install/configuration surfaces and exact install plans over arbitrary commands. For repeated tools, first check accepted `dockerAlternative` metadata and use the pinned repo/official Docker image when available; keep host installs for MCPs, IDE plugins, Docker itself, interactive auth, secret-bearing tools, and tools without a verified image. Ask before global, IDE, privileged, secret-bearing, MCP/plugin, or reboot-required installs. Continue independent acquisitions after one item needs restart, then report one Important restart/reboot message with affected tools and validation commands.
 19. Use `project-guidance-mapper` when the operator asks which skills or guidance apply to the current delivery step or when a workflow needs to combine repo-local workflow skills with installed expert skills, tools, references, practices, and standards. Let `project-guidance-mapper` read and update `.codex/tool-recommendations.local.json` through `MapProjectGuidanceStep` after a step mapping is chosen, used, or inferred.
 20. Record accepted or dismissed recommendation ids with `SetRecommendedTools` only after user confirmation.
 21. Ask: `Which setup area do you want to work on now?`
@@ -150,16 +154,16 @@ trivy --download-db-only
    - Monitoring dashboards
    - Azure Event Hub to Seq ingestion
 23. If the user is vague, default to full guided setup in this order:
-   Plane -> Gitea PR automation -> Gitea Actions runner -> Quality gates and CI -> Nexus artifacts and deployment promotion -> Azure environments -> Monitoring dashboards -> Azure Event Hub to Seq ingestion.
+   InitProjectProfile -> Audit -> Plane -> Gitea PR automation -> Gitea Actions runner -> Quality gates and CI -> Nexus artifacts and deployment promotion -> Azure environments -> Monitoring dashboards -> Azure Event Hub to Seq ingestion -> final Audit.
 
 ## Domain Routing
 
-- Plane tickets: use `$configure-plane-workflow`; read `references/plane.md`.
-- Gitea PR automation: use `$configure-gitea-source-control`; read `references/gitea-pr.md`.
-- Gitea Actions runner: use `$configure-gitea-actions-runner`; read `references/gitea-runner.md`.
+- Plane tickets: use `$configure-ticket-workflow`; read `references/plane.md`.
+- Gitea PR automation: use `$configure-source-control`; read `references/gitea-pr.md`.
+- Gitea Actions runner: use `$configure-ci-runner`; read `references/gitea-runner.md`.
 - Quality gates and CI: use `$configure-quality-gates`; read `references/quality-gates.md`.
-- Nexus artifacts and deployment promotion: use `$configure-artifact-delivery`; read `references/nexus.md`.
-- Azure environments: use `$configure-azure-environments`; read `references/azure.md`.
+- Nexus artifacts and deployment promotion: use `$configure-artifact-repository`; read `references/nexus.md`.
+- Azure environments: use `$configure-cloud-environments`; read `references/azure.md`.
 - Monitoring dashboards: use `$configure-observability`; read `references/observability.md`.
 - Azure Event Hub to Seq ingestion: use `$configure-observability`; read `references/observability.md`.
 
@@ -183,7 +187,9 @@ End setup work with:
 ## Failure Rules
 
 - Stop when required user-supplied secrets, tokens, workspace IDs, project IDs, cloud IDs, or service account values are missing; provide source, destination, official setup path, validation command, and handoff impact.
+- Stop before provider-specific mutation when `.codex/project-profile.json`, `.codex/project-profile.schema.json`, or any selected adapter path is missing; run `InitProjectProfile` or the focused provider configure skill first.
 - Stop successful completion of `config infra` when observability is not working: missing Event Hub collector values, Seq unhealthy, or collector container not running when the `eventhub` profile is expected.
 - Stop before writing secrets to tracked files or reading secrets from containers, volumes, databases, or logs.
 - Stop before branch, Plane, ticket-lock, or OpenSpec mutation when first-ticket stack context, guidance discovery review, or recommendation audit context is missing or drifted.
-- Stop before using command installers for skills; route confirmed skill copying to `project-guidance-acquire`.
+- Stop before using arbitrary command installers; route confirmed acquisition and guarded install planning to `project-guidance-acquire`.
+- If a required repo skill, command, memory rule, definition, or configured tool/install path cannot be applied, do not silently switch to an ad hoc setup path. Report the failed required item, why it is required, the current-flow fix, the viable alternative, and the alternative's risk or impact, then ask the user whether to fix the current flow or continue with the alternative.

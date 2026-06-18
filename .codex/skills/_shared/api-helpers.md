@@ -34,6 +34,16 @@ Patch description or state:
 PATCH {plane.baseUrl}/api/v1/workspaces/{workspaceSlug}/projects/{projectUuid}/work-items/{workItemUuid}/
 ```
 
+State payload:
+
+```json
+{
+  "state": "{stateUuid}"
+}
+```
+
+Use the resolved state UUID in the `state` field. Do not use `state_id`; Plane accepts the request but does not move the work item state.
+
 Create generated comments:
 
 ```text

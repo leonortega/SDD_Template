@@ -164,9 +164,27 @@ If these documents conflict, the delivery contract wins for automation behavior 
 
 ## Canonical Context
 
-Before the first ticket starts, the workflow validates stack context and routes to `configure-dev-environment` when required docs, OpenSpec context, or recommendation catalogs are missing or drifted. `configure-dev-environment` scans stack, tooling, environments, test frameworks, and workflow files, reports suggested missing skills and guidance, and asks whether the operator wants to add additional desired skills or guidance.
+`.codex/project-profile.json` is the canonical non-secret declaration for the current stack, providers, ticket key pattern, branch policy, environments, quality gates, and adapter paths. Generic delivery skills read that profile first and then load the selected `.codex/providers/*.md` adapter files for project-specific behavior. Exact versions, images, executable commands, endpoints, and secrets stay in project files, workflow files, infrastructure files, or ignored local config.
 
-Project guidance is manual by default. Confirmed skills must read the source repository's `SKILL.md` and be copied into `.codex/skills`; Skills are not installed by command. `.codex/tool-recommendations.example.json` documents the tracked catalog shape, while ignored `.codex/tool-recommendations.local.json` stores local discovery state and `project-guidance-mapper` reads that local file for step mapping.
+Before the first ticket starts, the workflow validates stack context and routes to `configure-dev-environment` when required docs, OpenSpec context, or recommendation catalogs are missing or drifted. Full `config infra` runs `InitProjectProfile` first to create the canonical project profile, schema, and neutral provider adapter examples before provider-specific setup, quality gates, CI, deployment, or ticket work. `configure-dev-environment` then scans stack, tooling, environments, test frameworks, and workflow files, researches extra useful skills, MCPs, plugins, tools, references, practices, standards, and Codex-applicable IDE helpers, reports suggested missing guidance, and asks the operator only to confirm, dismiss, or name omissions. Confirmation means record and install/configure supported items immediately; there is no second install prompt.
+
+Project guidance uses guarded auto acquisition. Confirmed repo-local, non-secret skills may be copied into `.codex/skills` from verified `SKILL.md` sources; confirmed MCPs, plugins, tools, and IDE extensions are installed or configured when a platform-supported guarded path exists. Global installs, secrets, reboot-required items, or new scope still require explicit confirmation. Restart requirements are collected and reported once after all feasible acquisitions finish. `.codex/tool-recommendations.example.json` documents the tracked catalog shape, `.codex/skills/README.md` is the tracked skill ownership and naming catalog, while ignored `.codex/tool-recommendations.local.json` stores local discovery state and `project-guidance-mapper` reads that local file for step mapping.
+
+## External Skills
+
+External skills keep their upstream names and must be marked as external in `.codex/skills/README.md`. Whenever a new external skill is added, cite its source repository in this section and in the skill catalog before handoff.
+
+Current external skill sources:
+
+- `aspnet-core`: ASP.NET Core guidance from https://github.com/openai/skills/tree/main/skills/.curated/aspnet-core.
+- `assertion-quality`: test assertion analysis guidance from https://github.com/dotnet/skills/tree/main/plugins/dotnet-test/skills/assertion-quality.
+- `dotnet-webapi`: ASP.NET Core Web API endpoint guidance from https://github.com/dotnet/skills/tree/main/plugins/dotnet-aspnet/skills/dotnet-webapi.
+- `plan-ui-change`: Blazor UI planning guidance from https://github.com/dotnet/skills/tree/main/plugins/dotnet-blazor/skills/plan-ui-change.
+- `playwright`: browser automation guidance from https://github.com/openai/skills/tree/main/skills/.curated/playwright.
+- `security-best-practices`: secure coding guidance from https://github.com/openai/skills/tree/main/skills/.curated/security-best-practices.
+- `test-analysis-extensions`: language-specific test analysis extensions from https://github.com/dotnet/skills/tree/main/plugins/dotnet-test/skills/test-analysis-extensions.
+
+Agent utility skills are treated as external for naming purposes and are listed in `.codex/skills/README.md`; they are not renamed by delivery category.
 
 Implementation handoffs must report context findings and either list updated docs or state `Docs: no durable context changes`.
 

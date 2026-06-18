@@ -10,7 +10,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
     font: inherit;
 }
 
@@ -32,57 +33,74 @@ input {
     text-decoration: none;
 }
 
-.clients-page {
+.clients-page,
+.products-page {
     margin: 0 auto;
     max-width: 1120px;
     padding: 2rem 1.5rem;
 }
 
-.clients-header {
+.clients-header,
+.products-header {
     align-items: end;
     display: flex;
     justify-content: space-between;
     margin-bottom: 1.5rem;
 }
 
-.clients-header h1 {
+.clients-header h1,
+.products-header h1 {
     font-size: 2rem;
     margin: 0;
 }
 
-.clients-header p {
+.clients-header p,
+.products-header p {
     color: #5e6673;
     margin: 0.35rem 0 0;
 }
 
-.clients-grid {
+.clients-grid,
+.products-grid {
     align-items: start;
     display: grid;
     gap: 1.5rem;
     grid-template-columns: minmax(280px, 420px) 1fr;
 }
 
-.client-form {
+.client-form,
+.product-form {
     border: 1px solid #d9dde5;
     border-radius: 8px;
-    display: grid;
-    gap: 1rem;
-    grid-template-columns: 1fr 1fr;
     padding: 1rem;
 }
 
-.client-form label {
+.form-fields {
+    border: 0;
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: 1fr 1fr;
+    margin: 0;
+    min-inline-size: 0;
+    padding: 0;
+}
+
+.client-form label,
+.product-form label {
     display: grid;
     gap: 0.35rem;
 }
 
-.client-form span {
+.client-form span,
+.product-form span {
     color: #3d4551;
     font-size: 0.875rem;
     font-weight: 700;
 }
 
-.client-form input {
+.client-form input,
+.product-form input,
+.product-form select {
     border: 1px solid #b8c0cc;
     border-radius: 6px;
     min-width: 0;
@@ -111,32 +129,38 @@ input {
     color: #fff;
 }
 
-.client-errors {
+.client-errors,
+.product-errors {
     color: #9f1d1d;
     grid-column: 1 / -1;
     margin: 0;
     min-height: 1.25rem;
 }
 
-.clients-list-wrap {
+.clients-list-wrap,
+.products-list-wrap {
     overflow-x: auto;
 }
 
-.clients-table {
+.clients-table,
+.products-table {
     border-collapse: collapse;
     min-width: 620px;
     width: 100%;
 }
 
 .clients-table th,
-.clients-table td {
+.clients-table td,
+.products-table th,
+.products-table td {
     border-bottom: 1px solid #d9dde5;
     padding: 0.875rem;
     text-align: left;
     vertical-align: top;
 }
 
-.clients-table span {
+.clients-table span,
+.products-table span {
     color: #5e6673;
     display: block;
     font-size: 0.875rem;
@@ -160,13 +184,14 @@ input {
 }
 
 @media (max-width: 840px) {
-    .clients-grid {
+    .clients-grid,
+    .products-grid {
         grid-template-columns: 1fr;
     }
 }
 
 @media (max-width: 560px) {
-    .client-form {
+    .form-fields {
         grid-template-columns: 1fr;
     }
 }
