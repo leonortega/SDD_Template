@@ -12,14 +12,14 @@ namespace SDDTemplate.Site.Tests
 
         [Theory]
         [MemberData(nameof(ApplicationConfigPaths))]
-        public void ApplicationConfigUsesVerboseLoggingForDevAndQa(string appPath)
+        public void ApplicationConfigUsesDebugLoggingForDevAndQa(string appPath)
         {
             string root = FindRepositoryRoot();
             string development = Path.Combine(root, appPath, "appsettings.Development.json");
             string staging = Path.Combine(root, appPath, "appsettings.Staging.json");
 
-            Assert.Equal("Verbose", ReadSerilogMinimumLevel(development));
-            Assert.Equal("Verbose", ReadSerilogMinimumLevel(staging));
+            Assert.Equal("Debug", ReadSerilogMinimumLevel(development));
+            Assert.Equal("Debug", ReadSerilogMinimumLevel(staging));
         }
 
         [Theory]
@@ -75,7 +75,7 @@ namespace SDDTemplate.Site.Tests
         }
 
         [Fact]
-        public void DeploymentConfigLeavesSerilogStaticConfigOutOfAppSettingsMutation()
+        public void DeploymentConfigIgnoresSerilogStaticSubtree()
         {
             string root = FindRepositoryRoot();
             string configurationPath = Path.Combine(root, "infra", "deployment", "configuration.json");
@@ -84,6 +84,44 @@ namespace SDDTemplate.Site.Tests
             JsonElement ignoredPrefixes = document.RootElement.GetProperty("ignoredPrefixes");
 
             Assert.Contains(ignoredPrefixes.EnumerateArray(), prefix => prefix.GetString() == "Serilog");
+        }
+
+        [Fact]
+        public void DeploymentConfigAppliesEnvironmentSpecificLogLevels()
+        {
+            string root = FindRepositoryRoot();
+            string configurationPath = Path.Combine(root, "infra", "deployment", "configuration.json");
+            using JsonDocument document = JsonDocument.Parse(File.ReadAllText(configurationPath));
+
+            JsonElement settings = document.RootElement.GetProperty("settings");
+
+            foreach (string appId in new[] { "api", "site" })
+            {
+                Assert.Contains(settings.EnumerateArray(), setting =>
+                    setting.GetProperty("appId").GetString() == appId
+                    && setting.GetProperty("name").GetString() == "Serilog__MinimumLevel__Default"
+                    && setting.GetProperty("source").GetString() == "environmentLogLevel");
+
+                Assert.Contains(settings.EnumerateArray(), setting =>
+                    setting.GetProperty("appId").GetString() == appId
+                    && setting.GetProperty("name").GetString() == "Logging__LogLevel__Default"
+                    && setting.GetProperty("source").GetString() == "environmentLogLevel");
+            }
+        }
+
+        [Fact]
+        public void DeploymentWorkflowResolvesEnvironmentSpecificLogLevels()
+        {
+            string root = FindRepositoryRoot();
+            string workflow = File.ReadAllText(Path.Combine(root, ".gitea", "workflows", "package-deploy.yml"));
+            string configureScript = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "scripts", "configure_infra_tools.ps1"));
+
+            foreach (string source in new[] { workflow, configureScript })
+            {
+                Assert.Contains("environmentLogLevel)", source);
+                Assert.Contains("printf '%s' \"Debug\"", source);
+                Assert.Contains("printf '%s' \"Warning\"", source);
+            }
         }
 
         [Fact]

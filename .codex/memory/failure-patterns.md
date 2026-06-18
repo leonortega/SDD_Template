@@ -90,6 +90,15 @@ Direct pushes to protected `main` are rejected with `Not allowed to push to prot
 
 Do not read secrets from Docker containers, mounted volumes, databases, logs, or committed files. Do not store secrets in memory. Tracked examples must remain placeholder-safe.
 
+## Local Gitleaks No-Git Scans Hit Ignored Secret Files
+
+- Type: Pattern
+- Status: Active
+- Source: `gitleaks detect --source . --redact --no-git --report-format json --report-path artifacts/gitleaks-report.local.json`
+- Last verified: 2026-06-18
+
+On this workstation, the configured local secret scan with `--no-git` scans ignored local files and reports redacted findings in `.codex/client-tools.local.json`, `infra/azure/variables.env`, `infra/gitea/runner.env`, `infra/monitoring/variables.env`, and `infra/plane/variables.env`. Treat this as local secret-bearing runtime state unless the findings reference tracked files. Do not print values. Use redacted metadata only, and keep any local report under ignored `artifacts/`.
+
 ## Compose Secret Fallbacks Can Bypass Local Env Values
 
 - Type: Pattern
