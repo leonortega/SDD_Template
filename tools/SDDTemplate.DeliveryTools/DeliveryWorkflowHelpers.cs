@@ -317,7 +317,7 @@ namespace SDDTemplate.DeliveryTools
                 ? new TicketReadinessResult("blocked", missing)
                 : missing.Count == 0
                     ? new TicketReadinessResult("ready", [])
-                    : new TicketReadinessResult("enrichable", missing);
+                    : new TicketReadinessResult("refinable", missing);
         }
 
         public static DeliveryRiskResult ClassifyDeliveryRisk(IEnumerable<string> changedPaths, string contextText, int estimatedChangedLines)

@@ -149,10 +149,10 @@ Actionable `ponytail-review` findings are AI review findings and feed the same `
 Before `plane-start-ticket` mutates Git, Plane state, the delivery lock, or OpenSpec, classify the ticket as:
 
 - `ready`: includes a user-visible goal, concrete acceptance criteria, and validation expectations.
-- `enrichable`: intent is clear enough to proceed after adding concrete generated acceptance criteria, affected areas, validation expectations, risks, and definition of done to the managed Plane block.
+- `refinable`: intent is clear enough to proceed after adding Scrum-ready planning details to the managed Plane block: problem or opportunity, user story, concrete acceptance criteria, scope or affected areas, dependencies or assumptions, validation expectations, risks, and definition of done.
 - `blocked`: product or technical intent is too vague to safely generate acceptance criteria.
 
-For `enrichable`, update only the generated Plane block and continue. For `blocked`, stop before branch, Plane state, delivery lock, or OpenSpec mutation and report the missing intent. Do not create a second planning artifact for refinement; Plane managed block plus OpenSpec remain the planning surfaces.
+For `refinable`, update only the generated Plane block and continue. For `blocked`, stop before branch, Plane state, delivery lock, or OpenSpec mutation and report the missing intent. Do not create a second planning artifact for refinement; Plane managed block plus OpenSpec remain the planning surfaces.
 
 ## Review Workload Forecast
 
@@ -409,7 +409,7 @@ Use `.codex/skills/_shared/scripts/delivery_tools.ps1` for deterministic deliver
 - `ValidateTicketLock`: compare resolved ticket, branch, PR, artifact commit, RC, or final version against `.codex/delivery-context.local.json`.
 - `ValidateDeploymentLane`: enforce serialized deployment ownership from `.codex/parallel-delivery.local.json`.
 - `ValidateParallelDeliveryDryRun`: validate enabled state, planned ticket/worktree/branch uniqueness, serialized lane ownership, supported lane policy, and required ignored local runtime files without mutating Git, Plane, Gitea, Nexus, or Azure.
-- `ClassifyTicketReadiness`: classify Plane ticket text as `ready`, `enrichable`, or `blocked`.
+- `ClassifyTicketReadiness`: classify Plane ticket text as `ready`, `refinable`, or `blocked`.
 - `ClassifyDeliveryRisk`: classify planned or changed work as `low`, `standard`, or `high`.
 - `ParseWorkloadForecast`: parse required `Review Workload Forecast` guard lines from OpenSpec tasks.
 - `DetectAdversarialReviewTrigger`: determine whether PR review needs adversarial mode.
