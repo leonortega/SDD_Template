@@ -3318,6 +3318,14 @@ on:
       - main
       - dev
     paths:
+      - .editorconfig
+      - Directory.Build.props
+      - Directory.Build.targets
+      - Directory.Packages.props
+      - global.json
+      - NuGet.config
+      - SDDTemplate.slnx
+      - dotnet-tools.json
       - src/**
       - tests/**
 
@@ -4375,7 +4383,7 @@ Gitea PR validation is the source of truth. Local hooks are only convenience che
 
 Coverage threshold defaults to `80%` from `.codex/quality.example.json`. Local development may override it with ignored `.codex/quality.local.json`; CI falls back to the tracked example when no local config is present.
 
-The local runner executes PR validation inside a pinned .NET SDK container. PR validation must target product/application projects specifically for restore, format, build, tests, coverage, and dependency audit. For this template, CI uses explicit `src/SDDTemplate.Site`, `src/SDDTemplate.Api`, and `tests/SDDTemplate.Site.Tests` project paths; SDD delivery-tool, workflow, agent, OpenSpec, infrastructure, and meta-tests remain local/template-maintenance checks and are not part of normal PR CI. Keep checkout and security tools shell-based unless the job container explicitly includes `node`; JavaScript `uses:` actions can fail inside plain SDK containers. Validate runner compatibility after workflow changes:
+The local runner executes PR validation inside a pinned .NET SDK container. PR validation triggers only for application code, tests, and root app build inputs such as `.editorconfig`, `Directory.Build.props`, `Directory.Build.targets`, `Directory.Packages.props`, `global.json`, `NuGet.config`, `SDDTemplate.slnx`, and `dotnet-tools.json`. It must target product/application projects specifically for restore, format, build, tests, coverage, and dependency audit. For this template, CI uses explicit `src/SDDTemplate.Site`, `src/SDDTemplate.Api`, and `tests/SDDTemplate.Site.Tests` project paths; SDD delivery-tool, workflow, agent, OpenSpec, infrastructure, workflow files, docs, and meta-tests remain local/template-maintenance checks and are not part of normal PR CI. Keep checkout and security tools shell-based unless the job container explicitly includes `node`; JavaScript `uses:` actions can fail inside plain SDK containers. Validate runner compatibility after workflow changes:
 
 ```powershell
 .\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode ValidateGiteaActionsRunner

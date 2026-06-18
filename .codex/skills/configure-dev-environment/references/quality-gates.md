@@ -56,7 +56,7 @@ Use Lefthook by default:
 
 Use the pinned repo-owned .NET 10 runner image that has been validated on the local runner: `agentic/dotnet-ci:10.0.300-tools-1`.
 
-PR validation runs only for pull request changes under `src/**` or `tests/**`. Non-code PRs outside those folders skip automatic CI.
+PR validation runs only for pull request changes under `src/**`, `tests/**`, or root app build inputs: `.editorconfig`, `Directory.Build.props`, `Directory.Build.targets`, `Directory.Packages.props`, `global.json`, `NuGet.config`, `SDDTemplate.slnx`, and `dotnet-tools.json`. Agent skills, workflow files, OpenSpec, infrastructure, docs, delivery tools, and other meta/template-maintenance changes skip normal app PR CI.
 
 CI restore, format, build, test, coverage, dependency-audit, and publish commands must target product/application projects specifically. Do not include SDD template, delivery-tool, workflow, agent, OpenSpec, infrastructure, or meta-test projects in normal PR CI for downstream applications. Keep those tests as local/template-maintenance checks unless a repository explicitly owns them as application behavior.
 

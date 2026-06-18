@@ -312,17 +312,37 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
-        public void PrValidationRunsOnlyForSrcAndTestsChanges()
+        public void PrValidationRunsOnlyForAppTestAndBuildInputChanges()
         {
             string workflow = ReadPrValidationWorkflow();
             string configureTemplate = ReadConfigureScript();
 
+            string[] includedPaths =
+            [
+                "- .editorconfig",
+                "- Directory.Build.props",
+                "- Directory.Build.targets",
+                "- Directory.Packages.props",
+                "- global.json",
+                "- NuGet.config",
+                "- SDDTemplate.slnx",
+                "- dotnet-tools.json",
+                "- src/**",
+                "- tests/**"
+            ];
+
             Assert.Contains("paths:", workflow);
-            Assert.Contains("- src/**", workflow);
-            Assert.Contains("- tests/**", workflow);
             Assert.Contains("paths:", configureTemplate);
-            Assert.Contains("- src/**", configureTemplate);
-            Assert.Contains("- tests/**", configureTemplate);
+            foreach (string path in includedPaths)
+            {
+                Assert.Contains(path, workflow);
+                Assert.Contains(path, configureTemplate);
+            }
+
+            Assert.DoesNotContain("- .codex/skills/**", workflow);
+            Assert.DoesNotContain("- .gitea/workflows/**", workflow);
+            Assert.DoesNotContain("- .codex/skills/**", configureTemplate);
+            Assert.DoesNotContain("- .gitea/workflows/**", configureTemplate);
         }
 
         [Fact]
@@ -357,9 +377,9 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("dotnet format \"$project\" --verify-no-changes --no-restore", configureTemplate);
             Assert.Contains("dotnet build \"$project\" -c Release --no-restore", configureTemplate);
             Assert.Contains("dotnet list \"$project\" package --vulnerable --include-transitive", configureTemplate);
-            Assert.Contains("PR validation must target product/application projects specifically", workflowReadme);
-            Assert.Contains("OpenSpec, infrastructure, and meta-tests remain local/template-maintenance checks", workflowReadme);
-            Assert.Contains("PR validation must target product/application projects specifically", configureTemplate);
+            Assert.Contains("PR validation triggers only for application code, tests, and root app build inputs", workflowReadme);
+            Assert.Contains("OpenSpec, infrastructure, workflow files, docs, and meta-tests remain local/template-maintenance checks", workflowReadme);
+            Assert.Contains("PR validation triggers only for application code, tests, and root app build inputs", configureTemplate);
             Assert.Contains("rejects deployable project paths outside `src/`", configureTemplate);
         }
 
