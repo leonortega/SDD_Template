@@ -13,7 +13,7 @@ This skill is technology-agnostic. Inspect the repository first. Use an establis
 
 For Blazor or other rendered website changes, prefer `$quality-frontend-testing-debugging` when the repo has `.codex/skills/quality-frontend-testing-debugging/SKILL.md` and the ticket requires browser-visible validation, responsive layout checks, console health, screenshots, or interaction proof. Keep API and deployment health checks in the repo-native .NET/API path.
 
-When the repository contains `tests/SDDTemplate.E2ETests`, treat it as the reusable deployed-QA regression suite. Implementation records browser E2E expectations and acceptance oracles, but Playwright E2E creation and repair are owned by this QA skill unless the user, Plane ticket, or OpenSpec artifacts explicitly made E2E part of implementation PR scope. The suite is executed by the Gitea `e2e-qa` job against the deployed QA Site/API URLs, and the Gitea job is evidence-only. After `deploy-qa` succeeds, create a `qa/{ticketKey}` branch from current `dev` and push it so Gitea runs the committed suite remotely without redeploying. Create or update reusable tests on the QA branch when the existing suite cannot prove a required acceptance criterion, record the reason in the QA result, and route those test changes through the normal reviewed follow-up path unless the configured QA workflow rule explicitly allows committing them in the QA workflow. This skill still owns QA acceptance: verify the Gitea E2E evidence bundle, run or rerun the suite manually only when remote execution is unavailable or diagnostic evidence is needed, publish final QA evidence, create or verify the RC tag, update release metadata, comment Plane, move the ticket to Done only after the QA result is `PASS`, and delete the remote `qa/{ticketKey}` branch after durable evidence exists.
+When the repository contains `tests/SDDTemplate.E2ETests`, treat it as the reusable deployed-QA regression suite. Implementation records browser E2E expectations and acceptance oracles, but Playwright E2E creation and repair are owned by this QA skill unless the user, Plane ticket, or OpenSpec artifacts explicitly made E2E part of implementation PR scope. The suite is executed by the Gitea `e2e-qa` job against the deployed QA Site/API URLs, and the Gitea job is evidence-only. After `deploy-qa` succeeds, create a `qa/{ticketKey}` branch from current `dev`, push it so Gitea runs the committed suite remotely without redeploying, and verify that a Gitea `e2e-qa` run exists. Create or update reusable tests on the QA branch when the existing suite cannot prove a required acceptance criterion, record the reason in the QA result, and route those test changes through the normal reviewed follow-up path unless the configured QA workflow rule explicitly allows committing them in the QA workflow. This skill still owns QA acceptance: verify the Gitea E2E evidence bundle, publish final QA evidence, create or verify the RC tag, update release metadata, comment Plane, move the ticket to Done only after the QA result is `PASS`, and delete the remote `qa/{ticketKey}` branch after durable evidence exists. Local E2E QA is forbidden unless a deployment-related blocker prevents the normal Gitea `e2e-qa` path from running or completing and `agentOptimization.maxToolRetries` deploy-fix attempts from `.codex/delivery-policy.json` have failed; the current limit is `2`. Product E2E test failures remain QA failures and are not a local-fallback trigger.
 
 After the evidence bundle is verified, the E2E QA Plane comment is verified, the RC tag is created or verified, release metadata is updated, and the ticket is moved to Done, delete the remote `qa/{ticketKey}` branch from Gitea. The branch is only a temporary evidence trigger; durable evidence is in Nexus, Plane, the release manifest, and tags. Keep the branch only when evidence publication, comment verification, RC tagging, or Done-state mutation is incomplete and the branch may need a rerun.
 
@@ -111,9 +111,9 @@ Inspect the repo before choosing tools:
 - API specs, OpenAPI/Swagger files, Postman collections, k6 scripts, REST Assured or language-native integration tests
 - Existing helper APIs, fixtures, auth setup, seeded users, environment variable conventions
 
-Use an established tool when the repo clearly already has one. For this repository's committed QA E2E suite, run Playwright remotely through Gitea Actions against deployed QA URLs; do not start local web servers for QA acceptance. Local Playwright execution is only a fallback for authoring diagnostics and must still target deployed QA URLs with `E2E_SITE_URL` and `E2E_API_URL`. Prefer `npm run test:docker` from `tests/SDDTemplate.E2ETests` for local diagnostics so the pinned `agentic/e2e-ci:playwright-1.57.0-1` image supplies browsers and dependencies instead of installing Chromium on the host.
+Use an established tool when the repo clearly already has one. For this repository's committed QA E2E suite, run Playwright remotely through Gitea Actions against deployed QA URLs; do not start local web servers for QA acceptance. Local Playwright execution is only allowed after 2 failed deploy-fix attempts for a deployment-related blocker that prevents Gitea `e2e-qa` from running or completing. The local fallback must use `npm run test:docker` from `tests/SDDTemplate.E2ETests`, target deployed QA URLs with `E2E_SITE_URL` and `E2E_API_URL`, and never target localhost.
 
-For any deployed browser E2E failure, Playwright MCP or the configured Browser/Playwright tool is the first diagnostic source before source-code changes. Reproduce the failing user flow against the real QA URL or a production-like local target, inspect console, network, websocket, DOM readiness, screenshots, and trace/video evidence, and classify the failure as product defect, E2E harness issue, deployment/environment issue, or workflow gate gap. Do not change app code to add E2E-only JavaScript, hidden hooks, test ids, bypasses, timing shims, or Playwright-specific behavior. If the failure is a harness issue, update only the E2E tests, evidence capture, or workflow. If the failure is a real product defect, route to implementation and require a product-valid fix.
+For any deployed browser E2E failure, Playwright MCP or the configured Browser/Playwright tool is the first diagnostic source before source-code changes. Reproduce the failing user flow against the real QA URL, inspect console, network, websocket, DOM readiness, screenshots, and trace/video evidence, and classify the failure as product defect, E2E harness issue, deployment/environment issue, or workflow gate gap. Do not change app code to add E2E-only JavaScript, hidden hooks, test ids, bypasses, timing shims, or Playwright-specific behavior. If the failure is a harness issue, update only the E2E tests, evidence capture, or workflow. If the failure is a real product defect, route to implementation and require a product-valid fix.
 
 Tool choice is secondary to the evidence contract. Playwright, API tests, Postman/Newman, k6, repo-native integration tests, or manual browser evidence are acceptable only when the resulting QA record proves the same ticket-scoped assertions against the deployed QA artifact.
 
@@ -127,6 +127,17 @@ In non-interactive contexts, stop with `tool choice required` instead of guessin
 ### 4. Execute QA
 
 Prefer repeatable automated checks. Use browser automation for websites and request-level checks for APIs.
+
+For this repository, execute QA in this order:
+
+1. Verify the QA deployment target metadata and deployed QA URLs.
+2. Push `qa/{ticketKey}` from current `dev`.
+3. Verify Gitea Actions created an `e2e-qa` run for that branch.
+4. Use the Gitea `e2e-qa` evidence as the normal QA execution result.
+5. If a deployment-related blocker prevents that remote run from starting or completing, attempt to fix the deploy/remote QA path up to `agentOptimization.maxToolRetries` from `.codex/delivery-policy.json`, currently `2`.
+6. Only after those 2 deploy-fix attempts fail, run local fallback with `npm run test:docker` against `E2E_SITE_URL` and `E2E_API_URL`.
+
+The QA summary for any local fallback must include the deployment blocker, both failed deploy-fix attempts, the local fallback command, tested QA URLs, and evidence.
 
 For website E2E:
 
@@ -357,6 +368,9 @@ Report the ticket, QA environment, scenarios tested, validation assertions, evid
 - Tool choice is ambiguous: ask the user before technology-dependent tests.
 - Non-interactive ambiguous tool choice: stop with `tool choice required`.
 - QA evidence path is not ignored by Git: stop before generating evidence.
+- Local E2E QA before 2 failed deploy-fix attempts: stop and trigger or repair the Gitea `e2e-qa` path first.
+- Product E2E test failure: classify as QA failure; do not switch to local fallback.
+- Local fallback targeting localhost or missing `E2E_SITE_URL` / `E2E_API_URL`: fail closed and do not move the ticket to Done.
 - RC version cannot be supplied or derived: comment available evidence, leave ticket in QA, and ask for the RC version.
 - Missing acceptance-to-assertion mapping: comment the gap and leave the ticket in QA.
 - Screenshot-only, trace-only, log-only, page-load-only, or smoke-only evidence: classify as `PASS WITH GAPS` or `FAIL` and do not move the ticket to Done.
