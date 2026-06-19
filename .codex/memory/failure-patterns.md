@@ -379,3 +379,12 @@ Do not run repo-wide `dotnet build`, `dotnet test`, and `dotnet format` concurre
 - Last verified: 2026-06-18
 
 After NuGet package updates, `dotnet list package --vulnerable --include-transitive` can be clean while Trivy still reports vulnerabilities from stale generated `bin/Release/**/*.deps.json` files. Rebuild Release with `dotnet build .\SDDTemplate.slnx -c Release --no-restore` before rerunning Trivy, or clean ignored build outputs if a full rebuild is not needed. Do not treat stale Release deps findings as unresolved package graph drift until the generated deps files are refreshed.
+
+## Root Page Title Is A Deployment Smoke Contract
+
+- Type: Pattern
+- Status: Active
+- Source: E2EPROJECT-8 Gitea Actions run 268, DEV smoke check after PR 53 merge
+- Last verified: 2026-06-19
+
+The package/deploy workflow checks the deployed web root for `<title>SDD Template</title>`. A visible homepage rebrand can keep the app healthy while still failing DEV smoke if `Home.razor` changes the root `PageTitle`. Preserve that title or update `.gitea/workflows/package-deploy.yml` and its generator/tests together before merging homepage changes.
