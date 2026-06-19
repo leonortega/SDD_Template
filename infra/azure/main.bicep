@@ -53,6 +53,7 @@ var siteAppName = hasSiteApp ? 'app-${normalizedProjectName}-${environmentName}-
 var apiAppUrl = hasApiApp ? 'https://${apiAppName}.azurewebsites.net' : ''
 var siteAppUrl = hasSiteApp ? 'https://${siteAppName}.azurewebsites.net' : ''
 var aspNetEnvironment = environmentName == 'prod' ? 'Production' : environmentName == 'qa' ? 'Staging' : 'Development'
+var minimumLogLevel = environmentName == 'prod' ? 'Warning' : 'Debug'
 var sqliteDbPath = '/home/data/${sqliteDatabaseFileName}'
 
 resource appServicePlan 'Microsoft.Web/serverfarms@2023-12-01' = {
@@ -101,6 +102,8 @@ resource appSettings 'Microsoft.Web/sites/config@2023-12-01' = [for (app, i) in 
   properties: union(
     {
       ASPNETCORE_ENVIRONMENT: aspNetEnvironment
+      Logging__LogLevel__Default: minimumLogLevel
+      Serilog__MinimumLevel__Default: minimumLogLevel
     },
     app.role == 'web' && hasApiApp ? {
       Api__BaseUrl: apiAppUrl

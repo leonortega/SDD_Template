@@ -1,5 +1,32 @@
 # Failure Pattern Memory
 
+## Ticket Readiness Helper Lives In DeliveryTools CLI
+
+- Type: Pattern
+- Status: Active
+- Source: `tools/SDDTemplate.DeliveryTools/Program.cs`, `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode ClassifyTicketReadiness` failure
+- Last verified: 2026-06-19
+
+`ClassifyTicketReadiness` is exposed by the .NET delivery helper CLI, not by `.codex/skills/_shared/scripts/delivery_tools.ps1` on this checkout. If the shared script rejects `-Mode ClassifyTicketReadiness`, run `dotnet run --project tools/SDDTemplate.DeliveryTools -- ClassifyTicketReadiness --title <title> --description <description>` and keep ticket text out of command logs when it contains sensitive details.
+
+## Stop Local Site Server Before Rebuilding
+
+- Type: Pattern
+- Status: Active
+- Source: `dotnet build .\SDDTemplate.slnx` failure while `dotnet run --project src/SDDTemplate.Site --urls http://127.0.0.1:5098` was active
+- Last verified: 2026-06-19
+
+On Windows, a running local `SDDTemplate.Site.exe` from `dotnet run` can lock `src/SDDTemplate.Site/bin/Debug/net10.0/SDDTemplate.Site.exe` and make `dotnet build` fail with `MSB3027` / `MSB3021`. Stop only the local dev-server processes for the test URL, then run `dotnet build-server shutdown` before retrying build or test gates.
+
+## OpenSpec Verification Is Manual In This Checkout
+
+- Type: Pattern
+- Status: Active
+- Source: `openspec verify feat-e2eproject-8-improve-home-page` returned `unknown command`
+- Last verified: 2026-06-19
+
+The installed OpenSpec CLI does not expose an `openspec verify` command. For `dev-flow-verify-change`, use the skill workflow directly: run `openspec status --change <name> --json`, run `openspec instructions apply --change <name> --json`, read the listed artifacts, then manually verify completeness, correctness, and coherence against code/tests.
+
 ## OpenSpec CLI Telemetry Can Slow List And Status
 
 - Type: Pattern
@@ -89,6 +116,15 @@ Direct pushes to protected `main` are rejected with `Not allowed to push to prot
 - Last verified: 2026-05-29
 
 Do not read secrets from Docker containers, mounted volumes, databases, logs, or committed files. Do not store secrets in memory. Tracked examples must remain placeholder-safe.
+
+## Local Gitleaks No-Git Scans Hit Ignored Secret Files
+
+- Type: Pattern
+- Status: Active
+- Source: `gitleaks detect --source . --redact --no-git --report-format json --report-path artifacts/gitleaks-report.local.json`
+- Last verified: 2026-06-18
+
+On this workstation, the configured local secret scan with `--no-git` scans ignored local files and reports redacted findings in `.codex/client-tools.local.json`, `infra/azure/variables.env`, `infra/gitea/runner.env`, `infra/monitoring/variables.env`, and `infra/plane/variables.env`. Treat this as local secret-bearing runtime state unless the findings reference tracked files. Do not print values. Use redacted metadata only, and keep any local report under ignored `artifacts/`.
 
 ## Compose Secret Fallbacks Can Bypass Local Env Values
 
@@ -343,3 +379,30 @@ Do not run repo-wide `dotnet build`, `dotnet test`, and `dotnet format` concurre
 - Last verified: 2026-06-18
 
 After NuGet package updates, `dotnet list package --vulnerable --include-transitive` can be clean while Trivy still reports vulnerabilities from stale generated `bin/Release/**/*.deps.json` files. Rebuild Release with `dotnet build .\SDDTemplate.slnx -c Release --no-restore` before rerunning Trivy, or clean ignored build outputs if a full rebuild is not needed. Do not treat stale Release deps findings as unresolved package graph drift until the generated deps files are refreshed.
+
+## Root Page Title Is A Deployment Smoke Contract
+
+- Type: Pattern
+- Status: Active
+- Source: E2EPROJECT-8 Gitea Actions run 268, DEV smoke check after PR 53 merge
+- Last verified: 2026-06-19
+
+The package/deploy workflow checks the deployed web root for `<title>SDD Template</title>`. A visible homepage rebrand can keep the app healthy while still failing DEV smoke if `Home.razor` changes the root `PageTitle`. Preserve that title or update `.gitea/workflows/package-deploy.yml` and its generator/tests together before merging homepage changes.
+
+## QA Branch E2E Image Needs Jq Before Artifact Resolution
+
+- Type: Pattern
+- Status: Active
+- Source: E2EPROJECT-8 Gitea Actions run 272, `e2e-qa` job
+- Last verified: 2026-06-19
+
+The QA branch `e2e-qa` job resolves the ticket key with `jq -r '.workflow.ticketKeyPattern // empty' .codex/project-profile.json` before running `npm ci`. If `agentic/e2e-ci:playwright-1.57.0-1` lacks `jq`, the job fails with `line 8: jq: command not found` before any browser tests execute. Classify this as workflow image/tooling failure, not product QA failure. Use local `npm run test:docker` or repair the image/workflow before treating QA branch evidence as authoritative.
+
+## Landing CTAs Can Collide With Broad E2E Link Locators
+
+- Type: Pattern
+- Status: Active
+- Source: E2EPROJECT-8 local Docker E2E run after landing page deployment
+- Last verified: 2026-06-19
+
+When a landing page adds CTA links like `View products`, Playwright locators such as `getByRole("link", { name: "Products" })` can match both the navigation link and CTA because accessible-name matching is substring-based by default. Use `exact: true` for navigation links whose text also appears inside longer CTA labels.
