@@ -388,3 +388,21 @@ After NuGet package updates, `dotnet list package --vulnerable --include-transit
 - Last verified: 2026-06-19
 
 The package/deploy workflow checks the deployed web root for `<title>SDD Template</title>`. A visible homepage rebrand can keep the app healthy while still failing DEV smoke if `Home.razor` changes the root `PageTitle`. Preserve that title or update `.gitea/workflows/package-deploy.yml` and its generator/tests together before merging homepage changes.
+
+## QA Branch E2E Image Needs Jq Before Artifact Resolution
+
+- Type: Pattern
+- Status: Active
+- Source: E2EPROJECT-8 Gitea Actions run 272, `e2e-qa` job
+- Last verified: 2026-06-19
+
+The QA branch `e2e-qa` job resolves the ticket key with `jq -r '.workflow.ticketKeyPattern // empty' .codex/project-profile.json` before running `npm ci`. If `agentic/e2e-ci:playwright-1.57.0-1` lacks `jq`, the job fails with `line 8: jq: command not found` before any browser tests execute. Classify this as workflow image/tooling failure, not product QA failure. Use local `npm run test:docker` or repair the image/workflow before treating QA branch evidence as authoritative.
+
+## Landing CTAs Can Collide With Broad E2E Link Locators
+
+- Type: Pattern
+- Status: Active
+- Source: E2EPROJECT-8 local Docker E2E run after landing page deployment
+- Last verified: 2026-06-19
+
+When a landing page adds CTA links like `View products`, Playwright locators such as `getByRole("link", { name: "Products" })` can match both the navigation link and CTA because accessible-name matching is substring-based by default. Use `exact: true` for navigation links whose text also appears inside longer CTA labels.
