@@ -85,3 +85,11 @@ Production hotfixes should remain expedited but gated. They still require ticket
 
 When deployable app topology or `appsettings*.json` mappings change, it is not enough for the tracked manifest, Bicep, and workflow to mention the settings. Initial Azure provisioning should apply non-secret inferred mappings through explicit App Service appsettings resources, and package deployment should reapply and verify `deployment-config.json`. Live DEV/QA/PROD App Service settings must contain web `Api__BaseUrl`, API `Cors__AllowedOrigins__0`, and API `ConnectionStrings__ClientsDb`; smoke checks should inspect rendered `const apiBaseUrl` and API CORS preflight. If the API works directly but the site cannot call it, compare rendered site configuration and live Azure app settings against the topology manifest before treating the issue as product code.
 
+## Workflow-Only PRs And PROD Smoke Drift
+
+- Type: Pattern
+- Status: Active
+- Source: PR #58, Gitea Actions run 281, `.gitea/workflows/pr-validation.yml`, `.gitea/workflows/package-deploy.yml`
+- Last verified: 2026-06-19
+
+`pr-validation.yml` is path-filtered to application, test, and core .NET files, so workflow-only PRs under `.gitea/workflows/**` may not launch the branch-protection status context. When the operator explicitly approves a workflow-only release-gate fix, record the skip reason in the status/PR evidence before merge. For current Blazor server-rendered clients pages, PROD smoke should match DEV/QA by checking `/clients` for `<title>Clients</title>` and `id="client-form"` plus API CORS/health checks; the old static `const apiBaseUrl` assertion is stale for this page shape.
