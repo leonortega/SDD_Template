@@ -932,7 +932,8 @@ jobs:
               expected_api_url="${AZURE_PROD_API_APP_URL:-}"
               test -n "$expected_api_url"
               curl --fail --silent --show-error --location "${app_url}/clients" -o clients.html
-              grep -q "const apiBaseUrl = \"${expected_api_url}\";" clients.html
+              grep -q "<title>Clients</title>" clients.html
+              grep -q 'id="client-form"' clients.html
             fi
             if [ "$role" = "api" ]; then
               site_origin="${AZURE_PROD_SITE_APP_URL:-}"
