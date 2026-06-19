@@ -1,5 +1,32 @@
 # Failure Pattern Memory
 
+## Ticket Readiness Helper Lives In DeliveryTools CLI
+
+- Type: Pattern
+- Status: Active
+- Source: `tools/SDDTemplate.DeliveryTools/Program.cs`, `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode ClassifyTicketReadiness` failure
+- Last verified: 2026-06-19
+
+`ClassifyTicketReadiness` is exposed by the .NET delivery helper CLI, not by `.codex/skills/_shared/scripts/delivery_tools.ps1` on this checkout. If the shared script rejects `-Mode ClassifyTicketReadiness`, run `dotnet run --project tools/SDDTemplate.DeliveryTools -- ClassifyTicketReadiness --title <title> --description <description>` and keep ticket text out of command logs when it contains sensitive details.
+
+## Stop Local Site Server Before Rebuilding
+
+- Type: Pattern
+- Status: Active
+- Source: `dotnet build .\SDDTemplate.slnx` failure while `dotnet run --project src/SDDTemplate.Site --urls http://127.0.0.1:5098` was active
+- Last verified: 2026-06-19
+
+On Windows, a running local `SDDTemplate.Site.exe` from `dotnet run` can lock `src/SDDTemplate.Site/bin/Debug/net10.0/SDDTemplate.Site.exe` and make `dotnet build` fail with `MSB3027` / `MSB3021`. Stop only the local dev-server processes for the test URL, then run `dotnet build-server shutdown` before retrying build or test gates.
+
+## OpenSpec Verification Is Manual In This Checkout
+
+- Type: Pattern
+- Status: Active
+- Source: `openspec verify feat-e2eproject-8-improve-home-page` returned `unknown command`
+- Last verified: 2026-06-19
+
+The installed OpenSpec CLI does not expose an `openspec verify` command. For `dev-flow-verify-change`, use the skill workflow directly: run `openspec status --change <name> --json`, run `openspec instructions apply --change <name> --json`, read the listed artifacts, then manually verify completeness, correctness, and coherence against code/tests.
+
 ## OpenSpec CLI Telemetry Can Slow List And Status
 
 - Type: Pattern
