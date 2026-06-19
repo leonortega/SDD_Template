@@ -27,11 +27,19 @@
     {
       "appId": "site",
       "name": "Logging__LogLevel__Default",
-      "source": "literal",
-      "value": "Information",
+      "source": "environmentLogLevel",
       "required": false,
       "secret": false,
-      "description": "Default application log level."
+      "description": "Default application log level: Debug for DEV/QA and Warning for PROD."
+    },
+    {
+      "appId": "site",
+      "name": "Serilog__MinimumLevel__Default",
+      "source": "environmentLogLevel",
+      "required": false,
+      "secret": false,
+      "additionalSetting": true,
+      "description": "Serilog minimum level: Debug for DEV/QA and Warning for PROD."
     },
     {
       "appId": "site",
@@ -75,11 +83,19 @@
     {
       "appId": "api",
       "name": "Logging__LogLevel__Default",
-      "source": "literal",
-      "value": "Information",
+      "source": "environmentLogLevel",
       "required": false,
       "secret": false,
-      "description": "Default application log level."
+      "description": "Default application log level: Debug for DEV/QA and Warning for PROD."
+    },
+    {
+      "appId": "api",
+      "name": "Serilog__MinimumLevel__Default",
+      "source": "environmentLogLevel",
+      "required": false,
+      "secret": false,
+      "additionalSetting": true,
+      "description": "Serilog minimum level: Debug for DEV/QA and Warning for PROD."
     },
     {
       "appId": "api",
