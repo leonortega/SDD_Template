@@ -1,5 +1,14 @@
 # Failure Pattern Memory
 
+## Ticket Readiness Helper Lives In DeliveryTools CLI
+
+- Type: Pattern
+- Status: Active
+- Source: `tools/SDDTemplate.DeliveryTools/Program.cs`, `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode ClassifyTicketReadiness` failure
+- Last verified: 2026-06-19
+
+`ClassifyTicketReadiness` is exposed by the .NET delivery helper CLI, not by `.codex/skills/_shared/scripts/delivery_tools.ps1` on this checkout. If the shared script rejects `-Mode ClassifyTicketReadiness`, run `dotnet run --project tools/SDDTemplate.DeliveryTools -- ClassifyTicketReadiness --title <title> --description <description>` and keep ticket text out of command logs when it contains sensitive details.
+
 ## OpenSpec CLI Telemetry Can Slow List And Status
 
 - Type: Pattern
