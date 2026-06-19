@@ -16,6 +16,7 @@ namespace SDDTemplate.Site.Tests
             string markup = await response.Content.ReadAsStringAsync();
 
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Contains("<title>SDD Template</title>", markup);
             Assert.Contains("StockPilot", markup);
             Assert.Contains("Run stock, orders, and clients from one calm dashboard.", markup);
             Assert.Contains("Inventory dashboard showing stock levels and warehouse activity", markup);
