@@ -1,5 +1,5 @@
 param(
-  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetGiteaBranchProtection", "SetPlaneEnv", "SetMonitoringEnv", "SetGiteaRunner", "SetSeqAzureEventHubLogs", "SplitInfraEnv", "AuditQualityGates", "AuditRecommendedTools", "DiscoverProjectGuidance", "AcquireProjectGuidance", "SetRecommendedTools", "MapProjectGuidanceStep", "BuildGiteaActionsImages", "ValidateGiteaActionsRunner", "InitProjectProfile", "InitQualityGateTemplates", "SetQualityConfig", "SyncWorktreeLocalConfig", "EnsureDeliveryContext")]
+  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetGiteaBranchProtection", "SetPlaneEnv", "SetMonitoringEnv", "SetGiteaRunner", "SetSeqAzureEventHubLogs", "SplitInfraEnv", "AuditQualityGates", "AuditRecommendedTools", "DiscoverProjectGuidance", "AcquireProjectGuidance", "SetRecommendedTools", "MapProjectGuidanceStep", "BuildGiteaActionsImages", "ValidateGiteaActionsRunner", "InitProjectProfile", "InitQualityGateTemplates", "SetQualityConfig", "SyncWorktreeLocalConfig", "EnsureDeliveryContext", "EnsureRancherKubernetes")]
   [string]$Mode = "Audit",
 
   [string]$Root = (Resolve-Path ".").Path,
@@ -111,6 +111,81 @@ function Test-RancherLocalDeploymentConfigured {
   }
 
   return $false
+}
+
+function Invoke-NativeText {
+  param(
+    [string]$FileName,
+    [string[]]$Arguments,
+    [int]$TimeoutSeconds = 30
+  )
+
+  $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+  $startInfo.FileName = $FileName
+  foreach ($argument in $Arguments) {
+    [void]$startInfo.ArgumentList.Add($argument)
+  }
+  $startInfo.RedirectStandardOutput = $true
+  $startInfo.RedirectStandardError = $true
+  $startInfo.UseShellExecute = $false
+
+  $process = [System.Diagnostics.Process]::Start($startInfo)
+  $stdout = $process.StandardOutput.ReadToEndAsync()
+  $stderr = $process.StandardError.ReadToEndAsync()
+  if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+    try { $process.Kill($true) } catch { $process.Kill() }
+    throw "$FileName $($Arguments -join ' ') timed out after $TimeoutSeconds seconds."
+  }
+  $process.WaitForExit()
+
+  return [pscustomobject]@{
+    ExitCode = $process.ExitCode
+    Output = $stdout.GetAwaiter().GetResult()
+    Error = $stderr.GetAwaiter().GetResult()
+  }
+}
+
+function Get-RancherDesktopSettings {
+  $command = Invoke-NativeText "rdctl" @("list-settings") 20
+  if ($command.ExitCode -ne 0) {
+    throw "rdctl list-settings failed: $($command.Output)$($command.Error)"
+  }
+
+  return $command.Output | ConvertFrom-Json
+}
+
+function Test-RancherKubernetesEnabled {
+  param($Settings)
+  return $null -ne $Settings.kubernetes -and [bool]$Settings.kubernetes.enabled
+}
+
+function Get-KubectlCurrentContext {
+  try {
+    $command = Invoke-NativeText "kubectl" @("config", "current-context") 10
+    if ($command.ExitCode -ne 0) { return "" }
+    return $command.Output.Trim()
+  } catch {
+    return ""
+  }
+}
+
+function Get-KubectlReadyNodeNames {
+  $command = Invoke-NativeText "kubectl" @("get", "nodes", "-o", "json", "--request-timeout=5s") 15
+  if ($command.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($command.Output)) {
+    throw "kubectl get nodes did not return a node list. $($command.Error)"
+  }
+
+  $nodes = $command.Output | ConvertFrom-Json
+  $ready = @()
+  foreach ($node in @($nodes.items)) {
+    foreach ($condition in @($node.status.conditions)) {
+      if ($condition.type -eq "Ready" -and $condition.status -eq "True") {
+        $ready += [string]$node.metadata.name
+      }
+    }
+  }
+
+  return $ready
 }
 
 function Test-LocalImageTag {
@@ -2273,19 +2348,46 @@ function Add-RancherLocalLabAuditFindings {
     }
   }
 
-  $kubectl = Get-Command kubectl -ErrorAction SilentlyContinue
-  if ($null -eq $kubectl) {
-    Add-Item $Result "findings" "kubectl" "" "kubectl is missing; Rancher Desktop local-lab live validation cannot run." "warning" "pre-start"
+  $rdctl = Get-Command rdctl -ErrorAction SilentlyContinue
+  if ($null -eq $rdctl) {
+    Add-Item $Result "findings" "rdctl" "" "rdctl is missing; install or repair Rancher Desktop so config infra can enable Kubernetes." "error" "pre-start"
   } else {
     try {
-      $context = (& kubectl config current-context 2>$null | Out-String).Trim()
-      if ($LASTEXITCODE -eq 0 -and $context -eq "rancher-desktop") {
-        Add-Item $Result "actions" "kubectl" "context" "kubectl current context is rancher-desktop."
+      $settings = Get-RancherDesktopSettings
+      if (Test-RancherKubernetesEnabled $settings) {
+        Add-Item $Result "actions" "rdctl" "kubernetes.enabled" "Rancher Desktop Kubernetes is enabled."
       } else {
-        Add-Item $Result "findings" "kubectl" "context" "kubectl current context is '$context'; Rancher local-lab deployment requires 'rancher-desktop'." "warning" "pre-start"
+        Add-Item $Result "findings" "rdctl" "kubernetes.enabled" "Rancher Desktop Kubernetes is disabled. Run EnsureRancherKubernetes or enable Kubernetes in Rancher Desktop Settings -> Kubernetes." "error" "pre-start"
       }
     } catch {
-      Add-Item $Result "findings" "kubectl" "context" "Could not read kubectl current context: $($_.Exception.Message)" "warning" "pre-start"
+      Add-Item $Result "findings" "rdctl" "list-settings" "Could not read Rancher Desktop settings: $($_.Exception.Message)" "error" "pre-start"
+    }
+  }
+
+  $kubectl = Get-Command kubectl -ErrorAction SilentlyContinue
+  if ($null -eq $kubectl) {
+    Add-Item $Result "findings" "kubectl" "" "kubectl is missing; Rancher Desktop local-lab live validation cannot run." "error" "pre-start"
+  } else {
+    try {
+      $context = Get-KubectlCurrentContext
+      if ($context -eq "rancher-desktop") {
+        Add-Item $Result "actions" "kubectl" "context" "kubectl current context is rancher-desktop."
+      } else {
+        Add-Item $Result "findings" "kubectl" "context" "kubectl current context is '$context'; Rancher local-lab deployment requires 'rancher-desktop'." "error" "pre-start"
+      }
+    } catch {
+      Add-Item $Result "findings" "kubectl" "context" "Could not read kubectl current context: $($_.Exception.Message)" "error" "pre-start"
+    }
+
+    try {
+      $readyNodes = @(Get-KubectlReadyNodeNames)
+      if ($readyNodes.Count -gt 0) {
+        Add-Item $Result "actions" "kubectl" "nodes.ready" "Rancher Desktop Kubernetes has Ready node(s): $($readyNodes -join ', ')."
+      } else {
+        Add-Item $Result "findings" "kubectl" "nodes.ready" "Rancher Desktop Kubernetes API is reachable, but no nodes are Ready." "error" "post-start"
+      }
+    } catch {
+      Add-Item $Result "findings" "kubectl" "nodes" "Rancher Desktop Kubernetes API is not reachable: $($_.Exception.Message)" "error" "post-start"
     }
   }
 }
@@ -5189,6 +5291,86 @@ function Invoke-SetSeqAzureEventHubLogs {
   return $result
 }
 
+function Invoke-EnsureRancherKubernetes {
+  $result = New-Result
+
+  if (-not (Test-RancherLocalDeploymentConfigured)) {
+    Add-Item $result "actions" ".codex/project-profile.json" "providers.deployment" "Rancher Desktop is not the selected deployment provider; Kubernetes enablement skipped."
+    return $result
+  }
+
+  if ($null -eq (Get-Command rdctl -ErrorAction SilentlyContinue)) {
+    Add-Item $result "findings" "rdctl" "" "rdctl is missing. Install or repair Rancher Desktop, then validate with `rdctl list-settings`." "error" "pre-start"
+    return $result
+  }
+
+  if ($null -eq (Get-Command kubectl -ErrorAction SilentlyContinue)) {
+    Add-Item $result "findings" "kubectl" "" "kubectl is missing. Install Rancher Desktop Kubernetes support, then validate with `kubectl get nodes`." "error" "pre-start"
+    return $result
+  }
+
+  $settings = $null
+  try {
+    $settings = Get-RancherDesktopSettings
+  } catch {
+    Add-Item $result "actions" "rdctl" "start" "Rancher Desktop settings are not reachable; starting Rancher Desktop with Kubernetes enabled."
+    $start = Invoke-NativeText "rdctl" @("start", "--kubernetes.enabled", "--no-modal-dialogs") 120
+    if ($start.ExitCode -ne 0) {
+      Add-Item $result "findings" "rdctl" "start" "Could not start Rancher Desktop with Kubernetes enabled: $($start.Error)" "error" "pre-start"
+      return $result
+    }
+  }
+
+  if ($null -ne $settings -and -not (Test-RancherKubernetesEnabled $settings)) {
+    Add-Item $result "actions" "rdctl" "set" "Enabling Rancher Desktop Kubernetes."
+    $set = Invoke-NativeText "rdctl" @("set", "--kubernetes.enabled") 120
+    if ($set.ExitCode -ne 0) {
+      Add-Item $result "findings" "rdctl" "set" "Could not enable Rancher Desktop Kubernetes: $($set.Error)" "error" "pre-start"
+      return $result
+    }
+  } elseif ($null -ne $settings) {
+    Add-Item $result "actions" "rdctl" "kubernetes.enabled" "Rancher Desktop Kubernetes is already enabled."
+  }
+
+  $deadline = (Get-Date).AddMinutes(5)
+  do {
+    $context = Get-KubectlCurrentContext
+    if ($context -eq "rancher-desktop") {
+      Add-Item $result "actions" "kubectl" "context" "kubectl current context is rancher-desktop."
+      break
+    }
+
+    Start-Sleep -Seconds 5
+  } while ((Get-Date) -lt $deadline)
+
+  if ((Get-KubectlCurrentContext) -ne "rancher-desktop") {
+    Add-Item $result "findings" "kubectl" "context" "kubectl current context did not become 'rancher-desktop'. Open Rancher Desktop Settings -> Kubernetes, enable Kubernetes, then run `kubectl config use-context rancher-desktop`." "error" "post-start"
+    return $result
+  }
+
+  do {
+    try {
+      $readyNodes = @(Get-KubectlReadyNodeNames)
+      if ($readyNodes.Count -gt 0) {
+        Add-Item $result "actions" "kubectl" "nodes.ready" "Rancher Desktop Kubernetes has Ready node(s): $($readyNodes -join ', ')."
+        return $result
+      }
+    } catch {
+      $lastError = $_.Exception.Message
+    }
+
+    Start-Sleep -Seconds 5
+  } while ((Get-Date) -lt $deadline)
+
+  $message = if ([string]::IsNullOrWhiteSpace($lastError)) {
+    "Rancher Desktop Kubernetes API is reachable, but no nodes became Ready within 5 minutes."
+  } else {
+    "Rancher Desktop Kubernetes API did not become ready within 5 minutes: $lastError"
+  }
+  Add-Item $result "findings" "kubectl" "nodes.ready" "$message Validate with `kubectl get nodes` after Rancher Desktop finishes starting Kubernetes." "error" "post-start"
+  return $result
+}
+
 switch ($Mode) {
   "Audit" { $result = Invoke-Audit }
   "AuditQualityGates" { $result = Invoke-AuditQualityGates }
@@ -5210,6 +5392,7 @@ switch ($Mode) {
   "SetMonitoringEnv" { $result = Invoke-SetEnvMode -TargetRelative "infra/monitoring/variables.env" }
   "SetGiteaRunner" { $result = Invoke-SetEnvMode -TargetRelative "infra/gitea/runner.env" }
   "SetSeqAzureEventHubLogs" { $result = Invoke-SetSeqAzureEventHubLogs }
+  "EnsureRancherKubernetes" { $result = Invoke-EnsureRancherKubernetes }
   "SplitInfraEnv" { $result = Invoke-SplitInfraEnv }
   "SetQualityConfig" { $result = Invoke-SetQualityConfig }
 }

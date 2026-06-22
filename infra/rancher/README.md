@@ -11,7 +11,7 @@ Nexus raw hosted -> release manifests, pointers, QA evidence
 
 ## Required Local Setup
 
-1. Enable Rancher Desktop Kubernetes and confirm:
+1. Run `config infra` to enable Rancher Desktop Kubernetes for the selected Rancher lane, or enable it manually in Rancher Desktop Settings -> Kubernetes. Then confirm:
 
    ```powershell
    kubectl config current-context
@@ -19,6 +19,7 @@ Nexus raw hosted -> release manifests, pointers, QA evidence
    ```
 
    The current context must be `rancher-desktop`.
+   At least one node must be `Ready`. The configure `Audit` reports disabled or unhealthy Kubernetes but does not change Rancher Desktop settings; explicit `config infra` runs `EnsureRancherKubernetes` before the read-only audit.
 
 2. In Nexus, create a Docker hosted repository and expose its HTTP connector on the port mapped in `infra/nexus/compose.yml`, default `5001`.
 
