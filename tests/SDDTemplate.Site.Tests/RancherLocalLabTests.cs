@@ -184,10 +184,41 @@ namespace SDDTemplate.Site.Tests
             Assert.Contains("timed out after $TimeoutSeconds seconds", script);
             Assert.Contains("nodes.ready", script);
             Assert.Contains("Rancher Desktop Kubernetes is disabled", script);
-            Assert.Contains("run `EnsureRancherKubernetes` before `Audit`", configureSkill);
-            Assert.Contains("`EnsureRancherKubernetes` when Rancher Desktop is selected", aliasSkill);
+            Assert.Contains("run `EnsureRancherKubernetes` before `EnsureRancherPortForwards` and `Audit`", configureSkill);
+            Assert.Contains("`EnsureRancherKubernetes` and `EnsureRancherPortForwards` when Rancher Desktop is selected", aliasSkill);
             Assert.Contains("Plain `Audit` only reports disabled or unhealthy Kubernetes", adapter);
             Assert.Contains("explicit `config infra` runs `EnsureRancherKubernetes`", rancherReadme);
+        }
+
+        [Fact]
+        public void ConfigureInfraCanEnsureRancherPortForwards()
+        {
+            string root = FindRepositoryRoot();
+            string script = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "scripts", "configure_infra_tools.ps1"));
+            string configureSkill = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "SKILL.md"));
+            string aliasSkill = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-infra-tools", "SKILL.md"));
+            string adapter = File.ReadAllText(Path.Combine(root, ".codex", "providers", "deploy.rancher-desktop.md"));
+            string rancherReadme = File.ReadAllText(Path.Combine(root, "infra", "rancher", "README.md"));
+
+            Assert.Contains("\"EnsureRancherPortForwards\"", script);
+            Assert.Contains("function Invoke-EnsureRancherPortForwards", script);
+            Assert.Contains("function Get-RancherPortForwardMappings", script);
+            Assert.Contains("\"port-forward\"", script);
+            Assert.Contains("\"--address\", \"127.0.0.1\"", script);
+            Assert.Contains("Start-Process -FilePath \"kubectl\"", script);
+            Assert.Contains("-WindowStyle Hidden", script);
+
+            foreach (int port in new[] { 18081, 18082, 18083, 18084, 18085, 18086 })
+            {
+                Assert.Contains(port.ToString(), script);
+                Assert.Contains($"127.0.0.1:{port}", adapter);
+            }
+
+            Assert.Contains("EnsureRancherKubernetes` before `EnsureRancherPortForwards` and `Audit`", configureSkill);
+            Assert.Contains("starts localhost browser mappings", configureSkill);
+            Assert.Contains("`EnsureRancherPortForwards` when Rancher Desktop is selected", aliasSkill);
+            Assert.Contains("Plain `Audit` only reports missing mappings", adapter);
+            Assert.Contains("Windows cannot resolve the `*.sdd.localhost` ingress hosts", rancherReadme);
         }
 
         [Fact]

@@ -6,6 +6,7 @@ Use this adapter when `.codex/project-profile.json` selects `providers.deploymen
 
 - Use Rancher Desktop's built-in Kubernetes context named `rancher-desktop`.
 - During explicit `config infra`, use `EnsureRancherKubernetes` to enable Rancher Desktop Kubernetes through `rdctl` and wait for at least one Ready node. Plain `Audit` only reports disabled or unhealthy Kubernetes.
+- During explicit `config infra`, use `EnsureRancherPortForwards` after Kubernetes is ready to start stable localhost browser mappings for deployed services: DEV site/API on `127.0.0.1:18081`/`18082`, QA site/API on `127.0.0.1:18083`/`18084`, and PROD site/API on `127.0.0.1:18085`/`18086`. Plain `Audit` only reports missing mappings.
 - Read local cluster access from the user's kubeconfig for manual runs or from a secret such as `RANCHER_KUBECONFIG_B64` for Gitea Actions.
 - Read Nexus Docker registry endpoint and credentials from Gitea Actions secrets or ignored `.codex/client-tools.local.json`.
 - Keep runtime images in a Nexus Docker hosted repository and keep release metadata plus QA evidence in the existing Nexus raw repository.
@@ -29,6 +30,10 @@ Use this adapter when `.codex/project-profile.json` selects `providers.deploymen
   - DEV site/API: `site.dev.sdd.localhost`, `api.dev.sdd.localhost`.
   - QA site/API: `site.qa.sdd.localhost`, `api.qa.sdd.localhost`.
   - PROD site/API: `site.prod.sdd.localhost`, `api.prod.sdd.localhost`.
+- Windows browser fallback URLs created by `EnsureRancherPortForwards`:
+  - DEV site/API: `http://127.0.0.1:18081`, `http://127.0.0.1:18082`.
+  - QA site/API: `http://127.0.0.1:18083`, `http://127.0.0.1:18084`.
+  - PROD site/API: `http://127.0.0.1:18085`, `http://127.0.0.1:18086`.
 
 ## Failure Rules
 

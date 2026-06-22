@@ -433,3 +433,12 @@ The QA branch `e2e-qa` job resolves the ticket key with `jq -r '.workflow.ticket
 - Last verified: 2026-06-19
 
 When a landing page adds CTA links like `View products`, Playwright locators such as `getByRole("link", { name: "Products" })` can match both the navigation link and CTA because accessible-name matching is substring-based by default. Use `exact: true` for navigation links whose text also appears inside longer CTA labels.
+
+## Rancher Manual Publish Needs Nexus Docker And Host-Aware Health Checks
+
+- Type: Pattern
+- Status: Active
+- Source: manual Rancher DEV/QA publish for commit `cacbba52bb0b7823fa0932139098a3af9b31e693`, Gitea Actions run 293, local `kubectl` evidence
+- Last verified: 2026-06-22
+
+When Rancher Desktop publish fails in `build-container-images` with empty `NEXUS_DOCKER_REGISTRY`, `NEXUS_DOCKER_USERNAME`, or `NEXUS_DOCKER_PASSWORD`, configure the Rancher Docker secrets before relying on Gitea workflow dispatch. If `agentic-nexus` predates `infra/nexus/compose.yml` exposing `5001`, recreate only the Nexus service through the main compose file so the existing volume is preserved, then create/verify the hosted Docker repository. On this Windows/Rancher setup, `*.sdd.localhost` may be served by Windows HTTPAPI on port 80 instead of Traefik; verify deployed app health through `kubectl port-forward` or a host mapping to the Rancher node IP before classifying the deployment as failed.

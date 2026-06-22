@@ -1,5 +1,5 @@
 param(
-  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetGiteaBranchProtection", "SetPlaneEnv", "SetMonitoringEnv", "SetGiteaRunner", "SetSeqAzureEventHubLogs", "SplitInfraEnv", "AuditQualityGates", "AuditRecommendedTools", "DiscoverProjectGuidance", "AcquireProjectGuidance", "SetRecommendedTools", "MapProjectGuidanceStep", "BuildGiteaActionsImages", "ValidateGiteaActionsRunner", "InitProjectProfile", "InitQualityGateTemplates", "SetQualityConfig", "SyncWorktreeLocalConfig", "EnsureDeliveryContext", "EnsureRancherKubernetes")]
+  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetGiteaBranchProtection", "SetPlaneEnv", "SetMonitoringEnv", "SetGiteaRunner", "SetSeqAzureEventHubLogs", "SplitInfraEnv", "AuditQualityGates", "AuditRecommendedTools", "DiscoverProjectGuidance", "AcquireProjectGuidance", "SetRecommendedTools", "MapProjectGuidanceStep", "BuildGiteaActionsImages", "ValidateGiteaActionsRunner", "InitProjectProfile", "InitQualityGateTemplates", "SetQualityConfig", "SyncWorktreeLocalConfig", "EnsureDeliveryContext", "EnsureRancherKubernetes", "EnsureRancherPortForwards")]
   [string]$Mode = "Audit",
 
   [string]$Root = (Resolve-Path ".").Path,
@@ -186,6 +186,75 @@ function Get-KubectlReadyNodeNames {
   }
 
   return $ready
+}
+
+function Get-RancherPortForwardMappings {
+  return @(
+    [ordered]@{ Environment = "dev"; Namespace = "sdd-dev"; Service = "site"; LocalPort = 18081 },
+    [ordered]@{ Environment = "dev"; Namespace = "sdd-dev"; Service = "api"; LocalPort = 18082 },
+    [ordered]@{ Environment = "qa"; Namespace = "sdd-qa"; Service = "site"; LocalPort = 18083 },
+    [ordered]@{ Environment = "qa"; Namespace = "sdd-qa"; Service = "api"; LocalPort = 18084 },
+    [ordered]@{ Environment = "prod"; Namespace = "sdd-prod"; Service = "site"; LocalPort = 18085 },
+    [ordered]@{ Environment = "prod"; Namespace = "sdd-prod"; Service = "api"; LocalPort = 18086 }
+  )
+}
+
+function Get-KubectlServicePort {
+  param(
+    [string]$Namespace,
+    [string]$ServiceName
+  )
+
+  $command = Invoke-NativeText "kubectl" @("--context", "rancher-desktop", "-n", $Namespace, "get", "service", $ServiceName, "-o", "json", "--request-timeout=5s") 15
+  if ($command.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($command.Output)) {
+    $message = "$($command.Output)$($command.Error)"
+    if ($message -match "NotFound|not found") { return $null }
+    throw "kubectl could not inspect service $Namespace/$ServiceName. $message"
+  }
+
+  $service = $command.Output | ConvertFrom-Json
+  $ports = @($service.spec.ports)
+  if ($ports.Count -eq 0) { return $null }
+
+  foreach ($port in $ports) {
+    if ([string]$port.name -eq "http") { return [int]$port.port }
+  }
+
+  return [int]$ports[0].port
+}
+
+function Test-LocalPortListening {
+  param([int]$Port)
+
+  $client = [System.Net.Sockets.TcpClient]::new()
+  try {
+    $async = $client.BeginConnect("127.0.0.1", $Port, $null, $null)
+    if (-not $async.AsyncWaitHandle.WaitOne(500)) { return $false }
+    $client.EndConnect($async)
+    return $true
+  } catch {
+    return $false
+  } finally {
+    $client.Close()
+  }
+}
+
+function Get-RancherPortForwardProcess {
+  param($Mapping)
+
+  $serviceToken = "svc/$($Mapping.Service)"
+  $portToken = "$($Mapping.LocalPort):"
+  try {
+    return @(Get-CimInstance Win32_Process | Where-Object {
+      $_.CommandLine -and
+      $_.CommandLine -like "*port-forward*" -and
+      $_.CommandLine -like "*$serviceToken*" -and
+      $_.CommandLine -like "*$($Mapping.Namespace)*" -and
+      $_.CommandLine -like "*$portToken*"
+    })
+  } catch {
+    return @()
+  }
 }
 
 function Test-LocalImageTag {
@@ -2388,6 +2457,29 @@ function Add-RancherLocalLabAuditFindings {
       }
     } catch {
       Add-Item $Result "findings" "kubectl" "nodes" "Rancher Desktop Kubernetes API is not reachable: $($_.Exception.Message)" "error" "post-start"
+    }
+
+    foreach ($mapping in Get-RancherPortForwardMappings) {
+      $key = "$($mapping.Namespace).$($mapping.Service).$($mapping.LocalPort)"
+      try {
+        $servicePort = Get-KubectlServicePort $mapping.Namespace $mapping.Service
+      } catch {
+        Add-Item $Result "findings" "kubectl" "port-forward.$key" "Could not inspect Rancher $($mapping.Environment) $($mapping.Service) service for localhost forwarding: $($_.Exception.Message)" "error" "post-start"
+        continue
+      }
+      if ($null -eq $servicePort) {
+        Add-Item $Result "warnings" "kubectl" "port-forward.$key" "Rancher $($mapping.Environment) $($mapping.Service) service is not deployed yet; localhost port $($mapping.LocalPort) will be configured after deployment." "warning" "post-start"
+        continue
+      }
+
+      $processes = @(Get-RancherPortForwardProcess $mapping)
+      if ($processes.Count -gt 0 -and (Test-LocalPortListening $mapping.LocalPort)) {
+        Add-Item $Result "actions" "kubectl" "port-forward.$key" "Rancher $($mapping.Environment) $($mapping.Service) is forwarded at http://127.0.0.1:$($mapping.LocalPort)."
+      } elseif (Test-LocalPortListening $mapping.LocalPort) {
+        Add-Item $Result "warnings" "kubectl" "port-forward.$key" "Local port $($mapping.LocalPort) is already in use by a non-matching process; run EnsureRancherPortForwards after freeing it." "warning" "post-start"
+      } else {
+        Add-Item $Result "warnings" "kubectl" "port-forward.$key" "Rancher $($mapping.Environment) $($mapping.Service) is deployed, but localhost port $($mapping.LocalPort) is not forwarded. Run EnsureRancherPortForwards." "warning" "post-start"
+      }
     }
   }
 }
@@ -5371,6 +5463,81 @@ function Invoke-EnsureRancherKubernetes {
   return $result
 }
 
+function Invoke-EnsureRancherPortForwards {
+  $result = New-Result
+
+  if (-not (Test-RancherLocalDeploymentConfigured)) {
+    Add-Item $result "actions" ".codex/project-profile.json" "providers.deployment" "Rancher Desktop is not the selected deployment provider; localhost port-forward setup skipped."
+    return $result
+  }
+
+  if ($null -eq (Get-Command kubectl -ErrorAction SilentlyContinue)) {
+    Add-Item $result "findings" "kubectl" "" "kubectl is missing. Install Rancher Desktop Kubernetes support, then validate with `kubectl get nodes`." "error" "pre-start"
+    return $result
+  }
+
+  $context = Get-KubectlCurrentContext
+  if ($context -ne "rancher-desktop") {
+    Add-Item $result "findings" "kubectl" "context" "kubectl current context is '$context'; run EnsureRancherKubernetes before EnsureRancherPortForwards." "error" "pre-start"
+    return $result
+  }
+
+  foreach ($mapping in Get-RancherPortForwardMappings) {
+    $key = "$($mapping.Namespace).$($mapping.Service).$($mapping.LocalPort)"
+    try {
+      $servicePort = Get-KubectlServicePort $mapping.Namespace $mapping.Service
+    } catch {
+      Add-Item $result "findings" "kubectl" "port-forward.$key" "Could not inspect Rancher $($mapping.Environment) $($mapping.Service) service for localhost forwarding: $($_.Exception.Message)" "error" "post-start"
+      continue
+    }
+    if ($null -eq $servicePort) {
+      Add-Item $result "warnings" "kubectl" "port-forward.$key" "Rancher $($mapping.Environment) $($mapping.Service) service is not deployed yet; skipping localhost port $($mapping.LocalPort)." "warning" "post-start"
+      continue
+    }
+
+    $processes = @(Get-RancherPortForwardProcess $mapping)
+    if ($processes.Count -gt 0 -and (Test-LocalPortListening $mapping.LocalPort)) {
+      Add-Item $result "actions" "kubectl" "port-forward.$key" "Rancher $($mapping.Environment) $($mapping.Service) is already forwarded at http://127.0.0.1:$($mapping.LocalPort)."
+      continue
+    }
+
+    if ((Test-LocalPortListening $mapping.LocalPort) -and $processes.Count -eq 0) {
+      Add-Item $result "findings" "kubectl" "port-forward.$key" "Local port $($mapping.LocalPort) is already in use by a non-matching process. Free the port, then rerun EnsureRancherPortForwards." "error" "post-start"
+      continue
+    }
+
+    $arguments = @(
+      "--context", "rancher-desktop",
+      "-n", $mapping.Namespace,
+      "port-forward",
+      "svc/$($mapping.Service)",
+      "$($mapping.LocalPort):$servicePort",
+      "--address", "127.0.0.1"
+    )
+
+    try {
+      $process = Start-Process -FilePath "kubectl" -ArgumentList $arguments -WindowStyle Hidden -PassThru
+      $deadline = (Get-Date).AddSeconds(15)
+      do {
+        if (Test-LocalPortListening $mapping.LocalPort) {
+          Add-Item $result "actions" "kubectl" "port-forward.$key" "Started Rancher $($mapping.Environment) $($mapping.Service) port-forward at http://127.0.0.1:$($mapping.LocalPort) with process id $($process.Id)."
+          break
+        }
+
+        Start-Sleep -Milliseconds 500
+      } while ((Get-Date) -lt $deadline)
+
+      if (-not (Test-LocalPortListening $mapping.LocalPort)) {
+        Add-Item $result "findings" "kubectl" "port-forward.$key" "kubectl port-forward for $($mapping.Namespace)/$($mapping.Service) did not open local port $($mapping.LocalPort) within 15 seconds." "error" "post-start"
+      }
+    } catch {
+      Add-Item $result "findings" "kubectl" "port-forward.$key" "Could not start kubectl port-forward for $($mapping.Namespace)/$($mapping.Service): $($_.Exception.Message)" "error" "post-start"
+    }
+  }
+
+  return $result
+}
+
 switch ($Mode) {
   "Audit" { $result = Invoke-Audit }
   "AuditQualityGates" { $result = Invoke-AuditQualityGates }
@@ -5393,6 +5560,7 @@ switch ($Mode) {
   "SetGiteaRunner" { $result = Invoke-SetEnvMode -TargetRelative "infra/gitea/runner.env" }
   "SetSeqAzureEventHubLogs" { $result = Invoke-SetSeqAzureEventHubLogs }
   "EnsureRancherKubernetes" { $result = Invoke-EnsureRancherKubernetes }
+  "EnsureRancherPortForwards" { $result = Invoke-EnsureRancherPortForwards }
   "SplitInfraEnv" { $result = Invoke-SplitInfraEnv }
   "SetQualityConfig" { $result = Invoke-SetQualityConfig }
 }

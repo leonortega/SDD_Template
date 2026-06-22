@@ -21,6 +21,14 @@ Nexus raw hosted -> release manifests, pointers, QA evidence
    The current context must be `rancher-desktop`.
    At least one node must be `Ready`. The configure `Audit` reports disabled or unhealthy Kubernetes but does not change Rancher Desktop settings; explicit `config infra` runs `EnsureRancherKubernetes` before the read-only audit.
 
+   `config infra` also runs `EnsureRancherPortForwards` for deployed services. This starts stable localhost browser mappings when Windows cannot resolve the `*.sdd.localhost` ingress hosts:
+
+   ```text
+   DEV site/API  -> http://127.0.0.1:18081 / http://127.0.0.1:18082
+   QA site/API   -> http://127.0.0.1:18083 / http://127.0.0.1:18084
+   PROD site/API -> http://127.0.0.1:18085 / http://127.0.0.1:18086
+   ```
+
 2. In Nexus, create a Docker hosted repository and expose its HTTP connector on the port mapped in `infra/nexus/compose.yml`, default `5001`.
 
 3. Configure the Gitea Actions secrets:
