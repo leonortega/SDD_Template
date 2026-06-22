@@ -6,17 +6,22 @@ namespace SDDTemplate.Site.Tests
     public sealed class RancherLocalLabTests
     {
         [Fact]
-        public void ProjectProfileRegistersRancherDesktopAsLocalDeploymentAdapter()
+        public void ProjectProfileSelectsRancherDesktopAsDeploymentProvider()
         {
             string root = FindRepositoryRoot();
             using JsonDocument profile = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, ".codex", "project-profile.json")));
 
-            string localAdapter = profile.RootElement
+            JsonElement deployment = profile.RootElement
+                .GetProperty("providers")
+                .GetProperty("deployment");
+            string adapter = profile.RootElement
                 .GetProperty("adapters")
-                .GetProperty("deploymentLocal")
+                .GetProperty("deployment")
                 .GetString()!;
 
-            Assert.Equal(".codex/providers/deploy.rancher-desktop.md", localAdapter);
+            Assert.Equal("rancher-desktop", deployment.GetProperty("id").GetString());
+            Assert.Equal(".codex/providers/deploy.rancher-desktop.md", deployment.GetProperty("adapter").GetString());
+            Assert.Equal(".codex/providers/deploy.rancher-desktop.md", adapter);
             Assert.True(File.Exists(Path.Combine(root, ".codex", "providers", "deploy.rancher-desktop.md")));
         }
 
@@ -72,25 +77,25 @@ namespace SDDTemplate.Site.Tests
         }
 
         [Fact]
-        public void SharedArtifactPathsExposeAzureAndRancherProviderMetadata()
+        public void SharedArtifactPathsDefaultToSelectedRancherProviderMetadata()
         {
             string root = FindRepositoryRoot();
             string script = Path.Combine(root, ".codex", "skills", "_shared", "scripts", "delivery_tools.ps1");
 
-            string azureJson = RunPowerShell(root, $"-NoProfile -ExecutionPolicy Bypass -File \"{script}\" -Mode ArtifactPaths -CommitSha abc123");
-            string rancherJson = RunPowerShell(root, $"-NoProfile -ExecutionPolicy Bypass -File \"{script}\" -Mode ArtifactPaths -CommitSha abc123 -DeploymentProvider rancher-desktop");
+            string defaultJson = RunPowerShell(root, $"-NoProfile -ExecutionPolicy Bypass -File \"{script}\" -Mode ArtifactPaths -CommitSha abc123");
+            string azureJson = RunPowerShell(root, $"-NoProfile -ExecutionPolicy Bypass -File \"{script}\" -Mode ArtifactPaths -CommitSha abc123 -DeploymentProvider azure-appservice");
 
+            using JsonDocument defaultPaths = JsonDocument.Parse(defaultJson);
             using JsonDocument azure = JsonDocument.Parse(azureJson);
-            using JsonDocument rancher = JsonDocument.Parse(rancherJson);
+
+            Assert.Equal("rancher-desktop", defaultPaths.RootElement.GetProperty("deploymentProvider").GetString());
+            Assert.Equal("app/abc123/container-images.json", defaultPaths.RootElement.GetProperty("containerImages").GetString());
+            Assert.Equal("app/abc123/monitoring-summary-{environment}.json", defaultPaths.RootElement.GetProperty("monitoringSummaryPattern").GetString());
+            Assert.Equal("app/abc123/qa-observability.json", defaultPaths.RootElement.GetProperty("qaObservability").GetString());
 
             Assert.Equal("azure-appservice", azure.RootElement.GetProperty("deploymentProvider").GetString());
             Assert.Equal("app/abc123/deployable-apps.json", azure.RootElement.GetProperty("topology").GetString());
             Assert.False(azure.RootElement.TryGetProperty("containerImages", out _));
-
-            Assert.Equal("rancher-desktop", rancher.RootElement.GetProperty("deploymentProvider").GetString());
-            Assert.Equal("app/abc123/container-images.json", rancher.RootElement.GetProperty("containerImages").GetString());
-            Assert.Equal("app/abc123/monitoring-summary-{environment}.json", rancher.RootElement.GetProperty("monitoringSummaryPattern").GetString());
-            Assert.Equal("app/abc123/qa-observability.json", rancher.RootElement.GetProperty("qaObservability").GetString());
         }
 
         [Fact]
@@ -127,11 +132,13 @@ namespace SDDTemplate.Site.Tests
             Assert.Contains("http://site.prod.sdd.localhost/health", targets);
             Assert.Contains("http://api.prod.sdd.localhost/health", targets);
             Assert.Contains("provider: rancher-desktop", targets);
+            Assert.DoesNotContain("azurewebsites.net", targets);
+            Assert.DoesNotContain("provider: azure-appservice", targets);
             Assert.Contains("target_label: provider", prometheus);
         }
 
         [Fact]
-        public void ConfigureInfraAuditsRancherLocalLabSurfaces()
+        public void ConfigureInfraAuditsSelectedRancherLocalLabSurfaces()
         {
             string root = FindRepositoryRoot();
             string script = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "scripts", "configure_infra_tools.ps1"));
@@ -153,6 +160,9 @@ namespace SDDTemplate.Site.Tests
             Assert.Contains("RANCHER_OBSERVABILITY_ENABLED=true", script);
             Assert.Contains("target_label:\\s*provider", script);
             Assert.Contains("Rancher Desktop local lab", configureSkill);
+            Assert.Contains("providers.deployment", script);
+            Assert.Contains("Azure Event Hub collector checks skipped", script);
+            Assert.Contains("if ($azureDeploymentSelected)", script);
         }
 
         [Fact]

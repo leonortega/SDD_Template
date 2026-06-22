@@ -83,7 +83,7 @@ function Get-ArtifactPaths([string] $Sha) {
     throw 'CommitSha is required for ArtifactPaths.'
   }
 
-  $provider = if ([string]::IsNullOrWhiteSpace($DeploymentProvider)) { 'azure-appservice' } else { $DeploymentProvider }
+  $provider = if ([string]::IsNullOrWhiteSpace($DeploymentProvider)) { Get-SelectedDeploymentProvider } else { $DeploymentProvider }
 
   $paths = [ordered]@{
     deploymentProvider = $provider
@@ -102,6 +102,25 @@ function Get-ArtifactPaths([string] $Sha) {
   }
 
   [pscustomobject]$paths
+}
+
+function Get-SelectedDeploymentProvider {
+  $profilePath = Join-Path $RepoRoot '.codex/project-profile.json'
+  if (-not (Test-Path -LiteralPath $profilePath)) {
+    return 'azure-appservice'
+  }
+
+  try {
+    $profile = Get-Content -Path $profilePath -Raw | ConvertFrom-Json
+    $provider = [string]$profile.providers.deployment.id
+    if (-not [string]::IsNullOrWhiteSpace($provider)) {
+      return $provider
+    }
+  } catch {
+    return 'azure-appservice'
+  }
+
+  return 'azure-appservice'
 }
 
 function Test-GitIgnored([string] $CandidatePath) {

@@ -102,8 +102,12 @@ function Test-RancherLocalDeploymentConfigured {
   $profile = Get-ProjectProfile
   if ($null -eq $profile) { return $false }
 
-  if ($null -ne $profile.adapters -and $profile.adapters.PSObject.Properties.Name -contains "deploymentLocal") {
-    return [string]$profile.adapters.deploymentLocal -eq ".codex/providers/deploy.rancher-desktop.md"
+  if ($null -ne $profile.providers -and $null -ne $profile.providers.deployment -and [string]$profile.providers.deployment.id -eq "rancher-desktop") {
+    return $true
+  }
+
+  if ($null -ne $profile.adapters -and $profile.adapters.PSObject.Properties.Name -contains "deployment") {
+    return [string]$profile.adapters.deployment -eq ".codex/providers/deploy.rancher-desktop.md"
   }
 
   return $false
@@ -325,7 +329,7 @@ function Set-JsonProperty {
   if ($Object.PSObject.Properties.Name -contains $Name) {
     $Object.$Name = $Value
   } else {
-    $Object | Add-Member -MemberType NoteProperty -Name $Name -Value $Value
+    $Object | Add-Member -MemberType NoteProperty -Name $Name -Value $Value -Force
   }
 }
 
@@ -1195,19 +1199,21 @@ function Add-QualityGateAuditFindings {
       }
     }
   }
-  if (Test-FileContains $azureMain "DOTNETCORE\|8\.0") {
-    Add-Item $Result "findings" $azureMain "webRuntimeStack/apiRuntimeStack" "Azure runtime defaults still target DOTNETCORE|8.0; align with .NET 10 app or use a self-contained deployment strategy." "warning"
-  }
-  foreach ($expectedAzureMapping in @("deployableApps", "Microsoft.Web/sites/config", "Api__BaseUrl", "Cors__AllowedOrigins__0", "ConnectionStrings__ClientsDb", "output apps array")) {
-    if (-not (Test-FileContains $azureMain ([regex]::Escape($expectedAzureMapping)))) {
-      Add-Item $Result "findings" $azureMain $expectedAzureMapping "Azure Bicep should map topology apps and appsettings-derived App Service settings." "warning"
+  if (Test-AzureDeploymentSelected) {
+    if (Test-FileContains $azureMain "DOTNETCORE\|8\.0") {
+      Add-Item $Result "findings" $azureMain "webRuntimeStack/apiRuntimeStack" "Azure runtime defaults still target DOTNETCORE|8.0; align with .NET 10 app or use a self-contained deployment strategy." "warning"
     }
-  }
-  foreach ($parametersFile in @("infra/azure/dev.parameters.json", "infra/azure/qa.parameters.json", "infra/azure/prod.parameters.json")) {
-    if (Test-Path (Join-RootPath $parametersFile)) {
-      $params = Get-Content -Path (Join-RootPath $parametersFile) -Raw | ConvertFrom-Json
-      if ($null -eq $params.parameters.webRuntimeStack -or $null -eq $params.parameters.apiRuntimeStack) {
-        Add-Item $Result "findings" $parametersFile "runtimeStack" "Runtime stack is not overridden; deployment will use the template default." "info"
+    foreach ($expectedAzureMapping in @("deployableApps", "Microsoft.Web/sites/config", "Api__BaseUrl", "Cors__AllowedOrigins__0", "ConnectionStrings__ClientsDb", "output apps array")) {
+      if (-not (Test-FileContains $azureMain ([regex]::Escape($expectedAzureMapping)))) {
+        Add-Item $Result "findings" $azureMain $expectedAzureMapping "Azure Bicep should map topology apps and appsettings-derived App Service settings." "warning"
+      }
+    }
+    foreach ($parametersFile in @("infra/azure/dev.parameters.json", "infra/azure/qa.parameters.json", "infra/azure/prod.parameters.json")) {
+      if (Test-Path (Join-RootPath $parametersFile)) {
+        $params = Get-Content -Path (Join-RootPath $parametersFile) -Raw | ConvertFrom-Json
+        if ($null -eq $params.parameters.webRuntimeStack -or $null -eq $params.parameters.apiRuntimeStack) {
+          Add-Item $Result "findings" $parametersFile "runtimeStack" "Runtime stack is not overridden; deployment will use the template default." "info"
+        }
       }
     }
   }
@@ -1216,7 +1222,11 @@ function Add-QualityGateAuditFindings {
   if (-not (Test-Path (Join-RootPath $secretsDoc))) {
     Add-Item $Result "findings" $secretsDoc "" "Missing documentation for required Gitea Actions secrets and branch protection." "warning"
   } else {
-    foreach ($secret in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "NEXUS_REPOSITORY", "AZURE_CREDENTIALS", "AZURE_DEV_RESOURCE_GROUP", "AZURE_DEV_SITE_APP_NAME", "AZURE_DEV_SITE_APP_URL", "AZURE_DEV_API_APP_NAME", "AZURE_DEV_API_APP_URL", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_SITE_APP_NAME", "AZURE_QA_SITE_APP_URL", "AZURE_QA_API_APP_NAME", "AZURE_QA_API_APP_URL", "AZURE_PROD_RESOURCE_GROUP", "AZURE_PROD_SITE_APP_NAME", "AZURE_PROD_SITE_APP_URL", "AZURE_PROD_API_APP_NAME", "AZURE_PROD_API_APP_URL")) {
+    $expectedSecrets = @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "NEXUS_REPOSITORY", "NEXUS_DOCKER_REGISTRY", "NEXUS_DOCKER_USERNAME", "NEXUS_DOCKER_PASSWORD", "RANCHER_KUBECONFIG_B64")
+    if (Test-AzureDeploymentSelected) {
+      $expectedSecrets += @("AZURE_CREDENTIALS", "AZURE_DEV_RESOURCE_GROUP", "AZURE_DEV_SITE_APP_NAME", "AZURE_DEV_SITE_APP_URL", "AZURE_DEV_API_APP_NAME", "AZURE_DEV_API_APP_URL", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_SITE_APP_NAME", "AZURE_QA_SITE_APP_URL", "AZURE_QA_API_APP_NAME", "AZURE_QA_API_APP_URL", "AZURE_PROD_RESOURCE_GROUP", "AZURE_PROD_SITE_APP_NAME", "AZURE_PROD_SITE_APP_URL", "AZURE_PROD_API_APP_NAME", "AZURE_PROD_API_APP_URL")
+    }
+    foreach ($secret in $expectedSecrets) {
       if (-not (Test-FileContains $secretsDoc $secret)) {
         Add-Item $Result "findings" $secretsDoc $secret "Required Gitea Actions secret is not documented." "warning"
       }
@@ -2184,7 +2194,7 @@ function Add-RancherLocalLabAuditFindings {
 
   $rancherConfigured = Test-RancherLocalDeploymentConfigured
   if (-not $rancherConfigured) {
-    Add-Item $Result "actions" ".codex/project-profile.json" "deploymentLocal" "Rancher Desktop local deployment adapter is not selected; Rancher local-lab checks are informational only."
+    Add-Item $Result "actions" ".codex/project-profile.json" "providers.deployment" "Rancher Desktop is not the selected deployment provider; Rancher local-lab checks are informational only."
     return
   }
 
@@ -2239,7 +2249,7 @@ function Add-RancherLocalLabAuditFindings {
   if (Test-Path $prometheusPath) {
     $prometheus = Get-Content -Path $prometheusPath -Raw
     if ($prometheus -notmatch 'target_label:\s*provider') {
-      Add-Item $Result "findings" "infra/monitoring/prometheus/prometheus.yml" "provider-relabel" "Prometheus must preserve the provider label so Azure and Rancher health targets remain distinguishable." "warning" "pre-start"
+      Add-Item $Result "findings" "infra/monitoring/prometheus/prometheus.yml" "provider-relabel" "Prometheus must preserve the provider label so selected deployment health targets remain distinguishable." "warning" "pre-start"
     }
   }
 
@@ -2404,15 +2414,17 @@ function Invoke-Audit {
   )
   if ($monitoring.Count -eq 0) {
     Add-Item $result "findings" $monitoringLocal "" "Monitoring local env file is missing or empty. Run InitLocalFiles or SplitInfraEnv." "error" "pre-start"
-    foreach ($name in $requiredOtelCollectorEnv) {
-      $severity = if ($azureDeploymentSelected) { "error" } else { "warning" }
-      Add-Item $result "findings" $monitoringLocal $name "Missing OpenTelemetry collector value for Event Hub to Seq ingestion. Required for Azure observability; Rancher local-lab Seq capture uses SEQ_URL." $severity "pre-start"
+    if ($azureDeploymentSelected) {
+      foreach ($name in $requiredOtelCollectorEnv) {
+        Add-Item $result "findings" $monitoringLocal $name "Missing OpenTelemetry collector value for Event Hub to Seq ingestion. Required for Azure observability; Rancher local-lab Seq capture uses SEQ_URL." "error" "pre-start"
+      }
     }
   } else {
-    foreach ($name in $requiredOtelCollectorEnv) {
-      if (-not $monitoring.Contains($name) -or [string]::IsNullOrWhiteSpace($monitoring[$name])) {
-        $severity = if ($azureDeploymentSelected) { "error" } else { "warning" }
-        Add-Item $result "findings" $monitoringLocal $name "Missing OpenTelemetry collector value for Event Hub to Seq ingestion. Required for Azure observability; Rancher local-lab Seq capture uses SEQ_URL." $severity "pre-start"
+    if ($azureDeploymentSelected) {
+      foreach ($name in $requiredOtelCollectorEnv) {
+        if (-not $monitoring.Contains($name) -or [string]::IsNullOrWhiteSpace($monitoring[$name])) {
+          Add-Item $result "findings" $monitoringLocal $name "Missing OpenTelemetry collector value for Event Hub to Seq ingestion. Required for Azure observability; Rancher local-lab Seq capture uses SEQ_URL." "error" "pre-start"
+        }
       }
     }
     foreach ($name in @("GRAFANA_HEALTH_ALERT_FOR", "SEQ_ERROR_ALERT_WINDOW", "SEQ_ERROR_ALERT_THRESHOLD", "SEQ_URL", "PROMETHEUS_URL", "RANCHER_OBSERVABILITY_ENABLED")) {
@@ -2570,7 +2582,7 @@ function Invoke-Audit {
         if ($upTargets.Count -gt 0) {
           Add-Item $result "actions" "prometheus" "targets.up" "Prometheus scrape job 'blackbox_http_health' has $($upTargets.Count) targets UP and ready for probing."
         } else {
-          Add-Item $result "findings" "prometheus" "targets.down" "Prometheus targets are not UP. Check Docker network connectivity from Prometheus to Azure app endpoints. Verify blackbox container is running and App Service /health endpoints are accessible." "warning" "post-start"
+          Add-Item $result "findings" "prometheus" "targets.down" "Prometheus targets are not UP. Check Docker network connectivity from Prometheus to configured app endpoints. Verify blackbox container is running and selected deployment /health endpoints are accessible." "warning" "post-start"
         }
       } catch {
         Add-Item $result "findings" "prometheus" "targets.check" "Could not query Prometheus targets at localhost:9091: $($_.Exception.Message)" "info" "post-start"
@@ -5054,46 +5066,50 @@ function Invoke-SetSeqAzureEventHubLogs {
   $collectorPath = Join-RootPath $collectorRelative
   $azureDeploymentSelected = Test-AzureDeploymentSelected
 
-  if (-not (Test-Path $composePath)) {
-    Add-Item $result "findings" $composeRelative "monitoring-compose" "Missing monitoring compose file." "error" "pre-start"
-  } else {
-    $compose = Get-Content -Path $composePath -Raw
-    if ($compose -notmatch 'name:\s*agentic-e2e' -or $compose -notmatch 'profiles:\s*\n\s*-\s*eventhub' -or $compose -notmatch 'agentic-otelcol' -or $compose -notmatch 'otel/opentelemetry-collector-contrib:0\.154\.0') {
-      Add-Item $result "findings" $composeRelative "otelcol-service" "Monitoring compose does not define the required Event Hub collector profile." "error" "pre-start"
+  if ($azureDeploymentSelected) {
+    if (-not (Test-Path $composePath)) {
+      Add-Item $result "findings" $composeRelative "monitoring-compose" "Missing monitoring compose file." "error" "pre-start"
     } else {
-      Add-Item $result "actions" $composeRelative "" "Required Event Hub collector profile is present in the shared agentic-e2e compose collection."
-    }
-  }
-
-  if (-not (Test-Path $collectorPath)) {
-    Add-Item $result "findings" $collectorRelative "collector-config" "Missing OpenTelemetry Collector Contrib configuration." "error" "pre-start"
-  } else {
-    $collector = Get-Content -Path $collectorPath -Raw
-    foreach ($needle in @("azure_event_hub/dev", "azure_event_hub/qa", "azure_event_hub/prod", "otlphttp/seq")) {
-      if ($collector -notmatch [regex]::Escape($needle)) {
-        Add-Item $result "findings" $collectorRelative $needle "Collector configuration is missing expected Event Hub to Seq wiring." "error" "pre-start"
+      $compose = Get-Content -Path $composePath -Raw
+      if ($compose -notmatch 'name:\s*agentic-e2e' -or $compose -notmatch 'profiles:\s*\n\s*-\s*eventhub' -or $compose -notmatch 'agentic-otelcol' -or $compose -notmatch 'otel/opentelemetry-collector-contrib:0\.154\.0') {
+        Add-Item $result "findings" $composeRelative "otelcol-service" "Monitoring compose does not define the required Event Hub collector profile." "error" "pre-start"
+      } else {
+        Add-Item $result "actions" $composeRelative "" "Required Event Hub collector profile is present in the shared agentic-e2e compose collection."
       }
     }
-    if ($collector -match "azure_event_hub/dev" -and $collector -match "otlphttp/seq") {
-      Add-Item $result "actions" $collectorRelative "" "OpenTelemetry Collector Contrib config is present for Azure Event Hub to Seq ingestion."
+
+    if (-not (Test-Path $collectorPath)) {
+      Add-Item $result "findings" $collectorRelative "collector-config" "Missing OpenTelemetry Collector Contrib configuration." "error" "pre-start"
+    } else {
+      $collector = Get-Content -Path $collectorPath -Raw
+      foreach ($needle in @("azure_event_hub/dev", "azure_event_hub/qa", "azure_event_hub/prod", "otlphttp/seq")) {
+        if ($collector -notmatch [regex]::Escape($needle)) {
+          Add-Item $result "findings" $collectorRelative $needle "Collector configuration is missing expected Event Hub to Seq wiring." "error" "pre-start"
+        }
+      }
+      if ($collector -match "azure_event_hub/dev" -and $collector -match "otlphttp/seq") {
+        Add-Item $result "actions" $collectorRelative "" "OpenTelemetry Collector Contrib config is present for Azure Event Hub to Seq ingestion."
+      }
     }
+  } else {
+    Add-Item $result "actions" $composeRelative "eventhub.skipped" "Azure Event Hub collector checks skipped because Rancher Desktop is the selected deployment provider."
   }
 
   $monitoring = Read-EnvFile $target
-  foreach ($name in @("OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING", "OTELCOL_AZURE_EVENT_HUB_QA_CONNECTION_STRING", "OTELCOL_AZURE_EVENT_HUB_PROD_CONNECTION_STRING")) {
-    if (-not $monitoring.Contains($name) -or [string]::IsNullOrWhiteSpace($monitoring[$name])) {
-      $severity = if ($azureDeploymentSelected) { "error" } else { "warning" }
-      Add-Item $result "findings" $targetRelative $name "Missing Event Hub connection string required by the Azure collector-based Seq ingestion path." $severity "pre-start"
-    } else {
-      Add-Item $result "actions" $targetRelative $name "Event Hub connection string is configured for collector-based Seq ingestion."
+  if ($azureDeploymentSelected) {
+    foreach ($name in @("OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING", "OTELCOL_AZURE_EVENT_HUB_QA_CONNECTION_STRING", "OTELCOL_AZURE_EVENT_HUB_PROD_CONNECTION_STRING")) {
+      if (-not $monitoring.Contains($name) -or [string]::IsNullOrWhiteSpace($monitoring[$name])) {
+        Add-Item $result "findings" $targetRelative $name "Missing Event Hub connection string required by the Azure collector-based Seq ingestion path." "error" "pre-start"
+      } else {
+        Add-Item $result "actions" $targetRelative $name "Event Hub connection string is configured for collector-based Seq ingestion."
+      }
     }
-  }
 
-  if (-not $monitoring.Contains("OTELCOL_SEQ_OTLP_ENDPOINT") -or [string]::IsNullOrWhiteSpace($monitoring["OTELCOL_SEQ_OTLP_ENDPOINT"])) {
-    $severity = if ($azureDeploymentSelected) { "error" } else { "warning" }
-    Add-Item $result "findings" $targetRelative "OTELCOL_SEQ_OTLP_ENDPOINT" "Missing OTLP endpoint required by the Azure collector-based Seq ingestion path." $severity "pre-start"
-  } else {
-    Add-Item $result "actions" $targetRelative "OTELCOL_SEQ_OTLP_ENDPOINT" "Collector OTLP export endpoint is configured."
+    if (-not $monitoring.Contains("OTELCOL_SEQ_OTLP_ENDPOINT") -or [string]::IsNullOrWhiteSpace($monitoring["OTELCOL_SEQ_OTLP_ENDPOINT"])) {
+      Add-Item $result "findings" $targetRelative "OTELCOL_SEQ_OTLP_ENDPOINT" "Missing OTLP endpoint required by the Azure collector-based Seq ingestion path." "error" "pre-start"
+    } else {
+      Add-Item $result "actions" $targetRelative "OTELCOL_SEQ_OTLP_ENDPOINT" "Collector OTLP export endpoint is configured."
+    }
   }
 
   $rancherObservabilityEnabled = $true
@@ -5132,7 +5148,7 @@ function Invoke-SetSeqAzureEventHubLogs {
       Add-Item $result "findings" "docker" "agentic-seq" "Seq container is not running; collector path cannot be validated." "error" "post-start"
     }
 
-    if ($LASTEXITCODE -eq 0 -and $containers -contains "agentic-otelcol") {
+    if ($azureDeploymentSelected -and $LASTEXITCODE -eq 0 -and $containers -contains "agentic-otelcol") {
       $otelState = (& docker inspect -f "{{.State.Status}}" agentic-otelcol 2>$null | Out-String).Trim()
       if ($otelState -eq "running") {
         Add-Item $result "actions" "docker" "agentic-otelcol" "Event Hub collector container is running."
@@ -5158,18 +5174,18 @@ function Invoke-SetSeqAzureEventHubLogs {
           Add-Item $result "findings" "docker" "agentic-otelcol-runtime" "Collector logs show Event Hub authentication or ingestion failures. Verify Send/Listen auth rules and recreate the collector container after updating connection strings." $severity "post-start"
         }
       } else {
-        $severity = if ($azureDeploymentSelected) { "error" } else { "warning" }
-        Add-Item $result "findings" "docker" "agentic-otelcol" "Event Hub collector container status is '$otelState'." $severity "post-start"
+        Add-Item $result "findings" "docker" "agentic-otelcol" "Event Hub collector container status is '$otelState'." "error" "post-start"
       }
-    } else {
-      $severity = if ($azureDeploymentSelected) { "error" } else { "warning" }
-      Add-Item $result "findings" "docker" "agentic-otelcol" "Event Hub collector container is not running. Start with --profile eventhub to complete Azure observability setup." $severity "post-start"
+    } elseif ($azureDeploymentSelected) {
+      Add-Item $result "findings" "docker" "agentic-otelcol" "Event Hub collector container is not running. Start with --profile eventhub to complete Azure observability setup." "error" "post-start"
     }
   } catch {
     Add-Item $result "findings" "seq" "ready" "Could not validate Seq API endpoint: $($_.Exception.Message)" "error" "post-start"
   }
 
-  Add-Item $result "actions" $composeRelative "" "Run `docker compose --profile eventhub --env-file .\infra\plane\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml --project-directory .\infra up -d --force-recreate otelcol` after Event Hub or OTEL env changes."
+  if ($azureDeploymentSelected) {
+    Add-Item $result "actions" $composeRelative "" "Run `docker compose --profile eventhub --env-file .\infra\plane\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml --project-directory .\infra up -d --force-recreate otelcol` after Event Hub or OTEL env changes."
+  }
   return $result
 }
 
