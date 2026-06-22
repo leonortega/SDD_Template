@@ -14,7 +14,7 @@ Plane Todo
   -> Gitea PR
   -> PR validation + Codex review agent
   -> merge to dev
-  -> Nexus package + Azure DEV + Azure QA
+  -> Nexus artifact set + selected provider DEV + selected provider QA
   -> E2E QA evidence
   -> Plane Done
   -> explicit PROD promotion to main/PROD
@@ -85,7 +85,7 @@ Normal automatic delivery stays locked to one Plane ticket through ignored `.cod
 - Source: `.codex/skills/_shared/delivery-contract.md`, `docs/architecture.md`
 - Last verified: 2026-05-29
 
-Implementation and review can run concurrently across isolated worktrees. DEV, QA, E2E QA, PROD, rollback, and hotfix promotion are serialized because they share Azure environments, Nexus release manifests, RC/final tags, and Plane deployment evidence.
+Implementation and review can run concurrently across isolated worktrees. DEV, QA, E2E QA, PROD, rollback, and hotfix promotion are serialized because they share selected provider environments, Nexus release manifests, RC/final tags, and Plane deployment evidence.
 
 ## Context Findings Review
 

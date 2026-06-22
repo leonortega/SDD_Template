@@ -260,8 +260,14 @@ namespace SDDTemplate.Site.Tests
         {
             string root = FindRepositoryRoot();
             string script = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "scripts", "configure_infra_tools.ps1"));
+            string observabilitySkill = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-observability", "SKILL.md"));
 
             Assert.Contains("SetSeqAzureEventHubLogs", script);
+            Assert.Contains("RANCHER_OBSERVABILITY_ENABLED", script);
+            Assert.Contains("rancher.ready", script);
+            Assert.Contains("Test-AzureDeploymentSelected", script);
+            Assert.Contains("Azure collector-based Seq ingestion path", script);
+            Assert.Contains("Rancher Desktop sanitized pod-log capture", observabilitySkill);
             Assert.DoesNotContain("SetSeqAzureLogs", script);
             Assert.DoesNotContain("\"SetGrafanaAzureMonitor\"", script);
         }

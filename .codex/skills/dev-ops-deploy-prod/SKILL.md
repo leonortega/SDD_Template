@@ -53,13 +53,18 @@ Run preflight, main/tag promotion, PROD deployment, PROD verification, Plane res
 4. Fetch every included Plane ticket with expanded state/project data and verify each one is in `plane.doneState`.
 5. Read Plane comments for every included ticket and find `IA generated E2E QA: {ticketKey}` for the same commit/artifact or for a commit reachable from the promoted artifact commit.
 6. Verify every included ticket's E2E QA comment includes pass result, PR URL, QA URL, Nexus artifact URL, QA evidence URL, and source RC version.
-7. Verify Nexus contains:
+7. Verify Nexus contains the selected provider artifact set. Azure requires:
    - `app/{commitSha}/deployable-apps.json`
    - `app/{commitSha}/deployment-config.json`
    - one `app/{commitSha}/{artifactName}` per topology app
    - one `app/{commitSha}/{artifactName}.sha256` per topology app
    - `app/{commitSha}/commit.sha`
    - `app/{commitSha}/release.json`
+   Rancher Desktop requires:
+   - `app/{commitSha}/container-images.json`
+   - `app/{commitSha}/commit.sha`
+   - `app/{commitSha}/release.json`
+   - `app/{commitSha}/qa-observability.json` when observability is enabled
 8. Download checksum metadata only as needed and verify `commit.sha` exactly matches the QA-approved commit.
 9. Read `release.json` and verify it references the same commit SHA, checksum, primary Plane ticket, QA evidence URL, and source RC version as the Plane E2E QA evidence. If `includedTickets` exists, every included ticket must have Done state, E2E QA PASS evidence, source RC lineage, and release membership proof. Treat a different `planeTicketKey` as blocking only when no `includedTickets` release membership proves the batch release.
 10. Verify the source RC tag exists and points to the QA-approved commit.
@@ -81,12 +86,13 @@ Stop if any QA gate, tag gate, artifact gate, or checksum gate fails.
 
 ## PROD Deployment
 
-PROD deployment can be triggered in two supported ways:
+PROD deployment can be triggered in provider-specific ways:
 
-- A push/merge to `main` deploys PROD only when the changed files include application/test/package source and the commit or merged PR title starts with the configured ticket key format from `.codex/project-profile.json`. It resolves the artifact from `app/qa-approved/latest.json`, requires the pointer commit to equal `GITHUB_SHA`, then validates `commit.sha`, `release.json`, and the source RC tag before downloading the canonical `app/{commitSha}` ZIPs.
-- Manual workflow dispatch with `environment=prod` deploys the topology artifacts identified by `artifact_commit_sha`.
+- Azure App Service: a push/merge to `main` deploys PROD only when the changed files include application/test/package source and the commit or merged PR title starts with the configured ticket key format from `.codex/project-profile.json`. It resolves the artifact from `app/qa-approved/latest.json`, requires the pointer commit to equal `GITHUB_SHA`, then validates `commit.sha`, `release.json`, and the source RC tag before downloading the canonical `app/{commitSha}` ZIPs.
+- Azure App Service: manual `.gitea/workflows/package-deploy.yml` dispatch with `environment=prod` deploys the topology artifacts identified by `artifact_commit_sha`.
+- Rancher Desktop: manual `.gitea/workflows/rancher-local-deploy.yml` dispatch with `environment=prod` deploys the QA-approved image digest set from `app/{artifact_commit_sha}/container-images.json` into `sdd-prod`.
 
-For manual dispatch, trigger the Gitea package/deploy workflow with:
+For Azure manual dispatch, trigger the Gitea package/deploy workflow with:
 
 ```text
 environment=prod
@@ -95,7 +101,9 @@ release_version={finalVersion}
 source_rc_version={sourceRcVersion}
 ```
 
-The PROD workflow must not run package, DEV, or QA jobs for a `main` push or `environment=prod` dispatch. Maintenance-only changes such as `.codex/**` or workflow-only edits must not deploy PROD. PROD must download `app/{artifact_commit_sha}/deployable-apps.json` and every listed app ZIP from Nexus, verify each checksum, deploy each app to PROD, then run:
+For Rancher Desktop manual dispatch, trigger the Rancher local deploy workflow with the same inputs. The workflow must validate `release.json`, verify the RC pointer when `source_rc_version` is supplied, download `container-images.json`, and deploy only digest-pinned references.
+
+The PROD workflow must not run package, DEV, or QA jobs for a `main` push or `environment=prod` dispatch. Maintenance-only changes such as `.codex/**` or workflow-only edits must not deploy PROD. PROD must download the selected provider artifact set from Nexus, verify Azure ZIP checksums or Rancher image digests, deploy to PROD, then run:
 
 - PROD page smoke check: HTTP 200, expected title/content, no Azure placeholder page.
 - PROD health checks: every topology app health path returns HTTP 200 and JSON `status=ok`.
@@ -104,12 +112,12 @@ After dispatch, inspect the workflow run jobs and logs against the artifact-reus
 
 - used `environment=prod`,
 - consumed `artifact_commit_sha={qaApprovedCommit}` for manual dispatch or resolved the same commit from `app/qa-approved/latest.json` for a `main` push,
-- downloaded `app/{artifact_commit_sha}/deployable-apps.json` and per-app ZIPs from Nexus,
-- verified every per-app checksum,
+- downloaded the provider artifact set from Nexus: Azure `deployable-apps.json` plus per-app ZIPs; Rancher `container-images.json` digest references,
+- verified every per-app checksum for Azure or every `@sha256:` image reference for Rancher,
 - skipped rebuild/republish behavior,
 - skipped DEV and QA deployment behavior,
 - ran direct PROD page and `/health` checks.
-- applied and verified `deployment-config.json` against live PROD App Service settings before claiming success.
+- applied and verified `deployment-config.json` against live PROD App Service settings for Azure before claiming success, or published `monitoring-summary-prod.json` for Rancher.
 
 Prefer named job checks such as `deploy-prod` when present, but do not rely only on job names. If the workflow rebuilds, republishes, downloads an artifact commit that does not match the approved commit, lacks a PROD deployment path, deploys DEV/QA during PROD promotion, or skips `/health`, treat it as blocking workflow drift.
 
@@ -119,7 +127,7 @@ After the workflow succeeds, run direct verification before commenting success:
 
 1. Request the PROD web URL and assert HTTP 200 plus expected page title/content.
 2. Request every topology app health path and assert HTTP 200 plus `status=ok`.
-3. Verify the PROD workflow applied and verified `deployment-config.json`; required live App Service settings must exist and non-secret values must match expected resolved values. Missing proof is blocking.
+3. For Azure, verify the PROD workflow applied and verified `deployment-config.json`; required live App Service settings must exist and non-secret values must match expected resolved values. For Rancher, verify the workflow deployed the selected digest set to `sdd-prod` and uploaded `monitoring-summary-prod.json`. Missing proof is blocking.
 4. If Seq log validation is unavailable, classify monitoring as unavailable. Direct HTTP, deployment configuration, and `/health` checks remain authoritative for app success.
 5. If direct page, deployment configuration, or `/health` checks fail, classify PROD verification as failed and do not claim success.
 6. When PROD verification passes, use `UpdateReleaseManifest` to update `app/{commitSha}/release.json` with final release version, final tag, included tickets, PROD URL, PROD page status, PROD deployment configuration status, PROD `/health` status, workflow run URL, monitoring status, and PROD deployment timestamp. Validate and upload the updated manifest to Nexus.
@@ -185,7 +193,8 @@ Report the final release version, included tickets, PROD URL, final tag, deploye
 - Missing source RC tag or wrong tag target: stop.
 - Existing final release tag: stop.
 - Missing Nexus artifact/checksum/commit metadata: stop.
-- Missing `deployment-config.json` or failed live PROD App Service setting verification: stop.
+- For Azure, missing `deployment-config.json` or failed live PROD App Service setting verification: stop.
+- For Rancher Desktop, missing `container-images.json`, mutable image references, missing RC pointer validation when supplied, or missing `monitoring-summary-prod.json`: stop.
 - Checksum, commit metadata, or included ticket membership mismatch: stop.
 - Diverged `main`: stop.
 - Local-only release tag after failed push: delete the local tag before stopping unless the tag already exists on the remote.
