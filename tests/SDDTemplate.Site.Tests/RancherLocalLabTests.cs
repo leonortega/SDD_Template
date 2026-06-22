@@ -166,6 +166,31 @@ namespace SDDTemplate.Site.Tests
         }
 
         [Fact]
+        public void ConfigureInfraCanEnsureRancherKubernetes()
+        {
+            string root = FindRepositoryRoot();
+            string script = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "scripts", "configure_infra_tools.ps1"));
+            string configureSkill = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "SKILL.md"));
+            string aliasSkill = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-infra-tools", "SKILL.md"));
+            string adapter = File.ReadAllText(Path.Combine(root, ".codex", "providers", "deploy.rancher-desktop.md"));
+            string rancherReadme = File.ReadAllText(Path.Combine(root, "infra", "rancher", "README.md"));
+
+            Assert.Contains("\"EnsureRancherKubernetes\"", script);
+            Assert.Contains("function Invoke-EnsureRancherKubernetes", script);
+            Assert.Contains("rdctl list-settings", script);
+            Assert.Contains("\"start\", \"--kubernetes.enabled\", \"--no-modal-dialogs\"", script);
+            Assert.Contains("\"set\", \"--kubernetes.enabled\"", script);
+            Assert.Contains("\"get\", \"nodes\", \"-o\", \"json\", \"--request-timeout=5s\"", script);
+            Assert.Contains("timed out after $TimeoutSeconds seconds", script);
+            Assert.Contains("nodes.ready", script);
+            Assert.Contains("Rancher Desktop Kubernetes is disabled", script);
+            Assert.Contains("run `EnsureRancherKubernetes` before `Audit`", configureSkill);
+            Assert.Contains("`EnsureRancherKubernetes` when Rancher Desktop is selected", aliasSkill);
+            Assert.Contains("Plain `Audit` only reports disabled or unhealthy Kubernetes", adapter);
+            Assert.Contains("explicit `config infra` runs `EnsureRancherKubernetes`", rancherReadme);
+        }
+
+        [Fact]
         public void NexusComposeExposesDockerRegistryConnectorPort()
         {
             string root = FindRepositoryRoot();

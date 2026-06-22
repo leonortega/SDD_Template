@@ -5,6 +5,7 @@ Use this adapter when `.codex/project-profile.json` selects `providers.deploymen
 ## Runtime Configuration
 
 - Use Rancher Desktop's built-in Kubernetes context named `rancher-desktop`.
+- During explicit `config infra`, use `EnsureRancherKubernetes` to enable Rancher Desktop Kubernetes through `rdctl` and wait for at least one Ready node. Plain `Audit` only reports disabled or unhealthy Kubernetes.
 - Read local cluster access from the user's kubeconfig for manual runs or from a secret such as `RANCHER_KUBECONFIG_B64` for Gitea Actions.
 - Read Nexus Docker registry endpoint and credentials from Gitea Actions secrets or ignored `.codex/client-tools.local.json`.
 - Keep runtime images in a Nexus Docker hosted repository and keep release metadata plus QA evidence in the existing Nexus raw repository.
@@ -32,6 +33,7 @@ Use this adapter when `.codex/project-profile.json` selects `providers.deploymen
 ## Failure Rules
 
 - Stop when `kubectl config current-context` is not `rancher-desktop`.
+- Stop when Rancher Desktop Kubernetes is disabled, unreachable, or has no Ready nodes after `EnsureRancherKubernetes`.
 - Stop when the Nexus Docker registry is not reachable by both the Gitea runner and Rancher Desktop Kubernetes.
 - Stop when deployment would use a mutable tag without an immutable digest.
 - Do not rebuild between DEV, QA, PROD, or rollback. Promote the exact image digest references from `container-images.json`.
