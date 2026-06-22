@@ -12,6 +12,7 @@ services:
     container_name: agentic-nexus
     ports:
       - "8088:8081"
+      - "5001:5001"
     volumes:
       - nexus-data:/nexus-data
     networks:

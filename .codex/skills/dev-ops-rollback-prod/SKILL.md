@@ -31,19 +31,23 @@ Run preflight, rollback deployment, verification, Plane result, and follow-up ha
 2. Run `ValidateTicketLock` when `.codex/delivery-context.local.json` is present and report the active ticket lock. If the rollback target differs from the lock, require explicit user confirmation before mutation.
 3. If the user did not supply a rollback target, list known-good candidates from Plane PROD comments, Git tags, and Nexus `release.json` metadata. Order newest-first, mark the current PROD release, and ask the user to choose a target before mutating anything.
 4. Resolve the rollback target from user input, Plane PROD comments, Git tags, or Nexus `release.json` metadata.
-5. Verify the target artifact exists:
+5. Verify the selected provider target artifact exists. Azure requires:
    - `app/{commitSha}/deployable-apps.json`
    - one `app/{commitSha}/{artifactName}` per topology app
    - one `app/{commitSha}/{artifactName}.sha256` per topology app
    - `app/{commitSha}/commit.sha`
    - `app/{commitSha}/release.json`
-6. Verify checksum and `commit.sha`.
+   Rancher Desktop requires:
+   - `app/{commitSha}/container-images.json`
+   - `app/{commitSha}/commit.sha`
+   - `app/{commitSha}/release.json`
+6. Verify Azure checksum and `commit.sha`, or Rancher image references pinned by `@sha256:` and `commit.sha`.
 7. Verify `release.json` marks the target as previously QA-approved and either previously PROD-deployed or explicitly user-approved as the rollback target.
 8. Stop if the target commit equals the current PROD commit unless the user explicitly asks to redeploy the same artifact.
 
 ## Rollback Deployment
 
-Trigger the package/deploy workflow with:
+Trigger the selected provider workflow without rebuilding. Azure uses `.gitea/workflows/package-deploy.yml` with:
 
 ```text
 environment=prod
@@ -52,7 +56,7 @@ release_version={rollbackVersionOrTag}
 source_rc_version={sourceRcVersion}
 ```
 
-The workflow must download `app/{artifact_commit_sha}/deployable-apps.json`, download every listed app ZIP, verify every checksum, deploy the ZIPs, and run page plus all app `/health` checks. Do not rebuild.
+Rancher Desktop uses `.gitea/workflows/rancher-local-deploy.yml` with the same dispatch inputs. The workflow must download `app/{artifact_commit_sha}/container-images.json`, verify every image reference is digest-pinned, deploy the existing digest set to `sdd-prod`, publish `monitoring-summary-prod.json`, and run page plus all app `/health` checks. Do not rebuild.
 
 ## Verification
 
@@ -89,7 +93,7 @@ Report the rollback target, current and restored PROD versions, artifact commit,
 
 ## Failure Rules
 
-- Missing artifact/checksum/commit metadata: stop.
+- Missing provider artifact/checksum/image/commit metadata: stop.
 - Missing or inconsistent `release.json`: stop unless the user explicitly approves the artifact as rollback target.
 - Checksum mismatch: stop.
 - No rollback target supplied: list known-good candidates and stop before mutation.

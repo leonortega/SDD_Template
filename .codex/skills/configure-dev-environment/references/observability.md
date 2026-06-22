@@ -3,6 +3,7 @@
 Owns:
 
 - Seq local log search for DEV, QA, and PROD Azure App Service logs via the required Azure Event Hub collector path.
+- Seq local log search for sanitized Rancher Desktop Kubernetes pod logs captured during local-lab deployment.
 - Native Seq alerting when any error or fatal log event appears.
 - Grafana `/health` alerts for DEV, QA, and PROD web/API probes.
 - Required OpenTelemetry Collector Contrib ingestion from Azure Event Hub into Seq.
@@ -20,6 +21,7 @@ Repo-managed local log search:
 - `infra/monitoring/compose.yml` runs `datalust/seq:2025.2.16202` as `agentic-seq`.
 - Seq is bound to `http://localhost:5341` and uses explicit local no-auth first-run configuration.
 - Seq receives Azure-hosted console logs through the optional OpenTelemetry Collector Contrib Event Hub profile.
+- The Rancher Desktop lane posts sanitized pod-log events through Seq's CLEF ingestion endpoint during `infra/rancher/capture-observability.sh`.
 - `SetSeqAzureEventHubLogs` creates or updates the native Seq alert `Agentic E2E - Any Seq Error Logs`.
 - The error alert uses `SEQ_ERROR_ALERT_WINDOW` and `SEQ_ERROR_ALERT_THRESHOLD` from `infra/monitoring/variables.env`; defaults are `1m` and `0`.
 
@@ -51,3 +53,5 @@ After the collector starts, search Seq for `Environment = 'DEV'`, `Environment =
 When the collector profile is enabled, Azure-hosted console logs arrive from Azure Event Hub through the repo-managed collector path.
 
 Direct app page and `/health` HTTP checks remain authoritative deployment gates. Seq log search comes from the collector-based Event Hub path, and Dozzle is the place for local container log inspection.
+
+For the Rancher Desktop local lane, `infra/monitoring/prometheus/targets.local.yml` includes `provider: rancher-desktop` blackbox targets for site/API DEV, QA, and PROD local hosts. Real local values for `SEQ_URL`, `PROMETHEUS_URL`, and `RANCHER_OBSERVABILITY_ENABLED` belong in ignored env files or Gitea Actions secrets.

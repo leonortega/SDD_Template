@@ -106,7 +106,7 @@ Useful modes:
 - `ValidateGiteaActionsRunner`: live-check Docker runner prerequisites for PR validation containers, including local image presence, required tools, and local Gitea checkout reachability.
 - `InitProjectProfile`: create the canonical project profile, schema, and neutral provider adapter examples. This is a required first-class step for full `config infra`.
 - `InitQualityGateTemplates`: create tracked quality-gate templates.
-- `SetSeqAzureEventHubLogs`: validate the required OpenTelemetry Collector Contrib Azure Event Hub path for Seq, including collector config, profile wiring, required connection strings, and the native Seq error-log alert.
+- `SetSeqAzureEventHubLogs`: validate the OpenTelemetry Collector Contrib Azure Event Hub path for Seq, the native Seq error-log alert, and Rancher Desktop local-lab Seq capture reachability when enabled.
 - `SetQualityConfig`: create or update `.codex/quality.local.json`, including `coverage.minimumPercent` (default `80`).
 
 ## Workflow
@@ -120,7 +120,7 @@ docker compose --env-file .\infra\plane\variables.env --env-file .\infra\monitor
 ```
 
 3. Summarize findings by domain without exposing secret values.
-4. Observability is mandatory for `config infra`: run `SetSeqAzureEventHubLogs`, then ensure Seq, the native Seq error-log alert, Grafana health alerts, and the collector are running and healthy.
+4. Observability is mandatory for `config infra`: run `SetSeqAzureEventHubLogs`, then ensure Seq, the native Seq error-log alert, Grafana health alerts, Rancher Desktop health targets, and the selected collector/capture path are running and healthy.
 5. If all `OTELCOL_AZURE_EVENT_HUB_*_CONNECTION_STRING` values are present, enable collector ingestion with the `eventhub` profile and validate collector startup.
 6. Do not finish `config infra` successfully while observability findings remain unresolved.
 7. For every missing prerequisite found during audit or validation, provide install, official link, and post-install validation/configuration commands.
@@ -150,6 +150,7 @@ trivy --download-db-only
    - Gitea Actions runner
    - Quality gates and CI
    - Nexus artifacts and deployment promotion
+   - Rancher Desktop local lab
    - Azure environments
    - Monitoring dashboards
    - Azure Event Hub to Seq ingestion
@@ -163,6 +164,7 @@ trivy --download-db-only
 - Gitea Actions runner: use `$configure-ci-runner`; read `references/gitea-runner.md`.
 - Quality gates and CI: use `$configure-quality-gates`; read `references/quality-gates.md`.
 - Nexus artifacts and deployment promotion: use `$configure-artifact-repository`; read `references/nexus.md`.
+- Rancher Desktop local lab: read `references/nexus.md`, `references/observability.md`, and `.codex/providers/deploy.rancher-desktop.md`.
 - Azure environments: use `$configure-cloud-environments`; read `references/azure.md`.
 - Monitoring dashboards: use `$configure-observability`; read `references/observability.md`.
 - Azure Event Hub to Seq ingestion: use `$configure-observability`; read `references/observability.md`.
@@ -175,7 +177,7 @@ End setup work with:
 
 - Files created or updated, without secret values.
 - Values still missing or intentionally skipped.
-- Observability findings and status from the current run, including at minimum: Seq runtime health, Seq error-log alert status, Grafana `/health` alert status, OTEL collector endpoint + DEV/QA/PROD Event Hub connection-string presence, and runtime stack override status for `infra/azure/dev.parameters.json`, `infra/azure/qa.parameters.json`, and `infra/azure/prod.parameters.json`.
+- Observability findings and status from the current run, including at minimum: Seq runtime health, Seq error-log alert status, Grafana `/health` alert status, OTEL collector endpoint + DEV/QA/PROD Event Hub connection-string presence for the Azure lane, Rancher Desktop Seq capture status, Rancher Prometheus target status, and runtime stack override status for `infra/azure/dev.parameters.json`, `infra/azure/qa.parameters.json`, and `infra/azure/prod.parameters.json`.
 - Missing tools with install command, official URL, and validation/configuration command.
 - Missing user-supplied values with source, destination, manual setup steps, official URL, and validation command.
 - Docker images or libraries pinned/updated, including the source used to confirm the current stable version.
@@ -188,7 +190,7 @@ End setup work with:
 
 - Stop when required user-supplied secrets, tokens, workspace IDs, project IDs, cloud IDs, or service account values are missing; provide source, destination, official setup path, validation command, and handoff impact.
 - Stop before provider-specific mutation when `.codex/project-profile.json`, `.codex/project-profile.schema.json`, or any selected adapter path is missing; run `InitProjectProfile` or the focused provider configure skill first.
-- Stop successful completion of `config infra` when observability is not working: missing Event Hub collector values, Seq unhealthy, or collector container not running when the `eventhub` profile is expected.
+- Stop successful completion of `config infra` when selected observability is not working: missing Event Hub collector values, Seq unhealthy, or collector container not running when the Azure `eventhub` profile is expected; Rancher Desktop local-lab capture must reach Seq when `RANCHER_OBSERVABILITY_ENABLED=true`.
 - Stop before writing secrets to tracked files or reading secrets from containers, volumes, databases, or logs.
 - Stop before branch, Plane, ticket-lock, or OpenSpec mutation when first-ticket stack context, guidance discovery review, or recommendation audit context is missing or drifted.
 - Stop before using arbitrary command installers; route confirmed acquisition and guarded install planning to `project-guidance-acquire`.

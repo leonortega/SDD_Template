@@ -8,6 +8,7 @@
 ![Tests](https://img.shields.io/badge/tests-xUnit%20%2B%20Playwright-2EAD33)
 ![Delivery](https://img.shields.io/badge/delivery-Plane%20%7C%20OpenSpec%20%7C%20Gitea%20%7C%20Nexus-0A66C2)
 ![Cloud](https://img.shields.io/badge/cloud-Azure%20DEV%20%7C%20QA%20%7C%20PROD-0078D4)
+![Local Cloud](https://img.shields.io/badge/local%20cloud-Rancher%20Desktop%20%2B%20Nexus-326CE5)
 ![Release](https://img.shields.io/badge/release-explicit%20PROD%20promotion-6A5ACD)
 ![Coverage](https://img.shields.io/badge/coverage%20gate-80%25-brightgreen)
 
@@ -63,8 +64,9 @@ In plain language:
 - OpenSpec captures the planned behavior before implementation.
 - Gitea manages source control, pull requests, and validation.
 - Nexus stores the exact build artifact used for deployment.
-- Azure hosts the DEV, QA, and PROD application runtimes.
-- Seq helps operators search DEV/QA/PROD Azure application logs; Grafana and Dozzle help inspect health, delivery signals, and local container logs.
+- Azure hosts the DEV, QA, and PROD application runtimes by default.
+- Rancher Desktop can host an optional local DEV, QA, and PROD Kubernetes lane with Nexus Docker images and the same raw Nexus evidence model.
+- Seq helps operators search DEV/QA/PROD Azure application logs and sanitized Rancher Desktop pod logs; Grafana and Dozzle help inspect health, delivery signals, and local container logs.
 - Codex skills under `.codex/skills/` guide the agent through each delivery stage.
 
 ## What Is Included
@@ -90,6 +92,7 @@ In plain language:
 - DEV, QA, PROD, and rollback promotion from the same immutable artifact.
 - Release manifests and checksums for traceability.
 - Explicit separation between QA approval and production release.
+- Optional Rancher Desktop local lane using Nexus Docker image digests for runtime artifacts and Nexus raw paths for manifests, pointers, and QA evidence.
 
 ### QA Evidence
 
@@ -109,6 +112,7 @@ In plain language:
 - Docker Compose platform for local delivery tools.
 - Seq log search for Azure App Service logs imported from Log Analytics.
 - Grafana health/status dashboards for Azure Monitor and Log Analytics.
+- Rancher Desktop health targets and sanitized Kubernetes pod-log evidence for the local lab lane.
 - Dozzle for local container logs.
 - Azure App Service diagnostics for DEV, QA, and PROD runtimes.
 
@@ -232,8 +236,9 @@ Detailed structure is documented in [Architecture](docs/architecture.md) and [De
 
 ```text
 Local tools manage the delivery workflow.
-Azure hosts only DEV, QA, and PROD runtime resources.
-Nexus stores the exact build artifact promoted between environments.
+Azure hosts DEV, QA, and PROD runtime resources by default.
+Rancher Desktop may host the optional local DEV, QA, and PROD Kubernetes lane.
+Nexus stores the exact build artifact or image metadata promoted between environments.
 Plane records ticket state and generated workflow checkpoints.
 Production promotion is explicit and artifact-based.
 ```

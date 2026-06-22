@@ -31,12 +31,17 @@ Read `.codex/client-tools.local.json` first. Required values are Plane, Gitea, a
 4. Resolve the merge commit SHA from Gitea metadata.
 5. Resolve the Plane ticket key from the PR title/body, branch name, commit messages, or Plane comments.
 6. Run `ValidateTicketLock` with the resolved ticket key, PR number, branch, and merge/artifact commit when known. If the result is invalid, stop before waiting for artifacts.
-7. Poll for the Nexus artifact files for the merge commit:
+7. Poll for the Nexus artifact files for the merge commit according to the selected deployment provider. For Azure App Service, require:
    - `app/{commitSha}/deployable-apps.json`
    - one `app/{commitSha}/{artifactName}` per topology app
    - one `app/{commitSha}/{artifactName}.sha256` per topology app
    - `app/{commitSha}/commit.sha`
    - `app/{commitSha}/release.json` when present
+   For Rancher Desktop, require:
+   - `app/{commitSha}/container-images.json`
+   - `app/{commitSha}/commit.sha`
+   - `app/{commitSha}/release.json`
+   - `app/{commitSha}/monitoring-summary-dev.json` and `app/{commitSha}/monitoring-summary-qa.json` when DEV/QA deployment already completed
 8. Use bounded waiting: check immediately, then retry with backoff for up to 10 minutes unless the user asked for a shorter wait.
 9. Verify `commit.sha` matches the merge commit before delegating.
 10. If `release.json` exists, verify `planeTicketKey` matches the locked/resolved ticket key.
@@ -57,6 +62,6 @@ Report the PR, merge commit, artifact availability, validation status, deploymen
 - Unmerged PR: stop and report the PR state.
 - PR target is not `dev`: stop and report the mismatch.
 - Stale `needs-changes` or `needs-tests` labels: stop before artifact promotion.
-- Nexus artifact missing after the wait window: stop and report artifact paths checked.
+- Nexus artifact missing after the wait window: stop and report provider-specific artifact paths checked.
 - Nexus unavailable: stop; do not use a degraded artifact source.
 - Commit metadata mismatch: stop and report the expected and actual commit SHA.

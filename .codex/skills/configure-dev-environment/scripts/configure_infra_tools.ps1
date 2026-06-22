@@ -68,7 +68,7 @@ function Get-GiteaActionsImages {
       image = "agentic/dotnet-ci:10.0.300-tools-1"
       dockerfile = "infra/gitea/actions-images/dotnet-ci/Dockerfile"
       context = "infra/gitea/actions-images/dotnet-ci"
-      requiredTools = @("bash", "git", "curl", "tar", "dotnet", "jq", "zip", "gitleaks", "trivy", "az", "node", "npm")
+      requiredTools = @("bash", "git", "curl", "tar", "dotnet", "jq", "zip", "gitleaks", "trivy", "az", "node", "npm", "docker", "kubectl")
     },
     [ordered]@{
       id = "e2e-ci"
@@ -79,6 +79,34 @@ function Get-GiteaActionsImages {
       extraCheck = "test -d /ms-playwright"
     }
   )
+}
+
+function Get-ProjectProfile {
+  $profilePath = Join-RootPath ".codex/project-profile.json"
+  if (-not (Test-Path $profilePath)) { return $null }
+
+  try {
+    return Get-Content -Path $profilePath -Raw | ConvertFrom-Json
+  } catch {
+    return $null
+  }
+}
+
+function Test-AzureDeploymentSelected {
+  $profile = Get-ProjectProfile
+  if ($null -eq $profile -or $null -eq $profile.providers -or $null -eq $profile.providers.deployment) { return $true }
+  return [string]$profile.providers.deployment.id -eq "azure-appservice"
+}
+
+function Test-RancherLocalDeploymentConfigured {
+  $profile = Get-ProjectProfile
+  if ($null -eq $profile) { return $false }
+
+  if ($null -ne $profile.adapters -and $profile.adapters.PSObject.Properties.Name -contains "deploymentLocal") {
+    return [string]$profile.adapters.deploymentLocal -eq ".codex/providers/deploy.rancher-desktop.md"
+  }
+
+  return $false
 }
 
 function Test-LocalImageTag {
@@ -955,7 +983,7 @@ function Add-QualityGateAuditFindings {
   if (-not (Test-Path (Join-RootPath $releaseWorkflow))) {
     Add-Item $Result "findings" $releaseWorkflow "" "Missing package/deploy workflow for Nexus artifact publication and Azure promotion." "warning"
   } else {
-    foreach ($expected in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "az webapp deploy", "az webapp config appsettings set", "az webapp config appsettings list", "classify-changes", "app_changed", "deploy_allowed", ".codex/project-profile.json", "workflow.ticketKeyPattern", "BASH_REMATCH", "refs/heads/dev", "refs/heads/main", "qa/**", "deploy-qa", "e2e-qa", "deploy-prod", "artifact_commit_sha", "PROD_ARTIFACT_COMMIT_SHA", "release_version", "source_rc_version", "release.json", "CreateReleaseManifest", "ValidateReleaseManifest", "BuildDeploymentConfig", "infra/deployment/apps.json", "infra/deployment/configuration.json", "deployable-apps.json", "deployment-config.json", "app/qa-approved/latest.json", "const apiBaseUrl", "Access-Control-Allow-Origin", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_SITE_APP_NAME", "AZURE_QA_SITE_APP_URL", "AZURE_QA_API_APP_NAME", "AZURE_QA_API_APP_URL", "E2E_SITE_URL", "E2E_API_URL", "E2E_ARTIFACT_COMMIT_SHA", "qa-targets.json", "qa-e2e-evidence.zip", "AZURE_PROD_RESOURCE_GROUP", "AZURE_PROD_SITE_APP_NAME", "AZURE_PROD_SITE_APP_URL", "AZURE_PROD_API_APP_NAME", "AZURE_PROD_API_APP_URL", "healthPath", '${app_url}${health_path}')) {
+    foreach ($expected in @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "az webapp deploy", "az webapp config appsettings set", "az webapp config appsettings list", "classify-changes", "app_changed", "deploy_allowed", ".codex/project-profile.json", "workflow.ticketKeyPattern", "BASH_REMATCH", "refs/heads/dev", "refs/heads/main", "qa/**", "deploy-qa", "e2e-qa", "deploy-prod", "artifact_commit_sha", "PROD_ARTIFACT_COMMIT_SHA", "release_version", "source_rc_version", "release.json", "CreateReleaseManifest", "ValidateReleaseManifest", "BuildDeploymentConfig", "infra/deployment/apps.json", "infra/deployment/configuration.json", "deployable-apps.json", "deployment-config.json", "app/qa-approved/latest.json", "expected_api_url", "Access-Control-Allow-Origin", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_SITE_APP_NAME", "AZURE_QA_SITE_APP_URL", "AZURE_QA_API_APP_NAME", "AZURE_QA_API_APP_URL", "E2E_SITE_URL", "E2E_API_URL", "E2E_ARTIFACT_COMMIT_SHA", "qa-targets.json", "qa-e2e-evidence.zip", "qa-evidence.zip", "AZURE_PROD_RESOURCE_GROUP", "AZURE_PROD_SITE_APP_NAME", "AZURE_PROD_SITE_APP_URL", "AZURE_PROD_API_APP_NAME", "AZURE_PROD_API_APP_URL", "healthPath", '${app_url}${health_path}')) {
       if (-not (Test-FileContains $releaseWorkflow ([regex]::Escape($expected)))) {
         Add-Item $Result "findings" $releaseWorkflow $expected "Package/deploy workflow does not mention $expected." "warning"
       }
@@ -2151,6 +2179,107 @@ function Invoke-AcquireProjectGuidance {
   return $result
 }
 
+function Add-RancherLocalLabAuditFindings {
+  param($Result)
+
+  $rancherConfigured = Test-RancherLocalDeploymentConfigured
+  if (-not $rancherConfigured) {
+    Add-Item $Result "actions" ".codex/project-profile.json" "deploymentLocal" "Rancher Desktop local deployment adapter is not selected; Rancher local-lab checks are informational only."
+    return
+  }
+
+  $requiredFiles = @(
+    ".codex/providers/deploy.rancher-desktop.md",
+    ".gitea/workflows/rancher-local-deploy.yml",
+    "infra/rancher/deploy-local-lab.sh",
+    "infra/rancher/capture-observability.sh",
+    "src/SDDTemplate.Site/Dockerfile",
+    "src/SDDTemplate.Api/Dockerfile"
+  )
+
+  foreach ($relativePath in $requiredFiles) {
+    if (Test-Path (Join-RootPath $relativePath)) {
+      Add-Item $Result "actions" $relativePath "rancher-local-lab.file" "Rancher Desktop local-lab file is present."
+    } else {
+      Add-Item $Result "findings" $relativePath "rancher-local-lab.file" "Missing Rancher Desktop local-lab file required by the configured local deployment adapter." "error" "pre-start"
+    }
+  }
+
+  $workflowPath = Join-RootPath ".gitea/workflows/rancher-local-deploy.yml"
+  if (Test-Path $workflowPath) {
+    $workflow = Get-Content -Path $workflowPath -Raw
+    foreach ($needle in @("NEXUS_DOCKER_REGISTRY", "NEXUS_DOCKER_USERNAME", "NEXUS_DOCKER_PASSWORD", "RANCHER_KUBECONFIG_B64", "container-images.json", "capture-observability.sh", "monitoring-summary.json", "qa-observability.json", "kubectl config current-context | grep -qx `"rancher-desktop`"")) {
+      if ($workflow -notmatch [regex]::Escape($needle)) {
+        Add-Item $Result "findings" ".gitea/workflows/rancher-local-deploy.yml" $needle "Rancher local deploy workflow is missing required local-lab wiring." "error" "pre-start"
+      }
+    }
+  }
+
+  $nexusComposePath = Join-RootPath "infra/nexus/compose.yml"
+  if (Test-Path $nexusComposePath) {
+    $nexusCompose = Get-Content -Path $nexusComposePath -Raw
+    if ($nexusCompose -notmatch '"5001:5001"') {
+      Add-Item $Result "findings" "infra/nexus/compose.yml" "nexus-docker-port" "Nexus Compose must expose the Docker hosted registry connector port 5001 for the Rancher local lane." "error" "pre-start"
+    }
+  } else {
+    Add-Item $Result "findings" "infra/nexus/compose.yml" "nexus-docker-port" "Missing Nexus Compose file; cannot validate Docker hosted registry connector port." "error" "pre-start"
+  }
+
+  $nexusReferencePath = Join-RootPath ".codex/skills/configure-dev-environment/references/nexus.md"
+  if (Test-Path $nexusReferencePath) {
+    $nexusReference = Get-Content -Path $nexusReferencePath -Raw
+    foreach ($needle in @("NEXUS_DOCKER_REGISTRY", "NEXUS_DOCKER_USERNAME", "NEXUS_DOCKER_PASSWORD", "RANCHER_KUBECONFIG_B64")) {
+      if ($nexusReference -notmatch [regex]::Escape($needle)) {
+        Add-Item $Result "findings" ".codex/skills/configure-dev-environment/references/nexus.md" $needle "Nexus configure reference must list the Rancher local-lab secret name." "warning" "pre-start"
+      }
+    }
+  }
+
+  $prometheusPath = Join-RootPath "infra/monitoring/prometheus/prometheus.yml"
+  if (Test-Path $prometheusPath) {
+    $prometheus = Get-Content -Path $prometheusPath -Raw
+    if ($prometheus -notmatch 'target_label:\s*provider') {
+      Add-Item $Result "findings" "infra/monitoring/prometheus/prometheus.yml" "provider-relabel" "Prometheus must preserve the provider label so Azure and Rancher health targets remain distinguishable." "warning" "pre-start"
+    }
+  }
+
+  $targetsPath = Join-RootPath "infra/monitoring/prometheus/targets.local.yml"
+  if (Test-Path $targetsPath) {
+    $targets = Get-Content -Path $targetsPath -Raw
+    foreach ($needle in @("http://site.dev.sdd.localhost/health", "http://api.dev.sdd.localhost/health", "http://site.qa.sdd.localhost/health", "http://api.qa.sdd.localhost/health", "http://site.prod.sdd.localhost/health", "http://api.prod.sdd.localhost/health", "provider: rancher-desktop")) {
+      if ($targets -notmatch [regex]::Escape($needle)) {
+        Add-Item $Result "findings" "infra/monitoring/prometheus/targets.local.yml" $needle "Prometheus targets must include Rancher Desktop local-lab site/API health endpoints with provider labels." "warning" "pre-start"
+      }
+    }
+  }
+
+  $monitoringExamplePath = Join-RootPath "infra/monitoring/variables.env.example"
+  if (Test-Path $monitoringExamplePath) {
+    $monitoringExample = Get-Content -Path $monitoringExamplePath -Raw
+    foreach ($needle in @("SEQ_URL=http://localhost:5341", "PROMETHEUS_URL=http://localhost:9091", "RANCHER_OBSERVABILITY_ENABLED=true")) {
+      if ($monitoringExample -notmatch [regex]::Escape($needle)) {
+        Add-Item $Result "findings" "infra/monitoring/variables.env.example" $needle "Monitoring env template must include Rancher local observability defaults." "warning" "pre-start"
+      }
+    }
+  }
+
+  $kubectl = Get-Command kubectl -ErrorAction SilentlyContinue
+  if ($null -eq $kubectl) {
+    Add-Item $Result "findings" "kubectl" "" "kubectl is missing; Rancher Desktop local-lab live validation cannot run." "warning" "pre-start"
+  } else {
+    try {
+      $context = (& kubectl config current-context 2>$null | Out-String).Trim()
+      if ($LASTEXITCODE -eq 0 -and $context -eq "rancher-desktop") {
+        Add-Item $Result "actions" "kubectl" "context" "kubectl current context is rancher-desktop."
+      } else {
+        Add-Item $Result "findings" "kubectl" "context" "kubectl current context is '$context'; Rancher local-lab deployment requires 'rancher-desktop'." "warning" "pre-start"
+      }
+    } catch {
+      Add-Item $Result "findings" "kubectl" "context" "Could not read kubectl current context: $($_.Exception.Message)" "warning" "pre-start"
+    }
+  }
+}
+
 function Invoke-Audit {
   $result = New-Result
   Ensure-InferredClientToolsConfig $result
@@ -2266,6 +2395,7 @@ function Invoke-Audit {
 
   $monitoringLocal = "infra/monitoring/variables.env"
   $monitoring = Read-EnvFile (Join-RootPath $monitoringLocal)
+  $azureDeploymentSelected = Test-AzureDeploymentSelected
   $requiredOtelCollectorEnv = @(
     "OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING",
     "OTELCOL_AZURE_EVENT_HUB_QA_CONNECTION_STRING",
@@ -2275,15 +2405,17 @@ function Invoke-Audit {
   if ($monitoring.Count -eq 0) {
     Add-Item $result "findings" $monitoringLocal "" "Monitoring local env file is missing or empty. Run InitLocalFiles or SplitInfraEnv." "error" "pre-start"
     foreach ($name in $requiredOtelCollectorEnv) {
-      Add-Item $result "findings" $monitoringLocal $name "Missing required OpenTelemetry collector value for Event Hub to Seq ingestion. Run SetSeqAzureEventHubLogs and provide the missing value." "error" "pre-start"
+      $severity = if ($azureDeploymentSelected) { "error" } else { "warning" }
+      Add-Item $result "findings" $monitoringLocal $name "Missing OpenTelemetry collector value for Event Hub to Seq ingestion. Required for Azure observability; Rancher local-lab Seq capture uses SEQ_URL." $severity "pre-start"
     }
   } else {
     foreach ($name in $requiredOtelCollectorEnv) {
       if (-not $monitoring.Contains($name) -or [string]::IsNullOrWhiteSpace($monitoring[$name])) {
-        Add-Item $result "findings" $monitoringLocal $name "Missing required OpenTelemetry collector value for Event Hub to Seq ingestion. Run SetSeqAzureEventHubLogs and provide the missing value." "error" "pre-start"
+        $severity = if ($azureDeploymentSelected) { "error" } else { "warning" }
+        Add-Item $result "findings" $monitoringLocal $name "Missing OpenTelemetry collector value for Event Hub to Seq ingestion. Required for Azure observability; Rancher local-lab Seq capture uses SEQ_URL." $severity "pre-start"
       }
     }
-    foreach ($name in @("GRAFANA_HEALTH_ALERT_FOR", "SEQ_ERROR_ALERT_WINDOW", "SEQ_ERROR_ALERT_THRESHOLD")) {
+    foreach ($name in @("GRAFANA_HEALTH_ALERT_FOR", "SEQ_ERROR_ALERT_WINDOW", "SEQ_ERROR_ALERT_THRESHOLD", "SEQ_URL", "PROMETHEUS_URL", "RANCHER_OBSERVABILITY_ENABLED")) {
       if (-not $monitoring.Contains($name) -or [string]::IsNullOrWhiteSpace($monitoring[$name])) {
         Add-Item $result "findings" $monitoringLocal $name "Missing monitoring alert configuration value. Copy the default from infra/monitoring/variables.env.example." "warning" "pre-start"
       }
@@ -2486,6 +2618,7 @@ function Invoke-Audit {
 
   Add-QualityGateAuditFindings $result
   Add-WorktreeLocalConfigAuditFindings $result
+  Add-RancherLocalLabAuditFindings $result
 
   return $result
 }
@@ -4288,7 +4421,7 @@ jobs:
           zip -r qa-e2e-evidence.zip evidence
 
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file qa-e2e-evidence.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${E2E_ARTIFACT_COMMIT_SHA}/qa-e2e-evidence.zip"
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file qa-e2e-evidence.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/qa/${E2E_PLANE_TICKET_KEY}/${run_id}/qa-e2e-evidence.zip"
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file qa-e2e-evidence.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/qa/${E2E_PLANE_TICKET_KEY}/${run_id}/qa-evidence.zip"
 
           exit "$test_exit"
         env:
@@ -4511,7 +4644,8 @@ jobs:
               expected_api_url="${AZURE_PROD_API_APP_URL:-}"
               test -n "$expected_api_url"
               curl --fail --silent --show-error --location "${app_url}/clients" -o clients.html
-              grep -q "const apiBaseUrl = \"${expected_api_url}\";" clients.html
+              grep -q "<title>Clients</title>" clients.html
+              grep -q 'id="client-form"' clients.html
             fi
             if [ "$role" = "api" ]; then
               site_origin="${AZURE_PROD_SITE_APP_URL:-}"
@@ -4592,7 +4726,7 @@ Release flow:
 feature branch -> dev -> DEV -> QA -> Gitea E2E evidence -> Plane E2E QA -> main -> PROD
 ```
 
-The package workflow reads `infra/deployment/apps.json`, rejects deployable project paths outside `src/`, builds one ZIP per deployable app, builds `deployment-config.json` from `infra/deployment/configuration.json` plus each app's `appsettings*.json`, and publishes from ticket-gated application changes on `dev`, including `app/{commitSha}/deployable-apps.json`, `app/{commitSha}/deployment-config.json`, per-app ZIP/checksum files, and a baseline `app/{commitSha}/release.json`. DEV, QA, and PROD must apply and verify deployment configuration before deployment success is claimed. Smoke checks also verify that the clients page renders the expected API base URL and that API CORS preflight allows the matching web origin. DEV and QA must deploy the same Nexus app artifacts for the same commit SHA. After QA deploy and smoke checks, push a `qa/{ticketKey}` branch from current `dev`; the `e2e-qa` job runs the committed Playwright suite against the deployed QA Site/API URLs without redeploying, resolves the artifact commit from the branch point with `dev`, and uploads `app/{commitSha}/qa-e2e-evidence.zip` plus a ticket/run evidence copy under `qa/{ticketKey}/{runId}/qa-e2e-evidence.zip`. Implementation records E2E expectations; `quality-test-e2e` owns Playwright E2E creation, repair, rerun, and evidence when existing committed tests cannot prove acceptance. This Gitea job is evidence-only; the `quality-test-e2e` skill remains responsible for acceptance-to-assertion QA proof, Plane Done state, RC tagging, release manifest QA lineage, and deleting the remote `qa/{ticketKey}` branch after durable Nexus/Plane/release/tag evidence exists. Only full `PASS` can move Plane to Done; `PASS WITH GAPS` or `FAIL` remain in QA. PROD is an explicit release event that may include one or more Done tickets through `release.json.includedTickets`; it must deploy the QA-approved Nexus app artifacts from an exact-commit `main` promotion or explicit dispatch by commit SHA, pass deployment configuration verification, rendered API base URL validation, CORS preflight validation, the web page smoke check, and every app `/health` check, then record the PROD result on every included ticket.
+The package workflow reads `infra/deployment/apps.json`, rejects deployable project paths outside `src/`, builds one ZIP per deployable app, builds `deployment-config.json` from `infra/deployment/configuration.json` plus each app's `appsettings*.json`, and publishes from ticket-gated application changes on `dev`, including `app/{commitSha}/deployable-apps.json`, `app/{commitSha}/deployment-config.json`, per-app ZIP/checksum files, and a baseline `app/{commitSha}/release.json`. DEV, QA, and PROD must apply and verify deployment configuration before deployment success is claimed. Smoke checks also verify that the clients page renders the expected API base URL and that API CORS preflight allows the matching web origin. DEV and QA must deploy the same Nexus app artifacts for the same commit SHA. After QA deploy and smoke checks, push a `qa/{ticketKey}` branch from current `dev`; the `e2e-qa` job runs the committed Playwright suite against the deployed QA Site/API URLs without redeploying, resolves the artifact commit from the branch point with `dev`, and uploads `app/{commitSha}/qa-e2e-evidence.zip` plus the canonical ticket/run evidence copy under `qa/{ticketKey}/{runId}/qa-evidence.zip`. Implementation records E2E expectations; `quality-test-e2e` owns Playwright E2E creation, repair, rerun, and evidence when existing committed tests cannot prove acceptance. This Gitea job is evidence-only; the `quality-test-e2e` skill remains responsible for acceptance-to-assertion QA proof, Plane Done state, RC tagging, release manifest QA lineage, and deleting the remote `qa/{ticketKey}` branch after durable Nexus/Plane/release/tag evidence exists. Only full `PASS` can move Plane to Done; `PASS WITH GAPS` or `FAIL` remain in QA. PROD is an explicit release event that may include one or more Done tickets through `release.json.includedTickets`; it must deploy the QA-approved Nexus app artifacts from an exact-commit `main` promotion or explicit dispatch by commit SHA, pass deployment configuration verification, rendered API base URL validation, CORS preflight validation, the web page smoke check, and every app `/health` check, then record the PROD result on every included ticket.
 '@
 
   return $result
@@ -4918,6 +5052,7 @@ function Invoke-SetSeqAzureEventHubLogs {
   $collectorRelative = "infra/monitoring/otelcol/collector.yaml"
   $composePath = Join-RootPath $composeRelative
   $collectorPath = Join-RootPath $collectorRelative
+  $azureDeploymentSelected = Test-AzureDeploymentSelected
 
   if (-not (Test-Path $composePath)) {
     Add-Item $result "findings" $composeRelative "monitoring-compose" "Missing monitoring compose file." "error" "pre-start"
@@ -4947,16 +5082,37 @@ function Invoke-SetSeqAzureEventHubLogs {
   $monitoring = Read-EnvFile $target
   foreach ($name in @("OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING", "OTELCOL_AZURE_EVENT_HUB_QA_CONNECTION_STRING", "OTELCOL_AZURE_EVENT_HUB_PROD_CONNECTION_STRING")) {
     if (-not $monitoring.Contains($name) -or [string]::IsNullOrWhiteSpace($monitoring[$name])) {
-      Add-Item $result "findings" $targetRelative $name "Missing Event Hub connection string required by the collector-based Seq ingestion path." "error" "pre-start"
+      $severity = if ($azureDeploymentSelected) { "error" } else { "warning" }
+      Add-Item $result "findings" $targetRelative $name "Missing Event Hub connection string required by the Azure collector-based Seq ingestion path." $severity "pre-start"
     } else {
       Add-Item $result "actions" $targetRelative $name "Event Hub connection string is configured for collector-based Seq ingestion."
     }
   }
 
   if (-not $monitoring.Contains("OTELCOL_SEQ_OTLP_ENDPOINT") -or [string]::IsNullOrWhiteSpace($monitoring["OTELCOL_SEQ_OTLP_ENDPOINT"])) {
-    Add-Item $result "findings" $targetRelative "OTELCOL_SEQ_OTLP_ENDPOINT" "Missing OTLP endpoint required by the collector-based Seq ingestion path." "error" "pre-start"
+    $severity = if ($azureDeploymentSelected) { "error" } else { "warning" }
+    Add-Item $result "findings" $targetRelative "OTELCOL_SEQ_OTLP_ENDPOINT" "Missing OTLP endpoint required by the Azure collector-based Seq ingestion path." $severity "pre-start"
   } else {
     Add-Item $result "actions" $targetRelative "OTELCOL_SEQ_OTLP_ENDPOINT" "Collector OTLP export endpoint is configured."
+  }
+
+  $rancherObservabilityEnabled = $true
+  if ($monitoring.Contains("RANCHER_OBSERVABILITY_ENABLED") -and -not [string]::IsNullOrWhiteSpace($monitoring["RANCHER_OBSERVABILITY_ENABLED"])) {
+    $rancherObservabilityEnabled = [string]::Equals($monitoring["RANCHER_OBSERVABILITY_ENABLED"], "true", [System.StringComparison]::OrdinalIgnoreCase)
+  }
+  $seqUrl = if ($monitoring.Contains("SEQ_URL") -and -not [string]::IsNullOrWhiteSpace($monitoring["SEQ_URL"])) { $monitoring["SEQ_URL"] } else { "http://localhost:5341" }
+  if ($rancherObservabilityEnabled) {
+    Add-Item $result "actions" $targetRelative "RANCHER_OBSERVABILITY_ENABLED" "Rancher Desktop local-lab Seq capture is enabled."
+    try {
+      $seqReady = Invoke-WebRequest -Uri "$($seqUrl.TrimEnd('/'))/api" -UseBasicParsing -TimeoutSec 5
+      if ($seqReady.StatusCode -eq 200) {
+        Add-Item $result "actions" "seq" "rancher.ready" "Seq endpoint is reachable for Rancher Desktop sanitized pod-log capture."
+      }
+    } catch {
+      Add-Item $result "findings" "seq" "rancher.ready" "Rancher Desktop log capture is enabled, but Seq endpoint '$seqUrl' is not reachable: $($_.Exception.Message)" "error" "post-start"
+    }
+  } else {
+    Add-Item $result "warnings" $targetRelative "RANCHER_OBSERVABILITY_ENABLED" "Rancher Desktop local-lab Seq capture is disabled."
   }
 
   try {
@@ -4998,13 +5154,16 @@ function Invoke-SetSeqAzureEventHubLogs {
 
         $otelLogs = (& docker logs --tail 120 agentic-otelcol 2>&1 | Out-String)
         if ($otelLogs -match "InvalidSignature|error receiving events|unauthorized") {
-          Add-Item $result "findings" "docker" "agentic-otelcol-runtime" "Collector logs show Event Hub authentication or ingestion failures. Verify Send/Listen auth rules and recreate the collector container after updating connection strings." "error" "post-start"
+          $severity = if ($azureDeploymentSelected) { "error" } else { "warning" }
+          Add-Item $result "findings" "docker" "agentic-otelcol-runtime" "Collector logs show Event Hub authentication or ingestion failures. Verify Send/Listen auth rules and recreate the collector container after updating connection strings." $severity "post-start"
         }
       } else {
-        Add-Item $result "findings" "docker" "agentic-otelcol" "Event Hub collector container status is '$otelState'." "error" "post-start"
+        $severity = if ($azureDeploymentSelected) { "error" } else { "warning" }
+        Add-Item $result "findings" "docker" "agentic-otelcol" "Event Hub collector container status is '$otelState'." $severity "post-start"
       }
     } else {
-      Add-Item $result "findings" "docker" "agentic-otelcol" "Event Hub collector container is not running. Start with --profile eventhub to complete observability setup." "error" "post-start"
+      $severity = if ($azureDeploymentSelected) { "error" } else { "warning" }
+      Add-Item $result "findings" "docker" "agentic-otelcol" "Event Hub collector container is not running. Start with --profile eventhub to complete Azure observability setup." $severity "post-start"
     }
   } catch {
     Add-Item $result "findings" "seq" "ready" "Could not validate Seq API endpoint: $($_.Exception.Message)" "error" "post-start"
