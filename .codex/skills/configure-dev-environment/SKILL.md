@@ -121,7 +121,7 @@ docker compose --env-file .\infra\plane\variables.env --env-file .\infra\monitor
 
 3. Summarize findings by domain without exposing secret values.
 4. Observability is mandatory for `config infra`: run `SetSeqAzureEventHubLogs`, then ensure Seq, the native Seq error-log alert, Grafana health alerts, Rancher Desktop health targets, and the selected collector/capture path are running and healthy.
-5. If all `OTELCOL_AZURE_EVENT_HUB_*_CONNECTION_STRING` values are present, enable collector ingestion with the `eventhub` profile and validate collector startup.
+5. If Azure App Service is selected and all `OTELCOL_AZURE_EVENT_HUB_*_CONNECTION_STRING` values are present, enable collector ingestion with the `eventhub` profile and validate collector startup. When Rancher Desktop is selected, skip Event Hub collector checks and validate Rancher Desktop Seq capture.
 6. Do not finish `config infra` successfully while observability findings remain unresolved.
 7. For every missing prerequisite found during audit or validation, provide install, official link, and post-install validation/configuration commands.
 8. For every missing user-supplied value, provide source, destination, manual setup steps, official link, and validation command.
@@ -155,7 +155,7 @@ trivy --download-db-only
    - Monitoring dashboards
    - Azure Event Hub to Seq ingestion
 23. If the user is vague, default to full guided setup in this order:
-   InitProjectProfile -> Audit -> Plane -> Gitea PR automation -> Gitea Actions runner -> Quality gates and CI -> Nexus artifacts and deployment promotion -> Azure environments -> Monitoring dashboards -> Azure Event Hub to Seq ingestion -> final Audit.
+   InitProjectProfile -> Audit -> Plane -> Gitea PR automation -> Gitea Actions runner -> Quality gates and CI -> Nexus artifacts and Rancher Desktop deployment promotion -> Monitoring dashboards -> final Audit.
 
 ## Domain Routing
 
@@ -177,7 +177,7 @@ End setup work with:
 
 - Files created or updated, without secret values.
 - Values still missing or intentionally skipped.
-- Observability findings and status from the current run, including at minimum: Seq runtime health, Seq error-log alert status, Grafana `/health` alert status, OTEL collector endpoint + DEV/QA/PROD Event Hub connection-string presence for the Azure lane, Rancher Desktop Seq capture status, Rancher Prometheus target status, and runtime stack override status for `infra/azure/dev.parameters.json`, `infra/azure/qa.parameters.json`, and `infra/azure/prod.parameters.json`.
+- Observability findings and status from the current run, including at minimum: Seq runtime health, Seq error-log alert status, Grafana `/health` alert status, Rancher Desktop Seq capture status, and Rancher Prometheus target status. Include OTEL collector endpoint + DEV/QA/PROD Event Hub connection-string presence only when Azure App Service is selected.
 - Missing tools with install command, official URL, and validation/configuration command.
 - Missing user-supplied values with source, destination, manual setup steps, official URL, and validation command.
 - Docker images or libraries pinned/updated, including the source used to confirm the current stable version.
@@ -190,7 +190,7 @@ End setup work with:
 
 - Stop when required user-supplied secrets, tokens, workspace IDs, project IDs, cloud IDs, or service account values are missing; provide source, destination, official setup path, validation command, and handoff impact.
 - Stop before provider-specific mutation when `.codex/project-profile.json`, `.codex/project-profile.schema.json`, or any selected adapter path is missing; run `InitProjectProfile` or the focused provider configure skill first.
-- Stop successful completion of `config infra` when selected observability is not working: missing Event Hub collector values, Seq unhealthy, or collector container not running when the Azure `eventhub` profile is expected; Rancher Desktop local-lab capture must reach Seq when `RANCHER_OBSERVABILITY_ENABLED=true`.
+- Stop successful completion of `config infra` when selected observability is not working: Seq unhealthy; collector container missing when Azure App Service is selected and the Azure `eventhub` profile is expected; or Rancher Desktop local-lab capture cannot reach Seq when `RANCHER_OBSERVABILITY_ENABLED=true`.
 - Stop before writing secrets to tracked files or reading secrets from containers, volumes, databases, or logs.
 - Stop before branch, Plane, ticket-lock, or OpenSpec mutation when first-ticket stack context, guidance discovery review, or recommendation audit context is missing or drifted.
 - Stop before using arbitrary command installers; route confirmed acquisition and guarded install planning to `project-guidance-acquire`.

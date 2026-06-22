@@ -1,6 +1,6 @@
 # Deployment Adapter: Rancher Desktop Kubernetes
 
-Use this adapter when a local laboratory run selects Rancher Desktop as the deployment provider. It is an additional local deployment provider and does not replace the default Azure App Service adapter in `.codex/project-profile.json`.
+Use this adapter when `.codex/project-profile.json` selects `providers.deployment.id = "rancher-desktop"`. It is the default deployment provider for this local Kubernetes lab.
 
 ## Runtime Configuration
 

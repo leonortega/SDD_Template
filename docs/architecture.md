@@ -8,9 +8,9 @@ This repository is a local agentic delivery lab. Its current profile is a .NET B
 - The REST API application lives under `src/SDDTemplate.Api`.
 - The EF Core entities, DbContext, migrations, and database setup live under `src/SDDTemplate.Data`.
 - Application behavior is tested from `tests/SDDTemplate.Site.Tests`.
-- Local Docker Compose infrastructure provides Plane, Gitea, the Gitea Actions runner, Nexus, Dozzle, Grafana, and Seq. OpenTelemetry Collector Contrib consumes Azure Event Hub and forwards console logs into Seq when the Azure lane is used; the Rancher Desktop lane captures sanitized Kubernetes pod logs into Seq during local deployment evidence collection.
-- Azure hosts the default remote DEV, QA, and PROD application runtimes. The web and API runtimes may be deployed as separate App Service apps per environment.
-- Rancher Desktop can host an optional local Kubernetes DEV, QA, and PROD lane through namespaces `sdd-dev`, `sdd-qa`, and `sdd-prod`.
+- Local Docker Compose infrastructure provides Plane, Gitea, the Gitea Actions runner, Nexus, Dozzle, Grafana, and Seq. Rancher Desktop captures sanitized Kubernetes pod logs into Seq during local deployment evidence collection; OpenTelemetry Collector Contrib consumes Azure Event Hub only when the optional Azure lane is selected.
+- Rancher Desktop Kubernetes hosts the default DEV, QA, and PROD application runtimes through namespaces `sdd-dev`, `sdd-qa`, and `sdd-prod`.
+- Azure can host optional remote DEV, QA, and PROD application runtimes when its adapter is explicitly selected.
 - Nexus stores immutable application artifacts, container image metadata, release manifests, and QA evidence.
 - Plane records ticket state, generated workflow markers, and human-readable delivery comments.
 - OpenSpec records planned behavior before implementation.
@@ -24,9 +24,9 @@ The canonical non-secret stack and tool declaration is `.codex/project-profile.j
 - OpenSpec captures planned behavior, requirements, design decisions, and task checklists before implementation and after review feedback.
 - Gitea hosts source control and pull requests; Gitea Actions is the authoritative PR validation and deployment workflow runner.
 - Nexus stores immutable artifacts, checksums, release manifests, container image digest metadata, and preferred QA evidence bundles.
-- Azure App Service hosts the default DEV, QA, and PROD application runtimes.
-- Rancher Desktop Kubernetes is the local-cloud deployment provider for laboratory runs that should avoid Azure cost while preserving promotion gates.
-- Azure Monitor and Log Analytics remain Azure-side observability sources. Seq provides local Azure application console log search through an OpenTelemetry Collector Contrib profile and Rancher Desktop pod-log search through the local capture script. Dozzle provides local container log inspection.
+- Rancher Desktop Kubernetes is the default local-cloud deployment provider.
+- Azure App Service remains an optional deployment adapter, not the default provider.
+- Azure Monitor and Log Analytics remain Azure-side observability sources when the optional Azure lane is used. Seq provides Rancher Desktop pod-log search through the local capture script. Dozzle provides local container log inspection.
 - Repo-local Codex skills under `.codex/skills` are copied from verified repository sources when recommended. `project-guidance-discover` scans the project, checks repo-local workflow sources, searches OpenAI official sources, official tool and technology-owner sources, `skills.sh`/`skills` or marketplace repository leads, and clearly labeled community sources in that order, researches extra useful skills, MCPs, plugins, tools, references, practices, standards, and Codex-applicable IDE helpers, then asks the user only to confirm, dismiss, or name omissions. Confirmation means record accepted ids and run guarded acquisition immediately. `project-guidance-acquire` uses guarded auto acquisition: safe repo-local, non-secret skills may be copied with `sourceKind` attribution, and supported MCP/plugin/tool/IDE configuration runs without a second install prompt for confirmed items. Global, IDE, secret-bearing, privileged, MCP/plugin, or reboot-required installs still require explicit confirmation when they introduce new scope, secrets, or different items. Restart and reboot requirements are aggregated and reported once after all feasible acquisitions finish. `project-guidance-mapper` maps delivery steps to workflow skills, expert skills, MCPs, plugins, tools, references, practices, and standards through ignored `.codex/tool-recommendations.local.json` `usedInSteps`.
 
 ## Sources Of Truth

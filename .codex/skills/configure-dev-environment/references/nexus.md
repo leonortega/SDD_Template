@@ -10,10 +10,10 @@ Owns:
 ## Strategy
 
 - Nexus stores build artifacts/packages published by Gitea Actions.
-- Azure App Service uses package/ZIP deployment by default.
-- Rancher Desktop uses digest-pinned container image metadata from Nexus Docker plus raw Nexus release metadata.
+- Rancher Desktop uses digest-pinned container image metadata from Nexus Docker plus raw Nexus release metadata by default.
+- Azure App Service uses package/ZIP deployment when the optional Azure lane is selected.
 - Do not configure Azure to pull container images from Nexus unless the user explicitly changes architecture.
-- Do not require a Nexus Docker registry for the default flow.
+- The default Rancher Desktop flow requires a Nexus Docker registry.
 
 ## Required Gitea Actions Secrets
 
@@ -24,7 +24,7 @@ Store these as repository or organization Actions secrets:
 - `NEXUS_PASSWORD`: Nexus service account password or token.
 - `NEXUS_REPOSITORY`: Hosted raw repository name, default `raw-hosted`.
 
-For the optional Rancher Desktop local Kubernetes lane, also store:
+For the Rancher Desktop local Kubernetes lane, also store:
 
 - `NEXUS_DOCKER_REGISTRY`: Docker registry endpoint reachable by both the Gitea runner and Rancher Desktop Kubernetes, for example `host.docker.internal:5001` when that name is valid in the local runtime.
 - `NEXUS_DOCKER_USERNAME`: Nexus Docker service account username.
@@ -154,7 +154,7 @@ Use `release.json` for automation and idempotency. It should carry commit SHA, c
 
 ## Nexus Docker Repository Setup
 
-Use a hosted Docker repository only for the optional Rancher Desktop local lane. Keep raw Nexus as the release metadata and QA evidence store.
+Use a hosted Docker repository for the Rancher Desktop local lane. Keep raw Nexus as the release metadata and QA evidence store.
 
 Manual setup:
 

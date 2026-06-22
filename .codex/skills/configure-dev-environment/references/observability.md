@@ -2,11 +2,11 @@
 
 Owns:
 
-- Seq local log search for DEV, QA, and PROD Azure App Service logs via the required Azure Event Hub collector path.
+- Seq local log search for sanitized Rancher Desktop Kubernetes pod logs captured during local-lab deployment.
 - Seq local log search for sanitized Rancher Desktop Kubernetes pod logs captured during local-lab deployment.
 - Native Seq alerting when any error or fatal log event appears.
 - Grafana `/health` alerts for DEV, QA, and PROD web/API probes.
-- Required OpenTelemetry Collector Contrib ingestion from Azure Event Hub into Seq.
+- Optional OpenTelemetry Collector Contrib ingestion from Azure Event Hub into Seq when Azure App Service is selected.
 
 Use the shared script for the required collector path:
 
@@ -32,7 +32,7 @@ Repo-managed local log search:
 - The blackbox exporter must listen on `0.0.0.0:9115` so Prometheus can scrape it over the Docker monitoring network.
 - `noDataState` and `execErrState` stay `OK` to avoid noisy startup or deploy gaps.
 
-Collector-based ingestion:
+Azure collector-based ingestion, only when Azure App Service is selected:
 
 - `infra/monitoring/compose.yml` defines the required `agentic-otelcol` service under the `eventhub` profile.
 - `infra/monitoring/otelcol/collector.yaml` configures separate DEV, QA, and PROD Azure Event Hub receivers and exports OTLP logs to Seq.
@@ -48,7 +48,7 @@ docker compose --profile eventhub --env-file .\infra\plane\variables.env --env-f
 
 After the collector starts, search Seq for `Environment = 'DEV'`, `Environment = 'QA'`, and `Environment = 'PROD'`.
 
-`config infra` is not complete until Seq, the Seq error-log alert, Grafana health alerts, and `agentic-otelcol` are running and healthy, and required OTEL collector connection values are configured in ignored local env.
+`config infra` is not complete until Seq, the Seq error-log alert, Grafana health alerts, Rancher Desktop Prometheus targets, and Rancher Desktop Seq capture are running and healthy. `agentic-otelcol` and required OTEL collector connection values are required only when Azure App Service is selected.
 
 When the collector profile is enabled, Azure-hosted console logs arrive from Azure Event Hub through the repo-managed collector path.
 

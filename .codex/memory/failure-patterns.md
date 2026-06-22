@@ -1,5 +1,14 @@
 # Failure Pattern Memory
 
+## Seq Alert Updates Need Force For Existing Fields
+
+- Type: Pattern
+- Status: Active
+- Source: `.codex/skills/configure-dev-environment/scripts/configure_infra_tools.ps1 -Mode SetSeqAzureEventHubLogs`, error `Cannot add a member with the name "Title" because a member with that name already exists`
+- Last verified: 2026-06-22
+
+When updating the existing Seq alert `Agentic E2E - Any Seq Error Logs`, PowerShell objects returned by the Seq API may expose fields in a shape where `Add-Member` sees an existing member even if direct property-name checks missed it. Use `Add-Member -Force` in the shared `Set-JsonProperty` helper so repeated `SetSeqAzureEventHubLogs` runs update the alert idempotently instead of failing.
+
 ## DeliveryTools Package Workflow Test Has Stale Azure Script Expectation
 
 - Type: Pattern
