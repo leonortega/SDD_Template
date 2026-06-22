@@ -25,5 +25,8 @@ scrape_configs:
       - source_labels:
           - app
         target_label: app
+      - source_labels:
+          - provider
+        target_label: provider
       - target_label: __address__
         replacement: blackbox-exporter:9115

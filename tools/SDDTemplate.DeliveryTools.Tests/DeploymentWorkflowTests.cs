@@ -131,7 +131,9 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("az webapp config appsettings set", workflow);
             Assert.Contains("az webapp config appsettings list", workflow);
             Assert.Contains("az webapp deploy", workflow);
-            Assert.Contains("const apiBaseUrl", workflow);
+            Assert.Contains("expected_api_url", workflow);
+            Assert.Contains("grep -q \"<title>Clients</title>\" clients.html", workflow);
+            Assert.Contains("grep -q 'id=\"client-form\"' clients.html", workflow);
             Assert.Contains("Access-Control-Allow-Origin", workflow);
             Assert.Contains("AZURE_DEV_${app_upper}_APP_NAME", workflow);
             Assert.Contains("AZURE_QA_${app_upper}_APP_NAME", workflow);
@@ -172,7 +174,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("Publish QA target metadata", workflow);
             Assert.Contains("qa-targets.json", workflow);
             Assert.Contains("app/${GITHUB_SHA}/qa-targets.json", workflow);
-            Assert.Contains("qa/${E2E_PLANE_TICKET_KEY}/${run_id}/qa-e2e-evidence.zip", e2eJob);
+            Assert.Contains("qa/${E2E_PLANE_TICKET_KEY}/${run_id}/qa-evidence.zip", e2eJob);
             Assert.Contains("exit \"$test_exit\"", e2eJob);
         }
 
@@ -438,7 +440,9 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("--version-status unversioned", script);
             Assert.Contains("ValidateReleaseManifest", script);
             Assert.Contains("deployment-config.json", script);
-            Assert.Contains("const apiBaseUrl", script);
+            Assert.Contains("expected_api_url", script);
+            Assert.Contains("grep -q \"<title>Clients</title>\" clients.html", script);
+            Assert.Contains("grep -q 'id=\"client-form\"' clients.html", script);
             Assert.Contains("Access-Control-Allow-Origin", script);
             Assert.Contains("app/${GITHUB_SHA}/release.json", script);
             Assert.Contains("app/qa-approved/latest.json", script);
@@ -471,6 +475,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("deployed-QA regression suite", e2eSkill);
             Assert.Contains("qa/{ticketKey}", e2eSkill);
             Assert.Contains("app/{commitSha}/qa-e2e-evidence.zip", e2eSkill);
+            Assert.Contains("qa/{ticketKey}/{runId}/qa-evidence.zip", e2eSkill);
             Assert.Contains("acceptance-to-assertion QA proof", script);
             Assert.Contains("acceptance criteria proven by executable assertions", developmentDoc);
             Assert.Contains("Only full `PASS` can move Plane to Done", workflowReadme);
@@ -1962,12 +1967,13 @@ namespace SDDTemplate.DeliveryTools.Tests
             string configureScript = ReadConfigureScript();
 
             Assert.Contains("QA Evidence Trigger Branch Cleanup", contract);
-            Assert.Contains("delete the remote `qa/{ticketKey}` branch from Gitea", contract);
+            Assert.Contains("Azure uses `qa/{ticketKey}` and Rancher Desktop uses `qa-local/{ticketKey}`", contract);
             Assert.Contains("Durable QA evidence belongs in Nexus, Plane comments, release manifests, and tags", contract);
             Assert.Contains("git push origin --delete qa/E2EPROJECT-123", e2eSkill);
+            Assert.Contains("git push origin --delete qa-local/E2EPROJECT-123", e2eSkill);
             Assert.Contains("Do not delete the branch before Nexus evidence exists", e2eSkill);
             Assert.Contains("delete the remote `qa/{ticketKey}` branch from Gitea", deploymentDoc);
-            Assert.Contains("delete the remote `qa/{ticketKey}` branch", developmentDoc);
+            Assert.Contains("delete the remote selected-provider QA branch", developmentDoc);
             Assert.Contains("deleting the remote `qa/{ticketKey}` branch after durable Nexus/Plane/release/tag evidence exists", workflowReadme);
             Assert.Contains("deleting the remote `qa/{ticketKey}` branch after durable Nexus/Plane/release/tag evidence exists", configureScript);
         }

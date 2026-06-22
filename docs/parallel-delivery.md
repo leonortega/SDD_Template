@@ -63,7 +63,7 @@ Every child agent must return concise status, files touched, validation run, blo
 
 ## Deployment Lane Serialization
 
-Implementation and review may run concurrently across isolated worktrees. DEV, QA, E2E QA, PROD, rollback, and hotfix promotion are serialized because they share Azure environments, Nexus release manifests, release tags, and Plane deployment evidence.
+Implementation and review may run concurrently across isolated worktrees. DEV, QA, E2E QA, PROD, rollback, and hotfix promotion are serialized because they share the selected deployment provider environments, Nexus release manifests, release tags, and Plane deployment evidence.
 
 If another ticket owns the deployment lane, continue implementation or review work for other tickets when safe. Do not deploy, test, tag, move QA/Done state, or write deployment evidence for a ticket that does not own the lane.
 

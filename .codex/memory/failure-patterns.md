@@ -1,5 +1,23 @@
 # Failure Pattern Memory
 
+## DeliveryTools Package Workflow Test Has Stale Azure Script Expectation
+
+- Type: Pattern
+- Status: Active
+- Source: `dotnet test tools/SDDTemplate.DeliveryTools.Tests/SDDTemplate.DeliveryTools.Tests.csproj --no-build`, `tools/SDDTemplate.DeliveryTools.Tests/DeploymentWorkflowTests.cs`
+- Last verified: 2026-06-22
+
+`DeploymentWorkflowTests.PackageWorkflowPublishesUploadsAndDeploysPerAppArtifacts` previously failed because it expected the package/deploy workflow text to contain `const apiBaseUrl`, but `.gitea/workflows/package-deploy.yml` now verifies the rendered clients page through `<title>Clients</title>` and `id="client-form"`. Keep the workflow generator, workflow, and tests synchronized when smoke-check criteria change.
+
+## Windows Bash Shim Can Fail Without WSL Bash
+
+- Type: Pattern
+- Status: Active
+- Source: `bash -n infra/rancher/deploy-local-lab.sh`, `Get-Command bash`, `C:\Program Files\Git\bin\bash.exe -n infra/rancher/capture-observability.sh`
+- Last verified: 2026-06-22
+
+On this workstation, `bash` resolves to `C:\WINDOWS\system32\bash.exe` and can fail with `execvpe(/bin/bash) failed: No such file or directory` when WSL has no usable `/bin/bash`. For shell syntax validation, call Git Bash directly at `C:\Program Files\Git\bin\bash.exe` when present.
+
 ## Ticket Readiness Helper Lives In DeliveryTools CLI
 
 - Type: Pattern
