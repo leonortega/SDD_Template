@@ -5,6 +5,7 @@ Gitea PR validation is the source of truth. Local hooks are only convenience che
 Workflow jobs use repo-owned pinned images built by `config infra`:
 
 - `agentic/dotnet-ci:10.0.300-tools-1` for PR validation, package, DEV/QA/PROD deployment, scanners, and Azure CLI work.
+- The same image also includes Docker CLI and `kubectl` for the optional Rancher Desktop local deployment lane.
 - `agentic/e2e-ci:playwright-1.57.0-1` for deployed-QA Playwright evidence runs.
 
 Use the same E2E image for local QA diagnosis from `tests/SDDTemplate.E2ETests`:
@@ -39,6 +40,19 @@ Required repository secrets:
 - `NEXUS_USERNAME`
 - `NEXUS_PASSWORD`
 - `NEXUS_REPOSITORY`
+- `NEXUS_DOCKER_REGISTRY` - optional Rancher Desktop lane Docker registry endpoint.
+- `NEXUS_DOCKER_USERNAME`
+- `NEXUS_DOCKER_PASSWORD`
+- `RANCHER_KUBECONFIG_B64` - optional Rancher Desktop lane kubeconfig for context `rancher-desktop`.
+- `RANCHER_DEV_SITE_URL`
+- `RANCHER_DEV_API_URL`
+- `RANCHER_QA_SITE_URL`
+- `RANCHER_QA_API_URL`
+- `RANCHER_PROD_SITE_URL`
+- `RANCHER_PROD_API_URL`
+- `SEQ_URL` - optional Rancher Desktop observability endpoint, default `http://localhost:5341`.
+- `PROMETHEUS_URL` - optional Prometheus readiness endpoint base URL, default `http://localhost:9091`.
+- `RANCHER_OBSERVABILITY_ENABLED` - optional flag for Seq pod-log ingestion, default `true`.
 - `AZURE_CREDENTIALS`
 - `AZURE_DEV_RESOURCE_GROUP`
 - `AZURE_DEV_SITE_APP_NAME`
@@ -77,6 +91,14 @@ Release flow:
 feature branch -> dev -> DEV -> QA -> Gitea E2E evidence -> Plane E2E QA -> main -> PROD
 ```
 
-The package workflow reads `infra/deployment/apps.json`, rejects deployable project paths outside `src/`, builds one ZIP per deployable app, builds `deployment-config.json` from `infra/deployment/configuration.json` plus each app's `appsettings*.json`, and publishes the topology, deployment configuration, and app artifacts under `app/{commitSha}/` with a baseline `release.json`. Merge and deployment jobs focus on immutable artifact packaging, deployment configuration verification, checksum validation, and environment smoke checks; they do not rerun the same unit test suite already covered by PR validation unless package inputs changed outside that path. DEV, QA, and PROD apply and verify `deployment-config.json` before deployment success is claimed; missing or mismatched required settings fail closed. Smoke checks also verify that the clients page renders the expected API base URL and that API CORS preflight allows the matching web origin. DEV and QA must deploy the same Nexus artifacts for the same commit SHA. After QA deploy and smoke checks, the workflow publishes `app/{commitSha}/qa-targets.json` with the QA Site/API URLs so local Playwright diagnosis can discover the deployed target. Then push a `qa/{ticketKey}` branch from current `dev` to run the committed Playwright suite against the deployed QA Site/API URLs. Implementation records E2E expectations; `quality-test-e2e` owns Playwright E2E creation, repair, rerun, and evidence when existing committed tests cannot prove acceptance. The `e2e-qa` job runs remotely without redeploying, resolves the artifact commit from the branch point with `dev`, and uploads `app/{commitSha}/qa-e2e-evidence.zip` plus a ticket/run evidence copy under `qa/{ticketKey}/{runId}/qa-e2e-evidence.zip`. This Gitea job is evidence-only; the `quality-test-e2e` skill remains responsible for acceptance-to-assertion QA proof, Plane Done state, RC tagging, release manifest QA lineage, and deleting the remote `qa/{ticketKey}` branch after durable Nexus/Plane/release/tag evidence exists. Only full `PASS` can move Plane to Done; `PASS WITH GAPS` or `FAIL` remain in QA. PROD is an explicit release event that may include one or more Done tickets through `release.json.includedTickets`; it must deploy the QA-approved Nexus artifacts from an exact-commit `main` promotion or explicit dispatch by commit SHA, pass deployment configuration verification, rendered API base URL validation, CORS preflight validation, the web page smoke check, and every app `/health` check, then record the PROD result on every included ticket.
+The package workflow reads `infra/deployment/apps.json`, rejects deployable project paths outside `src/`, builds one ZIP per deployable app, builds `deployment-config.json` from `infra/deployment/configuration.json` plus each app's `appsettings*.json`, and publishes the topology, deployment configuration, and app artifacts under `app/{commitSha}/` with a baseline `release.json`. Merge and deployment jobs focus on immutable artifact packaging, deployment configuration verification, checksum validation, and environment smoke checks; they do not rerun the same unit test suite already covered by PR validation unless package inputs changed outside that path. DEV, QA, and PROD apply and verify `deployment-config.json` before deployment success is claimed; missing or mismatched required settings fail closed. Smoke checks also verify that the clients page renders the expected API base URL and that API CORS preflight allows the matching web origin. DEV and QA must deploy the same Nexus artifacts for the same commit SHA. After QA deploy and smoke checks, the workflow publishes `app/{commitSha}/qa-targets.json` with the QA Site/API URLs so local Playwright diagnosis can discover the deployed target. Then push a `qa/{ticketKey}` branch from current `dev` to run the committed Playwright suite against the deployed QA Site/API URLs. Implementation records E2E expectations; `quality-test-e2e` owns Playwright E2E creation, repair, rerun, and evidence when existing committed tests cannot prove acceptance. The `e2e-qa` job runs remotely without redeploying, resolves the artifact commit from the branch point with `dev`, and uploads `app/{commitSha}/qa-e2e-evidence.zip` plus the canonical ticket/run evidence copy under `qa/{ticketKey}/{runId}/qa-evidence.zip`. This Gitea job is evidence-only; the `quality-test-e2e` skill remains responsible for acceptance-to-assertion QA proof, Plane Done state, RC tagging, release manifest QA lineage, and deleting the remote `qa/{ticketKey}` branch after durable Nexus/Plane/release/tag evidence exists. Only full `PASS` can move Plane to Done; `PASS WITH GAPS` or `FAIL` remain in QA. PROD is an explicit release event that may include one or more Done tickets through `release.json.includedTickets`; it must deploy the QA-approved Nexus artifacts from an exact-commit `main` promotion or explicit dispatch by commit SHA, pass deployment configuration verification, rendered API base URL validation, CORS preflight validation, the web page smoke check, and every app `/health` check, then record the PROD result on every included ticket.
+
+Optional Rancher Desktop local lane:
+
+- `.gitea/workflows/rancher-local-deploy.yml` builds `site` and `api` container images, pushes them to Nexus Docker hosted, records digest-pinned metadata at `app/{commitSha}/container-images.json`, and deploys the same image digests through `sdd-dev`, `sdd-qa`, and explicit `sdd-prod`.
+- The workflow requires `kubectl config current-context` to be `rancher-desktop`.
+- Deploy jobs run `infra/rancher/capture-observability.sh`, upload `monitoring-summary*.json`, `qa-observability.json`, and sanitized pod logs under `app/{commitSha}/`, and include `qa-observability.json` in the local QA evidence bundle when available.
+- QA evidence remains in raw Nexus at canonical path `qa/{ticketKey}/{runId}/qa-evidence.zip`; `app/{commitSha}/qa-e2e-evidence.zip` is the workflow artifact copy.
+- Local QA branches use `qa-local/{ticketKey}` so the Azure QA branch workflow remains unchanged.
 
 When adding a new appsetting, add a mapping to `infra/deployment/configuration.json`. Use topology references for values derived from another deployed app, literals for placeholder-safe values, `environmentSecret` for secret-backed values stored as Gitea Actions secrets, and `manualRequired` only as a temporary blocker while gathering the value.

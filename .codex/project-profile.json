@@ -117,6 +117,7 @@
     "review": ".codex/providers/repo.gitea.md",
     "artifact": ".codex/providers/artifact.nexus.md",
     "deployment": ".codex/providers/deploy.azure-appservice.md",
+    "deploymentLocal": ".codex/providers/deploy.rancher-desktop.md",
     "stack": ".codex/providers/stack.dotnet.md",
     "e2e": ".codex/providers/e2e.playwright.md"
   }

@@ -14,6 +14,7 @@ param(
   [string] $ArtifactCommitSha,
   [string] $SourceRcVersion,
   [string] $FinalReleaseVersion,
+  [string] $DeploymentProvider,
   [string] $Stage,
   [string] $Type,
   [string] $Message,
@@ -82,13 +83,25 @@ function Get-ArtifactPaths([string] $Sha) {
     throw 'CommitSha is required for ArtifactPaths.'
   }
 
-  [pscustomobject]@{
+  $provider = if ([string]::IsNullOrWhiteSpace($DeploymentProvider)) { 'azure-appservice' } else { $DeploymentProvider }
+
+  $paths = [ordered]@{
+    deploymentProvider = $provider
     topology = "app/$Sha/deployable-apps.json"
     appArtifactPattern = "app/$Sha/{artifactName}"
     checksumPattern = "app/$Sha/{artifactName}.sha256"
     commitMetadata = "app/$Sha/commit.sha"
     releaseManifest = "app/$Sha/release.json"
   }
+
+  if ($provider -eq 'rancher-desktop') {
+    $paths.containerImages = "app/$Sha/container-images.json"
+    $paths.qaTargets = "app/$Sha/qa-targets.json"
+    $paths.monitoringSummaryPattern = "app/$Sha/monitoring-summary-{environment}.json"
+    $paths.qaObservability = "app/$Sha/qa-observability.json"
+  }
+
+  [pscustomobject]$paths
 }
 
 function Test-GitIgnored([string] $CandidatePath) {

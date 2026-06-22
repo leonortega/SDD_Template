@@ -119,6 +119,11 @@ namespace SDDTemplate.DeliveryTools
                 }
             }
 
+            if (root.TryGetProperty("containerImages", out JsonElement containerImages))
+            {
+                ValidateContainerImages(containerImages, errors);
+            }
+
             return new ReleaseManifestValidation(path, errors.Count == 0, errors);
         }
 
@@ -494,6 +499,50 @@ namespace SDDTemplate.DeliveryTools
             }
 
             return false;
+        }
+
+        private static void ValidateContainerImages(JsonElement containerImages, ICollection<string> errors)
+        {
+            if (containerImages.ValueKind != JsonValueKind.Array)
+            {
+                errors.Add("containerImages must be an array when present.");
+                return;
+            }
+
+            int index = 0;
+            foreach (JsonElement image in containerImages.EnumerateArray())
+            {
+                if (image.ValueKind != JsonValueKind.Object)
+                {
+                    errors.Add($"containerImages[{index}] must be an object.");
+                    index++;
+                    continue;
+                }
+
+                foreach (string field in new[] { "appId", "image", "tag", "digest", "reference" })
+                {
+                    if (!image.TryGetProperty(field, out JsonElement value) || IsMissing(value))
+                    {
+                        errors.Add($"containerImages[{index}] is missing required field: {field}");
+                    }
+                }
+
+                if (image.TryGetProperty("digest", out JsonElement digest)
+                    && !IsMissing(digest)
+                    && !Regex.IsMatch(digest.GetString() ?? string.Empty, "^sha256:[0-9a-fA-F]{64}$", RegexOptions.CultureInvariant))
+                {
+                    errors.Add($"containerImages[{index}].digest must be a sha256 digest.");
+                }
+
+                if (image.TryGetProperty("reference", out JsonElement reference)
+                    && !IsMissing(reference)
+                    && !Regex.IsMatch(reference.GetString() ?? string.Empty, "@sha256:[0-9a-fA-F]{64}$", RegexOptions.CultureInvariant))
+                {
+                    errors.Add($"containerImages[{index}].reference must be pinned by sha256 digest.");
+                }
+
+                index++;
+            }
         }
 
         private static bool HasAny(string text, params string[] needles)

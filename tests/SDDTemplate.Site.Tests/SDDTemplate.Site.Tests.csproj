@@ -23,6 +23,7 @@
     <ProjectReference Include="..\..\src\SDDTemplate.Api\SDDTemplate.Api.csproj" />
     <ProjectReference Include="..\..\src\SDDTemplate.Data\SDDTemplate.Data.csproj" />
     <ProjectReference Include="..\..\src\SDDTemplate.Site\SDDTemplate.Site.csproj" />
+    <ProjectReference Include="..\..\tools\SDDTemplate.DeliveryTools\SDDTemplate.DeliveryTools.csproj" />
   </ItemGroup>
 
 </Project>

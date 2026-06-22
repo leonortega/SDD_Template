@@ -65,6 +65,18 @@
     "qaResult": {
       "type": "string"
     },
+    "deploymentProvider": {
+      "type": "string"
+    },
+    "containerImagesUrl": {
+      "type": "string"
+    },
+    "containerImages": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/containerImage"
+      }
+    },
     "dev": {
       "$ref": "#/$defs/environmentResult"
     },
@@ -95,6 +107,39 @@
         },
         "timestamp": {
           "type": "string"
+        }
+      }
+    },
+    "containerImage": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "appId",
+        "image",
+        "tag",
+        "digest",
+        "reference"
+      ],
+      "properties": {
+        "appId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "image": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tag": {
+          "type": "string",
+          "minLength": 1
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-fA-F]{64}$"
+        },
+        "reference": {
+          "type": "string",
+          "pattern": "@sha256:[0-9a-fA-F]{64}$"
         }
       }
     }
