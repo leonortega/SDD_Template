@@ -108,6 +108,7 @@ Useful modes:
 - `EnsureRancherKubernetes`: when Rancher Desktop is the selected deployment provider, enable Rancher Desktop Kubernetes through `rdctl` during explicit setup/config runs and wait for the `rancher-desktop` context to expose a Ready node. `Audit` remains read-only and only reports disabled or unhealthy Kubernetes.
 - `EnsureHeadlamp`: when Rancher Desktop is the selected deployment provider, install or update Headlamp through the official Helm chart, wait for the `headlamp` deployment, and expose it at `http://127.0.0.1:4466`. Tokens must not be printed; copy a fresh login token with `kubectl create token headlamp --namespace headlamp | Set-Clipboard`, then paste it into Headlamp.
 - `EnsureRancherPortForwards`: when Rancher Desktop is the selected deployment provider, start stable `kubectl port-forward --address 127.0.0.1` mappings for deployed local-lab services so Windows browsers can use `127.0.0.1` URLs. It maps DEV site/API to `18081`/`18082`, QA site/API to `18083`/`18084`, and PROD site/API to `18085`/`18086`; services not deployed yet are skipped with warnings.
+- `ShowEnvironmentUrls`: show and refresh the ignored local environment URL registry at `.codex/environment-urls.local.json` plus the Grafana Environment URLs dashboard. It lists DEV/QA/PROD Web/API browser URLs, container URLs, ingress URLs, deployment status, and port-forward status without exposing secrets.
 - `InitQualityGateTemplates`: create tracked quality-gate templates.
 - `SetSeqAzureEventHubLogs`: validate the OpenTelemetry Collector Contrib Azure Event Hub path for Seq, the native Seq error-log alert, and Rancher Desktop local-lab Seq capture reachability when enabled.
 - `SetQualityConfig`: create or update `.codex/quality.local.json`, including `coverage.minimumPercent` (default `80`).
@@ -115,7 +116,7 @@ Useful modes:
 ## Workflow
 
 1. For full `config infra` or full guided setup, run `InitProjectProfile` first. If the profile, schema, or selected adapters already exist, treat the mode as idempotent and continue from its `Template already exists` findings.
-2. When Rancher Desktop is the selected deployment provider and the user explicitly asked for `config infra`, full setup, or Rancher Desktop local lab setup, run `EnsureRancherKubernetes` before `EnsureHeadlamp`, `EnsureRancherPortForwards`, and `Audit`. `EnsureHeadlamp` installs the Kubernetes management UI and starts its localhost mapping. `EnsureRancherPortForwards` starts localhost browser mappings for services that are already deployed. This is the only configure path that may auto-enable Rancher Desktop Kubernetes, install Headlamp, or start Rancher local-lab port-forward processes; plain `Audit` remains read-only.
+2. When Rancher Desktop is the selected deployment provider and the user explicitly asked for `config infra`, full setup, or Rancher Desktop local lab setup, run `EnsureRancherKubernetes` before `EnsureHeadlamp`, `EnsureRancherPortForwards`, `ShowEnvironmentUrls`, and `Audit`. `EnsureHeadlamp` installs the Kubernetes management UI and starts its localhost mapping. `EnsureRancherPortForwards` starts localhost browser mappings for services that are already deployed. `ShowEnvironmentUrls` refreshes the local URL registry and Grafana URL dashboard. This is the only configure path that may auto-enable Rancher Desktop Kubernetes, install Headlamp, or start Rancher local-lab port-forward processes; plain `Audit` remains read-only.
 3. Run `Audit` after `InitProjectProfile` and any selected-provider prerequisite repair unless the user asked for a very specific area and a narrower audit is enough.
 4. For core compose status checks, always include the plane env file so variable resolution matches runtime expectations:
 
@@ -159,7 +160,7 @@ trivy --download-db-only
    - Monitoring dashboards
    - Azure Event Hub to Seq ingestion
 25. If the user is vague, default to full guided setup in this order:
-   InitProjectProfile -> EnsureRancherKubernetes when Rancher Desktop is selected -> EnsureHeadlamp when Rancher Desktop is selected -> EnsureRancherPortForwards when Rancher Desktop is selected -> Audit -> Plane -> Gitea PR automation -> Gitea Actions runner -> Quality gates and CI -> Nexus artifacts and Rancher Desktop deployment promotion -> Monitoring dashboards -> final Audit.
+   InitProjectProfile -> EnsureRancherKubernetes when Rancher Desktop is selected -> EnsureHeadlamp when Rancher Desktop is selected -> EnsureRancherPortForwards when Rancher Desktop is selected -> ShowEnvironmentUrls when Rancher Desktop is selected -> Audit -> Plane -> Gitea PR automation -> Gitea Actions runner -> Quality gates and CI -> Nexus artifacts and Rancher Desktop deployment promotion -> Monitoring dashboards -> final Audit.
 
 ## Domain Routing
 

@@ -1,35 +1,35 @@
 - targets:
-    - http://site.dev.sdd.localhost/health
+    - http://host.docker.internal:18081/health
   labels:
     environment: dev
     app: site
     provider: rancher-desktop
 - targets:
-    - http://api.dev.sdd.localhost/health
+    - http://host.docker.internal:18082/health
   labels:
     environment: dev
     app: api
     provider: rancher-desktop
 - targets:
-    - http://site.qa.sdd.localhost/health
+    - http://host.docker.internal:18083/health
   labels:
     environment: qa
     app: site
     provider: rancher-desktop
 - targets:
-    - http://api.qa.sdd.localhost/health
+    - http://host.docker.internal:18084/health
   labels:
     environment: qa
     app: api
     provider: rancher-desktop
 - targets:
-    - http://site.prod.sdd.localhost/health
+    - http://host.docker.internal:18085/health
   labels:
     environment: prod
     app: site
     provider: rancher-desktop
 - targets:
-    - http://api.prod.sdd.localhost/health
+    - http://host.docker.internal:18086/health
   labels:
     environment: prod
     app: api

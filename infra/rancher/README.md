@@ -57,11 +57,12 @@ Nexus raw hosted -> release manifests, pointers, QA evidence
    RANCHER_PROD_SITE_URL
    RANCHER_PROD_API_URL
    SEQ_URL
+   RANCHER_APP_SEQ_URL
    PROMETHEUS_URL
    RANCHER_OBSERVABILITY_ENABLED
    ```
 
-   Keep the existing raw Nexus secrets unchanged.
+   Keep the existing raw Nexus secrets unchanged. When values are consumed by Gitea Action containers or Kubernetes app pods, use the `host.docker.internal` port-forward URLs, for example `http://host.docker.internal:18083` for QA site, `http://host.docker.internal:18084` for QA API, `http://host.docker.internal:5341` for Seq, and `http://host.docker.internal:9091` for Prometheus.
 
 4. Configure Rancher Desktop so Kubernetes can pull from the Nexus Docker registry. For HTTP local-lab registries, configure Rancher Desktop/containerd with an allowed insecure registry or use a trusted local TLS certificate.
 
@@ -72,7 +73,7 @@ Nexus raw hosted -> release manifests, pointers, QA evidence
 - Deployment identity: image digests from `app/{commitSha}/container-images.json`.
 - API data: a namespace-local PVC mounted at `/home/data`.
 - Site-to-API calls: site pods use the namespace-local API service URL `http://api:8080`.
-- Observability metadata: pods carry app, namespace, environment, commit SHA, and image digest labels/annotations plus matching non-secret environment variables.
+- Observability metadata: pods carry app, namespace, environment, commit SHA, and image digest labels/annotations plus matching non-secret environment variables. Pods also send live Serilog events to Seq through `RANCHER_APP_SEQ_URL`, default `http://host.docker.internal:5341`.
 
 Run the script directly only after setting digest-pinned image references:
 
@@ -82,7 +83,7 @@ bash infra/rancher/deploy-local-lab.sh --environment dev --namespace sdd-dev --s
 
 ## Observability Evidence
 
-Use `capture-observability.sh` after a namespace deployment. It verifies site/API `/health`, collects recent pod logs, redacts common secret patterns, posts the sanitized events to Seq through `/ingest/clef`, and writes `monitoring-summary.json`.
+Site/API pods send live Serilog events to local Seq after deployment. Use `capture-observability.sh` after a namespace deployment for evidence snapshots. It verifies site/API `/health`, collects recent pod logs, redacts common secret patterns, posts the sanitized events to Seq through `/ingest/clef`, and writes `monitoring-summary.json`.
 
 ```powershell
 bash infra/rancher/capture-observability.sh --environment qa --namespace sdd-qa --commit-sha "<commitSha>" --site-image "<site@sha256...>" --api-image "<api@sha256...>" --site-url "http://site.qa.sdd.localhost" --api-url "http://api.qa.sdd.localhost"

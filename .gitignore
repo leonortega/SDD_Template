@@ -116,6 +116,7 @@ infra/plane/plane/
 .codex/client-tools.local.json
 .codex/quality.local.json
 .codex/azure-login.local.json
+.codex/environment-urls.local.json
 infra/monitoring/grafana/dashboards.local/
 
 # OS/editor noise

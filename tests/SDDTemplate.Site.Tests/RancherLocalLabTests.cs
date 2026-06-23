@@ -112,6 +112,10 @@ namespace SDDTemplate.Site.Tests
             Assert.Contains("seqRecentLogStatus", script);
             Assert.Contains("CommitSha", script);
             Assert.Contains("ImageDigest", script);
+            Assert.Contains("RANCHER_APP_SEQ_URL", File.ReadAllText(Path.Combine(root, "infra", "monitoring", "variables.env.example")));
+            Assert.Contains("Serilog__WriteTo__1__Name", File.ReadAllText(Path.Combine(root, "infra", "rancher", "deploy-local-lab.sh")));
+            Assert.Contains("Serilog__WriteTo__1__Args__serverUrl", File.ReadAllText(Path.Combine(root, "infra", "rancher", "deploy-local-lab.sh")));
+            Assert.Contains("http://host.docker.internal:5341", File.ReadAllText(Path.Combine(root, "infra", "rancher", "deploy-local-lab.sh")));
 
             Assert.Contains("app/${GITHUB_SHA}/monitoring-summary.json", workflow);
             Assert.Contains("app/${GITHUB_SHA}/qa-observability.json", workflow);
@@ -125,12 +129,12 @@ namespace SDDTemplate.Site.Tests
             string targets = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "prometheus", "targets.local.yml"));
             string prometheus = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "prometheus", "prometheus.yml"));
 
-            Assert.Contains("http://site.dev.sdd.localhost/health", targets);
-            Assert.Contains("http://api.dev.sdd.localhost/health", targets);
-            Assert.Contains("http://site.qa.sdd.localhost/health", targets);
-            Assert.Contains("http://api.qa.sdd.localhost/health", targets);
-            Assert.Contains("http://site.prod.sdd.localhost/health", targets);
-            Assert.Contains("http://api.prod.sdd.localhost/health", targets);
+            Assert.Contains("http://host.docker.internal:18081/health", targets);
+            Assert.Contains("http://host.docker.internal:18082/health", targets);
+            Assert.Contains("http://host.docker.internal:18083/health", targets);
+            Assert.Contains("http://host.docker.internal:18084/health", targets);
+            Assert.Contains("http://host.docker.internal:18085/health", targets);
+            Assert.Contains("http://host.docker.internal:18086/health", targets);
             Assert.Contains("provider: rancher-desktop", targets);
             Assert.DoesNotContain("azurewebsites.net", targets);
             Assert.DoesNotContain("provider: azure-appservice", targets);
@@ -182,9 +186,10 @@ namespace SDDTemplate.Site.Tests
             Assert.Contains("\"set\", \"--kubernetes.enabled\"", script);
             Assert.Contains("\"get\", \"nodes\", \"-o\", \"json\", \"--request-timeout=5s\"", script);
             Assert.Contains("timed out after $TimeoutSeconds seconds", script);
+            Assert.Contains("$startInfo.Arguments = $escapedArguments -join \" \"", script);
             Assert.Contains("nodes.ready", script);
             Assert.Contains("Rancher Desktop Kubernetes is disabled", script);
-            Assert.Contains("run `EnsureRancherKubernetes` before `EnsureHeadlamp`, `EnsureRancherPortForwards`, and `Audit`", configureSkill);
+            Assert.Contains("run `EnsureRancherKubernetes` before `EnsureHeadlamp`, `EnsureRancherPortForwards`, `ShowEnvironmentUrls`, and `Audit`", configureSkill);
             Assert.Contains("`EnsureRancherKubernetes`, `EnsureHeadlamp`, and `EnsureRancherPortForwards` when Rancher Desktop is selected", aliasSkill);
             Assert.Contains("Plain `Audit` only reports disabled or unhealthy Kubernetes", adapter);
             Assert.Contains("explicit `config infra` runs `EnsureRancherKubernetes`", rancherReadme);
@@ -214,7 +219,7 @@ namespace SDDTemplate.Site.Tests
                 Assert.Contains($"127.0.0.1:{port}", adapter);
             }
 
-            Assert.Contains("EnsureRancherKubernetes` before `EnsureHeadlamp`, `EnsureRancherPortForwards`, and `Audit`", configureSkill);
+            Assert.Contains("EnsureRancherKubernetes` before `EnsureHeadlamp`, `EnsureRancherPortForwards`, `ShowEnvironmentUrls`, and `Audit`", configureSkill);
             Assert.Contains("starts localhost browser mappings", configureSkill);
             Assert.Contains("`EnsureRancherPortForwards` when Rancher Desktop is selected", aliasSkill);
             Assert.Contains("Plain `Audit` only reports missing mappings", adapter);

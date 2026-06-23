@@ -9,7 +9,12 @@ api_image=""
 site_url=""
 api_url=""
 output_dir="artifacts/rancher-observability"
-seq_url="${SEQ_URL:-http://localhost:5341}"
+if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+  default_seq_url="http://host.docker.internal:5341"
+else
+  default_seq_url="http://localhost:5341"
+fi
+seq_url="${SEQ_URL:-$default_seq_url}"
 observability_enabled="${RANCHER_OBSERVABILITY_ENABLED:-true}"
 
 while [ "$#" -gt 0 ]; do
@@ -147,8 +152,14 @@ if [ "$observability_enabled" = "true" ]; then
 fi
 
 prometheus_health_status="UNKNOWN"
-if [ -n "${PROMETHEUS_URL:-}" ]; then
-  if curl --fail --silent --show-error "${PROMETHEUS_URL%/}/-/ready" >/dev/null; then
+if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+  default_prometheus_url="http://host.docker.internal:9091"
+else
+  default_prometheus_url=""
+fi
+prometheus_url="${PROMETHEUS_URL:-$default_prometheus_url}"
+if [ -n "$prometheus_url" ]; then
+  if curl --fail --silent --show-error "${prometheus_url%/}/-/ready" >/dev/null; then
     prometheus_health_status="PASS"
   else
     prometheus_health_status="FAIL"

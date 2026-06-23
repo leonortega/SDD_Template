@@ -8,6 +8,7 @@ api_image=""
 site_host=""
 api_host=""
 commit_sha=""
+app_seq_url="${RANCHER_APP_SEQ_URL:-http://host.docker.internal:5341}"
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -163,6 +164,10 @@ spec:
               value: "${log_level}"
             - name: Serilog__MinimumLevel__Default
               value: "${log_level}"
+            - name: Serilog__WriteTo__1__Name
+              value: "Seq"
+            - name: Serilog__WriteTo__1__Args__serverUrl
+              value: "${app_seq_url}"
             - name: SDDTEMPLATE_APP
               value: "api"
             - name: SDDTEMPLATE_ENVIRONMENT
@@ -236,6 +241,10 @@ spec:
               value: "${log_level}"
             - name: Serilog__MinimumLevel__Default
               value: "${log_level}"
+            - name: Serilog__WriteTo__1__Name
+              value: "Seq"
+            - name: Serilog__WriteTo__1__Args__serverUrl
+              value: "${app_seq_url}"
             - name: SDDTEMPLATE_APP
               value: "site"
             - name: SDDTEMPLATE_ENVIRONMENT

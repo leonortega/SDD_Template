@@ -246,7 +246,7 @@ jobs:
           site_image="$(jq -r '.images[] | select(.appId == "site") | .reference' container-images.json)"
           api_image="$(jq -r '.images[] | select(.appId == "api") | .reference' container-images.json)"
           bash infra/rancher/deploy-local-lab.sh --environment dev --namespace sdd-dev --site-image "$site_image" --api-image "$api_image" --commit-sha "$GITHUB_SHA" --site-host "${RANCHER_DEV_SITE_HOST:-site.dev.sdd.localhost}" --api-host "${RANCHER_DEV_API_HOST:-api.dev.sdd.localhost}"
-          bash infra/rancher/capture-observability.sh --environment dev --namespace sdd-dev --commit-sha "$GITHUB_SHA" --site-image "$site_image" --api-image "$api_image" --site-url "${RANCHER_DEV_SITE_URL:-http://site.dev.sdd.localhost}" --api-url "${RANCHER_DEV_API_URL:-http://api.dev.sdd.localhost}" --output-dir artifacts/rancher-observability/dev
+          bash infra/rancher/capture-observability.sh --environment dev --namespace sdd-dev --commit-sha "$GITHUB_SHA" --site-image "$site_image" --api-image "$api_image" --site-url "${RANCHER_DEV_SITE_URL:-http://host.docker.internal:18081}" --api-url "${RANCHER_DEV_API_URL:-http://host.docker.internal:18082}" --output-dir artifacts/rancher-observability/dev
 
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/rancher-observability/dev/monitoring-summary.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/monitoring-summary-dev.json"
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/rancher-observability/dev/site-pod.sanitized.log "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/dev-site-pod.sanitized.log"
@@ -315,13 +315,13 @@ jobs:
           site_image="$(jq -r '.images[] | select(.appId == "site") | .reference' container-images.json)"
           api_image="$(jq -r '.images[] | select(.appId == "api") | .reference' container-images.json)"
           bash infra/rancher/deploy-local-lab.sh --environment qa --namespace sdd-qa --site-image "$site_image" --api-image "$api_image" --commit-sha "$GITHUB_SHA" --site-host "${RANCHER_QA_SITE_HOST:-site.qa.sdd.localhost}" --api-host "${RANCHER_QA_API_HOST:-api.qa.sdd.localhost}"
-          bash infra/rancher/capture-observability.sh --environment qa --namespace sdd-qa --commit-sha "$GITHUB_SHA" --site-image "$site_image" --api-image "$api_image" --site-url "${RANCHER_QA_SITE_URL:-http://site.qa.sdd.localhost}" --api-url "${RANCHER_QA_API_URL:-http://api.qa.sdd.localhost}" --output-dir artifacts/rancher-observability/qa
+          bash infra/rancher/capture-observability.sh --environment qa --namespace sdd-qa --commit-sha "$GITHUB_SHA" --site-image "$site_image" --api-image "$api_image" --site-url "${RANCHER_QA_SITE_URL:-http://host.docker.internal:18083}" --api-url "${RANCHER_QA_API_URL:-http://host.docker.internal:18084}" --output-dir artifacts/rancher-observability/qa
 
           jq -n \
             --arg environment "QA" \
             --arg commitSha "$GITHUB_SHA" \
-            --arg siteUrl "${RANCHER_QA_SITE_URL:-http://site.qa.sdd.localhost}" \
-            --arg apiUrl "${RANCHER_QA_API_URL:-http://api.qa.sdd.localhost}" \
+            --arg siteUrl "${RANCHER_QA_SITE_URL:-http://host.docker.internal:18083}" \
+            --arg apiUrl "${RANCHER_QA_API_URL:-http://host.docker.internal:18084}" \
             --arg workflowRunUrl "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             --arg publishedAtUtc "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             '{
@@ -404,8 +404,8 @@ jobs:
           cd tests/SDDTemplate.E2ETests
           mkdir -p evidence
 
-          test -n "$E2E_SITE_URL"
-          test -n "$E2E_API_URL"
+          E2E_SITE_URL="${E2E_SITE_URL:-http://host.docker.internal:18083}"
+          E2E_API_URL="${E2E_API_URL:-http://host.docker.internal:18084}"
 
           test_exit=0
           npm test || test_exit=$?
@@ -500,7 +500,7 @@ jobs:
           site_image="$(jq -r '.images[] | select(.appId == "site") | .reference' container-images.json)"
           api_image="$(jq -r '.images[] | select(.appId == "api") | .reference' container-images.json)"
           bash infra/rancher/deploy-local-lab.sh --environment prod --namespace sdd-prod --site-image "$site_image" --api-image "$api_image" --commit-sha "$ARTIFACT_COMMIT_SHA" --site-host "${RANCHER_PROD_SITE_HOST:-site.prod.sdd.localhost}" --api-host "${RANCHER_PROD_API_HOST:-api.prod.sdd.localhost}"
-          bash infra/rancher/capture-observability.sh --environment prod --namespace sdd-prod --commit-sha "$ARTIFACT_COMMIT_SHA" --site-image "$site_image" --api-image "$api_image" --site-url "${RANCHER_PROD_SITE_URL:-http://site.prod.sdd.localhost}" --api-url "${RANCHER_PROD_API_URL:-http://api.prod.sdd.localhost}" --output-dir artifacts/rancher-observability/prod
+          bash infra/rancher/capture-observability.sh --environment prod --namespace sdd-prod --commit-sha "$ARTIFACT_COMMIT_SHA" --site-image "$site_image" --api-image "$api_image" --site-url "${RANCHER_PROD_SITE_URL:-http://host.docker.internal:18085}" --api-url "${RANCHER_PROD_API_URL:-http://host.docker.internal:18086}" --output-dir artifacts/rancher-observability/prod
 
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/rancher-observability/prod/monitoring-summary.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${ARTIFACT_COMMIT_SHA}/monitoring-summary-prod.json"
         env:
