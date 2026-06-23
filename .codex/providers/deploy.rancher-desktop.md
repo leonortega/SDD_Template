@@ -6,6 +6,7 @@ Use this adapter when `.codex/project-profile.json` selects `providers.deploymen
 
 - Use Rancher Desktop's built-in Kubernetes context named `rancher-desktop`.
 - During explicit `config infra`, use `EnsureRancherKubernetes` to enable Rancher Desktop Kubernetes through `rdctl` and wait for at least one Ready node. Plain `Audit` only reports disabled or unhealthy Kubernetes.
+- During explicit `config infra`, use `EnsureHeadlamp` to install Headlamp through the official Helm chart and expose it at `http://127.0.0.1:4466`. Create the login token with `kubectl create token headlamp --namespace headlamp | Set-Clipboard`; never print or store the token in tracked files.
 - During explicit `config infra`, use `EnsureRancherPortForwards` after Kubernetes is ready to start stable localhost browser mappings for deployed services: DEV site/API on `127.0.0.1:18081`/`18082`, QA site/API on `127.0.0.1:18083`/`18084`, and PROD site/API on `127.0.0.1:18085`/`18086`. Plain `Audit` only reports missing mappings.
 - Read local cluster access from the user's kubeconfig for manual runs or from a secret such as `RANCHER_KUBECONFIG_B64` for Gitea Actions.
 - Read Nexus Docker registry endpoint and credentials from Gitea Actions secrets or ignored `.codex/client-tools.local.json`.

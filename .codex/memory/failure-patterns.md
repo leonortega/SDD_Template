@@ -442,3 +442,21 @@ When a landing page adds CTA links like `View products`, Playwright locators suc
 - Last verified: 2026-06-22
 
 When Rancher Desktop publish fails in `build-container-images` with empty `NEXUS_DOCKER_REGISTRY`, `NEXUS_DOCKER_USERNAME`, or `NEXUS_DOCKER_PASSWORD`, configure the Rancher Docker secrets before relying on Gitea workflow dispatch. If `agentic-nexus` predates `infra/nexus/compose.yml` exposing `5001`, recreate only the Nexus service through the main compose file so the existing volume is preserved, then create/verify the hosted Docker repository. On this Windows/Rancher setup, `*.sdd.localhost` may be served by Windows HTTPAPI on port 80 instead of Traefik; verify deployed app health through `kubectl port-forward` or a host mapping to the Rancher node IP before classifying the deployment as failed.
+
+## Headlamp Desktop Install May Block; Use Helm In Rancher Desktop
+
+- Type: Pattern
+- Status: Active
+- Source: local Headlamp install attempt, official GitHub release `v0.43.0`, Helm chart install into Rancher Desktop
+- Last verified: 2026-06-22
+
+On this Windows workstation, `winget install --id Headlamp.Headlamp` can hang without spawning a child installer, and the verified GitHub Windows `.exe` can fail with `Access is denied` even after `Unblock-File`. For the local Rancher Desktop lab, install Headlamp in-cluster instead: `helm repo add headlamp https://kubernetes-sigs.github.io/headlamp/`, `helm upgrade --install headlamp headlamp/headlamp --namespace headlamp --create-namespace --wait`, then expose it with `kubectl --context rancher-desktop -n headlamp port-forward svc/headlamp 4466:80 --address 127.0.0.1`.
+
+## Parallel Dotnet Test Runs Can Lock DeliveryTools Outputs
+
+- Type: Pattern
+- Status: Active
+- Source: local validation after adding Headlamp config infra mode; `CSC : error CS2012` on `tools/SDDTemplate.DeliveryTools/obj/Debug/net10.0/SDDTemplate.DeliveryTools.dll`
+- Last verified: 2026-06-22
+
+Do not run overlapping `dotnet test` commands that build shared projects in this repository. On Windows, parallel test invocations can leave `VBCSCompiler` or MSBuild nodes holding `SDDTemplate.DeliveryTools.dll`, causing `CS2012 Cannot open ... for writing`. Run focused .NET tests sequentially, or clear stale build servers with `dotnet build-server shutdown` before rerunning validation.

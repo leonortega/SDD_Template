@@ -1252,12 +1252,12 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("InitProjectProfile", configureRouter);
             Assert.Contains("required first-class step for full `config infra`", configureRouter);
             Assert.Contains("run `InitProjectProfile` first", configureRouter);
-            Assert.Contains("InitProjectProfile -> EnsureRancherKubernetes when Rancher Desktop is selected -> EnsureRancherPortForwards when Rancher Desktop is selected -> Audit -> Plane", configureRouter);
+            Assert.Contains("InitProjectProfile -> EnsureRancherKubernetes when Rancher Desktop is selected -> EnsureHeadlamp when Rancher Desktop is selected -> EnsureRancherPortForwards when Rancher Desktop is selected -> Audit -> Plane", configureRouter);
             Assert.Contains("Stop before provider-specific mutation", configureRouter);
 
             Assert.Contains("InitProjectProfile", qualityReference);
             Assert.Contains("before full `config infra` quality/provider setup", qualityReference);
-            Assert.Contains("follow its `InitProjectProfile`, `EnsureRancherKubernetes` and `EnsureRancherPortForwards` when Rancher Desktop is selected, audit", compatibilityRouter);
+            Assert.Contains("follow its `InitProjectProfile`, `EnsureRancherKubernetes`, `EnsureHeadlamp`, and `EnsureRancherPortForwards` when Rancher Desktop is selected, audit", compatibilityRouter);
             Assert.Contains("Full `config infra` runs `InitProjectProfile` first", readme);
 
             Assert.Contains("\"InitProjectProfile\"", configureScript);

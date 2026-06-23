@@ -1,5 +1,5 @@
 param(
-  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetGiteaBranchProtection", "SetPlaneEnv", "SetMonitoringEnv", "SetGiteaRunner", "SetSeqAzureEventHubLogs", "SplitInfraEnv", "AuditQualityGates", "AuditRecommendedTools", "DiscoverProjectGuidance", "AcquireProjectGuidance", "SetRecommendedTools", "MapProjectGuidanceStep", "BuildGiteaActionsImages", "ValidateGiteaActionsRunner", "InitProjectProfile", "InitQualityGateTemplates", "SetQualityConfig", "SyncWorktreeLocalConfig", "EnsureDeliveryContext", "EnsureRancherKubernetes", "EnsureRancherPortForwards")]
+  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetGiteaBranchProtection", "SetPlaneEnv", "SetMonitoringEnv", "SetGiteaRunner", "SetSeqAzureEventHubLogs", "SplitInfraEnv", "AuditQualityGates", "AuditRecommendedTools", "DiscoverProjectGuidance", "AcquireProjectGuidance", "SetRecommendedTools", "MapProjectGuidanceStep", "BuildGiteaActionsImages", "ValidateGiteaActionsRunner", "InitProjectProfile", "InitQualityGateTemplates", "SetQualityConfig", "SyncWorktreeLocalConfig", "EnsureDeliveryContext", "EnsureRancherKubernetes", "EnsureRancherPortForwards", "EnsureHeadlamp")]
   [string]$Mode = "Audit",
 
   [string]$Root = (Resolve-Path ".").Path,
@@ -251,6 +251,20 @@ function Get-RancherPortForwardProcess {
       $_.CommandLine -like "*$serviceToken*" -and
       $_.CommandLine -like "*$($Mapping.Namespace)*" -and
       $_.CommandLine -like "*$portToken*"
+    })
+  } catch {
+    return @()
+  }
+}
+
+function Get-HeadlampPortForwardProcess {
+  try {
+    return @(Get-CimInstance Win32_Process | Where-Object {
+      $_.CommandLine -and
+      $_.CommandLine -like "*port-forward*" -and
+      $_.CommandLine -like "*svc/headlamp*" -and
+      $_.CommandLine -like "*headlamp*" -and
+      $_.CommandLine -like "*4466:80*"
     })
   } catch {
     return @()
@@ -2480,6 +2494,23 @@ function Add-RancherLocalLabAuditFindings {
       } else {
         Add-Item $Result "warnings" "kubectl" "port-forward.$key" "Rancher $($mapping.Environment) $($mapping.Service) is deployed, but localhost port $($mapping.LocalPort) is not forwarded. Run EnsureRancherPortForwards." "warning" "post-start"
       }
+    }
+
+    if ($null -eq (Get-Command helm -ErrorAction SilentlyContinue)) {
+      Add-Item $Result "findings" "helm" "" "Helm is missing; config infra cannot install Headlamp Kubernetes management UI." "warning" "pre-start"
+    } else {
+      $status = Invoke-NativeText "helm" @("-n", "headlamp", "status", "headlamp") 20
+      if ($status.ExitCode -eq 0) {
+        Add-Item $Result "actions" "helm" "headlamp" "Headlamp Helm release is installed in namespace headlamp."
+      } else {
+        Add-Item $Result "warnings" "helm" "headlamp" "Headlamp is not installed. Run EnsureHeadlamp to install the Kubernetes management UI." "warning" "post-start"
+      }
+    }
+
+    if ((Get-HeadlampPortForwardProcess).Count -gt 0 -and (Test-LocalPortListening 4466)) {
+      Add-Item $Result "actions" "kubectl" "headlamp.port-forward" "Headlamp is forwarded at http://127.0.0.1:4466."
+    } else {
+      Add-Item $Result "warnings" "kubectl" "headlamp.port-forward" "Headlamp localhost UI is not forwarded. Run EnsureHeadlamp, then open http://127.0.0.1:4466." "warning" "post-start"
     }
   }
 }
@@ -5538,6 +5569,92 @@ function Invoke-EnsureRancherPortForwards {
   return $result
 }
 
+function Invoke-EnsureHeadlamp {
+  $result = New-Result
+
+  if (-not (Test-RancherLocalDeploymentConfigured)) {
+    Add-Item $result "actions" ".codex/project-profile.json" "providers.deployment" "Rancher Desktop is not the selected deployment provider; Headlamp setup skipped."
+    return $result
+  }
+
+  foreach ($tool in @("kubectl", "helm")) {
+    if ($null -eq (Get-Command $tool -ErrorAction SilentlyContinue)) {
+      Add-Item $result "findings" $tool "" "$tool is missing. Install it, then rerun EnsureHeadlamp." "error" "pre-start"
+      return $result
+    }
+  }
+
+  $context = Get-KubectlCurrentContext
+  if ($context -ne "rancher-desktop") {
+    Add-Item $result "findings" "kubectl" "context" "kubectl current context is '$context'; run EnsureRancherKubernetes before EnsureHeadlamp." "error" "pre-start"
+    return $result
+  }
+
+  $repoList = Invoke-NativeText "helm" @("repo", "list", "-o", "json") 30
+  $hasRepo = $false
+  if ($repoList.ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($repoList.Output)) {
+    $repos = $repoList.Output | ConvertFrom-Json
+    $hasRepo = @($repos | Where-Object { $_.name -eq "headlamp" }).Count -gt 0
+  }
+
+  if (-not $hasRepo) {
+    $repoAdd = Invoke-NativeText "helm" @("repo", "add", "headlamp", "https://kubernetes-sigs.github.io/headlamp/") 60
+    if ($repoAdd.ExitCode -ne 0) {
+      Add-Item $result "findings" "helm" "repo.add" "Could not add the official Headlamp Helm repository: $($repoAdd.Error)" "error" "pre-start"
+      return $result
+    }
+    Add-Item $result "actions" "helm" "repo.add" "Added the official Headlamp Helm repository."
+  }
+
+  $repoUpdate = Invoke-NativeText "helm" @("repo", "update", "headlamp") 120
+  if ($repoUpdate.ExitCode -ne 0) {
+    Add-Item $result "findings" "helm" "repo.update" "Could not update the Headlamp Helm repository: $($repoUpdate.Error)" "error" "pre-start"
+    return $result
+  }
+
+  $install = Invoke-NativeText "helm" @("upgrade", "--install", "headlamp", "headlamp/headlamp", "--namespace", "headlamp", "--create-namespace", "--wait", "--timeout", "5m") 360
+  if ($install.ExitCode -ne 0) {
+    Add-Item $result "findings" "helm" "headlamp.install" "Could not install Headlamp: $($install.Error)" "error" "post-start"
+    return $result
+  }
+  Add-Item $result "actions" "helm" "headlamp.install" "Headlamp is installed in namespace headlamp."
+
+  $rollout = Invoke-NativeText "kubectl" @("--context", "rancher-desktop", "-n", "headlamp", "rollout", "status", "deploy/headlamp", "--timeout=120s") 150
+  if ($rollout.ExitCode -ne 0) {
+    Add-Item $result "findings" "kubectl" "headlamp.rollout" "Headlamp deployment did not become ready: $($rollout.Error)" "error" "post-start"
+    return $result
+  }
+
+  $headlampForwards = @(Get-HeadlampPortForwardProcess)
+  if ((Test-LocalPortListening 4466) -and $headlampForwards.Count -eq 0) {
+    Add-Item $result "findings" "kubectl" "headlamp.port-forward" "Local port 4466 is already in use by a non-Headlamp process. Free the port, then rerun EnsureHeadlamp." "error" "post-start"
+    return $result
+  }
+
+  if ($headlampForwards.Count -eq 0 -or -not (Test-LocalPortListening 4466)) {
+    try {
+      Start-Process -FilePath "kubectl" -ArgumentList @("--context", "rancher-desktop", "-n", "headlamp", "port-forward", "svc/headlamp", "4466:80", "--address", "127.0.0.1") -WindowStyle Hidden | Out-Null
+      $deadline = (Get-Date).AddSeconds(20)
+      do {
+        if (Test-LocalPortListening 4466) { break }
+        Start-Sleep -Milliseconds 500
+      } while ((Get-Date) -lt $deadline)
+    } catch {
+      Add-Item $result "findings" "kubectl" "headlamp.port-forward" "Could not start Headlamp port-forward: $($_.Exception.Message)" "error" "post-start"
+      return $result
+    }
+  }
+
+  if (Test-LocalPortListening 4466) {
+    Add-Item $result "actions" "kubectl" "headlamp.port-forward" "Headlamp is available at http://127.0.0.1:4466."
+    Add-Item $result "actions" "kubectl" "headlamp.token" "Create a login token without printing it by running: kubectl create token headlamp --namespace headlamp | Set-Clipboard"
+  } else {
+    Add-Item $result "findings" "kubectl" "headlamp.port-forward" "Headlamp port-forward did not open http://127.0.0.1:4466." "error" "post-start"
+  }
+
+  return $result
+}
+
 switch ($Mode) {
   "Audit" { $result = Invoke-Audit }
   "AuditQualityGates" { $result = Invoke-AuditQualityGates }
@@ -5561,6 +5678,7 @@ switch ($Mode) {
   "SetSeqAzureEventHubLogs" { $result = Invoke-SetSeqAzureEventHubLogs }
   "EnsureRancherKubernetes" { $result = Invoke-EnsureRancherKubernetes }
   "EnsureRancherPortForwards" { $result = Invoke-EnsureRancherPortForwards }
+  "EnsureHeadlamp" { $result = Invoke-EnsureHeadlamp }
   "SplitInfraEnv" { $result = Invoke-SplitInfraEnv }
   "SetQualityConfig" { $result = Invoke-SetQualityConfig }
 }
