@@ -2,7 +2,7 @@
 
 Owns:
 
-- Seq local log search for sanitized Rancher Desktop Kubernetes pod logs captured during local-lab deployment.
+- Seq local log search for live Rancher Desktop Kubernetes app logs.
 - Seq local log search for sanitized Rancher Desktop Kubernetes pod logs captured during local-lab deployment.
 - Native Seq alerting when any error or fatal log event appears.
 - Grafana `/health` alerts for DEV, QA, and PROD web/API probes.
@@ -21,6 +21,7 @@ Repo-managed local log search:
 - `infra/monitoring/compose.yml` runs `datalust/seq:2025.2.16202` as `agentic-seq`.
 - Seq is bound to `http://localhost:5341` and uses explicit local no-auth first-run configuration.
 - Seq receives Azure-hosted console logs through the optional OpenTelemetry Collector Contrib Event Hub profile.
+- Rancher Desktop site/API pods send live Serilog events directly to Seq through `RANCHER_APP_SEQ_URL`, default `http://host.docker.internal:5341`.
 - The Rancher Desktop lane posts sanitized pod-log events through Seq's CLEF ingestion endpoint during `infra/rancher/capture-observability.sh`.
 - `SetSeqAzureEventHubLogs` creates or updates the native Seq alert `Agentic E2E - Any Seq Error Logs`.
 - The error alert uses `SEQ_ERROR_ALERT_WINDOW` and `SEQ_ERROR_ALERT_THRESHOLD` from `infra/monitoring/variables.env`; defaults are `1m` and `0`.
@@ -52,6 +53,6 @@ After the collector starts, search Seq for `Environment = 'DEV'`, `Environment =
 
 When the collector profile is enabled, Azure-hosted console logs arrive from Azure Event Hub through the repo-managed collector path.
 
-Direct app page and `/health` HTTP checks remain authoritative deployment gates. Seq log search comes from the collector-based Event Hub path, and Dozzle is the place for local container log inspection.
+Direct app page and `/health` HTTP checks remain authoritative deployment gates. Seq log search comes from the collector-based Event Hub path for Azure and from direct Serilog Seq sinks plus sanitized capture evidence for Rancher Desktop.
 
-For the Rancher Desktop local lane, `infra/monitoring/prometheus/targets.local.yml` includes `provider: rancher-desktop` blackbox targets for site/API DEV, QA, and PROD local hosts. Real local values for `SEQ_URL`, `PROMETHEUS_URL`, and `RANCHER_OBSERVABILITY_ENABLED` belong in ignored env files or Gitea Actions secrets.
+For the Rancher Desktop local lane, `infra/monitoring/prometheus/targets.local.yml` includes `provider: rancher-desktop` blackbox targets for the site/API DEV, QA, and PROD localhost port-forward ports through `host.docker.internal`, because Prometheus and Blackbox run inside Docker containers. Real local values for `SEQ_URL`, `RANCHER_APP_SEQ_URL`, `PROMETHEUS_URL`, and `RANCHER_OBSERVABILITY_ENABLED` belong in ignored env files or Gitea Actions secrets.

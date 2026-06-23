@@ -61,6 +61,32 @@ namespace SDDTemplate.Site.Tests
 
         [Theory]
         [MemberData(nameof(ApplicationConfigPaths))]
+        public void ApplicationConfigLoadsSeqSinkForLiveLogSearch(string appPath)
+        {
+            string root = FindRepositoryRoot();
+            string appsettings = Path.Combine(root, appPath, "appsettings.json");
+            using JsonDocument document = JsonDocument.Parse(File.ReadAllText(appsettings));
+
+            JsonElement usingEntries = document.RootElement
+                .GetProperty("Serilog")
+                .GetProperty("Using");
+
+            Assert.Contains(usingEntries.EnumerateArray(), entry => entry.GetString() == "Serilog.Sinks.Console");
+            Assert.Contains(usingEntries.EnumerateArray(), entry => entry.GetString() == "Serilog.Sinks.Seq");
+        }
+
+        [Fact]
+        public void SharedLoggingPackageIncludesSeqSink()
+        {
+            string root = FindRepositoryRoot();
+            string project = File.ReadAllText(Path.Combine(root, "src", "SDDTemplate.Common", "SDDTemplate.Common.csproj"));
+
+            Assert.Contains("Serilog.Sinks.Seq", project);
+            Assert.Contains("Version=\"9.1.0\"", project);
+        }
+
+        [Theory]
+        [MemberData(nameof(ApplicationConfigPaths))]
         public void ProgramConfiguresCorrelationAwareRequestLoggingWithoutSensitivePayloads(string appPath)
         {
             string root = FindRepositoryRoot();
@@ -253,6 +279,51 @@ namespace SDDTemplate.Site.Tests
             string devDashboard = File.ReadAllText(devDashboardPath);
             Assert.Contains("\"uid\": \"prometheus\"", devDashboard);
             Assert.Contains("probe_success", devDashboard);
+            Assert.Contains("DEV K8 Web/API Health", devDashboard);
+            Assert.Contains("provider=\\\"rancher-desktop\\\"", devDashboard);
+            Assert.Contains("app=\\\"site\\\"", devDashboard);
+            Assert.Contains("instance=\\\"http://host.docker.internal:18081/health\\\"", devDashboard);
+            Assert.Contains("app=\\\"api\\\"", devDashboard);
+            Assert.Contains("instance=\\\"http://host.docker.internal:18082/health\\\"", devDashboard);
+            Assert.DoesNotContain("app=\\\"web\\\"", devDashboard);
+            Assert.DoesNotContain("Azure", devDashboard);
+        }
+
+        [Fact]
+        public void ConfigureInfraGeneratesK8GrafanaHealthDashboards()
+        {
+            string root = FindRepositoryRoot();
+            string script = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "scripts", "configure_infra_tools.ps1"));
+
+            Assert.Contains("Write-GrafanaK8HealthDashboards", script);
+            Assert.Contains("New-GrafanaK8HealthDashboard", script);
+            Assert.Contains("DEV K8 Web/API Health", script);
+            Assert.Contains("QA K8 Web/API Health", script);
+            Assert.Contains("PROD K8 Web/API Health", script);
+            Assert.Contains("host.docker.internal:18081", script);
+            Assert.Contains("host.docker.internal:18086", script);
+            Assert.Contains("grafana-legacy-dashboard", script);
+        }
+
+        [Fact]
+        public void ConfigureInfraShowsEnvironmentUrls()
+        {
+            string root = FindRepositoryRoot();
+            string script = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "scripts", "configure_infra_tools.ps1"));
+            string gitignore = File.ReadAllText(Path.Combine(root, ".gitignore"));
+
+            Assert.Contains("\"ShowEnvironmentUrls\"", script);
+            Assert.Contains("Invoke-ShowEnvironmentUrls", script);
+            Assert.Contains("Write-EnvironmentUrlRegistry", script);
+            Assert.Contains(".codex/environment-urls.local.json", script);
+            Assert.Contains("Environment URLs", script);
+            Assert.Contains("agentic-environment-urls", script);
+            Assert.Contains("LocalPort = 18081", script);
+            Assert.Contains("LocalPort = 18086", script);
+            Assert.Contains("http://127.0.0.1:$($mapping.LocalPort)", script);
+            Assert.Contains("http://host.docker.internal:$($mapping.LocalPort)", script);
+            Assert.Contains("sdd.localhost", script);
+            Assert.Contains(".codex/environment-urls.local.json", gitignore);
         }
 
         [Fact]

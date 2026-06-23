@@ -1,5 +1,5 @@
 param(
-  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetGiteaBranchProtection", "SetPlaneEnv", "SetMonitoringEnv", "SetGiteaRunner", "SetSeqAzureEventHubLogs", "SplitInfraEnv", "AuditQualityGates", "AuditRecommendedTools", "DiscoverProjectGuidance", "AcquireProjectGuidance", "SetRecommendedTools", "MapProjectGuidanceStep", "BuildGiteaActionsImages", "ValidateGiteaActionsRunner", "InitProjectProfile", "InitQualityGateTemplates", "SetQualityConfig", "SyncWorktreeLocalConfig", "EnsureDeliveryContext", "EnsureRancherKubernetes", "EnsureRancherPortForwards", "EnsureHeadlamp")]
+  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetGiteaBranchProtection", "SetPlaneEnv", "SetMonitoringEnv", "SetGiteaRunner", "SetSeqAzureEventHubLogs", "SplitInfraEnv", "AuditQualityGates", "AuditRecommendedTools", "DiscoverProjectGuidance", "AcquireProjectGuidance", "SetRecommendedTools", "MapProjectGuidanceStep", "BuildGiteaActionsImages", "ValidateGiteaActionsRunner", "InitProjectProfile", "InitQualityGateTemplates", "SetQualityConfig", "SyncWorktreeLocalConfig", "EnsureDeliveryContext", "EnsureRancherKubernetes", "EnsureRancherPortForwards", "EnsureHeadlamp", "ShowEnvironmentUrls")]
   [string]$Mode = "Audit",
 
   [string]$Root = (Resolve-Path ".").Path,
@@ -122,8 +122,19 @@ function Invoke-NativeText {
 
   $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
   $startInfo.FileName = $FileName
-  foreach ($argument in $Arguments) {
-    [void]$startInfo.ArgumentList.Add($argument)
+  if ($null -ne $startInfo.ArgumentList) {
+    foreach ($argument in $Arguments) {
+      [void]$startInfo.ArgumentList.Add($argument)
+    }
+  } else {
+    $escapedArguments = foreach ($argument in $Arguments) {
+      if ($argument -match '[\s"]') {
+        '"' + ($argument -replace '"', '\"') + '"'
+      } else {
+        $argument
+      }
+    }
+    $startInfo.Arguments = $escapedArguments -join " "
   }
   $startInfo.RedirectStandardOutput = $true
   $startInfo.RedirectStandardError = $true
@@ -766,6 +777,334 @@ function Copy-LocalFile {
   Add-Item $Result "actions" $TargetRelative "" "Create local file from $SourceRelative."
   if (-not $DryRun) {
     Copy-Item -Path $source -Destination $target
+  }
+}
+
+function New-GrafanaHealthStatPanel {
+  param(
+    [int]$Id,
+    [string]$Title,
+    [string]$Expression,
+    [int]$X
+  )
+
+  return [ordered]@{
+    datasource = [ordered]@{ type = "prometheus"; uid = "prometheus" }
+    fieldConfig = [ordered]@{
+      defaults = [ordered]@{
+        color = [ordered]@{ mode = "thresholds" }
+        mappings = @(
+          [ordered]@{
+            type = "value"
+            options = [ordered]@{
+              "0" = [ordered]@{ color = "red"; text = "DOWN" }
+              "1" = [ordered]@{ color = "green"; text = "UP" }
+            }
+          }
+        )
+        thresholds = [ordered]@{
+          mode = "absolute"
+          steps = @(
+            [ordered]@{ color = "red"; value = $null },
+            [ordered]@{ color = "green"; value = 1 }
+          )
+        }
+      }
+      overrides = @()
+    }
+    gridPos = [ordered]@{ h = 8; w = 12; x = $X; y = 0 }
+    id = $Id
+    options = [ordered]@{
+      colorMode = "background"
+      graphMode = "none"
+      justifyMode = "center"
+      orientation = "auto"
+      reduceOptions = [ordered]@{ calcs = @("lastNotNull"); fields = ""; values = $false }
+      textMode = "value_and_name"
+      wideLayout = $true
+    }
+    targets = @(
+      [ordered]@{
+        editorMode = "code"
+        expr = $Expression
+        legendFormat = $Title
+        range = $true
+        refId = "A"
+      }
+    )
+    title = $Title
+    type = "stat"
+  }
+}
+
+function New-GrafanaDurationPanel {
+  param(
+    [string]$Title,
+    [string]$Expression
+  )
+
+  return [ordered]@{
+    datasource = [ordered]@{ type = "prometheus"; uid = "prometheus" }
+    fieldConfig = [ordered]@{
+      defaults = [ordered]@{ unit = "s" }
+      overrides = @()
+    }
+    gridPos = [ordered]@{ h = 12; w = 24; x = 0; y = 8 }
+    id = 3
+    options = [ordered]@{
+      legend = [ordered]@{ displayMode = "list"; placement = "bottom" }
+      tooltip = [ordered]@{ mode = "multi" }
+    }
+    targets = @(
+      [ordered]@{
+        editorMode = "code"
+        expr = $Expression
+        legendFormat = "{{app}}"
+        range = $true
+        refId = "A"
+      }
+    )
+    title = $Title
+    type = "timeseries"
+  }
+}
+
+function New-GrafanaK8HealthDashboard {
+  param(
+    [string]$Environment,
+    [string]$EnvironmentLabel,
+    [string]$Uid,
+    [int]$SitePort,
+    [int]$ApiPort
+  )
+
+  $siteInstance = "http://host.docker.internal:$SitePort/health"
+  $apiInstance = "http://host.docker.internal:$ApiPort/health"
+  $durationPattern = "http://host\\.docker\\.internal:$($SitePort.ToString().Substring(0, 4))[$($SitePort.ToString().Substring(4, 1))$($ApiPort.ToString().Substring(4, 1))]/health"
+
+  return [ordered]@{
+    annotations = [ordered]@{
+      list = @(
+        [ordered]@{
+          builtIn = 1
+          datasource = [ordered]@{ type = "grafana"; uid = "-- Grafana --" }
+          enable = $true
+          hide = $true
+          iconColor = "rgba(0, 211, 255, 1)"
+          name = "Annotations & Alerts"
+          type = "dashboard"
+        }
+      )
+    }
+    editable = $true
+    fiscalYearStartMonth = 0
+    graphTooltip = 0
+    id = $null
+    links = @()
+    liveNow = $false
+    panels = @(
+      (New-GrafanaHealthStatPanel 1 "$EnvironmentLabel K8 Web /health" "probe_success{environment=`"$Environment`", provider=`"rancher-desktop`", app=`"site`", instance=`"$siteInstance`"}" 0),
+      (New-GrafanaHealthStatPanel 2 "$EnvironmentLabel K8 API /health" "probe_success{environment=`"$Environment`", provider=`"rancher-desktop`", app=`"api`", instance=`"$apiInstance`"}" 12),
+      (New-GrafanaDurationPanel "$EnvironmentLabel K8 Web/API Probe Duration" "probe_duration_seconds{environment=`"$Environment`", provider=`"rancher-desktop`", instance=~`"$durationPattern`"}")
+    )
+    refresh = "30s"
+    schemaVersion = 41
+    tags = @("agentic-e2e", "prometheus", "health", $Environment, "k8", "rancher-desktop")
+    templating = [ordered]@{ list = @() }
+    time = [ordered]@{ from = "now-1h"; to = "now" }
+    timepicker = [ordered]@{}
+    timezone = "browser"
+    title = "$EnvironmentLabel K8 Web/API Health"
+    uid = $Uid
+    version = 3
+    weekStart = ""
+  }
+}
+
+function Write-GrafanaK8HealthDashboards {
+  param($Result)
+
+  $dashboardRootRelative = "infra/monitoring/grafana/dashboards.local"
+  $dashboardRoot = Join-RootPath $dashboardRootRelative
+  $dashboards = @(
+    [ordered]@{ File = "dev-health-dashboard.json"; Environment = "dev"; Label = "DEV"; Uid = "agentic-dev-health"; SitePort = 18081; ApiPort = 18082 },
+    [ordered]@{ File = "qa-health-dashboard.json"; Environment = "qa"; Label = "QA"; Uid = "agentic-qa-health"; SitePort = 18083; ApiPort = 18084 },
+    [ordered]@{ File = "prod-health-dashboard.json"; Environment = "prod"; Label = "PROD"; Uid = "agentic-prod-health"; SitePort = 18085; ApiPort = 18086 }
+  )
+
+  foreach ($dashboard in $dashboards) {
+    $relativePath = "$dashboardRootRelative/$($dashboard.File)"
+    $target = Join-Path $dashboardRoot $dashboard.File
+    $content = New-GrafanaK8HealthDashboard $dashboard.Environment $dashboard.Label $dashboard.Uid $dashboard.SitePort $dashboard.ApiPort
+    $json = ($content | ConvertTo-Json -Depth 30)
+
+    if (Test-Path $target) {
+      $current = Get-Content -Path $target -Raw
+      if ($current.TrimEnd("`r", "`n") -eq $json) {
+        Add-Item $Result "findings" $relativePath "" "K8 Web/API Grafana dashboard is already current."
+        continue
+      }
+      Add-Item $Result "actions" $relativePath "" "Update local K8 Web/API Grafana dashboard."
+    } else {
+      Add-Item $Result "actions" $relativePath "" "Create local K8 Web/API Grafana dashboard."
+    }
+
+    if (Test-ConfigWritesEnabled) {
+      New-Item -ItemType Directory -Path $dashboardRoot -Force | Out-Null
+      Set-Content -Path $target -Value $json -Encoding UTF8
+    }
+  }
+}
+
+function Get-EnvironmentUrlEntries {
+  $entries = @()
+  foreach ($mapping in Get-RancherPortForwardMappings) {
+    $hostName = "$($mapping.Service).$($mapping.Environment).sdd.localhost"
+    $servicePort = $null
+    try {
+      $servicePort = Get-KubectlServicePort $mapping.Namespace $mapping.Service
+    } catch {
+      $servicePort = $null
+    }
+
+    $status = if ($null -ne $servicePort) { "deployed" } else { "not-deployed" }
+    $portForwarded = Test-LocalPortListening $mapping.LocalPort
+
+    $entries += [ordered]@{
+      environment = [string]$mapping.Environment
+      app = if ([string]$mapping.Service -eq "site") { "web" } else { [string]$mapping.Service }
+      kubernetesService = [string]$mapping.Service
+      namespace = [string]$mapping.Namespace
+      status = $status
+      portForwarded = $portForwarded
+      browserUrl = "http://127.0.0.1:$($mapping.LocalPort)"
+      browserHealthUrl = "http://127.0.0.1:$($mapping.LocalPort)/health"
+      containerUrl = "http://host.docker.internal:$($mapping.LocalPort)"
+      containerHealthUrl = "http://host.docker.internal:$($mapping.LocalPort)/health"
+      ingressUrl = "http://$hostName"
+      ingressHealthUrl = "http://$hostName/health"
+    }
+  }
+
+  return $entries
+}
+
+function Write-EnvironmentUrlRegistry {
+  param($Result)
+
+  $relativePath = ".codex/environment-urls.local.json"
+  $target = Join-RootPath $relativePath
+  $registry = [ordered]@{
+    schemaVersion = 1
+    provider = "rancher-desktop"
+    generatedBy = "configure_infra_tools.ps1"
+    note = "Local operator URL registry. Browser URLs use 127.0.0.1 port-forwards; container URLs are for Docker/Gitea Action jobs."
+    environments = @(Get-EnvironmentUrlEntries)
+  }
+  $json = $registry | ConvertTo-Json -Depth 20
+
+  if (Test-Path $target) {
+    $current = Get-Content -Path $target -Raw
+    if ($current.TrimEnd("`r", "`n") -eq $json) {
+      Add-Item $Result "findings" $relativePath "" "Environment URL registry is already current."
+      return
+    }
+    Add-Item $Result "actions" $relativePath "" "Update local environment URL registry."
+  } else {
+    Add-Item $Result "actions" $relativePath "" "Create local environment URL registry."
+  }
+
+  if (Test-ConfigWritesEnabled) {
+    $parent = Split-Path -Path $target -Parent
+    New-Item -ItemType Directory -Path $parent -Force | Out-Null
+    Set-Content -Path $target -Value $json -Encoding UTF8
+  }
+}
+
+function New-GrafanaEnvironmentUrlsDashboard {
+  $rows = @()
+  foreach ($entry in Get-EnvironmentUrlEntries) {
+    $rows += "| $($entry.environment.ToUpperInvariant()) | $($entry.app.ToUpperInvariant()) | [$($entry.browserUrl)]($($entry.browserUrl)) | [$($entry.containerUrl)]($($entry.containerUrl)) | [$($entry.ingressUrl)]($($entry.ingressUrl)) | $($entry.status) |"
+  }
+
+  $markdown = @(
+    "| Environment | App | Browser URL | Container URL | Ingress URL | Status |",
+    "|---|---|---|---|---|---|"
+  ) + $rows
+
+  return [ordered]@{
+    annotations = [ordered]@{
+      list = @(
+        [ordered]@{
+          builtIn = 1
+          datasource = [ordered]@{ type = "grafana"; uid = "-- Grafana --" }
+          enable = $true
+          hide = $true
+          iconColor = "rgba(0, 211, 255, 1)"
+          name = "Annotations & Alerts"
+          type = "dashboard"
+        }
+      )
+    }
+    editable = $true
+    fiscalYearStartMonth = 0
+    graphTooltip = 0
+    id = $null
+    links = @()
+    liveNow = $false
+    panels = @(
+      [ordered]@{
+        datasource = [ordered]@{ type = "grafana"; uid = "-- Grafana --" }
+        fieldConfig = [ordered]@{ defaults = [ordered]@{}; overrides = @() }
+        gridPos = [ordered]@{ h = 16; w = 24; x = 0; y = 0 }
+        id = 1
+        options = [ordered]@{
+          code = [ordered]@{ language = "plaintext"; showLineNumbers = $false; showMiniMap = $false }
+          content = ($markdown -join "`n")
+          mode = "markdown"
+        }
+        pluginVersion = "13.0.1"
+        title = "Rancher Desktop Environment URLs"
+        type = "text"
+      }
+    )
+    refresh = "30s"
+    schemaVersion = 41
+    tags = @("agentic-e2e", "urls", "k8", "rancher-desktop")
+    templating = [ordered]@{ list = @() }
+    time = [ordered]@{ from = "now-1h"; to = "now" }
+    timepicker = [ordered]@{}
+    timezone = "browser"
+    title = "Environment URLs"
+    uid = "agentic-environment-urls"
+    version = 1
+    weekStart = ""
+  }
+}
+
+function Write-GrafanaEnvironmentUrlsDashboard {
+  param($Result)
+
+  $relativePath = "infra/monitoring/grafana/dashboards.local/environment-urls-dashboard.json"
+  $target = Join-RootPath $relativePath
+  $dashboard = New-GrafanaEnvironmentUrlsDashboard
+  $json = $dashboard | ConvertTo-Json -Depth 30
+
+  if (Test-Path $target) {
+    $current = Get-Content -Path $target -Raw
+    if ($current.TrimEnd("`r", "`n") -eq $json) {
+      Add-Item $Result "findings" $relativePath "" "Environment URLs Grafana dashboard is already current."
+      return
+    }
+    Add-Item $Result "actions" $relativePath "" "Update Environment URLs Grafana dashboard."
+  } else {
+    Add-Item $Result "actions" $relativePath "" "Create Environment URLs Grafana dashboard."
+  }
+
+  if (Test-ConfigWritesEnabled) {
+    $parent = Split-Path -Path $target -Parent
+    New-Item -ItemType Directory -Path $parent -Force | Out-Null
+    Set-Content -Path $target -Value $json -Encoding UTF8
   }
 }
 
@@ -2414,7 +2753,7 @@ function Add-RancherLocalLabAuditFindings {
   $targetsPath = Join-RootPath "infra/monitoring/prometheus/targets.local.yml"
   if (Test-Path $targetsPath) {
     $targets = Get-Content -Path $targetsPath -Raw
-    foreach ($needle in @("http://site.dev.sdd.localhost/health", "http://api.dev.sdd.localhost/health", "http://site.qa.sdd.localhost/health", "http://api.qa.sdd.localhost/health", "http://site.prod.sdd.localhost/health", "http://api.prod.sdd.localhost/health", "provider: rancher-desktop")) {
+    foreach ($needle in @("http://host.docker.internal:18081/health", "http://host.docker.internal:18082/health", "http://host.docker.internal:18083/health", "http://host.docker.internal:18084/health", "http://host.docker.internal:18085/health", "http://host.docker.internal:18086/health", "provider: rancher-desktop")) {
       if ($targets -notmatch [regex]::Escape($needle)) {
         Add-Item $Result "findings" "infra/monitoring/prometheus/targets.local.yml" $needle "Prometheus targets must include Rancher Desktop local-lab site/API health endpoints with provider labels." "warning" "pre-start"
       }
@@ -2681,6 +3020,67 @@ function Invoke-Audit {
     if (-not (Test-Path (Join-RootPath $dashboardFile))) {
       Add-Item $result "findings" $dashboardFile "grafana-provisioning" "Missing Grafana provisioning artifact." "warning" "post-start"
     }
+  }
+
+  $dashboardExpectations = @(
+    [ordered]@{ File = "infra/monitoring/grafana/dashboards.local/dev-health-dashboard.json"; Title = "DEV K8 Web/API Health"; Environment = "dev"; SiteInstance = "http://host.docker.internal:18081/health"; ApiInstance = "http://host.docker.internal:18082/health" },
+    [ordered]@{ File = "infra/monitoring/grafana/dashboards.local/qa-health-dashboard.json"; Title = "QA K8 Web/API Health"; Environment = "qa"; SiteInstance = "http://host.docker.internal:18083/health"; ApiInstance = "http://host.docker.internal:18084/health" },
+    [ordered]@{ File = "infra/monitoring/grafana/dashboards.local/prod-health-dashboard.json"; Title = "PROD K8 Web/API Health"; Environment = "prod"; SiteInstance = "http://host.docker.internal:18085/health"; ApiInstance = "http://host.docker.internal:18086/health" }
+  )
+  foreach ($dashboard in $dashboardExpectations) {
+    $path = Join-RootPath $dashboard.File
+    if (-not (Test-Path $path)) {
+      Add-Item $result "findings" $dashboard.File "grafana-k8-dashboard" "Local Grafana K8 Web/API health dashboard is missing. Run InitLocalFiles to generate it." "warning" "pre-start"
+      continue
+    }
+    $content = Get-Content -Path $path -Raw
+    try {
+      $parsedDashboard = $content | ConvertFrom-Json
+      $expressions = @($parsedDashboard.panels | ForEach-Object { $_.targets } | ForEach-Object { $_.expr })
+      $siteExpression = $expressions | Where-Object {
+        $_ -match 'probe_success' -and
+        $_ -match "environment=`"$($dashboard.Environment)`"" -and
+        $_ -match 'provider="rancher-desktop"' -and
+        $_ -match 'app="site"' -and
+        $_ -match "instance=`"$([regex]::Escape($dashboard.SiteInstance))`""
+      }
+      $apiExpression = $expressions | Where-Object {
+        $_ -match 'probe_success' -and
+        $_ -match "environment=`"$($dashboard.Environment)`"" -and
+        $_ -match 'provider="rancher-desktop"' -and
+        $_ -match 'app="api"' -and
+        $_ -match "instance=`"$([regex]::Escape($dashboard.ApiInstance))`""
+      }
+      $durationExpression = $expressions | Where-Object {
+        $_ -match 'probe_duration_seconds' -and
+        $_ -match "environment=`"$($dashboard.Environment)`"" -and
+        $_ -match 'provider="rancher-desktop"' -and
+        $_ -match 'host\\\\.docker\\\\.internal'
+      }
+
+      if ($parsedDashboard.title -ne $dashboard.Title -or -not $siteExpression -or -not $apiExpression -or -not $durationExpression) {
+        Add-Item $result "findings" $dashboard.File "grafana-k8-dashboard" "Local Grafana dashboard is stale or not scoped to Rancher Desktop K8 Web/API exact instances. Run InitLocalFiles to repair it." "warning" "pre-start"
+      } elseif ($content -match 'app=\\"web\\"|Azure|azure-monitor') {
+        Add-Item $result "findings" $dashboard.File "grafana-legacy-dashboard" "Local Grafana dashboard contains legacy Azure/web-series content. Run InitLocalFiles to repair it." "warning" "pre-start"
+      }
+    } catch {
+      Add-Item $result "findings" $dashboard.File "grafana-k8-dashboard" "Local Grafana dashboard JSON could not be parsed. Run InitLocalFiles to repair it." "warning" "pre-start"
+    }
+  }
+
+  $environmentUrlsDashboardPath = Join-RootPath "infra/monitoring/grafana/dashboards.local/environment-urls-dashboard.json"
+  if (-not (Test-Path $environmentUrlsDashboardPath)) {
+    Add-Item $result "findings" "infra/monitoring/grafana/dashboards.local/environment-urls-dashboard.json" "environment-urls-dashboard" "Environment URLs Grafana dashboard is missing. Run InitLocalFiles to generate it." "warning" "pre-start"
+  } else {
+    $environmentUrlsDashboard = Get-Content -Path $environmentUrlsDashboardPath -Raw
+    if ($environmentUrlsDashboard -notmatch "Environment URLs" -or $environmentUrlsDashboard -notmatch "127.0.0.1:18081" -or $environmentUrlsDashboard -notmatch "host.docker.internal:18086") {
+      Add-Item $result "findings" "infra/monitoring/grafana/dashboards.local/environment-urls-dashboard.json" "environment-urls-dashboard" "Environment URLs Grafana dashboard is stale. Run InitLocalFiles to repair it." "warning" "pre-start"
+    }
+  }
+
+  $environmentUrlsRegistryPath = Join-RootPath ".codex/environment-urls.local.json"
+  if (-not (Test-Path $environmentUrlsRegistryPath)) {
+    Add-Item $result "findings" ".codex/environment-urls.local.json" "environment-url-registry" "Local environment URL registry is missing. Run InitLocalFiles or ShowEnvironmentUrls to generate it." "warning" "pre-start"
   }
 
   $healthAlertsPath = Join-RootPath "infra/monitoring/grafana/provisioning/alerting/health-alerts.yml"
@@ -3724,6 +4124,7 @@ infra/plane/plane/
 .codex/client-tools.local.json
 .codex/quality.local.json
 .codex/azure-login.local.json
+.codex/environment-urls.local.json
 infra/monitoring/grafana/dashboards.local/
 
 # OS/editor noise
@@ -5020,6 +5421,17 @@ function Invoke-InitLocalFiles {
   Copy-LocalFile $result "infra/monitoring/variables.env.example" "infra/monitoring/variables.env"
   Copy-LocalFile $result "infra/azure/variables.env.example" "infra/azure/variables.env"
   Copy-LocalFile $result "infra/gitea/runner.env.example" "infra/gitea/runner.env"
+  Write-EnvironmentUrlRegistry $result
+  Write-GrafanaK8HealthDashboards $result
+  Write-GrafanaEnvironmentUrlsDashboard $result
+  return $result
+}
+
+function Invoke-ShowEnvironmentUrls {
+  $result = New-Result
+  Write-EnvironmentUrlRegistry $result
+  Write-GrafanaEnvironmentUrlsDashboard $result
+  $result["environmentUrls"] = @(Get-EnvironmentUrlEntries)
   return $result
 }
 
@@ -5679,6 +6091,7 @@ switch ($Mode) {
   "EnsureRancherKubernetes" { $result = Invoke-EnsureRancherKubernetes }
   "EnsureRancherPortForwards" { $result = Invoke-EnsureRancherPortForwards }
   "EnsureHeadlamp" { $result = Invoke-EnsureHeadlamp }
+  "ShowEnvironmentUrls" { $result = Invoke-ShowEnvironmentUrls }
   "SplitInfraEnv" { $result = Invoke-SplitInfraEnv }
   "SetQualityConfig" { $result = Invoke-SetQualityConfig }
 }
