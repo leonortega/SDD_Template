@@ -184,8 +184,8 @@ namespace SDDTemplate.Site.Tests
             Assert.Contains("timed out after $TimeoutSeconds seconds", script);
             Assert.Contains("nodes.ready", script);
             Assert.Contains("Rancher Desktop Kubernetes is disabled", script);
-            Assert.Contains("run `EnsureRancherKubernetes` before `EnsureRancherPortForwards` and `Audit`", configureSkill);
-            Assert.Contains("`EnsureRancherKubernetes` and `EnsureRancherPortForwards` when Rancher Desktop is selected", aliasSkill);
+            Assert.Contains("run `EnsureRancherKubernetes` before `EnsureHeadlamp`, `EnsureRancherPortForwards`, and `Audit`", configureSkill);
+            Assert.Contains("`EnsureRancherKubernetes`, `EnsureHeadlamp`, and `EnsureRancherPortForwards` when Rancher Desktop is selected", aliasSkill);
             Assert.Contains("Plain `Audit` only reports disabled or unhealthy Kubernetes", adapter);
             Assert.Contains("explicit `config infra` runs `EnsureRancherKubernetes`", rancherReadme);
         }
@@ -214,11 +214,38 @@ namespace SDDTemplate.Site.Tests
                 Assert.Contains($"127.0.0.1:{port}", adapter);
             }
 
-            Assert.Contains("EnsureRancherKubernetes` before `EnsureRancherPortForwards` and `Audit`", configureSkill);
+            Assert.Contains("EnsureRancherKubernetes` before `EnsureHeadlamp`, `EnsureRancherPortForwards`, and `Audit`", configureSkill);
             Assert.Contains("starts localhost browser mappings", configureSkill);
             Assert.Contains("`EnsureRancherPortForwards` when Rancher Desktop is selected", aliasSkill);
             Assert.Contains("Plain `Audit` only reports missing mappings", adapter);
             Assert.Contains("Windows cannot resolve the `*.sdd.localhost` ingress hosts", rancherReadme);
+        }
+
+        [Fact]
+        public void ConfigureInfraCanEnsureHeadlamp()
+        {
+            string root = FindRepositoryRoot();
+            string script = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "scripts", "configure_infra_tools.ps1"));
+            string configureSkill = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "SKILL.md"));
+            string aliasSkill = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-infra-tools", "SKILL.md"));
+            string adapter = File.ReadAllText(Path.Combine(root, ".codex", "providers", "deploy.rancher-desktop.md"));
+            string rancherReadme = File.ReadAllText(Path.Combine(root, "infra", "rancher", "README.md"));
+
+            Assert.Contains("\"EnsureHeadlamp\"", script);
+            Assert.Contains("function Invoke-EnsureHeadlamp", script);
+            Assert.Contains("helm\" @(\"repo\", \"add\", \"headlamp\", \"https://kubernetes-sigs.github.io/headlamp/\"", script);
+            Assert.Contains("\"upgrade\", \"--install\", \"headlamp\", \"headlamp/headlamp\"", script);
+            Assert.Contains("\"rollout\", \"status\", \"deploy/headlamp\"", script);
+            Assert.Contains("\"svc/headlamp\"", script);
+            Assert.Contains("\"4466:80\"", script);
+            Assert.Contains("kubectl create token headlamp --namespace headlamp | Set-Clipboard", script);
+            Assert.DoesNotContain("ConvertTo-SecureString", script);
+
+            Assert.Contains("EnsureHeadlamp", configureSkill);
+            Assert.Contains("Tokens must not be printed", configureSkill);
+            Assert.Contains("install Headlamp through `EnsureHeadlamp`", aliasSkill);
+            Assert.Contains("http://127.0.0.1:4466", adapter);
+            Assert.Contains("kubectl create token headlamp --namespace headlamp | Set-Clipboard", rancherReadme);
         }
 
         [Fact]

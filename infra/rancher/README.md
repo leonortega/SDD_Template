@@ -21,6 +21,18 @@ Nexus raw hosted -> release manifests, pointers, QA evidence
    The current context must be `rancher-desktop`.
    At least one node must be `Ready`. The configure `Audit` reports disabled or unhealthy Kubernetes but does not change Rancher Desktop settings; explicit `config infra` runs `EnsureRancherKubernetes` before the read-only audit.
 
+   `config infra` also runs `EnsureHeadlamp` to install the Headlamp Kubernetes UI into the `headlamp` namespace and expose it at:
+
+   ```text
+   http://127.0.0.1:4466
+   ```
+
+   Copy a fresh login token to the Windows clipboard, then paste it into Headlamp:
+
+   ```powershell
+   kubectl create token headlamp --namespace headlamp | Set-Clipboard
+   ```
+
    `config infra` also runs `EnsureRancherPortForwards` for deployed services. This starts stable localhost browser mappings when Windows cannot resolve the `*.sdd.localhost` ingress hosts:
 
    ```text
