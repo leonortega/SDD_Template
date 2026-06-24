@@ -76,7 +76,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                 commitSha = "abcdef1",
                 checksum = "abc123",
                 artifactUrl = "http://nexus/repository/raw-hosted/app/abcdef1/site.zip",
-                planeTicketKey = "E2EPROJECT-1",
+                ticketKey = "E2EPROJECT-1",
                 includedTickets = new[] { "E2EPROJECT-1", "E2EPROJECT-2" },
                 versionStatus = "qa-approved",
             }));
@@ -89,7 +89,7 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             ReleaseManifestValidation invalid = DeliveryWorkflowHelpers.ValidateReleaseManifest(invalidPath);
             Assert.False(invalid.Valid);
-            Assert.Contains(invalid.Errors, error => error.Contains("planeTicketKey", StringComparison.Ordinal));
+            Assert.Contains(invalid.Errors, error => error.Contains("ticketKey", StringComparison.Ordinal));
             Assert.Contains(invalid.Errors, error => error.Contains("commitSha", StringComparison.Ordinal));
 
             string invalidBatchPath = Path.Combine(root, "invalid-batch-release.json");
@@ -99,7 +99,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                 commitSha = "abcdef1",
                 checksum = "abc123",
                 artifactUrl = "http://nexus/repository/raw-hosted/app/abcdef1/site.zip",
-                planeTicketKey = "E2EPROJECT-1",
+                ticketKey = "E2EPROJECT-1",
                 includedTickets = new[] { "E2EPROJECT-1", "" },
                 versionStatus = "qa-approved",
             }));
@@ -115,7 +115,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                 commitSha = "abcdef1",
                 checksum = "abc123",
                 artifactUrl = "http://nexus/repository/raw-hosted/app/abcdef1/site.zip",
-                planeTicketKey = "E2EPROJECT-1",
+                ticketKey = "E2EPROJECT-1",
                 includedTickets = Array.Empty<string>(),
                 versionStatus = "qa-approved",
             }));
@@ -147,7 +147,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Equal("abcdef1234567890", rootElement.GetProperty("artifactCommitSha").GetString());
             Assert.Equal("app/abcdef1234567890/", rootElement.GetProperty("canonicalPath").GetString());
             Assert.Equal("app/abcdef1234567890/release.json", rootElement.GetProperty("releaseManifestPath").GetString());
-            Assert.Equal("E2EPROJECT-1", rootElement.GetProperty("planeTicketKey").GetString());
+            Assert.Equal("E2EPROJECT-1", rootElement.GetProperty("ticketKey").GetString());
             Assert.Equal("2026-06-12T10:15:30.0000000+00:00", rootElement.GetProperty("createdAtUtc").GetString());
 
             string[] includedTickets = [.. rootElement.GetProperty("includedTickets").EnumerateArray().Select(item => item.GetString() ?? string.Empty)];
@@ -404,7 +404,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                 Path.Combine(root, ".codex", "client-tools.local.json"),
                 JsonSerializer.Serialize(new
                 {
-                    plane = new { baseUrl = "http://localhost:8080", apiToken = "replace-with-plane-api-token" },
+                    openProject = new { baseUrl = "http://localhost:8080", apiToken = "replace-with-openproject-api-token" },
                     gitea = new { baseUrl = "http://localhost:3000", apiToken = "replace-with-gitea-api-token" },
                     pr = new { reviewers = "all", minimumApprovals = new { dev = -1, main = "bad" } },
                 }));
@@ -437,7 +437,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                 Path.Combine(root, ".codex", "client-tools.local.json"),
                 JsonSerializer.Serialize(new
                 {
-                    plane = new { baseUrl = "http://localhost:8080", apiToken = "replace-with-plane-api-token" },
+                    openProject = new { baseUrl = "http://localhost:8080", apiToken = "replace-with-openproject-api-token" },
                     gitea = new { baseUrl = "http://localhost:3000", apiToken = "replace-with-gitea-api-token" },
                     pr = new { reviewers = "all", minimumApprovals = 1 },
                 }));
@@ -686,7 +686,7 @@ namespace SDDTemplate.DeliveryTools.Tests
         {
             string root = CreateTempDirectory();
             _ = Directory.CreateDirectory(Path.Combine(root, ".codex"));
-            _ = Directory.CreateDirectory(Path.Combine(root, "infra", "plane"));
+            _ = Directory.CreateDirectory(Path.Combine(root, "infra", "openproject"));
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "gitea"));
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "monitoring", "grafana", "dashboards"));
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "dashboards"));
@@ -702,7 +702,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             File.Copy(
                 Path.Combine(FindRepositoryRoot().FullName, ".codex", "quality.example.json"),
                 Path.Combine(root, ".codex", "quality.example.json"));
-            File.WriteAllText(Path.Combine(root, "infra", "plane", "variables.env"), string.Empty);
+            File.WriteAllText(Path.Combine(root, "infra", "openproject", "variables.env"), string.Empty);
             File.WriteAllText(Path.Combine(root, "infra", "gitea", "runner.env"), "GITEA_RUNNER_REGISTRATION_TOKEN=replace-with-token");
             File.WriteAllText(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "dashboards", "dashboards.yml"), "apiVersion: 1");
             File.WriteAllText(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "datasources", "prometheus.yml"), "uid: prometheus");
@@ -727,7 +727,7 @@ namespace SDDTemplate.DeliveryTools.Tests
         {
             string root = CreateTempDirectory();
             _ = Directory.CreateDirectory(Path.Combine(root, ".codex"));
-            _ = Directory.CreateDirectory(Path.Combine(root, "infra", "plane"));
+            _ = Directory.CreateDirectory(Path.Combine(root, "infra", "openproject"));
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "gitea"));
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "dashboards"));
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "datasources"));
@@ -742,7 +742,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             File.Copy(
                 Path.Combine(FindRepositoryRoot().FullName, ".codex", "quality.example.json"),
                 Path.Combine(root, ".codex", "quality.example.json"));
-            File.WriteAllText(Path.Combine(root, "infra", "plane", "variables.env"), string.Empty);
+            File.WriteAllText(Path.Combine(root, "infra", "openproject", "variables.env"), string.Empty);
             File.WriteAllText(Path.Combine(root, "infra", "gitea", "runner.env"), "GITEA_RUNNER_REGISTRATION_TOKEN=replace-with-token");
             File.WriteAllText(Path.Combine(root, "infra", "monitoring", "variables.env"), """
                 GRAFANA_HEALTH_ALERT_FOR=2m
@@ -963,7 +963,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                         dismissed = new[] { "playwright-frontend-testing-skill" },
                     },
                 }));
-            _ = Directory.CreateDirectory(Path.Combine(root, "infra", "plane"));
+            _ = Directory.CreateDirectory(Path.Combine(root, "infra", "openproject"));
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "gitea"));
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "nexus"));
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "azure"));
@@ -1297,7 +1297,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Equal("openai-official", aspNetSkill.GetProperty("sourceKind").GetString());
 
             Assert.Contains(rootElement.GetProperty("notRecommended").EnumerateArray(),
-                item => item.GetProperty("id").GetString() == "plane-mcp-for-ticket-delivery");
+                item => item.GetProperty("id").GetString() == "openproject-mcp-for-ticket-delivery");
 
             JsonElement cleanCode = rootElement.GetProperty("recommendations").EnumerateArray().Single(
                 item => item.GetProperty("id").GetString() == "clean-code-practice-guidance");
@@ -1632,7 +1632,7 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
-        public void RenderPlaneCommentRendersWorkflowTimingTable()
+        public void RenderTicketCommentRendersWorkflowTimingTable()
         {
             string script = Path.Combine(FindRepositoryRoot().FullName, ".codex", "skills", "_shared", "scripts", "delivery_tools.ps1");
             string inputJson = JsonSerializer.Serialize(new
@@ -1664,7 +1664,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             string output = RunPowerShell(
                 script,
                 "-Mode",
-                "RenderPlaneComment",
+                "RenderTicketComment",
                 "-Type",
                 "WorkflowTiming",
                 "-InputJson",
@@ -1738,7 +1738,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             string comment = RunPowerShell(
                 script,
                 "-Mode",
-                "RenderPlaneComment",
+                "RenderTicketComment",
                 "-Type",
                 "WorkflowTiming",
                 "-InputJson",
@@ -1751,7 +1751,7 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
-        public void RenderPlaneCommentRendersProdBatchIncludedTickets()
+        public void RenderTicketCommentRendersProdBatchIncludedTickets()
         {
             string script = Path.Combine(FindRepositoryRoot().FullName, ".codex", "skills", "_shared", "scripts", "delivery_tools.ps1");
             string inputJson = JsonSerializer.Serialize(new
@@ -1777,7 +1777,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             string output = RunPowerShell(
                 script,
                 "-Mode",
-                "RenderPlaneComment",
+                "RenderTicketComment",
                 "-Type",
                 "ProdDeployment",
                 "-InputJson",
@@ -1904,7 +1904,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             string comment = RunPowerShell(
                 script,
                 "-Mode",
-                "RenderPlaneComment",
+                "RenderTicketComment",
                 "-Type",
                 "WorkflowTiming",
                 "-InputJson",
@@ -2092,7 +2092,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                 </Project>
                 """);
 
-            _ = Directory.CreateDirectory(Path.Combine(root, "infra", "plane"));
+            _ = Directory.CreateDirectory(Path.Combine(root, "infra", "openproject"));
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "gitea"));
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "nexus"));
             _ = Directory.CreateDirectory(Path.Combine(root, "infra", "azure"));
@@ -2119,7 +2119,7 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             if (!includeContext) { return; }
 
-            string context = ".NET 10 ASP.NET Core Blazor xUnit coverage Plane Gitea Gitea Actions Nexus Azure App Service Azure Monitor Log Analytics Grafana Seq Browser Playwright Bicep OpenSpec clean code architecture web UI REST API security OWASP";
+            string context = ".NET 10 ASP.NET Core Blazor xUnit coverage OpenProject Gitea Gitea Actions Nexus Azure App Service Azure Monitor Log Analytics Grafana Seq Browser Playwright Bicep OpenSpec clean code architecture web UI REST API security OWASP";
             _ = Directory.CreateDirectory(Path.Combine(root, "docs"));
             File.WriteAllText(Path.Combine(root, "docs", "architecture.md"), context);
             File.WriteAllText(Path.Combine(root, "docs", "development.md"), context);

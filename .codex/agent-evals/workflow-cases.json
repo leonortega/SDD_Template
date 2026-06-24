@@ -4,24 +4,24 @@
     {
       "id": "ticket-start-lock-created",
       "stage": "dev-flow-start-ticket",
-      "goal": "Start one Plane Todo ticket and prepare implementation context.",
+      "goal": "Start one OpenProject Todo ticket and prepare implementation context.",
       "expectedRoute": "dev-flow-start-ticket",
       "requiredEvidence": [
-        "Plane ticket key and current state",
+        "OpenProject work package key and current state",
         "base branch",
         "branch name",
         "OpenSpec change id or explicit no-OpenSpec rationale",
         ".codex/delivery-context.local.json shape"
       ],
       "toolExpectations": [
-        "Read existing generated Plane markers before adding new generated comments",
+        "Read existing generated OpenProject markers before adding new generated comments",
         "Validate ticket key against .codex/project-profile.json",
         "Create or reuse exactly one branch for the ticket"
       ],
       "stopConditions": [
         "Several Todo tickets are plausible and no ticket was requested",
         "existing ticket lock points at a different ticket",
-        "branch naming conflicts with durable Plane or Git checkpoints"
+        "branch naming conflicts with durable OpenProject or Git checkpoints"
       ],
       "handoffFields": [
         "ticketKey",
@@ -38,7 +38,7 @@
       "expectedRoute": "dev-flow-implement-ticket",
       "requiredEvidence": [
         "ticket lock",
-        "Plane acceptance criteria",
+        "OpenProject acceptance criteria",
         "active OpenSpec tasks",
         "OpenSpec PR Review Feedback tasks",
         "relevant code and tests",
@@ -48,11 +48,11 @@
         "Use repository commands before inventing new quality gates",
         "Run build, tests, formatting, or explain why a gate could not run",
         "Run Context Findings Review before handoff",
-        "Create Plane PR feedback detected and fixes markers for each unresolved feedback batch"
+        "Create OpenProject PR feedback detected and fixes markers for each unresolved feedback batch"
       ],
       "stopConditions": [
         "resolved ticket differs from the lock",
-        "OpenSpec tasks conflict with Plane acceptance criteria",
+        "OpenSpec tasks conflict with OpenProject acceptance criteria",
         "OpenSpec PR Review Feedback tasks remain incomplete",
         "required quality gate fails without an explicit blocker"
       ],
@@ -103,11 +103,11 @@
       "goal": "Reconnect automation after humans add PR comments after the AI review loop already completed.",
       "expectedRoute": "dev-flow-implement-ticket",
       "requiredEvidence": [
-        "Plane ticket is In Review",
+        "OpenProject work package is In Review",
         "open PR with current head SHA",
         "existing AI review marker and clean labels from an earlier batch",
         "new human top-level or inline PR comment ids",
-        "Plane PR feedback detection and fix batch markers",
+        "OpenProject PR feedback detection and fix batch markers",
         "OpenSpec PR Review Feedback tasks"
       ],
       "toolExpectations": [
@@ -115,8 +115,8 @@
         "Delegate feedback processing to dev-flow-pr-review-feedback-loop",
         "Derive a new feedbackBatchId from sorted late human comment source ids",
         "Create or update OpenSpec PR Review Feedback tasks before fixing",
-        "Keep Plane In Review while applying late human feedback fixes",
-        "Post a human-readable Plane fix comment with reviewer readiness and how IA resolved each addressed comment",
+        "Keep OpenProject In Review while applying late human feedback fixes",
+        "Post a human-readable OpenProject fix comment with reviewer readiness and how IA resolved each addressed comment",
         "Rerun AI review on the pushed fix before handoff"
       ],
       "stopConditions": [
@@ -129,7 +129,7 @@
         "prNumberOrUrl",
         "headSha",
         "feedbackBatchId",
-        "humanReadablePlaneFixComment",
+        "humanReadableOpenProjectFixComment",
         "openSpecFeedbackTasks",
         "validation"
       ]
@@ -149,11 +149,11 @@
       "toolExpectations": [
         "Validate release manifest before mutation",
         "Verify each topology artifact checksum",
-        "Update Plane only after artifact and deployment checks pass"
+        "Update OpenProject only after artifact and deployment checks pass"
       ],
       "stopConditions": [
         "PR has needs-tests or needs-changes",
-        "release.json planeTicketKey differs from the ticket lock and no includedTickets batch membership proves the release",
+        "release.json ticketKey differs from the ticket lock and no includedTickets batch membership proves the release",
         "deployment lane is owned by another ticket"
       ],
       "handoffFields": [
@@ -171,7 +171,7 @@
       "goal": "Run ticket-specific QA and move only passing tickets to Done.",
       "expectedRoute": "quality-test-e2e",
       "requiredEvidence": [
-        "QA Plane state",
+        "QA OpenProject status",
         "QA deployment marker",
         "ticket acceptance criteria",
         "tested URLs",
@@ -201,7 +201,7 @@
       "goal": "Prevent a QA ticket from jumping to E2E when deployment telemetry is missing.",
       "expectedRoute": "dev-ops-post-merge-deploy",
       "requiredEvidence": [
-        "Plane ticket is QA",
+        "OpenProject work package is QA",
         "QA deployment marker exists",
         "artifact commit and release manifest exist",
         "missing dev-ops-post-merge-deploy or dev-ops-deploy-qa telemetry row"
@@ -210,7 +210,7 @@
         "Read active ticket workflow telemetry before routing to quality-test-e2e",
         "Route through dev-ops-post-merge-deploy in idempotent verification mode",
         "dev-ops-post-merge-deploy invokes dev-ops-deploy-qa idempotently",
-        "Do not duplicate QA deployment Plane comments"
+        "Do not duplicate QA deployment OpenProject comments"
       ],
       "stopConditions": [
         "QA deployment evidence conflicts with ticket lock",
@@ -230,7 +230,7 @@
       "goal": "Repair missing E2E telemetry through idempotent quality-test-e2e finalization before reporting timing complete.",
       "expectedRoute": "quality-test-e2e",
       "requiredEvidence": [
-        "Plane ticket is Done",
+        "OpenProject work package is Done",
         "canonical E2E QA marker exists",
         "QA evidence and RC lineage exist",
         "missing quality-test-e2e telemetry row"
@@ -286,7 +286,7 @@
       "goal": "Promote one QA-approved artifact to PROD after explicit user intent, then record the release on every included Done ticket.",
       "expectedRoute": "dev-ops-deploy-prod",
       "requiredEvidence": [
-        "Plane Done state for every included ticket",
+        "OpenProject Done state for every included ticket",
         "QA-approved artifact commit",
         "source RC tag",
         "main target commit",
@@ -296,7 +296,7 @@
       ],
       "toolExpectations": [
         "Require explicit PROD intent",
-        "Treat E2E QA PASS and Plane Done as ticket completion before PROD",
+        "Treat E2E QA PASS and OpenProject Done as ticket completion before PROD",
         "Support single-ticket releases when includedTickets is absent",
         "Use release.json includedTickets as authoritative release membership when present",
         "Validate RC and final tag lineage",
@@ -305,7 +305,7 @@
       ],
       "stopConditions": [
         "main diverges from the intended QA-approved commit",
-        "release manifest conflicts with Plane or tags",
+        "release manifest conflicts with OpenProject or tags",
         "source RC version is ambiguous",
         "any included ticket lacks Done state, E2E QA PASS evidence, source RC lineage, or release membership proof"
       ],
@@ -338,7 +338,7 @@
       "toolExpectations": [
         "Invoke dev-flow-retrospective-audit in read-only post-prod-ticket-release mode",
         "Append or update sanitized local result data in .codex/agent-evals/results.local.json",
-        "Add or reuse Plane marker IA generated post-PROD retrospective: {finalVersion}",
+        "Add or reuse OpenProject marker IA generated post-PROD retrospective: {finalVersion}",
         "Read prior post-PROD markers or local results as learning evidence when present",
         "Recommend docs, contract, skill, test, memory, eval, or follow-up ticket actions without applying them automatically"
       ],
@@ -349,7 +349,7 @@
         "retrospective evidence would require exposing secrets or credential-bearing URLs"
       ],
       "unsafeMutations": [
-        "move Plane ticket state",
+        "move OpenProject work package state",
         "deploy or promote environments",
         "create, delete, or push tags",
         "rewrite branches or release manifests",
@@ -364,7 +364,7 @@
         "prodUrl",
         "releaseManifest",
         "localResultPath",
-        "planeRetrospectiveMarker",
+        "openProjectRetrospectiveMarker",
         "findings",
         "recommendations",
         "evalCoverageGaps",
@@ -375,18 +375,18 @@
     {
       "id": "weak-ticket-refinement-before-mutation",
       "stage": "dev-flow-start-ticket",
-      "goal": "Classify a weak Plane Todo ticket before branch, Plane state, lock, or OpenSpec mutation.",
+      "goal": "Classify a weak OpenProject Todo ticket before branch, OpenProject status, lock, or OpenSpec mutation.",
       "expectedRoute": "dev-flow-start-ticket",
       "requiredEvidence": [
-        "Plane ticket title and description",
+        "OpenProject work package title and description",
         "ticket readiness classification",
-        "managed Plane generated block",
+        "managed OpenProject generated block",
         "missing readiness fields when blocked"
       ],
       "toolExpectations": [
         "Classify ticket as ready, enrichable, or blocked before mutation",
-        "For enrichable tickets, update only the managed Plane block with concrete acceptance criteria, affected areas, validation expectations, risks, and definition of done",
-        "For blocked tickets, stop before branch creation, Plane state changes, delivery lock writes, comments, or OpenSpec proposal creation"
+        "For enrichable tickets, update only the managed OpenProject block with concrete acceptance criteria, affected areas, validation expectations, risks, and definition of done",
+        "For blocked tickets, stop before branch creation, OpenProject status changes, delivery lock writes, comments, or OpenSpec proposal creation"
       ],
       "stopConditions": [
         "user-visible goal is missing",
@@ -469,7 +469,7 @@
       "requiredEvidence": [
         "PR diff",
         "delivery risk classification high",
-        "Plane or OpenSpec acceptance criteria",
+        "OpenProject or OpenSpec acceptance criteria",
         "changed paths or diff size",
         "review mode and verdict"
       ],

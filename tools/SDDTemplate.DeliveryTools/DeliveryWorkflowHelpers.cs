@@ -65,7 +65,7 @@ namespace SDDTemplate.DeliveryTools
             JsonElement root = document.RootElement;
             List<string> errors = [];
 
-            foreach (string field in new[] { "schemaVersion", "commitSha", "checksum", "artifactUrl", "planeTicketKey", "versionStatus" })
+            foreach (string field in new[] { "schemaVersion", "commitSha", "checksum", "artifactUrl", "ticketKey", "versionStatus" })
             {
                 if (!root.TryGetProperty(field, out JsonElement value) || IsMissing(value))
                 {
@@ -132,7 +132,7 @@ namespace SDDTemplate.DeliveryTools
             string commitSha,
             string checksum,
             string artifactUrl,
-            string planeTicketKey,
+            string ticketKey,
             string versionStatus)
         {
             SortedDictionary<string, object?> manifest = new()
@@ -141,7 +141,7 @@ namespace SDDTemplate.DeliveryTools
                 ["commitSha"] = commitSha,
                 ["checksum"] = checksum,
                 ["artifactUrl"] = artifactUrl,
-                ["planeTicketKey"] = planeTicketKey,
+                ["ticketKey"] = ticketKey,
                 ["versionStatus"] = versionStatus,
             };
 
@@ -158,13 +158,13 @@ namespace SDDTemplate.DeliveryTools
             string outputPath,
             string version,
             string artifactCommitSha,
-            string planeTicketKey,
+            string ticketKey,
             IEnumerable<string> includedTickets,
             DateTimeOffset? createdAtUtc = null)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(version);
             ArgumentException.ThrowIfNullOrWhiteSpace(artifactCommitSha);
-            ArgumentException.ThrowIfNullOrWhiteSpace(planeTicketKey);
+            ArgumentException.ThrowIfNullOrWhiteSpace(ticketKey);
 
             string[] normalizedTickets = [.. includedTickets
                 .Where(ticket => !string.IsNullOrWhiteSpace(ticket))
@@ -174,7 +174,7 @@ namespace SDDTemplate.DeliveryTools
 
             if (normalizedTickets.Length == 0)
             {
-                normalizedTickets = [planeTicketKey];
+                normalizedTickets = [ticketKey];
             }
 
             SortedDictionary<string, object?> pointer = new()
@@ -184,7 +184,7 @@ namespace SDDTemplate.DeliveryTools
                 ["artifactCommitSha"] = artifactCommitSha,
                 ["canonicalPath"] = $"app/{artifactCommitSha}/",
                 ["releaseManifestPath"] = $"app/{artifactCommitSha}/release.json",
-                ["planeTicketKey"] = planeTicketKey,
+                ["ticketKey"] = ticketKey,
                 ["includedTickets"] = normalizedTickets,
                 ["createdAtUtc"] = (createdAtUtc ?? DateTimeOffset.UtcNow).ToString("O", CultureInfo.InvariantCulture),
             };

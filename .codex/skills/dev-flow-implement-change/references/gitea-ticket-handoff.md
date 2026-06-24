@@ -1,4 +1,4 @@
-# Gitea And Plane Handoff Reference
+# Gitea And OpenProject Handoff Reference
 
 Use bearer-style token auth for Gitea:
 
@@ -6,10 +6,10 @@ Use bearer-style token auth for Gitea:
 Authorization: token <gitea.apiToken>
 ```
 
-Use Plane API key auth:
+Use OpenProject API v3 bearer token auth:
 
 ```text
-X-API-Key: <plane.apiToken>
+Authorization: Bearer <openProject.apiToken>
 ```
 
 Never print token values.
@@ -70,7 +70,7 @@ Payload:
 }
 ```
 
-Then re-fetch the PR and verify the requested reviewers are present before moving the Plane work item to review. If Gitea rejects the request, document the reviewer gap in the PR body, Plane handoff comment, and final summary.
+Then re-fetch the PR and verify the requested reviewers are present before moving the OpenProject work package to review. If Gitea rejects the request, document the reviewer gap in the PR body, OpenProject handoff comment, and final summary.
 
 ## Reviewers
 
@@ -133,44 +133,45 @@ Default label meanings:
 - `needs-tests`: review found missing or failing tests.
 - `needs-changes`: review found actionable defects or blocking concerns.
 
-## Plane Review State
+## OpenProject Review State
 
-Resolve `projectIdentifier` to a project UUID:
-
-```text
-GET {plane.baseUrl}/api/v1/workspaces/{workspaceSlug}/projects/
-```
-
-Resolve project states and find `plane.reviewState` by exact name, default `In Review`:
+Resolve the configured project:
 
 ```text
-GET {plane.baseUrl}/api/v1/workspaces/{workspaceSlug}/projects/{projectUuid}/states/
+GET {openProject.baseUrl}/api/v3/projects/{projectIdentifier}
 ```
 
-Move the work item:
+Fetch the work package and current `lockVersion`:
 
 ```text
-PATCH {plane.baseUrl}/api/v1/workspaces/{workspaceSlug}/projects/{projectUuid}/work-items/{workItemUuid}/
+GET {openProject.baseUrl}/api/v3/work_packages/{workPackageId}
 ```
 
-Payload must set the state to the resolved state id. If the target state does not exist, stop and report the missing configuration.
+Resolve the status whose name equals `openProject.reviewStatus`, default `In Review`, then move the work package:
+
+```text
+PATCH {openProject.baseUrl}/api/v3/work_packages/{workPackageId}
+```
+
+Payload must set `_links.status` to the resolved status link and include the current `lockVersion`. If the target status does not exist, stop and report the missing configuration.
 
 Add the PR link comment:
 
 ```text
-POST {plane.baseUrl}/api/v1/workspaces/{workspaceSlug}/projects/{projectUuid}/work-items/{workItemUuid}/comments/
+POST {openProject.baseUrl}/api/v3/work_packages/{workPackageId}/activities
 ```
 
 Payload:
 
 ```json
 {
-  "comment_html": "<p>IA generated PR: {prUrl}</p>",
-  "comment_stripped": "IA generated PR: {prUrl}"
+  "comment": {
+    "raw": "IA generated PR: {prUrl}\n\n**Status:** ..."
+  }
 }
 ```
 
-Do not send a Gitea-style `comment` or `body` field. Plane can create a blank rendered comment when those fields are used. After posting, read the comment back and verify `comment_stripped` starts with the stable marker.
+After posting, read activities back and verify the activity comment starts with the stable marker.
 
 Use a stable marker:
 
@@ -178,4 +179,4 @@ Use a stable marker:
 IA generated PR: {prUrl}
 ```
 
-Before adding the comment, read existing comments when the API allows it and skip if the same marker already exists.
+Before adding the comment, read existing activities when the API allows it and skip if the same marker already exists.

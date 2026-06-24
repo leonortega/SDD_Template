@@ -990,13 +990,13 @@
   ],
   "notRecommended": [
     {
-      "id": "plane-mcp-for-ticket-delivery",
-      "name": "Plane MCP",
+      "id": "openproject-mcp-for-ticket-delivery",
+      "name": "OpenProject MCP",
       "type": "mcp",
       "requires": [
-        "plane"
+        "openproject"
       ],
-      "reason": "Plane MCP is intentionally not recommended for this delivery flow; repo-local skills must use the configured Plane API and never Plane MCP, containers, or direct databases for ticket delivery."
+      "reason": "OpenProject MCP is intentionally not recommended for this delivery flow; repo-local skills must use the configured OpenProject API and never OpenProject MCP, containers, or direct databases for ticket delivery."
     }
   ]
 }

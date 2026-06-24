@@ -1,6 +1,6 @@
 ---
 name: dev-flow-retrospective-audit
-description: Inspect completed, failed, or blocked Plane/Gitea/OpenSpec delivery runs and convert repeated audit evidence into durable workflow improvements. Use when Codex is asked to audit the delivery flow, perform a retrospective, identify self-improvements, reduce recurring review/QA/CI failures, improve skills from past delivery evidence, or propose/apply updates to delivery skills, configure skills, templates, tests, quality gates, or shared workflow policy.
+description: Inspect completed, failed, or blocked OpenProject/Gitea/OpenSpec delivery runs and convert repeated audit evidence into durable workflow improvements. Use when Codex is asked to audit the delivery flow, perform a retrospective, identify self-improvements, reduce recurring review/QA/CI failures, improve skills from past delivery evidence, or propose/apply updates to delivery skills, configure skills, templates, tests, quality gates, or shared workflow policy.
 ---
 
 # Delivery Retrospective Audit
@@ -30,7 +30,7 @@ This skill is safe to run as a manual quality lane through prompts such as:
 - `Audit failed QA/review/CI run`
 - `Run agent self-improvement audit`
 
-Do not create recurring automations, scheduled jobs, Plane tickets, deployment actions, tags, or ticket-state mutations from this skill unless the user explicitly requests that separate action.
+Do not create recurring automations, scheduled jobs, OpenProject work packages, deployment actions, tags, or ticket-state mutations from this skill unless the user explicitly requests that separate action.
 
 ## Triggers
 
@@ -65,8 +65,8 @@ Inspect the smallest useful set first, then expand as needed:
 - `.codex/skills/configure-*` docs, references, scripts, templates, and tests when setup or generated behavior is implicated
 - `.codex/delivery-context.local.json` when present, without printing secrets
 - ignored `.codex/agent-telemetry.local.jsonl` and `.codex/agent-evals/results.local.json` when present, without printing prompts or sensitive payloads
-- prior Plane comments with marker `IA generated post-PROD retrospective: {finalVersion}` when auditing PROD release learning evidence
-- recent Git commits, branches, tags, PR labels, PR review comments, CI results, OpenSpec verification output, Plane comments, QA bug tickets, Nexus release manifests, and deployment evidence when available
+- prior OpenProject comments with marker `IA generated post-PROD retrospective: {finalVersion}` when auditing PROD release learning evidence
+- recent Git commits, branches, tags, PR labels, PR review comments, CI results, OpenSpec verification output, OpenProject comments, QA bug tickets, Nexus release manifests, and deployment evidence when available
 
 ## Workflow
 
@@ -89,7 +89,7 @@ For `post-prod-ticket-release`, scope the audit to the just-promoted release fro
 
 Build a concise timeline from durable checkpoints:
 
-- Plane state and generated comments,
+- OpenProject status and generated comments,
 - active or historical ticket context lock,
 - branch and OpenSpec change,
 - PR number, head SHA, labels, review-agent markers, and comments,
@@ -167,14 +167,14 @@ For `post-prod-ticket-release`, write only compact, sanitized evidence:
 
 1. Append or update the ignored `.codex/agent-evals/results.local.json` with a result for the final release version. Include schema version, timestamp, mode, ticket key, artifact commit, final release version, PROD URL host or safe URL, release manifest path or URL, inspected evidence categories, finding summaries, recommendation outcomes, eval coverage gaps, residual evidence gaps, and `appliedChanges: false`.
 2. Do not store secrets, tokens, cookies, credential-bearing URLs, raw prompts, raw tool payloads, large logs, private request/response bodies, or unredacted local config values.
-3. Add or reuse a compact Plane comment with marker:
+3. Add or reuse a compact OpenProject comment with marker:
 
    ```text
    IA generated post-PROD retrospective: {finalVersion}
    ```
 
    Keep the marker as the first line by itself. Summarize audit scope, inspected release evidence, findings, recommendations, eval coverage gaps, local result path, and residual gaps.
-4. Treat failure to write the local result or Plane marker as an audit evidence gap, not a PROD deployment failure, after PROD success was already recorded.
+4. Treat failure to write the local result or OpenProject marker as an audit evidence gap, not a PROD deployment failure, after PROD success was already recorded.
 
 ## Output
 
@@ -186,7 +186,7 @@ For read-only audits, report:
 - findings grouped by layer,
 - recommended durable improvements,
 - risks or evidence gaps.
-- local result path and Plane marker status when the scope is `post-prod-ticket-release`.
+- local result path and OpenProject marker status when the scope is `post-prod-ticket-release`.
 
 For applied improvements, report:
 

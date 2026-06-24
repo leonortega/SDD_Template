@@ -25,7 +25,7 @@ When setup needs values the user must supply manually, do not only ask for the v
 - Update ignored local files only when applying user-confirmed secrets:
   - `.codex/client-tools.local.json`
   - `.codex/quality.local.json`
-  - `infra/plane/variables.env`
+  - `infra/openproject/variables.env`
   - `infra/monitoring/variables.env`
   - `infra/azure/variables.env`
   - `infra/gitea/runner.env`
@@ -49,7 +49,7 @@ When setup needs values the user must supply manually, do not only ask for the v
 - For required secrets, tokens, passwords, repository names, cloud identifiers, or service-account values, provide a short checklist with: value name, purpose, source, destination, safe example when possible, and validation command.
 - Never invent secret values and never read them from containers, mounted volumes, service databases, or logs.
 - Prefer manual UI steps for first-time secret entry. Use APIs only after the user provides values explicitly in chat or an approved local secret source.
-- Include official documentation links for manual configuration surfaces such as Gitea Actions secrets, Nexus repositories, Azure service principals, and Plane/Gitea API tokens.
+- Include official documentation links for manual configuration surfaces such as Gitea Actions secrets, Nexus repositories, Azure service principals, and OpenProject/Gitea API tokens.
 - If the repo has enough context to infer non-secret values, show the inferred value and ask the user to confirm before writing it.
 
 ## Client Tools Local Config Rules
@@ -57,7 +57,7 @@ When setup needs values the user must supply manually, do not only ask for the v
 - For `.codex/client-tools.local.json`, complete safe inferred non-secret values during explicit setup/write modes before reporting findings.
 - `Audit*` modes are read-only by default. They may report inferred values as actions, but must not write `.codex/client-tools.local.json` unless the operator explicitly passes `-AllowAuditWrites`.
 - Inferred values include local service URLs, default workflow state names, Git branch defaults, PR labels, Gitea owner/repo from `origin`, and Nexus local URL/repository name.
-- Never infer or fabricate API tokens, passwords, service-account credentials, Plane workspace/project identifiers, or cloud identifiers that are not discoverable from local repo/Azure metadata.
+- Never infer or fabricate API tokens, passwords, service-account credentials, OpenProject workspace/project identifiers, or cloud identifiers that are not discoverable from local repo/Azure metadata.
 - If a required value is not inferable, report it as a user-supplied value with its source, destination, official setup surface, and validation command.
 
 ## Parallel Delivery Rules
@@ -68,7 +68,7 @@ When setup needs values the user must supply manually, do not only ask for the v
 - Use the allowlist from `SyncWorktreeLocalConfig` for default worktree sync: `.codex/client-tools.local.json`, `.codex/quality.local.json`, and `.codex/tool-recommendations.local.json` when present. Do not copy `.codex/parallel-delivery.local.json`, `.codex/delivery-context.local.json`, `.codex/azure-login.local.json`, or app `*.local.json` files by default.
 - Deployment promotion remains serialized because DEV, QA, PROD, RC tags, final release tags, and Nexus release manifests are shared surfaces.
 - `agentModelPolicy` is a cost-control policy for on-the-fly sub-agents. `model=inherit` means no explicit model override; unavailable model ids should fall back to inherited model behavior and be reported.
-- `ValidateParallelDeliveryDryRun` must pass before parallel Git, Plane, or Gitea mutation. Include required ignored local runtime files such as `.codex/client-tools.local.json` and `.codex/quality.local.json` when child skills need them.
+- `ValidateParallelDeliveryDryRun` must pass before parallel Git, OpenProject, or Gitea mutation. Include required ignored local runtime files such as `.codex/client-tools.local.json` and `.codex/quality.local.json` when child skills need them.
 - The installed-skill runtime index is ignored local state derived from actual `.codex/skills/*/SKILL.md` files. It is not a project guidance catalog and must not duplicate `.codex/tool-recommendations.local.json`.
 - See `docs/parallel-delivery.md` for operator guidance, dry-run checklist, role contracts, and cleanup/recovery steps.
 
@@ -97,9 +97,9 @@ Useful modes:
 - `WriteInstalledSkillIndex` through `tools/SDDTemplate.DeliveryTools`: generate or reuse ignored `.codex/installed-skill-index.local.json` and `.codex/installed-skill-index.cache.local.json` from installed project skills.
 - `SyncWorktreeLocalConfig`: copy the allowlisted ignored local runtime config from the coordinator checkout into selected or discovered ticket worktrees without printing secret values.
 - `EnsureDeliveryContext`: create or repair the current worktree's `.codex/delivery-context.local.json` from explicit ticket, branch, OpenSpec, and PR context; never copy this file from another worktree. Use `replaceExisting=true` only after `dev-flow-start-ticket` confirms the existing lock's ticket is in the configured Done state, or after explicit operator confirmation for a known-safe repair. QA Done does not require immediate lock deletion because explicit PROD promotion may still need artifact and RC context.
-- `SetPlaneEnv`: update `infra/plane/variables.env`.
+- `SetOpenProjectEnv`: update `infra/openproject/variables.env`.
 - `SetMonitoringEnv`: update `infra/monitoring/variables.env`.
-- `SplitInfraEnv`: migrate old mixed `infra/plane/variables.env` values into tool-owned env files.
+- `SplitInfraEnv`: migrate old mixed `infra/openproject/variables.env` values into tool-owned env files.
 - `SetGiteaRunner`: update `infra/gitea/runner.env`.
 - `AuditQualityGates`: inspect quality and CI/CD templates without writing local config by default.
 - `BuildGiteaActionsImages`: build and validate pinned local Gitea Actions job images used by PR validation, package/deploy, and QA E2E workflows.
@@ -118,10 +118,10 @@ Useful modes:
 1. For full `config infra` or full guided setup, run `InitProjectProfile` first. If the profile, schema, or selected adapters already exist, treat the mode as idempotent and continue from its `Template already exists` findings.
 2. When k3d is the selected deployment provider and the user explicitly asked for `config infra`, full setup, or k3d local lab setup, run `EnsureK3dCluster` before `EnsureK3dHeadlamp`, `EnsureK3dPortForwards`, `ShowEnvironmentUrls`, and `Audit`. `EnsureK3dHeadlamp` installs the Kubernetes management UI and starts its localhost mapping. `EnsureK3dPortForwards` starts localhost browser mappings for services that are already deployed. `ShowEnvironmentUrls` refreshes the local URL registry and Grafana URL dashboard. This is the only configure path that may auto-enable k3d Kubernetes, install Headlamp, or start k3d local-lab port-forward processes; plain `Audit` remains read-only.
 3. Run `Audit` after `InitProjectProfile` and any selected-provider prerequisite repair unless the user asked for a very specific area and a narrower audit is enough.
-4. For core compose status checks, always include the plane env file so variable resolution matches runtime expectations:
+4. For core compose status checks, always include the OpenProject env file so variable resolution matches runtime expectations:
 
 ```powershell
-docker compose --env-file .\infra\plane\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml ps
+docker compose --env-file .\infra\openproject\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml ps
 ```
 
 5. Summarize findings by domain without exposing secret values.
@@ -150,7 +150,7 @@ trivy --download-db-only
 23. Ask: `Which setup area do you want to work on now?`
 24. Offer these choices:
    - Full guided setup
-   - Plane tickets
+   - OpenProject work packages
    - Gitea PR automation
    - Gitea Actions runner
    - Quality gates and CI
@@ -160,11 +160,11 @@ trivy --download-db-only
    - Monitoring dashboards
    - Azure Event Hub to Seq ingestion
 25. If the user is vague, default to full guided setup in this order:
-   InitProjectProfile -> EnsureK3dCluster when k3d is selected -> EnsureK3dHeadlamp when k3d is selected -> EnsureK3dPortForwards when k3d is selected -> ShowEnvironmentUrls when k3d is selected -> Audit -> Plane -> Gitea PR automation -> Gitea Actions runner -> Quality gates and CI -> Nexus artifacts and k3d deployment promotion -> Monitoring dashboards -> final Audit.
+   InitProjectProfile -> EnsureK3dCluster when k3d is selected -> EnsureK3dHeadlamp when k3d is selected -> EnsureK3dPortForwards when k3d is selected -> ShowEnvironmentUrls when k3d is selected -> Audit -> OpenProject -> Gitea PR automation -> Gitea Actions runner -> Quality gates and CI -> Nexus artifacts and k3d deployment promotion -> Monitoring dashboards -> final Audit.
 
 ## Domain Routing
 
-- Plane tickets: use `$configure-ticket-workflow`; read `references/plane.md`.
+- OpenProject work packages: use `$configure-ticket-workflow`; read `references/openproject.md`.
 - Gitea PR automation: use `$configure-source-control`; read `references/gitea-pr.md`.
 - Gitea Actions runner: use `$configure-ci-runner`; read `references/gitea-runner.md`.
 - Quality gates and CI: use `$configure-quality-gates`; read `references/quality-gates.md`.
@@ -197,6 +197,6 @@ End setup work with:
 - Stop before provider-specific mutation when `.codex/project-profile.json`, `.codex/project-profile.schema.json`, or any selected adapter path is missing; run `InitProjectProfile` or the focused provider configure skill first.
 - Stop successful completion of `config infra` when selected observability is not working: Seq unhealthy, Grafana Infinity health datasource missing, or Grafana health alert missing.
 - Stop before writing secrets to tracked files or reading secrets from containers, volumes, databases, or logs.
-- Stop before branch, Plane, ticket-lock, or OpenSpec mutation when first-ticket stack context, guidance discovery review, or recommendation audit context is missing or drifted.
+- Stop before branch, OpenProject, ticket-lock, or OpenSpec mutation when first-ticket stack context, guidance discovery review, or recommendation audit context is missing or drifted.
 - Stop before using arbitrary command installers; route confirmed acquisition and guarded install planning to `project-guidance-acquire`.
 - If a required repo skill, command, memory rule, definition, or configured tool/install path cannot be applied, do not silently switch to an ad hoc setup path. Report the failed required item, why it is required, the current-flow fix, the viable alternative, and the alternative's risk or impact, then ask the user whether to fix the current flow or continue with the alternative.

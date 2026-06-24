@@ -23,7 +23,7 @@ The blocker response must include:
 - risk/impact of alternative
 - explicit user choice required before continuing
 
-The agent may continue unrelated read-only investigation, but must not mutate repository files, Plane, Git, Gitea, Nexus, Azure, tags, releases, or local workflow state through the alternative until the user chooses that path or fixes the current flow.
+The agent may continue unrelated read-only investigation, but must not mutate repository files, OpenProject, Git, Gitea, Nexus, Azure, tags, releases, or local workflow state through the alternative until the user chooses that path or fixes the current flow.
 
 ## Skill Synchronization Rule
 
@@ -41,7 +41,7 @@ If configure skills differ from delivery-flow skills, update configure docs, tem
 
 Before finishing any change to a non-OpenSpec delivery skill, run this completion gate:
 
-- Identify whether the skill change affects repo setup, generated files, workflow YAML, secrets, ignored local files, Plane/Gitea labels, ticket gates, artifact paths, release manifests, QA/PROD promotion, rollback, or audit/repair behavior.
+- Identify whether the skill change affects repo setup, generated files, workflow YAML, secrets, ignored local files, OpenProject/Gitea labels, ticket gates, artifact paths, release manifests, QA/PROD promotion, rollback, or audit/repair behavior.
 - If it does, update the matching `configure-*` skill docs, references, templates, scripts, and tests in the same change.
 - If it does not, state in the final response that the configure skills were checked and no configure sync was required.
 - Add or update regression tests for the sync point when the behavior is enforceable from files.
@@ -50,7 +50,7 @@ Before finishing any change to a non-OpenSpec delivery skill, run this completio
 
 Implementation and retrospective work must preserve durable context discovered during delivery. Apply the Context Findings classification from `docs/context-management.md`.
 
-Implementation PR bodies and Plane handoff comments must include `Context findings: added/updated/none`, `Docs updated: <files>` or `Docs: no durable context changes`, `Memory updated: <files>` or `Memory updated: none`, and `Assumptions recorded: <short list or none>`.
+Implementation PR bodies and OpenProject handoff comments must include `Context findings: added/updated/none`, `Docs updated: <files>` or `Docs: no durable context changes`, `Memory updated: <files>` or `Memory updated: none`, and `Assumptions recorded: <short list or none>`.
 
 ## Durable Learning Capture Gate
 
@@ -61,7 +61,7 @@ This gate is mandatory even when no memory update is needed. The final handoff m
 - `Memory updated: <files>` when reusable non-authoritative knowledge was added or updated.
 - `Memory updated: none` when the run produced no reusable memory candidates.
 
-Do not treat Plane comments, PR comments, QA evidence, logs, or chat summaries as a substitute for this gate. If a run fixes or diagnoses a blocker that could recur across tickets, first decide whether it belongs in canonical docs, this delivery contract plus related skills/tests, or `.codex/memory/`, then update the selected durable surface before reporting completion.
+Do not treat OpenProject comments, PR comments, QA evidence, logs, or chat summaries as a substitute for this gate. If a run fixes or diagnoses a blocker that could recur across tickets, first decide whether it belongs in canonical docs, this delivery contract plus related skills/tests, or `.codex/memory/`, then update the selected durable surface before reporting completion.
 
 When the agent itself hits a failed command, hook rejection, configuration mismatch, missing local tool, wrong tool boundary, or other repeatable workflow mistake while doing the task, treat it as a durable learning candidate by default. Search memory with the concrete symptom, apply the immediate fix, and update memory, docs, skills, or tests unless the issue is already covered or clearly one-off. Do not report `Memory updated: none` for a newly diagnosed repeatable agent/tooling failure.
 
@@ -69,7 +69,7 @@ When the agent itself hits a failed command, hook rejection, configuration misma
 
 Agent self-improvement is a controlled quality lane, not an automatic permission to rewrite workflow behavior.
 
-Use `dev-flow-retrospective-audit` for prompts such as `Audit recent delivery workflow`, `Audit failed QA/review/CI run`, or `Run agent self-improvement audit`. The audit is read-only by default and must not mutate Plane state, deploy, promote, tag, create scheduled automations, or rewrite active ticket context unless the user explicitly requests that separate action.
+Use `dev-flow-retrospective-audit` for prompts such as `Audit recent delivery workflow`, `Audit failed QA/review/CI run`, or `Run agent self-improvement audit`. The audit is read-only by default and must not mutate OpenProject status, deploy, promote, tag, create scheduled automations, or rewrite active ticket context unless the user explicitly requests that separate action.
 
 Before changing any skill, workflow policy, configure template, or quality gate from retrospective evidence, at least one gate must be met:
 
@@ -82,7 +82,7 @@ When a retrospective changes delivery behavior, update this contract first when 
 
 ## States And Flow
 
-Default Plane states:
+Default OpenProject statuss:
 
 - Todo: work is not started.
 - In Progress: branch and implementation are active.
@@ -93,14 +93,14 @@ Default Plane states:
 Delivery flow:
 
 ```text
-Plane Todo -> branch/OpenSpec -> implementation -> PR review -> dev -> DEV/QA -> E2E QA -> main -> PROD -> rollback/hotfix when needed
+OpenProject Todo -> branch/OpenSpec -> implementation -> PR review -> dev -> DEV/QA -> E2E QA -> main -> PROD -> rollback/hotfix when needed
 ```
 
 Before starting the first ticket, and before any Todo ticket is moved into implementation when stack context is missing, verify that the project tool set and tech stack are defined in `.codex/project-profile.json`, that every selected adapter path exists, and that docs/OpenSpec context points to the profile instead of duplicating canonical provider facts. The ticket-start path must run or inspect the configured guidance audit and stop before repository, ticket, or OpenSpec mutation when the audit reports `stack-context.*` drift or missing profile/adapter files. Route the operator to `configure-dev-environment` to define the project profile and recommendation catalog first. When project guidance coverage is missing, use `project-guidance-discover` to research extra useful skills, MCPs, plugins, tools, references, practices, standards, and Codex-applicable IDE helpers, show suggested guidance, and ask only for confirmation, dismissals, or omissions. A confirmation must record accepted ids, persist the local catalog, run `project-guidance-acquire`, and install/configure supported confirmed items without a second install prompt. `project-guidance-acquire` may auto-copy safe repo-local, non-secret skills; global, IDE, secret-bearing, privileged, MCP/plugin, or reboot-required installs require explicit confirmation, and the confirmed discovery list satisfies that requirement for listed non-secret items unless the installer introduces new scope, secrets, or different items. Restart and reboot requirements must be aggregated and reported once after all feasible acquisition steps finish; do not reboot automatically. Ignored `.codex/tool-recommendations.local.json` may preserve catalog-shaped discovery state and recommendation-level `usedInSteps` for `project-guidance-mapper`, but it must never override the active ticket, this delivery contract, validation gates, or current repo files.
 
 For recurring tools used by CI, QA, security, or delivery gates, project guidance must prefer a verified pinned Docker image over repeated package-manager installation when the tool can run with mounted workspace/cache and no host-only interactive auth. Record this with `installPreference: docker-preferred` and `dockerAlternative` metadata. Keep host install plans for Docker itself, MCPs, IDE plugins, secret-bearing tools, interactive-auth tools, and tools without official/vendor or repo-owned pinned images.
 
-PROD promotion is explicit and release-centric. Do not promote to PROD only because QA passed unless the user asks for PROD promotion or a ticket-named `src/**` or `tests/**` merge to `main` triggers the PROD-only workflow. A PROD release may include one or more Done tickets; the release promotes one QA-approved artifact commit once, then records the PROD result on every included ticket without changing Plane state.
+PROD promotion is explicit and release-centric. Do not promote to PROD only because QA passed unless the user asks for PROD promotion or a ticket-named `src/**` or `tests/**` merge to `main` triggers the PROD-only workflow. A PROD release may include one or more Done tickets; the release promotes one QA-approved artifact commit once, then records the PROD result on every included ticket without changing OpenProject status.
 
 Push-triggered environment deployment is allowed only for ticket-named work that changes configured application or test paths. The ticket key pattern is configured in `.codex/project-profile.json` at `workflow.ticketKeyPattern`. The commit message must start with the configured ticket key format, or be a repository-adapter merge commit whose PR title starts with that ticket key format. Non-code changes outside configured deploy-trigger paths do not run automatic CI/deployment work.
 
@@ -112,11 +112,11 @@ E2E QA is an acceptance-evidence gate, not a screenshot, smoke, or page-load gat
 
 When a deployed browser E2E fails, use Playwright MCP or the configured Browser/Playwright tool as the first diagnostic source before changing source code. Reproduce the failing user flow against the real QA URL, inspect console, network, websocket, DOM readiness, screenshots, and trace/video evidence, then classify the failure as product defect, E2E harness issue, deployment/environment issue, or workflow gate gap. App code must remain product-only: do not add JavaScript helpers, hidden hooks, test ids, bypass paths, timing shims, or Playwright-specific behavior whose only purpose is making E2E pass. If the classification is an E2E harness issue, change only the E2E tests, evidence capture, or workflow. If it is a product defect, implement the smallest product-valid fix and keep the E2E proof external to product code.
 
-Implementation records browser E2E expectations, acceptance oracles, and lower-level regression coverage, but does not create Playwright E2E tests by default. `quality-test-e2e` owns deployed browser E2E creation, repair, execution, evidence, and QA pass/fail classification; it creates or updates reusable E2E tests when QA proof requires them and existing committed coverage is insufficient. After QA deployment, use the selected provider temporary QA trigger branch from the tested `dev` commit to run the committed suite remotely against the deployed QA URLs and publish evidence: Azure uses `qa/{ticketKey}` with `e2e-qa`, k3d uses `qa-local/{ticketKey}` with `e2e-qa-local`. Local E2E QA is forbidden unless a deployment-related blocker prevents the normal selected-provider Gitea E2E path from running or completing and `agentOptimization.maxToolRetries` deploy-fix attempts from `.codex/delivery-policy.json` have failed. In this repo that limit is currently `2`. Product E2E test failures are QA failures, not a reason to switch to local fallback. Any local fallback must run `npm run test:docker` under `tests/SDDTemplate.E2ETests`, target deployed QA URLs through `E2E_SITE_URL` and `E2E_API_URL`, never target localhost, and record the deploy blocker, both failed fix attempts, local command, tested URLs, and evidence before Plane can move to Done. During QA execution, keep one-off exploratory scripts, probes, screenshots, traces, logs, and reports under ignored `artifacts/qa/**`; do not commit them as regression tests unless the configured QA workflow rule explicitly allows it or a follow-up implementation workflow intentionally promotes them. Implementation may add E2E only when the user, Plane ticket, or OpenSpec artifacts explicitly make implementation-owned E2E part of the PR scope.
+Implementation records browser E2E expectations, acceptance oracles, and lower-level regression coverage, but does not create Playwright E2E tests by default. `quality-test-e2e` owns deployed browser E2E creation, repair, execution, evidence, and QA pass/fail classification; it creates or updates reusable E2E tests when QA proof requires them and existing committed coverage is insufficient. After QA deployment, use the selected provider temporary QA trigger branch from the tested `dev` commit to run the committed suite remotely against the deployed QA URLs and publish evidence: Azure uses `qa/{ticketKey}` with `e2e-qa`, k3d uses `qa-local/{ticketKey}` with `e2e-qa-local`. Local E2E QA is forbidden unless a deployment-related blocker prevents the normal selected-provider Gitea E2E path from running or completing and `agentOptimization.maxToolRetries` deploy-fix attempts from `.codex/delivery-policy.json` have failed. In this repo that limit is currently `2`. Product E2E test failures are QA failures, not a reason to switch to local fallback. Any local fallback must run `npm run test:docker` under `tests/SDDTemplate.E2ETests`, target deployed QA URLs through `E2E_SITE_URL` and `E2E_API_URL`, never target localhost, and record the deploy blocker, both failed fix attempts, local command, tested URLs, and evidence before OpenProject can move to Done. During QA execution, keep one-off exploratory scripts, probes, screenshots, traces, logs, and reports under ignored `artifacts/qa/**`; do not commit them as regression tests unless the configured QA workflow rule explicitly allows it or a follow-up implementation workflow intentionally promotes them. Implementation may add E2E only when the user, OpenProject work package, or OpenSpec artifacts explicitly make implementation-owned E2E part of the PR scope.
 
 Before `quality-test-e2e` may move a ticket to Done, it must:
 
-- resolve the Plane/OpenSpec acceptance criteria and validation expectations for the ticket,
+- resolve the OpenProject/OpenSpec acceptance criteria and validation expectations for the ticket,
 - map each criterion to at least one explicit test oracle or mark the criterion blocked,
 - execute the relevant checks against the exact deployed QA artifact commit and tested QA URLs,
 - record assertion evidence, not only navigation steps, screenshots, traces, logs, or HTTP 200 smoke checks,
@@ -139,11 +139,11 @@ QA outcomes are:
 - `PASS WITH GAPS`: the deployed artifact appears usable but a non-blocking evidence weakness, warning, or assumption remains; record the gap and keep the ticket out of Done until the gap is resolved or explicitly accepted as non-blocking in the ticket.
 - `FAIL`: a required assertion failed, a required oracle is missing, evidence is contradictory, the wrong artifact/environment was tested, or a product defect was found.
 
-Only `PASS` can move Plane to Done. `PASS WITH GAPS` and `FAIL` must leave the ticket in QA unless a separate explicit user decision changes the ticket's acceptance expectations.
+Only `PASS` can move OpenProject to Done. `PASS WITH GAPS` and `FAIL` must leave the ticket in QA unless a separate explicit user decision changes the ticket's acceptance expectations.
 
 ## Risk-Adaptive Workflow Depth
 
-Strict delivery gates remain mandatory. Risk-adaptive depth changes how much planning, review, and context loading is required, not whether Plane, OpenSpec, PR validation, QA, artifact promotion, PROD, rollback, or secret-safety gates can be skipped.
+Strict delivery gates remain mandatory. Risk-adaptive depth changes how much planning, review, and context loading is required, not whether OpenProject, OpenSpec, PR validation, QA, artifact promotion, PROD, rollback, or secret-safety gates can be skipped.
 
 Classify delivery risk as:
 
@@ -151,7 +151,7 @@ Classify delivery risk as:
 - `standard`: normal feature, bug, test, or workflow work that crosses implementation and validation but does not touch high-risk surfaces.
 - `high`: work touching auth, authorization, persistence, migrations, deployment workflows, secrets, public APIs, `/health`, release manifests, Nexus/Azure/Gitea Actions, rollback/hotfix, or large diffs.
 
-Use `.codex/skills/_shared/scripts/delivery_tools.ps1` or `tools/SDDTemplate.DeliveryTools` deterministic helpers when available. Low-risk work may use compact planning and review summaries, but must still preserve ticket context, branch/PR handoff, validation evidence, docs/memory classification, and configured quality gates. High-risk work requires full workload forecast handling, adversarial review, deployment topology checks when applicable, and explicit evidence in PR and Plane handoff comments.
+Use `.codex/skills/_shared/scripts/delivery_tools.ps1` or `tools/SDDTemplate.DeliveryTools` deterministic helpers when available. Low-risk work may use compact planning and review summaries, but must still preserve ticket context, branch/PR handoff, validation evidence, docs/memory classification, and configured quality gates. High-risk work requires full workload forecast handling, adversarial review, deployment topology checks when applicable, and explicit evidence in PR and OpenProject handoff comments.
 
 ## Ponytail Implementation And Review
 
@@ -163,13 +163,13 @@ Actionable `ponytail-review` findings are AI review findings and feed the same `
 
 ## Ticket Refinement Gate
 
-Before `dev-flow-start-ticket` mutates Git, Plane state, the delivery lock, or OpenSpec, classify the ticket as:
+Before `dev-flow-start-ticket` mutates Git, OpenProject status, the delivery lock, or OpenSpec, classify the ticket as:
 
 - `ready`: includes a user-visible goal, concrete acceptance criteria, and validation expectations.
-- `refinable`: intent is clear enough to proceed after adding Scrum-ready planning details to the managed Plane block: problem or opportunity, user story, concrete acceptance criteria, scope or affected areas, dependencies or assumptions, validation expectations, risks, and definition of done.
+- `refinable`: intent is clear enough to proceed after adding Scrum-ready planning details to the managed OpenProject block: problem or opportunity, user story, concrete acceptance criteria, scope or affected areas, dependencies or assumptions, validation expectations, risks, and definition of done.
 - `blocked`: product or technical intent is too vague to safely generate acceptance criteria.
 
-For `refinable`, update only the generated Plane block and continue. For `blocked`, stop before branch, Plane state, delivery lock, or OpenSpec mutation and report the missing intent. Do not create a second planning artifact for refinement; Plane managed block plus OpenSpec remain the planning surfaces.
+For `refinable`, update only the generated OpenProject block and continue. For `blocked`, stop before branch, OpenProject status, delivery lock, or OpenSpec mutation and report the missing intent. Do not create a second planning artifact for refinement; OpenProject managed block plus OpenSpec remain the planning surfaces.
 
 ## Review Workload Forecast
 
@@ -184,7 +184,7 @@ Delivery strategy: ask-on-risk|auto-chain|single-pr|exception-ok
 Suggested work units: <single PR or PR 1 -> PR 2 -> PR 3>
 ```
 
-If the forecast says `400-line budget risk: High`, `Chained PRs recommended: Yes`, or `Decision needed before apply: Yes`, implementation must not start until the prompt, Plane/OpenSpec artifacts, or user decision records one of:
+If the forecast says `400-line budget risk: High`, `Chained PRs recommended: Yes`, or `Decision needed before apply: Yes`, implementation must not start until the prompt, OpenProject/OpenSpec artifacts, or user decision records one of:
 
 - split/chained work-unit plan,
 - `size:exception`,
@@ -211,14 +211,14 @@ For each commit checkpoint:
 2. Review `git status` and the relevant diff.
 3. Run the smallest relevant validation for that step, or record why validation is deferred to CI.
 4. Stage only files related to that step.
-5. Commit with a message that starts with the Plane ticket key or OpenSpec id.
+5. Commit with a message that starts with the OpenProject work package key or OpenSpec id.
 6. Continue the next workflow step only after the working tree is clean or remaining changes are intentionally unrelated and documented.
 
 Do not create empty commits. Do not intentionally leave broken intermediate commits; when two workflow steps must be committed together to keep the repository valid, combine them and record that reason in the handoff. Do not automatically stash normal ticket progress. Use stash only for unrelated local or user changes that block the current step, and never stash as a substitute for committing completed ticket work.
 
 ## Adversarial Review
 
-`dev-flow-pr-review-agent` must run an adversarial pass when requested explicitly or when risk is `high`, including auth, authorization, persistence, migrations, deployment workflows, secrets, public APIs, `/health`, release manifests, rollback/hotfix, or large diffs. The pass reads Plane/OpenSpec acceptance criteria first, then tries to disprove implementation compliance through negative paths, idempotency, security, data-loss, deployment, and missing-test scenarios.
+`dev-flow-pr-review-agent` must run an adversarial pass when requested explicitly or when risk is `high`, including auth, authorization, persistence, migrations, deployment workflows, secrets, public APIs, `/health`, release manifests, rollback/hotfix, or large diffs. The pass reads OpenProject/OpenSpec acceptance criteria first, then tries to disprove implementation compliance through negative paths, idempotency, security, data-loss, deployment, and missing-test scenarios.
 
 Adversarial review output must include one verdict:
 
@@ -230,15 +230,15 @@ Adversarial findings feed the same `dev-flow-pr-review-feedback-loop` as normal 
 
 ## PR Reviewer Handoff
 
-Ticket implementation handoff must request the configured human reviewers before moving the Plane ticket to review. When `pr.reviewers` is `"all"`, resolve reviewers from current Gitea collaborators and exclude the PR author plus the authenticated automation user. Gitea collaborator responses must be normalized before filtering: treat both a JSON array and a single collaborator object as a candidate list, and resolve each username from `login` first, then `username`. If reviewers are resolved but the PR create response does not show them as requested, call the Gitea requested-reviewers endpoint and re-fetch the PR to verify the requested reviewer list.
+Ticket implementation handoff must request the configured human reviewers before moving the OpenProject work package to review. When `pr.reviewers` is `"all"`, resolve reviewers from current Gitea collaborators and exclude the PR author plus the authenticated automation user. Gitea collaborator responses must be normalized before filtering: treat both a JSON array and a single collaborator object as a candidate list, and resolve each username from `login` first, then `username`. If reviewers are resolved but the PR create response does not show them as requested, call the Gitea requested-reviewers endpoint and re-fetch the PR to verify the requested reviewer list.
 
-Do not treat the Codex review-agent comment, `codex-reviewed` label, or passing PR validation as a substitute for human reviewer assignment. If no eligible reviewers can be resolved, or Gitea rejects reviewer assignment, keep the PR open but document the reviewer gap in the PR body, Plane handoff comment, and final summary.
+Do not treat the Codex review-agent comment, `codex-reviewed` label, or passing PR validation as a substitute for human reviewer assignment. If no eligible reviewers can be resolved, or Gitea rejects reviewer assignment, keep the PR open but document the reviewer gap in the PR body, OpenProject handoff comment, and final summary.
 
 ## QA Evidence Trigger Branch Cleanup
 
-Selected-provider QA trigger branches are temporary Gitea Actions triggers for evidence-only E2E QA. Azure uses `qa/{ticketKey}` and k3d uses `qa-local/{ticketKey}`. After the branch run succeeds, Nexus evidence exists for the tested artifact, the E2E QA Plane comment is verified, the RC tag is created or verified, and the Plane ticket is moved to Done, delete the remote trigger branch from Gitea. Durable QA evidence belongs in Nexus, Plane comments, release manifests, and tags, not in the trigger branch.
+Selected-provider QA trigger branches are temporary Gitea Actions triggers for evidence-only E2E QA. Azure uses `qa/{ticketKey}` and k3d uses `qa-local/{ticketKey}`. After the branch run succeeds, Nexus evidence exists for the tested artifact, the E2E QA OpenProject comment is verified, the RC tag is created or verified, and the OpenProject work package is moved to Done, delete the remote trigger branch from Gitea. Durable QA evidence belongs in Nexus, OpenProject comments, release manifests, and tags, not in the trigger branch.
 
-If evidence publication, Plane comment verification, RC tagging, or Done-state mutation is incomplete, keep the branch until the blocking step is resolved or the branch is intentionally rerun.
+If evidence publication, OpenProject comment verification, RC tagging, or Done-state mutation is incomplete, keep the branch until the blocking step is resolved or the branch is intentionally rerun.
 
 ## Local And CI Quality Split
 
@@ -250,13 +250,13 @@ Gitea PR validation is authoritative for restore, formatting verification, relea
 
 ## OpenSpec Completion Archive Gate
 
-After E2E QA passes and the Plane ticket is moved to Done, the linked active OpenSpec change must be archived before the workflow is reported complete. If exactly one active OpenSpec change clearly matches the ticket key, invoke `dev-flow-archive-change` and report the archive path. Do not leave a completed linked OpenSpec change active merely because Plane, Nexus, and tags are complete.
+After E2E QA passes and the OpenProject work package is moved to Done, the linked active OpenSpec change must be archived before the workflow is reported complete. If exactly one active OpenSpec change clearly matches the ticket key, invoke `dev-flow-archive-change` and report the archive path. Do not leave a completed linked OpenSpec change active merely because OpenProject, Nexus, and tags are complete.
 
 Run OpenSpec automation with `OPENSPEC_TELEMETRY=0` in the process environment so `openspec list`, `openspec status`, and archive preflights do not time out on telemetry startup or flush. Before moving a ticket to review, implementation handoff must leave the active OpenSpec `tasks.md` with zero unchecked tasks. Before reporting QA completion, `quality-test-e2e` must re-check `openspec list --json` and the linked change status, then either archive the change or report `OpenSpec archive blocker: <reason>`.
 
 If a ticket is already in Done or has QA evidence but lacks the canonical `IA generated E2E QA: {ticketKey}` marker, treat the QA finalization as incomplete, not as an idempotent success. Repair the canonical E2E QA marker, workflow timing marker, and OpenSpec archive gate before reporting the ticket workflow complete.
 
-`dev-flow-archive-change` must fail closed: incomplete artifacts, incomplete tasks, missing `tasks.md`, failed spec sync, failed archive movement, or a still-active change after archive are blockers. Do not allow confirmation prompts to override incomplete work. If no matching active change can be resolved, multiple active changes match, artifact or task completion is incomplete, spec sync fails, or archive movement fails, report the archive blocker explicitly in Plane or the final handoff and leave the ticket result intact.
+`dev-flow-archive-change` must fail closed: incomplete artifacts, incomplete tasks, missing `tasks.md`, failed spec sync, failed archive movement, or a still-active change after archive are blockers. Do not allow confirmation prompts to override incomplete work. If no matching active change can be resolved, multiple active changes match, artifact or task completion is incomplete, spec sync fails, or archive movement fails, report the archive blocker explicitly in OpenProject or the final handoff and leave the ticket result intact.
 
 ## Installed Skill Runtime Index
 
@@ -275,7 +275,7 @@ Do not create parallel catalogs, planning artifacts, review workflows, or qualit
 
 ## Ticket Context Lock
 
-Normal automatic delivery must stay locked to one Plane ticket. Use ignored `.codex/delivery-context.local.json` as the local active delivery context lock. Never commit it. Do not delete the lock merely because E2E QA moved a ticket to `Done`; the lock can still carry QA-approved artifact, RC, and release context needed for explicit PROD promotion.
+Normal automatic delivery must stay locked to one OpenProject work package. Use ignored `.codex/delivery-context.local.json` as the local active delivery context lock. Never commit it. Do not delete the lock merely because E2E QA moved a ticket to `Done`; the lock can still carry QA-approved artifact, RC, and release context needed for explicit PROD promotion.
 
 Parallel delivery keeps the same lock shape, but scopes it to the ticket worktree. Each active ticket worktree must contain its own `.codex/delivery-context.local.json`, and role agents must run only from the worktree assigned to that ticket. Do not share one checkout, one lock file, or one active implementation branch across multiple active tickets.
 
@@ -297,8 +297,8 @@ Rules:
 
 - `dev-flow-continue-implementation` resolves or creates the lock before delegating. If no ticket is selected, it must ask or route to `dev-flow-pipeline-status` instead of guessing.
 - `dev-flow-parallel-ticket-coordinator` creates or reuses one Git worktree per active ticket, records that assignment in ignored `.codex/parallel-delivery.local.json`, and delegates child skills only inside the assigned worktree.
-- `dev-flow-start-ticket` creates or updates the lock after the selected ticket, branch, and OpenSpec decision are known. If an existing lock names a different ticket, fetch the locked ticket from Plane and compare it with the configured Done state. If the locked ticket is `Done`, replace the lock for the new selected ticket. If the locked ticket is active, missing, ambiguous, or cannot be verified, stop before branch, Plane, or OpenSpec mutation and report the lock blocker. This is lazy cleanup on next ticket start, not immediate deletion after QA Done.
-- Child skills must verify their resolved ticket, branch, PR, artifact `release.json.planeTicketKey`, QA evidence path, RC tag, and PROD release lineage match the locked `ticketKey` before mutating or promoting. For PROD batch releases, `includedTickets` is authoritative when present: do not block only because the promoted commit includes multiple ticket keys, but stop when any explicitly included ticket lacks Done state, E2E QA PASS evidence, source RC lineage, or release membership proof.
+- `dev-flow-start-ticket` creates or updates the lock after the selected ticket, branch, and OpenSpec decision are known. If an existing lock names a different ticket, fetch the locked ticket from OpenProject and compare it with the configured Done state. If the locked ticket is `Done`, replace the lock for the new selected ticket. If the locked ticket is active, missing, ambiguous, or cannot be verified, stop before branch, OpenProject, or OpenSpec mutation and report the lock blocker. This is lazy cleanup on next ticket start, not immediate deletion after QA Done.
+- Child skills must verify their resolved ticket, branch, PR, artifact `release.json.ticketKey`, QA evidence path, RC tag, and PROD release lineage match the locked `ticketKey` before mutating or promoting. For PROD batch releases, `includedTickets` is authoritative when present: do not block only because the promoted commit includes multiple ticket keys, but stop when any explicitly included ticket lacks Done state, E2E QA PASS evidence, source RC lineage, or release membership proof.
 - If the lock exists and a child skill resolves a different ticket key, stop and report the mismatch. Do not deploy, test, move state, tag, or comment the other ticket.
 - If the lock is stale outside the `dev-flow-start-ticket` terminal-ticket replacement path, or all durable checkpoints clearly identify one different active ticket, stop and ask the user to clear or replace the lock; do not silently rewrite it.
 - `dev-flow-pipeline-status` may read and report the lock plus mismatches. `dev-ops-rollback-prod` may operate by incident/release target, but must report when it differs from the active lock and require explicit user confirmation before mutation.
@@ -348,25 +348,25 @@ Rules:
 - `parallelDelivery.maxActiveTickets` limits active ticket worktrees. If the limit is reached, report the active tickets and do not start another one.
 - `parallelDelivery.worktreeRoot` is the only supported isolation model for parallel implementation. Fresh clones and shared-checkout parallelism are unsupported.
 - `parallelDelivery.agentModelPolicy` maps each delivery role to a model and reasoning effort. `model: inherit` means omit the model override and use the parent Codex run's model.
-- Each active ticket owns exactly one worktree and one implementation branch. Reuse matching worktrees; stop if a ticket, branch, or worktree mapping conflicts with durable Plane/Gitea/Git checkpoints.
+- Each active ticket owns exactly one worktree and one implementation branch. Reuse matching worktrees; stop if a ticket, branch, or worktree mapping conflicts with durable OpenProject/Gitea/Git checkpoints.
 - Copy ignored local config needed by child skills into each worktree without printing tokens, passwords, cookies, or credential-bearing URLs. The default allowlist is `.codex/client-tools.local.json`, `.codex/quality.local.json`, and `.codex/tool-recommendations.local.json` when present; do not copy `.codex/parallel-delivery.local.json`, `.codex/delivery-context.local.json`, `.codex/azure-login.local.json`, or app `*.local.json` files by default. Keep tracked templates placeholder-safe.
-- Before Git, Plane, or Gitea mutation for new or reused parallel work, run `ValidateParallelDeliveryDryRun` with planned tickets, lane state, enabled state, and required local runtime files. The operator-facing question is: `Can I safely start these 2 tickets in parallel?`
+- Before Git, OpenProject, or Gitea mutation for new or reused parallel work, run `ValidateParallelDeliveryDryRun` with planned tickets, lane state, enabled state, and required local runtime files. The operator-facing question is: `Can I safely start these 2 tickets in parallel?`
 - Implementation and review stages may run concurrently across tickets.
 - DEV, QA, E2E QA, PROD, rollback, and hotfix promotion share deployment lanes and release tags. With `deploymentLanePolicy` set to `serialized`, only the recorded lane owner may run `dev-ops-post-merge-deploy`, `dev-ops-deploy-qa`, `quality-test-e2e`, or `dev-ops-deploy-prod`; other agents must wait or report the owner.
 - PROD promotion remains explicit. Parallel delivery must not promote to PROD only because QA passed.
-- After QA evidence is recorded and the Plane ticket is moved to Done, the coordinator checkout owns ticket worktree teardown. Verify the worktree is clean, verify its branch is merged into the configured base branch, run `git worktree remove <worktreePath>` and `git worktree prune`, then remove that ticket from `.codex/parallel-delivery.local.json`. Child role agents must not delete their own assigned worktree.
+- After QA evidence is recorded and the OpenProject work package is moved to Done, the coordinator checkout owns ticket worktree teardown. Verify the worktree is clean, verify its branch is merged into the configured base branch, run `git worktree remove <worktreePath>` and `git worktree prune`, then remove that ticket from `.codex/parallel-delivery.local.json`. Child role agents must not delete their own assigned worktree.
 
 Role contracts:
 
 - `coordinator`: owns preflight, routing, runtime-state synthesis, lane ownership, and all cross-ticket decisions.
-- `ticketStarter`: prepares ticket branch, worktree, Plane/OpenSpec setup, and ticket lock only.
+- `ticketStarter`: prepares ticket branch, worktree, OpenProject/OpenSpec setup, and ticket lock only.
 - `implementation`: edits and tests one assigned ticket worktree only.
 - `prReview`: performs focused review, labels, and comments without taking unrelated implementation work.
 - `deployment`: handles post-merge DEV/QA promotion only when the serialized deployment lane is free or owned by the ticket.
 - `qa`: validates QA and records evidence only with lane ownership.
 - `prodHotfix`: handles PROD, rollback, and hotfix only after explicit user intent and lane validation.
 
-Every child agent must return concise status, files touched, validation run, blockers, and next action. Never let two agents mutate the same Plane ticket. Never parallelize DEV, QA, E2E QA, PROD, rollback, or hotfix promotion.
+Every child agent must return concise status, files touched, validation run, blockers, and next action. Never let two agents mutate the same OpenProject work package. Never parallelize DEV, QA, E2E QA, PROD, rollback, or hotfix promotion.
 
 ## Stable Markers
 
@@ -385,17 +385,17 @@ Use these exact markers for idempotency:
 - PR review agent: `<!-- codex-review-agent:{headSha} -->`
 - PR review feedback detected: `IA generated PR feedback detected: {headSha}:{feedbackBatchId}`
 - PR review feedback fixes: `IA generated PR feedback fixes: {headSha}:{feedbackBatchId}`
-- Plane generated description block: `<!-- ia-generated:start -->` through `<!-- ia-generated:end -->`
+- OpenProject generated description block: `<!-- ia-generated:start -->` through `<!-- ia-generated:end -->`
 
 Before adding generated comments or moving states, read existing comments when the API allows it and treat matching markers as already completed.
 
-After a successful PROD deployment marker is recorded on every included ticket, `dev-ops-deploy-prod` runs a read-only `dev-flow-retrospective-audit` with `post-prod-ticket-release` scope for the just-promoted release. This audit stores sanitized learning evidence in ignored `.codex/agent-evals/results.local.json` and records the post-PROD retrospective marker on Plane. It is not a release gate and must not mutate Plane state, deploy, promote, tag, rewrite branches, update release manifests, create tickets, or apply docs, contract, skill, eval, test, or memory changes without a separate user request.
+After a successful PROD deployment marker is recorded on every included ticket, `dev-ops-deploy-prod` runs a read-only `dev-flow-retrospective-audit` with `post-prod-ticket-release` scope for the just-promoted release. This audit stores sanitized learning evidence in ignored `.codex/agent-evals/results.local.json` and records the post-PROD retrospective marker on OpenProject. It is not a release gate and must not mutate OpenProject status, deploy, promote, tag, rewrite branches, update release manifests, create tickets, or apply docs, contract, skill, eval, test, or memory changes without a separate user request.
 
-## Plane Comment Format
+## OpenProject Comment Format
 
-Generated Plane comments must keep the stable marker as the first line by itself, followed by a blank line and a human-readable Markdown summary.
+Generated OpenProject comments must keep the stable marker as the first line by itself, followed by a blank line and a human-readable Markdown summary.
 
-When creating or repairing Plane work-item comments through the API, send both `comment_html` and `comment_stripped`; do not send Gitea-style `comment` or `body` fields. Plane can accept those fields while rendering a blank `<p></p>` comment. After posting or patching a generated marker, read the comment back and verify `comment_stripped` starts with the stable marker before reporting the Plane comment as added.
+When creating or repairing OpenProject work package comments through the API, send a `comment.raw` activity payload. After posting a generated marker, read activities back and verify the activity comment starts with the stable marker before reporting the OpenProject comment as added.
 
 Use this structure unless a workflow-specific skill requires more detail:
 
@@ -407,7 +407,7 @@ Use this structure unless a workflow-specific skill requires more detail:
 
 Prefer Markdown links for long URLs, short commit display text such as ``8acc4d4`` with the full SHA recorded in a field when needed, and grouped sections over long flat `Label: value` lists. Keep automation-critical values present and searchable; do not hide the stable marker, commit SHA, ticket key, release version, artifact URL, or evidence URL inside prose only.
 
-Workflow timing comments use marker `IA generated workflow timing: {ticketKey}` and a compact Markdown table with stage, outcome, duration, started UTC, and finished UTC. At the beginning of a selected ticket, `dev-flow-start-ticket` must create or clear ignored `.codex/agent-telemetry.local.jsonl` with `InitializeWorkflowTelemetry`. Each non-OpenSpec delivery stage must capture UTC start and finish times and append one row for its own stage with `AppendWorkflowTelemetry` on every run, resume, `PASS`, `BLOCKED`, `FAIL`, or idempotent `SKIP`; this includes `dev-flow-start-ticket`, `dev-flow-implement-ticket`, `dev-flow-pr-review-feedback-loop`, `dev-flow-pr-review-agent`, `dev-ops-post-merge-deploy`, `dev-ops-deploy-qa`, and `quality-test-e2e`. `dev-flow-continue-implementation` may append only its own routing row when it performs meaningful routing work, but it must not duplicate child stage rows. `ReadWorkflowTelemetry` must collapse repeated rows for the same ticket and stage into one rendered stage row: earliest `startedUtc`, latest `finishedUtc`, elapsed time as latest finish minus earliest start, latest outcome, and summed retry count. The timing table must list the standard stages even when a stage did not run or did not apply to the ticket; missing stages use outcome `NOT RUN / N/A`, duration `no time`, and `-` for start and finish. Before routing forward, required predecessor telemetry must exist for `dev-flow-start-ticket`, `dev-flow-implement-ticket`, `dev-flow-pr-review-agent`, `dev-ops-post-merge-deploy`, `dev-ops-deploy-qa`, and `quality-test-e2e`; `dev-flow-pr-review-feedback-loop` is required only when unresolved PR feedback exists or feedback markers/tasks show it ran. If durable evidence says a predecessor stage completed but its telemetry row is missing, route through that stage in idempotent verification mode so it appends its own row without duplicating Plane comments or state changes. After the E2E QA Plane comment is verified and before final QA handoff, `quality-test-e2e` must read rows for the active ticket with `ReadWorkflowTelemetry`, render the Plane timing comment with `RenderPlaneComment -Type WorkflowTiming`, then create or patch the timing marker comment. Raw telemetry stays in the ignored JSONL file; Plane timing comments must not include token counts, raw logs, full prompts, credential-bearing URLs, secrets, noisy tool details, Gitea Actions job duration, or Plane marker-derived timing. If telemetry cannot be written or read, report the workflow timing comment as blocked. On rerun, update or reuse the existing workflow timing marker comment for the same ticket instead of creating duplicates. Send both `comment_html` and `comment_stripped`, and verify `comment_stripped` starts with the marker after posting or patching.
+Workflow timing comments use marker `IA generated workflow timing: {ticketKey}` and a compact Markdown table with stage, outcome, duration, started UTC, and finished UTC. At the beginning of a selected ticket, `dev-flow-start-ticket` must create or clear ignored `.codex/agent-telemetry.local.jsonl` with `InitializeWorkflowTelemetry`. Each non-OpenSpec delivery stage must capture UTC start and finish times and append one row for its own stage with `AppendWorkflowTelemetry` on every run, resume, `PASS`, `BLOCKED`, `FAIL`, or idempotent `SKIP`; this includes `dev-flow-start-ticket`, `dev-flow-implement-ticket`, `dev-flow-pr-review-feedback-loop`, `dev-flow-pr-review-agent`, `dev-ops-post-merge-deploy`, `dev-ops-deploy-qa`, and `quality-test-e2e`. `dev-flow-continue-implementation` may append only its own routing row when it performs meaningful routing work, but it must not duplicate child stage rows. `ReadWorkflowTelemetry` must collapse repeated rows for the same ticket and stage into one rendered stage row: earliest `startedUtc`, latest `finishedUtc`, elapsed time as latest finish minus earliest start, latest outcome, and summed retry count. The timing table must list the standard stages even when a stage did not run or did not apply to the ticket; missing stages use outcome `NOT RUN / N/A`, duration `no time`, and `-` for start and finish. Before routing forward, required predecessor telemetry must exist for `dev-flow-start-ticket`, `dev-flow-implement-ticket`, `dev-flow-pr-review-agent`, `dev-ops-post-merge-deploy`, `dev-ops-deploy-qa`, and `quality-test-e2e`; `dev-flow-pr-review-feedback-loop` is required only when unresolved PR feedback exists or feedback markers/tasks show it ran. If durable evidence says a predecessor stage completed but its telemetry row is missing, route through that stage in idempotent verification mode so it appends its own row without duplicating OpenProject comments or state changes. After the E2E QA OpenProject comment is verified and before final QA handoff, `quality-test-e2e` must read rows for the active ticket with `ReadWorkflowTelemetry`, render the OpenProject timing comment with `RenderTicketComment -Type WorkflowTiming`, then create or patch the timing marker comment. Raw telemetry stays in the ignored JSONL file; OpenProject timing comments must not include token counts, raw logs, full prompts, credential-bearing URLs, secrets, noisy tool details, Gitea Actions job duration, or OpenProject marker-derived timing. If telemetry cannot be written or read, report the workflow timing comment as blocked. On rerun, update or reuse the existing workflow timing marker comment for the same ticket instead of creating duplicates. Send a `comment.raw` activity payload and verify the activity comment starts with the marker after posting.
 
 ## Reusable Delivery Tools
 
@@ -425,14 +425,14 @@ Use `.codex/skills/_shared/scripts/delivery_tools.ps1` for deterministic deliver
 - `CreateArtifactPointer`: write human-readable Nexus alias pointer JSON for QA-approved, RC, and final release metadata folders.
 - `ValidateTicketLock`: compare resolved ticket, branch, PR, artifact commit, RC, or final version against `.codex/delivery-context.local.json`.
 - `ValidateDeploymentLane`: enforce serialized deployment ownership from `.codex/parallel-delivery.local.json`.
-- `ValidateParallelDeliveryDryRun`: validate enabled state, planned ticket/worktree/branch uniqueness, serialized lane ownership, supported lane policy, and required ignored local runtime files without mutating Git, Plane, Gitea, Nexus, or Azure.
-- `ClassifyTicketReadiness`: classify Plane ticket text as `ready`, `refinable`, or `blocked`.
+- `ValidateParallelDeliveryDryRun`: validate enabled state, planned ticket/worktree/branch uniqueness, serialized lane ownership, supported lane policy, and required ignored local runtime files without mutating Git, OpenProject, Gitea, Nexus, or Azure.
+- `ClassifyTicketReadiness`: classify OpenProject work package text as `ready`, `refinable`, or `blocked`.
 - `ClassifyDeliveryRisk`: classify planned or changed work as `low`, `standard`, or `high`.
 - `ParseWorkloadForecast`: parse required `Review Workload Forecast` guard lines from OpenSpec tasks.
 - `DetectAdversarialReviewTrigger`: determine whether PR review needs adversarial mode.
 - `WriteInstalledSkillIndex`: write or reuse the ignored installed-skill runtime index and cache.
-- `InitializeWorkflowTelemetry`, `AppendWorkflowTelemetry`, and `ReadWorkflowTelemetry`: create or clear the per-ticket ignored telemetry JSONL file, append stage timing rows, and prepare timing data for Plane comments.
-- `RenderPlaneComment`: render standard Markdown Plane comments for QA deployment, E2E QA, PROD deployment, and workflow timing.
+- `InitializeWorkflowTelemetry`, `AppendWorkflowTelemetry`, and `ReadWorkflowTelemetry`: create or clear the per-ticket ignored telemetry JSONL file, append stage timing rows, and prepare timing data for OpenProject comments.
+- `RenderTicketComment`: render standard Markdown OpenProject comments for QA deployment, E2E QA, PROD deployment, and workflow timing.
 - `UpdateReleaseManifest`: merge stage-specific fields into `release.json` while preserving existing metadata, then validate the result.
 
 Skills remain responsible for API calls, user-facing decisions, blocker classification, and whether a mutation is allowed. The script is the reusable preflight/render/update helper.
@@ -458,7 +458,7 @@ Severity describes risk and PR label behavior. In this repository, every AI revi
 PR review has two reconnectable loops:
 
 1. AI review runs immediately after PR creation. The PR is not ready for human review until the current head has a review-agent comment, AI findings have been converted into OpenSpec feedback tasks, all feedback tasks are complete, relevant validation has passed, and current-head `needs-tests` / `needs-changes` labels are clean.
-2. Human review happens later. The automatic workflow reconnects only when the operator manually resumes the ticket, such as `automatically continue this ticket` or `continue E2EPROJECT-123`. Plane remains `In Review` while human feedback fixes are applied unless the workflow stops on an ambiguous or conflicting blocker.
+2. Human review happens later. The automatic workflow reconnects only when the operator manually resumes the ticket, such as `automatically continue this ticket` or `continue E2EPROJECT-123`. OpenProject remains `In Review` while human feedback fixes are applied unless the workflow stops on an ambiguous or conflicting blocker.
 
 Feedback batches are identified by source ids, not only by head SHA. Compute `feedbackBatchId` as a deterministic short id from the sorted source ids in the batch, such as AI finding ids, Gitea top-level comment ids, and inline review comment ids. This allows late human comments on the same `headSha` to create a new batch instead of being skipped by an earlier fix marker.
 
@@ -468,18 +468,18 @@ When actionable AI or human feedback is found:
 
 - Add or update a `## PR Review Feedback` section in the active OpenSpec `tasks.md`.
 - Add one task for each feedback item. Each task must record source type, source id or link, head SHA, severity, and the requested code, test, documentation, or workflow change.
-- Add a Plane ticket comment with marker `IA generated PR feedback detected: {headSha}:{feedbackBatchId}` before applying fixes. The comment must list source ids or links, classifications, and OpenSpec feedback task ids.
+- Add a OpenProject work package comment with marker `IA generated PR feedback detected: {headSha}:{feedbackBatchId}` before applying fixes. The comment must list source ids or links, classifications, and OpenSpec feedback task ids.
 - Apply the requested code, test, documentation, or workflow change when it is clear and scoped to the ticket.
 - Update OpenSpec specs or design artifacts when the feedback changes required behavior.
 - Run the relevant quality checks for the changed files.
 - Commit and push the fix to the existing PR branch.
 - Mark the OpenSpec feedback tasks complete only after the code and validation are complete.
-- Add a Plane ticket comment with marker `IA generated PR feedback fixes: {headSha}:{feedbackBatchId}` as the first line by itself, followed by a blank line and a reviewer-facing Markdown summary. The body must be human-readable, not only automation evidence, and must include `**Status:** READY FOR REVIEW | BLOCKED | PARTIAL - short outcome`, `**Reviewer feedback addressed:**` with source ids or links plus a short human summary of each comment, `**How IA resolved it:**` with concrete changes in reviewer language, `**Changed:**` with commit SHA, PR link, and completed OpenSpec feedback tasks, `**Validation:**` with checks run and results, `**Reviewer readiness:**` with what the reviewer should re-check and remaining blockers or `None`, and `**Skipped comments:**` only when non-actionable, stale, duplicate, generated, ambiguous, or conflicting comments were skipped.
+- Add a OpenProject work package comment with marker `IA generated PR feedback fixes: {headSha}:{feedbackBatchId}` as the first line by itself, followed by a blank line and a reviewer-facing Markdown summary. The body must be human-readable, not only automation evidence, and must include `**Status:** READY FOR REVIEW | BLOCKED | PARTIAL - short outcome`, `**Reviewer feedback addressed:**` with source ids or links plus a short human summary of each comment, `**How IA resolved it:**` with concrete changes in reviewer language, `**Changed:**` with commit SHA, PR link, and completed OpenSpec feedback tasks, `**Validation:**` with checks run and results, `**Reviewer readiness:**` with what the reviewer should re-check and remaining blockers or `None`, and `**Skipped comments:**` only when non-actionable, stale, duplicate, generated, ambiguous, or conflicting comments were skipped.
 - Rerun the AI review loop on the new head before returning to human review.
 
 AI review findings must have stable finding ids in the PR review comment so `dev-flow-pr-review-feedback-loop` can convert them into deterministic feedback tasks and batch ids. Human-authored Gitea PR feedback includes top-level PR comments and inline code review comments, plus review-thread replies supported by the configured Gitea version.
 
-Do not treat generated agent comments, duplicate comments already addressed by a newer head SHA or completed feedback batch, resolved/outdated inline comments, or purely informational comments as required code changes. Record skipped human comments in the Plane detection or fix comment. If human feedback is ambiguous or conflicts with the ticket, OpenSpec, security policy, or another human comment, stop before guessing and report the blocker in the PR and Plane ticket.
+Do not treat generated agent comments, duplicate comments already addressed by a newer head SHA or completed feedback batch, resolved/outdated inline comments, or purely informational comments as required code changes. Record skipped human comments in the OpenProject detection or fix comment. If human feedback is ambiguous or conflicts with the ticket, OpenSpec, security policy, or another human comment, stop before guessing and report the blocker in the PR and OpenProject work package.
 
 Before PR handoff, merge, or QA promotion, stop when any current PR feedback batch is unresolved, any OpenSpec `## PR Review Feedback` task is incomplete, or the merged PR still has `needs-tests` or `needs-changes`.
 
@@ -538,8 +538,8 @@ Required baseline fields:
 - `commitSha`
 - `checksum`
 - `artifactUrl`
-- `planeTicketKey`
-- Optional `includedTickets` records the Done tickets included in a PROD release. `planeTicketKey` remains the primary or representative ticket for backward compatibility; when `includedTickets` exists, PROD skills must use it as the release membership list.
+- `ticketKey`
+- Optional `includedTickets` records the Done tickets included in a PROD release. `ticketKey` remains the primary or representative ticket for backward compatibility; when `includedTickets` exists, PROD skills must use it as the release membership list.
 - `versionStatus`
 
 Stage-specific fields are added by the responsible skill:
@@ -567,7 +567,7 @@ Stop instead of guessing when:
 - Nexus is unavailable for promotion,
 - PR labels still indicate blocking review/test work,
 - QA evidence cannot be safely stored or published,
-- release manifest fields conflict with Plane comments or tags,
+- release manifest fields conflict with OpenProject comments or tags,
 - `main` diverges from the intended QA-approved commit.
 
 Rollback does not rewrite `main`. After rollback, require a hotfix PR, revert PR, or explicit temporary divergence note with owner and expected resolution.

@@ -59,7 +59,7 @@ static void Run(string[] args)
                 Required(options, "commit-sha"),
                 Required(options, "checksum"),
                 Required(options, "artifact-url"),
-                Required(options, "plane-ticket-key"),
+                Required(options, "ticket-key"),
                 options.GetValueOrDefault("version-status", "unversioned"));
             break;
         case "CreateArtifactPointer":
@@ -67,7 +67,7 @@ static void Run(string[] args)
                 Required(options, "output"),
                 Required(options, "version"),
                 Required(options, "artifact-commit-sha"),
-                Required(options, "plane-ticket-key"),
+                Required(options, "ticket-key"),
                 SplitList(options.GetValueOrDefault("included-tickets", string.Empty)));
             break;
         case "BuildDeploymentConfig":

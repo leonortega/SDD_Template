@@ -9,7 +9,7 @@
     "commitSha",
     "checksum",
     "artifactUrl",
-    "planeTicketKey",
+    "ticketKey",
     "versionStatus"
   ],
   "properties": {
@@ -29,7 +29,7 @@
       "type": "string",
       "minLength": 1
     },
-    "planeTicketKey": {
+    "ticketKey": {
       "type": "string",
       "minLength": 1
     },

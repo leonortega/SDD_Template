@@ -43,7 +43,7 @@ Use `IA generated E2E QA: {ticketKey}` as the stable marker for E2E QA idempoten
 - Source: `.codex/skills/_shared/delivery-contract.md`
 - Last verified: 2026-05-29
 
-Use `IA generated QA bug: {parentTicketKey}` when creating a linked Plane bug from failed QA evidence.
+Use `IA generated QA bug: {parentTicketKey}` when creating a linked OpenProject bug from failed QA evidence.
 
 ## Multi-App QA Requires Live App-To-App Settings
 

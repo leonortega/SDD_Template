@@ -1,6 +1,6 @@
 ---
 name: configure-infra-tools
-description: Compatibility alias for configuring this repo's local development and delivery environment. Use when older prompts mention "config infra", "configure infra tools", or the previous configure-infra-tools skill name; route immediately to configure-dev-environment and the specialized setup skills for Plane, Gitea, Gitea Actions, quality gates, Nexus, Azure, and observability.
+description: Compatibility alias for configuring this repo's local development and delivery environment. Use when older prompts mention "config infra", "configure infra tools", or the previous configure-infra-tools skill name; route immediately to configure-dev-environment and the specialized setup skills for OpenProject, Gitea, Gitea Actions, quality gates, Nexus, Azure, and observability.
 ---
 
 # Configure Infra Tools
@@ -24,7 +24,7 @@ When this skill triggers:
 3. During infra status checks for the core stack, use the compose env file explicitly:
 
 ```powershell
-docker compose --env-file .\infra\plane\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml ps
+docker compose --env-file .\infra\openproject\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml ps
 ```
 
 4. When local Trivy scans report a stale DB, refresh before scanning:
@@ -49,4 +49,4 @@ Report that routing moved to `$configure-dev-environment`, the audit result, sel
 
 - Stop when the active configure entrypoint cannot be read.
 - Stop when validation finds missing local config or secrets that require manual user action.
-- Stop before mutating ticket, Git, Plane, Gitea, Nexus, Azure, or monitoring state from this compatibility alias.
+- Stop before mutating ticket, Git, OpenProject, Gitea, Nexus, Azure, or monitoring state from this compatibility alias.

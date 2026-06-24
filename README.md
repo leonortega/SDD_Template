@@ -6,7 +6,7 @@
 ![App](https://img.shields.io/badge/app-Blazor%20%2B%20ASP.NET%20Core-512BD4)
 ![Data](https://img.shields.io/badge/data-EF%20Core%20%2B%20SQLite-4479A1)
 ![Tests](https://img.shields.io/badge/tests-xUnit%20%2B%20Playwright-2EAD33)
-![Delivery](https://img.shields.io/badge/delivery-Plane%20%7C%20OpenSpec%20%7C%20Gitea%20%7C%20Nexus-0A66C2)
+![Delivery](https://img.shields.io/badge/delivery-OpenProject%20%7C%20OpenSpec%20%7C%20Gitea%20%7C%20Nexus-0A66C2)
 ![Local Cloud](https://img.shields.io/badge/local%20cloud-k3d%20Desktop%20DEV%20%7C%20QA%20%7C%20PROD-326CE5)
 ![Optional Cloud](https://img.shields.io/badge/optional%20cloud-Azure%20App%20Service-0078D4)
 ![Release](https://img.shields.io/badge/release-explicit%20PROD%20promotion-6A5ACD)
@@ -29,7 +29,7 @@ Every change should have a ticket, a plan, a review, a tested artifact, QA evide
 ## Why It Matters
 
 - Faster controlled delivery: agents can continue work through known checkpoints instead of restarting from scratch.
-- Better leadership visibility: Plane records the ticket state, workflow markers, handoffs, and evidence.
+- Better leadership visibility: OpenProject records the ticket state, workflow markers, handoffs, and evidence.
 - Stronger quality control: Gitea pull requests, validation gates, Codex review, tests, and QA evidence are part of the normal flow.
 - Safer releases: Nexus stores immutable artifacts that are promoted across DEV, QA, PROD, and rollback without rebuilding.
 - Clearer accountability: production promotion is explicit, documented, and separated from QA approval.
@@ -41,12 +41,12 @@ Every change should have a ticket, a plan, a review, a tested artifact, QA evide
 - Product and operations teams that need visible ticket-to-production progress.
 - Delivery teams building repeatable SDLC automation.
 - Consultants or vendors packaging a professional agent-assisted delivery model.
-- Technical operators who need a local lab for Plane, Gitea, Nexus, k3d Kubernetes, QA, release, rollback, and hotfix workflows.
+- Technical operators who need a local lab for OpenProject, Gitea, Nexus, k3d Kubernetes, QA, release, rollback, and hotfix workflows.
 
 ## How The Delivery Flow Works
 
 ```text
-Idea in Plane
+Idea in OpenProject
   -> Plan the change with OpenSpec
   -> Implement and test the work
   -> Review through Gitea pull requests
@@ -60,7 +60,7 @@ Idea in Plane
 
 In plain language:
 
-- Plane is the work tracker and delivery record.
+- OpenProject is the work tracker and delivery record.
 - OpenSpec captures the planned behavior before implementation.
 - Gitea manages source control, pull requests, and validation.
 - Nexus stores the exact build artifact used for deployment.
@@ -73,7 +73,7 @@ In plain language:
 
 ### Planning And Ticket Control
 
-- Plane-based ticket workflow.
+- OpenProject-based ticket workflow.
 - OpenSpec planning before implementation.
 - Checkpoint-based reruns that continue from existing branches, PRs, artifacts, QA evidence, tags, and release manifests.
 - Ticket locks and delivery context rules to prevent work from crossing the wrong branch, PR, artifact, or environment.
@@ -182,6 +182,7 @@ Current external skill sources:
 
 - `aspnet-core`: ASP.NET Core guidance from https://github.com/openai/skills/tree/main/skills/.curated/aspnet-core.
 - `assertion-quality`: test assertion analysis guidance from https://github.com/dotnet/skills/tree/main/plugins/dotnet-test/skills/assertion-quality.
+- `caveman`: output compression guidance from https://github.com/JuliusBrussee/caveman.
 - `dotnet-webapi`: ASP.NET Core Web API endpoint guidance from https://github.com/dotnet/skills/tree/main/plugins/dotnet-aspnet/skills/dotnet-webapi.
 - `plan-ui-change`: Blazor UI planning guidance from https://github.com/dotnet/skills/tree/main/plugins/dotnet-blazor/skills/plan-ui-change.
 - `playwright`: browser automation guidance from https://github.com/openai/skills/tree/main/skills/.curated/playwright.
@@ -197,8 +198,8 @@ Implementation handoffs must report context findings and either list updated doc
 Common Codex chat requests:
 
 ```text
-List Plane Todo tickets
-Start the next Plane Todo ticket
+List OpenProject Todo tickets
+Start the next OpenProject Todo ticket
 Start E2EPROJECT-1
 Continue E2EPROJECT-1
 Where does E2EPROJECT-1 stand?
@@ -207,13 +208,13 @@ Promote E2EPROJECT-1 to PROD
 Audit recent delivery workflow
 Audit failed QA/review/CI run
 Run agent self-improvement audit
-Coordinate parallel Plane tickets
+Coordinate parallel OpenProject work packages
 ```
 
-Direct Docker Compose startup is also supported when the local Plane and monitoring environment files are configured:
+Direct Docker Compose startup is also supported when the local OpenProject and monitoring environment files are configured:
 
 ```powershell
-docker compose --env-file .\infra\plane\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml up -d
+docker compose --env-file .\infra\openproject\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml up -d
 ```
 
 ## Repository Shape
@@ -239,6 +240,6 @@ Local tools manage the delivery workflow.
 k3d hosts DEV, QA, and PROD runtime resources by default.
 Azure App Service may host an optional remote DEV, QA, and PROD lane.
 Nexus stores the exact build artifact or image metadata promoted between environments.
-Plane records ticket state and generated workflow checkpoints.
+OpenProject records ticket state and generated workflow checkpoints.
 Production promotion is explicit and artifact-based.
 ```

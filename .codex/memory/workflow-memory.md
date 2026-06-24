@@ -8,7 +8,7 @@
 - Last verified: 2026-05-29
 
 ```text
-Plane Todo
+OpenProject Todo
   -> branch + OpenSpec proposal
   -> implementation + tests
   -> Gitea PR
@@ -16,12 +16,12 @@ Plane Todo
   -> merge to dev
   -> Nexus artifact set + selected provider DEV + selected provider QA
   -> E2E QA evidence
-  -> Plane Done
+  -> OpenProject Done
   -> explicit PROD promotion to main/PROD
   -> rollback or hotfix when needed
 ```
 
-## Default Plane States
+## Default OpenProject States
 
 - Type: Fact
 - Status: Active
@@ -76,7 +76,7 @@ Use these markers for idempotency:
 - Source: `.codex/skills/_shared/delivery-contract.md`, `docs/architecture.md`
 - Last verified: 2026-06-09
 
-Normal automatic delivery stays locked to one Plane ticket through ignored `.codex/delivery-context.local.json`. Keep the lock after QA Done because explicit PROD promotion may still need artifact and RC context. `dev-flow-start-ticket` may lazily replace the lock when starting another ticket only after the locked ticket is verified in the configured Done state. Parallel delivery uses one worktree and one local ticket lock per active ticket. Child skills must verify ticket, branch, PR, artifact commit, QA evidence, RC tag, and PROD lineage match the lock before mutation.
+Normal automatic delivery stays locked to one OpenProject work package through ignored `.codex/delivery-context.local.json`. Keep the lock after QA Done because explicit PROD promotion may still need artifact and RC context. `dev-flow-start-ticket` may lazily replace the lock when starting another ticket only after the locked ticket is verified in the configured Done state. Parallel delivery uses one worktree and one local ticket lock per active ticket. Child skills must verify ticket, branch, PR, artifact commit, QA evidence, RC tag, and PROD lineage match the lock before mutation.
 
 ## Parallel Delivery
 
@@ -85,7 +85,7 @@ Normal automatic delivery stays locked to one Plane ticket through ignored `.cod
 - Source: `.codex/skills/_shared/delivery-contract.md`, `docs/architecture.md`
 - Last verified: 2026-05-29
 
-Implementation and review can run concurrently across isolated worktrees. DEV, QA, E2E QA, PROD, rollback, and hotfix promotion are serialized because they share selected provider environments, Nexus release manifests, RC/final tags, and Plane deployment evidence.
+Implementation and review can run concurrently across isolated worktrees. DEV, QA, E2E QA, PROD, rollback, and hotfix promotion are serialized because they share selected provider environments, Nexus release manifests, RC/final tags, and OpenProject deployment evidence.
 
 ## Context Findings Review
 
@@ -94,7 +94,7 @@ Implementation and review can run concurrently across isolated worktrees. DEV, Q
 - Source: `docs/context-management.md`, `docs/development.md`, `.codex/skills/_shared/delivery-contract.md`
 - Last verified: 2026-05-29
 
-Every implementation must finish with a Context Findings Review and memory update review. Durable authoritative findings update the matching `docs/` file in the same PR. Reusable non-authoritative findings update `.codex/memory/`. If no durable findings exist, the PR body and Plane handoff comment must state `Docs: no durable context changes` and `Memory updated: none`.
+Every implementation must finish with a Context Findings Review and memory update review. Durable authoritative findings update the matching `docs/` file in the same PR. Reusable non-authoritative findings update `.codex/memory/`. If no durable findings exist, the PR body and OpenProject handoff comment must state `Docs: no durable context changes` and `Memory updated: none`.
 
 ## Delivery Skill Startup
 
@@ -112,7 +112,7 @@ Non-OpenSpec, non-configure delivery skills share a startup sequence through `.c
 - Source: `AGENTS.md`, `.codex/skills/_shared/skill-startup.md`, `.codex/skills/_shared/delivery-contract.md`, current conversation
 - Last verified: 2026-06-02
 
-Before final handoff for any non-trivial repository work, agents must classify whether an error, issue, blocker, fix, configuration repair, local tooling correction, or debugging result is reusable. The result must be reported as `Memory updated: <files>` or `Memory updated: none`. Plane comments, PR comments, QA evidence, logs, and chat summaries do not replace durable learning capture.
+Before final handoff for any non-trivial repository work, agents must classify whether an error, issue, blocker, fix, configuration repair, local tooling correction, or debugging result is reusable. The result must be reported as `Memory updated: <files>` or `Memory updated: none`. OpenProject comments, PR comments, QA evidence, logs, and chat summaries do not replace durable learning capture.
 
 Agent-caused or tool-discovered failures are memory candidates by default. If a command fails, a hook rejects the agent's action, a required local tool is missing, or the agent repeats a workflow mistake, search memory with the concrete symptom and persist a small update unless the issue is already covered or clearly one-off. Do not use `Memory updated: none` for a newly diagnosed repeatable agent/tooling failure.
 
@@ -125,23 +125,23 @@ Agent-caused or tool-discovered failures are memory candidates by default. If a 
 
 Use `.codex/memory/search_memory.ps1 -Query <symptom>` during debugging and preflight when a task mentions or reveals an error, blocker, failed command, deployment issue, PR feedback, QA failure, configuration mismatch, or local tooling problem. Search concrete terms such as config keys, command names, marker names, workflow stages, and error fragments, then verify the memory lead against current files and live state.
 
-## Plane Generated Comments Require Plane Payload Fields
+## OpenProject Generated Comments Require OpenProject Payload Fields
 
 - Type: Pattern
 - Status: Active
 - Source: `.codex/skills/_shared/api-helpers.md`, `.codex/skills/_shared/delivery-contract.md`, current conversation
 - Last verified: 2026-06-02
 
-Generated Plane comments must send both `comment_html` and `comment_stripped`; Gitea-style fields such as `comment` or `body` can produce blank rendered comments. After posting or patching a generated marker, read the comment back and verify `comment_stripped` starts with the marker before reporting the comment as added.
+Generated OpenProject comments must send both `comment_html` and `comment_stripped`; Gitea-style fields such as `comment` or `body` can produce blank rendered comments. After posting or patching a generated marker, read the comment back and verify `comment_stripped` starts with the marker before reporting the comment as added.
 
-## Plane Descriptions Strip Raw Html Comments
+## OpenProject Descriptions Strip Raw Html Comments
 
 - Type: Pattern
 - Status: Active
-- Source: E2EPROJECT-4 ticket start, Plane work-item description PATCH/readback
+- Source: E2EPROJECT-4 ticket start, OpenProject work package description PATCH/readback
 - Last verified: 2026-06-08
 
-Plane work-item descriptions can strip raw HTML comments such as `<!-- ia-generated:start -->` from `description_html` during sanitization. When writing the managed generated block through Plane API, read the description back and verify marker persistence; escaped marker text such as `&lt;!-- ia-generated:start --&gt;` remains detectable in `description_html` and `description_stripped`.
+OpenProject work package descriptions can strip raw HTML comments such as `<!-- ia-generated:start -->` from `description_html` during sanitization. When writing the managed generated block through OpenProject API, read the description back and verify marker persistence; escaped marker text such as `&lt;!-- ia-generated:start --&gt;` remains detectable in `description_html` and `description_stripped`.
 
 ## Repo-Owned Skills Carry Local Delivery Behavior
 
@@ -159,7 +159,7 @@ Repo-specific delivery behavior should live in repo-owned skills. The reconnecta
 - Source: Codex thread `019e83a6-433d-7fa2-8ff0-852d74d2eb21`, `.codex/skills/_shared/delivery-contract.md`
 - Last verified: 2026-06-02
 
-AI review findings and later human PR comments must be converted into OpenSpec `## PR Review Feedback` tasks, Plane detection/fix comments, code/test/doc fixes, validation, commits, pushes, and an AI review rerun before handoff. Feedback batches should use deterministic ids from source comment/review ids so late comments on the same head SHA are not skipped by an earlier batch marker.
+AI review findings and later human PR comments must be converted into OpenSpec `## PR Review Feedback` tasks, OpenProject detection/fix comments, code/test/doc fixes, validation, commits, pushes, and an AI review rerun before handoff. Feedback batches should use deterministic ids from source comment/review ids so late comments on the same head SHA are not skipped by an earlier batch marker.
 
 ## Compatibility Alias Skills Should Stay Thin
 

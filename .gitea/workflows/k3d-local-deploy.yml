@@ -84,14 +84,14 @@ jobs:
           test -n "$ticket_key_pattern"
 
           commit_message="${{ github.event.head_commit.message }}"
-          plane_ticket_key=""
+          ticket_key=""
           if [[ "$commit_message" =~ ^($ticket_key_pattern) ]]; then
-            plane_ticket_key="${BASH_REMATCH[1]}"
+            ticket_key="${BASH_REMATCH[1]}"
           elif [[ "$commit_message" =~ Merge\ pull\ request.*\'($ticket_key_pattern): ]]; then
-            plane_ticket_key="${BASH_REMATCH[1]}"
+            ticket_key="${BASH_REMATCH[1]}"
           fi
           deploy_allowed=false
-          if [ -n "$plane_ticket_key" ]; then
+          if [ -n "$ticket_key" ]; then
             deploy_allowed=true
           fi
 
@@ -132,7 +132,7 @@ jobs:
           commit_sha="$(cat artifacts/commit.sha)"
           ticket_key_pattern="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ReadProjectProfile --path .codex/project-profile.json)"
           commit_message="$(git log -1 --pretty=%B)"
-          plane_ticket_key="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ExtractTicketKey --pattern "$ticket_key_pattern" --message "$commit_message" --fallback manual-dispatch)"
+          ticket_key="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ExtractTicketKey --pattern "$ticket_key_pattern" --message "$commit_message" --fallback manual-dispatch)"
 
           site_tag="$NEXUS_DOCKER_REGISTRY/sddtemplate/site:$commit_sha"
           api_tag="$NEXUS_DOCKER_REGISTRY/sddtemplate/api:$commit_sha"
@@ -151,7 +151,7 @@ jobs:
 
           jq -n \
             --arg commitSha "$commit_sha" \
-            --arg planeTicketKey "$plane_ticket_key" \
+            --arg ticketKey "$ticket_key" \
             --arg registry "$NEXUS_DOCKER_REGISTRY" \
             --arg siteImage "$NEXUS_DOCKER_REGISTRY/sddtemplate/site" \
             --arg siteTag "$commit_sha" \
@@ -164,7 +164,7 @@ jobs:
             '{
               schemaVersion: 1,
               commitSha: $commitSha,
-              planeTicketKey: $planeTicketKey,
+              ticketKey: $ticketKey,
               registry: $registry,
               images: [
                 { appId: "site", image: $siteImage, tag: $siteTag, digest: $siteDigest, reference: $siteReference },
@@ -172,7 +172,7 @@ jobs:
               ]
             }' > artifacts/container-images.json
 
-          dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- CreateReleaseManifest --output artifacts/release.json --commit-sha "$commit_sha" --checksum "$site_digest" --artifact-url "$site_ref" --plane-ticket-key "$plane_ticket_key" --version-status "local container candidate"
+          dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- CreateReleaseManifest --output artifacts/release.json --commit-sha "$commit_sha" --checksum "$site_digest" --artifact-url "$site_ref" --ticket-key "$ticket_key" --version-status "local container candidate"
           tmp="$(mktemp)"
           jq --slurpfile containerImages artifacts/container-images.json '.deploymentProvider = "k3d" | .containerImages = $containerImages[0].images | .containerImagesUrl = "app/" + .commitSha + "/container-images.json"' artifacts/release.json > "$tmp"
           mv "$tmp" artifacts/release.json
@@ -483,9 +483,9 @@ jobs:
 
           ticket_key_pattern="$(jq -r '.workflow.ticketKeyPattern // empty' .codex/project-profile.json)"
           branch_name="${GITHUB_REF#refs/heads/}"
-          plane_ticket_key="$(printf '%s\n' "$branch_name" | sed -nE "s#^qa-local/($ticket_key_pattern)(/.*)?\$#\1#p" | head -n 1)"
-          test -n "$plane_ticket_key"
-          echo "E2E_PLANE_TICKET_KEY=$plane_ticket_key" >> "$GITHUB_ENV"
+          ticket_key="$(printf '%s\n' "$branch_name" | sed -nE "s#^qa-local/($ticket_key_pattern)(/.*)?\$#\1#p" | head -n 1)"
+          test -n "$ticket_key"
+          echo "E2E_TICKET_KEY=$ticket_key" >> "$GITHUB_ENV"
 
       - name: Install E2E dependencies
         shell: bash
@@ -511,7 +511,7 @@ jobs:
           run_id="$(date -u +%Y%m%d-%H%M%S)-${GITHUB_SHA:0:7}"
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o evidence/qa-observability.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${E2E_ARTIFACT_COMMIT_SHA}/qa-observability.json" || true
           {
-            echo "ticketKey=$E2E_PLANE_TICKET_KEY"
+            echo "ticketKey=$E2E_TICKET_KEY"
             echo "artifactCommitSha=$E2E_ARTIFACT_COMMIT_SHA"
             echo "testCommitSha=$GITHUB_SHA"
             echo "deploymentProvider=k3d"
@@ -526,7 +526,7 @@ jobs:
           zip -r qa-e2e-evidence.zip evidence
 
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file qa-e2e-evidence.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${E2E_ARTIFACT_COMMIT_SHA}/qa-e2e-evidence.zip"
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file qa-e2e-evidence.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/qa/${E2E_PLANE_TICKET_KEY}/${run_id}/qa-evidence.zip"
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file qa-e2e-evidence.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/qa/${E2E_TICKET_KEY}/${run_id}/qa-evidence.zip"
 
           exit "$test_exit"
         env:

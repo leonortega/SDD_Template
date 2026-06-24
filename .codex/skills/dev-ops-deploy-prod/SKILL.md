@@ -7,7 +7,7 @@ description: Promote a QA-approved release artifact to production after configur
 
 ## Overview
 
-Use this skill after `quality-test-e2e` has passed and moved each included Plane ticket to `plane.doneState`. `Done` means QA accepted and PROD eligible; PROD remains an explicit release event that may include one or more Done tickets. The release rule is:
+Use this skill after `quality-test-e2e` has passed and moved each included OpenProject work package to `openProject.doneStatus`. `Done` means QA accepted and PROD eligible; PROD remains an explicit release event that may include one or more Done tickets. The release rule is:
 
 ```text
 feature branch -> dev -> DEV -> QA -> E2E QA OK -> main -> PROD
@@ -17,7 +17,7 @@ PROD must reuse the QA-approved Nexus artifact. Never rebuild, republish, or ren
 
 ## Shared Context
 
-Before production promotion, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Load selected ticket, repository/review, artifact, deployment, and observability adapters. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` helpers: `ValidateTicketLock` for `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, `ArtifactPaths`, `ValidateReleaseManifest`, `UpdateReleaseManifest`, and `RenderPlaneComment -Type ProdDeployment`.
+Before production promotion, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Load selected ticket, repository/review, artifact, deployment, and observability adapters. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` helpers: `ValidateTicketLock` for `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, `ArtifactPaths`, `ValidateReleaseManifest`, `UpdateReleaseManifest`, and `RenderTicketComment -Type ProdDeployment`.
 
 For push-triggered production deployment from the release branch, the commit or merged PR title must start with the ticket key format configured in `.codex/project-profile.json` at `workflow.ticketKeyPattern`, and the change must touch configured application or test paths. Non-code changes outside those paths and non-ticket PRs must not deploy production.
 
@@ -27,13 +27,13 @@ Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.e
 
 Required values:
 
-- `plane.baseUrl`, `plane.apiToken`, `plane.workspaceSlug`, `plane.projectIdentifier`, `plane.doneState`
+- `openProject.baseUrl`, `openProject.apiToken`, `openProject.projectIdentifier`, `openProject.projectIdentifier`, `openProject.doneStatus`
 - `gitea.baseUrl`, `gitea.apiToken`, `gitea.owner`, `gitea.repo`
 - `nexus.baseUrl`, `nexus.username`, `nexus.password`, `nexus.repository`
 
 Optional environment variables override local JSON when present:
 
-- `PLANE_DONE_STATE`
+- `OPENPROJECT_DONE_STATUS`
 - `GITEA_BASE_URL`
 - `GITEA_API_TOKEN`
 - `GITEA_OWNER`
@@ -41,17 +41,17 @@ Optional environment variables override local JSON when present:
 
 ## Workflow
 
-Run preflight, main/tag promotion, PROD deployment, PROD verification, Plane results, post-PROD retrospective, and release handoff steps in order. Do not continue to the next step until the prior validation evidence is present.
+Run preflight, main/tag promotion, PROD deployment, PROD verification, OpenProject results, post-PROD retrospective, and release handoff steps in order. Do not continue to the next step until the prior validation evidence is present.
 
 ## Preflight
 
-1. Resolve the primary Plane ticket, included Done ticket list, PRs, QA-approved commit SHA, source RC version, and final release version from user input, Plane comments, Gitea PR metadata, tags, `app/qa-approved/latest.json`, or Nexus artifact paths. If `release.json.includedTickets` exists, treat it as the authoritative release membership list; otherwise default to the primary `planeTicketKey` for single-ticket compatibility.
-2. Run `ValidateTicketLock` with the primary Plane ticket, representative PR, QA-approved commit, source RC version when known, and final release version when known. If the result is invalid, stop before tag or `main` mutation. Do not reject a valid batch release only because additional included tickets differ from the active ticket lock.
+1. Resolve the primary OpenProject work package, included Done ticket list, PRs, QA-approved commit SHA, source RC version, and final release version from user input, OpenProject comments, Gitea PR metadata, tags, `app/qa-approved/latest.json`, or Nexus artifact paths. If `release.json.includedTickets` exists, treat it as the authoritative release membership list; otherwise default to the primary `ticketKey` for single-ticket compatibility.
+2. Run `ValidateTicketLock` with the primary OpenProject work package, representative PR, QA-approved commit, source RC version when known, and final release version when known. If the result is invalid, stop before tag or `main` mutation. Do not reject a valid batch release only because additional included tickets differ from the active ticket lock.
 3. Require SemVer tags:
    - source RC: `vMAJOR.MINOR.PATCH-rc.N`
    - final release: `vMAJOR.MINOR.PATCH`
-4. Fetch every included Plane ticket with expanded state/project data and verify each one is in `plane.doneState`.
-5. Read Plane comments for every included ticket and find `IA generated E2E QA: {ticketKey}` for the same commit/artifact or for a commit reachable from the promoted artifact commit.
+4. Fetch every included OpenProject work package with expanded state/project data and verify each one is in `openProject.doneStatus`.
+5. Read OpenProject comments for every included ticket and find `IA generated E2E QA: {ticketKey}` for the same commit/artifact or for a commit reachable from the promoted artifact commit.
 6. Verify every included ticket's E2E QA comment includes pass result, PR URL, QA URL, Nexus artifact URL, QA evidence URL, and source RC version.
 7. Verify Nexus contains the selected provider artifact set. Azure requires:
    - `app/{commitSha}/deployable-apps.json`
@@ -66,10 +66,10 @@ Run preflight, main/tag promotion, PROD deployment, PROD verification, Plane res
    - `app/{commitSha}/release.json`
    - `app/{commitSha}/qa-observability.json` when observability is enabled
 8. Download checksum metadata only as needed and verify `commit.sha` exactly matches the QA-approved commit.
-9. Read `release.json` and verify it references the same commit SHA, checksum, primary Plane ticket, QA evidence URL, and source RC version as the Plane E2E QA evidence. If `includedTickets` exists, every included ticket must have Done state, E2E QA PASS evidence, source RC lineage, and release membership proof. Treat a different `planeTicketKey` as blocking only when no `includedTickets` release membership proves the batch release.
+9. Read `release.json` and verify it references the same commit SHA, checksum, primary OpenProject work package, QA evidence URL, and source RC version as the OpenProject E2E QA evidence. If `includedTickets` exists, every included ticket must have Done state, E2E QA PASS evidence, source RC lineage, and release membership proof. Treat a different `ticketKey` as blocking only when no `includedTickets` release membership proves the batch release.
 10. Verify the source RC tag exists and points to the QA-approved commit.
 11. Verify the final release tag does not already exist.
-12. If `app/qa-approved/latest.json` is used to resolve the commit, verify its `artifactCommitSha`, `version`, `canonicalPath`, `releaseManifestPath`, `planeTicketKey`, and `includedTickets` match the selected release context before any `main` or tag mutation.
+12. If `app/qa-approved/latest.json` is used to resolve the commit, verify its `artifactCommitSha`, `version`, `canonicalPath`, `releaseManifestPath`, `ticketKey`, and `includedTickets` match the selected release context before any `main` or tag mutation.
 
 Stop if any QA gate, tag gate, artifact gate, or checksum gate fails.
 
@@ -135,7 +135,7 @@ After the workflow succeeds, run direct verification before commenting success:
 
 PROD success must never be based on screenshots alone.
 
-## Plane Result
+## OpenProject Result
 
 Before commenting, read existing comments for every included ticket when the API allows it. Use this stable marker:
 
@@ -145,7 +145,7 @@ IA generated PROD deployment: {finalVersion}
 
 Do not duplicate a PROD result comment with the same marker, commit, artifact, and PROD URL on an included ticket unless the user explicitly asks for a fresh run.
 
-Keep the marker as the first line by itself. Use `RenderPlaneComment -Type ProdDeployment` with the resolved release, reference, evidence, and production validation data to format the readable Markdown body.
+Keep the marker as the first line by itself. Use `RenderTicketComment -Type ProdDeployment` with the resolved release, reference, evidence, and production validation data to format the readable Markdown body.
 
 Add or update the PROD result on every included ticket. The comment must include:
 
@@ -175,21 +175,21 @@ This retrospective is a learning-evidence step, not a release gate. PROD success
 The retrospective must persist compact, sanitized learning evidence:
 
 - append or update local audit result data in ignored `.codex/agent-evals/results.local.json`,
-- add or reuse a compact Plane comment with marker `IA generated post-PROD retrospective: {finalVersion}`,
+- add or reuse a compact OpenProject comment with marker `IA generated post-PROD retrospective: {finalVersion}`,
 - include findings, recommended durable improvements, eval coverage gaps, residual evidence gaps, and follow-up ownership when applicable.
 
-The retrospective must not mutate Plane state, deploy, promote, tag, rewrite branches, update release manifests, create tickets, schedule automations, or apply docs, contract, skill, eval, or memory changes unless the user separately asks for apply mode. Do not include secrets, raw tool payloads, full prompts, tokens, cookies, or credential-bearing URLs in the local result or Plane comment.
+The retrospective must not mutate OpenProject status, deploy, promote, tag, rewrite branches, update release manifests, create tickets, schedule automations, or apply docs, contract, skill, eval, or memory changes unless the user separately asks for apply mode. Do not include secrets, raw tool payloads, full prompts, tokens, cookies, or credential-bearing URLs in the local result or OpenProject comment.
 
 ## Output
 
-Report the final release version, included tickets, PROD URL, final tag, deployed artifact commit, validation results, Plane PROD comment status for every included ticket, post-PROD retrospective result path and Plane marker status, and any handoff, audit, or monitoring gaps.
+Report the final release version, included tickets, PROD URL, final tag, deployed artifact commit, validation results, OpenProject PROD comment status for every included ticket, post-PROD retrospective result path and OpenProject marker status, and any handoff, audit, or monitoring gaps.
 
 ## Failure Rules
 
-- Missing Plane API config: stop before Plane reads or mutations.
-- Any included ticket not in `plane.doneState`: stop.
+- Missing OpenProject API config: stop before OpenProject reads or mutations.
+- Any included ticket not in `openProject.doneStatus`: stop.
 - Missing or stale E2E QA marker for any included ticket: stop.
-- Ticket context lock mismatch: stop before tag, `main`, workflow, Plane, or release manifest mutation.
+- Ticket context lock mismatch: stop before tag, `main`, workflow, OpenProject, or release manifest mutation.
 - Missing source RC tag or wrong tag target: stop.
 - Existing final release tag: stop.
 - Missing Nexus artifact/checksum/commit metadata: stop.

@@ -21,15 +21,15 @@ Capture UTC start time after resolving the ticket key and before post-merge vali
 
 ## Configuration
 
-Read `.codex/client-tools.local.json` first. Required values are Plane, Gitea, and Nexus settings used by `dev-ops-deploy-qa`.
+Read `.codex/client-tools.local.json` first. Required values are OpenProject, Gitea, and Nexus settings used by `dev-ops-deploy-qa`.
 
 ## Workflow
 
-1. Resolve the PR from user input, current branch, Plane comments, commit messages, or ticket key.
+1. Resolve the PR from user input, current branch, OpenProject comments, commit messages, or ticket key.
 2. Verify the PR is merged and its target branch is `dev`.
 3. Verify the PR does not currently have configured `pr.labels.needsChanges` or `pr.labels.needsTests`.
 4. Resolve the merge commit SHA from Gitea metadata.
-5. Resolve the Plane ticket key from the PR title/body, branch name, commit messages, or Plane comments.
+5. Resolve the OpenProject work package key from the PR title/body, branch name, commit messages, or OpenProject comments.
 6. Run `ValidateTicketLock` with the resolved ticket key, PR number, branch, and merge/artifact commit when known. If the result is invalid, stop before waiting for artifacts.
 7. Poll for the Nexus artifact files for the merge commit according to the selected deployment provider. For Azure App Service, require:
    - `app/{commitSha}/deployable-apps.json`
@@ -44,8 +44,8 @@ Read `.codex/client-tools.local.json` first. Required values are Plane, Gitea, a
    - `app/{commitSha}/monitoring-summary-dev.json` and `app/{commitSha}/monitoring-summary-qa.json` when DEV/QA deployment already completed
 8. Use bounded waiting: check immediately, then retry with backoff for up to 10 minutes unless the user asked for a shorter wait.
 9. Verify `commit.sha` matches the merge commit before delegating.
-10. If `release.json` exists, verify `planeTicketKey` matches the locked/resolved ticket key.
-11. Invoke `dev-ops-deploy-qa` with the resolved PR, ticket key, and merge commit. If QA deployment is already complete, invoke `dev-ops-deploy-qa` in idempotent verification mode so that stage records its own telemetry row without duplicating Plane comments or state changes.
+10. If `release.json` exists, verify `ticketKey` matches the locked/resolved ticket key.
+11. Invoke `dev-ops-deploy-qa` with the resolved PR, ticket key, and merge commit. If QA deployment is already complete, invoke `dev-ops-deploy-qa` in idempotent verification mode so that stage records its own telemetry row without duplicating OpenProject comments or state changes.
 
 ## Idempotency
 

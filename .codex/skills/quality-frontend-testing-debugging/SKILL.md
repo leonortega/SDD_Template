@@ -38,7 +38,7 @@ If the Browser plugin is unavailable, use the repository's configured Playwright
 - Assert observable behavior, not just navigation success.
 - Check blank-page risk, layout overlap, clipped text, missing assets, broken links, stale loading states, and console errors.
 - Use screenshots as evidence only after validating that they show the intended environment and state.
-- Keep checks scoped to the Plane ticket or explicit user request.
+- Keep checks scoped to the OpenProject work package or explicit user request.
 - Store one-off QA evidence under ignored `artifacts/qa/{ticketKey}/{runId}/` only when invoked through `quality-test-e2e`.
 
 ## Output
