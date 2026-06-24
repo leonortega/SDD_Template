@@ -1,5 +1,23 @@
 # Failure Pattern Memory
 
+## k3d Install Works From Approved Executables Folder, But Docker Backend Can Block Cluster Create
+
+- Type: Pattern
+- Status: Active
+- Source: `winget install -e --id k3d.k3d`, direct `k3d.exe` download, `EnsureK3dCluster`, `k3d cluster list`, Docker error `timed out dialing Hyper-V socket`
+- Last verified: 2026-06-23
+
+On this workstation, `winget` can install k3d under `%LOCALAPPDATA%\Microsoft\WinGet\Packages`, but executing that package path may fail with `Access is denied`. Put `k3d.exe` in the approved folder `C:\Endava\EndevLocal\Executables` and prepend that path for validation. If `k3d cluster create sdd-template` fails with Docker backend `failed to connect to the backend: timed out dialing Hyper-V socket`, treat it as a live Docker/Rancher backend blocker, not a k3d config bug. Restart or repair the Docker backend, clean only failed `k3d-sdd-template*` containers/network/volume if needed, then rerun `EnsureK3dCluster`.
+
+## Rancher Docker Backend Can Timeout During Cleanup
+
+- Type: Pattern
+- Status: Active
+- Source: current Docker cleanup run, `docker ps`, `docker system df`, `docker image rm`, `rdctl shell`, and `kubectl get pods -A -o jsonpath=...`
+- Last verified: 2026-06-23
+
+On this Rancher Desktop setup, Docker CLI cleanup commands can intermittently fail with `failed to connect to the backend: timed out dialing Hyper-V socket` even while Kubernetes remains responsive. Before removing Rancher images, use `kubectl get pods -A -o jsonpath=...` to list active pod images, keep the active Rancher and deployed app digest images, and delete stale tags one by one. Avoid broad `docker image prune -a` when local tool images such as `agentic/*` or `zricethezav/gitleaks:latest` are intentionally cached.
+
 ## Seq Alert Updates Need Force For Existing Fields
 
 - Type: Pattern
@@ -171,14 +189,14 @@ When hardening local infra Compose files, ensure service env interpolation uses 
 
 Docker Compose interpolates dollar-prefixed dotenv values. Azure Event Hub consumer group values such as `$Default` must be written as `$$Default` in `infra/monitoring/variables.env` and `infra/monitoring/variables.env.example`; otherwise Compose warns that `Default` is unset and passes a blank value to the collector configuration. Validate both local and example env files with `docker compose ... config --quiet`.
 
-## Grafana Health Alerts Need Scheduler-Aligned Blackbox Probes
+## Grafana Health Alerts Need Scheduler-Aligned Direct Health Checks
 
 - Type: Pattern
-- Status: Active
-- Source: `infra/monitoring/grafana/provisioning/alerting/health-alerts.yml`, `infra/monitoring/compose.yml`, `infra/monitoring/prometheus/prometheus.yml`, `infra/monitoring/prometheus/blackbox.yml`, `configure_infra_tools.ps1 -Mode Audit`
-- Last verified: 2026-06-16
+- Status: Superseded
+- Source: `infra/monitoring/grafana/provisioning/alerting/health-alerts.yml`, `infra/monitoring/compose.yml`, `infra/monitoring/grafana/provisioning/datasources/infinity-health.yml`, `.gitea/workflows/k3d-local-deploy.yml`, `configure_infra_tools.ps1 -Mode Audit`
+- Last verified: 2026-06-24
 
-Grafana alert rule groups reject intervals below the local scheduler interval; use a 10-second health alert pending duration by default. Prometheus health checks need blackbox exporter to listen on `0.0.0.0:9115`; otherwise Prometheus may time out on `blackbox-exporter:9115` even though the host port responds. Keep blackbox timeout below Prometheus scrape timeout so failed or slow `/health` endpoints still return `probe_success` metrics.
+Grafana alert rule groups reject intervals below the local scheduler interval; keep a scheduler-aligned health alert pending duration such as `2m`. Prometheus and Blackbox were removed from the local k3d lane. Deployment evidence now comes from direct site/API `/health` checks in Gitea workflows, while Grafana Infinity queries the same health URLs for operator dashboards and alerts.
 
 ## Full Test Suite Can Fail On Canonical Docs And Event Hub Template Drift
 
@@ -188,6 +206,15 @@ Grafana alert rule groups reject intervals below the local scheduler interval; u
 - Last verified: 2026-06-17
 
 When unrelated code changes run the full suite, existing fixture drift can fail tests that assert README/canonical docs text and Event Hub collector template values. Current known failures include missing `OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING` in the expected env surface, missing `Azure Monitor` in architecture context, and missing README phrases such as `## Canonical Context` or `Before the first ticket starts`. The old `manual by default` recommendation wording is superseded by guarded-auto acquisition. Treat these as repository guidance/configuration drift, not product-code regressions, unless the current change touched those docs or env templates.
+
+## k3d CLI Can Be Present But Blocked By Windows Access
+
+- Type: Pattern
+- Status: Active
+- Source: `k3d version`, `.codex/skills/configure-dev-environment/scripts/configure_infra_tools.ps1 -Mode Audit`, local `C:\Endava\EndevLocal\Executables\k3d.cmd` bridge validation, `EnsureK3dCluster` repair
+- Last verified: 2026-06-24
+
+`k3d.exe` can be installed at `C:\Users\mlortega\AppData\Local\Programs\k3d\k3d.exe` but fail to start with `Access is denied`. On this workstation, copying the WinGet package executable into `C:\Endava\EndevLocal\Executables\k3d.k3d_Microsoft.Winget.Source_8wekyb3d8bbwe\k3d.exe`, adding `C:\Endava\EndevLocal\Executables\k3d.cmd`, and moving `C:\Endava\EndevLocal\Executables` before the blocked AppData k3d directory in User PATH made `k3d version` resolve to the bridge and return `v5.9.0`. Existing Codex shells can still inherit stale PATH from the parent process, so `configure_infra_tools.ps1` resolves `k3d` from persisted User/Machine PATH while leaving other tools on normal session resolution. `EnsureK3dCluster` must merge with `--kubeconfig-merge-default --kubeconfig-switch-context`; otherwise k3d can write `C:\Users\mlortega\.config\kubeconfig-sdd-template.yaml` while default `kubectl` remains on `rancher-desktop`.
 
 ## Clean CI Lacks Ignored Grafana Dashboards Local Files
 
@@ -460,3 +487,30 @@ On this Windows workstation, `winget install --id Headlamp.Headlamp` can hang wi
 - Last verified: 2026-06-22
 
 Do not run overlapping `dotnet test` commands that build shared projects in this repository. On Windows, parallel test invocations can leave `VBCSCompiler` or MSBuild nodes holding `SDDTemplate.DeliveryTools.dll`, causing `CS2012 Cannot open ... for writing`. Run focused .NET tests sequentially, or clear stale build servers with `dotnet build-server shutdown` before rerunning validation.
+
+## Docker Backend Hyper-V Socket Timeout Can Block Runtime Inspection
+
+- Type: Pattern
+- Status: Active
+- Source: local Docker/Rancher runtime inspection during k3d observability cleanup; `failed to connect to the backend: timed out dialing Hyper-V socket`
+- Last verified: 2026-06-23
+
+When Docker CLI commands time out with `failed to connect to the backend: timed out dialing Hyper-V socket`, treat live container inspection as inconclusive rather than proof that a container is absent or stopped. Validate static Compose config first, then restart Rancher Desktop or run `wsl --shutdown` before retrying Docker runtime checks.
+
+## Plane Postgres Env Drift Causes API 502 And Crash Loops
+
+- Type: Pattern
+- Status: Active
+- Source: local Plane repair; `agentic-e2e-plane-db-1` logs, Docker-network `psql`, `http://agentic.lvh.me:8080/api/v1/users/me/`
+- Last verified: 2026-06-24
+
+When Plane returns `502 Bad Gateway` and backend containers repeatedly restart, check `agentic-e2e-plane-db-1` logs for `password authentication failed for user "plane"`. A common cause is drift between `infra/plane/variables.env` values and the persisted Postgres volume. Verify `DATABASE_URL`, `FOLLOWER_POSTGRES_URI`, and `PLANE_PI_DATABASE_URL` all use the current `POSTGRES_PASSWORD`, then reset the persisted Postgres role password without printing the secret. Also verify the `plane_pi` database exists; if `pi-db-init` is scaled to zero, create it manually through `psql` before recreating stateless Plane backend containers.
+
+## Grafana Infinity Single Object Health Panels Need Computed Numeric Fields
+
+- Type: Pattern
+- Status: Active
+- Source: local Grafana DEV/QA/PROD K8 health dashboards after Prometheus/Blackbox removal; `http://localhost:3001/api/ds/query`; rendered dashboard screenshot
+- Last verified: 2026-06-24
+
+For `/health` JSON shaped as a single object with `status: "ok"`, Grafana Infinity backend queries need `json_options.root_is_not_array: true`. Stat panels should expose a computed numeric field such as `status == 'ok' ? 1 : 0` as `up` and map `1 -> UP`, `0/null -> DOWN`. Returning only the string `status` can make Grafana Stat panels render blank even when `/api/ds/query` returns `status: ok`.

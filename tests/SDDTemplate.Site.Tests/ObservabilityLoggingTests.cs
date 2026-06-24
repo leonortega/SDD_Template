@@ -188,27 +188,19 @@ namespace SDDTemplate.Site.Tests
         }
 
         [Fact]
-        public void CollectorComposeDefinesOptionalEventHubProfile()
+        public void MonitoringComposeDoesNotRunLocalOtelCollector()
         {
             string root = FindRepositoryRoot();
             string compose = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "compose.yml"));
-            string collector = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "otelcol", "collector.yaml"));
             string envExample = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "variables.env.example"));
 
-            Assert.Contains("image: otel/opentelemetry-collector-contrib:0.154.0", compose);
-            Assert.Contains("profiles:", compose);
-            Assert.Contains("eventhub", compose);
-            Assert.Contains("agentic-otelcol", compose);
-            Assert.Contains("agentic-prometheus", compose);
-            Assert.Contains("agentic-blackbox", compose);
-            Assert.Contains("--web.listen-address=0.0.0.0:9115", compose);
-            Assert.Contains("azure_event_hub/dev", collector);
-            Assert.Contains("azure_event_hub/qa", collector);
-            Assert.Contains("azure_event_hub/prod", collector);
-            Assert.Contains("otlphttp/seq", collector);
-            Assert.Contains("OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING", envExample);
-            Assert.Contains("OTELCOL_AZURE_EVENT_HUB_QA_CONNECTION_STRING", envExample);
-            Assert.Contains("OTELCOL_AZURE_EVENT_HUB_PROD_CONNECTION_STRING", envExample);
+            Assert.DoesNotContain("otel/opentelemetry-collector-contrib", compose);
+            Assert.DoesNotContain("agentic-otelcol", compose);
+            Assert.DoesNotContain("otelcol-data", compose);
+            Assert.DoesNotContain("agentic-prometheus", compose);
+            Assert.DoesNotContain("agentic-blackbox", compose);
+            Assert.Contains("GF_PLUGINS_PREINSTALL_SYNC: yesoreyeram-infinity-datasource@3.8.0", compose);
+            Assert.DoesNotContain("OTELCOL_", envExample);
         }
 
         [Fact]
@@ -216,19 +208,20 @@ namespace SDDTemplate.Site.Tests
         {
             string root = FindRepositoryRoot();
             string compose = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "compose.yml"));
-            string prometheus = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "prometheus", "prometheus.yml"));
-            string blackbox = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "prometheus", "blackbox.yml"));
             string envExample = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "variables.env.example"));
             string alert = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "alerting", "health-alerts.yml"));
 
             Assert.Contains("./grafana/provisioning:/etc/grafana/provisioning:ro", compose);
-            Assert.Contains("GRAFANA_HEALTH_ALERT_FOR: ${GRAFANA_HEALTH_ALERT_FOR:-10s}", compose);
-            Assert.Contains("scrape_interval: 10s", prometheus);
-            Assert.Contains("evaluation_interval: 10s", prometheus);
-            Assert.Contains("scrape_timeout: 10s", prometheus);
-            Assert.Contains("timeout: 9s", blackbox);
-            Assert.Contains("GRAFANA_HEALTH_ALERT_FOR=10s", envExample);
-            Assert.Contains("probe_success{job=\"blackbox_http_health\"} == 0", alert);
+            Assert.Contains("GRAFANA_HEALTH_ALERT_FOR: ${GRAFANA_HEALTH_ALERT_FOR:-2m}", compose);
+            Assert.Contains("GRAFANA_HEALTH_ALERT_FOR=2m", envExample);
+            Assert.Contains("datasourceUid: infinity-health", alert);
+            Assert.Contains("computed_columns:", alert);
+            Assert.Contains("selector: \"status == 'ok' ? 1 : 0\"", alert);
+            Assert.Contains("root_is_not_array: true", alert);
+            Assert.Contains("root_selector: \"\"", alert);
+            Assert.Contains("type: lt", alert);
+            Assert.Contains("url: http://host.docker.internal:18081/health", alert);
+            Assert.DoesNotContain("probe_success", alert);
             Assert.Contains("for: ${GRAFANA_HEALTH_ALERT_FOR}", alert);
             Assert.Contains("noDataState: OK", alert);
             Assert.Contains("execErrState: OK", alert);
@@ -249,15 +242,23 @@ namespace SDDTemplate.Site.Tests
         }
 
         [Fact]
-        public void GrafanaPrometheusDatasourceProvisioningExistsForHealthBoards()
+        public void GrafanaInfinityDatasourceProvisioningExistsForHealthBoards()
         {
             string root = FindRepositoryRoot();
-            string datasourcePath = Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "datasources", "prometheus.yml");
+            string datasourcePath = Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "datasources", "infinity-health.yml");
+            string removedPrometheusPath = Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "datasources", "prometheus.yml");
             string removedAzureMonitorPath = Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "datasources", "azure-monitor.yml");
 
             Assert.True(File.Exists(datasourcePath));
+            Assert.False(File.Exists(removedPrometheusPath));
             Assert.False(File.Exists(removedAzureMonitorPath));
-            Assert.Contains("uid: prometheus", File.ReadAllText(datasourcePath));
+            string datasource = File.ReadAllText(datasourcePath);
+            Assert.Contains("deleteDatasources:", datasource);
+            Assert.Contains("name: Prometheus", datasource);
+            Assert.Contains("uid: infinity-health", datasource);
+            Assert.Contains("type: yesoreyeram-infinity-datasource", datasource);
+            Assert.Contains("http://host.docker.internal:18081", datasource);
+            Assert.Contains("http://host.docker.internal:18086", datasource);
         }
 
         [Fact]
@@ -277,14 +278,21 @@ namespace SDDTemplate.Site.Tests
             }
 
             string devDashboard = File.ReadAllText(devDashboardPath);
-            Assert.Contains("\"uid\": \"prometheus\"", devDashboard);
-            Assert.Contains("probe_success", devDashboard);
+            Assert.Contains("\"uid\": \"infinity-health\"", devDashboard);
+            Assert.Contains("yesoreyeram-infinity-datasource", devDashboard);
+            Assert.Contains("\"parser\": \"backend\"", devDashboard);
+            Assert.Contains("\"root_is_not_array\": true", devDashboard);
+            Assert.Contains("\"selector\": \"status\"", devDashboard);
+            Assert.Contains("\"computed_columns\"", devDashboard);
+            Assert.Contains("\"selector\": \"status == 'ok' ? 1 : 0\"", devDashboard);
+            Assert.Contains("\"text\": \"up\"", devDashboard);
+            Assert.Contains("\"1\"", devDashboard);
+            Assert.Contains("\"text\": \"UP\"", devDashboard);
             Assert.Contains("DEV K8 Web/API Health", devDashboard);
-            Assert.Contains("provider=\\\"rancher-desktop\\\"", devDashboard);
-            Assert.Contains("app=\\\"site\\\"", devDashboard);
-            Assert.Contains("instance=\\\"http://host.docker.internal:18081/health\\\"", devDashboard);
-            Assert.Contains("app=\\\"api\\\"", devDashboard);
-            Assert.Contains("instance=\\\"http://host.docker.internal:18082/health\\\"", devDashboard);
+            Assert.Contains("\"url\": \"http://host.docker.internal:18081/health\"", devDashboard);
+            Assert.Contains("\"url\": \"http://host.docker.internal:18082/health\"", devDashboard);
+            Assert.DoesNotContain("probe_success", devDashboard);
+            Assert.DoesNotContain("prometheus", devDashboard, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("app=\\\"web\\\"", devDashboard);
             Assert.DoesNotContain("Azure", devDashboard);
         }
@@ -302,6 +310,7 @@ namespace SDDTemplate.Site.Tests
             Assert.Contains("PROD K8 Web/API Health", script);
             Assert.Contains("host.docker.internal:18081", script);
             Assert.Contains("host.docker.internal:18086", script);
+            Assert.Contains("infinity-health", script);
             Assert.Contains("grafana-legacy-dashboard", script);
         }
 
@@ -334,11 +343,10 @@ namespace SDDTemplate.Site.Tests
             string observabilitySkill = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-observability", "SKILL.md"));
 
             Assert.Contains("SetSeqAzureEventHubLogs", script);
-            Assert.Contains("RANCHER_OBSERVABILITY_ENABLED", script);
-            Assert.Contains("rancher.ready", script);
-            Assert.Contains("Test-AzureDeploymentSelected", script);
-            Assert.Contains("Azure collector-based Seq ingestion path", script);
-            Assert.Contains("Rancher Desktop sanitized pod-log capture", observabilitySkill);
+            Assert.DoesNotContain("K3D_OBSERVABILITY_ENABLED", script);
+            Assert.Contains("k3d.ready", script);
+            Assert.DoesNotContain("Azure collector-based Seq ingestion path", script);
+            Assert.Contains("Grafana Infinity health checks", observabilitySkill);
             Assert.DoesNotContain("SetSeqAzureLogs", script);
             Assert.DoesNotContain("\"SetGrafanaAzureMonitor\"", script);
         }

@@ -45,7 +45,7 @@ Before delegating, inspect as much context as is safely available:
 - Plane ticket key, state, generated markers, linked parent/bug tickets, workflow timing marker, and deployment/QA/PROD comments.
 - Current Git branch, branch naming, local dirty state, remote branch, active OpenSpec change, and relevant tags.
 - Gitea PR status, target branch, merge status, head/merge commit, AI review markers, stable AI finding ids, human-authored top-level and inline review comments, OpenSpec `## PR Review Feedback` tasks, Plane PR feedback detection/fix batch markers, and `needs-tests` / `needs-changes` labels.
-- Nexus artifact files under `app/{commitSha}/` for the selected provider: Azure uses `deployable-apps.json`, each manifest app ZIP/checksum pair, `commit.sha`, and `release.json`; Rancher Desktop uses `container-images.json`, `commit.sha`, `release.json`, and monitoring summaries.
+- Nexus artifact files under `app/{commitSha}/` for the selected provider: Azure uses `deployable-apps.json`, each manifest app ZIP/checksum pair, `commit.sha`, and `release.json`; k3d uses `container-images.json`, `commit.sha`, `release.json`, and monitoring summaries.
 - QA evidence marker `IA generated E2E QA: {ticketKey}` and source RC tag.
 - PROD marker `IA generated PROD deployment: {finalVersion}` and latest release manifest.
 - Active `.codex/delivery-context.local.json` lock and whether branch, PR, artifact, QA, RC, and PROD evidence match its ticket.

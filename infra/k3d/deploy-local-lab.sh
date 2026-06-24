@@ -8,7 +8,7 @@ api_image=""
 site_host=""
 api_host=""
 commit_sha=""
-app_seq_url="${RANCHER_APP_SEQ_URL:-http://host.docker.internal:5341}"
+app_seq_url="${K3D_APP_SEQ_URL:-http://host.docker.internal:5341}"
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -60,8 +60,8 @@ case "$environment" in
     ;;
 esac
 
-if ! kubectl config current-context | grep -qx "rancher-desktop"; then
-  echo "kubectl current context must be rancher-desktop." >&2
+if ! kubectl config current-context | grep -qx "k3d-sdd-template"; then
+  echo "kubectl current context must be k3d-sdd-template." >&2
   exit 1
 fi
 

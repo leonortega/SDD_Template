@@ -52,6 +52,46 @@ Official URL: https://docs.docker.com/desktop/setup/install/windows-install/
 
 After install, run `wsl --update`, start Docker Desktop, reopen PowerShell, then run `docker run hello-world`.
 
+## k3d
+
+Required for the default local Kubernetes lane. k3d creates k3s cluster nodes as Docker containers while the `k3d` CLI runs on the host.
+
+Check:
+
+```powershell
+k3d version
+```
+
+Install:
+
+```powershell
+choco install k3d -y
+```
+
+Alternative:
+
+```powershell
+winget install -e --id k3d.k3d
+```
+
+Local executable-folder fallback for this workstation:
+
+```powershell
+Invoke-WebRequest -Uri https://github.com/k3d-io/k3d/releases/download/v5.9.0/k3d-windows-amd64.exe -OutFile C:\Endava\EndevLocal\Executables\k3d.exe
+$env:Path = "C:\Endava\EndevLocal\Executables;$env:Path"
+```
+
+Official URL: https://k3d.io/stable/
+
+After install, reopen PowerShell and run:
+
+```powershell
+k3d version
+k3d cluster create sdd-template --api-port 127.0.0.1:6550
+kubectl config current-context
+kubectl get nodes
+```
+
 ## Azure CLI
 
 Required for Azure DEV/QA/PROD validation, Bicep what-if, and deployment.

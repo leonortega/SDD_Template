@@ -37,7 +37,7 @@ Read `.codex/client-tools.local.json` first. Required values are Plane, Gitea, a
    - one `app/{commitSha}/{artifactName}.sha256` per topology app
    - `app/{commitSha}/commit.sha`
    - `app/{commitSha}/release.json` when present
-   For Rancher Desktop, require:
+   For k3d, require:
    - `app/{commitSha}/container-images.json`
    - `app/{commitSha}/commit.sha`
    - `app/{commitSha}/release.json`

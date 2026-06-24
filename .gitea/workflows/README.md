@@ -40,19 +40,17 @@ Required repository secrets:
 - `NEXUS_USERNAME`
 - `NEXUS_PASSWORD`
 - `NEXUS_REPOSITORY`
-- `NEXUS_DOCKER_REGISTRY` - optional Rancher Desktop lane Docker registry endpoint.
+- `NEXUS_DOCKER_REGISTRY` - optional k3d local lane Docker registry endpoint.
 - `NEXUS_DOCKER_USERNAME`
 - `NEXUS_DOCKER_PASSWORD`
-- `RANCHER_KUBECONFIG_B64` - optional Rancher Desktop lane kubeconfig for context `rancher-desktop`.
-- `RANCHER_DEV_SITE_URL`
-- `RANCHER_DEV_API_URL`
-- `RANCHER_QA_SITE_URL`
-- `RANCHER_QA_API_URL`
-- `RANCHER_PROD_SITE_URL`
-- `RANCHER_PROD_API_URL`
-- `SEQ_URL` - optional Rancher Desktop observability endpoint, default `http://localhost:5341`.
-- `PROMETHEUS_URL` - optional Prometheus readiness endpoint base URL, default `http://localhost:9091`.
-- `RANCHER_OBSERVABILITY_ENABLED` - optional flag for Seq pod-log ingestion, default `true`.
+- `K3D_KUBECONFIG_B64` - optional k3d local lane kubeconfig for context `k3d-sdd-template`.
+- `K3D_DEV_SITE_URL`
+- `K3D_DEV_API_URL`
+- `K3D_QA_SITE_URL`
+- `K3D_QA_API_URL`
+- `K3D_PROD_SITE_URL`
+- `K3D_PROD_API_URL`
+- `SEQ_URL` - optional k3d local observability endpoint, default `http://localhost:5341`.
 - `AZURE_CREDENTIALS`
 - `AZURE_DEV_RESOURCE_GROUP`
 - `AZURE_DEV_SITE_APP_NAME`
@@ -97,7 +95,7 @@ Optional Rancher Desktop local lane:
 
 - `.gitea/workflows/rancher-local-deploy.yml` builds `site` and `api` container images, pushes them to Nexus Docker hosted, records digest-pinned metadata at `app/{commitSha}/container-images.json`, and deploys the same image digests through `sdd-dev`, `sdd-qa`, and explicit `sdd-prod`.
 - The workflow requires `kubectl config current-context` to be `rancher-desktop`.
-- Deploy jobs run `infra/rancher/capture-observability.sh`, upload `monitoring-summary*.json`, `qa-observability.json`, and sanitized pod logs under `app/{commitSha}/`, and include `qa-observability.json` in the local QA evidence bundle when available.
+- Deploy jobs call site/API `/health` directly, upload `monitoring-summary*.json` and `qa-observability.json` under `app/{commitSha}/`, and include `qa-observability.json` in the local QA evidence bundle when available.
 - QA evidence remains in raw Nexus at canonical path `qa/{ticketKey}/{runId}/qa-evidence.zip`; `app/{commitSha}/qa-e2e-evidence.zip` is the workflow artifact copy.
 - Local QA branches use `qa-local/{ticketKey}` so the Azure QA branch workflow remains unchanged.
 
