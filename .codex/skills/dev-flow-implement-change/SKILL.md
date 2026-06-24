@@ -1,15 +1,15 @@
 ---
 name: dev-flow-implement-change
-description: Implement an OpenSpec change through the complete local delivery workflow. Use when Codex is asked to run /opsx:apply, implement a OpenProject work package or OpenSpec change, add edge-case tests, verify the app, commit, push, open a Gitea pull request, invoke a PR review agent, move the OpenProject work package to review, or complete implementation handoff.
+description: Implement an OpenSpec change through the complete local delivery workflow. Use when Codex is asked to run /opsx:apply, implement a ticket or OpenSpec change, add edge-case tests, verify the app, commit, push, open a repository pull request, invoke a PR review agent, move the ticket to review, or complete implementation handoff.
 ---
 
 # OpenSpec Implement Change
 
 ## Overview
 
-Use this skill to take an active OpenSpec change from implementation through Gitea PR handoff. Compose the existing `dev-flow-apply-change` workflow with local verification, Git, Gitea, the `dev-flow-pr-review-agent` skill, and OpenProject API updates.
+Use this skill to take an active OpenSpec change from implementation through repository PR handoff. Compose the existing `dev-flow-apply-change` workflow with local verification, Git, repository/review provider, the `dev-flow-pr-review-agent` skill, and selected ticket-adapter updates.
 
-For exact Gitea and OpenProject endpoint guidance, read `references/gitea-ticket-handoff.md` before making API calls. Read `docs/context-management.md` before implementation handoff so context findings, freshness, and handoff summaries match the repo policy.
+For exact repository/review provider and ticket provider endpoint guidance, read `the selected repository/review adapter` before making API calls. Read `docs/context-management.md` before implementation handoff so context findings, freshness, and handoff summaries match the repo policy.
 
 ## Shared Context
 
@@ -21,16 +21,16 @@ Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.e
 
 Required or defaulted values:
 
-- `openProject.baseUrl`, `openProject.apiToken`, `openProject.projectIdentifier`, `openProject.projectIdentifier`
-- `openProject.reviewStatus`: target state after PR creation and review. Default: `In Review`.
+- `selected ticket adapter runtime values`
+- `configured review state`: target state after PR creation and review. Default: `In Review`.
 - `git.baseBranch`, `git.branchPattern`, `git.maxBranchLength`
-- `gitea.baseUrl`: default `http://localhost:3000`
-- `gitea.apiToken`: required for Gitea API mutations.
-- `gitea.owner` and `gitea.repo`: infer from `git remote get-url origin` when omitted.
-- `pr.reviewers`: either `"all"` or an array of Gitea usernames.
+- `selected repository/review adapter runtime values`
+- `selected repository/review adapter token`: required for repository/review provider API mutations.
+- `selected repository owner` and `selected repository name`: infer from `git remote get-url origin` when omitted.
+- `pr.reviewers`: either `"all"` or an array of repository/review provider usernames.
 - `pr.labels`: optional label config. Defaults to `codex-reviewed`, `needs-tests`, and `needs-changes`.
 
-Optional environment variables override local JSON when present: `OPENPROJECT_REVIEW_STATUS`, `GITEA_BASE_URL`, `GITEA_API_TOKEN`, `GITEA_OWNER`, `GITEA_REPO`, `PR_REVIEWERS`, `PR_LABEL_REVIEWED`, `PR_LABEL_NEEDS_TESTS`, `PR_LABEL_NEEDS_CHANGES`.
+Provider-supported environment variables may override local JSON when present. Repository/review overrides include `selected repository/review adapter overrides, `PR_REVIEWERS`, `PR_LABEL_REVIEWED`, `PR_LABEL_NEEDS_TESTS`, and `PR_LABEL_NEEDS_CHANGES`.
 
 Never print, commit, paste into tickets, or write real API tokens into tracked files.
 
@@ -85,42 +85,42 @@ Before committing, classify durable implementation findings using `docs/context-
 - agent context loading, freshness, authority, handoff, or conflict rule -> `docs/context-management.md`
 - enforceable automation behavior -> `.codex/skills/_shared/delivery-contract.md` plus related skills and tests
 
-If implementation discovers durable knowledge, update the matching doc in the same PR. If no durable knowledge was discovered, record `Docs: no durable context changes` in the PR body and OpenProject handoff comment.
+If implementation discovers durable knowledge, update the matching doc in the same PR. If no durable knowledge was discovered, record `Docs: no durable context changes` in the PR body and ticket handoff comment.
 
-### 5. Open The Gitea PR
+### 5. Open The repository PR
 
 1. Resolve `owner` and `repo` from config or the `origin` remote.
 2. Resolve reviewers:
-   - If `pr.reviewers` equals `"all"`, list repository collaborators/developers from Gitea, normalize the response to a candidate list even when Gitea returns a single object, resolve each reviewer from `login` first and `username` second, then exclude the PR author plus the automation user.
+   - If `pr.reviewers` equals `"all"`, list repository collaborators/developers through the selected repository adapter, normalize the response to a candidate list, resolve each reviewer from `login` first and `username` second, then exclude the PR author plus the automation user.
    - If `pr.reviewers` is an array, use that username list exactly.
    - If no reviewers can be resolved, create the PR without reviewers and document the gap in the PR body.
 3. Create configured PR labels if they do not exist and labels are enabled.
 4. Create the PR with title from the branch in human-readable text and a body containing all commit message change lists, `Context findings: added/updated/none`, `Docs updated: <files>` or `Docs: no durable context changes`, and `Assumptions recorded: <short list or none>`.
 5. Verify human reviewers before review handoff:
-   - If reviewers were resolved but the PR create response does not show them as requested, call `POST /api/v1/repos/{owner}/{repo}/pulls/{prNumber}/requested_reviewers` with the resolved reviewer usernames.
+   - If reviewers were resolved but the PR create response does not show them as requested, call the selected review adapter's `request-reviewers` operation with the resolved reviewer usernames.
    - Re-fetch the PR and confirm the requested reviewers are present.
-   - If Gitea rejects reviewer assignment or the verification still shows no requested reviewers, document the gap in the PR body, OpenProject handoff comment, and final summary before moving on.
+   - If the selected review adapter rejects reviewer assignment or the verification still shows no requested reviewers, document the gap in the PR body, ticket handoff comment, and final summary before moving on.
 6. Apply the configured reviewed label after the review agent completes. Apply `needs-tests` or `needs-changes` when the review agent reports those outcomes.
 
-### 6. Review And Update OpenProject
+### 6. Review And Update Ticket Provider
 
 1. Invoke the `dev-flow-pr-review-agent` skill against the newly created PR.
-2. Move the linked OpenProject work package to `openProject.reviewStatus`, default `In Review`, only after PR creation, human reviewer request verification or documented reviewer gap, and review-agent posting complete.
-3. Add a OpenProject comment containing the PR link, `Context findings: added/updated/none`, `Docs updated: <files>` or `Docs: no durable context changes`, and `Assumptions recorded: <short list or none>`.
-4. If the configured OpenProject status is missing, stop after PR creation and review, report the missing state, and do not guess another state.
+2. Move the linked ticket to `configured review state`, default `In Review`, only after PR creation, human reviewer request verification or documented reviewer gap, and review-agent posting complete.
+3. Add a ticket comment containing the PR link, `Context findings: added/updated/none`, `Docs updated: <files>` or `Docs: no durable context changes`, and `Assumptions recorded: <short list or none>`.
+4. If the configured ticket status is missing, stop after PR creation and review, report the missing state, and do not guess another state.
 
 ## Idempotency And Failure Rules
 
 - Do not duplicate PRs for the same source branch; reuse an existing open PR when found.
-- Do not duplicate OpenProject PR-link comments when the same PR URL is already present.
+- Do not duplicate ticket-provider PR-link comments when the same PR URL is already present.
 - Use stable generated markers for PR review comments as defined by `dev-flow-pr-review-agent`.
 - Preserve unrelated user changes in the working tree. If unrelated changes block staging or verification, stop and explain the conflict.
 - Treat placeholder tokens as missing config.
-- Keep mutation order: implement and verify, commit, push, PR, review agent, OpenProject status/comment.
+- Keep mutation order: implement and verify, commit, push, PR, review agent, ticket status/comment.
 
 ## Completion Summary
 
-End with the selected change, commit SHA, PR URL, reviewers requested, labels applied, OpenProject status update result, verification commands, context findings, docs updated or `Docs: no durable context changes`, assumptions recorded, and any gaps.
+End with the selected change, commit SHA, PR URL, reviewers requested, labels applied, ticket status update result, verification commands, context findings, docs updated or `Docs: no durable context changes`, assumptions recorded, and any gaps.
 
 ## Output
 

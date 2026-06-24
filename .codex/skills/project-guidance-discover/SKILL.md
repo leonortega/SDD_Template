@@ -23,7 +23,7 @@ Read `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.m
    - Repository-local workflow skills, scripts, templates, and docs that are already tracked in this project.
    - OpenAI skill catalogs and docs.
    - Official repository or tool docs for the technology, framework, product, or plugin.
-   - Technology-owner skill repositories or docs, such as Microsoft, .NET, Playwright, Gitea, Sonatype Nexus, Azure, Azure Monitor, Grafana, Seq, Docker, Kubernetes, or OWASP.
+   - Technology-owner skill repositories or docs for the selected stack, E2E tool, repository/review provider, artifact provider, deployment provider, observability tools, container tools, or security standards.
    - `skills.sh`, `skills`, marketplace pages, or command examples when they identify a repository, ref, skill name, and likely `SKILL.md` path.
    - Well-used public skills or references only when no official or technology-owner source exists; label them as community-maintained.
 4. Check whether each candidate skill already exists at `.codex/skills/{skill-name}/SKILL.md`.
@@ -77,8 +77,8 @@ Present suggestions before acquisition. Use a compact message like:
 
 ```text
 I found these missing project guidance items:
-- aspnet-core skill: detected .NET/ASP.NET Core; source <url>; target .codex/skills/aspnet-core/SKILL.md
-- Playwright reference: detected browser QA; source <url>; type reference
+- stack expert skill: detected selected stack; source <url>; target .codex/skills/<skill>/SKILL.md
+- configured E2E tool reference: detected browser QA; source <url>; type reference
 
 Confirm these to record and install/configure what is supported now, dismiss any you do not want, or name anything I missed.
 ```
@@ -93,7 +93,7 @@ If the user confirms the researched list, immediately record accepted ids, persi
 - Treat command installers as metadata only unless `project-guidance-acquire` later has explicit user confirmation and a supported guarded install path.
 - Prefer pinned Docker alternatives over package-manager installs for recurring tools when the metadata proves the tool can run from the mounted workspace/cache without host secrets or interactive auth.
 - Do not read or print secrets.
-- Do not recommend OpenProject MCP for ticket delivery; repo-local skills use the configured OpenProject API.
+- Do not recommend MCP-based ticket delivery unless the selected ticket adapter explicitly requires it; repo-local skills must use the configured ticket adapter.
 - Record accepted or dismissed recommendation ids only with `SetRecommendedTools` after explicit user confirmation.
 - Do not commit `.codex/tool-recommendations.local.json`; it is local project state.
 - Do not list OpenSpec or configure skills as installable skill recommendations in the local or example catalog.

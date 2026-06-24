@@ -505,3 +505,12 @@ When Docker CLI commands time out with `failed to connect to the backend: timed 
 - Last verified: 2026-06-24
 
 For `/health` JSON shaped as a single object with `status: "ok"`, Grafana Infinity backend queries need `json_options.root_is_not_array: true`. Stat panels should expose a computed numeric field such as `status == 'ok' ? 1 : 0` as `up` and map `1 -> UP`, `0/null -> DOWN`. Returning only the string `status` can make Grafana Stat panels render blank even when `/api/ds/query` returns `status: ok`.
+
+## Ripgrep Wildcard Paths In PowerShell Need Expansion Or Glob Filters
+
+- Type: Pattern
+- Status: Active
+- Source: workflow skill maintenance run; `rg` failed on literal `.codex/skills/dev-flow-*` path with `os error 123`
+- Last verified: 2026-06-24
+
+On Windows PowerShell, passing wildcard directory arguments such as `.codex/skills/dev-flow-*` directly to `rg` can fail with `The filename, directory name, or volume label syntax is incorrect. (os error 123)` because `rg` receives the literal wildcard path. Use `rg --glob ...` filters from a real root path, or expand paths with PowerShell before passing them to `rg`.

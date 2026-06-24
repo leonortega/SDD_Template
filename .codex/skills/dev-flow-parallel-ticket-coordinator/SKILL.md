@@ -7,7 +7,7 @@ description: Coordinate multiple configured tickets through role-specialized del
 
 ## Overview
 
-Use this skill when the user asks to process more than one OpenProject work package at the same time, run parallel ticket delivery, create parallel role agents, or coordinate concurrent OpenProject work.
+Use this skill when the user asks to process more than one ticket at the same time, run parallel ticket delivery, create parallel role agents, or coordinate concurrent ticket provider work.
 
 This skill orchestrates existing role skills. It does not duplicate child workflows and does not implement ticket-specific code itself.
 
@@ -27,9 +27,9 @@ Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.e
 - `parallelDelivery.deploymentLanePolicy`, default `serialized`
 - `parallelDelivery.agentModelPolicy`, default to the placeholder-safe role policy in `.codex/client-tools.example.json`
 - `git.baseBranch`, default `dev`
-- OpenProject, Gitea, Nexus, PR label, and quality config used by delegated child skills
+- ticket provider, repository/review provider, Nexus, PR label, and quality config used by delegated child skills
 
-When copying ignored local config into a ticket worktree, report only filenames copied, never values. The default allowlist is `.codex/client-tools.local.json`, `.codex/quality.local.json`, and `.codex/tool-recommendations.local.json` when present. Do not copy `.codex/parallel-delivery.local.json`, `.codex/delivery-context.local.json`, `.codex/azure-login.local.json`, or app `*.local.json` files by default.
+When copying ignored local config into a ticket worktree, report only filenames copied, never values. The default allowlist is `.codex/client-tools.local.json`, `.codex/quality.local.json`, and `.codex/tool-recommendations.local.json` when present. Do not copy `.codex/parallel-delivery.local.json`, `.codex/delivery-context.local.json`, `.codex/deployment-provider-login.local.json`, or app `*.local.json` files by default.
 
 ## Agent Model Policy
 
@@ -55,7 +55,7 @@ If a role is missing from local config, use the example default for that role an
 ## Role Contracts
 
 - `coordinator`: owns preflight, routing, runtime-state synthesis, lane ownership, and cross-ticket decisions.
-- `ticketStarter`: prepares ticket branch, worktree, OpenProject/OpenSpec setup, and ticket lock only.
+- `ticketStarter`: prepares ticket branch, worktree, ticket provider/OpenSpec setup, and ticket lock only.
 - `implementation`: edits and tests one assigned ticket worktree only.
 - `prReview`: performs focused review, labels, and comments without taking unrelated implementation work.
 - `deployment`: handles post-merge DEV/QA promotion only when the serialized deployment lane is free or owned by the ticket.
@@ -84,16 +84,16 @@ Each ticket worktree must have its own ignored `.codex/delivery-context.local.js
 
 1. Read `.codex/parallel-delivery.local.json` when present.
 2. Run `git worktree list` and compare active worktrees with the runtime state.
-3. Inspect OpenProject/Gitea/Nexus/QA state only as needed to route each ticket.
+3. Inspect ticket provider/repository/review provider/Nexus/QA state only as needed to route each ticket.
 4. If the runtime state references a missing worktree or a worktree branch no longer matches the ticket, report the stale entry and do not route that ticket until it is repaired.
 5. Classify each ticket's delivery risk when enough ticket, OpenSpec, PR, or artifact evidence exists. Include the risk level in the planned state and child role prompt.
 6. Check installed-skill runtime index status. Use it only to pass exact `SKILL.md` paths to child agents; if missing or stale, report regeneration as setup work instead of rescanning inside every child agent.
-7. Before any Git, OpenProject, or Gitea mutation for new or reused parallel work, run `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode ValidateParallelDeliveryDryRun` with the planned state. The operator-facing checklist question is: `Can I safely start these 2 tickets in parallel?`
+7. Before any Git, ticket provider, or repository/review provider mutation for new or reused parallel work, run `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode ValidateParallelDeliveryDryRun` with the planned state. The operator-facing checklist question is: `Can I safely start these 2 tickets in parallel?`
 
 ### 2. Select Or Reuse Tickets
 
 1. If the user named tickets, resolve those tickets.
-2. If no ticket is specified, list OpenProject Todo tickets and ask the user to choose before mutating.
+2. If no ticket is specified, list ticket provider Todo tickets and ask the user to choose before mutating.
 3. Enforce `parallelDelivery.maxActiveTickets`. If starting a new ticket would exceed the limit, report active tickets and stop.
 4. Reuse existing ticket worktrees when the ticket key, branch, and local lock agree.
 
@@ -151,8 +151,8 @@ With `deploymentLanePolicy` set to `serialized`, only one ticket may own the sha
 
 - Missing or disabled `parallelDelivery.enabled`: report that parallel delivery is not enabled and show the placeholder-safe config keys to set.
 - Missing `worktreeRoot`: use `../ticket-worktrees` and report the default.
-- Failed `ValidateParallelDeliveryDryRun`: stop before Git, OpenProject, or Gitea mutation and report duplicate tickets, duplicate branches, duplicate worktrees, missing worktree paths, deployment lane conflicts, unsupported lane policy, disabled parallel delivery, or missing required ignored local runtime files.
-- Dirty coordinator checkout before creating a new worktree: stop before Git or OpenProject mutation.
+- Failed `ValidateParallelDeliveryDryRun`: stop before Git, ticket provider, or repository/review provider mutation and report duplicate tickets, duplicate branches, duplicate worktrees, missing worktree paths, deployment lane conflicts, unsupported lane policy, disabled parallel delivery, or missing required ignored local runtime files.
+- Dirty coordinator checkout before creating a new worktree: stop before Git or ticket-provider mutation.
 - Existing worktree mapped to a different ticket or branch: stop and report the conflict.
 - Existing `.codex/delivery-context.local.json` in a ticket worktree points to another ticket: stop before routing.
 - Serialized deployment lane owned by another ticket: do not promote, deploy, tag, move QA/Done state, or write release evidence for the blocked ticket.
@@ -160,11 +160,11 @@ With `deploymentLanePolicy` set to `serialized`, only one ticket may own the sha
 
 ## Cleanup And Recovery
 
-- Stale runtime state: compare `.codex/parallel-delivery.local.json` with `git worktree list`, OpenProject, Gitea, and branch state; do not route stale entries until repaired.
+- Stale runtime state: compare `.codex/parallel-delivery.local.json` with `git worktree list`, ticket provider, repository/review provider, and branch state; do not route stale entries until repaired.
 - Missing worktree: report the ticket and branch, then recreate only after durable checkpoints confirm the same ticket/branch mapping.
 - Blocked ticket: keep the ticket entry, record the blocker, and route other independent tickets if max active tickets and lane ownership allow it.
 - Lane-owner conflict: preserve the owner until QA evidence, PROD evidence, rollback/hotfix handoff, or a clear blocker releases the lane.
-- Completed ticket: after QA evidence is recorded and the OpenProject work package is moved to Done, run teardown from the coordinator checkout only:
+- Completed ticket: after QA evidence is recorded and the ticket is moved to Done, run teardown from the coordinator checkout only:
   1. Verify `git -C <worktreePath> status --porcelain` is empty.
   2. Verify the worktree branch is merged into configured `git.baseBranch`, for example `git merge-base --is-ancestor <branch> <baseBranch>`.
   3. Verify no deployment lane owner still references the ticket.
