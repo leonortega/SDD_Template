@@ -31,7 +31,7 @@ Safety:
 2. If templates are missing, ask before running `InitQualityGateTemplates`.
 3. For every missing SDK/tool/scanner, provide install command, official URL, and post-install validation/configuration command before continuing.
 4. Ensure `.codex/quality.local.json` exists from `.codex/quality.example.json`; default `coverage.minimumPercent` is `80`.
-5. Use `SetQualityConfig` when the user wants a different coverage threshold; never write scanner, Gitea, Nexus, Azure, or Plane secrets there.
+5. Use `SetQualityConfig` when the user wants a different coverage threshold; never write scanner, Gitea, Nexus, Azure, or OpenProject secrets there.
 6. Verify the generated flow uses PR checks for restore, format, build, application tests only, coverage collection, coverage threshold enforcement, dependency audit, Gitleaks, and Trivy. CI restore, format, build, test, coverage, dependency-audit, and publish commands must target product/application projects, not SDD template, delivery-tool, workflow, agent, OpenSpec, infrastructure, or meta-test projects.
 7. Run or recommend `BuildGiteaActionsImages` so .NET SDK tooling, Gitleaks, Trivy, Azure CLI, jq, zip, Node, and Playwright runtime dependencies are supplied by pinned local CI images instead of installed during every workflow run. Treat those recurring tools as Docker-preferred unless Docker is unavailable or a tool needs host-only interactive auth.
 8. Run `ValidateGiteaActionsRunner` when Docker is available to catch missing local job images, missing shell tools, JavaScript action/node mismatches, and local Gitea checkout networking before a PR depends on CI.
@@ -46,4 +46,4 @@ Report quality-gate templates, local config, missing tools, validation commands,
 
 - Stop when required SDKs, scanners, or CI runner validation are missing and provide official install/setup guidance.
 - Stop before weakening PR validation, coverage, secret scanning, dependency audit, or Trivy gates.
-- Stop before writing scanner, Gitea, Nexus, Azure, or Plane secrets into tracked files.
+- Stop before writing scanner, Gitea, Nexus, Azure, or OpenProject secrets into tracked files.

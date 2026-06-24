@@ -43,5 +43,5 @@ Use this adapter when `.codex/project-profile.json` selects `providers.deploymen
 - Stop when the Nexus Docker registry is not reachable by both the Gitea runner and k3d Kubernetes.
 - Stop when deployment would use a mutable tag without an immutable digest.
 - Do not rebuild between DEV, QA, PROD, or rollback. Promote the exact image digest references from `container-images.json`.
-- Do not publish pod logs to Nexus, Plane, or PR comments for the local k3d health evidence path. Store summary JSON only.
+- Do not publish pod logs to Nexus, OpenProject, or PR comments for the local k3d health evidence path. Store summary JSON only.
 - Do not treat k3d as an Azure emulator; it is a local Kubernetes deployment provider.

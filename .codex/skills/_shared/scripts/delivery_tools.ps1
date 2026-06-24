@@ -1,6 +1,6 @@
 param(
   [Parameter(Mandatory = $true)]
-  [ValidateSet('ArtifactPaths', 'CheckGitIgnored', 'NextRcVersion', 'ReadProjectProfile', 'ReadDeliveryPolicy', 'ExtractTicketKey', 'ReadCoverageThreshold', 'ReadCoberturaLineRate', 'ValidateReleaseManifest', 'CreateArtifactPointer', 'ValidateTicketLock', 'ValidateDeploymentLane', 'ValidateParallelDeliveryDryRun', 'InitializeWorkflowTelemetry', 'AppendWorkflowTelemetry', 'ReadWorkflowTelemetry', 'RenderPlaneComment', 'UpdateReleaseManifest')]
+  [ValidateSet('ArtifactPaths', 'CheckGitIgnored', 'NextRcVersion', 'ReadProjectProfile', 'ReadDeliveryPolicy', 'ExtractTicketKey', 'ReadCoverageThreshold', 'ReadCoberturaLineRate', 'ValidateReleaseManifest', 'CreateArtifactPointer', 'ValidateTicketLock', 'ValidateDeploymentLane', 'ValidateParallelDeliveryDryRun', 'InitializeWorkflowTelemetry', 'AppendWorkflowTelemetry', 'ReadWorkflowTelemetry', 'RenderTicketComment', 'UpdateReleaseManifest')]
   [string] $Mode,
 
   [string] $CommitSha,
@@ -240,7 +240,7 @@ function New-ArtifactPointer([string] $OutputPath) {
     '--output', $OutputPath,
     '--version', $Version,
     '--artifact-commit-sha', $ArtifactCommitSha,
-    '--plane-ticket-key', $TicketKey
+    '--ticket-key', $TicketKey
   )
   if (-not [string]::IsNullOrWhiteSpace($IncludedTickets)) {
     $arguments += @('--included-tickets', $IncludedTickets)
@@ -826,9 +826,9 @@ function Get-InputObject {
   return $InputJson | ConvertFrom-Json
 }
 
-function Render-PlaneComment {
+function Render-TicketComment {
   if ([string]::IsNullOrWhiteSpace($Type)) {
-    throw 'Type is required for RenderPlaneComment.'
+    throw 'Type is required for RenderTicketComment.'
   }
 
   $data = Get-InputObject
@@ -981,7 +981,7 @@ function Render-PlaneComment {
       return ($lines -join [Environment]::NewLine)
     }
     default {
-      throw "Unsupported RenderPlaneComment type: $Type"
+      throw "Unsupported RenderTicketComment type: $Type"
     }
   }
 }
@@ -1030,6 +1030,6 @@ switch ($Mode) {
   'InitializeWorkflowTelemetry' { Write-Json (Initialize-WorkflowTelemetry) }
   'AppendWorkflowTelemetry' { Write-Json (Append-WorkflowTelemetry) }
   'ReadWorkflowTelemetry' { Write-Json (Read-WorkflowTelemetry) }
-  'RenderPlaneComment' { Render-PlaneComment }
+  'RenderTicketComment' { Render-TicketComment }
   'UpdateReleaseManifest' { Write-Json (Update-ReleaseManifest) }
 }

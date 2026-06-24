@@ -1,14 +1,13 @@
 {
-  "plane": {
-    "baseUrl": "replace-with-plane-base-url",
-    "apiToken": "replace-with-plane-api-token",
-    "workspaceSlug": "replace-with-plane-workspace-slug",
-    "projectIdentifier": "replace-with-plane-project-identifier",
-    "todoState": "replace-with-plane-todo-state",
-    "inProgressState": "replace-with-plane-in-progress-state",
-    "reviewState": "replace-with-plane-review-state",
-    "qaState": "replace-with-plane-qa-state",
-    "doneState": "replace-with-plane-done-state"
+  "openProject": {
+    "baseUrl": "replace-with-openproject-base-url",
+    "apiToken": "replace-with-openproject-api-token",
+    "projectIdentifier": "replace-with-openproject-project-identifier",
+    "todoStatus": "replace-with-openproject-todo-status",
+    "inProgressStatus": "replace-with-openproject-in-progress-status",
+    "reviewStatus": "replace-with-openproject-review-status",
+    "qaStatus": "replace-with-openproject-qa-status",
+    "doneStatus": "replace-with-openproject-done-status"
   },
   "git": {
     "baseBranch": "replace-with-base-branch",

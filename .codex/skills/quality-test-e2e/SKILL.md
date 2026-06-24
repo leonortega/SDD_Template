@@ -7,27 +7,27 @@ description: Run post-deploy E2E QA for configured tickets that are already in Q
 
 ## Overview
 
-Use this skill after deployment validation has already moved a Plane ticket to QA. Act as a QA expert: test only the website and API behavior implied by the ticket, record evidence, and move the ticket to the configured final state only after every required QA check passes.
+Use this skill after deployment validation has already moved a OpenProject work package to QA. Act as a QA expert: test only the website and API behavior implied by the ticket, record evidence, and move the ticket to the configured final state only after every required QA check passes.
 
 This skill is technology-agnostic. Inspect the repository first. Use an established E2E/API test tool when one is already configured; otherwise ask the user to choose before creating or running technology-dependent tests.
 
 For Blazor or other rendered website changes, prefer `$quality-frontend-testing-debugging` when the repo has `.codex/skills/quality-frontend-testing-debugging/SKILL.md` and the ticket requires browser-visible validation, responsive layout checks, console health, screenshots, or interaction proof. Keep API and deployment health checks in the repo-native .NET/API path.
 
-When the repository contains `tests/SDDTemplate.E2ETests`, treat it as the reusable deployed-QA regression suite. Implementation records browser E2E expectations and acceptance oracles, but Playwright E2E creation and repair are owned by this QA skill unless the user, Plane ticket, or OpenSpec artifacts explicitly made E2E part of implementation PR scope. The suite is executed by the selected provider QA job against the deployed QA Site/API URLs, and the Gitea job is evidence-only. Azure uses branch `qa/{ticketKey}` and job `e2e-qa`; k3d uses branch `qa-local/{ticketKey}` and job `e2e-qa-local`. Create or update reusable tests on the QA branch when the existing suite cannot prove a required acceptance criterion, record the reason in the QA result, and route those test changes through the normal reviewed follow-up path unless the configured QA workflow rule explicitly allows committing them in the QA workflow. This skill still owns QA acceptance: verify the Gitea E2E evidence bundle, publish final QA evidence, create or verify the RC tag, update release metadata, comment Plane, move the ticket to Done only after the QA result is `PASS`, and delete the remote QA trigger branch after durable evidence exists. Local E2E QA is forbidden unless a deployment-related blocker prevents the normal selected-provider E2E path from running or completing and `agentOptimization.maxToolRetries` deploy-fix attempts from `.codex/delivery-policy.json` have failed; the current limit is `2`. Product E2E test failures remain QA failures and are not a local-fallback trigger.
+When the repository contains `tests/SDDTemplate.E2ETests`, treat it as the reusable deployed-QA regression suite. Implementation records browser E2E expectations and acceptance oracles, but Playwright E2E creation and repair are owned by this QA skill unless the user, OpenProject work package, or OpenSpec artifacts explicitly made E2E part of implementation PR scope. The suite is executed by the selected provider QA job against the deployed QA Site/API URLs, and the Gitea job is evidence-only. Azure uses branch `qa/{ticketKey}` and job `e2e-qa`; k3d uses branch `qa-local/{ticketKey}` and job `e2e-qa-local`. Create or update reusable tests on the QA branch when the existing suite cannot prove a required acceptance criterion, record the reason in the QA result, and route those test changes through the normal reviewed follow-up path unless the configured QA workflow rule explicitly allows committing them in the QA workflow. This skill still owns QA acceptance: verify the Gitea E2E evidence bundle, publish final QA evidence, create or verify the RC tag, update release metadata, comment OpenProject, move the ticket to Done only after the QA result is `PASS`, and delete the remote QA trigger branch after durable evidence exists. Local E2E QA is forbidden unless a deployment-related blocker prevents the normal selected-provider E2E path from running or completing and `agentOptimization.maxToolRetries` deploy-fix attempts from `.codex/delivery-policy.json` have failed; the current limit is `2`. Product E2E test failures remain QA failures and are not a local-fallback trigger.
 
-After the evidence bundle is verified, the E2E QA Plane comment is verified, the RC tag is created or verified, release metadata is updated, and the ticket is moved to Done, delete the remote selected-provider QA trigger branch from Gitea. Azure uses `qa/{ticketKey}`; k3d uses `qa-local/{ticketKey}`. The branch is only a temporary evidence trigger; durable evidence is in Nexus, Plane, the release manifest, and tags. Keep the branch only when evidence publication, comment verification, RC tagging, or Done-state mutation is incomplete and the branch may need a rerun.
+After the evidence bundle is verified, the E2E QA OpenProject comment is verified, the RC tag is created or verified, release metadata is updated, and the ticket is moved to Done, delete the remote selected-provider QA trigger branch from Gitea. Azure uses `qa/{ticketKey}`; k3d uses `qa-local/{ticketKey}`. The branch is only a temporary evidence trigger; durable evidence is in Nexus, OpenProject, the release manifest, and tags. Keep the branch only when evidence publication, comment verification, RC tagging, or Done-state mutation is incomplete and the branch may need a rerun.
 
 Non-interactive context means the run has no available user-response channel, such as cron automation, CI, detached automation, or an explicit "do not ask" instruction.
 
 ## Shared Context
 
-Before QA state changes, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Load selected ticket, artifact, deployment, repository/review, and E2E adapters. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` helpers: `ValidateTicketLock` for `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, `CheckGitIgnored`, `NextRcVersion`, `UpdateReleaseManifest`, `ValidateReleaseManifest`, and `RenderPlaneComment -Type E2EQA`.
+Before QA state changes, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Load selected ticket, artifact, deployment, repository/review, and E2E adapters. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` helpers: `ValidateTicketLock` for `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, `CheckGitIgnored`, `NextRcVersion`, `UpdateReleaseManifest`, `ValidateReleaseManifest`, and `RenderTicketComment -Type E2EQA`.
 
 ## Workflow Telemetry
 
 Capture UTC start time after resolving the ticket key and before QA evidence checks. Append a `quality-test-e2e` row with `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` when E2E QA succeeds, blocks, fails, or is skipped idempotently because the verified E2E QA comment and Done state already exist. On resume or idempotent reuse, append another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=quality-test-e2e`, `agentRole=qa`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`.
 
-After the E2E QA Plane comment is verified and before final QA handoff, read the active ticket rows with `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode ReadWorkflowTelemetry -TicketKey {ticketKey}`, render `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode RenderPlaneComment -Type WorkflowTiming`, then create or patch the Plane comment with stable marker `IA generated workflow timing: {ticketKey}`. Send both `comment_html` and `comment_stripped`, never `comment` or `body`, and verify `comment_stripped` starts with the marker after posting or patching. The timing comment must include only status, current route, total elapsed time, and the stage table. Stages that did not run or did not apply must remain visible in the table as `NOT RUN / N/A` with duration `no time`; repeated rows for a stage are collapsed by earliest start and latest finish. Do not include token counts, prompts, raw logs, credential-bearing URLs, noisy tool details, Gitea Actions job duration, or Plane marker-derived timing. If telemetry cannot be written or read, report the workflow timing comment as blocked.
+After the E2E QA OpenProject comment is verified and before final QA handoff, read the active ticket rows with `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode ReadWorkflowTelemetry -TicketKey {ticketKey}`, render `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode RenderTicketComment -Type WorkflowTiming`, then create an OpenProject activity with stable marker `IA generated workflow timing: {ticketKey}`. Send a `comment.raw` activity payload and verify the activity comment starts with the marker after posting. The timing comment must include only status, current route, total elapsed time, and the stage table. Stages that did not run or did not apply must remain visible in the table as `NOT RUN / N/A` with duration `no time`; repeated rows for a stage are collapsed by earliest start and latest finish. Do not include token counts, prompts, raw logs, credential-bearing URLs, noisy tool details, Gitea Actions job duration, or OpenProject marker-derived timing. If telemetry cannot be written or read, report the workflow timing comment as blocked.
 
 ## Configuration
 
@@ -35,17 +35,17 @@ Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.e
 
 Required or defaulted values:
 
-- `plane.baseUrl`, `plane.apiToken`, `plane.workspaceSlug`, `plane.projectIdentifier`
-- `plane.qaState`, default `QA`
-- `plane.doneState`, default `Done` only when explicitly configured or confirmed
+- `openProject.baseUrl`, `openProject.apiToken`, `openProject.projectIdentifier`
+- `openProject.qaStatus`, default `QA`
+- `openProject.doneStatus`, default `Done` only when explicitly configured or confirmed
 - `gitea.baseUrl`, `gitea.apiToken`, `gitea.owner`, `gitea.repo` when PR/deploy context is needed
 - `nexus.baseUrl`, `nexus.username`, `nexus.password`, `nexus.repository` when publishing QA evidence bundles
 - source RC version for release candidates, supplied by the user or resolved from an existing annotated tag on the tested commit, using format `vMAJOR.MINOR.PATCH-rc.N`
 
 Optional environment variables override local JSON when present:
 
-- `PLANE_QA_STATE`
-- `PLANE_DONE_STATE`
+- `OPENPROJECT_QA_STATUS`
+- `OPENPROJECT_DONE_STATUS`
 - `GITEA_BASE_URL`
 - `GITEA_API_TOKEN`
 - `GITEA_OWNER`
@@ -55,14 +55,14 @@ Optional environment variables override local JSON when present:
 
 ### 1. Resolve Context
 
-1. Resolve the Plane ticket from user input, current branch, Gitea PR metadata, deployment comments, Gitea E2E evidence, commit messages, or a ticket key.
-2. Run `ValidateTicketLock` with the resolved Plane ticket, QA deployment commit, artifact commit, and known version values. If the result is invalid, stop before testing or writing evidence.
-3. Fetch the Plane ticket with expanded state/project data.
-4. Verify the ticket is in `plane.qaState`. If it is not, stop unless the user explicitly asks to test despite the state mismatch.
-5. Resolve the project UUID and the configured `plane.doneState` by exact state name before any mutation. If `plane.doneState` is missing or unresolved, stop and ask for configuration.
+1. Resolve the OpenProject work package from user input, current branch, Gitea PR metadata, deployment comments, Gitea E2E evidence, commit messages, or a ticket key.
+2. Run `ValidateTicketLock` with the resolved OpenProject work package, QA deployment commit, artifact commit, and known version values. If the result is invalid, stop before testing or writing evidence.
+3. Fetch the OpenProject work package with expanded state/project data.
+4. Verify the ticket is in `openProject.qaStatus`. If it is not, stop unless the user explicitly asks to test despite the state mismatch.
+5. Resolve the project UUID and the configured `openProject.doneStatus` by exact state name before any mutation. If `openProject.doneStatus` is missing or unresolved, stop and ask for configuration.
 6. Read ticket description, acceptance criteria, explicit test expectations, generated planning blocks, PR comments, deployment comments, and linked implementation context.
 
-Use Plane API only. Do not use Plane MCP, Docker containers, or direct database access for Plane.
+Use OpenProject API only. Do not use OpenProject MCP, Docker containers, or direct database access for OpenProject.
 
 ### 2. Scope QA From The Ticket
 
@@ -87,7 +87,7 @@ Use these QA result classifications:
 - `PASS WITH GAPS`: the deployed artifact appears usable but a non-blocking evidence weakness, warning, or assumption remains; record the gap and keep the ticket in QA until the gap is resolved or explicitly accepted as non-blocking in the ticket.
 - `FAIL`: a required assertion failed, a required oracle is missing, evidence is contradictory, the wrong artifact/environment was tested, or a product defect was found.
 
-Only `PASS` can move Plane to `plane.doneState`.
+Only `PASS` can move OpenProject to `openProject.doneStatus`.
 
 Apply this general QA quality bar before executing tests:
 
@@ -198,7 +198,7 @@ Useful evidence includes:
 
 Create `qa-summary.md` with the result, tested URLs, selected tools, commit/artifact, scenario categories, acceptance-to-assertion map, evidence inventory, gaps, assumptions, and failure classification. Create `test-plan.md` with the derived checklist, especially when the ticket's original test expectations were weak.
 
-Prefer durable links in Plane comments. Use this evidence publication order:
+Prefer durable links in OpenProject comments. Use this evidence publication order:
 
 1. Commit reusable tests to the repo only when the configured QA workflow rule explicitly allows it; otherwise preserve the generated test changes as QA evidence and create or route a reviewed follow-up implementation workflow for permanent regression coverage.
 2. When the selected Gitea E2E job has already run the committed suite, verify the Nexus bundle at `app/{commitSha}/qa-e2e-evidence.zip` and prefer reusing it as supporting evidence instead of rerunning the same test without cause. For k3d, also verify `app/{commitSha}/qa-observability.json` when available.
@@ -210,22 +210,22 @@ Prefer durable links in Plane comments. Use this evidence publication order:
 qa/{ticketKey}/{runId}/qa-evidence.zip
 ```
 
-6. Add the Nexus evidence URL to the Plane comment.
-7. If Nexus is unavailable but Plane attachments are configured and safe, attach evidence to Plane.
-8. If neither Nexus nor Plane attachments are available, include local evidence paths in the Plane comment and clearly label them as local-only fallback evidence.
+6. Add the Nexus evidence URL to the OpenProject comment.
+7. If Nexus is unavailable but OpenProject attachments are configured and safe, attach evidence to OpenProject.
+8. If neither Nexus nor OpenProject attachments are available, include local evidence paths in the OpenProject comment and clearly label them as local-only fallback evidence.
 9. Use `UpdateReleaseManifest` after QA passes, adding source RC version, QA evidence URL, QA result, QA timestamp, tested URLs, and the E2E scenario summary while preserving existing artifact, checksum, PR, ticket, DEV, and QA deployment fields.
 10. Use `CreateArtifactPointer` to create `artifact-pointer.json` for the approved RC, then upload the pointer to `app/qa-approved/latest.json` and `app/rc/{sourceRcVersion}/artifact-pointer.json`; also upload the updated release manifest to `app/rc/{sourceRcVersion}/release.json`. These version paths are metadata aliases only; do not duplicate ZIP files there.
 
-Do not move a ticket to `plane.doneState` until the evidence link or fallback evidence path has been written to Plane. If evidence upload fails after tests pass, comment the upload failure, leave the ticket in QA, and report the blocking evidence publication issue.
+Do not move a ticket to `openProject.doneStatus` until the evidence link or fallback evidence path has been written to OpenProject. If evidence upload fails after tests pass, comment the upload failure, leave the ticket in QA, and report the blocking evidence publication issue.
 
 Do not publish secrets, cookies, authorization headers, raw tokens, private credentials, or sensitive payloads in evidence. Redact or discard unsafe evidence before zipping or commenting.
 
 ### 6. QA Release Candidate Marker
 
-Before moving a ticket to `plane.doneState`, establish a release-candidate marker for the exact tested artifact commit:
+Before moving a ticket to `openProject.doneStatus`, establish a release-candidate marker for the exact tested artifact commit:
 
 1. Resolve the tested commit SHA from the QA deployment comment, PR metadata, Nexus artifact path, or user input.
-2. Verify the tested commit's `release.json.planeTicketKey` matches the locked/resolved ticket key before deriving or pushing an RC tag.
+2. Verify the tested commit's `release.json.ticketKey` matches the locked/resolved ticket key before deriving or pushing an RC tag.
 3. Resolve the source RC version from user input, an existing annotated tag on that commit, or deterministic auto-increment. Use format `vMAJOR.MINOR.PATCH-rc.N`.
 4. If no RC version is supplied and no matching tag exists, derive the next RC:
    - find the latest final SemVer tag `vMAJOR.MINOR.PATCH`,
@@ -235,9 +235,9 @@ Before moving a ticket to `plane.doneState`, establish a release-candidate marke
    If version derivation is ambiguous, stop after recording QA evidence and ask for the RC version; do not move the ticket to Done.
 5. Verify the RC tag is annotated and points to the tested commit. If the tag is missing, create it on the tested commit only after every QA scenario passes and evidence is published.
 6. Push the RC tag only after the QA result comment is ready and the tag target has been verified.
-7. Include the source RC version in the E2E QA Plane comment.
+7. Include the source RC version in the E2E QA OpenProject comment.
 8. Update the Nexus release manifest so `release.json` records `artifact commit -> source RC version -> pending final PROD version`.
-9. Upload human-readable Nexus aliases for the QA-approved artifact: `app/qa-approved/latest.json`, `app/rc/{sourceRcVersion}/artifact-pointer.json`, and `app/rc/{sourceRcVersion}/release.json`. Each pointer must name the source RC version, artifact commit SHA, canonical `app/{commitSha}/` path, release manifest path, primary Plane ticket, included ticket list, and creation timestamp.
+9. Upload human-readable Nexus aliases for the QA-approved artifact: `app/qa-approved/latest.json`, `app/rc/{sourceRcVersion}/artifact-pointer.json`, and `app/rc/{sourceRcVersion}/release.json`. Each pointer must name the source RC version, artifact commit SHA, canonical `app/{commitSha}/` path, release manifest path, primary OpenProject work package, included ticket list, and creation timestamp.
 
 The RC tag is the human release-candidate identifier for the QA-approved artifact set. It must not replace the immutable Nexus identity under `app/{commitSha}/` from `deployable-apps.json` and each per-app ZIP/checksum pair.
 
@@ -247,7 +247,7 @@ Respect the repo's hooks when QA creates files:
 
 - Before writing evidence, verify `artifacts/qa/**` or a broader `artifacts/` rule is ignored by Git. If it is not ignored, stop and route to workflow maintenance before generating screenshots, traces, logs, reports, or ZIP evidence.
 - `gitleaks protect --staged --redact` scans staged files. Keep raw QA evidence ignored under `artifacts/qa/**` and do not stage it.
-- The commit message hook requires messages to start with a Plane ticket key, an OpenSpec id, or `[SDD]`.
+- The commit message hook requires messages to start with a OpenProject work package key, an OpenSpec id, or `[SDD]`.
 - Commit reusable ticket-specific tests with the ticket key only when the configured QA workflow rule explicitly allows committing them in the QA workflow, for example:
 
 ```text
@@ -264,7 +264,7 @@ E2EPROJECT-123: add E2E regression tests
 - Reusable tests must reference secrets through environment variables or test configuration placeholders. Never hardcode real credentials, tokens, cookies, connection strings, or private payloads.
 - If reusable tests require new repo config, stage only intentional source/config files and leave screenshots, logs, reports, traces, videos, and ZIP evidence untracked.
 
-### 8. Plane Result And QA Branch Cleanup
+### 8. OpenProject Result And QA Branch Cleanup
 
 Before commenting, read existing comments when the API allows it. Use this stable marker:
 
@@ -274,7 +274,7 @@ IA generated E2E QA: {ticketKey}
 
 Do not duplicate a QA result comment with the same marker and same tested commit/artifact unless the user explicitly asks for a fresh run.
 
-Keep the marker as the first line by itself. Use `RenderPlaneComment -Type E2EQA` with the resolved QA data, scenario summary, evidence links, and notes to format the readable Markdown body.
+Keep the marker as the first line by itself. Use `RenderTicketComment -Type E2EQA` with the resolved QA data, scenario summary, evidence links, and notes to format the readable Markdown body.
 
 The comment must include:
 
@@ -291,14 +291,14 @@ The comment must include:
 - scenarios executed
 - pass/fail result
 - gaps, assumptions, or blocked criteria
-- Nexus evidence URL, Plane attachment link, or local fallback evidence path
+- Nexus evidence URL, OpenProject attachment link, or local fallback evidence path
 - report links, screenshots, traces, or logs included in the evidence bundle
 - defects, blockers, or environment/tooling issues found
 - completed test expectations when the original ticket expectations were weak
 
-Move the ticket to `plane.doneState` only after:
+Move the ticket to `openProject.doneStatus` only after:
 
-- the ticket was in `plane.qaState` or the user explicitly overrode the state check,
+- the ticket was in `openProject.qaStatus` or the user explicitly overrode the state check,
 - the QA result is `PASS`, not `PASS WITH GAPS`,
 - every required ticket-scoped QA scenario passed,
 - every acceptance criterion is mapped to at least one explicit assertion or is removed from scope by explicit ticket evidence,
@@ -306,10 +306,10 @@ Move the ticket to `plane.doneState` only after:
 - the QA result includes API/backend-effect, state-verification, validation/boundary, error-handling, and environment-correctness checks whenever the delivered change makes those categories relevant,
 - evidence was validated against the assertions and does not contradict the pass result,
 - the source RC version was recorded and any RC tag used for PROD promotion points to the tested commit,
-- evidence was collected and published to Nexus, attached to Plane, or documented as a local-only fallback,
+- evidence was collected and published to Nexus, attached to OpenProject, or documented as a local-only fallback,
 - the QA result comment was added or confirmed idempotently present.
 
-If any required QA scenario fails, add the result comment and leave the ticket in `plane.qaState`.
+If any required QA scenario fails, add the result comment and leave the ticket in `openProject.qaStatus`.
 
 After the verified E2E QA comment and Done-state mutation succeed, delete the selected provider QA trigger branch from Gitea. Azure uses `qa/{ticketKey}`; k3d uses `qa-local/{ticketKey}`. For example:
 
@@ -323,22 +323,22 @@ For k3d:
 git push origin --delete qa-local/E2EPROJECT-123
 ```
 
-Then verify the remote ref is gone. Do not delete the branch before Nexus evidence exists, release metadata is updated, the RC tag is created or verified, and Plane is Done.
+Then verify the remote ref is gone. Do not delete the branch before Nexus evidence exists, release metadata is updated, the RC tag is created or verified, and OpenProject is Done.
 
-Before reporting final QA handoff, append the `quality-test-e2e` telemetry row, read workflow telemetry, render `RenderPlaneComment -Type WorkflowTiming`, and create or patch the `IA generated workflow timing: {ticketKey}` Plane comment. If the timing marker already exists for the ticket, patch that comment instead of creating a duplicate.
+Before reporting final QA handoff, append the `quality-test-e2e` telemetry row, read workflow telemetry, render `RenderTicketComment -Type WorkflowTiming`, and create or patch the `IA generated workflow timing: {ticketKey}` OpenProject comment. If the timing marker already exists for the ticket, patch that comment instead of creating a duplicate.
 
 If the ticket is already in Done or has QA evidence but only a noncanonical QA marker is present, such as `IA generated QA evidence: {ticketKey}`, do not skip finalization. Repair or add the canonical `IA generated E2E QA: {ticketKey}` marker, verify the workflow timing marker, and continue to the OpenSpec archival handoff.
 
 ### 9. OpenSpec Archival Handoff
 
-After every required QA scenario passes, evidence is published, the E2E QA comment is present, and the ticket has been moved to `plane.doneState`, check whether the completed ticket is linked to an active OpenSpec change.
+After every required QA scenario passes, evidence is published, the E2E QA comment is present, and the ticket has been moved to `openProject.doneStatus`, check whether the completed ticket is linked to an active OpenSpec change.
 
 Run all OpenSpec CLI checks in this section with process environment `OPENSPEC_TELEMETRY=0`, then run `openspec list --json` and `openspec status --change "<change>" --json` before invoking `$dev-flow-archive-change`.
 
 Resolve the OpenSpec change id from, in order:
 
 - explicit user input
-- Plane ticket description or generated planning blocks
+- OpenProject work package description or generated planning blocks
 - Gitea PR title, body, labels, branch name, or comments
 - local `openspec/changes/*` entries that clearly reference the ticket key
 
@@ -346,7 +346,7 @@ If exactly one active OpenSpec change is linked to the completed ticket, invoke 
 
 If multiple active OpenSpec changes match, or no clear linked change can be resolved, do not guess. Add the unresolved archival handoff to the completion summary and leave the OpenSpec change active until the user selects the change.
 
-If `$dev-flow-archive-change` reports incomplete artifacts, incomplete tasks, spec sync warnings, or needs user confirmation, stop the archival handoff and report the exact blocker. Do not undo the QA pass or move the Plane ticket back from Done.
+If `$dev-flow-archive-change` reports incomplete artifacts, incomplete tasks, spec sync warnings, or needs user confirmation, stop the archival handoff and report the exact blocker. Do not undo the QA pass or move the OpenProject work package back from Done.
 
 Do not report the QA workflow as fully complete while exactly one linked active OpenSpec change remains unarchived. The final handoff must include either `OpenSpec archived: <archive path>` or `OpenSpec archive blocker: <reason>`.
 
@@ -359,17 +359,17 @@ Before final handoff, apply `.codex/memory/retrieval-policy.md#update-process` t
 - If the finding is reusable but non-authoritative workflow knowledge, update the targeted `.codex/memory/` file.
 - If nothing reusable was discovered, explicitly record `Memory updated: none`.
 
-Plane comments, QA evidence, and final chat summaries do not satisfy this gate by themselves. Do not report the QA run as complete until the final handoff can state `Memory updated: <files>` or `Memory updated: none`.
+OpenProject comments, QA evidence, and final chat summaries do not satisfy this gate by themselves. Do not report the QA run as complete until the final handoff can state `Memory updated: <files>` or `Memory updated: none`.
 
 ## Output
 
-Report the ticket, QA environment, scenarios tested, validation assertions, evidence path or URL, RC version, Plane state/comment updates, OpenSpec archive path or explicit archive blocker, `Memory updated: <files>` or `Memory updated: none`, and any blockers or residual risk.
+Report the ticket, QA environment, scenarios tested, validation assertions, evidence path or URL, RC version, OpenProject status/comment updates, OpenSpec archive path or explicit archive blocker, `Memory updated: <files>` or `Memory updated: none`, and any blockers or residual risk.
 
 ## Failure Rules
 
-- Missing Plane API config: stop before Plane reads or mutations.
-- Missing or placeholder `plane.doneState`: stop and ask for configuration.
-- Ticket not in `plane.qaState`: stop unless the user explicitly overrides.
+- Missing OpenProject API config: stop before OpenProject reads or mutations.
+- Missing or placeholder `openProject.doneStatus`: stop and ask for configuration.
+- Ticket not in `openProject.qaStatus`: stop unless the user explicitly overrides.
 - Ticket context lock mismatch: stop before testing, evidence publication, RC tagging, or state movement.
 - Tool choice is ambiguous: ask the user before technology-dependent tests.
 - Non-interactive ambiguous tool choice: stop with `tool choice required`.
@@ -387,7 +387,7 @@ Report the ticket, QA environment, scenarios tested, validation assertions, evid
 - Product defect after QA: invoke `dev-flow-file-qa-bug`; do not fix product code inside this skill unless the user changes the task.
 - E2E failure without Playwright MCP or Browser/Playwright diagnostic classification: stop before app-code changes and record the missing classification.
 - Proposed app-code change that exists only for Playwright/E2E: stop; update the E2E harness or workflow instead.
-- Missing evidence upload support: include local evidence paths or links in the Plane comment.
+- Missing evidence upload support: include local evidence paths or links in the OpenProject comment.
 - Secrets in logs or screenshots: redact or discard the evidence before commenting.
 
 ## Practice References

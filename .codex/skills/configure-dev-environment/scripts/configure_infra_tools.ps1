@@ -1,5 +1,5 @@
 param(
-  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetGiteaBranchProtection", "SetPlaneEnv", "SetMonitoringEnv", "SetGiteaRunner", "SetSeqAzureEventHubLogs", "SplitInfraEnv", "AuditQualityGates", "AuditRecommendedTools", "DiscoverProjectGuidance", "AcquireProjectGuidance", "SetRecommendedTools", "MapProjectGuidanceStep", "BuildGiteaActionsImages", "ValidateGiteaActionsRunner", "InitProjectProfile", "InitQualityGateTemplates", "SetQualityConfig", "SyncWorktreeLocalConfig", "EnsureDeliveryContext", "EnsureK3dCluster", "EnsureK3dPortForwards", "EnsureK3dHeadlamp", "ShowEnvironmentUrls")]
+  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetGiteaBranchProtection", "SetOpenProjectEnv", "SetMonitoringEnv", "SetGiteaRunner", "SetSeqAzureEventHubLogs", "SplitInfraEnv", "AuditQualityGates", "AuditRecommendedTools", "DiscoverProjectGuidance", "AcquireProjectGuidance", "SetRecommendedTools", "MapProjectGuidanceStep", "BuildGiteaActionsImages", "ValidateGiteaActionsRunner", "InitProjectProfile", "InitQualityGateTemplates", "SetQualityConfig", "SyncWorktreeLocalConfig", "EnsureDeliveryContext", "EnsureK3dCluster", "EnsureK3dPortForwards", "EnsureK3dHeadlamp", "ShowEnvironmentUrls")]
   [string]$Mode = "Audit",
 
   [string]$Root = (Resolve-Path ".").Path,
@@ -2053,12 +2053,12 @@ function Ensure-InferredClientToolsConfig {
 
   $remote = Get-GitRemoteOwnerRepo
 
-  Set-InferredClientValue $Result $client @("plane", "baseUrl") "http://localhost:8080"
-  Set-InferredClientValue $Result $client @("plane", "todoState") "Todo"
-  Set-InferredClientValue $Result $client @("plane", "inProgressState") "In Progress"
-  Set-InferredClientValue $Result $client @("plane", "reviewState") "In Review"
-  Set-InferredClientValue $Result $client @("plane", "qaState") "QA"
-  Set-InferredClientValue $Result $client @("plane", "doneState") "Done"
+  Set-InferredClientValue $Result $client @("openProject", "baseUrl") "http://localhost:8080"
+  Set-InferredClientValue $Result $client @("openProject", "todoStatus") "Todo"
+  Set-InferredClientValue $Result $client @("openProject", "inProgressStatus") "In Progress"
+  Set-InferredClientValue $Result $client @("openProject", "reviewStatus") "In Review"
+  Set-InferredClientValue $Result $client @("openProject", "qaStatus") "QA"
+  Set-InferredClientValue $Result $client @("openProject", "doneStatus") "Done"
 
   Set-InferredClientValue $Result $client @("git", "baseBranch") "dev"
   Set-InferredClientValue $Result $client @("git", "branchPrefix") "codex"
@@ -2881,17 +2881,17 @@ function Invoke-Audit {
     Add-Item $result "findings" $clientLocal "" "Local client tool config is missing." "error"
   } else {
     $client = Get-Content -Path $clientPath -Raw | ConvertFrom-Json
-    foreach ($requiredPlaneValue in @("baseUrl", "todoState", "inProgressState", "reviewState", "qaState", "doneState")) {
-      if (Test-ClientValueMissing $client.plane $requiredPlaneValue) {
-        Add-Item $result "findings" $clientLocal "plane.$requiredPlaneValue" "Missing inferred Plane local value; rerun Audit to apply defaults or set manually." "warning"
+    foreach ($requiredOpenProjectValue in @("baseUrl", "todoStatus", "inProgressStatus", "reviewStatus", "qaStatus", "doneStatus")) {
+      if (Test-ClientValueMissing $client.openProject $requiredOpenProjectValue) {
+        Add-Item $result "findings" $clientLocal "openProject.$requiredOpenProjectValue" "Missing inferred OpenProject local value; rerun Audit to apply defaults or set manually." "warning"
       }
     }
-    if (Test-Placeholder $client.plane.apiToken) {
-      Add-Item $result "findings" $clientLocal "plane.apiToken" "Missing or placeholder Plane API token; ask the user for this value." "error"
+    if (Test-Placeholder $client.openProject.apiToken) {
+      Add-Item $result "findings" $clientLocal "openProject.apiToken" "Missing or placeholder OpenProject API token; ask the user for this value." "error"
     }
-    foreach ($requiredPlaneUserValue in @("workspaceSlug", "projectIdentifier")) {
-      if (Test-ClientValueMissing $client.plane $requiredPlaneUserValue) {
-        Add-Item $result "findings" $clientLocal "plane.$requiredPlaneUserValue" "Missing Plane value and it is not inferable from local files; ask the user for this value." "warning"
+    foreach ($requiredOpenProjectUserValue in @("projectIdentifier")) {
+      if (Test-ClientValueMissing $client.openProject $requiredOpenProjectUserValue) {
+        Add-Item $result "findings" $clientLocal "openProject.$requiredOpenProjectUserValue" "Missing OpenProject value and it is not inferable from local files; ask the user for this value." "warning"
       }
     }
 
@@ -2944,42 +2944,14 @@ function Invoke-Audit {
     }
   }
 
-  $planeLocal = "infra/plane/variables.env"
-  $plane = Read-EnvFile (Join-RootPath $planeLocal)
-  if ($plane.Count -eq 0) {
-    Add-Item $result "findings" $planeLocal "" "Plane local env file is missing or empty." "error" "pre-start"
+  $openProjectLocal = "infra/openproject/variables.env"
+  $openProject = Read-EnvFile (Join-RootPath $openProjectLocal)
+  if ($openProject.Count -eq 0) {
+    Add-Item $result "findings" $openProjectLocal "" "OpenProject local env file is missing or empty." "error" "pre-start"
   } else {
-    $unsafePairs = @{
-      POSTGRES_PASSWORD = @("plane")
-      RABBITMQ_DEFAULT_PASS = @("plane")
-      AWS_ACCESS_KEY_ID = @("access-key")
-      AWS_SECRET_ACCESS_KEY = @("secret-key")
-      MINIO_ROOT_USER = @("access-key")
-      MINIO_ROOT_PASSWORD = @("secret-key")
-    }
-
-    foreach ($key in $unsafePairs.Keys) {
-      if ($plane.Contains($key) -and ($unsafePairs[$key] -contains $plane[$key])) {
-        Add-Item $result "findings" $planeLocal $key "Unsafe local default; replace with a generated local value." "warning" "pre-start"
-      }
-    }
-
-    foreach ($key in @("MACHINE_SIGNATURE", "SECRET_KEY", "SILO_HMAC_SECRET_KEY", "AES_SECRET_KEY", "LIVE_SERVER_SECRET_KEY", "PI_INTERNAL_SECRET")) {
-      if (-not $plane.Contains($key) -or (Test-Placeholder $plane[$key])) {
-        Add-Item $result "findings" $planeLocal $key "Missing or placeholder generated secret." "warning" "pre-start"
-      }
-    }
-
-    if ($plane.Contains("FOLLOWER_POSTGRES_URI") -and $plane["FOLLOWER_POSTGRES_URI"] -match "plane:plane@") {
-      Add-Item $result "findings" $planeLocal "FOLLOWER_POSTGRES_URI" "Contains unsafe default Postgres password." "warning" "pre-start"
-    }
-    if ($plane.Contains("AMQP_URL") -and $plane["AMQP_URL"] -match "plane:plane@") {
-      Add-Item $result "findings" $planeLocal "AMQP_URL" "Contains unsafe default RabbitMQ password." "warning" "pre-start"
-    }
-
-    foreach ($key in @("OTELCOL_SEQ_OTLP_ENDPOINT", "OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING", "OTELCOL_AZURE_EVENT_HUB_QA_CONNECTION_STRING", "OTELCOL_AZURE_EVENT_HUB_PROD_CONNECTION_STRING", "GRAFANA_AZURE_SUBSCRIPTION_ID", "GRAFANA_AZURE_TENANT_ID", "GRAFANA_AZURE_CLIENT_ID", "GRAFANA_AZURE_CLIENT_SECRET", "AZURE_TENANT_ID", "AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET")) {
-      if ($plane.Contains($key)) {
-        Add-Item $result "findings" $planeLocal $key "Key belongs in a tool-specific env file; run SplitInfraEnv to migrate local values." "warning" "pre-start"
+    foreach ($key in @("OPENPROJECT_SECRET_KEY_BASE")) {
+      if (-not $openProject.Contains($key) -or (Test-Placeholder $openProject[$key])) {
+        Add-Item $result "findings" $openProjectLocal $key "Missing or placeholder generated secret." "warning" "pre-start"
       }
     }
   }
@@ -4047,14 +4019,14 @@ yarn-error.log*
 pnpm-debug.log*
 
 # Local container runtime state
-infra/plane/plane/
+infra/openproject/openproject/
 **/data/
 **/logs/
 
 # Local secrets and machine-specific environment files
 *.env
 !*.env.example
-.plane.local.json
+.openproject.local.json
 .codex/client-tools.local.json
 .codex/quality.local.json
 .codex/azure-login.local.json
@@ -4387,14 +4359,14 @@ jobs:
           fi
 
           commit_message="${{ github.event.head_commit.message }}"
-          plane_ticket_key=""
+          ticket_key=""
           if [[ "$commit_message" =~ ^($ticket_key_pattern) ]]; then
-            plane_ticket_key="${BASH_REMATCH[1]}"
+            ticket_key="${BASH_REMATCH[1]}"
           elif [[ "$commit_message" =~ Merge\ pull\ request.*\'($ticket_key_pattern): ]]; then
-            plane_ticket_key="${BASH_REMATCH[1]}"
+            ticket_key="${BASH_REMATCH[1]}"
           fi
           deploy_allowed=false
-          if [ -n "$plane_ticket_key" ]; then
+          if [ -n "$ticket_key" ]; then
             deploy_allowed=true
           fi
 
@@ -4456,10 +4428,10 @@ jobs:
           ticket_key_pattern="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ReadProjectProfile --path .codex/project-profile.json)"
 
           commit_message="$(git log -1 --pretty=%B)"
-          plane_ticket_key="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ExtractTicketKey --pattern "$ticket_key_pattern" --message "$commit_message" --fallback manual-dispatch)"
+          ticket_key="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ExtractTicketKey --pattern "$ticket_key_pattern" --message "$commit_message" --fallback manual-dispatch)"
 
           artifact_url="$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/$first_artifact_name"
-          dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- CreateReleaseManifest --output artifacts/release.json --commit-sha "$commit_sha" --checksum "$first_artifact_checksum" --artifact-url "$artifact_url" --plane-ticket-key "$plane_ticket_key" --version-status unversioned
+          dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- CreateReleaseManifest --output artifacts/release.json --commit-sha "$commit_sha" --checksum "$first_artifact_checksum" --artifact-url "$artifact_url" --ticket-key "$ticket_key" --version-status unversioned
           dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ValidateReleaseManifest --path artifacts/release.json
 
           jq -r '.apps[] | .artifactName' infra/deployment/apps.json |
@@ -4954,9 +4926,9 @@ jobs:
 
           ticket_key_pattern="$(jq -r '.workflow.ticketKeyPattern // empty' .codex/project-profile.json)"
           branch_name="${GITHUB_REF#refs/heads/}"
-          plane_ticket_key="$(printf '%s\n' "$branch_name" | sed -nE "s#^qa/($ticket_key_pattern)(/.*)?\$#\1#p" | head -n 1)"
-          test -n "$plane_ticket_key"
-          echo "E2E_PLANE_TICKET_KEY=$plane_ticket_key" >> "$GITHUB_ENV"
+          ticket_key="$(printf '%s\n' "$branch_name" | sed -nE "s#^qa/($ticket_key_pattern)(/.*)?\$#\1#p" | head -n 1)"
+          test -n "$ticket_key"
+          echo "E2E_TICKET_KEY=$ticket_key" >> "$GITHUB_ENV"
 
       - name: Install E2E dependencies
         shell: bash
@@ -4979,7 +4951,7 @@ jobs:
 
           run_id="$(date -u +%Y%m%d-%H%M%S)-${GITHUB_SHA:0:7}"
           {
-            echo "ticketKey=$E2E_PLANE_TICKET_KEY"
+            echo "ticketKey=$E2E_TICKET_KEY"
             echo "artifactCommitSha=$E2E_ARTIFACT_COMMIT_SHA"
             echo "testCommitSha=$GITHUB_SHA"
             echo "runId=$run_id"
@@ -4993,7 +4965,7 @@ jobs:
           zip -r qa-e2e-evidence.zip evidence
 
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file qa-e2e-evidence.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${E2E_ARTIFACT_COMMIT_SHA}/qa-e2e-evidence.zip"
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file qa-e2e-evidence.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/qa/${E2E_PLANE_TICKET_KEY}/${run_id}/qa-evidence.zip"
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file qa-e2e-evidence.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/qa/${E2E_TICKET_KEY}/${run_id}/qa-evidence.zip"
 
           exit "$test_exit"
         env:
@@ -5035,7 +5007,7 @@ jobs:
             test "$(jq -r '.sourceRcVersion // empty' release.json)" = "$source_rc_version"
             test "$(jq -r '.qaResult // empty' release.json)" = "PASS"
             test -n "$(jq -r '.qaEvidenceUrl // empty' release.json)"
-            test "$(jq -c '(.includedTickets // [.planeTicketKey]) | sort' qa-approved-latest.json)" = "$(jq -c '(.includedTickets // [.planeTicketKey]) | sort' release.json)"
+            test "$(jq -c '(.includedTickets // [.ticketKey]) | sort' qa-approved-latest.json)" = "$(jq -c '(.includedTickets // [.ticketKey]) | sort' release.json)"
 
             git fetch --depth 1 origin "refs/tags/$source_rc_version:refs/tags/$source_rc_version"
             test "$(git rev-list -n 1 "$source_rc_version")" = "$artifact_commit_sha"
@@ -5295,10 +5267,10 @@ Recommended branch protection:
 Release flow:
 
 ```text
-feature branch -> dev -> DEV -> QA -> Gitea E2E evidence -> Plane E2E QA -> main -> PROD
+feature branch -> dev -> DEV -> QA -> Gitea E2E evidence -> OpenProject E2E QA -> main -> PROD
 ```
 
-The package workflow reads `infra/deployment/apps.json`, rejects deployable project paths outside `src/`, builds one ZIP per deployable app, builds `deployment-config.json` from `infra/deployment/configuration.json` plus each app's `appsettings*.json`, and publishes from ticket-gated application changes on `dev`, including `app/{commitSha}/deployable-apps.json`, `app/{commitSha}/deployment-config.json`, per-app ZIP/checksum files, and a baseline `app/{commitSha}/release.json`. DEV, QA, and PROD must apply and verify deployment configuration before deployment success is claimed. Smoke checks also verify that the clients page renders the expected API base URL and that API CORS preflight allows the matching web origin. DEV and QA must deploy the same Nexus app artifacts for the same commit SHA. After QA deploy and smoke checks, push a `qa/{ticketKey}` branch from current `dev`; the `e2e-qa` job runs the committed Playwright suite against the deployed QA Site/API URLs without redeploying, resolves the artifact commit from the branch point with `dev`, and uploads `app/{commitSha}/qa-e2e-evidence.zip` plus the canonical ticket/run evidence copy under `qa/{ticketKey}/{runId}/qa-evidence.zip`. Implementation records E2E expectations; `quality-test-e2e` owns Playwright E2E creation, repair, rerun, and evidence when existing committed tests cannot prove acceptance. This Gitea job is evidence-only; the `quality-test-e2e` skill remains responsible for acceptance-to-assertion QA proof, Plane Done state, RC tagging, release manifest QA lineage, and deleting the remote `qa/{ticketKey}` branch after durable Nexus/Plane/release/tag evidence exists. Only full `PASS` can move Plane to Done; `PASS WITH GAPS` or `FAIL` remain in QA. PROD is an explicit release event that may include one or more Done tickets through `release.json.includedTickets`; it must deploy the QA-approved Nexus app artifacts from an exact-commit `main` promotion or explicit dispatch by commit SHA, pass deployment configuration verification, rendered API base URL validation, CORS preflight validation, the web page smoke check, and every app `/health` check, then record the PROD result on every included ticket.
+The package workflow reads `infra/deployment/apps.json`, rejects deployable project paths outside `src/`, builds one ZIP per deployable app, builds `deployment-config.json` from `infra/deployment/configuration.json` plus each app's `appsettings*.json`, and publishes from ticket-gated application changes on `dev`, including `app/{commitSha}/deployable-apps.json`, `app/{commitSha}/deployment-config.json`, per-app ZIP/checksum files, and a baseline `app/{commitSha}/release.json`. DEV, QA, and PROD must apply and verify deployment configuration before deployment success is claimed. Smoke checks also verify that the clients page renders the expected API base URL and that API CORS preflight allows the matching web origin. DEV and QA must deploy the same Nexus app artifacts for the same commit SHA. After QA deploy and smoke checks, push a `qa/{ticketKey}` branch from current `dev`; the `e2e-qa` job runs the committed Playwright suite against the deployed QA Site/API URLs without redeploying, resolves the artifact commit from the branch point with `dev`, and uploads `app/{commitSha}/qa-e2e-evidence.zip` plus the canonical ticket/run evidence copy under `qa/{ticketKey}/{runId}/qa-evidence.zip`. Implementation records E2E expectations; `quality-test-e2e` owns Playwright E2E creation, repair, rerun, and evidence when existing committed tests cannot prove acceptance. This Gitea job is evidence-only; the `quality-test-e2e` skill remains responsible for acceptance-to-assertion QA proof, OpenProject Done state, RC tagging, release manifest QA lineage, and deleting the remote `qa/{ticketKey}` branch after durable Nexus/OpenProject/release/tag evidence exists. Only full `PASS` can move OpenProject to Done; `PASS WITH GAPS` or `FAIL` remain in QA. PROD is an explicit release event that may include one or more Done tickets through `release.json.includedTickets`; it must deploy the QA-approved Nexus app artifacts from an exact-commit `main` promotion or explicit dispatch by commit SHA, pass deployment configuration verification, rendered API base URL validation, CORS preflight validation, the web page smoke check, and every app `/health` check, then record the PROD result on every included ticket.
 '@
 
   return $result
@@ -5351,7 +5323,7 @@ function Invoke-InitLocalFiles {
   $result = New-Result
   Copy-LocalFile $result ".codex/client-tools.example.json" ".codex/client-tools.local.json"
   Copy-LocalFile $result ".codex/quality.example.json" ".codex/quality.local.json"
-  Copy-LocalFile $result "infra/plane/variables.env.example" "infra/plane/variables.env"
+  Copy-LocalFile $result "infra/openproject/variables.env.example" "infra/openproject/variables.env"
   Copy-LocalFile $result "infra/monitoring/variables.env.example" "infra/monitoring/variables.env"
   Copy-LocalFile $result "infra/azure/variables.env.example" "infra/azure/variables.env"
   Copy-LocalFile $result "infra/gitea/runner.env.example" "infra/gitea/runner.env"
@@ -5495,7 +5467,7 @@ function Invoke-SetClientTools {
 
   $values = Convert-JsonToHashtable $ValuesJson
   $config = Get-Content -Path $target -Raw | ConvertFrom-Json
-  foreach ($section in @("plane", "git", "gitea", "nexus", "pr")) {
+  foreach ($section in @("openProject", "git", "gitea", "nexus", "pr")) {
     if ($values.Contains($section)) {
       Ensure-ObjectProperty -Object $config -Name $section
       foreach ($key in $values[$section].Keys) {
@@ -5590,25 +5562,25 @@ function Invoke-SetEnvMode {
 
 function Invoke-SplitInfraEnv {
   $result = New-Result
-  $planeRelative = "infra/plane/variables.env"
+  $openProjectRelative = "infra/openproject/variables.env"
   $monitoringRelative = "infra/monitoring/variables.env"
   $azureRelative = "infra/azure/variables.env"
 
-  $planePath = Join-RootPath $planeRelative
-  if (-not (Test-Path $planePath)) {
-    throw "Missing $planeRelative. Run -Mode InitLocalFiles first."
+  $openProjectPath = Join-RootPath $openProjectRelative
+  if (-not (Test-Path $openProjectPath)) {
+    throw "Missing $openProjectRelative. Run -Mode InitLocalFiles first."
   }
 
-  $source = Read-EnvFile $planePath
+  $source = Read-EnvFile $openProjectPath
   $monitoringExisting = Read-EnvFile (Join-RootPath $monitoringRelative)
   $azureExisting = Read-EnvFile (Join-RootPath $azureRelative)
 
   Write-EnvFromTemplate -TemplateRelative "infra/monitoring/variables.env.example" -TargetRelative $monitoringRelative -PrimaryValues $monitoringExisting -FallbackValues $source -Result $result
   Write-EnvFromTemplate -TemplateRelative "infra/azure/variables.env.example" -TargetRelative $azureRelative -PrimaryValues $azureExisting -FallbackValues $source -Result $result
-  Write-EnvFromTemplate -TemplateRelative "infra/plane/variables.env.example" -TargetRelative $planeRelative -PrimaryValues $source -FallbackValues @{} -Result $result
+  Write-EnvFromTemplate -TemplateRelative "infra/openproject/variables.env.example" -TargetRelative $openProjectRelative -PrimaryValues $source -FallbackValues @{} -Result $result
 
   $known = @{}
-  foreach ($templateRelative in @("infra/plane/variables.env.example", "infra/monitoring/variables.env.example", "infra/azure/variables.env.example")) {
+  foreach ($templateRelative in @("infra/openproject/variables.env.example", "infra/monitoring/variables.env.example", "infra/azure/variables.env.example")) {
     foreach ($key in (Get-EnvFileKeys (Join-RootPath $templateRelative))) {
       $known[$key] = $true
     }
@@ -5616,7 +5588,7 @@ function Invoke-SplitInfraEnv {
 
   foreach ($key in @($source.Keys | Sort-Object)) {
     if (-not $known.ContainsKey($key)) {
-      Add-Item $result "findings" $planeRelative $key "Existing key is not owned by the split env templates; value was left for manual review and not copied." "warning" "pre-start"
+      Add-Item $result "findings" $openProjectRelative $key "Existing key is not owned by the split env templates; value was left for manual review and not copied." "warning" "pre-start"
     }
   }
 
@@ -5940,7 +5912,7 @@ switch ($Mode) {
   "BuildGiteaActionsImages" { $result = Invoke-BuildGiteaActionsImages }
   "SyncWorktreeLocalConfig" { $result = Invoke-SyncWorktreeLocalConfig }
   "EnsureDeliveryContext" { $result = Invoke-EnsureDeliveryContext }
-  "SetPlaneEnv" { $result = Invoke-SetEnvMode -TargetRelative "infra/plane/variables.env" }
+  "SetOpenProjectEnv" { $result = Invoke-SetEnvMode -TargetRelative "infra/openproject/variables.env" }
   "SetMonitoringEnv" { $result = Invoke-SetEnvMode -TargetRelative "infra/monitoring/variables.env" }
   "SetGiteaRunner" { $result = Invoke-SetEnvMode -TargetRelative "infra/gitea/runner.env" }
   "SetSeqAzureEventHubLogs" { $result = Invoke-SetSeqAzureEventHubLogs }

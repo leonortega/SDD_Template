@@ -1,6 +1,6 @@
 # Context Management Fundamentals
 
-This repository treats context as an SDLC asset. Durable project knowledge belongs in tracked documentation and workflow contracts, not only in chat history, temporary notes, PR comments, or Plane comments.
+This repository treats context as an SDLC asset. Durable project knowledge belongs in tracked documentation and workflow contracts, not only in chat history, temporary notes, PR comments, or OpenProject comments.
 
 `.codex/memory/` provides a reviewable repository memory layer for reusable workflow knowledge, repeated failure patterns, module landmarks, and release or QA lessons. Memory is a retrieval aid only; it must be verified against the authority order below before it drives an action.
 
@@ -36,9 +36,9 @@ Load only the context needed for the workflow stage.
 
 ## Freshness Checks
 
-Before mutating Plane, Git, Gitea, Nexus, Azure, tags, or release manifests, refresh the relevant state:
+Before mutating OpenProject, Git, Gitea, Nexus, Azure, tags, or release manifests, refresh the relevant state:
 
-- Plane state, ticket description, and generated comments.
+- OpenProject status, ticket description, and generated comments.
 - Current Git branch, dirty state, remote branch, and tags.
 - Gitea PR status, labels, reviews, head SHA, merge commit, and CI status.
 - Nexus artifact files under `app/{commitSha}/`, including `release.json`.
@@ -60,7 +60,7 @@ If docs conflict with `.codex/skills/_shared/delivery-contract.md`, the delivery
 Every implementation, review, QA, deployment, PROD, rollback, or hotfix handoff must preserve:
 
 - goal and current workflow stage
-- Plane ticket and state
+- OpenProject work package and state
 - branch and OpenSpec change
 - PR number or URL
 - commit SHA and artifact path when available
@@ -73,7 +73,7 @@ Every implementation, review, QA, deployment, PROD, rollback, or hotfix handoff 
 
 ## Prompt Cache Hygiene
 
-Long-running agent workflows should keep stable context before volatile runtime context so repeated calls can reuse cacheable prompt prefixes. Put repository policy, delivery contract excerpts, skill instructions, schemas, and stable examples before ticket-specific Plane comments, PR diffs, tool results, timestamps, logs, and health-check output.
+Long-running agent workflows should keep stable context before volatile runtime context so repeated calls can reuse cacheable prompt prefixes. Put repository policy, delivery contract excerpts, skill instructions, schemas, and stable examples before ticket-specific OpenProject comments, PR diffs, tool results, timestamps, logs, and health-check output.
 
 Dynamic values belong near the end of the working context:
 
@@ -83,7 +83,7 @@ Dynamic values belong near the end of the working context:
 - Nexus manifests, Azure health checks, QA evidence, and monitoring output
 - tool errors, retries, and latest observations
 
-Do not insert timestamps, random IDs, raw tool dumps, or refreshed status summaries into otherwise stable context blocks. If a run records model telemetry, write it to ignored local output such as `.codex/agent-telemetry.local.jsonl` and summarize only useful optimization findings in handoff text. Delivery stages maintain a concise generated Plane timing comment for the active ticket from that telemetry file, but only with per-stage outcome, duration, and UTC start/finish values; raw logs, token counts, prompts, and sensitive values stay out of Plane. E2E QA posts or patches the final timing comment after the E2E QA comment is verified because PROD promotion is a separate explicit release step.
+Do not insert timestamps, random IDs, raw tool dumps, or refreshed status summaries into otherwise stable context blocks. If a run records model telemetry, write it to ignored local output such as `.codex/agent-telemetry.local.jsonl` and summarize only useful optimization findings in handoff text. Delivery stages maintain a concise generated OpenProject timing comment for the active ticket from that telemetry file, but only with per-stage outcome, duration, and UTC start/finish values; raw logs, token counts, prompts, and sensitive values stay out of OpenProject. E2E QA posts or patches the final timing comment after the E2E QA comment is verified because PROD promotion is a separate explicit release step.
 
 ## Risk-Adaptive Context Loading
 
@@ -95,7 +95,7 @@ Strict gates do not require every run to load every long instruction body. Agent
 
 Project guidance remains the broad catalog for skills, tools, references, practices, standards, MCPs, and plugins. The installed-skill runtime index is only an ignored cache of exact installed `SKILL.md` paths used to avoid repeated scans and pass precise skill paths during delegation.
 
-Avoid duplicate context systems. Ticket refinement belongs in the managed Plane block; implementation planning belongs in OpenSpec; recurring workflow learning belongs in `dev-flow-retrospective-audit`, docs, the shared contract, or `.codex/memory/` according to the existing authority order.
+Avoid duplicate context systems. Ticket refinement belongs in the managed OpenProject block; implementation planning belongs in OpenSpec; recurring workflow learning belongs in `dev-flow-retrospective-audit`, docs, the shared contract, or `.codex/memory/` according to the existing authority order.
 
 ## Agent Telemetry
 

@@ -18,8 +18,8 @@
   },
   "providers": {
     "ticket": {
-      "id": "plane",
-      "adapter": ".codex/providers/ticket.plane.md"
+      "id": "openproject",
+      "adapter": ".codex/providers/ticket.openproject.md"
     },
     "repository": {
       "id": "gitea",
@@ -112,7 +112,7 @@
     ]
   },
   "adapters": {
-    "ticket": ".codex/providers/ticket.plane.md",
+    "ticket": ".codex/providers/ticket.openproject.md",
     "repository": ".codex/providers/repo.gitea.md",
     "review": ".codex/providers/repo.gitea.md",
     "artifact": ".codex/providers/artifact.nexus.md",

@@ -150,7 +150,7 @@ Each artifact commit must also have a machine-readable release manifest:
 $NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${commitSha}/release.json
 ```
 
-Use `release.json` for automation and idempotency. It should carry commit SHA, checksum, artifact path, PR URL, Plane ticket key, DEV/QA/PROD URLs and status, QA evidence URL, source RC tag, final release tag, workflow run URLs, monitoring status, and timestamps. Plane comments remain the human-readable summary.
+Use `release.json` for automation and idempotency. It should carry commit SHA, checksum, artifact path, PR URL, OpenProject work package key, DEV/QA/PROD URLs and status, QA evidence URL, source RC tag, final release tag, workflow run URLs, monitoring status, and timestamps. OpenProject comments remain the human-readable summary.
 
 ## Nexus Docker Repository Setup
 
@@ -191,15 +191,15 @@ $NEXUS_URL/repository/$NEXUS_REPOSITORY/app/releases/${finalReleaseVersion}/rele
 - Merge to `dev` builds once.
 - For Azure, publish one deployable ZIP artifact per app in `infra/deployment/apps.json`, compute per-app checksums, upload topology/artifacts/checksums/metadata to Nexus, deploy DEV from the Nexus topology artifacts, and promote the same topology artifacts to QA after DEV page and all app `/health` checks pass.
 - For k3d, build `sddtemplate/site` and `sddtemplate/api` images once, push to Nexus Docker, upload `app/{commitSha}/container-images.json`, deploy the digest-pinned references to `sdd-dev`, and promote the same digest set to `sdd-qa` after DEV health and observability checks pass.
-- Move the Plane ticket to QA only after QA checks pass.
+- Move the OpenProject work package to QA only after QA checks pass.
 - Create or verify an annotated RC tag such as `v1.2.0-rc.1` on the QA-approved artifact commit after E2E QA passes, then publish `app/qa-approved/latest.json` and the matching `app/rc/{sourceRcVersion}/` alias metadata.
 - Fast-forward the tested commit to `main` only after QA passes. Push-triggered PROD deployment is allowed only when `main` points to the exact QA-approved packaged commit, the commit or merged PR title starts with the configured ticket key pattern in `.codex/project-profile.json`, and application/test/package source changed.
 - Create the final annotated release tag such as `v1.2.0` on the same commit.
 - Deploy PROD from the QA-passed artifact commit by Azure ticket-gated `main` push through `app/qa-approved/latest.json` or explicit provider workflow dispatch inputs `artifact_commit_sha`, `release_version`, and `source_rc_version`.
 - After PROD passes, publish the final `app/releases/{finalReleaseVersion}/` alias metadata.
 - Validate PROD page and all app `/health` checks; use Seq log search as observability verification when available.
-- Record version lineage in Plane comments at each phase: QA deployment as unversioned candidate or known RC, E2E QA as `artifact commit -> source RC`, and PROD as `artifact commit -> source RC -> final release`.
-- For rollback, redeploy the previous known-good provider artifact set: Azure `app/{commitSha}/deployable-apps.json` ZIP topology with checksums, or k3d `app/{commitSha}/container-images.json` digest set. Verify `/health`, update `release.json`, and comment Plane with rollback lineage.
+- Record version lineage in OpenProject comments at each phase: QA deployment as unversioned candidate or known RC, E2E QA as `artifact commit -> source RC`, and PROD as `artifact commit -> source RC -> final release`.
+- For rollback, redeploy the previous known-good provider artifact set: Azure `app/{commitSha}/deployable-apps.json` ZIP topology with checksums, or k3d `app/{commitSha}/container-images.json` digest set. Verify `/health`, update `release.json`, and comment OpenProject with rollback lineage.
 - Do not rebuild between environments.
 
 Default release path:

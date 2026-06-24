@@ -93,7 +93,7 @@ If the user confirms the researched list, immediately record accepted ids, persi
 - Treat command installers as metadata only unless `project-guidance-acquire` later has explicit user confirmation and a supported guarded install path.
 - Prefer pinned Docker alternatives over package-manager installs for recurring tools when the metadata proves the tool can run from the mounted workspace/cache without host secrets or interactive auth.
 - Do not read or print secrets.
-- Do not recommend Plane MCP for ticket delivery; repo-local skills use the configured Plane API.
+- Do not recommend OpenProject MCP for ticket delivery; repo-local skills use the configured OpenProject API.
 - Record accepted or dismissed recommendation ids only with `SetRecommendedTools` after explicit user confirmation.
 - Do not commit `.codex/tool-recommendations.local.json`; it is local project state.
 - Do not list OpenSpec or configure skills as installable skill recommendations in the local or example catalog.

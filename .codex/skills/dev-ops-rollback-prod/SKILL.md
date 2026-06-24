@@ -17,20 +17,20 @@ Before rollback, follow `.codex/skills/_shared/skill-startup.md`, which reads `.
 
 Read `.codex/client-tools.local.json` first. Required values:
 
-- `plane.baseUrl`, `plane.apiToken`, `plane.workspaceSlug`, `plane.projectIdentifier`
+- `openProject.baseUrl`, `openProject.apiToken`, `openProject.projectIdentifier`, `openProject.projectIdentifier`
 - `gitea.baseUrl`, `gitea.apiToken`, `gitea.owner`, `gitea.repo`
 - `nexus.baseUrl`, `nexus.username`, `nexus.password`, `nexus.repository`
 
 ## Workflow
 
-Run preflight, rollback deployment, verification, Plane result, and follow-up handoff steps in order. Do not mutate PROD until artifact and release-manifest validation pass.
+Run preflight, rollback deployment, verification, OpenProject result, and follow-up handoff steps in order. Do not mutate PROD until artifact and release-manifest validation pass.
 
 ## Preflight
 
-1. Resolve the current PROD release from the latest Plane PROD deployment comment or release manifest.
+1. Resolve the current PROD release from the latest OpenProject PROD deployment comment or release manifest.
 2. Run `ValidateTicketLock` when `.codex/delivery-context.local.json` is present and report the active ticket lock. If the rollback target differs from the lock, require explicit user confirmation before mutation.
-3. If the user did not supply a rollback target, list known-good candidates from Plane PROD comments, Git tags, and Nexus `release.json` metadata. Order newest-first, mark the current PROD release, and ask the user to choose a target before mutating anything.
-4. Resolve the rollback target from user input, Plane PROD comments, Git tags, or Nexus `release.json` metadata.
+3. If the user did not supply a rollback target, list known-good candidates from OpenProject PROD comments, Git tags, and Nexus `release.json` metadata. Order newest-first, mark the current PROD release, and ask the user to choose a target before mutating anything.
+4. Resolve the rollback target from user input, OpenProject PROD comments, Git tags, or Nexus `release.json` metadata.
 5. Verify the selected provider target artifact exists. Azure requires:
    - `app/{commitSha}/deployable-apps.json`
    - one `app/{commitSha}/{artifactName}` per topology app
@@ -62,12 +62,12 @@ k3d uses `.gitea/workflows/k3d-local-deploy.yml` with the same dispatch inputs. 
 
 1. Verify PROD page returns HTTP 200 and expected title/content.
 2. Verify `{prodWebUrl}/health` returns HTTP 200 and JSON `status=ok`.
-3. If Seq log validation is unavailable, rollback may still pass but the Plane comment must record monitoring unavailable.
+3. If Seq log validation is unavailable, rollback may still pass but the OpenProject comment must record monitoring unavailable.
 4. If page or `/health` fails, comment rollback failure and stop.
 
-## Plane Result
+## OpenProject Result
 
-Add a Plane comment with marker:
+Add a OpenProject comment with marker:
 
 ```text
 IA generated PROD rollback: {rollbackVersionOrCommit}
@@ -77,7 +77,7 @@ Include current PROD version/commit, rollback target version/commit, Nexus artif
 
 Use `UpdateReleaseManifest` to update `app/{commitSha}/release.json` with rollback deployment timestamp, workflow run URL, PROD URL, and rollback source/current version relationship when rollback passes.
 
-Create or update a Plane incident ticket with marker:
+Create or update a OpenProject incident ticket with marker:
 
 ```text
 IA generated PROD rollback incident: {rollbackVersionOrCommit}
@@ -89,7 +89,7 @@ After rollback, explicitly document Git state. `main` is not automatically rever
 
 ## Output
 
-Report the rollback target, current and restored PROD versions, artifact commit, validation results, Plane rollback comment, incident/follow-up handoff, and any remaining Git-line divergence.
+Report the rollback target, current and restored PROD versions, artifact commit, validation results, OpenProject rollback comment, incident/follow-up handoff, and any remaining Git-line divergence.
 
 ## Failure Rules
 

@@ -7,7 +7,7 @@
 - Source: current conversation, `.codex/memory/`
 - Last verified: 2026-05-29
 
-This repository should use a tracked, reviewable, file-backed memory system under `.codex/memory/`. Memory entries should be source-backed and should support the existing SDD/SDLC workflow rather than replacing Plane, OpenSpec, docs, delivery contracts, or live tool state.
+This repository should use a tracked, reviewable, file-backed memory system under `.codex/memory/`. Memory entries should be source-backed and should support the existing SDD/SDLC workflow rather than replacing OpenProject, OpenSpec, docs, delivery contracts, or live tool state.
 
 ## Memory Is Subordinate To Existing Context Authority
 
@@ -52,7 +52,7 @@ Nexus stores the immutable artifact promoted across DEV, QA, PROD, and rollback.
 - Source: `docs/context-management.md`
 - Last verified: 2026-05-29
 
-Durable project knowledge belongs in tracked documentation and workflow contracts, not only in chat history, temporary notes, PR comments, or Plane comments. Memory extends this approach but does not replace canonical docs.
+Durable project knowledge belongs in tracked documentation and workflow contracts, not only in chat history, temporary notes, PR comments, or OpenProject comments. Memory extends this approach but does not replace canonical docs.
 
 ## Shared Startup For Delivery Skills
 
@@ -71,3 +71,12 @@ Non-OpenSpec, non-configure delivery skills should use `.codex/skills/_shared/sk
 - Last verified: 2026-06-18
 
 When a required repo skill, command, memory rule, definition, or configured tool/install path cannot be applied, agents must stop the affected flow instead of silently using an alternative. The agent must report the blocker, current-flow fix, viable alternative, and risk or impact, then ask the user whether to fix the current flow or continue with the alternative.
+
+## OpenProject Replaces Plane
+
+- Type: Decision
+- Status: Active
+- Source: current conversation, `.codex/project-profile.json`, `.codex/providers/ticket.openproject.md`
+- Last verified: 2026-06-24
+
+OpenProject is the configured ticket provider. Future delivery uses OpenProject work packages, API v3 bearer-token authentication, and the `openProject` local config section. Existing archived OpenSpec text remains historical and is not migrated.

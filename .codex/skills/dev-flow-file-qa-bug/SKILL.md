@@ -19,10 +19,10 @@ Read `.codex/project-profile.json` first. Read `.codex/client-tools.local.json` 
 
 ## Workflow
 
-1. Resolve the parent Plane ticket, failed QA run, tested commit, artifact, QA URL, and evidence path or URL.
-2. Read `.codex/delivery-context.local.json` when present and verify the parent ticket, tested commit, artifact `release.json.planeTicketKey`, and evidence path match the locked `ticketKey`. If they do not, stop before filing a bug against the wrong parent.
+1. Resolve the parent OpenProject work package, failed QA run, tested commit, artifact, QA URL, and evidence path or URL.
+2. Read `.codex/delivery-context.local.json` when present and verify the parent ticket, tested commit, artifact `release.json.ticketKey`, and evidence path match the locked `ticketKey`. If they do not, stop before filing a bug against the wrong parent.
 3. Confirm the failure is a product defect, not tooling, missing credentials, missing test data, unreachable infrastructure, or evidence upload failure.
-4. Create or reuse a linked Plane bug ticket with:
+4. Create or reuse a linked OpenProject bug ticket with:
    - parent ticket key,
    - tested commit and artifact,
    - QA environment and URLs,
@@ -48,4 +48,4 @@ Report the parent ticket, QA validation failure, bug ticket link, evidence path 
 - Ticket context lock mismatch: stop before filing or linking a bug.
 - Unsafe evidence contains secrets: redact or discard unsafe evidence before commenting.
 - Existing linked bug with the same marker and tested commit: reuse it instead of creating a duplicate.
-- Plane mutation fails: do not create branches or OpenSpec changes until the bug relationship is recorded.
+- OpenProject mutation fails: do not create branches or OpenSpec changes until the bug relationship is recorded.

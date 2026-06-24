@@ -49,10 +49,10 @@ Sources: `README.md`, `docs/architecture.md`, `.codex/project-profile.json`, `.c
 ### Context Management
 
 - Context is treated as an SDLC asset.
-- Durable project knowledge belongs in tracked docs and workflow contracts, not only chat, temporary notes, PR comments, or Plane comments.
+- Durable project knowledge belongs in tracked docs and workflow contracts, not only chat, temporary notes, PR comments, or OpenProject comments.
 - Every implementation must run a Context Findings Review.
 - Durable findings update the matching `docs/` file in the same PR.
-- If no durable context changed, the PR body and Plane handoff comment must state `Docs: no durable context changes`.
+- If no durable context changed, the PR body and OpenProject handoff comment must state `Docs: no durable context changes`.
 
 Sources: `README.md`, `docs/context-management.md`, `docs/development.md`.
 

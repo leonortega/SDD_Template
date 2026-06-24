@@ -88,7 +88,7 @@ The global `@fission-ai/openspec` CLI initializes PostHog telemetry before comma
 - Source: `.codex/skills/_shared/delivery-contract.md`
 - Last verified: 2026-06-09
 
-If a child skill resolves a ticket key that differs from `.codex/delivery-context.local.json`, stop and report the mismatch. Do not deploy, test, move state, tag, or comment the other ticket. `dev-flow-start-ticket` is the only lazy cleanup path: when starting another ticket, it may replace a different existing lock only after the locked Plane ticket is verified in the configured Done state. Active, missing, ambiguous, or unverifiable locks still block.
+If a child skill resolves a ticket key that differs from `.codex/delivery-context.local.json`, stop and report the mismatch. Do not deploy, test, move state, tag, or comment the other ticket. `dev-flow-start-ticket` is the only lazy cleanup path: when starting another ticket, it may replace a different existing lock only after the locked OpenProject work package is verified in the configured Done state. Active, missing, ambiguous, or unverifiable locks still block.
 
 ## Deployment Lane Conflict
 
@@ -115,7 +115,7 @@ QA promotion must stop when a merged PR still has `needs-tests` or `needs-change
 - Source: `.codex/skills/_shared/delivery-contract.md`
 - Last verified: 2026-05-29
 
-Stop when release manifest fields conflict with Plane comments or tags. Validate `release.json` against `.codex/skills/_shared/release.schema.json` when reading or writing it.
+Stop when release manifest fields conflict with OpenProject comments or tags. Validate `release.json` against `.codex/skills/_shared/release.schema.json` when reading or writing it.
 
 ## Nexus Unavailable
 
@@ -169,22 +169,22 @@ Do not read secrets from Docker containers, mounted volumes, databases, logs, or
 - Source: `gitleaks detect --source . --redact --no-git --report-format json --report-path artifacts/gitleaks-report.local.json`
 - Last verified: 2026-06-18
 
-On this workstation, the configured local secret scan with `--no-git` scans ignored local files and reports redacted findings in `.codex/client-tools.local.json`, `infra/azure/variables.env`, `infra/gitea/runner.env`, `infra/monitoring/variables.env`, and `infra/plane/variables.env`. Treat this as local secret-bearing runtime state unless the findings reference tracked files. Do not print values. Use redacted metadata only, and keep any local report under ignored `artifacts/`.
+On this workstation, the configured local secret scan with `--no-git` scans ignored local files and reports redacted findings in `.codex/client-tools.local.json`, `infra/azure/variables.env`, `infra/gitea/runner.env`, `infra/monitoring/variables.env`, and `infra/openproject/variables.env`. Treat this as local secret-bearing runtime state unless the findings reference tracked files. Do not print values. Use redacted metadata only, and keep any local report under ignored `artifacts/`.
 
 ## Compose Secret Fallbacks Can Bypass Local Env Values
 
 - Type: Pattern
 - Status: Active
-- Source: current conversation, `infra/plane/compose.yml`, `infra/plane/variables.env.example`, `docker compose --env-file .\infra\plane\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml --project-directory .\infra config --quiet`
+- Source: current conversation, `infra/openproject/compose.yml`, `infra/openproject/variables.env.example`, `docker compose --env-file .\infra\openproject\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml --project-directory .\infra config --quiet`
 - Last verified: 2026-06-12
 
-When hardening local infra Compose files, ensure service env interpolation uses the same variable names as the owning `variables.env.example` file and fail-fast `${VAR:?message}` checks for required secrets. A mismatch such as Compose reading `RABBITMQ_PASSWORD` while the template/local file defines `RABBITMQ_DEFAULT_PASS`, or URL defaults such as `postgresql://plane:plane@...`, can silently bypass generated local secrets. Validate changes with all required tool env files, such as `docker compose --env-file .\infra\plane\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml --project-directory .\infra config --quiet`, without printing secret values.
+When hardening local infra Compose files, ensure service env interpolation uses the same variable names as the owning `variables.env.example` file and fail-fast `${VAR:?message}` checks for required secrets. A mismatch such as Compose reading `RABBITMQ_PASSWORD` while the template/local file defines `RABBITMQ_DEFAULT_PASS`, or URL defaults such as `postgresql://plane:plane@...`, can silently bypass generated local secrets. Validate changes with all required tool env files, such as `docker compose --env-file .\infra\openproject\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml --project-directory .\infra config --quiet`, without printing secret values.
 
 ## Docker Compose Dotenv Values Need Escaped Dollar Signs
 
 - Type: Pattern
 - Status: Active
-- Source: `infra/monitoring/variables.env.example`, `infra/monitoring/variables.env`, `docker compose --env-file .\infra\plane\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml --project-directory .\infra config --quiet`
+- Source: `infra/monitoring/variables.env.example`, `infra/monitoring/variables.env`, `docker compose --env-file .\infra\openproject\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml --project-directory .\infra config --quiet`
 - Last verified: 2026-06-16
 
 Docker Compose interpolates dollar-prefixed dotenv values. Azure Event Hub consumer group values such as `$Default` must be written as `$$Default` in `infra/monitoring/variables.env` and `infra/monitoring/variables.env.example`; otherwise Compose warns that `Default` is unset and passes a blank value to the collector configuration. Validate both local and example env files with `docker compose ... config --quiet`.
@@ -232,7 +232,7 @@ When unrelated code changes run the full suite, existing fixture drift can fail 
 - Source: current conversation, `.codex/skills/_shared/delivery-contract.md`
 - Last verified: 2026-06-02
 
-When creating or reusing a ticket worktree, do not assume ignored local config files copied with real values. A copied `.codex/client-tools.local.json` or related local file may still contain placeholders if the copy process used tracked examples, an earlier placeholder source, or skipped sensitive values. Before running Plane, Gitea, Nexus, Azure, or quality-gate automation from a worktree, validate that required local config keys are present without printing secret values. If placeholders are found, repair the worktree local file from the approved original local config source and keep it ignored.
+When creating or reusing a ticket worktree, do not assume ignored local config files copied with real values. A copied `.codex/client-tools.local.json` or related local file may still contain placeholders if the copy process used tracked examples, an earlier placeholder source, or skipped sensitive values. Before running OpenProject, Gitea, Nexus, Azure, or quality-gate automation from a worktree, validate that required local config keys are present without printing secret values. If placeholders are found, repair the worktree local file from the approved original local config source and keep it ignored.
 
 ## Gitea Reviewers Must Be Repository Collaborators
 
@@ -252,7 +252,7 @@ Superseded note: E2EPROJECT-4 showed `robert` was returned by the collaborators 
 - Source: E2EPROJECT-4 PR #23 reviewer correction, Gitea collaborators API readback, `.codex/skills/_shared/delivery-contract.md`
 - Last verified: 2026-06-08
 
-When `pr.reviewers` is `"all"`, normalize `GET /api/v1/repos/{owner}/{repo}/collaborators` before filtering because Gitea may return a JSON array or a single collaborator object. Resolve each reviewer username from `login` first and `username` second, then exclude the PR author and authenticated automation user. If reviewers are resolved but not shown in the PR response, call `POST /api/v1/repos/{owner}/{repo}/pulls/{prNumber}/requested_reviewers` and re-fetch the PR before moving Plane to review.
+When `pr.reviewers` is `"all"`, normalize `GET /api/v1/repos/{owner}/{repo}/collaborators` before filtering because Gitea may return a JSON array or a single collaborator object. Resolve each reviewer username from `login` first and `username` second, then exclude the PR author and authenticated automation user. If reviewers are resolved but not shown in the PR response, call `POST /api/v1/repos/{owner}/{repo}/pulls/{prNumber}/requested_reviewers` and re-fetch the PR before moving OpenProject to review.
 
 ## Gitea Actions Runner May Lack Dotnet In Early Utility Jobs
 
@@ -342,7 +342,7 @@ When merging `dev` into a ticket feature branch, Git's generated merge message c
 - Source: repeated local commit hook failures, latest during project guidance acquisition flow commit
 - Last verified: 2026-06-17
 
-When committing direct repository maintenance that is not tied to a Plane ticket or OpenSpec change, start the commit message with `[SDD]`, for example `[SDD] Improve project guidance acquisition flow`. The `.githooks/require-ticket.ps1` commit-msg hook rejects ordinary messages that do not start with a configured ticket key, an OpenSpec id, or `[SDD]`. Before running `git commit` in this repository, classify the work as ticketed, OpenSpec, or direct SDD maintenance and choose the prefix first.
+When committing direct repository maintenance that is not tied to a OpenProject work package or OpenSpec change, start the commit message with `[SDD]`, for example `[SDD] Improve project guidance acquisition flow`. The `.githooks/require-ticket.ps1` commit-msg hook rejects ordinary messages that do not start with a configured ticket key, an OpenSpec id, or `[SDD]`. Before running `git commit` in this repository, classify the work as ticketed, OpenSpec, or direct SDD maintenance and choose the prefix first.
 
 ## Timed-Out Playwright Installs Can Leave A Cache Lock
 
@@ -366,25 +366,25 @@ When Docker Desktop is installed but its backend is unhealthy, `docker version`,
 
 - Type: Pattern
 - Status: Active
-- Source: PR 16 CI failure in `RenderPlaneCommentRendersWorkflowTimingTable`, `.codex/skills/_shared/scripts/delivery_tools.ps1`
+- Source: PR 16 CI failure in `RenderTicketCommentRendersWorkflowTimingTable`, `.codex/skills/_shared/scripts/delivery_tools.ps1`
 - Last verified: 2026-06-03
 
-PowerShell `ConvertFrom-Json` can coerce ISO timestamp strings into `DateTime` values, and later string interpolation renders them with the host culture instead of the original `yyyy-MM-ddTHH:mm:ssZ` form. For Plane comments, workflow timing tables, or tests that assert exact UTC text, format timestamp values explicitly with invariant UTC formatting before interpolation. Reproduce failures with the CI-shaped command `dotnet test .\SDDTemplate.slnx -c Release --no-build --logger trx --collect:"XPlat Code Coverage"`.
+PowerShell `ConvertFrom-Json` can coerce ISO timestamp strings into `DateTime` values, and later string interpolation renders them with the host culture instead of the original `yyyy-MM-ddTHH:mm:ssZ` form. For OpenProject comments, workflow timing tables, or tests that assert exact UTC text, format timestamp values explicitly with invariant UTC formatting before interpolation. Reproduce failures with the CI-shaped command `dotnet test .\SDDTemplate.slnx -c Release --no-build --logger trx --collect:"XPlat Code Coverage"`.
 
 ## Missing Workflow Timing Comments Need Ticket Telemetry Initialization
 
 - Type: Pattern
 - Status: Active
-- Source: E2EPROJECT-3 and E2EPROJECT-4 Done tickets missing `IA generated workflow timing` comments while other generated Plane markers existed
+- Source: E2EPROJECT-3 and E2EPROJECT-4 Done tickets missing `IA generated workflow timing` comments while other generated OpenProject markers existed
 - Last verified: 2026-06-09
 
-When `.codex/agent-telemetry.local.jsonl` is absent or a delivery run missed telemetry writes, treat that as a workflow instrumentation failure. Initialize or clear telemetry at selected ticket start with `InitializeWorkflowTelemetry`, append stage rows with `AppendWorkflowTelemetry`, read active ticket rows with `ReadWorkflowTelemetry`, then render `IA generated workflow timing: {ticketKey}` with `RenderPlaneComment -Type WorkflowTiming`. Do not derive workflow timing from generated Plane marker timestamps. Verify the posted comment by reading Plane comments back and matching the timing marker.
+When `.codex/agent-telemetry.local.jsonl` is absent or a delivery run missed telemetry writes, treat that as a workflow instrumentation failure. Initialize or clear telemetry at selected ticket start with `InitializeWorkflowTelemetry`, append stage rows with `AppendWorkflowTelemetry`, read active ticket rows with `ReadWorkflowTelemetry`, then render `IA generated workflow timing: {ticketKey}` with `RenderTicketComment -Type WorkflowTiming`. Do not derive workflow timing from generated OpenProject marker timestamps. Verify the posted comment by reading OpenProject comments back and matching the timing marker.
 
 ## Noncanonical QA Evidence Marker Bypasses Timing Finalization
 
 - Type: Pattern
 - Status: Active
-- Source: E2EPROJECT-6 Plane comments and `.codex/agent-telemetry.local.jsonl`
+- Source: E2EPROJECT-6 OpenProject comments and `.codex/agent-telemetry.local.jsonl`
 - Last verified: 2026-06-12
 
 If a ticket is moved to Done after a Gitea QA evidence run using a noncanonical marker such as `IA generated QA evidence: {ticketKey}` instead of the `quality-test-e2e` marker `IA generated E2E QA: {ticketKey}`, the `quality-test-e2e` finalization path may never append a `quality-test-e2e` telemetry row or post `IA generated workflow timing: {ticketKey}`. Treat Done state plus QA evidence marker as insufficient; rerun or repair through `quality-test-e2e` so the canonical E2E QA marker, workflow timing comment, and telemetry row are verified.
@@ -496,15 +496,6 @@ Do not run overlapping `dotnet test` commands that build shared projects in this
 - Last verified: 2026-06-23
 
 When Docker CLI commands time out with `failed to connect to the backend: timed out dialing Hyper-V socket`, treat live container inspection as inconclusive rather than proof that a container is absent or stopped. Validate static Compose config first, then restart Rancher Desktop or run `wsl --shutdown` before retrying Docker runtime checks.
-
-## Plane Postgres Env Drift Causes API 502 And Crash Loops
-
-- Type: Pattern
-- Status: Active
-- Source: local Plane repair; `agentic-e2e-plane-db-1` logs, Docker-network `psql`, `http://agentic.lvh.me:8080/api/v1/users/me/`
-- Last verified: 2026-06-24
-
-When Plane returns `502 Bad Gateway` and backend containers repeatedly restart, check `agentic-e2e-plane-db-1` logs for `password authentication failed for user "plane"`. A common cause is drift between `infra/plane/variables.env` values and the persisted Postgres volume. Verify `DATABASE_URL`, `FOLLOWER_POSTGRES_URI`, and `PLANE_PI_DATABASE_URL` all use the current `POSTGRES_PASSWORD`, then reset the persisted Postgres role password without printing the secret. Also verify the `plane_pi` database exists; if `pi-db-init` is scaled to zero, create it manually through `psql` before recreating stateless Plane backend containers.
 
 ## Grafana Infinity Single Object Health Panels Need Computed Numeric Fields
 

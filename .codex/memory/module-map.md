@@ -55,5 +55,5 @@ Common workflow entry points:
 - Source: `.codex/skills/_shared/delivery-contract.md`
 - Last verified: 2026-05-29
 
-Use `.codex/skills/_shared/scripts/delivery_tools.ps1` for deterministic delivery mechanics such as artifact paths, ignore checks, RC versioning, delivery policy reading, ticket key extraction, coverage threshold reading, Cobertura parsing, release manifest validation, ticket lock validation, deployment lane validation, Plane comment rendering, and release manifest updates.
+Use `.codex/skills/_shared/scripts/delivery_tools.ps1` for deterministic delivery mechanics such as artifact paths, ignore checks, RC versioning, delivery policy reading, ticket key extraction, coverage threshold reading, Cobertura parsing, release manifest validation, ticket lock validation, deployment lane validation, OpenProject comment rendering, and release manifest updates.
 

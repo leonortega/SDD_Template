@@ -62,7 +62,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("--commit-sha \"$commit_sha\"", packageJob);
             Assert.Contains("--checksum \"$first_artifact_checksum\"", packageJob);
             Assert.Contains("--artifact-url \"$artifact_url\"", packageJob);
-            Assert.Contains("--plane-ticket-key \"$plane_ticket_key\"", packageJob);
+            Assert.Contains("--ticket-key \"$ticket_key\"", packageJob);
             Assert.Contains("--version-status unversioned", packageJob);
             Assert.Contains("ValidateReleaseManifest", packageJob);
             Assert.Contains("app/${GITHUB_SHA}/release.json", packageJob);
@@ -174,7 +174,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("Publish QA target metadata", workflow);
             Assert.Contains("qa-targets.json", workflow);
             Assert.Contains("app/${GITHUB_SHA}/qa-targets.json", workflow);
-            Assert.Contains("qa/${E2E_PLANE_TICKET_KEY}/${run_id}/qa-evidence.zip", e2eJob);
+            Assert.Contains("qa/${E2E_TICKET_KEY}/${run_id}/qa-evidence.zip", e2eJob);
             Assert.Contains("exit \"$test_exit\"", e2eJob);
         }
 
@@ -189,7 +189,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("git fetch --depth 50 origin dev", branchJob);
             Assert.Contains("git merge-base HEAD origin/dev", branchJob);
             Assert.Contains("E2E_ARTIFACT_COMMIT_SHA", branchJob);
-            Assert.Contains("E2E_PLANE_TICKET_KEY", branchJob);
+            Assert.Contains("E2E_TICKET_KEY", branchJob);
             Assert.Contains("tests/SDDTemplate.E2ETests", branchJob);
             Assert.Contains("npm test || test_exit=$?", branchJob);
             Assert.Contains("app/${E2E_ARTIFACT_COMMIT_SHA}/qa-e2e-evidence.zip", branchJob);
@@ -436,7 +436,7 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.Contains("CreateReleaseManifest", script);
             Assert.Contains("BuildDeploymentConfig", script);
-            Assert.Contains("--plane-ticket-key \"$plane_ticket_key\"", script);
+            Assert.Contains("--ticket-key \"$ticket_key\"", script);
             Assert.Contains("--version-status unversioned", script);
             Assert.Contains("ValidateReleaseManifest", script);
             Assert.Contains("deployment-config.json", script);
@@ -478,7 +478,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("qa/{ticketKey}/{runId}/qa-evidence.zip", e2eSkill);
             Assert.Contains("acceptance-to-assertion QA proof", script);
             Assert.Contains("acceptance criteria proven by executable assertions", developmentDoc);
-            Assert.Contains("Only full `PASS` can move Plane to Done", workflowReadme);
+            Assert.Contains("Only full `PASS` can move OpenProject to Done", workflowReadme);
         }
 
         [Fact]
@@ -503,7 +503,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("Validation and boundaries", contract);
             Assert.Contains("Environment correctness", contract);
             Assert.Contains("Evidence integrity", contract);
-            Assert.Contains("Only `PASS` can move Plane to Done", contract);
+            Assert.Contains("Only `PASS` can move OpenProject to Done", contract);
 
             Assert.Contains("acceptance-to-assertion map", e2eSkill);
             Assert.Contains("scenario categories used", e2eSkill);
@@ -512,7 +512,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("Data-changing ticket without independent state/API verification", e2eSkill);
             Assert.Contains("Validation-changing ticket without relevant invalid or boundary cases", e2eSkill);
             Assert.Contains("Wrong artifact, wrong QA URL, localhost, stale DEV endpoint", e2eSkill);
-            Assert.Contains("Only `PASS` can move Plane to `plane.doneState`", e2eSkill);
+            Assert.Contains("Only `PASS` can move OpenProject to `openProject.doneStatus`", e2eSkill);
 
             Assert.Contains("PASS WITH GAPS", deploymentDoc);
             Assert.Contains("PASS WITH GAPS", qualityGates);
@@ -597,13 +597,13 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains(".codex/delivery-context.local.json", gitignore);
             Assert.Contains(".codex/parallel-delivery.local.json", gitignore);
             Assert.Contains("## Ticket Context Lock", contract);
-            Assert.Contains("Normal automatic delivery must stay locked to one Plane ticket.", contract);
+            Assert.Contains("Normal automatic delivery must stay locked to one OpenProject work package.", contract);
             Assert.Contains("scopes it to the ticket worktree", contract);
             Assert.Contains("one Git worktree per active ticket", contract);
             Assert.Contains("deploymentLanePolicy", contract);
             Assert.Contains("serialized", contract);
             Assert.Contains("\"ticketKey\": \"E2EPROJECT-123\"", contract);
-            Assert.Contains("release.json.planeTicketKey", contract);
+            Assert.Contains("release.json.ticketKey", contract);
             Assert.Contains("dev-ops-rollback-prod", contract);
         }
 
@@ -674,9 +674,9 @@ namespace SDDTemplate.DeliveryTools.Tests
                 "delivery_tools.ps1"));
 
             Assert.Contains("IA generated workflow timing: {ticketKey}", contract);
-            Assert.Contains("RenderPlaneComment -Type WorkflowTiming", contract);
-            Assert.Contains("comment_html", contract);
-            Assert.Contains("comment_stripped", contract);
+            Assert.Contains("RenderTicketComment -Type WorkflowTiming", contract);
+            Assert.Contains("comment.raw", contract);
+            Assert.Contains("activity comment starts with the marker", contract);
             Assert.Contains("InitializeWorkflowTelemetry", contract);
             Assert.Contains("AppendWorkflowTelemetry", contract);
             Assert.Contains("ReadWorkflowTelemetry", contract);
@@ -712,22 +712,22 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("AppendWorkflowTelemetry", testE2E);
             Assert.Contains("ReadWorkflowTelemetry", testE2E);
             Assert.Contains("repeated rows for a stage are collapsed", testE2E);
-            Assert.Contains("RenderPlaneComment -Type WorkflowTiming", testE2E);
+            Assert.Contains("RenderTicketComment -Type WorkflowTiming", testE2E);
             Assert.Contains("patch that comment instead of creating a duplicate", testE2E);
-            Assert.Contains("comment_html", testE2E);
-            Assert.Contains("comment_stripped", testE2E);
+            Assert.Contains("comment.raw", testE2E);
+            Assert.Contains("activity comment starts with the marker", testE2E);
             Assert.Contains(".codex/agent-telemetry.local.jsonl", automatic);
             Assert.Contains("Do not append telemetry for a delegated child stage", automatic);
             Assert.Contains("AppendWorkflowTelemetry", automatic);
             Assert.Contains("IA generated workflow timing: {ticketKey}", automatic);
-            Assert.Contains("do not derive timing from Plane generated marker timestamps", automatic);
+            Assert.Contains("do not derive timing from OpenProject generated marker timestamps", automatic);
             Assert.Contains("workflow timing marker", automatic);
             Assert.Contains("Required predecessor rows", automatic);
             Assert.Contains("route through that predecessor in idempotent verification mode", automatic);
 
-            Assert.Contains("Delivery stages maintain a concise generated Plane timing comment", contextDocs);
+            Assert.Contains("Delivery stages maintain a concise generated OpenProject timing comment", contextDocs);
             Assert.Contains("E2E QA posts or patches the final timing comment", contextDocs);
-            Assert.Contains("concise generated Plane timing comment", contextDocs);
+            Assert.Contains("concise generated OpenProject timing comment", contextDocs);
             Assert.Contains("from that telemetry file", contextDocs);
             Assert.Contains("E2E QA posts or patches the workflow timing comment", deploymentDocs);
             Assert.Contains("PROD timing and PROD deployment comments remain part of the separate explicit PROD promotion step", deploymentDocs);
@@ -741,26 +741,20 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
-        public void PlaneStartTicketSetsEstimatePointOnlyWhenMissing()
+        public void OpenProjectStartTicketUsesApiV3WorkPackages()
         {
             string starter = ReadSkill("dev-flow-start-ticket", "SKILL.md");
-            string planeApi = ReadSkill("dev-flow-start-ticket", Path.Combine("references", "plane-api.md"));
+            string openProjectApi = ReadSkill("dev-flow-start-ticket", Path.Combine("references", "openproject-api.md"));
 
-            Assert.Contains("If the fetched Plane ticket has empty or null `point`", starter);
-            Assert.Contains("preserve it exactly and do not overwrite a human estimate", starter);
-            Assert.Contains("## Estimate Points", starter);
-            Assert.Contains("`0`: explicitly no-op, research-only, or investigation ticket", starter);
-            Assert.Contains("`7`: large or high-risk work requiring broad coordination", starter);
-            Assert.Contains("Patch the work item with only the resolved `point` value", starter);
-            Assert.Contains("accepted mutable field for this workflow is `point`", starter);
-
-            Assert.Contains("\"point\": 3", planeApi);
-            Assert.Contains("Only send this patch when the fetched work item has null or empty `point` and `estimate_point`", planeApi);
-            Assert.Contains("Preserve any non-empty `point` or `estimate_point` value", planeApi);
+            Assert.Contains("Use OpenProject API v3 `work_packages` endpoints", starter);
+            Assert.Contains("current `lockVersion`", starter);
+            Assert.Contains("GET {baseUrl}/api/v3/projects/{projectIdentifier}", openProjectApi);
+            Assert.Contains("GET {baseUrl}/api/v3/work_packages/{workPackageId}", openProjectApi);
+            Assert.Contains("POST {baseUrl}/api/v3/work_packages/{workPackageId}/activities", openProjectApi);
         }
 
         [Fact]
-        public void PlaneStartTicketUsesScrumReadyGeneratedDescriptionBlock()
+        public void OpenProjectStartTicketUsesScrumReadyGeneratedDescriptionBlock()
         {
             string starter = ReadSkill("dev-flow-start-ticket", "SKILL.md");
             string contract = ReadSkill("_shared", "delivery-contract.md");
@@ -816,7 +810,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("post-prod-ticket-release", deployToProd);
             Assert.Contains("IA generated post-PROD retrospective: {finalVersion}", deployToProd);
             Assert.Contains(".codex/agent-evals/results.local.json", deployToProd);
-            Assert.Contains("must not mutate Plane state", deployToProd);
+            Assert.Contains("must not mutate OpenProject status", deployToProd);
             Assert.Contains("release handoff", deployToProd);
 
             Assert.Contains("post-prod-ticket-release", retrospective);
@@ -894,13 +888,13 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("included ticket list", evidence);
             Assert.Contains(".codex/agent-evals/results.local.json ignored path", evidence);
             Assert.Contains("Invoke dev-flow-retrospective-audit in read-only post-prod-ticket-release mode", expectations);
-            Assert.Contains("Add or reuse Plane marker IA generated post-PROD retrospective: {finalVersion}", expectations);
+            Assert.Contains("Add or reuse OpenProject marker IA generated post-PROD retrospective: {finalVersion}", expectations);
             Assert.Contains("PROD deployment has not succeeded", stopConditions);
-            Assert.Contains("move Plane ticket state", unsafeMutations);
+            Assert.Contains("move OpenProject work package state", unsafeMutations);
             Assert.Contains("apply docs, delivery contract, skill, eval, test, or memory changes automatically", unsafeMutations);
             Assert.Contains("includedTickets", handoffFields);
             Assert.Contains("localResultPath", handoffFields);
-            Assert.Contains("planeRetrospectiveMarker", handoffFields);
+            Assert.Contains("openProjectRetrospectiveMarker", handoffFields);
             Assert.Contains("appliedChanges", handoffFields);
         }
 
@@ -923,7 +917,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("Manual resume scans PR comments instead of relying on webhook or polling", expectations);
             Assert.Contains("Delegate feedback processing to dev-flow-pr-review-feedback-loop", expectations);
             Assert.Contains("Derive a new feedbackBatchId from sorted late human comment source ids", expectations);
-            Assert.Contains("Keep Plane In Review while applying late human feedback fixes", expectations);
+            Assert.Contains("Keep OpenProject In Review while applying late human feedback fixes", expectations);
             Assert.Contains("late human comment source ids are already covered by a completed feedback batch", stopConditions);
         }
 
@@ -981,20 +975,20 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("EnsureDeliveryContext", docs);
             Assert.Contains(".codex/tool-recommendations.local.json", docs);
             Assert.Contains(".codex/azure-login.local.json", docs);
-            Assert.Contains("after QA evidence is recorded and the Plane ticket is moved to Done", docs);
+            Assert.Contains("after QA evidence is recorded and the OpenProject work package is moved to Done", docs);
             Assert.Contains("git worktree remove <worktreePath>", docs);
 
-            Assert.Contains("Before Git, Plane, or Gitea mutation", contract);
+            Assert.Contains("Before Git, OpenProject, or Gitea mutation", contract);
             Assert.Contains("ValidateParallelDeliveryDryRun", contract);
             Assert.Contains("one worktree", contract);
             Assert.Contains(".codex/tool-recommendations.local.json", contract);
             Assert.Contains(".codex/azure-login.local.json", contract);
-            Assert.Contains("Never let two agents mutate the same Plane ticket", contract);
+            Assert.Contains("Never let two agents mutate the same OpenProject work package", contract);
             Assert.Contains("Never parallelize DEV, QA, E2E QA, PROD, rollback, or hotfix promotion", contract);
             Assert.Contains("coordinator checkout owns ticket worktree teardown", contract);
             Assert.Contains("Child role agents must not delete their own assigned worktree", contract);
 
-            Assert.Contains("Before any Git, Plane, or Gitea mutation", coordinator);
+            Assert.Contains("Before any Git, OpenProject, or Gitea mutation", coordinator);
             Assert.Contains("Failed `ValidateParallelDeliveryDryRun`", coordinator);
             Assert.Contains("## Cleanup And Recovery", coordinator);
             Assert.Contains("required ignored local runtime files", coordinator);
@@ -1110,7 +1104,7 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
-        public void RecommendedToolsAuditDetectsCurrentStackAndAvoidsPlaneMcp()
+        public void RecommendedToolsAuditDetectsCurrentStackAndAvoidsOpenProjectMcp()
         {
             string script = ReadConfigureScript();
             string discoveryScript = ReadSkill("project-guidance-discover", Path.Combine("scripts", "project_guidance_discovery.ps1"));
@@ -1154,7 +1148,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("\"kubernetes\"", discoveryScript);
             Assert.Contains("\"xunit\"", discoveryScript);
             Assert.Contains("\"coverage\"", discoveryScript);
-            Assert.Contains("\"plane\"", discoveryScript);
+            Assert.Contains("\"openproject\"", discoveryScript);
             Assert.Contains("\"gitea\"", discoveryScript);
             Assert.Contains("\"gitea-actions-runner\"", discoveryScript);
             Assert.Contains("\"nexus\"", discoveryScript);
@@ -1192,8 +1186,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("manual-copy", catalog);
             Assert.Contains("repo:.codex/skills/quality-frontend-testing-debugging/SKILL.md", catalog);
             Assert.Contains("https://playwright.dev/docs/best-practices", catalog);
-            Assert.Contains("Plane MCP is intentionally not recommended", catalog);
-            Assert.Contains("repo-local skills must use the configured Plane API", catalog);
+            Assert.Contains("OpenProject MCP is intentionally not recommended", catalog);
+            Assert.Contains("repo-local skills must use the configured OpenProject API", catalog);
             Assert.DoesNotContain("openspec-delivery-skills", catalog);
             Assert.DoesNotContain("dotnet-quality-gates-skill", catalog);
             Assert.DoesNotContain("azure-environment-config-skill", catalog);
@@ -1252,7 +1246,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("InitProjectProfile", configureRouter);
             Assert.Contains("required first-class step for full `config infra`", configureRouter);
             Assert.Contains("run `InitProjectProfile` first", configureRouter);
-            Assert.Contains("InitProjectProfile -> EnsureK3dCluster when k3d is selected -> EnsureK3dHeadlamp when k3d is selected -> EnsureK3dPortForwards when k3d is selected -> ShowEnvironmentUrls when k3d is selected -> Audit -> Plane", configureRouter);
+            Assert.Contains("InitProjectProfile -> EnsureK3dCluster when k3d is selected -> EnsureK3dHeadlamp when k3d is selected -> EnsureK3dPortForwards when k3d is selected -> ShowEnvironmentUrls when k3d is selected -> Audit -> OpenProject", configureRouter);
             Assert.Contains("Stop before provider-specific mutation", configureRouter);
 
             Assert.Contains("InitProjectProfile", qualityReference);
@@ -1325,7 +1319,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             string openSpecConfig = File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, "openspec", "config.yaml"));
 
             Assert.Contains("## Technology Stack And Tool Set", architecture);
-            Assert.Contains("Plane", architecture);
+            Assert.Contains("OpenProject", architecture);
             Assert.Contains("Gitea Actions", architecture);
             Assert.Contains("Nexus", architecture);
             Assert.Contains("Azure App Service", architecture);
@@ -1365,7 +1359,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("project-guidance-acquire", openSpecConfig);
             Assert.Contains("project-guidance-mapper", openSpecConfig);
             Assert.Contains("usedInSteps", openSpecConfig);
-            Assert.Contains("Plane MCP is not used for ticket delivery", openSpecConfig);
+            Assert.Contains("OpenProject MCP is not used for ticket delivery", openSpecConfig);
             Assert.Contains("official-first research", openSpecConfig);
             Assert.Contains("rules:", openSpecConfig);
             Assert.Contains("proposal:", openSpecConfig);
@@ -1400,7 +1394,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("openspec/config.yaml` contains `context:` and `rules:`", starter);
             Assert.Contains(".codex/tool-recommendations.example.json", starter);
             Assert.Contains("AuditRecommendedTools", starter);
-            Assert.Contains("stop before branch creation, Plane description updates, comments, state changes, ticket-lock writes, or OpenSpec proposal creation", starter);
+            Assert.Contains("stop before branch creation, OpenProject description updates, comments, state changes, ticket-lock writes, or OpenSpec proposal creation", starter);
             Assert.Contains("Run the Stack Context Preflight", starter);
 
             Assert.Contains("Stack Context Preflight", automatic);
@@ -1511,17 +1505,16 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("**Changed:**", feedbackLoop);
             Assert.Contains("**Validation:**", feedbackLoop);
             Assert.Contains("**Reviewer readiness:**", feedbackLoop);
-            Assert.Contains("comment_html", feedbackLoop);
-            Assert.Contains("comment_stripped", feedbackLoop);
-            Assert.Contains("verify `comment_stripped` starts with the marker", feedbackLoop);
-            Assert.Contains("Keep Plane in `In Review`", implementation);
+            Assert.Contains("comment.raw", feedbackLoop);
+            Assert.Contains("activity comment starts with the marker", feedbackLoop);
+            Assert.Contains("Keep OpenProject in `In Review`", implementation);
 
-            Assert.Contains("comment_html", contract);
-            Assert.Contains("comment_stripped", contract);
-            Assert.Contains("Do not send a Gitea-style `comment` or `body` field", apiHelpers);
-            Assert.Contains("verify `comment_stripped` starts with the stable marker", apiHelpers);
+            Assert.Contains("comment.raw", contract);
+            Assert.Contains("activity comment starts with the stable marker", contract);
+            Assert.Contains("POST {openProject.baseUrl}/api/v3/work_packages/{workPackageId}/activities", apiHelpers);
+            Assert.Contains("read activities back and verify the comment text starts with the marker", apiHelpers);
 
-            Assert.Contains("Plane PR feedback detection/fix batch markers", autoRouter);
+            Assert.Contains("OpenProject PR feedback detection/fix batch markers", autoRouter);
             Assert.Contains("later human comment on the same PR head SHA", autoRouter);
             Assert.Contains("route to `dev-flow-implement-ticket`", autoRouter);
             Assert.Contains("dev-flow-pr-review-feedback-loop", autoRouter);
@@ -1533,8 +1526,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("Every AI finding in the review body must include a stable finding id", giteaApiReference);
             Assert.Contains("PR review feedback has two timed loops", developmentDocs);
             Assert.Contains("repo-local `dev-flow-pr-review-feedback-loop` skill", developmentDocs);
-            Assert.Contains("Plane remains `In Review` while late human feedback fixes are applied", developmentDocs);
-            Assert.Contains("Feedback-fix Plane comments are reviewer-facing summaries", developmentDocs);
+            Assert.Contains("OpenProject remains `In Review` while late human feedback fixes are applied", developmentDocs);
+            Assert.Contains("Feedback-fix OpenProject comments are reviewer-facing summaries", developmentDocs);
         }
 
         [Fact]
@@ -1553,7 +1546,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains(".codex/skills/_shared/delivery-contract.md", contextFindings);
 
             Assert.DoesNotContain("Equivalent plain-language routing", contextDocs);
-            Assert.Contains("Implementation PR bodies and Plane handoff comments", contract);
+            Assert.Contains("Implementation PR bodies and OpenProject handoff comments", contract);
             Assert.Contains("Context Findings classification from `docs/context-management.md`", contract);
             Assert.Contains("Context Findings classification from `docs/context-management.md`", implementation);
             Assert.Contains("Context Findings classification from `docs/context-management.md`", retrospective);
@@ -1577,7 +1570,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("any prompt where an error, issue, blocker, or fix was diagnosed", contract);
             Assert.Contains("Memory updated: <files>", contract);
             Assert.Contains("Memory updated: none", contract);
-            Assert.Contains("Do not treat Plane comments, PR comments, QA evidence, logs, or chat summaries as a substitute", contract);
+            Assert.Contains("Do not treat OpenProject comments, PR comments, QA evidence, logs, or chat summaries as a substitute", contract);
             Assert.Contains("When the agent itself hits a failed command", contract);
             Assert.Contains("Do not report `Memory updated: none` for a newly diagnosed repeatable agent/tooling failure", contract);
 
@@ -1590,7 +1583,7 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.Contains("### 10. Durable Learning Capture Gate", e2eSkill);
             Assert.Contains(".codex/memory/retrieval-policy.md#update-process", e2eSkill);
-            Assert.Contains("Plane comments, QA evidence, and final chat summaries do not satisfy this gate by themselves", e2eSkill);
+            Assert.Contains("OpenProject comments, QA evidence, and final chat summaries do not satisfy this gate by themselves", e2eSkill);
             Assert.Contains("Memory updated: <files>` or `Memory updated: none", e2eSkill);
 
             Assert.Contains("## Update Process", memoryPolicy);
@@ -1617,7 +1610,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("alternative path", contract);
             Assert.Contains("risk/impact of alternative", contract);
             Assert.Contains("explicit user choice required before continuing", contract);
-            Assert.Contains("must not mutate repository files, Plane, Git, Gitea, Nexus, Azure", contract);
+            Assert.Contains("must not mutate repository files, OpenProject, Git, Gitea, Nexus, Azure", contract);
 
             Assert.Contains("Tool And Skill Blocker Consent", skillStartup);
             Assert.Contains("Silent fallback from a required configured repo flow is invalid", contextDocs);
@@ -1704,7 +1697,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                 "ValidateTicketLock",
                 "ValidateDeploymentLane",
                 "ValidateParallelDeliveryDryRun",
-                "RenderPlaneComment",
+                "RenderTicketComment",
                 "WorkflowTiming",
                 "UpdateReleaseManifest",
                 "CreateArtifactPointer"
@@ -1721,7 +1714,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("function Get-CoverageThreshold", script);
             Assert.Contains("function Get-CoberturaLineRate", script);
             Assert.Contains("function Test-ParallelDeliveryDryRun", script);
-            Assert.Contains("function Render-PlaneComment", script);
+            Assert.Contains("function Render-TicketComment", script);
             Assert.Contains("function Update-ReleaseManifest", script);
             Assert.Contains("function New-ArtifactPointer", script);
         }
@@ -1736,7 +1729,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                     "ValidateTicketLock",
                     "ValidateDeploymentLane",
                     "UpdateReleaseManifest",
-                    "RenderPlaneComment -Type QADeployment"
+                    "RenderTicketComment -Type QADeployment"
                 ],
                 ["quality-test-e2e"] =
                 [
@@ -1744,7 +1737,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                     "ValidateDeploymentLane",
                     "UpdateReleaseManifest",
                     "CreateArtifactPointer",
-                    "RenderPlaneComment -Type E2EQA"
+                    "RenderTicketComment -Type E2EQA"
                 ],
                 ["dev-ops-deploy-prod"] =
                 [
@@ -1752,7 +1745,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                     "ValidateDeploymentLane",
                     "UpdateReleaseManifest",
                     "CreateArtifactPointer",
-                    "RenderPlaneComment -Type ProdDeployment"
+                    "RenderTicketComment -Type ProdDeployment"
                 ],
                 ["dev-ops-post-merge-deploy"] =
                 [
@@ -1887,13 +1880,13 @@ namespace SDDTemplate.DeliveryTools.Tests
             string parallelDocs = ReadDoc("parallel-delivery.md");
 
             Assert.Contains("Do not delete the lock merely because E2E QA moved a ticket to `Done`", contract);
-            Assert.Contains("fetch the locked ticket from Plane", contract);
+            Assert.Contains("fetch the locked ticket from OpenProject", contract);
             Assert.Contains("If the locked ticket is `Done`, replace the lock", contract);
             Assert.Contains("active, missing, ambiguous, or cannot be verified", contract);
             Assert.Contains("lazy cleanup on next ticket start", contract);
 
-            Assert.Contains("fetch the locked ticket through the Plane API", startSkill);
-            Assert.Contains("configured `plane.doneState` or default `Done`", startSkill);
+            Assert.Contains("fetch the locked ticket through the OpenProject API", startSkill);
+            Assert.Contains("configured `openProject.doneStatus` or default `Done`", startSkill);
             Assert.Contains("replaceExisting=true", startSkill);
             Assert.Contains("Do not delete the lock merely because the old ticket is QA Done or ready for PROD", startSkill);
 
@@ -1927,7 +1920,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                 "delivery-contract.md"));
             string implementSkill = ReadSkill("dev-flow-implement-ticket", "SKILL.md");
             string openspecSkill = ReadSkill("dev-flow-implement-change", "SKILL.md");
-            string handoffReference = ReadSkill("dev-flow-implement-change", Path.Combine("references", "gitea-plane-handoff.md"));
+            string handoffReference = ReadSkill("dev-flow-implement-change", Path.Combine("references", "gitea-ticket-handoff.md"));
             string configureReference = ReadSkill("configure-dev-environment", Path.Combine("references", "gitea-pr.md"));
 
             Assert.Contains("PR Reviewer Handoff", contract);
@@ -1937,7 +1930,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("not treat the Codex review-agent comment", contract);
             Assert.Contains("requested_reviewers", implementSkill);
             Assert.Contains("Gitea may return either an array or a single object", implementSkill);
-            Assert.Contains("Do not move the Plane ticket to review until human reviewers are requested and verified", implementSkill);
+            Assert.Contains("Do not move the OpenProject work package to review until human reviewers are requested and verified", implementSkill);
             Assert.Contains("requested_reviewers", openspecSkill);
             Assert.Contains("normalize the response to a candidate list", openspecSkill);
             Assert.Contains("Re-fetch the PR and confirm the requested reviewers are present", openspecSkill);
@@ -1968,14 +1961,14 @@ namespace SDDTemplate.DeliveryTools.Tests
 
             Assert.Contains("QA Evidence Trigger Branch Cleanup", contract);
             Assert.Contains("Azure uses `qa/{ticketKey}` and k3d uses `qa-local/{ticketKey}`", contract);
-            Assert.Contains("Durable QA evidence belongs in Nexus, Plane comments, release manifests, and tags", contract);
+            Assert.Contains("Durable QA evidence belongs in Nexus, OpenProject comments, release manifests, and tags", contract);
             Assert.Contains("git push origin --delete qa/E2EPROJECT-123", e2eSkill);
             Assert.Contains("git push origin --delete qa-local/E2EPROJECT-123", e2eSkill);
             Assert.Contains("Do not delete the branch before Nexus evidence exists", e2eSkill);
             Assert.Contains("delete the remote `qa/{ticketKey}` branch from Gitea", deploymentDoc);
             Assert.Contains("delete the remote selected-provider QA branch", developmentDoc);
-            Assert.Contains("deleting the remote `qa/{ticketKey}` branch after durable Nexus/Plane/release/tag evidence exists", workflowReadme);
-            Assert.Contains("deleting the remote `qa/{ticketKey}` branch after durable Nexus/Plane/release/tag evidence exists", configureScript);
+            Assert.Contains("deleting the remote `qa/{ticketKey}` branch after durable Nexus/OpenProject/release/tag evidence exists", workflowReadme);
+            Assert.Contains("deleting the remote `qa/{ticketKey}` branch after durable Nexus/OpenProject/release/tag evidence exists", configureScript);
         }
 
         [Fact]

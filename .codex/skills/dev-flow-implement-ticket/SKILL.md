@@ -7,7 +7,7 @@ description: Implement an already-started configured ticket through OpenSpec tas
 
 ## Overview
 
-Use this skill after `dev-flow-start-ticket` has created or reused the implementation branch, moved the Plane ticket to progress, and created the OpenSpec change. This skill owns implementation through PR handoff. It does not select Todo tickets, create initial branches, or archive OpenSpec changes.
+Use this skill after `dev-flow-start-ticket` has created or reused the implementation branch, moved the OpenProject work package to progress, and created the OpenSpec change. This skill owns implementation through PR handoff. It does not select Todo tickets, create initial branches, or archive OpenSpec changes.
 
 ## Shared Context
 
@@ -25,8 +25,8 @@ Read coverage config from `.codex/quality.local.json` when present. If it is mis
 
 Required/defaulted values:
 
-- `plane.baseUrl`, `plane.apiToken`, `plane.workspaceSlug`, `plane.projectIdentifier`
-- `plane.reviewState`, default `In Review`
+- `openProject.baseUrl`, `openProject.apiToken`, `openProject.projectIdentifier`, `openProject.projectIdentifier`
+- `openProject.reviewStatus`, default `In Review`
 - `git.baseBranch`
 - `gitea.baseUrl`, `gitea.apiToken`, `gitea.owner`, `gitea.repo`
 - `pr.reviewers`
@@ -37,8 +37,8 @@ Required/defaulted values:
 
 ### 1. Resolve Context
 
-1. Identify the Plane ticket, current branch, and OpenSpec change from user input, branch name, or existing OpenSpec changes.
-2. Read `.codex/delivery-context.local.json` when present and verify the resolved Plane ticket, current branch, OpenSpec change, existing PR, and any artifact commit match the locked `ticketKey`. If they resolve to another ticket, stop and report the mismatch.
+1. Identify the OpenProject work package, current branch, and OpenSpec change from user input, branch name, or existing OpenSpec changes.
+2. Read `.codex/delivery-context.local.json` when present and verify the resolved OpenProject work package, current branch, OpenSpec change, existing PR, and any artifact commit match the locked `ticketKey`. If they resolve to another ticket, stop and report the mismatch.
 3. Stop if the branch or OpenSpec change is missing; tell the user to run the `dev-flow-start-ticket` flow first.
 4. Check `git status --porcelain`. If unrelated changes exist, stop before implementation and list the changed files.
 5. Detect resume checkpoints before doing new work:
@@ -49,8 +49,8 @@ Required/defaulted values:
    - latest review-agent marker and stable AI finding ids for the current head SHA,
    - existing OpenSpec `## PR Review Feedback` tasks,
    - human-authored top-level PR comments and inline code review comments,
-   - latest Plane `IA generated PR feedback detected: {headSha}:{feedbackBatchId}` markers,
-   - latest Plane `IA generated PR feedback fixes: {headSha}:{feedbackBatchId}` markers,
+   - latest OpenProject `IA generated PR feedback detected: {headSha}:{feedbackBatchId}` markers,
+   - latest OpenProject `IA generated PR feedback fixes: {headSha}:{feedbackBatchId}` markers,
    - current `needs-tests` and `needs-changes` labels,
    - latest Gitea Actions status.
    Continue from the latest completed checkpoint instead of restarting earlier steps.
@@ -63,7 +63,7 @@ Required/defaulted values:
    openspec instructions apply --change "<change>" --json
    ```
 8. Read every context file returned by the apply instructions.
-9. Classify delivery risk from ticket text, OpenSpec artifacts, changed/planned paths, and estimated changed lines using the shared delivery contract. Prefer `tools/SDDTemplate.DeliveryTools ClassifyDeliveryRisk` when available. Record `low`, `standard`, or `high` in the PR body and Plane handoff.
+9. Classify delivery risk from ticket text, OpenSpec artifacts, changed/planned paths, and estimated changed lines using the shared delivery contract. Prefer `tools/SDDTemplate.DeliveryTools ClassifyDeliveryRisk` when available. Record `low`, `standard`, or `high` in the PR body and OpenProject handoff.
 
 ### 2. Discover Quality Gates
 
@@ -107,7 +107,7 @@ Follow `dev-flow-apply-change`:
 6. Mark a task complete only after its code, related tests, and validation evidence are updated.
 7. If implementation reveals extra required work, add a new OpenSpec task before doing that work.
 8. Keep OpenSpec specs, design notes, and tasks aligned with the latest implementation.
-9. Do not treat Playwright E2E creation as a required implementation task. Record browser E2E expectations and acceptance oracles for `quality-test-e2e`; add E2E in implementation only when the user, Plane ticket, or OpenSpec artifacts explicitly make implementation-owned E2E part of the PR scope.
+9. Do not treat Playwright E2E creation as a required implementation task. Record browser E2E expectations and acceptance oracles for `quality-test-e2e`; add E2E in implementation only when the user, OpenProject work package, or OpenSpec artifacts explicitly make implementation-owned E2E part of the PR scope.
 10. Commit after each completed workflow step when tracked changes exist, then start the next step from a clean working tree. Use ticket- or OpenSpec-prefixed messages, skip empty commits, and keep code, tests, docs, and OpenSpec changes together when splitting them would leave a broken intermediate commit.
 11. Do not automatically stash normal ticket progress. Use stash only for unrelated local or user changes that block the current step.
 
@@ -121,7 +121,7 @@ Implementation is not complete until:
 - Gitea PR validation passes,
 - coverage meets `coverage.minimumPercent`.
 
-Before PR and Plane review handoff, re-read the active OpenSpec `tasks.md` and stop if any `- [ ]` task remains, including final quality, Context Findings, PR review feedback, validation, or handoff tasks. Mark a task complete only when the matching evidence is present in the PR body, Plane handoff comment, validation output, docs/context review result, or memory status.
+Before PR and OpenProject review handoff, re-read the active OpenSpec `tasks.md` and stop if any `- [ ]` task remains, including final quality, Context Findings, PR review feedback, validation, or handoff tasks. Mark a task complete only when the matching evidence is present in the PR body, OpenProject handoff comment, validation output, docs/context review result, or memory status.
 
 For web/API application work, preserve the delivery health contract required by deployment promotion:
 
@@ -161,7 +161,7 @@ At each workflow-step checkpoint with tracked changes:
 3. Run the smallest relevant validation for that step, or document why validation is deferred to CI.
 4. Run Context Findings Review before staging docs, memory, or workflow-policy changes.
 5. Stage only files related to that completed step.
-6. Commit with a message that satisfies the configured commit hook and starts with the Plane ticket or OpenSpec id.
+6. Commit with a message that satisfies the configured commit hook and starts with the OpenProject work package or OpenSpec id.
 7. Let hooks run naturally. Do not bypass hooks unless the user explicitly requests that in the current chat.
 
 Create checkpoint commits for OpenSpec refinement, implementation, tests or reusable QA coverage, docs/context/memory updates, review-feedback fixes, and ticket-scoped tooling/config fixes when those steps change tracked files. Skip empty commits. Do not intentionally leave broken intermediate commits; if two steps must stay together to keep the repository valid, combine them and report that reason in the handoff. Push the branch after the planned commit set is ready, and push again after each later feedback-fix commit.
@@ -172,7 +172,7 @@ Do not automatically stash normal ticket progress. Use stash only for unrelated 
 
 Before committing, apply the Context Findings classification from `docs/context-management.md` and the memory update process from `.codex/memory/retrieval-policy.md`. If the finding changes enforceable automation behavior, update `.codex/skills/_shared/delivery-contract.md` plus related skills and tests.
 
-If implementation discovers durable authoritative knowledge, update the matching doc in the same PR. If it discovers reusable non-authoritative knowledge, update `.codex/memory/`. If no durable knowledge was discovered, record `Docs: no durable context changes` in the PR body and Plane handoff comment.
+If implementation discovers durable authoritative knowledge, update the matching doc in the same PR. If it discovers reusable non-authoritative knowledge, update `.codex/memory/`. If no durable knowledge was discovered, record `Docs: no durable context changes` in the PR body and OpenProject handoff comment.
 
 ### 8. Create Or Reuse The Gitea PR
 
@@ -180,11 +180,11 @@ Reuse an existing open PR for the branch when present. Otherwise create a PR tar
 
 Resolve configured human reviewers before PR handoff. When `pr.reviewers` is `"all"`, list current Gitea collaborators and exclude the PR author plus the authenticated automation user. Normalize the Gitea collaborator response before filtering because Gitea may return either an array or a single object; use each collaborator's `login` value, falling back to `username`, and discard empty or duplicate names. When `pr.reviewers` is an array, use the configured usernames after trimming empty values. If eligible reviewers are resolved but the PR create or reuse response does not show them as requested, call `POST /api/v1/repos/{owner}/{repo}/pulls/{prNumber}/requested_reviewers`, then re-fetch the PR and verify the requested reviewers are present.
 
-Do not move the Plane ticket to review until human reviewers are requested and verified, or until the reviewer gap is documented in the PR body, Plane handoff comment, and final summary. The Codex review-agent comment, `codex-reviewed` label, and passing PR validation are not substitutes for requested human reviewers.
+Do not move the OpenProject work package to review until human reviewers are requested and verified, or until the reviewer gap is documented in the PR body, OpenProject handoff comment, and final summary. The Codex review-agent comment, `codex-reviewed` label, and passing PR validation are not substitutes for requested human reviewers.
 
 The PR body must include:
 
-- Plane ticket id
+- OpenProject work package id
 - OpenSpec change id
 - implementation summary
 - tests added or updated
@@ -206,7 +206,7 @@ The PR body must include:
 
 ### 9. Review And Fix Loop
 
-Invoke the repo-owned `dev-flow-pr-review-feedback-loop` skill after PR creation and on every open-PR resume. That skill owns AI review findings, late human PR comments, feedback batch ids, Plane detection/fix comments, and OpenSpec `## PR Review Feedback` tasks.
+Invoke the repo-owned `dev-flow-pr-review-feedback-loop` skill after PR creation and on every open-PR resume. That skill owns AI review findings, late human PR comments, feedback batch ids, OpenProject detection/fix comments, and OpenSpec `## PR Review Feedback` tasks.
 
 After `dev-flow-pr-review-feedback-loop` returns, continue only when:
 
@@ -216,13 +216,13 @@ After `dev-flow-pr-review-feedback-loop` returns, continue only when:
 - validation for feedback fixes has passed,
 - `pr.labels.needsTests` and `pr.labels.needsChanges` are no longer valid for the current head.
 
-Keep Plane in `In Review` while late human feedback fixes are applied. If `dev-flow-pr-review-feedback-loop` reports ambiguous or conflicting human feedback, stop and preserve its blocker classification.
+Keep OpenProject in `In Review` while late human feedback fixes are applied. If `dev-flow-pr-review-feedback-loop` reports ambiguous or conflicting human feedback, stop and preserve its blocker classification.
 
-### 10. Plane Handoff
+### 10. OpenProject Handoff
 
-Move the Plane ticket to `plane.reviewState`, default `In Review`, only after PR creation, AI review-agent posting, all current OpenSpec PR review feedback tasks are complete, all current feedback batches have fix markers, and blocking fix loops are complete. If the ticket is already `In Review` during a late human-feedback resume, leave it there and add the detection/fix comments instead of moving state.
+Move the OpenProject work package to `openProject.reviewStatus`, default `In Review`, only after PR creation, AI review-agent posting, all current OpenSpec PR review feedback tasks are complete, all current feedback batches have fix markers, and blocking fix loops are complete. If the ticket is already `In Review` during a late human-feedback resume, leave it there and add the detection/fix comments instead of moving state.
 
-Add a Plane comment with:
+Add a OpenProject comment with:
 
 - PR link
 - coverage threshold used
@@ -247,34 +247,34 @@ Do not move the ticket to Done.
 
 ## Output
 
-Report the ticket, branch, OpenSpec change, PR URL, commits pushed, validation and coverage results, PR review feedback batches handled, Context Findings Review result, Plane handoff state, and any remaining blockers or risks.
+Report the ticket, branch, OpenSpec change, PR URL, commits pushed, validation and coverage results, PR review feedback batches handled, Context Findings Review result, OpenProject handoff state, and any remaining blockers or risks.
 
 ## Archive And QA Policy
 
 - Do not archive OpenSpec changes in this skill.
 - Archive only after PR merge in a separate post-merge flow.
-- QA findings after merge must create a new related Plane bug ticket linked to the parent ticket.
+- QA findings after merge must create a new related OpenProject bug ticket linked to the parent ticket.
 - The bug ticket gets its own branch, OpenSpec change if needed, implementation, PR, and review flow.
 
 ## Failure Rules
 
 - Missing branch or OpenSpec change: stop and route to `dev-flow-start-ticket`.
 - Dirty worktree with unrelated changes: stop before implementation.
-- Missing or placeholder API token: stop before Plane or Gitea mutations.
+- Missing or placeholder API token: stop before OpenProject or Gitea mutations.
 - Invalid coverage config: use `80`, report the issue, and do not lower the gate.
 - Failing coverage: add/update OpenSpec task and tests before completion.
 - Missing local coverage command: report the gap; do not invent a command when CI is the only configured coverage source.
 - Missing Review Workload Forecast: update OpenSpec tasks before implementation, or stop if the forecast cannot be derived safely.
-- Unchecked OpenSpec tasks at PR handoff: stop before moving Plane to review; complete the task evidence or report the blocker.
+- Unchecked OpenSpec tasks at PR handoff: stop before moving OpenProject to review; complete the task evidence or report the blocker.
 - Oversized/high workload without split or `size:exception`: stop before implementation and request or record the required decision.
 - Flaky test or CI failure: rerun once before classifying; do not edit product code solely for an unconfirmed intermittent failure.
 - Gitea Actions infra/tooling failure: route through `configure-dev-environment`, `configure-ci-runner`, or `configure-quality-gates`; run `ValidateGiteaActionsRunner` when runner/container compatibility is implicated; do not classify it as a product implementation defect.
 - Ignored local secret findings from full local scans: report as local setup notes unless the same secret is staged, tracked, or reported by CI.
 - Existing PR: reuse it instead of creating a duplicate.
 - Existing review-agent comment for same head SHA: reuse it instead of posting a duplicate; post a new review marker only after the head SHA changes.
-- Actionable AI or human PR feedback: invoke `dev-flow-pr-review-feedback-loop` to create OpenSpec `## PR Review Feedback` tasks, post Plane feedback batch comments, apply fixes, validate, commit, push, and rerun AI review before handoff.
-- Ambiguous or conflicting human PR feedback: stop before changing code, request clarification in the PR when possible, and record the blocker in Plane.
-- Late human PR feedback after `In Review`: process it on manual resume and keep Plane in `In Review` while fixes are applied.
+- Actionable AI or human PR feedback: invoke `dev-flow-pr-review-feedback-loop` to create OpenSpec `## PR Review Feedback` tasks, post OpenProject feedback batch comments, apply fixes, validate, commit, push, and rerun AI review before handoff.
+- Ambiguous or conflicting human PR feedback: stop before changing code, request clarification in the PR when possible, and record the blocker in OpenProject.
+- Late human PR feedback after `In Review`: process it on manual resume and keep OpenProject in `In Review` while fixes are applied.
 - Stale PR labels: remove `needs-tests` after required tests are added and passing; remove `needs-changes` after requested fixes are in place, OpenSpec PR review feedback tasks are complete, and the current-head review has no blocking findings.
 - Review loop exceeds 3 cycles with remaining blockers: stop and escalate with a concise conflict/stale-feedback summary.
-- Missing Plane review state: stop after PR/review work and report the missing state.
+- Missing OpenProject review state: stop after PR/review work and report the missing state.

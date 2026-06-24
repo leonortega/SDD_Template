@@ -32,7 +32,7 @@ Required baseline `release.json` fields:
 - `commitSha`
 - `checksum`
 - `artifactUrl`
-- `planeTicketKey`
+- `ticketKey`
 - `versionStatus`
 
 Preserve existing manifest fields when adding stage-specific data.

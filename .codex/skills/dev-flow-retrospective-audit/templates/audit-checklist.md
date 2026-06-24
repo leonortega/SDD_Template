@@ -11,7 +11,7 @@ Use this report skeleton for read-only audits and proposals. The canonical findi
 
 ## Evidence
 
-- Plane state, ticket comments, and generated markers:
+- OpenProject status, ticket comments, and generated markers:
 - Branch, commit, PR, labels, review markers, and CI result:
 - OpenSpec proposal, tasks, and verification result:
 - Nexus artifact, release manifest, tags, and deployment evidence:

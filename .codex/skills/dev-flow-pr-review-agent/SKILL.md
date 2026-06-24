@@ -17,7 +17,7 @@ Before posting review output, follow `.codex/skills/_shared/skill-startup.md`, w
 
 ## Workflow Telemetry
 
-When this skill runs as part of a ticket workflow and a Plane ticket key is resolved, capture UTC start time before PR review reads. Append a `dev-flow-pr-review-agent` row with `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` when the review succeeds, blocks, fails, or is skipped idempotently because a current-head review marker already exists. On resume or idempotent reuse, append another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-flow-pr-review-agent`, `agentRole=prReview`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If the review is explicitly standalone and no ticket key can be safely resolved, report that workflow telemetry was skipped.
+When this skill runs as part of a ticket workflow and a OpenProject work package key is resolved, capture UTC start time before PR review reads. Append a `dev-flow-pr-review-agent` row with `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` when the review succeeds, blocks, fails, or is skipped idempotently because a current-head review marker already exists. On resume or idempotent reuse, append another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-flow-pr-review-agent`, `agentRole=prReview`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If the review is explicitly standalone and no ticket key can be safely resolved, report that workflow telemetry was skipped.
 
 ## Configuration
 
@@ -55,7 +55,7 @@ Fetch:
 
 If a comment contains `<!-- codex-review-agent:{headSha} -->`, skip posting another review for the same head SHA unless the user explicitly asks for a fresh review. The existing review still remains an implementation feedback source for `dev-flow-implement-ticket`.
 
-Human-authored comments are implementation inputs, not review-agent findings. Preserve them in the review context, avoid duplicating them as Codex findings unless local analysis independently confirms the issue, and report actionable human feedback to the caller so `dev-flow-pr-review-feedback-loop` can create OpenSpec `## PR Review Feedback` tasks, apply fixes, commit, push, rerun AI review, and record Plane feedback batch comments.
+Human-authored comments are implementation inputs, not review-agent findings. Preserve them in the review context, avoid duplicating them as Codex findings unless local analysis independently confirms the issue, and report actionable human feedback to the caller so `dev-flow-pr-review-feedback-loop` can create OpenSpec `## PR Review Feedback` tasks, apply fixes, commit, push, rerun AI review, and record OpenProject feedback batch comments.
 
 ### 2. Review The Code
 
@@ -85,7 +85,7 @@ Use deterministic diff scope:
 
 Run adversarial review mode when requested explicitly or when the shared delivery contract classifies the PR as high risk. In adversarial mode:
 
-1. Read Plane/OpenSpec acceptance criteria before judging the diff.
+1. Read OpenProject/OpenSpec acceptance criteria before judging the diff.
 2. For each requirement, ask how the implementation could fail through negative input, stale state, retries, idempotency, authorization, data loss, deployment mismatch, or missing test evidence.
 3. Treat spec/code mismatches and unproven high-risk behavior as first-class findings.
 4. End the review with verdict `PASS`, `PASS WITH GAPS`, or `FAIL`.

@@ -34,7 +34,7 @@ Before delegating child work, apply the shared delivery contract's risk-adaptive
 
 Each child delivery skill owns its own workflow telemetry row. Do not append telemetry for a delegated child stage from this router, or the timing comment will double count the stage. This router may append one non-secret `dev-flow-continue-implementation` row with `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` only when it performs meaningful routing work before or after delegation. Include `workflowStage`, `agentRole`, `startedUtc`, `finishedUtc`, `elapsedMilliseconds`, `retryCount`, and `outcome`; include model, reasoning effort, token counts, cached tokens, tool-call count, and blocker category when the platform exposes them, otherwise leave those optional values null. On resume, create `.codex/agent-telemetry.local.jsonl` if missing, but do not clear existing rows for the same active ticket.
 
-Workflow timing comments use stable marker `IA generated workflow timing: {ticketKey}` and are finalized by `quality-test-e2e` after the E2E QA Plane comment is verified. During routing, read existing Plane comments when the API allows it and report whether the workflow timing marker is present, missing, or blocked; do not derive timing from Plane generated marker timestamps.
+Workflow timing comments use stable marker `IA generated workflow timing: {ticketKey}` and are finalized by `quality-test-e2e` after the E2E QA OpenProject comment is verified. During routing, read existing OpenProject comments when the API allows it and report whether the workflow timing marker is present, missing, or blocked; do not derive timing from OpenProject generated marker timestamps.
 
 Before routing to a later workflow stage, read active ticket telemetry when `.codex/agent-telemetry.local.jsonl` exists and compare it with durable checkpoints. Required predecessor rows are `dev-flow-start-ticket`, `dev-flow-implement-ticket`, `dev-flow-pr-review-agent`, `dev-ops-post-merge-deploy`, `dev-ops-deploy-qa`, and `quality-test-e2e`; `dev-flow-pr-review-feedback-loop` is required only when unresolved PR feedback exists or feedback markers/tasks show it ran. If durable evidence says a predecessor stage completed but its telemetry row is missing, route through that predecessor in idempotent verification mode before advancing. Do not route directly to `quality-test-e2e` for a QA ticket when `dev-ops-post-merge-deploy` or `dev-ops-deploy-qa` telemetry is missing; first route through `dev-ops-post-merge-deploy`, which must invoke `dev-ops-deploy-qa` idempotently. Do not route directly to later PR handoff when an existing current-head review marker lacks `dev-flow-pr-review-agent` telemetry; route through idempotent `dev-flow-pr-review-agent`.
 
@@ -42,9 +42,9 @@ Before routing to a later workflow stage, read active ticket telemetry when `.co
 
 Before delegating, inspect as much context as is safely available:
 
-- Plane ticket key, state, generated markers, linked parent/bug tickets, workflow timing marker, and deployment/QA/PROD comments.
+- OpenProject work package key, state, generated markers, linked parent/bug tickets, workflow timing marker, and deployment/QA/PROD comments.
 - Current Git branch, branch naming, local dirty state, remote branch, active OpenSpec change, and relevant tags.
-- Gitea PR status, target branch, merge status, head/merge commit, AI review markers, stable AI finding ids, human-authored top-level and inline review comments, OpenSpec `## PR Review Feedback` tasks, Plane PR feedback detection/fix batch markers, and `needs-tests` / `needs-changes` labels.
+- Gitea PR status, target branch, merge status, head/merge commit, AI review markers, stable AI finding ids, human-authored top-level and inline review comments, OpenSpec `## PR Review Feedback` tasks, OpenProject PR feedback detection/fix batch markers, and `needs-tests` / `needs-changes` labels.
 - Nexus artifact files under `app/{commitSha}/` for the selected provider: Azure uses `deployable-apps.json`, each manifest app ZIP/checksum pair, `commit.sha`, and `release.json`; k3d uses `container-images.json`, `commit.sha`, `release.json`, and monitoring summaries.
 - QA evidence marker `IA generated E2E QA: {ticketKey}` and source RC tag.
 - PROD marker `IA generated PROD deployment: {finalVersion}` and latest release manifest.
@@ -57,7 +57,7 @@ If the state is ambiguous, invoke `dev-flow-pipeline-status` or produce a read-o
 - Ticket in Todo with no branch: invoke `dev-flow-start-ticket`.
 
   Before routing, preserve the `dev-flow-start-ticket` Stack Context Preflight:
-  - The first ticket must not create a branch, Plane generated block, ticket lock, or OpenSpec proposal until `docs/architecture.md`, `docs/development.md`, `docs/deployment.md`, and `openspec/config.yaml` define the current tool set and tech stack without `stack-context.*` drift from `AuditRecommendedTools`.
+  - The first ticket must not create a branch, OpenProject generated block, ticket lock, or OpenSpec proposal until `docs/architecture.md`, `docs/development.md`, `docs/deployment.md`, and `openspec/config.yaml` define the current tool set and tech stack without `stack-context.*` drift from `AuditRecommendedTools`.
   - Treat `.codex/tool-recommendations.example.json` as the tracked shape/template only.
   - When project guidance coverage has not been reviewed, route to `project-guidance-discover` so extra useful skills, MCPs, plugins, tools, references, practices, standards, and Codex-applicable IDE helpers are researched before suggestions are shown, and only confirmed items are passed to `project-guidance-acquire`.
 - Ticket in In Progress with active branch/OpenSpec but no PR: invoke `dev-flow-implement-ticket`.
@@ -78,7 +78,7 @@ When a child skill stops on a blocker, preserve its blocker classification and d
 
 - Missing Nexus artifact blocks deployment promotion.
 - Stale `needs-changes` or `needs-tests` labels block QA promotion.
-- Unresolved PR review feedback batches, incomplete OpenSpec `## PR Review Feedback` tasks, or late actionable human PR comments block implementation handoff and QA promotion until fixes are committed, pushed, rerun through AI review, and recorded in Plane.
+- Unresolved PR review feedback batches, incomplete OpenSpec `## PR Review Feedback` tasks, or late actionable human PR comments block implementation handoff and QA promotion until fixes are committed, pushed, rerun through AI review, and recorded in OpenProject.
 - A later human comment on the same PR head SHA is not covered by an earlier feedback-fix marker unless its source id is included in that marker's `feedbackBatchId`.
 - Missing RC tag blocks PROD promotion.
 - QA product defect routes to `dev-flow-file-qa-bug`, not direct code edits inside QA.

@@ -1,4 +1,4 @@
 interface:
   display_name: "Automatic Implement Ticket"
-  short_description: "Route a Plane ticket through the delivery lifecycle."
-  default_prompt: "Use $dev-flow-continue-implementation to continue this Plane ticket from its current state."
+  short_description: "Route a OpenProject work package through the delivery lifecycle."
+  default_prompt: "Use $dev-flow-continue-implementation to continue this OpenProject work package from its current state."

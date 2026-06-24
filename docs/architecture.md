@@ -8,11 +8,11 @@ This repository is a local agentic delivery lab. Its current profile is a .NET B
 - The REST API application lives under `src/SDDTemplate.Api`.
 - The EF Core entities, DbContext, migrations, and database setup live under `src/SDDTemplate.Data`.
 - Application behavior is tested from `tests/SDDTemplate.Site.Tests`.
-- Local Docker Compose infrastructure provides Plane, Gitea, the Gitea Actions runner, Nexus, Dozzle, Grafana, and Seq. k3d deployment health evidence comes from direct site/API `/health` checks, and Grafana uses the Infinity datasource for operator health dashboards and alerts. Azure Event Hub ingestion is optional future observability, not part of the current local environment.
+- Local Docker Compose infrastructure provides OpenProject, Gitea, the Gitea Actions runner, Nexus, Dozzle, Grafana, and Seq. k3d deployment health evidence comes from direct site/API `/health` checks, and Grafana uses the Infinity datasource for operator health dashboards and alerts. Azure Event Hub ingestion is optional future observability, not part of the current local environment.
 - k3d Kubernetes hosts the default DEV, QA, and PROD application runtimes through namespaces `sdd-dev`, `sdd-qa`, and `sdd-prod`.
 - Azure can host optional remote DEV, QA, and PROD application runtimes when its adapter is explicitly selected.
 - Nexus stores immutable application artifacts, container image metadata, release manifests, and QA evidence.
-- Plane records ticket state, generated workflow markers, and human-readable delivery comments.
+- OpenProject records ticket state, generated workflow markers, and human-readable delivery comments.
 - OpenSpec records planned behavior before implementation.
 - `.codex/skills` encode operator workflows for setup, implementation, review, deployment, QA, rollback, and hotfix.
 
@@ -20,7 +20,7 @@ This repository is a local agentic delivery lab. Its current profile is a .NET B
 
 The canonical non-secret stack and tool declaration is `.codex/project-profile.json`. This document explains the current repository profile for humans; agents must read the profile first, then load the selected adapter files under `.codex/providers/`. Configuration audits should verify the profile against current files such as `global.json`, `.csproj` files, `infra/**`, `.gitea/workflows/**`, monitoring provisioning, and OpenSpec context.
 
-- Plane is the ticket system and records generated delivery markers, state transitions, and handoff comments.
+- OpenProject is the ticket system and records generated delivery markers, state transitions, and handoff comments.
 - OpenSpec captures planned behavior, requirements, design decisions, and task checklists before implementation and after review feedback.
 - Gitea hosts source control and pull requests; Gitea Actions is the authoritative PR validation and deployment workflow runner.
 - Nexus stores immutable artifacts, checksums, release manifests, container image digest metadata, and preferred QA evidence bundles.
@@ -48,4 +48,4 @@ Parallel delivery uses one Git worktree and one `.codex/delivery-context.local.j
 
 ## Deployment Lane
 
-Implementation and review can run concurrently across isolated worktrees. DEV, QA, E2E QA, PROD, rollback, and hotfix promotion are serialized because they share runtime environments, Nexus release manifests, RC/final tags, and Plane deployment evidence.
+Implementation and review can run concurrently across isolated worktrees. DEV, QA, E2E QA, PROD, rollback, and hotfix promotion are serialized because they share runtime environments, Nexus release manifests, RC/final tags, and OpenProject deployment evidence.

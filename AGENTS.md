@@ -18,7 +18,7 @@ Prefer repository-specific skills and scripts over ad hoc process decisions.
 
 ## Delivery Workflow
 
-- Use the Plane/OpenSpec workflow for ticketed implementation.
+- Use the OpenProject/OpenSpec workflow for ticketed implementation.
 - Create or continue work from the relevant ticket and OpenSpec change.
 - Keep changes scoped to the ticket or explicit user request.
 - Update task, review, QA, and deployment state through the configured tools when applicable.
@@ -63,9 +63,17 @@ If a gate cannot be run, document the reason and the residual risk.
 
 ## Repo-Local Token Saving
 
-Use the repo-local `.codex/skills/caveman` guidance for normal assistant chat in this repository. Default to Caveman full for commentary, direct answers, status updates, and final summaries: terse fragments, no filler, exact technical terms.
+Apply Caveman full to all assistant chat prompts in this repository. Use the external `.codex/skills/caveman` skill only as the generic compression style reference; keep repository-specific customization here in `AGENTS.md`, not in the external skill.
 
-This applies only to assistant communication. Write normal complete prose for authored artifacts, including documentation, README files, OpenSpec artifacts, skill content, code, comments where clarity matters, commit messages, PR bodies, Plane/Gitea comments, QA evidence, formal reports, generated files, user-facing copy, and any user-requested long-form text.
+Use terse fragments for commentary, direct answers, status updates, debug findings, next steps, blockers, validation summaries, and final summaries. Drop filler and hedging. Keep technical terms exact. Prefer concise bullets only when they improve scanning.
+
+Use this pattern when it fits:
+
+```text
+[thing] [action] [reason]. [next step].
+```
+
+This applies only to assistant communication. Write normal complete prose for authored artifacts, including documentation, README files, OpenSpec artifacts, skill content, code, code comments where clarity matters, commit messages, PR bodies, OpenProject/Gitea comments, QA evidence, formal reports, generated files, user-facing copy, and any user-requested long-form text.
 
 Keep code blocks, commands, paths, API names, error messages, quoted text, and file content exact. Temporarily use normal prose for security warnings, irreversible actions, precise multi-step instructions, ambiguous order of operations, or clarification. Resume terse chat after the clear section. Do not run upstream caveman installers or caveman-compress on this repository unless the user explicitly asks.
 
@@ -75,7 +83,7 @@ When in doubt, first inspect the applicable skill under `.codex/skills/` and fol
 
 When a required repo skill, command, memory rule, definition, or configured tool/install path cannot be applied, stop the affected flow instead of silently using an alternative. Report the failed required item, why it is required, the current-flow fix, the viable alternative, and the alternative's risk or impact, then ask the user whether to fix the current flow or continue with the alternative.
 
-Use `.codex/memory/` as a reviewable repository memory layer. Memory is guidance only and must be verified against the current user request, Plane, OpenSpec, the shared delivery contract, canonical docs, current files, and live tool output before acting on it.
+Use `.codex/memory/` as a reviewable repository memory layer. Memory is guidance only and must be verified against the current user request, OpenProject, OpenSpec, the shared delivery contract, canonical docs, current files, and live tool output before acting on it.
 
 For practical use, start with `.codex/memory/memory_summary.md`, then use `.codex/memory/MEMORY.md` or run `.codex/memory/search_memory.ps1 -Query <symptom>` for concrete errors, blockers, failed commands, deployment issues, PR feedback, QA failures, configuration mismatches, or local tooling problems.
 

@@ -64,7 +64,7 @@ namespace SDDTemplate.Site.Tests
             Assert.Contains("source_rc_version", workflow);
             Assert.Contains("release_version", workflow);
             Assert.Contains("app/rc/${SOURCE_RC_VERSION}/artifact-pointer.json", workflow);
-            Assert.Contains("qa/${E2E_PLANE_TICKET_KEY}/${run_id}/qa-evidence.zip", workflow);
+            Assert.Contains("qa/${E2E_TICKET_KEY}/${run_id}/qa-evidence.zip", workflow);
             Assert.Contains("monitoring-summary-prod.json", workflow);
 
             Assert.Contains("sdd-dev", workflow);
@@ -279,7 +279,7 @@ namespace SDDTemplate.Site.Tests
               "commitSha": "abcdef1234567890",
               "checksum": "{{digest}}",
               "artifactUrl": "localhost:5001/sddtemplate/site@{{digest}}",
-              "planeTicketKey": "E2EPROJECT-1",
+              "ticketKey": "E2EPROJECT-1",
               "versionStatus": "local container candidate",
               "deploymentProvider": "k3d",
               "containerImages": [
@@ -317,7 +317,7 @@ namespace SDDTemplate.Site.Tests
               "commitSha": "abcdef1234567890",
               "checksum": "{{digest}}",
               "artifactUrl": "localhost:5001/sddtemplate/site:abcdef1234567890",
-              "planeTicketKey": "E2EPROJECT-1",
+              "ticketKey": "E2EPROJECT-1",
               "versionStatus": "local container candidate",
               "containerImages": [
                 {

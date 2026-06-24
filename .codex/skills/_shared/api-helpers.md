@@ -1,73 +1,88 @@
 # Shared Delivery API Helpers
 
-Use these patterns for repeated Plane, Gitea, Nexus, and Git operations. Load credentials from `.codex/client-tools.local.json` or approved environment overrides. Never print tokens or credential-bearing URLs.
+Use these patterns for repeated OpenProject, Gitea, Nexus, and Git operations. Load credentials from `.codex/client-tools.local.json` or approved environment overrides. Never print tokens or credential-bearing URLs.
 
-## Plane
+## OpenProject
 
 Headers:
 
 ```text
-X-API-Key: {plane.apiToken}
+Authorization: Bearer {openProject.apiToken}
+Accept: application/hal+json
+Content-Type: application/json
 ```
 
-Resolve project UUID from configured identifier:
+Resolve the configured project:
 
 ```text
-GET {plane.baseUrl}/api/v1/workspaces/{workspaceSlug}/projects/
+GET {openProject.baseUrl}/api/v3/projects/{projectIdentifier}
 ```
 
-Fetch ticket with expanded state/project:
+List candidate work packages:
 
 ```text
-GET {plane.baseUrl}/api/v1/workspaces/{workspaceSlug}/work-items/{ticketKey}/?expand=state,project
+GET {openProject.baseUrl}/api/v3/projects/{projectIdentifier}/work_packages
 ```
 
-Read comments before writing generated markers:
+Fetch one work package:
 
 ```text
-GET {plane.baseUrl}/api/v1/workspaces/{workspaceSlug}/projects/{projectUuid}/work-items/{workItemUuid}/comments/
+GET {openProject.baseUrl}/api/v3/work_packages/{workPackageId}
 ```
 
-Patch description or state:
+Read activities before writing generated markers:
 
 ```text
-PATCH {plane.baseUrl}/api/v1/workspaces/{workspaceSlug}/projects/{projectUuid}/work-items/{workItemUuid}/
+GET {openProject.baseUrl}/api/v3/work_packages/{workPackageId}/activities
 ```
 
-State payload:
+Patch description or status:
+
+```text
+PATCH {openProject.baseUrl}/api/v3/work_packages/{workPackageId}
+```
+
+Status payload:
 
 ```json
 {
-  "state": "{stateUuid}"
+  "lockVersion": 7,
+  "_links": {
+    "status": {
+      "href": "/api/v3/statuses/{statusId}"
+    }
+  }
 }
 ```
 
-Use the resolved state UUID in the `state` field. Do not use `state_id`; Plane accepts the request but does not move the work item state.
+Description payload:
+
+```json
+{
+  "lockVersion": 7,
+  "description": {
+    "raw": "..."
+  }
+}
+```
 
 Create generated comments:
 
 ```text
-POST {plane.baseUrl}/api/v1/workspaces/{workspaceSlug}/projects/{projectUuid}/work-items/{workItemUuid}/comments/
+POST {openProject.baseUrl}/api/v3/work_packages/{workPackageId}/activities
 ```
 
 Payload:
 
 ```json
 {
-  "comment_html": "<p>IA generated marker...</p>",
-  "comment_stripped": "IA generated marker...\n\nStatus: ..."
+  "comment": {
+    "raw": "IA generated marker...\n\nStatus: ..."
+  }
 }
 ```
 
-Plane work-item comments render from `comment_html` and expose searchable text through `comment_stripped`. Do not send a Gitea-style `comment` or `body` field; it can create a blank `<p></p>` Plane comment. After posting or patching a generated marker, read the comment back and verify `comment_stripped` starts with the stable marker before reporting success.
-
-Repair an accidentally blank generated comment:
-
-```text
-PATCH {plane.baseUrl}/api/v1/workspaces/{workspaceSlug}/projects/{projectUuid}/work-items/{workItemUuid}/comments/{commentUuid}/
-```
-
-Use the same `comment_html` and `comment_stripped` payload shape.
+After posting a generated marker, read activities back and verify the comment text starts with the marker before reporting success.
 
 ## Gitea
 

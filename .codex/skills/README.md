@@ -8,7 +8,7 @@ When adding an external skill, mark it as `External`, keep the upstream skill na
 |---|---|---|---|---|
 | `aspnet-core` | External guidance | External | https://github.com/openai/skills/tree/main/skills/.curated/aspnet-core | No rename |
 | `assertion-quality` | External guidance | External | https://github.com/dotnet/skills/tree/main/plugins/dotnet-test/skills/assertion-quality | No rename |
-| `caveman` | Agent utility | External | Not recorded in skill metadata | No rename |
+| `caveman` | Agent utility | External | https://github.com/JuliusBrussee/caveman | No rename |
 | `configure-artifact-repository` | Configure | Repo-owned | Repository local | Renamed from `configure-artifact-delivery` |
 | `configure-ci-runner` | Configure | Repo-owned | Repository local | Renamed from `configure-gitea-actions-runner` |
 | `configure-cloud-environments` | Configure | Repo-owned | Repository local | Renamed from `configure-azure-environments` |
@@ -17,7 +17,7 @@ When adding an external skill, mark it as `External`, keep the upstream skill na
 | `configure-observability` | Configure | Repo-owned | Repository local | No rename |
 | `configure-quality-gates` | Configure | Repo-owned | Repository local | No rename |
 | `configure-source-control` | Configure | Repo-owned | Repository local | Renamed from `configure-gitea-source-control` |
-| `configure-ticket-workflow` | Configure | Repo-owned | Repository local | Renamed from `configure-plane-workflow` |
+| `configure-ticket-workflow` | Configure | Repo-owned | Repository local | OpenProject ticket workflow setup |
 | `dev-flow-apply-change` | Dev flow | Repo-owned | Repository local | Renamed from `openspec-apply-change` |
 | `dev-flow-archive-change` | Dev flow | Repo-owned | Repository local | Renamed from `openspec-archive-change` |
 | `dev-flow-continue-implementation` | Dev flow | Repo-owned | Repository local | Renamed from `automatic-implement-ticket` |
@@ -31,7 +31,7 @@ When adding an external skill, mark it as `External`, keep the upstream skill na
 | `dev-flow-pr-review-feedback-loop` | Dev flow | Repo-owned | Repository local | Renamed from `pr-review-feedback-loop` |
 | `dev-flow-propose-change` | Dev flow | Repo-owned | Repository local | Renamed from `openspec-propose` |
 | `dev-flow-retrospective-audit` | Dev flow | Repo-owned | Repository local | Renamed from `delivery-retrospective-audit` |
-| `dev-flow-start-ticket` | Dev flow | Repo-owned | Repository local | Renamed from `plane-start-ticket` |
+| `dev-flow-start-ticket` | Dev flow | Repo-owned | Repository local | OpenProject ticket start workflow |
 | `dev-flow-verify-change` | Dev flow | Repo-owned | Repository local | Renamed from `openspec-verify-change` |
 | `dev-ops-deploy-prod` | DevOps | Repo-owned | Repository local | Renamed from `deploy-to-prod` |
 | `dev-ops-deploy-qa` | DevOps | Repo-owned | Repository local | Renamed from `deploy-to-qa` |

@@ -88,14 +88,14 @@ jobs:
           fi
 
           commit_message="${{ github.event.head_commit.message }}"
-          plane_ticket_key=""
+          ticket_key=""
           if [[ "$commit_message" =~ ^($ticket_key_pattern) ]]; then
-            plane_ticket_key="${BASH_REMATCH[1]}"
+            ticket_key="${BASH_REMATCH[1]}"
           elif [[ "$commit_message" =~ Merge\ pull\ request.*\'($ticket_key_pattern): ]]; then
-            plane_ticket_key="${BASH_REMATCH[1]}"
+            ticket_key="${BASH_REMATCH[1]}"
           fi
           deploy_allowed=false
-          if [ -n "$plane_ticket_key" ]; then
+          if [ -n "$ticket_key" ]; then
             deploy_allowed=true
           fi
 
@@ -157,10 +157,10 @@ jobs:
           ticket_key_pattern="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ReadProjectProfile --path .codex/project-profile.json)"
 
           commit_message="$(git log -1 --pretty=%B)"
-          plane_ticket_key="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ExtractTicketKey --pattern "$ticket_key_pattern" --message "$commit_message" --fallback manual-dispatch)"
+          ticket_key="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ExtractTicketKey --pattern "$ticket_key_pattern" --message "$commit_message" --fallback manual-dispatch)"
 
           artifact_url="$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/$first_artifact_name"
-          dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- CreateReleaseManifest --output artifacts/release.json --commit-sha "$commit_sha" --checksum "$first_artifact_checksum" --artifact-url "$artifact_url" --plane-ticket-key "$plane_ticket_key" --version-status unversioned
+          dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- CreateReleaseManifest --output artifacts/release.json --commit-sha "$commit_sha" --checksum "$first_artifact_checksum" --artifact-url "$artifact_url" --ticket-key "$ticket_key" --version-status unversioned
           dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ValidateReleaseManifest --path artifacts/release.json
 
           jq -r '.apps[] | .artifactName' infra/deployment/apps.json |
@@ -655,9 +655,9 @@ jobs:
 
           ticket_key_pattern="$(jq -r '.workflow.ticketKeyPattern // empty' .codex/project-profile.json)"
           branch_name="${GITHUB_REF#refs/heads/}"
-          plane_ticket_key="$(printf '%s\n' "$branch_name" | sed -nE "s#^qa/($ticket_key_pattern)(/.*)?\$#\1#p" | head -n 1)"
-          test -n "$plane_ticket_key"
-          echo "E2E_PLANE_TICKET_KEY=$plane_ticket_key" >> "$GITHUB_ENV"
+          ticket_key="$(printf '%s\n' "$branch_name" | sed -nE "s#^qa/($ticket_key_pattern)(/.*)?\$#\1#p" | head -n 1)"
+          test -n "$ticket_key"
+          echo "E2E_TICKET_KEY=$ticket_key" >> "$GITHUB_ENV"
 
       - name: Install E2E dependencies
         shell: bash
@@ -680,7 +680,7 @@ jobs:
 
           run_id="$(date -u +%Y%m%d-%H%M%S)-${GITHUB_SHA:0:7}"
           {
-            echo "ticketKey=$E2E_PLANE_TICKET_KEY"
+            echo "ticketKey=$E2E_TICKET_KEY"
             echo "artifactCommitSha=$E2E_ARTIFACT_COMMIT_SHA"
             echo "testCommitSha=$GITHUB_SHA"
             echo "runId=$run_id"
@@ -694,7 +694,7 @@ jobs:
           zip -r qa-e2e-evidence.zip evidence
 
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file qa-e2e-evidence.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${E2E_ARTIFACT_COMMIT_SHA}/qa-e2e-evidence.zip"
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file qa-e2e-evidence.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/qa/${E2E_PLANE_TICKET_KEY}/${run_id}/qa-evidence.zip"
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file qa-e2e-evidence.zip "$NEXUS_URL/repository/$NEXUS_REPOSITORY/qa/${E2E_TICKET_KEY}/${run_id}/qa-evidence.zip"
 
           exit "$test_exit"
         env:
@@ -751,7 +751,7 @@ jobs:
             test "$(jq -r '.sourceRcVersion // empty' release.json)" = "$source_rc_version"
             test "$(jq -r '.qaResult // empty' release.json)" = "PASS"
             test -n "$(jq -r '.qaEvidenceUrl // empty' release.json)"
-            test "$(jq -c '(.includedTickets // [.planeTicketKey]) | sort' qa-approved-latest.json)" = "$(jq -c '(.includedTickets // [.planeTicketKey]) | sort' release.json)"
+            test "$(jq -c '(.includedTickets // [.ticketKey]) | sort' qa-approved-latest.json)" = "$(jq -c '(.includedTickets // [.ticketKey]) | sort' release.json)"
 
             git fetch --depth 1 origin "refs/tags/$source_rc_version:refs/tags/$source_rc_version"
             test "$(git rev-list -n 1 "$source_rc_version")" = "$artifact_commit_sha"

@@ -103,7 +103,8 @@ yarn-error.log*
 pnpm-debug.log*
 
 # Local container runtime state
-infra/plane/plane/
+infra/openproject/openproject/
+infra/openproject/plane/
 **/data/
 **/logs/
 !src/SDDTemplate.Site/Data/
@@ -112,7 +113,7 @@ infra/plane/plane/
 # Local secrets and machine-specific environment files
 *.env
 !*.env.example
-.plane.local.json
+.openproject.local.json
 .codex/client-tools.local.json
 .codex/quality.local.json
 .codex/azure-login.local.json

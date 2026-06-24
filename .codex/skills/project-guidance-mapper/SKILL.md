@@ -25,7 +25,7 @@ Read `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.m
 - When a step uses, confirms, or infers a guidance item, persist that mapping with `MapProjectGuidanceStep` so the recommendation receives the current step in `usedInSteps`.
 - If a recommendation has no `usedInSteps`, infer fit from `type`, `requires`, `researchTopics`, `tags`, `purpose`, and current workflow context; then persist the inferred step only after it is used or confirmed.
 - Use tool/framework expert guidance, MCPs, plugins, and IDE/tool availability as supporting context for implementation, review, QA, deploy, and security; do not let them override the repo delivery contract.
-- Keep Plane ticket delivery on repo-local skills and the configured Plane API; do not recommend Plane MCP for ticket delivery.
+- Keep OpenProject work package delivery on repo-local skills and the configured OpenProject API; do not recommend OpenProject MCP for ticket delivery.
 
 ## Workflow
 
@@ -72,7 +72,7 @@ When asked to map guidance, answer with:
 - `nextAction`
 - `localMappingUpdated`
 
-If the workflow step is unclear, inspect current Plane/OpenSpec/Git state through the responsible status skill before choosing a mutation skill.
+If the workflow step is unclear, inspect current OpenProject/OpenSpec/Git state through the responsible status skill before choosing a mutation skill.
 
 ## Failure Rules
 

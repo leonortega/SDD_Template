@@ -7,7 +7,7 @@
 - Source: `README.md`, `docs/architecture.md`
 - Last verified: 2026-06-11
 
-This repository is an agentic E2E development lab and SDD/SDLC template. It is designed for Codex-style agents to move a Plane ticket from idea to production using planning, implementation, review, artifact, QA, deployment, release, rollback, and hotfix checkpoints.
+This repository is an agentic E2E development lab and SDD/SDLC template. It is designed for Codex-style agents to move a OpenProject work package from idea to production using planning, implementation, review, artifact, QA, deployment, release, rollback, and hotfix checkpoints.
 
 ## Main Project Shape
 
@@ -36,12 +36,12 @@ artifacts/qa/
 - Source: `README.md`, `docs/architecture.md`, `docs/deployment.md`
 - Last verified: 2026-06-12
 
-- Local Docker Compose provides Plane, Gitea, Gitea Actions runner, Nexus, Dozzle, Grafana, and Seq.
+- Local Docker Compose provides OpenProject, Gitea, Gitea Actions runner, Nexus, Dozzle, Grafana, and Seq.
 - Seq imports DEV, QA, and PROD Azure App Service logs from Log Analytics for local log search.
 - Grafana uses Azure Monitor and Log Analytics for health/status dashboards.
 - Azure hosts only DEV, QA, and PROD application runtimes.
 - Nexus stores immutable application artifacts and release manifests.
-- Plane records ticket state, generated workflow markers, and human-readable delivery comments.
+- OpenProject records ticket state, generated workflow markers, and human-readable delivery comments.
 - OpenSpec records planned behavior before implementation.
 - `.codex/skills` encode operator workflows.
 
@@ -69,7 +69,7 @@ Important local configuration files include:
 
 - `.codex/client-tools.local.json`
 - `.codex/quality.local.json`
-- `infra/plane/variables.env`
+- `infra/openproject/variables.env`
 - `infra/monitoring/variables.env`
 - `infra/azure/variables.env`
 - `infra/gitea/runner.env`

@@ -57,4 +57,4 @@ dotnet format --verify-no-changes
 - Prefer updating canonical docs when the finding is authoritative workflow or architecture context.
 - Keep secrets, tokens, local credentials, and ignored local runtime state out of memory.
 - Before final handoff for any non-trivial repository work, report `Memory updated: <files>` or `Memory updated: none` after classifying reusable errors, blockers, fixes, configuration repairs, tooling corrections, and debugging results.
-- Recent cross-thread lessons include worktree local-config sync, Gitea reviewer collaborator requirements, Plane comment payload fields, Gitea Actions shell/runtime assumptions, PR feedback batching, and live Azure app-to-app settings for topology deployments.
+- Recent cross-thread lessons include worktree local-config sync, Gitea reviewer collaborator requirements, OpenProject comment payload fields, Gitea Actions shell/runtime assumptions, PR feedback batching, and live Azure app-to-app settings for topology deployments.

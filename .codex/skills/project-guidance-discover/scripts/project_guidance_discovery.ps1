@@ -53,7 +53,7 @@ function Add-StackContextDriftFindings {
     [pscustomobject]@{ tag = "blazor"; pattern = "Blazor"; label = "Blazor" },
     [pscustomobject]@{ tag = "xunit"; pattern = "xUnit"; label = "xUnit" },
     [pscustomobject]@{ tag = "coverage"; pattern = "coverage|coverlet"; label = "coverage" },
-    [pscustomobject]@{ tag = "plane"; pattern = "Plane"; label = "Plane" },
+    [pscustomobject]@{ tag = "openproject"; pattern = "OpenProject"; label = "OpenProject" },
     [pscustomobject]@{ tag = "gitea"; pattern = "Gitea"; label = "Gitea" },
     [pscustomobject]@{ tag = "gitea-actions-runner"; pattern = "Gitea Actions"; label = "Gitea Actions" },
     [pscustomobject]@{ tag = "nexus-artifacts"; pattern = "Nexus"; label = "Nexus artifacts" },
@@ -158,7 +158,7 @@ function Get-DetectedStackTags {
       (Test-Path (Join-RootPath ".codex/quality.example.json"))) {
     $tags.Add("security")
   }
-  if (Test-Path (Join-RootPath "infra/plane")) { $tags.Add("plane") }
+  if (Test-Path (Join-RootPath "infra/openproject")) { $tags.Add("openproject") }
   if (Test-Path (Join-RootPath "infra/gitea")) { $tags.Add("gitea") }
   if (Test-Path (Join-RootPath ".gitea/workflows")) {
     $tags.Add("gitea-actions")
@@ -241,7 +241,7 @@ function Get-ProjectGuidanceResearchTopics {
     },
     [pscustomobject]@{
       id = "delivery-tools"
-      tags = @("plane", "gitea", "gitea-actions-runner", "nexus-artifacts", "azure-app-service", "azure-monitor", "grafana")
+      tags = @("openproject", "gitea", "gitea-actions-runner", "nexus-artifacts", "azure-app-service", "azure-monitor", "grafana")
       area = "Delivery tools and environments"
       purpose = "Find skills for ticket workflow, source control/review, CI runner behavior, artifact promotion, cloud deployment, and observability."
       officialFirstSources = @("https://github.com/openai/skills", "https://docs.gitea.com/", "https://learn.microsoft.com/en-us/azure/app-service/", "https://learn.microsoft.com/en-us/azure/azure-monitor/", "https://grafana.com/docs/", "https://datalust.co/docs/")
