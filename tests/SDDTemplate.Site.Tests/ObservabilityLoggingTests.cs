@@ -343,8 +343,8 @@ namespace SDDTemplate.Site.Tests
             string observabilitySkill = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-observability", "SKILL.md"));
 
             Assert.Contains("SetSeqAzureEventHubLogs", script);
-            Assert.DoesNotContain("K3D_OBSERVABILITY_ENABLED", script);
-            Assert.Contains("k3d.ready", script);
+            Assert.DoesNotContain("RANCHER_OBSERVABILITY_ENABLED", script);
+            Assert.Contains("Rancher Desktop.ready", script);
             Assert.DoesNotContain("Azure collector-based Seq ingestion path", script);
             Assert.Contains("Grafana Infinity health checks", observabilitySkill);
             Assert.DoesNotContain("SetSeqAzureLogs", script);
@@ -383,3 +383,4 @@ namespace SDDTemplate.Site.Tests
         }
     }
 }
+

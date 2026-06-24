@@ -3,10 +3,10 @@ using SDDTemplate.DeliveryTools;
 
 namespace SDDTemplate.Site.Tests
 {
-    public sealed class K3dLocalLabTests
+    public sealed class RancherDesktopLocalLabTests
     {
         [Fact]
-        public void ProjectProfileSelectsK3dAsDeploymentProvider()
+        public void ProjectProfileSelectsRancherDesktopAsDeploymentProvider()
         {
             string root = FindRepositoryRoot();
             using JsonDocument profile = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, ".codex", "project-profile.json")));
@@ -19,10 +19,10 @@ namespace SDDTemplate.Site.Tests
                 .GetProperty("deployment")
                 .GetString()!;
 
-            Assert.Equal("k3d", deployment.GetProperty("id").GetString());
-            Assert.Equal(".codex/providers/deploy.k3d.md", deployment.GetProperty("adapter").GetString());
-            Assert.Equal(".codex/providers/deploy.k3d.md", adapter);
-            Assert.True(File.Exists(Path.Combine(root, ".codex", "providers", "deploy.k3d.md")));
+            Assert.Equal("rancher-desktop", deployment.GetProperty("id").GetString());
+            Assert.Equal(".codex/providers/deploy.rancher-desktop.md", deployment.GetProperty("adapter").GetString());
+            Assert.Equal(".codex/providers/deploy.rancher-desktop.md", adapter);
+            Assert.True(File.Exists(Path.Combine(root, ".codex", "providers", "deploy.rancher-desktop.md")));
         }
 
         [Fact]
@@ -43,11 +43,11 @@ namespace SDDTemplate.Site.Tests
         }
 
         [Fact]
-        public void K3dWorkflowBuildsImagesAndPromotesDigestPinnedMetadata()
+        public void RancherDesktopWorkflowBuildsImagesAndPromotesDigestPinnedMetadata()
         {
             string root = FindRepositoryRoot();
-            string workflow = File.ReadAllText(Path.Combine(root, ".gitea", "workflows", "k3d-local-deploy.yml"));
-            string script = File.ReadAllText(Path.Combine(root, "infra", "k3d", "deploy-local-lab.sh"));
+            string workflow = File.ReadAllText(Path.Combine(root, ".gitea", "workflows", "rancher-local-deploy.yml"));
+            string script = File.ReadAllText(Path.Combine(root, "infra", "rancher", "deploy-local-lab.sh"));
 
             Assert.Contains("NEXUS_DOCKER_REGISTRY", workflow);
             Assert.Contains("docker build -f src/SDDTemplate.Site/Dockerfile", workflow);
@@ -58,8 +58,8 @@ namespace SDDTemplate.Site.Tests
             Assert.Contains("healthCheckMode: \"direct-http\"", workflow);
             Assert.Contains("monitoring-summary.json", workflow);
             Assert.Contains("qa-observability.json", workflow);
-            Assert.Contains("deploymentProvider = \"k3d\"", workflow);
-            Assert.Contains("kubectl config current-context | grep -qx \"k3d-sdd-template\"", workflow);
+            Assert.Contains("deploymentProvider = \"rancher-desktop\"", workflow);
+            Assert.Contains("kubectl config current-context | grep -qx \"rancher-desktop\"", workflow);
             Assert.Contains("qa-local/**", workflow);
             Assert.Contains("source_rc_version", workflow);
             Assert.Contains("release_version", workflow);
@@ -79,7 +79,7 @@ namespace SDDTemplate.Site.Tests
         }
 
         [Fact]
-        public void SharedArtifactPathsDefaultToSelectedK3dProviderMetadata()
+        public void SharedArtifactPathsDefaultToSelectedRancherDesktopProviderMetadata()
         {
             string root = FindRepositoryRoot();
             string script = Path.Combine(root, ".codex", "skills", "_shared", "scripts", "delivery_tools.ps1");
@@ -90,7 +90,7 @@ namespace SDDTemplate.Site.Tests
             using JsonDocument defaultPaths = JsonDocument.Parse(defaultJson);
             using JsonDocument azure = JsonDocument.Parse(azureJson);
 
-            Assert.Equal("k3d", defaultPaths.RootElement.GetProperty("deploymentProvider").GetString());
+            Assert.Equal("rancher-desktop", defaultPaths.RootElement.GetProperty("deploymentProvider").GetString());
             Assert.Equal("app/abc123/container-images.json", defaultPaths.RootElement.GetProperty("containerImages").GetString());
             Assert.Equal("app/abc123/monitoring-summary-{environment}.json", defaultPaths.RootElement.GetProperty("monitoringSummaryPattern").GetString());
             Assert.Equal("app/abc123/qa-observability.json", defaultPaths.RootElement.GetProperty("qaObservability").GetString());
@@ -101,12 +101,12 @@ namespace SDDTemplate.Site.Tests
         }
 
         [Fact]
-        public void K3dObservabilityUsesDirectHealthAndDirectSeqAppLogs()
+        public void RancherDesktopObservabilityUsesDirectHealthAndDirectSeqAppLogs()
         {
             string root = FindRepositoryRoot();
-            string workflow = File.ReadAllText(Path.Combine(root, ".gitea", "workflows", "k3d-local-deploy.yml"));
+            string workflow = File.ReadAllText(Path.Combine(root, ".gitea", "workflows", "rancher-local-deploy.yml"));
 
-            Assert.False(File.Exists(Path.Combine(root, "infra", "k3d", "capture-observability.sh")));
+            Assert.False(File.Exists(Path.Combine(root, "infra", "rancher", "capture-observability.sh")));
             Assert.DoesNotContain("/ingest/clef", workflow);
             Assert.DoesNotContain("pod.sanitized.log", workflow);
             Assert.DoesNotContain("probe_success", workflow);
@@ -116,10 +116,10 @@ namespace SDDTemplate.Site.Tests
             Assert.Contains("healthCheckMode: \"direct-http\"", workflow);
             Assert.Contains("sleep 10", workflow);
             Assert.Contains("for attempt in 1 2 3 4 5 6", workflow);
-            Assert.Contains("K3D_APP_SEQ_URL", File.ReadAllText(Path.Combine(root, "infra", "monitoring", "variables.env.example")));
-            Assert.Contains("Serilog__WriteTo__1__Name", File.ReadAllText(Path.Combine(root, "infra", "k3d", "deploy-local-lab.sh")));
-            Assert.Contains("Serilog__WriteTo__1__Args__serverUrl", File.ReadAllText(Path.Combine(root, "infra", "k3d", "deploy-local-lab.sh")));
-            Assert.Contains("http://host.docker.internal:5341", File.ReadAllText(Path.Combine(root, "infra", "k3d", "deploy-local-lab.sh")));
+            Assert.Contains("RANCHER_APP_SEQ_URL", File.ReadAllText(Path.Combine(root, "infra", "monitoring", "variables.env.example")));
+            Assert.Contains("Serilog__WriteTo__1__Name", File.ReadAllText(Path.Combine(root, "infra", "rancher", "deploy-local-lab.sh")));
+            Assert.Contains("Serilog__WriteTo__1__Args__serverUrl", File.ReadAllText(Path.Combine(root, "infra", "rancher", "deploy-local-lab.sh")));
+            Assert.Contains("http://host.docker.internal:5341", File.ReadAllText(Path.Combine(root, "infra", "rancher", "deploy-local-lab.sh")));
 
             Assert.Contains("app/${GITHUB_SHA}/monitoring-summary.json", workflow);
             Assert.Contains("app/${GITHUB_SHA}/qa-observability.json", workflow);
@@ -127,7 +127,7 @@ namespace SDDTemplate.Site.Tests
         }
 
         [Fact]
-        public void GrafanaInfinityDatasourceIncludesK3dHealthUrls()
+        public void GrafanaInfinityDatasourceIncludesRancherDesktopHealthUrls()
         {
             string root = FindRepositoryRoot();
             string datasource = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "datasources", "infinity-health.yml"));
@@ -144,75 +144,73 @@ namespace SDDTemplate.Site.Tests
         }
 
         [Fact]
-        public void ConfigureInfraAuditsSelectedK3dLocalLabSurfaces()
+        public void ConfigureInfraAuditsSelectedRancherDesktopLocalLabSurfaces()
         {
             string root = FindRepositoryRoot();
             string script = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "scripts", "configure_infra_tools.ps1"));
             string configureSkill = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "SKILL.md"));
 
-            Assert.Contains("function Add-K3dLocalLabAuditFindings", script);
-            Assert.Contains("Add-K3dLocalLabAuditFindings $result", script);
+            Assert.Contains("function Add-RancherDesktopLocalLabAuditFindings", script);
+            Assert.Contains("Add-RancherDesktopLocalLabAuditFindings $result", script);
             Assert.Contains("\"docker\", \"kubectl\"", script);
-            Assert.Contains(".codex/providers/deploy.k3d.md", script);
-            Assert.Contains(".gitea/workflows/k3d-local-deploy.yml", script);
-            Assert.Contains("infra/k3d/deploy-local-lab.sh", script);
-            Assert.DoesNotContain("infra/k3d/capture-observability.sh", script);
+            Assert.Contains(".codex/providers/deploy.rancher-desktop.md", script);
+            Assert.Contains(".gitea/workflows/rancher-local-deploy.yml", script);
+            Assert.Contains("infra/rancher/deploy-local-lab.sh", script);
+            Assert.DoesNotContain("infra/rancher/capture-observability.sh", script);
             Assert.Contains("src/SDDTemplate.Site/Dockerfile", script);
             Assert.Contains("src/SDDTemplate.Api/Dockerfile", script);
             Assert.Contains("NEXUS_DOCKER_REGISTRY", script);
-            Assert.Contains("K3D_KUBECONFIG_B64", script);
+            Assert.Contains("RANCHER_KUBECONFIG_B64", script);
             Assert.Contains("SEQ_URL=http://localhost:5341", script);
             Assert.Contains("infinity-health", script);
             Assert.DoesNotContain("PROMETHEUS_URL=http://localhost:9091", script);
-            Assert.DoesNotContain("K3D_OBSERVABILITY_ENABLED=true", script);
-            Assert.Contains("k3d local lab", configureSkill);
+            Assert.DoesNotContain("RANCHER_OBSERVABILITY_ENABLED=true", script);
+            Assert.Contains("Rancher Desktop local lab", configureSkill);
             Assert.Contains("providers.deployment", script);
-            Assert.Contains("Current k3d monitoring compose excludes local otelcol", script);
+            Assert.Contains("Current Rancher Desktop monitoring compose excludes local otelcol", script);
         }
 
         [Fact]
-        public void ConfigureInfraCanEnsureK3dCluster()
+        public void ConfigureInfraCanEnsureRancherDesktopCluster()
         {
             string root = FindRepositoryRoot();
             string script = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "scripts", "configure_infra_tools.ps1"));
             string configureSkill = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "SKILL.md"));
             string aliasSkill = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-infra-tools", "SKILL.md"));
-            string adapter = File.ReadAllText(Path.Combine(root, ".codex", "providers", "deploy.k3d.md"));
-            string k3dReadme = File.ReadAllText(Path.Combine(root, "infra", "k3d", "README.md"));
+            string adapter = File.ReadAllText(Path.Combine(root, ".codex", "providers", "deploy.rancher-desktop.md"));
+            string rancherReadme = File.ReadAllText(Path.Combine(root, "infra", "rancher", "README.md"));
 
-            Assert.Contains("\"EnsureK3dCluster\"", script);
-            Assert.Contains("function Invoke-EnsureK3dCluster", script);
-            Assert.Contains("\"k3d\" @(\"cluster\", \"list\", $K3dClusterName, \"-o\", \"json\")", script);
-            Assert.Contains("\"cluster\", \"create\", $K3dClusterName", script);
-            Assert.Contains("\"--api-port\", \"127.0.0.1:$K3dApiPort\"", script);
-            Assert.Contains("\"kubeconfig\", \"merge\", $K3dClusterName", script);
-            Assert.Contains("\"--kubeconfig-merge-default\"", script);
+            Assert.Contains("\"EnsureRancherDesktopCluster\"", script);
+            Assert.Contains("function Invoke-EnsureRancherDesktopCluster", script);
+            Assert.Contains("\"kubectl\" @(\"config\", \"use-context\", $RancherDesktopContextName)", script);
+            Assert.DoesNotContain("\"cluster\", \"create\"", script);
+            Assert.DoesNotContain("\"kubeconfig\", \"merge\"", script);
             Assert.Contains("Get-Command $FileName", script);
             Assert.Contains("[System.IO.Path]::GetExtension($resolvedPath) -in @(\".cmd\", \".bat\")", script);
             Assert.Contains("\"get\", \"nodes\", \"-o\", \"json\", \"--request-timeout=5s\"", script);
             Assert.Contains("timed out after $TimeoutSeconds seconds", script);
             Assert.Contains("$startInfo.Arguments = $escapedArguments -join \" \"", script);
             Assert.Contains("nodes.ready", script);
-            Assert.Contains("k3d cluster '$K3dClusterName' is missing", script);
-            Assert.Contains("run `EnsureK3dCluster` before `EnsureK3dHeadlamp`, `EnsureK3dPortForwards`, `ShowEnvironmentUrls`, and `Audit`", configureSkill);
-            Assert.Contains("`EnsureK3dCluster`, `EnsureK3dHeadlamp`, and `EnsureK3dPortForwards` when k3d is selected", aliasSkill);
-            Assert.Contains("Plain `Audit` only reports missing or unhealthy k3d cluster state", adapter);
-            Assert.Contains("explicit `config infra` runs `EnsureK3dCluster`", k3dReadme);
+            Assert.Contains("Could not switch to '$RancherDesktopContextName'", script);
+            Assert.Contains("run `EnsureRancherDesktopCluster` before `EnsureRancherDesktopHeadlamp`, `EnsureRancherDesktopPortForwards`, `ShowEnvironmentUrls`, and `Audit`", configureSkill);
+            Assert.Contains("`EnsureRancherDesktopCluster`, `EnsureRancherDesktopHeadlamp`, and `EnsureRancherDesktopPortForwards` when Rancher Desktop is selected", aliasSkill);
+            Assert.Contains("Plain `Audit` only reports missing or unhealthy Rancher Desktop Kubernetes state", adapter);
+            Assert.Contains("explicit `config infra` runs `EnsureRancherDesktopCluster`", rancherReadme);
         }
 
         [Fact]
-        public void ConfigureInfraCanEnsureK3dPortForwards()
+        public void ConfigureInfraCanEnsureRancherDesktopPortForwards()
         {
             string root = FindRepositoryRoot();
             string script = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "scripts", "configure_infra_tools.ps1"));
             string configureSkill = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "SKILL.md"));
             string aliasSkill = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-infra-tools", "SKILL.md"));
-            string adapter = File.ReadAllText(Path.Combine(root, ".codex", "providers", "deploy.k3d.md"));
-            string k3dReadme = File.ReadAllText(Path.Combine(root, "infra", "k3d", "README.md"));
+            string adapter = File.ReadAllText(Path.Combine(root, ".codex", "providers", "deploy.rancher-desktop.md"));
+            string rancherReadme = File.ReadAllText(Path.Combine(root, "infra", "rancher", "README.md"));
 
-            Assert.Contains("\"EnsureK3dPortForwards\"", script);
-            Assert.Contains("function Invoke-EnsureK3dPortForwards", script);
-            Assert.Contains("function Get-K3dPortForwardMappings", script);
+            Assert.Contains("\"EnsureRancherDesktopPortForwards\"", script);
+            Assert.Contains("function Invoke-EnsureRancherDesktopPortForwards", script);
+            Assert.Contains("function Get-RancherDesktopPortForwardMappings", script);
             Assert.Contains("\"port-forward\"", script);
             Assert.Contains("\"--address\", \"127.0.0.1\"", script);
             Assert.Contains("Start-Process -FilePath \"kubectl\"", script);
@@ -224,25 +222,25 @@ namespace SDDTemplate.Site.Tests
                 Assert.Contains($"127.0.0.1:{port}", adapter);
             }
 
-            Assert.Contains("EnsureK3dCluster` before `EnsureK3dHeadlamp`, `EnsureK3dPortForwards`, `ShowEnvironmentUrls`, and `Audit`", configureSkill);
+            Assert.Contains("EnsureRancherDesktopCluster` before `EnsureRancherDesktopHeadlamp`, `EnsureRancherDesktopPortForwards`, `ShowEnvironmentUrls`, and `Audit`", configureSkill);
             Assert.Contains("starts localhost browser mappings", configureSkill);
-            Assert.Contains("`EnsureK3dPortForwards` when k3d is selected", aliasSkill);
+            Assert.Contains("`EnsureRancherDesktopPortForwards` when Rancher Desktop is selected", aliasSkill);
             Assert.Contains("Plain `Audit` only reports missing mappings", adapter);
-            Assert.Contains("Windows cannot resolve the `*.sdd.localhost` ingress hosts", k3dReadme);
+            Assert.Contains("Windows cannot resolve the `*.sdd.localhost` ingress hosts", rancherReadme);
         }
 
         [Fact]
-        public void ConfigureInfraCanEnsureK3dHeadlamp()
+        public void ConfigureInfraCanEnsureRancherDesktopHeadlamp()
         {
             string root = FindRepositoryRoot();
             string script = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "scripts", "configure_infra_tools.ps1"));
             string configureSkill = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "SKILL.md"));
             string aliasSkill = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-infra-tools", "SKILL.md"));
-            string adapter = File.ReadAllText(Path.Combine(root, ".codex", "providers", "deploy.k3d.md"));
-            string k3dReadme = File.ReadAllText(Path.Combine(root, "infra", "k3d", "README.md"));
+            string adapter = File.ReadAllText(Path.Combine(root, ".codex", "providers", "deploy.rancher-desktop.md"));
+            string rancherReadme = File.ReadAllText(Path.Combine(root, "infra", "rancher", "README.md"));
 
-            Assert.Contains("\"EnsureK3dHeadlamp\"", script);
-            Assert.Contains("function Invoke-EnsureK3dHeadlamp", script);
+            Assert.Contains("\"EnsureRancherDesktopHeadlamp\"", script);
+            Assert.Contains("function Invoke-EnsureRancherDesktopHeadlamp", script);
             Assert.Contains("helm\" @(\"repo\", \"add\", \"headlamp\", \"https://kubernetes-sigs.github.io/headlamp/\"", script);
             Assert.Contains("\"upgrade\", \"--install\", \"headlamp\", \"headlamp/headlamp\"", script);
             Assert.Contains("\"rollout\", \"status\", \"deploy/headlamp\"", script);
@@ -251,11 +249,11 @@ namespace SDDTemplate.Site.Tests
             Assert.Contains("kubectl create token headlamp --namespace headlamp | Set-Clipboard", script);
             Assert.DoesNotContain("ConvertTo-SecureString", script);
 
-            Assert.Contains("EnsureK3dHeadlamp", configureSkill);
+            Assert.Contains("EnsureRancherDesktopHeadlamp", configureSkill);
             Assert.Contains("Tokens must not be printed", configureSkill);
-            Assert.Contains("install Headlamp through `EnsureK3dHeadlamp`", aliasSkill);
+            Assert.Contains("install Headlamp through `EnsureRancherDesktopHeadlamp`", aliasSkill);
             Assert.Contains("http://127.0.0.1:4466", adapter);
-            Assert.Contains("kubectl create token headlamp --namespace headlamp | Set-Clipboard", k3dReadme);
+            Assert.Contains("kubectl create token headlamp --namespace headlamp | Set-Clipboard", rancherReadme);
         }
 
         [Fact]
@@ -281,7 +279,7 @@ namespace SDDTemplate.Site.Tests
               "artifactUrl": "localhost:5001/sddtemplate/site@{{digest}}",
               "ticketKey": "E2EPROJECT-1",
               "versionStatus": "local container candidate",
-              "deploymentProvider": "k3d",
+              "deploymentProvider": "rancher-desktop",
               "containerImages": [
                 {
                   "appId": "site",
@@ -380,3 +378,5 @@ namespace SDDTemplate.Site.Tests
         }
     }
 }
+
+

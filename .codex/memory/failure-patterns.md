@@ -1,13 +1,31 @@
 # Failure Pattern Memory
 
-## k3d Install Works From Approved Executables Folder, But Docker Backend Can Block Cluster Create
+## Windows PowerShell Lacks System.IO.Path IsPathFullyQualified
 
 - Type: Pattern
 - Status: Active
-- Source: `winget install -e --id k3d.k3d`, direct `k3d.exe` download, `EnsureK3dCluster`, `k3d cluster list`, Docker error `timed out dialing Hyper-V socket`
-- Last verified: 2026-06-23
+- Source: `.codex/skills/configure-dev-environment/scripts/configure_infra_tools.ps1 -Mode Audit`, June 24, 2026
+- Last verified: 2026-06-24
 
-On this workstation, `winget` can install k3d under `%LOCALAPPDATA%\Microsoft\WinGet\Packages`, but executing that package path may fail with `Access is denied`. Put `k3d.exe` in the approved folder `C:\Endava\EndevLocal\Executables` and prepend that path for validation. If `k3d cluster create sdd-template` fails with Docker backend `failed to connect to the backend: timed out dialing Hyper-V socket`, treat it as a live Docker/Rancher backend blocker, not a k3d config bug. Restart or repair the Docker backend, clean only failed `k3d-sdd-template*` containers/network/volume if needed, then rerun `EnsureK3dCluster`.
+Windows PowerShell on this workstation can fail with `Method invocation failed because [System.IO.Path] does not contain a method named 'IsPathFullyQualified'`. Repo PowerShell scripts that need broad Windows compatibility should use `[System.IO.Path]::IsPathRooted(...)` or another available check instead.
+
+## Provider Switch Can Leave Stale QA Trigger Branch Assertions
+
+- Type: Pattern
+- Status: Active
+- Source: `DeploymentWorkflowTests.E2EQaDeletesTemporaryTriggerBranchAfterDurableEvidence`, Rancher Desktop migration, June 24, 2026
+- Last verified: 2026-06-24
+
+When the selected deployment provider changes, update workflow docs, generated README text, shared delivery contracts, QA skills, and meta-tests together. The current Rancher Desktop QA trigger branch is `qa-local/{ticketKey}`. The durable Nexus evidence path can still be `qa/{ticketKey}/{runId}/qa-evidence.zip`; do not confuse evidence paths with trigger branch names.
+
+## k3d Install Works From Approved Executables Folder, But Docker Backend Can Block Cluster Create
+
+- Type: Pattern
+- Status: Superseded
+- Source: `winget install -e --id k3d.k3d`, direct `k3d.exe` download, `EnsureK3dCluster`, `k3d cluster list`, Docker error `timed out dialing Hyper-V socket`
+- Last verified: 2026-06-24
+
+Superseded by the current Rancher Desktop lane. This older k3d workaround is historical only; do not reinstall k3d or restore the k3d PATH bridge unless the operator explicitly reselects k3d.
 
 ## Rancher Docker Backend Can Timeout During Cleanup
 

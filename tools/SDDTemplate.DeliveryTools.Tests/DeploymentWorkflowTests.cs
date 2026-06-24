@@ -468,12 +468,12 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("qa-e2e-evidence.zip", script);
             Assert.Contains("E2E_SITE_URL", script);
             Assert.Contains("E2E_API_URL", script);
-            Assert.Contains("push a `qa/{ticketKey}` branch from current `dev`", deploymentDoc);
+            Assert.Contains("push a `qa-local/{ticketKey}` branch from current `dev`", deploymentDoc);
             Assert.Contains("rendered web API-base-url verification", deploymentDoc);
             Assert.Contains("API CORS preflight verification", deploymentDoc);
             Assert.Contains("tests/SDDTemplate.E2ETests", developmentDoc);
             Assert.Contains("deployed-QA regression suite", e2eSkill);
-            Assert.Contains("qa/{ticketKey}", e2eSkill);
+            Assert.Contains("qa-local/{ticketKey}", e2eSkill);
             Assert.Contains("app/{commitSha}/qa-e2e-evidence.zip", e2eSkill);
             Assert.Contains("qa/{ticketKey}/{runId}/qa-evidence.zip", e2eSkill);
             Assert.Contains("acceptance-to-assertion QA proof", script);
@@ -1246,12 +1246,12 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("InitProjectProfile", configureRouter);
             Assert.Contains("required first-class step for full `config infra`", configureRouter);
             Assert.Contains("run `InitProjectProfile` first", configureRouter);
-            Assert.Contains("InitProjectProfile -> EnsureK3dCluster when k3d is selected -> EnsureK3dHeadlamp when k3d is selected -> EnsureK3dPortForwards when k3d is selected -> ShowEnvironmentUrls when k3d is selected -> Audit -> OpenProject", configureRouter);
+            Assert.Contains("InitProjectProfile -> EnsureRancherDesktopCluster when Rancher Desktop is selected -> EnsureRancherDesktopHeadlamp when Rancher Desktop is selected -> EnsureRancherDesktopPortForwards when Rancher Desktop is selected -> ShowEnvironmentUrls when Rancher Desktop is selected -> Audit -> OpenProject", configureRouter);
             Assert.Contains("Stop before provider-specific mutation", configureRouter);
 
             Assert.Contains("InitProjectProfile", qualityReference);
             Assert.Contains("before full `config infra` quality/provider setup", qualityReference);
-            Assert.Contains("follow its `InitProjectProfile`, `EnsureK3dCluster`, `EnsureK3dHeadlamp`, and `EnsureK3dPortForwards` when k3d is selected, audit", compatibilityRouter);
+            Assert.Contains("follow its `InitProjectProfile`, `EnsureRancherDesktopCluster`, `EnsureRancherDesktopHeadlamp`, and `EnsureRancherDesktopPortForwards` when Rancher Desktop is selected, audit", compatibilityRouter);
             Assert.Contains("Full `config infra` runs `InitProjectProfile` first", readme);
 
             Assert.Contains("\"InitProjectProfile\"", configureScript);
@@ -1960,15 +1960,14 @@ namespace SDDTemplate.DeliveryTools.Tests
             string configureScript = ReadConfigureScript();
 
             Assert.Contains("QA Evidence Trigger Branch Cleanup", contract);
-            Assert.Contains("Azure uses `qa/{ticketKey}` and k3d uses `qa-local/{ticketKey}`", contract);
+            Assert.Contains("Rancher Desktop uses `qa-local/{ticketKey}`", contract);
             Assert.Contains("Durable QA evidence belongs in Nexus, OpenProject comments, release manifests, and tags", contract);
-            Assert.Contains("git push origin --delete qa/E2EPROJECT-123", e2eSkill);
             Assert.Contains("git push origin --delete qa-local/E2EPROJECT-123", e2eSkill);
             Assert.Contains("Do not delete the branch before Nexus evidence exists", e2eSkill);
-            Assert.Contains("delete the remote `qa/{ticketKey}` branch from Gitea", deploymentDoc);
-            Assert.Contains("delete the remote selected-provider QA branch", developmentDoc);
-            Assert.Contains("deleting the remote `qa/{ticketKey}` branch after durable Nexus/OpenProject/release/tag evidence exists", workflowReadme);
-            Assert.Contains("deleting the remote `qa/{ticketKey}` branch after durable Nexus/OpenProject/release/tag evidence exists", configureScript);
+            Assert.Contains("delete the remote `qa-local/{ticketKey}` branch from Gitea", deploymentDoc);
+            Assert.Contains("delete the remote `qa-local/{ticketKey}` branch", developmentDoc);
+            Assert.Contains("deleting the remote `qa-local/{ticketKey}` branch after durable Nexus/OpenProject/release/tag evidence exists", workflowReadme);
+            Assert.Contains("deleting the remote `qa-local/{ticketKey}` branch after durable Nexus/OpenProject/release/tag evidence exists", configureScript);
         }
 
         [Fact]

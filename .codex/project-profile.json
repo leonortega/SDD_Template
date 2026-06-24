@@ -34,8 +34,8 @@
       "adapter": ".codex/providers/artifact.nexus.md"
     },
     "deployment": {
-      "id": "k3d",
-      "adapter": ".codex/providers/deploy.k3d.md"
+      "id": "rancher-desktop",
+      "adapter": ".codex/providers/deploy.rancher-desktop.md"
     },
     "observability": [
       {
@@ -116,9 +116,10 @@
     "repository": ".codex/providers/repo.gitea.md",
     "review": ".codex/providers/repo.gitea.md",
     "artifact": ".codex/providers/artifact.nexus.md",
-    "deployment": ".codex/providers/deploy.k3d.md",
+    "deployment": ".codex/providers/deploy.rancher-desktop.md",
     "deploymentAzure": ".codex/providers/deploy.azure-appservice.md",
     "stack": ".codex/providers/stack.dotnet.md",
     "e2e": ".codex/providers/e2e.playwright.md"
   }
 }
+

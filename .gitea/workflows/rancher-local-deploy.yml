@@ -1,4 +1,4 @@
-name: k3d local deploy
+name: Rancher Desktop local deploy
 
 on:
   push:
@@ -72,7 +72,7 @@ jobs:
           app_changed=false
           while IFS= read -r path; do
             case "$path" in
-              src/*|tests/*|infra/k3d/*)
+              src/*|tests/*|infra/rancher/*)
                 app_changed=true
                 ;;
             esac
@@ -174,7 +174,7 @@ jobs:
 
           dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- CreateReleaseManifest --output artifacts/release.json --commit-sha "$commit_sha" --checksum "$site_digest" --artifact-url "$site_ref" --ticket-key "$ticket_key" --version-status "local container candidate"
           tmp="$(mktemp)"
-          jq --slurpfile containerImages artifacts/container-images.json '.deploymentProvider = "k3d" | .containerImages = $containerImages[0].images | .containerImagesUrl = "app/" + .commitSha + "/container-images.json"' artifacts/release.json > "$tmp"
+          jq --slurpfile containerImages artifacts/container-images.json '.deploymentProvider = "rancher-desktop" | .containerImages = $containerImages[0].images | .containerImagesUrl = "app/" + .commitSha + "/container-images.json"' artifacts/release.json > "$tmp"
           mv "$tmp" artifacts/release.json
           dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ValidateReleaseManifest --path artifacts/release.json
 
@@ -227,16 +227,16 @@ jobs:
           NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
           NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
 
-      - name: Configure k3d kubeconfig
+      - name: Configure Rancher Desktop kubeconfig
         shell: bash
         run: |
           set -euo pipefail
 
           mkdir -p "$HOME/.kube"
-          printf '%s' "$K3D_KUBECONFIG_B64" | base64 -d > "$HOME/.kube/config"
-          kubectl config current-context | grep -qx "k3d-sdd-template"
+          printf '%s' "$RANCHER_KUBECONFIG_B64" | base64 -d > "$HOME/.kube/config"
+          kubectl config current-context | grep -qx "rancher-desktop"
         env:
-          K3D_KUBECONFIG_B64: ${{ secrets.K3D_KUBECONFIG_B64 }}
+          RANCHER_KUBECONFIG_B64: ${{ secrets.RANCHER_KUBECONFIG_B64 }}
 
       - name: Deploy DEV namespace
         shell: bash
@@ -276,7 +276,7 @@ jobs:
             jq -n \
               --arg commitSha "$commit_sha" \
               --arg environment "$env_upper" \
-              --arg provider "k3d" \
+              --arg provider "rancher-desktop" \
               --arg siteHealthStatus "$site_status" \
               --arg apiHealthStatus "$api_status" \
               --arg siteUrl "$site_url" \
@@ -299,10 +299,10 @@ jobs:
 
           site_image="$(jq -r '.images[] | select(.appId == "site") | .reference' container-images.json)"
           api_image="$(jq -r '.images[] | select(.appId == "api") | .reference' container-images.json)"
-          bash infra/k3d/deploy-local-lab.sh --environment dev --namespace sdd-dev --site-image "$site_image" --api-image "$api_image" --commit-sha "$GITHUB_SHA" --site-host "${K3D_DEV_SITE_HOST:-site.dev.sdd.localhost}" --api-host "${K3D_DEV_API_HOST:-api.dev.sdd.localhost}"
-          wait_for_direct_health dev "$GITHUB_SHA" artifacts/k3d-observability/dev "${K3D_DEV_SITE_URL:-http://host.docker.internal:18081/health}" "${K3D_DEV_API_URL:-http://host.docker.internal:18082/health}"
+          bash infra/rancher/deploy-local-lab.sh --environment dev --namespace sdd-dev --site-image "$site_image" --api-image "$api_image" --commit-sha "$GITHUB_SHA" --site-host "${RANCHER_DEV_SITE_HOST:-site.dev.sdd.localhost}" --api-host "${RANCHER_DEV_API_HOST:-api.dev.sdd.localhost}"
+          wait_for_direct_health dev "$GITHUB_SHA" artifacts/rancher-observability/dev "${RANCHER_DEV_SITE_URL:-http://host.docker.internal:18081/health}" "${RANCHER_DEV_API_URL:-http://host.docker.internal:18082/health}"
 
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/k3d-observability/dev/monitoring-summary.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/monitoring-summary-dev.json"
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/rancher-observability/dev/monitoring-summary.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/monitoring-summary-dev.json"
         env:
           NEXUS_DOCKER_REGISTRY: ${{ secrets.NEXUS_DOCKER_REGISTRY }}
           NEXUS_DOCKER_USERNAME: ${{ secrets.NEXUS_DOCKER_USERNAME }}
@@ -346,15 +346,15 @@ jobs:
           NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
           NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
 
-      - name: Configure k3d kubeconfig
+      - name: Configure Rancher Desktop kubeconfig
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p "$HOME/.kube"
-          printf '%s' "$K3D_KUBECONFIG_B64" | base64 -d > "$HOME/.kube/config"
-          kubectl config current-context | grep -qx "k3d-sdd-template"
+          printf '%s' "$RANCHER_KUBECONFIG_B64" | base64 -d > "$HOME/.kube/config"
+          kubectl config current-context | grep -qx "rancher-desktop"
         env:
-          K3D_KUBECONFIG_B64: ${{ secrets.K3D_KUBECONFIG_B64 }}
+          RANCHER_KUBECONFIG_B64: ${{ secrets.RANCHER_KUBECONFIG_B64 }}
 
       - name: Deploy QA namespace
         shell: bash
@@ -394,7 +394,7 @@ jobs:
             jq -n \
               --arg commitSha "$commit_sha" \
               --arg environment "$env_upper" \
-              --arg provider "k3d" \
+              --arg provider "rancher-desktop" \
               --arg siteHealthStatus "$site_status" \
               --arg apiHealthStatus "$api_status" \
               --arg siteUrl "$site_url" \
@@ -417,19 +417,19 @@ jobs:
 
           site_image="$(jq -r '.images[] | select(.appId == "site") | .reference' container-images.json)"
           api_image="$(jq -r '.images[] | select(.appId == "api") | .reference' container-images.json)"
-          bash infra/k3d/deploy-local-lab.sh --environment qa --namespace sdd-qa --site-image "$site_image" --api-image "$api_image" --commit-sha "$GITHUB_SHA" --site-host "${K3D_QA_SITE_HOST:-site.qa.sdd.localhost}" --api-host "${K3D_QA_API_HOST:-api.qa.sdd.localhost}"
-          wait_for_direct_health qa "$GITHUB_SHA" artifacts/k3d-observability/qa "${K3D_QA_SITE_URL:-http://host.docker.internal:18083/health}" "${K3D_QA_API_URL:-http://host.docker.internal:18084/health}"
+          bash infra/rancher/deploy-local-lab.sh --environment qa --namespace sdd-qa --site-image "$site_image" --api-image "$api_image" --commit-sha "$GITHUB_SHA" --site-host "${RANCHER_QA_SITE_HOST:-site.qa.sdd.localhost}" --api-host "${RANCHER_QA_API_HOST:-api.qa.sdd.localhost}"
+          wait_for_direct_health qa "$GITHUB_SHA" artifacts/rancher-observability/qa "${RANCHER_QA_SITE_URL:-http://host.docker.internal:18083/health}" "${RANCHER_QA_API_URL:-http://host.docker.internal:18084/health}"
 
           jq -n \
             --arg environment "QA" \
             --arg commitSha "$GITHUB_SHA" \
-            --arg siteUrl "${K3D_QA_SITE_URL:-http://host.docker.internal:18083}" \
-            --arg apiUrl "${K3D_QA_API_URL:-http://host.docker.internal:18084}" \
+            --arg siteUrl "${RANCHER_QA_SITE_URL:-http://host.docker.internal:18083}" \
+            --arg apiUrl "${RANCHER_QA_API_URL:-http://host.docker.internal:18084}" \
             --arg workflowRunUrl "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             --arg publishedAtUtc "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             '{
               environment: $environment,
-              deploymentProvider: "k3d",
+              deploymentProvider: "rancher-desktop",
               commitSha: $commitSha,
               siteUrl: $siteUrl,
               apiUrl: $apiUrl,
@@ -438,14 +438,14 @@ jobs:
             }' > qa-targets.json
 
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file qa-targets.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/qa-targets.json"
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/k3d-observability/qa/monitoring-summary.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/monitoring-summary.json"
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/k3d-observability/qa/monitoring-summary.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/qa-observability.json"
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/rancher-observability/qa/monitoring-summary.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/monitoring-summary.json"
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/rancher-observability/qa/monitoring-summary.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${GITHUB_SHA}/qa-observability.json"
         env:
           NEXUS_DOCKER_REGISTRY: ${{ secrets.NEXUS_DOCKER_REGISTRY }}
           NEXUS_DOCKER_USERNAME: ${{ secrets.NEXUS_DOCKER_USERNAME }}
           NEXUS_DOCKER_PASSWORD: ${{ secrets.NEXUS_DOCKER_PASSWORD }}
-          K3D_QA_SITE_URL: ${{ secrets.K3D_QA_SITE_URL }}
-          K3D_QA_API_URL: ${{ secrets.K3D_QA_API_URL }}
+          RANCHER_QA_SITE_URL: ${{ secrets.RANCHER_QA_SITE_URL }}
+          RANCHER_QA_API_URL: ${{ secrets.RANCHER_QA_API_URL }}
           NEXUS_URL: ${{ secrets.NEXUS_URL }}
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
           NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
@@ -514,7 +514,7 @@ jobs:
             echo "ticketKey=$E2E_TICKET_KEY"
             echo "artifactCommitSha=$E2E_ARTIFACT_COMMIT_SHA"
             echo "testCommitSha=$GITHUB_SHA"
-            echo "deploymentProvider=k3d"
+            echo "deploymentProvider=rancher-desktop"
             echo "runId=$run_id"
             echo "siteUrl=$E2E_SITE_URL"
             echo "apiUrl=$E2E_API_URL"
@@ -530,8 +530,8 @@ jobs:
 
           exit "$test_exit"
         env:
-          E2E_SITE_URL: ${{ secrets.K3D_QA_SITE_URL }}
-          E2E_API_URL: ${{ secrets.K3D_QA_API_URL }}
+          E2E_SITE_URL: ${{ secrets.RANCHER_QA_SITE_URL }}
+          E2E_API_URL: ${{ secrets.RANCHER_QA_API_URL }}
           NEXUS_URL: ${{ secrets.NEXUS_URL }}
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
           NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
@@ -566,7 +566,7 @@ jobs:
           test -n "$artifact_commit_sha"
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o container-images.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${artifact_commit_sha}/container-images.json"
           curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o release.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${artifact_commit_sha}/release.json"
-          jq -e --arg commit "$artifact_commit_sha" '.commitSha == $commit and (.deploymentProvider == "k3d" or (.containerImages | type == "array"))' release.json
+          jq -e --arg commit "$artifact_commit_sha" '.commitSha == $commit and (.deploymentProvider == "rancher-desktop" or (.containerImages | type == "array"))' release.json
           jq -e '.images[] | .reference | test("@sha256:")' container-images.json
           if [ -n "$SOURCE_RC_VERSION" ]; then
             curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" -o artifact-pointer.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/rc/${SOURCE_RC_VERSION}/artifact-pointer.json"
@@ -580,15 +580,15 @@ jobs:
           NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
           NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
 
-      - name: Configure k3d kubeconfig
+      - name: Configure Rancher Desktop kubeconfig
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p "$HOME/.kube"
-          printf '%s' "$K3D_KUBECONFIG_B64" | base64 -d > "$HOME/.kube/config"
-          kubectl config current-context | grep -qx "k3d-sdd-template"
+          printf '%s' "$RANCHER_KUBECONFIG_B64" | base64 -d > "$HOME/.kube/config"
+          kubectl config current-context | grep -qx "rancher-desktop"
         env:
-          K3D_KUBECONFIG_B64: ${{ secrets.K3D_KUBECONFIG_B64 }}
+          RANCHER_KUBECONFIG_B64: ${{ secrets.RANCHER_KUBECONFIG_B64 }}
 
       - name: Deploy PROD namespace
         shell: bash
@@ -628,7 +628,7 @@ jobs:
             jq -n \
               --arg commitSha "$commit_sha" \
               --arg environment "$env_upper" \
-              --arg provider "k3d" \
+              --arg provider "rancher-desktop" \
               --arg siteHealthStatus "$site_status" \
               --arg apiHealthStatus "$api_status" \
               --arg siteUrl "$site_url" \
@@ -651,10 +651,10 @@ jobs:
 
           site_image="$(jq -r '.images[] | select(.appId == "site") | .reference' container-images.json)"
           api_image="$(jq -r '.images[] | select(.appId == "api") | .reference' container-images.json)"
-          bash infra/k3d/deploy-local-lab.sh --environment prod --namespace sdd-prod --site-image "$site_image" --api-image "$api_image" --commit-sha "$ARTIFACT_COMMIT_SHA" --site-host "${K3D_PROD_SITE_HOST:-site.prod.sdd.localhost}" --api-host "${K3D_PROD_API_HOST:-api.prod.sdd.localhost}"
-          wait_for_direct_health prod "$ARTIFACT_COMMIT_SHA" artifacts/k3d-observability/prod "${K3D_PROD_SITE_URL:-http://host.docker.internal:18085/health}" "${K3D_PROD_API_URL:-http://host.docker.internal:18086/health}"
+          bash infra/rancher/deploy-local-lab.sh --environment prod --namespace sdd-prod --site-image "$site_image" --api-image "$api_image" --commit-sha "$ARTIFACT_COMMIT_SHA" --site-host "${RANCHER_PROD_SITE_HOST:-site.prod.sdd.localhost}" --api-host "${RANCHER_PROD_API_HOST:-api.prod.sdd.localhost}"
+          wait_for_direct_health prod "$ARTIFACT_COMMIT_SHA" artifacts/rancher-observability/prod "${RANCHER_PROD_SITE_URL:-http://host.docker.internal:18085/health}" "${RANCHER_PROD_API_URL:-http://host.docker.internal:18086/health}"
 
-          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/k3d-observability/prod/monitoring-summary.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${ARTIFACT_COMMIT_SHA}/monitoring-summary-prod.json"
+          curl --fail --user "$NEXUS_USERNAME:$NEXUS_PASSWORD" --upload-file artifacts/rancher-observability/prod/monitoring-summary.json "$NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${ARTIFACT_COMMIT_SHA}/monitoring-summary-prod.json"
         env:
           NEXUS_DOCKER_REGISTRY: ${{ secrets.NEXUS_DOCKER_REGISTRY }}
           NEXUS_DOCKER_USERNAME: ${{ secrets.NEXUS_DOCKER_USERNAME }}
@@ -662,9 +662,11 @@ jobs:
           ARTIFACT_COMMIT_SHA: ${{ github.event.inputs.artifact_commit_sha }}
           RELEASE_VERSION: ${{ github.event.inputs.release_version }}
           SOURCE_RC_VERSION: ${{ github.event.inputs.source_rc_version }}
-          K3D_PROD_SITE_URL: ${{ secrets.K3D_PROD_SITE_URL }}
-          K3D_PROD_API_URL: ${{ secrets.K3D_PROD_API_URL }}
+          RANCHER_PROD_SITE_URL: ${{ secrets.RANCHER_PROD_SITE_URL }}
+          RANCHER_PROD_API_URL: ${{ secrets.RANCHER_PROD_API_URL }}
           NEXUS_URL: ${{ secrets.NEXUS_URL }}
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
           NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
           NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
+
+

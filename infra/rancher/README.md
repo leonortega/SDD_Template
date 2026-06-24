@@ -1,27 +1,27 @@
-# k3d Local Deployment
+# Rancher Desktop Local Deployment
 
-This folder contains the local Kubernetes deployment surface for the k3d laboratory lane.
+This folder contains the local Kubernetes deployment surface for the Rancher Desktop laboratory lane.
 
 The local lane keeps Azure support separate and uses:
 
 ```text
-Gitea Actions -> Nexus Docker hosted -> k3d Kubernetes
+Gitea Actions -> Nexus Docker hosted -> Rancher Desktop Kubernetes
 Nexus raw hosted -> release manifests, pointers, QA evidence
 ```
 
 ## Required Local Setup
 
-1. Run `config infra` to create or start the selected k3d lane, or create it manually with `k3d cluster create sdd-template --api-port 127.0.0.1:6550`. Then confirm:
+1. Enable Kubernetes in Rancher Desktop, then run `config infra` to select and validate the Rancher Desktop lane. Confirm:
 
    ```powershell
    kubectl config current-context
    kubectl get nodes
    ```
 
-   The current context must be `k3d-sdd-template`.
-   At least one node must be `Ready`. The configure `Audit` reports missing or unhealthy k3d cluster state but does not create the cluster; explicit `config infra` runs `EnsureK3dCluster` before the read-only audit.
+   The current context must be `rancher-desktop`.
+   At least one node must be `Ready`. The configure `Audit` reports missing or unhealthy Rancher Desktop Kubernetes state but does not create the cluster; explicit `config infra` runs `EnsureRancherDesktopCluster` before the read-only audit.
 
-   `config infra` also runs `EnsureK3dHeadlamp` to install the Headlamp Kubernetes UI into the `headlamp` namespace and expose it at:
+   `config infra` also runs `EnsureRancherDesktopHeadlamp` to install the Headlamp Kubernetes UI into the `headlamp` namespace and expose it at:
 
    ```text
    http://127.0.0.1:4466
@@ -33,7 +33,7 @@ Nexus raw hosted -> release manifests, pointers, QA evidence
    kubectl create token headlamp --namespace headlamp | Set-Clipboard
    ```
 
-   `config infra` also runs `EnsureK3dPortForwards` for deployed services. This starts stable localhost browser mappings when Windows cannot resolve the `*.sdd.localhost` ingress hosts:
+   `config infra` also runs `EnsureRancherDesktopPortForwards` for deployed services. This starts stable localhost browser mappings when Windows cannot resolve the `*.sdd.localhost` ingress hosts:
 
    ```text
    DEV site/API  -> http://127.0.0.1:18081 / http://127.0.0.1:18082
@@ -49,20 +49,20 @@ Nexus raw hosted -> release manifests, pointers, QA evidence
    NEXUS_DOCKER_REGISTRY
    NEXUS_DOCKER_USERNAME
    NEXUS_DOCKER_PASSWORD
-   K3D_KUBECONFIG_B64
-   K3D_DEV_SITE_URL
-   K3D_DEV_API_URL
-   K3D_QA_SITE_URL
-   K3D_QA_API_URL
-   K3D_PROD_SITE_URL
-   K3D_PROD_API_URL
+   RANCHER_KUBECONFIG_B64
+   RANCHER_DEV_SITE_URL
+   RANCHER_DEV_API_URL
+   RANCHER_QA_SITE_URL
+   RANCHER_QA_API_URL
+   RANCHER_PROD_SITE_URL
+   RANCHER_PROD_API_URL
    SEQ_URL
-   K3D_APP_SEQ_URL
+   RANCHER_APP_SEQ_URL
    ```
 
    Keep the existing raw Nexus secrets unchanged. When values are consumed by Gitea Action containers or Kubernetes app pods, use the `host.docker.internal` port-forward URLs, for example `http://host.docker.internal:18083` for QA site, `http://host.docker.internal:18084` for QA API, and `http://host.docker.internal:5341` for Seq.
 
-4. Configure the k3d cluster so k3s/containerd can pull from the Nexus Docker registry. For HTTP local-lab registries, use a k3d registry config with an allowed insecure registry or use a trusted local TLS certificate.
+4. Configure the Rancher Desktop cluster so k3s/containerd can pull from the Nexus Docker registry. For HTTP local-lab registries, use a Rancher Desktop registry config with an allowed insecure registry or use a trusted local TLS certificate.
 
 ## Deployment Model
 
@@ -71,12 +71,12 @@ Nexus raw hosted -> release manifests, pointers, QA evidence
 - Deployment identity: image digests from `app/{commitSha}/container-images.json`.
 - API data: a namespace-local PVC mounted at `/home/data`.
 - Site-to-API calls: site pods use the namespace-local API service URL `http://api:8080`.
-- Observability metadata: pods carry app, namespace, environment, commit SHA, and image digest labels/annotations plus matching non-secret environment variables. Pods also send live Serilog events to Seq through `K3D_APP_SEQ_URL`, default `http://host.docker.internal:5341`.
+- Observability metadata: pods carry app, namespace, environment, commit SHA, and image digest labels/annotations plus matching non-secret environment variables. Pods also send live Serilog events to Seq through `RANCHER_APP_SEQ_URL`, default `http://host.docker.internal:5341`.
 
 Run the script directly only after setting digest-pinned image references:
 
 ```powershell
-bash infra/k3d/deploy-local-lab.sh --environment dev --namespace sdd-dev --site-image "<site@sha256...>" --api-image "<api@sha256...>" --commit-sha "<commitSha>"
+bash infra/rancher/deploy-local-lab.sh --environment dev --namespace sdd-dev --site-image "<site@sha256...>" --api-image "<api@sha256...>" --commit-sha "<commitSha>"
 ```
 
 ## Observability Evidence
@@ -91,3 +91,4 @@ Raw Nexus stores the local monitoring evidence next to the artifact commit:
 app/{commitSha}/monitoring-summary.json
 app/{commitSha}/qa-observability.json
 ```
+

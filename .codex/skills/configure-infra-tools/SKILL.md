@@ -20,7 +20,7 @@ Also apply `docs/context-management.md` for durable configuration findings, tick
 When this skill triggers:
 
 1. Read `.codex/skills/configure-dev-environment/SKILL.md`.
-2. Route immediately to `$configure-dev-environment` and follow its `InitProjectProfile`, `EnsureK3dCluster`, `EnsureK3dHeadlamp`, and `EnsureK3dPortForwards` when k3d is selected, audit, safety, domain routing, and output rules.
+2. Route immediately to `$configure-dev-environment` and follow its `InitProjectProfile`, `EnsureRancherDesktopCluster`, `EnsureRancherDesktopHeadlamp`, and `EnsureRancherDesktopPortForwards` when Rancher Desktop is selected, audit, safety, domain routing, and output rules.
 3. During infra status checks for the core stack, use the compose env file explicitly:
 
 ```powershell
@@ -39,7 +39,7 @@ trivy --download-db-only
 .\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode Audit
 ```
 
-Keep using the same safety rules as `$configure-dev-environment`: no secrets in tracked files, no Docker secret extraction, and no automatic infra startup or shutdown. Explicit `config infra` may auto-enable k3d Kubernetes through `EnsureK3dCluster`, install Headlamp through `EnsureK3dHeadlamp`, and start stable local browser mappings through `EnsureK3dPortForwards`; plain `Audit` remains read-only.
+Keep using the same safety rules as `$configure-dev-environment`: no secrets in tracked files, no Docker secret extraction, and no automatic infra startup or shutdown. Explicit `config infra` may auto-enable Rancher Desktop Kubernetes through `EnsureRancherDesktopCluster`, install Headlamp through `EnsureRancherDesktopHeadlamp`, and start stable local browser mappings through `EnsureRancherDesktopPortForwards`; plain `Audit` remains read-only.
 
 ## Output
 
@@ -50,3 +50,4 @@ Report that routing moved to `$configure-dev-environment`, the audit result, sel
 - Stop when the active configure entrypoint cannot be read.
 - Stop when validation finds missing local config or secrets that require manual user action.
 - Stop before mutating ticket, Git, OpenProject, Gitea, Nexus, Azure, or monitoring state from this compatibility alias.
+

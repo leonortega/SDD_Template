@@ -23,7 +23,7 @@ Safety:
 
 - Do not print or store Nexus credentials in tracked files.
 - Do not read Nexus initial admin password from Docker containers, mounted volumes, databases, or logs.
-- Do not change the default Azure architecture to container-image deployment unless explicitly requested. The explicitly requested k3d local lane uses container image digests in Nexus Docker and raw Nexus metadata.
+- Do not change the default Azure architecture to container-image deployment unless explicitly requested. The explicitly requested Rancher Desktop local lane uses container image digests in Nexus Docker and raw Nexus metadata.
 
 ## Workflow
 
@@ -33,7 +33,7 @@ Safety:
 4. Guide the user to store Nexus credentials as Gitea Actions secrets for CI and in ignored `.codex/client-tools.local.json` for local repository checks.
 5. Keep the release model: build once, upload provider artifact metadata and a baseline `release.json` to Nexus, promote the same artifact set through DEV and QA after ticket-gated merge to `dev`, and promote PROD only by explicit request or ticket-gated exact-commit `main` push when the selected provider supports it.
 6. Ensure Azure workflow setup includes `/health` checks for DEV/QA/PROD, `.codex/project-profile.json` ticket gating, `dev` push deployment for DEV/QA, QA-approved pointer resolution from `app/qa-approved/latest.json` for `main` pushes, exact QA-approved commit deployment for PROD only, and PROD dispatch inputs `artifact_commit_sha`, `release_version`, and `source_rc_version`.
-7. Ensure k3d workflow setup builds `sddtemplate/site` and `sddtemplate/api` images once, publishes digest-pinned `container-images.json`, deploys the same digests through `sdd-dev` and `sdd-qa`, uses `qa-local/{ticketKey}` for local E2E, and deploys `sdd-prod` only from an existing QA-approved digest set with dispatch inputs `artifact_commit_sha`, `release_version`, and `source_rc_version`.
+7. Ensure Rancher Desktop workflow setup builds `sddtemplate/site` and `sddtemplate/api` images once, publishes digest-pinned `container-images.json`, deploys the same digests through `sdd-dev` and `sdd-qa`, uses `qa-local/{ticketKey}` for local E2E, and deploys `sdd-prod` only from an existing QA-approved digest set with dispatch inputs `artifact_commit_sha`, `release_version`, and `source_rc_version`.
 8. Ensure ticket comments record version lineage so humans can trace `artifact commit -> source RC -> final release` without inspecting Git/Nexus manually.
 9. Ensure Nexus release manifests at `app/{commitSha}/release.json` carry machine-readable release, QA, PROD, monitoring, and rollback metadata.
 10. Ensure human-readable Nexus aliases are metadata-only pointers: `app/qa-approved/latest.json`, `app/rc/{sourceRcVersion}/artifact-pointer.json`, `app/rc/{sourceRcVersion}/release.json`, `app/releases/{finalReleaseVersion}/artifact-pointer.json`, and `app/releases/{finalReleaseVersion}/release.json`.
@@ -47,3 +47,4 @@ Report configured files, missing values, validation commands, artifact/release-m
 - Stop when Nexus credentials, repository names, or Gitea Actions secrets are missing and explain manual setup.
 - Stop when validation cannot prove the build-once promote-same-artifact rule.
 - Stop before changing deployment architecture or PROD behavior without explicit user approval.
+
