@@ -17,37 +17,37 @@ Before rollback, follow `.codex/skills/_shared/skill-startup.md`, which reads `.
 
 Read `.codex/client-tools.local.json` first. Required values:
 
-- `openProject.baseUrl`, `openProject.apiToken`, `openProject.projectIdentifier`, `openProject.projectIdentifier`
-- `gitea.baseUrl`, `gitea.apiToken`, `gitea.owner`, `gitea.repo`
+- `selected ticket adapter runtime values`
+- `selected repository/review adapter runtime values`
 - `nexus.baseUrl`, `nexus.username`, `nexus.password`, `nexus.repository`
 
 ## Workflow
 
-Run preflight, rollback deployment, verification, OpenProject result, and follow-up handoff steps in order. Do not mutate PROD until artifact and release-manifest validation pass.
+Run preflight, rollback deployment, verification, ticket-provider result, and follow-up handoff steps in order. Do not mutate PROD until artifact and release-manifest validation pass.
 
 ## Preflight
 
-1. Resolve the current PROD release from the latest OpenProject PROD deployment comment or release manifest.
+1. Resolve the current PROD release from the latest ticket-provider PROD deployment comment or release manifest.
 2. Run `ValidateTicketLock` when `.codex/delivery-context.local.json` is present and report the active ticket lock. If the rollback target differs from the lock, require explicit user confirmation before mutation.
-3. If the user did not supply a rollback target, list known-good candidates from OpenProject PROD comments, Git tags, and Nexus `release.json` metadata. Order newest-first, mark the current PROD release, and ask the user to choose a target before mutating anything.
-4. Resolve the rollback target from user input, OpenProject PROD comments, Git tags, or Nexus `release.json` metadata.
-5. Verify the selected provider target artifact exists. Azure requires:
+3. If the user did not supply a rollback target, list known-good candidates from ticket-provider PROD comments, Git tags, and Nexus `release.json` metadata. Order newest-first, mark the current PROD release, and ask the user to choose a target before mutating anything.
+4. Resolve the rollback target from user input, ticket-provider PROD comments, Git tags, or Nexus `release.json` metadata.
+5. Verify the selected provider target artifact exists. selected deployment provider requires:
    - `app/{commitSha}/deployable-apps.json`
    - one `app/{commitSha}/{artifactName}` per topology app
    - one `app/{commitSha}/{artifactName}.sha256` per topology app
    - `app/{commitSha}/commit.sha`
    - `app/{commitSha}/release.json`
-   k3d requires:
+   selected deployment provider requires:
    - `app/{commitSha}/container-images.json`
    - `app/{commitSha}/commit.sha`
    - `app/{commitSha}/release.json`
-6. Verify Azure checksum and `commit.sha`, or k3d image references pinned by `@sha256:` and `commit.sha`.
+6. Verify the immutable checksum, digest, and `commit.sha` metadata required by the selected deployment adapter.
 7. Verify `release.json` marks the target as previously QA-approved and either previously PROD-deployed or explicitly user-approved as the rollback target.
 8. Stop if the target commit equals the current PROD commit unless the user explicitly asks to redeploy the same artifact.
 
 ## Rollback Deployment
 
-Trigger the selected provider workflow without rebuilding. Azure uses `.gitea/workflows/package-deploy.yml` with:
+Trigger the selected provider workflow without rebuilding. The selected deployment adapter declares the rollback workflow inputs:
 
 ```text
 environment=prod
@@ -56,18 +56,18 @@ release_version={rollbackVersionOrTag}
 source_rc_version={sourceRcVersion}
 ```
 
-k3d uses `.gitea/workflows/k3d-local-deploy.yml` with the same dispatch inputs. The workflow must download `app/{artifact_commit_sha}/container-images.json`, verify every image reference is digest-pinned, deploy the existing digest set to `sdd-prod`, publish `monitoring-summary-prod.json`, and run page plus all app `/health` checks. Do not rebuild.
+The selected deployment adapter may use the same dispatch inputs. The workflow must download `app/{artifact_commit_sha}/container-images.json`, verify every image reference is digest-pinned, deploy the existing digest set to `sdd-prod`, publish `monitoring-summary-prod.json`, and run page plus all app `/health` checks. Do not rebuild.
 
 ## Verification
 
 1. Verify PROD page returns HTTP 200 and expected title/content.
 2. Verify `{prodWebUrl}/health` returns HTTP 200 and JSON `status=ok`.
-3. If Seq log validation is unavailable, rollback may still pass but the OpenProject comment must record monitoring unavailable.
+3. If Seq log validation is unavailable, rollback may still pass but the ticket comment must record monitoring unavailable.
 4. If page or `/health` fails, comment rollback failure and stop.
 
-## OpenProject Result
+## Ticket Provider Result
 
-Add a OpenProject comment with marker:
+Add a ticket comment with marker:
 
 ```text
 IA generated PROD rollback: {rollbackVersionOrCommit}
@@ -77,7 +77,7 @@ Include current PROD version/commit, rollback target version/commit, Nexus artif
 
 Use `UpdateReleaseManifest` to update `app/{commitSha}/release.json` with rollback deployment timestamp, workflow run URL, PROD URL, and rollback source/current version relationship when rollback passes.
 
-Create or update a OpenProject incident ticket with marker:
+Create or update a ticket provider incident ticket with marker:
 
 ```text
 IA generated PROD rollback incident: {rollbackVersionOrCommit}
@@ -89,7 +89,7 @@ After rollback, explicitly document Git state. `main` is not automatically rever
 
 ## Output
 
-Report the rollback target, current and restored PROD versions, artifact commit, validation results, OpenProject rollback comment, incident/follow-up handoff, and any remaining Git-line divergence.
+Report the rollback target, current and restored PROD versions, artifact commit, validation results, ticket provider rollback comment, incident/follow-up handoff, and any remaining Git-line divergence.
 
 ## Failure Rules
 

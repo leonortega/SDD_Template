@@ -31,7 +31,7 @@ When adding an external skill, mark it as `External`, keep the upstream skill na
 | `dev-flow-pr-review-feedback-loop` | Dev flow | Repo-owned | Repository local | Renamed from `pr-review-feedback-loop` |
 | `dev-flow-propose-change` | Dev flow | Repo-owned | Repository local | Renamed from `openspec-propose` |
 | `dev-flow-retrospective-audit` | Dev flow | Repo-owned | Repository local | Renamed from `delivery-retrospective-audit` |
-| `dev-flow-start-ticket` | Dev flow | Repo-owned | Repository local | OpenProject ticket start workflow |
+| `dev-flow-start-ticket` | Dev flow | Repo-owned | Repository local | Configured ticket-provider start workflow |
 | `dev-flow-verify-change` | Dev flow | Repo-owned | Repository local | Renamed from `openspec-verify-change` |
 | `dev-ops-deploy-prod` | DevOps | Repo-owned | Repository local | Renamed from `deploy-to-prod` |
 | `dev-ops-deploy-qa` | DevOps | Repo-owned | Repository local | Renamed from `deploy-to-qa` |

@@ -34,6 +34,49 @@ $supportSkillNames = @(
   "ponytail-review"
 )
 
+$providerNeutralSkillNames = @(
+  "dev-flow-continue-implementation",
+  "dev-flow-file-qa-bug",
+  "dev-flow-implement-change",
+  "dev-flow-implement-ticket",
+  "dev-flow-parallel-ticket-coordinator",
+  "dev-flow-pipeline-status",
+  "dev-flow-pr-review-agent",
+  "dev-flow-pr-review-feedback-loop",
+  "dev-flow-retrospective-audit",
+  "dev-flow-start-ticket",
+  "dev-ops-deploy-prod",
+  "dev-ops-deploy-qa",
+  "dev-ops-hotfix-prod",
+  "dev-ops-post-merge-deploy",
+  "dev-ops-rollback-prod",
+  "project-guidance-discover",
+  "project-guidance-mapper",
+  "quality-frontend-testing-debugging",
+  "quality-test-e2e"
+)
+
+$providerSpecificTerms = @(
+  "Plane",
+  "plane",
+  "OpenProject",
+  "openProject",
+  "OPENPROJECT",
+  "work_packages",
+  "Gitea",
+  "gitea",
+  "GITEA",
+  "Azure",
+  "azure",
+  "AZURE",
+  "k3d",
+  "K3D",
+  "Playwright",
+  "playwright",
+  ".NET",
+  "dotnet"
+)
+
 function Get-RelativePathForAudit([string]$BasePath, [string]$FullPath) {
   $base = [System.IO.Path]::GetFullPath($BasePath).TrimEnd('\', '/')
   $full = [System.IO.Path]::GetFullPath($FullPath)
@@ -48,6 +91,7 @@ if (-not (Test-Path $skillRoot)) {
 }
 
 $results = @()
+$providerSpecificFindings = @()
 
 $profileFindings = @()
 $profilePath = Join-Path $Root ".codex/project-profile.json"
@@ -137,6 +181,14 @@ Get-ChildItem -Path $skillRoot -Recurse -Filter "SKILL.md" |
       }
     }
 
+    if ($providerNeutralSkillNames -contains $skillName) {
+      foreach ($providerTerm in $providerSpecificTerms) {
+        if ($content.Contains($providerTerm)) {
+          $providerSpecificFindings += "$relativePath contains provider-specific term '$providerTerm'. Generic delivery skills must load provider details through .codex/project-profile.json and selected adapters."
+        }
+      }
+    }
+
     $results += [ordered]@{
       path = $relativePath
       passed = ($missingSections.Count -eq 0 -and $missingTerms.Count -eq 0)
@@ -151,6 +203,8 @@ $summary = [ordered]@{
   failed = @($results | Where-Object { -not $_.passed }).Count
   profilePassed = ($profileFindings.Count -eq 0)
   profileFindings = $profileFindings
+  providerSpecificPassed = ($providerSpecificFindings.Count -eq 0)
+  providerSpecificFindings = $providerSpecificFindings
   results = $results
 }
 
@@ -172,6 +226,16 @@ else {
   }
 }
 
+if ($summary.providerSpecificPassed) {
+  "Provider-neutral generic skills: PASS"
+}
+else {
+  "Provider-neutral generic skills: FAIL"
+  foreach ($finding in $providerSpecificFindings) {
+    "  $finding"
+  }
+}
+
 foreach ($result in $results | Where-Object { -not $_.passed }) {
   "FAIL $($result.path)"
   if ($result.missingSections.Count -gt 0) {
@@ -182,6 +246,6 @@ foreach ($result in $results | Where-Object { -not $_.passed }) {
   }
 }
 
-if ($FailOnFindings -and ($summary.failed -gt 0 -or $profileFindings.Count -gt 0)) {
+if ($FailOnFindings -and ($summary.failed -gt 0 -or $profileFindings.Count -gt 0 -or $providerSpecificFindings.Count -gt 0)) {
   exit 1
 }

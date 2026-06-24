@@ -30,40 +30,40 @@ Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.e
 
 Required/defaulted values:
 
-- `openProject.baseUrl`, `openProject.apiToken`, `openProject.projectIdentifier`, `openProject.projectIdentifier`
-- `gitea.baseUrl`, `gitea.apiToken`, `gitea.owner`, `gitea.repo`
+- `selected ticket adapter runtime values`
+- `selected repository/review adapter runtime values`
 - `pr.labels.reviewed`, `pr.labels.needsTests`, `pr.labels.needsChanges`
 - local quality settings used by `dev-flow-implement-ticket`
 
 ## Workflow
 
-1. Resolve the OpenProject work package, active branch, OpenSpec change, PR number, current head SHA, latest Gitea Actions status, and current PR labels.
+1. Resolve the ticket, active branch, OpenSpec change, PR number, current head SHA, latest repository workflow status, and current PR labels.
 2. Invoke or reuse `dev-flow-pr-review-agent` for the current head SHA. The AI review comment must use `<!-- codex-review-agent:{headSha} -->` and stable finding ids for every finding.
 3. Read current PR feedback sources:
    - AI review findings from the latest current-head review-agent comment, including adversarial review findings, `ponytail-review` simplification findings, and verdict when present,
    - human top-level PR comments from the issue comments endpoint,
-   - human inline code review comments and review-thread replies from Gitea pull review/comment endpoints,
+   - human inline code review comments and review-thread replies from repository/review provider pull review/comment endpoints,
    - existing OpenSpec `## PR Review Feedback` tasks,
-   - OpenProject `IA generated PR feedback detected: {headSha}:{feedbackBatchId}` and `IA generated PR feedback fixes: {headSha}:{feedbackBatchId}` markers.
+   - ticket provider `IA generated PR feedback detected: {headSha}:{feedbackBatchId}` and `IA generated PR feedback fixes: {headSha}:{feedbackBatchId}` markers.
 4. Classify each feedback item:
    - `actionable`: clear AI finding or human-requested code, test, documentation, or workflow change scoped to the ticket.
    - `non-actionable`: praise, FYI, already-answered questions, generated output, or source ids already covered by a completed feedback batch.
    - `stale`: outdated diff-line feedback or older-head feedback already satisfied by current code.
    - `ambiguous/conflicting`: unclear request, ticket/OpenSpec/security conflict, or conflict with another human comment.
-5. For every actionable AI finding and actionable human comment, including AI `BLOCKER`, `WARNING`, and `SUGGESTION` severities and `ponytail-review` simplification findings, compute `feedbackBatchId` as a deterministic short id from sorted source ids such as AI finding ids, Gitea top-level comment ids, and inline review comment ids.
+5. For every actionable AI finding and actionable human comment, including AI `BLOCKER`, `WARNING`, and `SUGGESTION` severities and `ponytail-review` simplification findings, compute `feedbackBatchId` as a deterministic short id from sorted source ids such as AI finding ids, repository/review provider top-level comment ids, and inline review comment ids.
 6. Add or update a `## PR Review Feedback` section in the active OpenSpec `tasks.md`. Add one task per feedback item, recording source type, source id or link, head SHA, severity, review mode, `ponytail-review` source when applicable, adversarial verdict when present, and requested change.
-7. Before applying fixes, add a OpenProject comment with marker:
+7. Before applying fixes, add a ticket comment with marker:
 
    ```text
    IA generated PR feedback detected: {headSha}:{feedbackBatchId}
    ```
 
    Include PR link, source ids or links, classifications, and OpenSpec feedback task ids.
-   Use the OpenProject work package activities API with a `comment.raw` payload. Read activities back and verify the activity comment starts with the marker.
+   Use the ticket activities API with a `comment.raw` payload. Read activities back and verify the activity comment starts with the marker.
 8. Apply the requested code, test, documentation, or workflow change in the existing PR branch. Update OpenSpec specs or design artifacts when behavior changes.
-9. Run the relevant validation checks for changed files. Use the same quality-gate discovery and failure classification as `dev-flow-implement-ticket`. If feedback fixes touch `src/**.csproj`, `src/**/Program.cs`, `src/**/appsettings*.json`, `infra/deployment/**`, `infra/azure/**`, or `.gitea/workflows/package-deploy.yml`, run Deployment Topology Review through `configure-cloud-environments` and report `Deployment topology: updated`, `Deployment topology: verified`, or `Deployment topology: no deployable app changes` in the OpenProject fix comment.
+9. Run the relevant validation checks for changed files. Use the same quality-gate discovery and failure classification as `dev-flow-implement-ticket`. If feedback fixes touch deployable project files, deployment manifests, provider-specific deployment infrastructure, or configured package/deploy workflows, run Deployment Topology Review through the selected deployment configure skill and report `Deployment topology: updated`, `Deployment topology: verified`, or `Deployment topology: no deployable app changes` in the ticket provider fix comment.
 10. Mark OpenSpec feedback tasks complete only after code and validation are complete.
-11. Commit with the ticket key: commit the feedback batch as its own ticket-prefixed commit when tracked changes exist. Skip empty commits. Do not automatically stash normal ticket progress; use stash only for unrelated local or user changes that block the fix. Push the fix commit, then add a OpenProject comment with marker:
+11. Commit with the ticket key: commit the feedback batch as its own ticket-prefixed commit when tracked changes exist. Skip empty commits. Do not automatically stash normal ticket progress; use stash only for unrelated local or user changes that block the fix. Push the fix commit, then add a ticket comment with marker:
 
    ```text
    IA generated PR feedback fixes: {headSha}:{feedbackBatchId}
@@ -80,22 +80,22 @@ Required/defaulted values:
    - `**Skipped comments:**` only when non-actionable, stale, duplicate, generated, ambiguous, or conflicting comments were skipped
 
    Include stash notes when relevant without exposing secrets or noisy tool output.
-   Use the OpenProject work package activities API with a `comment.raw` payload. If a generated activity is missing or wrong, add a corrected marker activity and then read activities back before handoff.
+   Use the ticket activities API with a `comment.raw` payload. If a generated activity is missing or wrong, add a corrected marker activity and then read activities back before handoff.
 12. Rerun the AI review loop on the new head before returning to human review or implementation handoff.
 
-Keep OpenProject in `In Review` while late human feedback fixes are applied. Do not move the ticket backward unless another workflow rule explicitly requires it.
+Keep ticket provider in `In Review` while late human feedback fixes are applied. Do not move the ticket backward unless another workflow rule explicitly requires it.
 
 ## Output
 
-Report the ticket, branch, PR URL, original and new head SHA, feedback batch id, OpenSpec feedback tasks created or completed, commits pushed, validation run, PR labels, OpenProject comments added, and handoff status.
+Report the ticket, branch, PR URL, original and new head SHA, feedback batch id, OpenSpec feedback tasks created or completed, commits pushed, validation run, PR labels, ticket comments added, and handoff status.
 
 ## Failure Rules
 
-- Missing branch, PR, OpenProject work package, or OpenSpec change: stop and route back to `dev-flow-implement-ticket`.
-- Ticket context lock mismatch: stop before Git, OpenProject, Gitea, or OpenSpec mutation.
-- Missing or placeholder API token: stop before OpenProject or Gitea mutation.
-- Ambiguous or conflicting human feedback: stop before changing code, request clarification in the PR when possible, record the blocker in OpenProject, and leave OpenProject in its current state.
-- Feedback source ids already covered by a completed feedback batch: do not duplicate tasks or OpenProject comments.
+- Missing branch, PR, ticket, or OpenSpec change: stop and route back to `dev-flow-implement-ticket`.
+- Ticket context lock mismatch: stop before Git, ticket provider, repository/review provider, or OpenSpec mutation.
+- Missing or placeholder API token: stop before ticket provider or repository/review provider mutation.
+- Ambiguous or conflicting human feedback: stop before changing code, request clarification in the PR when possible, record the blocker in ticket provider, and leave ticket provider in its current state.
+- Feedback source ids already covered by a completed feedback batch: do not duplicate tasks or ticket comments.
 - Adversarial verdict `FAIL`: keep feedback tasks open until fixes and validation are complete and a new current-head review no longer fails.
 - OpenSpec `## PR Review Feedback` tasks remain incomplete: do not hand off for merge or QA promotion.
 - `needs-tests` or `needs-changes` remains valid after fixes: do not remove the label or hand off.

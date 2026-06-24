@@ -31,34 +31,34 @@ Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.e
 
 Required or defaulted values:
 
-- `openProject.baseUrl`, `openProject.apiToken`, `openProject.projectIdentifier`, `openProject.projectIdentifier`
-- `openProject.qaStatus`: target state after QA validation. Default: `QA`.
-- `gitea.baseUrl`, `gitea.apiToken`, `gitea.owner`, `gitea.repo`
+- `selected ticket adapter runtime values`
+- `configured QA state`: target state after QA validation. Default: `QA`.
+- `selected repository/review adapter runtime values`
 - `nexus.baseUrl`, `nexus.username`, `nexus.password`, `nexus.repository`
 
-Optional environment variables override local JSON when present: `OPENPROJECT_QA_STATUS`, `GITEA_BASE_URL`, `GITEA_API_TOKEN`, `GITEA_OWNER`, `GITEA_REPO`.
+Provider-supported environment variables may override local JSON when present. Repository/review overrides include `selected repository/review adapter overrides`.
 
 ## Workflow
 
-Run preflight, DEV/QA promotion, OpenProject updates, and handoff reporting in order. Do not move the ticket to QA until deployment validation and release manifest validation pass.
+Run preflight, DEV/QA promotion, ticket provider updates, and handoff reporting in order. Do not move the ticket to QA until deployment validation and release manifest validation pass.
 
-In idempotent verification mode, do not redeploy or duplicate OpenProject comments. Re-verify the resolved ticket, PR, artifact commit, QA deployment marker, QA state, release manifest, and available DEV/QA validation evidence, then append the `dev-ops-deploy-qa` telemetry row and hand off to E2E QA.
+In idempotent verification mode, do not redeploy or duplicate ticket comments. Re-verify the resolved ticket, PR, artifact commit, QA deployment marker, QA state, release manifest, and available DEV/QA validation evidence, then append the `dev-ops-deploy-qa` telemetry row and hand off to E2E QA.
 
 ## Preflight
 
 1. Verify the PR is merged and its target branch is `dev`. If the PR merged elsewhere, stop and report the branch mismatch.
-2. Resolve the merged commit SHA from Gitea PR metadata. Use the merge commit SHA as the artifact identity.
+2. Resolve the merged commit SHA from repository PR metadata. Use the merge commit SHA as the artifact identity.
 3. Verify the PR does not currently carry `pr.labels.needsChanges` or `pr.labels.needsTests`. If either label remains, stop before promotion.
-4. Resolve the OpenProject work package key from the branch name, PR title, PR body, commit messages, or existing OpenProject comments.
+4. Resolve the ticket key from the branch name, PR title, PR body, commit messages, or existing ticket comments.
 5. Run `ValidateTicketLock` with the resolved ticket key, PR, branch, and merged/artifact commit. If the result is invalid, stop before reading or promoting artifacts.
-6. Verify the selected provider workflow completed for the merged commit. Azure uses `.gitea/workflows/package-deploy.yml`; k3d uses `.gitea/workflows/k3d-local-deploy.yml`. If the expected workflow did not run, report that config-infra should repair the selected provider workflow.
-7. Build the Nexus artifact paths for the selected provider. Azure requires:
+6. Verify the selected provider workflow completed for the merged commit. The selected deployment adapter declares the required workflow. If the expected workflow did not run, report that config-infra should repair the selected provider workflow.
+7. Build the Nexus artifact paths declared by the selected artifact and deployment adapters.
    - `app/{commitSha}/deployable-apps.json`
    - one `app/{commitSha}/{artifactName}` per topology app
    - one `app/{commitSha}/{artifactName}.sha256` per topology app
    - `app/{commitSha}/commit.sha`
    - `app/{commitSha}/release.json`
-   k3d requires:
+   selected deployment provider requires:
    - `app/{commitSha}/container-images.json`
    - `app/{commitSha}/commit.sha`
    - `app/{commitSha}/release.json`
@@ -67,28 +67,28 @@ In idempotent verification mode, do not redeploy or duplicate OpenProject commen
 8. Confirm the selected provider artifact metadata, runtime artifacts, and commit metadata exist in Nexus using the configured Nexus credentials. Treat missing Nexus local config, Nexus outage, or any missing required file as blocking.
 9. Compare `commit.sha` with the resolved commit SHA. Treat mismatch as blocking.
 10. Read `release.json` when present and verify `ticketKey` matches the locked/resolved ticket key. Treat another ticket key as blocking cross-ticket promotion.
-11. For Azure, confirm Nexus contains `app/{commitSha}/deployment-config.json`; a missing deployment configuration artifact is blocking workflow drift and routes to `configure-cloud-environments`. For k3d, confirm `container-images.json` contains site and API references pinned with `@sha256:` and route drift to the k3d local-lab config path.
+11. Confirm Nexus contains all deployment metadata required by the selected deployment adapter. Missing deployment configuration or immutable artifact metadata is blocking workflow drift and routes to the selected deployment configure path.
 
 ## DEV And QA Promotion
 
-1. Confirm DEV deployment succeeded for the same commit. If DEV failed, add a OpenProject failure comment and stop.
-2. Validate the DEV URL using the workflow smoke-check result or a fresh `curl --fail` when the URL is available. For Azure fresh checks, retry with backoff for cold starts: 5 attempts with waits of 5, 10, 20, 30, and 60 seconds. For k3d, verify the `sdd-dev` namespace health and ingress URL.
+1. Confirm DEV deployment succeeded for the same commit. If DEV failed, add a ticket provider failure comment and stop.
+2. Validate the DEV URL using the workflow smoke-check result or a fresh `curl --fail` when the URL is available. Apply any retry or environment-health behavior required by the selected deployment adapter.
 3. Validate DEV `/health` using workflow output or a fresh request. It must return HTTP 200 and JSON `status=ok`. For fresh checks, use the same retry/backoff policy.
-4. For Azure, confirm DEV applied and verified `deployment-config.json`; required live App Service settings must exist and non-secret values must match expected resolved values. For k3d, confirm DEV deployed the digest references from `container-images.json` and published `monitoring-summary-dev.json`. Missing proof is blocking.
-5. Confirm QA deployed the same Azure ZIP/checksum set or k3d digest set used by DEV. Do not rebuild.
+4. Confirm DEV applied and verified all configuration and artifact metadata required by the selected deployment adapter. Missing proof is blocking.
+5. Confirm QA deployed the same selected artifact set used by DEV. Do not rebuild.
 6. Validate the QA URL using the workflow smoke-check result or a fresh `curl --fail` when the URL is available. For fresh checks, use the same retry/backoff policy.
 7. Validate QA `/health` using workflow output or a fresh request. It must return HTTP 200 and JSON `status=ok`. For fresh checks, use the same retry/backoff policy.
-8. For Azure, confirm QA applied and verified `deployment-config.json`; required live App Service settings must exist and non-secret values must match expected resolved values. For k3d, confirm QA deployed the same image digests to `sdd-qa`, published `qa-targets.json`, and captured observability evidence. Missing proof is blocking.
-9. If DEV or QA page, `/health`, or deployment configuration validation fails, add a OpenProject failure comment and do not move the ticket state.
-10. Use `UpdateReleaseManifest` to create or update `app/{commitSha}/release.json` with commit SHA, representative checksum/artifact URL, PR URL, OpenProject work package key, DEV/QA URLs, DEV/QA status, per-app health status, deployment configuration status, workflow run URL, and `versionStatus=unversioned QA candidate` unless an RC tag already exists.
+8. Confirm QA applied and verified all configuration, artifact metadata, target URL, and observability evidence required by the selected deployment adapter. Missing proof is blocking.
+9. If DEV or QA page, `/health`, or deployment configuration validation fails, add a ticket provider failure comment and do not move the ticket state.
+10. Use `UpdateReleaseManifest` to create or update `app/{commitSha}/release.json` with commit SHA, representative checksum/artifact URL, PR URL, ticket key, DEV/QA URLs, DEV/QA status, per-app health status, deployment configuration status, workflow run URL, and `versionStatus=unversioned QA candidate` unless an RC tag already exists.
 11. Validate and upload `release.json` to Nexus next to the artifact.
-12. If QA passes, move the OpenProject work package to `openProject.qaStatus`, default `QA`.
+12. If QA passes, move the ticket to `configured QA state`, default `QA`.
 
-## OpenProject Updates
+## Ticket Provider Updates
 
-Use OpenProject API only. Never use OpenProject MCP, Docker containers, or direct database access for OpenProject.
+Use the selected ticket adapter only. Never use MCPs, Docker containers, or direct database access for ticket delivery unless the selected adapter explicitly requires it.
 
-Before mutating OpenProject, resolve the project UUID and target state ID. If the configured QA state does not exist, stop after adding the deployment comment and report the missing state.
+Before mutating ticket state, resolve the target state through the selected ticket adapter. If the configured QA state does not exist, stop after adding the deployment comment and report the missing state.
 
 Add a comment with this stable marker:
 
@@ -117,7 +117,7 @@ The comment must include:
 
 ## Output
 
-Report the ticket, merged PR, artifact commit, DEV/QA URLs, health validation, Nexus release manifest, OpenProject QA-state update, and next handoff to E2E QA.
+Report the ticket, merged PR, artifact commit, DEV/QA URLs, health validation, Nexus release manifest, ticket provider QA-state update, and next handoff to E2E QA.
 
 ## Failure Rules
 
@@ -127,11 +127,11 @@ Report the ticket, merged PR, artifact commit, DEV/QA URLs, health validation, N
 - Stop on DEV failure.
 - Stop on QA failure.
 - Stop on DEV or QA `/health` failure.
-- For Azure, stop when `deployment-config.json` is missing or live DEV/QA App Service setting verification is missing, failed, or mismatched.
-- For k3d, stop when `container-images.json` is missing, mutable, not digest-pinned, or DEV/QA namespace health and observability evidence are missing when enabled.
+- Stop when selected deployment-adapter configuration verification is missing, failed, or mismatched.
+- Stop when selected deployment-adapter immutable artifact metadata, environment health, or observability evidence is missing when required.
 - Stop when merged PR still has `needs-changes` or `needs-tests`.
 - Stop when the ticket context lock or `release.json.ticketKey` points to a different ticket.
 - Stop when Nexus is unreachable; do not use a degraded artifact source.
 - Treat placeholder config as missing.
 - Preserve unrelated local working tree changes.
-- Route missing infra, secrets, workflow templates, Azure resources, or branch protection setup to `$configure-dev-environment`.
+- Route missing infra, secrets, workflow templates, selected deployment provider resources, or branch protection setup to `$configure-dev-environment`.

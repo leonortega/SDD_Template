@@ -19,16 +19,16 @@ Read `.codex/project-profile.json` first. Use available selected adapter runtime
 
 ## Workflow
 
-Collect read-only status sources, compare them against the ticket context lock, report validation gaps, and recommend the next handoff route without mutating OpenProject, Git, Gitea, Nexus, Azure, tags, or release manifests.
+Collect read-only status sources, compare them against the ticket context lock, report validation gaps, and recommend the next handoff route without mutating ticket provider, Git, repository/review provider, Nexus, selected deployment provider, tags, or release manifests.
 
 ## Status Sources
 
 Collect what is relevant to the request:
 
-- OpenProject work packages by configured states: Todo, In Progress, In Review, QA, Done.
+- tickets by configured states: Todo, In Progress, In Review, QA, Done.
 - Current ticket generated markers: branch, PR, QA deployment, E2E QA, PROD deployment, rollback, QA bug.
 - Active `.codex/delivery-context.local.json` lock, including ticket key, branch, PR, artifact commit, RC/final versions, and any mismatch with discovered state.
-- Gitea open PRs, merged PRs, target branches, labels, latest review markers, and CI status when available.
+- repository/review provider open PRs, merged PRs, target branches, labels, latest review markers, and CI status when available.
 - Nexus artifacts and `release.json` for relevant commits.
 - Git branches and SemVer tags.
 - DEV/QA/PROD URLs and `/health` status when available.
@@ -51,5 +51,5 @@ If the next step is ambiguous, list the candidate routes and recommend the safes
 
 - Do not mutate state.
 - If credentials are missing, report which integration cannot be inspected.
-- If Nexus or Gitea is unavailable, continue with OpenProject/Git information when possible.
+- If Nexus or repository/review provider is unavailable, continue with ticket provider/Git information when possible.
 - If multiple tickets or PRs match, report all candidates and do not choose one unless the user provided a unique key.
