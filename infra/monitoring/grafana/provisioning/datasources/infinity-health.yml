@@ -1,0 +1,20 @@
+apiVersion: 1
+
+deleteDatasources:
+  - name: Prometheus
+    orgId: 1
+
+datasources:
+  - name: Infinity Health
+    type: yesoreyeram-infinity-datasource
+    uid: infinity-health
+    access: proxy
+    editable: true
+    jsonData:
+      allowedHosts:
+        - http://host.docker.internal:18081
+        - http://host.docker.internal:18082
+        - http://host.docker.internal:18083
+        - http://host.docker.internal:18084
+        - http://host.docker.internal:18085
+        - http://host.docker.internal:18086

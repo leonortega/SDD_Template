@@ -37,11 +37,11 @@ Run preflight, rollback deployment, verification, Plane result, and follow-up ha
    - one `app/{commitSha}/{artifactName}.sha256` per topology app
    - `app/{commitSha}/commit.sha`
    - `app/{commitSha}/release.json`
-   Rancher Desktop requires:
+   k3d requires:
    - `app/{commitSha}/container-images.json`
    - `app/{commitSha}/commit.sha`
    - `app/{commitSha}/release.json`
-6. Verify Azure checksum and `commit.sha`, or Rancher image references pinned by `@sha256:` and `commit.sha`.
+6. Verify Azure checksum and `commit.sha`, or k3d image references pinned by `@sha256:` and `commit.sha`.
 7. Verify `release.json` marks the target as previously QA-approved and either previously PROD-deployed or explicitly user-approved as the rollback target.
 8. Stop if the target commit equals the current PROD commit unless the user explicitly asks to redeploy the same artifact.
 
@@ -56,7 +56,7 @@ release_version={rollbackVersionOrTag}
 source_rc_version={sourceRcVersion}
 ```
 
-Rancher Desktop uses `.gitea/workflows/rancher-local-deploy.yml` with the same dispatch inputs. The workflow must download `app/{artifact_commit_sha}/container-images.json`, verify every image reference is digest-pinned, deploy the existing digest set to `sdd-prod`, publish `monitoring-summary-prod.json`, and run page plus all app `/health` checks. Do not rebuild.
+k3d uses `.gitea/workflows/k3d-local-deploy.yml` with the same dispatch inputs. The workflow must download `app/{artifact_commit_sha}/container-images.json`, verify every image reference is digest-pinned, deploy the existing digest set to `sdd-prod`, publish `monitoring-summary-prod.json`, and run page plus all app `/health` checks. Do not rebuild.
 
 ## Verification
 

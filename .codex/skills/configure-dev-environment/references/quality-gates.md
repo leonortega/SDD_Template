@@ -82,7 +82,7 @@ Required checks:
 
 Merge and deployment jobs should not rerun the same unit test suite that PR validation already ran for the reviewed commit. They should focus on immutable artifact packaging, deployment configuration verification, checksum validation, and environment smoke checks unless package or artifact inputs changed outside the PR validation path.
 
-Run `BuildGiteaActionsImages` after changing image Dockerfiles, tool versions, workflow image tags, or Rancher local-lab workflow requirements. Then run `ValidateGiteaActionsRunner`; it validates Docker availability, local image presence, required tools inside each image, including Docker CLI and `kubectl` in the .NET CI image, and that the PR validation job image can reach the repository origin through `host.docker.internal`.
+Run `BuildGiteaActionsImages` after changing image Dockerfiles, tool versions, workflow image tags, or k3d local-lab workflow requirements. Then run `ValidateGiteaActionsRunner`; it validates Docker availability, local image presence, required tools inside each image, including Docker CLI and `kubectl` in the .NET CI image, and that the PR validation job image can reach the repository origin through `host.docker.internal`.
 
 Semgrep is optional. Default to skipping it until the first real application code exists.
 

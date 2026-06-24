@@ -682,7 +682,7 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
-        public void AuditReportsMissingEventHubCollectorValues()
+        public void AuditDoesNotRequireEventHubCollectorValues()
         {
             string root = CreateTempDirectory();
             _ = Directory.CreateDirectory(Path.Combine(root, ".codex"));
@@ -716,10 +716,10 @@ namespace SDDTemplate.DeliveryTools.Tests
                 .EnumerateArray()
                 .Select(item => item.GetProperty("key").GetString() ?? string.Empty)];
 
-            Assert.Contains("OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING", keys);
-            Assert.Contains("OTELCOL_AZURE_EVENT_HUB_QA_CONNECTION_STRING", keys);
-            Assert.Contains("OTELCOL_AZURE_EVENT_HUB_PROD_CONNECTION_STRING", keys);
-            Assert.Contains("OTELCOL_SEQ_OTLP_ENDPOINT", keys);
+            Assert.DoesNotContain("OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING", keys);
+            Assert.DoesNotContain("OTELCOL_AZURE_EVENT_HUB_QA_CONNECTION_STRING", keys);
+            Assert.DoesNotContain("OTELCOL_AZURE_EVENT_HUB_PROD_CONNECTION_STRING", keys);
+            Assert.DoesNotContain("OTELCOL_SEQ_OTLP_ENDPOINT", keys);
         }
 
         [Fact]
@@ -745,13 +745,11 @@ namespace SDDTemplate.DeliveryTools.Tests
             File.WriteAllText(Path.Combine(root, "infra", "plane", "variables.env"), string.Empty);
             File.WriteAllText(Path.Combine(root, "infra", "gitea", "runner.env"), "GITEA_RUNNER_REGISTRATION_TOKEN=replace-with-token");
             File.WriteAllText(Path.Combine(root, "infra", "monitoring", "variables.env"), """
-                OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING=x
-                OTELCOL_AZURE_EVENT_HUB_QA_CONNECTION_STRING=x
-                OTELCOL_AZURE_EVENT_HUB_PROD_CONNECTION_STRING=x
-                OTELCOL_SEQ_OTLP_ENDPOINT=http://seq:5341/ingest/otlp
-                GRAFANA_HEALTH_ALERT_FOR=10s
+                GRAFANA_HEALTH_ALERT_FOR=2m
                 SEQ_ERROR_ALERT_WINDOW=1m
                 SEQ_ERROR_ALERT_THRESHOLD=0
+                SEQ_URL=http://localhost:5341
+                PROMETHEUS_URL=http://localhost:9091
                 """);
             File.WriteAllText(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "dashboards", "dashboards.yml"), "apiVersion: 1");
             File.WriteAllText(Path.Combine(root, "infra", "monitoring", "grafana", "provisioning", "datasources", "prometheus.yml"), "uid: prometheus");

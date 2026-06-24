@@ -1,5 +1,5 @@
 param(
-  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetGiteaBranchProtection", "SetPlaneEnv", "SetMonitoringEnv", "SetGiteaRunner", "SetSeqAzureEventHubLogs", "SplitInfraEnv", "AuditQualityGates", "AuditRecommendedTools", "DiscoverProjectGuidance", "AcquireProjectGuidance", "SetRecommendedTools", "MapProjectGuidanceStep", "BuildGiteaActionsImages", "ValidateGiteaActionsRunner", "InitProjectProfile", "InitQualityGateTemplates", "SetQualityConfig", "SyncWorktreeLocalConfig", "EnsureDeliveryContext", "EnsureRancherKubernetes", "EnsureRancherPortForwards", "EnsureHeadlamp", "ShowEnvironmentUrls")]
+  [ValidateSet("Audit", "InitLocalFiles", "SetClientTools", "SetGiteaBranchProtection", "SetPlaneEnv", "SetMonitoringEnv", "SetGiteaRunner", "SetSeqAzureEventHubLogs", "SplitInfraEnv", "AuditQualityGates", "AuditRecommendedTools", "DiscoverProjectGuidance", "AcquireProjectGuidance", "SetRecommendedTools", "MapProjectGuidanceStep", "BuildGiteaActionsImages", "ValidateGiteaActionsRunner", "InitProjectProfile", "InitQualityGateTemplates", "SetQualityConfig", "SyncWorktreeLocalConfig", "EnsureDeliveryContext", "EnsureK3dCluster", "EnsureK3dPortForwards", "EnsureK3dHeadlamp", "ShowEnvironmentUrls")]
   [string]$Mode = "Audit",
 
   [string]$Root = (Resolve-Path ".").Path,
@@ -12,6 +12,17 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$K3dClusterName = "sdd-template"
+$K3dContextName = "k3d-sdd-template"
+$K3dApiPort = "6550"
+$K3dLocalExecutableDirectory = "C:\Endava\EndevLocal\Executables"
+$K3dWingetDirectory = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages\k3d.k3d_Microsoft.Winget.Source_8wekyb3d8bbwe"
+if ((Test-Path (Join-Path $K3dLocalExecutableDirectory "k3d.exe")) -and $env:Path -notlike "*$K3dLocalExecutableDirectory*") {
+  $env:Path = "$K3dLocalExecutableDirectory;$env:Path"
+}
+if (-not (Test-Path (Join-Path $K3dLocalExecutableDirectory "k3d.exe")) -and (Test-Path (Join-Path $K3dWingetDirectory "k3d.exe")) -and $env:Path -notlike "*$K3dWingetDirectory*") {
+  $env:Path = "$K3dWingetDirectory;$env:Path"
+}
 
 function Join-RootPath {
   param([string]$RelativePath)
@@ -98,19 +109,63 @@ function Test-AzureDeploymentSelected {
   return [string]$profile.providers.deployment.id -eq "azure-appservice"
 }
 
-function Test-RancherLocalDeploymentConfigured {
+function Test-K3dLocalDeploymentConfigured {
   $profile = Get-ProjectProfile
   if ($null -eq $profile) { return $false }
 
-  if ($null -ne $profile.providers -and $null -ne $profile.providers.deployment -and [string]$profile.providers.deployment.id -eq "rancher-desktop") {
+  if ($null -ne $profile.providers -and $null -ne $profile.providers.deployment -and [string]$profile.providers.deployment.id -eq "k3d") {
     return $true
   }
 
   if ($null -ne $profile.adapters -and $profile.adapters.PSObject.Properties.Name -contains "deployment") {
-    return [string]$profile.adapters.deployment -eq ".codex/providers/deploy.rancher-desktop.md"
+    return [string]$profile.adapters.deployment -eq ".codex/providers/deploy.k3d.md"
   }
 
   return $false
+}
+
+function Resolve-NativeCommandPath {
+  param([string]$FileName)
+
+  if ([System.IO.Path]::IsPathFullyQualified($FileName) -or $FileName.Contains("\") -or $FileName.Contains("/")) {
+    return $FileName
+  }
+
+  if ($FileName -ne "k3d") {
+    $currentCommand = Get-Command $FileName -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -ne $currentCommand -and -not [string]::IsNullOrWhiteSpace($currentCommand.Path)) {
+      return $currentCommand.Path
+    }
+  }
+
+  $extensions = @("")
+  if (-not [System.IO.Path]::HasExtension($FileName)) {
+    $extensions += ($env:PATHEXT -split ";" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+  }
+
+  $pathScopes = @(
+    [Environment]::GetEnvironmentVariable("Path", "User"),
+    [Environment]::GetEnvironmentVariable("Path", "Machine"),
+    $env:Path
+  )
+
+  foreach ($pathScope in $pathScopes) {
+    foreach ($directory in ($pathScope -split ";" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })) {
+      foreach ($extension in $extensions) {
+        $candidate = Join-Path $directory ($FileName + $extension)
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+          return $candidate
+        }
+      }
+    }
+  }
+
+  $resolvedCommand = Get-Command $FileName -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($null -ne $resolvedCommand -and -not [string]::IsNullOrWhiteSpace($resolvedCommand.Path)) {
+    return $resolvedCommand.Path
+  }
+
+  return $FileName
 }
 
 function Invoke-NativeText {
@@ -120,13 +175,24 @@ function Invoke-NativeText {
     [int]$TimeoutSeconds = 30
   )
 
+  $resolvedPath = Resolve-NativeCommandPath $FileName
+
   $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
-  $startInfo.FileName = $FileName
-  if ($null -ne $startInfo.ArgumentList) {
+  if ([System.IO.Path]::GetExtension($resolvedPath) -in @(".cmd", ".bat")) {
+    $startInfo.FileName = $env:ComSpec
+    $batchCommand = '""' + $resolvedPath + '"'
+    foreach ($argument in $Arguments) {
+      $batchCommand += ' "' + ($argument -replace '"', '""') + '"'
+    }
+    $batchCommand += '"'
+    $startInfo.Arguments = "/d /s /c $batchCommand"
+  } elseif ($null -ne $startInfo.ArgumentList) {
+    $startInfo.FileName = $resolvedPath
     foreach ($argument in $Arguments) {
       [void]$startInfo.ArgumentList.Add($argument)
     }
   } else {
+    $startInfo.FileName = $resolvedPath
     $escapedArguments = foreach ($argument in $Arguments) {
       if ($argument -match '[\s"]') {
         '"' + ($argument -replace '"', '\"') + '"'
@@ -154,20 +220,6 @@ function Invoke-NativeText {
     Output = $stdout.GetAwaiter().GetResult()
     Error = $stderr.GetAwaiter().GetResult()
   }
-}
-
-function Get-RancherDesktopSettings {
-  $command = Invoke-NativeText "rdctl" @("list-settings") 20
-  if ($command.ExitCode -ne 0) {
-    throw "rdctl list-settings failed: $($command.Output)$($command.Error)"
-  }
-
-  return $command.Output | ConvertFrom-Json
-}
-
-function Test-RancherKubernetesEnabled {
-  param($Settings)
-  return $null -ne $Settings.kubernetes -and [bool]$Settings.kubernetes.enabled
 }
 
 function Get-KubectlCurrentContext {
@@ -199,7 +251,7 @@ function Get-KubectlReadyNodeNames {
   return $ready
 }
 
-function Get-RancherPortForwardMappings {
+function Get-K3dPortForwardMappings {
   return @(
     [ordered]@{ Environment = "dev"; Namespace = "sdd-dev"; Service = "site"; LocalPort = 18081 },
     [ordered]@{ Environment = "dev"; Namespace = "sdd-dev"; Service = "api"; LocalPort = 18082 },
@@ -216,7 +268,7 @@ function Get-KubectlServicePort {
     [string]$ServiceName
   )
 
-  $command = Invoke-NativeText "kubectl" @("--context", "rancher-desktop", "-n", $Namespace, "get", "service", $ServiceName, "-o", "json", "--request-timeout=5s") 15
+  $command = Invoke-NativeText "kubectl" @("--context", $K3dContextName, "-n", $Namespace, "get", "service", $ServiceName, "-o", "json", "--request-timeout=5s") 15
   if ($command.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($command.Output)) {
     $message = "$($command.Output)$($command.Error)"
     if ($message -match "NotFound|not found") { return $null }
@@ -250,7 +302,7 @@ function Test-LocalPortListening {
   }
 }
 
-function Get-RancherPortForwardProcess {
+function Get-K3dPortForwardProcess {
   param($Mapping)
 
   $serviceToken = "svc/$($Mapping.Service)"
@@ -784,12 +836,12 @@ function New-GrafanaHealthStatPanel {
   param(
     [int]$Id,
     [string]$Title,
-    [string]$Expression,
+    [string]$Url,
     [int]$X
   )
 
   return [ordered]@{
-    datasource = [ordered]@{ type = "prometheus"; uid = "prometheus" }
+    datasource = [ordered]@{ type = "yesoreyeram-infinity-datasource"; uid = "infinity-health" }
     fieldConfig = [ordered]@{
       defaults = [ordered]@{
         color = [ordered]@{ mode = "thresholds" }
@@ -797,16 +849,22 @@ function New-GrafanaHealthStatPanel {
           [ordered]@{
             type = "value"
             options = [ordered]@{
-              "0" = [ordered]@{ color = "red"; text = "DOWN" }
               "1" = [ordered]@{ color = "green"; text = "UP" }
+              "0" = [ordered]@{ color = "red"; text = "DOWN" }
+            }
+          },
+          [ordered]@{
+            type = "special"
+            options = [ordered]@{
+              match = "null"
+              result = [ordered]@{ color = "red"; text = "DOWN" }
             }
           }
         )
         thresholds = [ordered]@{
           mode = "absolute"
           steps = @(
-            [ordered]@{ color = "red"; value = $null },
-            [ordered]@{ color = "green"; value = 1 }
+            [ordered]@{ color = "green"; value = $null }
           )
         }
       }
@@ -825,47 +883,31 @@ function New-GrafanaHealthStatPanel {
     }
     targets = @(
       [ordered]@{
-        editorMode = "code"
-        expr = $Expression
+        columns = @(
+          [ordered]@{ selector = "status"; text = "status"; type = "string" }
+        )
+        computed_columns = @(
+          [ordered]@{ selector = "status == 'ok' ? 1 : 0"; text = "up"; type = "number" }
+        )
+        format = "table"
+        json_options = [ordered]@{
+          columnar = $false
+          root_is_not_array = $true
+        }
+        parser = "backend"
         legendFormat = $Title
-        range = $true
         refId = "A"
+        root_selector = ""
+        source = "url"
+        type = "json"
+        url = $Url
+        url_options = [ordered]@{
+          method = "GET"
+        }
       }
     )
     title = $Title
     type = "stat"
-  }
-}
-
-function New-GrafanaDurationPanel {
-  param(
-    [string]$Title,
-    [string]$Expression
-  )
-
-  return [ordered]@{
-    datasource = [ordered]@{ type = "prometheus"; uid = "prometheus" }
-    fieldConfig = [ordered]@{
-      defaults = [ordered]@{ unit = "s" }
-      overrides = @()
-    }
-    gridPos = [ordered]@{ h = 12; w = 24; x = 0; y = 8 }
-    id = 3
-    options = [ordered]@{
-      legend = [ordered]@{ displayMode = "list"; placement = "bottom" }
-      tooltip = [ordered]@{ mode = "multi" }
-    }
-    targets = @(
-      [ordered]@{
-        editorMode = "code"
-        expr = $Expression
-        legendFormat = "{{app}}"
-        range = $true
-        refId = "A"
-      }
-    )
-    title = $Title
-    type = "timeseries"
   }
 }
 
@@ -878,9 +920,8 @@ function New-GrafanaK8HealthDashboard {
     [int]$ApiPort
   )
 
-  $siteInstance = "http://host.docker.internal:$SitePort/health"
-  $apiInstance = "http://host.docker.internal:$ApiPort/health"
-  $durationPattern = "http://host\\.docker\\.internal:$($SitePort.ToString().Substring(0, 4))[$($SitePort.ToString().Substring(4, 1))$($ApiPort.ToString().Substring(4, 1))]/health"
+  $siteUrl = "http://host.docker.internal:$SitePort/health"
+  $apiUrl = "http://host.docker.internal:$ApiPort/health"
 
   return [ordered]@{
     annotations = [ordered]@{
@@ -903,13 +944,12 @@ function New-GrafanaK8HealthDashboard {
     links = @()
     liveNow = $false
     panels = @(
-      (New-GrafanaHealthStatPanel 1 "$EnvironmentLabel K8 Web /health" "probe_success{environment=`"$Environment`", provider=`"rancher-desktop`", app=`"site`", instance=`"$siteInstance`"}" 0),
-      (New-GrafanaHealthStatPanel 2 "$EnvironmentLabel K8 API /health" "probe_success{environment=`"$Environment`", provider=`"rancher-desktop`", app=`"api`", instance=`"$apiInstance`"}" 12),
-      (New-GrafanaDurationPanel "$EnvironmentLabel K8 Web/API Probe Duration" "probe_duration_seconds{environment=`"$Environment`", provider=`"rancher-desktop`", instance=~`"$durationPattern`"}")
+      (New-GrafanaHealthStatPanel 1 "$EnvironmentLabel K8 Web /health" $siteUrl 0),
+      (New-GrafanaHealthStatPanel 2 "$EnvironmentLabel K8 API /health" $apiUrl 12)
     )
     refresh = "30s"
     schemaVersion = 41
-    tags = @("agentic-e2e", "prometheus", "health", $Environment, "k8", "rancher-desktop")
+    tags = @("agentic-e2e", "infinity", "health", $Environment, "k8", "k3d")
     templating = [ordered]@{ list = @() }
     time = [ordered]@{ from = "now-1h"; to = "now" }
     timepicker = [ordered]@{}
@@ -958,7 +998,7 @@ function Write-GrafanaK8HealthDashboards {
 
 function Get-EnvironmentUrlEntries {
   $entries = @()
-  foreach ($mapping in Get-RancherPortForwardMappings) {
+  foreach ($mapping in Get-K3dPortForwardMappings) {
     $hostName = "$($mapping.Service).$($mapping.Environment).sdd.localhost"
     $servicePort = $null
     try {
@@ -996,7 +1036,7 @@ function Write-EnvironmentUrlRegistry {
   $target = Join-RootPath $relativePath
   $registry = [ordered]@{
     schemaVersion = 1
-    provider = "rancher-desktop"
+    provider = "k3d"
     generatedBy = "configure_infra_tools.ps1"
     note = "Local operator URL registry. Browser URLs use 127.0.0.1 port-forwards; container URLs are for Docker/Gitea Action jobs."
     environments = @(Get-EnvironmentUrlEntries)
@@ -1064,13 +1104,13 @@ function New-GrafanaEnvironmentUrlsDashboard {
           mode = "markdown"
         }
         pluginVersion = "13.0.1"
-        title = "Rancher Desktop Environment URLs"
+        title = "k3d Environment URLs"
         type = "text"
       }
     )
     refresh = "30s"
     schemaVersion = 41
-    tags = @("agentic-e2e", "urls", "k8", "rancher-desktop")
+    tags = @("agentic-e2e", "urls", "k8", "k3d")
     templating = [ordered]@{ list = @() }
     time = [ordered]@{ from = "now-1h"; to = "now" }
     timepicker = [ordered]@{}
@@ -1719,7 +1759,7 @@ function Add-QualityGateAuditFindings {
   if (-not (Test-Path (Join-RootPath $secretsDoc))) {
     Add-Item $Result "findings" $secretsDoc "" "Missing documentation for required Gitea Actions secrets and branch protection." "warning"
   } else {
-    $expectedSecrets = @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "NEXUS_REPOSITORY", "NEXUS_DOCKER_REGISTRY", "NEXUS_DOCKER_USERNAME", "NEXUS_DOCKER_PASSWORD", "RANCHER_KUBECONFIG_B64")
+    $expectedSecrets = @("NEXUS_URL", "NEXUS_USERNAME", "NEXUS_PASSWORD", "NEXUS_REPOSITORY", "NEXUS_DOCKER_REGISTRY", "NEXUS_DOCKER_USERNAME", "NEXUS_DOCKER_PASSWORD", "K3D_KUBECONFIG_B64")
     if (Test-AzureDeploymentSelected) {
       $expectedSecrets += @("AZURE_CREDENTIALS", "AZURE_DEV_RESOURCE_GROUP", "AZURE_DEV_SITE_APP_NAME", "AZURE_DEV_SITE_APP_URL", "AZURE_DEV_API_APP_NAME", "AZURE_DEV_API_APP_URL", "AZURE_QA_RESOURCE_GROUP", "AZURE_QA_SITE_APP_NAME", "AZURE_QA_SITE_APP_URL", "AZURE_QA_API_APP_NAME", "AZURE_QA_API_APP_URL", "AZURE_PROD_RESOURCE_GROUP", "AZURE_PROD_SITE_APP_NAME", "AZURE_PROD_SITE_APP_URL", "AZURE_PROD_API_APP_NAME", "AZURE_PROD_API_APP_URL")
     }
@@ -2686,38 +2726,37 @@ function Invoke-AcquireProjectGuidance {
   return $result
 }
 
-function Add-RancherLocalLabAuditFindings {
+function Add-K3dLocalLabAuditFindings {
   param($Result)
 
-  $rancherConfigured = Test-RancherLocalDeploymentConfigured
+  $rancherConfigured = Test-K3dLocalDeploymentConfigured
   if (-not $rancherConfigured) {
-    Add-Item $Result "actions" ".codex/project-profile.json" "providers.deployment" "Rancher Desktop is not the selected deployment provider; Rancher local-lab checks are informational only."
+    Add-Item $Result "actions" ".codex/project-profile.json" "providers.deployment" "k3d is not the selected deployment provider; k3d local-lab checks are informational only."
     return
   }
 
   $requiredFiles = @(
-    ".codex/providers/deploy.rancher-desktop.md",
-    ".gitea/workflows/rancher-local-deploy.yml",
-    "infra/rancher/deploy-local-lab.sh",
-    "infra/rancher/capture-observability.sh",
+    ".codex/providers/deploy.k3d.md",
+    ".gitea/workflows/k3d-local-deploy.yml",
+    "infra/k3d/deploy-local-lab.sh",
     "src/SDDTemplate.Site/Dockerfile",
     "src/SDDTemplate.Api/Dockerfile"
   )
 
   foreach ($relativePath in $requiredFiles) {
     if (Test-Path (Join-RootPath $relativePath)) {
-      Add-Item $Result "actions" $relativePath "rancher-local-lab.file" "Rancher Desktop local-lab file is present."
+      Add-Item $Result "actions" $relativePath "k3d-local-lab.file" "k3d local-lab file is present."
     } else {
-      Add-Item $Result "findings" $relativePath "rancher-local-lab.file" "Missing Rancher Desktop local-lab file required by the configured local deployment adapter." "error" "pre-start"
+      Add-Item $Result "findings" $relativePath "k3d-local-lab.file" "Missing k3d local-lab file required by the configured local deployment adapter." "error" "pre-start"
     }
   }
 
-  $workflowPath = Join-RootPath ".gitea/workflows/rancher-local-deploy.yml"
+  $workflowPath = Join-RootPath ".gitea/workflows/k3d-local-deploy.yml"
   if (Test-Path $workflowPath) {
     $workflow = Get-Content -Path $workflowPath -Raw
-    foreach ($needle in @("NEXUS_DOCKER_REGISTRY", "NEXUS_DOCKER_USERNAME", "NEXUS_DOCKER_PASSWORD", "RANCHER_KUBECONFIG_B64", "container-images.json", "capture-observability.sh", "monitoring-summary.json", "qa-observability.json", "kubectl config current-context | grep -qx `"rancher-desktop`"")) {
+    foreach ($needle in @("NEXUS_DOCKER_REGISTRY", "NEXUS_DOCKER_USERNAME", "NEXUS_DOCKER_PASSWORD", "K3D_KUBECONFIG_B64", "container-images.json", "wait_for_direct_health", "monitoring-summary.json", "qa-observability.json", "kubectl config current-context | grep -qx `"k3d-sdd-template`"")) {
       if ($workflow -notmatch [regex]::Escape($needle)) {
-        Add-Item $Result "findings" ".gitea/workflows/rancher-local-deploy.yml" $needle "Rancher local deploy workflow is missing required local-lab wiring." "error" "pre-start"
+        Add-Item $Result "findings" ".gitea/workflows/k3d-local-deploy.yml" $needle "k3d local deploy workflow is missing required local-lab wiring." "error" "pre-start"
       }
     }
   }
@@ -2726,7 +2765,7 @@ function Add-RancherLocalLabAuditFindings {
   if (Test-Path $nexusComposePath) {
     $nexusCompose = Get-Content -Path $nexusComposePath -Raw
     if ($nexusCompose -notmatch '"5001:5001"') {
-      Add-Item $Result "findings" "infra/nexus/compose.yml" "nexus-docker-port" "Nexus Compose must expose the Docker hosted registry connector port 5001 for the Rancher local lane." "error" "pre-start"
+      Add-Item $Result "findings" "infra/nexus/compose.yml" "nexus-docker-port" "Nexus Compose must expose the Docker hosted registry connector port 5001 for the k3d local lane." "error" "pre-start"
     }
   } else {
     Add-Item $Result "findings" "infra/nexus/compose.yml" "nexus-docker-port" "Missing Nexus Compose file; cannot validate Docker hosted registry connector port." "error" "pre-start"
@@ -2735,27 +2774,9 @@ function Add-RancherLocalLabAuditFindings {
   $nexusReferencePath = Join-RootPath ".codex/skills/configure-dev-environment/references/nexus.md"
   if (Test-Path $nexusReferencePath) {
     $nexusReference = Get-Content -Path $nexusReferencePath -Raw
-    foreach ($needle in @("NEXUS_DOCKER_REGISTRY", "NEXUS_DOCKER_USERNAME", "NEXUS_DOCKER_PASSWORD", "RANCHER_KUBECONFIG_B64")) {
+    foreach ($needle in @("NEXUS_DOCKER_REGISTRY", "NEXUS_DOCKER_USERNAME", "NEXUS_DOCKER_PASSWORD", "K3D_KUBECONFIG_B64")) {
       if ($nexusReference -notmatch [regex]::Escape($needle)) {
-        Add-Item $Result "findings" ".codex/skills/configure-dev-environment/references/nexus.md" $needle "Nexus configure reference must list the Rancher local-lab secret name." "warning" "pre-start"
-      }
-    }
-  }
-
-  $prometheusPath = Join-RootPath "infra/monitoring/prometheus/prometheus.yml"
-  if (Test-Path $prometheusPath) {
-    $prometheus = Get-Content -Path $prometheusPath -Raw
-    if ($prometheus -notmatch 'target_label:\s*provider') {
-      Add-Item $Result "findings" "infra/monitoring/prometheus/prometheus.yml" "provider-relabel" "Prometheus must preserve the provider label so selected deployment health targets remain distinguishable." "warning" "pre-start"
-    }
-  }
-
-  $targetsPath = Join-RootPath "infra/monitoring/prometheus/targets.local.yml"
-  if (Test-Path $targetsPath) {
-    $targets = Get-Content -Path $targetsPath -Raw
-    foreach ($needle in @("http://host.docker.internal:18081/health", "http://host.docker.internal:18082/health", "http://host.docker.internal:18083/health", "http://host.docker.internal:18084/health", "http://host.docker.internal:18085/health", "http://host.docker.internal:18086/health", "provider: rancher-desktop")) {
-      if ($targets -notmatch [regex]::Escape($needle)) {
-        Add-Item $Result "findings" "infra/monitoring/prometheus/targets.local.yml" $needle "Prometheus targets must include Rancher Desktop local-lab site/API health endpoints with provider labels." "warning" "pre-start"
+        Add-Item $Result "findings" ".codex/skills/configure-dev-environment/references/nexus.md" $needle "Nexus configure reference must list the k3d local-lab secret name." "warning" "pre-start"
       }
     }
   }
@@ -2763,39 +2784,35 @@ function Add-RancherLocalLabAuditFindings {
   $monitoringExamplePath = Join-RootPath "infra/monitoring/variables.env.example"
   if (Test-Path $monitoringExamplePath) {
     $monitoringExample = Get-Content -Path $monitoringExamplePath -Raw
-    foreach ($needle in @("SEQ_URL=http://localhost:5341", "PROMETHEUS_URL=http://localhost:9091", "RANCHER_OBSERVABILITY_ENABLED=true")) {
+    foreach ($needle in @("SEQ_URL=http://localhost:5341", "GRAFANA_HEALTH_ALERT_FOR=2m")) {
       if ($monitoringExample -notmatch [regex]::Escape($needle)) {
-        Add-Item $Result "findings" "infra/monitoring/variables.env.example" $needle "Monitoring env template must include Rancher local observability defaults." "warning" "pre-start"
+        Add-Item $Result "findings" "infra/monitoring/variables.env.example" $needle "Monitoring env template must include k3d local observability defaults." "warning" "pre-start"
       }
     }
   }
 
-  $rdctl = Get-Command rdctl -ErrorAction SilentlyContinue
-  if ($null -eq $rdctl) {
-    Add-Item $Result "findings" "rdctl" "" "rdctl is missing; install or repair Rancher Desktop so config infra can enable Kubernetes." "error" "pre-start"
+  $k3d = Get-Command k3d -ErrorAction SilentlyContinue
+  if ($null -eq $k3d) {
+    Add-Item $Result "findings" "k3d" "" "k3d is missing; install it with `choco install k3d -y`, then validate with `k3d version`." "error" "pre-start"
   } else {
-    try {
-      $settings = Get-RancherDesktopSettings
-      if (Test-RancherKubernetesEnabled $settings) {
-        Add-Item $Result "actions" "rdctl" "kubernetes.enabled" "Rancher Desktop Kubernetes is enabled."
-      } else {
-        Add-Item $Result "findings" "rdctl" "kubernetes.enabled" "Rancher Desktop Kubernetes is disabled. Run EnsureRancherKubernetes or enable Kubernetes in Rancher Desktop Settings -> Kubernetes." "error" "pre-start"
-      }
-    } catch {
-      Add-Item $Result "findings" "rdctl" "list-settings" "Could not read Rancher Desktop settings: $($_.Exception.Message)" "error" "pre-start"
+    $clusterList = Invoke-NativeText "k3d" @("cluster", "list", $K3dClusterName, "-o", "json") 20
+    if ($clusterList.ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($clusterList.Output) -and $clusterList.Output.Trim() -ne "[]") {
+      Add-Item $Result "actions" "k3d" "cluster" "k3d cluster '$K3dClusterName' exists."
+    } else {
+      Add-Item $Result "findings" "k3d" "cluster" "k3d cluster '$K3dClusterName' is missing. Run EnsureK3dCluster." "error" "pre-start"
     }
   }
 
   $kubectl = Get-Command kubectl -ErrorAction SilentlyContinue
   if ($null -eq $kubectl) {
-    Add-Item $Result "findings" "kubectl" "" "kubectl is missing; Rancher Desktop local-lab live validation cannot run." "error" "pre-start"
+    Add-Item $Result "findings" "kubectl" "" "kubectl is missing; k3d local-lab live validation cannot run." "error" "pre-start"
   } else {
     try {
       $context = Get-KubectlCurrentContext
-      if ($context -eq "rancher-desktop") {
-        Add-Item $Result "actions" "kubectl" "context" "kubectl current context is rancher-desktop."
+      if ($context -eq $K3dContextName) {
+        Add-Item $Result "actions" "kubectl" "context" "kubectl current context is $K3dContextName."
       } else {
-        Add-Item $Result "findings" "kubectl" "context" "kubectl current context is '$context'; Rancher local-lab deployment requires 'rancher-desktop'." "error" "pre-start"
+        Add-Item $Result "findings" "kubectl" "context" "kubectl current context is '$context'; k3d local-lab deployment requires '$K3dContextName'." "error" "pre-start"
       }
     } catch {
       Add-Item $Result "findings" "kubectl" "context" "Could not read kubectl current context: $($_.Exception.Message)" "error" "pre-start"
@@ -2804,34 +2821,34 @@ function Add-RancherLocalLabAuditFindings {
     try {
       $readyNodes = @(Get-KubectlReadyNodeNames)
       if ($readyNodes.Count -gt 0) {
-        Add-Item $Result "actions" "kubectl" "nodes.ready" "Rancher Desktop Kubernetes has Ready node(s): $($readyNodes -join ', ')."
+        Add-Item $Result "actions" "kubectl" "nodes.ready" "k3d Kubernetes has Ready node(s): $($readyNodes -join ', ')."
       } else {
-        Add-Item $Result "findings" "kubectl" "nodes.ready" "Rancher Desktop Kubernetes API is reachable, but no nodes are Ready." "error" "post-start"
+        Add-Item $Result "findings" "kubectl" "nodes.ready" "k3d Kubernetes API is reachable, but no nodes are Ready." "error" "post-start"
       }
     } catch {
-      Add-Item $Result "findings" "kubectl" "nodes" "Rancher Desktop Kubernetes API is not reachable: $($_.Exception.Message)" "error" "post-start"
+      Add-Item $Result "findings" "kubectl" "nodes" "k3d Kubernetes API is not reachable: $($_.Exception.Message)" "error" "post-start"
     }
 
-    foreach ($mapping in Get-RancherPortForwardMappings) {
+    foreach ($mapping in Get-K3dPortForwardMappings) {
       $key = "$($mapping.Namespace).$($mapping.Service).$($mapping.LocalPort)"
       try {
         $servicePort = Get-KubectlServicePort $mapping.Namespace $mapping.Service
       } catch {
-        Add-Item $Result "findings" "kubectl" "port-forward.$key" "Could not inspect Rancher $($mapping.Environment) $($mapping.Service) service for localhost forwarding: $($_.Exception.Message)" "error" "post-start"
+        Add-Item $Result "findings" "kubectl" "port-forward.$key" "Could not inspect k3d $($mapping.Environment) $($mapping.Service) service for localhost forwarding: $($_.Exception.Message)" "error" "post-start"
         continue
       }
       if ($null -eq $servicePort) {
-        Add-Item $Result "warnings" "kubectl" "port-forward.$key" "Rancher $($mapping.Environment) $($mapping.Service) service is not deployed yet; localhost port $($mapping.LocalPort) will be configured after deployment." "warning" "post-start"
+        Add-Item $Result "warnings" "kubectl" "port-forward.$key" "k3d $($mapping.Environment) $($mapping.Service) service is not deployed yet; localhost port $($mapping.LocalPort) will be configured after deployment." "warning" "post-start"
         continue
       }
 
-      $processes = @(Get-RancherPortForwardProcess $mapping)
+      $processes = @(Get-K3dPortForwardProcess $mapping)
       if ($processes.Count -gt 0 -and (Test-LocalPortListening $mapping.LocalPort)) {
-        Add-Item $Result "actions" "kubectl" "port-forward.$key" "Rancher $($mapping.Environment) $($mapping.Service) is forwarded at http://127.0.0.1:$($mapping.LocalPort)."
+        Add-Item $Result "actions" "kubectl" "port-forward.$key" "k3d $($mapping.Environment) $($mapping.Service) is forwarded at http://127.0.0.1:$($mapping.LocalPort)."
       } elseif (Test-LocalPortListening $mapping.LocalPort) {
-        Add-Item $Result "warnings" "kubectl" "port-forward.$key" "Local port $($mapping.LocalPort) is already in use by a non-matching process; run EnsureRancherPortForwards after freeing it." "warning" "post-start"
+        Add-Item $Result "warnings" "kubectl" "port-forward.$key" "Local port $($mapping.LocalPort) is already in use by a non-matching process; run EnsureK3dPortForwards after freeing it." "warning" "post-start"
       } else {
-        Add-Item $Result "warnings" "kubectl" "port-forward.$key" "Rancher $($mapping.Environment) $($mapping.Service) is deployed, but localhost port $($mapping.LocalPort) is not forwarded. Run EnsureRancherPortForwards." "warning" "post-start"
+        Add-Item $Result "warnings" "kubectl" "port-forward.$key" "k3d $($mapping.Environment) $($mapping.Service) is deployed, but localhost port $($mapping.LocalPort) is not forwarded. Run EnsureK3dPortForwards." "warning" "post-start"
       }
     }
 
@@ -2842,14 +2859,14 @@ function Add-RancherLocalLabAuditFindings {
       if ($status.ExitCode -eq 0) {
         Add-Item $Result "actions" "helm" "headlamp" "Headlamp Helm release is installed in namespace headlamp."
       } else {
-        Add-Item $Result "warnings" "helm" "headlamp" "Headlamp is not installed. Run EnsureHeadlamp to install the Kubernetes management UI." "warning" "post-start"
+        Add-Item $Result "warnings" "helm" "headlamp" "Headlamp is not installed. Run EnsureK3dHeadlamp to install the Kubernetes management UI." "warning" "post-start"
       }
     }
 
     if ((Get-HeadlampPortForwardProcess).Count -gt 0 -and (Test-LocalPortListening 4466)) {
       Add-Item $Result "actions" "kubectl" "headlamp.port-forward" "Headlamp is forwarded at http://127.0.0.1:4466."
     } else {
-      Add-Item $Result "warnings" "kubectl" "headlamp.port-forward" "Headlamp localhost UI is not forwarded. Run EnsureHeadlamp, then open http://127.0.0.1:4466." "warning" "post-start"
+      Add-Item $Result "warnings" "kubectl" "headlamp.port-forward" "Headlamp localhost UI is not forwarded. Run EnsureK3dHeadlamp, then open http://127.0.0.1:4466." "warning" "post-start"
     }
   }
 }
@@ -2969,29 +2986,10 @@ function Invoke-Audit {
 
   $monitoringLocal = "infra/monitoring/variables.env"
   $monitoring = Read-EnvFile (Join-RootPath $monitoringLocal)
-  $azureDeploymentSelected = Test-AzureDeploymentSelected
-  $requiredOtelCollectorEnv = @(
-    "OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING",
-    "OTELCOL_AZURE_EVENT_HUB_QA_CONNECTION_STRING",
-    "OTELCOL_AZURE_EVENT_HUB_PROD_CONNECTION_STRING",
-    "OTELCOL_SEQ_OTLP_ENDPOINT"
-  )
   if ($monitoring.Count -eq 0) {
     Add-Item $result "findings" $monitoringLocal "" "Monitoring local env file is missing or empty. Run InitLocalFiles or SplitInfraEnv." "error" "pre-start"
-    if ($azureDeploymentSelected) {
-      foreach ($name in $requiredOtelCollectorEnv) {
-        Add-Item $result "findings" $monitoringLocal $name "Missing OpenTelemetry collector value for Event Hub to Seq ingestion. Required for Azure observability; Rancher local-lab Seq capture uses SEQ_URL." "error" "pre-start"
-      }
-    }
   } else {
-    if ($azureDeploymentSelected) {
-      foreach ($name in $requiredOtelCollectorEnv) {
-        if (-not $monitoring.Contains($name) -or [string]::IsNullOrWhiteSpace($monitoring[$name])) {
-          Add-Item $result "findings" $monitoringLocal $name "Missing OpenTelemetry collector value for Event Hub to Seq ingestion. Required for Azure observability; Rancher local-lab Seq capture uses SEQ_URL." "error" "pre-start"
-        }
-      }
-    }
-    foreach ($name in @("GRAFANA_HEALTH_ALERT_FOR", "SEQ_ERROR_ALERT_WINDOW", "SEQ_ERROR_ALERT_THRESHOLD", "SEQ_URL", "PROMETHEUS_URL", "RANCHER_OBSERVABILITY_ENABLED")) {
+    foreach ($name in @("GRAFANA_HEALTH_ALERT_FOR", "SEQ_ERROR_ALERT_WINDOW", "SEQ_ERROR_ALERT_THRESHOLD", "SEQ_URL")) {
       if (-not $monitoring.Contains($name) -or [string]::IsNullOrWhiteSpace($monitoring[$name])) {
         Add-Item $result "findings" $monitoringLocal $name "Missing monitoring alert configuration value. Copy the default from infra/monitoring/variables.env.example." "warning" "pre-start"
       }
@@ -3036,31 +3034,25 @@ function Invoke-Audit {
     $content = Get-Content -Path $path -Raw
     try {
       $parsedDashboard = $content | ConvertFrom-Json
-      $expressions = @($parsedDashboard.panels | ForEach-Object { $_.targets } | ForEach-Object { $_.expr })
-      $siteExpression = $expressions | Where-Object {
-        $_ -match 'probe_success' -and
-        $_ -match "environment=`"$($dashboard.Environment)`"" -and
-        $_ -match 'provider="rancher-desktop"' -and
-        $_ -match 'app="site"' -and
-        $_ -match "instance=`"$([regex]::Escape($dashboard.SiteInstance))`""
+      $targets = @($parsedDashboard.panels | ForEach-Object { $_.targets } | ForEach-Object { $_ })
+      $siteTarget = $targets | Where-Object {
+        $_.url -eq $dashboard.SiteInstance -and
+        $_.parser -eq "backend" -and
+        $_.json_options.root_is_not_array -eq $true -and
+        @($_.columns | Where-Object { $_.selector -eq "status" -and $_.type -eq "string" }).Count -gt 0 -and
+        @($_.computed_columns | Where-Object { $_.selector -eq "status == 'ok' ? 1 : 0" -and $_.text -eq "up" -and $_.type -eq "number" }).Count -gt 0
       }
-      $apiExpression = $expressions | Where-Object {
-        $_ -match 'probe_success' -and
-        $_ -match "environment=`"$($dashboard.Environment)`"" -and
-        $_ -match 'provider="rancher-desktop"' -and
-        $_ -match 'app="api"' -and
-        $_ -match "instance=`"$([regex]::Escape($dashboard.ApiInstance))`""
-      }
-      $durationExpression = $expressions | Where-Object {
-        $_ -match 'probe_duration_seconds' -and
-        $_ -match "environment=`"$($dashboard.Environment)`"" -and
-        $_ -match 'provider="rancher-desktop"' -and
-        $_ -match 'host\\\\.docker\\\\.internal'
+      $apiTarget = $targets | Where-Object {
+        $_.url -eq $dashboard.ApiInstance -and
+        $_.parser -eq "backend" -and
+        $_.json_options.root_is_not_array -eq $true -and
+        @($_.columns | Where-Object { $_.selector -eq "status" -and $_.type -eq "string" }).Count -gt 0 -and
+        @($_.computed_columns | Where-Object { $_.selector -eq "status == 'ok' ? 1 : 0" -and $_.text -eq "up" -and $_.type -eq "number" }).Count -gt 0
       }
 
-      if ($parsedDashboard.title -ne $dashboard.Title -or -not $siteExpression -or -not $apiExpression -or -not $durationExpression) {
-        Add-Item $result "findings" $dashboard.File "grafana-k8-dashboard" "Local Grafana dashboard is stale or not scoped to Rancher Desktop K8 Web/API exact instances. Run InitLocalFiles to repair it." "warning" "pre-start"
-      } elseif ($content -match 'app=\\"web\\"|Azure|azure-monitor') {
+      if ($parsedDashboard.title -ne $dashboard.Title -or -not $siteTarget -or -not $apiTarget -or $content -notmatch "infinity-health") {
+        Add-Item $result "findings" $dashboard.File "grafana-k8-dashboard" "Local Grafana dashboard is stale or not scoped to k3d K8 Web/API exact Infinity health URLs. Run InitLocalFiles to repair it." "warning" "pre-start"
+      } elseif ($content -match 'probe_success|prometheus|app=\\"web\\"|Azure|azure-monitor') {
         Add-Item $result "findings" $dashboard.File "grafana-legacy-dashboard" "Local Grafana dashboard contains legacy Azure/web-series content. Run InitLocalFiles to repair it." "warning" "pre-start"
       }
     } catch {
@@ -3086,19 +3078,16 @@ function Invoke-Audit {
   $healthAlertsPath = Join-RootPath "infra/monitoring/grafana/provisioning/alerting/health-alerts.yml"
   if (Test-Path $healthAlertsPath) {
     $healthAlerts = Get-Content -Path $healthAlertsPath -Raw
-    if ($healthAlerts -notmatch "probe_success\{job=""blackbox_http_health""\}\s*==\s*0" -or $healthAlerts -notmatch 'for:\s*\$\{GRAFANA_HEALTH_ALERT_FOR\}') {
-      Add-Item $result "findings" "infra/monitoring/grafana/provisioning/alerting/health-alerts.yml" "grafana-health-alerts" "Grafana health alert rule must trigger when probe_success stays 0 for the configured duration." "warning" "post-start"
+    if ($healthAlerts -notmatch "datasourceUid:\s*infinity-health" -or $healthAlerts -notmatch "type:\s*lt" -or $healthAlerts -notmatch 'for:\s*\$\{GRAFANA_HEALTH_ALERT_FOR\}') {
+      Add-Item $result "findings" "infra/monitoring/grafana/provisioning/alerting/health-alerts.yml" "grafana-health-alerts" "Grafana health alert rules must query Infinity health URLs and trigger when up is below 1 for the configured duration." "warning" "post-start"
     }
   }
 
   foreach ($grafanaFile in @(
-    "infra/monitoring/grafana/provisioning/datasources/prometheus.yml",
-    "infra/monitoring/prometheus/prometheus.yml",
-    "infra/monitoring/prometheus/blackbox.yml",
-    "infra/monitoring/prometheus/targets.local.yml"
+    "infra/monitoring/grafana/provisioning/datasources/infinity-health.yml"
   )) {
     if (-not (Test-Path (Join-RootPath $grafanaFile))) {
-      Add-Item $result "findings" $grafanaFile "grafana-health-stack" "Missing Grafana health monitoring artifact required for Prometheus-based /health dashboards." "warning" "post-start"
+      Add-Item $result "findings" $grafanaFile "grafana-health-stack" "Missing Grafana Infinity health datasource artifact required for /health dashboards." "warning" "post-start"
     }
   }
 
@@ -3119,52 +3108,28 @@ function Invoke-Audit {
         Add-Item $result "findings" "docker" "agentic-grafana" "Grafana container is not running; dashboards are unavailable." "warning" "post-start"
       }
 
-      if ($containers -contains "agentic-prometheus") {
-        Add-Item $result "actions" "docker" "agentic-prometheus" "Prometheus container is running for Grafana /health dashboards."
-        try {
-          $ready = Invoke-WebRequest -Uri "http://localhost:9091/-/ready" -UseBasicParsing -TimeoutSec 5
-          if ($ready.StatusCode -eq 200) {
-            Add-Item $result "actions" "prometheus" "ready" "Prometheus readiness endpoint is healthy."
-          }
-        } catch {
-          Add-Item $result "findings" "prometheus" "ready" "Prometheus container is running but readiness endpoint failed: $($_.Exception.Message)" "warning" "post-start"
-        }
-      } else {
-        Add-Item $result "findings" "docker" "agentic-prometheus" "Prometheus container is not running; Grafana /health dashboards cannot query probe data." "warning" "post-start"
-      }
-
-      if ($containers -contains "agentic-blackbox") {
-        Add-Item $result "actions" "docker" "agentic-blackbox" "Blackbox exporter container is running for /health probes."
-        try {
-          $ready = Invoke-WebRequest -Uri "http://localhost:9115/-/healthy" -UseBasicParsing -TimeoutSec 5
-          if ($ready.StatusCode -eq 200) {
-            Add-Item $result "actions" "blackbox" "ready" "Blackbox exporter health endpoint is healthy."
-          }
-        } catch {
-          Add-Item $result "findings" "blackbox" "ready" "Blackbox exporter container is running but health endpoint failed: $($_.Exception.Message)" "warning" "post-start"
-        }
-      } else {
-        Add-Item $result "findings" "docker" "agentic-blackbox" "Blackbox exporter container is not running; Prometheus cannot probe app /health endpoints." "warning" "post-start"
+      if ($containers -contains "agentic-prometheus" -or $containers -contains "agentic-blackbox") {
+        Add-Item $result "findings" "docker" "legacy-health-containers" "Prometheus or Blackbox containers are still running. Recreate the monitoring stack to use Grafana Infinity health checks only." "warning" "post-start"
       }
 
       # Check Grafana datasource provisioning
       try {
         $datasources = Invoke-WebRequest -Uri "http://localhost:3001/api/datasources" -UseBasicParsing -TimeoutSec 5
         $ds = $datasources.Content | ConvertFrom-Json
-        $promDs = $ds | Where-Object { $_.type -eq "prometheus" }
-        if ($promDs) {
-          Add-Item $result "actions" "grafana" "datasource.prometheus" "Prometheus datasource is provisioned in Grafana (uid: $($promDs.uid))."
+        $healthDs = $ds | Where-Object { $_.uid -eq "infinity-health" -and $_.type -eq "yesoreyeram-infinity-datasource" }
+        if ($healthDs) {
+          Add-Item $result "actions" "grafana" "datasource.infinity-health" "Infinity health datasource is provisioned in Grafana."
         } else {
-          Add-Item $result "findings" "grafana" "datasource.prometheus" "Prometheus datasource is not found in Grafana. Check provisioning YAML at infra/monitoring/grafana/provisioning/datasources/prometheus.yml." "warning" "post-start"
+          Add-Item $result "findings" "grafana" "datasource.infinity-health" "Infinity health datasource is not found in Grafana. Check provisioning YAML at infra/monitoring/grafana/provisioning/datasources/infinity-health.yml." "warning" "post-start"
         }
       } catch {
         # Check if it's an auth error (datasource exists but requires login) or connection error
         if ($_.Exception.Message -match "401|Unauthorized|Invalid API key") {
-          Add-Item $result "findings" "grafana" "datasource.prometheus.auth" "Grafana datasource endpoint returned 401. Enable GF_AUTH_ANONYMOUS_ENABLED=true in compose.yml or ensure admin credentials are correct." "warning" "post-start"
+          Add-Item $result "findings" "grafana" "datasource.infinity-health.auth" "Grafana datasource endpoint returned 401. Enable GF_AUTH_ANONYMOUS_ENABLED=true in compose.yml or ensure admin credentials are correct." "warning" "post-start"
         } elseif ($_.Exception.Message -match "Connection|timeout|refused") {
-          Add-Item $result "findings" "grafana" "datasource.prometheus.connect" "Could not connect to Grafana API at localhost:3001; Prometheus datasource check skipped." "info" "post-start"
+          Add-Item $result "findings" "grafana" "datasource.infinity-health.connect" "Could not connect to Grafana API at localhost:3001; Infinity datasource check skipped." "info" "post-start"
         } else {
-          Add-Item $result "findings" "grafana" "datasource.prometheus" "Could not check Grafana datasources: $($_.Exception.Message)" "info" "post-start"
+          Add-Item $result "findings" "grafana" "datasource.infinity-health" "Could not check Grafana datasources: $($_.Exception.Message)" "info" "post-start"
         }
       }
 
@@ -3199,37 +3164,6 @@ function Invoke-Audit {
         Add-Item $result "findings" "grafana" "alerts.health" "Could not query Grafana alert rules: $($_.Exception.Message)" "info" "post-start"
       }
 
-      # Check Prometheus scrape targets are discovering and UP
-      try {
-        $targets = Invoke-WebRequest -Uri "http://localhost:9091/api/v1/targets" -UseBasicParsing -TimeoutSec 5
-        $targetData = $targets.Content | ConvertFrom-Json
-        $upTargets = @($targetData.data.activeTargets | Where-Object { $_.health -eq "up" })
-        if ($upTargets.Count -gt 0) {
-          Add-Item $result "actions" "prometheus" "targets.up" "Prometheus scrape job 'blackbox_http_health' has $($upTargets.Count) targets UP and ready for probing."
-        } else {
-          Add-Item $result "findings" "prometheus" "targets.down" "Prometheus targets are not UP. Check Docker network connectivity from Prometheus to configured app endpoints. Verify blackbox container is running and selected deployment /health endpoints are accessible." "warning" "post-start"
-        }
-      } catch {
-        Add-Item $result "findings" "prometheus" "targets.check" "Could not query Prometheus targets at localhost:9091: $($_.Exception.Message)" "info" "post-start"
-      }
-
-      # Check Prometheus has metrics for health probes
-      try {
-        $metrics = Invoke-WebRequest -Uri "http://localhost:9091/api/v1/query?query=probe_success" -UseBasicParsing -TimeoutSec 5
-        $metricData = $metrics.Content | ConvertFrom-Json
-        $results = @($metricData.data.result)
-        if ($results.Count -ge 6) {
-          $devResults = @($results | Where-Object { $_.metric.environment -eq "dev" })
-          Add-Item $result "actions" "prometheus" "metrics.probe_success" "Prometheus has $($results.Count) probe_success metrics. Dev environment has $($devResults.Count) metrics (web and api expected)."
-        } elseif ($results.Count -gt 0) {
-          Add-Item $result "findings" "prometheus" "metrics.probe_success.partial" "Prometheus has only $($results.Count) probe metrics; expected 6 (dev/qa/prod x web/api). Probes may still be initializing or encountering errors." "warning" "post-start"
-        } else {
-          Add-Item $result "findings" "prometheus" "metrics.probe_success.none" "No probe_success metrics found in Prometheus. Check Blackbox exporter logs: 'docker logs agentic-blackbox'. Verify Prometheus scrape config at infra/monitoring/prometheus/prometheus.yml includes blackbox_http_health job." "error" "post-start"
-        }
-      } catch {
-        Add-Item $result "findings" "prometheus" "metrics.check" "Could not query Prometheus metrics: $($_.Exception.Message)" "info" "post-start"
-      }
-
       # Check Grafana anonymous access is enabled (fix for volume corruption issues)
       try {
         $dockerPath = Join-RootPath "infra/monitoring/compose.yml"
@@ -3255,7 +3189,7 @@ function Invoke-Audit {
 
   Add-QualityGateAuditFindings $result
   Add-WorktreeLocalConfigAuditFindings $result
-  Add-RancherLocalLabAuditFindings $result
+  Add-K3dLocalLabAuditFindings $result
 
   return $result
 }
@@ -5698,74 +5632,27 @@ function Invoke-SetSeqAzureEventHubLogs {
   }
 
   $composeRelative = "infra/monitoring/compose.yml"
-  $collectorRelative = "infra/monitoring/otelcol/collector.yaml"
   $composePath = Join-RootPath $composeRelative
-  $collectorPath = Join-RootPath $collectorRelative
-  $azureDeploymentSelected = Test-AzureDeploymentSelected
-
-  if ($azureDeploymentSelected) {
-    if (-not (Test-Path $composePath)) {
-      Add-Item $result "findings" $composeRelative "monitoring-compose" "Missing monitoring compose file." "error" "pre-start"
-    } else {
-      $compose = Get-Content -Path $composePath -Raw
-      if ($compose -notmatch 'name:\s*agentic-e2e' -or $compose -notmatch 'profiles:\s*\n\s*-\s*eventhub' -or $compose -notmatch 'agentic-otelcol' -or $compose -notmatch 'otel/opentelemetry-collector-contrib:0\.154\.0') {
-        Add-Item $result "findings" $composeRelative "otelcol-service" "Monitoring compose does not define the required Event Hub collector profile." "error" "pre-start"
-      } else {
-        Add-Item $result "actions" $composeRelative "" "Required Event Hub collector profile is present in the shared agentic-e2e compose collection."
-      }
-    }
-
-    if (-not (Test-Path $collectorPath)) {
-      Add-Item $result "findings" $collectorRelative "collector-config" "Missing OpenTelemetry Collector Contrib configuration." "error" "pre-start"
-    } else {
-      $collector = Get-Content -Path $collectorPath -Raw
-      foreach ($needle in @("azure_event_hub/dev", "azure_event_hub/qa", "azure_event_hub/prod", "otlphttp/seq")) {
-        if ($collector -notmatch [regex]::Escape($needle)) {
-          Add-Item $result "findings" $collectorRelative $needle "Collector configuration is missing expected Event Hub to Seq wiring." "error" "pre-start"
-        }
-      }
-      if ($collector -match "azure_event_hub/dev" -and $collector -match "otlphttp/seq") {
-        Add-Item $result "actions" $collectorRelative "" "OpenTelemetry Collector Contrib config is present for Azure Event Hub to Seq ingestion."
-      }
-    }
+  if (-not (Test-Path $composePath)) {
+    Add-Item $result "findings" $composeRelative "monitoring-compose" "Missing monitoring compose file." "error" "pre-start"
   } else {
-    Add-Item $result "actions" $composeRelative "eventhub.skipped" "Azure Event Hub collector checks skipped because Rancher Desktop is the selected deployment provider."
+    $compose = Get-Content -Path $composePath -Raw
+    if ($compose -notmatch 'name:\s*agentic-e2e' -or $compose -match 'agentic-otelcol') {
+      Add-Item $result "findings" $composeRelative "monitoring-compose" "Current k3d monitoring compose must use the shared agentic-e2e collection without a local otelcol service." "error" "pre-start"
+    } else {
+      Add-Item $result "actions" $composeRelative "" "Current k3d monitoring compose excludes local otelcol."
+    }
   }
 
   $monitoring = Read-EnvFile $target
-  if ($azureDeploymentSelected) {
-    foreach ($name in @("OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING", "OTELCOL_AZURE_EVENT_HUB_QA_CONNECTION_STRING", "OTELCOL_AZURE_EVENT_HUB_PROD_CONNECTION_STRING")) {
-      if (-not $monitoring.Contains($name) -or [string]::IsNullOrWhiteSpace($monitoring[$name])) {
-        Add-Item $result "findings" $targetRelative $name "Missing Event Hub connection string required by the Azure collector-based Seq ingestion path." "error" "pre-start"
-      } else {
-        Add-Item $result "actions" $targetRelative $name "Event Hub connection string is configured for collector-based Seq ingestion."
-      }
-    }
-
-    if (-not $monitoring.Contains("OTELCOL_SEQ_OTLP_ENDPOINT") -or [string]::IsNullOrWhiteSpace($monitoring["OTELCOL_SEQ_OTLP_ENDPOINT"])) {
-      Add-Item $result "findings" $targetRelative "OTELCOL_SEQ_OTLP_ENDPOINT" "Missing OTLP endpoint required by the Azure collector-based Seq ingestion path." "error" "pre-start"
-    } else {
-      Add-Item $result "actions" $targetRelative "OTELCOL_SEQ_OTLP_ENDPOINT" "Collector OTLP export endpoint is configured."
-    }
-  }
-
-  $rancherObservabilityEnabled = $true
-  if ($monitoring.Contains("RANCHER_OBSERVABILITY_ENABLED") -and -not [string]::IsNullOrWhiteSpace($monitoring["RANCHER_OBSERVABILITY_ENABLED"])) {
-    $rancherObservabilityEnabled = [string]::Equals($monitoring["RANCHER_OBSERVABILITY_ENABLED"], "true", [System.StringComparison]::OrdinalIgnoreCase)
-  }
   $seqUrl = if ($monitoring.Contains("SEQ_URL") -and -not [string]::IsNullOrWhiteSpace($monitoring["SEQ_URL"])) { $monitoring["SEQ_URL"] } else { "http://localhost:5341" }
-  if ($rancherObservabilityEnabled) {
-    Add-Item $result "actions" $targetRelative "RANCHER_OBSERVABILITY_ENABLED" "Rancher Desktop local-lab Seq capture is enabled."
-    try {
-      $seqReady = Invoke-WebRequest -Uri "$($seqUrl.TrimEnd('/'))/api" -UseBasicParsing -TimeoutSec 5
-      if ($seqReady.StatusCode -eq 200) {
-        Add-Item $result "actions" "seq" "rancher.ready" "Seq endpoint is reachable for Rancher Desktop sanitized pod-log capture."
-      }
-    } catch {
-      Add-Item $result "findings" "seq" "rancher.ready" "Rancher Desktop log capture is enabled, but Seq endpoint '$seqUrl' is not reachable: $($_.Exception.Message)" "error" "post-start"
+  try {
+    $seqReady = Invoke-WebRequest -Uri "$($seqUrl.TrimEnd('/'))/api" -UseBasicParsing -TimeoutSec 5
+    if ($seqReady.StatusCode -eq 200) {
+      Add-Item $result "actions" "seq" "k3d.ready" "Seq endpoint is reachable for direct k3d app logs."
     }
-  } else {
-    Add-Item $result "warnings" $targetRelative "RANCHER_OBSERVABILITY_ENABLED" "Rancher Desktop local-lab Seq capture is disabled."
+  } catch {
+    Add-Item $result "findings" "seq" "k3d.ready" "Seq endpoint '$seqUrl' is not reachable: $($_.Exception.Message)" "error" "post-start"
   }
 
   try {
@@ -5782,104 +5669,73 @@ function Invoke-SetSeqAzureEventHubLogs {
         }
       }
     } else {
-      Add-Item $result "findings" "docker" "agentic-seq" "Seq container is not running; collector path cannot be validated." "error" "post-start"
-    }
-
-    if ($azureDeploymentSelected -and $LASTEXITCODE -eq 0 -and $containers -contains "agentic-otelcol") {
-      $otelState = (& docker inspect -f "{{.State.Status}}" agentic-otelcol 2>$null | Out-String).Trim()
-      if ($otelState -eq "running") {
-        Add-Item $result "actions" "docker" "agentic-otelcol" "Event Hub collector container is running."
-
-        $otelEnv = (& docker inspect agentic-otelcol --format "{{range .Config.Env}}{{println .}}{{end}}" 2>$null | Out-String)
-        foreach ($name in @("OTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING", "OTELCOL_AZURE_EVENT_HUB_QA_CONNECTION_STRING", "OTELCOL_AZURE_EVENT_HUB_PROD_CONNECTION_STRING", "OTELCOL_SEQ_OTLP_ENDPOINT")) {
-          $pattern = "(?m)^" + [regex]::Escape($name) + "=(.*)$"
-          $match = [regex]::Match($otelEnv, $pattern)
-          if (-not $match.Success) {
-            Add-Item $result "findings" "docker" $name "Running collector container is missing expected environment value '$name'. Recreate the collector container." "error" "post-start"
-            continue
-          }
-
-          $runningValue = $match.Groups[1].Value.Trim()
-          if ($monitoring.Contains($name) -and -not [string]::Equals($runningValue, $monitoring[$name], [System.StringComparison]::Ordinal)) {
-            Add-Item $result "findings" "docker" $name "Running collector container has a stale '$name' value that does not match infra/monitoring/variables.env. Recreate the collector container with --force-recreate." "error" "post-start"
-          }
-        }
-
-        $otelLogs = (& docker logs --tail 120 agentic-otelcol 2>&1 | Out-String)
-        if ($otelLogs -match "InvalidSignature|error receiving events|unauthorized") {
-          $severity = if ($azureDeploymentSelected) { "error" } else { "warning" }
-          Add-Item $result "findings" "docker" "agentic-otelcol-runtime" "Collector logs show Event Hub authentication or ingestion failures. Verify Send/Listen auth rules and recreate the collector container after updating connection strings." $severity "post-start"
-        }
-      } else {
-        Add-Item $result "findings" "docker" "agentic-otelcol" "Event Hub collector container status is '$otelState'." "error" "post-start"
-      }
-    } elseif ($azureDeploymentSelected) {
-      Add-Item $result "findings" "docker" "agentic-otelcol" "Event Hub collector container is not running. Start with --profile eventhub to complete Azure observability setup." "error" "post-start"
+      Add-Item $result "findings" "docker" "agentic-seq" "Seq container is not running; app log search cannot be validated." "error" "post-start"
     }
   } catch {
     Add-Item $result "findings" "seq" "ready" "Could not validate Seq API endpoint: $($_.Exception.Message)" "error" "post-start"
   }
 
-  if ($azureDeploymentSelected) {
-    Add-Item $result "actions" $composeRelative "" "Run `docker compose --profile eventhub --env-file .\infra\plane\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml --project-directory .\infra up -d --force-recreate otelcol` after Event Hub or OTEL env changes."
-  }
   return $result
 }
 
-function Invoke-EnsureRancherKubernetes {
+function Invoke-EnsureK3dCluster {
   $result = New-Result
 
-  if (-not (Test-RancherLocalDeploymentConfigured)) {
-    Add-Item $result "actions" ".codex/project-profile.json" "providers.deployment" "Rancher Desktop is not the selected deployment provider; Kubernetes enablement skipped."
+  if (-not (Test-K3dLocalDeploymentConfigured)) {
+    Add-Item $result "actions" ".codex/project-profile.json" "providers.deployment" "k3d is not the selected deployment provider; Kubernetes enablement skipped."
     return $result
   }
 
-  if ($null -eq (Get-Command rdctl -ErrorAction SilentlyContinue)) {
-    Add-Item $result "findings" "rdctl" "" "rdctl is missing. Install or repair Rancher Desktop, then validate with `rdctl list-settings`." "error" "pre-start"
+  foreach ($tool in @("docker", "k3d", "kubectl")) {
+    if ($null -eq (Get-Command $tool -ErrorAction SilentlyContinue)) {
+      $install = if ($tool -eq "k3d") { " Install with `choco install k3d -y` or `winget install -e --id k3d.k3d`." } else { "" }
+      Add-Item $result "findings" $tool "" "$tool is missing.$install" "error" "pre-start"
+      return $result
+    }
+  }
+
+  $docker = Invoke-NativeText "docker" @("info", "--format", "{{.ServerVersion}}") 30
+  if ($docker.ExitCode -ne 0) {
+    Add-Item $result "findings" "docker" "ready" "Docker is not reachable; start Docker and validate with `docker info`." "error" "pre-start"
     return $result
   }
 
-  if ($null -eq (Get-Command kubectl -ErrorAction SilentlyContinue)) {
-    Add-Item $result "findings" "kubectl" "" "kubectl is missing. Install Rancher Desktop Kubernetes support, then validate with `kubectl get nodes`." "error" "pre-start"
-    return $result
-  }
-
-  $settings = $null
-  try {
-    $settings = Get-RancherDesktopSettings
-  } catch {
-    Add-Item $result "actions" "rdctl" "start" "Rancher Desktop settings are not reachable; starting Rancher Desktop with Kubernetes enabled."
-    $start = Invoke-NativeText "rdctl" @("start", "--kubernetes.enabled", "--no-modal-dialogs") 120
+  $clusterList = Invoke-NativeText "k3d" @("cluster", "list", $K3dClusterName, "-o", "json") 20
+  if ($clusterList.ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($clusterList.Output) -and $clusterList.Output.Trim() -ne "[]") {
+    Add-Item $result "actions" "k3d" "cluster" "k3d cluster '$K3dClusterName' already exists."
+    $start = Invoke-NativeText "k3d" @("cluster", "start", $K3dClusterName) 180
     if ($start.ExitCode -ne 0) {
-      Add-Item $result "findings" "rdctl" "start" "Could not start Rancher Desktop with Kubernetes enabled: $($start.Error)" "error" "pre-start"
+      Add-Item $result "findings" "k3d" "cluster.start" "Could not start k3d cluster '$K3dClusterName': $($start.Error)" "error" "pre-start"
+      return $result
+    }
+  } else {
+    Add-Item $result "actions" "k3d" "cluster.create" "Creating k3d cluster '$K3dClusterName' on API port 127.0.0.1:$K3dApiPort."
+    $create = Invoke-NativeText "k3d" @("cluster", "create", $K3dClusterName, "--servers", "1", "--agents", "1", "--api-port", "127.0.0.1:$K3dApiPort", "--wait", "--timeout", "300s") 360
+    if ($create.ExitCode -ne 0) {
+      Add-Item $result "findings" "k3d" "cluster.create" "Could not create k3d cluster '$K3dClusterName': $($create.Error)" "error" "pre-start"
       return $result
     }
   }
 
-  if ($null -ne $settings -and -not (Test-RancherKubernetesEnabled $settings)) {
-    Add-Item $result "actions" "rdctl" "set" "Enabling Rancher Desktop Kubernetes."
-    $set = Invoke-NativeText "rdctl" @("set", "--kubernetes.enabled") 120
-    if ($set.ExitCode -ne 0) {
-      Add-Item $result "findings" "rdctl" "set" "Could not enable Rancher Desktop Kubernetes: $($set.Error)" "error" "pre-start"
-      return $result
-    }
-  } elseif ($null -ne $settings) {
-    Add-Item $result "actions" "rdctl" "kubernetes.enabled" "Rancher Desktop Kubernetes is already enabled."
+  $merge = Invoke-NativeText "k3d" @("kubeconfig", "merge", $K3dClusterName, "--kubeconfig-merge-default", "--kubeconfig-switch-context") 30
+  if ($merge.ExitCode -ne 0) {
+    Add-Item $result "findings" "k3d" "kubeconfig.merge" "Could not merge/switch kubeconfig for '$K3dClusterName': $($merge.Error)" "error" "post-start"
+    return $result
   }
 
   $deadline = (Get-Date).AddMinutes(5)
   do {
     $context = Get-KubectlCurrentContext
-    if ($context -eq "rancher-desktop") {
-      Add-Item $result "actions" "kubectl" "context" "kubectl current context is rancher-desktop."
+    if ($context -eq $K3dContextName) {
+      Add-Item $result "actions" "kubectl" "context" "kubectl current context is $K3dContextName."
       break
     }
 
     Start-Sleep -Seconds 5
   } while ((Get-Date) -lt $deadline)
 
-  if ((Get-KubectlCurrentContext) -ne "rancher-desktop") {
-    Add-Item $result "findings" "kubectl" "context" "kubectl current context did not become 'rancher-desktop'. Open Rancher Desktop Settings -> Kubernetes, enable Kubernetes, then run `kubectl config use-context rancher-desktop`." "error" "post-start"
+  if ((Get-KubectlCurrentContext) -ne $K3dContextName) {
+    Add-Item $result "findings" "kubectl" "context" "kubectl current context did not become '$K3dContextName'. Run `kubectl config use-context $K3dContextName`." "error" "post-start"
     return $result
   }
 
@@ -5887,7 +5743,7 @@ function Invoke-EnsureRancherKubernetes {
     try {
       $readyNodes = @(Get-KubectlReadyNodeNames)
       if ($readyNodes.Count -gt 0) {
-        Add-Item $result "actions" "kubectl" "nodes.ready" "Rancher Desktop Kubernetes has Ready node(s): $($readyNodes -join ', ')."
+        Add-Item $result "actions" "kubectl" "nodes.ready" "k3d Kubernetes has Ready node(s): $($readyNodes -join ', ')."
         return $result
       }
     } catch {
@@ -5898,59 +5754,59 @@ function Invoke-EnsureRancherKubernetes {
   } while ((Get-Date) -lt $deadline)
 
   $message = if ([string]::IsNullOrWhiteSpace($lastError)) {
-    "Rancher Desktop Kubernetes API is reachable, but no nodes became Ready within 5 minutes."
+    "k3d Kubernetes API is reachable, but no nodes became Ready within 5 minutes."
   } else {
-    "Rancher Desktop Kubernetes API did not become ready within 5 minutes: $lastError"
+    "k3d Kubernetes API did not become ready within 5 minutes: $lastError"
   }
-  Add-Item $result "findings" "kubectl" "nodes.ready" "$message Validate with `kubectl get nodes` after Rancher Desktop finishes starting Kubernetes." "error" "post-start"
+  Add-Item $result "findings" "kubectl" "nodes.ready" "$message Validate with `kubectl get nodes` after k3d finishes starting Kubernetes." "error" "post-start"
   return $result
 }
 
-function Invoke-EnsureRancherPortForwards {
+function Invoke-EnsureK3dPortForwards {
   $result = New-Result
 
-  if (-not (Test-RancherLocalDeploymentConfigured)) {
-    Add-Item $result "actions" ".codex/project-profile.json" "providers.deployment" "Rancher Desktop is not the selected deployment provider; localhost port-forward setup skipped."
+  if (-not (Test-K3dLocalDeploymentConfigured)) {
+    Add-Item $result "actions" ".codex/project-profile.json" "providers.deployment" "k3d is not the selected deployment provider; localhost port-forward setup skipped."
     return $result
   }
 
   if ($null -eq (Get-Command kubectl -ErrorAction SilentlyContinue)) {
-    Add-Item $result "findings" "kubectl" "" "kubectl is missing. Install Rancher Desktop Kubernetes support, then validate with `kubectl get nodes`." "error" "pre-start"
+    Add-Item $result "findings" "kubectl" "" "kubectl is missing. Install k3d Kubernetes support, then validate with `kubectl get nodes`." "error" "pre-start"
     return $result
   }
 
   $context = Get-KubectlCurrentContext
-  if ($context -ne "rancher-desktop") {
-    Add-Item $result "findings" "kubectl" "context" "kubectl current context is '$context'; run EnsureRancherKubernetes before EnsureRancherPortForwards." "error" "pre-start"
+  if ($context -ne $K3dContextName) {
+    Add-Item $result "findings" "kubectl" "context" "kubectl current context is '$context'; run EnsureK3dCluster before EnsureK3dPortForwards." "error" "pre-start"
     return $result
   }
 
-  foreach ($mapping in Get-RancherPortForwardMappings) {
+  foreach ($mapping in Get-K3dPortForwardMappings) {
     $key = "$($mapping.Namespace).$($mapping.Service).$($mapping.LocalPort)"
     try {
       $servicePort = Get-KubectlServicePort $mapping.Namespace $mapping.Service
     } catch {
-      Add-Item $result "findings" "kubectl" "port-forward.$key" "Could not inspect Rancher $($mapping.Environment) $($mapping.Service) service for localhost forwarding: $($_.Exception.Message)" "error" "post-start"
+      Add-Item $result "findings" "kubectl" "port-forward.$key" "Could not inspect k3d $($mapping.Environment) $($mapping.Service) service for localhost forwarding: $($_.Exception.Message)" "error" "post-start"
       continue
     }
     if ($null -eq $servicePort) {
-      Add-Item $result "warnings" "kubectl" "port-forward.$key" "Rancher $($mapping.Environment) $($mapping.Service) service is not deployed yet; skipping localhost port $($mapping.LocalPort)." "warning" "post-start"
+      Add-Item $result "warnings" "kubectl" "port-forward.$key" "k3d $($mapping.Environment) $($mapping.Service) service is not deployed yet; skipping localhost port $($mapping.LocalPort)." "warning" "post-start"
       continue
     }
 
-    $processes = @(Get-RancherPortForwardProcess $mapping)
+    $processes = @(Get-K3dPortForwardProcess $mapping)
     if ($processes.Count -gt 0 -and (Test-LocalPortListening $mapping.LocalPort)) {
-      Add-Item $result "actions" "kubectl" "port-forward.$key" "Rancher $($mapping.Environment) $($mapping.Service) is already forwarded at http://127.0.0.1:$($mapping.LocalPort)."
+      Add-Item $result "actions" "kubectl" "port-forward.$key" "k3d $($mapping.Environment) $($mapping.Service) is already forwarded at http://127.0.0.1:$($mapping.LocalPort)."
       continue
     }
 
     if ((Test-LocalPortListening $mapping.LocalPort) -and $processes.Count -eq 0) {
-      Add-Item $result "findings" "kubectl" "port-forward.$key" "Local port $($mapping.LocalPort) is already in use by a non-matching process. Free the port, then rerun EnsureRancherPortForwards." "error" "post-start"
+      Add-Item $result "findings" "kubectl" "port-forward.$key" "Local port $($mapping.LocalPort) is already in use by a non-matching process. Free the port, then rerun EnsureK3dPortForwards." "error" "post-start"
       continue
     }
 
     $arguments = @(
-      "--context", "rancher-desktop",
+      "--context", $K3dContextName,
       "-n", $mapping.Namespace,
       "port-forward",
       "svc/$($mapping.Service)",
@@ -5963,7 +5819,7 @@ function Invoke-EnsureRancherPortForwards {
       $deadline = (Get-Date).AddSeconds(15)
       do {
         if (Test-LocalPortListening $mapping.LocalPort) {
-          Add-Item $result "actions" "kubectl" "port-forward.$key" "Started Rancher $($mapping.Environment) $($mapping.Service) port-forward at http://127.0.0.1:$($mapping.LocalPort) with process id $($process.Id)."
+          Add-Item $result "actions" "kubectl" "port-forward.$key" "Started k3d $($mapping.Environment) $($mapping.Service) port-forward at http://127.0.0.1:$($mapping.LocalPort) with process id $($process.Id)."
           break
         }
 
@@ -5981,24 +5837,24 @@ function Invoke-EnsureRancherPortForwards {
   return $result
 }
 
-function Invoke-EnsureHeadlamp {
+function Invoke-EnsureK3dHeadlamp {
   $result = New-Result
 
-  if (-not (Test-RancherLocalDeploymentConfigured)) {
-    Add-Item $result "actions" ".codex/project-profile.json" "providers.deployment" "Rancher Desktop is not the selected deployment provider; Headlamp setup skipped."
+  if (-not (Test-K3dLocalDeploymentConfigured)) {
+    Add-Item $result "actions" ".codex/project-profile.json" "providers.deployment" "k3d is not the selected deployment provider; Headlamp setup skipped."
     return $result
   }
 
   foreach ($tool in @("kubectl", "helm")) {
     if ($null -eq (Get-Command $tool -ErrorAction SilentlyContinue)) {
-      Add-Item $result "findings" $tool "" "$tool is missing. Install it, then rerun EnsureHeadlamp." "error" "pre-start"
+      Add-Item $result "findings" $tool "" "$tool is missing. Install it, then rerun EnsureK3dHeadlamp." "error" "pre-start"
       return $result
     }
   }
 
   $context = Get-KubectlCurrentContext
-  if ($context -ne "rancher-desktop") {
-    Add-Item $result "findings" "kubectl" "context" "kubectl current context is '$context'; run EnsureRancherKubernetes before EnsureHeadlamp." "error" "pre-start"
+  if ($context -ne $K3dContextName) {
+    Add-Item $result "findings" "kubectl" "context" "kubectl current context is '$context'; run EnsureK3dCluster before EnsureK3dHeadlamp." "error" "pre-start"
     return $result
   }
 
@@ -6031,7 +5887,7 @@ function Invoke-EnsureHeadlamp {
   }
   Add-Item $result "actions" "helm" "headlamp.install" "Headlamp is installed in namespace headlamp."
 
-  $rollout = Invoke-NativeText "kubectl" @("--context", "rancher-desktop", "-n", "headlamp", "rollout", "status", "deploy/headlamp", "--timeout=120s") 150
+  $rollout = Invoke-NativeText "kubectl" @("--context", $K3dContextName, "-n", "headlamp", "rollout", "status", "deploy/headlamp", "--timeout=120s") 150
   if ($rollout.ExitCode -ne 0) {
     Add-Item $result "findings" "kubectl" "headlamp.rollout" "Headlamp deployment did not become ready: $($rollout.Error)" "error" "post-start"
     return $result
@@ -6039,13 +5895,13 @@ function Invoke-EnsureHeadlamp {
 
   $headlampForwards = @(Get-HeadlampPortForwardProcess)
   if ((Test-LocalPortListening 4466) -and $headlampForwards.Count -eq 0) {
-    Add-Item $result "findings" "kubectl" "headlamp.port-forward" "Local port 4466 is already in use by a non-Headlamp process. Free the port, then rerun EnsureHeadlamp." "error" "post-start"
+    Add-Item $result "findings" "kubectl" "headlamp.port-forward" "Local port 4466 is already in use by a non-Headlamp process. Free the port, then rerun EnsureK3dHeadlamp." "error" "post-start"
     return $result
   }
 
   if ($headlampForwards.Count -eq 0 -or -not (Test-LocalPortListening 4466)) {
     try {
-      Start-Process -FilePath "kubectl" -ArgumentList @("--context", "rancher-desktop", "-n", "headlamp", "port-forward", "svc/headlamp", "4466:80", "--address", "127.0.0.1") -WindowStyle Hidden | Out-Null
+      Start-Process -FilePath "kubectl" -ArgumentList @("--context", $K3dContextName, "-n", "headlamp", "port-forward", "svc/headlamp", "4466:80", "--address", "127.0.0.1") -WindowStyle Hidden | Out-Null
       $deadline = (Get-Date).AddSeconds(20)
       do {
         if (Test-LocalPortListening 4466) { break }
@@ -6088,9 +5944,9 @@ switch ($Mode) {
   "SetMonitoringEnv" { $result = Invoke-SetEnvMode -TargetRelative "infra/monitoring/variables.env" }
   "SetGiteaRunner" { $result = Invoke-SetEnvMode -TargetRelative "infra/gitea/runner.env" }
   "SetSeqAzureEventHubLogs" { $result = Invoke-SetSeqAzureEventHubLogs }
-  "EnsureRancherKubernetes" { $result = Invoke-EnsureRancherKubernetes }
-  "EnsureRancherPortForwards" { $result = Invoke-EnsureRancherPortForwards }
-  "EnsureHeadlamp" { $result = Invoke-EnsureHeadlamp }
+  "EnsureK3dCluster" { $result = Invoke-EnsureK3dCluster }
+  "EnsureK3dPortForwards" { $result = Invoke-EnsureK3dPortForwards }
+  "EnsureK3dHeadlamp" { $result = Invoke-EnsureK3dHeadlamp }
   "ShowEnvironmentUrls" { $result = Invoke-ShowEnvironmentUrls }
   "SplitInfraEnv" { $result = Invoke-SplitInfraEnv }
   "SetQualityConfig" { $result = Invoke-SetQualityConfig }

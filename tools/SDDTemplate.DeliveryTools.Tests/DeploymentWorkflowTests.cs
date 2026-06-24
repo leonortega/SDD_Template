@@ -1252,12 +1252,12 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("InitProjectProfile", configureRouter);
             Assert.Contains("required first-class step for full `config infra`", configureRouter);
             Assert.Contains("run `InitProjectProfile` first", configureRouter);
-            Assert.Contains("InitProjectProfile -> EnsureRancherKubernetes when Rancher Desktop is selected -> EnsureHeadlamp when Rancher Desktop is selected -> EnsureRancherPortForwards when Rancher Desktop is selected -> Audit -> Plane", configureRouter);
+            Assert.Contains("InitProjectProfile -> EnsureK3dCluster when k3d is selected -> EnsureK3dHeadlamp when k3d is selected -> EnsureK3dPortForwards when k3d is selected -> ShowEnvironmentUrls when k3d is selected -> Audit -> Plane", configureRouter);
             Assert.Contains("Stop before provider-specific mutation", configureRouter);
 
             Assert.Contains("InitProjectProfile", qualityReference);
             Assert.Contains("before full `config infra` quality/provider setup", qualityReference);
-            Assert.Contains("follow its `InitProjectProfile`, `EnsureRancherKubernetes`, `EnsureHeadlamp`, and `EnsureRancherPortForwards` when Rancher Desktop is selected, audit", compatibilityRouter);
+            Assert.Contains("follow its `InitProjectProfile`, `EnsureK3dCluster`, `EnsureK3dHeadlamp`, and `EnsureK3dPortForwards` when k3d is selected, audit", compatibilityRouter);
             Assert.Contains("Full `config infra` runs `InitProjectProfile` first", readme);
 
             Assert.Contains("\"InitProjectProfile\"", configureScript);
@@ -1967,7 +1967,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             string configureScript = ReadConfigureScript();
 
             Assert.Contains("QA Evidence Trigger Branch Cleanup", contract);
-            Assert.Contains("Azure uses `qa/{ticketKey}` and Rancher Desktop uses `qa-local/{ticketKey}`", contract);
+            Assert.Contains("Azure uses `qa/{ticketKey}` and k3d uses `qa-local/{ticketKey}`", contract);
             Assert.Contains("Durable QA evidence belongs in Nexus, Plane comments, release manifests, and tags", contract);
             Assert.Contains("git push origin --delete qa/E2EPROJECT-123", e2eSkill);
             Assert.Contains("git push origin --delete qa-local/E2EPROJECT-123", e2eSkill);

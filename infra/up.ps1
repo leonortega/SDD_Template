@@ -7,4 +7,4 @@ docker compose `
   --env-file (Join-Path $infraDir "monitoring\variables.env") `
   -f (Join-Path $infraDir "compose.yml") `
   --project-directory $infraDir `
-  up -d
+  up -d --remove-orphans

@@ -8,8 +8,8 @@ This repository is a local agentic delivery lab. Its current profile is a .NET B
 - The REST API application lives under `src/SDDTemplate.Api`.
 - The EF Core entities, DbContext, migrations, and database setup live under `src/SDDTemplate.Data`.
 - Application behavior is tested from `tests/SDDTemplate.Site.Tests`.
-- Local Docker Compose infrastructure provides Plane, Gitea, the Gitea Actions runner, Nexus, Dozzle, Grafana, and Seq. Rancher Desktop captures sanitized Kubernetes pod logs into Seq during local deployment evidence collection; OpenTelemetry Collector Contrib consumes Azure Event Hub only when the optional Azure lane is selected.
-- Rancher Desktop Kubernetes hosts the default DEV, QA, and PROD application runtimes through namespaces `sdd-dev`, `sdd-qa`, and `sdd-prod`.
+- Local Docker Compose infrastructure provides Plane, Gitea, the Gitea Actions runner, Nexus, Dozzle, Grafana, and Seq. k3d deployment health evidence comes from direct site/API `/health` checks, and Grafana uses the Infinity datasource for operator health dashboards and alerts. Azure Event Hub ingestion is optional future observability, not part of the current local environment.
+- k3d Kubernetes hosts the default DEV, QA, and PROD application runtimes through namespaces `sdd-dev`, `sdd-qa`, and `sdd-prod`.
 - Azure can host optional remote DEV, QA, and PROD application runtimes when its adapter is explicitly selected.
 - Nexus stores immutable application artifacts, container image metadata, release manifests, and QA evidence.
 - Plane records ticket state, generated workflow markers, and human-readable delivery comments.
@@ -24,9 +24,9 @@ The canonical non-secret stack and tool declaration is `.codex/project-profile.j
 - OpenSpec captures planned behavior, requirements, design decisions, and task checklists before implementation and after review feedback.
 - Gitea hosts source control and pull requests; Gitea Actions is the authoritative PR validation and deployment workflow runner.
 - Nexus stores immutable artifacts, checksums, release manifests, container image digest metadata, and preferred QA evidence bundles.
-- Rancher Desktop Kubernetes is the default local-cloud deployment provider.
+- k3d Kubernetes is the default local-cloud deployment provider.
 - Azure App Service remains an optional deployment adapter, not the default provider.
-- Azure Monitor and Log Analytics remain Azure-side observability sources when the optional Azure lane is used. Seq provides Rancher Desktop pod-log search through the local capture script. Dozzle provides local container log inspection.
+- Azure Monitor and Log Analytics remain Azure-side observability sources when the optional Azure lane is used. Seq receives app-emitted Serilog events, Grafana Infinity visualizes k3d `/health`, direct deployment checks produce health evidence, and Dozzle provides local container log inspection.
 - Repo-local Codex skills under `.codex/skills` are copied from verified repository sources when recommended. `project-guidance-discover` scans the project, checks repo-local workflow sources, searches OpenAI official sources, official tool and technology-owner sources, `skills.sh`/`skills` or marketplace repository leads, and clearly labeled community sources in that order, researches extra useful skills, MCPs, plugins, tools, references, practices, standards, and Codex-applicable IDE helpers, then asks the user only to confirm, dismiss, or name omissions. Confirmation means record accepted ids and run guarded acquisition immediately. `project-guidance-acquire` uses guarded auto acquisition: safe repo-local, non-secret skills may be copied with `sourceKind` attribution, and supported MCP/plugin/tool/IDE configuration runs without a second install prompt for confirmed items. Global, IDE, secret-bearing, privileged, MCP/plugin, or reboot-required installs still require explicit confirmation when they introduce new scope, secrets, or different items. Restart and reboot requirements are aggregated and reported once after all feasible acquisitions finish. `project-guidance-mapper` maps delivery steps to workflow skills, expert skills, MCPs, plugins, tools, references, practices, and standards through ignored `.codex/tool-recommendations.local.json` `usedInSteps`.
 
 ## Sources Of Truth
@@ -38,7 +38,7 @@ The canonical non-secret stack and tool declaration is `.codex/project-profile.j
 - `.codex/skills/_shared/delivery-contract.md` is authoritative for agent-enforced delivery behavior.
 - `docs/` holds durable human-readable project context.
 - The configured review provider validation is authoritative for PR quality gates.
-- The configured artifact provider `app/{commitSha}/release.json` is authoritative for artifact lineage across environments. For the Rancher Desktop lane, `app/{commitSha}/container-images.json` records the digest-pinned runtime image set promoted through local namespaces.
+- The configured artifact provider `app/{commitSha}/release.json` is authoritative for artifact lineage across environments. For the k3d lane, `app/{commitSha}/container-images.json` records the digest-pinned runtime image set promoted through local namespaces.
 
 ## Ticket And Worktree Isolation
 

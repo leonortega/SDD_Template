@@ -9,7 +9,7 @@ description: Configure Azure DEV, QA, and PROD App Service environments for this
 
 Configure Azure DEV, QA, and PROD App Service environments for ticket-gated deployment validation and handoff. This skill owns Deployment Topology Review: detect deployable apps, keep `infra/deployment/apps.json` aligned, map `appsettings*.json` keys through `infra/deployment/configuration.json`, and keep Bicep plus package/deploy workflow surfaces synchronized.
 
-This skill is Azure-only. Rancher Desktop local Kubernetes setup is handled by `configure-dev-environment` Rancher Desktop local lab routing, `.codex/providers/deploy.rancher-desktop.md`, and `.gitea/workflows/rancher-local-deploy.yml`.
+This skill is Azure-only. k3d local Kubernetes setup is handled by `configure-dev-environment` k3d local lab routing, `.codex/providers/deploy.k3d.md`, and `.gitea/workflows/k3d-local-deploy.yml`.
 
 ## Shared Context
 

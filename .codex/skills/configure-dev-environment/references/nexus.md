@@ -10,10 +10,10 @@ Owns:
 ## Strategy
 
 - Nexus stores build artifacts/packages published by Gitea Actions.
-- Rancher Desktop uses digest-pinned container image metadata from Nexus Docker plus raw Nexus release metadata by default.
+- k3d uses digest-pinned container image metadata from Nexus Docker plus raw Nexus release metadata by default.
 - Azure App Service uses package/ZIP deployment when the optional Azure lane is selected.
 - Do not configure Azure to pull container images from Nexus unless the user explicitly changes architecture.
-- The default Rancher Desktop flow requires a Nexus Docker registry.
+- The default k3d flow requires a Nexus Docker registry.
 
 ## Required Gitea Actions Secrets
 
@@ -24,12 +24,12 @@ Store these as repository or organization Actions secrets:
 - `NEXUS_PASSWORD`: Nexus service account password or token.
 - `NEXUS_REPOSITORY`: Hosted raw repository name, default `raw-hosted`.
 
-For the Rancher Desktop local Kubernetes lane, also store:
+For the k3d local Kubernetes lane, also store:
 
-- `NEXUS_DOCKER_REGISTRY`: Docker registry endpoint reachable by both the Gitea runner and Rancher Desktop Kubernetes, for example `host.docker.internal:5001` when that name is valid in the local runtime.
+- `NEXUS_DOCKER_REGISTRY`: Docker registry endpoint reachable by both the Gitea runner and k3d Kubernetes, for example `host.docker.internal:5001` when that name is valid in the local runtime.
 - `NEXUS_DOCKER_USERNAME`: Nexus Docker service account username.
 - `NEXUS_DOCKER_PASSWORD`: Nexus Docker service account password or token.
-- `RANCHER_KUBECONFIG_B64`: Base64-encoded kubeconfig for the `rancher-desktop` context.
+- `K3D_KUBECONFIG_B64`: Base64-encoded kubeconfig for the `k3d` context.
 
 Do not store kubeconfig contents or registry credentials in tracked files.
 
@@ -154,7 +154,7 @@ Use `release.json` for automation and idempotency. It should carry commit SHA, c
 
 ## Nexus Docker Repository Setup
 
-Use a hosted Docker repository for the Rancher Desktop local lane. Keep raw Nexus as the release metadata and QA evidence store.
+Use a hosted Docker repository for the k3d local lane. Keep raw Nexus as the release metadata and QA evidence store.
 
 Manual setup:
 
@@ -162,10 +162,10 @@ Manual setup:
 2. Create a hosted Docker repository, for example `docker-hosted`.
 3. Configure an HTTP connector port that matches `infra/nexus/compose.yml`, default `5001`.
 4. Create or reuse the automation service account with Docker repository read/write privileges.
-5. Configure Rancher Desktop/containerd to trust or allow the local registry endpoint. Prefer trusted local TLS; use an insecure local registry only for the lab.
+5. Configure k3d/containerd to trust or allow the local registry endpoint. Prefer trusted local TLS; use an insecure local registry only for the lab.
 6. Store `NEXUS_DOCKER_REGISTRY`, `NEXUS_DOCKER_USERNAME`, and `NEXUS_DOCKER_PASSWORD` as Gitea Actions secrets.
 
-The Rancher workflow uploads image metadata to raw Nexus:
+The k3d workflow uploads image metadata to raw Nexus:
 
 ```text
 $NEXUS_URL/repository/$NEXUS_REPOSITORY/app/${commitSha}/container-images.json
@@ -190,7 +190,7 @@ $NEXUS_URL/repository/$NEXUS_REPOSITORY/app/releases/${finalReleaseVersion}/rele
 - Feature branches open PRs into `dev`.
 - Merge to `dev` builds once.
 - For Azure, publish one deployable ZIP artifact per app in `infra/deployment/apps.json`, compute per-app checksums, upload topology/artifacts/checksums/metadata to Nexus, deploy DEV from the Nexus topology artifacts, and promote the same topology artifacts to QA after DEV page and all app `/health` checks pass.
-- For Rancher Desktop, build `sddtemplate/site` and `sddtemplate/api` images once, push to Nexus Docker, upload `app/{commitSha}/container-images.json`, deploy the digest-pinned references to `sdd-dev`, and promote the same digest set to `sdd-qa` after DEV health and observability checks pass.
+- For k3d, build `sddtemplate/site` and `sddtemplate/api` images once, push to Nexus Docker, upload `app/{commitSha}/container-images.json`, deploy the digest-pinned references to `sdd-dev`, and promote the same digest set to `sdd-qa` after DEV health and observability checks pass.
 - Move the Plane ticket to QA only after QA checks pass.
 - Create or verify an annotated RC tag such as `v1.2.0-rc.1` on the QA-approved artifact commit after E2E QA passes, then publish `app/qa-approved/latest.json` and the matching `app/rc/{sourceRcVersion}/` alias metadata.
 - Fast-forward the tested commit to `main` only after QA passes. Push-triggered PROD deployment is allowed only when `main` points to the exact QA-approved packaged commit, the commit or merged PR title starts with the configured ticket key pattern in `.codex/project-profile.json`, and application/test/package source changed.
@@ -199,7 +199,7 @@ $NEXUS_URL/repository/$NEXUS_REPOSITORY/app/releases/${finalReleaseVersion}/rele
 - After PROD passes, publish the final `app/releases/{finalReleaseVersion}/` alias metadata.
 - Validate PROD page and all app `/health` checks; use Seq log search as observability verification when available.
 - Record version lineage in Plane comments at each phase: QA deployment as unversioned candidate or known RC, E2E QA as `artifact commit -> source RC`, and PROD as `artifact commit -> source RC -> final release`.
-- For rollback, redeploy the previous known-good provider artifact set: Azure `app/{commitSha}/deployable-apps.json` ZIP topology with checksums, or Rancher `app/{commitSha}/container-images.json` digest set. Verify `/health`, update `release.json`, and comment Plane with rollback lineage.
+- For rollback, redeploy the previous known-good provider artifact set: Azure `app/{commitSha}/deployable-apps.json` ZIP topology with checksums, or k3d `app/{commitSha}/container-images.json` digest set. Verify `/health`, update `release.json`, and comment Plane with rollback lineage.
 - Do not rebuild between environments.
 
 Default release path:

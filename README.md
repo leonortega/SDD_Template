@@ -7,7 +7,7 @@
 ![Data](https://img.shields.io/badge/data-EF%20Core%20%2B%20SQLite-4479A1)
 ![Tests](https://img.shields.io/badge/tests-xUnit%20%2B%20Playwright-2EAD33)
 ![Delivery](https://img.shields.io/badge/delivery-Plane%20%7C%20OpenSpec%20%7C%20Gitea%20%7C%20Nexus-0A66C2)
-![Local Cloud](https://img.shields.io/badge/local%20cloud-Rancher%20Desktop%20DEV%20%7C%20QA%20%7C%20PROD-326CE5)
+![Local Cloud](https://img.shields.io/badge/local%20cloud-k3d%20Desktop%20DEV%20%7C%20QA%20%7C%20PROD-326CE5)
 ![Optional Cloud](https://img.shields.io/badge/optional%20cloud-Azure%20App%20Service-0078D4)
 ![Release](https://img.shields.io/badge/release-explicit%20PROD%20promotion-6A5ACD)
 ![Coverage](https://img.shields.io/badge/coverage%20gate-80%25-brightgreen)
@@ -33,7 +33,7 @@ Every change should have a ticket, a plan, a review, a tested artifact, QA evide
 - Stronger quality control: Gitea pull requests, validation gates, Codex review, tests, and QA evidence are part of the normal flow.
 - Safer releases: Nexus stores immutable artifacts that are promoted across DEV, QA, PROD, and rollback without rebuilding.
 - Clearer accountability: production promotion is explicit, documented, and separated from QA approval.
-- Practical observability: Seq, Grafana, Dozzle, Rancher Desktop Kubernetes log capture, and optional Azure diagnostics support delivery and runtime inspection.
+- Practical observability: Seq, Grafana, Dozzle, k3d Kubernetes log capture, and optional Azure diagnostics support delivery and runtime inspection.
 
 ## Who This Is For
 
@@ -41,7 +41,7 @@ Every change should have a ticket, a plan, a review, a tested artifact, QA evide
 - Product and operations teams that need visible ticket-to-production progress.
 - Delivery teams building repeatable SDLC automation.
 - Consultants or vendors packaging a professional agent-assisted delivery model.
-- Technical operators who need a local lab for Plane, Gitea, Nexus, Rancher Desktop Kubernetes, QA, release, rollback, and hotfix workflows.
+- Technical operators who need a local lab for Plane, Gitea, Nexus, k3d Kubernetes, QA, release, rollback, and hotfix workflows.
 
 ## How The Delivery Flow Works
 
@@ -64,9 +64,9 @@ In plain language:
 - OpenSpec captures the planned behavior before implementation.
 - Gitea manages source control, pull requests, and validation.
 - Nexus stores the exact build artifact used for deployment.
-- Rancher Desktop hosts the DEV, QA, and PROD application runtimes by default.
+- k3d hosts the DEV, QA, and PROD application runtimes by default.
 - Azure App Service remains an optional remote DEV, QA, and PROD lane.
-- Seq helps operators search sanitized Rancher Desktop pod logs and optional Azure application logs; Grafana and Dozzle help inspect health, delivery signals, and local container logs.
+- Seq helps operators search sanitized k3d pod logs and optional Azure application logs; Grafana and Dozzle help inspect health, delivery signals, and local container logs.
 - Codex skills under `.codex/skills/` guide the agent through each delivery stage.
 
 ## What Is Included
@@ -92,7 +92,7 @@ In plain language:
 - DEV, QA, PROD, and rollback promotion from the same immutable artifact.
 - Release manifests and checksums for traceability.
 - Explicit separation between QA approval and production release.
-- Rancher Desktop local lane using Nexus Docker image digests for runtime artifacts and Nexus raw paths for manifests, pointers, and QA evidence.
+- k3d local lane using Nexus Docker image digests for runtime artifacts and Nexus raw paths for manifests, pointers, and QA evidence.
 
 ### QA Evidence
 
@@ -110,9 +110,9 @@ In plain language:
 ### Local Observability
 
 - Docker Compose platform for local delivery tools.
-- Seq log search for sanitized Rancher Desktop Kubernetes pod logs, with optional Azure App Service logs imported through the Event Hub collector path.
-- Grafana health/status dashboards for Rancher Desktop local health targets.
-- Sanitized Kubernetes pod-log evidence for the local lab lane.
+- Seq log search for app-emitted k3d Serilog events.
+- Grafana Infinity health/status dashboards for k3d local health targets.
+- Direct `/health` deployment evidence for the local lab lane.
 - Dozzle for local container logs.
 - Optional Azure App Service diagnostics for remote DEV, QA, and PROD runtimes.
 
@@ -236,7 +236,7 @@ Detailed structure is documented in [Architecture](docs/architecture.md) and [De
 
 ```text
 Local tools manage the delivery workflow.
-Rancher Desktop hosts DEV, QA, and PROD runtime resources by default.
+k3d hosts DEV, QA, and PROD runtime resources by default.
 Azure App Service may host an optional remote DEV, QA, and PROD lane.
 Nexus stores the exact build artifact or image metadata promoted between environments.
 Plane records ticket state and generated workflow checkpoints.

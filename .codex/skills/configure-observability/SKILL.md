@@ -1,13 +1,13 @@
 ---
 name: configure-observability
-description: Configure Seq log search for this repo through Azure Event Hub to OpenTelemetry Collector Contrib ingestion, Rancher Desktop sanitized pod-log capture, and local runtime health checks.
+description: Configure Seq app log search, Grafana Infinity health checks, Grafana health alerts, and optional future Azure Event Hub ingestion guidance.
 ---
 
 # Configure Observability
 
 ## Overview
 
-Configure Seq, Grafana health alerts, Azure Event Hub to Seq ingestion, and Rancher Desktop sanitized pod-log capture used for deployment validation and ticket handoff evidence.
+Configure Seq, Grafana Infinity health alerts, and direct k3d `/health` deployment checks used for ticket handoff evidence.
 
 Observability is mandatory for `config infra` completion. Do not leave this step as optional.
 
@@ -26,22 +26,21 @@ Safety:
 ## Workflow
 
 1. Run `Audit`.
-2. Use `SetSeqAzureEventHubLogs` to validate the OpenTelemetry Collector Contrib Azure Event Hub path for Seq and Rancher Desktop Seq capture reachability when enabled.
+2. Use `SetSeqAzureEventHubLogs` to validate Seq, Grafana Infinity health alerts, and direct k3d health-check readiness.
 3. Start or repair local monitoring services when needed so setup ends in a working state.
 4. Validate all required checks before completion:
 	- Seq API/health endpoint is `200`.
 	- Seq native error-log alert exists.
 	- Grafana `/health` alert rule exists and uses the configured pending duration.
-	- Event Hub collector profile is configured and running.
-	- Required Event Hub connection strings and OTLP endpoint exist in ignored local env.
-	- Rancher Desktop local-lab capture can reach Seq when `RANCHER_OBSERVABILITY_ENABLED=true`.
+	- Grafana Infinity health datasource and DEV, QA, and PROD health dashboards are configured.
+	- Azure Event Hub collector configuration is not required for the current k3d environment.
 
 ## Output
 
-Report Seq API/health status, Seq alert status, Grafana health alert status, collector status, Rancher Desktop capture status, missing values, and ticket handoff evidence without exposing secrets.
+Report Seq API/health status, Seq alert status, Grafana Infinity datasource status, Grafana health alert status, missing values, and ticket handoff evidence without exposing secrets.
 
 ## Failure Rules
 
 - Stop when required selected-lane values are missing.
-- Stop when Seq or collector runtime validation fails.
+- Stop when Seq or Grafana health validation fails.
 - Stop before writing credentials into tracked files.
