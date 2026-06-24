@@ -94,7 +94,7 @@ function Get-ArtifactPaths([string] $Sha) {
     releaseManifest = "app/$Sha/release.json"
   }
 
-  if ($provider -eq 'k3d') {
+  if ($provider -eq 'rancher-desktop') {
     $paths.containerImages = "app/$Sha/container-images.json"
     $paths.qaTargets = "app/$Sha/qa-targets.json"
     $paths.monitoringSummaryPattern = "app/$Sha/monitoring-summary-{environment}.json"
@@ -1033,3 +1033,5 @@ switch ($Mode) {
   'RenderTicketComment' { Render-TicketComment }
   'UpdateReleaseManifest' { Write-Json (Update-ReleaseManifest) }
 }
+
+

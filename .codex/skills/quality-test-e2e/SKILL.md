@@ -17,6 +17,14 @@ When the repository contains `tests/SDDTemplate.E2ETests`, treat it as the reusa
 
 After the evidence bundle is verified, the E2E QA ticket comment is verified, the RC tag is created or verified, release metadata is updated, and the ticket is moved to Done, delete the remote selected-provider QA trigger branch through the repository adapter. The branch is only a temporary evidence trigger; durable evidence is in Nexus, ticket provider, the release manifest, and tags. Keep the branch only when evidence publication, comment verification, RC tagging, or Done-state mutation is incomplete and the branch may need a rerun.
 
+For the current Rancher Desktop lane, the temporary branch is `qa-local/{ticketKey}`. Example cleanup command after durable evidence exists:
+
+```powershell
+git push origin --delete qa-local/E2EPROJECT-123
+```
+
+Do not delete the branch before Nexus evidence exists, the E2E QA comment is verified, the RC tag is created or verified, release metadata is updated, and the ticket is Done.
+
 Non-interactive context means the run has no available user-response channel, such as cron automation, CI, detached automation, or an explicit "do not ask" instruction.
 
 ## Shared Context

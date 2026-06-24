@@ -105,9 +105,9 @@ Useful modes:
 - `BuildGiteaActionsImages`: build and validate pinned local Gitea Actions job images used by PR validation, package/deploy, and QA E2E workflows.
 - `ValidateGiteaActionsRunner`: live-check Docker runner prerequisites for PR validation containers, including local image presence, required tools, and local Gitea checkout reachability.
 - `InitProjectProfile`: create the canonical project profile, schema, and neutral provider adapter examples. This is a required first-class step for full `config infra`.
-- `EnsureK3dCluster`: when k3d is the selected deployment provider, create or start cluster `sdd-template` through the host `k3d` CLI during explicit setup/config runs, expose the API on `127.0.0.1:6550`, switch to context `k3d-sdd-template`, and wait for a Ready node. `Audit` remains read-only and only reports missing or unhealthy cluster state.
-- `EnsureK3dHeadlamp`: when k3d is the selected deployment provider, install or update Headlamp through the official Helm chart, wait for the `headlamp` deployment, and expose it at `http://127.0.0.1:4466`. Tokens must not be printed; copy a fresh login token with `kubectl create token headlamp --namespace headlamp | Set-Clipboard`, then paste it into Headlamp.
-- `EnsureK3dPortForwards`: when k3d is the selected deployment provider, start stable `kubectl port-forward --address 127.0.0.1` mappings for deployed local-lab services so Windows browsers can use `127.0.0.1` URLs. It maps DEV site/API to `18081`/`18082`, QA site/API to `18083`/`18084`, and PROD site/API to `18085`/`18086`; services not deployed yet are skipped with warnings.
+- `EnsureRancherDesktopCluster`: when Rancher Desktop is the selected deployment provider, switch to context `rancher-desktop` and wait for a Ready node. `Audit` remains read-only and only reports missing or unhealthy Kubernetes state. Rancher Desktop owns cluster creation and startup through its application settings.
+- `EnsureRancherDesktopHeadlamp`: when Rancher Desktop is the selected deployment provider, install or update Headlamp through the official Helm chart, wait for the `headlamp` deployment, and expose it at `http://127.0.0.1:4466`. Tokens must not be printed; copy a fresh login token with `kubectl create token headlamp --namespace headlamp | Set-Clipboard`, then paste it into Headlamp.
+- `EnsureRancherDesktopPortForwards`: when Rancher Desktop is the selected deployment provider, start stable `kubectl port-forward --address 127.0.0.1` mappings for deployed local-lab services so Windows browsers can use `127.0.0.1` URLs. It maps DEV site/API to `18081`/`18082`, QA site/API to `18083`/`18084`, and PROD site/API to `18085`/`18086`; services not deployed yet are skipped with warnings.
 - `ShowEnvironmentUrls`: show and refresh the ignored local environment URL registry at `.codex/environment-urls.local.json` plus the Grafana Environment URLs dashboard. It lists DEV/QA/PROD Web/API browser URLs, container URLs, ingress URLs, deployment status, and port-forward status without exposing secrets.
 - `InitQualityGateTemplates`: create tracked quality-gate templates.
 - `SetSeqAzureEventHubLogs`: validate Seq, the native Seq error-log alert, Grafana Infinity health datasource, and Grafana health alerts.
@@ -116,7 +116,7 @@ Useful modes:
 ## Workflow
 
 1. For full `config infra` or full guided setup, run `InitProjectProfile` first. If the profile, schema, or selected adapters already exist, treat the mode as idempotent and continue from its `Template already exists` findings.
-2. When k3d is the selected deployment provider and the user explicitly asked for `config infra`, full setup, or k3d local lab setup, run `EnsureK3dCluster` before `EnsureK3dHeadlamp`, `EnsureK3dPortForwards`, `ShowEnvironmentUrls`, and `Audit`. `EnsureK3dHeadlamp` installs the Kubernetes management UI and starts its localhost mapping. `EnsureK3dPortForwards` starts localhost browser mappings for services that are already deployed. `ShowEnvironmentUrls` refreshes the local URL registry and Grafana URL dashboard. This is the only configure path that may auto-enable k3d Kubernetes, install Headlamp, or start k3d local-lab port-forward processes; plain `Audit` remains read-only.
+2. When Rancher Desktop is the selected deployment provider and the user explicitly asked for `config infra`, full setup, or Rancher Desktop local lab setup, run `EnsureRancherDesktopCluster` before `EnsureRancherDesktopHeadlamp`, `EnsureRancherDesktopPortForwards`, `ShowEnvironmentUrls`, and `Audit`. `EnsureRancherDesktopHeadlamp` installs the Kubernetes management UI and starts its localhost mapping. `EnsureRancherDesktopPortForwards` starts localhost browser mappings for services that are already deployed. This is the only configure path that may switch Rancher Desktop Kubernetes context, install Headlamp, or start Rancher Desktop local-lab port-forward processes; plain `Audit` remains read-only.
 3. Run `Audit` after `InitProjectProfile` and any selected-provider prerequisite repair unless the user asked for a very specific area and a narrower audit is enough.
 4. For core compose status checks, always include the OpenProject env file so variable resolution matches runtime expectations:
 
@@ -126,7 +126,7 @@ docker compose --env-file .\infra\openproject\variables.env --env-file .\infra\m
 
 5. Summarize findings by domain without exposing secret values.
 6. Observability is mandatory for `config infra`: run `SetSeqAzureEventHubLogs`, then ensure Seq, the native Seq error-log alert, Grafana Infinity health datasource, and Grafana health alerts are running and healthy.
-7. Azure Event Hub collector ingestion is not part of the current k3d environment.
+7. Azure Event Hub collector ingestion is not part of the current Rancher Desktop environment.
 8. Do not finish `config infra` successfully while observability findings remain unresolved.
 9. For every missing prerequisite found during audit or validation, provide install, official link, and post-install validation/configuration commands.
 10. For every missing user-supplied value, provide source, destination, manual setup steps, official link, and validation command.
@@ -155,12 +155,12 @@ trivy --download-db-only
    - Gitea Actions runner
    - Quality gates and CI
    - Nexus artifacts and deployment promotion
-   - k3d local lab
+   - Rancher Desktop local lab
    - Azure environments
    - Monitoring dashboards
    - Azure Event Hub to Seq ingestion
 25. If the user is vague, default to full guided setup in this order:
-   InitProjectProfile -> EnsureK3dCluster when k3d is selected -> EnsureK3dHeadlamp when k3d is selected -> EnsureK3dPortForwards when k3d is selected -> ShowEnvironmentUrls when k3d is selected -> Audit -> OpenProject -> Gitea PR automation -> Gitea Actions runner -> Quality gates and CI -> Nexus artifacts and k3d deployment promotion -> Monitoring dashboards -> final Audit.
+   InitProjectProfile -> EnsureRancherDesktopCluster when Rancher Desktop is selected -> EnsureRancherDesktopHeadlamp when Rancher Desktop is selected -> EnsureRancherDesktopPortForwards when Rancher Desktop is selected -> ShowEnvironmentUrls when Rancher Desktop is selected -> Audit -> OpenProject -> Gitea PR automation -> Gitea Actions runner -> Quality gates and CI -> Nexus artifacts and Rancher Desktop deployment promotion -> Monitoring dashboards -> final Audit.
 
 ## Domain Routing
 
@@ -169,7 +169,7 @@ trivy --download-db-only
 - Gitea Actions runner: use `$configure-ci-runner`; read `references/gitea-runner.md`.
 - Quality gates and CI: use `$configure-quality-gates`; read `references/quality-gates.md`.
 - Nexus artifacts and deployment promotion: use `$configure-artifact-repository`; read `references/nexus.md`.
-- k3d local lab: read `references/nexus.md`, `references/observability.md`, and `.codex/providers/deploy.k3d.md`.
+- Rancher Desktop local lab: read `references/nexus.md`, `references/observability.md`, and `.codex/providers/deploy.rancher-desktop.md`.
 - Azure environments: use `$configure-cloud-environments`; read `references/azure.md`.
 - Monitoring dashboards: use `$configure-observability`; read `references/observability.md`.
 - Azure Event Hub to Seq ingestion: use `$configure-observability`; read `references/observability.md`.
@@ -200,3 +200,4 @@ End setup work with:
 - Stop before branch, OpenProject, ticket-lock, or OpenSpec mutation when first-ticket stack context, guidance discovery review, or recommendation audit context is missing or drifted.
 - Stop before using arbitrary command installers; route confirmed acquisition and guarded install planning to `project-guidance-acquire`.
 - If a required repo skill, command, memory rule, definition, or configured tool/install path cannot be applied, do not silently switch to an ad hoc setup path. Report the failed required item, why it is required, the current-flow fix, the viable alternative, and the alternative's risk or impact, then ask the user whether to fix the current flow or continue with the alternative.
+

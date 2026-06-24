@@ -69,8 +69,8 @@ $providerSpecificTerms = @(
   "Azure",
   "azure",
   "AZURE",
-  "k3d",
-  "K3D",
+  "rancher-desktop",
+  "RANCHER",
   "Playwright",
   "playwright",
   ".NET",
@@ -249,3 +249,4 @@ foreach ($result in $results | Where-Object { -not $_.passed }) {
 if ($FailOnFindings -and ($summary.failed -gt 0 -or $profileFindings.Count -gt 0 -or $providerSpecificFindings.Count -gt 0)) {
   exit 1
 }
+

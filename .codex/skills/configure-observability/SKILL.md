@@ -7,7 +7,7 @@ description: Configure Seq app log search, Grafana Infinity health checks, Grafa
 
 ## Overview
 
-Configure Seq, Grafana Infinity health alerts, and direct k3d `/health` deployment checks used for ticket handoff evidence.
+Configure Seq, Grafana Infinity health alerts, and direct Rancher Desktop `/health` deployment checks used for ticket handoff evidence.
 
 Observability is mandatory for `config infra` completion. Do not leave this step as optional.
 
@@ -26,14 +26,14 @@ Safety:
 ## Workflow
 
 1. Run `Audit`.
-2. Use `SetSeqAzureEventHubLogs` to validate Seq, Grafana Infinity health alerts, and direct k3d health-check readiness.
+2. Use `SetSeqAzureEventHubLogs` to validate Seq, Grafana Infinity health alerts, and direct Rancher Desktop health-check readiness.
 3. Start or repair local monitoring services when needed so setup ends in a working state.
 4. Validate all required checks before completion:
 	- Seq API/health endpoint is `200`.
 	- Seq native error-log alert exists.
 	- Grafana `/health` alert rule exists and uses the configured pending duration.
 	- Grafana Infinity health datasource and DEV, QA, and PROD health dashboards are configured.
-	- Azure Event Hub collector configuration is not required for the current k3d environment.
+	- Azure Event Hub collector configuration is not required for the current Rancher Desktop environment.
 
 ## Output
 
@@ -44,3 +44,4 @@ Report Seq API/health status, Seq alert status, Grafana Infinity datasource stat
 - Stop when required selected-lane values are missing.
 - Stop when Seq or Grafana health validation fails.
 - Stop before writing credentials into tracked files.
+
