@@ -7,10 +7,10 @@ Owns:
 - Grafana Infinity `/health` dashboards and alerts for DEV, QA, and PROD web/API probes.
 - Optional future Azure Event Hub ingestion into Seq when Azure App Service is selected.
 
-Use the shared script for the required collector path:
+Use the shared script for the required Rancher Desktop observability path:
 
 ```bash
-python -m tools.sdd_cli configure SetSeqAzureEventHubLogs
+python -m tools.sdd_cli configure ValidateObservability
 ```
 
 ## Seq
@@ -20,7 +20,7 @@ Repo-managed local log search:
 - `infra/monitoring/compose.yml` runs `datalust/seq:2025.2.16202` as `agentic-seq`.
 - Seq is bound to `http://localhost:5341` and uses explicit local no-auth first-run configuration.
 - Rancher Desktop site/API pods send live Serilog events directly to Seq through `RANCHER_APP_SEQ_URL`, default `http://host.docker.internal:5341`.
-- `SetSeqAzureEventHubLogs` creates or updates the native Seq alert `Agentic E2E - Any Seq Error Logs`.
+- `ValidateObservability` validates the native Seq alert configuration `Agentic E2E - Any Seq Error Logs`.
 - The error alert uses `SEQ_ERROR_ALERT_WINDOW` and `SEQ_ERROR_ALERT_THRESHOLD` from `infra/monitoring/variables.env`; defaults are `1m` and `0`.
 
 ## Grafana Health Alerts
@@ -35,7 +35,7 @@ Azure Event Hub ingestion is not part of the current local environment. Add a co
 Validation (required path):
 
 ```bash
-python -m tools.sdd_cli configure SetSeqAzureEventHubLogs
+python -m tools.sdd_cli configure ValidateObservability
 ```
 
 `config infra` is not complete until Seq, the Seq error-log alert, Grafana Infinity health datasource, Grafana health alerts, and local Rancher Desktop health dashboards are running and healthy.

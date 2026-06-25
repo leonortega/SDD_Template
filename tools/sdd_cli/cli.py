@@ -120,10 +120,10 @@ CONFIGURE_MODE_NAMES = [
     "SetProjectStack",
     "SetQualityConfig",
     "SetRecommendedTools",
-    "SetSeqAzureEventHubLogs",
     "ShowEnvironmentUrls",
     "SplitInfraEnv",
     "SyncWorktreeLocalConfig",
+    "ValidateObservability",
     "ValidateGiteaActionsRunner",
 ]
 RANCHER_DESKTOP_CONTEXT = "rancher-desktop"
@@ -430,11 +430,11 @@ def run_configure_mode(mode: str, root: Path, values: dict[str, Any], dry_run: b
         "SetProjectStack": configure_set_project_stack,
         "SetQualityConfig": configure_set_quality_config,
         "SetRecommendedTools": configure_set_recommended_tools,
-        "SetSeqAzureEventHubLogs": configure_set_seq_azure_event_hub_logs,
         "ShowEnvironmentUrls": configure_show_environment_urls,
         "SplitInfraEnv": configure_split_infra_env,
         "SyncWorktreeLocalConfig": configure_sync_worktree_local_config,
         "ValidateGiteaActionsRunner": configure_validate_runner,
+        "ValidateObservability": configure_validate_observability,
     }
     handler = modes.get(mode)
     if handler is None:
@@ -1188,11 +1188,15 @@ def configure_set_project_stack(root: Path, values: dict[str, Any], dry_run: boo
     }
 
 
-def configure_set_seq_azure_event_hub_logs(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
-    result = configure_result("SetSeqAzureEventHubLogs", dry_run, write_enabled=not dry_run)
+def configure_validate_observability(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
+    return configure_observability_checks(root, values, dry_run, "ValidateObservability")
+
+
+def configure_observability_checks(root: Path, values: dict[str, Any], dry_run: bool, mode: str) -> dict[str, Any]:
+    result = configure_result(mode, dry_run, write_enabled=not dry_run)
     monitoring_path = root / "infra" / "monitoring" / "variables.env"
     if not monitoring_path.exists():
-        return {"mode": "SetSeqAzureEventHubLogs", "valid": False, "errors": ["Missing infra/monitoring/variables.env. Run InitLocalFiles first."]}
+        return {"mode": mode, "valid": False, "errors": ["Missing infra/monitoring/variables.env. Run InitLocalFiles first."]}
     monitoring = read_env_file(monitoring_path)
     seq_url = monitoring.get("SEQ_URL") or "http://localhost:5341"
     status, error = http_status(seq_url.rstrip("/") + "/api")

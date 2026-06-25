@@ -26,7 +26,7 @@ Safety:
 ## Workflow
 
 1. Run `Audit`.
-2. Use `SetSeqAzureEventHubLogs` to validate Seq, Grafana Infinity health alerts, and direct Rancher Desktop health-check readiness.
+2. Use `ValidateObservability` to validate Seq, Grafana Infinity health alerts, and direct Rancher Desktop health-check readiness.
 3. Start or repair local monitoring services when needed so setup ends in a working state.
 4. Validate all required checks before completion:
 	- Seq API/health endpoint is `200`.

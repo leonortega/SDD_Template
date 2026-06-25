@@ -417,9 +417,10 @@ class SddCliTests(unittest.TestCase):
                 return 200, ""
 
             with patch.object(cli, "http_status", fake_http_status):
-                result = cli.run_configure_mode("SetSeqAzureEventHubLogs", root, {}, False)
+                result = cli.run_configure_mode("ValidateObservability", root, {}, False)
 
             self.assertTrue(result["valid"])
+            self.assertEqual("ValidateObservability", result["mode"])
             self.assertIn("http://localhost:3001/api/health", seen)
             self.assertNotIn("http://localhost:3000/api/health", seen)
             keys = {item["key"] for item in result["actions"]}
