@@ -19,3 +19,12 @@ First consumer-repo `config infra` stopped because configure skills required mod
 - Last verified: 2026-06-25
 
 The installer excludes `tools/sdd_cli/tests`, so installed consumer repositories cannot run `python -m unittest tools.sdd_cli.tests.test_cli`. README validation commands for installed targets must use installed CLI smoke checks such as `python -m tools.sdd_cli configure Audit`; helper unit tests are lab-repository-only.
+
+### OpenProject Compose Needs Container SECRET_KEY_BASE
+
+- Type: Pattern
+- Status: Active
+- Source: config infra run on 2026-06-25; verified against `infra/openproject/compose.yml`, `.codex/skills/configure-dev-environment/SKILL.md`, OpenProject GHSA-r85r-gjq2-f83r, and OpenProject 17.3.2 release notes
+- Last verified: 2026-06-25
+
+OpenProject Docker images require container env `SECRET_KEY_BASE`; mapping only `OPENPROJECT_SECRET_KEY_BASE` leaves the app using or rejecting the default. Keep ignored local env/template key `OPENPROJECT_SECRET_KEY_BASE`, but map it to container key `SECRET_KEY_BASE` in Compose. For current Trivy CLI DB refresh, use `trivy image --download-db-only`, not the old root-level `trivy --download-db-only`.

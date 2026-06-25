@@ -30,7 +30,7 @@ docker compose --env-file .\infra\openproject\variables.env --env-file .\infra\m
 4. When local Trivy scans report a stale DB, refresh before scanning:
 
 ```text
-trivy --download-db-only
+trivy image --download-db-only
 ```
 
 5. If the caller explicitly asked for the legacy script path, use the active shared script path instead:
@@ -50,4 +50,3 @@ Report that routing moved to `$configure-dev-environment`, the audit result, sel
 - Stop when the active configure entrypoint cannot be read.
 - Stop when validation finds missing local config or secrets that require manual user action.
 - Stop before mutating ticket, Git, OpenProject, Gitea, Nexus, Azure, or monitoring state from this compatibility alias.
-

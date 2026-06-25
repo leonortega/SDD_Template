@@ -383,6 +383,19 @@ class SddCliTests(unittest.TestCase):
             self.assertIn("env.stale-keys", findings)
             self.assertIn("SECRET_KEY", findings["env.stale-keys"])
 
+    def test_config_infra_docs_match_openproject_and_trivy_runtime(self) -> None:
+        repo = Path(__file__).resolve().parents[3]
+        compose = (repo / "infra" / "openproject" / "compose.yml").read_text(encoding="utf-8")
+        configure = (repo / ".codex" / "skills" / "configure-dev-environment" / "SKILL.md").read_text(encoding="utf-8")
+        legacy = (repo / ".codex" / "skills" / "configure-infra-tools" / "SKILL.md").read_text(encoding="utf-8")
+
+        self.assertIn("SECRET_KEY_BASE: ${OPENPROJECT_SECRET_KEY_BASE:", compose)
+        self.assertNotIn("OPENPROJECT_SECRET_KEY_BASE: ${OPENPROJECT_SECRET_KEY_BASE:", compose)
+        self.assertIn("trivy image --download-db-only", configure)
+        self.assertIn("trivy image --download-db-only", legacy)
+        self.assertNotIn("trivy --download-db-only", configure)
+        self.assertNotIn("trivy --download-db-only", legacy)
+
     def test_seq_grafana_validation_uses_grafana_port_and_checks_provisioning(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
