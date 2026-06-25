@@ -748,6 +748,114 @@
       "userActionRequired": false
     },
     {
+      "id": "rancher-desktop-local-deploy-guidance",
+      "name": "Rancher Desktop local deployment guidance",
+      "type": "reference",
+      "requires": [
+        "rancher-desktop",
+        "kubernetes"
+      ],
+      "purpose": "Keep the selected local deployment lane aligned with Rancher Desktop Kubernetes behavior, context selection, image runtime, and operator validation.",
+      "installMethod": "manual-reference",
+      "source": "official:https://docs.rancherdesktop.io/",
+      "target": "docs/deployment.md",
+      "validation": "Confirm docs and configure checks use the selected rancher-desktop Kubernetes context and do not route local deployment through optional Azure guidance.",
+      "researchTopics": [
+        "Rancher Desktop",
+        "local Kubernetes",
+        "container runtime",
+        "kubectl context",
+        "local deployment evidence"
+      ],
+      "officialSources": [
+        "https://docs.rancherdesktop.io/",
+        "https://docs.rancherdesktop.io/ui/preferences/kubernetes/"
+      ],
+      "searchQueries": [
+        "site:docs.rancherdesktop.io Rancher Desktop Kubernetes",
+        "site:docs.rancherdesktop.io Rancher Desktop container runtime"
+      ],
+      "notes": "Use because .codex/project-profile.json selects rancher-desktop as the deployment provider; Azure App Service remains optional and should not be suggested for the default lane.",
+      "sourceKind": "technology-owner",
+      "installScope": "repo-local",
+      "installerKind": "none",
+      "requiresIdeRestart": false,
+      "requiresSystemReboot": false,
+      "userActionRequired": false
+    },
+    {
+      "id": "kubernetes-workload-guidance",
+      "name": "Kubernetes workload guidance",
+      "type": "reference",
+      "requires": [
+        "kubernetes",
+        "rancher-desktop"
+      ],
+      "purpose": "Guide Deployment, Service, health, rollout, namespace, and manifest changes for the Rancher Desktop local lab.",
+      "installMethod": "manual-reference",
+      "source": "official:https://kubernetes.io/docs/home/",
+      "target": "infra/rancher/",
+      "validation": "Confirm Rancher Desktop manifests and deployment scripts keep workloads, services, health checks, and rollouts explicit and verifiable.",
+      "researchTopics": [
+        "Kubernetes Deployments",
+        "Kubernetes Services",
+        "rollout status",
+        "health probes",
+        "namespace-scoped local lab"
+      ],
+      "officialSources": [
+        "https://kubernetes.io/docs/concepts/workloads/controllers/deployment/",
+        "https://kubernetes.io/docs/concepts/services-networking/service/"
+      ],
+      "searchQueries": [
+        "site:kubernetes.io/docs Kubernetes Deployment Service rollout status",
+        "site:kubernetes.io/docs Kubernetes health probes services"
+      ],
+      "notes": "Use for local-lab Kubernetes manifests and deployment scripts; do not imply a host-level Kubernetes installer.",
+      "sourceKind": "technology-owner",
+      "installScope": "repo-local",
+      "installerKind": "none",
+      "requiresIdeRestart": false,
+      "requiresSystemReboot": false,
+      "userActionRequired": false
+    },
+    {
+      "id": "seq-serilog-observability-guidance",
+      "name": "Seq Serilog observability guidance",
+      "type": "reference",
+      "requires": [
+        "seq",
+        "aspnet-core"
+      ],
+      "purpose": "Keep structured application log capture, Seq search, alerting, and evidence rules aligned with the selected local observability lane.",
+      "installMethod": "manual-reference",
+      "source": "official:https://datalust.co/docs/using-serilog",
+      "target": ".codex/skills/configure-dev-environment/references/observability.md",
+      "validation": "Confirm Seq setup and evidence guidance use structured Serilog events without secrets or raw pod logs in durable evidence.",
+      "researchTopics": [
+        "Seq",
+        "Serilog",
+        "structured logging",
+        "ASP.NET Core logs",
+        "observability evidence"
+      ],
+      "officialSources": [
+        "https://datalust.co/docs/using-serilog",
+        "https://github.com/datalust/serilog-sinks-seq"
+      ],
+      "searchQueries": [
+        "site:datalust.co/docs Seq Serilog ASP.NET Core",
+        "github.com/datalust/serilog-sinks-seq"
+      ],
+      "notes": "Use for direct Rancher Desktop app log search and alert guidance; keep credentials and noisy pod logs out of durable evidence.",
+      "sourceKind": "technology-owner",
+      "installScope": "repo-local",
+      "installerKind": "none",
+      "requiresIdeRestart": false,
+      "requiresSystemReboot": false,
+      "userActionRequired": false
+    },
+    {
       "id": "release-practice-guidance",
       "name": "Release practice guidance",
       "type": "practice",
