@@ -129,7 +129,7 @@ Useful modes:
 - `EnsureRancherDesktopPortForwards`: when Rancher Desktop is the selected deployment provider, start stable `kubectl port-forward --address 127.0.0.1` mappings for deployed local-lab services so Windows browsers can use `127.0.0.1` URLs. It maps DEV site/API to `18081`/`18082`, QA site/API to `18083`/`18084`, and PROD site/API to `18085`/`18086`; services not deployed yet are skipped with warnings.
 - `ShowEnvironmentUrls`: show and refresh the ignored local environment URL registry at `.codex/environment-urls.local.json` plus the Grafana Environment URLs dashboard. It lists DEV/QA/PROD Web/API browser URLs, container URLs, ingress URLs, deployment status, and port-forward status without exposing secrets.
 - `InitQualityGateTemplates`: create tracked quality-gate templates.
-- `SetSeqAzureEventHubLogs`: validate Seq, the native Seq error-log alert, Grafana Infinity health datasource, and Grafana health alerts.
+- `ValidateObservability`: validate Seq, the native Seq error-log alert, Grafana Infinity health datasource, and Grafana health alerts. Azure Event Hub ingestion applies only when Azure App Service is selected.
 - `SetQualityConfig`: create or update `.codex/quality.local.json`, including `coverage.minimumPercent` (default `80`).
 
 ## Workflow
@@ -145,7 +145,7 @@ docker compose --env-file .\infra\openproject\variables.env --env-file .\infra\m
 ```
 
 5. Summarize findings by domain without exposing secret values.
-6. Observability is mandatory for `config infra`: run `SetSeqAzureEventHubLogs`, then ensure Seq, the native Seq error-log alert, Grafana Infinity health datasource, and Grafana health alerts are running and healthy.
+6. Observability is mandatory for `config infra`: run `ValidateObservability`, then ensure Seq, the native Seq error-log alert, Grafana Infinity health datasource, and Grafana health alerts are running and healthy.
 7. Azure Event Hub collector ingestion is not part of the current Rancher Desktop environment.
 8. Do not finish `config infra` successfully while observability findings remain unresolved.
 9. For every missing prerequisite found during audit or validation, provide install, official link, and post-install validation/configuration commands.

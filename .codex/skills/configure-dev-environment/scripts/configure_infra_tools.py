@@ -17,6 +17,7 @@ SUPPORTED_MODES = [
     "AcquireProjectGuidance",
     "SetRecommendedTools",
     "MapProjectGuidanceStep",
+    "ValidateObservability",
     "ValidateGiteaActionsRunner",
     "InitProjectProfile",
     "InitQualityGateTemplates",
@@ -35,7 +36,6 @@ SUPPORTED_MODES = [
     "EnsureRancherDesktopHeadlamp",
     "EnsureRancherDesktopPortForwards",
     "ShowEnvironmentUrls",
-    "SetSeqAzureEventHubLogs",
     "SetGiteaBranchProtection",
 ]
 
