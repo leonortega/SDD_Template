@@ -10,7 +10,7 @@ Tracked skills, including external skills copied into this repository, must sati
 |---|---|---|---|---|
 | `aspnet-core` | External guidance | External | https://github.com/openai/skills/tree/main/skills/.curated/aspnet-core | No rename |
 | `assertion-quality` | External guidance | External | https://github.com/dotnet/skills/tree/main/plugins/dotnet-test/skills/assertion-quality | No rename |
-| `caveman` | Agent utility | External | https://github.com/JuliusBrussee/caveman | No rename |
+| `caveman` | Agent utility | External | https://github.com/JuliusBrussee/caveman/tree/main/plugins/caveman/skills/caveman | No rename |
 | `configure-artifact-repository` | Configure | Repo-owned | Repository local | Renamed from `configure-artifact-delivery` |
 | `configure-ci-runner` | Configure | Repo-owned | Repository local | Renamed from `configure-gitea-actions-runner` |
 | `configure-cloud-environments` | Configure | Repo-owned | Repository local | Renamed from `configure-azure-environments` |
@@ -41,21 +41,21 @@ Tracked skills, including external skills copied into this repository, must sati
 | `dev-ops-post-merge-deploy` | DevOps | Repo-owned | Repository local | Renamed from `post-merge-deploy` |
 | `dev-ops-rollback-prod` | DevOps | Repo-owned | Repository local | Renamed from `rollback-prod` |
 | `domain-modeling` | External guidance | External | https://github.com/mattpocock/skills/tree/main/skills/engineering/domain-modeling | No rename; repo-local context-surface adaptation |
-| `dotnet-webapi` | External guidance | External | https://github.com/dotnet/skills/tree/main/plugins/dotnet-aspnet/skills/dotnet-webapi | No rename |
+| `dotnet-webapi` | External guidance | External | https://github.com/dotnet/skills/tree/main/plugins/dotnet-aspnetcore/skills/dotnet-webapi | No rename |
 | `grill-me` | External guidance | External | https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me | No rename |
 | `grill-with-docs` | External guidance | External | https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs | No rename; repo-local context-surface adaptation |
 | `grilling` | External guidance | External | https://github.com/mattpocock/skills/tree/main/skills/productivity/grilling | No rename |
 | `plan-ui-change` | External guidance | External | https://github.com/dotnet/skills/tree/main/plugins/dotnet-blazor/skills/plan-ui-change | No rename |
 | `playwright` | External guidance | External | https://github.com/openai/skills/tree/main/skills/.curated/playwright | No rename |
 | `playwright-interactive` | External guidance | External | https://github.com/openai/skills/tree/main/skills/.curated/playwright-interactive | No rename; repo-local SDLC guardrails added |
-| `ponytail` | Agent utility | External | Not recorded in skill metadata | No rename |
-| `ponytail-audit` | Agent utility | External | Not recorded in skill metadata | No rename |
-| `ponytail-debt` | Agent utility | External | Not recorded in skill metadata | No rename |
-| `ponytail-help` | Agent utility | External | Not recorded in skill metadata | No rename |
-| `ponytail-review` | Agent utility | External | Not recorded in skill metadata | No rename |
-| `project-guidance-acquire` | Agent utility | External | Not recorded in skill metadata | No rename |
-| `project-guidance-discover` | Agent utility | External | Not recorded in skill metadata | No rename |
-| `project-guidance-mapper` | Agent utility | External | Not recorded in skill metadata | No rename |
+| `ponytail` | Agent utility | External | https://github.com/DietrichGebert/ponytail/tree/main/skills/ponytail | No rename |
+| `ponytail-audit` | Agent utility | External | https://github.com/DietrichGebert/ponytail/tree/main/skills/ponytail-audit | No rename |
+| `ponytail-debt` | Agent utility | External | https://github.com/DietrichGebert/ponytail/tree/main/skills/ponytail-debt | No rename |
+| `ponytail-help` | Agent utility | External | https://github.com/DietrichGebert/ponytail/tree/main/skills/ponytail-help | No rename |
+| `ponytail-review` | Agent utility | External | https://github.com/DietrichGebert/ponytail/tree/main/skills/ponytail-review | No rename |
+| `project-guidance-acquire` | Agent utility | Repo-owned | Repository local | No rename |
+| `project-guidance-discover` | Agent utility | Repo-owned | Repository local | No rename |
+| `project-guidance-mapper` | Agent utility | Repo-owned | Repository local | No rename |
 | `quality-frontend-testing-debugging` | Quality | Repo-owned | Repository local | Renamed from `frontend-testing-debugging` |
 | `quality-test-e2e` | Quality | Repo-owned | Repository local | Renamed from `test-e2e` |
 | `security-best-practices` | External guidance | External | https://github.com/openai/skills/tree/main/skills/.curated/security-best-practices | No rename |

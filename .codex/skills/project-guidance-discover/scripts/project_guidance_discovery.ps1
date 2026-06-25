@@ -361,9 +361,9 @@ function Get-DetectedSkillDefinitions {
       requires = @("aspnet-core", "rest-api")
       purpose = "Use the .NET team's Web API skill for ASP.NET Core REST/minimal API design, route shape, validation, ProblemDetails, auth boundaries, OpenAPI, and integration tests."
       sourceKind = "technology-owner"
-      source = "https://github.com/dotnet/skills/tree/main/plugins/dotnet-aspnet/skills/dotnet-webapi"
+      source = "https://github.com/dotnet/skills/tree/main/plugins/dotnet-aspnetcore/skills/dotnet-webapi"
       target = ".codex/skills/dotnet-webapi/SKILL.md"
-      candidateSkillSources = @("https://github.com/dotnet/skills/tree/main/plugins/dotnet-aspnet/skills/dotnet-webapi", "https://github.com/openai/skills/tree/main/skills/.curated/aspnet-core")
+      candidateSkillSources = @("https://github.com/dotnet/skills/tree/main/plugins/dotnet-aspnetcore/skills/dotnet-webapi", "https://github.com/openai/skills/tree/main/skills/.curated/aspnet-core")
       researchTopics = @("ASP.NET Core minimal APIs", "REST API design", "ProblemDetails", "OpenAPI", "integration testing")
       officialSources = @("https://learn.microsoft.com/en-us/aspnet/core/fundamentals/minimal-apis/", "https://learn.microsoft.com/en-us/aspnet/core/web-api/", "https://learn.microsoft.com/en-us/aspnet/core/fundamentals/error-handling-api")
       searchQueries = @("site:github.com/dotnet/skills dotnet-webapi", "site:github.com/openai/skills aspnet-core Minimal APIs Web APIs")

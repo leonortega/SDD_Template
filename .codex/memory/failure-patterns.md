@@ -568,3 +568,21 @@ When a downloaded Windows MCP binary is present, unblocked, and still fails from
 - Last verified: 2026-06-25
 
 In repository PowerShell scripts, avoid local variable names that differ only by case from parameters, automatic variables, or globals. `$home` collides with `$HOME`, and `$root` can overwrite `$Root`; use specific names such as `$codexHomePath` or `$skillRoot` to prevent late failures in helper functions.
+
+## Guidance Discovery Report Needs Configure Helpers Loaded
+
+- Type: Pattern
+- Status: Active
+- Source: external skill acquisition repair; `Get-ProjectGuidanceDiscoveryReport` failed with missing `Test-FileContains`
+- Last verified: 2026-06-25
+
+When refreshing `.codex/tool-recommendations.local.json` directly from `.codex/skills/project-guidance-discover/scripts/project_guidance_discovery.ps1`, dot-source `.codex/skills/configure-dev-environment/scripts/configure_infra_tools.ps1` first. The discovery report uses shared helpers such as `Join-RootPath`, `Test-FileContains`, and `Test-AnyRepoFileContains`; loading only the discovery script can fail before it writes the local catalog.
+
+## Assign PowerShell Loop Output Before Piping
+
+- Type: Pattern
+- Status: Active
+- Source: external skill acquisition repair; inline `foreach (...) { ... } | Format-Table` failed with `An empty pipe element is not allowed`
+- Last verified: 2026-06-25
+
+When composing multi-line PowerShell snippets for repository audits, assign loop output to a variable before piping to formatters or filters. Use `$out = foreach (...) { ... }` followed by `$out | Format-Table`; this avoids parser failures from a closing brace followed directly by a pipeline.

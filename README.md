@@ -182,15 +182,16 @@ Current external skill sources:
 
 - `aspnet-core`: ASP.NET Core guidance from https://github.com/openai/skills/tree/main/skills/.curated/aspnet-core.
 - `assertion-quality`: test assertion analysis guidance from https://github.com/dotnet/skills/tree/main/plugins/dotnet-test/skills/assertion-quality.
-- `caveman`: output compression guidance from https://github.com/JuliusBrussee/caveman.
+- `caveman`: output compression guidance from https://github.com/JuliusBrussee/caveman/tree/main/plugins/caveman/skills/caveman.
 - `domain-modeling`: domain glossary and decision guidance from https://github.com/mattpocock/skills/tree/main/skills/engineering/domain-modeling.
-- `dotnet-webapi`: ASP.NET Core Web API endpoint guidance from https://github.com/dotnet/skills/tree/main/plugins/dotnet-aspnet/skills/dotnet-webapi.
+- `dotnet-webapi`: ASP.NET Core Web API endpoint guidance from https://github.com/dotnet/skills/tree/main/plugins/dotnet-aspnetcore/skills/dotnet-webapi.
 - `grill-me`: planning interview guidance from https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me.
 - `grill-with-docs`: planning interview plus documentation guidance from https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs.
 - `grilling`: support skill for grill-style planning interviews from https://github.com/mattpocock/skills/tree/main/skills/productivity/grilling.
 - `plan-ui-change`: Blazor UI planning guidance from https://github.com/dotnet/skills/tree/main/plugins/dotnet-blazor/skills/plan-ui-change.
 - `playwright`: browser automation guidance from https://github.com/openai/skills/tree/main/skills/.curated/playwright.
 - `playwright-interactive`: persistent Playwright browser/Electron debugging and visual QA guidance from https://github.com/openai/skills/tree/main/skills/.curated/playwright-interactive.
+- `ponytail`, `ponytail-audit`, `ponytail-debt`, `ponytail-help`, and `ponytail-review`: minimal-change and over-engineering review guidance from https://github.com/DietrichGebert/ponytail.
 - `security-best-practices`: secure coding guidance from https://github.com/openai/skills/tree/main/skills/.curated/security-best-practices.
 - `tdd`: test-driven development guidance from https://github.com/mattpocock/skills/tree/main/skills/engineering/tdd.
 - `test-analysis-extensions`: language-specific test analysis extensions from https://github.com/dotnet/skills/tree/main/plugins/dotnet-test/skills/test-analysis-extensions.
