@@ -15,6 +15,6 @@ Use `$configure-dev-environment` as the router and load domain references from:
 
 Prefer the new shared script path:
 
-```powershell
-.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode Audit
+```bash
+python -m tools.sdd_cli configure Audit
 ```

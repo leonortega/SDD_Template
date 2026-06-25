@@ -40,14 +40,14 @@ Read `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.m
 
 Use the configure router when deterministic scanning is needed:
 
-```powershell
-.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode DiscoverProjectGuidance
+```bash
+python -m tools.sdd_cli configure DiscoverProjectGuidance
 ```
 
 To update the local project reference after the user confirms discovery, pass `persistLocal=true`:
 
-```powershell
-.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode DiscoverProjectGuidance -ValuesJson '{"confirmed":true,"persistLocal":true}'
+```bash
+python -m tools.sdd_cli configure DiscoverProjectGuidance --values-json '{"confirmed":true,"persistLocal":true}'
 ```
 
 The report must include:

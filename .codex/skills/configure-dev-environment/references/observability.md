@@ -9,8 +9,8 @@ Owns:
 
 Use the shared script for the required collector path:
 
-```powershell
-.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode SetSeqAzureEventHubLogs
+```bash
+python -m tools.sdd_cli configure SetSeqAzureEventHubLogs
 ```
 
 ## Seq
@@ -34,7 +34,7 @@ Azure Event Hub ingestion is not part of the current local environment. Add a co
 
 Validation (required path):
 
-```powershell
+```bash
 Invoke-RestMethod -Uri 'http://localhost:5341/api'
 Invoke-RestMethod -Uri 'http://localhost:3001/api/health'
 ```
@@ -44,4 +44,3 @@ Invoke-RestMethod -Uri 'http://localhost:3001/api/health'
 Direct app page and `/health` checks remain authoritative deployment gates. Seq log search comes from direct Serilog Seq sinks for Rancher Desktop. Grafana health dashboards are operator visibility over the same direct `/health` endpoints.
 
 For the Rancher Desktop local lane, Grafana Infinity queries the site/API DEV, QA, and PROD localhost port-forward ports through `host.docker.internal`, because Grafana runs inside Docker. Real local values for `SEQ_URL` and `RANCHER_APP_SEQ_URL` belong in ignored env files or Gitea Actions secrets.
-

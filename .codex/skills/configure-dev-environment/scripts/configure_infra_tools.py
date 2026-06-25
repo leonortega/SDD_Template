@@ -3,7 +3,7 @@
 Canonical runtime: ``python -m tools.sdd_cli configure <Mode> ...``
 
 This module documents the Python-native configure surface that replaced the
-repo-owned PowerShell router. Tests read this file as a lightweight reference
+repo-owned Python router. Tests read this file as a lightweight reference
 for supported modes, Rancher Desktop local-lab helpers, and project-guidance
 entry points.
 """
@@ -20,8 +20,13 @@ SUPPORTED_MODES = [
     "ValidateGiteaActionsRunner",
     "InitProjectProfile",
     "InitQualityGateTemplates",
+    "InitLocalFiles",
     "SetQualityConfig",
     "SetClientTools",
+    "SetOpenProjectEnv",
+    "SetMonitoringEnv",
+    "SetGiteaRunner",
+    "SplitInfraEnv",
     "SyncWorktreeLocalConfig",
     "EnsureDeliveryContext",
     "BuildGiteaActionsImages",

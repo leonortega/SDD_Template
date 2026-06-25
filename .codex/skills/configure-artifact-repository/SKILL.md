@@ -13,7 +13,7 @@ Configure Nexus artifact delivery for ticket-gated DEV, QA, PROD, rollback, and 
 
 Read `.codex/skills/configure-dev-environment/references/nexus.md` before asking for values or applying changes.
 
-Use the shared script at `.codex/skills/configure-dev-environment/scripts/configure_infra_tools.ps1`.
+Use the shared command `python -m tools.sdd_cli configure`.
 
 Keep this skill synchronized with `.codex/skills/_shared/delivery-contract.md` and the non-OpenSpec delivery-flow skills. When behavior differs, delivery-flow skills are authoritative.
 
@@ -47,4 +47,3 @@ Report configured files, missing values, validation commands, artifact/release-m
 - Stop when Nexus credentials, repository names, or Gitea Actions secrets are missing and explain manual setup.
 - Stop when validation cannot prove the build-once promote-same-artifact rule.
 - Stop before changing deployment architecture or PROD behavior without explicit user approval.
-
