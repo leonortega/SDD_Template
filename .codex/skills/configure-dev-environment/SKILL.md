@@ -115,12 +115,12 @@ Useful modes:
 
 ## Workflow
 
-1. For full `config infra` or full guided setup, run `InitProjectProfile` first. If the profile, schema, or selected adapters already exist, treat the mode as idempotent and continue from its `Template already exists` findings.
+1. For full `config infra` or full guided setup, run `InitProjectProfile` first, then `InitLocalFiles` so ignored local env/config files and required memory seed files exist before audit or provider checks need them. If the profile, schema, local files, memory files, or selected adapters already exist, treat the mode as idempotent and continue from its `Template already exists` or preserved-file findings.
 2. When Rancher Desktop is the selected deployment provider and the user explicitly asked for `config infra`, full setup, or Rancher Desktop local lab setup, run `EnsureRancherDesktopCluster` before `EnsureRancherDesktopHeadlamp`, `EnsureRancherDesktopPortForwards`, `ShowEnvironmentUrls`, and `Audit`. `EnsureRancherDesktopHeadlamp` installs the Kubernetes management UI and starts its localhost mapping. `EnsureRancherDesktopPortForwards` starts localhost browser mappings for services that are already deployed. This is the only configure path that may switch Rancher Desktop Kubernetes context, install Headlamp, or start Rancher Desktop local-lab port-forward processes; plain `Audit` remains read-only.
 3. Run `Audit` after `InitProjectProfile` and any selected-provider prerequisite repair unless the user asked for a very specific area and a narrower audit is enough.
 4. For core compose status checks, always include the OpenProject env file so variable resolution matches runtime expectations:
 
-```powershell
+```bash
 docker compose --env-file .\infra\openproject\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml ps
 ```
 
@@ -132,7 +132,7 @@ docker compose --env-file .\infra\openproject\variables.env --env-file .\infra\m
 10. For every missing user-supplied value, provide source, destination, manual setup steps, official link, and validation command.
 11. If local Trivy checks report a stale vulnerability database, refresh it before local scans:
 
-```powershell
+```bash
 trivy --download-db-only
 ```
 
@@ -200,4 +200,3 @@ End setup work with:
 - Stop before branch, OpenProject, ticket-lock, or OpenSpec mutation when first-ticket stack context, guidance discovery review, or recommendation audit context is missing or drifted.
 - Stop before using arbitrary command installers; route confirmed acquisition and guarded install planning to `project-guidance-acquire`.
 - If a required repo skill, command, memory rule, definition, or configured tool/install path cannot be applied, do not silently switch to an ad hoc setup path. Report the failed required item, why it is required, the current-flow fix, the viable alternative, and the alternative's risk or impact, then ask the user whether to fix the current flow or continue with the alternative.
-

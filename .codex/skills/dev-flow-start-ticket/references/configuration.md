@@ -51,7 +51,7 @@ feat/e2eproject-1-create-files-and-folders-for-a-site
 
 Copy the tracked template and edit the ignored local file:
 
-```powershell
+```bash
 Copy-Item .\.codex\client-tools.common.json .\.codex\client-tools.local.json
 ```
 

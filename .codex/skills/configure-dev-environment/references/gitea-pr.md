@@ -8,9 +8,9 @@ Owns:
 
 Use the shared script:
 
-```powershell
-.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode Audit
-.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode SetClientTools -ValuesJson $values
+```bash
+python -m tools.sdd_cli configure Audit
+python -m tools.sdd_cli configure SetClientTools --values-json $values
 ```
 
 ## Required Values

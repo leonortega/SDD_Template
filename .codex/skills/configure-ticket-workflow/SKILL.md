@@ -13,7 +13,7 @@ Configure OpenProject work package workflow values used for local ticket state, 
 
 Read `.codex/skills/configure-dev-environment/references/openproject.md` before asking for values or applying changes.
 
-Use the shared script at `.codex/skills/configure-dev-environment/scripts/configure_infra_tools.ps1`.
+Use the shared command `python -m tools.sdd_cli configure`.
 
 Apply `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md` before changing ticket workflow behavior or handoff rules.
 

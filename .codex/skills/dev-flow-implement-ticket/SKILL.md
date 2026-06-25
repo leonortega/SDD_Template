@@ -55,11 +55,11 @@ Required/defaulted values:
    - latest repository workflow status.
    Continue from the latest completed checkpoint instead of restarting earlier steps.
 6. Confirm the OpenSpec change is active:
-   ```powershell
+   ```bash
    openspec status --change "<change>" --json
    ```
 7. Load apply instructions:
-   ```powershell
+   ```bash
    openspec instructions apply --change "<change>" --json
    ```
 8. Read every context file returned by the apply instructions.
@@ -88,8 +88,8 @@ The local fallback is advisory for faster iteration. repository workflow remains
 
 When repository workflow runner, workflow container, or security tool compatibility is part of the configured gate, use the existing infra validation path instead of inventing ad hoc checks:
 
-```powershell
-.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode AuditQualityGates
+```bash
+python -m tools.sdd_cli configure AuditQualityGates
 the selected runner validation helper from `configure-dev-environment`
 ```
 
