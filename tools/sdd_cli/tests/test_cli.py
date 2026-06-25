@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import tempfile
@@ -102,6 +102,63 @@ class SddCliTests(unittest.TestCase):
             self.assertFalse(unsupported["valid"])
             self.assertIn("PowerShell fallback is intentionally disabled", unsupported["nextAction"])
 
+    def test_project_profile_local_overlay_merges_with_common_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            codex = root / ".codex"
+            codex.mkdir()
+            (codex / "project-profile.json").write_text(
+                json.dumps({
+                    "schemaVersion": 1,
+                    "providers": {"deployment": {"id": "rancher-desktop"}},
+                    "workflow": {"ticketKeyPattern": "ABC-[0-9]+"},
+                    "quality": {"gates": [{"id": "secret-scan", "required": True}]},
+                    "adapters": {"deployment": ".codex/providers/deploy.rancher-desktop.md"},
+                }),
+                encoding="utf-8",
+            )
+            (codex / "project-profile.local.json").write_text(
+                json.dumps({"stack": {"languages": ["python"], "frameworks": [], "testFrameworks": ["unittest"]}}),
+                encoding="utf-8",
+            )
+
+            profile = cli.load_project_profile(root)
+            self.assertEqual(["python"], profile["stack"]["languages"])
+            self.assertEqual("ABC-[0-9]+", cli.read_ticket_pattern(root))
+            self.assertEqual("rancher-desktop", cli.selected_deployment_provider(root))
+            required = cli.run_configure_mode("AuditQualityGates", root, {}, False)
+            self.assertEqual(["secret-scan"], required["requiredGates"])
+
+    def test_tool_recommendations_local_overlay_merges_with_example_catalog(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            codex = root / ".codex"
+            codex.mkdir()
+            (codex / "tool-recommendations.common.json").write_text(
+                json.dumps({
+                    "schemaVersion": 1,
+                    "recommendations": [
+                        {"id": "playwright-guidance", "name": "Playwright guidance", "type": "skill", "usedInSteps": []}
+                    ],
+                }),
+                encoding="utf-8",
+            )
+            (codex / "tool-recommendations.local.json").write_text(
+                json.dumps({
+                    "recommendations": [
+                        {"id": "playwright-guidance", "usedInSteps": ["qa"], "accepted": True},
+                        {"id": "custom-guidance", "name": "Custom", "type": "reference", "usedInSteps": ["start"]},
+                    ],
+                }),
+                encoding="utf-8",
+            )
+
+            catalog = cli.load_tool_recommendations_catalog(root)
+            by_id = {item["id"]: item for item in catalog["recommendations"]}
+            self.assertEqual(["qa"], by_id["playwright-guidance"]["usedInSteps"])
+            self.assertTrue(by_id["playwright-guidance"]["accepted"])
+            self.assertEqual("Custom", by_id["custom-guidance"]["name"])
+
     def test_infra_up_builds_docker_compose_command(self) -> None:
         calls = []
 
@@ -113,39 +170,8 @@ class SddCliTests(unittest.TestCase):
         self.assertIn("compose", calls[0])
         self.assertEqual(["up", "-d", "--remove-orphans"], calls[0][-3:])
 
-    def test_e2e_docker_builds_command_without_running_services(self) -> None:
-        calls = []
-
-        def runner(command, cwd, env):
-            calls.append(command)
-            return 0
-
-        with tempfile.TemporaryDirectory() as tmp:
-            config = cli.REPO_ROOT / ".codex" / "client-tools.local.json"
-            # This command prefers env vars, so no local secret file needed.
-            old_site = cli.os.environ.get("E2E_SITE_URL")
-            old_api = cli.os.environ.get("E2E_API_URL")
-            cli.os.environ["E2E_SITE_URL"] = "https://site.example.test"
-            cli.os.environ["E2E_API_URL"] = "https://api.example.test"
-            try:
-                self.assertEqual(0, cli.e2e_docker(type("Args", (), {"playwright_args": ["--", "--list"]})(), runner))
-            finally:
-                restore_env("E2E_SITE_URL", old_site)
-                restore_env("E2E_API_URL", old_api)
-        self.assertEqual(["docker", "image", "inspect", cli.E2E_IMAGE], calls[0])
-        self.assertIn("docker", calls[1][0])
-        self.assertIn("--list", calls[1][-1])
-
-
 def arg(root: Path, message: Path):
     return type("Args", (), {"root": str(root), "message_file": str(message)})()
-
-
-def restore_env(key: str, value: str | None) -> None:
-    if value is None:
-        cli.os.environ.pop(key, None)
-    else:
-        cli.os.environ[key] = value
 
 
 if __name__ == "__main__":

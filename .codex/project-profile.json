@@ -1,21 +1,6 @@
 {
   "$schema": "./project-profile.schema.json",
   "schemaVersion": 1,
-  "stack": {
-    "languages": [
-      "csharp",
-      "typescript"
-    ],
-    "frameworks": [
-      "dotnet",
-      "aspnet-core",
-      "blazor"
-    ],
-    "testFrameworks": [
-      "xunit",
-      "playwright"
-    ]
-  },
   "providers": {
     "ticket": {
       "id": "openproject",
@@ -65,48 +50,11 @@
     }
   },
   "quality": {
-    "coverageMinimumPercent": 80,
     "gates": [
       {
-        "id": "restore",
-        "type": "build-prep",
-        "workflowJob": "pr-validation",
-        "required": true
-      },
-      {
-        "id": "format",
-        "type": "format",
-        "workflowJob": "pr-validation",
-        "required": true
-      },
-      {
-        "id": "build",
-        "type": "build",
-        "workflowJob": "pr-validation",
-        "required": true
-      },
-      {
-        "id": "tests",
-        "type": "test",
-        "workflowJob": "pr-validation",
-        "required": true
-      },
-      {
-        "id": "coverage",
-        "type": "coverage",
-        "workflowJob": "pr-validation",
-        "required": true
-      },
-      {
-        "id": "dependency-scan",
+        "id": "secret-scan",
         "type": "security",
         "workflowJob": "pr-validation",
-        "required": true
-      },
-      {
-        "id": "e2e-qa",
-        "type": "e2e",
-        "workflowJob": "e2e-qa",
         "required": true
       }
     ]
@@ -116,10 +64,6 @@
     "repository": ".codex/providers/repo.gitea.md",
     "review": ".codex/providers/repo.gitea.md",
     "artifact": ".codex/providers/artifact.nexus.md",
-    "deployment": ".codex/providers/deploy.rancher-desktop.md",
-    "deploymentAzure": ".codex/providers/deploy.azure-appservice.md",
-    "stack": ".codex/providers/stack.dotnet.md",
-    "e2e": ".codex/providers/e2e.playwright.md"
+    "deployment": ".codex/providers/deploy.rancher-desktop.md"
   }
 }
-

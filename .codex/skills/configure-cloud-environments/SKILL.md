@@ -29,7 +29,7 @@ Safety:
 
 1. Confirm Azure CLI exists and `az account show` succeeds.
 2. Run Deployment Topology Review whenever changes touch `src/**.csproj`, `src/**/Program.cs`, `src/**/appsettings*.json`, `infra/deployment/**`, `infra/azure/**`, or `.gitea/workflows/package-deploy.yml`.
-3. Detect deployable apps under `src/**` using `Microsoft.NET.Sdk.Web`; classify Blazor/Razor projects as `web`, Minimal/API endpoint projects as `api`, and preserve explicit overrides in `infra/deployment/apps.json`.
+3. Detect deployable apps using the selected future stack rules, and preserve explicit overrides in `infra/deployment/apps.json`.
 4. Record each app id, project path, role, artifact name, health path, deploy order, and dependencies in `infra/deployment/apps.json`. Use lowercase app ids; derive Gitea secret names as `AZURE_{ENV}_{APPID}_APP_NAME` and `AZURE_{ENV}_{APPID}_APP_URL`.
 5. Flatten `appsettings*.json` keys into Azure App Service setting names with `:` and arrays converted to `__`, such as `Api:BaseUrl` -> `Api__BaseUrl` and `Cors:AllowedOrigins[0]` -> `Cors__AllowedOrigins__0`.
 6. Compare discovered keys with `infra/deployment/configuration.json`. Add mappings for new keys, report removed keys as drift, and keep additional deploy-time settings such as API `ConnectionStrings__ClientsDb`.

@@ -1,5 +1,3 @@
-**/bin/
-**/obj/
 **/node_modules/
 **/TestResults/
 artifacts/
@@ -9,10 +7,6 @@ artifacts/
 .codex/*.local.jsonl
 .codex/agent-evals/results.local.json
 infra/**/variables.env
-tests/SDDTemplate.E2ETests/playwright-report/
-tests/SDDTemplate.E2ETests/test-results/
-tests/SDDTemplate.E2ETests/evidence/
-tests/SDDTemplate.E2ETests/qa-e2e-evidence.zip
 *.db
 *.db-shm
 *.db-wal

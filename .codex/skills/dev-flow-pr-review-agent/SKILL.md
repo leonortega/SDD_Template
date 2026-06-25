@@ -1,4 +1,4 @@
----
+﻿---
 name: dev-flow-pr-review-agent
 description: Review a specific pull request through the selected review adapter and post actionable findings. Use when Codex is asked to review a PR, review the PR just created by the implementation workflow, inspect PR diffs, use internet research to validate code quality, post review comments, or apply configured review outcome labels.
 ---
@@ -21,7 +21,7 @@ When this skill runs as part of a ticket workflow and a ticket key is resolved, 
 
 ## Configuration
 
-Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.example.json` for defaults only, then apply environment variable overrides when present.
+Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.common.json` for defaults only, then apply environment variable overrides when present.
 
 Required or defaulted values:
 
@@ -51,7 +51,7 @@ Fetch:
 - existing inline review comments and review-thread replies when the configured repository/review provider version exposes them
 - relevant local source files for changed code
 - changed line count for diff-size classification
-- delivery risk and adversarial-review trigger using the shared delivery contract; prefer `tools/SDDTemplate.DeliveryTools DetectAdversarialReviewTrigger` when available
+- delivery risk and adversarial-review trigger using the shared delivery contract; prefer repo-local helpers when available
 
 If a comment contains `<!-- codex-review-agent:{headSha} -->`, skip posting another review for the same head SHA unless the user explicitly asks for a fresh review. The existing review still remains an implementation feedback source for `dev-flow-implement-ticket`.
 

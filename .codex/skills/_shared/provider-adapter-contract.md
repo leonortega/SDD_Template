@@ -1,6 +1,6 @@
 # Provider Adapter Contract
 
-Generic delivery skills must read `.codex/project-profile.json` before provider-specific instructions.
+Generic delivery skills must read `.codex/project-profile.json` and optional `.codex/project-profile.local.json` before provider-specific instructions.
 
 ## Profile First
 
@@ -16,7 +16,7 @@ Use `.codex/client-tools.local.json` only for local endpoint values, credentials
 
 ## Adapter Loading
 
-Load only adapters selected by `.codex/project-profile.json` and needed for the current stage:
+Load only adapters selected by the merged project profile and needed for the current stage:
 
 - ticket adapter for ticket reads, comments, state changes, and generated markers,
 - repository/review adapter for branches, pushes, pull requests, checks, labels, comments, and reviewers,

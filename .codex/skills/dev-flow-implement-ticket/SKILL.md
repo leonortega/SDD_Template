@@ -1,4 +1,4 @@
----
+﻿---
 name: dev-flow-implement-ticket
 description: Implement an already-started configured ticket through OpenSpec tasks, project-profile quality gates, repository/review adapter handoff, review-agent fixes, and ticket adapter review-state update. Use when a ticket already has an implementation branch and OpenSpec change, or when Codex is asked to continue, finish, validate, or hand off ticket implementation work.
 ---
@@ -19,9 +19,9 @@ Capture UTC start time after resolving the ticket key and before implementation 
 
 ## Configuration
 
-Read `.codex/project-profile.json` first for stack, provider, branch, ticket-key, and quality-gate policy. Read `.codex/client-tools.local.json` only for selected adapter runtime values. Fall back to `.codex/client-tools.example.json` only for defaults and setup guidance.
+Read `.codex/project-profile.json` first for stack, provider, branch, ticket-key, and quality-gate policy. Read `.codex/client-tools.local.json` only for selected adapter runtime values. Fall back to `.codex/client-tools.common.json` only for defaults and setup guidance.
 
-Read coverage config from `.codex/quality.local.json` when present. If it is missing, invalid, or missing `coverage.minimumPercent`, use `80` and report the configuration gap. The safe tracked template is `.codex/quality.example.json`.
+Read coverage config from `.codex/quality.local.json` when present. If it is missing, invalid, or missing `coverage.minimumPercent`, use `80` and report the configuration gap. The safe tracked template is `.codex/quality.common.json`.
 
 Required/defaulted values:
 
@@ -63,14 +63,14 @@ Required/defaulted values:
    openspec instructions apply --change "<change>" --json
    ```
 8. Read every context file returned by the apply instructions.
-9. Classify delivery risk from ticket text, OpenSpec artifacts, changed/planned paths, and estimated changed lines using the shared delivery contract. Prefer `tools/SDDTemplate.DeliveryTools ClassifyDeliveryRisk` when available. Record `low`, `standard`, or `high` in the PR body and ticket handoff.
+9. Classify delivery risk from ticket text, OpenSpec artifacts, changed/planned paths, and estimated changed lines using the shared delivery contract. Prefer repo-local helpers when available. Record `low`, `standard`, or `high` in the PR body and ticket handoff.
 
 ### 2. Discover Quality Gates
 
 Inspect configured quality surfaces. Do not invent validation commands.
 
 - `.codex/quality.local.json`, falling back to coverage threshold `80`
-- `.codex/quality.example.json`, for the tracked default
+- `.codex/quality.common.json`, for the tracked default
 - configured PR validation workflow files
 - configured workflow documentation
 - `lefthook.yml`
@@ -99,7 +99,7 @@ Use the selected runner validation helper whenever repository workflow fails bef
 
 Follow `dev-flow-apply-change`:
 
-1. Verify the active `tasks.md` contains the Review Workload Forecast required by the shared delivery contract. Prefer `tools/SDDTemplate.DeliveryTools ParseWorkloadForecast` when available.
+1. Verify the active `tasks.md` contains the Review Workload Forecast required by the shared delivery contract. Prefer repo-local helpers when available.
 2. If the forecast requires a decision before apply, stop before editing code unless a split/chained work-unit plan, `size:exception`, or `exception-ok` is recorded in the prompt or OpenSpec artifacts.
 3. Apply `tdd` and build an acceptance-to-test map before product code changes. Map every acceptance criterion to committed automated coverage in the implementation PR, including Playwright/E2E tests when a criterion requires browser-level proof.
 4. Apply `ponytail full` before adding or changing project code: use the smallest working change, prefer standard library and native framework features, and avoid speculative abstractions or dependencies.
@@ -107,7 +107,7 @@ Follow `dev-flow-apply-change`:
 6. Mark a task complete only after its code, related tests, RED/GREEN validation evidence, and acceptance-to-test map entries are updated.
 7. If implementation reveals extra required work, add a new OpenSpec task before doing that work.
 8. Keep OpenSpec specs, design notes, and tasks aligned with the latest implementation.
-9. Do not defer acceptance test creation to `quality-test-e2e`. That skill runs existing committed tests and fails or blocks when coverage is missing.
+9. Do not defer acceptance test creation to the QA gate. QA runs existing committed tests and fails or blocks when coverage is missing.
 10. Commit after each completed workflow step when tracked changes exist, then start the next step from a clean working tree. Use ticket- or OpenSpec-prefixed messages, skip empty commits, and keep code, tests, docs, and OpenSpec changes together when splitting them would leave a broken intermediate commit.
 11. Do not automatically stash normal ticket progress. Use stash only for unrelated local or user changes that block the current step.
 

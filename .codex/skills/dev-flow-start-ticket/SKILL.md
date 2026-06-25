@@ -1,4 +1,4 @@
----
+﻿---
 name: dev-flow-start-ticket
 description: Start configured work items from chat by listing Todo tickets, preparing safe repository branches, pushing new branches, generating OpenSpec-style planning notes, updating the ticket description, and commenting with the branch through selected project-profile adapters. Use when the user asks to start the next ticket, start a specific ticket key, list Todo tickets, prepare a ticket branch, or connect ticket work to the local repository/OpenSpec workflow.
 ---
@@ -23,7 +23,7 @@ Capture UTC start time before the first ticket-specific mutation. When OpenProje
 
 ## Configuration
 
-Read `.codex/project-profile.json` first for the selected ticket provider, ticket key pattern, branch policy, and adapter path. Read `.codex/client-tools.local.json` only for selected adapter runtime values. Fall back to `.codex/client-tools.example.json` only for defaults and setup guidance, then apply provider-supported environment variable overrides only when present. Defaults are:
+Read `.codex/project-profile.json` first for the selected ticket provider, ticket key pattern, branch policy, and adapter path. Read `.codex/client-tools.local.json` only for selected adapter runtime values. Fall back to `.codex/client-tools.common.json` only for defaults and setup guidance, then apply provider-supported environment variable overrides only when present. Defaults are:
 
 - Todo state: `Todo`
 - In-progress state: `In Progress`
@@ -39,7 +39,7 @@ Required stack context:
 
 - `docs/architecture.md`, `docs/development.md`, and `docs/deployment.md` contain `Technology Stack And Tool Set`.
 - `openspec/config.yaml` contains `context:` and `rules:` with the current stack and artifact guidance.
-- `.codex/tool-recommendations.example.json` exists as the tracked placeholder-safe shape/template.
+- `.codex/tool-recommendations.common.json` exists as the tracked placeholder-safe shape/template.
 - Ignored `.codex/tool-recommendations.local.json` is used only after project guidance discovery confirms local recommendations and `usedInSteps`.
 
 Run the read-only recommendation audit before Git, ticket provider, or OpenSpec mutation when any of these files are missing, appear unconfigured, or this is the first ticket start in a fresh repository:
@@ -64,7 +64,7 @@ If the audit reports any `stack-context.*` warning, if `DiscoverProjectGuidance`
 
 1. Fetch the ticket by key or id.
 2. Run the Ticket Refinement Gate from the shared delivery contract before mutating Git, ticket status, the ticket lock, or OpenSpec:
-   - Prefer `tools/SDDTemplate.DeliveryTools ClassifyTicketReadiness` when available.
+   - Prefer repo-local readiness helpers when available.
    - `ready`: continue.
    - `refinable`: use grill-style refinement before writing the managed ticket provider block. Prefer `grill-with-docs` style when answers create durable product, domain, acceptance, or rationale knowledge; use `grill-me` style only for temporary alignment. Generate Scrum-ready planning details with a problem or opportunity, user story, concrete acceptance criteria, scope or affected areas, dependencies or assumptions, validation expectations, risks, and definition of done in the managed ticket provider block, then continue.
    - `blocked`: stop before branch creation, ticket status updates, comments, ticket-lock writes, or OpenSpec proposal creation. Report the missing product or technical intent.

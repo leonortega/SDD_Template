@@ -1,4 +1,4 @@
----
+﻿---
 name: dev-flow-implement-change
 description: Implement an OpenSpec change through the complete local delivery workflow. Use when Codex is asked to run /opsx:apply, implement a ticket or OpenSpec change, add edge-case tests, verify the app, commit, push, open a repository pull request, invoke a PR review agent, move the ticket to review, or complete implementation handoff.
 ---
@@ -17,7 +17,7 @@ Before ticketed implementation, read `.codex/skills/_shared/delivery-contract.md
 
 ## Configuration
 
-Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.example.json` for defaults only, then apply environment variable overrides when present.
+Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.common.json` for defaults only, then apply environment variable overrides when present.
 
 Required or defaulted values:
 

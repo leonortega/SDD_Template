@@ -1,6 +1,6 @@
-# OpenProject Ticket Workflow Configuration
+﻿# OpenProject Ticket Workflow Configuration
 
-Use `.codex/client-tools.local.json` as the primary local configuration file. Keep `.codex/client-tools.example.json` tracked as the template. Environment variables are optional overrides for client machines or CI.
+Use `.codex/client-tools.local.json` as the primary local configuration file. Keep `.codex/client-tools.common.json` tracked as the template. Environment variables are optional overrides for client machines or CI.
 
 ## Defaults
 
@@ -52,7 +52,7 @@ feat/e2eproject-1-create-files-and-folders-for-a-site
 Copy the tracked template and edit the ignored local file:
 
 ```powershell
-Copy-Item .\.codex\client-tools.example.json .\.codex\client-tools.local.json
+Copy-Item .\.codex\client-tools.common.json .\.codex\client-tools.local.json
 ```
 
 Set `openProject.apiToken` in `.codex/client-tools.local.json`. The token is sent as the `Authorization: Bearer` header. Never commit real OpenProject tokens or private client URLs. Use OpenProject API only; do not use OpenProject MCP, Docker containers, or direct database access for this workflow.

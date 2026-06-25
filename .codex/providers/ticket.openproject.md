@@ -1,4 +1,4 @@
-# Ticket Adapter: OpenProject
+﻿# Ticket Adapter: OpenProject
 
 Use this adapter only when `.codex/project-profile.json` selects `providers.ticket.id = "openproject"`.
 
@@ -6,7 +6,7 @@ Use this adapter only when `.codex/project-profile.json` selects `providers.tick
 
 - Read non-secret provider identity from `.codex/project-profile.json`.
 - Read local endpoint, API token, project identifier, status names, and optional `openProject.timeTelemetry` activity config from `.codex/client-tools.local.json`.
-- Use `.codex/client-tools.example.json` only for placeholder shape.
+- Use `.codex/client-tools.common.json` only for placeholder shape.
 - Never print tokens, cookies, session values, or secret-bearing URLs.
 
 ## Authentication

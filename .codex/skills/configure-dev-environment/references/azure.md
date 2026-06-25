@@ -78,7 +78,7 @@ Store the complete JSON file contents as the Gitea Actions secret `AZURE_CREDENT
 Run this review when changes touch deployable projects, `Program.cs`, `appsettings*.json`, Azure infrastructure, or the package/deploy workflow.
 
 - Detect deployable projects by `Microsoft.NET.Sdk.Web` under `src/**`.
-- Classify Blazor/Razor projects as `web` and endpoint-only projects as `api`.
+- Classify selected UI projects as `web` and endpoint-only projects as `api`.
 - Keep `infra/deployment/apps.json` aligned with app id, project path, role, artifact name, health path, deploy order, and dependencies.
 - Flatten appsettings keys into App Service settings using double underscores.
 - Infer known values between apps, including `Api__BaseUrl`, `Cors__AllowedOrigins__0`, and `ConnectionStrings__ClientsDb`.

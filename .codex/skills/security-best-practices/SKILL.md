@@ -91,7 +91,7 @@ Source: https://github.com/openai/skills/tree/main/skills/.curated/security-best
 
 Before using this repo-local copy for ticketed delivery, read `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md`. Apply the active ticket scope, repository validation gates, secret-handling rules, and handoff expectations before changing code, tests, local config, QA evidence, deployment behavior, or security documentation.
 
-For this repository's .NET and ASP.NET Core work, pair this skill with `aspnet-core` and its `references/security-and-identity.md` guidance because the copied upstream security references are strongest for Python, JavaScript/TypeScript, and Go.
+Pair this skill with the selected future stack guidance when a product stack exists.
 
 ## Output
 

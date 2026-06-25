@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 import json
@@ -7,7 +7,6 @@ import re
 import shutil
 import subprocess
 import sys
-import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,7 +15,6 @@ from typing import Any, Callable
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PYTHON_REQUIRES = (3, 11)
-E2E_IMAGE = "agentic/e2e-ci:playwright-1.57.0-1"
 SEARCH_PLAN_ID = "project-guidance-search-plan"
 STANDARD_STAGES = [
     "dev-flow-start-ticket",
@@ -25,10 +23,10 @@ STANDARD_STAGES = [
     "dev-flow-pr-review-feedback-loop",
     "dev-ops-post-merge-deploy",
     "dev-ops-deploy-qa",
-    "quality-test-e2e",
 ]
 ALLOWLISTED_LOCAL_CONFIG = [
     ".codex/client-tools.local.json",
+    ".codex/project-profile.local.json",
     ".codex/quality.local.json",
     ".codex/tool-recommendations.local.json",
 ]
@@ -118,12 +116,6 @@ def build_parser() -> argparse.ArgumentParser:
     validate.add_argument("message_file")
     validate.add_argument("--root", default=str(REPO_ROOT))
     validate.set_defaults(func=validate_commit_message)
-
-    e2e = sub.add_parser("e2e")
-    e2e_sub = e2e.add_subparsers(dest="action", required=True)
-    docker = e2e_sub.add_parser("docker")
-    docker.add_argument("playwright_args", nargs=argparse.REMAINDER)
-    docker.set_defaults(func=e2e_docker)
 
     delivery = sub.add_parser("delivery")
     delivery.add_argument("mode")
@@ -238,47 +230,6 @@ def azure_deploy_environments(args: argparse.Namespace, runner: Runner = default
     return 0
 
 
-def e2e_docker(args: argparse.Namespace, runner: Runner = default_runner) -> int:
-    config = read_json(REPO_ROOT / ".codex" / "client-tools.local.json", optional=True)
-    site_url = os.environ.get("E2E_SITE_URL") or nested(config, "azure", "qa", "siteUrl")
-    api_url = os.environ.get("E2E_API_URL") or nested(config, "azure", "qa", "apiUrl")
-    if not site_url or not api_url:
-        raise CliError(
-            "E2E_SITE_URL and E2E_API_URL are required, or set azure.qa.siteUrl/apiUrl in "
-            ".codex/client-tools.local.json."
-        )
-
-    if runner(["docker", "image", "inspect", E2E_IMAGE], REPO_ROOT, None):
-        raise CliError(
-            f"Docker image '{E2E_IMAGE}' is missing. Run config infra / BuildGiteaActionsImages before local Docker E2E."
-        )
-
-    test_command = ["npm", "ci", "&&", "npx", "playwright", "test", *trim_remainder(args.playwright_args)]
-    shell_command = " ".join(sh_quote(part) for part in test_command)
-    env = os.environ.copy()
-    env["E2E_SITE_URL"] = site_url
-    env["E2E_API_URL"] = api_url
-    command = [
-        "docker",
-        "run",
-        "--rm",
-        "--ipc=host",
-        "-e",
-        f"E2E_SITE_URL={site_url}",
-        "-e",
-        f"E2E_API_URL={api_url}",
-        "-v",
-        f"{REPO_ROOT.as_posix()}:/workspace",
-        "-w",
-        "/workspace/tests/SDDTemplate.E2ETests",
-        E2E_IMAGE,
-        "bash",
-        "-lc",
-        shell_command,
-    ]
-    return runner(command, REPO_ROOT, env)
-
-
 def memory_search(args: argparse.Namespace) -> int:
     result = search_memory(Path(args.root), args.query, args.list_topics)
     print(json.dumps(result, indent=2) if not isinstance(result, list) or args.as_json else "\n".join(" | ".join(str(row.get(key, "")) for key in row) for row in result))
@@ -293,7 +244,7 @@ def validate_commit_message(args: argparse.Namespace) -> int:
     if allowed.search(message):
         return 0
     print(
-        f"Commit message must start with a ticket matching '{pattern}', OpenSpec id, or [SDD] for direct SDD repo maintenance, for example: E2EPROJECT-1: scaffold blank site",
+        f"Commit message must start with a ticket matching '{pattern}', OpenSpec id, or [SDD] for direct SDD repo maintenance, for example: E2EPROJECT-1: initialize product shell",
         file=sys.stderr,
     )
     return 1
@@ -486,7 +437,7 @@ def configure_audit_quality_gates(root: Path, values: dict[str, Any], dry_run: b
     policy = read_json(root / ".codex" / "delivery-policy.json", optional=True)
     if policy and "agentOptimization" not in policy:
         add_bucket_item(result["findings"], ".codex/delivery-policy.json", "agentOptimization", "delivery-policy.json should define agentOptimization.", "warning")
-    profile = read_json(root / ".codex" / "project-profile.json", optional=True)
+    profile = load_project_profile(root)
     required = [gate.get("id") for gate in nested(profile, "quality", "gates") or [] if gate.get("required")]
     result["requiredGates"] = required
     result["valid"] = True
@@ -509,6 +460,7 @@ def configure_init_project_profile(root: Path, values: dict[str, Any], dry_run: 
     providers.mkdir(parents=True, exist_ok=True)
     schema_path = codex / "project-profile.schema.json"
     profile_path = codex / "project-profile.json"
+    local_profile_path = codex / "project-profile.local.json"
     changed = False
     actions: list[dict[str, str]] = []
 
@@ -525,7 +477,6 @@ def configure_init_project_profile(root: Path, values: dict[str, Any], dry_run: 
         profile = {
             "$schema": "./project-profile.schema.json",
             "schemaVersion": 1,
-            "stack": {"languages": [], "frameworks": [], "testFrameworks": []},
             "providers": {
                 "ticket": {"id": "example-ticket", "adapter": ".codex/providers/ticket.example.md"},
                 "repository": {"id": "example-repository", "adapter": ".codex/providers/repository.example.md"},
@@ -541,8 +492,6 @@ def configure_init_project_profile(root: Path, values: dict[str, Any], dry_run: 
                 "review": ".codex/providers/repository.example.md",
                 "artifact": ".codex/providers/artifact.example.md",
                 "deployment": ".codex/providers/deployment.example.md",
-                "stack": ".codex/providers/stack.example.md",
-                "e2e": ".codex/providers/e2e.example.md",
             },
         }
         if not dry_run:
@@ -551,7 +500,20 @@ def configure_init_project_profile(root: Path, values: dict[str, Any], dry_run: 
     else:
         actions.append({"path": ".codex/project-profile.json", "key": "exists", "severity": "info", "message": "Template already exists: .codex/project-profile.json", "phase": "apply"})
 
-    for name in ("ticket.example.md", "repository.example.md", "artifact.example.md", "deployment.example.md", "stack.example.md", "e2e.example.md"):
+    if not local_profile_path.exists():
+        changed = True
+        local_profile = {
+            "$schema": "./project-profile.schema.json",
+            "stack": {"languages": [], "frameworks": [], "testFrameworks": []},
+            "adapters": {},
+        }
+        if not dry_run:
+            write_json(local_profile_path, local_profile)
+        actions.append({"path": ".codex/project-profile.local.json", "key": "created", "severity": "info", "message": "Created ignored stack/profile overlay.", "phase": "apply"})
+    else:
+        actions.append({"path": ".codex/project-profile.local.json", "key": "exists", "severity": "info", "message": "Template already exists: .codex/project-profile.local.json", "phase": "apply"})
+
+    for name in ("ticket.example.md", "repository.example.md", "artifact.example.md", "deployment.example.md"):
         example = providers / name
         if not example.exists():
             changed = True
@@ -676,14 +638,24 @@ def configure_discover_project_guidance(root: Path, values: dict[str, Any], dry_
     actions: list[dict[str, str]] = []
     write_enabled = bool(values.get("confirmed") and values.get("persistLocal") and not dry_run)
     if write_enabled:
+        existing_catalog = load_tool_recommendations_catalog(root)
+        existing_by_id = {item.get("id"): item for item in existing_catalog.get("recommendations", [])}
+        persisted_recommendations = []
+        for item in recommendations:
+            if item.get("type") not in {"skill", "mcp", "plugin", "tool", "practice", "standard", "reference"}:
+                continue
+            persisted = merge_dicts(existing_by_id.get(item.get("id"), {}), ensure_used_in_steps(item))
+            persisted_recommendations.append(persisted)
         payload = {
             "schemaVersion": 1,
             "mode": "guarded-auto",
-            "sourceCatalog": ".codex/tool-recommendations.example.json",
+            "sourceCatalog": ".codex/tool-recommendations.common.json",
             "detectedTags": audit["detectedTags"],
             "researchTopics": audit["researchTopics"],
-            "recommendations": [ensure_used_in_steps(item) for item in recommendations if item.get("type") in {"skill", "mcp", "plugin", "tool", "practice", "standard", "reference"}],
-            "notRecommended": [item for item in recommendations if item["id"] == "openproject-mcp-for-ticket-delivery"],
+            "accepted": existing_catalog.get("accepted", []),
+            "dismissed": existing_catalog.get("dismissed", []),
+            "recommendations": persisted_recommendations,
+            "notRecommended": merge_catalog_items(existing_catalog.get("notRecommended", []), [item for item in recommendations if item["id"] == "openproject-mcp-for-ticket-delivery"]),
         }
         write_json(local_path, payload)
         actions.append({"path": ".codex/tool-recommendations.local.json", "key": "persist-local-catalog", "severity": "info", "message": "Persist local project guidance catalog.", "phase": "apply"})
@@ -710,12 +682,12 @@ def configure_map_project_guidance_step(root: Path, values: dict[str, Any], dry_
     if not values.get("workflowStep"):
         return {"mode": "MapProjectGuidanceStep", "valid": False, "errors": ["values.workflowStep is required."]}
     path = root / ".codex" / "tool-recommendations.local.json"
-    current = read_json(path, optional=True)
+    current = load_tool_recommendations_catalog(root)
     if not current:
         current = {
             "schemaVersion": 1,
             "mode": "guarded-auto",
-            "sourceCatalog": ".codex/tool-recommendations.example.json",
+            "sourceCatalog": ".codex/tool-recommendations.common.json",
             "detectedTags": [],
             "researchTopics": [],
             "recommendations": [ensure_used_in_steps(item) for item in build_recommendations(root, detect_stack_tags(root), build_research_topics(detect_stack_tags(root))) if item["id"] != SEARCH_PLAN_ID],
@@ -800,9 +772,10 @@ def search_memory(root: Path, queries: list[str], list_topics: bool) -> Any:
 
 
 def read_ticket_pattern(root: Path) -> str:
-    profile = root / ".codex" / "project-profile.json"
-    if profile.exists():
-        return read_ticket_pattern_from_profile(profile)
+    profile = load_project_profile(root)
+    pattern = nested(profile, "workflow", "ticketKeyPattern")
+    if pattern:
+        return pattern
     policy = root / ".codex" / "delivery-policy.json"
     data = read_json(policy, optional=True)
     return data.get("ticketKeyPattern", "E2EPROJECT-[0-9]+")
@@ -908,7 +881,7 @@ def artifact_paths(commit: str, provider: str | None) -> dict[str, str]:
 
 
 def selected_deployment_provider(root: Path) -> str:
-    profile = read_json(root / ".codex" / "project-profile.json", optional=True)
+    profile = load_project_profile(root)
     return nested(profile, "providers", "deployment", "id") or "azure-appservice"
 
 
@@ -1200,9 +1173,9 @@ def profile_audit_findings(root: Path) -> list[str]:
     if not profile_path.exists():
         findings.append("Missing .codex/project-profile.json.")
     else:
-        profile = read_json(profile_path, optional=True)
-        if profile.get("schemaVersion") != 1:
-            findings.append("project-profile.json schemaVersion must be 1.")
+        profile = load_project_profile(root)
+        if not isinstance(profile.get("schemaVersion"), int) or profile.get("schemaVersion", 0) < 1:
+            findings.append("project-profile.json schemaVersion must be at least 1.")
         if not nested(profile, "workflow", "ticketKeyPattern"):
             findings.append("project-profile.json must define workflow.ticketKeyPattern.")
         adapters = profile.get("adapters")
@@ -1257,11 +1230,7 @@ def classify_delivery_risk(paths: list[str], context: str, changed_lines: int) -
 
 def detect_stack_tags(root: Path) -> list[str]:
     tags: list[str] = []
-    if any(root.glob("*.slnx")) or any(root.rglob("*.csproj")):
-        tags.append("dotnet")
-    if (root / "global.json").exists() or any_contains(root, ["src", "tests", "tools"], ["*.csproj"], "<TargetFramework>net10.0</TargetFramework>"):
-        tags.append("dotnet-10")
-    if (root / "package.json").exists() or (root / "tests" / "SDDTemplate.E2ETests" / "package.json").exists():
+    if (root / "package.json").exists():
         tags.append("node")
     if (root / "tsconfig.json").exists() or any(root.rglob("*.ts")) or any(root.rglob("*.tsx")):
         tags.append("typescript")
@@ -1277,15 +1246,9 @@ def detect_stack_tags(root: Path) -> list[str]:
         tags.append("terraform")
     if any_contains(root, ["."], ["*.yaml", "*.yml"], "apiVersion:|kind: Deployment|kind: Service"):
         tags.append("kubernetes")
-    if any_contains(root, ["src"], ["*.csproj"], "Microsoft\\.AspNetCore|Microsoft\\.NET\\.Sdk\\.Web"):
-        tags.append("aspnet-core")
-    if any_contains(root, ["src"], ["*.razor", "*.csproj"], "Blazor|@page|BlazorDisableThrowNavigationException"):
-        tags.extend(["blazor", "web-ui"])
-    if any_contains(root, ["src", "docs", "openspec"], ["*.cs", "*.md", "*.yaml", "*.yml"], "REST|API|/health|/metrics"):
+    if any_contains(root, ["src", "docs", "openspec"], ["*.md", "*.yaml", "*.yml"], "REST|API"):
         tags.append("rest-api")
-    if any_contains(root, ["tests"], ["*.csproj"], "xunit"):
-        tags.append("xunit")
-    if any_contains(root, ["tests"], ["*.csproj"], "coverlet") or (root / ".codex" / "quality.example.json").exists():
+    if (root / ".codex" / "quality.common.json").exists():
         tags.extend(["coverage", "security"])
     if (root / "infra" / "openproject").exists():
         tags.append("openproject")
@@ -1298,19 +1261,15 @@ def detect_stack_tags(root: Path) -> list[str]:
     deployment = selected_deployment_provider(root)
     if deployment == "rancher-desktop":
         tags.append("rancher-desktop")
-    if deployment == "azure-appservice" or (root / "infra" / "azure").exists():
-        tags.extend(["azure", "azure-app-service"])
-    if any_contains(root, ["infra", "docs", ".codex"], ["*.bicep", "*.md", "*.json"], "Azure Monitor|Log Analytics"):
-        tags.append("azure-monitor")
     if (root / "infra" / "monitoring" / "grafana").exists():
         tags.append("grafana")
-    if any_contains(root, ["src", "infra", ".codex", "docs"], ["*.cs", "*.json", "*.md", "*.yml", "*.yaml"], "Seq|Serilog"):
+    if any_contains(root, ["infra", ".codex", "docs"], ["*.json", "*.md", "*.yml", "*.yaml"], "Seq"):
         tags.append("seq")
-    if (root / "tests" / "SDDTemplate.E2ETests").exists() or (root / ".codex" / "skills" / "quality-test-e2e" / "SKILL.md").exists():
+    if (root / ".codex" / "skills" / "playwright" / "SKILL.md").exists():
         tags.extend(["e2e", "browser-e2e", "playwright-guidance"])
     if (root / "openspec").exists():
         tags.append("openspec")
-    if any(root.rglob("*.csproj")):
+    if (root / ".codex" / "skills" / "tdd" / "SKILL.md").exists():
         tags.extend(["clean-code", "architecture-guidance"])
     return sorted(set(tags))
 
@@ -1318,12 +1277,11 @@ def detect_stack_tags(root: Path) -> list[str]:
 def build_research_topics(detected: list[str]) -> list[dict[str, Any]]:
     topics: list[dict[str, Any]] = []
     definitions = [
-        ("dotnet-aspnet", ["dotnet", "dotnet-10", "aspnet-core"], ".NET / ASP.NET Core"),
-        ("web-ui", ["blazor", "react", "web-ui"], "Web UI"),
-        ("rest-api", ["rest-api", "aspnet-core", "python", "java"], "REST/API"),
-        ("qa-testing", ["xunit", "coverage", "browser-e2e", "playwright-guidance"], "QA / Testing"),
+        ("web-ui", ["react", "web-ui"], "Web UI"),
+        ("rest-api", ["rest-api", "python", "java"], "REST/API"),
+        ("qa-testing", ["coverage", "browser-e2e", "playwright-guidance"], "QA / Testing"),
         ("security", ["security"], "Security"),
-        ("delivery-tools", ["openproject", "gitea", "gitea-actions-runner", "nexus-artifacts", "rancher-desktop", "azure-app-service", "azure-monitor", "grafana", "seq"], "Delivery tools and environments"),
+        ("delivery-tools", ["openproject", "gitea", "gitea-actions-runner", "nexus-artifacts", "rancher-desktop", "grafana", "seq"], "Delivery tools and environments"),
         ("containers-iac", ["docker", "terraform", "kubernetes"], "Containers / IaC"),
         ("code-standards", ["clean-code", "architecture-guidance"], "Code standards and architecture"),
     ]
@@ -1335,7 +1293,7 @@ def build_research_topics(detected: list[str]) -> list[dict[str, Any]]:
 
 
 def build_recommendations(root: Path, detected: list[str], topics: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    catalog = read_json(root / ".codex" / "tool-recommendations.example.json", optional=True)
+    catalog = load_tool_recommendations_catalog(root)
     catalog_items = [ensure_used_in_steps(item) for item in catalog.get("recommendations", [])]
     recommendations = [
         {
@@ -1347,12 +1305,8 @@ def build_recommendations(root: Path, detected: list[str], topics: list[dict[str
             "discoverySourcePriority": DISCOVERY_SOURCE_PRIORITY,
             "topics": topics,
         },
-        skill_recommendation(root, "openai-aspnet-core-skill", "OpenAI ASP.NET Core skill", ".codex/skills/aspnet-core/SKILL.md", "https://github.com/openai/skills/tree/main/skills/.curated/aspnet-core", "openai-official", detected, ["dotnet-10", "aspnet-core"], ["https://github.com/openai/skills/tree/main/skills/.curated/aspnet-core"], ["https://learn.microsoft.com/en-us/dotnet/architecture/", "https://learn.microsoft.com/en-us/aspnet/core/"]),
-        skill_recommendation(root, "dotnet-blazor-plan-ui-change-skill", ".NET Blazor plan UI change skill", ".codex/skills/plan-ui-change/SKILL.md", "https://github.com/dotnet/skills/tree/main/plugins/dotnet-blazor/skills/plan-ui-change", "technology-owner", detected, ["blazor", "web-ui"], ["https://github.com/dotnet/skills/tree/main/plugins/dotnet-blazor/skills/plan-ui-change"], ["https://learn.microsoft.com/en-us/aspnet/core/blazor/", "https://playwright.dev/docs/best-practices"]),
-        skill_recommendation(root, "dotnet-webapi-skill", ".NET Web API skill", ".codex/skills/dotnet-webapi/SKILL.md", "https://github.com/dotnet/skills/tree/main/plugins/dotnet-aspnetcore/skills/dotnet-webapi", "technology-owner", detected, ["aspnet-core", "rest-api"], ["https://github.com/dotnet/skills/tree/main/plugins/dotnet-aspnetcore/skills/dotnet-webapi"], ["https://learn.microsoft.com/en-us/aspnet/core/web-api/"]),
-        skill_recommendation(root, "openai-security-best-practices-skill", "OpenAI security best practices skill", ".codex/skills/security-best-practices/SKILL.md", "https://github.com/openai/skills/tree/main/skills/.curated/security-best-practices", "openai-official", detected, ["security", "aspnet-core"], ["https://github.com/openai/skills/tree/main/skills/.curated/security-best-practices"], ["https://owasp.org/www-project-top-ten/", "https://learn.microsoft.com/en-us/aspnet/core/security/"]),
+        skill_recommendation(root, "openai-security-best-practices-skill", "OpenAI security best practices skill", ".codex/skills/security-best-practices/SKILL.md", "https://github.com/openai/skills/tree/main/skills/.curated/security-best-practices", "openai-official", detected, ["security"], ["https://github.com/openai/skills/tree/main/skills/.curated/security-best-practices"], ["https://owasp.org/www-project-top-ten/"]),
         skill_recommendation(root, "openai-playwright-skill", "OpenAI Playwright skill", ".codex/skills/playwright/SKILL.md", "https://github.com/openai/skills/tree/main/skills/.curated/playwright", "openai-official", detected, ["browser-e2e", "playwright-guidance"], ["https://github.com/openai/skills/tree/main/skills/.curated/playwright"], ["https://playwright.dev/docs/best-practices"]),
-        skill_recommendation(root, "dotnet-assertion-quality-skill", ".NET assertion quality skill", ".codex/skills/assertion-quality/SKILL.md", "https://github.com/dotnet/skills/tree/main/plugins/dotnet-test/skills/assertion-quality", "technology-owner", detected, ["xunit", "coverage"], ["https://github.com/dotnet/skills/tree/main/plugins/dotnet-test/skills/assertion-quality"], ["https://github.com/dotnet/skills"]),
         *catalog_items,
         {
             "id": "clean-code-practice-guidance",
@@ -1424,7 +1378,7 @@ def skill_recommendation(
 
 
 def recommendation_from_catalog(root: Path, item_id: str) -> dict[str, Any] | None:
-    catalog = read_json(root / ".codex" / "tool-recommendations.example.json", optional=True)
+    catalog = load_tool_recommendations_catalog(root)
     for item in catalog.get("recommendations", []):
         if item.get("id") == item_id:
             return ensure_used_in_steps(item)
@@ -1444,10 +1398,7 @@ def build_stack_context_findings(root: Path, detected: list[str]) -> list[dict[s
         if (root / path).exists()
     )
     findings: list[dict[str, str]] = []
-    checks = {
-        "dotnet-10": ".NET 10|net10.0",
-        "azure-app-service": "Azure App Service",
-    }
+    checks: dict[str, str] = {}
     for tag, pattern in checks.items():
         if tag in detected and not re.search(pattern, context_text, re.IGNORECASE):
             findings.append({"path": "docs/, openspec/config.yaml", "key": f"stack-context.{tag}", "severity": "warning", "message": f"Detected stack tag '{tag}' but durable docs/OpenSpec context do not mention it."})
@@ -1517,6 +1468,42 @@ def merge_dicts(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
             output[key] = merge_dicts(output[key], value)
         else:
             output[key] = value
+    return output
+
+
+def load_project_profile(root: Path) -> dict[str, Any]:
+    base = read_json(root / ".codex" / "project-profile.json", optional=True)
+    local = read_json(root / ".codex" / "project-profile.local.json", optional=True)
+    return merge_dicts(base, local)
+
+
+def load_tool_recommendations_catalog(root: Path) -> dict[str, Any]:
+    base = read_json(root / ".codex" / "tool-recommendations.common.json", optional=True)
+    local = read_json(root / ".codex" / "tool-recommendations.local.json", optional=True)
+    merged = merge_dicts({key: value for key, value in base.items() if key not in {"recommendations", "notRecommended"}}, {key: value for key, value in local.items() if key not in {"recommendations", "notRecommended"}})
+    merged["recommendations"] = merge_catalog_items(base.get("recommendations", []), local.get("recommendations", []))
+    merged["notRecommended"] = merge_catalog_items(base.get("notRecommended", []), local.get("notRecommended", []))
+    return {key: value for key, value in merged.items() if value not in ({}, [])}
+
+
+def merge_catalog_items(base_items: list[dict[str, Any]], local_items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    output: list[dict[str, Any]] = []
+    positions: dict[str, int] = {}
+    for item in base_items:
+        item_id = item.get("id")
+        if not item_id:
+            continue
+        positions[item_id] = len(output)
+        output.append(ensure_used_in_steps(item))
+    for item in local_items:
+        item_id = item.get("id")
+        if not item_id:
+            continue
+        if item_id in positions:
+            output[positions[item_id]] = merge_dicts(output[positions[item_id]], ensure_used_in_steps(item))
+        else:
+            positions[item_id] = len(output)
+            output.append(ensure_used_in_steps(item))
     return output
 
 

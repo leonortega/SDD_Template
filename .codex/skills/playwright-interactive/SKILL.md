@@ -19,15 +19,15 @@ When this skill is used for ticket delivery, follow `.codex/skills/_shared/deliv
 
 This repository uses `playwright-interactive` as an optional implementation, PR-review debugging, and browser-failure diagnosis aid. It does not replace the official QA acceptance flow.
 
-- Use during implementation after browser-visible Blazor changes to inspect controls, states, responsive layout, viewport fit, console health, and visual quality before PR handoff.
+- Use during implementation after browser-visible UI changes to inspect controls, states, responsive layout, viewport fit, console health, and visual quality before PR handoff.
 - Use during PR review or debugging to reproduce UI findings quickly with a persistent browser session.
 - Use during QA failure diagnosis only to classify deployed browser failures against the real QA URL.
 - Do not create, repair, stage, or commit tests from this skill during QA. Missing or defective committed Playwright coverage routes back through implementation/review.
-- Do not treat screenshots, traces, page loads, or visual inspection as acceptance proof by themselves. They support committed executable assertions under `tests/SDDTemplate.E2ETests`.
+- Do not treat screenshots, traces, page loads, or visual inspection as acceptance proof by themselves. They support committed executable assertions in the future product test suite.
 - Store one-off screenshots, probes, traces, and generated evidence under ignored `artifacts/qa/{ticketKey}/{runId}/` when used for delivery evidence.
 - If `js_repl` is unavailable but an equivalent persistent Node-backed REPL is available in the current Codex session, use that persistent Node REPL with the same session-reuse and cleanup rules.
 
-Official QA remains owned by `quality-test-e2e`: committed Playwright tests run through the selected provider QA branch against deployed QA Site/API URLs, evidence is published through Nexus, and only `quality-test-e2e` classifies PASS/FAIL and moves tickets to Done.
+Official QA remains owned by the selected QA workflow for the future product: committed Playwright tests should run against deployed QA URLs, evidence should be published through Nexus, and the configured QA gate classifies PASS/FAIL.
 
 ## Preconditions
 
@@ -47,7 +47,7 @@ js_repl = true
 
 ## One-time setup
 
-In this repository, do not run `npm init` in the repository root. Prefer the existing Playwright package under `tests/SDDTemplate.E2ETests`, or use an ignored temporary workspace if the current task genuinely needs throwaway setup.
+In this repository, do not run `npm init` in the repository root. Use the future product test package when it exists, or an ignored temporary workspace if the current task genuinely needs throwaway setup.
 
 ```bash
 test -f package.json || npm init -y

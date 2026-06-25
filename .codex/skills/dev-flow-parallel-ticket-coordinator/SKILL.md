@@ -1,4 +1,4 @@
----
+﻿---
 name: dev-flow-parallel-ticket-coordinator
 description: Coordinate multiple configured tickets through role-specialized delivery agents by assigning one repository worktree and one local ticket lock per active ticket while serializing shared deployment lanes through selected project-profile adapters.
 ---
@@ -19,17 +19,17 @@ Before routing, follow `.codex/skills/_shared/skill-startup.md`, which reads `.c
 
 ## Configuration
 
-Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.example.json` only for structure and safe defaults. Required/defaulted values:
+Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.common.json` only for structure and safe defaults. Required/defaulted values:
 
 - `parallelDelivery.enabled`, default `false`
 - `parallelDelivery.maxActiveTickets`, default `2`
 - `parallelDelivery.worktreeRoot`, default `../ticket-worktrees`
 - `parallelDelivery.deploymentLanePolicy`, default `serialized`
-- `parallelDelivery.agentModelPolicy`, default to the placeholder-safe role policy in `.codex/client-tools.example.json`
+- `parallelDelivery.agentModelPolicy`, default to the placeholder-safe role policy in `.codex/client-tools.common.json`
 - `git.baseBranch`, default `dev`
 - ticket provider, repository/review provider, Nexus, PR label, and quality config used by delegated child skills
 
-When copying ignored local config into a ticket worktree, report only filenames copied, never values. The default allowlist is `.codex/client-tools.local.json`, `.codex/quality.local.json`, and `.codex/tool-recommendations.local.json` when present. Do not copy `.codex/parallel-delivery.local.json`, `.codex/delivery-context.local.json`, `.codex/deployment-provider-login.local.json`, or app `*.local.json` files by default.
+When copying ignored local config into a ticket worktree, report only filenames copied, never values. The default allowlist is `.codex/client-tools.local.json`, `.codex/project-profile.local.json`, `.codex/quality.local.json`, and `.codex/tool-recommendations.local.json` when present. Do not copy `.codex/parallel-delivery.local.json`, `.codex/delivery-context.local.json`, `.codex/deployment-provider-login.local.json`, or app `*.local.json` files by default.
 
 ## Agent Model Policy
 
@@ -105,6 +105,7 @@ Each ticket worktree must have its own ignored `.codex/delivery-context.local.js
 4. Copy required ignored local config files into the ticket worktree:
    - `.codex/client-tools.local.json`
    - `.codex/quality.local.json`
+   - `.codex/project-profile.local.json` when present
    - `.codex/tool-recommendations.local.json` when present
    - other ignored local delivery config only when a child skill requires it
 5. Do not copy `.codex/parallel-delivery.local.json` into ticket worktrees.
@@ -120,7 +121,7 @@ Route each ticket by current durable checkpoint:
 - In Progress with branch/OpenSpec and no PR: use `dev-flow-implement-ticket` in that ticket worktree.
 - Open PR: use `dev-flow-implement-ticket` for the review/fix loop or `dev-flow-pr-review-agent` for a focused review.
 - Merged PR awaiting artifact/QA: use `dev-ops-post-merge-deploy` only when the serialized deployment lane is free or already owned by that ticket.
-- Ticket in QA: use `quality-test-e2e` only when the serialized deployment lane is free or already owned by that ticket.
+- Ticket in QA: use `configured QA gate` only when the serialized deployment lane is free or already owned by that ticket.
 - Ticket Done and user explicitly requested PROD: use `dev-ops-deploy-prod` only when the serialized deployment lane is free or already owned by that ticket.
 - Ambiguous state: use `dev-flow-pipeline-status`.
 
@@ -132,7 +133,7 @@ When spawning a role agent, select the matching `agentModelPolicy` entry:
 - `dev-flow-pr-review-agent` -> `prReview`
 - `dev-ops-post-merge-deploy` -> `postMergeDeploy`
 - `dev-ops-deploy-qa` -> `deployToQa`
-- `quality-test-e2e` -> `e2eQa`
+- `configured QA gate` -> `e2eQa`
 - `dev-ops-deploy-prod` -> `deployToProd`
 - `dev-flow-file-qa-bug` -> `fileQaBug`
 - `dev-ops-rollback-prod` -> `rollbackProd`
@@ -142,7 +143,7 @@ When spawning a role agent, select the matching `agentModelPolicy` entry:
 
 With `deploymentLanePolicy` set to `serialized`, only one ticket may own the shared DEV/QA/PROD lane at a time.
 
-- Acquire the lane before invoking `dev-ops-post-merge-deploy`, `dev-ops-deploy-qa`, `quality-test-e2e`, or `dev-ops-deploy-prod`.
+- Acquire the lane before invoking `dev-ops-post-merge-deploy`, `dev-ops-deploy-qa`, `configured QA gate`, or `dev-ops-deploy-prod`.
 - Preserve the lane owner while the ticket is in deployment, QA, or explicit PROD promotion.
 - Release the lane after the stage reaches a stable checkpoint: QA evidence recorded, PROD deployment recorded, rollback/hotfix handoff recorded, or a blocker is reported.
 - If another ticket owns the lane, continue implementation/review work for other tickets when possible and report the lane owner for blocked promotion work.
