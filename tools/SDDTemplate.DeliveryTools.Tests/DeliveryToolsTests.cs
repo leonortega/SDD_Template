@@ -1751,6 +1751,108 @@ namespace SDDTemplate.DeliveryTools.Tests
         }
 
         [Fact]
+        public void OpenProjectTimeTelemetryReadAggregatesGeneratedTimeEntryComments()
+        {
+            string script = Path.Combine(FindRepositoryRoot().FullName, ".codex", "skills", "_shared", "scripts", "delivery_tools.ps1");
+            string inputJson = JsonSerializer.Serialize(new
+            {
+                status = "PASS - telemetry.",
+                currentRoute = "quality-test-e2e",
+                timeEntries = new[]
+                {
+                    new
+                    {
+                        comment = new
+                        {
+                            raw = string.Join("\n",
+                                "IA generated workflow telemetry: E2EPROJECT-123:dev-flow-start-ticket",
+                                "agentRole: ticketStarter",
+                                "startedUtc: 2026-06-09T10:00:00Z",
+                                "finishedUtc: 2026-06-09T10:01:00Z",
+                                "retryCount: 0",
+                                "outcome: PASS"),
+                        },
+                    },
+                    new
+                    {
+                        comment = new
+                        {
+                            raw = string.Join("\n",
+                                "IA generated workflow telemetry: E2EPROJECT-123:quality-test-e2e",
+                                "agentRole: qa",
+                                "startedUtc: 2026-06-09T11:00:00Z",
+                                "finishedUtc: 2026-06-09T11:20:00Z",
+                                "retryCount: 1",
+                                "outcome: PASS"),
+                        },
+                    },
+                    new
+                    {
+                        comment = new { raw = "IA generated workflow telemetry: E2EPROJECT-999:quality-test-e2e\noutcome: PASS" },
+                    },
+                },
+            });
+
+            string readJson = RunPowerShell(
+                script,
+                "-Mode",
+                "ReadOpenProjectTimeTelemetry",
+                "-TicketKey",
+                "E2EPROJECT-123",
+                "-InputJson",
+                inputJson);
+
+            using JsonDocument document = JsonDocument.Parse(readJson);
+            JsonElement stages = document.RootElement.GetProperty("stages");
+            Assert.Equal(2, stages.GetArrayLength());
+            Assert.Equal("dev-flow-start-ticket", stages[0].GetProperty("stage").GetString());
+            Assert.Equal("quality-test-e2e", stages[1].GetProperty("stage").GetString());
+            Assert.Equal(1, stages[1].GetProperty("retryCount").GetInt64());
+
+            string comment = RunPowerShell(
+                script,
+                "-Mode",
+                "RenderTicketComment",
+                "-Type",
+                "WorkflowTiming",
+                "-InputJson",
+                readJson);
+            Assert.Contains("IA generated workflow timing: E2EPROJECT-123", comment);
+            Assert.Contains("| `quality-test-e2e` | PASS | 20m 00s | 2026-06-09T11:00:00Z | 2026-06-09T11:20:00Z |", comment);
+        }
+
+        [Fact]
+        public void OpenProjectTimeTelemetryCommentRendererUsesStableMarker()
+        {
+            string script = Path.Combine(FindRepositoryRoot().FullName, ".codex", "skills", "_shared", "scripts", "delivery_tools.ps1");
+            string inputJson = JsonSerializer.Serialize(new
+            {
+                workflowStage = "dev-flow-implement-ticket",
+                agentRole = "implementation",
+                startedUtc = "2026-06-09T10:00:00Z",
+                finishedUtc = "2026-06-09T10:30:00Z",
+                retryCount = 2,
+                outcome = "BLOCKED",
+                blockerCategory = "validation",
+            });
+
+            string output = RunPowerShell(
+                script,
+                "-Mode",
+                "RenderOpenProjectTimeTelemetryComment",
+                "-TicketKey",
+                "E2EPROJECT-123",
+                "-InputJson",
+                inputJson);
+
+            Assert.StartsWith("IA generated workflow telemetry: E2EPROJECT-123:dev-flow-implement-ticket", output, StringComparison.Ordinal);
+            Assert.Contains("agentRole: implementation", output);
+            Assert.Contains("retryCount: 2", output);
+            Assert.Contains("blockerCategory: validation", output);
+            Assert.DoesNotContain("token", output, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
         public void RenderTicketCommentRendersProdBatchIncludedTickets()
         {
             string script = Path.Combine(FindRepositoryRoot().FullName, ".codex", "skills", "_shared", "scripts", "delivery_tools.ps1");

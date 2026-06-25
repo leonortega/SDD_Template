@@ -5,7 +5,7 @@ Use this adapter only when `.codex/project-profile.json` selects `providers.tick
 ## Runtime Configuration
 
 - Read non-secret provider identity from `.codex/project-profile.json`.
-- Read local endpoint, API token, project identifier, and status names from `.codex/client-tools.local.json` under `openProject`.
+- Read local endpoint, API token, project identifier, status names, and optional `openProject.timeTelemetry` activity config from `.codex/client-tools.local.json`.
 - Use `.codex/client-tools.example.json` only for placeholder shape.
 - Never print tokens, cookies, session values, or secret-bearing URLs.
 
@@ -27,6 +27,9 @@ Content-Type: application/json
 - `move-state`: update `_links.status` to the configured target status and include the current `lockVersion`.
 - `comment`: add generated comments as work package activities with the stable marker as the first line.
 - `verify-marker`: re-read activities and verify the marker appears in activity comment text before reporting success.
+- `time-telemetry-detect`: verify `/api/v3/time_entries` accepts work-package time-entry reads/writes for the authenticated user and that `openProject.timeTelemetry.enabled` is true with an `activityId` or resolvable `activityName`.
+- `time-telemetry-list`: query `/api/v3/time_entries` filtered by `entity_type=WorkPackage` and `entity_id={workPackageId}`.
+- `time-telemetry-upsert`: create or update generated time entries for workflow stage timing. Use marker `IA generated workflow telemetry: {ticketKey}:{workflowStage}` as the first line of the time-entry comment, link `_links.entity.href` to `/api/v3/work_packages/{workPackageId}`, set `_links.activity.href` from the configured activity, set `spentOn` from `finishedUtc`, and set `hours` as an ISO-8601 duration from elapsed time.
 
 ## Status Mapping
 
@@ -41,3 +44,5 @@ Content-Type: application/json
 - Stop before mutation when OpenProject config is missing, the work package is ambiguous, or the current status conflicts with the active delivery lock.
 - OpenProject work package updates must include the current `lockVersion`.
 - Do not read OpenProject data from containers, databases, or mounted volumes.
+- OpenProject time entries are the primary workflow telemetry store when the API and configured activity allow writes. If time-entry support, config, permissions, or schema validation fails, fall back to ignored `.codex/agent-telemetry.local.jsonl` and report the fallback reason.
+- Raw prompts, token counts, credential-bearing URLs, secrets, and noisy tool output must not be stored in OpenProject time entries.

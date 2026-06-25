@@ -22,7 +22,7 @@ Read `.codex/delivery-context.local.json` when present and verify the resolved t
 
 ## Workflow Telemetry
 
-Capture UTC start time after resolving the active ticket and PR. Append a `dev-flow-pr-review-feedback-loop` row with `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` when feedback handling succeeds, blocks, fails, or is skipped idempotently. On resume or idempotent reuse, append another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-flow-pr-review-feedback-loop`, `agentRole=reviewFeedback`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If no active feedback exists and the loop reuses an existing current-head review, record `outcome=SKIP`.
+Capture UTC start time after resolving the active ticket and PR. Prefer OpenProject time-entry telemetry and create or update the `dev-flow-pr-review-feedback-loop` entry with marker `IA generated workflow telemetry: {ticketKey}:dev-flow-pr-review-feedback-loop`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` only as the JSONL fallback when direct time telemetry is unavailable. On resume or idempotent reuse, append or update another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-flow-pr-review-feedback-loop`, `agentRole=reviewFeedback`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If no active feedback exists and the loop reuses an existing current-head review, record `outcome=SKIP`.
 
 ## Configuration
 

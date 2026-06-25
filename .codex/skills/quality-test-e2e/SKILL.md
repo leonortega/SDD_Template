@@ -12,6 +12,7 @@ Use this skill after deployment validation has already moved a ticket to QA. Act
 This skill is technology-agnostic. Inspect the repository first. Use an established E2E/API test tool when one is already configured; otherwise ask the user to choose before creating or running technology-dependent tests.
 
 For rendered website changes, prefer `$quality-frontend-testing-debugging` when the repo has `.codex/skills/quality-frontend-testing-debugging/SKILL.md` and the ticket requires browser-visible validation, responsive layout checks, console health, screenshots, or interaction proof. Keep API and deployment health checks in the repo-native stack path.
+For Blazor or other browser-visible validation, prefer that frontend testing/debugging skill before changing product code.
 
 When the repository contains `tests/SDDTemplate.E2ETests`, treat it as the reusable deployed-QA regression suite. Implementation records browser E2E expectations and acceptance oracles, but E2E creation and repair are owned by this QA skill unless the user, ticket, or OpenSpec artifacts explicitly made E2E part of implementation PR scope. The suite is executed by the selected-provider QA job against the deployed QA Site/API URLs. The selected deployment adapter defines any temporary QA branch and job names. Create or update reusable tests on the QA branch when the existing suite cannot prove a required acceptance criterion, record the reason in the QA result, and route those test changes through the normal reviewed follow-up path unless the configured QA workflow rule explicitly allows committing them in the QA workflow. This skill still owns QA acceptance: verify the repository E2E evidence bundle, publish final QA evidence, create or verify the RC tag, update release metadata, add the ticket-provider comment, move the ticket to Done only after the QA result is `PASS`, and delete the remote QA trigger branch after durable evidence exists. Local E2E QA is forbidden unless a deployment-related blocker prevents the normal selected-provider E2E path from running or completing and `agentOptimization.maxToolRetries` deploy-fix attempts from `.codex/delivery-policy.json` have failed; the current limit is `2`. Product E2E test failures remain QA failures and are not a local-fallback trigger.
 
@@ -33,9 +34,9 @@ Before QA state changes, follow `.codex/skills/_shared/skill-startup.md`, which 
 
 ## Workflow Telemetry
 
-Capture UTC start time after resolving the ticket key and before QA evidence checks. Append a `quality-test-e2e` row with `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` when E2E QA succeeds, blocks, fails, or is skipped idempotently because the verified E2E QA comment and Done state already exist. On resume or idempotent reuse, append another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=quality-test-e2e`, `agentRole=qa`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`.
+Capture UTC start time after resolving the ticket key and before QA evidence checks. Prefer OpenProject time-entry telemetry and create or update the `quality-test-e2e` entry with marker `IA generated workflow telemetry: {ticketKey}:quality-test-e2e`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` only as the JSONL fallback when direct time telemetry is unavailable. On resume or idempotent reuse, append or update another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=quality-test-e2e`, `agentRole=qa`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`.
 
-After the E2E QA ticket comment is verified and before final QA handoff, read the active ticket rows with `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode ReadWorkflowTelemetry -TicketKey {ticketKey}`, render `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode RenderTicketComment -Type WorkflowTiming`, then create a ticket provider activity with stable marker `IA generated workflow timing: {ticketKey}`. Send a `comment.raw` activity payload and verify the activity comment starts with the marker after posting. The timing comment must include only status, current route, total elapsed time, and the stage table. Stages that did not run or did not apply must remain visible in the table as `NOT RUN / N/A` with duration `no time`; repeated rows for a stage are collapsed by earliest start and latest finish. Do not include token counts, prompts, raw logs, credential-bearing URLs, noisy tool details, repository workflow job duration, or ticket provider marker-derived timing. If telemetry cannot be written or read, report the workflow timing comment as blocked.
+After the E2E QA ticket comment is verified and before final QA handoff, read OpenProject time entries first with `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode ReadOpenProjectTimeTelemetry -TicketKey {ticketKey}`. Fall back to `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode ReadWorkflowTelemetry -TicketKey {ticketKey}` only when direct time telemetry is unavailable. Render `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode RenderTicketComment -Type WorkflowTiming`, then create a ticket provider activity with stable marker `IA generated workflow timing: {ticketKey}`. Send a `comment.raw` activity payload and verify the activity comment starts with the marker after posting. The timing comment must include only status, current route, total elapsed time, and the stage table. Stages that did not run or did not apply must remain visible in the table as `NOT RUN / N/A` with duration `no time`; repeated rows for a stage are collapsed by earliest start and latest finish. Do not include token counts, prompts, raw logs, credential-bearing URLs, noisy tool details, repository workflow job duration, or ticket provider marker-derived timing. If telemetry cannot be written or read by either path, report the workflow timing comment as blocked.
 
 ## Configuration
 
@@ -88,7 +89,7 @@ Use these QA result classifications:
 - `PASS WITH GAPS`: the deployed artifact appears usable but a non-blocking evidence weakness, warning, or assumption remains; record the gap and keep the ticket in QA until the gap is resolved or explicitly accepted as non-blocking in the ticket.
 - `FAIL`: a required assertion failed, a required oracle is missing, evidence is contradictory, the wrong artifact/environment was tested, or a product defect was found.
 
-Only `PASS` can move the ticket to `configured Done state`.
+Only `PASS` can move the ticket to `configured Done state`. Only `PASS` can move OpenProject to `openProject.doneStatus`.
 
 Apply this general QA quality bar before executing tests:
 
@@ -316,7 +317,7 @@ After the verified E2E QA comment and Done-state mutation succeed, delete the se
 
 Then verify the remote ref is gone. Do not delete the branch before Nexus evidence exists, release metadata is updated, the RC tag is created or verified, and ticket provider is Done.
 
-Before reporting final QA handoff, append the `quality-test-e2e` telemetry row, read workflow telemetry, render `RenderTicketComment -Type WorkflowTiming`, and create or patch the `IA generated workflow timing: {ticketKey}` ticket comment. If the timing marker already exists for the ticket, patch that comment instead of creating a duplicate.
+Before reporting final QA handoff, append the `quality-test-e2e` telemetry row through OpenProject time entries or fallback JSONL, read workflow telemetry from OpenProject time entries first, render `RenderTicketComment -Type WorkflowTiming`, and create or patch the `IA generated workflow timing: {ticketKey}` ticket comment. If the timing marker already exists for the ticket, patch that comment instead of creating a duplicate.
 
 If the ticket is already in Done or has QA evidence but only a noncanonical QA marker is present, such as `IA generated QA evidence: {ticketKey}`, do not skip finalization. Repair or add the canonical `IA generated E2E QA: {ticketKey}` marker, verify the workflow timing marker, and continue to the OpenSpec archival handoff.
 
@@ -350,7 +351,7 @@ Before final handoff, apply `.codex/memory/retrieval-policy.md#update-process` t
 - If the finding is reusable but non-authoritative workflow knowledge, update the targeted `.codex/memory/` file.
 - If nothing reusable was discovered, explicitly record `Memory updated: none`.
 
-ticket comments, QA evidence, and final chat summaries do not satisfy this gate by themselves. Do not report the QA run as complete until the final handoff can state `Memory updated: <files>` or `Memory updated: none`.
+OpenProject comments, QA evidence, and final chat summaries do not satisfy this gate by themselves. Do not report the QA run as complete until the final handoff can state `Memory updated: <files>` or `Memory updated: none`.
 
 ## Output
 

@@ -15,11 +15,11 @@ For setup details and branch pattern options, read `references/configuration.md`
 
 Before mutating ticket or repository state, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/architecture.md` as the stage-specific doc. Load selected ticket and repository adapters before any mutation.
 
-This skill owns initial creation of ignored `.codex/delivery-context.local.json` and ignored `.codex/agent-telemetry.local.jsonl` for automatic delivery. Never commit those files.
+This skill owns initial creation of ignored `.codex/delivery-context.local.json` for automatic delivery. OpenProject time entries are the primary telemetry store; ignored `.codex/agent-telemetry.local.jsonl` is fallback only. Never commit local workflow files.
 
 ## Workflow Telemetry
 
-Capture UTC start time before the first ticket-specific mutation. After telemetry is initialized, append a `dev-flow-start-ticket` row with `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` when ticket start succeeds, blocks, fails, or is skipped idempotently. On resume or idempotent reuse, append another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-flow-start-ticket`, `agentRole=ticketStarter`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If a blocker happens before telemetry initialization or before a ticket key is selected, report that no telemetry row was possible.
+Capture UTC start time before the first ticket-specific mutation. When OpenProject time-entry telemetry is available, create or update the `dev-flow-start-ticket` time entry with marker `IA generated workflow telemetry: {ticketKey}:dev-flow-start-ticket`. If direct time telemetry is unavailable, initialize fallback `.codex/agent-telemetry.local.jsonl` and append a row with `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}`. On resume or idempotent reuse, append or update another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-flow-start-ticket`, `agentRole=ticketStarter`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If a blocker happens before a ticket key is selected, report that no telemetry row was possible.
 
 ## Configuration
 
@@ -49,7 +49,7 @@ Run the read-only recommendation audit before Git, ticket provider, or OpenSpec 
 .\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode DiscoverProjectGuidance
 ```
 
-If the audit reports any `stack-context.*` warning, if `DiscoverProjectGuidance` reports missing suggested skills or guidance that the operator has not reviewed, or if the required files are missing or placeholder-only, stop before branch creation, ticket provider description updates, comments, state changes, ticket-lock writes, or OpenSpec proposal creation. Route to `$configure-dev-environment` plus `project-guidance-discover` to define the stack/tooling docs, complete `openspec/config.yaml`, research extra useful guidance from detected project signals, confirm or dismiss suggestions, and update the local recommendation catalog first.
+If the audit reports any `stack-context.*` warning, if `DiscoverProjectGuidance` reports missing suggested skills or guidance that the operator has not reviewed, or if the required files are missing or placeholder-only, stop before branch creation, OpenProject description updates, comments, state changes, ticket-lock writes, or OpenSpec proposal creation. Route to `$configure-dev-environment` plus `project-guidance-discover` to define the stack/tooling docs, complete `openspec/config.yaml`, research extra useful guidance from detected project signals, confirm or dismiss suggestions, and update the local recommendation catalog first.
 
 ## Workflow
 
@@ -70,7 +70,7 @@ If the audit reports any `stack-context.*` warning, if `DiscoverProjectGuidance`
    - `blocked`: stop before branch creation, ticket status updates, comments, ticket-lock writes, or OpenSpec proposal creation. Report the missing product or technical intent.
 3. Run the Stack Context Preflight. If stack/tooling docs, OpenSpec config, local project guidance catalog, or project guidance discovery review are missing or drifted, stop and route to `configure-dev-environment` and `project-guidance-discover` before mutating Git, ticket provider, or OpenSpec.
 4. Check `git status --porcelain`. If any output exists, stop and report changed files.
-5. Initialize and clear `.codex/agent-telemetry.local.jsonl` for the selected ticket with `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode InitializeWorkflowTelemetry -TicketKey {ticketKey}`. Do not initialize telemetry when only listing Todo tickets.
+5. Prepare workflow telemetry for the selected ticket. Prefer OpenProject time entries with the configured `openProject.timeTelemetry` activity. Initialize and clear `.codex/agent-telemetry.local.jsonl` with `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode InitializeWorkflowTelemetry -TicketKey {ticketKey}` only when the OpenProject time-entry path is unavailable. Do not initialize telemetry when only listing Todo tickets.
 6. Switch to the configured base branch and run `git pull --ff-only`.
 7. Create or reuse the configured branch name.
 8. Pre-scan branch conflicts before creating or switching branches:
@@ -81,7 +81,7 @@ If the audit reports any `stack-context.*` warning, if `DiscoverProjectGuidance`
 10. Analyze the ticket description in an OpenSpec explore style unless OpenSpec is explicitly skipped by policy below.
 11. Update only the managed generated block in the ticket description.
 12. Add a ticket comment with the branch name, base branch, pushed repository branch, and OpenSpec decision, unless a generated comment for the same branch already exists.
-13. Create or update `.codex/delivery-context.local.json` with `ticketKey`, `branch`, `openspecChange` when applicable, and any known PR/artifact/version fields. If an existing lock names a different ticket, fetch the locked ticket through the selected ticket adapter and compare its status with the configured Done state or default `Done`. If the locked ticket is `Done`, call `EnsureDeliveryContext` with `replaceExisting=true` for the new selected ticket. If the locked ticket is active, missing, ambiguous, or cannot be verified, stop and report the stale-lock blocker. Do not delete the lock merely because the old ticket is QA Done or ready for PROD; replacement is lazy on the next ticket start.
+13. Create or update `.codex/delivery-context.local.json` with `ticketKey`, `branch`, `openspecChange` when applicable, and any known PR/artifact/version fields. If an existing lock names a different ticket, fetch the locked ticket through the OpenProject API when OpenProject is selected, otherwise through the selected ticket adapter, and compare its status with the configured `openProject.doneStatus` or default `Done`. If the locked ticket is `Done`, call `EnsureDeliveryContext` with `replaceExisting=true` for the new selected ticket. If the locked ticket is active, missing, ambiguous, or cannot be verified, stop and report the stale-lock blocker. Do not delete the lock merely because the old ticket is QA Done or ready for PROD; replacement is lazy on the next ticket start.
 14. Move the ticket to the configured in-progress status, unless it is already there.
 15. Create an OpenSpec proposal using the `dev-flow-propose-change` skill (`/opsx:propose`) with a change name matching the branch name as closely as OpenSpec allows, unless OpenSpec is explicitly skipped.
 
@@ -175,11 +175,14 @@ Concrete examples:
 
 ## Ticket Provider Access
 
+Use OpenProject API v3 `work_packages` endpoints when the selected ticket adapter is OpenProject.
+
 Use the selected ticket adapter only. Never use MCPs, Docker containers, or direct database access for ticket delivery unless the selected adapter explicitly requires it.
 
 Load credentials from `.codex/client-tools.local.json` or optional environment overrides only. Avoid echoing request headers, tokens, or full credential-bearing URLs.
 
 Use provider-neutral operations from `.codex/skills/_shared/provider-adapter-contract.md`: `list`, `read`, `enrich`, `move-state`, `comment`, and `verify-marker`. The selected ticket adapter translates those operations to concrete endpoints, payload fields, lock/version mechanics, and state names.
+Fetch the current `lockVersion` before OpenProject description or status updates.
 
 To move a ticket to the in-progress status, resolve the configured target state through the selected ticket adapter. Do not guess a state id or provider-specific lock/version value.
 

@@ -84,6 +84,17 @@ Payload:
 
 After posting a generated marker, read activities back and verify the comment text starts with the marker before reporting success.
 
+Workflow time telemetry uses OpenProject time entries first when the selected ticket adapter supports them and `openProject.timeTelemetry.enabled` is true:
+
+```text
+GET {openProject.baseUrl}/api/v3/time_entries
+POST {openProject.baseUrl}/api/v3/time_entries
+PATCH {openProject.baseUrl}/api/v3/time_entries/{timeEntryId}
+GET {openProject.baseUrl}/api/v3/time_entries/activity/{activityId}
+```
+
+List existing generated telemetry with filters for `entity_type=WorkPackage` and `entity_id={workPackageId}`. Create or update a time entry whose comment starts with `IA generated workflow telemetry: {ticketKey}:{workflowStage}`. The payload uses `spentOn`, `hours`, `_links.entity.href` for `/api/v3/work_packages/{workPackageId}`, and `_links.activity.href` for the configured activity. If the time-entry API, permissions, or configured activity cannot be used, record the fallback reason and use ignored `.codex/agent-telemetry.local.jsonl`.
+
 ## Gitea
 
 Headers:

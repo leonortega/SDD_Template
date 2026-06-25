@@ -23,7 +23,7 @@ For push-triggered pre-production deployment, the commit or merged PR title must
 
 ## Workflow Telemetry
 
-Capture UTC start time after resolving the ticket key and before artifact promotion checks. Append a `dev-ops-deploy-qa` row with `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` when QA promotion succeeds, blocks, fails, or is skipped idempotently because the QA deployment marker already exists. On resume or idempotent reuse, append another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-ops-deploy-qa`, `agentRole=deployment`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`.
+Capture UTC start time after resolving the ticket key and before artifact promotion checks. Prefer OpenProject time-entry telemetry and create or update the `dev-ops-deploy-qa` entry with marker `IA generated workflow telemetry: {ticketKey}:dev-ops-deploy-qa`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` only as the JSONL fallback when direct time telemetry is unavailable. On resume or idempotent reuse, append or update another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-ops-deploy-qa`, `agentRole=deployment`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`.
 
 ## Configuration
 

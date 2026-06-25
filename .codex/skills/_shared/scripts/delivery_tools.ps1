@@ -1,6 +1,6 @@
 param(
   [Parameter(Mandatory = $true)]
-  [ValidateSet('ArtifactPaths', 'CheckGitIgnored', 'NextRcVersion', 'ReadProjectProfile', 'ReadDeliveryPolicy', 'ExtractTicketKey', 'ReadCoverageThreshold', 'ReadCoberturaLineRate', 'ValidateReleaseManifest', 'CreateArtifactPointer', 'ValidateTicketLock', 'ValidateDeploymentLane', 'ValidateParallelDeliveryDryRun', 'InitializeWorkflowTelemetry', 'AppendWorkflowTelemetry', 'ReadWorkflowTelemetry', 'RenderTicketComment', 'UpdateReleaseManifest')]
+  [ValidateSet('ArtifactPaths', 'CheckGitIgnored', 'NextRcVersion', 'ReadProjectProfile', 'ReadDeliveryPolicy', 'ExtractTicketKey', 'ReadCoverageThreshold', 'ReadCoberturaLineRate', 'ValidateReleaseManifest', 'CreateArtifactPointer', 'ValidateTicketLock', 'ValidateDeploymentLane', 'ValidateParallelDeliveryDryRun', 'InitializeWorkflowTelemetry', 'AppendWorkflowTelemetry', 'ReadWorkflowTelemetry', 'ReadOpenProjectTimeTelemetry', 'RenderOpenProjectTimeTelemetryComment', 'RenderTicketComment', 'UpdateReleaseManifest')]
   [string] $Mode,
 
   [string] $CommitSha,
@@ -720,31 +720,9 @@ function Append-WorkflowTelemetry {
   }
 }
 
-function Read-WorkflowTelemetry {
-  $ticket = Get-RequiredTelemetryTicketKey
-  $input = Get-InputObject
-  $telemetryPath = Get-WorkflowTelemetryPath
-  if (-not (Test-Path -LiteralPath $telemetryPath)) {
-    throw "Workflow telemetry file not found: $telemetryPath"
-  }
-
-  $rows = [System.Collections.Generic.List[object]]::new()
-  foreach ($line in (Get-Content -LiteralPath $telemetryPath)) {
-    if ([string]::IsNullOrWhiteSpace($line)) {
-      continue
-    }
-    $row = $line | ConvertFrom-Json
-    if ([string](Get-ObjectProperty $row 'ticketKey') -eq $ticket) {
-      $rows.Add($row)
-    }
-  }
-
-  if ($rows.Count -eq 0) {
-    throw "Workflow telemetry has no rows for ticket '$ticket'."
-  }
-
+function ConvertTo-WorkflowTelemetrySummary($Rows, $Input, [string] $Ticket) {
   $stageGroups = [ordered]@{}
-  foreach ($row in $rows) {
+  foreach ($row in $Rows) {
     $stage = [string](Get-ObjectProperty $row 'workflowStage')
     if ([string]::IsNullOrWhiteSpace($stage)) {
       continue
@@ -801,22 +779,177 @@ function Read-WorkflowTelemetry {
     }
   }
 
-  $status = [string](Get-ObjectProperty $input 'status')
+  $status = [string](Get-ObjectProperty $Input 'status')
   if ([string]::IsNullOrWhiteSpace($status)) {
     $status = 'PASS - timing generated from workflow telemetry.'
   }
-  $currentRoute = [string](Get-ObjectProperty $input 'currentRoute')
+  $currentRoute = [string](Get-ObjectProperty $Input 'currentRoute')
   if ([string]::IsNullOrWhiteSpace($currentRoute)) {
     $currentRoute = [string](Get-ObjectProperty $stageRows[-1] 'stage')
   }
 
   [pscustomobject]@{
-    ticketKey = $ticket
+    ticketKey = $Ticket
     status = $status
     currentRoute = $currentRoute
     totalElapsedMilliseconds = $totalElapsedMilliseconds
     stages = $stageRows
   }
+}
+
+function Read-WorkflowTelemetry {
+  $ticket = Get-RequiredTelemetryTicketKey
+  $input = Get-InputObject
+  $telemetryPath = Get-WorkflowTelemetryPath
+  if (-not (Test-Path -LiteralPath $telemetryPath)) {
+    throw "Workflow telemetry file not found: $telemetryPath"
+  }
+
+  $rows = [System.Collections.Generic.List[object]]::new()
+  foreach ($line in (Get-Content -LiteralPath $telemetryPath)) {
+    if ([string]::IsNullOrWhiteSpace($line)) {
+      continue
+    }
+    $row = $line | ConvertFrom-Json
+    if ([string](Get-ObjectProperty $row 'ticketKey') -eq $ticket) {
+      $rows.Add($row)
+    }
+  }
+
+  if ($rows.Count -eq 0) {
+    throw "Workflow telemetry has no rows for ticket '$ticket'."
+  }
+
+  ConvertTo-WorkflowTelemetrySummary $rows $input $ticket
+}
+
+function Get-CommentRaw($Entry) {
+  $comment = Get-ObjectProperty $Entry 'comment'
+  if ($comment -is [string]) {
+    return $comment
+  }
+  $raw = Get-ObjectProperty $comment 'raw'
+  if ($null -ne $raw) {
+    return [string]$raw
+  }
+  return ''
+}
+
+function ConvertFrom-OpenProjectTelemetryComment([string] $RawComment) {
+  if ([string]::IsNullOrWhiteSpace($RawComment)) {
+    return $null
+  }
+
+  $lines = @($RawComment -split "`r?`n")
+  if ($lines.Count -eq 0) {
+    return $null
+  }
+
+  $marker = $lines[0].Trim()
+  $prefix = 'IA generated workflow telemetry: '
+  if (-not $marker.StartsWith($prefix, [System.StringComparison]::Ordinal)) {
+    return $null
+  }
+
+  $markerValue = $marker.Substring($prefix.Length)
+  $separator = $markerValue.LastIndexOf(':')
+  if ($separator -le 0 -or $separator -ge ($markerValue.Length - 1)) {
+    return $null
+  }
+
+  $values = @{}
+  foreach ($line in $lines | Select-Object -Skip 1) {
+    $index = $line.IndexOf(':')
+    if ($index -le 0) {
+      continue
+    }
+    $key = $line.Substring(0, $index).Trim()
+    $value = $line.Substring($index + 1).Trim()
+    if (-not [string]::IsNullOrWhiteSpace($key)) {
+      $values[$key] = $value
+    }
+  }
+
+  [pscustomobject]@{
+    ticketKey = $markerValue.Substring(0, $separator)
+    workflowStage = $markerValue.Substring($separator + 1)
+    agentRole = $values['agentRole']
+    startedUtc = $values['startedUtc']
+    finishedUtc = $values['finishedUtc']
+    retryCount = $values['retryCount']
+    outcome = $values['outcome']
+    blockerCategory = $values['blockerCategory']
+  }
+}
+
+function Read-OpenProjectTimeTelemetry {
+  $ticket = Get-RequiredTelemetryTicketKey
+  $input = Get-InputObject
+  $entries = @((Get-ObjectProperty $input 'timeEntries'))
+  if ($entries.Count -eq 0) {
+    $entries = @((Get-ObjectProperty $input 'entries'))
+  }
+
+  $rows = [System.Collections.Generic.List[object]]::new()
+  foreach ($entry in $entries) {
+    $row = ConvertFrom-OpenProjectTelemetryComment (Get-CommentRaw $entry)
+    if ($null -ne $row -and [string](Get-ObjectProperty $row 'ticketKey') -eq $ticket) {
+      $rows.Add($row)
+    }
+  }
+
+  if ($rows.Count -eq 0) {
+    throw "OpenProject time telemetry has no rows for ticket '$ticket'."
+  }
+
+  $readInput = [pscustomobject]@{
+    status = Get-ObjectProperty $input 'status'
+    currentRoute = Get-ObjectProperty $input 'currentRoute'
+  }
+
+  $normalizedRows = [System.Collections.Generic.List[object]]::new()
+  foreach ($row in $rows) {
+    $normalizedRows.Add([pscustomobject]@{
+      ticketKey = $ticket
+      workflowStage = Get-ObjectProperty $row 'workflowStage'
+      agentRole = Get-ObjectProperty $row 'agentRole'
+      startedUtc = Get-ObjectProperty $row 'startedUtc'
+      finishedUtc = Get-ObjectProperty $row 'finishedUtc'
+      retryCount = Get-LongProperty $row 'retryCount'
+      outcome = Get-ObjectProperty $row 'outcome'
+      blockerCategory = Get-ObjectProperty $row 'blockerCategory'
+    })
+  }
+
+  ConvertTo-WorkflowTelemetrySummary $normalizedRows $readInput $ticket
+}
+
+function Render-OpenProjectTimeTelemetryComment {
+  $ticket = Get-RequiredTelemetryTicketKey
+  $input = Get-InputObject
+  $stage = [string](Get-ObjectProperty $input 'workflowStage')
+  if ([string]::IsNullOrWhiteSpace($stage)) {
+    $stage = [string](Get-ObjectProperty $input 'stage')
+  }
+  if ([string]::IsNullOrWhiteSpace($stage)) {
+    throw 'workflowStage is required for OpenProject time telemetry.'
+  }
+
+  $lines = @(
+    "IA generated workflow telemetry: ${ticket}:$stage",
+    "agentRole: $((Get-ObjectProperty $input 'agentRole'))",
+    "startedUtc: $((Get-ObjectProperty $input 'startedUtc'))",
+    "finishedUtc: $((Get-ObjectProperty $input 'finishedUtc'))",
+    "retryCount: $((Get-ObjectProperty $input 'retryCount'))",
+    "outcome: $((Get-ObjectProperty $input 'outcome'))"
+  )
+
+  $blockerCategory = Get-ObjectProperty $input 'blockerCategory'
+  if ($null -ne $blockerCategory -and -not [string]::IsNullOrWhiteSpace([string]$blockerCategory)) {
+    $lines += "blockerCategory: $blockerCategory"
+  }
+
+  return ($lines -join [Environment]::NewLine)
 }
 
 function Get-InputObject {
@@ -1030,6 +1163,8 @@ switch ($Mode) {
   'InitializeWorkflowTelemetry' { Write-Json (Initialize-WorkflowTelemetry) }
   'AppendWorkflowTelemetry' { Write-Json (Append-WorkflowTelemetry) }
   'ReadWorkflowTelemetry' { Write-Json (Read-WorkflowTelemetry) }
+  'ReadOpenProjectTimeTelemetry' { Write-Json (Read-OpenProjectTimeTelemetry) }
+  'RenderOpenProjectTimeTelemetryComment' { Render-OpenProjectTimeTelemetryComment }
   'RenderTicketComment' { Render-TicketComment }
   'UpdateReleaseManifest' { Write-Json (Update-ReleaseManifest) }
 }

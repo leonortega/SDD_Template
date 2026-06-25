@@ -27,6 +27,9 @@ Ask only when missing or placeholder:
 - `openProject.reviewStatus`: default `In Review`.
 - `openProject.qaStatus`: default `QA`.
 - `openProject.doneStatus`: default `Done`.
+- `openProject.timeTelemetry.enabled`: default `true`; when supported, workflow duration telemetry is written as OpenProject time entries before falling back to local JSONL.
+- `openProject.timeTelemetry.activityId`: time-entry activity id used for generated workflow telemetry.
+- `openProject.timeTelemetry.activityName`: optional activity name to resolve when `activityId` is not set.
 
 ## Docker Env Values
 
@@ -51,5 +54,6 @@ Validate with OpenProject API v3:
 - `GET {baseUrl}/api/v3/users/me` with `Authorization: Bearer {apiToken}`.
 - `GET {baseUrl}/api/v3/projects/{projectIdentifier}`.
 - Resolve configured status names through the work package schema or statuses API before state mutations.
+- When time telemetry is enabled, validate the configured time-entry activity with `GET {baseUrl}/api/v3/time_entries/activity/{activityId}` or resolve the configured `activityName`, then verify the current user can list/create time entries for a test work package before relying on direct telemetry.
 
 Do not use OpenProject MCP, Docker database access, or direct database queries for ticket workflow validation.

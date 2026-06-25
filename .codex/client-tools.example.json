@@ -7,7 +7,12 @@
     "inProgressStatus": "replace-with-openproject-in-progress-status",
     "reviewStatus": "replace-with-openproject-review-status",
     "qaStatus": "replace-with-openproject-qa-status",
-    "doneStatus": "replace-with-openproject-done-status"
+    "doneStatus": "replace-with-openproject-done-status",
+    "timeTelemetry": {
+      "enabled": true,
+      "activityId": "replace-with-openproject-time-entry-activity-id",
+      "activityName": "replace-with-openproject-time-entry-activity-name"
+    }
   },
   "git": {
     "baseBranch": "replace-with-base-branch",
