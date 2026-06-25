@@ -13,7 +13,7 @@ Configure Gitea repository and PR automation used for ticket review, minimum app
 
 Read `.codex/skills/configure-dev-environment/references/gitea-pr.md` before asking for values or applying changes.
 
-Use the shared script at `.codex/skills/configure-dev-environment/scripts/configure_infra_tools.ps1`.
+Use the shared command `python -m tools.sdd_cli configure`.
 
 Apply `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md` before changing review, label, ticket, or handoff behavior.
 

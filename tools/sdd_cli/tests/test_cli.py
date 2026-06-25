@@ -101,7 +101,17 @@ class SddCliTests(unittest.TestCase):
             self.assertTrue(audit["valid"])
             unsupported = cli.run_configure_mode("LegacyOnly", root, {}, False)
             self.assertFalse(unsupported["valid"])
-            self.assertIn("PowerShell fallback is intentionally disabled", unsupported["nextAction"])
+            self.assertIn("Port this mode into tools/sdd_cli", unsupported["nextAction"])
+            self.assertNotIn("fallback", json.dumps(unsupported).lower())
+
+    def test_all_configure_modes_have_native_dispatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write(root / ".codex" / "project-profile.json", json.dumps({"providers": {"deployment": {"id": "example"}}}))
+            write(root / ".codex" / "client-tools.local.json", "{}")
+            for mode in cli.CONFIGURE_MODE_NAMES:
+                result = cli.run_configure_mode(mode, root, {}, True)
+                self.assertNotIn("Mode is not implemented in native Python", json.dumps(result), mode)
 
     def test_project_profile_local_overlay_merges_with_common_profile(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -185,7 +195,9 @@ class SddCliTests(unittest.TestCase):
             write(source / "openspec" / "changes" / "internal" / "tasks.md", "no")
             write(source / "tools" / "sdd_cli" / "cli.py", "tool")
             write(source / "tools" / "sdd_cli" / "tests" / "test_cli.py", "no")
-            write(source / ".codex" / "memory" / "MEMORY.md", "no")
+            write(source / ".codex" / "memory" / "MEMORY.md", "memory")
+            write(source / ".codex" / "memory" / "memory_summary.md", "summary")
+            write(source / ".codex" / "memory" / "retrieval-policy.md", "policy")
             write(source / "infra" / "openproject" / "data" / "runtime.db", "no")
 
             result = cli.install_sdd_tool(source, target, "v0.1.0", "install")
@@ -194,11 +206,49 @@ class SddCliTests(unittest.TestCase):
             self.assertTrue((target / ".codex" / "skills" / "demo" / "SKILL.md").exists())
             self.assertTrue((target / "tools" / "sdd_cli" / "cli.py").exists())
             self.assertFalse((target / "tools" / "sdd_cli" / "tests" / "test_cli.py").exists())
-            self.assertFalse((target / ".codex" / "memory" / "MEMORY.md").exists())
+            self.assertTrue((target / ".codex" / "memory" / "MEMORY.md").exists())
+            self.assertTrue((target / ".codex" / "memory" / "memory_summary.md").exists())
+            self.assertTrue((target / ".codex" / "memory" / "retrieval-policy.md").exists())
+            self.assertTrue((target / ".git").exists())
+            self.assertEqual("", cli.git_text(target, ["remote"]))
+            self.assertEqual("dev", cli.git_text(target, ["branch", "--show-current"]))
             self.assertFalse((target / "openspec" / "changes" / "internal" / "tasks.md").exists())
             self.assertFalse((target / "infra" / "openproject" / "data" / "runtime.db").exists())
             manifest = json.loads((target / ".codex" / "sdd-tool-version.json").read_text(encoding="utf-8"))
             self.assertIn("tools/sdd_cli/cli.py", manifest["managedFiles"])
+
+    def test_init_local_files_repairs_memory_and_env_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write(root / ".codex" / "client-tools.common.json", "{}")
+            write(root / ".codex" / "quality.common.json", "{}")
+            write(root / "infra" / "openproject" / "variables.env.example", "OPENPROJECT_HOST=http://localhost\n")
+            write(root / "infra" / "monitoring" / "variables.env.example", "SEQ_URL=http://localhost:5341\n")
+            write(root / "infra" / "azure" / "variables.env.example", "AZURE_LOCATION=westcentralus\n")
+            write(root / "infra" / "gitea" / "runner.env.example", "GITEA_INSTANCE_URL=http://localhost:3001\n")
+
+            result = cli.run_configure_mode("InitLocalFiles", root, {}, False)
+
+            self.assertTrue(result["valid"])
+            self.assertTrue((root / ".codex" / "memory" / "MEMORY.md").exists())
+            self.assertTrue((root / ".codex" / "memory" / "memory_summary.md").exists())
+            self.assertTrue((root / ".codex" / "memory" / "retrieval-policy.md").exists())
+            self.assertTrue((root / "infra" / "openproject" / "variables.env").exists())
+
+    def test_env_update_modes_validate_example_keys_and_preserve_values(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write(root / "infra" / "openproject" / "variables.env.example", "OPENPROJECT_HOST=\n")
+            write(root / "infra" / "openproject" / "variables.env", "OPENPROJECT_HOST=old\nOTHER=kept\n")
+
+            result = cli.run_configure_mode("SetOpenProjectEnv", root, {"OPENPROJECT_HOST": "new"}, False)
+            blocked = cli.run_configure_mode("SetOpenProjectEnv", root, {"BAD": "x"}, False)
+
+            self.assertTrue(result["valid"])
+            self.assertFalse(blocked["valid"])
+            env = cli.read_env_file(root / "infra" / "openproject" / "variables.env")
+            self.assertEqual("new", env["OPENPROJECT_HOST"])
+            self.assertEqual("kept", env["OTHER"])
 
     def test_tool_update_replaces_owned_files_and_preserves_consumer_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

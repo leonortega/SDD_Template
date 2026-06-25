@@ -15,7 +15,7 @@ Observability is mandatory for `config infra` completion. Do not leave this step
 
 Read `.codex/skills/configure-dev-environment/references/observability.md` before asking for values or applying changes.
 
-Use the shared script at `.codex/skills/configure-dev-environment/scripts/configure_infra_tools.ps1`.
+Use the shared command `python -m tools.sdd_cli configure`.
 
 Apply `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md` before changing monitoring validation, dashboard behavior, or handoff evidence.
 
@@ -44,4 +44,3 @@ Report Seq API/health status, Seq alert status, Grafana Infinity datasource stat
 - Stop when required selected-lane values are missing.
 - Stop when Seq or Grafana health validation fails.
 - Stop before writing credentials into tracked files.
-

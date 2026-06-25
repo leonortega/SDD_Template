@@ -48,8 +48,8 @@ Store the Nexus user used for repository checks in ignored `.codex/client-tools.
 
 Configure it with `SetClientTools` after the user supplies the values:
 
-```powershell
-.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode SetClientTools -ValuesJson '{
+```bash
+python -m tools.sdd_cli configure SetClientTools --values-json '{
   "nexus": {
     "baseUrl": "http://localhost:8088",
     "username": "gitea-actions",
@@ -70,7 +70,7 @@ Manual setup in Gitea:
 3. Use names exactly as listed above. Secret names may contain letters, numbers, and underscores; do not start them with `GITHUB_`, `GITEA_`, or a number.
 4. Validate with the Gitea API by listing secret names only:
 
-```powershell
+```bash
 $client = Get-Content .codex/client-tools.local.json -Raw | ConvertFrom-Json
 $headers = @{ Authorization = "token $($client.gitea.apiToken)" }
 Invoke-RestMethod "$($client.gitea.baseUrl)/api/v1/repos/$($client.gitea.owner)/$($client.gitea.repo)/actions/secrets" -Headers $headers
@@ -120,7 +120,7 @@ Create a Nexus service account:
 
 Validate from the host without exposing credentials:
 
-```powershell
+```bash
 $client = Get-Content .codex/client-tools.local.json -Raw | ConvertFrom-Json
 $pair = "$($client.nexus.username):$($client.nexus.password)"
 $encoded = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes($pair))
@@ -209,4 +209,3 @@ feature branch -> dev -> DEV -> QA -> main -> PROD
 ```
 
 If updating `main` creates a new merge commit, ensure that exact merge commit already has the QA-approved Nexus artifact before allowing push-triggered PROD deployment. Otherwise, use explicit dispatch with the original QA-passed artifact commit SHA. Non-code changes outside `src/**` and `tests/**` must not deploy automatically.
-

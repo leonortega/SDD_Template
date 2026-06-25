@@ -55,7 +55,7 @@ Safe local output path:
 
 Example:
 
-```powershell
+```bash
 $subscriptionId = '<subscription-id>'
 $scopes = @(
   "/subscriptions/$subscriptionId/resourceGroups/rg-agentic-dev",
@@ -113,7 +113,7 @@ Use the Bicep deployment outputs for app names and URLs. Keep real Azure hostnam
 
 Validation without exposing the secret:
 
-```powershell
+```bash
 $cred = Get-Content .codex/azure-login.local.json -Raw | ConvertFrom-Json
 az ad sp show --id $cred.clientId --query "{appId:appId,displayName:displayName,accountEnabled:accountEnabled}" -o json
 az role assignment list --scope "/subscriptions/$($cred.subscriptionId)/resourceGroups/rg-agentic-dev" --query "[?principalName=='$($cred.clientId)'].{role:roleDefinitionName,scope:scope}" -o json
@@ -121,7 +121,7 @@ az role assignment list --scope "/subscriptions/$($cred.subscriptionId)/resource
 
 Smoke-test with an isolated Azure CLI profile so the user's active login is not replaced:
 
-```powershell
+```bash
 $cred = Get-Content .codex/azure-login.local.json -Raw | ConvertFrom-Json
 $tmp = Join-Path $env:TEMP ('az-sp-test-' + [guid]::NewGuid())
 New-Item -ItemType Directory -Path $tmp | Out-Null
@@ -140,14 +140,14 @@ try {
 
 Preview first unless the user explicitly asks to deploy directly:
 
-```powershell
+```bash
 az account show
 python -m tools.sdd_cli azure deploy-environments --location westcentralus --what-if
 ```
 
 Deploy after approval:
 
-```powershell
+```bash
 python -m tools.sdd_cli azure deploy-environments --location westcentralus
 ```
 
