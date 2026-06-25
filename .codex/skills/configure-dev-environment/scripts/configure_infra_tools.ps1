@@ -4227,42 +4227,17 @@ pre-commit:
 commit-msg:
   commands:
     require-ticket:
-      run: powershell -NoProfile -ExecutionPolicy Bypass -File .githooks/require-ticket.ps1 "{1}"
+      run: python -m tools.sdd_cli hooks validate-commit-message "{1}"
 '@
 
-  Write-TemplateFile $result ".githooks/require-ticket.ps1" @'
-param(
-  [Parameter(Mandatory = $true)]
-  [string]$MessagePath
-)
+  Write-TemplateFile $result ".githooks/README.md" @'
+# Git Hooks
 
-$ErrorActionPreference = "Stop"
+Lefthook runs commit-message validation through:
 
-$message = Get-Content -Path $MessagePath -Raw
-$repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
-$profilePath = Join-Path $repoRoot ".codex/project-profile.json"
-$policyPath = Join-Path $repoRoot ".codex/delivery-policy.json"
-$ticketKeyPattern = "E2EPROJECT-[0-9]+"
-
-if (Test-Path -LiteralPath $profilePath) {
-  $profile = Get-Content -LiteralPath $profilePath -Raw | ConvertFrom-Json
-  if ($profile.workflow.ticketKeyPattern) {
-    $ticketKeyPattern = [string]$profile.workflow.ticketKeyPattern
-  }
-}
-elseif (Test-Path -LiteralPath $policyPath) {
-  $policy = Get-Content -LiteralPath $policyPath -Raw | ConvertFrom-Json
-  if ($policy.ticketKeyPattern) {
-    $ticketKeyPattern = [string]$policy.ticketKeyPattern
-  }
-}
-
-$pattern = "^(\[SDD\] .+|${ticketKeyPattern}: .+|openspec/[a-z0-9][a-z0-9-]*: .+)"
-
-if ($message -notmatch $pattern) {
-  Write-Error "Commit message must start with a ticket matching '$ticketKeyPattern', OpenSpec id, or [SDD] for direct SDD repo maintenance, for example: E2EPROJECT-1: scaffold blank Blazor site"
-  exit 1
-}
+```bash
+python -m tools.sdd_cli hooks validate-commit-message <message-file>
+```
 '@
 
   Write-TemplateFile $result ".gitea/workflows/pr-validation.yml" @'

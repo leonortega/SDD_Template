@@ -10,7 +10,7 @@ Memory is guidance only. It must never override the latest user request, active 
 - Solution: `SDDTemplate.slnx`.
 - App: `src/SDDTemplate.Site`.
 - Tests: `tests/SDDTemplate.Site.Tests`.
-- Delivery helpers: `tools/SDDTemplate.DeliveryTools`.
+- Delivery helpers: `tools/sdd_cli`.
 - Durable docs: `docs/context-management.md`, `docs/architecture.md`, `docs/development.md`, and `docs/deployment.md`.
 - Agent skills: `.codex/skills/`.
 - Shared delivery contract: `.codex/skills/_shared/delivery-contract.md`.
@@ -38,19 +38,18 @@ Configured Todo ticket
 
 ## Common Commands
 
-```powershell
-dotnet build .\SDDTemplate.slnx
-dotnet test .\SDDTemplate.slnx
-dotnet format --verify-no-changes
-.\infra\up.ps1
-.\infra\down.ps1
+```bash
+python -m tools.sdd_cli infra up
+python -m tools.sdd_cli infra down
+dotnet build ./SDDTemplate.slnx
+dotnet test ./SDDTemplate.slnx
 ```
 
 ## Memory Use
 
 - Read memory at the start of planning, implementation, review, QA, deployment, rollback, hotfix, and retrospective work.
 - Use `MEMORY.md` as the index into deeper memory files.
-- Use `.codex/memory/search_memory.ps1 -Query <symptom>` when debugging concrete errors, blockers, failed commands, deployment issues, PR feedback, QA failures, configuration mismatches, or local tooling problems.
+- Use `python -m tools.sdd_cli memory search --query <symptom>` when debugging concrete errors, blockers, failed commands, deployment issues, PR feedback, QA failures, configuration mismatches, or local tooling problems.
 - Write memory only for reusable, source-backed knowledge.
 - Follow `retrieval-policy.md#update-process` when updating memory.
 - Treat agent-caused or tool-discovered failures as memory candidates by default; if a command fails, a hook rejects an action, or a local tool/config mismatch is diagnosed, search memory with the symptom and persist a small update unless already covered or clearly one-off.

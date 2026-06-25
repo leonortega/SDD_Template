@@ -31,7 +31,7 @@ When setup needs values the user must supply manually, do not only ask for the v
   - `infra/gitea/runner.env`
 - Keep tracked files as templates, workflows, or placeholder-safe documentation.
 - Do not read secrets from Docker containers, container shells, mounted volumes, service databases, or logs.
-- Do not start or stop local infra automatically. Ask first before running `.\infra\up.ps1` or `.\infra\down.ps1` unless the user explicitly asks for `config infra` or `setup environment`; those requests are approval to run the minimum infra commands needed to leave configuration working.
+- Do not start or stop local infra automatically. Ask first before running `python -m tools.sdd_cli infra up` or `python -m tools.sdd_cli infra down` unless the user explicitly asks for `config infra` or `setup environment`; those requests are approval to run the minimum infra commands needed to leave configuration working.
 - Use Docker only for non-secret operational checks such as service status, mounts, health, and non-sensitive provisioning logs.
 
 ## Version And Install Rules
@@ -76,8 +76,8 @@ When setup needs values the user must supply manually, do not only ask for the v
 
 Use the shared deterministic script:
 
-```powershell
-.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode Audit
+```bash
+python -m tools.sdd_cli configure Audit
 ```
 
 The old path under `configure-infra-tools` is a compatibility wrapper. Prefer the new path in all new instructions.

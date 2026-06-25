@@ -39,7 +39,7 @@ Do not retrieve or generate this token from Docker containers, databases, mounte
 
 ## Live Validation
 
-Live validation requires local infra to be running. Ask before running `.\infra\up.ps1`.
+Live validation requires local infra to be running. Ask before running `python -m tools.sdd_cli infra up`.
 
 Validate:
 

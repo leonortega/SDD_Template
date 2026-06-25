@@ -43,10 +43,10 @@ If the agent itself encounters a failed command, hook rejection, configuration m
 
 Search helper:
 
-```powershell
-.\.codex\memory\search_memory.ps1 -ListTopics
-.\.codex\memory\search_memory.ps1 -Query Api__BaseUrl
-.\.codex\memory\search_memory.ps1 -Query Gitea,reviewer
+```bash
+python -m tools.sdd_cli memory search --list-topics
+python -m tools.sdd_cli memory search --query Api__BaseUrl
+python -m tools.sdd_cli memory search --query Gitea --query reviewer
 ```
 
 Search terms should be concrete: command names, error fragments, config keys, service names, workflow stages, marker names, or tool names. Examples: `dotnet`, `pipefail`, `comment_html`, `Api__BaseUrl`, `collaborators`, `pwsh`, `coverage`, `autocrlf`.
