@@ -273,6 +273,22 @@ Rules:
 
 Do not create parallel catalogs, planning artifacts, review workflows, or quality-command lists when an existing repo-owned surface already exists. Put cross-cutting automation rules in this contract first, explain human intent in `docs/`, and keep stage skills focused on activation, hard rules, decision gates, execution steps, and output contracts. Move long examples, API endpoint details, and edge-case prose to local `references/` files or deterministic scripts when practical.
 
+## Grill Planning Modes
+
+Use grill-style questioning as a planning stance inside the existing delivery workflow, not as a separate installed skill dependency or parallel planning system.
+
+- `grill-with-docs` is the preferred style when the discussion should produce durable knowledge, whether code already exists or not. Use it for domain terms, business rules, acceptance criteria, design choices, or future-reader rationale.
+- `grill-me` is the lightweight style for temporary alignment only. Use it when the agent should challenge assumptions before acting but no durable repo context is expected.
+
+Map resolved durable knowledge into the existing context surfaces:
+
+- product or ticket clarity -> the managed OpenProject generated block,
+- planned behavior or design -> OpenSpec artifacts,
+- durable repository or process knowledge -> `docs/`,
+- reusable non-authoritative lessons -> `.codex/memory/`.
+
+Do not create a standalone `CONTEXT.md`, ADR convention, global grill skill install, or upstream-default grill artifact path unless a separate explicit change adopts that model. Repo-local external grill skills may be installed under `.codex/skills/` when they are cataloged as external and follow this context-surface mapping.
+
 ## Ticket Context Lock
 
 Normal automatic delivery must stay locked to one OpenProject work package. Use ignored `.codex/delivery-context.local.json` as the local active delivery context lock. Never commit it. Do not delete the lock merely because E2E QA moved a ticket to `Done`; the lock can still carry QA-approved artifact, RC, and release context needed for explicit PROD promotion.

@@ -27,6 +27,10 @@ $requiredTerms = @(
 
 $supportSkillNames = @(
   "caveman",
+  "domain-modeling",
+  "grill-me",
+  "grill-with-docs",
+  "grilling",
   "ponytail",
   "ponytail-audit",
   "ponytail-debt",

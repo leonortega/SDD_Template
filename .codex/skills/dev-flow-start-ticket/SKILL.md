@@ -66,7 +66,7 @@ If the audit reports any `stack-context.*` warning, if `DiscoverProjectGuidance`
 2. Run the Ticket Refinement Gate from the shared delivery contract before mutating Git, ticket status, the ticket lock, or OpenSpec:
    - Prefer `tools/SDDTemplate.DeliveryTools ClassifyTicketReadiness` when available.
    - `ready`: continue.
-   - `refinable`: generate Scrum-ready planning details with a problem or opportunity, user story, concrete acceptance criteria, scope or affected areas, dependencies or assumptions, validation expectations, risks, and definition of done in the managed ticket provider block, then continue.
+   - `refinable`: use grill-style refinement before writing the managed ticket provider block. Prefer `grill-with-docs` style when answers create durable product, domain, acceptance, or rationale knowledge; use `grill-me` style only for temporary alignment. Generate Scrum-ready planning details with a problem or opportunity, user story, concrete acceptance criteria, scope or affected areas, dependencies or assumptions, validation expectations, risks, and definition of done in the managed ticket provider block, then continue.
    - `blocked`: stop before branch creation, ticket status updates, comments, ticket-lock writes, or OpenSpec proposal creation. Report the missing product or technical intent.
 3. Run the Stack Context Preflight. If stack/tooling docs, OpenSpec config, local project guidance catalog, or project guidance discovery review are missing or drifted, stop and route to `configure-dev-environment` and `project-guidance-discover` before mutating Git, ticket provider, or OpenSpec.
 4. Check `git status --porcelain`. If any output exists, stop and report changed files.
@@ -123,6 +123,8 @@ feat/e2eproject-1-create-files-and-folders-for-a-site
 ```
 
 ## Generated Ticket Block
+
+The managed generated block is the durable destination for grill-style product and ticket clarity. Do not add a separate `CONTEXT.md`, ADR, or upstream-default grill skill artifact while starting a ticket.
 
 Use this exact generated section in the ticket description:
 

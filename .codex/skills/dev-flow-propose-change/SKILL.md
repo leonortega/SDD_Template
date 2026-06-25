@@ -97,6 +97,7 @@ After completing all artifacts, summarize:
 - Follow the `instruction` field from `openspec instructions` for each artifact type
 - The schema defines what each artifact should contain - follow it
 - Read dependency artifacts for context before creating new ones
+- Capture resolved grill-style decisions in the normal OpenSpec artifacts: planned behavior in specs, design choices and rationale in design, and implementation steps in tasks.
 - Use `template` as the structure for your output file - fill in its sections
 - **IMPORTANT**: `context` and `rules` are constraints for YOU, not content for the file
   - Do NOT copy `<context>`, `<rules>`, `<project_context>` blocks into the artifact
@@ -119,7 +120,7 @@ For ticketed changes, read `.codex/skills/_shared/delivery-contract.md` and `doc
 
 ## Workflow
 
-Follow the proposal artifact creation steps above, then route implementation through the appropriate dev-flow skill.
+Follow the proposal artifact creation steps above, capture resolved `grill-with-docs` planning knowledge in OpenSpec instead of a separate context file, then route implementation through the appropriate dev-flow skill.
 
 ## Output
 
