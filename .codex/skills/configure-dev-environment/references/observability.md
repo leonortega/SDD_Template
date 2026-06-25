@@ -35,8 +35,7 @@ Azure Event Hub ingestion is not part of the current local environment. Add a co
 Validation (required path):
 
 ```bash
-Invoke-RestMethod -Uri 'http://localhost:5341/api'
-Invoke-RestMethod -Uri 'http://localhost:3001/api/health'
+python -m tools.sdd_cli configure SetSeqAzureEventHubLogs
 ```
 
 `config infra` is not complete until Seq, the Seq error-log alert, Grafana Infinity health datasource, Grafana health alerts, and local Rancher Desktop health dashboards are running and healthy.

@@ -164,13 +164,20 @@ Stop local delivery infrastructure:
 python -m tools.sdd_cli infra down
 ```
 
-Run helper tests when test dependencies are available:
+In an installed test repository, run smoke checks for the installed helper CLI:
+
+```bash
+python -m tools.sdd_cli configure Audit
+python -m tools.sdd_cli configure AuditRecommendedTools
+```
+
+In this lab repository only, run helper tests when test dependencies are available:
 
 ```bash
 python -m pytest tools/sdd_cli/tests
 ```
 
-If `pytest` is not installed, run the current stdlib test suite:
+If `pytest` is not installed, run the lab repository's stdlib test suite:
 
 ```bash
 python -m unittest tools.sdd_cli.tests.test_cli

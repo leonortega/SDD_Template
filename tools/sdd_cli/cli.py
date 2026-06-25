@@ -117,6 +117,7 @@ CONFIGURE_MODE_NAMES = [
     "SetGiteaRunner",
     "SetMonitoringEnv",
     "SetOpenProjectEnv",
+    "SetProjectStack",
     "SetQualityConfig",
     "SetRecommendedTools",
     "SetSeqAzureEventHubLogs",
@@ -349,10 +350,36 @@ def delivery_mode(args: argparse.Namespace) -> int:
 def configure_mode(args: argparse.Namespace) -> int:
     options = parse_configure_options(args.options)
     root = Path(options.get("root", REPO_ROOT))
-    values = json.loads(options["values-json"]) if options.get("values-json") else {}
+    values = read_configure_values(options, root)
     result = run_configure_mode(args.mode, root, values, dry_run=options.get("dry-run", "false").lower() == "true")
     print(json.dumps(result, indent=2))
     return 0 if result.get("valid", True) else 1
+
+
+def read_configure_values(options: dict[str, str], root: Path) -> dict[str, Any]:
+    raw = ""
+    source = ""
+    if options.get("values-json-stdin", "").lower() == "true":
+        raw = sys.stdin.read()
+        source = "--values-json-stdin"
+    elif options.get("values-json-file"):
+        path = Path(options["values-json-file"])
+        if not path.is_absolute():
+            path = root / path
+        raw = path.read_text(encoding="utf-8")
+        source = "--values-json-file"
+    elif options.get("values-json"):
+        raw = options["values-json"]
+        source = "--values-json"
+    if not raw:
+        return {}
+    try:
+        values = json.loads(raw)
+    except json.JSONDecodeError as ex:
+        fail(f"Invalid JSON in {source}: {ex.msg} at line {ex.lineno} column {ex.colno}.")
+    if not isinstance(values, dict):
+        fail(f"Invalid JSON in {source}: expected an object.")
+    return values
 
 
 def tool_install_or_update(args: argparse.Namespace) -> int:
@@ -371,7 +398,7 @@ def parse_configure_options(args: list[str]) -> dict[str, str]:
             options["dry-run"] = "true"
             index += 1
             continue
-        if key in {"--root", "--values-json"} and index + 1 < len(normalized):
+        if key in {"--root", "--values-json", "--values-json-file", "--values-json-stdin"} and index + 1 < len(normalized):
             options[key[2:]] = normalized[index + 1]
             index += 2
             continue
@@ -400,6 +427,7 @@ def run_configure_mode(mode: str, root: Path, values: dict[str, Any], dry_run: b
         "SetGiteaRunner": configure_set_gitea_runner,
         "SetMonitoringEnv": configure_set_monitoring_env,
         "SetOpenProjectEnv": configure_set_openproject_env,
+        "SetProjectStack": configure_set_project_stack,
         "SetQualityConfig": configure_set_quality_config,
         "SetRecommendedTools": configure_set_recommended_tools,
         "SetSeqAzureEventHubLogs": configure_set_seq_azure_event_hub_logs,
@@ -728,13 +756,36 @@ def env_template_keys(root: Path, target_relative: str) -> set[str]:
     return set(read_env_file(example))
 
 
+def env_template_values(root: Path, target_relative: str) -> dict[str, str]:
+    return read_env_file(local_path(root, target_relative + ".example"))
+
+
+def add_env_drift_findings(root: Path, result: dict[str, Any]) -> None:
+    for relative in (
+        "infra/openproject/variables.env",
+        "infra/monitoring/variables.env",
+        "infra/azure/variables.env",
+        "infra/gitea/runner.env",
+    ):
+        template = env_template_values(root, relative)
+        if not template:
+            continue
+        current = read_env_file(local_path(root, relative))
+        missing = sorted(set(template) - set(current))
+        stale = sorted(set(current) - set(template))
+        if missing:
+            add_bucket_item(result["findings"], relative, "env.missing-template-keys", f"Missing current template keys: {', '.join(missing[:8])}.", "error")
+        if stale:
+            add_bucket_item(result["findings"], relative, "env.stale-keys", f"Stale non-template keys present: {', '.join(stale[:8])}." + (f" Plus {len(stale) - 8} more." if len(stale) > 8 else ""), "warning")
+
+
 def configure_set_env_mode(root: Path, mode: str, target_relative: str, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
     result = configure_result(mode, dry_run, write_enabled=not dry_run)
     target = local_path(root, target_relative)
     if not target.exists():
         return {"mode": mode, "valid": False, "errors": [f"Missing {target_relative}. Run InitLocalFiles first."]}
     if not values:
-        return {"mode": mode, "valid": False, "errors": ["--values-json is required."]}
+        return {"mode": mode, "valid": False, "errors": ["Config values are required. Use --values-json-file, --values-json-stdin true, or --values-json."]}
     allowed = env_template_keys(root, target_relative)
     blocked = sorted(key for key in values if allowed and key not in allowed)
     if blocked:
@@ -864,6 +915,8 @@ def configure_audit(root: Path, values: dict[str, Any], dry_run: bool) -> dict[s
     alert_path = monitoring_root / "grafana" / "provisioning" / "alerting" / "health-alerts.yml"
     if monitoring_root.exists() and not alert_path.exists():
         add_bucket_item(result["findings"], "infra/monitoring/grafana/provisioning/alerting/health-alerts.yml", "grafana.health-alerts", "Grafana health alert provisioning is missing.", "warning")
+    add_env_drift_findings(root, result)
+    result["valid"] = not any(item.get("severity") == "error" for item in result["findings"])
     return result
 
 
@@ -927,12 +980,19 @@ def configure_split_infra_env(root: Path, values: dict[str, Any], dry_run: bool)
         return {"mode": "SplitInfraEnv", "valid": False, "errors": ["Missing infra/openproject/variables.env. Run InitLocalFiles first."]}
     for relative in ("infra/monitoring/variables.env", "infra/azure/variables.env", "infra/openproject/variables.env"):
         current = read_env_file(local_path(root, relative))
-        allowed = env_template_keys(root, relative)
-        merged = {key: current.get(key, source.get(key, "")) for key in allowed}
+        template = env_template_values(root, relative)
+        if not template:
+            add_bucket_item(result["findings"], relative + ".example", "missing.template", f"Missing template: {relative}.example", "error", "pre-start")
+            continue
+        stale_count = len(set(current) - set(template))
+        merged = {key: current.get(key, source.get(key, default)) for key, default in template.items()}
         if not dry_run:
             write_env_file(local_path(root, relative), merged)
-        result["actions"].append({"path": relative, "key": "split-env", "severity": "info", "message": "Wrote values from split env template, preserving current values first.", "phase": "apply"})
-    result["valid"] = True
+        message = "Wrote values from split env template, preserving current values first."
+        if stale_count:
+            message += f" Pruned {stale_count} stale non-template key(s)."
+        result["actions"].append({"path": relative, "key": "split-env", "severity": "info", "message": message, "phase": "apply"})
+    result["valid"] = not any(item.get("severity") == "error" for item in result["findings"])
     return result
 
 
@@ -1008,21 +1068,29 @@ def configure_init_project_profile(root: Path, values: dict[str, Any], dry_run: 
         profile = {
             "$schema": "./project-profile.schema.json",
             "schemaVersion": 1,
+            "stack": {
+                "frontend": {"applies": False, "value": ""},
+                "backend": {"applies": False, "value": ""},
+                "database": {"applies": False, "value": ""},
+                "languages": [],
+                "frameworks": [],
+                "testFrameworks": [],
+            },
             "providers": {
                 "ticket": {"id": "example-ticket", "adapter": ".codex/providers/ticket.example.md"},
-                "repository": {"id": "example-repository", "adapter": ".codex/providers/repository.example.md"},
-                "review": {"id": "example-review", "adapter": ".codex/providers/repository.example.md"},
+                "repository": {"id": "example-repository", "adapter": ".codex/providers/repo.example.md"},
+                "review": {"id": "example-review", "adapter": ".codex/providers/repo.example.md"},
                 "artifact": {"id": "example-artifact", "adapter": ".codex/providers/artifact.example.md"},
-                "deployment": {"id": "example-deployment", "adapter": ".codex/providers/deployment.example.md"},
+                "deployment": {"id": "example-deployment", "adapter": ".codex/providers/deploy.example.md"},
             },
             "workflow": {"ticketKeyPattern": "TICKET-[0-9]+", "baseBranch": "dev", "branchPrefix": "codex"},
             "quality": {"coverageMinimumPercent": 80, "gates": []},
             "adapters": {
                 "ticket": ".codex/providers/ticket.example.md",
-                "repository": ".codex/providers/repository.example.md",
-                "review": ".codex/providers/repository.example.md",
+                "repository": ".codex/providers/repo.example.md",
+                "review": ".codex/providers/repo.example.md",
                 "artifact": ".codex/providers/artifact.example.md",
-                "deployment": ".codex/providers/deployment.example.md",
+                "deployment": ".codex/providers/deploy.example.md",
             },
         }
         if not dry_run:
@@ -1035,7 +1103,14 @@ def configure_init_project_profile(root: Path, values: dict[str, Any], dry_run: 
         changed = True
         local_profile = {
             "$schema": "./project-profile.schema.json",
-            "stack": {"languages": [], "frameworks": [], "testFrameworks": []},
+            "stack": {
+                "frontend": {"applies": False, "value": ""},
+                "backend": {"applies": False, "value": ""},
+                "database": {"applies": False, "value": ""},
+                "languages": [],
+                "frameworks": [],
+                "testFrameworks": [],
+            },
             "adapters": {},
         }
         if not dry_run:
@@ -1044,7 +1119,7 @@ def configure_init_project_profile(root: Path, values: dict[str, Any], dry_run: 
     else:
         actions.append({"path": ".codex/project-profile.local.json", "key": "exists", "severity": "info", "message": "Template already exists: .codex/project-profile.local.json", "phase": "apply"})
 
-    for name in ("ticket.example.md", "repository.example.md", "artifact.example.md", "deployment.example.md"):
+    for name in ("ticket.example.md", "repo.example.md", "artifact.example.md", "deploy.example.md"):
         example = providers / name
         if not example.exists():
             changed = True
@@ -1066,7 +1141,7 @@ def configure_init_quality_templates(root: Path, values: dict[str, Any], dry_run
 def configure_set_quality_config(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
     path = root / ".codex" / "quality.local.json"
     if not values:
-        return {"mode": "SetQualityConfig", "valid": False, "errors": ["--values-json is required."]}
+        return {"mode": "SetQualityConfig", "valid": False, "errors": ["Config values are required. Use --values-json-file, --values-json-stdin true, or --values-json."]}
     if not dry_run:
         write_json(path, values)
     return {"mode": "SetQualityConfig", "valid": True, "changed": True, "path": str(path), "dryRun": dry_run}
@@ -1081,6 +1156,38 @@ def configure_set_client_tools(root: Path, values: dict[str, Any], dry_run: bool
     return {"mode": "SetClientTools", "valid": True, "changed": True, "path": str(path), "dryRun": dry_run}
 
 
+def configure_set_project_stack(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
+    if not any(key in values for key in ("frontend", "backend", "database")):
+        return {"mode": "SetProjectStack", "valid": False, "errors": ["values.frontend, values.backend, or values.database is required."]}
+    path = root / ".codex" / "project-profile.local.json"
+    current = read_json(path, optional=True)
+    stack = current.get("stack") if isinstance(current.get("stack"), dict) else {}
+    for domain in ("frontend", "backend", "database"):
+        if domain in values:
+            stack[domain] = normalize_stack_domain(values.get(domain))
+    stack.setdefault("languages", [])
+    stack.setdefault("frameworks", [])
+    stack.setdefault("testFrameworks", [])
+    tags = tags_from_stack_values([nested(stack, key, "value") or "" for key in ("frontend", "backend", "database")])
+    stack["languages"] = sorted(set(stack.get("languages", [])) | set(tags["languages"]))
+    stack["frameworks"] = sorted(set(stack.get("frameworks", [])) | set(tags["frameworks"]))
+    stack["testFrameworks"] = sorted(set(stack.get("testFrameworks", [])))
+    stack["selectionRecorded"] = True
+    current["$schema"] = current.get("$schema", "./project-profile.schema.json")
+    current["stack"] = stack
+    if not dry_run:
+        write_json(path, current)
+    return {
+        "mode": "SetProjectStack",
+        "valid": True,
+        "changed": True,
+        "path": ".codex/project-profile.local.json",
+        "dryRun": dry_run,
+        "writeEnabled": not dry_run,
+        "actions": [{"path": ".codex/project-profile.local.json", "key": "stack", "severity": "info", "message": "Recorded frontend/backend/database stack choices.", "phase": "apply"}],
+    }
+
+
 def configure_set_seq_azure_event_hub_logs(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
     result = configure_result("SetSeqAzureEventHubLogs", dry_run, write_enabled=not dry_run)
     monitoring_path = root / "infra" / "monitoring" / "variables.env"
@@ -1093,11 +1200,21 @@ def configure_set_seq_azure_event_hub_logs(root: Path, values: dict[str, Any], d
         result["actions"].append({"path": "seq", "key": "Rancher Desktop.ready", "severity": "info", "message": "Seq endpoint is reachable.", "phase": "post-start"})
     else:
         add_bucket_item(result["findings"], "seq", "Rancher Desktop.ready", f"Seq endpoint '{seq_url}' is not reachable: {error or status}", "error", "post-start")
-    grafana_status, grafana_error = http_status("http://localhost:3000/api/health")
+    for key in ("SEQ_ERROR_ALERT_WINDOW", "SEQ_ERROR_ALERT_THRESHOLD"):
+        if monitoring.get(key, "") != "":
+            result["actions"].append({"path": "seq", "key": key, "severity": "info", "message": "Seq error alert setting is configured.", "phase": "audit"})
+        else:
+            add_bucket_item(result["findings"], "infra/monitoring/variables.env", key, f"{key} is required for the Seq error-log alert.", "warning", "pre-start")
+    grafana_status, grafana_error = http_status("http://localhost:3001/api/health")
     if grafana_status in {200, 401}:
         result["actions"].append({"path": "grafana", "key": "health", "severity": "info", "message": "Grafana health endpoint responded.", "phase": "post-start"})
     else:
         add_bucket_item(result["findings"], "grafana", "health", f"Grafana health endpoint is not reachable: {grafana_error or grafana_status}", "warning", "post-start")
+    datasource_path = root / "infra" / "monitoring" / "grafana" / "provisioning" / "datasources" / "infinity-health.yml"
+    if datasource_path.exists():
+        result["actions"].append({"path": datasource_path.relative_to(root).as_posix(), "key": "grafana.infinity-health", "severity": "info", "message": "Grafana Infinity health datasource provisioning exists.", "phase": "audit"})
+    else:
+        add_bucket_item(result["findings"], "infra/monitoring/grafana/provisioning/datasources/infinity-health.yml", "grafana.infinity-health", "Grafana Infinity health datasource provisioning is missing.", "warning", "pre-start")
     alert_path = root / "infra" / "monitoring" / "grafana" / "provisioning" / "alerting" / "health-alerts.yml"
     if alert_path.exists():
         result["actions"].append({"path": alert_path.relative_to(root).as_posix(), "key": "grafana.health-alerts", "severity": "info", "message": "Grafana health alert provisioning exists.", "phase": "audit"})
@@ -1934,7 +2051,7 @@ def classify_delivery_risk(paths: list[str], context: str, changed_lines: int) -
 
 
 def detect_stack_tags(root: Path) -> list[str]:
-    tags: list[str] = []
+    tags: list[str] = profile_stack_tags(root)
     if (root / "package.json").exists():
         tags.append("node")
     if (root / "tsconfig.json").exists() or any(root.rglob("*.ts")) or any(root.rglob("*.tsx")):
@@ -2103,6 +2220,13 @@ def build_stack_context_findings(root: Path, detected: list[str]) -> list[dict[s
         if (root / path).exists()
     )
     findings: list[dict[str, str]] = []
+    if product_files_absent(root) and not profile_stack_selected(root):
+        findings.append({
+            "path": ".codex/project-profile.local.json",
+            "key": "stack-context.missing",
+            "severity": "warning",
+            "message": "Project stack is missing. Ask for frontend, backend, and database; use none/no/n/a/empty when not applicable.",
+        })
     checks: dict[str, str] = {}
     for tag, pattern in checks.items():
         if tag in detected and not re.search(pattern, context_text, re.IGNORECASE):
@@ -2111,6 +2235,87 @@ def build_stack_context_findings(root: Path, detected: list[str]) -> list[dict[s
         if item.get("type") == "skill" and item.get("detected") and not item.get("targetExists"):
             findings.append({"path": item.get("target", "."), "key": f"skill-gap.{item['id']}", "severity": "warning", "message": f"Detected stack suggests missing skill '{item['id']}'."})
     return findings
+
+
+def normalize_stack_domain(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        raw = str(value.get("value", ""))
+        notes = value.get("notes")
+    else:
+        raw = "" if value is None else str(value)
+        notes = None
+    clean = raw.strip()
+    applies = clean.lower() not in {"", "none", "no", "n/a", "na", "not applicable"}
+    result: dict[str, Any] = {"applies": applies, "value": clean if applies else ""}
+    if isinstance(notes, str) and notes.strip():
+        result["notes"] = notes.strip()
+    return result
+
+
+def profile_stack_selected(root: Path) -> bool:
+    stack = load_project_profile(root).get("stack")
+    if not isinstance(stack, dict):
+        return False
+    if stack.get("selectionRecorded") is True:
+        return True
+    for domain in ("frontend", "backend", "database"):
+        value = stack.get(domain)
+        if isinstance(value, dict) and value.get("applies") and str(value.get("value", "")).strip():
+            return True
+    return False
+
+
+def profile_stack_tags(root: Path) -> list[str]:
+    stack = load_project_profile(root).get("stack")
+    if not isinstance(stack, dict):
+        return []
+    values = [str(stack.get(key, "")) for key in ("languages", "frameworks", "testFrameworks")]
+    for domain in ("frontend", "backend", "database"):
+        value = stack.get(domain)
+        if isinstance(value, dict) and value.get("applies"):
+            values.append(str(value.get("value", "")))
+    tags = tags_from_stack_values(values)
+    return sorted(set(tags["languages"] + tags["frameworks"] + tags["other"]))
+
+
+def tags_from_stack_values(values: list[str]) -> dict[str, list[str]]:
+    text = " ".join(values).lower()
+    checks = [
+        ("typescript", "languages", r"\btypescript\b|\bts\b"),
+        ("javascript", "languages", r"\bjavascript\b|\bjs\b"),
+        ("python", "languages", r"\bpython\b"),
+        ("java", "languages", r"\bjava\b"),
+        ("csharp", "languages", r"\bc#\b|\bcsharp\b"),
+        ("go", "languages", r"\bgolang\b|\bgo\b"),
+        ("react", "frameworks", r"\breact\b"),
+        ("vue", "frameworks", r"\bvue\b"),
+        ("angular", "frameworks", r"\bangular\b"),
+        ("nextjs", "frameworks", r"\bnext\.?js\b"),
+        ("node", "frameworks", r"\bnode\.?js\b|\bnode\b"),
+        ("express", "frameworks", r"\bexpress\b"),
+        ("fastapi", "frameworks", r"\bfastapi\b"),
+        ("django", "frameworks", r"\bdjango\b"),
+        ("flask", "frameworks", r"\bflask\b"),
+        ("aspnetcore", "frameworks", r"\basp\.?net\b|\baspnet\b"),
+        ("spring", "frameworks", r"\bspring\b"),
+        ("web-ui", "other", r"\breact\b|\bvue\b|\bangular\b|\bnext\.?js\b"),
+        ("rest-api", "other", r"\bapi\b|\brest\b|\bfastapi\b|\bexpress\b|\basp\.?net\b|\bdjango\b|\bflask\b|\bspring\b"),
+        ("postgresql", "other", r"\bpostgresql\b|\bpostgres\b"),
+        ("mysql", "other", r"\bmysql\b|\bmariadb\b"),
+        ("sqlite", "other", r"\bsqlite\b"),
+        ("sqlserver", "other", r"\bsql server\b|\bsqlserver\b"),
+        ("mongodb", "other", r"\bmongodb\b|\bmongo\b"),
+    ]
+    output: dict[str, list[str]] = {"languages": [], "frameworks": [], "other": []}
+    for tag, bucket, pattern in checks:
+        if re.search(pattern, text) and tag not in output[bucket]:
+            output[bucket].append(tag)
+    return output
+
+
+def product_files_absent(root: Path) -> bool:
+    product_markers = ["src", "tests", "package.json", "pyproject.toml", "pom.xml", "build.gradle", "build.gradle.kts", "Dockerfile"]
+    return not any((root / marker).exists() for marker in product_markers)
 
 
 def normalize_added_guidance(items: list[Any]) -> list[dict[str, Any]]:

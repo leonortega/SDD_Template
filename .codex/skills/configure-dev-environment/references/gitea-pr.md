@@ -10,7 +10,7 @@ Use the shared script:
 
 ```bash
 python -m tools.sdd_cli configure Audit
-python -m tools.sdd_cli configure SetClientTools --values-json $values
+python -m tools.sdd_cli configure SetClientTools --values-json-file .codex/config-values.local.json
 ```
 
 ## Required Values
