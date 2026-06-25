@@ -86,7 +86,7 @@ SDD_TOOL_EXCLUDE_PARTS = {
     "openspec/changes",
     "tools/sdd_cli/tests",
 }
-SDD_TOOL_EXCLUDE_SEGMENTS = {"data", "logs"}
+SDD_TOOL_EXCLUDE_SEGMENTS = {"data", "logs", "pgdata"}
 SDD_TOOL_EXCLUDE_SUFFIXES = {".pyc", ".pyo"}
 SDD_TOOL_PRESERVE_FILES = {
     ".codex/client-tools.local.json",
