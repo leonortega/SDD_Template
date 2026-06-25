@@ -1,13 +1,13 @@
 ---
 name: configure-observability
-description: Configure Seq log search for this repo through Azure Event Hub to OpenTelemetry Collector Contrib ingestion and local runtime health checks.
+description: Configure Seq app log search, Grafana Infinity health checks, Grafana health alerts, and optional future Azure Event Hub ingestion guidance.
 ---
 
 # Configure Observability
 
 ## Overview
 
-Configure Seq, Grafana health alerts, and Azure Event Hub to Seq ingestion used for deployment validation and ticket handoff evidence.
+Configure Seq, Grafana Infinity health alerts, and direct Rancher Desktop `/health` deployment checks used for ticket handoff evidence.
 
 Observability is mandatory for `config infra` completion. Do not leave this step as optional.
 
@@ -26,21 +26,22 @@ Safety:
 ## Workflow
 
 1. Run `Audit`.
-2. Use `SetSeqAzureEventHubLogs` to validate and enforce the OpenTelemetry Collector Contrib Azure Event Hub path for Seq.
+2. Use `SetSeqAzureEventHubLogs` to validate Seq, Grafana Infinity health alerts, and direct Rancher Desktop health-check readiness.
 3. Start or repair local monitoring services when needed so setup ends in a working state.
 4. Validate all required checks before completion:
 	- Seq API/health endpoint is `200`.
 	- Seq native error-log alert exists.
 	- Grafana `/health` alert rule exists and uses the configured pending duration.
-	- Event Hub collector profile is configured and running.
-	- Required Event Hub connection strings and OTLP endpoint exist in ignored local env.
+	- Grafana Infinity health datasource and DEV, QA, and PROD health dashboards are configured.
+	- Azure Event Hub collector configuration is not required for the current Rancher Desktop environment.
 
 ## Output
 
-Report Seq API/health status, Seq alert status, Grafana health alert status, collector status, missing values, and ticket handoff evidence without exposing secrets.
+Report Seq API/health status, Seq alert status, Grafana Infinity datasource status, Grafana health alert status, missing values, and ticket handoff evidence without exposing secrets.
 
 ## Failure Rules
 
-- Stop when required Event Hub/OTLP values are missing.
-- Stop when Seq or collector runtime validation fails.
+- Stop when required selected-lane values are missing.
+- Stop when Seq or Grafana health validation fails.
 - Stop before writing credentials into tracked files.
+

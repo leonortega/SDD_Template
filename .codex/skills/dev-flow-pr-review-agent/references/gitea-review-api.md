@@ -47,7 +47,7 @@ GET {gitea.baseUrl}/api/v1/repos/{owner}/{repo}/pulls/{index}/reviews
 GET {gitea.baseUrl}/api/v1/repos/{owner}/{repo}/pulls/{index}/reviews/{reviewId}/comments
 ```
 
-Treat human-authored top-level comments, inline code comments, and review-thread replies as implementation feedback. Exclude generated comments such as `<!-- codex-review-agent:{headSha} -->`, `IA generated PR feedback detected: {headSha}:{feedbackBatchId}`, `IA generated PR feedback fixes: {headSha}:{feedbackBatchId}`, and other Plane stable markers from human-feedback fix requirements.
+Treat human-authored top-level comments, inline code comments, and review-thread replies as implementation feedback. Exclude generated comments such as `<!-- codex-review-agent:{headSha} -->`, `IA generated PR feedback detected: {headSha}:{feedbackBatchId}`, `IA generated PR feedback fixes: {headSha}:{feedbackBatchId}`, and other OpenProject stable markers from human-feedback fix requirements.
 
 ## Review Comment
 

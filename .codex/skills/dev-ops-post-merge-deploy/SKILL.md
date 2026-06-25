@@ -13,34 +13,39 @@ Do not perform DEV/QA validation inside this skill. `dev-ops-deploy-qa` owns art
 
 ## Shared Context
 
-Before running, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Load selected repository/review, artifact, deployment, and ticket adapters. Use `.codex/skills/_shared/scripts/delivery_tools.ps1` helpers: `ValidateTicketLock` for `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, and `ArtifactPaths`.
+Before running, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Load selected repository/review, artifact, deployment, and ticket adapters. Use `python -m tools.sdd_cli delivery` helpers: `ValidateTicketLock` for `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, and `ArtifactPaths`.
 
 ## Workflow Telemetry
 
-Capture UTC start time after resolving the ticket key and before post-merge validation or artifact waiting. Append a `dev-ops-post-merge-deploy` row with `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` when the bridge succeeds, blocks, fails, or is skipped idempotently because QA deployment is already complete. On resume or idempotent reuse, append another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-ops-post-merge-deploy`, `agentRole=deployment`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. Do not duplicate the `dev-ops-deploy-qa` row; `dev-ops-deploy-qa` records its own stage when invoked.
+Capture UTC start time after resolving the ticket key and before post-merge validation or artifact waiting. Prefer OpenProject time-entry telemetry and create or update the `dev-ops-post-merge-deploy` entry with marker `IA generated workflow telemetry: {ticketKey}:dev-ops-post-merge-deploy`. Use `python -m tools.sdd_cli delivery -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` only as the JSONL fallback when direct time telemetry is unavailable. On resume or idempotent reuse, append or update another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-ops-post-merge-deploy`, `agentRole=deployment`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. Do not duplicate the `dev-ops-deploy-qa` row; `dev-ops-deploy-qa` records its own stage when invoked.
 
 ## Configuration
 
-Read `.codex/client-tools.local.json` first. Required values are Plane, Gitea, and Nexus settings used by `dev-ops-deploy-qa`.
+Read `.codex/client-tools.local.json` first. Required values are ticket provider, repository/review provider, and Nexus settings used by `dev-ops-deploy-qa`.
 
 ## Workflow
 
-1. Resolve the PR from user input, current branch, Plane comments, commit messages, or ticket key.
+1. Resolve the PR from user input, current branch, ticket comments, commit messages, or ticket key.
 2. Verify the PR is merged and its target branch is `dev`.
 3. Verify the PR does not currently have configured `pr.labels.needsChanges` or `pr.labels.needsTests`.
-4. Resolve the merge commit SHA from Gitea metadata.
-5. Resolve the Plane ticket key from the PR title/body, branch name, commit messages, or Plane comments.
+4. Resolve the merge commit SHA from repository/review provider metadata.
+5. Resolve the ticket key from the PR title/body, branch name, commit messages, or ticket comments.
 6. Run `ValidateTicketLock` with the resolved ticket key, PR number, branch, and merge/artifact commit when known. If the result is invalid, stop before waiting for artifacts.
-7. Poll for the Nexus artifact files for the merge commit:
+7. Poll for the Nexus artifact files for the merge commit according to the selected artifact and deployment adapters. Require:
    - `app/{commitSha}/deployable-apps.json`
    - one `app/{commitSha}/{artifactName}` per topology app
    - one `app/{commitSha}/{artifactName}.sha256` per topology app
    - `app/{commitSha}/commit.sha`
    - `app/{commitSha}/release.json` when present
+   Also require any additional deployment metadata declared by the selected deployment adapter:
+   - `app/{commitSha}/container-images.json`
+   - `app/{commitSha}/commit.sha`
+   - `app/{commitSha}/release.json`
+   - `app/{commitSha}/monitoring-summary-dev.json` and `app/{commitSha}/monitoring-summary-qa.json` when DEV/QA deployment already completed
 8. Use bounded waiting: check immediately, then retry with backoff for up to 10 minutes unless the user asked for a shorter wait.
 9. Verify `commit.sha` matches the merge commit before delegating.
-10. If `release.json` exists, verify `planeTicketKey` matches the locked/resolved ticket key.
-11. Invoke `dev-ops-deploy-qa` with the resolved PR, ticket key, and merge commit. If QA deployment is already complete, invoke `dev-ops-deploy-qa` in idempotent verification mode so that stage records its own telemetry row without duplicating Plane comments or state changes.
+10. If `release.json` exists, verify `ticketKey` matches the locked/resolved ticket key.
+11. Invoke `dev-ops-deploy-qa` with the resolved PR, ticket key, and merge commit. If QA deployment is already complete, invoke `dev-ops-deploy-qa` in idempotent verification mode so that stage records its own telemetry row without duplicating ticket comments or state changes.
 
 ## Idempotency
 
@@ -57,6 +62,6 @@ Report the PR, merge commit, artifact availability, validation status, deploymen
 - Unmerged PR: stop and report the PR state.
 - PR target is not `dev`: stop and report the mismatch.
 - Stale `needs-changes` or `needs-tests` labels: stop before artifact promotion.
-- Nexus artifact missing after the wait window: stop and report artifact paths checked.
+- Nexus artifact missing after the wait window: stop and report provider-specific artifact paths checked.
 - Nexus unavailable: stop; do not use a degraded artifact source.
 - Commit metadata mismatch: stop and report the expected and actual commit SHA.

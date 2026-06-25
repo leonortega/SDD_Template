@@ -1,6 +1,6 @@
 ---
 name: configure-infra-tools
-description: Compatibility alias for configuring this repo's local development and delivery environment. Use when older prompts mention "config infra", "configure infra tools", or the previous configure-infra-tools skill name; route immediately to configure-dev-environment and the specialized setup skills for Plane, Gitea, Gitea Actions, quality gates, Nexus, Azure, and observability.
+description: Compatibility alias for configuring this repo's local development and delivery environment. Use when older prompts mention "config infra", "configure infra tools", or the previous configure-infra-tools skill name; route immediately to configure-dev-environment and the specialized setup skills for OpenProject, Gitea, Gitea Actions, quality gates, Nexus, Azure, and observability.
 ---
 
 # Configure Infra Tools
@@ -20,26 +20,26 @@ Also apply `docs/context-management.md` for durable configuration findings, tick
 When this skill triggers:
 
 1. Read `.codex/skills/configure-dev-environment/SKILL.md`.
-2. Route immediately to `$configure-dev-environment` and follow its `InitProjectProfile`, audit, safety, domain routing, and output rules.
+2. Route immediately to `$configure-dev-environment` and follow its `InitProjectProfile`, `EnsureRancherDesktopCluster`, `EnsureRancherDesktopHeadlamp`, and `EnsureRancherDesktopPortForwards` when Rancher Desktop is selected, audit, safety, domain routing, and output rules.
 3. During infra status checks for the core stack, use the compose env file explicitly:
 
-```powershell
-docker compose --env-file .\infra\plane\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml ps
+```text
+docker compose --env-file .\infra\openproject\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml ps
 ```
 
 4. When local Trivy scans report a stale DB, refresh before scanning:
 
-```powershell
+```text
 trivy --download-db-only
 ```
 
 5. If the caller explicitly asked for the legacy script path, use the active shared script path instead:
 
-```powershell
-.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode Audit
+```text
+python -m tools.sdd_cli configure Audit
 ```
 
-Keep using the same safety rules as `$configure-dev-environment`: no secrets in tracked files, no Docker secret extraction, and no automatic infra startup or shutdown.
+Keep using the same safety rules as `$configure-dev-environment`: no secrets in tracked files, no Docker secret extraction, and no automatic infra startup or shutdown. Explicit `config infra` may auto-enable Rancher Desktop Kubernetes through `EnsureRancherDesktopCluster`, install Headlamp through `EnsureRancherDesktopHeadlamp`, and start stable local browser mappings through `EnsureRancherDesktopPortForwards`; plain `Audit` remains read-only.
 
 ## Output
 
@@ -49,4 +49,5 @@ Report that routing moved to `$configure-dev-environment`, the audit result, sel
 
 - Stop when the active configure entrypoint cannot be read.
 - Stop when validation finds missing local config or secrets that require manual user action.
-- Stop before mutating ticket, Git, Plane, Gitea, Nexus, Azure, or monitoring state from this compatibility alias.
+- Stop before mutating ticket, Git, OpenProject, Gitea, Nexus, Azure, or monitoring state from this compatibility alias.
+

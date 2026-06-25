@@ -1,0 +1,19 @@
+name: Rancher Desktop local deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Local target environment
+        required: true
+        default: dev
+
+jobs:
+  no-product-targets:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report disabled local deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "No product images are configured. Add product build and Rancher deployment steps with the next stack."

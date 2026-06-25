@@ -1,27 +1,40 @@
 apiVersion: 1
 
+deleteRules:
+  - orgId: 1
+    uid: agentic-e2e-health-down
+
 groups:
   - orgId: 1
     name: Agentic E2E Health
     folder: Agentic E2E
-    interval: 10s
+    interval: 60s
     rules:
-      - uid: agentic-e2e-health-down
-        title: App /health down
+      - uid: agentic-e2e-dev-site-health-down
+        title: DEV site /health down
         condition: C
         data:
           - refId: A
-            datasourceUid: prometheus
+            datasourceUid: infinity-health
             relativeTimeRange:
               from: 60
               to: 0
             model:
-              editorMode: code
-              expr: probe_success{job="blackbox_http_health"} == 0
-              instant: true
-              intervalMs: 1000
-              maxDataPoints: 43200
+              columns: []
+              computed_columns:
+                - selector: "status == 'ok' ? 1 : 0"
+                  text: up
+                  type: number
+              format: table
+              json_options:
+                columnar: false
+                root_is_not_array: true
+              parser: backend
               refId: A
+              root_selector: ""
+              source: url
+              type: json
+              url: http://host.docker.internal:18081/health
           - refId: B
             datasourceUid: __expr__
             model:
@@ -35,8 +48,8 @@ groups:
               conditions:
                 - evaluator:
                     params:
-                      - 0
-                    type: gt
+                      - 1
+                    type: lt
                   operator:
                     type: and
                   query:
@@ -53,7 +66,320 @@ groups:
         noDataState: OK
         execErrState: OK
         annotations:
-          summary: '{{ $labels.environment }} {{ $labels.app }} /health has been down for the configured duration.'
+          summary: 'DEV site /health is down for the configured duration.'
         labels:
           service: agentic-e2e
           signal: health
+          environment: dev
+          app: site
+      - uid: agentic-e2e-dev-api-health-down
+        title: DEV API /health down
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: infinity-health
+            relativeTimeRange:
+              from: 60
+              to: 0
+            model:
+              columns: []
+              computed_columns:
+                - selector: "status == 'ok' ? 1 : 0"
+                  text: up
+                  type: number
+              format: table
+              json_options:
+                columnar: false
+                root_is_not_array: true
+              parser: backend
+              refId: A
+              root_selector: ""
+              source: url
+              type: json
+              url: http://host.docker.internal:18082/health
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              expression: A
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 1
+                    type: lt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - C
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              expression: B
+              refId: C
+              type: threshold
+        for: ${GRAFANA_HEALTH_ALERT_FOR}
+        noDataState: OK
+        execErrState: OK
+        annotations:
+          summary: 'DEV API /health is down for the configured duration.'
+        labels:
+          service: agentic-e2e
+          signal: health
+          environment: dev
+          app: api
+      - uid: agentic-e2e-qa-site-health-down
+        title: QA site /health down
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: infinity-health
+            relativeTimeRange:
+              from: 60
+              to: 0
+            model:
+              columns: []
+              computed_columns:
+                - selector: "status == 'ok' ? 1 : 0"
+                  text: up
+                  type: number
+              format: table
+              json_options:
+                columnar: false
+                root_is_not_array: true
+              parser: backend
+              refId: A
+              root_selector: ""
+              source: url
+              type: json
+              url: http://host.docker.internal:18083/health
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              expression: A
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 1
+                    type: lt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - C
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              expression: B
+              refId: C
+              type: threshold
+        for: ${GRAFANA_HEALTH_ALERT_FOR}
+        noDataState: OK
+        execErrState: OK
+        annotations:
+          summary: 'QA site /health is down for the configured duration.'
+        labels:
+          service: agentic-e2e
+          signal: health
+          environment: qa
+          app: site
+      - uid: agentic-e2e-qa-api-health-down
+        title: QA API /health down
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: infinity-health
+            relativeTimeRange:
+              from: 60
+              to: 0
+            model:
+              columns: []
+              computed_columns:
+                - selector: "status == 'ok' ? 1 : 0"
+                  text: up
+                  type: number
+              format: table
+              json_options:
+                columnar: false
+                root_is_not_array: true
+              parser: backend
+              refId: A
+              root_selector: ""
+              source: url
+              type: json
+              url: http://host.docker.internal:18084/health
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              expression: A
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 1
+                    type: lt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - C
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              expression: B
+              refId: C
+              type: threshold
+        for: ${GRAFANA_HEALTH_ALERT_FOR}
+        noDataState: OK
+        execErrState: OK
+        annotations:
+          summary: 'QA API /health is down for the configured duration.'
+        labels:
+          service: agentic-e2e
+          signal: health
+          environment: qa
+          app: api
+      - uid: agentic-e2e-prod-site-health-down
+        title: PROD site /health down
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: infinity-health
+            relativeTimeRange:
+              from: 60
+              to: 0
+            model:
+              columns: []
+              computed_columns:
+                - selector: "status == 'ok' ? 1 : 0"
+                  text: up
+                  type: number
+              format: table
+              json_options:
+                columnar: false
+                root_is_not_array: true
+              parser: backend
+              refId: A
+              root_selector: ""
+              source: url
+              type: json
+              url: http://host.docker.internal:18085/health
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              expression: A
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 1
+                    type: lt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - C
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              expression: B
+              refId: C
+              type: threshold
+        for: ${GRAFANA_HEALTH_ALERT_FOR}
+        noDataState: OK
+        execErrState: OK
+        annotations:
+          summary: 'PROD site /health is down for the configured duration.'
+        labels:
+          service: agentic-e2e
+          signal: health
+          environment: prod
+          app: site
+      - uid: agentic-e2e-prod-api-health-down
+        title: PROD API /health down
+        condition: C
+        data:
+          - refId: A
+            datasourceUid: infinity-health
+            relativeTimeRange:
+              from: 60
+              to: 0
+            model:
+              columns: []
+              computed_columns:
+                - selector: "status == 'ok' ? 1 : 0"
+                  text: up
+                  type: number
+              format: table
+              json_options:
+                columnar: false
+                root_is_not_array: true
+              parser: backend
+              refId: A
+              root_selector: ""
+              source: url
+              type: json
+              url: http://host.docker.internal:18086/health
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              expression: A
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 1
+                    type: lt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - C
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              expression: B
+              refId: C
+              type: threshold
+        for: ${GRAFANA_HEALTH_ALERT_FOR}
+        noDataState: OK
+        execErrState: OK
+        annotations:
+          summary: 'PROD API /health is down for the configured duration.'
+        labels:
+          service: agentic-e2e
+          signal: health
+          environment: prod
+          app: api
+

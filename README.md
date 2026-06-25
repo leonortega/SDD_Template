@@ -1,239 +1,212 @@
-# Agentic E2E Development Lab
+# AI SDLC + DevOps Laboratory
 
-![Platform](https://img.shields.io/badge/platform-Windows-0078D4)
-![Shell](https://img.shields.io/badge/shell-PowerShell-5391FE)
-![.NET](https://img.shields.io/badge/.NET-10.0-512BD4)
-![App](https://img.shields.io/badge/app-Blazor%20%2B%20ASP.NET%20Core-512BD4)
-![Data](https://img.shields.io/badge/data-EF%20Core%20%2B%20SQLite-4479A1)
-![Tests](https://img.shields.io/badge/tests-xUnit%20%2B%20Playwright-2EAD33)
-![Delivery](https://img.shields.io/badge/delivery-Plane%20%7C%20OpenSpec%20%7C%20Gitea%20%7C%20Nexus-0A66C2)
-![Cloud](https://img.shields.io/badge/cloud-Azure%20DEV%20%7C%20QA%20%7C%20PROD-0078D4)
-![Release](https://img.shields.io/badge/release-explicit%20PROD%20promotion-6A5ACD)
-![Coverage](https://img.shields.io/badge/coverage%20gate-80%25-brightgreen)
+This repository is a laboratory for testing an AI-assisted SDLC and DevOps flow using local and free software where possible. It is meant to prove the workflow end to end: ticket intake, specification, implementation flow, review, artifact handling, deployment, QA evidence, release promotion, rollback, and operational learning.
 
-An executive-ready software delivery template for teams that want AI agents to move work from idea to production with the same traceability, quality checks, and release discipline expected from a professional engineering organization.
+This repository is not a production-ready product template yet. It is not a product application either. The current goal is to keep a reusable lab where a separate test project can exercise the full delivery flow and help improve the tool before it becomes something ready for real product adoption.
 
-## What This Template Does
+## What This Lab Gives You
 
-This repository packages a complete software delivery lab. It shows how a Codex-style agent can take a product request, plan it, implement it, review it, test it, deploy it, and prepare it for production without losing the human controls that make delivery trustworthy.
+- A repeatable SDLC workflow driven by tickets, OpenSpec changes, and Codex skills.
+- A local DevOps platform shape built around free/open-source tools for source control, CI, artifacts, deployment, and observability.
+- Provider adapters for OpenProject, Gitea, Nexus, Rancher Desktop, Azure App Service, and observability tools.
+- Versioned install and update commands so a separate test repository can consume lab releases.
+- Guardrails for quality gates, secret safety, PR review, QA evidence, release lineage, and rollback.
 
-It is designed for teams that want to evaluate or sell an agent-assisted SDLC model, not just run a demo. The template combines local delivery tools with remote application environments so the process stays inspectable, repeatable, and close to real-world delivery.
+## How The Flow Works
 
-The core idea is simple:
+The intended delivery flow is:
 
 ```text
-Every change should have a ticket, a plan, a review, a tested artifact, QA evidence, and an explicit production decision.
+Idea or ticket
+  -> OpenProject work item
+  -> OpenSpec proposal, design, specs, and tasks
+  -> feature branch from dev
+  -> implementation with focused tests
+  -> pull request in Gitea
+  -> CI and review gates
+  -> immutable artifact in Nexus
+  -> DEV and QA deployment
+  -> executable QA evidence
+  -> merge/release approval
+  -> explicit PROD promotion
+  -> rollback or hotfix when needed
 ```
 
-## Why It Matters
+The tool is intentionally conservative:
 
-- Faster controlled delivery: agents can continue work through known checkpoints instead of restarting from scratch.
-- Better leadership visibility: Plane records the ticket state, workflow markers, handoffs, and evidence.
-- Stronger quality control: Gitea pull requests, validation gates, Codex review, tests, and QA evidence are part of the normal flow.
-- Safer releases: Nexus stores immutable artifacts that are promoted across DEV, QA, PROD, and rollback without rebuilding.
-- Clearer accountability: production promotion is explicit, documented, and separated from QA approval.
-- Practical observability: Seq, Grafana, Dozzle, Azure diagnostics, and Log Analytics support delivery and runtime inspection.
-
-## Who This Is For
-
-- Engineering leaders evaluating agentic software delivery.
-- Product and operations teams that need visible ticket-to-production progress.
-- Delivery teams building repeatable SDLC automation.
-- Consultants or vendors packaging a professional agent-assisted delivery model.
-- Technical operators who need a local lab for Plane, Gitea, Nexus, Azure, QA, release, rollback, and hotfix workflows.
-
-## How The Delivery Flow Works
-
-```text
-Idea in Plane
-  -> Plan the change with OpenSpec
-  -> Implement and test the work
-  -> Review through Gitea pull requests
-  -> Package an immutable artifact in Nexus
-  -> Deploy the same artifact to DEV and QA
-  -> Prove acceptance with E2E QA evidence
-  -> Mark the ticket Done
-  -> Promote explicitly to PROD
-  -> Roll back or hotfix when needed
-```
-
-In plain language:
-
-- Plane is the work tracker and delivery record.
-- OpenSpec captures the planned behavior before implementation.
-- Gitea manages source control, pull requests, and validation.
-- Nexus stores the exact build artifact used for deployment.
-- Azure hosts the DEV, QA, and PROD application runtimes.
-- Seq helps operators search DEV/QA/PROD Azure application logs; Grafana and Dozzle help inspect health, delivery signals, and local container logs.
-- Codex skills under `.codex/skills/` guide the agent through each delivery stage.
-
-## What Is Included
-
-### Planning And Ticket Control
-
-- Plane-based ticket workflow.
-- OpenSpec planning before implementation.
-- Checkpoint-based reruns that continue from existing branches, PRs, artifacts, QA evidence, tags, and release manifests.
-- Ticket locks and delivery context rules to prevent work from crossing the wrong branch, PR, artifact, or environment.
-
-### Review And Quality Gates
-
-- Gitea pull request flow.
-- Gitea Actions validation.
-- Codex review-agent workflow.
-- Build, test, coverage, formatting, dependency, secret, and container scanning guidance.
-- Durable context review so reusable project knowledge is captured in the right docs.
-
-### Artifact Promotion
-
-- Nexus artifact storage by commit SHA.
-- DEV, QA, PROD, and rollback promotion from the same immutable artifact.
-- Release manifests and checksums for traceability.
-- Explicit separation between QA approval and production release.
-
-### QA Evidence
-
-- E2E QA workflow for deployed QA environments.
-- Evidence stored under ignored local paths and preferably published to Nexus.
-- Acceptance criteria proven through executable assertions, not only screenshots or smoke checks.
-
-### Production, Rollback, And Hotfix
-
-- Explicit PROD promotion from QA-approved artifacts.
-- Final release metadata and production evidence.
-- Rollback path for known-good artifacts.
-- Hotfix workflow for urgent production corrections.
-
-### Local Observability
-
-- Docker Compose platform for local delivery tools.
-- Seq log search for Azure App Service logs imported from Log Analytics.
-- Grafana health/status dashboards for Azure Monitor and Log Analytics.
-- Dozzle for local container logs.
-- Azure App Service diagnostics for DEV, QA, and PROD runtimes.
-
-## Quick Start
-
-Configure the local delivery platform through Codex chat:
-
-```text
-config infra
-```
-
-Continue the current ticket through the next valid workflow stage:
-
-```text
-automatically continue this ticket
-```
-
-Start the local delivery platform:
-
-```powershell
-.\infra\up.ps1
-```
-
-Stop it:
-
-```powershell
-.\infra\down.ps1
-```
-
-Build and test the solution:
-
-```powershell
-dotnet build .\SDDTemplate.slnx
-dotnet test .\SDDTemplate.slnx
-```
-
-Verify formatting:
-
-```powershell
-dotnet format --verify-no-changes
-```
-
-## Documentation Map
-
-- [Architecture](docs/architecture.md): system topology, sources of truth, ticket locks, and deployment-lane ownership.
-- [Development](docs/development.md): implementation workflow, local commands, OpenSpec usage, and quality gates.
-- [Deployment](docs/deployment.md): artifact promotion, QA evidence, versions, PROD, rollback, and hotfix rules.
-- [Context Management](docs/context-management.md): context authority, freshness, conflict handling, and handoff rules.
-- [Parallel Delivery](docs/parallel-delivery.md): optional multi-ticket coordination, worktree isolation, and serialized deployment lanes.
-- [Delivery Contract](.codex/skills/_shared/delivery-contract.md): agent-enforced operational policy.
-
-If these documents conflict, the delivery contract wins for automation behavior until the docs are corrected.
-
-## Canonical Context
-
-`.codex/project-profile.json` is the canonical non-secret declaration for the current stack, providers, ticket key pattern, branch policy, environments, quality gates, and adapter paths. Generic delivery skills read that profile first and then load the selected `.codex/providers/*.md` adapter files for project-specific behavior. Exact versions, images, executable commands, endpoints, and secrets stay in project files, workflow files, infrastructure files, or ignored local config.
-
-Before the first ticket starts, the workflow validates stack context and routes to `configure-dev-environment` when required docs, OpenSpec context, or recommendation catalogs are missing or drifted. Full `config infra` runs `InitProjectProfile` first to create the canonical project profile, schema, and neutral provider adapter examples before provider-specific setup, quality gates, CI, deployment, or ticket work. `configure-dev-environment` then scans stack, tooling, environments, test frameworks, and workflow files, researches extra useful skills, MCPs, plugins, tools, references, practices, standards, and Codex-applicable IDE helpers, reports suggested missing guidance, and asks the operator only to confirm, dismiss, or name omissions. Confirmation means record and install/configure supported items immediately; there is no second install prompt.
-
-Project guidance uses guarded auto acquisition. Confirmed repo-local, non-secret skills may be copied into `.codex/skills` from verified `SKILL.md` sources; confirmed MCPs, plugins, tools, and IDE extensions are installed or configured when a platform-supported guarded path exists. Global installs, secrets, reboot-required items, or new scope still require explicit confirmation. Restart requirements are collected and reported once after all feasible acquisitions finish. `.codex/tool-recommendations.example.json` documents the tracked catalog shape, `.codex/skills/README.md` is the tracked skill ownership and naming catalog, while ignored `.codex/tool-recommendations.local.json` stores local discovery state and `project-guidance-mapper` reads that local file for step mapping.
-
-## External Skills
-
-External skills keep their upstream names and must be marked as external in `.codex/skills/README.md`. Whenever a new external skill is added, cite its source repository in this section and in the skill catalog before handoff.
-
-Current external skill sources:
-
-- `aspnet-core`: ASP.NET Core guidance from https://github.com/openai/skills/tree/main/skills/.curated/aspnet-core.
-- `assertion-quality`: test assertion analysis guidance from https://github.com/dotnet/skills/tree/main/plugins/dotnet-test/skills/assertion-quality.
-- `dotnet-webapi`: ASP.NET Core Web API endpoint guidance from https://github.com/dotnet/skills/tree/main/plugins/dotnet-aspnet/skills/dotnet-webapi.
-- `plan-ui-change`: Blazor UI planning guidance from https://github.com/dotnet/skills/tree/main/plugins/dotnet-blazor/skills/plan-ui-change.
-- `playwright`: browser automation guidance from https://github.com/openai/skills/tree/main/skills/.curated/playwright.
-- `security-best-practices`: secure coding guidance from https://github.com/openai/skills/tree/main/skills/.curated/security-best-practices.
-- `test-analysis-extensions`: language-specific test analysis extensions from https://github.com/dotnet/skills/tree/main/plugins/dotnet-test/skills/test-analysis-extensions.
-
-Agent utility skills are treated as external for naming purposes and are listed in `.codex/skills/README.md`; they are not renamed by delivery category.
-
-Implementation handoffs must report context findings and either list updated docs or state `Docs: no durable context changes`.
-
-## Operator Commands
-
-Common Codex chat requests:
-
-```text
-List Plane Todo tickets
-Start the next Plane Todo ticket
-Start E2EPROJECT-1
-Continue E2EPROJECT-1
-Where does E2EPROJECT-1 stand?
-Run QA for E2EPROJECT-1
-Promote E2EPROJECT-1 to PROD
-Audit recent delivery workflow
-Audit failed QA/review/CI run
-Run agent self-improvement audit
-Coordinate parallel Plane tickets
-```
-
-Direct Docker Compose startup is also supported when the local Plane and monitoring environment files are configured:
-
-```powershell
-docker compose --env-file .\infra\plane\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml up -d
-```
+- Sample project source code is added only after the project stack is selected.
+- Generated runtime evidence stays out of Git.
+- Secrets and local machine settings stay in ignored local files.
+- Production promotion is explicit; QA success alone does not automatically release to PROD.
+- Artifacts are built once and promoted through environments instead of rebuilt per environment.
 
 ## Repository Shape
 
 ```text
-SDDTemplate.slnx
-docs/
-src/
-tests/
-openspec/
-infra/
-.gitea/
-.codex/
-artifacts/
+.codex/             AI workflow skills, provider adapters, policies, and profile files
+.gitea/             Gitea Actions workflow templates
+docs/               Architecture, development, deployment, and context guidance
+infra/              Local platform templates and deployment topology
+openspec/           OpenSpec configuration and future change specs
+tools/              Helper CLI used by the workflow
+artifacts/          Ignored runtime/evidence output
 ```
 
-Detailed structure is documented in [Architecture](docs/architecture.md) and [Development](docs/development.md).
-
-## Key Principle
+The product folders are intentionally absent:
 
 ```text
-Local tools manage the delivery workflow.
-Azure hosts only DEV, QA, and PROD runtime resources.
-Nexus stores the exact build artifact promoted between environments.
-Plane records ticket state and generated workflow checkpoints.
-Production promotion is explicit and artifact-based.
+src/
+tests/
 ```
+
+Create them only in a separate test project repository or after a sample project stack is chosen.
+
+## Install In A Test Repository
+
+From this lab repository, install the latest final release into a separate test repository:
+
+```bash
+python -m tools.sdd_cli tool install --target C:\path\to\test-repo
+```
+
+Install a specific pinned version:
+
+```bash
+python -m tools.sdd_cli tool install --version v0.1.0 --target C:\path\to\test-repo
+```
+
+Update an installed test repository:
+
+```bash
+python -m tools.sdd_cli tool update --version v0.2.0 --target C:\path\to\test-repo
+```
+
+If `--version` is omitted, the installer uses the latest final Git tag matching `vMAJOR.MINOR.PATCH`. Release candidates such as `v0.1.7-rc.2` are ignored by that default.
+
+The install writes:
+
+```text
+.codex/sdd-tool-version.json
+```
+
+That manifest records the installed version, source repo, source commit, checksum, managed files, and preserved local files. Future updates replace only managed tool files. Test-project files such as `.codex/project-profile.local.json`, secrets, product source, tests, and product OpenSpec changes are preserved.
+
+## Tools Used
+
+- Codex skills: AI workflow instructions for planning, implementation, review, QA, deployment, rollback, and retrospective work.
+- OpenSpec: structured proposal, design, spec, and task workflow for product changes.
+- OpenProject: ticket and work package workflow.
+- Gitea: repository hosting, pull requests, review, and Actions workflows.
+- Nexus: immutable artifact storage and release lineage.
+- Rancher Desktop: local Kubernetes deployment lane.
+- Azure App Service: optional cloud deployment provider for experiments beyond the free local lab.
+- Seq: application log search and inspection.
+- Grafana: dashboards, health checks, and alert visibility.
+- Dozzle: container log visibility.
+- Playwright: browser-level QA and UI validation when a future product has a UI.
+- Python `tools.sdd_cli`: deterministic helper CLI for install/update, infrastructure commands, delivery checks, manifest handling, and workflow rendering.
+
+## Use It In Chat
+
+Most work is started by asking your AI coding agent to run one workflow stage. Use short, explicit prompts and keep one ticket or release goal active at a time.
+
+Follow this normal lab delivery sequence:
+
+```text
+1. Configure this repository for my sample project stack and local delivery tools.
+2. Create or refine an OpenProject ticket for this project idea: <idea>.
+3. Propose an OpenSpec change for ticket <ticket-key>.
+4. Start implementation for ticket <ticket-key>.
+5. Continue implementation for ticket <ticket-key>.
+6. Verify the OpenSpec change for ticket <ticket-key>.
+7. Create a pull request for ticket <ticket-key>.
+8. Run PR review for ticket <ticket-key>.
+9. Address PR review feedback for ticket <ticket-key>.
+10. Continue after merge and deploy ticket <ticket-key> to QA.
+11. Run the configured QA gate for ticket <ticket-key>.
+12. Promote the QA-approved release to PROD.
+13. Check pipeline status for ticket <ticket-key>.
+```
+
+Use these operational prompts when needed:
+
+```text
+Rollback PROD to the previous verified release.
+Run an urgent PROD hotfix for <incident or ticket>.
+Show pipeline status for <ticket-key>.
+Audit recent delivery workflow and capture improvements.
+Archive the completed OpenSpec change for <ticket-key>.
+```
+
+For a fresh test project, a typical chat flow is:
+
+```text
+Install this SDLC tool into C:\path\to\test-repo.
+Configure the test repo for <stack>, <deployment target>, and <quality gates>.
+Create the first project ticket for: <feature idea>.
+Propose the OpenSpec change for that ticket.
+Start implementation.
+```
+
+## Common Commands
+
+Start local delivery infrastructure:
+
+```bash
+python -m tools.sdd_cli infra up
+```
+
+Stop local delivery infrastructure:
+
+```bash
+python -m tools.sdd_cli infra down
+```
+
+Run helper tests when test dependencies are available:
+
+```bash
+python -m pytest tools/sdd_cli/tests
+```
+
+If `pytest` is not installed, run the current stdlib test suite:
+
+```bash
+python -m unittest tools.sdd_cli.tests.test_cli
+```
+
+## Documentation
+
+- [Architecture](docs/architecture.md): repository topology, sources of truth, and install boundary.
+- [Development](docs/development.md): how to add a sample project stack and use a test fixture repository.
+- [Deployment](docs/deployment.md): deployment shell and app target wiring.
+- [Context Management](docs/context-management.md): authority order, freshness checks, and handoff rules.
+- [Parallel Delivery](docs/parallel-delivery.md): optional multi-ticket coordination.
+- [Delivery Contract](.codex/skills/_shared/delivery-contract.md): agent-enforced delivery policy.
+
+## Current Status
+
+This project is a product-free SDLC and DevOps laboratory. It is ready to be versioned and installed into a separate test repository so the full workflow can be exercised with a real sample project. It should not be presented as a finished production template yet.
+
+## Thanks
+
+This tool uses and integrates ideas, workflows, or runtime support from the following external projects and platforms:
+
+- [OpenAI Codex](https://developers.openai.com/codex/) for AI-assisted repository work.
+- [OpenAI Codex Agent Skills](https://developers.openai.com/codex/skills) for the skill-based workflow model.
+- [OpenAI Skills repository](https://github.com/openai/skills) for reusable external skill patterns.
+- [OpenAI Playwright skill](https://github.com/openai/skills/tree/main/skills/.curated/playwright) and [OpenAI Playwright Interactive skill](https://github.com/openai/skills/tree/main/skills/.curated/playwright-interactive) for browser automation workflow guidance.
+- [OpenAI Security Best Practices skill](https://github.com/openai/skills/tree/main/skills/.curated/security-best-practices) for secure-by-default review guidance.
+- [Caveman skill](https://github.com/JuliusBrussee/caveman/tree/main/plugins/caveman/skills/caveman) for terse, token-saving assistant communication.
+- [Domain Modeling skill](https://github.com/mattpocock/skills/tree/main/skills/engineering/domain-modeling) for domain language and modeling guidance.
+- [Grill Me skill](https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me), [Grill With Docs skill](https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs), and [Grilling skill](https://github.com/mattpocock/skills/tree/main/skills/productivity/grilling) for planning and design interrogation.
+- [TDD skill](https://github.com/mattpocock/skills/tree/main/skills/engineering/tdd) for test-driven implementation guidance.
+- [Ponytail skills](https://github.com/DietrichGebert/ponytail/tree/main/skills) for minimal-solution implementation and complexity review guidance.
+- [OpenSpec](https://openspec.dev/) for structured software change specifications.
+- [OpenProject](https://www.openproject.org/) for project and ticket management.
+- [Gitea](https://about.gitea.com/) and [Gitea Actions](https://docs.gitea.com/usage/actions/overview) for Git hosting, pull requests, review, and CI automation.
+- [Sonatype Nexus Repository](https://www.sonatype.com/products/sonatype-nexus-repository) for artifact storage and promotion.
+- [Rancher Desktop](https://rancherdesktop.io/) and [Kubernetes](https://kubernetes.io/) for local deployment workflows.
+- [Microsoft Azure App Service](https://azure.microsoft.com/products/app-service) for optional cloud hosting.
+- [Grafana](https://grafana.com/), [Seq](https://datalust.co/seq), and [Dozzle](https://dozzle.dev/) for observability workflows.
+- [Playwright](https://playwright.dev/) for browser automation and QA validation.
+- [Python](https://www.python.org/) and the Python standard library for the local helper CLI.

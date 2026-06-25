@@ -1,10 +1,10 @@
 # Context Management Fundamentals
 
-This repository treats context as an SDLC asset. Durable project knowledge belongs in tracked documentation and workflow contracts, not only in chat history, temporary notes, PR comments, or Plane comments.
+This repository treats context as an SDLC asset. Durable project knowledge belongs in tracked documentation and workflow contracts, not only in chat history, temporary notes, PR comments, or OpenProject comments.
 
 `.codex/memory/` provides a reviewable repository memory layer for reusable workflow knowledge, repeated failure patterns, module landmarks, and release or QA lessons. Memory is a retrieval aid only; it must be verified against the authority order below before it drives an action.
 
-For practical lookup, use `.codex/memory/search_memory.ps1 -Query <symptom>` with concrete error text, config keys, tool names, workflow stages, or marker names. Memory search should accelerate diagnosis, not replace freshness checks against current files and live systems.
+For practical lookup, use `python -m tools.sdd_cli memory search --query <symptom>` with concrete error text, config keys, tool names, workflow stages, or marker names. Memory search should accelerate diagnosis, not replace freshness checks against current files and live systems.
 
 ## Authority Order
 
@@ -13,7 +13,7 @@ When sources disagree, use this order until the conflict is resolved:
 1. Latest explicit user request in the current conversation.
 2. Active ticket-provider state, description, acceptance criteria, and generated markers.
 3. Active OpenSpec proposal, design, specs, and tasks.
-4. `.codex/project-profile.json` and selected `.codex/providers/*.md` adapter files for project stack/provider selection.
+4. `.codex/project-profile.json`, optional `.codex/project-profile.local.json`, and selected `.codex/providers/*.md` adapter files for project stack/provider selection.
 5. `.codex/skills/_shared/delivery-contract.md` for agent-enforced delivery behavior.
 6. Canonical docs in `docs/`.
 7. Current code, tests, workflow files, and configuration templates.
@@ -36,9 +36,9 @@ Load only the context needed for the workflow stage.
 
 ## Freshness Checks
 
-Before mutating Plane, Git, Gitea, Nexus, Azure, tags, or release manifests, refresh the relevant state:
+Before mutating OpenProject, Git, Gitea, Nexus, Azure, tags, or release manifests, refresh the relevant state:
 
-- Plane state, ticket description, and generated comments.
+- OpenProject status, ticket description, and generated comments.
 - Current Git branch, dirty state, remote branch, and tags.
 - Gitea PR status, labels, reviews, head SHA, merge commit, and CI status.
 - Nexus artifact files under `app/{commitSha}/`, including `release.json`.
@@ -60,7 +60,7 @@ If docs conflict with `.codex/skills/_shared/delivery-contract.md`, the delivery
 Every implementation, review, QA, deployment, PROD, rollback, or hotfix handoff must preserve:
 
 - goal and current workflow stage
-- Plane ticket and state
+- OpenProject work package and state
 - branch and OpenSpec change
 - PR number or URL
 - commit SHA and artifact path when available
@@ -73,7 +73,7 @@ Every implementation, review, QA, deployment, PROD, rollback, or hotfix handoff 
 
 ## Prompt Cache Hygiene
 
-Long-running agent workflows should keep stable context before volatile runtime context so repeated calls can reuse cacheable prompt prefixes. Put repository policy, delivery contract excerpts, skill instructions, schemas, and stable examples before ticket-specific Plane comments, PR diffs, tool results, timestamps, logs, and health-check output.
+Long-running agent workflows should keep stable context before volatile runtime context so repeated calls can reuse cacheable prompt prefixes. Put repository policy, delivery contract excerpts, skill instructions, schemas, and stable examples before ticket-specific OpenProject comments, PR diffs, tool results, timestamps, logs, and health-check output.
 
 Dynamic values belong near the end of the working context:
 
@@ -83,7 +83,7 @@ Dynamic values belong near the end of the working context:
 - Nexus manifests, Azure health checks, QA evidence, and monitoring output
 - tool errors, retries, and latest observations
 
-Do not insert timestamps, random IDs, raw tool dumps, or refreshed status summaries into otherwise stable context blocks. If a run records model telemetry, write it to ignored local output such as `.codex/agent-telemetry.local.jsonl` and summarize only useful optimization findings in handoff text. Delivery stages maintain a concise generated Plane timing comment for the active ticket from that telemetry file, but only with per-stage outcome, duration, and UTC start/finish values; raw logs, token counts, prompts, and sensitive values stay out of Plane. E2E QA posts or patches the final timing comment after the E2E QA comment is verified because PROD promotion is a separate explicit release step.
+Do not insert timestamps, random IDs, raw tool dumps, or refreshed status summaries into otherwise stable context blocks. If a run records model telemetry, use OpenProject time entries for the active ticket when the selected ticket adapter supports direct time telemetry; otherwise write to ignored local fallback output such as `.codex/agent-telemetry.local.jsonl`. Delivery stages maintain a concise generated OpenProject timing comment for the active ticket from OpenProject time entries first, or the fallback telemetry file when direct writes are unavailable, but only with per-stage outcome, duration, and UTC start/finish values; raw logs, token counts, prompts, and sensitive values stay out of OpenProject. E2E QA posts or patches the final timing comment after the E2E QA comment is verified because PROD promotion is a separate explicit release step.
 
 ## Risk-Adaptive Context Loading
 
@@ -95,7 +95,9 @@ Strict gates do not require every run to load every long instruction body. Agent
 
 Project guidance remains the broad catalog for skills, tools, references, practices, standards, MCPs, and plugins. The installed-skill runtime index is only an ignored cache of exact installed `SKILL.md` paths used to avoid repeated scans and pass precise skill paths during delegation.
 
-Avoid duplicate context systems. Ticket refinement belongs in the managed Plane block; implementation planning belongs in OpenSpec; recurring workflow learning belongs in `dev-flow-retrospective-audit`, docs, the shared contract, or `.codex/memory/` according to the existing authority order.
+Avoid duplicate context systems. Ticket refinement belongs in the managed OpenProject block; implementation planning belongs in OpenSpec; recurring workflow learning belongs in `dev-flow-retrospective-audit`, docs, the shared contract, or `.codex/memory/` according to the existing authority order.
+
+Grill-style planning is a questioning stance inside those same surfaces. Use `grill-with-docs` as the preferred style when answers should become durable context, with or without existing code. Use `grill-me` only for lightweight temporary alignment where no durable repo context is expected. Product or ticket clarity goes to the managed OpenProject block, planned behavior and design go to OpenSpec, durable repository or process knowledge goes to `docs/`, and reusable non-authoritative lessons go to `.codex/memory/`. Do not introduce a separate `CONTEXT.md`, ADR convention, global grill skill installation, or upstream-default grill artifact path unless a separate explicit change adopts that model. Repo-local external grill skills are allowed under `.codex/skills/` when cataloged and governed by this mapping.
 
 ## Agent Telemetry
 

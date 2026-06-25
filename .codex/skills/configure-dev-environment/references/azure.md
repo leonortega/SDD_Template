@@ -9,7 +9,7 @@ Owns:
 - `infra/azure/dev.parameters.json`.
 - `infra/azure/qa.parameters.json`.
 - `infra/azure/prod.parameters.json`.
-- `infra/azure/deploy-environments.ps1`.
+- `python -m tools.sdd_cli azure deploy-environments`.
 - DEV/QA/PROD App Service runtime and outputs.
 - Deployment Topology Review for deployable apps and `appsettings*.json` to App Service setting mappings.
 - Deployment configuration drift prevention through the generated `deployment-config.json` Nexus artifact.
@@ -78,7 +78,7 @@ Store the complete JSON file contents as the Gitea Actions secret `AZURE_CREDENT
 Run this review when changes touch deployable projects, `Program.cs`, `appsettings*.json`, Azure infrastructure, or the package/deploy workflow.
 
 - Detect deployable projects by `Microsoft.NET.Sdk.Web` under `src/**`.
-- Classify Blazor/Razor projects as `web` and endpoint-only projects as `api`.
+- Classify selected UI projects as `web` and endpoint-only projects as `api`.
 - Keep `infra/deployment/apps.json` aligned with app id, project path, role, artifact name, health path, deploy order, and dependencies.
 - Flatten appsettings keys into App Service settings using double underscores.
 - Infer known values between apps, including `Api__BaseUrl`, `Cors__AllowedOrigins__0`, and `ConnectionStrings__ClientsDb`.
@@ -142,13 +142,13 @@ Preview first unless the user explicitly asks to deploy directly:
 
 ```powershell
 az account show
-.\infra\azure\deploy-environments.ps1 -Location westcentralus -WhatIf
+python -m tools.sdd_cli azure deploy-environments --location westcentralus --what-if
 ```
 
 Deploy after approval:
 
 ```powershell
-.\infra\azure\deploy-environments.ps1 -Location westcentralus
+python -m tools.sdd_cli azure deploy-environments --location westcentralus
 ```
 
 ## Validation

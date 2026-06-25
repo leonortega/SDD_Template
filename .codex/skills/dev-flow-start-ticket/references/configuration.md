@@ -1,18 +1,17 @@
-# Plane Ticket Workflow Configuration
+﻿# OpenProject Ticket Workflow Configuration
 
-Use `.codex/client-tools.local.json` as the primary local configuration file. Keep `.codex/client-tools.example.json` tracked as the template. Environment variables are optional overrides for client machines or CI.
+Use `.codex/client-tools.local.json` as the primary local configuration file. Keep `.codex/client-tools.common.json` tracked as the template. Environment variables are optional overrides for client machines or CI.
 
 ## Defaults
 
 ```json
 {
-  "plane": {
-    "baseUrl": "http://agentic.lvh.me:8080",
-    "apiToken": "replace-with-plane-api-token",
-    "workspaceSlug": "e2etest",
-    "projectIdentifier": "E2EPROJECT",
-    "todoState": "Todo",
-    "inProgressState": "In Progress"
+  "openProject": {
+    "baseUrl": "http://localhost:8080",
+    "apiToken": "replace-with-openproject-api-token",
+    "projectIdentifier": "e2eproject",
+    "todoStatus": "Todo",
+    "inProgressStatus": "In Progress"
   },
   "git": {
     "baseBranch": "dev",
@@ -25,12 +24,11 @@ Use `.codex/client-tools.local.json` as the primary local configuration file. Ke
 
 ## Optional Environment Overrides
 
-- `PLANE_BASE_URL`
-- `PLANE_API_TOKEN`
-- `PLANE_WORKSPACE_SLUG`
-- `PLANE_PROJECT_IDENTIFIER`
-- `PLANE_TODO_STATE`
-- `PLANE_IN_PROGRESS_STATE`
+- `OPENPROJECT_BASE_URL`
+- `OPENPROJECT_API_TOKEN`
+- `OPENPROJECT_PROJECT_IDENTIFIER`
+- `OPENPROJECT_TODO_STATUS`
+- `OPENPROJECT_IN_PROGRESS_STATUS`
 - `GIT_BASE_BRANCH`
 - `GIT_BRANCH_PREFIX`
 - `GIT_BRANCH_PATTERN`
@@ -49,25 +47,22 @@ Default recommendation:
 feat/e2eproject-1-create-files-and-folders-for-a-site
 ```
 
-## Plane API Setup
+## OpenProject API Setup
 
 Copy the tracked template and edit the ignored local file:
 
 ```powershell
-Copy-Item .\.codex\client-tools.example.json .\.codex\client-tools.local.json
+Copy-Item .\.codex\client-tools.common.json .\.codex\client-tools.local.json
 ```
 
-Set `plane.apiToken` in `.codex/client-tools.local.json`. The token is sent as the `X-API-Key` header. Never commit real Plane tokens or client URLs that should remain private. Use Plane API only; do not use Plane MCP, Docker containers, or direct database access for this workflow.
+Set `openProject.apiToken` in `.codex/client-tools.local.json`. The token is sent as the `Authorization: Bearer` header. Never commit real OpenProject tokens or private client URLs. Use OpenProject API only; do not use OpenProject MCP, Docker containers, or direct database access for this workflow.
 
-Use the lowercase workspace slug from the Plane URL. Use `work-items` endpoints for tickets. For project-scoped list/detail calls, resolve `projectIdentifier` to a project UUID through `GET /api/v1/workspaces/{workspace_slug}/projects/`.
-
-Resolve the configured in-progress state by name before updating a ticket state. The default is `In Progress`.
+Resolve the configured in-progress status by name before updating a work package status. The default is `In Progress`.
 
 After the ticket is commented with the branch, create an OpenSpec proposal through `dev-flow-propose-change` (`/opsx:propose`). Use the branch name as the source name; if it contains `/`, replace `/` with `-` for the OpenSpec change id.
 
 Known local defaults:
 
-- `baseUrl`: `http://agentic.lvh.me:8080`
-- `workspaceSlug`: `e2etest`
-- `projectIdentifier`: `E2EPROJECT`
+- `baseUrl`: `http://localhost:8080`
+- `projectIdentifier`: `e2eproject`
 - `baseBranch`: `dev`

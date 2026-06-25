@@ -1,4 +1,4 @@
 interface:
   display_name: "Parallel Ticket Coordinator"
-  short_description: "Coordinate multiple Plane tickets across isolated worktrees."
-  default_prompt: "Use $dev-flow-parallel-ticket-coordinator to route active Plane tickets through role agents with one Git worktree per ticket and serialized deployment promotion."
+  short_description: "Coordinate multiple OpenProject work packages across isolated worktrees."
+  default_prompt: "Use $dev-flow-parallel-ticket-coordinator to route active OpenProject work packages through role agents with one Git worktree per ticket and serialized deployment promotion."
