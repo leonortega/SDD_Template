@@ -89,3 +89,12 @@ OpenProject is the configured ticket provider. Future delivery uses OpenProject 
 - Last verified: 2026-06-25
 
 When adding external skills for this repository, install them as repo-local skills under `.codex/skills/` and catalog them in `.codex/skills/README.md`. Do not install them globally under `$CODEX_HOME/skills`; if a skill installer defaults to global installation, pass an explicit repo-local destination.
+
+## IDE-Owned Skills Are Read-Only
+
+- Type: Decision
+- Status: Active
+- Source: user instruction in chat, `.codex/skills/_shared/delivery-contract.md`, `docs/development.md`
+- Last verified: 2026-06-25
+
+Do not edit, patch, or install repo-specific behavior into IDE-owned or global skill roots such as `C:\Users\mlortega\.codex\skills`. Restore-only cleanup is allowed when a prior run modified those files by mistake. Repo-specific skill acquisition behavior belongs in `.codex/skills/project-guidance-acquire` and repo-owned configure scripts.

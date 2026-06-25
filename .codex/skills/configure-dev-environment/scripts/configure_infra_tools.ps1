@@ -2517,6 +2517,119 @@ function Test-RepoRelativeTarget {
   return $true
 }
 
+function Get-SkillDirectoryRelativePath {
+  param([string]$SkillMdRelative)
+
+  $normalized = $SkillMdRelative.Replace("\", "/").TrimEnd("/")
+  if (-not $normalized.EndsWith("/SKILL.md")) { return $null }
+  return $normalized.Substring(0, $normalized.Length - "/SKILL.md".Length)
+}
+
+function Get-ChildRelativePath {
+  param(
+    [string]$BasePath,
+    [string]$ChildPath
+  )
+
+  $baseFull = (Resolve-Path $BasePath).Path.TrimEnd("\", "/") + [System.IO.Path]::DirectorySeparatorChar
+  $childFull = (Resolve-Path $ChildPath).Path
+  $baseUri = [System.Uri]::new($baseFull)
+  $childUri = [System.Uri]::new($childFull)
+  return [System.Uri]::UnescapeDataString($baseUri.MakeRelativeUri($childUri).ToString()).Replace("\", "/")
+}
+
+function Get-SkillCopyUnsafeItems {
+  param([string]$SkillDirectory)
+
+  $unsafeDirectories = @(".git", ".hg", ".svn", "node_modules", "bin", "obj", ".cache", "__pycache__", "TestResults", "test-results", "playwright-report", "coverage", "Debug", "Release", "logs", "Logs", "dist", "out")
+  $unsafeItems = [System.Collections.Generic.List[string]]::new()
+
+  foreach ($item in Get-ChildItem -LiteralPath $SkillDirectory -Recurse -Force) {
+    $relative = Get-ChildRelativePath $SkillDirectory $item.FullName
+    if ($item.PSIsContainer -and $unsafeDirectories -contains $item.Name) {
+      $unsafeItems.Add($relative) | Out-Null
+      continue
+    }
+
+    if (-not $item.PSIsContainer) {
+      if ($item.Name -like "*.local" -or
+          $item.Name -like "*.local.*" -or
+          $item.Name -like "*.log" -or
+          $item.Name -like "*.tmp" -or
+          $item.Name -like "*.cache" -or
+          $item.Name -like "*.pyc" -or
+          $item.Name -eq ".env" -or
+          $item.Name -like "*.env") {
+        $unsafeItems.Add($relative) | Out-Null
+      }
+    }
+  }
+
+  return @($unsafeItems)
+}
+
+function Get-SkillRelativeDirectories {
+  param([string]$SkillDirectory)
+
+  if (-not (Test-Path $SkillDirectory)) { return @() }
+  return @(Get-ChildItem -LiteralPath $SkillDirectory -Directory -Recurse -Force | ForEach-Object {
+    Get-ChildRelativePath $SkillDirectory $_.FullName
+  })
+}
+
+function Get-SkillRelativeFiles {
+  param([string]$SkillDirectory)
+
+  if (-not (Test-Path $SkillDirectory)) { return @() }
+  return @(Get-ChildItem -LiteralPath $SkillDirectory -File -Recurse -Force | ForEach-Object {
+    Get-ChildRelativePath $SkillDirectory $_.FullName
+  })
+}
+
+function Test-SkillDirectoryCopyComplete {
+  param(
+    $Result,
+    [string]$SourceDirectory,
+    [string]$TargetDirectory,
+    [string]$TargetRelative
+  )
+
+  $sourceDirectories = @(Get-SkillRelativeDirectories $SourceDirectory)
+  $targetDirectories = @(Get-SkillRelativeDirectories $TargetDirectory)
+  $missingDirectories = @($sourceDirectories | Where-Object { $targetDirectories -notcontains $_ })
+  if ($missingDirectories.Count -gt 0) {
+    Add-Item $Result "warnings" $TargetRelative "copy-verification" "Skill copy incomplete; missing directories: $($missingDirectories -join ', ')." "warning"
+    return $false
+  }
+
+  $sourceFiles = @(Get-SkillRelativeFiles $SourceDirectory)
+  $targetFiles = @(Get-SkillRelativeFiles $TargetDirectory)
+  $missingFiles = @($sourceFiles | Where-Object { $targetFiles -notcontains $_ })
+  if ($missingFiles.Count -gt 0) {
+    Add-Item $Result "warnings" $TargetRelative "copy-verification" "Skill copy incomplete; missing files: $($missingFiles -join ', ')." "warning"
+    return $false
+  }
+
+  $changedFiles = [System.Collections.Generic.List[string]]::new()
+  foreach ($relative in $sourceFiles) {
+    $sourceFile = Join-Path $SourceDirectory $relative
+    $targetFile = Join-Path $TargetDirectory $relative
+    $sourceHash = (Get-FileHash -LiteralPath $sourceFile -Algorithm SHA256).Hash
+    $targetHash = (Get-FileHash -LiteralPath $targetFile -Algorithm SHA256).Hash
+    if ($sourceHash -ne $targetHash) {
+      $changedFiles.Add($relative) | Out-Null
+    }
+  }
+
+  if ($changedFiles.Count -gt 0) {
+    Add-Item $Result "warnings" $TargetRelative "copy-verification" "Skill copy incomplete; changed files: $($changedFiles -join ', ')." "warning"
+    return $false
+  }
+
+  Add-Item $Result "findings" $TargetRelative "copy-verification" "Full skill directory copy verified: $($sourceDirectories.Count) directories and $($sourceFiles.Count) files." "info"
+  return $true
+}
+
 function Get-RequiredSkillAcquisitionFields {
   return @("name", "type", "installMethod", "source", "target", "validation", "sourceKind")
 }
@@ -2705,22 +2818,40 @@ function Invoke-AcquireProjectGuidance {
     $sourceRelative = $source.Substring("repo:".Length)
     $sourcePath = Join-RootPath $sourceRelative
     $targetPath = Join-RootPath $targetRelative
+    $sourceDirectoryRelative = Get-SkillDirectoryRelativePath $sourceRelative
+    $targetDirectoryRelative = Get-SkillDirectoryRelativePath $targetRelative
+    if ([string]::IsNullOrWhiteSpace($sourceDirectoryRelative) -or [string]::IsNullOrWhiteSpace($targetDirectoryRelative)) {
+      Add-Item $result "warnings" $name "skill-directory" "Source and target must resolve to SKILL.md files inside skill directories." "warning"
+      continue
+    }
+    $sourceDirectory = Join-RootPath $sourceDirectoryRelative
+    $targetDirectory = Join-RootPath $targetDirectoryRelative
     if (-not (Test-Path $sourcePath)) {
       Add-Item $result "warnings" $sourceRelative "source" "Source SKILL.md does not exist." "warning"
       continue
     }
-    if (Test-Path $targetPath) {
-      Add-Item $result "findings" $targetRelative "already-present" "Repo-local skill already exists; not overwriting without explicit replacement." "info"
+    if (-not (Test-Path $sourceDirectory)) {
+      Add-Item $result "warnings" $sourceDirectoryRelative "source" "Source skill directory does not exist." "warning"
+      continue
+    }
+    $unsafeItems = @(Get-SkillCopyUnsafeItems $sourceDirectory)
+    if ($unsafeItems.Count -gt 0) {
+      Add-Item $result "warnings" $sourceDirectoryRelative "unsafe-copy" "Skipping skill because the source directory contains unsafe files or folders: $($unsafeItems -join ', ')." "warning"
+      continue
+    }
+    if (Test-Path $targetDirectory) {
+      Add-Item $result "findings" $targetDirectoryRelative "already-present" "Repo-local skill directory already exists; not overwriting without explicit replacement." "info"
       continue
     }
 
-    Add-Item $result "actions" $targetRelative "manual-copy" "Copy confirmed SKILL.md from $source with sourceKind '$($item.sourceKind)'."
+    Add-Item $result "actions" $targetDirectoryRelative "manual-copy" "Copy confirmed full skill directory from $sourceDirectoryRelative with sourceKind '$($item.sourceKind)'."
     if (Test-ConfigWritesEnabled) {
-      $targetDirectory = Split-Path -Parent $targetPath
-      if (-not (Test-Path $targetDirectory)) {
-        New-Item -ItemType Directory -Path $targetDirectory -Force | Out-Null
+      $targetParent = Split-Path -Parent $targetDirectory
+      if (-not (Test-Path $targetParent)) {
+        New-Item -ItemType Directory -Path $targetParent -Force | Out-Null
       }
-      Copy-Item -Path $sourcePath -Destination $targetPath
+      Copy-Item -LiteralPath $sourceDirectory -Destination $targetDirectory -Recurse
+      Test-SkillDirectoryCopyComplete $result $sourceDirectory $targetDirectory $targetDirectoryRelative | Out-Null
     }
 
     Add-Item $result "findings" $targetRelative "validation" "Validate with: $($item.validation)" "info"

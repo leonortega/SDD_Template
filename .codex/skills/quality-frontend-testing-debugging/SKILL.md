@@ -17,7 +17,7 @@ When this skill is used for ticket delivery, follow `.codex/skills/_shared/deliv
 
 ## Workflow
 
-Use the Browser path first, then apply the QA quality bar, collect evidence, and return a concise validation handoff to the calling skill.
+Use the Browser path first, then `playwright-interactive` when a persistent Node/js_repl session is available and visual or iterative debugging is useful. Fall back to the configured E2E workflow when neither interactive browser path is available. Apply the QA quality bar, collect evidence, and return a concise validation handoff to the calling skill.
 
 ## Browser Path
 
@@ -30,7 +30,7 @@ Prefer the Codex Browser plugin when it is available in the current session:
 5. Exercise the target user flow with stable visible locators or accessible names.
 6. Capture screenshot evidence for the relevant state and one mobile viewport when layout is in scope.
 
-If the Browser plugin is unavailable, use the repository's configured E2E workflow. If no configured E2E workflow exists, use a temporary browser automation script outside the repo for screenshots, console capture, and interaction proof. Do not commit temporary screenshots, traces, generated reports, or one-off scripts.
+If the Browser plugin is unavailable and `.codex/skills/playwright-interactive/SKILL.md` exists, use `playwright-interactive` for persistent browser iteration, visual QA, viewport-fit checks, and deployed browser failure diagnosis. If that path is unavailable, use the repository's configured E2E workflow. If no configured E2E workflow exists, use a temporary browser automation script outside the repo for screenshots, console capture, and interaction proof. Do not commit temporary screenshots, traces, generated reports, or one-off scripts.
 
 ## QA Quality Bar
 

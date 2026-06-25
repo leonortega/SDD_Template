@@ -398,6 +398,20 @@ function Get-DetectedSkillDefinitions {
       notes = "Dynamic skill finding from browser/Playwright QA signals. This complements the repo-local quality-frontend-testing-debugging skill with an official curated Playwright skill."
     },
     [pscustomobject]@{
+      id = "openai-playwright-interactive-skill"
+      name = "OpenAI Playwright interactive skill"
+      requires = @("browser-e2e", "playwright-guidance")
+      purpose = "Use OpenAI's curated Playwright interactive skill for persistent browser sessions, visual QA, viewport-fit checks, and deployed browser failure diagnosis without replacing committed E2E tests."
+      sourceKind = "openai-official"
+      source = "https://github.com/openai/skills/tree/main/skills/.curated/playwright-interactive"
+      target = ".codex/skills/playwright-interactive/SKILL.md"
+      candidateSkillSources = @("https://github.com/openai/skills/tree/main/skills/.curated/playwright-interactive")
+      researchTopics = @("Playwright persistent sessions", "visual QA", "viewport-fit checks", "browser failure diagnosis", "js_repl")
+      officialSources = @("https://github.com/openai/skills/tree/main/skills/.curated/playwright-interactive", "https://playwright.dev/docs/best-practices")
+      searchQueries = @("site:github.com/openai/skills playwright-interactive", "site:playwright.dev/docs Playwright visual testing")
+      notes = "Dynamic skill finding from browser/Playwright QA signals. Use as optional implementation/debugging guidance only; official QA remains quality-test-e2e plus committed Playwright tests."
+    },
+    [pscustomobject]@{
       id = "dotnet-assertion-quality-skill"
       name = ".NET assertion quality skill"
       requires = @("dotnet-10", "xunit", "coverage")
