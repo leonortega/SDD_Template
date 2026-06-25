@@ -18,6 +18,15 @@ Windows PowerShell on this workstation can fail with `Method invocation failed b
 
 When the selected deployment provider changes, update workflow docs, generated README text, shared delivery contracts, QA skills, and meta-tests together. The current Rancher Desktop QA trigger branch is `qa-local/{ticketKey}`. The durable Nexus evidence path can still be `qa/{ticketKey}/{runId}/qa-evidence.zip`; do not confuse evidence paths with trigger branch names.
 
+## SDD Maintenance Commits Need Bracketed Prefix
+
+- Type: Pattern
+- Status: Active
+- Source: `.githooks/require-ticket.ps1`, failed commit message `Switch local deployment to Rancher Desktop`, June 24, 2026
+- Last verified: 2026-06-24
+
+Commit messages in this repo must start with a ticket matching `E2EPROJECT-[0-9]+`, an OpenSpec id, or `[SDD]` for direct SDD repo maintenance. For infra/template maintenance without a ticket, use `[SDD] <specific summary>` so the commit-msg hook passes on the first try.
+
 ## k3d Install Works From Approved Executables Folder, But Docker Backend Can Block Cluster Create
 
 - Type: Pattern
@@ -532,3 +541,30 @@ For `/health` JSON shaped as a single object with `status: "ok"`, Grafana Infini
 - Last verified: 2026-06-24
 
 On Windows PowerShell, passing wildcard directory arguments such as `.codex/skills/dev-flow-*` directly to `rg` can fail with `The filename, directory name, or volume label syntax is incorrect. (os error 123)` because `rg` receives the literal wildcard path. Use `rg --glob ...` filters from a real root path, or expand paths with PowerShell before passing them to `rg`.
+
+## Login Shell Startup Can Stall Simple PowerShell Reads
+
+- Type: Pattern
+- Status: Active
+- Source: project guidance maintenance run; initial parallel `Get-Content -Raw` reads timed out, same commands passed with `login=false`
+- Last verified: 2026-06-25
+
+When simple repository reads such as `Get-Content -Raw README.md` time out before producing output under the default login shell, retry the same read with `login=false` before treating the file, path, or command as broken. This is a shell-startup/tooling issue, not repository content failure.
+
+## Downloaded Windows MCP Binaries May Need Cmd Wrapper
+
+- Type: Pattern
+- Status: Active
+- Source: project guidance MCP cleanup run; official Grafana and Kubernetes MCP binaries failed through direct PowerShell spawn with `Access is denied`, but succeeded through `cmd /c`
+- Last verified: 2026-06-25
+
+When a downloaded Windows MCP binary is present, unblocked, and still fails from PowerShell or `uvx` with `Access is denied` / `EPERM`, test it through `cmd /c "<path-to-exe>" --help` before abandoning it. For Codex MCP config on this host, use `command = "cmd"` with `args = ["/c", "<path-to-exe>", ...]` when the wrapper is the validated launch path.
+
+## PowerShell Variable Names Are Case-Insensitive
+
+- Type: Pattern
+- Status: Active
+- Source: project guidance discovery edits; local variables `$home` and `$root` collided with read-only `$HOME` and script parameter `$Root`
+- Last verified: 2026-06-25
+
+In repository PowerShell scripts, avoid local variable names that differ only by case from parameters, automatic variables, or globals. `$home` collides with `$HOME`, and `$root` can overwrite `$Root`; use specific names such as `$codexHomePath` or `$skillRoot` to prevent late failures in helper functions.

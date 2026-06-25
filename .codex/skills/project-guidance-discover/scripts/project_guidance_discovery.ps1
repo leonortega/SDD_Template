@@ -40,6 +40,35 @@ function Get-ProjectGuidanceDiscoverySourceNotes {
   }
 }
 
+function Get-ProjectGuidanceProjectProfile {
+  $profilePath = Join-RootPath ".codex/project-profile.json"
+  if (-not (Test-Path $profilePath)) { return $null }
+
+  try {
+    return Get-Content -Path $profilePath -Raw | ConvertFrom-Json
+  } catch {
+    return $null
+  }
+}
+
+function Test-ProjectGuidanceSelectedProvider {
+  param(
+    [string]$ProviderGroup,
+    [string]$ProviderId
+  )
+
+  $profile = Get-ProjectGuidanceProjectProfile
+  if ($null -eq $profile -or $null -eq $profile.providers) { return $false }
+  if ($profile.providers.PSObject.Properties.Name -notcontains $ProviderGroup) { return $false }
+
+  $provider = $profile.providers.$ProviderGroup
+  if ($provider -is [array]) {
+    return (@($provider) | Where-Object { [string]$_.id -eq $ProviderId }).Count -gt 0
+  }
+
+  return [string]$provider.id -eq $ProviderId
+}
+
 function Add-StackContextDriftFindings {
   param(
     $Result,
@@ -130,7 +159,8 @@ function Get-DetectedStackTags {
       (Get-ChildItem -Path $Root -Filter "compose.yml" -Recurse -ErrorAction SilentlyContinue).Count -gt 0) {
     $tags.Add("docker")
   }
-  if (Test-AnyRepoFileContains @(".") @("*.bicep") "resource ") { $tags.Add("bicep") }
+  if ((Test-ProjectGuidanceSelectedProvider "deployment" "azure-appservice") -and
+      (Test-AnyRepoFileContains @(".") @("*.bicep") "resource ")) { $tags.Add("bicep") }
   if (Test-AnyRepoFileContains @(".") @("*.tf") "resource ") { $tags.Add("terraform") }
   if (Test-AnyRepoFileContains @(".") @("*.yaml", "*.yml") "apiVersion:|kind: Deployment|kind: Service") { $tags.Add("kubernetes") }
   if (Test-AnyRepoFileContains @("src", "tests") @("*.csproj") "Microsoft\.NET\.Sdk\.Web|Microsoft\.AspNetCore") {
@@ -168,15 +198,24 @@ function Get-DetectedStackTags {
     $tags.Add("nexus")
     $tags.Add("nexus-artifacts")
   }
-  if ((Test-Path (Join-RootPath "infra/azure")) -or (Test-AnyRepoFileContains @(".gitea/workflows") @("*.yml", "*.yaml") "az webapp deploy|Azure App Service")) {
+  if (Test-ProjectGuidanceSelectedProvider "deployment" "rancher-desktop") {
+    $tags.Add("rancher-desktop")
+  }
+  if ((Test-ProjectGuidanceSelectedProvider "deployment" "azure-appservice") -and
+      ((Test-Path (Join-RootPath "infra/azure")) -or (Test-AnyRepoFileContains @(".gitea/workflows") @("*.yml", "*.yaml") "az webapp deploy|Azure App Service"))) {
     $tags.Add("azure")
     $tags.Add("azure-app-service")
   }
   if (Test-Path (Join-RootPath "infra/monitoring")) { $tags.Add("observability") }
-  if (Test-AnyRepoFileContains @("infra/azure", "docs", ".codex/skills") @("*.bicep", "*.md", "*.ps1") "Log Analytics|Azure Monitor") {
+  if ((Test-ProjectGuidanceSelectedProvider "deployment" "azure-appservice") -and
+      (Test-AnyRepoFileContains @("infra/azure", "docs", ".codex/skills") @("*.bicep", "*.md", "*.ps1") "Log Analytics|Azure Monitor")) {
     $tags.Add("azure-monitor")
   }
   if (Test-Path (Join-RootPath "infra/monitoring/grafana")) { $tags.Add("grafana") }
+  if ((Test-Path (Join-RootPath "infra/monitoring")) -and
+      (Test-AnyRepoFileContains @("src", "infra", ".codex/skills", "docs") @("*.cs", "*.csproj", "*.json", "*.md", "*.ps1", "*.yml", "*.yaml") "Seq|Serilog")) {
+    $tags.Add("seq")
+  }
   if ((Test-Path (Join-RootPath "artifacts/qa")) -or (Test-Path (Join-RootPath ".codex/skills/quality-test-e2e/SKILL.md"))) {
     $tags.Add("e2e")
     $tags.Add("browser-e2e")
@@ -241,12 +280,12 @@ function Get-ProjectGuidanceResearchTopics {
     },
     [pscustomobject]@{
       id = "delivery-tools"
-      tags = @("openproject", "gitea", "gitea-actions-runner", "nexus-artifacts", "azure-app-service", "azure-monitor", "grafana")
+      tags = @("openproject", "gitea", "gitea-actions-runner", "nexus-artifacts", "rancher-desktop", "azure-app-service", "azure-monitor", "grafana", "seq")
       area = "Delivery tools and environments"
-      purpose = "Find skills for ticket workflow, source control/review, CI runner behavior, artifact promotion, cloud deployment, and observability."
-      officialFirstSources = @("https://github.com/openai/skills", "https://docs.gitea.com/", "https://learn.microsoft.com/en-us/azure/app-service/", "https://learn.microsoft.com/en-us/azure/azure-monitor/", "https://grafana.com/docs/", "https://datalust.co/docs/")
+      purpose = "Find skills for ticket workflow, source control/review, CI runner behavior, artifact promotion, selected deployment provider, and observability."
+      officialFirstSources = @("https://github.com/openai/skills", "https://docs.gitea.com/", "https://docs.rancherdesktop.io/", "https://kubernetes.io/docs/", "https://learn.microsoft.com/en-us/azure/app-service/", "https://learn.microsoft.com/en-us/azure/azure-monitor/", "https://grafana.com/docs/", "https://datalust.co/docs/")
       discoverySourcePriority = Get-ProjectGuidanceDiscoverySourcePriority
-      searchQueries = @("official Gitea Actions skill SKILL.md", "official Azure App Service deploy skill SKILL.md", "official Azure Monitor Grafana skill SKILL.md")
+      searchQueries = @("official Gitea Actions skill SKILL.md", "Rancher Desktop Kubernetes docs", "Seq Serilog ASP.NET Core docs", "official Azure App Service deploy skill SKILL.md", "official Azure Monitor Grafana skill SKILL.md")
     },
     [pscustomobject]@{
       id = "containers-iac"
@@ -511,7 +550,9 @@ function Add-DetectedSkillRecommendation {
   $severity = if ($item.targetExists) { "info" } else { "warning" }
   Add-Item $Result "findings" $Recommendation.target "$keyPrefix.$($Recommendation.id)" $message $severity
 
-  Add-Recommendation $Result $item
+  if (-not $item.targetExists) {
+    Add-Recommendation $Result $item
+  }
 }
 
 function Add-DetectedSkillRecommendations {
@@ -541,6 +582,107 @@ function Get-ExistingRepoSkills {
   }
 
   return @($skills | Sort-Object -Property name)
+}
+
+function Get-InstalledSkillInventory {
+  $roots = @(
+    [ordered]@{ scope = "repo-local"; path = (Join-RootPath ".codex/skills") },
+    [ordered]@{ scope = "user"; path = (Join-Path $env:USERPROFILE ".codex/skills") }
+  )
+
+  $items = foreach ($skillRoot in $roots) {
+    if (-not (Test-Path $skillRoot.path)) { continue }
+
+    foreach ($skillFile in Get-ChildItem -Path $skillRoot.path -Filter "SKILL.md" -Recurse -File -ErrorAction SilentlyContinue) {
+      $name = Split-Path -Leaf (Split-Path -Parent $skillFile.FullName)
+      $target = if ($skillRoot.scope -eq "repo-local") { Get-RepoRelativePath $skillFile.FullName } else { $skillFile.FullName }
+      [pscustomobject][ordered]@{
+        name = $name
+        scope = $skillRoot.scope
+        target = $target
+        status = "keep"
+        sourceKind = $root.scope
+        validationCommand = "Test-Path '$target'"
+      }
+    }
+  }
+
+  return @($items | Sort-Object -Property scope, name -Unique)
+}
+
+function Get-OfficialDocumentationUrls {
+  param(
+    [object[]]$ResearchTopics,
+    [string[]]$DetectedTags
+  )
+
+  $urls = @(
+    "https://developers.openai.com/codex/skills",
+    "https://developers.openai.com/codex/config-reference"
+  )
+
+  foreach ($topic in @($ResearchTopics)) {
+    $urls += @($topic.officialFirstSources)
+  }
+
+  $filtered = foreach ($url in ($urls | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Sort-Object -Unique)) {
+    $text = [string]$url
+    if (($DetectedTags -notcontains "azure") -and $text -match "learn\.microsoft\.com/en-us/azure/(app-service|azure-monitor)") { continue }
+    if (($DetectedTags -notcontains "bicep") -and $text -match "learn\.microsoft\.com/en-us/azure/azure-resource-manager/bicep") { continue }
+    if (($DetectedTags -notcontains "terraform") -and $text -match "developer\.hashicorp\.com/terraform") { continue }
+    $sourceKind = if ($text -match "developers\.openai\.com|github\.com/openai/skills") {
+      "openai-official"
+    } elseif ($text -match "github\.com|grafana\.com|kubernetes\.io|docs\.|learn\.microsoft\.com|datalust\.co|owasp\.org|w3\.org|playwright\.dev") {
+      "technology-owner"
+    } else {
+      "tool-official"
+    }
+
+    [ordered]@{
+      url = $text
+      type = "official-documentation"
+      status = "keep"
+      sourceKind = $sourceKind
+      validationCommand = "Open URL and verify current documentation before installing or changing guidance."
+    }
+  }
+
+  return @($filtered)
+}
+
+function Get-SkillClassifications {
+  param(
+    [object[]]$InstalledSkills,
+    [object[]]$SuggestedMissingSkills
+  )
+
+  $items = @()
+  $items += @($InstalledSkills | ForEach-Object {
+    [ordered]@{
+      id = "$($_.name)-skill"
+      name = $_.name
+      type = "skill"
+      status = "keep"
+      scope = $_.scope
+      target = $_.target
+      sourceKind = $_.sourceKind
+      validationCommand = $_.validationCommand
+    }
+  })
+  $items += @($SuggestedMissingSkills | ForEach-Object {
+    [ordered]@{
+      id = $_.id
+      name = $_.name
+      type = "skill"
+      status = "add"
+      target = $_.target
+      sourceKind = "official-first-internet-search"
+      source = $_.source
+      validationCommand = "Resolve source to readable SKILL.md before installing repo-local."
+    }
+  })
+
+  return @($items)
 }
 
 function ConvertTo-RequestedGuidance {
@@ -629,7 +771,9 @@ function Get-ScanDerivedCatalogGuidance {
   $catalog = Get-ToolRecommendationCatalog
   $guidance = foreach ($entry in @($catalog.recommendations)) {
     if ($Dismissed -contains $entry.id) { continue }
+    if ($Accepted -contains $entry.id) { continue }
     if ($entry.type -eq "skill") { continue }
+    if ($entry.id -eq "docker-mcp-toolkit" -and -not (Test-DockerMcpSupported)) { continue }
     if (-not (Test-RecommendationMatchesStack -Recommendation $entry -DetectedTags $DetectedTags)) { continue }
 
     $item = ConvertTo-CatalogRecommendation -Entry $entry -Accepted $Accepted
@@ -642,6 +786,164 @@ function Get-ScanDerivedCatalogGuidance {
   return @($guidance)
 }
 
+function Get-CodexMcpConfigPath {
+  $codexHomePath = if (-not [string]::IsNullOrWhiteSpace($env:CODEX_HOME)) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE ".codex" }
+  return Join-Path $codexHomePath "config.toml"
+}
+
+function Get-ActiveCodexMcpServers {
+  $path = Get-CodexMcpConfigPath
+  if (-not (Test-Path $path)) { return @() }
+
+  $servers = @()
+  $currentName = $null
+  $currentEnabled = $true
+
+  foreach ($line in (Get-Content -Path $path)) {
+    if ($line -match '^\s*\[mcp_servers\.([^\].]+)\]\s*$') {
+      if (-not [string]::IsNullOrWhiteSpace($currentName) -and $currentEnabled) {
+        $servers += $currentName
+      }
+      $currentName = $Matches[1]
+      $currentEnabled = $true
+      continue
+    }
+
+    if ($null -ne $currentName -and $line -match '^\s*enabled\s*=\s*false\s*$') {
+      $currentEnabled = $false
+    }
+  }
+  if (-not [string]::IsNullOrWhiteSpace($currentName) -and $currentEnabled) {
+    $servers += $currentName
+  }
+
+  return @($servers | Sort-Object -Unique)
+}
+
+function Test-LocalCommandAvailable {
+  param([string]$Name)
+  return $null -ne (Get-Command $Name -ErrorAction SilentlyContinue)
+}
+
+function Test-DockerMcpSupported {
+  if (-not (Test-LocalCommandAvailable "docker")) { return $false }
+
+  try {
+    $help = & docker --help 2>$null | Out-String
+    return $help -match '(?m)^\s*mcp\s+'
+  } catch {
+    return $false
+  }
+}
+
+function New-DynamicMcpRecommendation {
+  param(
+    [string]$Id,
+    [string]$Name,
+    [string[]]$Tags,
+    [string]$SourceKind,
+    [string]$Source,
+    [string]$InstallCommand,
+    [string]$ValidationCommand,
+    [string]$Reason
+  )
+
+  return [ordered]@{
+    id = $Id
+    name = $Name
+    type = "mcp"
+    tags = @($Tags)
+    installMethod = "codex-mcp-config"
+    installCommand = $InstallCommand
+    validationCommand = $ValidationCommand
+    requiresIdeRestart = $true
+    requiresSystemReboot = $false
+    userActionRequired = $true
+    sourceKind = $SourceKind
+    source = $Source
+    target = (Get-CodexMcpConfigPath)
+    status = "source-provided"
+    reason = $Reason
+  }
+}
+
+function Get-DynamicMcpGuidance {
+  param(
+    [string[]]$DetectedTags,
+    [string[]]$Accepted,
+    [string[]]$Dismissed,
+    [string[]]$ActiveMcpServers
+  )
+
+  $items = @()
+  $active = @($ActiveMcpServers)
+
+  if (($DetectedTags -contains "grafana") -and ($active -notcontains "grafana") -and ($Accepted -notcontains "grafana-mcp-server") -and ($Dismissed -notcontains "grafana-mcp-server")) {
+    $items += New-DynamicMcpRecommendation `
+      -Id "grafana-mcp-server" `
+      -Name "Grafana MCP server" `
+      -Tags @("grafana", "observability", "mcp") `
+      -SourceKind "tool-official" `
+      -Source "https://grafana.com/docs/grafana/latest/developer-resources/mcp/" `
+      -InstallCommand "Download the official mcp-grafana Windows release, then configure Codex MCP command=cmd args=/c <mcp-grafana.exe> --disable-write --disable-admin" `
+      -ValidationCommand "Restart Codex, expose GRAFANA_SERVICE_ACCOUNT_TOKEN locally, then verify Grafana MCP read-only tools are listed." `
+      -Reason "Detected Grafana observability guidance; use official Grafana MCP server with local-only token environment."
+  }
+
+  if (($DetectedTags -contains "kubernetes") -and ($active -notcontains "kubernetes") -and ($Accepted -notcontains "kubernetes-mcp-server") -and ($Dismissed -notcontains "kubernetes-mcp-server")) {
+    $items += New-DynamicMcpRecommendation `
+      -Id "kubernetes-mcp-server" `
+      -Name "Kubernetes MCP server" `
+      -Tags @("kubernetes", "rancher-desktop", "mcp") `
+      -SourceKind "tool-official" `
+      -Source "https://github.com/containers/kubernetes-mcp-server" `
+      -InstallCommand "Download the official kubernetes-mcp-server Windows release, then configure Codex MCP command=cmd args=/c <kubernetes-mcp-server.exe> --read-only --disable-destructive --disable-multi-cluster --cluster-provider kubeconfig" `
+      -ValidationCommand "Restart Codex, keep kubectl context on rancher-desktop, then verify Kubernetes MCP read-only tools are listed." `
+      -Reason "Detected Rancher Desktop Kubernetes workflow; use Kubernetes MCP for read-first cluster inspection."
+  }
+
+  return @($items)
+}
+
+function Get-ProjectGuidanceCleanupRecommendations {
+  param(
+    [string[]]$DetectedTags,
+    [string[]]$Accepted,
+    [string[]]$ActiveMcpServers
+  )
+
+  $cleanup = @()
+  $isRancher = $DetectedTags -contains "rancher-desktop"
+
+  foreach ($name in @("azure", "bicep")) {
+    if ($isRancher -and ($ActiveMcpServers -contains $name)) {
+      $cleanup += [ordered]@{
+        id = "$name-mcp-server"
+        name = "$name MCP server"
+        type = "mcp"
+        status = "disable"
+        target = (Get-CodexMcpConfigPath)
+        reason = "Rancher Desktop is the selected deployment provider; $name MCP is not needed for this repo flow."
+        disablePath = "Set enabled = false in [mcp_servers.$name], or remove with codex mcp remove $name when available."
+      }
+    }
+  }
+
+  if (($DetectedTags -contains "docker") -and -not (Test-DockerMcpSupported)) {
+    $cleanup += [ordered]@{
+      id = "docker-mcp-toolkit"
+      name = "Docker MCP Toolkit"
+      type = "mcp"
+      status = "not-recommended"
+      target = "local Docker CLI"
+      reason = "Current Docker CLI does not expose docker mcp; keep Docker/Rancher tools, but do not recommend Docker MCP Toolkit."
+      disablePath = "Move docker-mcp-toolkit to recommendedTools.dismissed."
+    }
+  }
+
+  return @($cleanup)
+}
+
 function Get-ProjectGuidanceDiscoveryReport {
   param(
     [string[]]$Accepted = @(),
@@ -652,10 +954,85 @@ function Get-ProjectGuidanceDiscoveryReport {
 
   $detectedTags = Get-DetectedStackTags
   $researchTopics = Get-ProjectGuidanceResearchTopics $detectedTags
+  $activeMcpServers = Get-ActiveCodexMcpServers
   $suggestions = Get-ScanDerivedSkillSuggestions $detectedTags $Accepted $Dismissed
-  $guidance = Get-ScanDerivedCatalogGuidance $detectedTags $Accepted $Dismissed
+  $guidance = @(
+    Get-ScanDerivedCatalogGuidance $detectedTags $Accepted $Dismissed
+    Get-DynamicMcpGuidance $detectedTags $Accepted $Dismissed $activeMcpServers
+  )
+  $cleanup = Get-ProjectGuidanceCleanupRecommendations $detectedTags $Accepted $activeMcpServers
+  $installedSkills = Get-InstalledSkillInventory
+  $officialDocumentationUrls = Get-OfficialDocumentationUrls $researchTopics $detectedTags
+  $classifications = @(
+    $activeMcpServers | ForEach-Object {
+      $metadata = switch ($_) {
+        "grafana" {
+          @{
+            source = "https://grafana.com/docs/grafana/latest/developer-resources/mcp/"
+            installCommand = "Download the official mcp-grafana Windows release, then configure Codex MCP command=cmd args=/c <mcp-grafana.exe> --disable-write --disable-admin"
+            validationCommand = "Restart Codex, expose GRAFANA_SERVICE_ACCOUNT_TOKEN locally, then verify Grafana MCP read-only tools are listed."
+          }
+        }
+        "kubernetes" {
+          @{
+            source = "https://github.com/containers/kubernetes-mcp-server"
+            installCommand = "Download the official kubernetes-mcp-server Windows release, then configure Codex MCP command=cmd args=/c <kubernetes-mcp-server.exe> --read-only --disable-destructive --disable-multi-cluster --cluster-provider kubeconfig"
+            validationCommand = "Restart Codex, keep kubectl context on rancher-desktop, then verify Kubernetes MCP read-only tools are listed."
+          }
+        }
+        "mslearn" {
+          @{
+            source = "https://learn.microsoft.com/"
+            installCommand = "configured in Codex MCP config"
+            validationCommand = "Restart Codex, then verify Microsoft Learn MCP tools are listed."
+          }
+        }
+        "playwright" {
+          @{
+            source = "https://playwright.dev/docs/mcp"
+            installCommand = "configured in Codex MCP config"
+            validationCommand = "Restart Codex, then verify Playwright MCP tools are listed."
+          }
+        }
+        default {
+          @{
+            source = "local Codex MCP config"
+            installCommand = "configured in Codex MCP config"
+            validationCommand = "Restart Codex, then verify MCP tools are listed."
+          }
+        }
+      }
+      [ordered]@{
+        id = "$_-mcp-server"
+        type = "mcp"
+        status = "keep"
+        reason = "Active Codex MCP server matches current project guidance or shared coding workflow."
+        target = (Get-CodexMcpConfigPath)
+        source = $metadata.source
+        installCommand = $metadata.installCommand
+        validationCommand = $metadata.validationCommand
+      }
+    }
+    $guidance | ForEach-Object {
+      [ordered]@{ id = $_.id; type = $_.type; status = "add"; reason = $_.reason; source = $_.source }
+    }
+    $cleanup | ForEach-Object {
+      [ordered]@{ id = $_.id; type = $_.type; status = $_.status; reason = $_.reason; target = $_.target }
+    }
+  )
   $missing = @($suggestions | Where-Object { -not $_.targetExists })
-  $present = @($suggestions | Where-Object { $_.targetExists })
+  $present = @()
+  $skillClassifications = Get-SkillClassifications $installedSkills $missing
+  $documentationClassifications = @($officialDocumentationUrls | ForEach-Object {
+    [ordered]@{
+      id = ($_.url -replace '^https?://', '' -replace '[^A-Za-z0-9]+', '-').Trim('-').ToLowerInvariant()
+      type = "official-documentation"
+      status = $_.status
+      url = $_.url
+      sourceKind = $_.sourceKind
+      validationCommand = $_.validationCommand
+    }
+  })
   $userAdded = @($UserAddedRequestedGuidance)
   $confirmedGuidance = if ($Confirmed) {
     @($missing + $guidance + $userAdded)
@@ -668,9 +1045,16 @@ function Get-ProjectGuidanceDiscoveryReport {
     detectedTags = @($detectedTags)
     researchTopics = @($researchTopics)
     existingSkills = @(Get-ExistingRepoSkills)
+    installedSkills = @($installedSkills)
+    officialDocumentationUrls = @($officialDocumentationUrls)
+    activeMcpServers = @($activeMcpServers)
     suggestedMissingSkills = @($missing)
     suggestedPresentSkills = @($present)
     suggestedGuidance = @($guidance)
+    cleanupRecommendations = @($cleanup)
+    guidanceClassifications = @($classifications)
+    skillClassifications = @($skillClassifications)
+    documentationClassifications = @($documentationClassifications)
     userAddedRequestedGuidance = @($userAdded)
     userAddedRequestedSkills = @($userAdded)
     finalConfirmedGuidance = @($confirmedGuidance)

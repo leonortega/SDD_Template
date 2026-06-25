@@ -2233,17 +2233,24 @@ function Get-DefaultSupportingSkillsForWorkflowStep {
 function Get-DefaultRecommendationIdsForWorkflowStep {
   param([string]$WorkflowStep)
 
+  $deploymentGuidance = if (Test-RancherDesktopLocalDeploymentConfigured) {
+    @("nexus-artifact-api-guidance", "rancher-desktop-local-deploy-guidance", "kubernetes-workload-guidance", "grafana-provisioning-guidance", "seq-serilog-observability-guidance", "release-practice-guidance")
+  } else {
+    @("nexus-artifact-api-guidance", "azure-app-service-zip-deploy-guidance", "azure-monitor-log-analytics-guidance", "grafana-provisioning-guidance", "release-practice-guidance")
+  }
+  $rollbackGuidance = @($deploymentGuidance | Where-Object { $_ -ne "release-practice-guidance" }) + @("rollback-practice-guidance")
+
   switch ($WorkflowStep) {
     "config-infra" { return @("project-guidance-search-plan") }
     "first-ticket-setup" { return @("project-guidance-search-plan") }
     "planning" { return @("openai-aspnet-core-skill", "dotnet-blazor-plan-ui-change-skill", "dotnet-webapi-skill", "openai-security-best-practices-skill", "clean-code-practice-guidance", "modern-dotnet-architecture-guidance") }
     "implementation" { return @("openai-aspnet-core-skill", "dotnet-blazor-plan-ui-change-skill", "dotnet-webapi-skill", "openai-security-best-practices-skill", "dotnet-assertion-quality-skill", "clean-code-practice-guidance", "modern-dotnet-architecture-guidance", "rest-api-design-practice-guidance") }
-    "pr-review" { return @("dev-flow-pr-review-agent-skill", "openai-aspnet-core-skill", "dotnet-webapi-skill", "openai-security-best-practices-skill", "dotnet-assertion-quality-skill", "pr-review-practice-guidance") }
+    "pr-review" { return @("pr-review-practice-guidance") }
     "review-feedback" { return @("openai-aspnet-core-skill", "dotnet-blazor-plan-ui-change-skill", "dotnet-webapi-skill", "openai-security-best-practices-skill", "dotnet-assertion-quality-skill", "clean-code-practice-guidance") }
-    "dev-ops-post-merge-deploy" { return @("nexus-artifact-api-guidance", "azure-app-service-zip-deploy-guidance", "azure-monitor-log-analytics-guidance", "grafana-provisioning-guidance", "release-practice-guidance") }
-    "e2e-qa" { return @("browser-e2e-qa-plugin", "playwright-frontend-testing-skill", "openai-playwright-skill", "dotnet-assertion-quality-skill", "qa-automation-practice-guidance") }
-    "prod-promotion" { return @("nexus-artifact-api-guidance", "azure-app-service-zip-deploy-guidance", "azure-monitor-log-analytics-guidance", "grafana-provisioning-guidance", "release-practice-guidance") }
-    "rollback" { return @("nexus-artifact-api-guidance", "azure-app-service-zip-deploy-guidance", "azure-monitor-log-analytics-guidance", "grafana-provisioning-guidance", "rollback-practice-guidance") }
+    "dev-ops-post-merge-deploy" { return @($deploymentGuidance) }
+    "e2e-qa" { return @("browser-e2e-qa-plugin", "qa-automation-practice-guidance") }
+    "prod-promotion" { return @($deploymentGuidance) }
+    "rollback" { return @($rollbackGuidance) }
     "hotfix" { return @("openai-security-best-practices-skill", "dotnet-assertion-quality-skill", "release-practice-guidance", "rollback-practice-guidance") }
     "retrospective" { return @("project-guidance-search-plan", "clean-code-practice-guidance", "qa-automation-practice-guidance", "pr-review-practice-guidance") }
     default { return @() }
@@ -2379,13 +2386,15 @@ function New-ProjectGuidanceLocalState {
   }
 
   $recommendations += @($report.suggestedMissingSkills)
-  $recommendations += @($report.suggestedPresentSkills)
   $recommendations += @($report.suggestedGuidance)
   $recommendations += @($report.userAddedRequestedGuidance)
 
   foreach ($entry in @($catalog.recommendations)) {
     if (-not (Test-RecommendationMatchesStack -Recommendation $entry -DetectedTags $detectedTags)) { continue }
     if ($Dismissed -contains $entry.id) { continue }
+    if ($Accepted -contains $entry.id) { continue }
+    if ($entry.id -eq "docker-mcp-toolkit" -and -not (Test-DockerMcpSupported)) { continue }
+    if ($entry.type -eq "skill" -and -not [string]::IsNullOrWhiteSpace([string]$entry.target) -and (Test-Path (Join-RootPath $entry.target))) { continue }
     $recommendations += ConvertTo-CatalogRecommendation -Entry $entry -Accepted $Accepted
   }
 
@@ -2400,7 +2409,7 @@ function New-ProjectGuidanceLocalState {
     $recommendationsById[[string]$hash["id"]] = Add-UsedInStepsToRecommendation -Recommendation $hash -Usage $stepUsage
   }
 
-  $notRecommended = foreach ($entry in @($catalog.notRecommended)) {
+  $notRecommended = @(foreach ($entry in @($catalog.notRecommended)) {
     if (-not (Test-RecommendationMatchesStack -Recommendation $entry -DetectedTags $detectedTags)) { continue }
 
     [ordered]@{
@@ -2411,7 +2420,8 @@ function New-ProjectGuidanceLocalState {
       reason = $entry.reason
       dismissed = ($Dismissed -contains $entry.id)
     }
-  }
+  })
+  $notRecommended += @($report.cleanupRecommendations)
 
   return [ordered]@{
     schemaVersion = 1
@@ -2423,9 +2433,16 @@ function New-ProjectGuidanceLocalState {
     detectedTags = @($report.detectedTags)
     researchTopics = @($report.researchTopics)
     existingSkills = @($report.existingSkills)
+    installedSkills = @($report.installedSkills)
+    officialDocumentationUrls = @($report.officialDocumentationUrls)
+    activeMcpServers = @($report.activeMcpServers)
     suggestedMissingSkills = @($report.suggestedMissingSkills)
     suggestedPresentSkills = @($report.suggestedPresentSkills)
     suggestedGuidance = @($report.suggestedGuidance)
+    cleanupRecommendations = @($report.cleanupRecommendations)
+    guidanceClassifications = @($report.guidanceClassifications)
+    skillClassifications = @($report.skillClassifications)
+    documentationClassifications = @($report.documentationClassifications)
     userAddedRequestedGuidance = @($report.userAddedRequestedGuidance)
     userAddedRequestedSkills = @($report.userAddedRequestedSkills)
     finalConfirmedGuidance = @($report.finalConfirmedGuidance)
@@ -3268,9 +3285,16 @@ function Invoke-DiscoverProjectGuidance {
     detectedTags = $report.detectedTags
     researchTopics = $report.researchTopics
     existingSkills = $report.existingSkills
+    installedSkills = $report.installedSkills
+    officialDocumentationUrls = $report.officialDocumentationUrls
+    activeMcpServers = $report.activeMcpServers
     suggestedMissingSkills = $report.suggestedMissingSkills
     suggestedPresentSkills = $report.suggestedPresentSkills
     suggestedGuidance = $report.suggestedGuidance
+    cleanupRecommendations = $report.cleanupRecommendations
+    guidanceClassifications = $report.guidanceClassifications
+    skillClassifications = $report.skillClassifications
+    documentationClassifications = $report.documentationClassifications
     userAddedRequestedGuidance = $report.userAddedRequestedGuidance
     userAddedRequestedSkills = $report.userAddedRequestedSkills
     finalConfirmedGuidance = $report.finalConfirmedGuidance
