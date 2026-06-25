@@ -13,7 +13,7 @@ Nexus raw hosted -> release manifests, pointers, QA evidence
 
 1. Enable Kubernetes in Rancher Desktop, then run `config infra` to select and validate the Rancher Desktop lane. Confirm:
 
-   ```powershell
+   ```text
    kubectl config current-context
    kubectl get nodes
    ```
@@ -29,7 +29,7 @@ Nexus raw hosted -> release manifests, pointers, QA evidence
 
    Copy a fresh login token to the Windows clipboard, then paste it into Headlamp:
 
-   ```powershell
+   ```text
    kubectl create token headlamp --namespace headlamp | Set-Clipboard
    ```
 
@@ -75,7 +75,7 @@ Nexus raw hosted -> release manifests, pointers, QA evidence
 
 Run the script directly only after setting digest-pinned image references:
 
-```powershell
+```text
 bash infra/rancher/deploy-local-lab.sh --environment dev --namespace sdd-dev --site-image "<site@sha256...>" --api-image "<api@sha256...>" --commit-sha "<commitSha>"
 ```
 

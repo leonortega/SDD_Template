@@ -4,18 +4,51 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Callable
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PYTHON_REQUIRES = (3, 11)
 E2E_IMAGE = "agentic/e2e-ci:playwright-1.57.0-1"
+SEARCH_PLAN_ID = "project-guidance-search-plan"
+STANDARD_STAGES = [
+    "dev-flow-start-ticket",
+    "dev-flow-implement-ticket",
+    "dev-flow-pr-review-agent",
+    "dev-flow-pr-review-feedback-loop",
+    "dev-ops-post-merge-deploy",
+    "dev-ops-deploy-qa",
+    "quality-test-e2e",
+]
+ALLOWLISTED_LOCAL_CONFIG = [
+    ".codex/client-tools.local.json",
+    ".codex/quality.local.json",
+    ".codex/tool-recommendations.local.json",
+]
+RANCHER_PORTS = [
+    ("dev", "web", 18081),
+    ("dev", "api", 18082),
+    ("qa", "web", 18083),
+    ("qa", "api", 18084),
+    ("prod", "web", 18085),
+    ("prod", "api", 18086),
+]
+DISCOVERY_SOURCE_PRIORITY = [
+    "repo-local",
+    "openai-official",
+    "tool-official",
+    "technology-owner",
+    "skills-cli",
+    "marketplace",
+    "community",
+]
 
 
 class CliError(RuntimeError):
@@ -23,6 +56,18 @@ class CliError(RuntimeError):
 
 
 Runner = Callable[[list[str], Path | None, dict[str, str] | None], int]
+
+
+@dataclass
+class TicketReadinessResult:
+    status: str
+    missing: list[str]
+
+
+@dataclass
+class DeliveryRiskResult:
+    level: str
+    reasons: list[str]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -133,33 +178,59 @@ def azure_deploy_environments(args: argparse.Namespace, runner: Runner = default
         deployment_name = f"agentic-{env_name}-{stamp}"
         if args.what_if:
             if runner(["az", "group", "show", "--name", group, "--output", "none"], REPO_ROOT, None):
-                print(f"WhatIf: resource group '{group}' would be created in '{args.location}'. Skipping deployment what-if for '{env_name}' until the group exists.")
+                print(
+                    f"WhatIf: resource group '{group}' would be created in '{args.location}'. "
+                    f"Skipping deployment what-if for '{env_name}' until the group exists."
+                )
                 continue
             command = [
-                "az", "deployment", "group", "what-if",
-                "--resource-group", group,
-                "--name", deployment_name,
-                "--template-file", str(template),
-                "--parameters", str(parameters),
+                "az",
+                "deployment",
+                "group",
+                "what-if",
+                "--resource-group",
+                group,
+                "--name",
+                deployment_name,
+                "--template-file",
+                str(template),
+                "--parameters",
+                str(parameters),
             ]
         else:
             create = [
-                "az", "group", "create",
-                "--name", group,
-                "--location", args.location,
-                "--tags", "project=agentic-e2e", f"env={env_name}", "managedBy=bicep",
-                "--output", "none",
+                "az",
+                "group",
+                "create",
+                "--name",
+                group,
+                "--location",
+                args.location,
+                "--tags",
+                "project=agentic-e2e",
+                f"env={env_name}",
+                "managedBy=bicep",
+                "--output",
+                "none",
             ]
             code = runner(create, REPO_ROOT, None)
             if code:
                 return code
             command = [
-                "az", "deployment", "group", "create",
-                "--resource-group", group,
-                "--name", deployment_name,
-                "--template-file", str(template),
-                "--parameters", str(parameters),
-                "--output", "table",
+                "az",
+                "deployment",
+                "group",
+                "create",
+                "--resource-group",
+                group,
+                "--name",
+                deployment_name,
+                "--template-file",
+                str(template),
+                "--parameters",
+                str(parameters),
+                "--output",
+                "table",
             ]
         code = runner(command, REPO_ROOT, None)
         if code:
@@ -172,10 +243,15 @@ def e2e_docker(args: argparse.Namespace, runner: Runner = default_runner) -> int
     site_url = os.environ.get("E2E_SITE_URL") or nested(config, "azure", "qa", "siteUrl")
     api_url = os.environ.get("E2E_API_URL") or nested(config, "azure", "qa", "apiUrl")
     if not site_url or not api_url:
-        raise CliError("E2E_SITE_URL and E2E_API_URL are required, or set azure.qa.siteUrl/apiUrl in .codex/client-tools.local.json.")
+        raise CliError(
+            "E2E_SITE_URL and E2E_API_URL are required, or set azure.qa.siteUrl/apiUrl in "
+            ".codex/client-tools.local.json."
+        )
 
     if runner(["docker", "image", "inspect", E2E_IMAGE], REPO_ROOT, None):
-        raise CliError(f"Docker image '{E2E_IMAGE}' is missing. Run config infra / BuildGiteaActionsImages before local Docker E2E.")
+        raise CliError(
+            f"Docker image '{E2E_IMAGE}' is missing. Run config infra / BuildGiteaActionsImages before local Docker E2E."
+        )
 
     test_command = ["npm", "ci", "&&", "npx", "playwright", "test", *trim_remainder(args.playwright_args)]
     shell_command = " ".join(sh_quote(part) for part in test_command)
@@ -183,26 +259,29 @@ def e2e_docker(args: argparse.Namespace, runner: Runner = default_runner) -> int
     env["E2E_SITE_URL"] = site_url
     env["E2E_API_URL"] = api_url
     command = [
-        "docker", "run", "--rm", "--ipc=host",
-        "-e", f"E2E_SITE_URL={site_url}",
-        "-e", f"E2E_API_URL={api_url}",
-        "-v", f"{REPO_ROOT.as_posix()}:/workspace",
-        "-w", "/workspace/tests/SDDTemplate.E2ETests",
+        "docker",
+        "run",
+        "--rm",
+        "--ipc=host",
+        "-e",
+        f"E2E_SITE_URL={site_url}",
+        "-e",
+        f"E2E_API_URL={api_url}",
+        "-v",
+        f"{REPO_ROOT.as_posix()}:/workspace",
+        "-w",
+        "/workspace/tests/SDDTemplate.E2ETests",
         E2E_IMAGE,
-        "bash", "-lc", shell_command,
+        "bash",
+        "-lc",
+        shell_command,
     ]
     return runner(command, REPO_ROOT, env)
 
 
 def memory_search(args: argparse.Namespace) -> int:
     result = search_memory(Path(args.root), args.query, args.list_topics)
-    if args.as_json:
-        print(json.dumps(result, indent=2))
-    elif isinstance(result, dict):
-        print(json.dumps(result, indent=2))
-    else:
-        for row in result:
-            print(" | ".join(str(row.get(key, "")) for key in row))
+    print(json.dumps(result, indent=2) if not isinstance(result, list) or args.as_json else "\n".join(" | ".join(str(row.get(key, "")) for key in row) for row in result))
     return 0
 
 
@@ -257,15 +336,19 @@ def parse_configure_options(args: list[str]) -> dict[str, str]:
 
 def run_configure_mode(mode: str, root: Path, values: dict[str, Any], dry_run: bool = False) -> dict[str, Any]:
     modes = {
+        "AcquireProjectGuidance": configure_acquire_project_guidance,
         "Audit": configure_audit,
         "AuditQualityGates": configure_audit_quality_gates,
-        "ValidateGiteaActionsRunner": configure_validate_runner,
-        "InitProjectProfile": configure_init_project_profile,
-        "InitQualityGateTemplates": configure_init_quality_templates,
-        "SetQualityConfig": configure_set_quality_config,
         "AuditRecommendedTools": configure_audit_recommended_tools,
         "DiscoverProjectGuidance": configure_discover_project_guidance,
+        "EnsureDeliveryContext": configure_ensure_delivery_context,
+        "InitProjectProfile": configure_init_project_profile,
+        "InitQualityGateTemplates": configure_init_quality_templates,
         "MapProjectGuidanceStep": configure_map_project_guidance_step,
+        "SetClientTools": configure_set_client_tools,
+        "SetQualityConfig": configure_set_quality_config,
+        "SyncWorktreeLocalConfig": configure_sync_worktree_local_config,
+        "ValidateGiteaActionsRunner": configure_validate_runner,
     }
     handler = modes.get(mode)
     if handler is None:
@@ -276,101 +359,6 @@ def run_configure_mode(mode: str, root: Path, values: dict[str, Any], dry_run: b
             "nextAction": "Port this mode into tools/sdd_cli before using it; PowerShell fallback is intentionally disabled.",
         }
     return handler(root, values, dry_run)
-
-
-def configure_audit(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
-    required = [
-        "README.md",
-        ".codex/project-profile.json",
-        ".codex/delivery-policy.json",
-        ".codex/skills/_shared/delivery-contract.md",
-        "docs/context-management.md",
-        "infra/compose.yml",
-        "lefthook.yml",
-        "tools/sdd_cli/cli.py",
-    ]
-    missing = [path for path in required if not (root / path).exists()]
-    return {"mode": "Audit", "valid": not missing, "missing": missing, "runtime": "python"}
-
-
-def configure_audit_quality_gates(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
-    profile = read_json(root / ".codex" / "project-profile.json")
-    gates = nested(profile, "quality", "gates") or []
-    required = [gate.get("id") for gate in gates if gate.get("required")]
-    missing = [name for name in ("restore", "format", "build", "tests", "coverage") if name not in required]
-    return {"mode": "AuditQualityGates", "valid": not missing, "requiredGates": required, "missingRequiredDefaults": missing}
-
-
-def configure_validate_runner(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
-    checks = {
-        "workflowDirectory": (root / ".gitea" / "workflows").exists(),
-        "runnerExample": (root / "infra" / "gitea" / "runner.env.example").exists(),
-        "lefthook": (root / "lefthook.yml").exists(),
-    }
-    return {"mode": "ValidateGiteaActionsRunner", "valid": all(checks.values()), "checks": checks}
-
-
-def configure_init_project_profile(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
-    path = root / ".codex" / "project-profile.json"
-    if path.exists():
-        return {"mode": "InitProjectProfile", "valid": True, "changed": False, "path": str(path)}
-    profile = {
-        "$schema": "./project-profile.schema.json",
-        "schemaVersion": 1,
-        "stack": {"languages": [], "frameworks": [], "testFrameworks": []},
-        "providers": {},
-        "workflow": {"ticketKeyPattern": "E2EPROJECT-[0-9]+", "baseBranch": "dev", "branchPrefix": "codex"},
-        "quality": {"coverageMinimumPercent": 80, "gates": []},
-    }
-    if not dry_run:
-        write_json(path, profile)
-    return {"mode": "InitProjectProfile", "valid": True, "changed": True, "path": str(path), "dryRun": dry_run}
-
-
-def configure_init_quality_templates(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
-    path = root / ".codex" / "quality.example.json"
-    data = {"coverage": {"minimumPercent": 80}, "format": {"verifyNoChanges": True}}
-    changed = not path.exists()
-    if changed and not dry_run:
-        write_json(path, data)
-    return {"mode": "InitQualityGateTemplates", "valid": True, "changed": changed, "path": str(path), "dryRun": dry_run}
-
-
-def configure_set_quality_config(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
-    path = root / ".codex" / "quality.local.json"
-    if not values:
-        return {"mode": "SetQualityConfig", "valid": False, "errors": ["--values-json is required."]}
-    if not dry_run:
-        write_json(path, values)
-    return {"mode": "SetQualityConfig", "valid": True, "changed": True, "path": str(path), "dryRun": dry_run}
-
-
-def configure_audit_recommended_tools(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
-    catalog = root / ".codex" / "tool-recommendations.example.json"
-    return {"mode": "AuditRecommendedTools", "valid": catalog.exists(), "catalog": str(catalog), "runtime": "python"}
-
-
-def configure_discover_project_guidance(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
-    signals = []
-    if (root / "global.json").exists():
-        signals.append("dotnet-example")
-    if (root / "tests" / "SDDTemplate.E2ETests" / "package.json").exists():
-        signals.append("playwright-example")
-    if (root / "infra" / "compose.yml").exists():
-        signals.append("docker-compose")
-    return {"mode": "DiscoverProjectGuidance", "valid": True, "signals": signals, "recommendations": []}
-
-
-def configure_map_project_guidance_step(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
-    if not values.get("workflowStep"):
-        return {"mode": "MapProjectGuidanceStep", "valid": False, "errors": ["values.workflowStep is required."]}
-    path = root / ".codex" / "tool-recommendations.local.json"
-    current = read_json(path, optional=True)
-    mappings = current.setdefault("stepMappings", [])
-    mappings.append(values)
-    if not dry_run:
-        write_json(path, current)
-    return {"mode": "MapProjectGuidanceStep", "valid": True, "changed": True, "path": str(path), "dryRun": dry_run}
 
 
 def run_delivery_mode(mode: str, options: dict[str, str]) -> Any:
@@ -408,45 +396,370 @@ def run_delivery_mode(mode: str, options: dict[str, str]) -> Any:
         create_artifact_pointer(options)
         return None
     if mode == "ArtifactPaths":
-        commit = require(options, "commit-sha")
-        return {
-            "canonicalPath": f"app/{commit}/",
-            "deployableAppsPath": f"app/{commit}/deployable-apps.json",
-            "releaseManifestPath": f"app/{commit}/release.json",
-            "commitShaPath": f"app/{commit}/commit.sha",
-        }
+        return artifact_paths(require(options, "commit-sha"), options.get("deployment-provider"))
     if mode == "CheckGitIgnored":
-        return {"ignored": check_git_ignored(Path(options.get("root", REPO_ROOT)), require(options, "path"))}
+        return {"path": require(options, "path"), "ignored": check_git_ignored(Path(options.get("root", REPO_ROOT)), require(options, "path"))}
     if mode == "NextRcVersion":
-        return next_rc_version(options.get("tags", ""))
+        return next_rc_version_output(options.get("tags", ""), options.get("target-version"))
     if mode == "ValidateTicketLock":
         return validate_ticket_lock(Path(options.get("path", Path(REPO_ROOT) / ".codex" / "delivery-context.local.json")), options)
     if mode == "ValidateDeploymentLane":
         return validate_deployment_lane(Path(options.get("path", Path(REPO_ROOT) / ".codex" / "parallel-delivery.local.json")), options)
     if mode == "ValidateParallelDeliveryDryRun":
-        return {"valid": True, "errors": []}
+        return validate_parallel_delivery_dry_run(Path(options.get("repo-root", REPO_ROOT)), require(options, "input-json"))
     if mode == "InitializeWorkflowTelemetry":
         return initialize_workflow_telemetry(Path(options.get("repo-root", REPO_ROOT)), require(options, "ticket-key"))
     if mode == "AppendWorkflowTelemetry":
         return append_workflow_telemetry(Path(options.get("repo-root", REPO_ROOT)), require(options, "ticket-key"), require(options, "input-json"))
     if mode == "ReadWorkflowTelemetry":
         return read_workflow_telemetry(Path(options.get("repo-root", REPO_ROOT)), require(options, "ticket-key"), options.get("input-json", "{}"))
+    if mode == "ReadOpenProjectTimeTelemetry":
+        return read_openproject_time_telemetry(require(options, "ticket-key"), require(options, "input-json"))
+    if mode == "RenderOpenProjectTimeTelemetryComment":
+        return render_openproject_time_telemetry_comment(require(options, "ticket-key"), require(options, "input-json"))
     if mode == "RenderTicketComment":
         return render_ticket_comment(require(options, "type"), require(options, "input-json"))
     if mode == "UpdateReleaseManifest":
         update_release_manifest(Path(require(options, "path")), require(options, "input-json"))
         return None
     if mode == "AuditSkillContracts":
-        result = audit_skill_contracts(Path(options.get("root", REPO_ROOT)), include_configure=options.get("include-configure", "false").lower() == "true")
-        if result["findings"]:
-            return result
-        return result
+        return audit_skill_contracts(Path(options.get("root", REPO_ROOT)), include_configure=options.get("include-configure", "false").lower() == "true")
     if mode == "ClassifyTicketReadiness":
         return asdict(classify_ticket_readiness(options.get("title", ""), options.get("description", "")))
     if mode == "ClassifyDeliveryRisk":
         paths = split_list(options.get("paths", ""))
         return asdict(classify_delivery_risk(paths, options.get("context", ""), int(options.get("changed-lines", "0"))))
     fail(f"Unsupported delivery mode: {mode}")
+
+
+def configure_audit(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
+    result = new_configure_result("Audit", dry_run, write_enabled=False)
+    profile_path = root / ".codex" / "project-profile.json"
+    if not profile_path.exists():
+        add_bucket_item(result["findings"], ".codex/project-profile.json", "InitProjectProfile", "Run InitProjectProfile before provider-specific setup.", "error", "pre-start")
+    if not (root / ".codex" / "project-profile.schema.json").exists():
+        add_bucket_item(result["findings"], ".codex/project-profile.schema.json", "InitProjectProfile", "Run InitProjectProfile before provider-specific setup.", "error", "pre-start")
+
+    client_tools = read_json(root / ".codex" / "client-tools.local.json", optional=True)
+    result["actions"].append({"path": ".codex/client-tools.local.json", "key": "inferred.local-values", "severity": "info", "message": "Would set inferred local client tool value defaults during explicit setup.", "phase": "audit"})
+
+    minimum = nested(client_tools, "pr", "minimumApprovals")
+    if isinstance(minimum, dict):
+        for branch in ("dev", "main"):
+            value = minimum.get(branch)
+            if not isinstance(value, int) or value < 0:
+                add_bucket_item(
+                    result["findings"],
+                    ".codex/client-tools.local.json",
+                    f"pr.minimumApprovals.{branch}",
+                    f"pr.minimumApprovals.{branch} must be greater than or equal to 0.",
+                    "warning",
+                )
+
+    state = read_json(root / ".codex" / "parallel-delivery.local.json", optional=True)
+    for ticket in state.get("tickets", []):
+        worktree = ticket.get("worktreePath")
+        if not worktree:
+            continue
+        worktree_path = Path(worktree)
+        if not worktree_path.is_absolute():
+            worktree_path = root / worktree_path
+        for relative in [".codex/client-tools.local.json", ".codex/quality.local.json"]:
+            if not (worktree_path / relative).exists():
+                add_bucket_item(
+                    result["findings"],
+                    relative,
+                    "missing.worktree-runtime-config",
+                    f"Ticket worktree is missing required local runtime file '{relative}'.",
+                    "warning",
+                )
+    monitoring_root = root / "infra" / "monitoring"
+    alert_path = monitoring_root / "grafana" / "provisioning" / "alerting" / "health-alerts.yml"
+    if monitoring_root.exists() and not alert_path.exists():
+        add_bucket_item(result["findings"], "infra/monitoring/grafana/provisioning/alerting/health-alerts.yml", "grafana.health-alerts", "Grafana health alert provisioning is missing.", "warning")
+    return result
+
+
+def configure_audit_quality_gates(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
+    result = new_configure_result("AuditQualityGates", dry_run, write_enabled=False)
+    result["actions"].append({"path": ".codex/client-tools.local.json", "key": "inferred.local-values", "severity": "info", "message": "Would set inferred local client tool value defaults during explicit setup.", "phase": "audit"})
+    policy = read_json(root / ".codex" / "delivery-policy.json", optional=True)
+    if policy and "agentOptimization" not in policy:
+        add_bucket_item(result["findings"], ".codex/delivery-policy.json", "agentOptimization", "delivery-policy.json should define agentOptimization.", "warning")
+    profile = read_json(root / ".codex" / "project-profile.json", optional=True)
+    required = [gate.get("id") for gate in nested(profile, "quality", "gates") or [] if gate.get("required")]
+    result["requiredGates"] = required
+    result["valid"] = True
+    return result
+
+
+def configure_validate_runner(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
+    checks = {
+        "workflowDirectory": (root / ".gitea" / "workflows").exists(),
+        "runnerExample": (root / "infra" / "gitea" / "runner.env.example").exists(),
+        "lefthook": (root / "lefthook.yml").exists(),
+    }
+    return {"mode": "ValidateGiteaActionsRunner", "valid": all(checks.values()), "checks": checks}
+
+
+def configure_init_project_profile(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
+    codex = root / ".codex"
+    providers = codex / "providers"
+    codex.mkdir(parents=True, exist_ok=True)
+    providers.mkdir(parents=True, exist_ok=True)
+    schema_path = codex / "project-profile.schema.json"
+    profile_path = codex / "project-profile.json"
+    changed = False
+    actions: list[dict[str, str]] = []
+
+    if not schema_path.exists():
+        changed = True
+        if not dry_run:
+            write_json(schema_path, {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object"})
+        actions.append({"path": ".codex/project-profile.schema.json", "key": "created", "severity": "info", "message": "Created .codex/project-profile.schema.json.", "phase": "apply"})
+    else:
+        actions.append({"path": ".codex/project-profile.schema.json", "key": "exists", "severity": "info", "message": "Template already exists: .codex/project-profile.schema.json", "phase": "apply"})
+
+    if not profile_path.exists():
+        changed = True
+        profile = {
+            "$schema": "./project-profile.schema.json",
+            "schemaVersion": 1,
+            "stack": {"languages": [], "frameworks": [], "testFrameworks": []},
+            "providers": {
+                "ticket": {"id": "example-ticket", "adapter": ".codex/providers/ticket.example.md"},
+                "repository": {"id": "example-repository", "adapter": ".codex/providers/repository.example.md"},
+                "review": {"id": "example-review", "adapter": ".codex/providers/repository.example.md"},
+                "artifact": {"id": "example-artifact", "adapter": ".codex/providers/artifact.example.md"},
+                "deployment": {"id": "example-deployment", "adapter": ".codex/providers/deployment.example.md"},
+            },
+            "workflow": {"ticketKeyPattern": "TICKET-[0-9]+", "baseBranch": "dev", "branchPrefix": "codex"},
+            "quality": {"coverageMinimumPercent": 80, "gates": []},
+            "adapters": {
+                "ticket": ".codex/providers/ticket.example.md",
+                "repository": ".codex/providers/repository.example.md",
+                "review": ".codex/providers/repository.example.md",
+                "artifact": ".codex/providers/artifact.example.md",
+                "deployment": ".codex/providers/deployment.example.md",
+                "stack": ".codex/providers/stack.example.md",
+                "e2e": ".codex/providers/e2e.example.md",
+            },
+        }
+        if not dry_run:
+            write_json(profile_path, profile)
+        actions.append({"path": ".codex/project-profile.json", "key": "created", "severity": "info", "message": "Created .codex/project-profile.json.", "phase": "apply"})
+    else:
+        actions.append({"path": ".codex/project-profile.json", "key": "exists", "severity": "info", "message": "Template already exists: .codex/project-profile.json", "phase": "apply"})
+
+    for name in ("ticket.example.md", "repository.example.md", "artifact.example.md", "deployment.example.md", "stack.example.md", "e2e.example.md"):
+        example = providers / name
+        if not example.exists():
+            changed = True
+            if not dry_run:
+                example.write_text(f"# {name}\n\nprovider-neutral scaffold\n", encoding="utf-8")
+
+    return {"mode": "InitProjectProfile", "valid": True, "changed": changed, "path": ".codex/project-profile.json", "dryRun": dry_run, "actions": actions}
+
+
+def configure_init_quality_templates(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
+    path = root / ".codex" / "delivery-policy.json"
+    data = read_json(REPO_ROOT / ".codex" / "delivery-policy.json")
+    changed = not path.exists()
+    if not dry_run:
+        write_json(path, data)
+    return {"mode": "InitQualityGateTemplates", "valid": True, "changed": changed, "path": ".codex/delivery-policy.json", "dryRun": dry_run}
+
+
+def configure_set_quality_config(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
+    path = root / ".codex" / "quality.local.json"
+    if not values:
+        return {"mode": "SetQualityConfig", "valid": False, "errors": ["--values-json is required."]}
+    if not dry_run:
+        write_json(path, values)
+    return {"mode": "SetQualityConfig", "valid": True, "changed": True, "path": str(path), "dryRun": dry_run}
+
+
+def configure_set_client_tools(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
+    path = root / ".codex" / "client-tools.local.json"
+    current = read_json(path, optional=True)
+    merged = merge_dicts(current, values)
+    if not dry_run:
+        write_json(path, merged)
+    return {"mode": "SetClientTools", "valid": True, "changed": True, "path": str(path), "dryRun": dry_run}
+
+
+def configure_sync_worktree_local_config(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
+    result = new_configure_result("SyncWorktreeLocalConfig", dry_run, write_enabled=not dry_run)
+    worktrees = [Path(path) for path in values.get("worktreePaths", [])]
+    for relative in ALLOWLISTED_LOCAL_CONFIG:
+        source = root / relative
+        required = relative != ".codex/tool-recommendations.local.json"
+        if required and not source.exists():
+            add_bucket_item(result["findings"], relative, "missing.required-source", f"Coordinator checkout is missing required local runtime file '{relative}'.", "error")
+            continue
+        if not source.exists():
+            continue
+        for worktree in worktrees:
+            target = worktree / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            previous = target.read_text(encoding="utf-8") if target.exists() else None
+            current = source.read_text(encoding="utf-8")
+            if not dry_run:
+                shutil.copyfile(source, target)
+            message = "Overwrite allowlisted local runtime file." if previous is not None and previous != current else "Copy allowlisted local runtime file."
+            result["actions"].append({"path": relative, "key": "sync.local-runtime-config", "severity": "info", "message": message, "phase": "apply"})
+    result["valid"] = True
+    return result
+
+
+def configure_ensure_delivery_context(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
+    path = root / ".codex" / "delivery-context.local.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    existing = read_json(path, optional=True) if path.exists() else {}
+    ticket_key = values.get("ticketKey")
+    replace_existing = bool(values.get("replaceExisting"))
+    if existing.get("ticketKey") and ticket_key and existing.get("ticketKey") != ticket_key and not replace_existing:
+        raise CliError(f"Existing .codex/delivery-context.local.json points to '{existing.get('ticketKey')}'.")
+
+    data = {
+        "ticketKey": ticket_key,
+        "branch": values.get("branch"),
+        "openspecChange": values.get("openspecChange"),
+    }
+    if values.get("prNumber") is not None:
+        data["prNumber"] = values.get("prNumber")
+    if not dry_run:
+        write_json(path, {key: value for key, value in data.items() if value is not None})
+    return {
+        "mode": "EnsureDeliveryContext",
+        "valid": True,
+        "path": str(path),
+        "actions": [{"path": ".codex/delivery-context.local.json", "key": "ensure-delivery-context", "severity": "info", "message": f"Create or update ticket context lock for {ticket_key}.", "phase": "apply"}],
+    }
+
+
+def configure_audit_recommended_tools(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
+    detected = detect_stack_tags(root)
+    topics = build_research_topics(detected)
+    recommendations = build_recommendations(root, detected, topics)
+    decisions = nested(read_json(root / ".codex" / "client-tools.local.json", optional=True), "recommendedTools") or {}
+    accepted = set(decisions.get("accepted", []))
+    dismissed = set(decisions.get("dismissed", []))
+    filtered = []
+    for item in recommendations:
+        if item.get("id") in dismissed:
+            continue
+        if item.get("id") in accepted:
+            item["accepted"] = True
+        filtered.append(item)
+    findings = build_stack_context_findings(root, detected)
+    return {
+        "mode": "AuditRecommendedTools",
+        "valid": True,
+        "writeEnabled": False,
+        "detectedTags": detected,
+        "researchTopics": topics,
+        "actions": [{"path": ".", "key": "detectedStack", "severity": "info", "message": f"Detected stack: {', '.join(detected)}", "phase": "audit"}],
+        "findings": findings,
+        "recommendations": filtered,
+    }
+
+
+def configure_discover_project_guidance(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
+    audit = configure_audit_recommended_tools(root, values, dry_run)
+    recommendations = [item for item in audit["recommendations"] if item["id"] != SEARCH_PLAN_ID]
+    missing_skills = [item for item in recommendations if item.get("type") == "skill" and item.get("detected", True) and not item.get("targetExists", False)]
+    suggested_guidance = [item for item in recommendations if item.get("type") != "skill"]
+    user_added = normalize_added_guidance(values.get("additionalSkills", []))
+    final_confirmed = recommendations + user_added if values.get("confirmed") else []
+    local_path = root / ".codex" / "tool-recommendations.local.json"
+    actions: list[dict[str, str]] = []
+    write_enabled = bool(values.get("confirmed") and values.get("persistLocal") and not dry_run)
+    if write_enabled:
+        payload = {
+            "schemaVersion": 1,
+            "mode": "guarded-auto",
+            "sourceCatalog": ".codex/tool-recommendations.example.json",
+            "detectedTags": audit["detectedTags"],
+            "researchTopics": audit["researchTopics"],
+            "recommendations": [ensure_used_in_steps(item) for item in recommendations if item.get("type") in {"skill", "mcp", "plugin", "tool", "practice", "standard", "reference"}],
+            "notRecommended": [item for item in recommendations if item["id"] == "openproject-mcp-for-ticket-delivery"],
+        }
+        write_json(local_path, payload)
+        actions.append({"path": ".codex/tool-recommendations.local.json", "key": "persist-local-catalog", "severity": "info", "message": "Persist local project guidance catalog.", "phase": "apply"})
+    return {
+        "mode": "DiscoverProjectGuidance",
+        "valid": True,
+        "writeEnabled": write_enabled,
+        "detectedTags": audit["detectedTags"],
+        "researchTopics": audit["researchTopics"],
+        "existingSkills": [],
+        "suggestedMissingSkills": missing_skills,
+        "suggestedGuidance": suggested_guidance,
+        "userAddedRequestedGuidance": user_added,
+        "finalConfirmedGuidance": final_confirmed,
+        "finalConfirmedSkills": [],
+        "discoverySourcePriority": DISCOVERY_SOURCE_PRIORITY,
+        "localRecommendationsPath": ".codex/tool-recommendations.local.json",
+        "nextUserQuestion": "I researched extra useful skills, MCPs, plugins, tools, references, practices, and standards. Confirm these suggestions to record and install/configure supported items now, dismiss any you do not want, or name anything I missed.",
+        "actions": actions,
+    }
+
+
+def configure_map_project_guidance_step(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
+    if not values.get("workflowStep"):
+        return {"mode": "MapProjectGuidanceStep", "valid": False, "errors": ["values.workflowStep is required."]}
+    path = root / ".codex" / "tool-recommendations.local.json"
+    current = read_json(path, optional=True)
+    if not current:
+        current = {
+            "schemaVersion": 1,
+            "mode": "guarded-auto",
+            "sourceCatalog": ".codex/tool-recommendations.example.json",
+            "detectedTags": [],
+            "researchTopics": [],
+            "recommendations": [ensure_used_in_steps(item) for item in build_recommendations(root, detect_stack_tags(root), build_research_topics(detect_stack_tags(root))) if item["id"] != SEARCH_PLAN_ID],
+            "notRecommended": [],
+        }
+    ids = set(values.get("recommendationIds", []))
+    for item in current.get("recommendations", []):
+        if item.get("id") not in ids:
+            continue
+        used = item.setdefault("usedInSteps", [])
+        step = values["workflowStep"]
+        if step not in used:
+            used.append(step)
+    if not dry_run:
+        write_json(path, current)
+    return {"mode": "MapProjectGuidanceStep", "valid": True, "writeEnabled": not dry_run, "changed": True, "path": str(path), "dryRun": dry_run}
+
+
+def configure_acquire_project_guidance(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
+    result = new_configure_result("AcquireProjectGuidance", dry_run, write_enabled=not dry_run)
+    final_guidance = values.get("finalConfirmedGuidance", [])
+    restart_items: list[str] = []
+    for item in final_guidance:
+        if "installCommand" in item:
+            raise CliError(f"{item.get('name', item.get('id', 'guidance'))} rejects installCommand.")
+        name = item.get("name", item.get("id", "guidance"))
+        if item.get("installPreference") == "docker-preferred":
+            docker = item.get("dockerAlternative")
+            if docker and docker.get("image"):
+                result["actions"].append({"path": name, "key": "docker-preferred", "severity": "info", "message": f"Use Docker-preferred runtime {docker['image']}.", "phase": "plan"})
+            else:
+                result["warnings"].append({"path": name, "key": "docker-preferred.blocked", "severity": "warning", "message": "Docker-preferred metadata is incomplete.", "phase": "plan"})
+        if item.get("userActionRequired"):
+            result["warnings"].append({"path": name, "key": "guarded-install-plan", "severity": "warning", "message": "User action is required for this guarded install.", "phase": "plan"})
+        if item.get("installMethod") == "manual-copy" and item.get("sourceKind") is None:
+            result["warnings"].append({"path": name, "key": "validation", "severity": "warning", "message": "manual-copy guidance should include sourceKind.", "phase": "plan"})
+        if item.get("requiresIdeRestart"):
+            restart_items.append(f"{name} [ide-restart]")
+        if item.get("requiresSystemReboot"):
+            restart_items.append(f"{name} [system-reboot]")
+    if restart_items:
+        result["findings"].append({"path": ".", "key": "important.restart-summary", "severity": "info", "message": f"complete all feasible installs first, then restart/reboot for: {', '.join(restart_items)}.", "phase": "handoff"})
+    result["valid"] = True
+    return result
 
 
 def search_memory(root: Path, queries: list[str], list_topics: bool) -> Any:
@@ -463,15 +776,17 @@ def search_memory(root: Path, queries: list[str], list_topics: bool) -> Any:
             body = match.group(2)
             plain = re.sub(r"(?m)^-\s+(Type|Status|Source|Last verified):.+$", "", body)
             plain = re.sub(r"\s+", " ", plain).strip()
-            entries.append({
-                "file": path.relative_to(root).as_posix(),
-                "title": match.group(1).strip(),
-                "type": find_meta(body, "Type"),
-                "status": find_meta(body, "Status"),
-                "source": find_meta(body, "Source"),
-                "lastVerified": find_meta(body, "Last verified"),
-                "excerpt": plain[:240] + ("..." if len(plain) > 240 else ""),
-            })
+            entries.append(
+                {
+                    "file": path.relative_to(root).as_posix(),
+                    "title": match.group(1).strip(),
+                    "type": find_meta(body, "Type"),
+                    "status": find_meta(body, "Status"),
+                    "source": find_meta(body, "Source"),
+                    "lastVerified": find_meta(body, "Last verified"),
+                    "excerpt": plain[:240] + ("..." if len(plain) > 240 else ""),
+                }
+            )
     if list_topics:
         return [{k: row[k] for k in ("file", "title", "type", "status", "lastVerified")} for row in entries]
     terms = [term.strip() for query in queries for term in query.split(",") if term.strip()]
@@ -531,6 +846,12 @@ def validate_release_manifest(path: Path) -> dict[str, Any]:
             for index, ticket in enumerate(included):
                 if not isinstance(ticket, str) or not ticket.strip():
                     errors.append(f"includedTickets[{index}] must be a non-empty string.")
+    images = data.get("containerImages")
+    if isinstance(images, list):
+        for index, image in enumerate(images):
+            reference = image.get("reference", "")
+            if "@" not in reference:
+                errors.append(f"containerImages[{index}].reference must be pinned by digest.")
     return {"path": str(path), "valid": not errors, "errors": errors}
 
 
@@ -552,6 +873,7 @@ def create_artifact_pointer(options: dict[str, str]) -> None:
     commit = require(options, "artifact-commit-sha")
     ticket = require(options, "ticket-key")
     tickets = sorted(set(split_list(options.get("included-tickets", "")) or [ticket]))
+    created_at = options.get("created-at-utc") or datetime.now(timezone.utc).isoformat()
     data = {
         "schemaVersion": 1,
         "version": require(options, "version"),
@@ -560,9 +882,34 @@ def create_artifact_pointer(options: dict[str, str]) -> None:
         "releaseManifestPath": f"app/{commit}/release.json",
         "ticketKey": ticket,
         "includedTickets": tickets,
-        "createdAtUtc": datetime.now(timezone.utc).isoformat(),
+        "createdAtUtc": created_at,
     }
     write_json(output, data)
+
+
+def artifact_paths(commit: str, provider: str | None) -> dict[str, str]:
+    selected = provider or selected_deployment_provider(REPO_ROOT)
+    data: dict[str, str] = {
+        "deploymentProvider": selected,
+        "topology": f"app/{commit}/deployable-apps.json",
+        "appArtifactPattern": f"app/{commit}/{{artifactName}}",
+        "checksumPattern": f"app/{commit}/{{artifactName}}.sha256",
+        "commitMetadata": f"app/{commit}/commit.sha",
+        "releaseManifestPath": f"app/{commit}/release.json",
+        "canonicalPath": f"app/{commit}/",
+        "deployableAppsPath": f"app/{commit}/deployable-apps.json",
+        "commitShaPath": f"app/{commit}/commit.sha",
+    }
+    if selected == "rancher-desktop":
+        data["containerImages"] = f"app/{commit}/container-images.json"
+        data["monitoringSummaryPattern"] = f"app/{commit}/monitoring-summary-{{environment}}.json"
+        data["qaObservability"] = f"app/{commit}/qa-observability.json"
+    return data
+
+
+def selected_deployment_provider(root: Path) -> str:
+    profile = read_json(root / ".codex" / "project-profile.json", optional=True)
+    return nested(profile, "providers", "deployment", "id") or "azure-appservice"
 
 
 def check_git_ignored(root: Path, path: str) -> bool:
@@ -570,38 +917,101 @@ def check_git_ignored(root: Path, path: str) -> bool:
     return completed.returncode == 0
 
 
-def next_rc_version(tags_text: str) -> str:
-    max_seen = 0
+def next_rc_version_output(tags_text: str, target_version: str | None) -> dict[str, str]:
+    finals: list[tuple[int, int, int]] = []
+    rcs: list[tuple[int, int, int, int]] = []
     for tag in split_list(tags_text.replace(" ", "\n")):
-        match = re.match(r"^v(\d+)\.(\d+)\.(\d+)-rc\.(\d+)$", tag)
-        if match:
-            max_seen = max(max_seen, int(match.group(4)))
-    return f"v0.1.0-rc.{max_seen + 1}"
+        if match := re.match(r"^v(\d+)\.(\d+)\.(\d+)$", tag):
+            finals.append((int(match.group(1)), int(match.group(2)), int(match.group(3))))
+        elif match := re.match(r"^v(\d+)\.(\d+)\.(\d+)-rc\.(\d+)$", tag):
+            rcs.append((int(match.group(1)), int(match.group(2)), int(match.group(3)), int(match.group(4))))
+    if target_version:
+        match = re.match(r"^v(\d+)\.(\d+)\.(\d+)$", target_version)
+        if not match:
+            fail("TargetVersion must use vMAJOR.MINOR.PATCH.")
+        major, minor, patch = (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+    elif finals:
+        major, minor, patch = sorted(finals)[-1]
+        patch += 1
+    else:
+        major, minor, patch = (0, 1, 0)
+    existing = [row[3] for row in rcs if row[:3] == (major, minor, patch)]
+    next_rc = (max(existing) + 1) if existing else 1
+    return {"targetVersion": f"v{major}.{minor}.{patch}", "nextRcVersion": f"v{major}.{minor}.{patch}-rc.{next_rc}"}
 
 
 def validate_ticket_lock(path: Path, options: dict[str, str]) -> dict[str, Any]:
     if not path.exists():
-        return {"valid": False, "errors": [f"Ticket lock not found: {path}"]}
+        return {"path": str(path), "exists": False, "valid": True, "errors": []}
     data = read_json(path)
-    errors = []
-    for option, field in (("ticket-key", "ticketKey"), ("branch", "branch"), ("commit-sha", "commitSha")):
+    errors: list[str] = []
+    mapping = [
+        ("ticket-key", "ticketKey"),
+        ("branch", "branch"),
+        ("pr-number", "prNumber"),
+        ("artifact-commit-sha", "artifactCommitSha"),
+        ("source-rc-version", "sourceRcVersion"),
+        ("final-release-version", "finalReleaseVersion"),
+    ]
+    for option, field in mapping:
         expected = options.get(option)
-        if expected and data.get(field) and data.get(field) != expected:
-            errors.append(f"{field} mismatch: expected {expected}, found {data.get(field)}")
-    return {"valid": not errors, "errors": errors}
+        if expected and str(data.get(field, "")).strip() and str(data.get(field)) != expected:
+            errors.append(f"{field} mismatch: lock has '{data.get(field)}', expected '{expected}'.")
+    return {"path": str(path), "exists": True, "valid": not errors, "errors": errors, **data}
 
 
 def validate_deployment_lane(path: Path, options: dict[str, str]) -> dict[str, Any]:
     if not path.exists():
-        return {"valid": True, "errors": []}
+        return {"path": str(path), "active": False, "valid": True, "errors": []}
     data = read_json(path)
-    lane = options.get("lane") or options.get("environment")
-    ticket = options.get("ticket-key")
-    if not lane or not ticket:
-        return {"valid": True, "errors": []}
-    owner = nested(data, "lanes", lane, "ticketKey")
-    errors = [] if not owner or owner == ticket else [f"Deployment lane {lane} is owned by {owner}, not {ticket}."]
-    return {"valid": not errors, "errors": errors}
+    policy = data.get("deploymentLanePolicy", "")
+    owner_ticket = nested(data, "deploymentLaneOwner", "ticketKey") or ""
+    owner_stage = nested(data, "deploymentLaneOwner", "stage") or ""
+    ticket = options.get("ticket-key", "")
+    errors: list[str] = []
+    if policy == "serialized" and owner_ticket and ticket and owner_ticket != ticket:
+        errors.append(f"Deployment lane is owned by '{owner_ticket}' at stage '{owner_stage}'.")
+    return {"path": str(path), "active": True, "valid": not errors, "errors": errors, "deploymentLanePolicy": policy}
+
+
+def validate_parallel_delivery_dry_run(root: Path, input_json: str) -> dict[str, Any]:
+    data = json.loads(input_json)
+    errors: list[str] = []
+    tickets = data.get("tickets", [])
+    if not data.get("enabled"):
+        errors.append("parallelDelivery.enabled must be true.")
+    active_count = len(tickets)
+    max_active = int(data.get("maxActiveTickets", 0) or 0)
+    if max_active and active_count > max_active:
+        errors.append(f"Active ticket count '{active_count}' exceeds maxActiveTickets '{max_active}'.")
+    policy = data.get("deploymentLanePolicy", "")
+    if policy != "serialized":
+        errors.append(f"Unsupported deploymentLanePolicy '{policy}'.")
+    seen_tickets: set[str] = set()
+    seen_branches: set[str] = set()
+    seen_worktrees: set[str] = set()
+    for ticket in tickets:
+        ticket_key = ticket.get("ticketKey", "")
+        branch = ticket.get("branch", "")
+        worktree = ticket.get("worktreePath", "")
+        if ticket_key in seen_tickets:
+            errors.append(f"Duplicate ticketKey '{ticket_key}'.")
+        seen_tickets.add(ticket_key)
+        if branch in seen_branches:
+            errors.append(f"Duplicate branch '{branch}'.")
+        seen_branches.add(branch)
+        if not worktree:
+            errors.append(f"Ticket '{ticket_key}' is missing worktreePath.")
+        elif worktree in seen_worktrees:
+            errors.append(f"Duplicate worktreePath '{worktree}'.")
+        seen_worktrees.add(worktree)
+    owner = nested(data, "deploymentLaneOwner", "ticketKey")
+    if owner and owner not in seen_tickets:
+        errors.append(f"Serialized deployment lane owner '{owner}' is not an active ticket.")
+    for relative in data.get("requiredLocalConfigFiles", []):
+        if not (root / relative).exists():
+            errors.append(f"Required local runtime file '{relative}' is missing.")
+    return {"valid": not errors, "errors": errors, "activeTicketCount": active_count, "deploymentLanePolicy": policy}
 
 
 def telemetry_path(root: Path) -> Path:
@@ -651,44 +1061,98 @@ def read_workflow_telemetry(root: Path, ticket_key: str, input_json: str) -> dic
     }
 
 
+def read_openproject_time_telemetry(ticket_key: str, input_json: str) -> dict[str, Any]:
+    data = json.loads(input_json)
+    rows: list[dict[str, Any]] = []
+    for entry in data.get("timeEntries", []):
+        raw = nested(entry, "comment", "raw") or ""
+        parsed = parse_time_comment(raw, ticket_key)
+        if parsed:
+            rows.append(parsed)
+    stages = collapse_stages(rows)
+    return {
+        "ticketKey": ticket_key,
+        "status": data.get("status", ""),
+        "currentRoute": data.get("currentRoute", ""),
+        "totalElapsedMilliseconds": sum(stage.get("elapsedMilliseconds", 0) for stage in stages),
+        "stages": stages,
+    }
+
+
+def render_openproject_time_telemetry_comment(ticket_key: str, input_json: str) -> str:
+    row = json.loads(input_json)
+    stage = row.get("workflowStage", "")
+    lines = [
+        f"IA generated workflow telemetry: {ticket_key}:{stage}",
+        f"agentRole: {row.get('agentRole', '')}",
+        f"startedUtc: {row.get('startedUtc', '')}",
+        f"finishedUtc: {row.get('finishedUtc', '')}",
+        f"retryCount: {row.get('retryCount', 0)}",
+        f"outcome: {row.get('outcome', '')}",
+    ]
+    if row.get("blockerCategory"):
+        lines.append(f"blockerCategory: {row['blockerCategory']}")
+    return "\n".join(lines)
+
+
 def collapse_stages(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     grouped: dict[str, dict[str, Any]] = {}
     for row in rows:
-        stage = row.get("workflowStage", "unknown")
-        current = grouped.setdefault(stage, {"stage": stage, "retryCount": 0, "elapsedMilliseconds": 0})
+        stage = row.get("workflowStage", row.get("stage", "unknown"))
+        current = grouped.setdefault(stage, {"stage": stage, "retryCount": 0})
         current["outcome"] = row.get("outcome", current.get("outcome", ""))
         current["startedUtc"] = min_text(current.get("startedUtc"), row.get("startedUtc"))
         current["finishedUtc"] = max_text(current.get("finishedUtc"), row.get("finishedUtc"))
         current["retryCount"] += int(row.get("retryCount", 0) or 0)
-        current["elapsedMilliseconds"] += int(row.get("elapsedMilliseconds", 0) or 0)
-    return [grouped[key] for key in sorted(grouped)]
+    for current in grouped.values():
+        started = parse_time(current.get("startedUtc"))
+        finished = parse_time(current.get("finishedUtc"))
+        current["elapsedMilliseconds"] = int((finished - started).total_seconds() * 1000) if started and finished else 0
+    return sorted(grouped.values(), key=lambda item: item.get("startedUtc", ""))
 
 
 def render_ticket_comment(comment_type: str, input_json: str) -> str:
     data = json.loads(input_json)
     if comment_type == "WorkflowTiming":
+        total = int(data.get("totalElapsedMilliseconds", 0) or sum(int(item.get("elapsedMilliseconds", 0) or 0) for item in data.get("stages", [])))
         lines = [
             f"IA generated workflow timing: {data.get('ticketKey', '')}",
             "",
             f"**Status:** {data.get('status', '')}",
-            f"**Current route:** `{data.get('currentRoute', '')}`",
-            f"**Total elapsed:** {format_duration(int(data.get('totalElapsedMilliseconds', 0) or 0))}",
+            f"- Current route: `{data.get('currentRoute', '')}`",
+            f"- Total elapsed: {format_duration(total)}",
             "",
             "| Stage | Outcome | Duration | Started UTC | Finished UTC |",
             "| --- | --- | --- | --- | --- |",
         ]
         known = {stage["stage"]: stage for stage in data.get("stages", [])}
-        for name in standard_stages():
+        for name in STANDARD_STAGES:
             stage = known.get(name)
             if stage:
-                lines.append(f"| `{name}` | {stage.get('outcome', '')} | {format_duration(stage.get('elapsedMilliseconds', 0))} | {stage.get('startedUtc', '-')} | {stage.get('finishedUtc', '-')} |")
+                lines.append(
+                    f"| `{name}` | {stage.get('outcome', '')} | {format_duration(stage.get('elapsedMilliseconds', 0))} | "
+                    f"{stage.get('startedUtc', '-')} | {stage.get('finishedUtc', '-')} |"
+                )
             else:
                 lines.append(f"| `{name}` | NOT RUN / N/A | no time | - | - |")
         return "\n".join(lines)
+    if comment_type == "ProdDeployment":
+        tickets = ", ".join(f"`{ticket}`" for ticket in data.get("includedTickets", []))
+        commit = str(data.get("commitSha", ""))[:7]
+        return "\n".join(
+            [
+                f"IA generated PROD deployment: {data.get('finalReleaseVersion', 'unknown')}",
+                "",
+                f"**Status:** {data.get('status', '')}",
+                f"- Primary ticket: `{data.get('ticketKey', '')}` ({data.get('ticketState', '')})",
+                f"- Included tickets: {tickets}",
+                f"- Lineage: `{commit}` -> `{data.get('sourceRcVersion', '')}` -> `{data.get('finalReleaseVersion', '')}`",
+                f"**PROD URL:** [open production]({data.get('prodUrl', '')})",
+            ]
+        )
     marker = {
         "QADeployment": "IA generated QA deployment",
         "E2EQA": "IA generated E2E QA",
-        "ProdDeployment": "IA generated PROD deployment",
     }.get(comment_type, f"IA generated {comment_type}")
     return f"{marker}: {data.get('ticketKey', data.get('finalReleaseVersion', 'unknown'))}\n\n**Status:** {data.get('status', '')}"
 
@@ -697,6 +1161,363 @@ def update_release_manifest(path: Path, input_json: str) -> None:
     data = read_json(path, optional=True)
     data.update(json.loads(input_json))
     write_json(path, data)
+
+
+def audit_skill_contracts(root: Path, include_configure: bool = False) -> dict[str, Any]:
+    skill_root = root / ".codex" / "skills"
+    results: list[dict[str, Any]] = []
+    provider_specific_findings: list[str] = []
+    required_sections = ["Overview", "Shared Context", "Workflow", "Output", "Failure Rules"]
+    required_terms = [".codex/skills/_shared/delivery-contract.md", "docs/context-management.md", "ticket", "validation", "handoff"]
+    support_skill_names = {"caveman", "domain-modeling", "grill-me", "grill-with-docs", "grilling", "ponytail", "ponytail-audit", "ponytail-debt", "ponytail-help", "ponytail-review"}
+    profile_findings = profile_audit_findings(root)
+    for path in sorted(skill_root.rglob("SKILL.md")):
+        skill_name = path.parent.name
+        if skill_name in support_skill_names:
+            continue
+        if not include_configure and skill_name.startswith("configure-"):
+            continue
+        content = path.read_text(encoding="utf-8")
+        missing_sections = [section for section in required_sections if not re.search(rf"(?m)^##\s+{re.escape(section)}\s*$", content)]
+        missing_terms = [term for term in required_terms if term not in content]
+        results.append({"path": path.relative_to(root).as_posix(), "passed": not missing_sections and not missing_terms, "missingSections": missing_sections, "missingTerms": missing_terms})
+    return {
+        "checked": len(results),
+        "passed": sum(1 for item in results if item["passed"]),
+        "failed": sum(1 for item in results if not item["passed"]),
+        "profilePassed": not profile_findings,
+        "profileFindings": profile_findings,
+        "providerSpecificPassed": not provider_specific_findings,
+        "providerSpecificFindings": provider_specific_findings,
+        "results": results,
+    }
+
+
+def profile_audit_findings(root: Path) -> list[str]:
+    findings: list[str] = []
+    profile_path = root / ".codex" / "project-profile.json"
+    schema_path = root / ".codex" / "project-profile.schema.json"
+    if not profile_path.exists():
+        findings.append("Missing .codex/project-profile.json.")
+    else:
+        profile = read_json(profile_path, optional=True)
+        if profile.get("schemaVersion") != 1:
+            findings.append("project-profile.json schemaVersion must be 1.")
+        if not nested(profile, "workflow", "ticketKeyPattern"):
+            findings.append("project-profile.json must define workflow.ticketKeyPattern.")
+        adapters = profile.get("adapters")
+        if adapters is None:
+            findings.append("project-profile.json must define adapters.")
+        else:
+            for name, adapter_path in adapters.items():
+                if not adapter_path:
+                    findings.append(f"Adapter '{name}' has an empty path.")
+                    continue
+                if os.path.isabs(adapter_path):
+                    findings.append(f"Adapter '{name}' must use a repo-relative path.")
+                    continue
+                resolved = (root / adapter_path).resolve()
+                if not str(resolved).startswith(str(root.resolve())):
+                    findings.append(f"Adapter '{name}' resolves outside the repository.")
+                    continue
+                if not resolved.exists():
+                    findings.append(f"Adapter '{name}' path does not exist: {adapter_path}.")
+    if not schema_path.exists():
+        findings.append("Missing .codex/project-profile.schema.json.")
+    return findings
+
+
+def classify_ticket_readiness(title: str, description: str) -> TicketReadinessResult:
+    missing: list[str] = []
+    normalized = description.lower()
+    if len(description.strip()) < 15:
+        missing.append("user-visible goal")
+    if "acceptance" not in normalized:
+        missing.append("acceptance criteria")
+    if "validation" not in normalized and "test" not in normalized:
+        missing.append("validation expectation")
+    if not missing:
+        return TicketReadinessResult("ready", [])
+    if "user-visible goal" in missing:
+        return TicketReadinessResult("blocked", missing)
+    return TicketReadinessResult("refinable", missing)
+
+
+def classify_delivery_risk(paths: list[str], context: str, changed_lines: int) -> DeliveryRiskResult:
+    risks: list[str] = []
+    joined = " ".join(paths + [context]).lower()
+    high_terms = ["auth", "authorization", "migration", "deployment", "secret", "public api", "/health", "release", "rollback", "hotfix", ".gitea/workflows"]
+    if any(term in joined for term in high_terms):
+        risks.append("Touches deployment or release surface.")
+        return DeliveryRiskResult("high", risks)
+    if all(path.startswith("docs/") for path in paths) and changed_lines <= 20:
+        return DeliveryRiskResult("low", ["Localized documentation-only change."])
+    return DeliveryRiskResult("standard", ["Normal implementation or test work."])
+
+
+def detect_stack_tags(root: Path) -> list[str]:
+    tags: list[str] = []
+    if any(root.glob("*.slnx")) or any(root.rglob("*.csproj")):
+        tags.append("dotnet")
+    if (root / "global.json").exists() or any_contains(root, ["src", "tests", "tools"], ["*.csproj"], "<TargetFramework>net10.0</TargetFramework>"):
+        tags.append("dotnet-10")
+    if (root / "package.json").exists() or (root / "tests" / "SDDTemplate.E2ETests" / "package.json").exists():
+        tags.append("node")
+    if (root / "tsconfig.json").exists() or any(root.rglob("*.ts")) or any(root.rglob("*.tsx")):
+        tags.append("typescript")
+    if any_contains(root, ["src", "."], ["*.tsx", "package.json"], "react"):
+        tags.extend(["react", "web-ui"])
+    if (root / "pyproject.toml").exists() or any(root.rglob("*.py")):
+        tags.append("python")
+    if (root / "pom.xml").exists() or (root / "build.gradle").exists() or (root / "build.gradle.kts").exists():
+        tags.append("java")
+    if (root / "Dockerfile").exists() or any(root.rglob("compose.yml")):
+        tags.append("docker")
+    if any(root.rglob("*.tf")):
+        tags.append("terraform")
+    if any_contains(root, ["."], ["*.yaml", "*.yml"], "apiVersion:|kind: Deployment|kind: Service"):
+        tags.append("kubernetes")
+    if any_contains(root, ["src"], ["*.csproj"], "Microsoft\\.AspNetCore|Microsoft\\.NET\\.Sdk\\.Web"):
+        tags.append("aspnet-core")
+    if any_contains(root, ["src"], ["*.razor", "*.csproj"], "Blazor|@page|BlazorDisableThrowNavigationException"):
+        tags.extend(["blazor", "web-ui"])
+    if any_contains(root, ["src", "docs", "openspec"], ["*.cs", "*.md", "*.yaml", "*.yml"], "REST|API|/health|/metrics"):
+        tags.append("rest-api")
+    if any_contains(root, ["tests"], ["*.csproj"], "xunit"):
+        tags.append("xunit")
+    if any_contains(root, ["tests"], ["*.csproj"], "coverlet") or (root / ".codex" / "quality.example.json").exists():
+        tags.extend(["coverage", "security"])
+    if (root / "infra" / "openproject").exists():
+        tags.append("openproject")
+    if (root / "infra" / "gitea").exists():
+        tags.append("gitea")
+    if (root / ".gitea" / "workflows").exists():
+        tags.append("gitea-actions-runner")
+    if (root / "infra" / "nexus").exists():
+        tags.extend(["nexus", "nexus-artifacts"])
+    deployment = selected_deployment_provider(root)
+    if deployment == "rancher-desktop":
+        tags.append("rancher-desktop")
+    if deployment == "azure-appservice" or (root / "infra" / "azure").exists():
+        tags.extend(["azure", "azure-app-service"])
+    if any_contains(root, ["infra", "docs", ".codex"], ["*.bicep", "*.md", "*.json"], "Azure Monitor|Log Analytics"):
+        tags.append("azure-monitor")
+    if (root / "infra" / "monitoring" / "grafana").exists():
+        tags.append("grafana")
+    if any_contains(root, ["src", "infra", ".codex", "docs"], ["*.cs", "*.json", "*.md", "*.yml", "*.yaml"], "Seq|Serilog"):
+        tags.append("seq")
+    if (root / "tests" / "SDDTemplate.E2ETests").exists() or (root / ".codex" / "skills" / "quality-test-e2e" / "SKILL.md").exists():
+        tags.extend(["e2e", "browser-e2e", "playwright-guidance"])
+    if (root / "openspec").exists():
+        tags.append("openspec")
+    if any(root.rglob("*.csproj")):
+        tags.extend(["clean-code", "architecture-guidance"])
+    return sorted(set(tags))
+
+
+def build_research_topics(detected: list[str]) -> list[dict[str, Any]]:
+    topics: list[dict[str, Any]] = []
+    definitions = [
+        ("dotnet-aspnet", ["dotnet", "dotnet-10", "aspnet-core"], ".NET / ASP.NET Core"),
+        ("web-ui", ["blazor", "react", "web-ui"], "Web UI"),
+        ("rest-api", ["rest-api", "aspnet-core", "python", "java"], "REST/API"),
+        ("qa-testing", ["xunit", "coverage", "browser-e2e", "playwright-guidance"], "QA / Testing"),
+        ("security", ["security"], "Security"),
+        ("delivery-tools", ["openproject", "gitea", "gitea-actions-runner", "nexus-artifacts", "rancher-desktop", "azure-app-service", "azure-monitor", "grafana", "seq"], "Delivery tools and environments"),
+        ("containers-iac", ["docker", "terraform", "kubernetes"], "Containers / IaC"),
+        ("code-standards", ["clean-code", "architecture-guidance"], "Code standards and architecture"),
+    ]
+    for topic_id, requires, area in definitions:
+        matched = [tag for tag in requires if tag in detected]
+        if matched:
+            topics.append({"id": topic_id, "area": area, "matchedTags": matched})
+    return topics
+
+
+def build_recommendations(root: Path, detected: list[str], topics: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    catalog = read_json(root / ".codex" / "tool-recommendations.example.json", optional=True)
+    catalog_items = [ensure_used_in_steps(item) for item in catalog.get("recommendations", [])]
+    recommendations = [
+        {
+            "id": SEARCH_PLAN_ID,
+            "name": "Project guidance search plan",
+            "type": "guidance-search-plan",
+            "installMethod": "research-then-guarded-install",
+            "sourceDiscovery": "official-first-internet-search",
+            "discoverySourcePriority": DISCOVERY_SOURCE_PRIORITY,
+            "topics": topics,
+        },
+        skill_recommendation(root, "openai-aspnet-core-skill", "OpenAI ASP.NET Core skill", ".codex/skills/aspnet-core/SKILL.md", "https://github.com/openai/skills/tree/main/skills/.curated/aspnet-core", "openai-official", detected, ["dotnet-10", "aspnet-core"], ["https://github.com/openai/skills/tree/main/skills/.curated/aspnet-core"], ["https://learn.microsoft.com/en-us/dotnet/architecture/", "https://learn.microsoft.com/en-us/aspnet/core/"]),
+        skill_recommendation(root, "dotnet-blazor-plan-ui-change-skill", ".NET Blazor plan UI change skill", ".codex/skills/plan-ui-change/SKILL.md", "https://github.com/dotnet/skills/tree/main/plugins/dotnet-blazor/skills/plan-ui-change", "technology-owner", detected, ["blazor", "web-ui"], ["https://github.com/dotnet/skills/tree/main/plugins/dotnet-blazor/skills/plan-ui-change"], ["https://learn.microsoft.com/en-us/aspnet/core/blazor/", "https://playwright.dev/docs/best-practices"]),
+        skill_recommendation(root, "dotnet-webapi-skill", ".NET Web API skill", ".codex/skills/dotnet-webapi/SKILL.md", "https://github.com/dotnet/skills/tree/main/plugins/dotnet-aspnetcore/skills/dotnet-webapi", "technology-owner", detected, ["aspnet-core", "rest-api"], ["https://github.com/dotnet/skills/tree/main/plugins/dotnet-aspnetcore/skills/dotnet-webapi"], ["https://learn.microsoft.com/en-us/aspnet/core/web-api/"]),
+        skill_recommendation(root, "openai-security-best-practices-skill", "OpenAI security best practices skill", ".codex/skills/security-best-practices/SKILL.md", "https://github.com/openai/skills/tree/main/skills/.curated/security-best-practices", "openai-official", detected, ["security", "aspnet-core"], ["https://github.com/openai/skills/tree/main/skills/.curated/security-best-practices"], ["https://owasp.org/www-project-top-ten/", "https://learn.microsoft.com/en-us/aspnet/core/security/"]),
+        skill_recommendation(root, "openai-playwright-skill", "OpenAI Playwright skill", ".codex/skills/playwright/SKILL.md", "https://github.com/openai/skills/tree/main/skills/.curated/playwright", "openai-official", detected, ["browser-e2e", "playwright-guidance"], ["https://github.com/openai/skills/tree/main/skills/.curated/playwright"], ["https://playwright.dev/docs/best-practices"]),
+        skill_recommendation(root, "dotnet-assertion-quality-skill", ".NET assertion quality skill", ".codex/skills/assertion-quality/SKILL.md", "https://github.com/dotnet/skills/tree/main/plugins/dotnet-test/skills/assertion-quality", "technology-owner", detected, ["xunit", "coverage"], ["https://github.com/dotnet/skills/tree/main/plugins/dotnet-test/skills/assertion-quality"], ["https://github.com/dotnet/skills"]),
+        *catalog_items,
+        {
+            "id": "clean-code-practice-guidance",
+            "name": "Clean code practice guidance",
+            "type": "practice",
+            "usedInSteps": [],
+        },
+        {
+            "id": "qa-automation-practice-guidance",
+            "name": "QA automation practice guidance",
+            "type": "practice",
+            "usedInSteps": [],
+        },
+        {
+            "id": "security-review-standard-guidance",
+            "name": "Security review standard guidance",
+            "type": "standard",
+            "usedInSteps": [],
+        },
+        {
+            "id": "openproject-mcp-for-ticket-delivery",
+            "name": "OpenProject MCP for ticket delivery",
+            "type": "not-recommended",
+            "message": "OpenProject MCP is intentionally not recommended because repo-local skills must use the configured OpenProject API.",
+        },
+    ]
+    output: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in recommendations:
+        if not item or item.get("id") in seen:
+            continue
+        seen.add(item["id"])
+        output.append(item)
+    return output
+
+
+def skill_recommendation(
+    root: Path,
+    item_id: str,
+    name: str,
+    target: str,
+    source: str,
+    source_kind: str,
+    detected: list[str],
+    requires: list[str],
+    candidate_skill_sources: list[str],
+    official_sources: list[str],
+) -> dict[str, Any]:
+    matched = all(tag in detected for tag in requires)
+    target_exists = (root / target).exists()
+    return {
+        "id": item_id,
+        "name": name,
+        "type": "skill",
+        "detected": matched,
+        "target": target,
+        "targetExists": target_exists,
+        "requiresUserConfirmation": True,
+        "installStatus": "installed" if target_exists else "proposed",
+        "sourceDiscovery": "official-first-internet-search",
+        "sourceKind": source_kind,
+        "source": source,
+        "installMethod": "manual-copy",
+        "candidateSkillSources": candidate_skill_sources,
+        "officialSkillSources": candidate_skill_sources,
+        "officialSources": official_sources,
+        "usedInSteps": [],
+    }
+
+
+def recommendation_from_catalog(root: Path, item_id: str) -> dict[str, Any] | None:
+    catalog = read_json(root / ".codex" / "tool-recommendations.example.json", optional=True)
+    for item in catalog.get("recommendations", []):
+        if item.get("id") == item_id:
+            return ensure_used_in_steps(item)
+    return None
+
+
+def ensure_used_in_steps(item: dict[str, Any]) -> dict[str, Any]:
+    clone = json.loads(json.dumps(item))
+    clone.setdefault("usedInSteps", [])
+    return clone
+
+
+def build_stack_context_findings(root: Path, detected: list[str]) -> list[dict[str, str]]:
+    context_text = "\n".join(
+        (root / path).read_text(encoding="utf-8")
+        for path in ["docs/architecture.md", "docs/development.md", "docs/deployment.md", "openspec/config.yaml"]
+        if (root / path).exists()
+    )
+    findings: list[dict[str, str]] = []
+    checks = {
+        "dotnet-10": ".NET 10|net10.0",
+        "azure-app-service": "Azure App Service",
+    }
+    for tag, pattern in checks.items():
+        if tag in detected and not re.search(pattern, context_text, re.IGNORECASE):
+            findings.append({"path": "docs/, openspec/config.yaml", "key": f"stack-context.{tag}", "severity": "warning", "message": f"Detected stack tag '{tag}' but durable docs/OpenSpec context do not mention it."})
+    for item in build_recommendations(root, detected, build_research_topics(detected)):
+        if item.get("type") == "skill" and item.get("detected") and not item.get("targetExists"):
+            findings.append({"path": item.get("target", "."), "key": f"skill-gap.{item['id']}", "severity": "warning", "message": f"Detected stack suggests missing skill '{item['id']}'."})
+    return findings
+
+
+def normalize_added_guidance(items: list[Any]) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    for item in items:
+        if isinstance(item, str):
+            normalized.append({"name": item})
+        elif isinstance(item, dict):
+            normalized.append(item)
+    return normalized
+
+
+def parse_time_comment(raw: str, ticket_key: str) -> dict[str, Any] | None:
+    first = raw.splitlines()[0] if raw else ""
+    match = re.match(rf"^IA generated workflow telemetry: {re.escape(ticket_key)}:(.+)$", first)
+    if not match:
+        return None
+    data: dict[str, Any] = {"workflowStage": match.group(1)}
+    for line in raw.splitlines()[1:]:
+        if ": " not in line:
+            continue
+        key, value = line.split(": ", 1)
+        data[key] = value
+    data["retryCount"] = int(data.get("retryCount", 0) or 0)
+    started = parse_time(data.get("startedUtc"))
+    finished = parse_time(data.get("finishedUtc"))
+    if started and finished:
+        data["elapsedMilliseconds"] = int((finished - started).total_seconds() * 1000)
+    return data
+
+
+def new_configure_result(mode: str, dry_run: bool, write_enabled: bool) -> dict[str, Any]:
+    return {"mode": mode, "dryRun": dry_run, "writeEnabled": write_enabled, "actions": [], "findings": [], "recommendations": [], "warnings": [], "valid": True}
+
+
+def add_bucket_item(bucket: list[dict[str, str]], path: str, key: str, message: str, severity: str, phase: str = "post-start") -> None:
+    bucket.append({"path": path, "key": key, "severity": severity, "phase": phase, "message": message})
+
+
+def any_contains(root: Path, directories: list[str], patterns: list[str], regex: str) -> bool:
+    compiled = re.compile(regex, re.IGNORECASE)
+    for directory in directories:
+        base = root / directory
+        if not base.exists():
+            continue
+        for pattern in patterns:
+            for path in base.rglob(pattern):
+                try:
+                    if compiled.search(path.read_text(encoding="utf-8", errors="ignore")):
+                        return True
+                except OSError:
+                    continue
+    return False
+
+
+def merge_dicts(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
+    output = json.loads(json.dumps(left))
+    for key, value in right.items():
+        if isinstance(value, dict) and isinstance(output.get(key), dict):
+            output[key] = merge_dicts(output[key], value)
+        else:
+            output[key] = value
+    return output
 
 
 def parse_time(value: str | None) -> datetime | None:
@@ -721,110 +1542,54 @@ def max_text(left: str | None, right: str | None) -> str:
     return max(left, right)
 
 
-def standard_stages() -> list[str]:
-    return [
-        "dev-flow-start-ticket",
-        "dev-flow-implement-ticket",
-        "dev-flow-pr-review-agent",
-        "dev-ops-post-merge-deploy",
-        "dev-ops-deploy-qa",
-        "quality-test-e2e",
-    ]
-
-
 def format_duration(milliseconds: int) -> str:
     if milliseconds <= 0:
         return "no time"
-    seconds = milliseconds // 1000
-    minutes, second = divmod(seconds, 60)
-    hours, minute = divmod(minutes, 60)
+    total_seconds = milliseconds // 1000
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
     if hours:
-        return f"{hours}h {minute}m {second}s"
+        return f"{hours}h {minutes:02d}m {seconds:02d}s"
     if minutes:
-        return f"{minutes}m {second}s"
-    return f"{second}s"
+        seconds_text = "00" if seconds == 0 else str(seconds)
+        return f"{minutes}m {seconds_text}s"
+    return f"{seconds}s"
 
 
-def audit_skill_contracts(root: Path, include_configure: bool = False) -> dict[str, Any]:
-    skills_root = root / ".codex" / "skills"
-    findings: list[dict[str, str]] = []
-    required = (".codex/skills/_shared/delivery-contract.md", "docs/context-management.md", "validation")
-    if not skills_root.exists():
-        return {"valid": False, "findings": [{"path": str(skills_root), "message": "skills root missing"}]}
-    for skill in sorted(skills_root.glob("*/SKILL.md")):
-        name = skill.parent.name
-        if name in {"_shared", "caveman"}:
-            continue
-        if name.startswith("configure-") and not include_configure:
-            continue
-        text = skill.read_text(encoding="utf-8")
-        if name.startswith(("dev-flow-", "dev-ops-", "quality-test-")):
-            for term in required:
-                if term not in text:
-                    findings.append({"path": skill.relative_to(root).as_posix(), "message": f"missing {term}"})
-    return {"valid": not findings, "findings": findings}
-
-
-@dataclass
-class TicketReadinessResult:
-    status: str
-    missing: list[str]
-
-
-def classify_ticket_readiness(title: str, description: str) -> TicketReadinessResult:
-    text = normalize(f"{title}\n{description}")
-    missing: list[str] = []
-    if not text or len(text) < 30:
-        return TicketReadinessResult("blocked", ["user-visible goal", "acceptance criteria", "validation expectation"])
-    if not has_any(text, "as a ", "i want", "needs", "should", "must", "add ", "create ", "fix ", "update ", "implement ", "allow ", "prevent "):
-        missing.append("user-visible goal")
-    if not has_any(text, "acceptance criteria", "given ", "when ", "then ", "- [ ]", "- ", "shall", "must", "should"):
-        missing.append("acceptance criteria")
-    if not has_any(text, "test", "validate", "verify", "qa", "e2e", "coverage", "health", "curl", "playwright"):
-        missing.append("validation expectation")
-    if "user-visible goal" in missing or len(missing) >= 3:
-        return TicketReadinessResult("blocked", missing)
-    return TicketReadinessResult("ready" if not missing else "refinable", missing)
-
-
-@dataclass
-class DeliveryRiskResult:
-    level: str
-    reasons: list[str]
-
-
-def classify_delivery_risk(paths: Iterable[str], context: str, changed_lines: int) -> DeliveryRiskResult:
-    normalized_paths = [path.replace("\\", "/") for path in paths]
-    combined = normalize("\n".join(normalized_paths) + "\n" + context)
-    reasons = []
-    for term in ("auth", "authorization", "authentication", "secret", "token", "password", "migration", "deployment", "rollback", "hotfix", "public api", "/health", "release.json", "nexus", "azure", "gitea/workflows", "infra/deployment", "infra/azure", "appsettings", "program.cs", ".csproj"):
-        if term in combined:
-            reasons.append(f"high-risk surface: {term}")
-    if changed_lines >= 500:
-        reasons.append("large diff >= 500 changed lines")
-    if reasons:
-        return DeliveryRiskResult("high", reasons)
-    non_docs = [path for path in normalized_paths if not (path.startswith("docs/") or path.lower().endswith((".md", ".txt")))]
-    if changed_lines > 80 or len(non_docs) > 1:
-        return DeliveryRiskResult("standard", ["normal implementation or multi-file review surface"])
-    return DeliveryRiskResult("low", ["localized low-risk change"])
-
-
-def parse_pairs(args: list[str]) -> dict[str, str]:
-    args = trim_remainder(args)
+def parse_pairs(items: list[str]) -> dict[str, str]:
+    args = trim_remainder(items)
     pairs: dict[str, str] = {}
     index = 0
     while index < len(args):
         key = args[index]
-        if not key.startswith("--") or index + 1 >= len(args):
-            fail(f"Expected --name value, got '{key}'.")
+        if not key.startswith("--"):
+            fail(f"Expected --option, got: {key}")
+        if index + 1 >= len(args):
+            fail(f"Missing value for option {key}")
         pairs[key[2:]] = args[index + 1]
         index += 2
     return pairs
 
 
-def trim_remainder(values: list[str]) -> list[str]:
-    return values[1:] if values and values[0] == "--" else values
+def trim_remainder(items: list[str]) -> list[str]:
+    return items[1:] if items and items[0] == "--" else items
+
+
+def split_list(value: str) -> list[str]:
+    return [item for item in re.split(r"[\s,]+", value.strip()) if item]
+
+
+def sh_quote(value: str) -> str:
+    return "'" + value.replace("'", "'\"'\"'") + "'"
+
+
+def nested(data: dict[str, Any], *keys: str) -> Any:
+    current: Any = data
+    for key in keys:
+        if not isinstance(current, dict) or key not in current:
+            return None
+        current = current[key]
+    return current
 
 
 def read_json(path: Path, optional: bool = False) -> dict[str, Any]:
@@ -838,42 +1603,17 @@ def write_json(path: Path, data: dict[str, Any]) -> None:
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
-def nested(data: dict[str, Any], *keys: str) -> Any:
-    current: Any = data
-    for key in keys:
-        if not isinstance(current, dict):
-            return None
-        current = current.get(key)
-    return current
-
-
-def find_meta(body: str, key: str) -> str:
-    match = re.search(rf"(?m)^-\s+{re.escape(key)}:\s*(.+)$", body)
+def find_meta(body: str, label: str) -> str:
+    match = re.search(rf"(?m)^-\s+{re.escape(label)}:\s*(.+)$", body)
     return match.group(1).strip() if match else ""
 
 
 def require(options: dict[str, str], key: str) -> str:
     value = options.get(key)
     if not value:
-        fail(f"--{key} is required.")
+        fail(f"Missing required option: --{key}")
     return value
 
 
 def fail(message: str) -> Any:
     raise CliError(message)
-
-
-def split_list(value: str) -> list[str]:
-    return [item.strip() for item in re.split(r"[,;\n]", value) if item.strip()]
-
-
-def normalize(value: str) -> str:
-    return re.sub(r"\s+", " ", value.lower()).strip()
-
-
-def has_any(value: str, *needles: str) -> bool:
-    return any(needle in value for needle in needles)
-
-
-def sh_quote(value: str) -> str:
-    return "'" + value.replace("'", "'\"'\"'") + "'"
