@@ -18,6 +18,15 @@
         "testFrameworks"
       ],
       "properties": {
+        "frontend": {
+          "$ref": "#/$defs/stackDomain"
+        },
+        "backend": {
+          "$ref": "#/$defs/stackDomain"
+        },
+        "database": {
+          "$ref": "#/$defs/stackDomain"
+        },
         "languages": {
           "type": "array",
           "items": {
@@ -41,6 +50,9 @@
             "minLength": 1
           },
           "uniqueItems": true
+        },
+        "selectionRecorded": {
+          "type": "boolean"
         }
       },
       "additionalProperties": true
@@ -160,6 +172,25 @@
   },
   "additionalProperties": false,
   "$defs": {
+    "stackDomain": {
+      "type": "object",
+      "required": [
+        "applies",
+        "value"
+      ],
+      "properties": {
+        "applies": {
+          "type": "boolean"
+        },
+        "value": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
     "providerRef": {
       "type": "object",
       "required": [

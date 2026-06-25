@@ -11,8 +11,8 @@ Use the shared script:
 ```bash
 python -m tools.sdd_cli configure Audit
 python -m tools.sdd_cli configure InitLocalFiles
-python -m tools.sdd_cli configure SetClientTools --values-json $values
-python -m tools.sdd_cli configure SetOpenProjectEnv --values-json $values
+python -m tools.sdd_cli configure SetClientTools --values-json-file .codex/config-values.local.json
+python -m tools.sdd_cli configure SetOpenProjectEnv --values-json-file .codex/config-values.local.json
 ```
 
 ## Client Tool Values
@@ -38,7 +38,7 @@ Pre-start values belong in `infra/openproject/variables.env`.
 Generate local-only secrets with:
 
 ```bash
-[Convert]::ToHexString([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(64)).ToLower()
+python -c "import secrets; print(secrets.token_hex(64))"
 ```
 
 Required generated value:
