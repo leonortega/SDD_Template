@@ -8,11 +8,11 @@ Owns:
 
 Use the shared script:
 
-```powershell
-.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode Audit
-.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode InitLocalFiles
-.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode SetClientTools -ValuesJson $values
-.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode SetOpenProjectEnv -ValuesJson $values
+```bash
+python -m tools.sdd_cli configure Audit
+python -m tools.sdd_cli configure InitLocalFiles
+python -m tools.sdd_cli configure SetClientTools --values-json $values
+python -m tools.sdd_cli configure SetOpenProjectEnv --values-json $values
 ```
 
 ## Client Tool Values
@@ -37,7 +37,7 @@ Pre-start values belong in `infra/openproject/variables.env`.
 
 Generate local-only secrets with:
 
-```powershell
+```bash
 [Convert]::ToHexString([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(64)).ToLower()
 ```
 

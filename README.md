@@ -89,7 +89,9 @@ The install writes:
 .codex/sdd-tool-version.json
 ```
 
-That manifest records the installed version, source repo, source commit, checksum, managed files, and preserved local files. Future updates replace only managed tool files. Test-project files such as `.codex/project-profile.local.json`, secrets, product source, tests, and product OpenSpec changes are preserved.
+That manifest records the installed version, source repo, source commit, checksum, managed files, preserved local files, and local Git bootstrap status. If the target is not already a Git repository, install initializes it locally on `dev` without adding a remote. Gitea remote mapping is configured later during Gitea setup.
+
+The installer also seeds the required `.codex/memory/MEMORY.md`, `.codex/memory/memory_summary.md`, and `.codex/memory/retrieval-policy.md` files so startup guidance works before any product memory exists. Future updates replace only managed tool files. Test-project files such as `.codex/project-profile.local.json`, local memory files, secrets, product source, tests, and product OpenSpec changes are preserved.
 
 ## Tools Used
 

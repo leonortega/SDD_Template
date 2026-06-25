@@ -44,9 +44,9 @@ Required stack context:
 
 Run the read-only recommendation audit before Git, ticket provider, or OpenSpec mutation when any of these files are missing, appear unconfigured, or this is the first ticket start in a fresh repository:
 
-```powershell
-.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode AuditRecommendedTools
-.\.codex\skills\configure-dev-environment\scripts\configure_infra_tools.ps1 -Mode DiscoverProjectGuidance
+```bash
+python -m tools.sdd_cli configure AuditRecommendedTools
+python -m tools.sdd_cli configure DiscoverProjectGuidance
 ```
 
 If the audit reports any `stack-context.*` warning, if `DiscoverProjectGuidance` reports missing suggested skills or guidance that the operator has not reviewed, or if the required files are missing or placeholder-only, stop before branch creation, OpenProject description updates, comments, state changes, ticket-lock writes, or OpenSpec proposal creation. Route to `$configure-dev-environment` plus `project-guidance-discover` to define the stack/tooling docs, complete `openspec/config.yaml`, research extra useful guidance from detected project signals, confirm or dismiss suggestions, and update the local recommendation catalog first.

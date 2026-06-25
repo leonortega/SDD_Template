@@ -13,7 +13,7 @@ Configure the Gitea Actions runner used for ticket PR validation and deployment 
 
 Read `.codex/skills/configure-dev-environment/references/gitea-runner.md` before asking for values or applying changes.
 
-Use the shared script at `.codex/skills/configure-dev-environment/scripts/configure_infra_tools.ps1`.
+Use the shared command `python -m tools.sdd_cli configure`.
 
 Apply `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md` before changing CI validation or handoff behavior.
 
