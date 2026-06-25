@@ -4,6 +4,8 @@ This catalog is the tracked source of truth for repo-local skill ownership, cate
 
 When adding an external skill, mark it as `External`, keep the upstream skill name unless the user explicitly approves a rename, add the source repository URL here, and add the source citation to the root `README.md`.
 
+Tracked skills, including external skills copied into this repository, must satisfy the shared skill-contract audit sections before handoff.
+
 | Skill | Category | Ownership | Source | Rename status |
 |---|---|---|---|---|
 | `aspnet-core` | External guidance | External | https://github.com/openai/skills/tree/main/skills/.curated/aspnet-core | No rename |
@@ -56,4 +58,5 @@ When adding an external skill, mark it as `External`, keep the upstream skill na
 | `quality-frontend-testing-debugging` | Quality | Repo-owned | Repository local | Renamed from `frontend-testing-debugging` |
 | `quality-test-e2e` | Quality | Repo-owned | Repository local | Renamed from `test-e2e` |
 | `security-best-practices` | External guidance | External | https://github.com/openai/skills/tree/main/skills/.curated/security-best-practices | No rename |
+| `tdd` | External guidance | External | https://github.com/mattpocock/skills/tree/main/skills/engineering/tdd | No rename |
 | `test-analysis-extensions` | External guidance | External | https://github.com/dotnet/skills/tree/main/plugins/dotnet-test/skills/test-analysis-extensions | No rename |

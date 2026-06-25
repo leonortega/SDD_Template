@@ -101,13 +101,13 @@ Follow `dev-flow-apply-change`:
 
 1. Verify the active `tasks.md` contains the Review Workload Forecast required by the shared delivery contract. Prefer `tools/SDDTemplate.DeliveryTools ParseWorkloadForecast` when available.
 2. If the forecast requires a decision before apply, stop before editing code unless a split/chained work-unit plan, `size:exception`, or `exception-ok` is recorded in the prompt or OpenSpec artifacts.
-3. Apply `ponytail full` before adding or changing project code: use the smallest working change, prefer standard library and native framework features, and avoid speculative abstractions or dependencies.
-4. Implement pending OpenSpec tasks one at a time.
-5. Add or update tests for changed behavior.
-6. Mark a task complete only after its code, related tests, and validation evidence are updated.
+3. Apply `tdd` and build an acceptance-to-test map before product code changes. Map every acceptance criterion to committed automated coverage in the implementation PR, including Playwright/E2E tests when a criterion requires browser-level proof.
+4. Apply `ponytail full` before adding or changing project code: use the smallest working change, prefer standard library and native framework features, and avoid speculative abstractions or dependencies.
+5. Implement pending OpenSpec tasks one at a time through vertical TDD cycles: one behavior-focused test through a public interface, confirm RED, minimal implementation, confirm GREEN, refactor only while GREEN, then repeat.
+6. Mark a task complete only after its code, related tests, RED/GREEN validation evidence, and acceptance-to-test map entries are updated.
 7. If implementation reveals extra required work, add a new OpenSpec task before doing that work.
 8. Keep OpenSpec specs, design notes, and tasks aligned with the latest implementation.
-9. Do not treat configured E2E tool E2E creation as a required implementation task. Record browser E2E expectations and acceptance oracles for `quality-test-e2e`; add E2E in implementation only when the user, ticket, or OpenSpec artifacts explicitly make implementation-owned E2E part of the PR scope.
+9. Do not defer acceptance test creation to `quality-test-e2e`. That skill runs existing committed tests and fails or blocks when coverage is missing.
 10. Commit after each completed workflow step when tracked changes exist, then start the next step from a clean working tree. Use ticket- or OpenSpec-prefixed messages, skip empty commits, and keep code, tests, docs, and OpenSpec changes together when splitting them would leave a broken intermediate commit.
 11. Do not automatically stash normal ticket progress. Use stash only for unrelated local or user changes that block the current step.
 
@@ -187,6 +187,8 @@ The PR body must include:
 - ticket id
 - OpenSpec change id
 - implementation summary
+- acceptance-to-test map for every acceptance criterion
+- TDD RED/GREEN evidence for tests added or updated
 - tests added or updated
 - E2E expectations for QA when browser acceptance is relevant, or `E2E expectations for QA: none`
 - coverage threshold used
@@ -225,6 +227,8 @@ Move the ticket to `configured review state`, default `In Review`, only after PR
 Add a ticket comment with:
 
 - PR link
+- acceptance-to-test map for every acceptance criterion
+- TDD RED/GREEN evidence for tests added or updated
 - coverage threshold used
 - quality gate result
 - feature fixes applied
@@ -264,6 +268,8 @@ Report the ticket, branch, OpenSpec change, PR URL, commits pushed, validation a
 - Invalid coverage config: use `80`, report the issue, and do not lower the gate.
 - Failing coverage: add/update OpenSpec task and tests before completion.
 - Missing local coverage command: report the gap; do not invent a command when CI is the only configured coverage source.
+- Missing acceptance-to-test map or committed automated coverage for any acceptance criterion: stop before product-code handoff or PR review handoff and add the missing tests.
+- Product code changed before the first relevant failing test: stop, record the process gap, add the missing behavior test, confirm it fails against the pre-fix behavior when still feasible, then continue from GREEN.
 - Missing Review Workload Forecast: update OpenSpec tasks before implementation, or stop if the forecast cannot be derived safely.
 - Unchecked OpenSpec tasks at PR handoff: stop before moving the ticket to review; complete the task evidence or report the blocker.
 - Oversized/high workload without split or `size:exception`: stop before implementation and request or record the required decision.
