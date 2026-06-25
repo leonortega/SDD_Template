@@ -1,8 +1,10 @@
 ﻿from __future__ import annotations
 
+import io
 import json
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -96,6 +98,7 @@ class SddCliTests(unittest.TestCase):
             profile = root / ".codex" / "project-profile.json"
             profile.parent.mkdir(parents=True, exist_ok=True)
             profile.write_text(json.dumps({"quality": {"gates": [{"id": "restore", "required": True}]}}), encoding="utf-8")
+            (root / ".codex" / "project-profile.schema.json").write_text("{}", encoding="utf-8")
 
             audit = cli.run_configure_mode("Audit", root, {}, False)
             self.assertTrue(audit["valid"])
@@ -139,6 +142,97 @@ class SddCliTests(unittest.TestCase):
             self.assertEqual("rancher-desktop", cli.selected_deployment_provider(root))
             required = cli.run_configure_mode("AuditQualityGates", root, {}, False)
             self.assertEqual(["secret-scan"], required["requiredGates"])
+
+    def test_set_project_stack_writes_local_profile_only_and_normalizes_answers(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            codex = root / ".codex"
+            codex.mkdir()
+            common = codex / "project-profile.json"
+            common.write_text(json.dumps({"schemaVersion": 1}), encoding="utf-8")
+            local = codex / "project-profile.local.json"
+            local.write_text(json.dumps({"stack": {"languages": ["go"], "frameworks": [], "testFrameworks": ["pytest"]}}), encoding="utf-8")
+            before_common = common.read_text(encoding="utf-8")
+
+            result = cli.run_configure_mode("SetProjectStack", root, {
+                "frontend": "React + TypeScript",
+                "backend": "none",
+                "database": "",
+            })
+
+            self.assertTrue(result["valid"])
+            self.assertEqual(before_common, common.read_text(encoding="utf-8"))
+            profile = json.loads(local.read_text(encoding="utf-8"))
+            stack = profile["stack"]
+            self.assertEqual({"applies": True, "value": "React + TypeScript"}, stack["frontend"])
+            self.assertEqual({"applies": False, "value": ""}, stack["backend"])
+            self.assertEqual({"applies": False, "value": ""}, stack["database"])
+            self.assertEqual(["go", "typescript"], stack["languages"])
+            self.assertEqual(["react"], stack["frameworks"])
+            self.assertEqual(["pytest"], stack["testFrameworks"])
+            self.assertTrue(stack["selectionRecorded"])
+            for empty_value in ("", "none", "no", "n/a"):
+                self.assertEqual({"applies": False, "value": ""}, cli.normalize_stack_domain(empty_value))
+
+    def test_audit_recommended_tools_uses_profile_stack_and_reports_missing_stack(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            codex = root / ".codex"
+            codex.mkdir()
+            (codex / "project-profile.local.json").write_text(
+                json.dumps({"stack": {"frontend": {"applies": True, "value": "React + TypeScript"}, "backend": {"applies": True, "value": "FastAPI + Python"}, "database": {"applies": True, "value": "PostgreSQL"}, "languages": [], "frameworks": [], "testFrameworks": []}}),
+                encoding="utf-8",
+            )
+
+            audit = cli.run_configure_mode("AuditRecommendedTools", root, {}, False)
+            self.assertIn("react", audit["detectedTags"])
+            self.assertIn("typescript", audit["detectedTags"])
+            self.assertIn("fastapi", audit["detectedTags"])
+            self.assertNotIn("stack-context.missing", {item["key"] for item in audit["findings"]})
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".codex").mkdir()
+            audit = cli.run_configure_mode("AuditRecommendedTools", root, {}, False)
+            findings = {item["key"]: item["message"] for item in audit["findings"]}
+            self.assertIn("stack-context.missing", findings)
+            self.assertIn("frontend, backend, and database", findings["stack-context.missing"])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".codex").mkdir()
+            cli.run_configure_mode("SetProjectStack", root, {"frontend": "none", "backend": "none", "database": "none"}, False)
+            audit = cli.run_configure_mode("AuditRecommendedTools", root, {}, False)
+            self.assertNotIn("stack-context.missing", {item["key"] for item in audit["findings"]})
+
+    def test_configure_values_json_file_stdin_inline_and_invalid_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".codex").mkdir()
+            (root / ".codex" / "project-profile.local.json").write_text("{}", encoding="utf-8")
+            values_file = root / "values.json"
+            values_file.write_text(json.dumps({"frontend": "none"}), encoding="utf-8")
+
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(0, cli.configure_mode(type("Args", (), {"mode": "SetProjectStack", "options": ["--root", str(root), "--values-json-file", "values.json"]})()))
+            profile = json.loads((root / ".codex" / "project-profile.local.json").read_text(encoding="utf-8"))
+            self.assertFalse(profile["stack"]["frontend"]["applies"])
+
+            with patch("sys.stdin", io.StringIO(json.dumps({"backend": "FastAPI + Python"}))), redirect_stdout(io.StringIO()):
+                self.assertEqual(0, cli.configure_mode(type("Args", (), {"mode": "SetProjectStack", "options": ["--root", str(root), "--values-json-stdin", "true"]})()))
+            profile = json.loads((root / ".codex" / "project-profile.local.json").read_text(encoding="utf-8"))
+            self.assertEqual("FastAPI + Python", profile["stack"]["backend"]["value"])
+
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(0, cli.configure_mode(type("Args", (), {"mode": "SetProjectStack", "options": ["--root", str(root), "--values-json", json.dumps({"database": "PostgreSQL"})]})()))
+            profile = json.loads((root / ".codex" / "project-profile.local.json").read_text(encoding="utf-8"))
+            self.assertEqual("PostgreSQL", profile["stack"]["database"]["value"])
+
+            stderr = io.StringIO()
+            with redirect_stdout(io.StringIO()), redirect_stderr(stderr):
+                self.assertEqual(1, cli.main(["configure", "SetProjectStack", "--root", str(root), "--values-json", "{bad"]))
+            self.assertIn("Invalid JSON in --values-json", stderr.getvalue())
+            self.assertNotIn("Traceback", stderr.getvalue())
 
     def test_tool_recommendations_local_overlay_merges_with_example_catalog(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -249,6 +343,86 @@ class SddCliTests(unittest.TestCase):
             env = cli.read_env_file(root / "infra" / "openproject" / "variables.env")
             self.assertEqual("new", env["OPENPROJECT_HOST"])
             self.assertEqual("kept", env["OTHER"])
+
+    def test_split_infra_env_prunes_stale_keys_and_preserves_current_values(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write(root / "infra" / "openproject" / "variables.env.example", "OPENPROJECT_TAG=17\nOPENPROJECT_SECRET_KEY_BASE=placeholder\n")
+            write(root / "infra" / "monitoring" / "variables.env.example", "SEQ_URL=http://localhost:5341\nRANCHER_APP_SEQ_URL=http://host.docker.internal:5341\n")
+            write(root / "infra" / "azure" / "variables.env.example", "AZURE_LOCATION=westcentralus\n")
+            write(root / "infra" / "openproject" / "variables.env", "OPENPROJECT_TAG=old\nSECRET_KEY=legacy\nSEQ_URL=http://old:5341\n")
+            write(root / "infra" / "monitoring" / "variables.env", "SEQ_URL=http://keep:5341\nOTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING=legacy\n")
+            write(root / "infra" / "azure" / "variables.env", "OLD_AZURE=value\n")
+
+            result = cli.run_configure_mode("SplitInfraEnv", root, {}, False)
+
+            self.assertTrue(result["valid"])
+            openproject = cli.read_env_file(root / "infra" / "openproject" / "variables.env")
+            monitoring = cli.read_env_file(root / "infra" / "monitoring" / "variables.env")
+            azure = cli.read_env_file(root / "infra" / "azure" / "variables.env")
+            self.assertEqual({"OPENPROJECT_TAG", "OPENPROJECT_SECRET_KEY_BASE"}, set(openproject))
+            self.assertEqual("old", openproject["OPENPROJECT_TAG"])
+            self.assertEqual({"SEQ_URL", "RANCHER_APP_SEQ_URL"}, set(monitoring))
+            self.assertEqual("http://keep:5341", monitoring["SEQ_URL"])
+            self.assertEqual({"AZURE_LOCATION"}, set(azure))
+
+    def test_audit_reports_env_template_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write(root / ".codex" / "project-profile.json", "{}")
+            write(root / ".codex" / "project-profile.schema.json", "{}")
+            write(root / "infra" / "openproject" / "variables.env.example", "OPENPROJECT_TAG=17\nOPENPROJECT_SECRET_KEY_BASE=placeholder\n")
+            write(root / "infra" / "openproject" / "variables.env", "OPENPROJECT_TAG=17\nSECRET_KEY=legacy\n")
+
+            result = cli.run_configure_mode("Audit", root, {}, False)
+            findings = {item["key"]: item["message"] for item in result["findings"]}
+
+            self.assertFalse(result["valid"])
+            self.assertIn("env.missing-template-keys", findings)
+            self.assertIn("OPENPROJECT_SECRET_KEY_BASE", findings["env.missing-template-keys"])
+            self.assertIn("env.stale-keys", findings)
+            self.assertIn("SECRET_KEY", findings["env.stale-keys"])
+
+    def test_config_infra_docs_match_openproject_and_trivy_runtime(self) -> None:
+        repo = Path(__file__).resolve().parents[3]
+        compose = (repo / "infra" / "openproject" / "compose.yml").read_text(encoding="utf-8")
+        configure = (repo / ".codex" / "skills" / "configure-dev-environment" / "SKILL.md").read_text(encoding="utf-8")
+        legacy = (repo / ".codex" / "skills" / "configure-infra-tools" / "SKILL.md").read_text(encoding="utf-8")
+
+        self.assertIn("SECRET_KEY_BASE: ${OPENPROJECT_SECRET_KEY_BASE:", compose)
+        self.assertNotIn("OPENPROJECT_SECRET_KEY_BASE: ${OPENPROJECT_SECRET_KEY_BASE:", compose)
+        self.assertIn("trivy image --download-db-only", configure)
+        self.assertIn("trivy image --download-db-only", legacy)
+        self.assertNotIn("trivy --download-db-only", configure)
+        self.assertNotIn("trivy --download-db-only", legacy)
+        self.assertIn("--values-json-stdin true", configure)
+        self.assertIn("Do not use per-mode `--help`", configure)
+        self.assertIn("Do not bypass the CLI by importing `run_configure_mode`", configure)
+        self.assertIn("When the operator forbids PowerShell", configure)
+        self.assertIn("ask for values one at a time", configure)
+        self.assertIn("Do not batch multiple missing-value questions into one prompt", configure)
+
+    def test_seq_grafana_validation_uses_grafana_port_and_checks_provisioning(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write(root / "infra" / "monitoring" / "variables.env", "SEQ_URL=http://localhost:5341\nSEQ_ERROR_ALERT_WINDOW=1m\nSEQ_ERROR_ALERT_THRESHOLD=0\n")
+            write(root / "infra" / "monitoring" / "grafana" / "provisioning" / "datasources" / "infinity-health.yml", "datasource")
+            write(root / "infra" / "monitoring" / "grafana" / "provisioning" / "alerting" / "health-alerts.yml", "alerts")
+            seen: list[str] = []
+
+            def fake_http_status(url: str, timeout: int = 5):
+                seen.append(url)
+                return 200, ""
+
+            with patch.object(cli, "http_status", fake_http_status):
+                result = cli.run_configure_mode("SetSeqAzureEventHubLogs", root, {}, False)
+
+            self.assertTrue(result["valid"])
+            self.assertIn("http://localhost:3001/api/health", seen)
+            self.assertNotIn("http://localhost:3000/api/health", seen)
+            keys = {item["key"] for item in result["actions"]}
+            self.assertIn("grafana.infinity-health", keys)
+            self.assertIn("grafana.health-alerts", keys)
 
     def test_tool_update_replaces_owned_files_and_preserves_consumer_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

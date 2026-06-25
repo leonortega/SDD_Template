@@ -47,7 +47,7 @@ python -m tools.sdd_cli configure DiscoverProjectGuidance
 To update the local project reference after the user confirms discovery, pass `persistLocal=true`:
 
 ```bash
-python -m tools.sdd_cli configure DiscoverProjectGuidance --values-json '{"confirmed":true,"persistLocal":true}'
+python -m tools.sdd_cli configure DiscoverProjectGuidance --values-json-file .codex/guidance-discovery-values.local.json
 ```
 
 The report must include:

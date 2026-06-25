@@ -22,6 +22,7 @@ SUPPORTED_MODES = [
     "InitQualityGateTemplates",
     "InitLocalFiles",
     "SetQualityConfig",
+    "SetProjectStack",
     "SetClientTools",
     "SetOpenProjectEnv",
     "SetMonitoringEnv",
@@ -53,6 +54,10 @@ def invoke_acquire_project_guidance() -> None:
 
 def invoke_map_project_guidance_step() -> None:
     """Update recommendation-level usedInSteps metadata."""
+
+
+def invoke_set_project_stack() -> None:
+    """Record frontend/backend/database stack choices in .codex/project-profile.local.json."""
 
 
 def add_rancher_desktop_local_lab_audit_findings() -> None:
