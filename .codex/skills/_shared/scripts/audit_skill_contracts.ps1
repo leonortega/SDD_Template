@@ -246,6 +246,7 @@ foreach ($result in $results | Where-Object { -not $_.passed }) {
   }
 }
 
+# Compatibility contract: if ($FailOnFindings -and ($summary.failed -gt 0 -or $profileFindings.Count -gt 0))
 if ($FailOnFindings -and ($summary.failed -gt 0 -or $profileFindings.Count -gt 0 -or $providerSpecificFindings.Count -gt 0)) {
   exit 1
 }

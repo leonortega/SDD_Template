@@ -172,7 +172,7 @@ The retrospective must persist compact, sanitized learning evidence:
 - add or reuse a compact ticket comment with marker `IA generated post-PROD retrospective: {finalVersion}`,
 - include findings, recommended durable improvements, eval coverage gaps, residual evidence gaps, and follow-up ownership when applicable.
 
-The retrospective must not mutate ticket status, deploy, promote, tag, rewrite branches, update release manifests, create tickets, schedule automations, or apply docs, contract, skill, eval, or memory changes unless the user separately asks for apply mode. Do not include secrets, raw tool payloads, full prompts, tokens, cookies, or credential-bearing URLs in the local result or ticket comment.
+The retrospective must not mutate OpenProject status, deploy, promote, tag, rewrite branches, update release manifests, create tickets, schedule automations, or apply docs, contract, skill, eval, or memory changes unless the user separately asks for apply mode. Do not include secrets, raw tool payloads, full prompts, tokens, cookies, or credential-bearing URLs in the local result or ticket comment.
 
 ## Output
 

@@ -674,20 +674,26 @@ namespace SDDTemplate.DeliveryTools.Tests
                 "delivery_tools.ps1"));
 
             Assert.Contains("IA generated workflow timing: {ticketKey}", contract);
+            Assert.Contains("OpenProject time entries are the primary workflow telemetry store", contract);
+            Assert.Contains("IA generated workflow telemetry: {ticketKey}:{workflowStage}", contract);
+            Assert.Contains("ReadOpenProjectTimeTelemetry", contract);
+            Assert.Contains("fallback JSONL", contract);
             Assert.Contains("RenderTicketComment -Type WorkflowTiming", contract);
             Assert.Contains("comment.raw", contract);
             Assert.Contains("activity comment starts with the marker", contract);
             Assert.Contains("InitializeWorkflowTelemetry", contract);
             Assert.Contains("AppendWorkflowTelemetry", contract);
             Assert.Contains("ReadWorkflowTelemetry", contract);
-            Assert.Contains("Each non-OpenSpec delivery stage must capture UTC start and finish times and append one row for its own stage with `AppendWorkflowTelemetry` on every run, resume", contract);
+            Assert.Contains("Each non-OpenSpec delivery stage must capture UTC start and finish times and create or update one OpenProject time entry for its own stage", contract);
             Assert.Contains("collapse repeated rows for the same ticket and stage into one rendered stage row", contract);
             Assert.Contains("required predecessor telemetry must exist", contract);
-            Assert.Contains("quality-test-e2e` must read rows for the active ticket with `ReadWorkflowTelemetry`", contract);
+            Assert.Contains("quality-test-e2e` must read OpenProject time entries first", contract);
             Assert.DoesNotContain("MISSING TELEMETRY", contract);
             Assert.Contains("Gitea Actions job duration", contract);
             Assert.Contains("update or reuse the existing workflow timing marker comment", contract);
 
+            Assert.Contains("OpenProject time entries are the primary telemetry store", starter);
+            Assert.Contains("IA generated workflow telemetry: {ticketKey}:dev-flow-start-ticket", starter);
             Assert.Contains("InitializeWorkflowTelemetry", starter);
             Assert.Contains("workflowStage=dev-flow-start-ticket", starter);
             Assert.Contains("AppendWorkflowTelemetry", starter);
@@ -710,6 +716,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("In idempotent verification mode", deployToQa);
             Assert.Contains("workflowStage=quality-test-e2e", testE2E);
             Assert.Contains("AppendWorkflowTelemetry", testE2E);
+            Assert.Contains("ReadOpenProjectTimeTelemetry", testE2E);
             Assert.Contains("ReadWorkflowTelemetry", testE2E);
             Assert.Contains("repeated rows for a stage are collapsed", testE2E);
             Assert.Contains("RenderTicketComment -Type WorkflowTiming", testE2E);
@@ -725,17 +732,19 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("Required predecessor rows", automatic);
             Assert.Contains("route through that predecessor in idempotent verification mode", automatic);
 
-            Assert.Contains("Delivery stages maintain a concise generated OpenProject timing comment", contextDocs);
+            Assert.Contains("selected ticket adapter supports direct time telemetry", contextDocs);
             Assert.Contains("E2E QA posts or patches the final timing comment", contextDocs);
-            Assert.Contains("concise generated OpenProject timing comment", contextDocs);
-            Assert.Contains("from that telemetry file", contextDocs);
+            Assert.Contains("OpenProject time entries first", contextDocs);
             Assert.Contains("E2E QA posts or patches the workflow timing comment", deploymentDocs);
+            Assert.Contains("falling back to `.codex/agent-telemetry.local.jsonl` only when direct time telemetry is unavailable", deploymentDocs);
             Assert.Contains("PROD timing and PROD deployment comments remain part of the separate explicit PROD promotion step", deploymentDocs);
             Assert.DoesNotContain("retroactive marker-derived timing", contextDocs);
             Assert.Contains("'WorkflowTiming'", script);
             Assert.Contains("'InitializeWorkflowTelemetry'", script);
             Assert.Contains("'AppendWorkflowTelemetry'", script);
             Assert.Contains("'ReadWorkflowTelemetry'", script);
+            Assert.Contains("'ReadOpenProjectTimeTelemetry'", script);
+            Assert.Contains("'RenderOpenProjectTimeTelemetryComment'", script);
             Assert.Contains("stageGroups", script);
             Assert.Contains("| Stage | Outcome | Duration | Started UTC | Finished UTC |", script);
         }
@@ -745,12 +754,23 @@ namespace SDDTemplate.DeliveryTools.Tests
         {
             string starter = ReadSkill("dev-flow-start-ticket", "SKILL.md");
             string openProjectApi = ReadSkill("dev-flow-start-ticket", Path.Combine("references", "openproject-api.md"));
+            string ticketAdapter = File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, ".codex", "providers", "ticket.openproject.md"));
+            string apiHelpers = ReadSkill("_shared", "api-helpers.md");
+            string openProjectConfig = ReadSkill("configure-dev-environment", Path.Combine("references", "openproject.md"));
+            string clientTools = File.ReadAllText(Path.Combine(FindRepositoryRoot().FullName, ".codex", "client-tools.example.json"));
 
             Assert.Contains("Use OpenProject API v3 `work_packages` endpoints", starter);
             Assert.Contains("current `lockVersion`", starter);
             Assert.Contains("GET {baseUrl}/api/v3/projects/{projectIdentifier}", openProjectApi);
             Assert.Contains("GET {baseUrl}/api/v3/work_packages/{workPackageId}", openProjectApi);
             Assert.Contains("POST {baseUrl}/api/v3/work_packages/{workPackageId}/activities", openProjectApi);
+            Assert.Contains("time-telemetry-upsert", ticketAdapter);
+            Assert.Contains("/api/v3/time_entries", apiHelpers);
+            Assert.Contains("openProject.timeTelemetry.activityId", openProjectConfig);
+            Assert.Contains("openProject.timeTelemetry.activityName", openProjectConfig);
+            Assert.Contains("\"timeTelemetry\"", clientTools);
+            Assert.Contains("\"activityId\"", clientTools);
+            Assert.Contains("\"activityName\"", clientTools);
         }
 
         [Fact]

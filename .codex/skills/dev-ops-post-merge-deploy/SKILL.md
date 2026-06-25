@@ -17,7 +17,7 @@ Before running, follow `.codex/skills/_shared/skill-startup.md`, which reads `.c
 
 ## Workflow Telemetry
 
-Capture UTC start time after resolving the ticket key and before post-merge validation or artifact waiting. Append a `dev-ops-post-merge-deploy` row with `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` when the bridge succeeds, blocks, fails, or is skipped idempotently because QA deployment is already complete. On resume or idempotent reuse, append another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-ops-post-merge-deploy`, `agentRole=deployment`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. Do not duplicate the `dev-ops-deploy-qa` row; `dev-ops-deploy-qa` records its own stage when invoked.
+Capture UTC start time after resolving the ticket key and before post-merge validation or artifact waiting. Prefer OpenProject time-entry telemetry and create or update the `dev-ops-post-merge-deploy` entry with marker `IA generated workflow telemetry: {ticketKey}:dev-ops-post-merge-deploy`. Use `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` only as the JSONL fallback when direct time telemetry is unavailable. On resume or idempotent reuse, append or update another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-ops-post-merge-deploy`, `agentRole=deployment`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. Do not duplicate the `dev-ops-deploy-qa` row; `dev-ops-deploy-qa` records its own stage when invoked.
 
 ## Configuration
 
