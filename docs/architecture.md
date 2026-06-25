@@ -30,6 +30,14 @@ No product stack is selected. Future work can draft stack choices in `.codex/pro
 
 Generic TDD and Playwright skills remain available for future implementation and browser-facing validation, but they are not tied to any current product app.
 
+## Versioned Consumer Installation
+
+This repository is the canonical SDLC tool source. Product repositories consume pinned releases through `python -m tools.sdd_cli tool install --version vMAJOR.MINOR.PATCH --target <repo>` and later `tool update` with a newer version. When `--version` is omitted, install resolves the latest final Git tag matching `vMAJOR.MINOR.PATCH` and ignores release-candidate tags.
+
+Installed repos get only runtime workflow assets: Codex skills, provider adapters/templates, docs, OpenSpec config, infrastructure templates, workflow templates, common non-secret config, and `tools/sdd_cli`. Tool-source-only files such as CLI tests, repo memory, OpenSpec changes, eval output, telemetry, and local config are not installed.
+
+The consumer manifest `.codex/sdd-tool-version.json` records the installed version, source repo, source commit, checksum, managed file list, and preserved local file list. Updates replace only managed files and leave consumer project code, secrets, local overlays, and product OpenSpec changes untouched.
+
 ## Deployment Lane
 
 Deployment providers remain configured as shell capabilities. No app target is currently deployable. `infra/deployment/apps.json` is empty until a new product adds concrete artifacts, health checks, and environment configuration.

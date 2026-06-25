@@ -22,6 +22,17 @@ When the stack is chosen:
 5. Replace placeholder Gitea workflows with stack-specific build, test, package, deployment, and QA jobs.
 6. Add only the skills, MCPs, tools, and documentation needed for that chosen stack.
 
+## Consumer Fixture Repositories
+
+Use a separate repository to validate this tool as a real consumer would:
+
+```bash
+python -m tools.sdd_cli tool install --version v0.1.0 --target C:\path\to\consumer-repo
+python -m tools.sdd_cli tool update --version v0.2.0 --target C:\path\to\consumer-repo
+```
+
+The consumer repo should not contain this tool's internal tests, memory, eval files, or experimental OpenSpec changes. Put product-specific source, tests, local profile overlays, secrets, and product OpenSpec changes in the consumer repo; the update command preserves them because they are not managed tool files.
+
 ## Development Rules
 
 - Use the OpenProject/OpenSpec workflow for ticketed changes.

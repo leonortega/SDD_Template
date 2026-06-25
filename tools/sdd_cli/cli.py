@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -47,6 +48,47 @@ DISCOVERY_SOURCE_PRIORITY = [
     "marketplace",
     "community",
 ]
+SDD_TOOL_MANIFEST = ".codex/sdd-tool-version.json"
+SDD_TOOL_VERSION_PATTERN = re.compile(r"^v\d+\.\d+\.\d+$")
+SDD_TOOL_INCLUDE_FILES = [
+    "AGENTS.md",
+    "README.md",
+    ".gitignore",
+    ".codex/client-tools.common.json",
+    ".codex/config.toml",
+    ".codex/delivery-policy.json",
+    ".codex/project-profile.json",
+    ".codex/project-profile.schema.json",
+    ".codex/quality.common.json",
+    ".codex/tool-recommendations.common.json",
+    "openspec/config.yaml",
+]
+SDD_TOOL_INCLUDE_DIRS = [
+    ".codex/providers",
+    ".codex/skills",
+    ".gitea/workflows",
+    "docs",
+    "infra",
+    "tools",
+]
+SDD_TOOL_EXCLUDE_PARTS = {
+    "__pycache__",
+    ".git",
+    ".pytest_cache",
+    ".codex/memory",
+    ".codex/agent-evals",
+    ".codex/ponytail",
+    "openspec/changes",
+    "tools/sdd_cli/tests",
+}
+SDD_TOOL_EXCLUDE_SEGMENTS = {"data", "logs"}
+SDD_TOOL_EXCLUDE_SUFFIXES = {".pyc", ".pyo"}
+SDD_TOOL_PRESERVE_FILES = {
+    ".codex/client-tools.local.json",
+    ".codex/project-profile.local.json",
+    ".codex/quality.local.json",
+    ".codex/tool-recommendations.local.json",
+}
 
 
 class CliError(RuntimeError):
@@ -126,6 +168,15 @@ def build_parser() -> argparse.ArgumentParser:
     configure.add_argument("mode", nargs="?", default="Audit")
     configure.add_argument("options", nargs=argparse.REMAINDER)
     configure.set_defaults(func=configure_mode)
+
+    tool = sub.add_parser("tool")
+    tool_sub = tool.add_subparsers(dest="action", required=True)
+    for action in ("install", "update"):
+        command = tool_sub.add_parser(action)
+        command.add_argument("--version")
+        command.add_argument("--target", required=True)
+        command.add_argument("--source", default=str(REPO_ROOT))
+        command.set_defaults(func=tool_install_or_update)
 
     return parser
 
@@ -267,6 +318,12 @@ def configure_mode(args: argparse.Namespace) -> int:
     return 0 if result.get("valid", True) else 1
 
 
+def tool_install_or_update(args: argparse.Namespace) -> int:
+    result = install_sdd_tool(Path(args.source), Path(args.target), args.version, args.action)
+    print(json.dumps(result, indent=2))
+    return 0
+
+
 def parse_configure_options(args: list[str]) -> dict[str, str]:
     normalized = trim_remainder(args)
     options: dict[str, str] = {}
@@ -310,6 +367,156 @@ def run_configure_mode(mode: str, root: Path, values: dict[str, Any], dry_run: b
             "nextAction": "Port this mode into tools/sdd_cli before using it; PowerShell fallback is intentionally disabled.",
         }
     return handler(root, values, dry_run)
+
+
+def install_sdd_tool(source: Path, target: Path, version: str | None, action: str) -> dict[str, Any]:
+    source = source.resolve()
+    target = target.resolve()
+    if source == target:
+        fail("Target must be a consumer repository, not the tool repository.")
+    version = version or latest_sdd_tool_version(source)
+    if not SDD_TOOL_VERSION_PATTERN.match(version):
+        fail("Tool version must use vMAJOR.MINOR.PATCH, for example v0.1.0.")
+    if action not in {"install", "update"}:
+        fail(f"Unsupported tool action: {action}")
+    if not source.exists():
+        fail(f"Tool source does not exist: {source}")
+    target.mkdir(parents=True, exist_ok=True)
+
+    files = sdd_tool_files(source)
+    old_manifest = read_json(target / SDD_TOOL_MANIFEST, optional=True)
+    old_managed = set(old_manifest.get("managedFiles", []))
+    owned = old_managed | ({SDD_TOOL_MANIFEST} if old_manifest else set())
+    if action == "update" and not old_manifest:
+        fail(f"Cannot update before install. Missing {SDD_TOOL_MANIFEST}.")
+    if action == "install" and old_manifest:
+        action = "update"
+
+    collisions = unmanaged_collisions(source, target, files, owned)
+    if collisions:
+        fail("Refusing to overwrite unmanaged files: " + ", ".join(collisions[:10]))
+
+    changed: list[str] = []
+    for relative in files:
+        src = source / relative
+        dst = target / relative
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        before = dst.read_bytes() if dst.exists() else None
+        shutil.copy2(src, dst)
+        if before != dst.read_bytes():
+            changed.append(relative)
+
+    new_managed = set(files)
+    removed: list[str] = []
+    for relative in sorted(old_managed - new_managed):
+        dst = target / relative
+        if dst.exists() and relative not in SDD_TOOL_PRESERVE_FILES:
+            dst.unlink()
+            removed.append(relative)
+            remove_empty_parents(dst.parent, target)
+
+    checksum = sdd_tool_checksum(target, files)
+    manifest = {
+        "schemaVersion": 1,
+        "tool": "sdd-tool",
+        "version": version,
+        "sourceRepo": git_text(source, ["config", "--get", "remote.origin.url"]) or str(source),
+        "sourceCommit": git_text(source, ["rev-parse", "HEAD"]),
+        "installedAtUtc": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "checksumSha256": checksum,
+        "managedFiles": files,
+        "preservedFiles": sorted(SDD_TOOL_PRESERVE_FILES),
+    }
+    write_json(target / SDD_TOOL_MANIFEST, manifest)
+    return {
+        "action": action,
+        "version": version,
+        "target": str(target),
+        "managedFileCount": len(files),
+        "changedFileCount": len(changed),
+        "removedFileCount": len(removed),
+        "manifest": SDD_TOOL_MANIFEST,
+        "checksumSha256": checksum,
+    }
+
+
+def sdd_tool_files(root: Path) -> list[str]:
+    files: set[str] = set()
+    for relative in SDD_TOOL_INCLUDE_FILES:
+        path = root / relative
+        if path.exists() and not is_sdd_tool_excluded(relative):
+            files.add(relative.replace("\\", "/"))
+    for dirname in SDD_TOOL_INCLUDE_DIRS:
+        base = root / dirname
+        if not base.exists():
+            continue
+        for path in base.rglob("*"):
+            if path.is_file():
+                relative = path.relative_to(root).as_posix()
+                if not is_sdd_tool_excluded(relative):
+                    files.add(relative)
+    return sorted(files)
+
+
+def latest_sdd_tool_version(source: Path) -> str:
+    tags = git_text(source, ["tag", "--list", "v*"])
+    versions: list[tuple[int, int, int, str]] = []
+    for tag in tags.splitlines():
+        match = re.match(r"^v(\d+)\.(\d+)\.(\d+)$", tag.strip())
+        if match:
+            versions.append((int(match.group(1)), int(match.group(2)), int(match.group(3)), tag.strip()))
+    if not versions:
+        fail("No final release tags found. Pass --version vMAJOR.MINOR.PATCH or create a release tag first.")
+    return max(versions)[3]
+
+
+def is_sdd_tool_excluded(relative: str) -> bool:
+    normalized = relative.replace("\\", "/")
+    if Path(normalized).suffix in SDD_TOOL_EXCLUDE_SUFFIXES:
+        return True
+    if set(normalized.split("/")) & SDD_TOOL_EXCLUDE_SEGMENTS:
+        return True
+    return any(normalized == part or normalized.startswith(part + "/") for part in SDD_TOOL_EXCLUDE_PARTS)
+
+
+def unmanaged_collisions(source: Path, target: Path, files: list[str], owned: set[str]) -> list[str]:
+    collisions: list[str] = []
+    for relative in files:
+        dst = target / relative
+        if not dst.exists() or relative in owned:
+            continue
+        if dst.read_bytes() != (source / relative).read_bytes():
+            collisions.append(relative)
+    return collisions
+
+
+def sdd_tool_checksum(root: Path, files: list[str]) -> str:
+    digest = hashlib.sha256()
+    for relative in files:
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update((root / relative).read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def remove_empty_parents(path: Path, stop: Path) -> None:
+    path = path.resolve()
+    stop = stop.resolve()
+    while path != stop and str(path).startswith(str(stop)):
+        try:
+            path.rmdir()
+        except OSError:
+            return
+        path = path.parent
+
+
+def git_text(root: Path, args: list[str]) -> str:
+    try:
+        result = subprocess.run(["git", *args], cwd=root, check=False, capture_output=True, text=True)
+    except OSError:
+        return ""
+    return result.stdout.strip() if result.returncode == 0 else ""
 
 
 def run_delivery_mode(mode: str, options: dict[str, str]) -> Any:
