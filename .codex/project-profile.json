@@ -1,6 +1,23 @@
 {
   "$schema": "./project-profile.schema.json",
   "schemaVersion": 1,
+  "stack": {
+    "frontend": {
+      "applies": false,
+      "value": ""
+    },
+    "backend": {
+      "applies": false,
+      "value": ""
+    },
+    "database": {
+      "applies": false,
+      "value": ""
+    },
+    "languages": [],
+    "frameworks": [],
+    "testFrameworks": []
+  },
   "providers": {
     "ticket": {
       "id": "openproject",
