@@ -31,21 +31,21 @@ Repo-specific skill changes belong under `.codex/skills/**`. IDE-owned and globa
 
 Build:
 
-```powershell
-dotnet build .\SDDTemplate.slnx
+```bash
+dotnet build ./SDDTemplate.slnx
 ```
 
 Run targeted tests locally for fast feedback while implementing:
 
-```powershell
-dotnet test .\SDDTemplate.slnx
+```bash
+dotnet test ./SDDTemplate.slnx
 ```
 
 This local command is a convenience, not a mandatory duplicate of CI. Prefer the smallest relevant build/test command that proves the touched behavior before PR handoff, then rely on Gitea PR validation for the full required gate in a clean pinned runner.
 
 Prepare remote QA E2E evidence after a ticket reaches QA:
 
-```powershell
+```bash
 git switch -c qa-local/E2EPROJECT-123 origin/dev
 git push origin qa-local/E2EPROJECT-123
 ```
@@ -54,20 +54,20 @@ The selected provider QA branch workflow runs the committed Playwright suite rem
 
 Verify formatting:
 
-```powershell
+```bash
 dotnet format --verify-no-changes
 ```
 
 Start local delivery infrastructure:
 
-```powershell
-.\infra\up.ps1
+```bash
+python -m tools.sdd_cli infra up
 ```
 
 Stop local delivery infrastructure:
 
-```powershell
-.\infra\down.ps1
+```bash
+python -m tools.sdd_cli infra down
 ```
 
 ## Implementation Workflow
@@ -137,13 +137,13 @@ Local eval output belongs in ignored `.codex/agent-evals/results.local.json`.
 
 Run the shared skill-contract audit after changing delivery skills or during retrospective hardening:
 
-```powershell
-.\.codex\skills\_shared\scripts\audit_skill_contracts.ps1
+```bash
+python -m tools.sdd_cli delivery AuditSkillContracts
 ```
 
-The audit checks repo-owned delivery skills by default for standard delivery contract sections and core terms such as validation, ticket context, and handoff behavior. Repo-local chat/support skills such as `caveman` are excluded because they are not ticket delivery workflows. Use `-IncludeConfigure` only when configure skills are part of the change; use `-AllSkills` only when the change intentionally broadens skill audit scope.
+The audit checks repo-owned delivery skills by default for standard delivery contract sections and core terms such as validation, ticket context, and handoff behavior. Repo-local chat/support skills such as `caveman` are excluded because they are not ticket delivery workflows. Use `--include-configure true` only when configure skills are part of the change.
 
-Use `-FailOnFindings` when the audit is part of a hard quality gate.
+The command exits with findings in JSON so CI or an agent can fail the gate.
 
 ## Context Findings
 

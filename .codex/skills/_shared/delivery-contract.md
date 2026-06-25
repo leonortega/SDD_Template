@@ -156,7 +156,7 @@ Classify delivery risk as:
 - `standard`: normal feature, bug, test, or workflow work that crosses implementation and validation but does not touch high-risk surfaces.
 - `high`: work touching auth, authorization, persistence, migrations, deployment workflows, secrets, public APIs, `/health`, release manifests, Nexus/Azure/Gitea Actions, rollback/hotfix, or large diffs.
 
-Use `.codex/skills/_shared/scripts/delivery_tools.ps1` or `tools/SDDTemplate.DeliveryTools` deterministic helpers when available. Low-risk work may use compact planning and review summaries, but must still preserve ticket context, branch/PR handoff, validation evidence, docs/memory classification, and configured quality gates. High-risk work requires full workload forecast handling, adversarial review, deployment topology checks when applicable, and explicit evidence in PR and OpenProject handoff comments.
+Use `python -m tools.sdd_cli delivery <Mode>` deterministic helpers when available. Low-risk work may use compact planning and review summaries, but must still preserve ticket context, branch/PR handoff, validation evidence, docs/memory classification, and configured quality gates. High-risk work requires full workload forecast handling, adversarial review, deployment topology checks when applicable, and explicit evidence in PR and OpenProject handoff comments.
 
 ## Ponytail Implementation And Review
 
@@ -432,7 +432,7 @@ Workflow timing comments use marker `IA generated workflow timing: {ticketKey}` 
 
 ## Reusable Delivery Tools
 
-Use `.codex/skills/_shared/scripts/delivery_tools.ps1` for deterministic delivery mechanics instead of duplicating script logic in skills:
+Use `python -m tools.sdd_cli delivery <Mode>` for deterministic delivery mechanics instead of duplicating script logic in skills:
 
 - `ArtifactPaths`: derive Nexus artifact paths for `app/{commitSha}`.
 - `CheckGitIgnored`: verify evidence or local runtime paths are ignored before writing generated files.

@@ -1,4 +1,6 @@
 # Build results
+__pycache__/
+*.py[cod]
 [Dd]ebug/
 [Dd]ebugPublic/
 [Rr]elease/

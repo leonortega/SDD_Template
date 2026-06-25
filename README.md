@@ -1,7 +1,7 @@
 # Agentic E2E Development Lab
 
-![Platform](https://img.shields.io/badge/platform-Windows-0078D4)
-![Shell](https://img.shields.io/badge/shell-PowerShell-5391FE)
+![Platform](https://img.shields.io/badge/platform-cross--platform-2EA44F)
+![Automation](https://img.shields.io/badge/automation-Python%203.11%2B-3776AB)
 ![.NET](https://img.shields.io/badge/.NET-10.0-512BD4)
 ![App](https://img.shields.io/badge/app-Blazor%20%2B%20ASP.NET%20Core-512BD4)
 ![Data](https://img.shields.io/badge/data-EF%20Core%20%2B%20SQLite-4479A1)
@@ -118,6 +118,8 @@ In plain language:
 
 ## Quick Start
 
+Template automation requires Python 3.11+ and uses `tools/sdd_cli` so the delivery workflow is not tied to the example application stack.
+
 Configure the local delivery platform through Codex chat:
 
 ```text
@@ -132,26 +134,26 @@ automatically continue this ticket
 
 Start the local delivery platform:
 
-```powershell
-.\infra\up.ps1
+```bash
+python -m tools.sdd_cli infra up
 ```
 
 Stop it:
 
-```powershell
-.\infra\down.ps1
+```bash
+python -m tools.sdd_cli infra down
 ```
 
-Build and test the solution:
+Build and test the example .NET solution:
 
-```powershell
-dotnet build .\SDDTemplate.slnx
-dotnet test .\SDDTemplate.slnx
+```bash
+dotnet build ./SDDTemplate.slnx
+dotnet test ./SDDTemplate.slnx
 ```
 
 Verify formatting:
 
-```powershell
+```bash
 dotnet format --verify-no-changes
 ```
 
@@ -220,8 +222,8 @@ Coordinate parallel OpenProject work packages
 
 Direct Docker Compose startup is also supported when the local OpenProject and monitoring environment files are configured:
 
-```powershell
-docker compose --env-file .\infra\openproject\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml up -d
+```bash
+docker compose --env-file ./infra/openproject/variables.env --env-file ./infra/monitoring/variables.env -f ./infra/compose.yml up -d
 ```
 
 ## Repository Shape

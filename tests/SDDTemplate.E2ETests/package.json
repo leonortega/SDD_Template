@@ -6,8 +6,8 @@
   "scripts": {
     "install:browsers": "playwright install --with-deps chromium",
     "test": "playwright test",
-    "test:docker": "powershell -ExecutionPolicy Bypass -File ./run-local-docker.ps1",
-    "test:docker:list": "powershell -ExecutionPolicy Bypass -File ./run-local-docker.ps1 --list",
+    "test:docker": "cd ../.. && python -m tools.sdd_cli e2e docker --",
+    "test:docker:list": "cd ../.. && python -m tools.sdd_cli e2e docker -- --list",
     "test:headed": "playwright test --headed"
   },
   "devDependencies": {

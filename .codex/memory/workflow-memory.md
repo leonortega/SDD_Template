@@ -120,10 +120,10 @@ Agent-caused or tool-discovered failures are memory candidates by default. If a 
 
 - Type: Pattern
 - Status: Active
-- Source: `.codex/memory/search_memory.ps1`, `.codex/memory/retrieval-policy.md`, current conversation
+- Source: `tools/sdd_cli`, `.codex/memory/retrieval-policy.md`, current conversation
 - Last verified: 2026-06-02
 
-Use `.codex/memory/search_memory.ps1 -Query <symptom>` during debugging and preflight when a task mentions or reveals an error, blocker, failed command, deployment issue, PR feedback, QA failure, configuration mismatch, or local tooling problem. Search concrete terms such as config keys, command names, marker names, workflow stages, and error fragments, then verify the memory lead against current files and live state.
+Use `python -m tools.sdd_cli memory search --query <symptom>` during debugging and preflight when a task mentions or reveals an error, blocker, failed command, deployment issue, PR feedback, QA failure, configuration mismatch, or local tooling problem. Search concrete terms such as config keys, command names, marker names, workflow stages, and error fragments, then verify the memory lead against current files and live state.
 
 ## OpenProject Generated Comments Require OpenProject Payload Fields
 

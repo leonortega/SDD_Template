@@ -9,4 +9,4 @@ pre-commit:
 commit-msg:
   commands:
     require-ticket:
-      run: powershell -NoProfile -ExecutionPolicy Bypass -File .githooks/require-ticket.ps1 "{1}"
+      run: python -m tools.sdd_cli hooks validate-commit-message "{1}"

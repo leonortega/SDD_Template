@@ -98,3 +98,11 @@ When adding external skills for this repository, install them as repo-local skil
 - Last verified: 2026-06-25
 
 Do not edit, patch, or install repo-specific behavior into IDE-owned or global skill roots such as `C:\Users\mlortega\.codex\skills`. Restore-only cleanup is allowed when a prior run modified those files by mistake. Repo-specific skill acquisition behavior belongs in `.codex/skills/project-guidance-acquire` and repo-owned configure scripts.
+## Stack-Neutral Python Automation
+
+- Type: Decision
+- Status: Active
+- Source: user request and `tools/sdd_cli`, 2026-06-25
+- Last verified: 2026-06-25
+
+Repository-owned delivery automation uses `python -m tools.sdd_cli` as the canonical command surface so the SDD template is not tied to any generated application stack. Python 3.11+ is the baseline automation runtime; app-stack commands remain example-specific.

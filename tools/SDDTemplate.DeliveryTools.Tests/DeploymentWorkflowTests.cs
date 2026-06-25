@@ -209,8 +209,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.DoesNotContain("webServer", config);
             Assert.Contains("\"@playwright/test\"", package);
             Assert.Contains("\"test:docker\"", package);
-            Assert.Contains("run-local-docker.ps1", package);
-            Assert.True(File.Exists(Path.Combine(root, "tests", "SDDTemplate.E2ETests", "run-local-docker.ps1")));
+            Assert.Contains("python -m tools.sdd_cli e2e docker", package);
+            Assert.True(File.Exists(Path.Combine(root, "tools", "sdd_cli", "cli.py")));
             Assert.Contains("Client CRUD deployed QA E2E", spec);
             Assert.Contains("/api/clients", spec);
             Assert.Contains("Born date cannot be in the future.", spec);
@@ -225,14 +225,14 @@ namespace SDDTemplate.DeliveryTools.Tests
             string root = FindRepositoryRoot().FullName;
             string workflow = ReadWorkflow();
             string dockerfile = File.ReadAllText(Path.Combine(root, "infra", "gitea", "actions-images", "e2e-ci", "Dockerfile"));
-            string localRunner = File.ReadAllText(Path.Combine(root, "tests", "SDDTemplate.E2ETests", "run-local-docker.ps1"));
+            string localRunner = File.ReadAllText(Path.Combine(root, "tools", "sdd_cli", "cli.py"));
             string packageLock = File.ReadAllText(Path.Combine(root, "tests", "SDDTemplate.E2ETests", "package-lock.json"));
 
             using JsonDocument lockJson = JsonDocument.Parse(packageLock);
             JsonElement packages = lockJson.RootElement.GetProperty("packages");
 
             Assert.Contains($"image: {expectedImage}", workflow);
-            Assert.Contains($"$image = '{expectedImage}'", localRunner);
+            Assert.Contains($"E2E_IMAGE = \"{expectedImage}\"", localRunner);
             Assert.Contains($"FROM mcr.microsoft.com/playwright:v{expectedPlaywrightVersion}-noble", dockerfile);
             Assert.Equal(expectedPlaywrightVersion, packages.GetProperty("").GetProperty("devDependencies").GetProperty("@playwright/test").GetString());
             Assert.Equal(expectedPlaywrightVersion, packages.GetProperty("node_modules/@playwright/test").GetProperty("version").GetString());
@@ -667,11 +667,9 @@ namespace SDDTemplate.DeliveryTools.Tests
             string deploymentDocs = ReadDoc("deployment.md");
             string script = File.ReadAllText(Path.Combine(
                 FindRepositoryRoot().FullName,
-                ".codex",
-                "skills",
-                "_shared",
-                "scripts",
-                "delivery_tools.ps1"));
+                "tools",
+                "sdd_cli",
+                "cli.py"));
 
             Assert.Contains("IA generated workflow timing: {ticketKey}", contract);
             Assert.Contains("OpenProject time entries are the primary workflow telemetry store", contract);
@@ -860,11 +858,9 @@ namespace SDDTemplate.DeliveryTools.Tests
                 "release.schema.json"));
             string script = File.ReadAllText(Path.Combine(
                 FindRepositoryRoot().FullName,
-                ".codex",
-                "skills",
-                "_shared",
-                "scripts",
-                "delivery_tools.ps1"));
+                "tools",
+                "sdd_cli",
+                "cli.py"));
 
             Assert.Contains("QA accepted and eligible for a later explicit PROD release", contract);
             Assert.Contains("PROD promotion is explicit and release-centric", contract);
@@ -1645,37 +1641,38 @@ namespace SDDTemplate.DeliveryTools.Tests
         public void MemorySearchHelperSupportsSymptomDrivenLookup()
         {
             string root = FindRepositoryRoot().FullName;
-            string searchScriptPath = Path.Combine(root, ".codex", "memory", "search_memory.ps1");
-            string searchScript = File.ReadAllText(searchScriptPath);
+            string searchScript = File.ReadAllText(Path.Combine(root, "tools", "sdd_cli", "cli.py"));
             string retrievalPolicy = File.ReadAllText(Path.Combine(root, ".codex", "memory", "retrieval-policy.md"));
             string memorySummary = File.ReadAllText(Path.Combine(root, ".codex", "memory", "memory_summary.md"));
             string skillStartup = ReadSkill("_shared", "skill-startup.md");
             string agents = File.ReadAllText(Path.Combine(root, "AGENTS.md"));
             string contextDocs = ReadDoc("context-management.md");
 
-            Assert.Contains("param(", searchScript);
-            Assert.Contains("-ListTopics", retrievalPolicy);
-            Assert.Contains("search_memory.ps1 -Query <symptom>", memorySummary);
-            Assert.Contains(".codex/memory/search_memory.ps1", skillStartup);
-            Assert.Contains("search_memory.ps1 -Query <symptom>", agents);
-            Assert.Contains("search_memory.ps1 -Query <symptom>", contextDocs);
+            Assert.Contains("def search_memory", searchScript);
+            Assert.Contains("--list-topics", retrievalPolicy);
+            Assert.Contains("python -m tools.sdd_cli memory search --query <symptom>", memorySummary);
+            Assert.Contains("python -m tools.sdd_cli memory search --query <symptom>", skillStartup);
+            Assert.Contains("python -m tools.sdd_cli memory search --query <symptom>", agents);
+            Assert.Contains("python -m tools.sdd_cli memory search --query <symptom>", contextDocs);
 
             using System.Diagnostics.Process process = new()
             {
                 StartInfo = new System.Diagnostics.ProcessStartInfo
                 {
-                    FileName = "pwsh",
+                    FileName = "python",
                     ArgumentList =
                     {
-                        "-NoProfile",
-                        "-File",
-                        searchScriptPath,
-                        "-Query",
+                        "-m",
+                        "tools.sdd_cli",
+                        "memory",
+                        "search",
+                        "--query",
                         "Api__BaseUrl",
-                        "-AsJson",
-                        "-Root",
+                        "--json",
+                        "--root",
                         root
                     },
+                    WorkingDirectory = root,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     UseShellExecute = false
@@ -1701,11 +1698,9 @@ namespace SDDTemplate.DeliveryTools.Tests
             string contract = ReadSkill("_shared", "delivery-contract.md");
             string script = File.ReadAllText(Path.Combine(
                 FindRepositoryRoot().FullName,
-                ".codex",
-                "skills",
-                "_shared",
-                "scripts",
-                "delivery_tools.ps1"));
+                "tools",
+                "sdd_cli",
+                "cli.py"));
 
             foreach (string mode in new[]
             {
@@ -1727,16 +1722,16 @@ namespace SDDTemplate.DeliveryTools.Tests
                 Assert.Contains(mode, script);
             }
 
-            Assert.Contains("function Test-TicketLock", script);
-            Assert.Contains("function Test-DeploymentLane", script);
-            Assert.Contains("function Get-DeliveryPolicy", script);
-            Assert.Contains("function Get-ExtractedTicketKey", script);
-            Assert.Contains("function Get-CoverageThreshold", script);
-            Assert.Contains("function Get-CoberturaLineRate", script);
-            Assert.Contains("function Test-ParallelDeliveryDryRun", script);
-            Assert.Contains("function Render-TicketComment", script);
-            Assert.Contains("function Update-ReleaseManifest", script);
-            Assert.Contains("function New-ArtifactPointer", script);
+            Assert.Contains("def validate_ticket_lock", script);
+            Assert.Contains("def validate_deployment_lane", script);
+            Assert.Contains("ReadDeliveryPolicy", script);
+            Assert.Contains("def extract_ticket_key", script);
+            Assert.Contains("ReadCoverageThreshold", script);
+            Assert.Contains("ReadCoberturaLineRate", script);
+            Assert.Contains("ValidateParallelDeliveryDryRun", script);
+            Assert.Contains("def render_ticket_comment", script);
+            Assert.Contains("def update_release_manifest", script);
+            Assert.Contains("def create_artifact_pointer", script);
         }
 
         [Fact]
@@ -1785,7 +1780,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             {
                 string skill = ReadSkill(skillName, "SKILL.md");
 
-                Assert.Contains(".codex/skills/_shared/scripts/delivery_tools.ps1", skill);
+                Assert.Contains("python -m tools.sdd_cli delivery", skill);
                 foreach (string expectedMode in expectedModes)
                 {
                     Assert.Contains(expectedMode, skill);

@@ -33,7 +33,7 @@ After install, reopen PowerShell and run `git --version`.
 
 ## Docker Desktop
 
-Required for `.\infra\up.ps1`, `.\infra\down.ps1`, local OpenProject/Gitea/Nexus/Grafana/Seq, and non-secret live checks.
+Required for `python -m tools.sdd_cli infra up`, `python -m tools.sdd_cli infra down`, local OpenProject/Gitea/Nexus/Grafana/Seq, and non-secret live checks.
 
 Check:
 
