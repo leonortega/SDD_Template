@@ -82,7 +82,7 @@ namespace SDDTemplate.Site.Tests
         public void SharedArtifactPathsDefaultToSelectedRancherDesktopProviderMetadata()
         {
             string root = FindRepositoryRoot();
-            string script = Path.Combine(root, ".codex", "skills", "_shared", "scripts", "delivery_tools.ps1");
+            string script = Path.Combine(root, ".codex", "skills", "_shared", "scripts", "delivery_tools.py");
 
             string defaultJson = RunPowerShell(root, $"-NoProfile -ExecutionPolicy Bypass -File \"{script}\" -Mode ArtifactPaths -CommitSha abc123");
             string azureJson = RunPowerShell(root, $"-NoProfile -ExecutionPolicy Bypass -File \"{script}\" -Mode ArtifactPaths -CommitSha abc123 -DeploymentProvider azure-appservice");
@@ -147,7 +147,7 @@ namespace SDDTemplate.Site.Tests
         public void ConfigureInfraAuditsSelectedRancherDesktopLocalLabSurfaces()
         {
             string root = FindRepositoryRoot();
-            string script = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "scripts", "configure_infra_tools.ps1"));
+            string script = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "scripts", "configure_infra_tools.py"));
             string configureSkill = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "SKILL.md"));
 
             Assert.Contains("function Add-RancherDesktopLocalLabAuditFindings", script);
@@ -174,7 +174,7 @@ namespace SDDTemplate.Site.Tests
         public void ConfigureInfraCanEnsureRancherDesktopCluster()
         {
             string root = FindRepositoryRoot();
-            string script = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "scripts", "configure_infra_tools.ps1"));
+            string script = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "scripts", "configure_infra_tools.py"));
             string configureSkill = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "SKILL.md"));
             string aliasSkill = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-infra-tools", "SKILL.md"));
             string adapter = File.ReadAllText(Path.Combine(root, ".codex", "providers", "deploy.rancher-desktop.md"));
@@ -202,7 +202,7 @@ namespace SDDTemplate.Site.Tests
         public void ConfigureInfraCanEnsureRancherDesktopPortForwards()
         {
             string root = FindRepositoryRoot();
-            string script = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "scripts", "configure_infra_tools.ps1"));
+            string script = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "scripts", "configure_infra_tools.py"));
             string configureSkill = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "SKILL.md"));
             string aliasSkill = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-infra-tools", "SKILL.md"));
             string adapter = File.ReadAllText(Path.Combine(root, ".codex", "providers", "deploy.rancher-desktop.md"));
@@ -233,7 +233,7 @@ namespace SDDTemplate.Site.Tests
         public void ConfigureInfraCanEnsureRancherDesktopHeadlamp()
         {
             string root = FindRepositoryRoot();
-            string script = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "scripts", "configure_infra_tools.ps1"));
+            string script = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "scripts", "configure_infra_tools.py"));
             string configureSkill = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "SKILL.md"));
             string aliasSkill = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-infra-tools", "SKILL.md"));
             string adapter = File.ReadAllText(Path.Combine(root, ".codex", "providers", "deploy.rancher-desktop.md"));
@@ -355,18 +355,55 @@ namespace SDDTemplate.Site.Tests
 
         private static string RunPowerShell(string workingDirectory, string arguments)
         {
+            string[] tokens = arguments.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            List<string> cliArgs = [];
+            string command = "delivery";
+            for (int i = 0; i < tokens.Length; i++)
+            {
+                if (tokens[i] is "-NoProfile" or "-ExecutionPolicy" or "-File")
+                {
+                    if (tokens[i] is "-ExecutionPolicy" or "-File")
+                    {
+                        i++;
+                    }
+                    continue;
+                }
+
+                if (tokens[i] == "-Mode" && i + 1 < tokens.Length)
+                {
+                    cliArgs.Add(tokens[++i]);
+                    continue;
+                }
+
+                if (tokens[i].StartsWith("-", StringComparison.Ordinal) && i + 1 < tokens.Length)
+                {
+                    string option = "--" + ToKebabCase(tokens[i][1..]);
+                    cliArgs.Add(option);
+                    if (!tokens[i + 1].StartsWith("-", StringComparison.Ordinal))
+                    {
+                        cliArgs.Add(tokens[++i].Trim('"'));
+                    }
+                }
+            }
+
             using System.Diagnostics.Process process = new()
             {
                 StartInfo = new System.Diagnostics.ProcessStartInfo
                 {
-                    FileName = "powershell",
-                    Arguments = arguments,
+                    FileName = "python",
                     WorkingDirectory = workingDirectory,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     UseShellExecute = false
                 }
             };
+            process.StartInfo.ArgumentList.Add("-m");
+            process.StartInfo.ArgumentList.Add("tools.sdd_cli");
+            process.StartInfo.ArgumentList.Add(command);
+            foreach (string arg in cliArgs)
+            {
+                process.StartInfo.ArgumentList.Add(arg);
+            }
 
             Assert.True(process.Start(), "PowerShell process did not start.");
             string output = process.StandardOutput.ReadToEnd();
@@ -376,7 +413,13 @@ namespace SDDTemplate.Site.Tests
             Assert.True(process.ExitCode == 0, error);
             return output;
         }
+
+        private static string ToKebabCase(string value)
+        {
+            return string.Concat(value.Select((ch, index) =>
+                char.IsUpper(ch) && index > 0
+                    ? "-" + char.ToLowerInvariant(ch)
+                    : char.ToLowerInvariant(ch).ToString()));
+        }
     }
 }
-
-

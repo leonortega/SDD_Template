@@ -140,7 +140,7 @@ namespace SDDTemplate.Site.Tests
         {
             string root = FindRepositoryRoot();
             string workflow = File.ReadAllText(Path.Combine(root, ".gitea", "workflows", "package-deploy.yml"));
-            string configureScript = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "scripts", "configure_infra_tools.ps1"));
+            string configureScript = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "scripts", "configure_infra_tools.py"));
 
             foreach (string source in new[] { workflow, configureScript })
             {
@@ -231,7 +231,7 @@ namespace SDDTemplate.Site.Tests
         public void SeqErrorAlertConfigurationUsesNativeSeqAlerting()
         {
             string root = FindRepositoryRoot();
-            string script = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "scripts", "configure_infra_tools.ps1"));
+            string script = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "scripts", "configure_infra_tools.py"));
             string envExample = File.ReadAllText(Path.Combine(root, "infra", "monitoring", "variables.env.example"));
 
             Assert.Contains("Agentic E2E - Any Seq Error Logs", script);
@@ -301,7 +301,7 @@ namespace SDDTemplate.Site.Tests
         public void ConfigureInfraGeneratesK8GrafanaHealthDashboards()
         {
             string root = FindRepositoryRoot();
-            string script = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "scripts", "configure_infra_tools.ps1"));
+            string script = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "scripts", "configure_infra_tools.py"));
 
             Assert.Contains("Write-GrafanaK8HealthDashboards", script);
             Assert.Contains("New-GrafanaK8HealthDashboard", script);
@@ -318,7 +318,7 @@ namespace SDDTemplate.Site.Tests
         public void ConfigureInfraShowsEnvironmentUrls()
         {
             string root = FindRepositoryRoot();
-            string script = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "scripts", "configure_infra_tools.ps1"));
+            string script = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "scripts", "configure_infra_tools.py"));
             string gitignore = File.ReadAllText(Path.Combine(root, ".gitignore"));
 
             Assert.Contains("\"ShowEnvironmentUrls\"", script);
@@ -339,7 +339,7 @@ namespace SDDTemplate.Site.Tests
         public void ConfigureInfraUsesCollectorBasedSeqIngestionOnly()
         {
             string root = FindRepositoryRoot();
-            string script = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "scripts", "configure_infra_tools.ps1"));
+            string script = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-dev-environment", "scripts", "configure_infra_tools.py"));
             string observabilitySkill = File.ReadAllText(Path.Combine(root, ".codex", "skills", "configure-observability", "SKILL.md"));
 
             Assert.Contains("SetSeqAzureEventHubLogs", script);
@@ -383,4 +383,3 @@ namespace SDDTemplate.Site.Tests
         }
     }
 }
-

@@ -643,7 +643,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("## Prompt Cache Hygiene", contextDocs);
             Assert.Contains("## Agent Telemetry", contextDocs);
             Assert.Contains("## Agent Workflow Evals", developmentDocs);
-            Assert.Contains("audit_skill_contracts.ps1", developmentDocs);
+            Assert.Contains("python -m tools.sdd_cli delivery AuditSkillContracts", developmentDocs);
             Assert.Contains("The audit checks repo-owned delivery skills by default", developmentDocs);
             Assert.Contains("model-optimization", retrospective);
             Assert.Contains("eval-coverage", retrospective);
@@ -737,13 +737,13 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("falling back to `.codex/agent-telemetry.local.jsonl` only when direct time telemetry is unavailable", deploymentDocs);
             Assert.Contains("PROD timing and PROD deployment comments remain part of the separate explicit PROD promotion step", deploymentDocs);
             Assert.DoesNotContain("retroactive marker-derived timing", contextDocs);
-            Assert.Contains("'WorkflowTiming'", script);
-            Assert.Contains("'InitializeWorkflowTelemetry'", script);
-            Assert.Contains("'AppendWorkflowTelemetry'", script);
-            Assert.Contains("'ReadWorkflowTelemetry'", script);
-            Assert.Contains("'ReadOpenProjectTimeTelemetry'", script);
-            Assert.Contains("'RenderOpenProjectTimeTelemetryComment'", script);
-            Assert.Contains("stageGroups", script);
+            Assert.Contains("\"WorkflowTiming\"", script);
+            Assert.Contains("\"InitializeWorkflowTelemetry\"", script);
+            Assert.Contains("\"AppendWorkflowTelemetry\"", script);
+            Assert.Contains("\"ReadWorkflowTelemetry\"", script);
+            Assert.Contains("\"ReadOpenProjectTimeTelemetry\"", script);
+            Assert.Contains("\"RenderOpenProjectTimeTelemetryComment\"", script);
+            Assert.Contains("collapse_stages", script);
             Assert.Contains("| Stage | Outcome | Duration | Started UTC | Finished UTC |", script);
         }
 
@@ -779,7 +779,8 @@ namespace SDDTemplate.DeliveryTools.Tests
             string development = ReadDoc("development.md");
 
             Assert.Contains("`ready`, `refinable`, or `blocked`", contract);
-            Assert.Contains("`refinable`: generate Scrum-ready planning details", starter);
+            Assert.Contains("`refinable`", starter);
+            Assert.Contains("Generate Scrum-ready planning details", starter);
             Assert.Contains("Scrum-ready planning details", contract);
             Assert.Contains("Refinable tickets", development);
 
@@ -946,7 +947,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                 "skills",
                 "_shared",
                 "scripts",
-                "audit_skill_contracts.ps1"));
+                "audit_skill_contracts.py"));
 
             Assert.Contains("FailOnFindings", script);
             Assert.Contains("IncludeConfigure", script);
@@ -1123,7 +1124,7 @@ namespace SDDTemplate.DeliveryTools.Tests
         public void RecommendedToolsAuditDetectsCurrentStackAndAvoidsOpenProjectMcp()
         {
             string script = ReadConfigureScript();
-            string discoveryScript = ReadSkill("project-guidance-discover", Path.Combine("scripts", "project_guidance_discovery.ps1"));
+            string discoveryScript = ReadSkill("project-guidance-discover", Path.Combine("scripts", "project_guidance_discovery.py"));
             string catalog = ReadToolRecommendationsCatalog();
 
             Assert.Contains("AuditRecommendedTools", script);
@@ -1135,7 +1136,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             Assert.Contains("usedInSteps", script);
             Assert.Contains("projectGuidanceDiscoveryScript", script);
             Assert.Contains("project-guidance-discover", script);
-            Assert.Contains("project_guidance_discovery.ps1", script);
+            Assert.Contains("project_guidance_discovery.py", script);
             Assert.Contains("function Invoke-DiscoverProjectGuidance", script);
             Assert.Contains("function Invoke-AcquireProjectGuidance", script);
             Assert.Contains("function Invoke-MapProjectGuidanceStep", script);
@@ -1282,7 +1283,7 @@ namespace SDDTemplate.DeliveryTools.Tests
             string discover = ReadSkill("project-guidance-discover", "SKILL.md");
             string acquire = ReadSkill("project-guidance-acquire", "SKILL.md");
             string mapper = ReadSkill("project-guidance-mapper", "SKILL.md");
-            string discoveryScript = ReadSkill("project-guidance-discover", Path.Combine("scripts", "project_guidance_discovery.ps1"));
+            string discoveryScript = ReadSkill("project-guidance-discover", Path.Combine("scripts", "project_guidance_discovery.py"));
 
             Assert.Contains("name: project-guidance-discover", discover);
             Assert.Contains("suggested missing skills and guidance", discover);
@@ -2060,7 +2061,7 @@ namespace SDDTemplate.DeliveryTools.Tests
                 "skills",
                 "configure-dev-environment",
                 "scripts",
-                "configure_infra_tools.ps1"));
+                "configure_infra_tools.py"));
         }
 
         private static string ReadToolRecommendationsCatalog()
