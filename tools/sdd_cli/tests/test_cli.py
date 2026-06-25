@@ -293,6 +293,7 @@ class SddCliTests(unittest.TestCase):
             write(source / ".codex" / "memory" / "memory_summary.md", "summary")
             write(source / ".codex" / "memory" / "retrieval-policy.md", "policy")
             write(source / "infra" / "openproject" / "data" / "runtime.db", "no")
+            write(source / "infra" / "openproject" / "openproject" / "pgdata" / "base" / "1" / "2619", "no")
 
             result = cli.install_sdd_tool(source, target, "v0.1.0", "install")
 
@@ -308,6 +309,7 @@ class SddCliTests(unittest.TestCase):
             self.assertEqual("dev", cli.git_text(target, ["branch", "--show-current"]))
             self.assertFalse((target / "openspec" / "changes" / "internal" / "tasks.md").exists())
             self.assertFalse((target / "infra" / "openproject" / "data" / "runtime.db").exists())
+            self.assertFalse((target / "infra" / "openproject" / "openproject" / "pgdata" / "base" / "1" / "2619").exists())
             manifest = json.loads((target / ".codex" / "sdd-tool-version.json").read_text(encoding="utf-8"))
             self.assertIn("tools/sdd_cli/cli.py", manifest["managedFiles"])
 
