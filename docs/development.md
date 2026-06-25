@@ -115,6 +115,8 @@ Gitea Actions jobs use repo-owned pinned Docker images built by `config infra` t
 
 Project guidance treats repeated CI, QA, and security tools as Docker-preferred when an official/vendor or repo-owned pinned image can run with mounted workspace/cache. Host installs remain the fallback for Docker itself, MCPs, IDE plugins, secret-bearing tools, interactive-auth tools, and tools without a verified image.
 
+CodeGraph may be used as optional local code-intelligence context for symbol, route, and impact exploration before broad `rg` or file-reading passes. Treat it as an acceleration aid only: current files, OpenSpec artifacts, tests, selected provider adapters, and the delivery contract remain authoritative.
+
 The `/health` endpoint is part of the deployment contract. It must return HTTP 200 with JSON field `status` equal to `ok` and must not expose secrets, connection strings, tokens, host internals, or detailed exception data.
 
 ## Agent Retrospective Quality Lane

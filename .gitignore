@@ -22,6 +22,7 @@ artifacts/
 .codex/installed-skill-index.cache.local.json
 .codex/agent-telemetry.local.jsonl
 .codex/agent-evals/results.local.json
+.codegraph/
 TestResults/
 [Tt]est[Rr]esult*/
 coverage/
