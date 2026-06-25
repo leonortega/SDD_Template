@@ -7,7 +7,7 @@ services:
     environment:
       OPENPROJECT_HOST__NAME: ${OPENPROJECT_HOST_NAME:-localhost:8080}
       OPENPROJECT_HTTPS: ${OPENPROJECT_HTTPS:-false}
-      OPENPROJECT_SECRET_KEY_BASE: ${OPENPROJECT_SECRET_KEY_BASE:?OPENPROJECT_SECRET_KEY_BASE must be set in infra/openproject/variables.env}
+      SECRET_KEY_BASE: ${OPENPROJECT_SECRET_KEY_BASE:?OPENPROJECT_SECRET_KEY_BASE must be set in infra/openproject/variables.env}
     volumes:
       - ${OPENPROJECT_DATA_DIR:-./openproject}/assets:/var/openproject/assets
       - ${OPENPROJECT_DATA_DIR:-./openproject}/pgdata:/var/openproject/pgdata

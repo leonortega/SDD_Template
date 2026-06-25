@@ -144,7 +144,7 @@ docker compose --env-file .\infra\openproject\variables.env --env-file .\infra\m
 11. If local Trivy checks report a stale vulnerability database, refresh it before local scans:
 
 ```bash
-trivy --download-db-only
+trivy image --download-db-only
 ```
 
 12. Run `AuditRecommendedTools` when the user is doing full setup or base-code creation, then summarize relevant MCPs, plugins, tools, references, practices, detected stack tags, stack-context drift, and scan-derived guidance findings for tools, frameworks, code standards, web UI, REST/API design, security, and QA. If no product source exists and `.codex/project-profile.local.json` has no frontend/backend/database selection, ask three separate questions for frontend, backend, and database before project guidance discovery; accept `none`, `no`, `n/a`, or an empty answer as not applicable, then record the answers with `SetProjectStack`. Use `.codex/tool-recommendations.common.json` as common recommendation catalog metadata, not as runtime project state or a substitute for scanning the repository.
