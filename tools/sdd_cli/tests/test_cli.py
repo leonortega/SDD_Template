@@ -395,6 +395,12 @@ class SddCliTests(unittest.TestCase):
         self.assertIn("trivy image --download-db-only", legacy)
         self.assertNotIn("trivy --download-db-only", configure)
         self.assertNotIn("trivy --download-db-only", legacy)
+        self.assertIn("--values-json-stdin true", configure)
+        self.assertIn("Do not use per-mode `--help`", configure)
+        self.assertIn("Do not bypass the CLI by importing `run_configure_mode`", configure)
+        self.assertIn("When the operator forbids PowerShell", configure)
+        self.assertIn("ask for values one at a time", configure)
+        self.assertIn("Do not batch multiple missing-value questions into one prompt", configure)
 
     def test_seq_grafana_validation_uses_grafana_port_and_checks_provisioning(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -413,6 +419,7 @@ class SddCliTests(unittest.TestCase):
 
             self.assertTrue(result["valid"])
             self.assertIn("http://localhost:3001/api/health", seen)
+            self.assertNotIn("http://localhost:3000/api/health", seen)
             keys = {item["key"] for item in result["actions"]}
             self.assertIn("grafana.infinity-health", keys)
             self.assertIn("grafana.health-alerts", keys)

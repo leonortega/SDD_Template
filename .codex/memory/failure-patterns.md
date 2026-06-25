@@ -2,6 +2,15 @@
 
 Add future entries only when source-backed, current, and not tied to the removed sample product.
 
+### User-Requested No-PowerShell Runs Need Alternate Execution
+
+- Type: Pattern
+- Status: Active
+- Source: conversation request on 2026-06-25 and current Codex run
+- Last verified: 2026-06-25
+
+When the user says not to use PowerShell, do not call `functions.shell_command` in this Windows workspace because it invokes PowerShell by default. Use `apply_patch` for edits and a non-PowerShell execution path such as Node REPL `child_process.execFile` for validation commands.
+
 ### Installed Template Config Infra Stops On Missing Native Modes And Memory
 
 - Type: Pattern
