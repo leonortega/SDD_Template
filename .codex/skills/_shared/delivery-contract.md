@@ -14,6 +14,8 @@ For durable context policy, read `docs/context-management.md`. The docs are the 
 
 When an agent cannot apply a required repository skill, command, memory rule, definition, or configured tool/install path, it must stop the affected workflow step instead of silently falling back to an alternative. This applies to repo-local skills, selected provider adapters, shared helper scripts, configured quality gates, memory update rules, project-guidance acquisition, and platform-supported installers.
 
+IDE-owned and global skill roots such as `C:\Users\mlortega\.codex\skills` are read-only for this repository. Do not edit, patch, or install into those roots for repo-specific behavior. Restore-only cleanup is allowed when an earlier run changed an IDE-owned skill; after restoration, put all repo-specific skill acquisition behavior in `.codex/skills/project-guidance-acquire` and repo-owned configure scripts.
+
 The blocker response must include:
 
 - failed required item

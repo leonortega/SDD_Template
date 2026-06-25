@@ -468,6 +468,42 @@
       "sourceKind": "repo-local"
     },
     {
+      "id": "playwright-interactive-skill",
+      "name": "Playwright interactive skill",
+      "type": "skill",
+      "requires": [
+        "browser-e2e",
+        "playwright-guidance"
+      ],
+      "purpose": "Use persistent Playwright sessions for local UI iteration, visual QA, viewport-fit checks, and deployed browser failure diagnosis without replacing committed E2E tests.",
+      "installMethod": "manual-copy",
+      "installScope": "repo-local",
+      "installerKind": "file-copy",
+      "requiresIdeRestart": false,
+      "requiresSystemReboot": false,
+      "userActionRequired": false,
+      "source": "official:https://github.com/openai/skills/tree/main/skills/.curated/playwright-interactive",
+      "target": ".codex/skills/playwright-interactive/SKILL.md",
+      "validation": "Test-Path .\\.codex\\skills\\playwright-interactive\\SKILL.md",
+      "researchTopics": [
+        "Playwright persistent sessions",
+        "visual QA",
+        "viewport-fit checks",
+        "browser failure diagnosis",
+        "js_repl"
+      ],
+      "officialSources": [
+        "https://github.com/openai/skills/tree/main/skills/.curated/playwright-interactive",
+        "https://playwright.dev/docs/best-practices"
+      ],
+      "searchQueries": [
+        "site:github.com/openai/skills playwright-interactive",
+        "site:playwright.dev/docs Playwright visual testing"
+      ],
+      "notes": "Repo-local external skill only. It supports implementation/debugging and QA failure classification; quality-test-e2e remains the official QA gate.",
+      "sourceKind": "openai-official"
+    },
+    {
       "id": "dotnet-10-platform-guidance",
       "name": ".NET 10 platform guidance",
       "type": "reference",

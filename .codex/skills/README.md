@@ -47,6 +47,7 @@ Tracked skills, including external skills copied into this repository, must sati
 | `grilling` | External guidance | External | https://github.com/mattpocock/skills/tree/main/skills/productivity/grilling | No rename |
 | `plan-ui-change` | External guidance | External | https://github.com/dotnet/skills/tree/main/plugins/dotnet-blazor/skills/plan-ui-change | No rename |
 | `playwright` | External guidance | External | https://github.com/openai/skills/tree/main/skills/.curated/playwright | No rename |
+| `playwright-interactive` | External guidance | External | https://github.com/openai/skills/tree/main/skills/.curated/playwright-interactive | No rename; repo-local SDLC guardrails added |
 | `ponytail` | Agent utility | External | Not recorded in skill metadata | No rename |
 | `ponytail-audit` | Agent utility | External | Not recorded in skill metadata | No rename |
 | `ponytail-debt` | Agent utility | External | Not recorded in skill metadata | No rename |

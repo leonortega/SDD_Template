@@ -11,6 +11,8 @@ Use this skill only with the final confirmed list from `project-guidance-discove
 
 This skill handles guarded acquisition from confirmed recommendations. Safe repo-local, non-secret skill recommendations may be copied into `.codex/skills`. Non-skill guidance such as tools, MCPs, plugins, IDE extensions, references, practices, and standards remains metadata in `.codex/tool-recommendations.local.json` unless a deterministic repo-local config path or platform-supported installer is explicitly supported.
 
+IDE-owned and global skill roots such as `C:\Users\mlortega\.codex\skills` are read-only for this repository. Do not edit, patch, or install into those roots. If an earlier run changed an IDE-owned skill, only restore it to official upstream content; put repo-specific installer behavior in this skill and the repository's `.codex/skills/**` files.
+
 ## Shared Context
 
 Read `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md` before copying skills that affect ticket delivery, QA, deployment, security, or handoff behavior. The source `SKILL.md`, repository docs, and validation commands are the authority for what to copy.
@@ -33,10 +35,11 @@ If a source is missing or ambiguous, return to `project-guidance-discover` for r
 
 1. Filter the final confirmed list by type and install metadata.
 2. Read the source repository's `SKILL.md`; when a `skills.sh`, `skills`, marketplace, or README command supplied the lead, treat the command as metadata only and use it to locate the repository/ref/path.
-3. Create `.codex/skills/{skill-name}/` when it does not exist.
-4. Write the copied `SKILL.md` to the target path.
-5. Inspect the source and copied `SKILL.md` for required frontmatter, matching name/description intent, and required relative references.
-6. Copy only required referenced scripts, templates, assets, or reference files that are needed by that skill.
+3. Derive the source skill directory from the confirmed `repo:.../SKILL.md` source and the target skill directory from `.codex/skills/{skill-name}/SKILL.md`.
+4. Reject the copy if the target skill directory already exists.
+5. Copy the full skill directory recursively, including nested `agents/`, `assets/`, `references/`, `scripts/`, templates, markdown guides, and empty subfolders.
+6. Verify that every source directory exists in the destination and every source file exists with byte-for-byte identical content.
+7. Inspect the copied `SKILL.md` for required frontmatter, matching name/description intent, and required relative references.
 7. Run the validation command, such as:
 
 ```powershell
@@ -53,7 +56,7 @@ Test-Path .\.codex\skills\{skill-name}\SKILL.md
 ## Safety Rules
 
 - Do not run arbitrary command installers, curl scripts, bootstrap snippets, or package-manager commands discovered from external sources.
-- Do not install into `$CODEX_HOME`.
+- Do not install into `$CODEX_HOME` or edit IDE-owned/global skill roots such as `C:\Users\mlortega\.codex\skills`.
 - Require explicit confirmation before global, IDE, privileged, MCP/plugin, secret-bearing, or reboot-required installs. The final confirmed list from `project-guidance-discover` is that confirmation for listed non-secret items; ask again only when a concrete installer would introduce new scope, privilege, secrets, destructive behavior, or different items.
 - Do not reboot automatically. Report one aggregate IDE restart/system reboot notice after all feasible work finishes.
 - Use platform-supported plugin/connector install tools only when available and only for the exact requested or confirmed item.
