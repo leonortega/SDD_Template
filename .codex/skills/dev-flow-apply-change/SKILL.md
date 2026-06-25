@@ -68,7 +68,13 @@ Implement tasks from an OpenSpec change.
 
    For each pending task:
    - Show which task is being worked on
-   - Make the code changes required
+   - Build or update the acceptance-to-test map for the task before product code changes
+   - Write one behavior-focused test through a public interface for the next acceptance criterion or task behavior
+   - Run the smallest relevant test command and confirm it fails for the expected reason (RED)
+   - Make the smallest product code change required to pass that test
+   - Rerun the focused test and confirm it passes (GREEN)
+   - Repeat one vertical RED/GREEN cycle at a time until every acceptance criterion has committed automated coverage
+   - Refactor only while GREEN, then rerun the relevant tests
    - Keep changes minimal and focused
    - Mark task complete in the tasks file: `- [ ]` → `- [x]`
    - Continue to next task
@@ -141,6 +147,9 @@ What would you like to do?
 **Guardrails**
 - Keep going through tasks until done or blocked
 - Always read context files before starting (from the apply instructions output)
+- Use `tdd` for ticketed implementation: tests first, public-interface behavior tests, one vertical RED/GREEN cycle at a time
+- Do not write all tests first and then all implementation; do not write product code before the acceptance-to-test map and first failing test for the current behavior
+- Stop before implementation handoff when any acceptance criterion lacks committed automated coverage
 - If task is ambiguous, pause and ask before implementing
 - If implementation reveals issues, pause and suggest artifact updates
 - Keep code changes minimal and scoped to each task

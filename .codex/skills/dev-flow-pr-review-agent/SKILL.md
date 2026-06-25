@@ -1,15 +1,15 @@
----
+﻿---
 name: dev-flow-pr-review-agent
 description: Review a specific pull request through the selected review adapter and post actionable findings. Use when Codex is asked to review a PR, review the PR just created by the implementation workflow, inspect PR diffs, use internet research to validate code quality, post review comments, or apply configured review outcome labels.
 ---
 
-# Gitea PR Review Agent
+# repository PR Review Agent
 
 ## Overview
 
-Use this skill to review one explicit Gitea pull request. It is invoked by `dev-flow-implement-change` after PR creation or directly by a user; it is not a recurring polling workflow.
+Use this skill to review one explicit repository pull request. It is invoked by `dev-flow-implement-change` after PR creation or directly by a user; it is not a recurring polling workflow.
 
-For exact Gitea API endpoint guidance, read `references/gitea-review-api.md` before making API calls.
+For exact repository/review provider API endpoint guidance, read `the selected repository/review adapter` before making API calls.
 
 ## Shared Context
 
@@ -17,17 +17,17 @@ Before posting review output, follow `.codex/skills/_shared/skill-startup.md`, w
 
 ## Workflow Telemetry
 
-When this skill runs as part of a ticket workflow and a Plane ticket key is resolved, capture UTC start time before PR review reads. Append a `dev-flow-pr-review-agent` row with `.codex/skills/_shared/scripts/delivery_tools.ps1 -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` when the review succeeds, blocks, fails, or is skipped idempotently because a current-head review marker already exists. On resume or idempotent reuse, append another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-flow-pr-review-agent`, `agentRole=prReview`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If the review is explicitly standalone and no ticket key can be safely resolved, report that workflow telemetry was skipped.
+When this skill runs as part of a ticket workflow and a ticket key is resolved, capture UTC start time before PR review reads. Prefer OpenProject time-entry telemetry and create or update the `dev-flow-pr-review-agent` entry with marker `IA generated workflow telemetry: {ticketKey}:dev-flow-pr-review-agent`. Use `python -m tools.sdd_cli delivery -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` only as the JSONL fallback when direct time telemetry is unavailable. On resume or idempotent reuse, append or update another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-flow-pr-review-agent`, `agentRole=prReview`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If the review is explicitly standalone and no ticket key can be safely resolved, report that workflow telemetry was skipped.
 
 ## Configuration
 
-Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.example.json` for defaults only, then apply environment variable overrides when present.
+Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.common.json` for defaults only, then apply environment variable overrides when present.
 
 Required or defaulted values:
 
-- `gitea.baseUrl`: default `http://localhost:3000`
-- `gitea.apiToken`: required for PR reads and comments when the repository is private.
-- `gitea.owner` and `gitea.repo`: infer from `git remote get-url origin` when omitted.
+- `selected repository/review adapter runtime values`
+- `selected repository/review adapter token`: required for PR reads and comments when the repository is private.
+- `selected repository owner` and `selected repository name`: infer from `git remote get-url origin` when omitted.
 - `pr.labels.enabled`: default `true`.
 - `pr.labels.reviewed`: default `codex-reviewed`.
 - `pr.labels.needsTests`: default `needs-tests`.
@@ -48,14 +48,14 @@ Fetch:
 - commits
 - changed files or diff
 - existing PR comments
-- existing inline review comments and review-thread replies when the configured Gitea version exposes them
+- existing inline review comments and review-thread replies when the configured repository/review provider version exposes them
 - relevant local source files for changed code
 - changed line count for diff-size classification
-- delivery risk and adversarial-review trigger using the shared delivery contract; prefer `tools/SDDTemplate.DeliveryTools DetectAdversarialReviewTrigger` when available
+- delivery risk and adversarial-review trigger using the shared delivery contract; prefer repo-local helpers when available
 
 If a comment contains `<!-- codex-review-agent:{headSha} -->`, skip posting another review for the same head SHA unless the user explicitly asks for a fresh review. The existing review still remains an implementation feedback source for `dev-flow-implement-ticket`.
 
-Human-authored comments are implementation inputs, not review-agent findings. Preserve them in the review context, avoid duplicating them as Codex findings unless local analysis independently confirms the issue, and report actionable human feedback to the caller so `dev-flow-pr-review-feedback-loop` can create OpenSpec `## PR Review Feedback` tasks, apply fixes, commit, push, rerun AI review, and record Plane feedback batch comments.
+Human-authored comments are implementation inputs, not review-agent findings. Preserve them in the review context, avoid duplicating them as Codex findings unless local analysis independently confirms the issue, and report actionable human feedback to the caller so `dev-flow-pr-review-feedback-loop` can create OpenSpec `## PR Review Feedback` tasks, apply fixes, commit, push, rerun AI review, and record ticket provider feedback batch comments.
 
 ### 2. Review The Code
 
@@ -85,7 +85,7 @@ Use deterministic diff scope:
 
 Run adversarial review mode when requested explicitly or when the shared delivery contract classifies the PR as high risk. In adversarial mode:
 
-1. Read Plane/OpenSpec acceptance criteria before judging the diff.
+1. Read ticket provider/OpenSpec acceptance criteria before judging the diff.
 2. For each requirement, ask how the implementation could fail through negative input, stale state, retries, idempotency, authorization, data loss, deployment mismatch, or missing test evidence.
 3. Treat spec/code mismatches and unproven high-risk behavior as first-class findings.
 4. End the review with verdict `PASS`, `PASS WITH GAPS`, or `FAIL`.
@@ -106,7 +106,7 @@ When a `ponytail-review` finding is actionable and scoped to the PR, include it 
 
 ### 3. Post The Review
 
-Post one top-level Gitea PR comment. Include:
+Post one top-level repository PR comment. Include:
 
 - marker `<!-- codex-review-agent:{headSha} -->`
 - short review summary
@@ -126,7 +126,7 @@ If no issues are found, say so clearly and mention any residual verification gap
 
 When `pr.labels.enabled` is true:
 
-1. Ensure configured labels exist in Gitea. Create missing labels before applying them. Use deterministic colors:
+1. Ensure configured labels exist in repository/review provider. Create missing labels before applying them. Use deterministic colors:
    - `codex-reviewed`: `#5319e7`
    - `needs-tests`: `#fbca04`
    - `needs-changes`: `#d73a4a`
@@ -147,7 +147,7 @@ Use a code-review stance. Lead with findings and severity. Keep summaries brief.
 
 ## Failure Rules
 
-- Missing or placeholder `gitea.apiToken`: stop before posting comments or labels.
+- Missing or placeholder `selected repository/review adapter token`: stop before posting comments or labels.
 - PR not found: stop and report the lookup attempted.
 - Duplicate review marker for the same head SHA: skip mutation unless explicitly asked to refresh.
 - Internet unavailable: continue with local review and note that external validation was skipped.

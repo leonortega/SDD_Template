@@ -28,7 +28,7 @@ Use progressive disclosure:
 1. Read `memory_summary.md`.
 2. Use `MEMORY.md` to identify likely relevant memory files.
 3. Open only the specific deeper files needed for the task.
-4. Verify all task-critical facts against current repo files, Plane, OpenSpec, Gitea, Nexus, Azure, Git, or live command output.
+4. Verify all task-critical facts against current repo files, OpenProject, OpenSpec, Gitea, Nexus, Azure, Git, or live command output.
 
 ## Operational Use Loop
 
@@ -43,13 +43,13 @@ If the agent itself encounters a failed command, hook rejection, configuration m
 
 Search helper:
 
-```powershell
-.\.codex\memory\search_memory.ps1 -ListTopics
-.\.codex\memory\search_memory.ps1 -Query Api__BaseUrl
-.\.codex\memory\search_memory.ps1 -Query Gitea,reviewer
+```bash
+python -m tools.sdd_cli memory search --list-topics
+python -m tools.sdd_cli memory search --query Api__BaseUrl
+python -m tools.sdd_cli memory search --query Gitea --query reviewer
 ```
 
-Search terms should be concrete: command names, error fragments, config keys, service names, workflow stages, marker names, or tool names. Examples: `dotnet`, `pipefail`, `comment_html`, `Api__BaseUrl`, `collaborators`, `pwsh`, `coverage`, `autocrlf`.
+Search terms should be concrete: command names, error fragments, config keys, service names, workflow stages, marker names, or tool names. Examples: `pipefail`, `comment_html`, `collaborators`, `pwsh`, `coverage`, `autocrlf`.
 
 ## Write Policy
 
@@ -73,7 +73,7 @@ Poor memory candidates:
 - temporary local machine state
 - full logs
 - speculative architecture ideas not accepted by the user
-- stale ticket status that should be read from Plane or Gitea
+- stale ticket status that should be read from OpenProject or Gitea
 
 ## Update Process
 
@@ -84,7 +84,7 @@ Use this process when a run discovers reusable knowledge:
    - Enforceable automation behavior belongs in `.codex/skills/_shared/delivery-contract.md` plus affected skills and tests.
    - Reusable but non-authoritative workflow knowledge belongs in `.codex/memory/`.
 2. Verify the source.
-   - Prefer current files, command output, Plane ticket data, Gitea PR data, Nexus manifests, Azure health checks, QA evidence, or explicit user instruction.
+   - Prefer current files, command output, OpenProject work package data, Gitea PR data, Nexus manifests, Azure health checks, QA evidence, or explicit user instruction.
    - Do not store assumptions as facts.
 3. Choose the target memory file.
    - Workflow or marker lesson -> `workflow-memory.md`.
@@ -132,7 +132,7 @@ Do not store:
 - passwords
 - cookies
 - secret-bearing URLs
-- generated Plane secrets
+- generated OpenProject secrets
 - Azure credentials
 - local service credentials
 - contents of ignored `.local` config files

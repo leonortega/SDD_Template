@@ -37,6 +37,7 @@ Depending on what the user brings, you might:
 - Challenge assumptions
 - Reframe the problem
 - Find analogies
+- Use a grill-style interview when the user wants the plan stress-tested. Prefer the `grill-with-docs` style when answers should become durable context; use `grill-me` style only when the alignment is temporary.
 
 **Investigate the codebase**
 - Map existing architecture relevant to the discussion
@@ -298,6 +299,8 @@ For ticketed work, read `.codex/skills/_shared/delivery-contract.md` and `docs/c
 ## Workflow
 
 Explore the problem, inspect relevant context, surface tradeoffs, and offer to capture stable decisions in OpenSpec artifacts when useful.
+
+When grill-style questioning reveals durable knowledge, route it to the existing repo surfaces instead of creating new context systems: product or ticket clarity belongs in the managed OpenProject block, planned behavior and design belong in OpenSpec, durable repository or process knowledge belongs in `docs/`, and reusable non-authoritative lessons belong in `.codex/memory/`.
 
 ## Output
 

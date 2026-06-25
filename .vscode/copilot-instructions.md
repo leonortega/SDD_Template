@@ -32,7 +32,7 @@ This ensures consistency, prevents duplicate documentation, and keeps you aligne
 
 ## Overview
 
-This is an agentic SDD/SDLC delivery lab. Work is driven from Plane tickets through OpenSpec planning, implementation, review, artifact promotion, deployment, QA, and production handoff. All delivery workflows, domain knowledge, and learnings are captured in `.codex/` without duplication.
+This is an agentic SDD/SDLC delivery lab. Work is driven from OpenProject work packages through OpenSpec planning, implementation, review, artifact promotion, deployment, QA, and production handoff. All delivery workflows, domain knowledge, and learnings are captured in `.codex/` without duplication.
 
 **Reference live `.codex/` files directly—do not copy or recreate them.**
 
@@ -40,7 +40,7 @@ This is an agentic SDD/SDLC delivery lab. Work is driven from Plane tickets thro
 
 ### High-Level Workflow
 ```
-Plane Ticket (Todo)
+OpenProject Ticket (Todo)
   → Branch + OpenSpec Proposal
   → Implementation + Tests + Gitea PR
   → Codex PR Review
@@ -48,7 +48,7 @@ Plane Ticket (Todo)
   → Nexus Artifact Package
   → Azure DEV + QA Deployment
   → E2E QA Validation
-  → Plane Ticket (Done)
+  → OpenProject Ticket (Done)
   → Explicit PROD Promotion
   → Rollback / Hotfix (if needed)
 ```
@@ -70,7 +70,7 @@ Domain-specific workflows for each delivery stage. Load these based on task type
 #### Ticket Implementation
 - [`dev-flow-continue-implementation`](.codex/skills/dev-flow-continue-implementation/) – Main entry point; inspects state, routes to next workflow
 - [`dev-flow-implement-ticket`](.codex/skills/dev-flow-implement-ticket/) – Core ticket implementation workflow
-- [`dev-flow-start-ticket`](.codex/skills/dev-flow-start-ticket/) – Initialize new ticket from Plane
+- [`dev-flow-start-ticket`](.codex/skills/dev-flow-start-ticket/) – Initialize new ticket from OpenProject
 
 #### OpenSpec Planning & Changes
 - [`dev-flow-explore-change`](.codex/skills/dev-flow-explore-change/) – Explore change requirements
@@ -88,7 +88,7 @@ Domain-specific workflows for each delivery stage. Load these based on task type
 #### Infrastructure & Configuration
 - [`configure-dev-environment`](.codex/skills/configure-dev-environment/) – Setup local environment
 - [`configure-cloud-environments`](.codex/skills/configure-cloud-environments/) – Configure DEV/QA/PROD
-- [`configure-ticket-workflow`](.codex/skills/configure-ticket-workflow/) – Setup Plane
+- [`configure-ticket-workflow`](.codex/skills/configure-ticket-workflow/) – Setup OpenProject
 - [`configure-source-control`](.codex/skills/configure-source-control/) – Setup Git
 - [`configure-infra-tools`](.codex/skills/configure-infra-tools/) – Docker Compose, Nexus, etc.
 - [`configure-observability`](.codex/skills/configure-observability/) – Monitoring & logging
@@ -146,7 +146,7 @@ Persistent learning and context. Consulted automatically at session start.
 ```
 "automatically continue this ticket"
 → .codex/skills/dev-flow-continue-implementation
-→ Inspects Plane, Git, Gitea, Nexus, OpenSpec, QA state
+→ Inspects OpenProject, Git, Gitea, Nexus, OpenSpec, QA state
 → Routes to next focused skill
 ```
 
@@ -198,7 +198,7 @@ When a conversation requires multiple steps, Copilot may activate a skill-driven
 - **Ticket Key Pattern**: `E2EPROJECT-[0-9]+` (from `delivery-policy.json`)
 - **Coverage Threshold**: 80% (from memory)
 - **No Duplication**: All `.codex/` files are live references, not copies
-- **Memory is Guidance**: Never override active Plane ticket, OpenSpec, user request, or live tool output
+- **Memory is Guidance**: Never override active OpenProject work package, OpenSpec, user request, or live tool output
 - **Quality Gates**: Run all gates before handoff (build, test, coverage, lint)
 - **Checkpoint-Based**: Reruns continue from existing state (branches, PRs, artifacts, QA evidence)
 
@@ -237,7 +237,7 @@ See `.codex/quality.local.json` for the authoritative gate configuration.
 3. **Execute**: Follow skill workflow, referencing docs & memory
 4. **Validate**: Run quality gates
 5. **Update**: Capture learnings in memory following `.codex/memory/retrieval-policy.md`
-6. **Handoff**: Confirm state change in Plane, Gitea, or deployment system
+6. **Handoff**: Confirm state change in OpenProject, Gitea, or deployment system
 
 ## When to Consult `.codex/` Resources
 

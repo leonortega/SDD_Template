@@ -1,23 +1,21 @@
 # Skill Catalog
 
-This catalog is the tracked source of truth for repo-local skill ownership, categories, and naming. External skills keep their upstream names. Repo-owned workflow skills use the category prefixes shown here.
+This catalog is the tracked source of truth for repo-local skill ownership, categories, and naming.
 
-When adding an external skill, mark it as `External`, keep the upstream skill name unless the user explicitly approves a rename, add the source repository URL here, and add the source citation to the root `README.md`.
+Product-stack skills should be added only after the next product stack is selected. The current shell keeps generic delivery flow, configuration, review, Playwright, and TDD skills.
 
 | Skill | Category | Ownership | Source | Rename status |
 |---|---|---|---|---|
-| `aspnet-core` | External guidance | External | https://github.com/openai/skills/tree/main/skills/.curated/aspnet-core | No rename |
-| `assertion-quality` | External guidance | External | https://github.com/dotnet/skills/tree/main/plugins/dotnet-test/skills/assertion-quality | No rename |
-| `caveman` | Agent utility | External | Not recorded in skill metadata | No rename |
+| `caveman` | Agent utility | External | https://github.com/JuliusBrussee/caveman/tree/main/plugins/caveman/skills/caveman | No rename |
 | `configure-artifact-repository` | Configure | Repo-owned | Repository local | Renamed from `configure-artifact-delivery` |
 | `configure-ci-runner` | Configure | Repo-owned | Repository local | Renamed from `configure-gitea-actions-runner` |
 | `configure-cloud-environments` | Configure | Repo-owned | Repository local | Renamed from `configure-azure-environments` |
 | `configure-dev-environment` | Configure | Repo-owned | Repository local | No rename |
-| `configure-infra-tools` | Configure alias | Repo-owned | Repository local | No rename, compatibility alias |
+| `configure-infra-tools` | Configure alias | Repo-owned | Repository local | Compatibility alias |
 | `configure-observability` | Configure | Repo-owned | Repository local | No rename |
 | `configure-quality-gates` | Configure | Repo-owned | Repository local | No rename |
 | `configure-source-control` | Configure | Repo-owned | Repository local | Renamed from `configure-gitea-source-control` |
-| `configure-ticket-workflow` | Configure | Repo-owned | Repository local | Renamed from `configure-plane-workflow` |
+| `configure-ticket-workflow` | Configure | Repo-owned | Repository local | OpenProject ticket workflow setup |
 | `dev-flow-apply-change` | Dev flow | Repo-owned | Repository local | Renamed from `openspec-apply-change` |
 | `dev-flow-archive-change` | Dev flow | Repo-owned | Repository local | Renamed from `openspec-archive-change` |
 | `dev-flow-continue-implementation` | Dev flow | Repo-owned | Repository local | Renamed from `automatic-implement-ticket` |
@@ -31,25 +29,26 @@ When adding an external skill, mark it as `External`, keep the upstream skill na
 | `dev-flow-pr-review-feedback-loop` | Dev flow | Repo-owned | Repository local | Renamed from `pr-review-feedback-loop` |
 | `dev-flow-propose-change` | Dev flow | Repo-owned | Repository local | Renamed from `openspec-propose` |
 | `dev-flow-retrospective-audit` | Dev flow | Repo-owned | Repository local | Renamed from `delivery-retrospective-audit` |
-| `dev-flow-start-ticket` | Dev flow | Repo-owned | Repository local | Renamed from `plane-start-ticket` |
+| `dev-flow-start-ticket` | Dev flow | Repo-owned | Repository local | Configured ticket-provider start workflow |
 | `dev-flow-verify-change` | Dev flow | Repo-owned | Repository local | Renamed from `openspec-verify-change` |
 | `dev-ops-deploy-prod` | DevOps | Repo-owned | Repository local | Renamed from `deploy-to-prod` |
 | `dev-ops-deploy-qa` | DevOps | Repo-owned | Repository local | Renamed from `deploy-to-qa` |
 | `dev-ops-hotfix-prod` | DevOps | Repo-owned | Repository local | Renamed from `hotfix-prod` |
 | `dev-ops-post-merge-deploy` | DevOps | Repo-owned | Repository local | Renamed from `post-merge-deploy` |
 | `dev-ops-rollback-prod` | DevOps | Repo-owned | Repository local | Renamed from `rollback-prod` |
-| `dotnet-webapi` | External guidance | External | https://github.com/dotnet/skills/tree/main/plugins/dotnet-aspnet/skills/dotnet-webapi | No rename |
-| `plan-ui-change` | External guidance | External | https://github.com/dotnet/skills/tree/main/plugins/dotnet-blazor/skills/plan-ui-change | No rename |
+| `domain-modeling` | External guidance | External | https://github.com/mattpocock/skills/tree/main/skills/engineering/domain-modeling | No rename |
+| `grill-me` | External guidance | External | https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me | No rename |
+| `grill-with-docs` | External guidance | External | https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs | No rename |
+| `grilling` | External guidance | External | https://github.com/mattpocock/skills/tree/main/skills/productivity/grilling | No rename |
 | `playwright` | External guidance | External | https://github.com/openai/skills/tree/main/skills/.curated/playwright | No rename |
-| `ponytail` | Agent utility | External | Not recorded in skill metadata | No rename |
-| `ponytail-audit` | Agent utility | External | Not recorded in skill metadata | No rename |
-| `ponytail-debt` | Agent utility | External | Not recorded in skill metadata | No rename |
-| `ponytail-help` | Agent utility | External | Not recorded in skill metadata | No rename |
-| `ponytail-review` | Agent utility | External | Not recorded in skill metadata | No rename |
-| `project-guidance-acquire` | Agent utility | External | Not recorded in skill metadata | No rename |
-| `project-guidance-discover` | Agent utility | External | Not recorded in skill metadata | No rename |
-| `project-guidance-mapper` | Agent utility | External | Not recorded in skill metadata | No rename |
-| `quality-frontend-testing-debugging` | Quality | Repo-owned | Repository local | Renamed from `frontend-testing-debugging` |
-| `quality-test-e2e` | Quality | Repo-owned | Repository local | Renamed from `test-e2e` |
+| `playwright-interactive` | External guidance | External | https://github.com/openai/skills/tree/main/skills/.curated/playwright-interactive | No rename |
+| `ponytail` | Agent utility | External | https://github.com/DietrichGebert/ponytail/tree/main/skills/ponytail | No rename |
+| `ponytail-audit` | Agent utility | External | https://github.com/DietrichGebert/ponytail/tree/main/skills/ponytail-audit | No rename |
+| `ponytail-debt` | Agent utility | External | https://github.com/DietrichGebert/ponytail/tree/main/skills/ponytail-debt | No rename |
+| `ponytail-help` | Agent utility | External | https://github.com/DietrichGebert/ponytail/tree/main/skills/ponytail-help | No rename |
+| `ponytail-review` | Agent utility | External | https://github.com/DietrichGebert/ponytail/tree/main/skills/ponytail-review | No rename |
+| `project-guidance-acquire` | Agent utility | Repo-owned | Repository local | No rename |
+| `project-guidance-discover` | Agent utility | Repo-owned | Repository local | No rename |
+| `project-guidance-mapper` | Agent utility | Repo-owned | Repository local | No rename |
 | `security-best-practices` | External guidance | External | https://github.com/openai/skills/tree/main/skills/.curated/security-best-practices | No rename |
-| `test-analysis-extensions` | External guidance | External | https://github.com/dotnet/skills/tree/main/plugins/dotnet-test/skills/test-analysis-extensions | No rename |
+| `tdd` | External guidance | External | https://github.com/mattpocock/skills/tree/main/skills/engineering/tdd | No rename |

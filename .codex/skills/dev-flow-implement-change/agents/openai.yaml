@@ -1,4 +1,4 @@
 interface:
   display_name: "OpenSpec Implement Change"
   short_description: "Implement OpenSpec changes through Gitea PR handoff"
-  default_prompt: "Implement the selected OpenSpec change end to end, verify it, open a Gitea PR, review it, and update Plane."
+  default_prompt: "Implement the selected OpenSpec change end to end, verify it, open a Gitea PR, review it, and update OpenProject."

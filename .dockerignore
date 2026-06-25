@@ -1,0 +1,12 @@
+**/node_modules/
+**/TestResults/
+artifacts/
+.git/
+.vs/
+.codex/*.local.json
+.codex/*.local.jsonl
+.codex/agent-evals/results.local.json
+infra/**/variables.env
+*.db
+*.db-shm
+*.db-wal
