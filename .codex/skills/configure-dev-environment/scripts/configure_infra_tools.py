@@ -105,36 +105,24 @@ def invoke_show_environment_urls() -> None:
 # acceptance-to-assertion QA proof
 # paths:
 # - .editorconfig
-# - Directory.Build.props
-# - Directory.Build.targets
-# - Directory.Packages.props
-# - global.json
-# - NuGet.config
-# - SDDTemplate.slnx
-# - dotnet-tools.json
-# - src/**
-# - tests/**
+# - docs/**
+# - .codex/**
+# - infra/**
 # app/${GITHUB_SHA}/release.json
 # app/qa-approved/latest.json
 # test "$artifact_commit_sha" = "$GITHUB_SHA"
-# dotnet restore "$project"
-# dotnet format "$project" --verify-no-changes --no-restore
-# dotnet build "$project" -c Release --no-restore
-# dotnet list "$project" package --vulnerable --include-transitive
-# PR validation triggers only for application code, tests, and root app build inputs
+# PR validation is shell-level until a product stack defines app build inputs
 # rejects deployable project paths outside `src/`
 # deleting the remote `qa-local/{ticketKey}` branch after durable evidence
 # deleting the remote `qa-local/{ticketKey}` trigger branch after durable evidence
 # Package/deploy workflow should upload a baseline Nexus release manifest next to the artifact.
 # deployment-config.json
-# dotnet test tests/SDDTemplate.Site.Tests/SDDTemplate.Site.Tests.csproj
 # .codex/delivery-context.local.json
 # .codex/parallel-delivery.local.json
 # Local ticket context lock must be ignored
 # Parallel delivery runtime state must be ignored
 # .gitattributes
 # text=auto eol=lf
-# Windows core.autocrlf checkouts can break dotnet format
 # NEXUS_REPOSITORY
 # AZURE_DEV_RESOURCE_GROUP
 # AZURE_DEV_SITE_APP_NAME
@@ -248,5 +236,5 @@ PR_APPROVAL_KEYS = [
 # Paths and env names used by the local lab
 NEXUS_DOCKER_REGISTRY = "NEXUS_DOCKER_REGISTRY"
 RANCHER_KUBECONFIG_B64 = "RANCHER_KUBECONFIG_B64"
-SITE_DOCKERFILE = "src/SDDTemplate.Site/Dockerfile"
-API_DOCKERFILE = "src/SDDTemplate.Api/Dockerfile"
+SITE_DOCKERFILE = ""
+API_DOCKERFILE = ""

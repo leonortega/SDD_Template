@@ -1,4 +1,4 @@
----
+﻿---
 name: dev-flow-pr-review-feedback-loop
 description: Process AI review findings and later human PR comments for an active ticket pull request through selected ticket and review adapters by creating OpenSpec feedback tasks, recording feedback batches, applying fixes, validating, pushing, and rerunning AI review before handoff.
 ---
@@ -26,7 +26,7 @@ Capture UTC start time after resolving the active ticket and PR. Prefer OpenProj
 
 ## Configuration
 
-Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.example.json` only for defaults and setup guidance.
+Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.common.json` only for defaults and setup guidance.
 
 Required/defaulted values:
 

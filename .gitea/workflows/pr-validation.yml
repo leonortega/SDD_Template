@@ -5,23 +5,10 @@ on:
     branches:
       - main
       - dev
-    paths:
-      - .editorconfig
-      - Directory.Build.props
-      - Directory.Build.targets
-      - Directory.Packages.props
-      - global.json
-      - NuGet.config
-      - SDDTemplate.slnx
-      - dotnet-tools.json
-      - src/**
-      - tests/**
 
 jobs:
-  validate:
+  validate-shell:
     runs-on: ubuntu-latest
-    container:
-      image: agentic/dotnet-ci:10.0.300-tools-1
     steps:
       - name: Checkout
         shell: bash
@@ -37,95 +24,14 @@ jobs:
           git fetch --depth 1 origin "$GITHUB_SHA"
           git checkout --force FETCH_HEAD
 
-      - name: Restore application projects
+      - name: Validate JSON files
         shell: bash
         run: |
           set -euo pipefail
-
-          quality_projects=(
-            "src/SDDTemplate.Site/SDDTemplate.Site.csproj"
-            "src/SDDTemplate.Api/SDDTemplate.Api.csproj"
-            "tests/SDDTemplate.Site.Tests/SDDTemplate.Site.Tests.csproj"
-          )
-          for project in "${quality_projects[@]}"; do
-            dotnet restore "$project"
-          done
-
-      - name: Verify application formatting
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          quality_projects=(
-            "src/SDDTemplate.Site/SDDTemplate.Site.csproj"
-            "src/SDDTemplate.Api/SDDTemplate.Api.csproj"
-            "tests/SDDTemplate.Site.Tests/SDDTemplate.Site.Tests.csproj"
-          )
-          for project in "${quality_projects[@]}"; do
-            dotnet format "$project" --verify-no-changes --no-restore
-          done
-
-      - name: Build application projects
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          quality_projects=(
-            "src/SDDTemplate.Site/SDDTemplate.Site.csproj"
-            "src/SDDTemplate.Api/SDDTemplate.Api.csproj"
-            "tests/SDDTemplate.Site.Tests/SDDTemplate.Site.Tests.csproj"
-          )
-          for project in "${quality_projects[@]}"; do
-            dotnet build "$project" -c Release --no-restore
-          done
-
-      - name: Test
-        run: dotnet test tests/SDDTemplate.Site.Tests/SDDTemplate.Site.Tests.csproj -c Release --no-build --logger trx --collect:"XPlat Code Coverage"
-
-      - name: Enforce coverage threshold
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          config=".codex/quality.local.json"
-          if [ ! -f "$config" ]; then
-            config=".codex/quality.example.json"
-          fi
-
-          minimum="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ReadCoverageThreshold --path "$config" --fallback 80)"
-
-          coverage_file="$(find . -path '*/coverage.cobertura.xml' -print -quit)"
-          if [ -z "$coverage_file" ]; then
-            echo "No Cobertura coverage report found."
-            exit 1
-          fi
-
-          actual="$(dotnet run --project tools/SDDTemplate.DeliveryTools/SDDTemplate.DeliveryTools.csproj -- ReadCoberturaLineRate --path "$coverage_file")"
-          awk -v actual="$actual" -v minimum="$minimum" 'BEGIN { exit !(actual + 0 >= minimum + 0) }' || {
-            echo "Coverage ${actual}% is below required ${minimum}%."
-            exit 1
-          }
-
-          echo "Coverage ${actual}% meets required ${minimum}%."
-
-      - name: Dependency vulnerability audit
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          quality_projects=(
-            "src/SDDTemplate.Site/SDDTemplate.Site.csproj"
-            "src/SDDTemplate.Api/SDDTemplate.Api.csproj"
-            "tests/SDDTemplate.Site.Tests/SDDTemplate.Site.Tests.csproj"
-          )
-          for project in "${quality_projects[@]}"; do
-            dotnet list "$project" package --vulnerable --include-transitive
+          find . -path './.git' -prune -o -name '*.json' -print | while IFS= read -r file; do
+            python -m json.tool "$file" >/dev/null
           done
 
       - name: Secret scan
+        shell: bash
         run: gitleaks detect --source . --redact --no-git
-
-      - name: Trivy filesystem scan
-        run: trivy fs --severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed .
-
-      # Optional: add Semgrep when rules and runtime budget are agreed.

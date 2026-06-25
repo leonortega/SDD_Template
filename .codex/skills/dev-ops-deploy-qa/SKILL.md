@@ -1,4 +1,4 @@
----
+﻿---
 name: dev-ops-deploy-qa
 description: Promote merged pull request artifacts through the selected artifact and deployment adapters into configured pre-production environments, then update the ticket adapter. Use when Codex needs to verify a merged PR, locate the linked ticket, confirm immutable artifacts and checksums, validate configured environment health checks, comment artifact and deployment links, and move the ticket to QA.
 ---
@@ -27,7 +27,7 @@ Capture UTC start time after resolving the ticket key and before artifact promot
 
 ## Configuration
 
-Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.example.json` for structure only, then apply environment variable overrides when present.
+Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.common.json` for structure only, then apply environment variable overrides when present.
 
 Required or defaulted values:
 

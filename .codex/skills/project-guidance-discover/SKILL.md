@@ -1,4 +1,4 @@
----
+﻿---
 name: project-guidance-discover
 description: Discover project-relevant guidance from the current repository. Use when Codex needs to scan tech stack, tools, environments, QA/test setup, security gates, code standards, architecture, web UI, REST/API needs, MCP/plugin/tool/reference/IDE-extension needs, or "config infra" guidance findings; research extra useful skills, MCPs, plugins, tools, references, practices, standards, and Codex-applicable IDE helpers from detected project signals; show suggested missing guidance with guarded install metadata; and prepare confirmed items for local acquisition or mapping.
 ---
@@ -65,7 +65,7 @@ The report must include:
 
 Use `AuditRecommendedTools` when the user also needs MCP, plugin, and non-skill recommendation findings.
 
-The local file is intentionally ignored and shaped like `.codex/tool-recommendations.example.json`, but it is project-specific runtime state. `project-guidance-mapper` updates `usedInSteps` on recommendations after a step uses, confirms, or infers a guidance mapping.
+The local file is intentionally ignored and shaped like `.codex/tool-recommendations.common.json`, but it is project-specific runtime state. `project-guidance-mapper` updates `usedInSteps` on recommendations after a step uses, confirms, or infers a guidance mapping.
 
 ## Output
 

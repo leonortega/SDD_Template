@@ -13,7 +13,7 @@ When sources disagree, use this order until the conflict is resolved:
 1. Latest explicit user request in the current conversation.
 2. Active ticket-provider state, description, acceptance criteria, and generated markers.
 3. Active OpenSpec proposal, design, specs, and tasks.
-4. `.codex/project-profile.json` and selected `.codex/providers/*.md` adapter files for project stack/provider selection.
+4. `.codex/project-profile.json`, optional `.codex/project-profile.local.json`, and selected `.codex/providers/*.md` adapter files for project stack/provider selection.
 5. `.codex/skills/_shared/delivery-contract.md` for agent-enforced delivery behavior.
 6. Canonical docs in `docs/`.
 7. Current code, tests, workflow files, and configuration templates.

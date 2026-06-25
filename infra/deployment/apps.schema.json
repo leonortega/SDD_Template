@@ -16,7 +16,7 @@
     },
     "apps": {
       "type": "array",
-      "minItems": 1,
+      "minItems": 0,
       "items": {
         "type": "object",
         "required": [
@@ -34,14 +34,11 @@
           },
           "projectPath": {
             "type": "string",
-            "pattern": "^src/.+\\.csproj$"
+            "minLength": 1
           },
           "role": {
             "type": "string",
-            "enum": [
-              "web",
-              "api"
-            ]
+            "minLength": 1
           },
           "artifactName": {
             "type": "string",

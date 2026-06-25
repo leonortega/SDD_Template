@@ -2,18 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Codex Project Profile",
   "type": "object",
-  "required": [
-    "schemaVersion",
-    "stack",
-    "providers",
-    "workflow",
-    "quality",
-    "adapters"
-  ],
   "properties": {
+    "$schema": {
+      "type": "string"
+    },
     "schemaVersion": {
       "type": "integer",
-      "const": 1
+      "minimum": 1
     },
     "stack": {
       "type": "object",
@@ -25,17 +20,26 @@
       "properties": {
         "languages": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 },
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
           "uniqueItems": true
         },
         "frameworks": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 },
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
           "uniqueItems": true
         },
         "testFrameworks": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 },
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
           "uniqueItems": true
         }
       },
@@ -43,56 +47,67 @@
     },
     "providers": {
       "type": "object",
-      "required": [
-        "ticket",
-        "repository",
-        "review",
-        "artifact",
-        "deployment",
-        "observability"
-      ],
       "properties": {
-        "ticket": { "$ref": "#/$defs/providerRef" },
-        "repository": { "$ref": "#/$defs/providerRef" },
-        "review": { "$ref": "#/$defs/providerRef" },
-        "artifact": { "$ref": "#/$defs/providerRef" },
-        "deployment": { "$ref": "#/$defs/providerRef" },
+        "ticket": {
+          "$ref": "#/$defs/providerRef"
+        },
+        "repository": {
+          "$ref": "#/$defs/providerRef"
+        },
+        "review": {
+          "$ref": "#/$defs/providerRef"
+        },
+        "artifact": {
+          "$ref": "#/$defs/providerRef"
+        },
+        "deployment": {
+          "$ref": "#/$defs/providerRef"
+        },
         "observability": {
           "type": "array",
-          "items": { "$ref": "#/$defs/providerRef" }
+          "items": {
+            "$ref": "#/$defs/providerRef"
+          }
         }
       },
       "additionalProperties": false
     },
     "workflow": {
       "type": "object",
-      "required": [
-        "ticketKeyPattern",
-        "baseBranch",
-        "branchPrefix",
-        "branchPattern",
-        "environments",
-        "releasePolicy"
-      ],
       "properties": {
-        "ticketKeyPattern": { "type": "string", "minLength": 1 },
-        "baseBranch": { "type": "string", "minLength": 1 },
-        "branchPrefix": { "type": "string", "minLength": 1 },
-        "branchPattern": { "type": "string", "minLength": 1 },
+        "ticketKeyPattern": {
+          "type": "string",
+          "minLength": 1
+        },
+        "baseBranch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "branchPrefix": {
+          "type": "string",
+          "minLength": 1
+        },
+        "branchPattern": {
+          "type": "string",
+          "minLength": 1
+        },
         "environments": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 },
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
           "uniqueItems": true
         },
         "releasePolicy": {
           "type": "object",
-          "required": [
-            "buildOncePromoteSameArtifact",
-            "explicitProductionPromotion"
-          ],
           "properties": {
-            "buildOncePromoteSameArtifact": { "type": "boolean" },
-            "explicitProductionPromotion": { "type": "boolean" }
+            "buildOncePromoteSameArtifact": {
+              "type": "boolean"
+            },
+            "explicitProductionPromotion": {
+              "type": "boolean"
+            }
           },
           "additionalProperties": true
         }
@@ -101,21 +116,33 @@
     },
     "quality": {
       "type": "object",
-      "required": [
-        "gates"
-      ],
       "properties": {
         "gates": {
           "type": "array",
           "items": {
             "type": "object",
-            "required": [ "id", "type" ],
+            "required": [
+              "id",
+              "type"
+            ],
             "properties": {
-              "id": { "type": "string", "minLength": 1 },
-              "type": { "type": "string", "minLength": 1 },
-              "command": { "type": "string" },
-              "workflowJob": { "type": "string" },
-              "required": { "type": "boolean" }
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "type": {
+                "type": "string",
+                "minLength": 1
+              },
+              "command": {
+                "type": "string"
+              },
+              "workflowJob": {
+                "type": "string"
+              },
+              "required": {
+                "type": "boolean"
+              }
             },
             "additionalProperties": true
           }
@@ -135,10 +162,18 @@
   "$defs": {
     "providerRef": {
       "type": "object",
-      "required": [ "id" ],
+      "required": [
+        "id"
+      ],
       "properties": {
-        "id": { "type": "string", "minLength": 1 },
-        "adapter": { "type": "string", "minLength": 1 }
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "adapter": {
+          "type": "string",
+          "minLength": 1
+        }
       },
       "additionalProperties": false
     }

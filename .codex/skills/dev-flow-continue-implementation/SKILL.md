@@ -1,4 +1,4 @@
----
+﻿---
 name: dev-flow-continue-implementation
 description: Orchestrate the full configured ticket delivery lifecycle by inspecting current ticket, repository, review, artifact, OpenSpec, QA, tag, and production state through the selected project-profile adapters, then delegating to the correct focused skill. Use when Codex is asked to automatically continue, resume, implement, deploy, QA, or hand off a ticket without the user knowing the current workflow step.
 ---
@@ -17,7 +17,7 @@ Before routing, follow `.codex/skills/_shared/skill-startup.md`, which reads `.c
 
 ## Configuration
 
-Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.example.json` only for structure and defaults. Read `.codex/quality.local.json` when coverage context is needed.
+Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.common.json` only for structure and defaults. Read `.codex/quality.local.json` when coverage context is needed.
 
 Use ignored `.codex/delivery-context.local.json` as the ticket context lock according to the shared contract. If the lock or durable checkpoints conflict with the resolved ticket, stop or invoke `dev-flow-pipeline-status` instead of routing to a child skill.
 
@@ -34,10 +34,10 @@ Before delegating child work, apply the shared delivery contract's risk-adaptive
 
 Each child delivery skill owns its own workflow telemetry row. Do not append telemetry for a delegated child stage from this router, or the timing comment will double count the stage. This router may record one non-secret `dev-flow-continue-implementation` row through OpenProject time-entry telemetry, or through `python -m tools.sdd_cli delivery -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` as fallback, only when it performs meaningful routing work before or after delegation. Include `workflowStage`, `agentRole`, `startedUtc`, `finishedUtc`, `elapsedMilliseconds`, `retryCount`, and `outcome`; include blocker category when available, but do not put token counts, prompts, raw logs, or secrets in OpenProject time entries. On resume, create `.codex/agent-telemetry.local.jsonl` only when direct OpenProject time telemetry is unavailable, and do not clear existing rows for the same active ticket.
 
-Workflow timing comments use stable marker `IA generated workflow timing: {ticketKey}` and are finalized by `quality-test-e2e` after the E2E QA ticket comment is verified. During routing, read existing ticket comments when the API allows it and report whether the workflow timing marker is present, missing, or blocked; do not derive timing from ticket-provider generated marker timestamps.
+Workflow timing comments use stable marker `IA generated workflow timing: {ticketKey}` and are finalized by `configured QA gate` after the E2E QA ticket comment is verified. During routing, read existing ticket comments when the API allows it and report whether the workflow timing marker is present, missing, or blocked; do not derive timing from ticket-provider generated marker timestamps.
 When the ticket adapter is OpenProject, do not derive timing from OpenProject generated marker timestamps.
 
-Before routing to a later workflow stage, read active ticket telemetry from OpenProject time entries first, falling back to `.codex/agent-telemetry.local.jsonl` when direct time telemetry is unavailable, and compare it with durable checkpoints. Required predecessor rows are `dev-flow-start-ticket`, `dev-flow-implement-ticket`, `dev-flow-pr-review-agent`, `dev-ops-post-merge-deploy`, `dev-ops-deploy-qa`, and `quality-test-e2e`; `dev-flow-pr-review-feedback-loop` is required only when unresolved PR feedback exists or feedback markers/tasks show it ran. If durable evidence says a predecessor stage completed but its telemetry row is missing, route through that predecessor in idempotent verification mode before advancing. Do not route directly to `quality-test-e2e` for a QA ticket when `dev-ops-post-merge-deploy` or `dev-ops-deploy-qa` telemetry is missing; first route through `dev-ops-post-merge-deploy`, which must invoke `dev-ops-deploy-qa` idempotently. Do not route directly to later PR handoff when an existing current-head review marker lacks `dev-flow-pr-review-agent` telemetry; route through idempotent `dev-flow-pr-review-agent`.
+Before routing to a later workflow stage, read active ticket telemetry from OpenProject time entries first, falling back to `.codex/agent-telemetry.local.jsonl` when direct time telemetry is unavailable, and compare it with durable checkpoints. Required predecessor rows are `dev-flow-start-ticket`, `dev-flow-implement-ticket`, `dev-flow-pr-review-agent`, `dev-ops-post-merge-deploy`, `dev-ops-deploy-qa`, and `configured QA gate`; `dev-flow-pr-review-feedback-loop` is required only when unresolved PR feedback exists or feedback markers/tasks show it ran. If durable evidence says a predecessor stage completed but its telemetry row is missing, route through that predecessor in idempotent verification mode before advancing. Do not route directly to `configured QA gate` for a QA ticket when `dev-ops-post-merge-deploy` or `dev-ops-deploy-qa` telemetry is missing; first route through `dev-ops-post-merge-deploy`, which must invoke `dev-ops-deploy-qa` idempotently. Do not route directly to later PR handoff when an existing current-head review marker lacks `dev-flow-pr-review-agent` telemetry; route through idempotent `dev-flow-pr-review-agent`.
 
 ## State Inspection
 
@@ -59,13 +59,13 @@ If the state is ambiguous, invoke `dev-flow-pipeline-status` or produce a read-o
 
   Before routing, preserve the `dev-flow-start-ticket` Stack Context Preflight:
   - The first ticket must not create a branch, ticket-provider generated block, ticket lock, or OpenSpec proposal until `docs/architecture.md`, `docs/development.md`, `docs/deployment.md`, and `openspec/config.yaml` define the current tool set and tech stack without `stack-context.*` drift from `AuditRecommendedTools`.
-  - Treat `.codex/tool-recommendations.example.json` as the tracked shape/template only.
+  - Treat `.codex/tool-recommendations.common.json` as the tracked shape/template only.
   - When project guidance coverage has not been reviewed, route to `project-guidance-discover` so extra useful skills, MCPs, plugins, tools, references, practices, standards, and Codex-applicable IDE helpers are researched before suggestions are shown, and only confirmed items are passed to `project-guidance-acquire`.
 - Ticket in In Progress with active branch/OpenSpec but no PR: invoke `dev-flow-implement-ticket`.
 - Open PR exists: route to `dev-flow-implement-ticket`; it delegates immediate AI review feedback fixes and late human PR feedback fixes to the repo-owned `dev-flow-pr-review-feedback-loop` skill.
 - PR merged to `dev` and artifact is not yet promoted to QA: invoke `dev-ops-post-merge-deploy`.
-- PR merged to `dev`, QA deployment evidence already exists, but `dev-ops-post-merge-deploy` or `dev-ops-deploy-qa` telemetry is missing: invoke `dev-ops-post-merge-deploy` in idempotent verification mode before `quality-test-e2e`.
-- Ticket in QA: invoke `quality-test-e2e` only after required predecessor telemetry exists.
+- PR merged to `dev`, QA deployment evidence already exists, but `dev-ops-post-merge-deploy` or `dev-ops-deploy-qa` telemetry is missing: invoke `dev-ops-post-merge-deploy` in idempotent verification mode before `configured QA gate`.
+- Ticket in QA: invoke `configured QA gate` only after required predecessor telemetry exists.
 - QA failed with product defect: invoke `dev-flow-file-qa-bug`.
 - Ticket in Done with QA-approved RC but no PROD release: stop unless the user explicitly requested PROD; if requested, invoke `dev-ops-deploy-prod`.
 - PROD incident or regression: invoke `dev-ops-rollback-prod` when restore is needed, or `dev-ops-hotfix-prod` when a targeted code fix is needed.

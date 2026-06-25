@@ -1,0 +1,170 @@
+{
+  "schemaVersion": 1,
+  "mode": "guarded-auto",
+  "recommendations": [
+    {
+      "id": "dev-flow-pr-review-agent-skill",
+      "name": "Gitea PR review skill",
+      "type": "skill",
+      "requires": [
+        "gitea"
+      ],
+      "purpose": "Review Gitea pull requests, post actionable findings, and apply configured review labels.",
+      "installMethod": "manual-copy",
+      "installScope": "repo-local",
+      "installerKind": "file-copy",
+      "requiresIdeRestart": false,
+      "requiresSystemReboot": false,
+      "userActionRequired": false,
+      "source": "repo:.codex/skills/dev-flow-pr-review-agent/SKILL.md",
+      "target": ".codex/skills/dev-flow-pr-review-agent/SKILL.md",
+      "validation": "Test-Path .\\.codex\\skills\\dev-flow-pr-review-agent\\SKILL.md",
+      "sourceKind": "repo-local"
+    },
+    {
+      "id": "playwright-guidance",
+      "name": "Playwright guidance",
+      "type": "skill",
+      "requires": [
+        "browser-qa"
+      ],
+      "purpose": "Use Playwright for browser-visible validation when a future product has UI behavior.",
+      "installMethod": "manual-copy",
+      "installScope": "repo-local",
+      "installerKind": "file-copy",
+      "requiresIdeRestart": false,
+      "requiresSystemReboot": false,
+      "userActionRequired": false,
+      "source": "repo:.codex/skills/playwright/SKILL.md",
+      "target": ".codex/skills/playwright/SKILL.md",
+      "validation": "Test-Path .\\.codex\\skills\\playwright\\SKILL.md",
+      "sourceKind": "repo-local"
+    },
+    {
+      "id": "playwright-interactive-guidance",
+      "name": "Playwright interactive guidance",
+      "type": "skill",
+      "requires": [
+        "browser-qa"
+      ],
+      "purpose": "Use persistent browser debugging and screenshots for future product UI diagnostics.",
+      "installMethod": "manual-copy",
+      "installScope": "repo-local",
+      "installerKind": "file-copy",
+      "requiresIdeRestart": false,
+      "requiresSystemReboot": false,
+      "userActionRequired": false,
+      "source": "repo:.codex/skills/playwright-interactive/SKILL.md",
+      "target": ".codex/skills/playwright-interactive/SKILL.md",
+      "validation": "Test-Path .\\.codex\\skills\\playwright-interactive\\SKILL.md",
+      "sourceKind": "repo-local"
+    },
+    {
+      "id": "tdd-guidance",
+      "name": "TDD guidance",
+      "type": "skill",
+      "requires": [
+        "implementation"
+      ],
+      "purpose": "Use test-first implementation for future product behavior.",
+      "installMethod": "manual-copy",
+      "installScope": "repo-local",
+      "installerKind": "file-copy",
+      "requiresIdeRestart": false,
+      "requiresSystemReboot": false,
+      "userActionRequired": false,
+      "source": "repo:.codex/skills/tdd/SKILL.md",
+      "target": ".codex/skills/tdd/SKILL.md",
+      "validation": "Test-Path .\\.codex\\skills\\tdd\\SKILL.md",
+      "sourceKind": "repo-local"
+    },
+    {
+      "id": "gitea-actions-api-guidance",
+      "name": "Gitea Actions and API guidance",
+      "type": "reference",
+      "requires": [
+        "gitea"
+      ],
+      "purpose": "Keep Gitea PR, Actions, runner, token, and status-check behavior aligned with official Gitea documentation.",
+      "installMethod": "manual-reference",
+      "source": "official:https://docs.gitea.com/usage/actions/overview",
+      "target": ".codex/skills/configure-dev-environment/references/gitea-runner.md",
+      "validation": "Confirm configure references and PR workflow docs use current Gitea Actions/API terminology.",
+      "sourceKind": "technology-owner",
+      "installScope": "repo-local",
+      "installerKind": "none",
+      "requiresIdeRestart": false,
+      "requiresSystemReboot": false,
+      "userActionRequired": false
+    },
+    {
+      "id": "nexus-artifact-api-guidance",
+      "name": "Nexus artifact API guidance",
+      "type": "reference",
+      "requires": [
+        "nexus-artifacts"
+      ],
+      "purpose": "Keep artifact upload, checksum, manifest, and QA evidence publication behavior aligned with Nexus Repository guidance.",
+      "installMethod": "manual-reference",
+      "source": "official:https://help.sonatype.com/en/api-reference.html",
+      "target": ".codex/skills/configure-dev-environment/references/nexus.md",
+      "validation": "Confirm Nexus references preserve artifact identity and release manifest handling.",
+      "sourceKind": "technology-owner",
+      "installScope": "repo-local",
+      "installerKind": "none",
+      "requiresIdeRestart": false,
+      "requiresSystemReboot": false,
+      "userActionRequired": false
+    },
+    {
+      "id": "rancher-desktop-local-deploy-guidance",
+      "name": "Rancher Desktop local deployment guidance",
+      "type": "reference",
+      "requires": [
+        "rancher-desktop",
+        "kubernetes"
+      ],
+      "purpose": "Keep the selected local deployment lane aligned with Rancher Desktop Kubernetes behavior.",
+      "installMethod": "manual-reference",
+      "source": "official:https://docs.rancherdesktop.io/",
+      "target": "docs/deployment.md",
+      "validation": "Confirm local deployment guidance uses the selected rancher-desktop context.",
+      "sourceKind": "technology-owner",
+      "installScope": "repo-local",
+      "installerKind": "none",
+      "requiresIdeRestart": false,
+      "requiresSystemReboot": false,
+      "userActionRequired": false
+    },
+    {
+      "id": "grafana-provisioning-guidance",
+      "name": "Grafana provisioning guidance",
+      "type": "reference",
+      "requires": [
+        "grafana"
+      ],
+      "purpose": "Keep datasource and dashboard provisioning aligned with Grafana file-provisioning behavior.",
+      "installMethod": "manual-reference",
+      "source": "official:https://grafana.com/docs/grafana/latest/administration/provisioning/",
+      "target": ".codex/skills/configure-dev-environment/references/observability.md",
+      "validation": "Confirm Grafana provisioning files remain tracked templates without secrets.",
+      "sourceKind": "technology-owner",
+      "installScope": "repo-local",
+      "installerKind": "none",
+      "requiresIdeRestart": false,
+      "requiresSystemReboot": false,
+      "userActionRequired": false
+    }
+  ],
+  "notRecommended": [
+    {
+      "id": "openproject-mcp-for-ticket-delivery",
+      "name": "OpenProject MCP",
+      "type": "mcp",
+      "requires": [
+        "openproject"
+      ],
+      "reason": "OpenProject MCP is intentionally not recommended for this delivery flow; repo-local skills use the configured OpenProject API."
+    }
+  ]
+}

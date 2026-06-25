@@ -1,6 +1,6 @@
----
+﻿---
 name: configure-dev-environment
-description: Router for configuring this repo's local development and delivery environment from `.codex/project-profile.json`. Use when Codex needs to set up, audit, repair, or guide configuration for selected ticket, repository/review, quality, artifact, deployment, observability, stack, and E2E adapters, or when the user asks "config infra", "setup environment", or is unsure which setup area they need.
+description: Router for configuring this repo's local development and delivery environment from `.codex/project-profile.json` plus optional `.codex/project-profile.local.json`. Use when Codex needs to set up, audit, repair, or guide configuration for selected ticket, repository/review, quality, artifact, deployment, observability, stack, and E2E adapters, or when the user asks "config infra", "setup environment", or is unsure which setup area they need.
 ---
 
 # Configure Dev Environment
@@ -11,7 +11,7 @@ Use this skill as the entrypoint for the repo-local delivery lab. Keep this file
 
 ## Shared Context
 
-Before changing configure behavior or finishing any non-OpenSpec delivery skill change, read `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, and `.codex/skills/_shared/delivery-contract.md`, then apply the Skill Synchronization Rule. Keep configure docs, templates, audits, and tests synchronized with the non-OpenSpec delivery-flow skills; when behavior differs, delivery-flow skills are authoritative. If a delivery skill change affects repo setup, generated files, workflow YAML, secrets, ignored local files, labels, ticket gates, artifact paths, release manifests, QA/PROD promotion, rollback, profile/adapters, or audit/repair behavior, update the matching configure skill and tests in the same change. If no configure update is needed, say that explicitly in the final response.
+Before changing configure behavior or finishing any non-OpenSpec delivery skill change, read `.codex/project-profile.json`, optional `.codex/project-profile.local.json`, `.codex/skills/_shared/provider-adapter-contract.md`, and `.codex/skills/_shared/delivery-contract.md`, then apply the Skill Synchronization Rule. Keep configure docs, templates, audits, and tests synchronized with the non-OpenSpec delivery-flow skills; when behavior differs, delivery-flow skills are authoritative. If a delivery skill change affects repo setup, generated files, workflow YAML, secrets, ignored local files, labels, ticket gates, artifact paths, release manifests, QA/PROD promotion, rollback, profile/adapters, or audit/repair behavior, update the matching configure skill and tests in the same change. If no configure update is needed, say that explicitly in the final response.
 
 Read `docs/context-management.md` before deciding whether setup findings belong in durable docs, skills, tests, memory, a ticket handoff, or local-only config.
 
@@ -65,7 +65,7 @@ When setup needs values the user must supply manually, do not only ask for the v
 - Parallel ticket delivery uses Git worktrees only. The default placeholder-safe config is `parallelDelivery.enabled=false`, `parallelDelivery.maxActiveTickets=2`, `parallelDelivery.worktreeRoot=../ticket-worktrees`, `parallelDelivery.deploymentLanePolicy=serialized`, and `parallelDelivery.agentModelPolicy` with per-role model/reasoning defaults.
 - The coordinator runtime index `.codex/parallel-delivery.local.json` and each worktree's `.codex/delivery-context.local.json` must be ignored and never committed.
 - Copy ignored local config into ticket worktrees only when a child delivery skill requires it. Report copied filenames, not secret values.
-- Use the allowlist from `SyncWorktreeLocalConfig` for default worktree sync: `.codex/client-tools.local.json`, `.codex/quality.local.json`, and `.codex/tool-recommendations.local.json` when present. Do not copy `.codex/parallel-delivery.local.json`, `.codex/delivery-context.local.json`, `.codex/azure-login.local.json`, or app `*.local.json` files by default.
+- Use the allowlist from `SyncWorktreeLocalConfig` for default worktree sync: `.codex/client-tools.local.json`, `.codex/project-profile.local.json`, `.codex/quality.local.json`, and `.codex/tool-recommendations.local.json` when present. Do not copy `.codex/parallel-delivery.local.json`, `.codex/delivery-context.local.json`, `.codex/azure-login.local.json`, or app `*.local.json` files by default.
 - Deployment promotion remains serialized because DEV, QA, PROD, RC tags, final release tags, and Nexus release manifests are shared surfaces.
 - `agentModelPolicy` is a cost-control policy for on-the-fly sub-agents. `model=inherit` means no explicit model override; unavailable model ids should fall back to inherited model behavior and be reported.
 - `ValidateParallelDeliveryDryRun` must pass before parallel Git, OpenProject, or Gitea mutation. Include required ignored local runtime files such as `.codex/client-tools.local.json` and `.codex/quality.local.json` when child skills need them.
@@ -94,7 +94,7 @@ Useful modes:
 - `SetGiteaBranchProtection`: apply `pr.minimumApprovals.dev/main` to live Gitea branch protection.
 - `SetRecommendedTools`: record accepted or dismissed recommendation ids in `.codex/client-tools.local.json`; it must not install skills, plugins, MCPs, or secrets.
 - `MapProjectGuidanceStep`: update `.codex/tool-recommendations.local.json` by appending the current workflow step to each used recommendation's `usedInSteps`.
-- `WriteInstalledSkillIndex` through `tools/SDDTemplate.DeliveryTools`: generate or reuse ignored `.codex/installed-skill-index.local.json` and `.codex/installed-skill-index.cache.local.json` from installed project skills.
+- `WriteInstalledSkillIndex` through `repo-local delivery helper`: generate or reuse ignored `.codex/installed-skill-index.local.json` and `.codex/installed-skill-index.cache.local.json` from installed project skills.
 - `SyncWorktreeLocalConfig`: copy the allowlisted ignored local runtime config from the coordinator checkout into selected or discovered ticket worktrees without printing secret values.
 - `EnsureDeliveryContext`: create or repair the current worktree's `.codex/delivery-context.local.json` from explicit ticket, branch, OpenSpec, and PR context; never copy this file from another worktree. Use `replaceExisting=true` only after `dev-flow-start-ticket` confirms the existing lock's ticket is in the configured Done state, or after explicit operator confirmation for a known-safe repair. QA Done does not require immediate lock deletion because explicit PROD promotion may still need artifact and RC context.
 - `SetOpenProjectEnv`: update `infra/openproject/variables.env`.
@@ -136,7 +136,7 @@ docker compose --env-file .\infra\openproject\variables.env --env-file .\infra\m
 trivy --download-db-only
 ```
 
-12. Run `AuditRecommendedTools` when the user is doing full setup or base-code creation, then summarize relevant MCPs, plugins, tools, references, practices, detected stack tags, stack-context drift, and scan-derived guidance findings for tools, frameworks, code standards, web UI, REST/API design, security, and QA. Use `.codex/tool-recommendations.example.json` as example recommendation metadata, not as runtime project state or a substitute for scanning the repository.
+12. Run `AuditRecommendedTools` when the user is doing full setup or base-code creation, then summarize relevant MCPs, plugins, tools, references, practices, detected stack tags, stack-context drift, and scan-derived guidance findings for tools, frameworks, code standards, web UI, REST/API design, security, and QA. Use `.codex/tool-recommendations.common.json` as common recommendation catalog metadata, not as runtime project state or a substitute for scanning the repository.
 13. Treat `docs/` as the durable stack/tooling source of truth and `openspec/config.yaml` as the compact AI-facing summary. The recommendation audit verifies those against current repo files; when they differ, report the drift before recommending new tooling.
 14. Use `project-guidance-discover` for project guidance findings. Treat `project-guidance-search-plan` as the first step: build topics from scanned technologies, tools, environments, test frameworks, QA workflows, security gates, code standards, and other detected project signals; do not rely on a fixed catalog alone.
 15. `project-guidance-discover` must research extra useful skills, MCPs, plugins, tools, references, practices, standards, and Codex-applicable IDE helpers before it shows suggested missing guidance to the user. Ask only for confirmation, dismissals, or omissions before anything is copied. Make confirmation mean "record and install/configure supported items now"; do not ask a second install question. If the user names omissions, add them to the list, research and verify each source with the same multi-source, official-first policy, then confirm the full list. Valid source families include repo-local workflow sources, OpenAI official catalogs/docs, official tool repositories/docs, technology-owner repositories/docs, `skills.sh` or `skills` command examples, marketplace pages, and clearly labeled community repositories.
@@ -194,7 +194,7 @@ End setup work with:
 ## Failure Rules
 
 - Stop when required user-supplied secrets, tokens, workspace IDs, project IDs, cloud IDs, or service account values are missing; provide source, destination, official setup path, validation command, and handoff impact.
-- Stop before provider-specific mutation when `.codex/project-profile.json`, `.codex/project-profile.schema.json`, or any selected adapter path is missing; run `InitProjectProfile` or the focused provider configure skill first.
+- Stop before provider-specific mutation when `.codex/project-profile.json`, `.codex/project-profile.schema.json`, or any selected adapter path in the merged profile is missing; run `InitProjectProfile` or the focused provider configure skill first.
 - Stop successful completion of `config infra` when selected observability is not working: Seq unhealthy, Grafana Infinity health datasource missing, or Grafana health alert missing.
 - Stop before writing secrets to tracked files or reading secrets from containers, volumes, databases, or logs.
 - Stop before branch, OpenProject, ticket-lock, or OpenSpec mutation when first-ticket stack context, guidance discovery review, or recommendation audit context is missing or drifted.
