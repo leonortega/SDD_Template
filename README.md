@@ -183,7 +183,11 @@ Current external skill sources:
 - `aspnet-core`: ASP.NET Core guidance from https://github.com/openai/skills/tree/main/skills/.curated/aspnet-core.
 - `assertion-quality`: test assertion analysis guidance from https://github.com/dotnet/skills/tree/main/plugins/dotnet-test/skills/assertion-quality.
 - `caveman`: output compression guidance from https://github.com/JuliusBrussee/caveman.
+- `domain-modeling`: domain glossary and decision guidance from https://github.com/mattpocock/skills/tree/main/skills/engineering/domain-modeling.
 - `dotnet-webapi`: ASP.NET Core Web API endpoint guidance from https://github.com/dotnet/skills/tree/main/plugins/dotnet-aspnet/skills/dotnet-webapi.
+- `grill-me`: planning interview guidance from https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me.
+- `grill-with-docs`: planning interview plus documentation guidance from https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs.
+- `grilling`: support skill for grill-style planning interviews from https://github.com/mattpocock/skills/tree/main/skills/productivity/grilling.
 - `plan-ui-change`: Blazor UI planning guidance from https://github.com/dotnet/skills/tree/main/plugins/dotnet-blazor/skills/plan-ui-change.
 - `playwright`: browser automation guidance from https://github.com/openai/skills/tree/main/skills/.curated/playwright.
 - `security-best-practices`: secure coding guidance from https://github.com/openai/skills/tree/main/skills/.curated/security-best-practices.

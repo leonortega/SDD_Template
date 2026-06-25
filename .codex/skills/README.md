@@ -38,7 +38,11 @@ When adding an external skill, mark it as `External`, keep the upstream skill na
 | `dev-ops-hotfix-prod` | DevOps | Repo-owned | Repository local | Renamed from `hotfix-prod` |
 | `dev-ops-post-merge-deploy` | DevOps | Repo-owned | Repository local | Renamed from `post-merge-deploy` |
 | `dev-ops-rollback-prod` | DevOps | Repo-owned | Repository local | Renamed from `rollback-prod` |
+| `domain-modeling` | External guidance | External | https://github.com/mattpocock/skills/tree/main/skills/engineering/domain-modeling | No rename; repo-local context-surface adaptation |
 | `dotnet-webapi` | External guidance | External | https://github.com/dotnet/skills/tree/main/plugins/dotnet-aspnet/skills/dotnet-webapi | No rename |
+| `grill-me` | External guidance | External | https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me | No rename |
+| `grill-with-docs` | External guidance | External | https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs | No rename; repo-local context-surface adaptation |
+| `grilling` | External guidance | External | https://github.com/mattpocock/skills/tree/main/skills/productivity/grilling | No rename |
 | `plan-ui-change` | External guidance | External | https://github.com/dotnet/skills/tree/main/plugins/dotnet-blazor/skills/plan-ui-change | No rename |
 | `playwright` | External guidance | External | https://github.com/openai/skills/tree/main/skills/.curated/playwright | No rename |
 | `ponytail` | Agent utility | External | Not recorded in skill metadata | No rename |

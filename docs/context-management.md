@@ -97,6 +97,8 @@ Project guidance remains the broad catalog for skills, tools, references, practi
 
 Avoid duplicate context systems. Ticket refinement belongs in the managed OpenProject block; implementation planning belongs in OpenSpec; recurring workflow learning belongs in `dev-flow-retrospective-audit`, docs, the shared contract, or `.codex/memory/` according to the existing authority order.
 
+Grill-style planning is a questioning stance inside those same surfaces. Use `grill-with-docs` as the preferred style when answers should become durable context, with or without existing code. Use `grill-me` only for lightweight temporary alignment where no durable repo context is expected. Product or ticket clarity goes to the managed OpenProject block, planned behavior and design go to OpenSpec, durable repository or process knowledge goes to `docs/`, and reusable non-authoritative lessons go to `.codex/memory/`. Do not introduce a separate `CONTEXT.md`, ADR convention, global grill skill installation, or upstream-default grill artifact path unless a separate explicit change adopts that model. Repo-local external grill skills are allowed under `.codex/skills/` when cataloged and governed by this mapping.
+
 ## Agent Telemetry
 
 When the platform exposes usage data, delivery agents should record non-secret optimization telemetry for retrospective analysis:

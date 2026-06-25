@@ -80,3 +80,12 @@ When a required repo skill, command, memory rule, definition, or configured tool
 - Last verified: 2026-06-24
 
 OpenProject is the configured ticket provider. Future delivery uses OpenProject work packages, API v3 bearer-token authentication, and the `openProject` local config section. Existing archived OpenSpec text remains historical and is not migrated.
+
+## Repo-Local Skill Installation Preference
+
+- Type: Preference
+- Status: Active
+- Source: user instruction in chat, 2026-06-25
+- Last verified: 2026-06-25
+
+When adding external skills for this repository, install them as repo-local skills under `.codex/skills/` and catalog them in `.codex/skills/README.md`. Do not install them globally under `$CODEX_HOME/skills`; if a skill installer defaults to global installation, pass an explicit repo-local destination.
