@@ -9,12 +9,12 @@ description: Run post-deploy E2E QA for configured tickets that are already in Q
 
 Use this skill after deployment validation has already moved a ticket to QA. Act as a QA expert: test only the website and API behavior implied by the ticket, record evidence, and move the ticket to the configured final state only after every required QA check passes.
 
-This skill is technology-agnostic. Inspect the repository first. Use an established E2E/API test tool when one is already configured; otherwise ask the user to choose before creating or running technology-dependent tests.
+This skill is technology-agnostic. Inspect the repository first. Use an established E2E/API test tool when one is already configured; otherwise ask the user to choose before running technology-dependent tests.
 
 For rendered website changes, prefer `$quality-frontend-testing-debugging` when the repo has `.codex/skills/quality-frontend-testing-debugging/SKILL.md` and the ticket requires browser-visible validation, responsive layout checks, console health, screenshots, or interaction proof. Keep API and deployment health checks in the repo-native stack path.
 For Blazor or other browser-visible validation, prefer that frontend testing/debugging skill before changing product code.
 
-When the repository contains `tests/SDDTemplate.E2ETests`, treat it as the reusable deployed-QA regression suite. Implementation records browser E2E expectations and acceptance oracles, but E2E creation and repair are owned by this QA skill unless the user, ticket, or OpenSpec artifacts explicitly made E2E part of implementation PR scope. The suite is executed by the selected-provider QA job against the deployed QA Site/API URLs. The selected deployment adapter defines any temporary QA branch and job names. Create or update reusable tests on the QA branch when the existing suite cannot prove a required acceptance criterion, record the reason in the QA result, and route those test changes through the normal reviewed follow-up path unless the configured QA workflow rule explicitly allows committing them in the QA workflow. This skill still owns QA acceptance: verify the repository E2E evidence bundle, publish final QA evidence, create or verify the RC tag, update release metadata, add the ticket-provider comment, move the ticket to Done only after the QA result is `PASS`, and delete the remote QA trigger branch after durable evidence exists. Local E2E QA is forbidden unless a deployment-related blocker prevents the normal selected-provider E2E path from running or completing and `agentOptimization.maxToolRetries` deploy-fix attempts from `.codex/delivery-policy.json` have failed; the current limit is `2`. Product E2E test failures remain QA failures and are not a local-fallback trigger.
+When the repository contains `tests/SDDTemplate.E2ETests`, treat it as the reusable deployed-QA regression suite. Implementation owns E2E test creation and repair when browser-level proof is needed. This QA skill runs existing committed tests only; it must not create, repair, commit, or stage tests. The suite is executed by the selected-provider QA job against the deployed QA Site/API URLs. The selected deployment adapter defines any temporary QA branch and job names. When existing committed tests cannot prove a required acceptance criterion, record the missing coverage in the QA result and classify the result as `FAIL` or blocked instead of filling the gap in QA. This skill still owns QA acceptance: verify the repository E2E evidence bundle, publish final QA evidence, create or verify the RC tag, update release metadata, add the ticket-provider comment, move the ticket to Done only after the QA result is `PASS`, and delete the remote QA trigger branch after durable evidence exists. Local E2E QA is forbidden unless a deployment-related blocker prevents the normal selected-provider E2E path from running or completing and `agentOptimization.maxToolRetries` deploy-fix attempts from `.codex/delivery-policy.json` have failed; the current limit is `2`. Product E2E test failures remain QA failures and are not a local-fallback trigger.
 
 After the evidence bundle is verified, the E2E QA ticket comment is verified, the RC tag is created or verified, release metadata is updated, and the ticket is moved to Done, delete the remote selected-provider QA trigger branch through the repository adapter. The branch is only a temporary evidence trigger; durable evidence is in Nexus, ticket provider, the release manifest, and tags. Keep the branch only when evidence publication, comment verification, RC tagging, or Done-state mutation is incomplete and the branch may need a rerun.
 
@@ -81,7 +81,7 @@ Build a scoped QA checklist from the ticket only. Include categories only when t
 - accessibility checks when forms, navigation, labels, focus, keyboard flow, or semantics changed
 - responsive checks when layout or viewport behavior changed
 
-If the ticket's test expectations are weak, complete them in the QA result comment by listing the concrete scenarios you created and executed. Do not broaden into unrelated regression testing unless the ticket explicitly asks for it. If an acceptance criterion cannot be converted into an observable oracle, classify the QA result as blocked or `FAIL`; do not pass by assumption.
+If the ticket's test expectations are weak, complete them in the QA result comment by listing the concrete committed scenarios you executed. Do not broaden into unrelated regression testing unless the ticket explicitly asks for it. If an acceptance criterion cannot be mapped to an existing committed automated test and observable oracle, classify the QA result as blocked or `FAIL`; do not pass by assumption and do not create the missing test in QA.
 
 Use these QA result classifications:
 
@@ -94,7 +94,7 @@ Only `PASS` can move the ticket to `configured Done state`. Only `PASS` can move
 Apply this general QA quality bar before executing tests:
 
 - Define the test oracle: what observable behavior proves the ticket works, what observable behavior proves it is broken, and which source establishes that expectation.
-- Build an acceptance-to-assertion map before testing. Every acceptance criterion must list the scenario category, assertion, tool, expected observable result, and evidence location.
+- Build an acceptance-to-assertion map before testing. Every acceptance criterion must list the existing committed test or suite, scenario category, assertion, tool, expected observable result, and evidence location.
 - Translate acceptance criteria into explicit assertions, not just navigation steps or screenshots. A passing test must check status, content, state, side effects, errors, visual state, or data changes as applicable.
 - Treat screenshots, traces, logs, and HTTP 200 smoke checks as supporting evidence only. They cannot prove acceptance unless tied to executable assertions.
 - Cover the highest-risk boundary and negative cases implied by the change, even when the ticket only describes the happy path. Keep the scope ticket-specific.
@@ -115,7 +115,7 @@ Inspect the repo before choosing tools:
 
 Use an established tool when the repo clearly already has one. For this repository's committed QA E2E suite, run the configured E2E tool remotely through repository workflow against deployed QA URLs; do not start local web servers for QA acceptance. Local configured E2E tool execution is only allowed after 2 failed deploy-fix attempts for a deployment-related blocker that prevents the configured remote QA workflow from running or completing. The local fallback must use `npm run test:docker` from `tests/SDDTemplate.E2ETests`, target deployed QA URLs with `E2E_SITE_URL` and `E2E_API_URL`, and never target localhost.
 
-For any deployed browser E2E failure, the configured browser diagnostic or E2E tool is the first diagnostic source before source-code changes. Reproduce the failing user flow against the real QA URL, inspect console, network, websocket, DOM readiness, screenshots, and trace/video evidence, and classify the failure as product defect, E2E harness issue, deployment/environment issue, or workflow gate gap. Do not change app code to add E2E-only JavaScript, hidden hooks, test ids, bypasses, timing shims, or configured E2E tool-specific behavior. If the failure is a harness issue, update only the E2E tests, evidence capture, or workflow. If the failure is a real product defect, route to implementation and require a product-valid fix.
+For any deployed browser E2E failure, the configured browser diagnostic or E2E tool is the first diagnostic source before source-code changes. Reproduce the failing user flow against the real QA URL, inspect console, network, websocket, DOM readiness, screenshots, and trace/video evidence, and classify the failure as product defect, committed-test defect, deployment/environment issue, or workflow gate gap. Do not change app code to add E2E-only JavaScript, hidden hooks, test ids, bypasses, timing shims, or configured E2E tool-specific behavior. If the failure is a committed-test defect or missing committed coverage, report it as a QA blocker and route it back to implementation/review instead of editing tests in QA. If the failure is a real product defect, route to implementation and require a product-valid fix.
 
 Tool choice is secondary to the evidence contract. The configured E2E tool, API tests, Postman/Newman, k6, repo-native integration tests, or manual browser evidence are acceptable only when the resulting QA record proves the same ticket-scoped assertions against the deployed QA artifact.
 
@@ -159,14 +159,12 @@ For API E2E:
 
 If a failure is clearly product behavior, report it as QA failure. If a failure is tooling, environment, missing credentials, missing test data, or unreachable QA infrastructure, classify it separately and do not move the ticket to Done.
 
-### 5. Test And Evidence Retention
+### 5. Evidence Retention
 
-Classify generated tests before deciding where to save them:
-
-- Reusable regression tests belong in the repository's normal test structure. Create or update them during QA when existing coverage cannot prove acceptance, then route them through the normal reviewed follow-up path unless the configured QA workflow rule explicitly allows committing them in the QA workflow.
-- One-off exploratory QA scripts, ad hoc generated tests, screenshots, traces, logs, and reports belong in the QA evidence bundle.
+- QA evidence belongs under ignored run folders and durable evidence storage. Do not create, repair, stage, or commit reusable regression tests in this skill.
+- One-off exploratory QA probes, screenshots, traces, logs, and reports belong in the QA evidence bundle.
 - Never stage or commit `artifacts/qa/**`; this path is for ignored run evidence only.
-- During QA, do not promote one-off generated scripts directly into committed regression tests. If the exploratory check should become permanent coverage, create a scoped implementation or follow-up ticket so it receives normal review and PR validation.
+- During QA, do not promote one-off probes directly into committed regression tests. If exploratory evidence shows permanent coverage is missing, classify QA as `FAIL` or blocked and route the missing test through implementation/review.
 
 Collect evidence in a stable per-run local folder:
 
@@ -181,7 +179,7 @@ artifacts/qa/{ticketKey}/{runId}/
 ├─ screenshots/
 ├─ traces/
 ├─ logs/
-└─ generated-tests/
+└─ probes/
 ```
 
 Use a deterministic `runId` such as UTC `yyyyMMdd-HHmmss` plus a short commit SHA when available.
@@ -196,27 +194,26 @@ Useful evidence includes:
 - test logs
 - HTML, JSON, JUnit, or CLI reports
 - console or network error summaries when relevant
-- generated one-off QA scripts that explain how the evidence was produced
+- generated one-off QA probes that explain how the evidence was produced
 
 Create `qa-summary.md` with the result, tested URLs, selected tools, commit/artifact, scenario categories, acceptance-to-assertion map, evidence inventory, gaps, assumptions, and failure classification. Create `test-plan.md` with the derived checklist, especially when the ticket's original test expectations were weak.
 
 Prefer durable links in ticket comments. Use this evidence publication order:
 
-1. Commit reusable tests to the repo only when the configured QA workflow rule explicitly allows it; otherwise preserve the generated test changes as QA evidence and create or route a reviewed follow-up implementation workflow for permanent regression coverage.
-2. When the selected repository E2E job has already run the committed suite, verify the Nexus bundle at `app/{commitSha}/qa-e2e-evidence.zip` and prefer reusing it as supporting evidence instead of rerunning the same test without cause. Also verify any QA observability evidence required by the selected deployment adapter.
-3. Save all run evidence locally under `artifacts/qa/{ticketKey}/{runId}/`.
-4. Zip the run folder as `qa-evidence.zip`.
-5. Upload `qa-evidence.zip` to Nexus when Nexus config is available, using a path like:
+1. When the selected repository E2E job has already run the committed suite, verify the Nexus bundle at `app/{commitSha}/qa-e2e-evidence.zip` and prefer reusing it as supporting evidence instead of rerunning the same test without cause. Also verify any QA observability evidence required by the selected deployment adapter.
+2. Save all run evidence locally under `artifacts/qa/{ticketKey}/{runId}/`.
+3. Zip the run folder as `qa-evidence.zip`.
+4. Upload `qa-evidence.zip` to Nexus when Nexus config is available, using a path like:
 
 ```text
 qa/{ticketKey}/{runId}/qa-evidence.zip
 ```
 
-6. Add the Nexus evidence URL to the ticket comment.
-7. If Nexus is unavailable but ticket provider attachments are configured and safe, attach evidence to ticket provider.
-8. If neither Nexus nor ticket provider attachments are available, include local evidence paths in the ticket comment and clearly label them as local-only fallback evidence.
-9. Use `UpdateReleaseManifest` after QA passes, adding source RC version, QA evidence URL, QA result, QA timestamp, tested URLs, and the E2E scenario summary while preserving existing artifact, checksum, PR, ticket, DEV, and QA deployment fields.
-10. Use `CreateArtifactPointer` to create `artifact-pointer.json` for the approved RC, then upload the pointer to `app/qa-approved/latest.json` and `app/rc/{sourceRcVersion}/artifact-pointer.json`; also upload the updated release manifest to `app/rc/{sourceRcVersion}/release.json`. These version paths are metadata aliases only; do not duplicate ZIP files there.
+5. Add the Nexus evidence URL to the ticket comment.
+6. If Nexus is unavailable but ticket provider attachments are configured and safe, attach evidence to ticket provider.
+7. If neither Nexus nor ticket provider attachments are available, include local evidence paths in the ticket comment and clearly label them as local-only fallback evidence.
+8. Use `UpdateReleaseManifest` after QA passes, adding source RC version, QA evidence URL, QA result, QA timestamp, tested URLs, and the E2E scenario summary while preserving existing artifact, checksum, PR, ticket, DEV, and QA deployment fields.
+9. Use `CreateArtifactPointer` to create `artifact-pointer.json` for the approved RC, then upload the pointer to `app/qa-approved/latest.json` and `app/rc/{sourceRcVersion}/artifact-pointer.json`; also upload the updated release manifest to `app/rc/{sourceRcVersion}/release.json`. These version paths are metadata aliases only; do not duplicate ZIP files there.
 
 Do not move a ticket to `configured Done state` until the evidence link or fallback evidence path has been written to ticket provider. If evidence upload fails after tests pass, comment the upload failure, leave the ticket in QA, and report the blocking evidence publication issue.
 
@@ -245,26 +242,13 @@ The RC tag is the human release-candidate identifier for the QA-approved artifac
 
 ### 7. Git And Hook Policy
 
-Respect the repo's hooks when QA creates files:
+Respect the repo's hooks when QA creates evidence files:
 
 - Before writing evidence, verify `artifacts/qa/**` or a broader `artifacts/` rule is ignored by Git. If it is not ignored, stop and route to workflow maintenance before generating screenshots, traces, logs, reports, or ZIP evidence.
 - `gitleaks protect --staged --redact` scans staged files. Keep raw QA evidence ignored under `artifacts/qa/**` and do not stage it.
-- The commit message hook requires messages to start with a ticket key, an OpenSpec id, or `[SDD]`.
-- Commit reusable ticket-specific tests with the ticket key only when the configured QA workflow rule explicitly allows committing them in the QA workflow, for example:
-
-```text
-E2EPROJECT-123: add E2E regression tests
-```
-
-- Use `[SDD]` only for repo workflow or QA platform maintenance, for example:
-
-```text
-[SDD] Add QA automation baseline
-```
-
-- One-off generated tests stay in `artifacts/qa/{ticketKey}/{runId}/generated-tests/` and are uploaded as evidence, not committed.
-- Reusable tests must reference secrets through environment variables or test configuration placeholders. Never hardcode real credentials, tokens, cookies, connection strings, or private payloads.
-- If reusable tests require new repo config, stage only intentional source/config files and leave screenshots, logs, reports, traces, videos, and ZIP evidence untracked.
+- The commit message hook applies only if a separate implementation or workflow-maintenance flow creates commits. This QA skill must not create test commits.
+- One-off generated probes stay in `artifacts/qa/{ticketKey}/{runId}/probes/` and are uploaded as evidence, not committed.
+- If reusable tests or repo config are missing, stop or fail QA and route the work through implementation/review.
 
 ### 8. Ticket Provider Result And QA Branch Cleanup
 
@@ -371,20 +355,21 @@ Report the ticket, QA environment, scenarios tested, validation assertions, evid
 - Local fallback targeting localhost or missing `E2E_SITE_URL` / `E2E_API_URL`: fail closed and do not move the ticket to Done.
 - RC version cannot be supplied or derived: comment available evidence, leave ticket in QA, and ask for the RC version.
 - Missing acceptance-to-assertion mapping: comment the gap and leave the ticket in QA.
+- Missing committed automated test coverage for any acceptance criterion: comment the gap, classify QA as `FAIL` or blocked, and leave the ticket in QA.
 - Screenshot-only, trace-only, log-only, page-load-only, or smoke-only evidence: classify as `PASS WITH GAPS` or `FAIL` and do not move the ticket to Done.
 - Data-changing ticket without independent state/API verification when such verification is possible: classify as `PASS WITH GAPS` or `FAIL` and do not move the ticket to Done.
 - Validation-changing ticket without relevant invalid or boundary cases: classify as `PASS WITH GAPS` or `FAIL` and do not move the ticket to Done.
 - Wrong artifact, wrong QA URL, localhost, stale DEV endpoint, mock endpoint, or accidental same-origin fallback: fail closed and do not move the ticket to Done.
 - QA test failure: comment evidence and do not move the ticket to Done.
 - Product defect after QA: invoke `dev-flow-file-qa-bug`; do not fix product code inside this skill unless the user changes the task.
-- E2E failure without configured browser diagnostic tool or configured Browser/E2E diagnostic classification: stop before app-code changes and record the missing classification.
-- Proposed app-code change that exists only for configured E2E tool/E2E: stop; update the E2E harness or workflow instead.
+- E2E failure without configured browser diagnostic tool or configured Browser/E2E diagnostic classification: stop before app-code or test changes and record the missing classification.
+- Proposed app-code or test change that exists only for configured E2E tool/E2E: stop and route the issue through implementation/review or workflow maintenance instead.
 - Missing evidence upload support: include local evidence paths or links in the ticket comment.
 - Secrets in logs or screenshots: redact or discard the evidence before commenting.
 
 ## Practice References
 
-When creating or repairing tool-specific tests, prefer official documentation and current repo conventions over memory:
+When running and interpreting tool-specific tests, prefer official documentation and current repo conventions over memory:
 
 - selected E2E adapter documentation and best practices
 - selected browser or API testing tool documentation

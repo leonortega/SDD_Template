@@ -191,6 +191,7 @@ Current external skill sources:
 - `plan-ui-change`: Blazor UI planning guidance from https://github.com/dotnet/skills/tree/main/plugins/dotnet-blazor/skills/plan-ui-change.
 - `playwright`: browser automation guidance from https://github.com/openai/skills/tree/main/skills/.curated/playwright.
 - `security-best-practices`: secure coding guidance from https://github.com/openai/skills/tree/main/skills/.curated/security-best-practices.
+- `tdd`: test-driven development guidance from https://github.com/mattpocock/skills/tree/main/skills/engineering/tdd.
 - `test-analysis-extensions`: language-specific test analysis extensions from https://github.com/dotnet/skills/tree/main/plugins/dotnet-test/skills/test-analysis-extensions.
 
 Agent utility skills are treated as external for naming purposes and are listed in `.codex/skills/README.md`; they are not renamed by delivery category.
