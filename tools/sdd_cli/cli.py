@@ -680,6 +680,8 @@ def run_delivery_mode(mode: str, options: dict[str, str]) -> Any:
         return read_workflow_telemetry(Path(options.get("repo-root", REPO_ROOT)), require(options, "ticket-key"), options.get("input-json", "{}"))
     if mode == "ReadOpenProjectTimeTelemetry":
         return read_openproject_time_telemetry(require(options, "ticket-key"), require(options, "input-json"))
+    if mode == "ResolveOpenProjectTimeActivity":
+        return resolve_openproject_time_activity(require(options, "workflow-stage"), require(options, "input-json"))
     if mode == "RenderOpenProjectTimeTelemetryComment":
         return render_openproject_time_telemetry_comment(require(options, "ticket-key"), require(options, "input-json"))
     if mode == "RenderTicketComment":
@@ -880,6 +882,26 @@ def configure_audit(root: Path, values: dict[str, Any], dry_run: bool) -> dict[s
 
     client_tools = read_json(root / ".codex" / "client-tools.local.json", optional=True)
     result["actions"].append({"path": ".codex/client-tools.local.json", "key": "inferred.local-values", "severity": "info", "message": "Would set inferred local client tool value defaults during explicit setup.", "phase": "audit"})
+    telemetry = nested(client_tools, "openProject", "timeTelemetry") or {}
+    if telemetry.get("enabled", True) and not isinstance(telemetry.get("activityByStage"), dict):
+        add_bucket_item(
+            result["findings"],
+            ".codex/client-tools.local.json",
+            "openProject.timeTelemetry.activityByStage",
+            "OpenProject time telemetry should map workflow stages to activities with openProject.timeTelemetry.activityByStage.",
+            "warning",
+            "audit",
+        )
+    flow_errors = openproject_activity_flow_errors(telemetry)
+    if flow_errors:
+        add_bucket_item(
+            result["findings"],
+            ".codex/client-tools.local.json",
+            "openProject.timeTelemetry.activityFlow",
+            "OpenProject activityFlow and activityByStage disagree: " + "; ".join(flow_errors[:5]),
+            "warning",
+            "audit",
+        )
 
     minimum = nested(client_tools, "pr", "minimumApprovals")
     if isinstance(minimum, dict):
@@ -1876,6 +1898,41 @@ def read_openproject_time_telemetry(ticket_key: str, input_json: str) -> dict[st
         "totalElapsedMilliseconds": sum(stage.get("elapsedMilliseconds", 0) for stage in stages),
         "stages": stages,
     }
+
+
+def resolve_openproject_time_activity(workflow_stage: str, input_json: str) -> dict[str, Any]:
+    config = json.loads(input_json)
+    telemetry = config.get("timeTelemetry", config)
+    by_stage = telemetry.get("activityByStage", {})
+    stage_config = by_stage.get(workflow_stage, {}) if isinstance(by_stage, dict) else {}
+    activity_id = stage_config.get("activityId") or telemetry.get("defaultActivityId") or telemetry.get("activityId")
+    activity_name = stage_config.get("activityName") or telemetry.get("defaultActivityName") or telemetry.get("activityName")
+    return {
+        "workflowStage": workflow_stage,
+        "activityId": activity_id or "",
+        "activityName": activity_name or "",
+        "configuredByStage": bool(stage_config),
+        "valid": bool(activity_id or activity_name),
+    }
+
+
+def openproject_activity_flow_errors(telemetry: dict[str, Any]) -> list[str]:
+    activity_flow = telemetry.get("activityFlow")
+    activity_by_stage = telemetry.get("activityByStage")
+    if not isinstance(activity_flow, dict) or not isinstance(activity_by_stage, dict):
+        return []
+    errors: list[str] = []
+    for activity, stages in activity_flow.items():
+        if not isinstance(stages, list) or not stages:
+            errors.append(f"{activity} has no flow steps")
+            continue
+        for stage in stages:
+            configured = activity_by_stage.get(stage)
+            if not isinstance(configured, dict):
+                errors.append(f"{stage} missing from activityByStage")
+            elif configured.get("activityName") != activity:
+                errors.append(f"{stage} maps to {configured.get('activityName')}, expected {activity}")
+    return errors
 
 
 def render_openproject_time_telemetry_comment(ticket_key: str, input_json: str) -> str:

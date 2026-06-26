@@ -10,8 +10,87 @@
     "doneStatus": "replace-with-openproject-done-status",
     "timeTelemetry": {
       "enabled": true,
-      "activityId": "replace-with-openproject-time-entry-activity-id",
-      "activityName": "replace-with-openproject-time-entry-activity-name"
+      "defaultActivityName": "Other",
+      "activityFlow": {
+        "Management": [
+          "dev-ops-post-merge-deploy",
+          "dev-ops-deploy-prod"
+        ],
+        "Specification": [
+          "dev-flow-propose-change",
+          "dev-flow-start-ticket",
+          "dev-flow-verify-change",
+          "dev-flow-archive-change"
+        ],
+        "Development": [
+          "dev-flow-implement-ticket",
+          "dev-flow-pr-review-agent",
+          "dev-flow-pr-review-feedback-loop"
+        ],
+        "Testing": [
+          "dev-ops-deploy-qa",
+          "configured-qa-gate"
+        ],
+        "Support": [
+          "dev-flow-file-qa-bug",
+          "dev-ops-rollback-prod",
+          "dev-ops-hotfix-prod"
+        ],
+        "Other": [
+          "dev-flow-pipeline-status",
+          "dev-flow-retrospective-audit"
+        ]
+      },
+      "activityByStage": {
+        "dev-flow-propose-change": {
+          "activityName": "Specification"
+        },
+        "dev-flow-start-ticket": {
+          "activityName": "Specification"
+        },
+        "dev-flow-verify-change": {
+          "activityName": "Specification"
+        },
+        "dev-flow-archive-change": {
+          "activityName": "Specification"
+        },
+        "dev-flow-implement-ticket": {
+          "activityName": "Development"
+        },
+        "dev-flow-pr-review-agent": {
+          "activityName": "Development"
+        },
+        "dev-flow-pr-review-feedback-loop": {
+          "activityName": "Development"
+        },
+        "dev-ops-post-merge-deploy": {
+          "activityName": "Management"
+        },
+        "dev-ops-deploy-qa": {
+          "activityName": "Testing"
+        },
+        "configured-qa-gate": {
+          "activityName": "Testing"
+        },
+        "dev-flow-file-qa-bug": {
+          "activityName": "Support"
+        },
+        "dev-ops-deploy-prod": {
+          "activityName": "Management"
+        },
+        "dev-ops-rollback-prod": {
+          "activityName": "Support"
+        },
+        "dev-ops-hotfix-prod": {
+          "activityName": "Support"
+        },
+        "dev-flow-pipeline-status": {
+          "activityName": "Other"
+        },
+        "dev-flow-retrospective-audit": {
+          "activityName": "Other"
+        }
+      }
     }
   },
   "git": {

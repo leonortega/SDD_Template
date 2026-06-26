@@ -21,6 +21,7 @@ DELIVERY_MODES = [
     "AppendWorkflowTelemetry",
     "ReadWorkflowTelemetry",
     "ReadOpenProjectTimeTelemetry",
+    "ResolveOpenProjectTimeActivity",
     "RenderOpenProjectTimeTelemetryComment",
     "RenderTicketComment",
     "UpdateReleaseManifest",
@@ -33,4 +34,3 @@ def collapse_stages() -> None:
 
 WORKFLOW_COMMENT_TYPE = "WorkflowTiming"
 WORKFLOW_TABLE = "| Stage | Outcome | Duration | Started UTC | Finished UTC |"
-
