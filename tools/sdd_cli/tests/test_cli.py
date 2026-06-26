@@ -80,6 +80,81 @@ class SddCliTests(unittest.TestCase):
             self.assertIn("IA generated workflow timing: ABC-1", comment)
             self.assertIn("| `dev-flow-start-ticket` | PASS | 1m 5s |", comment)
 
+    def test_openproject_time_activity_resolves_per_stage_with_default(self) -> None:
+        config = {
+            "timeTelemetry": {
+                "defaultActivityName": "Other",
+                "activityByStage": {
+                    "dev-flow-implement-ticket": {"activityName": "Development"},
+                    "dev-ops-deploy-qa": {"activityId": "4", "activityName": "Testing"},
+                },
+            }
+        }
+
+        development = cli.run_delivery_mode("ResolveOpenProjectTimeActivity", {
+            "workflow-stage": "dev-flow-implement-ticket",
+            "input-json": json.dumps(config),
+        })
+        fallback = cli.run_delivery_mode("ResolveOpenProjectTimeActivity", {
+            "workflow-stage": "unknown-stage",
+            "input-json": json.dumps(config),
+        })
+        testing = cli.run_delivery_mode("ResolveOpenProjectTimeActivity", {
+            "workflow-stage": "dev-ops-deploy-qa",
+            "input-json": json.dumps(config),
+        })
+
+        self.assertTrue(development["valid"])
+        self.assertEqual("Development", development["activityName"])
+        self.assertTrue(development["configuredByStage"])
+        self.assertEqual("Other", fallback["activityName"])
+        self.assertEqual("4", testing["activityId"])
+
+    def test_audit_warns_when_openproject_time_activity_map_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write(root / ".codex" / "project-profile.json", "{}")
+            write(root / ".codex" / "project-profile.schema.json", "{}")
+            write(root / ".codex" / "client-tools.local.json", json.dumps({
+                "openProject": {
+                    "timeTelemetry": {
+                        "enabled": True,
+                        "activityName": "Development",
+                    }
+                }
+            }))
+
+            result = cli.run_configure_mode("Audit", root, {}, False)
+            findings = {item["key"] for item in result["findings"]}
+
+            self.assertIn("openProject.timeTelemetry.activityByStage", findings)
+
+            write(root / ".codex" / "client-tools.local.json", json.dumps({
+                "openProject": {
+                    "timeTelemetry": {
+                        "enabled": True,
+                        "activityFlow": {"Development": ["dev-flow-implement-ticket"]},
+                        "activityByStage": {"dev-flow-implement-ticket": {"activityName": "Testing"}},
+                    }
+                }
+            }))
+            drift = cli.run_configure_mode("Audit", root, {}, False)
+            drift_findings = {item["key"] for item in drift["findings"]}
+            self.assertIn("openProject.timeTelemetry.activityFlow", drift_findings)
+
+    def test_common_openproject_activity_flow_maps_each_activity_by_name(self) -> None:
+        repo = Path(__file__).resolve().parents[3]
+        telemetry = json.loads((repo / ".codex" / "client-tools.common.json").read_text(encoding="utf-8"))["openProject"]["timeTelemetry"]
+        activity_flow = telemetry["activityFlow"]
+        activity_by_stage = telemetry["activityByStage"]
+        expected = {"Management", "Specification", "Development", "Testing", "Support", "Other"}
+
+        self.assertEqual(expected, set(activity_flow))
+        for activity, stages in activity_flow.items():
+            self.assertTrue(stages, activity)
+            for stage in stages:
+                self.assertEqual(activity, activity_by_stage[stage]["activityName"])
+
     def test_configure_audit_is_native_and_unsupported_modes_fail_closed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

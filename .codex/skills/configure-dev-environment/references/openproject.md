@@ -28,8 +28,9 @@ Ask only when missing or placeholder:
 - `openProject.qaStatus`: default `QA`.
 - `openProject.doneStatus`: default `Done`.
 - `openProject.timeTelemetry.enabled`: default `true`; when supported, workflow duration telemetry is written as OpenProject time entries before falling back to local JSONL.
-- `openProject.timeTelemetry.activityId`: time-entry activity id used for generated workflow telemetry.
-- `openProject.timeTelemetry.activityName`: optional activity name to resolve when `activityId` is not set.
+- `openProject.timeTelemetry.defaultActivityName`: fallback time-entry activity name, usually `Other`.
+- `openProject.timeTelemetry.activityFlow`: activity-name-first map for the OpenProject activity list. Use `Management` for `dev-ops-post-merge-deploy` and `dev-ops-deploy-prod`; `Specification` for `dev-flow-propose-change`, `dev-flow-start-ticket`, `dev-flow-verify-change`, and `dev-flow-archive-change`; `Development` for `dev-flow-implement-ticket`, `dev-flow-pr-review-agent`, and `dev-flow-pr-review-feedback-loop`; `Testing` for `dev-ops-deploy-qa` and `configured-qa-gate`; `Support` for `dev-flow-file-qa-bug`, `dev-ops-rollback-prod`, and `dev-ops-hotfix-prod`; `Other` for `dev-flow-pipeline-status` and `dev-flow-retrospective-audit`.
+- `openProject.timeTelemetry.activityByStage`: per-workflow-stage activity map used by automation. Each stage entry may use `activityName` or exact `activityId`; keep it consistent with `activityFlow`.
 
 ## Docker Env Values
 
@@ -54,6 +55,6 @@ Validate with OpenProject API v3:
 - `GET {baseUrl}/api/v3/users/me` with `Authorization: Bearer {apiToken}`.
 - `GET {baseUrl}/api/v3/projects/{projectIdentifier}`.
 - Resolve configured status names through the work package schema or statuses API before state mutations.
-- When time telemetry is enabled, validate the configured time-entry activity with `GET {baseUrl}/api/v3/time_entries/activity/{activityId}` or resolve the configured `activityName`, then verify the current user can list/create time entries for a test work package before relying on direct telemetry.
+- When time telemetry is enabled, validate every configured per-stage time-entry activity with `GET {baseUrl}/api/v3/time_entries/activity/{activityId}` or resolve each configured `activityName`, then verify the current user can list/create time entries for a test work package before relying on direct telemetry.
 
 Do not use OpenProject MCP, Docker database access, or direct database queries for ticket workflow validation.

@@ -93,7 +93,7 @@ PATCH {openProject.baseUrl}/api/v3/time_entries/{timeEntryId}
 GET {openProject.baseUrl}/api/v3/time_entries/activity/{activityId}
 ```
 
-List existing generated telemetry with filters for `entity_type=WorkPackage` and `entity_id={workPackageId}`. Create or update a time entry whose comment starts with `IA generated workflow telemetry: {ticketKey}:{workflowStage}`. The payload uses `spentOn`, `hours`, `_links.entity.href` for `/api/v3/work_packages/{workPackageId}`, and `_links.activity.href` for the configured activity. If the time-entry API, permissions, or configured activity cannot be used, record the fallback reason and use ignored `.codex/agent-telemetry.local.jsonl`.
+List existing generated telemetry with filters for `entity_type=WorkPackage` and `entity_id={workPackageId}`. Create or update a time entry whose comment starts with `IA generated workflow telemetry: {ticketKey}:{workflowStage}`. The payload uses `spentOn`, `hours`, `_links.entity.href` for `/api/v3/work_packages/{workPackageId}`, and `_links.activity.href` for the per-stage activity resolved from `openProject.timeTelemetry.activityByStage`, falling back to `defaultActivityId` or `defaultActivityName`. Use `ResolveOpenProjectTimeActivity` for deterministic stage-to-activity selection before API writes. If the time-entry API, permissions, or resolved per-stage activity cannot be used, record the fallback reason and use ignored `.codex/agent-telemetry.local.jsonl`.
 
 ## Gitea
 
