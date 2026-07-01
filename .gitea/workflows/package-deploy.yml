@@ -11,6 +11,8 @@ on:
 jobs:
   no-product-targets:
     runs-on: ubuntu-latest
+    container:
+      image: sdd-e2e-ci:local
     steps:
       - name: Report disabled deployment
         shell: bash

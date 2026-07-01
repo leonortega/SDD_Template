@@ -20,8 +20,9 @@ Also apply `docs/context-management.md` for durable configuration findings, tick
 When this skill triggers:
 
 1. Read `.codex/skills/configure-dev-environment/SKILL.md`.
-2. Route immediately to `$configure-dev-environment` and follow its `InitProjectProfile`, `EnsureRancherDesktopCluster`, `EnsureRancherDesktopHeadlamp`, and `EnsureRancherDesktopPortForwards` when Docker Desktop is selected, audit, safety, domain routing, and output rules.
-3. During infra status checks for the core stack, use the compose env file explicitly:
+2. Route immediately to `$configure-dev-environment` and follow its full mode sequence when `config infra` or full setup is requested. All configure modes in `tools/sdd_cli/cli.py` `CONFIGURE_MODE_NAMES` are non-optional for complete setup: `AcquireProjectGuidance`, `Audit`, `AuditQualityGates`, `AuditRecommendedTools`, `BuildGiteaActionsImages`, `DiscoverProjectGuidance`, `EnsureDeliveryContext`, `EnsureRancherDesktopCluster`, `EnsureRancherDesktopHeadlamp`, `EnsureRancherDesktopPortForwards`, `InitLocalFiles`, `InitProjectProfile`, `InitQualityGateTemplates`, `MapProjectGuidanceStep`, `SetClientTools`, `SetGiteaBranchProtection`, `SetGiteaRunner`, `SetMonitoringEnv`, `SetOpenProjectEnv`, `SetProjectStack`, `SetQualityConfig`, `SetRecommendedTools`, `ShowEnvironmentUrls`, `SplitInfraEnv`, `SyncWorktreeLocalConfig`, `ValidateObservability`, `ValidateGiteaActionsRunner`.
+3. Follow the skill-specific order defined in `configure-dev-environment` for the requested scope: initialization, provider prerequisites, audit, domain-specific configuration, validation, and observability checks.
+4. During infra status checks for the core stack, use the compose env file explicitly:
 
 ```text
 docker compose --env-file .\infra\openproject\variables.env --env-file .\infra\monitoring\variables.env -f .\infra\compose.yml ps

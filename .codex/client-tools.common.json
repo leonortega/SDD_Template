@@ -185,5 +185,13 @@
     "mode": "guarded-auto",
     "accepted": [],
     "dismissed": []
+  },
+  "openRouter": {
+    "baseUrl": "replace-with-openrouter-base-url",
+    "apiKey": "replace-with-openrouter-api-key",
+    "defaultChatModel": "openrouter/auto",
+    "modelMapping": {
+      "chat": "openrouter/auto"
+    }
   }
 }
