@@ -154,6 +154,25 @@
       "requiresIdeRestart": false,
       "requiresSystemReboot": false,
       "userActionRequired": false
+    },
+    {
+      "id": "openrouter-runtime-configuration",
+      "name": "OpenRouter runtime configuration",
+      "type": "tool",
+      "requires": [
+        "openrouter"
+      ],
+      "purpose": "Configure the OpenRouter endpoint and API key for local agent runtime model usage.",
+      "installMethod": "manual-reference",
+      "source": "official:https://openrouter.ai/docs",
+      "target": ".codex/client-tools.local.json",
+      "validation": "Confirm .codex/client-tools.local.json contains openRouter.baseUrl and openRouter.apiKey.",
+      "sourceKind": "technology-owner",
+      "installScope": "repo-local",
+      "installerKind": "none",
+      "requiresIdeRestart": false,
+      "requiresSystemReboot": false,
+      "userActionRequired": false
     }
   ],
   "notRecommended": [

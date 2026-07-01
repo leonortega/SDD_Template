@@ -5,7 +5,7 @@ context: |
 
   Durable project intent lives in docs/. The shared delivery contract at .codex/skills/_shared/delivery-contract.md is the agent-enforced policy layer. Agents should use documented intent first, then verify against current files and live tool output before mutating state.
 
-  Delivery tool set: OpenProject records tickets, states, and generated markers; OpenSpec records planned behavior; Gitea hosts PRs and reviews; Gitea Actions is the authoritative validation/deployment runner; Nexus stores immutable artifacts, release manifests, and preferred QA evidence bundles; Rancher Desktop is the default local deployment lane; Seq, Grafana, and Dozzle support local observability.
+  Delivery tool set: OpenProject records tickets, states, and generated markers; OpenSpec records planned behavior; Gitea hosts PRs and reviews; Gitea Actions is the authoritative validation/deployment runner; Nexus stores immutable artifacts, release manifests, and preferred QA evidence bundles; Docker Desktop is the default local deployment lane; Seq, Grafana, and Dozzle support local observability.
 
   Product stack: unselected. Add stack-specific languages, frameworks, tests, quality gates, skills, MCPs, and deployment targets only when the new product is defined.
 
@@ -13,7 +13,7 @@ context: |
 
   Recommendation audits scan the repository for detected tools, frameworks, environments, test frameworks, QA practices, code standards, web UI, REST/API, and security signals. project-guidance-discover owns project guidance suggestions and should avoid recommending stack-specific items before a stack exists.
 
-  Use official-first research for platform and tooling guidance. Prefer official Gitea, Sonatype Nexus, Rancher Desktop, Kubernetes, Grafana, Seq, Dozzle, Playwright, and selected future stack sources.
+  Use official-first research for platform and tooling guidance. Prefer official Gitea, Sonatype Nexus, Docker Desktop, Kubernetes, Grafana, Seq, Dozzle, Playwright, and selected future stack sources.
 
 rules:
   proposal:

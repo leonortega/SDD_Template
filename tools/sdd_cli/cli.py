@@ -882,6 +882,36 @@ def configure_audit(root: Path, values: dict[str, Any], dry_run: bool) -> dict[s
 
     client_tools = read_json(root / ".codex" / "client-tools.local.json", optional=True)
     result["actions"].append({"path": ".codex/client-tools.local.json", "key": "inferred.local-values", "severity": "info", "message": "Would set inferred local client tool value defaults during explicit setup.", "phase": "audit"})
+    openrouter = nested(client_tools, "openRouter") or {}
+    if openrouter:
+        if openrouter.get("baseUrl") and not openrouter.get("apiKey"):
+            add_bucket_item(
+                result["findings"],
+                ".codex/client-tools.local.json",
+                "openRouter.apiKey",
+                "OpenRouter configuration has a baseUrl but no apiKey. Set openRouter.apiKey in .codex/client-tools.local.json.",
+                "warning",
+                "audit",
+            )
+        if openrouter.get("apiKey") and not openrouter.get("baseUrl"):
+            add_bucket_item(
+                result["findings"],
+                ".codex/client-tools.local.json",
+                "openRouter.baseUrl",
+                "OpenRouter configuration has an apiKey but no baseUrl. Set openRouter.baseUrl in .codex/client-tools.local.json.",
+                "warning",
+                "audit",
+            )
+        model_mapping = openrouter.get("modelMapping")
+        if model_mapping is not None and not isinstance(model_mapping, dict):
+            add_bucket_item(
+                result["findings"],
+                ".codex/client-tools.local.json",
+                "openRouter.modelMapping",
+                "OpenRouter modelMapping must be an object mapping skill names to model preferences.",
+                "warning",
+                "audit",
+            )
     telemetry = nested(client_tools, "openProject", "timeTelemetry") or {}
     if telemetry.get("enabled", True) and not isinstance(telemetry.get("activityByStage"), dict):
         add_bucket_item(

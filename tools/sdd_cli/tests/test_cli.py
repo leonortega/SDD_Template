@@ -142,6 +142,32 @@ class SddCliTests(unittest.TestCase):
             drift_findings = {item["key"] for item in drift["findings"]}
             self.assertIn("openProject.timeTelemetry.activityFlow", drift_findings)
 
+    def test_audit_warns_when_openrouter_config_is_incomplete(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write(root / ".codex" / "project-profile.json", "{}")
+            write(root / ".codex" / "project-profile.schema.json", "{}")
+            write(root / ".codex" / "client-tools.local.json", json.dumps({
+                "openRouter": {
+                    "baseUrl": "https://api.openrouter.ai/v1"
+                }
+            }))
+
+            result = cli.run_configure_mode("Audit", root, {}, False)
+            findings = {item["key"] for item in result["findings"]}
+            self.assertIn("openRouter.apiKey", findings)
+
+            write(root / ".codex" / "client-tools.local.json", json.dumps({
+                "openRouter": {
+                    "apiKey": "token",
+                    "modelMapping": []
+                }
+            }))
+            result = cli.run_configure_mode("Audit", root, {}, False)
+            findings = {item["key"] for item in result["findings"]}
+            self.assertIn("openRouter.baseUrl", findings)
+            self.assertIn("openRouter.modelMapping", findings)
+
     def test_common_openproject_activity_flow_maps_each_activity_by_name(self) -> None:
         repo = Path(__file__).resolve().parents[3]
         telemetry = json.loads((repo / ".codex" / "client-tools.common.json").read_text(encoding="utf-8"))["openProject"]["timeTelemetry"]
@@ -154,6 +180,19 @@ class SddCliTests(unittest.TestCase):
             self.assertTrue(stages, activity)
             for stage in stages:
                 self.assertEqual(activity, activity_by_stage[stage]["activityName"])
+
+    def test_openrouter_model_mapping_keys_match_chat_or_skill_names(self) -> None:
+        repo = Path(__file__).resolve().parents[3]
+        common = json.loads((repo / ".codex" / "client-tools.common.json").read_text(encoding="utf-8"))
+        mapping = common.get("openRouter", {}).get("modelMapping", {})
+        self.assertIsInstance(mapping, dict)
+        self.assertIn("chat", mapping)
+        skill_dirs = {p.name for p in (repo / ".codex" / "skills").iterdir() if p.is_dir()}
+
+        for key in mapping:
+            if key == "chat":
+                continue
+            self.assertIn(key, skill_dirs, msg=f"OpenRouter modelMapping key '{key}' should match a skill directory or be 'chat'.")
 
     def test_configure_audit_is_native_and_unsupported_modes_fail_closed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
