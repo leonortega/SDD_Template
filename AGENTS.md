@@ -78,3 +78,8 @@ When a required repo skill, command, memory rule, definition, or configured tool
 Use `.codex/memory/` as a reviewable repository memory layer. Memory is guidance only and must be verified against the current user request, OpenProject, OpenSpec, shared delivery contract, canonical docs, current files, and live tool output before acting.
 
 Before final handoff for any non-trivial repo work, perform a durable learning capture. Update `docs/`, `.codex/skills/_shared/delivery-contract.md` plus related skills/tests, or `.codex/memory/` according to `.codex/memory/retrieval-policy.md#update-process`, then report `Memory updated: <files>` or `Memory updated: none`.
+
+## Skill Activation Configuration
+- All prompts must trigger skill evaluation by default
+- Skills are applied in priority order: security > caveman > others
+- Caveman skill auto-activates with intensity: full (unless specified otherwise)

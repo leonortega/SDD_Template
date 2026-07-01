@@ -8,7 +8,7 @@ This repository is not a production-ready product template yet. It is not a prod
 
 - A repeatable SDLC workflow driven by tickets, OpenSpec changes, and Codex skills.
 - A local DevOps platform shape built around free/open-source tools for source control, CI, artifacts, deployment, and observability.
-- Provider adapters for OpenProject, Gitea, Nexus, Rancher Desktop, Azure App Service, and observability tools.
+- Provider adapters for OpenProject, Gitea, Nexus, Docker Desktop, Azure App Service, and observability tools.
 - Versioned install and update commands so a separate test repository can consume lab releases.
 - Guardrails for quality gates, secret safety, PR review, QA evidence, release lineage, and rollback.
 
@@ -100,7 +100,7 @@ The installer also seeds the required `.codex/memory/MEMORY.md`, `.codex/memory/
 - OpenProject: ticket and work package workflow.
 - Gitea: repository hosting, pull requests, review, and Actions workflows.
 - Nexus: immutable artifact storage and release lineage.
-- Rancher Desktop: local Kubernetes deployment lane.
+- Docker Desktop: local Kubernetes deployment lane.
 - Azure App Service: optional cloud deployment provider for experiments beyond the free local lab.
 - Seq: application log search and inspection.
 - Grafana: dashboards, health checks, and alert visibility.
@@ -214,7 +214,7 @@ This tool uses and integrates ideas, workflows, or runtime support from the foll
 - [OpenProject](https://www.openproject.org/) for project and ticket management.
 - [Gitea](https://about.gitea.com/) and [Gitea Actions](https://docs.gitea.com/usage/actions/overview) for Git hosting, pull requests, review, and CI automation.
 - [Sonatype Nexus Repository](https://www.sonatype.com/products/sonatype-nexus-repository) for artifact storage and promotion.
-- [Rancher Desktop](https://rancherdesktop.io/) and [Kubernetes](https://kubernetes.io/) for local deployment workflows.
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) and [Kubernetes](https://kubernetes.io/) for local deployment workflows.
 - [Microsoft Azure App Service](https://azure.microsoft.com/products/app-service) for optional cloud hosting.
 - [Grafana](https://grafana.com/), [Seq](https://datalust.co/seq), and [Dozzle](https://dozzle.dev/) for observability workflows.
 - [Playwright](https://playwright.dev/) for browser automation and QA validation.

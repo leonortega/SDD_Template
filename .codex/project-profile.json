@@ -35,10 +35,10 @@
       "id": "nexus",
       "adapter": ".codex/providers/artifact.nexus.md"
     },
-    "deployment": {
-      "id": "rancher-desktop",
-      "adapter": ".codex/providers/deploy.rancher-desktop.md"
-    },
+      "deployment": {
+        "id": "docker-desktop",
+        "adapter": ".codex/providers/deploy.docker-desktop.md"
+      },
     "observability": [
       {
         "id": "seq"
@@ -81,6 +81,6 @@
     "repository": ".codex/providers/repo.gitea.md",
     "review": ".codex/providers/repo.gitea.md",
     "artifact": ".codex/providers/artifact.nexus.md",
-    "deployment": ".codex/providers/deploy.rancher-desktop.md"
+    "deployment": ".codex/providers/deploy.docker-desktop.md"
   }
 }
