@@ -17,6 +17,13 @@ The product stack is currently unselected. Keep prerequisites limited to the del
 - Gitleaks when running local secret scans.
 - Trivy when filesystem/container scans are configured.
 
+## MCPs
+
+- Codegraph for codebase context indexing.
+  - Install: already configured in `.codex/config.toml` through `@colbymchenry/codegraph@1.1.1` via `npx`.
+  - Validate: confirm the `.codex/config.toml` entry is present and `npx --yes @colbymchenry/codegraph@1.1.1 serve --mcp` starts successfully.
+  - Note: telemetry is disabled via `CODEGRAPH_TELEMETRY=0` and `DO_NOT_TRACK=1`.
+
 ## Future Stack Tools
 
-Add language runtimes, package managers, SDKs, MCPs, and IDE extensions only when the new product stack requires them. Prefer tracked examples over local secret-bearing files.
+Add language runtimes, package managers, SDKs, and IDE extensions only when the new product stack requires them. Prefer tracked examples over local secret-bearing files.

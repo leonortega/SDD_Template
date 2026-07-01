@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import hashlib
@@ -54,9 +54,12 @@ DISCOVERY_SOURCE_PRIORITY = [
 SDD_TOOL_MANIFEST = ".codex/sdd-tool-version.json"
 SDD_TOOL_VERSION_PATTERN = re.compile(r"^v\d+\.\d+\.\d+$")
 SDD_TOOL_INCLUDE_FILES = [
-    "AGENTS.md",
-    "README.md",
+    ".dockerignore",
+    ".editorconfig",
+    ".gitattributes",
     ".gitignore",
+    "AGENTS.md",
+    "lefthook.yml",
     ".codex/client-tools.common.json",
     ".codex/config.toml",
     ".codex/delivery-policy.json",
