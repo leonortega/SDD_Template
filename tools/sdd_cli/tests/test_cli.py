@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import io
 import json
@@ -226,7 +226,7 @@ class SddCliTests(unittest.TestCase):
             root = Path(tmp)
             write(root / ".codex" / "project-profile.json", json.dumps({"providers": {"deployment": {"id": "example"}}}))
             write(root / ".codex" / "client-tools.local.json", "{}")
-            for mode in cli.CONFIGURE_MODE_NAMES:
+            for mode in cli.ALL_CONFIGURE_MODES:
                 result = cli.run_configure_mode(mode, root, {}, True)
                 self.assertNotIn("Mode is not implemented in native Python", json.dumps(result), mode)
 

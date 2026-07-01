@@ -100,7 +100,8 @@ SDD_TOOL_PRESERVE_FILES = {
     ".codex/memory/memory_summary.md",
     ".codex/memory/retrieval-policy.md",
 }
-CONFIGURE_MODE_NAMES = [
+# Full mode registry including audit/validation modes
+ALL_CONFIGURE_MODES = [
     "AcquireProjectGuidance",
     "Audit",
     "AuditQualityGates",
@@ -108,6 +109,8 @@ CONFIGURE_MODE_NAMES = [
     "BuildGiteaActionsImages",
     "DiscoverProjectGuidance",
     "EnsureDeliveryContext",
+    "EnsureLefthook",
+    "EnsureQualityTools",
     "EnsureRancherDesktopCluster",
     "EnsureRancherDesktopHeadlamp",
     "EnsureRancherDesktopPortForwards",
@@ -126,6 +129,43 @@ CONFIGURE_MODE_NAMES = [
     "ShowEnvironmentUrls",
     "SplitInfraEnv",
     "SyncWorktreeLocalConfig",
+    "ValidateObservability",
+    "ValidateGiteaActionsRunner",
+]
+
+# Modes for first-time infrastructure configuration (setup, install, initialize)
+INFRA_CONFIG_MODES = [
+    "InitLocalFiles",
+    "InitProjectProfile",
+    "InitQualityGateTemplates",
+    "EnsureLefthook",
+    "EnsureQualityTools",
+    "EnsureRancherDesktopCluster",
+    "EnsureRancherDesktopHeadlamp",
+    "EnsureRancherDesktopPortForwards",
+    "BuildGiteaActionsImages",
+    "SetProjectStack",
+    "SetClientTools",
+    "SetQualityConfig",
+    "SetRecommendedTools",
+    "SetOpenProjectEnv",
+    "SetMonitoringEnv",
+    "SetGiteaRunner",
+    "SetGiteaBranchProtection",
+    "SplitInfraEnv",
+    "SyncWorktreeLocalConfig",
+    "EnsureDeliveryContext",
+    "DiscoverProjectGuidance",
+    "MapProjectGuidanceStep",
+    "AcquireProjectGuidance",
+    "ShowEnvironmentUrls",
+]
+
+# Read-only audit and validation modes (exclude from automated setup)
+AUDIT_AND_VALIDATION_MODES = [
+    "Audit",
+    "AuditQualityGates",
+    "AuditRecommendedTools",
     "ValidateObservability",
     "ValidateGiteaActionsRunner",
 ]
@@ -418,6 +458,8 @@ def run_configure_mode(mode: str, root: Path, values: dict[str, Any], dry_run: b
         "BuildGiteaActionsImages": configure_build_gitea_actions_images,
         "DiscoverProjectGuidance": configure_discover_project_guidance,
         "EnsureDeliveryContext": configure_ensure_delivery_context,
+        "EnsureLefthook": configure_ensure_lefthook,
+        "EnsureQualityTools": configure_ensure_quality_tools,
         "EnsureRancherDesktopCluster": configure_ensure_rancher_desktop_cluster,
         "EnsureRancherDesktopHeadlamp": configure_ensure_rancher_desktop_headlamp,
         "EnsureRancherDesktopPortForwards": configure_ensure_rancher_desktop_port_forwards,
@@ -513,7 +555,8 @@ def install_sdd_tool(source: Path, target: Path, version: str | None, action: st
         "gitBootstrap": git_bootstrap,
     }
     write_json(target / SDD_TOOL_MANIFEST, manifest)
-    return {
+    lefthook_result = configure_ensure_lefthook(target, {}, dry_run=False)
+    install_result = {
         "action": action,
         "version": version,
         "target": str(target),
@@ -524,6 +567,11 @@ def install_sdd_tool(source: Path, target: Path, version: str | None, action: st
         "checksumSha256": checksum,
         "gitBootstrap": git_bootstrap,
     }
+    if "actions" in lefthook_result:
+        install_result["lefthookActions"] = lefthook_result["actions"]
+    if lefthook_result.get("findings"):
+        install_result["lefthookFindings"] = lefthook_result["findings"]
+    return install_result
 
 
 def sdd_tool_files(root: Path) -> list[str]:
@@ -567,6 +615,18 @@ def is_sdd_tool_excluded(relative: str) -> bool:
 
 def unmanaged_collisions(source: Path, target: Path, files: list[str], owned: set[str]) -> list[str]:
     collisions: list[str] = []
+    managed = set(files)
+    for path in source.rglob("*"):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(source).as_posix()
+        if is_sdd_tool_excluded(relative):
+            continue
+        if relative in managed or relative in SDD_TOOL_PRESERVE_FILES or relative in owned:
+            continue
+        dst = target / relative
+        if dst.exists() and dst.read_bytes() != path.read_bytes():
+            collisions.append(relative)
     for relative in files:
         dst = target / relative
         if not dst.exists() or relative in owned:
@@ -989,12 +1049,30 @@ def configure_audit_quality_gates(root: Path, values: dict[str, Any], dry_run: b
 
 
 def configure_validate_runner(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
+    actions_images = root / "infra" / "gitea" / "actions-images"
+    dockerfiles = sorted(actions_images.glob("*/Dockerfile")) if actions_images.exists() else []
+    expected_images = [f"sdd-{dockerfile.parent.name}:local" for dockerfile in dockerfiles]
+    missing_images = []
+    if expected_images:
+        docker = run_native(["docker", "images", "--format", "{{.Repository}}:{{.Tag}}"], root, timeout=30)
+        if docker["returncode"] == 0:
+            present = set(docker["stdout"].splitlines())
+            missing_images = [image for image in expected_images if image not in present]
+        else:
+            missing_images = expected_images
     checks = {
         "workflowDirectory": (root / ".gitea" / "workflows").exists(),
         "runnerExample": (root / "infra" / "gitea" / "runner.env.example").exists(),
         "lefthook": (root / "lefthook.yml").exists(),
+        "giteaActionsImages": len(missing_images) == 0,
     }
-    return {"mode": "ValidateGiteaActionsRunner", "valid": all(checks.values()), "checks": checks}
+    return {
+        "mode": "ValidateGiteaActionsRunner",
+        "valid": all(checks.values()),
+        "checks": checks,
+        "missingImages": missing_images,
+        "expectedImages": expected_images,
+    }
 
 
 def configure_init_local_files(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
@@ -1388,6 +1466,125 @@ def configure_ensure_rancher_desktop_headlamp(root: Path, values: dict[str, Any]
     return result
 
 
+def configure_ensure_lefthook(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
+    result = configure_result("EnsureLefthook", dry_run, write_enabled=not dry_run)
+    config = root / "lefthook.yml"
+    if not config.exists():
+        add_bucket_item(result["findings"], "lefthook.yml", "config.missing", "lefthook.yml is missing.", "warning", "pre-start")
+        result["valid"] = False
+        return result
+    
+    lefthook_path = _resolve_lefthook(root)
+    if lefthook_path is None:
+        result["actions"].append({"path": "lefthook", "key": "install", "severity": "info", "message": "lefthook binary is not available. Attempting user-local install.", "phase": "apply"})
+        if dry_run:
+            result["actions"].append({"path": "lefthook", "key": "install", "severity": "info", "message": "Would download and install lefthook to user-local bin.", "phase": "apply"})
+            result["valid"] = True
+            return result
+        lefthook_path = _install_lefthook_user_local(root, result)
+        if lefthook_path is None:
+            result["valid"] = False
+            return result
+    
+    if dry_run:
+        result["actions"].append({"path": "lefthook", "key": "install", "severity": "info", "message": f"Would run {lefthook_path} install.", "phase": "apply"})
+        result["valid"] = True
+        return result
+    
+    install = run_native([lefthook_path, "install"], root, timeout=30)
+    if install["returncode"] == 0:
+        result["actions"].append({"path": "lefthook", "key": "install", "severity": "info", "message": "Lefthook git hooks installed.", "phase": "apply"})
+    else:
+        add_bucket_item(result["findings"], "lefthook", "install", f"Could not install lefthook: {install['stderr']}", "error", "apply")
+        result["valid"] = False
+        return result
+    
+    result["valid"] = True
+    return result
+
+
+def configure_ensure_quality_tools(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
+    result = configure_result("EnsureQualityTools", dry_run, write_enabled=not dry_run)
+    lefthook_result = configure_ensure_lefthook(root, values, dry_run)
+    result["actions"].extend(lefthook_result.get("actions", []))
+    result["findings"].extend(lefthook_result.get("findings", []))
+    result["valid"] = lefthook_result.get("valid", False)
+    return result
+
+
+def _lefthook_platform() -> str | None:
+    if sys.platform.startswith("win"):
+        return "windows"
+    if sys.platform.startswith("darwin"):
+        return "darwin"
+    if sys.platform.startswith("linux"):
+        return "linux"
+    return None
+
+
+def _lefthook_arch() -> str | None:
+    machine = sys.platform
+    if sys.platform == "win32":
+        machine = os.environ.get("PROCESSOR_ARCHITECTURE", "").lower()
+        if "arm64" in machine or "aarch64" in machine:
+            return "arm64"
+        if "x86" in machine or "amd64" in machine:
+            return "amd64"
+        return None
+    return "arm64" if "aarch64" in sys.version.lower() or "arm64" in sys.version.lower() else "amd64"
+
+
+def _lefthook_user_bin() -> Path:
+    if sys.platform.startswith("win"):
+        return Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local"))) / "bin"
+    return Path.home() / ".local" / "bin"
+
+
+def _resolve_lefthook(root: Path) -> str | None:
+    user_bin = _lefthook_user_bin() / ("lefthook.exe" if sys.platform.startswith("win") else "lefthook")
+    if user_bin.exists():
+        return str(user_bin)
+    for name in ["lefthook", "lefthook.exe"]:
+        found = shutil.which(name)
+        if found:
+            return found
+    return None
+
+
+def _install_lefthook_user_local(root: Path, result: dict[str, Any]) -> str | None:
+    platform = _lefthook_platform()
+    arch = _lefthook_arch()
+    if not platform or not arch:
+        add_bucket_item(result["findings"], "lefthook", "platform.unsupported", f"Unsupported platform/arch for lefthook auto-install: {sys.platform}", "error", "apply")
+        return None
+    
+    bin_dir = _lefthook_user_bin()
+    bin_name = "lefthook.exe" if platform == "windows" else "lefthook"
+    destination = bin_dir / bin_name
+    if destination.exists():
+        result["actions"].append({"path": str(destination), "key": "install", "severity": "info", "message": "Repo-local lefthook binary already exists.", "phase": "apply"})
+        return str(destination)
+    
+    try:
+        import urllib.request
+        release_url = f"https://github.com/evilmartians/lefthook/releases/latest/download/lefthook-{platform}_{arch}"
+        result["actions"].append({"path": "lefthook", "key": "download", "severity": "info", "message": f"Downloading lefthook from {release_url}.", "phase": "apply"})
+        with urllib.request.urlopen(release_url, timeout=60) as response:
+            data = response.read()
+        if not data:
+            add_bucket_item(result["findings"], "lefthook", "download", "Downloaded lefthook payload was empty.", "error", "apply")
+            return None
+        bin_dir.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(data)
+        if platform != "windows":
+            destination.chmod(destination.stat().st_mode | 0o111)
+        result["actions"].append({"path": str(destination), "key": "install", "severity": "info", "message": f"Installed lefthook to {destination}.", "phase": "apply"})
+        return str(destination)
+    except Exception as ex:  # noqa: BLE001 - user-facing install diagnostic
+        add_bucket_item(result["findings"], "lefthook", "install", f"Could not install lefthook: {ex}", "error", "apply")
+        return None
+
+
 def configure_show_environment_urls(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
     result = configure_result("ShowEnvironmentUrls", dry_run, write_enabled=not dry_run)
     result["environmentUrls"] = write_environment_urls(root, result, dry_run)
@@ -1496,6 +1693,22 @@ def configure_audit_recommended_tools(root: Path, values: dict[str, Any], dry_ru
             item["accepted"] = True
         filtered.append(item)
     findings = build_stack_context_findings(root, detected)
+    
+    # Automatic project guidance: if skill gaps exist, auto-persist discovery into tool-recommendations.local.json
+    skill_gaps = [item for item in filtered if item.get("type") == "skill" and item.get("detected") and not item.get("targetExists")]
+    if skill_gaps and not dry_run:
+        gap_ids = [item["id"] for item in skill_gaps]
+        discovery_values = {
+            "confirmed": gap_ids,
+            "persistLocal": True,
+            "additionalSkills": [],
+        }
+        discovery_result = configure_discover_project_guidance(root, discovery_values, dry_run=False)
+        findings.extend([finding for finding in discovery_result.get("findings", []) if finding.get("severity") == "error"])
+        for action in discovery_result.get("actions", []):
+            if action.get("key") == "persist-local-catalog":
+                findings.append({"path": action["path"], "key": "project-guidance.auto-discovered", "severity": "info", "message": f"Auto-discovered and persisted {len(gap_ids)} missing skill(s): {', '.join(gap_ids)}.", "phase": "audit"})
+    
     return {
         "mode": "AuditRecommendedTools",
         "valid": True,
