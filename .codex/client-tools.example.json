@@ -183,8 +183,8 @@
   "recommendedTools": {
     "enabled": true,
     "mode": "guarded-auto",
-    "accepted": [],
-    "dismissed": []
+    "accepted": ["ponytail", "caveman", "playwright", "dev-flow-pr-review-agent-skill"],
+    "dismissed": ["openproject-mcp"]
   },
   "openRouter": {
     "baseUrl": "replace-with-openrouter-base-url",
