@@ -1,4 +1,4 @@
-﻿---
+---
 name: dev-flow-start-ticket
 description: Start configured work items from chat by listing Todo tickets, preparing safe repository branches, pushing new branches, generating OpenSpec-style planning notes, updating the ticket description, and commenting with the branch through selected project-profile adapters. Use when the user asks to start the next ticket, start a specific ticket key, list Todo tickets, prepare a ticket branch, or connect ticket work to the local repository/OpenSpec workflow.
 ---
@@ -23,7 +23,7 @@ Capture UTC start time before the first ticket-specific mutation. When OpenProje
 
 ## Configuration
 
-Read `.codex/project-profile.json` first for the selected ticket provider, ticket key pattern, branch policy, and adapter path. Read `.codex/client-tools.local.json` only for selected adapter runtime values. Fall back to `.codex/client-tools.common.json` only for defaults and setup guidance, then apply provider-supported environment variable overrides only when present. Defaults are:
+Read `.codex/project-profile.json` first for the selected ticket provider, ticket key pattern, branch policy, and adapter path. Read `.codex/client-tools.local.json` only for selected adapter runtime values. Fall back to `.codex/client-tools.example.json` only for defaults and setup guidance, then apply provider-supported environment variable overrides only when present. Defaults are:
 
 - Todo state: `Todo`
 - In-progress state: `In Progress`
