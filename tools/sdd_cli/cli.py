@@ -60,16 +60,16 @@ SDD_TOOL_INCLUDE_FILES = [
     ".gitignore",
     "AGENTS.md",
     "lefthook.yml",
-    ".codex/client-tools.common.json",
+    ".codex/client-tools.example.json",
     ".codex/config.toml",
     ".codex/delivery-policy.json",
     ".codex/memory/MEMORY.md",
     ".codex/memory/memory_summary.md",
     ".codex/memory/retrieval-policy.md",
-    ".codex/project-profile.json",
+    ".codex/project-profile.example.json",
     ".codex/project-profile.schema.json",
-    ".codex/quality.common.json",
-    ".codex/tool-recommendations.common.json",
+    ".codex/quality.example.json",
+    ".codex/tool-recommendations.example.json",
     "openspec/config.yaml",
 ]
 SDD_TOOL_INCLUDE_DIRS = [
@@ -394,9 +394,63 @@ def configure_mode(args: argparse.Namespace) -> int:
     options = parse_configure_options(args.options)
     root = Path(options.get("root", REPO_ROOT))
     values = read_configure_values(options, root)
+
+    # Handle special "InfraConfig" mode that runs all infrastructure configuration modes
+    if args.mode == "InfraConfig":
+        return run_all_infra_config_modes(root, values, options.get("dry-run", "false").lower() == "true")
+
     result = run_configure_mode(args.mode, root, values, dry_run=options.get("dry-run", "false").lower() == "true")
     print(json.dumps(result, indent=2))
     return 0 if result.get("valid", True) else 1
+
+def run_all_infra_config_modes(root: Path, values: dict[str, Any], dry_run: bool) -> int:
+    """Run all infrastructure configuration modes in sequence."""
+    results = []
+    overall_success = True
+
+    print(f"Running all INFRA_CONFIG_MODES ({len(INFRA_CONFIG_MODES)} modes) in sequence...")
+    print(f"Root directory: {root}")
+    print(f"Dry run mode: {'enabled' if dry_run else 'disabled'}")
+    print("=" * 60)
+
+    for mode in INFRA_CONFIG_MODES:
+        print(f"\n[RUN] Running mode: {mode}")
+        try:
+            result = run_configure_mode(mode, root, values, dry_run=dry_run)
+            results.append(result)
+            success = result.get("valid", False)
+            if success:
+                print(f"[OK] {mode}: Completed successfully")
+            else:
+                print(f"[FAIL] {mode}: Failed - {result.get('errors', ['Unknown error'])}")
+                overall_success = False
+
+            # Show actions if available
+            actions = result.get("actions", [])
+            if actions:
+                print(f"   Actions performed: {len(actions)}")
+                for action in actions[:3]:  # Show first 3 actions as examples
+                    print(f"   - {action.get('message', 'No message')}")
+
+        except Exception as ex:
+            print(f"[ERROR] {mode}: Exception occurred - {str(ex)}")
+            results.append({"mode": mode, "valid": False, "errors": [str(ex)]})
+            overall_success = False
+
+    print("\n" + "=" * 60)
+    print(f"[SUMMARY] {len([r for r in results if r.get('valid', False)])}/{len(results)} modes completed successfully")
+
+    # Print detailed summary
+    summary = {
+        "totalModes": len(INFRA_CONFIG_MODES),
+        "successfulModes": len([r for r in results if r.get('valid', False)]),
+        "failedModes": len([r for r in results if not r.get('valid', False)]),
+        "results": results,
+        "overallSuccess": overall_success
+    }
+
+    print(json.dumps(summary, indent=2))
+    return 0 if overall_success else 1
 
 
 def read_configure_values(options: dict[str, str], root: Path) -> dict[str, Any]:
@@ -444,6 +498,12 @@ def parse_configure_options(args: list[str]) -> dict[str, str]:
         if key in {"--root", "--values-json", "--values-json-file", "--values-json-stdin"} and index + 1 < len(normalized):
             options[key[2:]] = normalized[index + 1]
             index += 2
+            continue
+        if key.startswith("--") and "=" in key:
+            # Handle --key=value format
+            parts = key[2:].split("=", 1)
+            options[parts[0]] = parts[1]
+            index += 1
             continue
         fail(f"Unsupported configure option: {key}")
     return options
@@ -1077,8 +1137,8 @@ def configure_validate_runner(root: Path, values: dict[str, Any], dry_run: bool)
 
 def configure_init_local_files(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
     result = configure_result("InitLocalFiles", dry_run, write_enabled=not dry_run)
-    copy_seed_file(root, ".codex/client-tools.common.json", ".codex/client-tools.local.json", result, dry_run)
-    copy_seed_file(root, ".codex/quality.common.json", ".codex/quality.local.json", result, dry_run)
+    copy_seed_file(root, ".codex/client-tools.example.json", ".codex/client-tools.local.json", result, dry_run)
+    copy_seed_file(root, ".codex/quality.example.json", ".codex/quality.local.json", result, dry_run)
     for relative in (
         "infra/openproject/variables.env",
         "infra/monitoring/variables.env",
@@ -1743,7 +1803,7 @@ def configure_discover_project_guidance(root: Path, values: dict[str, Any], dry_
         payload = {
             "schemaVersion": 1,
             "mode": "guarded-auto",
-            "sourceCatalog": ".codex/tool-recommendations.common.json",
+            "sourceCatalog": ".codex/tool-recommendations.example.json",
             "detectedTags": audit["detectedTags"],
             "researchTopics": audit["researchTopics"],
             "accepted": existing_catalog.get("accepted", []),
@@ -1781,7 +1841,7 @@ def configure_map_project_guidance_step(root: Path, values: dict[str, Any], dry_
         current = {
             "schemaVersion": 1,
             "mode": "guarded-auto",
-            "sourceCatalog": ".codex/tool-recommendations.common.json",
+            "sourceCatalog": ".codex/tool-recommendations.example.json",
             "detectedTags": [],
             "researchTopics": [],
             "recommendations": [ensure_used_in_steps(item) for item in build_recommendations(root, detect_stack_tags(root), build_research_topics(detect_stack_tags(root))) if item["id"] != SEARCH_PLAN_ID],
@@ -2377,7 +2437,7 @@ def detect_stack_tags(root: Path) -> list[str]:
         tags.append("kubernetes")
     if any_contains(root, ["src", "docs", "openspec"], ["*.md", "*.yaml", "*.yml"], "REST|API"):
         tags.append("rest-api")
-    if (root / ".codex" / "quality.common.json").exists():
+    if (root / ".codex" / "quality.example.json").exists():
         tags.extend(["coverage", "security"])
     if (root / "infra" / "openproject").exists():
         tags.append("openproject")
@@ -2695,7 +2755,7 @@ def load_project_profile(root: Path) -> dict[str, Any]:
 
 
 def load_tool_recommendations_catalog(root: Path) -> dict[str, Any]:
-    base = read_json(root / ".codex" / "tool-recommendations.common.json", optional=True)
+    base = read_json(root / ".codex" / "tool-recommendations.example.json", optional=True)
     local = read_json(root / ".codex" / "tool-recommendations.local.json", optional=True)
     merged = merge_dicts({key: value for key, value in base.items() if key not in {"recommendations", "notRecommended"}}, {key: value for key, value in local.items() if key not in {"recommendations", "notRecommended"}})
     merged["recommendations"] = merge_catalog_items(base.get("recommendations", []), local.get("recommendations", []))

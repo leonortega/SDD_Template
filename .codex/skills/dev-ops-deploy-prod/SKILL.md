@@ -1,4 +1,4 @@
-﻿---
+---
 name: dev-ops-deploy-prod
 description: Promote a QA-approved release artifact to production after configured ticket E2E QA approval. Use when Codex needs to verify one or more Done tickets included in a release, confirm the QA-approved artifact and checksum, ensure release/RC tag consistency, update the release branch, trigger production deployment, validate production page and health checks, verify configured observability when available, and comment the production result on every included ticket.
 ---
@@ -23,7 +23,7 @@ For push-triggered production deployment from the release branch, the commit or 
 
 ## Configuration
 
-Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.common.json` only for structure, then apply environment overrides when present.
+Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.example.json` only for structure, then apply environment overrides when present.
 
 Required values:
 

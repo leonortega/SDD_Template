@@ -196,8 +196,134 @@ trivy image --download-db-only
 - Azure environments: use `$configure-cloud-environments`; read `references/azure.md`.
 - Monitoring dashboards: use `$configure-observability`; read `references/observability.md`.
 - Azure Event Hub to Seq ingestion: use `$configure-observability`; read `references/observability.md`.
-
 For prerequisite installation guidance, read `references/shared-prerequisites.md` whenever a required executable is missing, incompatible, or a domain skill asks for it.
+
+## Infrastructure Configuration Coordination
+
+When handling "config infra" requests, use this interactive coordination workflow:
+
+### Step 1: Run Infrastructure Audit
+```bash
+python -m tools.sdd_cli configure InfraConfig --dry-run=true
+```
+
+### Step 2: Analyze Results
+- Parse the JSON output to identify completed vs. failed modes
+- Categorize failed modes by required configuration type
+- Report summary: "✅ X/24 modes completed, Y modes need configuration"
+
+### Step 3: Interactive Value Collection
+For each configuration type needed, prompt the user with:
+
+1. **Clear request**: "Please provide [configuration type] configuration"
+2. **Purpose**: Explain why it's needed and how it will be used
+3. **Example**: Show valid JSON format with common values
+4. **Source guidance**: Where to obtain the values (UI paths, CLI commands, documentation links)
+5. **Validation**: Check the provided values and ask for corrections if invalid
+
+#### Configuration Types and Prompts:
+
+**Project Stack** (SetProjectStack):
+- Request: "📦 Please provide your project stack configuration"
+- Purpose: "This sets up frontend, backend, and database choices for your project"
+- Example:
+```json
+{
+  "frontend": {"applies": true, "value": "react"},
+  "backend": {"applies": true, "value": "fastapi"},
+  "database": {"applies": true, "value": "postgresql"}
+}
+```
+- Source: "Check your project requirements or technology choices"
+- Validation: Ensure valid technology names, accept "none"/"n/a" for not applicable
+
+**Quality Configuration** (SetQualityConfig):
+- Request: "✅ Please provide quality gate configuration"
+- Purpose: "This configures code quality thresholds and gates"
+- Example:
+```json
+{
+  "coverageMinimumPercent": 90,
+  "gates": [{"id": "test-coverage", "required": true}]
+}
+```
+- Source: "Based on your project quality requirements"
+- Validation: coverageMinimumPercent between 0-100
+
+**Environment Variables** (SetOpenProjectEnv, SetMonitoringEnv, SetGiteaRunner):
+- Request: "🌐 Please provide environment configuration for [service]"
+- Purpose: "This sets up service URLs and connection details"
+- Example for OpenProject:
+```json
+{
+  "OPENPROJECT_URL": "http://localhost:18081",
+  "OPENPROJECT_ADMIN_EMAIL": "admin@example.com"
+}
+```
+- Source: "Check your running service configuration or deployment"
+- Validation: Valid URLs, no secrets in the example
+
+**Gitea Branch Protection** (SetGiteaBranchProtection):
+- Request: "🔒 Please provide Gitea API credentials"
+- Purpose: "This configures branch protection rules in your Gitea repository"
+- Example:
+```json
+{
+  "baseUrl": "http://gitea:3000",
+  "apiToken": "your-gitea-api-token",
+  "owner": "your-username",
+  "repo": "your-repo"
+}
+```
+- Source: "Gitea user settings → Applications → Generate new token"
+- Validation: Valid URL format, non-empty fields
+
+**Recommended Tools** (SetRecommendedTools):
+- Request: "🛠️ Please confirm which recommended tools to accept"
+- Purpose: "This records which tools from the recommendation audit you want to use"
+- Example:
+```json
+{
+  "accepted": ["ponytail", "caveman", "playwright"],
+  "dismissed": ["openproject-mcp"]
+}
+```
+- Source: "From the AuditRecommendedTools output"
+- Validation: Match against available recommendation IDs
+
+**Workflow Mapping** (MapProjectGuidanceStep):
+- Request: "🗺️ Please provide the current workflow step"
+- Purpose: "This maps project guidance to your current delivery workflow"
+- Example:
+```json
+{
+  "workflowStep": "dev-flow-start-ticket"
+}
+```
+- Source: "Current stage in your delivery process"
+- Validation: Match against standard workflow stages
+
+### Step 4: Execute with Collected Values
+```bash
+python -m tools.sdd_cli configure InfraConfig --values-json '{"collected": "values"}'
+```
+
+### Step 5: Handle Partial Success
+- If some modes still fail, prompt for additional values
+- Offer to continue with partial configuration
+- Provide clear summary of what was configured and what remains
+
+### Interactive Coordination Rules
+
+1. **One Value at a Time**: Ask for one configuration type per prompt
+2. **Step-by-Step Guidance**: Always provide clear instructions for obtaining each value
+3. **Validation**: Validate format before proceeding
+4. **Error Recovery**: Allow users to correct mistakes without starting over
+5. **Progress Tracking**: Show progress (e.g., "2/5 configuration types completed")
+6. **Partial Success**: Allow proceeding with available configuration
+7. **Secret Safety**: Never print or store actual secret values, only confirm receipt
+
+This coordination workflow ensures that "config infra" requests are handled interactively with proper user guidance for all required configuration values.
 
 ## Output
 

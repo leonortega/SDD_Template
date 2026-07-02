@@ -3,11 +3,11 @@
     "baseUrl": "replace-with-openproject-base-url",
     "apiToken": "replace-with-openproject-api-token",
     "projectIdentifier": "replace-with-openproject-project-identifier",
-    "todoStatus": "replace-with-openproject-todo-status",
-    "inProgressStatus": "replace-with-openproject-in-progress-status",
-    "reviewStatus": "replace-with-openproject-review-status",
-    "qaStatus": "replace-with-openproject-qa-status",
-    "doneStatus": "replace-with-openproject-done-status",
+    "todoStatus": "To do",
+    "inProgressStatus": "In progress",
+    "reviewStatus": "In review",
+    "qaStatus": "QA",
+    "doneStatus": "Done",
     "timeTelemetry": {
       "enabled": true,
       "defaultActivityName": "Other",
@@ -94,8 +94,8 @@
     }
   },
   "git": {
-    "baseBranch": "replace-with-base-branch",
-    "branchPrefix": "replace-with-branch-prefix",
+    "baseBranch": "dev",
+    "branchPrefix": "codex",
     "branchPattern": "{prefix}/{ticketKeySlug}-{titleSlug}",
     "maxBranchLength": 100
   },

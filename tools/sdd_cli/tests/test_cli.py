@@ -170,7 +170,7 @@ class SddCliTests(unittest.TestCase):
 
     def test_common_openproject_activity_flow_maps_each_activity_by_name(self) -> None:
         repo = Path(__file__).resolve().parents[3]
-        telemetry = json.loads((repo / ".codex" / "client-tools.common.json").read_text(encoding="utf-8"))["openProject"]["timeTelemetry"]
+        telemetry = json.loads((repo / ".codex" / "client-tools.example.json").read_text(encoding="utf-8"))["openProject"]["timeTelemetry"]
         activity_flow = telemetry["activityFlow"]
         activity_by_stage = telemetry["activityByStage"]
         expected = {"Management", "Specification", "Development", "Testing", "Support", "Other"}
@@ -183,7 +183,7 @@ class SddCliTests(unittest.TestCase):
 
     def test_openrouter_model_mapping_keys_match_chat_or_skill_names(self) -> None:
         repo = Path(__file__).resolve().parents[3]
-        common = json.loads((repo / ".codex" / "client-tools.common.json").read_text(encoding="utf-8"))
+        common = json.loads((repo / ".codex" / "client-tools.example.json").read_text(encoding="utf-8"))
         mapping = common.get("openRouter", {}).get("modelMapping", {})
         self.assertIsInstance(mapping, dict)
         self.assertIn("chat", mapping)
@@ -430,8 +430,8 @@ class SddCliTests(unittest.TestCase):
     def test_init_local_files_repairs_memory_and_env_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            write(root / ".codex" / "client-tools.common.json", "{}")
-            write(root / ".codex" / "quality.common.json", "{}")
+            write(root / ".codex" / "client-tools.example.json", "{}")
+            write(root / ".codex" / "quality.example.json", "{}")
             write(root / "infra" / "openproject" / "variables.env.example", "OPENPROJECT_HOST=http://localhost\n")
             write(root / "infra" / "monitoring" / "variables.env.example", "SEQ_URL=http://localhost:5341\n")
             write(root / "infra" / "azure" / "variables.env.example", "AZURE_LOCATION=westcentralus\n")

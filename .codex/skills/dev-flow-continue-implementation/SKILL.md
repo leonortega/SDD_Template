@@ -1,4 +1,4 @@
-﻿---
+---
 name: dev-flow-continue-implementation
 description: Orchestrate the full configured ticket delivery lifecycle by inspecting current ticket, repository, review, artifact, OpenSpec, QA, tag, and production state through the selected project-profile adapters, then delegating to the correct focused skill. Use when Codex is asked to automatically continue, resume, implement, deploy, QA, or hand off a ticket without the user knowing the current workflow step.
 ---
@@ -17,7 +17,7 @@ Before routing, follow `.codex/skills/_shared/skill-startup.md`, which reads `.c
 
 ## Configuration
 
-Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.common.json` only for structure and defaults. Read `.codex/quality.local.json` when coverage context is needed.
+Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.example.json` only for structure and defaults. Read `.codex/quality.local.json` when coverage context is needed.
 
 Use ignored `.codex/delivery-context.local.json` as the ticket context lock according to the shared contract. If the lock or durable checkpoints conflict with the resolved ticket, stop or invoke `dev-flow-pipeline-status` instead of routing to a child skill.
 
