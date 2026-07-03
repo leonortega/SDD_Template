@@ -16,6 +16,11 @@ The product stack is currently unselected. Keep prerequisites limited to the del
 - Docker-compatible runtime for local platform services.
 - Gitleaks when running local secret scans.
 - Trivy when filesystem/container scans are configured.
+- `pytest` for running the lab repository's Python test suite.
+  - Install:
+    - `python -m pip install pytest`
+  - Validate:
+    - `python -m pytest tools/sdd_cli/tests`
 
 ## MCPs
 
