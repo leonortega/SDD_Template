@@ -281,12 +281,66 @@ class SddCliTests(unittest.TestCase):
             self.assertEqual({"applies": True, "value": "React + TypeScript"}, stack["frontend"])
             self.assertEqual({"applies": False, "value": ""}, stack["backend"])
             self.assertEqual({"applies": False, "value": ""}, stack["database"])
-            self.assertEqual(["go", "typescript"], stack["languages"])
-            self.assertEqual(["react"], stack["frameworks"])
+            self.assertEqual(["go"], stack["languages"])
+            self.assertEqual([], stack["frameworks"])
             self.assertEqual(["pytest"], stack["testFrameworks"])
+            self.assertEqual("needs-user-validation", stack["metadataValidationStatus"])
             self.assertTrue(stack["selectionRecorded"])
             for empty_value in ("", "none", "no", "n/a"):
                 self.assertEqual({"applies": False, "value": ""}, cli.normalize_stack_domain(empty_value))
+
+    def test_project_stack_metadata_validation_gates_guidance_discovery(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            codex = root / ".codex"
+            codex.mkdir()
+            (codex / "project-profile.json").write_text(json.dumps({"schemaVersion": 1}), encoding="utf-8")
+            cli.run_configure_mode("SetProjectStack", root, {"frontend": "reactjs", "backend": ".net-core-10", "database": "sqlite"}, False)
+
+            blocked = cli.run_configure_mode("DiscoverProjectGuidance", root, {}, False)
+            self.assertFalse(blocked["valid"])
+            self.assertIn("stack.metadata.validation", {item["key"] for item in blocked["findings"]})
+
+            metadata = {
+                "frontend": [{
+                    "rawValue": "reactjs",
+                    "canonicalName": "React",
+                    "aliases": ["reactjs"],
+                    "languages": ["TypeScript"],
+                    "frameworks": ["React"],
+                    "testFrameworks": ["Vitest"],
+                    "guidanceSearchTerms": ["React official docs", "React TypeScript testing"],
+                }],
+                "backend": [{
+                    "rawValue": ".net-core-10",
+                    "canonicalName": ".NET 10 / ASP.NET Core",
+                    "aliases": [".NET Core", "dotnet"],
+                    "languages": ["C#"],
+                    "frameworks": ["ASP.NET Core"],
+                    "testFrameworks": ["xUnit"],
+                    "guidanceSearchTerms": ["ASP.NET Core official docs", ".NET 10 testing"],
+                }],
+                "database": [{
+                    "rawValue": "sqlite",
+                    "canonicalName": "SQLite",
+                    "aliases": ["sqlite"],
+                    "languages": [],
+                    "frameworks": [],
+                    "testFrameworks": [],
+                    "guidanceSearchTerms": ["SQLite official docs"],
+                }],
+            }
+            cli.run_configure_mode("SetProjectStackMetadata", root, {"metadata": metadata, "metadataValidationStatus": "validated"}, False)
+
+            audit = cli.run_configure_mode("AuditRecommendedTools", root, {}, False)
+            self.assertIn("react", audit["detectedTags"])
+            self.assertIn("csharp", audit["detectedTags"])
+            self.assertIn("aspnetcore", audit["detectedTags"])
+            self.assertIn("sqlite", audit["detectedTags"])
+            stack_topics = [topic for topic in audit["researchTopics"] if topic["id"].startswith("stack-")]
+            self.assertIn("React", {topic["technology"] for topic in stack_topics})
+            self.assertIn(".NET 10 / ASP.NET Core", {topic["technology"] for topic in stack_topics})
+            self.assertIn("SQLite", {topic["technology"] for topic in stack_topics})
 
     def test_audit_recommended_tools_uses_profile_stack_and_reports_missing_stack(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

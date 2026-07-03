@@ -149,6 +149,7 @@ ALL_CONFIGURE_MODES = [
     "SetMonitoringEnv",
     "SetOpenProjectEnv",
     "SetProjectStack",
+    "SetProjectStackMetadata",
     "SetQualityConfig",
     "SetRecommendedTools",
     "ShowEnvironmentUrls",
@@ -171,6 +172,7 @@ INFRA_CONFIG_MODES = [
     "EnsureRancherDesktopPortForwards",
     "BuildGiteaActionsImages",
     "SetProjectStack",
+    "SetProjectStackMetadata",
     "SetClientTools",
     "SetQualityConfig",
     "SetRecommendedTools",
@@ -559,6 +561,7 @@ def run_configure_mode(mode: str, root: Path, values: dict[str, Any], dry_run: b
         "SetGiteaRunner": configure_set_gitea_runner,
         "SetMonitoringEnv": configure_set_monitoring_env,
         "SetOpenProjectEnv": configure_set_openproject_env,
+        "SetProjectStackMetadata": configure_set_project_stack_metadata,
         "SetProjectStack": configure_set_project_stack,
         "SetQualityConfig": configure_set_quality_config,
         "SetRecommendedTools": configure_set_recommended_tools,
@@ -1050,9 +1053,11 @@ def write_environment_urls(root: Path, result: dict[str, Any], dry_run: bool) ->
 
 def configure_audit(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
     result = new_configure_result("Audit", dry_run, write_enabled=False)
-    profile_path = root / ".codex" / "project-profile.example.json"
+    profile_path = root / ".codex" / "project-profile.json"
     if not profile_path.exists():
-        add_bucket_item(result["findings"], ".codex/project-profile.example.json", "InitProjectProfile", "Run InitProjectProfile before provider-specific setup.", "error", "pre-start")
+        profile_path = root / ".codex" / "project-profile.example.json"
+    if not profile_path.exists():
+        add_bucket_item(result["findings"], ".codex/project-profile.json", "InitProjectProfile", "Run InitProjectProfile before provider-specific setup.", "error", "pre-start")
     if not (root / ".codex" / "project-profile.schema.json").exists():
         add_bucket_item(result["findings"], ".codex/project-profile.schema.json", "InitProjectProfile", "Run InitProjectProfile before provider-specific setup.", "error", "pre-start")
 
@@ -1463,9 +1468,13 @@ def configure_set_project_stack(root: Path, values: dict[str, Any], dry_run: boo
     stack.setdefault("languages", [])
     stack.setdefault("frameworks", [])
     stack.setdefault("testFrameworks", [])
-    tags = tags_from_stack_values([nested(stack, key, "value") or "" for key in ("frontend", "backend", "database")])
-    stack["languages"] = sorted(set(stack.get("languages", [])) | set(tags["languages"]))
-    stack["frameworks"] = sorted(set(stack.get("frameworks", [])) | set(tags["frameworks"]))
+    stack["rawInputs"] = {domain: nested(stack, domain, "value") or "" for domain in ("frontend", "backend", "database")}
+    if any(normalize_stack_domain(stack["rawInputs"].get(domain))["applies"] for domain in ("frontend", "backend", "database")):
+        stack["metadataValidationStatus"] = "needs-user-validation"
+    else:
+        stack["metadataValidationStatus"] = "validated"
+    stack["languages"] = sorted(set(stack.get("languages", [])))
+    stack["frameworks"] = sorted(set(stack.get("frameworks", [])))
     stack["testFrameworks"] = sorted(set(stack.get("testFrameworks", [])))
     stack["selectionRecorded"] = True
     current["$schema"] = current.get("$schema", "./project-profile.schema.json")
@@ -1481,6 +1490,25 @@ def configure_set_project_stack(root: Path, values: dict[str, Any], dry_run: boo
         "writeEnabled": not dry_run,
         "actions": [{"path": ".codex/project-profile.local.json", "key": "stack", "severity": "info", "message": "Recorded frontend/backend/database stack choices.", "phase": "apply"}],
     }
+
+
+def configure_set_project_stack_metadata(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
+    metadata = values.get("metadata")
+    if not isinstance(metadata, dict):
+        return {"mode": "SetProjectStackMetadata", "valid": False, "errors": ["values.metadata object is required."]}
+    status = str(values.get("metadataValidationStatus", "needs-user-validation"))
+    if status not in {"needs-user-validation", "validated"}:
+        return {"mode": "SetProjectStackMetadata", "valid": False, "errors": ["metadataValidationStatus must be needs-user-validation or validated."]}
+    path = root / ".codex" / "project-profile.local.json"
+    current = read_json(path, optional=True)
+    stack = current.get("stack") if isinstance(current.get("stack"), dict) else {}
+    stack["metadata"] = metadata
+    stack["metadataValidationStatus"] = status
+    current["$schema"] = current.get("$schema", "./project-profile.schema.json")
+    current["stack"] = stack
+    if not dry_run:
+        write_json(path, current)
+    return {"mode": "SetProjectStackMetadata", "valid": True, "changed": True, "path": ".codex/project-profile.local.json", "dryRun": dry_run, "writeEnabled": not dry_run, "actions": [{"path": ".codex/project-profile.local.json", "key": "stack.metadata", "severity": "info", "message": "Recorded project stack metadata for user validation.", "phase": "apply"}]}
 
 
 def configure_validate_observability(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
@@ -1945,7 +1973,7 @@ def configure_ensure_delivery_context(root: Path, values: dict[str, Any], dry_ru
 
 def configure_audit_recommended_tools(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
     detected = detect_stack_tags(root)
-    topics = build_research_topics(detected)
+    topics = build_research_topics(detected, root)
     recommendations = build_recommendations(root, detected, topics)
     decisions = nested(read_json(root / ".codex" / "client-tools.local.json", optional=True), "recommendedTools") or {}
     accepted = set(decisions.get("accepted", []))
@@ -1958,10 +1986,13 @@ def configure_audit_recommended_tools(root: Path, values: dict[str, Any], dry_ru
             item["accepted"] = True
         filtered.append(item)
     findings = build_stack_context_findings(root, detected)
+    metadata_finding = stack_metadata_validation_finding(root)
+    if metadata_finding:
+        findings.append(metadata_finding)
     
     # Automatic project guidance: if skill gaps exist, auto-persist discovery into tool-recommendations.local.json
     skill_gaps = [item for item in filtered if item.get("type") == "skill" and item.get("detected") and not item.get("targetExists")]
-    if skill_gaps and not dry_run:
+    if skill_gaps and not dry_run and not metadata_finding and not values.get("skipAutoDiscovery"):
         gap_ids = [item["id"] for item in skill_gaps]
         discovery_values = {
             "confirmed": gap_ids,
@@ -1987,7 +2018,11 @@ def configure_audit_recommended_tools(root: Path, values: dict[str, Any], dry_ru
 
 
 def configure_discover_project_guidance(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
-    audit = configure_audit_recommended_tools(root, values, dry_run)
+    audit_values = merge_dicts(values, {"skipAutoDiscovery": True})
+    audit = configure_audit_recommended_tools(root, audit_values, dry_run)
+    blockers = [item for item in audit.get("findings", []) if item.get("severity") == "error"]
+    if blockers:
+        return {"mode": "DiscoverProjectGuidance", "valid": False, "writeEnabled": False, "detectedTags": audit.get("detectedTags", []), "researchTopics": audit.get("researchTopics", []), "findings": blockers, "errors": [item["message"] for item in blockers], "actions": []}
     recommendations = [item for item in audit["recommendations"] if item["id"] != SEARCH_PLAN_ID]
     missing_skills = [item for item in recommendations if item.get("type") == "skill" and item.get("detected", True) and not item.get("targetExists", False)]
     suggested_guidance = [item for item in recommendations if item.get("type") != "skill"]
@@ -2562,10 +2597,12 @@ def audit_skill_contracts(root: Path, include_configure: bool = False) -> dict[s
 
 def profile_audit_findings(root: Path) -> list[str]:
     findings: list[str] = []
-    profile_path = root / ".codex" / "project-profile.example.json"
+    profile_path = root / ".codex" / "project-profile.json"
+    if not profile_path.exists():
+        profile_path = root / ".codex" / "project-profile.example.json"
     schema_path = root / ".codex" / "project-profile.schema.json"
     if not profile_path.exists():
-        findings.append("Missing .codex/project-profile.example.json.")
+        findings.append("Missing .codex/project-profile.json or .codex/project-profile.example.json.")
     else:
         profile = load_project_profile(root)
         if not isinstance(profile.get("schemaVersion"), int) or profile.get("schemaVersion", 0) < 1:
@@ -2668,7 +2705,7 @@ def detect_stack_tags(root: Path) -> list[str]:
     return sorted(set(tags))
 
 
-def build_research_topics(detected: list[str]) -> list[dict[str, Any]]:
+def build_research_topics(detected: list[str], root: Path | None = None) -> list[dict[str, Any]]:
     topics: list[dict[str, Any]] = []
     definitions = [
         ("web-ui", ["react", "web-ui"], "Web UI"),
@@ -2683,6 +2720,8 @@ def build_research_topics(detected: list[str]) -> list[dict[str, Any]]:
         matched = [tag for tag in requires if tag in detected]
         if matched:
             topics.append({"id": topic_id, "area": area, "matchedTags": matched})
+    if root is not None:
+        topics.extend(stack_metadata_research_topics(root))
     return topics
 
 
@@ -2837,11 +2876,73 @@ def profile_stack_selected(root: Path) -> bool:
     return False
 
 
+def stack_metadata_validation_finding(root: Path) -> dict[str, str] | None:
+    stack = load_project_profile(root).get("stack")
+    if not isinstance(stack, dict) or not profile_stack_selected(root):
+        return None
+    if stack.get("metadataValidationStatus") == "validated":
+        return None
+    return {
+        "path": ".codex/project-profile.local.json",
+        "key": "stack.metadata.validation",
+        "severity": "error",
+        "phase": "pre-discovery",
+        "message": "Validate stack metadata before project guidance discovery. Remove wrong inferred languages, frameworks, testFrameworks, aliases, and guidanceSearchTerms, then set metadataValidationStatus to validated.",
+    }
+
+
+def stack_metadata_values(stack: dict[str, Any]) -> list[str]:
+    values: list[str] = []
+    metadata = stack.get("metadata")
+    if isinstance(metadata, dict):
+        for domain in ("frontend", "backend", "database"):
+            items = metadata.get(domain, [])
+            if isinstance(items, dict):
+                items = [items]
+            if not isinstance(items, list):
+                continue
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                for key in ("rawValue", "canonicalName", "aliases", "languages", "frameworks", "testFrameworks", "guidanceSearchTerms"):
+                    value = item.get(key)
+                    if isinstance(value, list):
+                        values.extend(str(entry) for entry in value if str(entry).strip())
+                    elif value:
+                        values.append(str(value))
+    return values
+
+
+def stack_metadata_research_topics(root: Path) -> list[dict[str, Any]]:
+    stack = load_project_profile(root).get("stack")
+    if not isinstance(stack, dict) or stack.get("metadataValidationStatus") != "validated":
+        return []
+    topics: list[dict[str, Any]] = []
+    metadata = stack.get("metadata")
+    if not isinstance(metadata, dict):
+        return topics
+    for domain in ("frontend", "backend", "database"):
+        items = metadata.get(domain, [])
+        if isinstance(items, dict):
+            items = [items]
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("canonicalName") or item.get("rawValue") or "").strip()
+            terms = [str(term).strip() for term in item.get("guidanceSearchTerms", []) if str(term).strip()] if isinstance(item.get("guidanceSearchTerms"), list) else []
+            if name or terms:
+                topics.append({"id": f"stack-{domain}-{len(topics) + 1}", "area": f"Stack {domain}", "technology": name, "searchTerms": terms})
+    return topics
+
+
 def profile_stack_tags(root: Path) -> list[str]:
     stack = load_project_profile(root).get("stack")
     if not isinstance(stack, dict):
         return []
     values = [str(stack.get(key, "")) for key in ("languages", "frameworks", "testFrameworks")]
+    values.extend(stack_metadata_values(stack))
     for domain in ("frontend", "backend", "database"):
         value = stack.get(domain)
         if isinstance(value, dict) and value.get("applies"):
@@ -2857,7 +2958,7 @@ def tags_from_stack_values(values: list[str]) -> dict[str, list[str]]:
         ("javascript", "languages", r"\bjavascript\b|\bjs\b"),
         ("python", "languages", r"\bpython\b"),
         ("java", "languages", r"\bjava\b"),
-        ("csharp", "languages", r"\bc#\b|\bcsharp\b"),
+        ("csharp", "languages", r"\bcsharp\b|\bc#(?!\w)"),
         ("go", "languages", r"\bgolang\b|\bgo\b"),
         ("react", "frameworks", r"\breact\b"),
         ("vue", "frameworks", r"\bvue\b"),
@@ -2954,7 +3055,10 @@ def merge_dicts(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
 
 
 def load_project_profile(root: Path) -> dict[str, Any]:
-    base = read_json(root / ".codex" / "project-profile.example.json", optional=True)
+    base_path = root / ".codex" / "project-profile.json"
+    if not base_path.exists():
+        base_path = root / ".codex" / "project-profile.example.json"
+    base = read_json(base_path, optional=True)
     local = read_json(root / ".codex" / "project-profile.local.json", optional=True)
     return merge_dicts(base, local)
 
