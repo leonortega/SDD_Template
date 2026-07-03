@@ -81,5 +81,7 @@ Before final handoff for any non-trivial repo work, perform a durable learning c
 
 ## Skill Activation Configuration
 - All prompts must trigger skill evaluation by default
-- Skills are applied in priority order: security > caveman > others
+- Skills are applied in priority order: caveman > ponytail > others
 - Caveman skill auto-activates with intensity: full (unless specified otherwise)
+- Ponytail skill auto-activates on every prompt with intensity: full
+- Other skills, MCP servers, and capabilities activate on demand when relevant to the task

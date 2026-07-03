@@ -75,6 +75,8 @@ SDD_TOOL_INCLUDE_FILES = [
 ]
 SDD_TOOL_INCLUDE_DIRS = [
     ".agents",
+    ".cline",
+    ".clinerules",
     ".codex/providers",
     ".codex/skills",
     ".gitea/workflows",
@@ -593,6 +595,12 @@ def install_sdd_tool(source: Path, target: Path, version: str | None, action: st
         fail("Refusing to overwrite unmanaged files: " + ", ".join(collisions[:10]))
 
     changed: list[str] = []
+    # Ensure include directories exist, even if empty
+    for dirname in SDD_TOOL_INCLUDE_DIRS:
+        dirpath = target / dirname.replace("/", os.sep)
+        if not dirpath.exists():
+            dirpath.mkdir(parents=True, exist_ok=True)
+            changed.append(dirname + "/")
     for relative in files:
         src = source / relative
         dst = target / relative
