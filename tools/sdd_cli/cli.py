@@ -946,11 +946,8 @@ def configure_set_env_mode(root: Path, mode: str, target_relative: str, values: 
 
 def run_native(command: list[str], root: Path, timeout: int = 30) -> dict[str, Any]:
     try:
-        resolved = command[0]
-        if os.path.sep not in resolved and os.path.altsep not in resolved:
-            resolved = shutil.which(resolved) or resolved
-        completed = subprocess.run([resolved, *command[1:]], cwd=root, check=False, capture_output=True, text=True, timeout=timeout)
-        return {"returncode": completed.returncode, "stdout": completed.stdout.strip(), "stderr": completed.stderr.strip()}
+        completed = subprocess.run(command, cwd=root, check=False, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout)
+        return {"returncode": completed.returncode, "stdout": (completed.stdout or "").strip(), "stderr": (completed.stderr or "").strip()}
     except FileNotFoundError:
         return {"returncode": 127, "stdout": "", "stderr": f"{command[0]} is missing."}
     except subprocess.TimeoutExpired:
@@ -1636,29 +1633,29 @@ def configure_ensure_lefthook(root: Path, values: dict[str, Any], dry_run: bool)
 
 def configure_ensure_codegraph(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
     result = configure_result("EnsureCodegraph", dry_run, write_enabled=not dry_run)
-
+    
     # Check if npx is available
     npx_check = run_native(["npx", "--version"], root, timeout=10)
     if npx_check["returncode"] != 0:
         add_bucket_item(result["findings"], "npx", "missing", f"npx is not available: {npx_check['stderr']}", "error", "pre-start")
         result["valid"] = False
         return result
-
+    
     # Verify codegraph can be executed via npx
     verify_command = ["npx", "--yes", "@colbymchenry/codegraph@1.1.1", "--version"]
     if dry_run:
         result["actions"].append({"path": "npx", "key": "verify-codegraph", "severity": "info", "message": f"Would verify codegraph availability: {' '.join(verify_command)}", "phase": "apply"})
         result["valid"] = True
         return result
-
+    
     verify = run_native(verify_command, root, timeout=60)
     if verify["returncode"] != 0:
         add_bucket_item(result["findings"], "codegraph", "verify", f"Could not verify codegraph: {verify['stderr']}", "error", "apply")
         result["valid"] = False
         return result
-
+    
     result["actions"].append({"path": "npx", "key": "verify-codegraph", "severity": "info", "message": f"Codegraph verified: {verify['stdout']}", "phase": "apply"})
-
+    
     # Ensure .codex/config.toml has codegraph MCP server configuration
     config_path = root / ".codex" / "config.toml"
     config_dir = config_path.parent
@@ -1666,13 +1663,13 @@ def configure_ensure_codegraph(root: Path, values: dict[str, Any], dry_run: bool
         if not dry_run:
             config_dir.mkdir(parents=True, exist_ok=True)
         result["actions"].append({"path": ".codex/config.toml", "key": "directory", "severity": "info", "message": "Created .codex directory.", "phase": "apply"})
-
+    
     codegraph_config_present = False
     if config_path.exists():
         existing_content = config_path.read_text(encoding="utf-8")
         if "[mcp_servers.codegraph]" in existing_content:
             codegraph_config_present = True
-
+    
     if not codegraph_config_present:
         if dry_run:
             result["actions"].append({"path": ".codex/config.toml", "key": "codegraph-config", "severity": "info", "message": "Would add codegraph MCP server configuration to .codex/config.toml.", "phase": "apply"})
@@ -1694,21 +1691,7 @@ DO_NOT_TRACK = "1"
             result["actions"].append({"path": ".codex/config.toml", "key": "codegraph-config", "severity": "info", "message": "Added codegraph MCP server configuration to .codex/config.toml.", "phase": "apply"})
     else:
         result["actions"].append({"path": ".codex/config.toml", "key": "codegraph-config", "severity": "info", "message": "Codegraph MCP server configuration already present.", "phase": "apply"})
-
-    # If Cline is installed, also register codegraph in Cline MCP settings
-    cline_mcp_path = _resolve_cline_mcp_settings_path()
-    if cline_mcp_path:
-        if not dry_run:
-            _upsert_cline_mcp_server(cline_mcp_path, "codegraph", {
-                "command": "npx",
-                "args": ["--yes", "@colbymchenry/codegraph@1.1.1", "serve", "--mcp"],
-                "env": {
-                    "CODEGRAPH_TELEMETRY": "0",
-                    "DO_NOT_TRACK": "1"
-                }
-            })
-        result["actions"].append({"path": str(cline_mcp_path), "key": "cline-mcp", "severity": "info", "message": "Updated Cline MCP settings with codegraph.", "phase": "apply"})
-
+    
     result["valid"] = True
     return result
 
@@ -1766,15 +1749,37 @@ def _resolve_lefthook(root: Path) -> str | None:
     return None
 
 
+def _lefthook_arch_github() -> str | None:
+    machine = platform.machine().lower()
+    if sys.platform == "win32":
+        env_machine = os.environ.get("PROCESSOR_ARCHITECTURE", "").lower()
+        if "arm64" in env_machine or "aarch64" in env_machine:
+            return "arm64"
+        if "x86" in env_machine or "amd64" in env_machine:
+            return "x86_64"
+        if "arm64" in machine or "aarch64" in machine:
+            return "arm64"
+        if "x86" in machine or "amd64" in machine:
+            return "x86_64"
+        return None
+    if "aarch64" in machine or "arm64" in machine:
+        return "arm64"
+    if "x86_64" in machine or "amd64" in machine:
+        return "x86_64"
+    if "i386" in machine or "i686" in machine or "x86" in machine:
+        return "i386"
+    return None
+
+
 def _install_lefthook_user_local(root: Path, result: dict[str, Any]) -> str | None:
-    platform = _lefthook_platform()
-    arch = _lefthook_arch()
-    if not platform or not arch:
+    platform_name = _lefthook_platform()
+    arch = _lefthook_arch_github()
+    if not platform_name or not arch:
         add_bucket_item(result["findings"], "lefthook", "platform.unsupported", f"Unsupported platform/arch for lefthook auto-install: {sys.platform}", "error", "apply")
         return None
     
     bin_dir = _lefthook_user_bin()
-    bin_name = "lefthook.exe" if platform == "windows" else "lefthook"
+    bin_name = "lefthook.exe" if platform_name == "windows" else "lefthook"
     destination = bin_dir / bin_name
     if destination.exists():
         result["actions"].append({"path": str(destination), "key": "install", "severity": "info", "message": "Repo-local lefthook binary already exists.", "phase": "apply"})
@@ -1782,16 +1787,27 @@ def _install_lefthook_user_local(root: Path, result: dict[str, Any]) -> str | No
     
     try:
         import urllib.request
-        release_url = f"https://github.com/evilmartians/lefthook/releases/latest/download/lefthook-{platform}_{arch}"
-        result["actions"].append({"path": "lefthook", "key": "download", "severity": "info", "message": f"Downloading lefthook from {release_url}.", "phase": "apply"})
-        with urllib.request.urlopen(release_url, timeout=60) as response:
+        api_url = "https://api.github.com/repos/evilmartians/lefthook/releases/latest"
+        req = urllib.request.Request(api_url, headers={"Accept": "application/vnd.github+json", "User-Agent": "sdd-cli"})
+        with urllib.request.urlopen(req, timeout=30) as response:
+            release = json.loads(response.read().decode("utf-8"))
+        tag = release.get("tag_name", "")
+        platform_capitalized = platform_name.capitalize()
+        tag_without_v = tag[1:] if tag.startswith("v") else tag
+        if platform_name == "windows":
+            asset_name = f"lefthook_{tag_without_v}_{platform_capitalized}_{arch}.exe"
+        else:
+            asset_name = f"lefthook_{tag_without_v}_{platform_capitalized}_{arch}"
+        download_url = f"https://github.com/evilmartians/lefthook/releases/download/{tag}/{asset_name}"
+        result["actions"].append({"path": "lefthook", "key": "download", "severity": "info", "message": f"Downloading lefthook from {download_url}.", "phase": "apply"})
+        with urllib.request.urlopen(download_url, timeout=60) as response:
             data = response.read()
         if not data:
             add_bucket_item(result["findings"], "lefthook", "download", "Downloaded lefthook payload was empty.", "error", "apply")
             return None
         bin_dir.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(data)
-        if platform != "windows":
+        if platform_name != "windows":
             destination.chmod(destination.stat().st_mode | 0o111)
         result["actions"].append({"path": str(destination), "key": "install", "severity": "info", "message": f"Installed lefthook to {destination}.", "phase": "apply"})
         return str(destination)
@@ -3033,25 +3049,6 @@ def require(options: dict[str, str], key: str) -> str:
         fail(f"Missing required option: --{key}")
     return value
 
-
-
-def _resolve_cline_mcp_settings_path() -> Path | None:
-    candidates = [
-        REPO_ROOT / ".vscode" / "cline_mcp_settings.json",
-        REPO_ROOT / ".cline" / "mcp_settings.json",
-    ]
-    for path in candidates:
-        if path.exists():
-            return path
-    return None
-
-
-def _upsert_cline_mcp_server(path: Path, server_name: str, server_config: dict[str, Any]) -> None:
-    current = read_json(path, optional=True) if path.exists() else {}
-    servers = current.get("mcpServers", {})
-    servers[server_name] = server_config
-    current["mcpServers"] = servers
-    write_json(path, current)
 
 
 def fail(message: str) -> Any:
