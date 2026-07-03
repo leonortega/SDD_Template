@@ -5,6 +5,7 @@ import hashlib
 import http.client
 import json
 import os
+import platform
 import re
 import shutil
 import socket
@@ -413,7 +414,7 @@ def configure_mode(args: argparse.Namespace) -> int:
     return 0 if result.get("valid", True) else 1
 
 def run_all_infra_config_modes(root: Path, values: dict[str, Any], dry_run: bool) -> int:
-    """Run all infrastructure configuration modes in sequence with interactive value collection."""
+    """Run all infrastructure configuration modes in sequence."""
     results = []
     overall_success = True
 
@@ -422,96 +423,10 @@ def run_all_infra_config_modes(root: Path, values: dict[str, Any], dry_run: bool
     print(f"Dry run mode: {'enabled' if dry_run else 'disabled'}")
     print("=" * 60)
 
-    # First pass: identify modes that need values
-    modes_needing_values = []
-    first_pass_results = []
-
     for mode in INFRA_CONFIG_MODES:
-        print(f"\n[PASS1] Checking mode: {mode}")
+        print(f"\n[RUN] Running mode: {mode}")
         try:
             result = run_configure_mode(mode, root, values, dry_run=dry_run)
-            first_pass_results.append(result)
-            success = result.get("valid", False)
-
-            # Check if this mode needs values but doesn't have them
-            if not success:
-                errors = result.get('errors', [])
-                if any("values are required" in error.lower() or "is required" in error.lower() for error in errors):
-                    modes_needing_values.append((mode, errors))
-                    print(f"[NEEDS_VALUES] {mode}: {errors}")
-                else:
-                    print(f"[FAIL] {mode}: {errors}")
-            else:
-                print(f"[OK] {mode}: Completed successfully")
-
-        except Exception as ex:
-            print(f"[ERROR] {mode}: Exception occurred - {str(ex)}")
-            first_pass_results.append({"mode": mode, "valid": False, "errors": [str(ex)]})
-
-    # If we have modes that need values, collect them interactively
-    collected_values = {}
-    if modes_needing_values:
-        print("\n" + "=" * 60)
-        print("[INTERACTIVE] Some modes need configuration values. Let's collect them:")
-        print("=" * 60)
-
-        # Collect values for each mode that needs them
-        for mode, errors in modes_needing_values:
-            print(f"\n[COLLECT] Mode '{mode}' needs values:")
-            for error in errors:
-                print(f"  - {error}")
-
-            # Determine what values are needed based on the mode
-            needed_values = get_required_values_for_mode(mode, errors)
-
-            if needed_values:
-                print(f"\n  Please provide the following values for {mode}:")
-                mode_values = {}
-
-                for value_name, value_info in needed_values.items():
-                    print(f"\n  {value_name}:")
-                    print(f"    Purpose: {value_info['purpose']}")
-                    print(f"    Example: {value_info['example']}")
-                    print(f"    Source: {value_info['source']}")
-
-                    # Prompt user for the value
-                    while True:
-                        try:
-                            user_input = input(f"    Enter value for {value_name} (or 'skip' to skip this mode): ")
-                            if user_input.lower() == 'skip':
-                                print(f"    Skipping {mode} due to missing {value_name}")
-                                mode_values = None
-                                break
-
-                            # Validate the input
-                            validated_value = validate_user_input(value_name, user_input, value_info)
-                            mode_values[value_name] = validated_value
-                            break
-                        except ValueError as ve:
-                            print(f"    Invalid input: {ve}. Please try again.")
-
-                if mode_values:
-                    # Store the collected values
-                    if mode not in collected_values:
-                        collected_values[mode] = {}
-                    collected_values[mode].update(mode_values)
-                    print(f"    ✓ Collected values for {mode}")
-            else:
-                print(f"  Could not determine required values for {mode}. Skipping.")
-
-    # Second pass: run all modes with collected values
-    print("\n" + "=" * 60)
-    print("[PASS2] Running all modes with collected values...")
-    print("=" * 60)
-
-    for i, mode in enumerate(INFRA_CONFIG_MODES):
-        print(f"\n[RUN] Running mode: {mode}")
-
-        # Use collected values for this mode if available, otherwise use original values
-        mode_values = collected_values.get(mode, values)
-
-        try:
-            result = run_configure_mode(mode, root, mode_values, dry_run=dry_run)
             results.append(result)
             success = result.get("valid", False)
             if success:
@@ -685,6 +600,17 @@ def install_sdd_tool(source: Path, target: Path, version: str | None, action: st
         shutil.copy2(src, dst)
         if before != dst.read_bytes():
             changed.append(relative)
+    # Also copy any new files that weren't in the original manifest but are in the current source
+    if action == "update":
+        new_files = set(files) - old_managed
+        for relative in new_files:
+            if relative in SDD_TOOL_PRESERVE_FILES or relative in SDD_TOOL_PRESERVE_EXAMPLE_FILES:
+                continue
+            src = source / relative
+            dst = target / relative
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+            changed.append(relative)
 
     new_managed = set(files)
     removed: list[str] = []
@@ -710,7 +636,6 @@ def install_sdd_tool(source: Path, target: Path, version: str | None, action: st
         "gitBootstrap": git_bootstrap,
     }
     write_json(target / SDD_TOOL_MANIFEST, manifest)
-    lefthook_result = configure_ensure_lefthook(target, {}, dry_run=False)
     install_result = {
         "action": action,
         "version": version,
@@ -722,10 +647,6 @@ def install_sdd_tool(source: Path, target: Path, version: str | None, action: st
         "checksumSha256": checksum,
         "gitBootstrap": git_bootstrap,
     }
-    if "actions" in lefthook_result:
-        install_result["lefthookActions"] = lefthook_result["actions"]
-    if lefthook_result.get("findings"):
-        install_result["lefthookFindings"] = lefthook_result["findings"]
     return install_result
 
 
@@ -1430,8 +1351,57 @@ def configure_set_quality_config(root: Path, values: dict[str, Any], dry_run: bo
     path = root / ".codex" / "quality.local.json"
     if not values:
         return {"mode": "SetQualityConfig", "valid": False, "errors": ["Config values are required. Use --values-json-file, --values-json-stdin true, or --values-json."]}
+
+    # Validate and filter input to only allow quality-related configuration
+    valid_quality_keys = {
+        "coverageMinimumPercent", "minimumPercent", "coverage",
+        "SetQualityConfig", "quality"
+    }
+
+    # Check for invalid keys that belong to other configuration domains
+    forbidden_patterns = {
+        "SetProjectStack", "SetOpenProjectEnv", "SetMonitoringEnv",
+        "SetGiteaRunner", "SetRecommendedTools", "MapProjectGuidanceStep"
+    }
+
+    filtered_values = {}
+    invalid_keys = []
+
+    for key, value in values.items():
+        if any(pattern in key for pattern in forbidden_patterns):
+            invalid_keys.append(key)
+        elif any(valid_key in key for valid_key in valid_quality_keys):
+            filtered_values[key] = value
+        elif isinstance(value, dict):
+            # Recursively check nested dictionaries
+            nested_invalid = []
+            nested_filtered = {}
+            for nested_key, nested_value in value.items():
+                if any(pattern in nested_key for pattern in forbidden_patterns):
+                    nested_invalid.append(f"{key}.{nested_key}")
+                elif any(valid_key in nested_key for valid_key in valid_quality_keys):
+                    nested_filtered[nested_key] = nested_value
+            if nested_invalid:
+                invalid_keys.extend(nested_invalid)
+            if nested_filtered:
+                filtered_values[key] = nested_filtered
+
+    if invalid_keys:
+        return {
+            "mode": "SetQualityConfig",
+            "valid": False,
+            "errors": [
+                f"Invalid configuration keys for quality config: {', '.join(invalid_keys)}. "
+                "Use separate commands for different configuration domains: "
+                "SetProjectStack, SetOpenProjectEnv, SetMonitoringEnv, SetGiteaRunner, etc."
+            ]
+        }
+
+    if not filtered_values:
+        return {"mode": "SetQualityConfig", "valid": False, "errors": ["No valid quality configuration keys found."]}
+
     if not dry_run:
-        write_json(path, values)
+        write_json(path, filtered_values)
     return {"mode": "SetQualityConfig", "valid": True, "changed": True, "path": str(path), "dryRun": dry_run}
 
 
@@ -1678,15 +1648,20 @@ def _lefthook_platform() -> str | None:
 
 
 def _lefthook_arch() -> str | None:
-    machine = sys.platform
+    machine = platform.machine().lower()
     if sys.platform == "win32":
-        machine = os.environ.get("PROCESSOR_ARCHITECTURE", "").lower()
+        env_machine = os.environ.get("PROCESSOR_ARCHITECTURE", "").lower()
+        if "arm64" in env_machine or "aarch64" in env_machine:
+            return "arm64"
+        if "x86" in env_machine or "amd64" in env_machine:
+            return "amd64"
+        # Fallback to platform.machine() if environment variable not helpful
         if "arm64" in machine or "aarch64" in machine:
             return "arm64"
         if "x86" in machine or "amd64" in machine:
             return "amd64"
         return None
-    return "arm64" if "aarch64" in sys.version.lower() or "arm64" in sys.version.lower() else "amd64"
+    return "arm64" if "aarch64" in machine or "arm64" in machine else "amd64"
 
 
 def _lefthook_user_bin() -> Path:
@@ -2974,178 +2949,6 @@ def require(options: dict[str, str], key: str) -> str:
     return value
 
 
-def get_required_values_for_mode(mode: str, errors: list[str]) -> dict[str, dict[str, str]]:
-    """Determine what values are needed for a specific mode based on its error messages."""
-    required_values = {}
-
-    # Map modes to their required values and metadata
-    mode_requirements = {
-        "SetProjectStack": {
-            "frontend": {
-                "purpose": "Frontend technology (e.g., React, Vue, Angular) or 'none' if not applicable",
-                "example": "React + TypeScript",
-                "source": "Your project requirements or technology choices"
-            },
-            "backend": {
-                "purpose": "Backend technology (e.g., FastAPI, Django, Spring) or 'none' if not applicable",
-                "example": "FastAPI + Python",
-                "source": "Your project requirements or technology choices"
-            },
-            "database": {
-                "purpose": "Database technology (e.g., PostgreSQL, MySQL) or 'none' if not applicable",
-                "example": "PostgreSQL",
-                "source": "Your project requirements or technology choices"
-            }
-        },
-        "SetQualityConfig": {
-            "coverageMinimumPercent": {
-                "purpose": "Minimum code coverage percentage required",
-                "example": "80",
-                "source": "Your project quality requirements"
-            }
-        },
-        "SetClientTools": {
-            # This is a generic config mode, we'll handle it specially
-        },
-        "SetOpenProjectEnv": {
-            "OPENPROJECT_URL": {
-                "purpose": "OpenProject base URL",
-                "example": "http://localhost:18081",
-                "source": "Your OpenProject deployment configuration"
-            },
-            "OPENPROJECT_ADMIN_EMAIL": {
-                "purpose": "OpenProject administrator email",
-                "example": "admin@example.com",
-                "source": "Your OpenProject setup"
-            }
-        },
-        "SetMonitoringEnv": {
-            "SEQ_URL": {
-                "purpose": "Seq log server URL",
-                "example": "http://localhost:5341",
-                "source": "Your Seq deployment configuration"
-            }
-        },
-        "SetGiteaRunner": {
-            "GITEA_INSTANCE_URL": {
-                "purpose": "Gitea instance URL",
-                "example": "http://localhost:3001",
-                "source": "Your Gitea deployment configuration"
-            }
-        },
-        "SetGiteaBranchProtection": {
-            "baseUrl": {
-                "purpose": "Gitea base URL",
-                "example": "http://gitea:3000",
-                "source": "Your Gitea deployment configuration"
-            },
-            "apiToken": {
-                "purpose": "Gitea API token (will not be displayed)",
-                "example": "your-gitea-api-token",
-                "source": "Gitea user settings → Applications → Generate new token"
-            },
-            "owner": {
-                "purpose": "Gitea repository owner",
-                "example": "your-username",
-                "source": "Your Gitea account username"
-            },
-            "repo": {
-                "purpose": "Gitea repository name",
-                "example": "your-repo",
-                "source": "Your Gitea repository name"
-            }
-        },
-        "SetRecommendedTools": {
-            "accepted": {
-                "purpose": "List of recommendation IDs to accept",
-                "example": '["ponytail", "caveman"]',
-                "source": "From the AuditRecommendedTools output"
-            },
-            "dismissed": {
-                "purpose": "List of recommendation IDs to dismiss",
-                "example": '["openproject-mcp"]',
-                "source": "From the AuditRecommendedTools output"
-            }
-        },
-        "MapProjectGuidanceStep": {
-            "workflowStep": {
-                "purpose": "Current workflow step",
-                "example": "dev-flow-start-ticket",
-                "source": "Current stage in your delivery process"
-            }
-        }
-    }
-
-    # Handle special cases
-    if mode == "SetClientTools":
-        # For SetClientTools, we need to parse the errors to see what's missing
-        for error in errors:
-            if "is required" in error.lower():
-                # Extract the field name from the error message
-                match = re.search(r'(values\.)?([a-zA-Z]+)', error)
-                if match:
-                    field_name = match.group(2)
-                    required_values[field_name] = {
-                        "purpose": f"Configuration value for {field_name}",
-                        "example": "value",
-                        "source": "Your project configuration requirements"
-                    }
-    elif mode in mode_requirements:
-        # Check if specific fields are mentioned in errors
-        if mode_requirements[mode]:
-            # For modes with specific requirements, return all of them
-            # unless the errors indicate specific missing fields
-            return mode_requirements[mode]
-        else:
-            # Generic fallback
-            required_values["config"] = {
-                "purpose": "Configuration values for this mode",
-                "example": '{"key": "value"}',
-                "source": "Your project configuration requirements"
-            }
-
-    return required_values
-
-def validate_user_input(value_name: str, user_input: str, value_info: dict[str, str]) -> Any:
-    """Validate user input based on the value name and expected format."""
-    # Strip whitespace
-    input_str = user_input.strip()
-
-    # Handle empty input
-    if not input_str:
-        raise ValueError("Value cannot be empty")
-
-    # Handle special cases
-    if value_name == "coverageMinimumPercent":
-        try:
-            value = int(input_str)
-            if value < 0 or value > 100:
-                raise ValueError("Must be between 0 and 100")
-            return value
-        except ValueError:
-            raise ValueError("Must be a number between 0 and 100")
-
-    elif value_name in ["accepted", "dismissed"]:
-        try:
-            # Try to parse as JSON array
-            parsed = json.loads(input_str)
-            if not isinstance(parsed, list):
-                raise ValueError("Must be a JSON array")
-            return parsed
-        except json.JSONDecodeError:
-            # If not valid JSON, treat as comma-separated string and convert to list
-            items = [item.strip() for item in input_str.split(",") if item.strip()]
-            return items
-
-    elif value_name in ["frontend", "backend", "database"]:
-        # Allow "none", "no", "n/a", etc. as valid values
-        if input_str.lower() in ["none", "no", "n/a", "na", "not applicable", ""]:
-            return {"applies": False, "value": ""}
-        else:
-            return {"applies": True, "value": input_str}
-
-    # Default: return as string
-    return input_str
 
 def fail(message: str) -> Any:
     raise CliError(message)
