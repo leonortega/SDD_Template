@@ -76,7 +76,6 @@ SDD_TOOL_INCLUDE_FILES = [
 SDD_TOOL_INCLUDE_DIRS = [
     ".agents",
     ".cline",
-    ".clinerules",
     ".codex/providers",
     ".codex/skills",
     ".gitea/workflows",
@@ -84,6 +83,13 @@ SDD_TOOL_INCLUDE_DIRS = [
     "infra",
     "tools",
     ".vscode",
+]
+# Directories that should be created even if empty (no files to copy)
+SDD_TOOL_INCLUDE_EMPTY_DIRS = [
+    ".clinerules",    # Cline rules directory - may be empty initially
+]
+SDD_TOOL_TOOL_FILES = [
+    ".cline/create_skill_links.py",
 ]
 SDD_TOOL_EXCLUDE_PARTS = {
     "__pycache__",
@@ -98,6 +104,7 @@ SDD_TOOL_EXCLUDE_SEGMENTS = {"data", "logs", "pgdata"}
 SDD_TOOL_EXCLUDE_SUFFIXES = {".pyc", ".pyo"}
 SDD_TOOL_PRESERVE_FILES = {
     ".codex/client-tools.local.json",
+    ".codex/environment-urls.local.json",
     ".codex/project-profile.local.json",
     ".codex/quality.local.json",
     ".codex/tool-recommendations.local.json",
@@ -105,6 +112,11 @@ SDD_TOOL_PRESERVE_FILES = {
     ".codex/memory/memory_summary.md",
     ".codex/memory/retrieval-policy.md",
 }
+
+
+def is_preserved_local_json(relative: str) -> bool:
+    """Return True if the relative path is a *.local.json file that should be preserved."""
+    return relative.endswith(".local.json")
 
 SDD_TOOL_PRESERVE_EXAMPLE_FILES = {
     ".codex/client-tools.example.json",
@@ -601,10 +613,24 @@ def install_sdd_tool(source: Path, target: Path, version: str | None, action: st
         if not dirpath.exists():
             dirpath.mkdir(parents=True, exist_ok=True)
             changed.append(dirname + "/")
+    # Ensure empty directories (like .cline/skills and .clinerules) exist
+    for dirname in SDD_TOOL_INCLUDE_EMPTY_DIRS:
+        dirpath = target / dirname.replace("/", os.sep)
+        if not dirpath.exists():
+            dirpath.mkdir(parents=True, exist_ok=True)
+            changed.append(dirname + "/")
+    # Copy tool files (.cline/README.md, .cline/create_skill_links.py) - these are explicitly listed to handle junction-based directories
+    for relative in SDD_TOOL_TOOL_FILES:
+        src = source / relative
+        dst = target / relative
+        if src.exists() and (not dst.exists() or dst.read_bytes() != src.read_bytes()):
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+            changed.append(relative)
     for relative in files:
         src = source / relative
         dst = target / relative
-        if relative in SDD_TOOL_PRESERVE_FILES and dst.exists():
+        if (relative in SDD_TOOL_PRESERVE_FILES or is_preserved_local_json(relative)) and dst.exists():
             continue
         dst.parent.mkdir(parents=True, exist_ok=True)
         before = dst.read_bytes() if dst.exists() else None
@@ -615,7 +641,7 @@ def install_sdd_tool(source: Path, target: Path, version: str | None, action: st
     if action == "update":
         new_files = set(files) - old_managed
         for relative in new_files:
-            if relative in SDD_TOOL_PRESERVE_FILES or relative in SDD_TOOL_PRESERVE_EXAMPLE_FILES:
+            if relative in SDD_TOOL_PRESERVE_FILES or relative in SDD_TOOL_PRESERVE_EXAMPLE_FILES or is_preserved_local_json(relative):
                 continue
             src = source / relative
             dst = target / relative
@@ -627,7 +653,7 @@ def install_sdd_tool(source: Path, target: Path, version: str | None, action: st
     removed: list[str] = []
     for relative in sorted(old_managed - new_managed):
         dst = target / relative
-        if dst.exists() and relative not in SDD_TOOL_PRESERVE_FILES and relative not in SDD_TOOL_PRESERVE_EXAMPLE_FILES:
+        if dst.exists() and relative not in SDD_TOOL_PRESERVE_FILES and relative not in SDD_TOOL_PRESERVE_EXAMPLE_FILES and not is_preserved_local_json(relative):
             dst.unlink()
             removed.append(relative)
             remove_empty_parents(dst.parent, target)
@@ -709,7 +735,7 @@ def unmanaged_collisions(source: Path, target: Path, files: list[str], owned: se
         relative = path.relative_to(source).as_posix()
         if is_sdd_tool_excluded(relative):
             continue
-        if relative in managed or relative in SDD_TOOL_PRESERVE_FILES or relative in owned:
+        if relative in managed or relative in SDD_TOOL_PRESERVE_FILES or relative in owned or is_preserved_local_json(relative):
             continue
         dst = target / relative
         if dst.exists() and dst.read_bytes() != path.read_bytes():
@@ -718,7 +744,7 @@ def unmanaged_collisions(source: Path, target: Path, files: list[str], owned: se
         dst = target / relative
         if not dst.exists() or relative in owned:
             continue
-        if relative in SDD_TOOL_PRESERVE_FILES:
+        if relative in SDD_TOOL_PRESERVE_FILES or is_preserved_local_json(relative):
             continue
         if dst.read_bytes() != (source / relative).read_bytes():
             collisions.append(relative)
