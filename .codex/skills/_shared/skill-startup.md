@@ -4,15 +4,16 @@ Use this startup sequence for non-OpenSpec, non-configure delivery skills before
 
 ## Read Order
 
-1. `.codex/memory/memory_summary.md`
-2. `.codex/memory/MEMORY.md`
-3. `.codex/project-profile.json`
-4. `.codex/project-profile.local.json` when present
-5. `.codex/skills/_shared/provider-adapter-contract.md`
-6. `.codex/skills/_shared/delivery-contract.md`
-7. `.codex/delivery-policy.json`
-8. `docs/context-management.md`
-9. Stage-specific docs named by the skill, such as `docs/architecture.md`, `docs/development.md`, or `docs/deployment.md`
+1. `.codex/skills/_shared/repo-startup.md` — always-active skill policy (caveman, ponytail)
+2. `.codex/memory/memory_summary.md`
+3. `.codex/memory/MEMORY.md`
+4. `.codex/project-profile.json`
+5. `.codex/project-profile.local.json` when present
+6. `.codex/skills/_shared/provider-adapter-contract.md`
+7. `.codex/skills/_shared/delivery-contract.md`
+8. `.codex/delivery-policy.json`
+9. `docs/context-management.md`
+10. Stage-specific docs named by the skill, such as `docs/architecture.md`, `docs/development.md`, or `docs/deployment.md`
 
 Use memory only for recall and discovery. Verify task-critical facts against the current user request, OpenProject, OpenSpec, Gitea, Nexus, Azure, Git, current files, or live command output before acting.
 
