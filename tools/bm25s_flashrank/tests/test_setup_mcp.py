@@ -10,25 +10,20 @@ from tools.bm25s_flashrank import setup_mcp
 
 
 class SetupMcpTests(unittest.TestCase):
-    def test_write_workspace_mcp_config_persists_for_cline_and_copilot(self) -> None:
+    def test_write_workspace_mcp_config_persists_for_copilot(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo_root = Path(tmp)
             vscode_dir = repo_root / ".vscode"
             vscode_dir.mkdir(parents=True, exist_ok=True)
-            (vscode_dir / "cline_mcp_settings.json").write_text(
-                json.dumps({"mcpServers": {"codegraph": {"command": "npx"}}}),
-                encoding="utf-8",
-            )
 
             config = setup_mcp.build_mcp_config(r"C:\Users\marce\.mcp_shared_venv\Scripts\python.exe", r"C:\LeonRepository\SDD_Template\tools\bm25s_flashrank\mcp_doc_research.py")
             written_paths = setup_mcp.write_workspace_mcp_config(repo_root, config)
 
-            self.assertEqual({vscode_dir / "cline_mcp_settings.json", vscode_dir / "mcp.json", vscode_dir / "settings.json", repo_root / ".cline" / "mcp_settings.json"}, set(written_paths))
+            self.assertEqual({vscode_dir / "mcp.json", repo_root / ".cline" / "mcp_settings.json"}, set(written_paths))
 
-            cline = json.loads((vscode_dir / "cline_mcp_settings.json").read_text(encoding="utf-8"))
+            cline = json.loads((repo_root / ".cline" / "mcp_settings.json").read_text(encoding="utf-8"))
             self.assertEqual(r"C:\Users\marce\.mcp_shared_venv\Scripts\python.exe", cline["mcpServers"]["monorepo-docs-search"]["command"])
             self.assertEqual(r"C:\LeonRepository\SDD_Template\tools\bm25s_flashrank\mcp_doc_research.py", cline["mcpServers"]["monorepo-docs-search"]["args"][0])
-            self.assertEqual("npx", cline["mcpServers"]["codegraph"]["command"])
 
             copilot = json.loads((vscode_dir / "mcp.json").read_text(encoding="utf-8"))
             self.assertEqual(r"C:\Users\marce\.mcp_shared_venv\Scripts\python.exe", copilot["servers"]["monorepo-docs-search"]["command"])

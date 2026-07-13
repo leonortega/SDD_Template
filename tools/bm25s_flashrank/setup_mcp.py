@@ -59,24 +59,6 @@ def _update_cline_mcp_settings(path: Path, mcp_name: str, server_config: dict) -
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
-def _update_vscode_settings_file(path: Path, server_config: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if not path.exists():
-        path.write_text('{\n  "cline": {\n    "mcpServers": {\n    }\n  }\n}\n', encoding="utf-8")
-
-    text = path.read_text(encoding="utf-8")
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError:
-        data = {}
-
-    cline_block = data.setdefault("cline", {})
-    cline_block["enabled"] = True
-    servers = cline_block.setdefault("mcpServers", {})
-    servers["monorepo-docs-search"] = server_config
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-
-
 def write_workspace_mcp_config(repo_root: Path, config: dict) -> set[Path]:
     repo_root = repo_root.resolve()
     vscode_dir = repo_root / ".vscode"
@@ -84,17 +66,9 @@ def write_workspace_mcp_config(repo_root: Path, config: dict) -> set[Path]:
 
     written_paths: set[Path] = set()
 
-    cline_path = vscode_dir / "cline_mcp_settings.json"
-    _update_cline_mcp_settings(cline_path, "monorepo-docs-search", config["mcpServers"]["monorepo-docs-search"])
-    written_paths.add(cline_path)
-
     cline_repo_path = repo_root / ".cline" / "mcp_settings.json"
     _update_cline_mcp_settings(cline_repo_path, "monorepo-docs-search", config["mcpServers"]["monorepo-docs-search"])
     written_paths.add(cline_repo_path)
-
-    vscode_settings_path = vscode_dir / "settings.json"
-    _update_vscode_settings_file(vscode_settings_path, config["mcpServers"]["monorepo-docs-search"])
-    written_paths.add(vscode_settings_path)
 
     copilot_path = vscode_dir / "mcp.json"
     _update_cline_mcp_settings(copilot_path, "monorepo-docs-search", config["mcpServers"]["monorepo-docs-search"])

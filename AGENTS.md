@@ -79,6 +79,18 @@ Use `.codex/memory/` as a reviewable repository memory layer. Memory is guidance
 
 Before final handoff for any non-trivial repo work, perform a durable learning capture. Update `docs/`, `.codex/skills/_shared/delivery-contract.md` plus related skills/tests, or `.codex/memory/` according to `.codex/memory/retrieval-policy.md#update-process`, then report `Memory updated: <files>` or `Memory updated: none`.
 
+## Mandatory MCP Routing
+
+This repository has two MCP servers for content search — each with a strict domain. Every agent **must** follow `.codex/mcp-instructions.md` (the definitive MCP routing contract) when searching repository content:
+
+| Content Type | MCP Server | Tool | Reason |
+|---|---|---|---|
+| Documentation (`.md`, `.mdx`, skills, adapters) | `monorepo-docs-search` | `search_documentation` | BM25 + FlashRank cross-encoder — token-efficient snippets |
+| Source code (all other files) | `codebase-memory-mcp` | `search_graph`, `get_architecture`, `trace_path`, `get_code_snippet`, `query_graph` | BM25 ranking + structural boosting — definitions rank first |
+| Source code (all other files) | `codebase-memory-mcp` | `search_code` | Grep + graph-enriched dedup — for raw regex/pattern matching |
+
+This routing is mandatory (authority level 5 per `docs/context-management.md` — alongside `.codex/skills/_shared/delivery-contract.md`). Do not skip it. Do not use raw grep as the first approach. Do not cross-search domains between MCPs.
+
 ## Skill Activation Configuration
 - All prompts must trigger skill evaluation by default
 - Skills are applied in priority order: caveman > ponytail > others

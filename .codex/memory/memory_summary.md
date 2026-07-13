@@ -16,6 +16,7 @@ Memory is guidance only. It must never override the latest user request, active 
 - Project profile: `.codex/project-profile.json` plus optional `.codex/project-profile.local.json`.
 - Provider adapters: `.codex/providers/`.
 - OpenSpec config: `openspec/config.yaml`.
+- MCP routing contract: `.codex/mcp-instructions.md` — mandatory routing for all content search (docs → `monorepo-docs-search`, code → `codebase-memory-mcp`).
 
 ## Core Workflow
 
