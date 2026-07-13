@@ -34,6 +34,9 @@ The product stack is currently unselected. Keep prerequisites limited to the del
       - `node --version`
       - `npm --version`
       - `npx --version`
+      - On Windows PowerShell, direct `npx` can be enabled with:
+        - `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned`
+      - As a fallback, `npx.cmd --version` also works if the PowerShell wrapper is blocked.
   - Install: configured in `.codex/config.toml` through `@colbymchenry/codegraph@1.1.1` via `npx`.
   - Validate: confirm the `.codex/config.toml` entry is present and `npx --yes @colbymchenry/codegraph@1.1.1 serve --mcp` starts successfully.
   - Note: telemetry is disabled via `CODEGRAPH_TELEMETRY=0` and `DO_NOT_TRACK=1`.

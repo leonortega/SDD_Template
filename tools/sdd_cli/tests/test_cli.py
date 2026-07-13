@@ -481,6 +481,19 @@ class SddCliTests(unittest.TestCase):
             manifest = json.loads((target / ".codex" / "sdd-tool-version.json").read_text(encoding="utf-8"))
             self.assertIn("tools/sdd_cli/cli.py", manifest["managedFiles"])
 
+    def test_tool_install_includes_bm25s_flashrank_assets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "tool"
+            target = root / "consumer"
+            write(source / "tools" / "bm25s_flashrank" / "setup_mcp.py", "setup")
+            write(source / "tools" / "bm25s_flashrank" / "mcp_doc_research.py", "research")
+
+            cli.install_sdd_tool(source, target, "v0.1.0", "install")
+
+            self.assertTrue((target / "tools" / "bm25s_flashrank" / "setup_mcp.py").exists())
+            self.assertTrue((target / "tools" / "bm25s_flashrank" / "mcp_doc_research.py").exists())
+
     def test_init_local_files_repairs_memory_and_env_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

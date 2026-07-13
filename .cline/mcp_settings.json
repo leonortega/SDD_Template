@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "monorepo-docs-search": {
+      "command": "C:\\Users\\marce\\.mcp_shared_venv\\Scripts\\python.exe",
+      "args": [
+        "C:\\LeonRepository\\SDD_Template\\tools\\bm25s_flashrank\\mcp_doc_research.py"
+      ]
+    }
+  }
+}
