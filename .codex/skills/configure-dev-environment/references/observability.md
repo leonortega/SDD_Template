@@ -10,7 +10,7 @@ Owns:
 Use the shared script for the required Rancher Desktop observability path:
 
 ```bash
-python -m tools.sdd_cli configure ValidateObservability
+python -m tools.sdd_cli environment-lab validate-observability
 ```
 
 ## Seq
@@ -35,7 +35,7 @@ Azure Event Hub ingestion is not part of the current local environment. Add a co
 Validation (required path):
 
 ```bash
-python -m tools.sdd_cli configure ValidateObservability
+python -m tools.sdd_cli environment-lab validate-observability
 ```
 
 `config infra` is not complete until Seq, the Seq error-log alert, Grafana Infinity health datasource, Grafana health alerts, and local Rancher Desktop health dashboards are running and healthy.

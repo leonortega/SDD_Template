@@ -88,7 +88,7 @@ Each ticket worktree must have its own ignored `.codex/delivery-context.local.js
 4. If the runtime state references a missing worktree or a worktree branch no longer matches the ticket, report the stale entry and do not route that ticket until it is repaired.
 5. Classify each ticket's delivery risk when enough ticket, OpenSpec, PR, or artifact evidence exists. Include the risk level in the planned state and child role prompt.
 6. Check installed-skill runtime index status. Use it only to pass exact `SKILL.md` paths to child agents; if missing or stale, report regeneration as setup work instead of rescanning inside every child agent.
-7. Before any Git, OpenProject, or Gitea mutation for new or reused parallel work, run `python -m tools.sdd_cli delivery -Mode ValidateParallelDeliveryDryRun` with the planned state. The operator-facing checklist question is: `Can I safely start these 2 tickets in parallel?`
+7. Before any Git, OpenProject, or Gitea mutation for new or reused parallel work, run `python -m tools.sdd_cli dev-flow validate-parallel-dry-run` with the planned state. The operator-facing checklist question is: `Can I safely start these 2 tickets in parallel?`
 
 ### 2. Select Or Reuse Tickets
 

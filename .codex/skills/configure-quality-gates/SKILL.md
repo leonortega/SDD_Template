@@ -13,7 +13,7 @@ Configure local and CI quality gates used for ticket implementation validation a
 
 Read `.codex/skills/configure-dev-environment/references/quality-gates.md` before asking for values or applying changes.
 
-Use the shared command `python -m tools.sdd_cli configure`.
+Use the new modular CLI: `python -m tools.sdd_cli environment-lab` for environment setup and `python -m tools.sdd_cli dev-flow` for quality-gate audits.
 
 Keep this skill synchronized with `.codex/skills/_shared/delivery-contract.md` and the non-OpenSpec delivery-flow skills. When behavior differs, delivery-flow skills are authoritative.
 
@@ -27,14 +27,14 @@ Safety:
 
 ## Workflow
 
-1. Run `AuditQualityGates`.
-2. If templates are missing, ask before running `InitQualityGateTemplates`.
+1. Run `python -m tools.sdd_cli dev-flow audit-skill-contracts`.
+2. If templates are missing, ask before running `python -m tools.sdd_cli environment-lab init-quality-templates`.
 3. For every missing SDK/tool/scanner, provide install command, official URL, and post-install validation/configuration command before continuing.
 4. Ensure `.codex/quality.local.json` exists from `.codex/quality.example.json`; default `coverage.minimumPercent` is `80`.
-5. Use `SetQualityConfig` when the user wants a different coverage threshold; never write scanner, Gitea, Nexus, Azure, or OpenProject secrets there.
+5. Use `python -m tools.sdd_cli environment-lab set-quality-config` when the user wants a different coverage threshold; never write scanner, Gitea, Nexus, Azure, or OpenProject secrets there.
 6. Verify the generated flow uses PR checks for restore, format, build, application tests only, coverage collection, coverage threshold enforcement, dependency audit, Gitleaks, and Trivy. CI restore, format, build, test, coverage, dependency-audit, and publish commands must target product/application projects, not SDD template, delivery-tool, workflow, agent, OpenSpec, infrastructure, or meta-test projects.
-7. Run `BuildGiteaActionsImages` before any PR validation, deployment, or QA E2E workflow. .NET SDK tooling, Gitleaks, Trivy, Azure CLI, jq, zip, Node, and Playwright runtime dependencies must come from pinned local CI images. Host installs are not allowed when a pinned Docker image is available.
-8. Run `ValidateGiteaActionsRunner` when Docker is available to catch missing local job images, missing shell tools, JavaScript action/node mismatches, and local Gitea checkout networking before a PR depends on CI.
+7. Run `python -m tools.sdd_cli environment-lab build-gitea-images` before any PR validation, deployment, or QA E2E workflow. .NET SDK tooling, Gitleaks, Trivy, Azure CLI, jq, zip, Node, and Playwright runtime dependencies must come from pinned local CI images. Host installs are not allowed when a pinned Docker image is available.
+8. Run `python -m tools.sdd_cli environment-lab validate-gitea-runner` when Docker is available to catch missing local job images, missing shell tools, JavaScript action/node mismatches, and local Gitea checkout networking before a PR depends on CI.
 9. Ask whether Semgrep should be enabled only after real app code exists or the user explicitly wants it.
 10. Guide the user to configure Gitea branch protection, `pr.minimumApprovals`, and required status checks.
 

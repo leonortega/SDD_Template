@@ -9,7 +9,7 @@ Owns:
 - `infra/azure/dev.parameters.json`.
 - `infra/azure/qa.parameters.json`.
 - `infra/azure/prod.parameters.json`.
-- `python -m tools.sdd_cli azure deploy-environments`.
+- `python -m tools.sdd_cli environment-lab azure-deploy`.
 - DEV/QA/PROD App Service runtime and outputs.
 - Deployment Topology Review for deployable apps and `appsettings*.json` to App Service setting mappings.
 - Deployment configuration drift prevention through the generated `deployment-config.json` Nexus artifact.
@@ -142,13 +142,13 @@ Preview first unless the user explicitly asks to deploy directly:
 
 ```bash
 az account show
-python -m tools.sdd_cli azure deploy-environments --location westcentralus --what-if
+python -m tools.sdd_cli environment-lab azure-deploy --location westcentralus --what-if
 ```
 
 Deploy after approval:
 
 ```bash
-python -m tools.sdd_cli azure deploy-environments --location westcentralus
+python -m tools.sdd_cli environment-lab azure-deploy --location westcentralus
 ```
 
 ## Validation

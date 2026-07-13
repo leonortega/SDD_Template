@@ -1,6 +1,6 @@
 """Project guidance discovery reference.
 
-Canonical runtime: ``python -m tools.sdd_cli configure DiscoverProjectGuidance``.
+Canonical runtime: ``python -m tools.sdd_cli guidance discover``.
 """
 
 

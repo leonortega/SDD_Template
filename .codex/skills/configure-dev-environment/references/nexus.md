@@ -49,7 +49,7 @@ Store the Nexus user used for repository checks in ignored `.codex/client-tools.
 Configure it with `SetClientTools` after the user supplies the values:
 
 ```bash
-python -m tools.sdd_cli configure SetClientTools --values-json-file .codex/config-values.local.json
+python -m tools.sdd_cli environment-lab set-client-tools --values-json-file .codex/config-values.local.json
 ```
 
 The ignored `.codex/config-values.local.json` file should contain a `nexus` object with `baseUrl`, `username`, `password`, and `repository`.
@@ -66,7 +66,7 @@ Manual setup in Gitea:
 4. Validate with the Gitea API by listing secret names only:
 
 ```bash
-python -m tools.sdd_cli configure Audit
+python -m tools.sdd_cli environment-lab audit
 ```
 
 ## Prompting
@@ -114,7 +114,7 @@ Create a Nexus service account:
 Validate from the host without exposing credentials:
 
 ```bash
-python -m tools.sdd_cli configure Audit
+python -m tools.sdd_cli environment-lab audit
 ```
 
 Validate from Gitea Actions later by running the package workflow. The workflow uploads to:

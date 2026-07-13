@@ -53,7 +53,7 @@ The installed-skill runtime index is separate, derived state. It contains only i
 To persist a confirmed mapping:
 
 ```bash
-python -m tools.sdd_cli configure MapProjectGuidanceStep --values-json-file .codex/guidance-map-values.local.json
+python -m tools.sdd_cli guidance map-step --values-json-file .codex/guidance-map-values.local.json
 ```
 
 Only persist mappings after a step is actually chosen, confirmed, or used. Do not let the local mapping override the active ticket, delivery contract, validation gates, or current repo contents.

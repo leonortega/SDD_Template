@@ -66,19 +66,19 @@ Create them only in a separate test project repository or after a sample project
 From this lab repository, install the latest final release into a separate test repository:
 
 ```bash
-python -m tools.sdd_cli tool install --target C:\path\to\test-repo
+python -m tools.sdd_cli template-installer install --target C:\path\to\test-repo
 ```
 
 Install a specific pinned version:
 
 ```bash
-python -m tools.sdd_cli tool install --version v0.1.0 --target C:\path\to\test-repo
+python -m tools.sdd_cli template-installer install --version v0.1.0 --target C:\path\to\test-repo
 ```
 
 Update an installed test repository:
 
 ```bash
-python -m tools.sdd_cli tool update --version v0.2.0 --target C:\path\to\test-repo
+python -m tools.sdd_cli template-installer update --version v0.2.0 --target C:\path\to\test-repo
 ```
 
 If `--version` is omitted, the installer uses the latest final Git tag matching `vMAJOR.MINOR.PATCH`. Release candidates such as `v0.1.7-rc.2` are ignored by that default.
@@ -155,20 +155,20 @@ Start implementation.
 Start local delivery infrastructure:
 
 ```bash
-python -m tools.sdd_cli infra up
+python -m tools.sdd_cli environment-lab compose-up
 ```
 
 Stop local delivery infrastructure:
 
 ```bash
-python -m tools.sdd_cli infra down
+python -m tools.sdd_cli environment-lab compose-down
 ```
 
 In an installed test repository, run smoke checks for the installed helper CLI:
 
 ```bash
-python -m tools.sdd_cli configure Audit
-python -m tools.sdd_cli configure AuditRecommendedTools
+python -m tools.sdd_cli environment-lab audit
+python -m tools.sdd_cli guidance discover
 ```
 
 In this lab repository only, run helper tests when test dependencies are available:

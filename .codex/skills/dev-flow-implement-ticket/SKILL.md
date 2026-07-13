@@ -15,7 +15,7 @@ Before implementation, handoff, or review work, follow `.codex/skills/_shared/sk
 
 ## Workflow Telemetry
 
-Capture UTC start time after resolving the ticket key and before implementation or PR handoff work. Prefer OpenProject time-entry telemetry and create or update the `dev-flow-implement-ticket` entry with marker `IA generated workflow telemetry: {ticketKey}:dev-flow-implement-ticket`. Use `python -m tools.sdd_cli delivery -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` only as the JSONL fallback when direct time telemetry is unavailable. On resume or idempotent reuse, append or update another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-flow-implement-ticket`, `agentRole=implementation`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If telemetry append fails in both primary and fallback paths, report workflow timing as blocked and continue only when the underlying implementation handoff rules still allow it.
+Capture UTC start time after resolving the ticket key and before implementation or PR handoff work. Prefer OpenProject time-entry telemetry and create or update the `dev-flow-implement-ticket` entry with marker `IA generated workflow telemetry: {ticketKey}:dev-flow-implement-ticket`. Use `python -m tools.sdd_cli dev-flow append-telemetry -TicketKey {ticketKey}` only as the JSONL fallback when direct time telemetry is unavailable. On resume or idempotent reuse, append or update another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-flow-implement-ticket`, `agentRole=implementation`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If telemetry append fails in both primary and fallback paths, report workflow timing as blocked and continue only when the underlying implementation handoff rules still allow it.
 
 ## Configuration
 
@@ -89,7 +89,7 @@ The local fallback is advisory for faster iteration. repository workflow remains
 When repository workflow runner, workflow container, or security tool compatibility is part of the configured gate, use the existing infra validation path instead of inventing ad hoc checks:
 
 ```bash
-python -m tools.sdd_cli configure AuditQualityGates
+python -m tools.sdd_cli dev-flow audit-skill-contracts
 the selected runner validation helper from `configure-dev-environment`
 ```
 

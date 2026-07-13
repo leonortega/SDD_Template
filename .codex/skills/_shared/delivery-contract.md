@@ -156,7 +156,7 @@ Classify delivery risk as:
 - `standard`: normal feature, bug, test, or workflow work that crosses implementation and validation but does not touch high-risk surfaces.
 - `high`: work touching auth, authorization, persistence, migrations, deployment workflows, secrets, public APIs, `/health`, release manifests, Nexus/Azure/Gitea Actions, rollback/hotfix, or large diffs.
 
-Use `python -m tools.sdd_cli delivery <Mode>` deterministic helpers when available. Low-risk work may use compact planning and review summaries, but must still preserve ticket context, branch/PR handoff, validation evidence, docs/memory classification, and configured quality gates. High-risk work requires full workload forecast handling, adversarial review, deployment topology checks when applicable, and explicit evidence in PR and OpenProject handoff comments.
+Use `python -m tools.sdd_cli dev-flow` deterministic helpers when available. Low-risk work may use compact planning and review summaries, but must still preserve ticket context, branch/PR handoff, validation evidence, docs/memory classification, and configured quality gates. High-risk work requires full workload forecast handling, adversarial review, deployment topology checks when applicable, and explicit evidence in PR and OpenProject handoff comments.
 
 ## Ponytail Implementation And Review
 
@@ -372,7 +372,7 @@ Rules:
 - For non-parallel interactive chat, configure, guidance, and retrospective workflows, use `.codex/client-tools.local.json.openRouter.defaultChatModel` with optional per-skill `.codex/client-tools.local.json.openRouter.modelMapping` overrides. `parallelDelivery.agentModelPolicy` is reserved for spawnable parallel-delivery sub-agent roles only.
 - Each active ticket owns exactly one worktree and one implementation branch. Reuse matching worktrees; stop if a ticket, branch, or worktree mapping conflicts with durable OpenProject/Gitea/Git checkpoints.
 - Copy ignored local config needed by child skills into each worktree without printing tokens, passwords, cookies, or credential-bearing URLs. The default allowlist is `.codex/client-tools.local.json`, `.codex/project-profile.local.json`, `.codex/quality.local.json`, and `.codex/tool-recommendations.local.json` when present; do not copy `.codex/parallel-delivery.local.json`, `.codex/delivery-context.local.json`, `.codex/azure-login.local.json`, or app `*.local.json` files by default. Keep tracked templates placeholder-safe.
-- Before Git, OpenProject, or Gitea mutation for new or reused parallel work, run `ValidateParallelDeliveryDryRun` with planned tickets, lane state, enabled state, and required local runtime files. The operator-facing question is: `Can I safely start these 2 tickets in parallel?`
+- Before Git, OpenProject, or Gitea mutation for new or reused parallel work, run `python -m tools.sdd_cli dev-flow validate-parallel-dry-run` with planned tickets, lane state, enabled state, and required local runtime files. The operator-facing question is: `Can I safely start these 2 tickets in parallel?`
 - Implementation and review stages may run concurrently across tickets.
 - DEV, QA, E2E QA, PROD, rollback, and hotfix promotion share deployment lanes and release tags. With `deploymentLanePolicy` set to `serialized`, only the recorded lane owner may run `dev-ops-post-merge-deploy`, `dev-ops-deploy-qa`, `configured QA gate`, or `dev-ops-deploy-prod`; other agents must wait or report the owner.
 - PROD promotion remains explicit. Parallel delivery must not promote to PROD only because QA passed.
@@ -433,31 +433,33 @@ Workflow timing comments use marker `IA generated workflow timing: {ticketKey}` 
 
 ## Reusable Delivery Tools
 
-Use `python -m tools.sdd_cli delivery <Mode>` for deterministic delivery mechanics instead of duplicating script logic in skills:
+Use `python -m tools.sdd_cli dev-flow <subcommand>` for deterministic delivery mechanics instead of duplicating script logic in skills:
 
-- `ArtifactPaths`: derive Nexus artifact paths for `app/{commitSha}`.
-- `CheckGitIgnored`: verify evidence or local runtime paths are ignored before writing generated files.
-- `NextRcVersion`: derive the next RC version from existing Git tags.
-- `ReadProjectProfile`: read `.codex/project-profile.json` and return configured workflow values such as the ticket key pattern.
-- Repo-root profile helpers should merge optional `.codex/project-profile.local.json` with tracked `.codex/project-profile.json`.
-- `ReadDeliveryPolicy`: compatibility wrapper that reads `.codex/project-profile.json` first, then legacy `.codex/delivery-policy.json` when the profile is absent.
-- `ExtractTicketKey`: extract ticket keys from ticket-prefixed commits or Gitea merge commit titles.
-- `ReadCoverageThreshold`: read the configured coverage minimum with the repo default fallback.
-- `ReadCoberturaLineRate`: read Cobertura coverage percent from XML without shell text parsing.
-- `ValidateReleaseManifest`: validate required `release.json` fields and version formats.
-- `CreateArtifactPointer`: write human-readable Nexus alias pointer JSON for QA-approved, RC, and final release metadata folders.
-- `ValidateTicketLock`: compare resolved ticket, branch, PR, artifact commit, RC, or final version against `.codex/delivery-context.local.json`.
-- `ValidateDeploymentLane`: enforce serialized deployment ownership from `.codex/parallel-delivery.local.json`.
-- `ValidateParallelDeliveryDryRun`: validate enabled state, planned ticket/worktree/branch uniqueness, serialized lane ownership, supported lane policy, and required ignored local runtime files without mutating Git, OpenProject, Gitea, Nexus, or Azure.
-- `ClassifyTicketReadiness`: classify OpenProject work package text as `ready`, `refinable`, or `blocked`.
-- `ClassifyDeliveryRisk`: classify planned or changed work as `low`, `standard`, or `high`.
-- `ParseWorkloadForecast`: parse required `Review Workload Forecast` guard lines from OpenSpec tasks.
-- `DetectAdversarialReviewTrigger`: determine whether PR review needs adversarial mode.
-- `WriteInstalledSkillIndex`: write or reuse the ignored installed-skill runtime index and cache.
-- `ResolveOpenProjectTimeActivity`, `RenderOpenProjectTimeTelemetryComment`, and `ReadOpenProjectTimeTelemetry`: resolve stage-specific OpenProject activities, then render and read OpenProject time-entry telemetry comments for the primary workflow timing path.
-- `InitializeWorkflowTelemetry`, `AppendWorkflowTelemetry`, and `ReadWorkflowTelemetry`: fallback helpers that create or clear the per-ticket ignored telemetry JSONL file, append stage timing rows, and prepare timing data for OpenProject comments when direct OpenProject time entries are unavailable.
-- `RenderTicketComment`: render standard Markdown OpenProject comments for QA deployment, E2E QA, PROD deployment, and workflow timing.
-- `UpdateReleaseManifest`: merge stage-specific fields into `release.json` while preserving existing metadata, then validate the result.
+- `artifact-paths`: derive Nexus artifact paths for `app/{commitSha}`.
+- `check-git-ignored`: verify evidence or local runtime paths are ignored before writing generated files.
+- `next-rc-version`: derive the next RC version from existing Git tags.
+- `ReadProjectProfile`: read `.codex/project-profile.json` and return configured workflow values such as the ticket key pattern (internal helper, not a CLI command).
+- `ReadDeliveryPolicy`: compatibility wrapper that reads `.codex/project-profile.json` first, then legacy `.codex/delivery-policy.json` when the profile is absent (internal helper, not a CLI command).
+- `extract-ticket-key`: extract ticket keys from ticket-prefixed commits or Gitea merge commit titles.
+- `ReadCoverageThreshold`: read the configured coverage minimum with the repo default fallback (internal helper in `dev_flow.py`).
+- `ReadCoberturaLineRate`: read Cobertura coverage percent from XML without shell text parsing (internal helper in `dev_flow.py`).
+- `validate-release-manifest`: validate required `release.json` fields and version formats.
+- `create-artifact-pointer`: write human-readable Nexus alias pointer JSON for QA-approved, RC, and final release metadata folders.
+- `validate-ticket-lock`: compare resolved ticket, branch, PR, artifact commit, RC, or final version against `.codex/delivery-context.local.json`.
+- `validate-deployment-lane`: enforce serialized deployment ownership from `.codex/parallel-delivery.local.json`.
+- `validate-parallel-dry-run`: validate enabled state, planned ticket/worktree/branch uniqueness, serialized lane ownership, supported lane policy, and required ignored local runtime files without mutating Git, OpenProject, Gitea, Nexus, or Azure.
+- `ticket-readiness`: classify OpenProject work package text as `ready`, `refinable`, or `blocked`.
+- `delivery-risk`: classify planned or changed work as `low`, `standard`, or `high`.
+- `parse-workload-forecast`: parse required `Review Workload Forecast` guard lines from OpenSpec tasks.
+- `detect-adversarial-trigger`: determine whether PR review needs adversarial mode.
+- `resolve-openproject-activity`, `render-openproject-comment`, and `read-openproject-telemetry`: resolve stage-specific OpenProject activities, then render and read OpenProject time-entry telemetry comments for the primary workflow timing path.
+- `init-telemetry`, `append-telemetry`, and `read-telemetry`: fallback helpers that create or clear the per-ticket ignored telemetry JSONL file, append stage timing rows, and prepare timing data for OpenProject comments when direct OpenProject time entries are unavailable.
+- `render-ticket-comment`: render standard Markdown OpenProject comments for QA deployment, E2E QA, PROD deployment, and workflow timing.
+- `update-release-manifest`: merge stage-specific fields into `release.json` while preserving existing metadata, then validate the result.
+
+Helpers that are not CLI commands (marked as internal) are available through `from .dev_flow import <function>` or `from ._shared import <function>` within the Python modules.
+
+The `WriteInstalledSkillIndex` helper is now available via `python -m tools.sdd_cli guidance write-skill-index` (in the `guidance` module, not `dev-flow`).
 
 Skills remain responsible for API calls, user-facing decisions, blocker classification, and whether a mutation is allowed. The script is the reusable preflight/render/update helper.
 

@@ -13,7 +13,7 @@ Configure OpenProject work package workflow values used for local ticket state, 
 
 Read `.codex/skills/configure-dev-environment/references/openproject.md` before asking for values or applying changes.
 
-Use the shared command `python -m tools.sdd_cli configure`.
+Use the new modular CLI: `python -m tools.sdd_cli environment-lab` for shared configure operations.
 
 Apply `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md` before changing ticket workflow behavior or handoff rules.
 
@@ -26,11 +26,11 @@ Safety:
 
 ## Workflow
 
-1. Run `Audit`.
-2. Initialize local files with `InitLocalFiles` only if needed.
+1. Run `python -m tools.sdd_cli environment-lab audit`.
+2. Run `python -m tools.sdd_cli environment-lab init-local-files` only if needed.
 3. Ask only for missing or placeholder OpenProject values.
-4. Apply confirmed `.codex/client-tools.local.json` values with `SetClientTools`.
-5. Apply confirmed `infra/openproject/variables.env` values with `SetOpenProjectEnv`.
+4. Run `python -m tools.sdd_cli environment-lab set-client-tools` with confirmed `.codex/client-tools.local.json` values.
+5. Run `python -m tools.sdd_cli environment-lab set-openproject-env` with confirmed `infra/openproject/variables.env` values.
 6. Perform live OpenProject API validation only when infra is running or the user approves starting it.
 
 ## Output

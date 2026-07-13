@@ -4,7 +4,7 @@ This repository treats context as an SDLC asset. Durable project knowledge belon
 
 `.codex/memory/` provides a reviewable repository memory layer for reusable workflow knowledge, repeated failure patterns, module landmarks, and release or QA lessons. Memory is a retrieval aid only; it must be verified against the authority order below before it drives an action.
 
-For practical lookup, use `python -m tools.sdd_cli memory search --query <symptom>` with concrete error text, config keys, tool names, workflow stages, or marker names. Memory search should accelerate diagnosis, not replace freshness checks against current files and live systems.
+For practical lookup, use `python -m tools.sdd_cli memory-search search --query <symptom>` with concrete error text, config keys, tool names, workflow stages, or marker names. Memory search should accelerate diagnosis, not replace freshness checks against current files and live systems.
 
 ## Authority Order
 

@@ -40,7 +40,7 @@ Safety:
 11. Smoke checks must verify browser-facing topology: rendered web pages must contain the expected API base URL and API preflight must allow the matching web origin.
 12. Keep `infra/azure/main.bicep`, `.gitea/workflows/package-deploy.yml`, `.gitea/workflows/README.md`, configure audits, and tests synchronized with the manifest and `deployment-config.json` artifact.
 13. Ask only for values that differ from defaults.
-14. Preview with `python -m tools.sdd_cli azure deploy-environments --location westcentralus --what-if` (or the explicitly requested region).
+14. Preview with `python -m tools.sdd_cli environment-lab azure-deploy --location westcentralus --what-if` (or the explicitly requested region).
 15. Deploy only after approval.
 16. When `AZURE_CREDENTIALS` is missing, explain how to create the service principal JSON, where to store it in Gitea Actions secrets, official documentation links, and validation commands.
 17. When PROD deployment is enabled, verify the Gitea Actions secret names for every manifest app exist. Infer their non-secret values from Azure deployment outputs or `az webapp list`, then configure only after confirming the values.
