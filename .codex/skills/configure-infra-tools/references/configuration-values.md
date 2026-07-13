@@ -16,5 +16,5 @@ Use `$configure-dev-environment` as the router and load domain references from:
 Prefer the new shared script path:
 
 ```bash
-python -m tools.sdd_cli configure Audit
+python -m tools.sdd_cli environment-lab audit
 ```

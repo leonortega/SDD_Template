@@ -31,7 +31,7 @@ When setup needs values the user must supply manually, do not only ask for the v
   - `infra/gitea/runner.env`
 - Keep tracked files as templates, workflows, or placeholder-safe documentation.
 - Do not read secrets from Docker containers, container shells, mounted volumes, service databases, or logs.
-- Do not start or stop local infra automatically. Ask first before running `python -m tools.sdd_cli infra up` or `python -m tools.sdd_cli infra down` unless the user explicitly asks for `config infra` or `setup environment`; those requests are approval to run the minimum infra commands needed to leave configuration working.
+- Do not start or stop local infra automatically. Ask first before running `python -m tools.sdd_cli environment-lab compose-up` or `python -m tools.sdd_cli environment-lab compose-down` unless the user explicitly asks for `config infra` or `setup environment`; those requests are approval to run the minimum infra commands needed to leave configuration working.
 - Use Docker only for non-secret operational checks such as service status, mounts, health, and non-sensitive provisioning logs.
 
 ## Version And Install Rules
@@ -80,24 +80,20 @@ When setup needs values the user must supply manually, do not only ask for the v
 
 Use the shared deterministic script:
 
-```bash
-python -m tools.sdd_cli configure Audit
-```
-
 For full setup, follow the repository startup order before any write: `README.md`, `.codex/skills/_shared/skill-startup.md`, memory files, `.codex/delivery-policy.json`, shared contracts, `docs/context-management.md`, then this skill and only the required references.
 
 For modes that accept values, prefer shell-neutral input:
 
 ```bash
-python -m tools.sdd_cli configure SetClientTools --values-json-file .codex/config-values.local.json
-python -m tools.sdd_cli configure SetClientTools --values-json-stdin true
+python -m tools.sdd_cli environment-lab set-client-tools --values-json-file .codex/config-values.local.json
+python -m tools.sdd_cli environment-lab set-client-tools --values-json-stdin true
 ```
 
 Keep value files ignored/local and never commit secret values. `--values-json` remains supported for non-secret compatibility use.
 
 Do not use per-mode `--help`; configure submodes do not expose dedicated help. Read this skill, the focused reference, or `tools/sdd_cli/cli.py` instead.
 
-Do not bypass the CLI by importing `run_configure_mode` for real setup mutations. Use `python -m tools.sdd_cli configure ...`, then verify writes by reading the affected ignored local file without printing secrets and rerunning `python -m tools.sdd_cli configure Audit`.
+Use the modular CLI commands directly. For each domain, use the matching module: `environment-lab` for env/config operations, `guidance` for project guidance, `dev-flow` for delivery mechanics, `tool-installer` for tool installations. Verify writes by reading the affected ignored local file without printing secrets.
 
 When the operator forbids PowerShell, do not use PowerShell wrappers for configure commands or file inspection. Use a non-PowerShell runner while preserving the same CLI arguments.
 
@@ -203,9 +199,7 @@ For prerequisite installation guidance, read `references/shared-prerequisites.md
 When handling "config infra" requests, use this interactive coordination workflow:
 
 ### Step 1: Run Infrastructure Audit
-```bash
-python -m tools.sdd_cli configure InfraConfig --dry-run=true
-```
+Run the relevant validation commands for each configured domain. See the individual mode mappings below for the new modular paths.
 
 ### Step 2: Analyze Results
 - Parse the JSON output to identify completed vs. failed modes
@@ -304,9 +298,7 @@ For each configuration type needed, prompt the user with:
 - Validation: Match against standard workflow stages
 
 ### Step 4: Execute with Collected Values
-```bash
-python -m tools.sdd_cli configure InfraConfig --values-json '{"collected": "values"}'
-```
+Execute the collected values through the individual module commands (see the Useful modes list above for the new `environment-lab` and `guidance` paths).
 
 ### Step 5: Handle Partial Success
 - If some modes still fail, prompt for additional values

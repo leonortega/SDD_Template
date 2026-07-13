@@ -27,8 +27,8 @@ When the stack is chosen:
 Use a separate repository to validate this tool as a real consumer would:
 
 ```bash
-python -m tools.sdd_cli tool install --version v0.1.0 --target C:\path\to\consumer-repo
-python -m tools.sdd_cli tool update --version v0.2.0 --target C:\path\to\consumer-repo
+python -m tools.sdd_cli template-installer install --version v0.1.0 --target C:\path\to\consumer-repo
+python -m tools.sdd_cli template-installer update --version v0.2.0 --target C:\path\to\consumer-repo
 ```
 
 The consumer repo should not contain this tool's internal tests, memory, eval files, or experimental OpenSpec changes. Put product-specific source, tests, local profile overlays, secrets, and product OpenSpec changes in the consumer repo; the update command preserves them because they are not managed tool files.

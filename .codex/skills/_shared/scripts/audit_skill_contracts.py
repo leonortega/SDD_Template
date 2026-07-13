@@ -1,6 +1,6 @@
 """Shared skill-contract audit reference.
 
-Canonical runtime: ``python -m tools.sdd_cli delivery AuditSkillContracts``.
+Canonical runtime: ``python -m tools.sdd_cli dev-flow audit-skill-contracts``.
 """
 
 # Legacy advisory switches preserved as audit concepts:

@@ -13,7 +13,7 @@ Configure Nexus artifact delivery for ticket-gated DEV, QA, PROD, rollback, and 
 
 Read `.codex/skills/configure-dev-environment/references/nexus.md` before asking for values or applying changes.
 
-Use the shared command `python -m tools.sdd_cli configure`.
+Use the new modular CLI: `python -m tools.sdd_cli dev-flow` for quality-gate audits and `python -m tools.sdd_cli environment-lab` for environment setup operations.
 
 Keep this skill synchronized with `.codex/skills/_shared/delivery-contract.md` and the non-OpenSpec delivery-flow skills. When behavior differs, delivery-flow skills are authoritative.
 
@@ -27,7 +27,7 @@ Safety:
 
 ## Workflow
 
-1. Run `AuditQualityGates` to verify package/deploy workflow presence.
+1. Run `python -m tools.sdd_cli dev-flow audit-skill-contracts` to verify package/deploy workflow presence.
 2. Ask for Nexus service account, password/token, local Nexus URL, and repository name only when configuring artifact publishing or repository validation.
 3. When values are missing, explain how to create the Nexus raw hosted repository, create a Nexus service account, add Gitea Actions secrets, include official documentation links, and provide validation commands.
 4. Guide the user to store Nexus credentials as Gitea Actions secrets for CI and in ignored `.codex/client-tools.local.json` for local repository checks.

@@ -1,6 +1,6 @@
 """Shared delivery helper reference.
 
-Canonical runtime: ``python -m tools.sdd_cli delivery <Mode> ...``.
+Canonical runtime: ``python -m tools.sdd_cli dev-flow <subcommand> ...``.
 """
 
 DELIVERY_MODES = [

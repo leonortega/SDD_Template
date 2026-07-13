@@ -20,7 +20,7 @@ Also apply `docs/context-management.md` for durable configuration findings, tick
 When this skill triggers:
 
 1. Read `.codex/skills/configure-dev-environment/SKILL.md`.
-2. Route immediately to `$configure-dev-environment` and follow its full mode sequence when `config infra` or full setup is requested. All configure modes in `tools/sdd_cli/cli.py` `CONFIGURE_MODE_NAMES` are non-optional for complete setup: `AcquireProjectGuidance`, `Audit`, `AuditQualityGates`, `AuditRecommendedTools`, `BuildGiteaActionsImages`, `DiscoverProjectGuidance`, `EnsureDeliveryContext`, `EnsureRancherDesktopCluster`, `EnsureRancherDesktopHeadlamp`, `EnsureRancherDesktopPortForwards`, `InitLocalFiles`, `InitProjectProfile`, `InitQualityGateTemplates`, `MapProjectGuidanceStep`, `SetClientTools`, `SetGiteaBranchProtection`, `SetGiteaRunner`, `SetMonitoringEnv`, `SetOpenProjectEnv`, `SetProjectStack`, `SetQualityConfig`, `SetRecommendedTools`, `ShowEnvironmentUrls`, `SplitInfraEnv`, `SyncWorktreeLocalConfig`, `ValidateObservability`, `ValidateGiteaActionsRunner`.
+2. Route immediately to `$configure-dev-environment` and follow its full mode sequence when `config infra` or full setup is requested. All setup modes have been remapped to the new modular CLI: `guidance` (`acquire`, `discover`, `map-step`, `set-recommended-tools`, `write-skill-index`), `environment-lab` (`audit`, `init-local-files`, `init-project-profile`, `init-quality-templates`, `set-client-tools`, `set-openproject-env`, `set-monitoring-env`, `set-gitea-runner-env`, `set-gitea-branch-protection`, `set-project-stack`, `set-quality-config`, `show-environment-urls`, `split-infra-env`, `sync-worktree-config`, `validate-observability`, `validate-gitea-runner`, `build-gitea-images`, `ensure-rancher-cluster`, `ensure-rancher-headlamp`, `ensure-rancher-port-forwards`), `dev-flow` (`audit-skill-contracts`, `ensure-delivery-context`), and `tool-installer` (`ensure-codebase-memory`, `ensure-quality-tools`).
 3. Follow the skill-specific order defined in `configure-dev-environment` for the requested scope: initialization, provider prerequisites, audit, domain-specific configuration, validation, and observability checks.
 4. During infra status checks for the core stack, use the compose env file explicitly:
 
@@ -37,7 +37,7 @@ trivy image --download-db-only
 5. If the caller explicitly asked for the legacy script path, use the active shared script path instead:
 
 ```text
-python -m tools.sdd_cli configure Audit
+python -m tools.sdd_cli environment-lab audit
 ```
 
 Keep using the same safety rules as `$configure-dev-environment`: no secrets in tracked files, no Docker secret extraction, and no automatic infra startup or shutdown. Explicit `config infra` may auto-enable Docker Desktop Kubernetes through `EnsureRancherDesktopCluster`, install Headlamp through `EnsureRancherDesktopHeadlamp`, and start stable local browser mappings through `EnsureRancherDesktopPortForwards`; plain `Audit` remains read-only.

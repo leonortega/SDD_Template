@@ -19,7 +19,7 @@ This skill owns initial creation of ignored `.codex/delivery-context.local.json`
 
 ## Workflow Telemetry
 
-Capture UTC start time before the first ticket-specific mutation. When OpenProject time-entry telemetry is available, create or update the `dev-flow-start-ticket` time entry with marker `IA generated workflow telemetry: {ticketKey}:dev-flow-start-ticket`. If direct time telemetry is unavailable, initialize fallback `.codex/agent-telemetry.local.jsonl` and append a row with `python -m tools.sdd_cli delivery -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}`. On resume or idempotent reuse, append or update another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-flow-start-ticket`, `agentRole=ticketStarter`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If a blocker happens before a ticket key is selected, report that no telemetry row was possible.
+Capture UTC start time before the first ticket-specific mutation. When OpenProject time-entry telemetry is available, create or update the `dev-flow-start-ticket` time entry with marker `IA generated workflow telemetry: {ticketKey}:dev-flow-start-ticket`. If direct time telemetry is unavailable, initialize fallback `.codex/agent-telemetry.local.jsonl` and append a row with `python -m tools.sdd_cli dev-flow append-telemetry -TicketKey {ticketKey}`. On resume or idempotent reuse, append or update another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-flow-start-ticket`, `agentRole=ticketStarter`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If a blocker happens before a ticket key is selected, report that no telemetry row was possible.
 
 ## Configuration
 
@@ -45,8 +45,7 @@ Required stack context:
 Run the read-only recommendation audit before Git, ticket provider, or OpenSpec mutation when any of these files are missing, appear unconfigured, or this is the first ticket start in a fresh repository:
 
 ```bash
-python -m tools.sdd_cli configure AuditRecommendedTools
-python -m tools.sdd_cli configure DiscoverProjectGuidance
+python -m tools.sdd_cli guidance discover
 ```
 
 If the audit reports any `stack-context.*` warning, if `DiscoverProjectGuidance` reports missing suggested skills or guidance that the operator has not reviewed, or if the required files are missing or placeholder-only, stop before branch creation, OpenProject description updates, comments, state changes, ticket-lock writes, or OpenSpec proposal creation. Route to `$configure-dev-environment` plus `project-guidance-discover` to define the stack/tooling docs, complete `openspec/config.yaml`, research extra useful guidance from detected project signals, confirm or dismiss suggestions, and update the local recommendation catalog first.
@@ -70,7 +69,7 @@ If the audit reports any `stack-context.*` warning, if `DiscoverProjectGuidance`
    - `blocked`: stop before branch creation, ticket status updates, comments, ticket-lock writes, or OpenSpec proposal creation. Report the missing product or technical intent.
 3. Run the Stack Context Preflight. If stack/tooling docs, OpenSpec config, local project guidance catalog, or project guidance discovery review are missing or drifted, stop and route to `configure-dev-environment` and `project-guidance-discover` before mutating Git, ticket provider, or OpenSpec.
 4. Check `git status --porcelain`. If any output exists, stop and report changed files.
-5. Prepare workflow telemetry for the selected ticket. Prefer OpenProject time entries with the configured `openProject.timeTelemetry` activity. Initialize and clear `.codex/agent-telemetry.local.jsonl` with `python -m tools.sdd_cli delivery -Mode InitializeWorkflowTelemetry -TicketKey {ticketKey}` only when the OpenProject time-entry path is unavailable. Do not initialize telemetry when only listing Todo tickets.
+5. Prepare workflow telemetry for the selected ticket. Prefer OpenProject time entries with the configured `openProject.timeTelemetry` activity. Initialize and clear `.codex/agent-telemetry.local.jsonl` with `python -m tools.sdd_cli dev-flow init-telemetry -TicketKey {ticketKey}` only when the OpenProject time-entry path is unavailable. Do not initialize telemetry when only listing Todo tickets.
 6. Switch to the configured base branch and run `git pull --ff-only`.
 7. Create or reuse the configured branch name.
 8. Pre-scan branch conflicts before creating or switching branches:

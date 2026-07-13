@@ -1,6 +1,6 @@
 """Stack-neutral configure helper reference.
 
-Canonical runtime: ``python -m tools.sdd_cli configure <Mode> ...``
+Canonical runtimes: ``python -m tools.sdd_cli environment-lab <subcommand> ...``, ``python -m tools.sdd_cli guidance <subcommand> ...``, ``python -m tools.sdd_cli dev-flow <subcommand> ...``, or ``python -m tools.sdd_cli tool-installer <subcommand> ...``.
 
 This module documents the Python-native configure surface that replaced the
 repo-owned Python router. Tests read this file as a lightweight reference

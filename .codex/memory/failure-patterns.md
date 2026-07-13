@@ -27,13 +27,13 @@ First consumer-repo `config infra` stopped because configure skills required mod
 - Source: user-reported installed target failure on 2026-06-25; verified against `README.md` and `tools/sdd_cli/cli.py`
 - Last verified: 2026-06-25
 
-The installer excludes `tools/sdd_cli/tests`, so installed consumer repositories cannot run `python -m unittest tools.sdd_cli.tests.test_cli`. README validation commands for installed targets must use installed CLI smoke checks such as `python -m tools.sdd_cli configure Audit`; helper unit tests are lab-repository-only.
+The installer excludes `tools/sdd_cli/tests`, so installed consumer repositories cannot run `python -m unittest tools.sdd_cli.tests.test_cli`. README validation commands for installed targets must use installed CLI smoke checks such as `python -m tools.sdd_cli environment-lab audit`; helper unit tests are lab-repository-only.
 
 ### Tool Update Must Exclude Runtime Database Directories
 
 - Type: Pattern
 - Status: Active
-- Source: user-reported update blocker on 2026-06-25; verified against `tools/sdd_cli/cli.py`, `tools/sdd_cli/tests/test_cli.py`, and `python -m tools.sdd_cli tool update --target C:\Endava\EndevLocal\Personal\SDD_test --source C:\Endava\EndevLocal\Personal\SDD_template`
+- Source: user-reported update blocker on 2026-06-25; verified against `tools/sdd_cli/cli.py`, `tools/sdd_cli/tests/test_cli.py`, and `python -m tools.sdd_cli template-installer update --target C:\Endava\EndevLocal\Personal\SDD_test --source C:\Endava\EndevLocal\Personal\SDD_template`
 - Last verified: 2026-06-25
 
 The tool updater packages files under include roots unless `is_sdd_tool_excluded` filters them. OpenProject runtime DB paths such as `infra/openproject/openproject/pgdata/**` must be excluded like `data` and `logs`, or updates can stop with unmanaged-collision blockers in consumer repositories.

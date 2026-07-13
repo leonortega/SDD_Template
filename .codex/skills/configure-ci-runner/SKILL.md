@@ -13,7 +13,7 @@ Configure the Gitea Actions runner used for ticket PR validation and deployment 
 
 Read `.codex/skills/configure-dev-environment/references/gitea-runner.md` before asking for values or applying changes.
 
-Use the shared command `python -m tools.sdd_cli configure`.
+Use the new modular CLI: `python -m tools.sdd_cli environment-lab` for shared configure operations.
 
 Apply `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md` before changing CI validation or handoff behavior.
 
@@ -25,11 +25,11 @@ Safety:
 
 ## Workflow
 
-1. Run `Audit`.
-2. Initialize `infra/gitea/runner.env` with `InitLocalFiles` only if missing.
+1. Run `python -m tools.sdd_cli environment-lab audit`.
+2. Run `python -m tools.sdd_cli environment-lab init-local-files` to initialize `infra/gitea/runner.env` only if missing.
 3. Ask for runner token/name only when missing or placeholder.
-4. Apply confirmed values with `SetGiteaRunner`.
-5. Run `BuildGiteaActionsImages` first so the Docker daemon used by the runner has the pinned local job images. This is mandatory.
+4. Run `python -m tools.sdd_cli environment-lab set-gitea-runner-env` with confirmed values.
+5. Run `python -m tools.sdd_cli environment-lab build-gitea-images` first so the Docker daemon used by the runner has the pinned local job images. This is mandatory.
 6. For old or floating Gitea/Gitea Runner images, check the current stable upstream versions, update Compose to stable patch tags, and report official sources plus migration notes.
 7. Validate runner registration only when Gitea is running.
 

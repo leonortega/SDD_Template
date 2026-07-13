@@ -15,7 +15,7 @@ Observability is mandatory for `config infra` completion. Do not leave this step
 
 Read `.codex/skills/configure-dev-environment/references/observability.md` before asking for values or applying changes.
 
-Use the shared command `python -m tools.sdd_cli configure`.
+Use the new modular CLI: `python -m tools.sdd_cli environment-lab` for shared configure operations.
 
 Apply `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md` before changing monitoring validation, dashboard behavior, or handoff evidence.
 
@@ -25,8 +25,8 @@ Safety:
 
 ## Workflow
 
-1. Run `Audit`.
-2. Use `ValidateObservability` to validate Seq, Grafana Infinity health alerts, and direct Rancher Desktop health-check readiness.
+1. Run `python -m tools.sdd_cli environment-lab audit`.
+2. Run `python -m tools.sdd_cli environment-lab validate-observability` to validate Seq, Grafana Infinity health alerts, and direct Rancher Desktop health-check readiness.
 3. Start or repair local monitoring services when needed so setup ends in a working state.
 4. Validate all required checks before completion:
 	- Seq API/health endpoint is `200`.

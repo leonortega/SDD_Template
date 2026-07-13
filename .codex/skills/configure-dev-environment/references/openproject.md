@@ -9,10 +9,10 @@ Owns:
 Use the shared script:
 
 ```bash
-python -m tools.sdd_cli configure Audit
-python -m tools.sdd_cli configure InitLocalFiles
-python -m tools.sdd_cli configure SetClientTools --values-json-file .codex/config-values.local.json
-python -m tools.sdd_cli configure SetOpenProjectEnv --values-json-file .codex/config-values.local.json
+python -m tools.sdd_cli environment-lab audit
+python -m tools.sdd_cli environment-lab init-local-files
+python -m tools.sdd_cli environment-lab set-client-tools --values-json-file .codex/config-values.local.json
+python -m tools.sdd_cli environment-lab set-openproject-env --values-json-file .codex/config-values.local.json
 ```
 
 ## Client Tool Values
@@ -48,7 +48,7 @@ Required generated value:
 
 ## Live Validation
 
-Live validation requires local infra to be running. Ask before running `python -m tools.sdd_cli infra up`.
+Live validation requires local infra to be running. Ask before running `python -m tools.sdd_cli environment-lab compose-up`.
 
 Validate with OpenProject API v3:
 

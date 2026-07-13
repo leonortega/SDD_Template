@@ -32,7 +32,7 @@ Generic TDD and Playwright skills remain available for future implementation and
 
 ## Versioned Consumer Installation
 
-This repository is the canonical SDLC tool source. Product repositories consume pinned releases through `python -m tools.sdd_cli tool install --version vMAJOR.MINOR.PATCH --target <repo>` and later `tool update` with a newer version. When `--version` is omitted, install resolves the latest final Git tag matching `vMAJOR.MINOR.PATCH` and ignores release-candidate tags.
+This repository is the canonical SDLC tool source. Product repositories consume pinned releases through `python -m tools.sdd_cli template-installer install --version vMAJOR.MINOR.PATCH --target <repo>` and later `tool update` with a newer version. When `--version` is omitted, install resolves the latest final Git tag matching `vMAJOR.MINOR.PATCH` and ignores release-candidate tags.
 
 Installed repos get only runtime workflow assets: Codex skills, provider adapters/templates, docs, OpenSpec config, infrastructure templates, workflow templates, common non-secret config, and `tools/sdd_cli`. Tool-source-only files such as CLI tests, repo memory, OpenSpec changes, eval output, telemetry, and local config are not installed.
 

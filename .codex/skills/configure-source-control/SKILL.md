@@ -13,7 +13,7 @@ Configure Gitea repository and PR automation used for ticket review, minimum app
 
 Read `.codex/skills/configure-dev-environment/references/gitea-pr.md` before asking for values or applying changes.
 
-Use the shared command `python -m tools.sdd_cli configure`.
+Use the new modular CLI: `python -m tools.sdd_cli environment-lab` for shared configure operations.
 
 Apply `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md` before changing review, label, ticket, or handoff behavior.
 
@@ -25,11 +25,11 @@ Safety:
 
 ## Workflow
 
-1. Run `Audit`.
+1. Run `python -m tools.sdd_cli environment-lab audit`.
 2. Infer owner/repo from `git remote get-url origin` when possible.
 3. Ask only for missing or placeholder Gitea/PR values.
-4. Apply confirmed `.codex/client-tools.local.json` values with `SetClientTools`, including `pr.minimumApprovals.dev` and `pr.minimumApprovals.main`.
-5. Apply live Gitea branch protection approval counts with `SetGiteaBranchProtection` when Gitea is running and the user asked to configure Gitea.
+4. Run `python -m tools.sdd_cli environment-lab set-client-tools` with confirmed `.codex/client-tools.local.json` values, including `pr.minimumApprovals.dev` and `pr.minimumApprovals.main`.
+5. Run `python -m tools.sdd_cli environment-lab set-gitea-branch-protection` when Gitea is running and the user asked to configure Gitea.
 6. Validate token, repo, collaborators, branch protection approval minimum, and labels only when Gitea is running.
 
 ## Output
