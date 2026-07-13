@@ -133,7 +133,7 @@ ALL_CONFIGURE_MODES = [
     "AuditRecommendedTools",
     "BuildGiteaActionsImages",
     "DiscoverProjectGuidance",
-    "EnsureCodegraph",
+    "EnsureCodebaseMemory",
     "EnsureDeliveryContext",
     "EnsureLefthook",
     "EnsureQualityTools",
@@ -165,7 +165,7 @@ INFRA_CONFIG_MODES = [
     "InitLocalFiles",
     "InitProjectProfile",
     "InitQualityGateTemplates",
-    "EnsureCodegraph",
+    "EnsureCodebaseMemory",
     "EnsureLefthook",
     "EnsureQualityTools",
     "EnsureRancherDesktopCluster",
@@ -546,7 +546,7 @@ def run_configure_mode(mode: str, root: Path, values: dict[str, Any], dry_run: b
         "AuditRecommendedTools": configure_audit_recommended_tools,
         "BuildGiteaActionsImages": configure_build_gitea_actions_images,
         "DiscoverProjectGuidance": configure_discover_project_guidance,
-        "EnsureCodegraph": configure_ensure_codegraph,
+        "EnsureCodebaseMemory": configure_ensure_codebase_memory,
         "EnsureDeliveryContext": configure_ensure_delivery_context,
         "EnsureLefthook": configure_ensure_lefthook,
         "EnsureQualityTools": configure_ensure_quality_tools,
@@ -1692,6 +1692,73 @@ def configure_ensure_lefthook(root: Path, values: dict[str, Any], dry_run: bool)
         result["valid"] = False
         return result
     
+    result["valid"] = True
+    return result
+
+
+def configure_ensure_codebase_memory(root: Path, values: dict[str, Any], dry_run: bool) -> dict[str, Any]:
+    """Ensure codebase-memory-mcp is registered in .vscode/mcp.json."""
+    result = configure_result("EnsureCodebaseMemory", dry_run, write_enabled=not dry_run)
+    mcp_path = root / ".vscode" / "mcp.json"
+    shim_path = root / "tools" / "codebase_memory_mcp" / "mcp_cap_shim.py"
+
+    if not shim_path.exists():
+        add_bucket_item(result["findings"], "tools/codebase_memory_mcp/mcp_cap_shim.py", "missing.shim",
+                         "codebase-memory-mcp shim script not found. Run install.ps1 or download the binary first.", "error", "pre-start")
+        result["valid"] = False
+        return result
+
+    server_name = "codebase-memory-mcp"
+    expected_entry = {
+        "type": "stdio",
+        "command": sys.executable,
+        "args": [str(shim_path)],
+    }
+
+    if not mcp_path.exists():
+        if dry_run:
+            result["actions"].append({"path": ".vscode/mcp.json", "key": "create", "severity": "info",
+                                      "message": f"Would create .vscode/mcp.json with {server_name} server.", "phase": "apply"})
+            result["valid"] = True
+            return result
+        config: dict[str, Any] = {"servers": {}}
+    else:
+        try:
+            config = read_json(mcp_path, optional=False)
+        except Exception:
+            add_bucket_item(result["findings"], ".vscode/mcp.json", "parse.error",
+                             "Could not parse existing .vscode/mcp.json.", "error", "pre-start")
+            result["valid"] = False
+            return result
+
+    servers = config.get("servers", {})
+    if not isinstance(servers, dict):
+        add_bucket_item(result["findings"], ".vscode/mcp.json", "invalid.servers",
+                         "servers key must be a JSON object.", "error", "pre-start")
+        result["valid"] = False
+        return result
+
+    existing = servers.get(server_name)
+    if existing == expected_entry:
+        result["actions"].append({"path": ".vscode/mcp.json", "key": server_name, "severity": "info",
+                                  "message": f"{server_name} is already configured in .vscode/mcp.json.", "phase": "apply"})
+        result["valid"] = True
+        return result
+
+    if existing is not None:
+        changed_keys = [k for k in expected_entry if existing.get(k) != expected_entry[k]]
+        result["actions"].append({"path": ".vscode/mcp.json", "key": server_name, "severity": "info",
+                                  "message": f"Updating {server_name} config (changed: {', '.join(changed_keys)}).", "phase": "apply"})
+    else:
+        result["actions"].append({"path": ".vscode/mcp.json", "key": server_name, "severity": "info",
+                                  "message": f"Adding {server_name} server to .vscode/mcp.json.", "phase": "apply"})
+
+    if not dry_run:
+        servers[server_name] = expected_entry
+        config["servers"] = servers
+        mcp_path.parent.mkdir(parents=True, exist_ok=True)
+        write_json(mcp_path, config)
+
     result["valid"] = True
     return result
 

@@ -24,22 +24,9 @@ The product stack is currently unselected. Keep prerequisites limited to the del
 
 ## MCPs
 
-- Codegraph for codebase context indexing.
-  - Prerequisite: Node.js 18+ with npx.
-    - Install:
-      - Windows: download from https://nodejs.org/en/download or use Windows Package Manager `winget install OpenJS.NodeJS`
-      - macOS: use Homebrew `brew install node`
-      - Linux: install the distro package for Node.js 18+ or use NodeSource, for example `curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt install -y nodejs`
-    - Validate:
-      - `node --version`
-      - `npm --version`
-      - `npx --version`
-      - On Windows PowerShell, direct `npx` can be enabled with:
-        - `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned`
-      - As a fallback, `npx.cmd --version` also works if the PowerShell wrapper is blocked.
-  - Install: configured in `.codex/config.toml` through `@colbymchenry/codegraph@1.1.1` via `npx`.
-  - Validate: confirm the `.codex/config.toml` entry is present and `npx --yes @colbymchenry/codegraph@1.1.1 serve --mcp` starts successfully.
-  - Note: telemetry is disabled via `CODEGRAPH_TELEMETRY=0` and `DO_NOT_TRACK=1`.
+- codebase-memory-mcp for codebase context indexing.
+  - Install: system/binary installer.
+  - Validate: confirm the installed `codebase-memory-mcp` binary and agent config are present.
 
 ## Future Stack Tools
 

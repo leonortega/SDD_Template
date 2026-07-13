@@ -6,13 +6,12 @@
       "args": [
         "C:\\LeonRepository\\SDD_Template\\tools\\bm25s_flashrank\\mcp_doc_research.py"
       ]
-    }
-  },
-  "mcpServers": {
-    "monorepo-docs-search": {
-      "command": "C:\\Users\\marce\\.mcp_shared_venv\\Scripts\\python.exe",
+    },
+    "codebase-memory-mcp": {
+      "type": "stdio",
+      "command": "C:\\Users\\marce\\AppData\\Local\\Microsoft\\WindowsApps\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\python.exe",
       "args": [
-        "c:\\LeonRepository\\SDD_Template\\tools\\bm25s_flashrank\\mcp_doc_research.py"
+        "C:\\LeonRepository\\SDD_Template\\tools\\codebase_memory_mcp\\mcp_cap_shim.py"
       ]
     }
   }

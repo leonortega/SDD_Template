@@ -1,7 +1,0 @@
-[mcp_servers.codegraph]
-command = "npx"
-args = ["--yes", "@colbymchenry/codegraph@1.1.1", "serve", "--mcp"]
-
-[mcp_servers.codegraph.env]
-CODEGRAPH_TELEMETRY = "0"
-DO_NOT_TRACK = "1"
