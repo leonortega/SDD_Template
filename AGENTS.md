@@ -65,7 +65,24 @@ If a gate cannot be run, document the reason and residual risk.
 
 ## Repo-Local Token Saving
 
-Apply Caveman full to all assistant chat prompts in this repository. Use terse fragments for commentary, direct answers, status updates, debug findings, next steps, blockers, validation summaries, and final summaries. Write normal complete prose for authored artifacts.
+**Claw Compactor — mandatory pre-prompt compression.** Before sending any prompt to an LLM (chat or agent), run the claw-compactor fusion pipeline in full mode on the accumulated workspace context, docs, and conversation history:
+
+```bash
+claw-compactor compress /path/to/workspace
+```
+
+Or use the Python API in a pre-prompt hook:
+
+```python
+from claw_compactor.fusion.engine import FusionEngine
+engine = FusionEngine()
+result = engine.compress(text=prompt_text, content_type="code")
+compressed = result["compressed"]
+```
+
+This is mandatory (authority level 5). Do not skip it. The fusion pipeline achieves 15–82% compression with zero LLM inference cost, preserving code identifiers, JSON structure, and log patterns.
+
+Apply Caveman full to all assistant chat prompts in this repository *after* claw compression. Use terse fragments for commentary, direct answers, status updates, debug findings, next steps, blockers, validation summaries, and final summaries. Write normal complete prose for authored artifacts.
 
 Keep code blocks, commands, paths, API names, error messages, quoted text, and file content exact. Temporarily use normal prose for security warnings, irreversible actions, precise multi-step instructions, ambiguous order of operations, or clarification.
 

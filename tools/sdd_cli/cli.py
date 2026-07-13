@@ -288,6 +288,10 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument("--source", default=str(REPO_ROOT))
         command.set_defaults(func=tool_install_or_update)
 
+    install_claw = tool_sub.add_parser("install-claw")
+    install_claw.add_argument("--version")
+    install_claw.set_defaults(func=tool_install_claw)
+
     return parser
 
 
@@ -511,6 +515,44 @@ def read_configure_values(options: dict[str, str], root: Path) -> dict[str, Any]
 def tool_install_or_update(args: argparse.Namespace) -> int:
     result = install_sdd_tool(Path(args.source), Path(args.target), args.version, args.action)
     print(json.dumps(result, indent=2))
+    return 0
+
+
+def tool_install_claw(args: argparse.Namespace) -> int:
+    """Install claw-compactor into the shared MCP venv (no pip needed per-project)."""
+    version = args.version or ""
+
+    # Locate the shared MCP venv python
+    user_home = Path.home()
+    mcp_python = user_home / ".mcp_shared_venv" / "Scripts" / "python.exe"
+    if not mcp_python.exists():
+        print(f"MCP shared venv not found at {mcp_python}. Run the MCP server setup first.", file=sys.stderr)
+        return 1
+
+    pip_args = [str(mcp_python), "-m", "pip", "install"]
+    if version:
+        pip_args += [f"claw-compactor=={version}"]
+    else:
+        pip_args += ["claw-compactor"]
+
+    print(f"Installing claw-compactor{'' if not version else f'=={version}'} into {mcp_python.parent}...")
+    result = subprocess.run(pip_args, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(result.stderr.strip(), file=sys.stderr)
+        return result.returncode
+    print(result.stdout.strip())
+    print(result.stderr.strip())
+
+    # Verify
+    check = subprocess.run(
+        [str(mcp_python), "-m", "claw_compactor.cli", "--help"],
+        capture_output=True, text=True,
+    )
+    if check.returncode == 0:
+        print("claw-compactor installed and verified.")
+    else:
+        print("claw-compactor installed but CLI verification failed.", file=sys.stderr)
+        print(check.stderr.strip(), file=sys.stderr)
     return 0
 
 
