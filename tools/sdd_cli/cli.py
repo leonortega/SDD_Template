@@ -82,6 +82,7 @@ SDD_TOOL_INCLUDE_DIRS = [
     "docs",
     "infra",
     "tools",
+    "tools/bm25s_flashrank",
     ".vscode",
 ]
 # Directories that should be created even if empty (no files to copy)
@@ -983,7 +984,9 @@ def configure_set_env_mode(root: Path, mode: str, target_relative: str, values: 
 
 def run_native(command: list[str], root: Path, timeout: int = 30) -> dict[str, Any]:
     try:
-        completed = subprocess.run(command, cwd=root, check=False, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout)
+        # Convert command list to string for shell execution on Windows to properly resolve executables in PATH
+        command_str = " ".join(f'"{arg}"' if " " in arg else arg for arg in command)
+        completed = subprocess.run(command_str, cwd=root, check=False, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout, env=os.environ, shell=True)
         return {"returncode": completed.returncode, "stdout": (completed.stdout or "").strip(), "stderr": (completed.stderr or "").strip()}
     except FileNotFoundError:
         return {"returncode": 127, "stdout": "", "stderr": f"{command[0]} is missing."}
