@@ -1,6 +1,6 @@
 import os
-import sys
 import time
+from typing import Any
 from mcp.server.fastmcp import FastMCP
 import bm25s
 from flashrank import Ranker, RerankRequest
@@ -17,7 +17,7 @@ try:
 except Exception:
     ranker = Ranker(model_name="ms-marco-MiniLM-L-12-v2")
 
-_INDEX_CACHE = {
+_INDEX_CACHE: dict[str, Any] = {
     "last_project": None,
     "last_check_time": 0,
     "max_mtime": 0,
@@ -107,7 +107,7 @@ def build_monorepo_index(repo_path, project_filter=None):
     return retriever, _INDEX_CACHE["indexed_data"]
 
 @mcp.tool()
-def search_documentation(query: str, subproject: str = None, force_refresh: bool = False) -> str:
+def search_documentation(query: str, subproject: str | None = None, force_refresh: bool = False) -> str:
     """
     Search across all Markdown (.md, .mdx) files in the monorepo.
     

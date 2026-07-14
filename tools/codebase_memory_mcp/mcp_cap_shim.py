@@ -5,10 +5,11 @@ import json
 import subprocess
 import sys
 import threading
+from typing import Any
 
 REAL_BINARY = r"C:\Users\marce\AppData\Local\Programs\codebase-memory-mcp\codebase-memory-mcp.exe"
 
-HANDLED = {
+HANDLED: dict[str, dict[str, Any]] = {
     "resources/list": {"resources": [], "nextCursor": None},
     "resources/templates/list": {"resourceTemplates": [], "nextCursor": None},
     "prompts/list": {"prompts": [], "nextCursor": None},

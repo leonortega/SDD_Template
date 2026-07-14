@@ -4,19 +4,15 @@ from __future__ import annotations
 
 import http.client
 import json
-import os
 import subprocess
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 from ._shared import (
     REPO_ROOT,
-    CliError,
     add_bucket_item,
-    add_env_drift_findings,
     configure_result,
     configure_set_env_mode,
     copy_seed_file,
@@ -25,7 +21,7 @@ from ._shared import (
     http_status,
     local_path,
     nested,
-    new_configure_result,
+    normalize_stack_domain,
     read_env_file,
     read_json,
     run_native,
@@ -386,12 +382,14 @@ def set_gitea_branch_protection(root: Path, dry_run: bool = False) -> dict[str, 
 
 # ── Observability ────────────────────────────────────────────────────────
 
-def validate_observability(root: Path, dry_run: bool = False) -> dict[str, Any]:
+def validate_observability(root: Path, dry_run: bool = False, http_status_fn: Any = None) -> dict[str, Any]:
     """Validate Seq and Grafana endpoints."""
-    return _observability_checks(root, dry_run, "ValidateObservability")
+    return _observability_checks(root, dry_run, "ValidateObservability", http_status_fn=http_status_fn)
 
 
-def _observability_checks(root: Path, dry_run: bool, mode: str) -> dict[str, Any]:
+def _observability_checks(root: Path, dry_run: bool, mode: str, http_status_fn: Any = None) -> dict[str, Any]:
+    if http_status_fn is None:
+        http_status_fn = http_status
     result = configure_result(mode, dry_run, write_enabled=not dry_run)
     monitoring_path = root / "infra" / "monitoring" / "variables.env"
     if not monitoring_path.exists():
@@ -399,7 +397,7 @@ def _observability_checks(root: Path, dry_run: bool, mode: str) -> dict[str, Any
     monitoring = read_env_file(monitoring_path)
     seq_url = monitoring.get("SEQ_URL") or "http://localhost:5341"
     if not dry_run:
-        status, error = http_status(seq_url.rstrip("/") + "/api")
+        status, error = http_status_fn(seq_url.rstrip("/") + "/api")
         if status == 200:
             result["actions"].append({"path": "seq", "key": "endpoint.ready", "severity": "info",
                                       "message": "Seq endpoint is reachable.", "phase": "post-start"})
@@ -417,7 +415,7 @@ def _observability_checks(root: Path, dry_run: bool, mode: str) -> dict[str, Any
             add_bucket_item(result["findings"], "infra/monitoring/variables.env", key,
                             f"{key} is required for the Seq error-log alert.", "warning", "pre-start")
     if not dry_run:
-        grafana_status, grafana_error = http_status("http://localhost:3001/api/health")
+        grafana_status, grafana_error = http_status_fn("http://localhost:3001/api/health")
         if grafana_status in {200, 401}:
             result["actions"].append({"path": "grafana", "key": "health", "severity": "info",
                                       "message": "Grafana health endpoint responded.", "phase": "post-start"})
@@ -466,25 +464,12 @@ def set_project_stack(root: Path, values: dict[str, Any], dry_run: bool = False)
                 "errors": ["values.frontend, values.backend, or values.database is required."]}
     path = root / ".codex" / "project-profile.local.json"
     current = read_json(path, optional=True)
-    stack = current.get("stack") if isinstance(current.get("stack"), dict) else {}
-
-    def normalize_domain(value: Any) -> dict[str, Any]:
-        if isinstance(value, dict):
-            raw = str(value.get("value", ""))
-            notes = value.get("notes")
-        else:
-            raw = "" if value is None else str(value)
-            notes = None
-        clean = raw.strip()
-        applies = clean.lower() not in {"", "none", "no", "n/a", "na", "not applicable"}
-        result: dict[str, Any] = {"applies": applies, "value": clean if applies else ""}
-        if isinstance(notes, str) and notes.strip():
-            result["notes"] = notes.strip()
-        return result
+    stack_raw = current.get("stack")
+    stack: dict[str, Any] = stack_raw if isinstance(stack_raw, dict) else {}
 
     for domain in ("frontend", "backend", "database"):
         if domain in values:
-            stack[domain] = normalize_domain(values.get(domain))
+            stack[domain] = normalize_stack_domain(values.get(domain))
     stack.setdefault("languages", [])
     stack.setdefault("frameworks", [])
     stack.setdefault("testFrameworks", [])
@@ -492,7 +477,7 @@ def set_project_stack(root: Path, values: dict[str, Any], dry_run: bool = False)
         domain: nested(stack, domain, "value") or ""
         for domain in ("frontend", "backend", "database")
     }
-    if any(normalize_domain(stack["rawInputs"].get(domain))["applies"]
+    if any(normalize_stack_domain(stack["rawInputs"].get(domain))["applies"]
            for domain in ("frontend", "backend", "database")):
         stack["metadataValidationStatus"] = "needs-user-validation"
     else:
@@ -526,7 +511,8 @@ def set_project_stack_metadata(root: Path, values: dict[str, Any], dry_run: bool
                 "errors": ["metadataValidationStatus must be needs-user-validation or validated."]}
     path = root / ".codex" / "project-profile.local.json"
     current = read_json(path, optional=True)
-    stack = current.get("stack") if isinstance(current.get("stack"), dict) else {}
+    stack_raw = current.get("stack")
+    stack: dict[str, Any] = stack_raw if isinstance(stack_raw, dict) else {}
     stack["metadata"] = metadata
     stack["metadataValidationStatus"] = status
     current["$schema"] = current.get("$schema", "./project-profile.schema.json")
@@ -694,7 +680,7 @@ def validate_gitea_runner(root: Path, dry_run: bool = False) -> dict[str, Any]:
 def run_environment_lab(args: list[str]) -> int:
     """CLI entry point for environment-lab commands."""
     import json as _json
-    from ._shared import parse_pairs, trim_remainder
+    from ._shared import parse_pairs
 
     if not args:
         print("Available: setup-lab, compose-up, compose-down, init-local-files, init-project-profile, "

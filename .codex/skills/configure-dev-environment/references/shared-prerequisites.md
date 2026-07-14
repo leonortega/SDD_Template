@@ -24,7 +24,10 @@ The product stack is currently unselected. Keep prerequisites limited to the del
 
 ## MCPs
 
-- codebase-memory-mcp for codebase context indexing.
+- **monorepo-docs-search** for documentation search across `.md`/`.mdx` files using BM25 + FlashRank.
+  - Install: `python tools/bm25s_flashrank/setup_mcp.py`
+  - Validate: check `.vscode/mcp.json` for `servers.monorepo-docs-search` entry.
+- **codebase-memory-mcp** for codebase context indexing.
   - Install: system/binary installer.
   - Validate: confirm the installed `codebase-memory-mcp` binary and agent config are present.
 

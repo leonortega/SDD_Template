@@ -52,7 +52,6 @@ def _update_cline_mcp_settings(path: Path, mcp_name: str, server_config: dict) -
 
     servers = data.setdefault("mcpServers", {})
     if mcp_name in servers:
-        existing = servers[mcp_name]
         _replace_path_values(servers, server_config["command"], server_config["args"][0])
     else:
         servers[mcp_name] = server_config

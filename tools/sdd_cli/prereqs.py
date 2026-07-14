@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import subprocess
 import sys
-from pathlib import Path
 from typing import Any
 
 from ._shared import REPO_ROOT, PYTHON_REQUIRES, CliError, run_native
@@ -68,7 +66,10 @@ def enable_powershell_execution_policy() -> dict[str, Any]:
     return {
         "command": "enable-powershell",
         "valid": result["returncode"] == 0,
-        "message": "PowerShell execution policy set to RemoteSigned." if result["returncode"] == 0 else result["stderr"],
+        "message": (
+            "PowerShell execution policy set to RemoteSigned." if result["returncode"] == 0
+            else result["stderr"]
+        ),
     }
 
 
