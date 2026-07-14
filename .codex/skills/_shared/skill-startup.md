@@ -56,7 +56,7 @@ Use memory only for recall and discovery. Verify task-critical facts against the
 - Use `python -m tools.sdd_cli memory-search search --query <symptom>` for symptom-driven memory lookup when a task mentions or reveals an error, blocker, failed command, deploy issue, PR feedback, QA failure, configuration mismatch, or local tooling problem.
 - Follow the mandatory MCP routing contract in `.codex/mcp-instructions.md`. Docs/markdown → `monorepo-docs-search`, source code → `codebase-memory-mcp`. Do not use raw grep as the first approach.
 - Apply stable markers, ticket context locks, rerun behavior, artifact lineage, release manifests, versioning, PR labels, and failure rules from `.codex/skills/_shared/delivery-contract.md`.
-- Apply the merged project profile for ticket key format and `.codex/delivery-policy.json` for `agentOptimization` defaults such as retry limits, prompt-cache ordering, telemetry output, and workflow eval paths when the platform exposes the needed data.
+- Apply the merged project profile for ticket key format and `.codex/delivery-policy.json` for `agentOptimization` defaults such as retry limits, prompt-cache ordering, telemetry output, and Promptfoo eval paths when the platform exposes the needed data.
 - Use `python -m tools.sdd_cli dev-flow <subcommand>` for deterministic mechanics when the skill names helper functions.
 - Never print, commit, paste into tickets, or store real tokens, cookies, session values, Azure credentials, Nexus credentials, Gitea tokens, OpenProject tokens, secret-bearing URLs, or sensitive payloads.
 

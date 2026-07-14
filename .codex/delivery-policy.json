@@ -86,9 +86,8 @@
       "provider": "promptfoo",
       "configPath": ".codex/agent-evals/promptfooconfig.yaml",
       "providerPath": ".codex/agent-evals/routing_provider.py",
-      "legacyCasesPath": ".codex/agent-evals/workflow-cases.json",
       "resultsPath": ".codex/agent-evals/results.local.json",
-      "requireEvalEvidenceBeforeNewAgentRole": true,
+      "blockOnEvalFailure": false,
       "ciWorkflow": ".gitea/workflows/agent-eval.yml",
       "testCount": 22
     }

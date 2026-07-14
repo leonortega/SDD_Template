@@ -37,7 +37,7 @@ Provider-supported environment variables may override local JSON when present. R
 
 ## Workflow
 
-Run preflight, main/tag promotion, PROD deployment, PROD verification, ticket-provider results, post-PROD retrospective, and release handoff steps in order. Do not continue to the next step until the prior validation evidence is present.
+Run preflight, main/tag promotion, PROD deployment, PROD verification, ticket-provider results, post-PROD eval, post-PROD retrospective, and release handoff steps in order. Do not continue to the next step until the prior validation evidence is present.
 
 ## Preflight
 
@@ -162,17 +162,37 @@ Add or update the PROD result on every included ticket. The comment must include
 
 Only write a success result after the workflow passed and direct PROD page plus `/health` verification passed. If app checks fail, write a failure comment on the primary ticket and stop. If only local monitoring is unavailable, deployment may still pass, but every included ticket comment must state monitoring verification was unavailable.
 
+## Post-PROD Eval
+
+After successful PROD result comments are recorded for every included ticket, run the Promptfoo eval to check for routing regressions:
+
+1. Run `npx promptfoo eval --config .codex/agent-evals/promptfooconfig.yaml --no-cache`
+2. Or use the CLI runner: `python -m tools.sdd_cli agent-eval run`
+3. Read the results:
+   - **All tests pass**: report "no routing regressions detected"
+   - **Any test fails**: flag the failures for the retrospective audit
+
+Persist the eval results to `.codex/agent-evals/results.local.json` with mode `post-prod-eval`, scope set to the final release version, and the list of failures (if any).
+
+If the eval cannot run (missing tool, missing deps), report the blocker as an evidence gap but do not fail the PROD deployment — the eval is advisory, not a gate.
+
 ## Post-PROD Retrospective
 
-After successful PROD result comments are recorded for every included ticket, automatically run `dev-flow-retrospective-audit` in read-only `post-prod-ticket-release` mode for the just-promoted release. Pass the primary ticket key, included ticket list, artifact commit, final release version, PROD URL, and Nexus release manifest path or URL as the audit scope.
+After the eval completes, automatically run `dev-flow-retrospective-audit` in `post-prod-ticket-release` mode for the just-promoted release. Pass the primary ticket key, included ticket list, artifact commit, final release version, PROD URL, Nexus release manifest path or URL, and **the eval results** as evidence.
 
 This retrospective is a learning-evidence step, not a release gate. PROD success remains based on the artifact, workflow, direct PROD page, and `/health` validation above. If the retrospective cannot inspect optional evidence, report the evidence gap in the final handoff and keep the successful PROD result intact.
+
+The retrospective must include the eval summary (total, passed, failed) in its findings:
+
+- **All tests passed**: report "no routing regressions detected"
+- **Any test failed**: report each failure as an `eval-regression` finding and **recommend** running `eval-driven-improvement diagnose` as a follow-up to classify and fix the failures
 
 The retrospective must persist compact, sanitized learning evidence:
 
 - append or update local audit result data in ignored `.codex/agent-evals/results.local.json`,
 - add or reuse a compact ticket comment with marker `IA generated post-PROD retrospective: {finalVersion}`,
-- include findings, recommended durable improvements, eval coverage gaps, residual evidence gaps, and follow-up ownership when applicable.
+- include the eval summary (total, passed, failed) in the findings,
+- include recommended durable improvements, eval coverage gaps, residual evidence gaps, and follow-up ownership when applicable.
 
 The retrospective must not mutate OpenProject status, deploy, promote, tag, rewrite branches, update release manifests, create tickets, schedule automations, or apply docs, contract, skill, eval, or memory changes unless the user separately asks for apply mode. Do not include secrets, raw tool payloads, full prompts, tokens, cookies, or credential-bearing URLs in the local result or ticket comment.
 
