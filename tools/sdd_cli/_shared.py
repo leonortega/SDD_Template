@@ -35,14 +35,6 @@ ALLOWLISTED_LOCAL_CONFIG = [
     ".codex/quality.local.json",
     ".codex/tool-recommendations.local.json",
 ]
-RANCHER_PORTS = [
-    ("dev", "web", 18081),
-    ("dev", "api", 18082),
-    ("qa", "web", 18083),
-    ("qa", "api", 18084),
-    ("prod", "web", 18085),
-    ("prod", "api", 18086),
-]
 DISCOVERY_SOURCE_PRIORITY = [
     "repo-local",
     "openai-official",
@@ -112,9 +104,6 @@ SDD_TOOL_PRESERVE_FILES = {
     ".codex/memory/memory_summary.md",
     ".codex/memory/retrieval-policy.md",
 }
-RANCHER_DESKTOP_CONTEXT = "rancher-desktop"
-
-
 class CliError(RuntimeError):
     pass
 
@@ -308,22 +297,7 @@ def load_project_profile(root: Path) -> dict[str, Any]:
 
 def selected_deployment_provider(root: Path) -> str:
     profile = load_project_profile(root)
-    return nested(profile, "providers", "deployment", "id") or "azure-appservice"
-
-
-def selected_rancher(root: Path) -> bool:
-    return selected_deployment_provider(root) == "rancher-desktop"
-
-
-def rancher_port_mappings() -> list[dict[str, Any]]:
-    return [
-        {"environment": "dev", "kind": "web", "namespace": "sdd-dev", "service": "web", "localPort": 18081},
-        {"environment": "dev", "kind": "api", "namespace": "sdd-dev", "service": "api", "localPort": 18082},
-        {"environment": "qa", "kind": "web", "namespace": "sdd-qa", "service": "web", "localPort": 18083},
-        {"environment": "qa", "kind": "api", "namespace": "sdd-qa", "service": "api", "localPort": 18084},
-        {"environment": "prod", "kind": "web", "namespace": "sdd-prod", "service": "web", "localPort": 18085},
-        {"environment": "prod", "kind": "api", "namespace": "sdd-prod", "service": "api", "localPort": 18086},
-    ]
+    return nested(profile, "providers", "deployment", "id") or "docker-desktop"
 
 
 def load_tool_recommendations_catalog(root: Path) -> dict[str, Any]:
@@ -460,7 +434,6 @@ def add_env_drift_findings(root: Path, result: dict[str, Any]) -> None:
     for relative in (
         "infra/openproject/variables.env",
         "infra/monitoring/variables.env",
-        "infra/azure/variables.env",
         "infra/gitea/runner.env",
     ):
         template = env_template_values(root, relative)

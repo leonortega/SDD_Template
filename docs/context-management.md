@@ -36,7 +36,7 @@ Load only the context needed for the workflow stage.
 
 ## Freshness Checks
 
-Before mutating OpenProject, Git, Gitea, Nexus, Azure, tags, or release manifests, refresh the relevant state:
+Before mutating OpenProject, Git, Gitea, Nexus, tags, or release manifests, refresh the relevant state:
 
 - OpenProject status, ticket description, and generated comments.
 - Current Git branch, dirty state, remote branch, and tags.
@@ -80,7 +80,7 @@ Dynamic values belong near the end of the working context:
 - current user request
 - active ticket state and generated comments
 - Git branch, dirty state, commit SHA, PR state, labels, and CI status
-- Nexus manifests, Azure health checks, QA evidence, and monitoring output
+- Nexus manifests, QA evidence, and monitoring output
 - tool errors, retries, and latest observations
 
 Do not insert timestamps, random IDs, raw tool dumps, or refreshed status summaries into otherwise stable context blocks. If a run records model telemetry, use OpenProject time entries for the active ticket when the selected ticket adapter supports direct time telemetry; otherwise write to ignored local fallback output such as `.codex/agent-telemetry.local.jsonl`. Delivery stages maintain a concise generated OpenProject timing comment for the active ticket from OpenProject time entries first, or the fallback telemetry file when direct writes are unavailable, but only with per-stage outcome, duration, and UTC start/finish values; raw logs, token counts, prompts, and sensitive values stay out of OpenProject. E2E QA posts or patches the final timing comment after the E2E QA comment is verified because PROD promotion is a separate explicit release step.

@@ -1,12 +1,10 @@
-"""Environment lab: Docker Compose, env files, project profile, cluster, observability."""
+"""Environment lab: Docker Compose, env files, project profile, observability."""
 
 from __future__ import annotations
 
 import http.client
 import json
 import os
-import re
-import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -16,7 +14,6 @@ from urllib.parse import urlparse
 
 from ._shared import (
     REPO_ROOT,
-    RANCHER_DESKTOP_CONTEXT,
     CliError,
     add_bucket_item,
     add_env_drift_findings,
@@ -26,20 +23,70 @@ from ._shared import (
     ensure_seed_file,
     env_template_values,
     http_status,
-    load_project_profile,
     local_path,
     nested,
     new_configure_result,
-    port_listening,
-    rancher_port_mappings,
     read_env_file,
     read_json,
     run_native,
-    selected_deployment_provider,
-    selected_rancher,
     write_env_file,
     write_json,
 )
+
+
+# ── Setup Lab (all-in-one idempotent) ───────────────────────────────────
+
+def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Run the full lab setup in order: init, compose up, build images, validate."""
+    result = configure_result("SetupLab", dry_run, write_enabled=not dry_run)
+    steps: list[dict[str, Any]] = []
+
+    # Helper to append a step and optionally return early on failure
+    def _add_step(step_result: dict[str, Any], *, fatal: bool = True) -> dict[str, Any] | None:
+        steps.append(step_result)
+        if fatal and not dry_run and not step_result.get("valid", True):
+            result["steps"] = steps
+            result["valid"] = False
+            return result
+        return None
+
+    # 1. Init local files
+    early = _add_step(init_local_files(root, dry_run))
+    if early:
+        return early
+
+    # 2. Init project profile
+    _add_step(init_project_profile(root, dry_run), fatal=False)
+
+    # 3. Init quality templates
+    _add_step(init_quality_templates(root, dry_run), fatal=False)
+
+    # 4. Build Gitea Actions images
+    early = _add_step(build_gitea_actions_images(root, dry_run))
+    if early:
+        return early
+
+    # 5. Start compose services
+    if not dry_run:
+        early = _add_step(compose_up())
+        if early:
+            return early
+    else:
+        steps.append({"command": "compose-up", "valid": True, "dryRun": True,
+                      "message": "Skipped compose-up in dry-run mode."})
+
+    # 6. Set Gitea branch protection is skipped (requires configured API token — run separately)
+
+    # 7. Validate observability
+    _add_step(validate_observability(root, dry_run), fatal=False)
+
+    # 8. Validate Gitea runner
+    _add_step(validate_gitea_runner(root, dry_run), fatal=False)
+
+    result["steps"] = steps
+    all_valid = all(s.get("valid", True) for s in steps)
+    result["valid"] = all_valid
+    return result
 
 
 # ── Docker Compose ───────────────────────────────────────────────────────
@@ -83,7 +130,6 @@ def init_local_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
     for relative in (
         "infra/openproject/variables.env",
         "infra/monitoring/variables.env",
-        "infra/azure/variables.env",
         "infra/gitea/runner.env",
     ):
         copy_seed_file(root, relative + ".example", relative, result, dry_run)
@@ -95,7 +141,6 @@ def init_local_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
     ensure_seed_file(root, ".codex/memory/retrieval-policy.md",
                      "# Memory Retrieval And Write Policy\n\nUse memory as guidance only. "
                      "Verify against current files and live tools before acting.\n", result, dry_run)
-    _write_environment_urls(root, result, dry_run)
     result["valid"] = not any(item.get("severity") == "error" for item in result["findings"])
     return result
 
@@ -141,19 +186,19 @@ def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 "testFrameworks": [],
             },
             "providers": {
-                "ticket": {"id": "example-ticket", "adapter": ".codex/providers/ticket.example.md"},
-                "repository": {"id": "example-repository", "adapter": ".codex/providers/repo.example.md"},
-                "review": {"id": "example-review", "adapter": ".codex/providers/repo.example.md"},
-                "artifact": {"id": "example-artifact", "adapter": ".codex/providers/artifact.example.md"},
-                "deployment": {"id": "example-deployment", "adapter": ".codex/providers/deploy.example.md"},
+                "ticket": {"id": "openproject", "adapter": ".codex/providers/ticket.openproject.md"},
+                "repository": {"id": "gitea", "adapter": ".codex/providers/repo.gitea.md"},
+                "review": {"id": "gitea", "adapter": ".codex/providers/repo.gitea.md"},
+                "artifact": {"id": "nexus", "adapter": ".codex/providers/artifact.nexus.md"},
+                "deployment": {"id": "docker-desktop", "adapter": ".codex/providers/deploy.example.md"},
             },
             "workflow": {"ticketKeyPattern": "TICKET-[0-9]+", "baseBranch": "dev", "branchPrefix": "codex"},
             "quality": {"coverageMinimumPercent": 80, "gates": []},
             "adapters": {
-                "ticket": ".codex/providers/ticket.example.md",
-                "repository": ".codex/providers/repo.example.md",
-                "review": ".codex/providers/repo.example.md",
-                "artifact": ".codex/providers/artifact.example.md",
+                "ticket": ".codex/providers/ticket.openproject.md",
+                "repository": ".codex/providers/repo.gitea.md",
+                "review": ".codex/providers/repo.gitea.md",
+                "artifact": ".codex/providers/artifact.nexus.md",
                 "deployment": ".codex/providers/deploy.example.md",
             },
         }
@@ -237,7 +282,7 @@ def split_infra_env(root: Path, dry_run: bool = False) -> dict[str, Any]:
     if not source:
         return {"mode": "SplitInfraEnv", "valid": False,
                 "errors": ["Missing infra/openproject/variables.env. Run InitLocalFiles first."]}
-    for relative in ("infra/monitoring/variables.env", "infra/azure/variables.env", "infra/openproject/variables.env"):
+    for relative in ("infra/monitoring/variables.env", "infra/openproject/variables.env"):
         current = read_env_file(local_path(root, relative))
         template = env_template_values(root, relative)
         if not template:
@@ -262,6 +307,11 @@ def split_infra_env(root: Path, dry_run: bool = False) -> dict[str, Any]:
 def build_gitea_actions_images(root: Path, dry_run: bool = False) -> dict[str, Any]:
     """Build Gitea Actions runner Docker images."""
     result = configure_result("BuildGiteaActionsImages", dry_run, write_enabled=not dry_run)
+    if dry_run:
+        result["actions"].append({"path": "docker", "key": "build.gitea-images", "severity": "info",
+                                  "message": "Would build Gitea Actions runner images.", "phase": "apply"})
+        result["valid"] = True
+        return result
     docker = run_native(["docker", "version"], root, timeout=30)
     if docker["returncode"] != 0:
         add_bucket_item(result["findings"], "docker", "", f"Docker CLI is not usable: {docker['stderr']}", "error", "pre-start")
@@ -393,249 +443,6 @@ def _observability_checks(root: Path, dry_run: bool, mode: str) -> dict[str, Any
                         "grafana.health-alerts", "Grafana health alert provisioning is missing.", "warning", "pre-start")
     result["valid"] = not any(item.get("severity") == "error" for item in result["findings"])
     return result
-
-
-# ── Cluster management ───────────────────────────────────────────────────
-
-def ensure_cluster(root: Path, dry_run: bool = False) -> dict[str, Any]:
-    """Ensure k8s cluster (Rancher Desktop / Docker) context is active."""
-    from ._shared import RANCHER_DESKTOP_CONTEXT
-    result = configure_result("EnsureCluster", dry_run, write_enabled=not dry_run)
-    if not selected_rancher(root):
-        result["actions"].append({"path": ".codex/project-profile.example.json", "key": "providers.deployment",
-                                  "severity": "info", "message": "Rancher Desktop is not selected; skipped.", "phase": "pre-start"})
-        result["valid"] = True
-        return result
-    if dry_run:
-        result["actions"].append({"path": "kubectl", "key": "context", "severity": "info",
-                                  "message": f"Would switch context to {RANCHER_DESKTOP_CONTEXT}.", "phase": "apply"})
-        result["valid"] = True
-        return result
-    use_context = run_native(["kubectl", "config", "use-context", RANCHER_DESKTOP_CONTEXT], root, timeout=30)
-    if use_context["returncode"] != 0:
-        add_bucket_item(result["findings"], "kubectl", "context",
-                        f"Could not switch to '{RANCHER_DESKTOP_CONTEXT}': {use_context['stderr']}", "error", "pre-start")
-        result["valid"] = False
-        return result
-    nodes = run_native(["kubectl", "get", "nodes", "-o", "json"], root, timeout=30)
-    if nodes["returncode"] != 0:
-        add_bucket_item(result["findings"], "kubectl", "nodes.ready",
-                        f"Could not read cluster nodes: {nodes['stderr']}", "error", "post-start")
-    else:
-        data = json.loads(nodes["stdout"] or "{}")
-        ready = [
-            item.get("metadata", {}).get("name", "")
-            for item in data.get("items", [])
-            if any(condition.get("type") == "Ready" and condition.get("status") == "True"
-                   for condition in item.get("status", {}).get("conditions", []))
-        ]
-        if ready:
-            result["actions"].append({"path": "kubectl", "key": "nodes.ready", "severity": "info",
-                                      "message": f"Ready node(s): {', '.join(ready)}.", "phase": "post-start"})
-        else:
-            add_bucket_item(result["findings"], "kubectl", "nodes.ready",
-                            "No Ready cluster nodes found.", "error", "post-start")
-    result["valid"] = not any(item.get("severity") == "error" for item in result["findings"])
-    return result
-
-
-def ensure_headlamp(root: Path, dry_run: bool = False) -> dict[str, Any]:
-    """Deploy Headlamp dashboard via Helm."""
-    from ._shared import RANCHER_DESKTOP_CONTEXT
-    result = configure_result("EnsureHeadlamp", dry_run, write_enabled=not dry_run)
-    if not selected_rancher(root):
-        result["actions"].append({"path": ".codex/project-profile.example.json", "key": "providers.deployment",
-                                  "severity": "info", "message": "Rancher Desktop is not selected; skipped.", "phase": "pre-start"})
-        result["valid"] = True
-        return result
-    for tool in ("kubectl", "helm"):
-        found = run_native([tool, "version"] if tool == "helm" else [tool, "version", "--client"], root, timeout=15)
-        if found["returncode"] != 0:
-            add_bucket_item(result["findings"], tool, "", f"{tool} is missing or not usable: {found['stderr']}", "error", "pre-start")
-            result["valid"] = False
-            return result
-    commands = [
-        ["helm", "repo", "add", "headlamp", "https://kubernetes-sigs.github.io/headlamp/"],
-        ["helm", "repo", "update"],
-        ["helm", "upgrade", "--install", "headlamp", "headlamp/headlamp", "--namespace", "headlamp", "--create-namespace"],
-        ["kubectl", "-n", "headlamp", "rollout", "status", "deploy/headlamp", "--timeout=120s"],
-    ]
-    for command in commands:
-        if dry_run:
-            result["actions"].append({"path": command[0], "key": " ".join(command[:3]), "severity": "info",
-                                      "message": f"Would run: {' '.join(command)}", "phase": "apply"})
-            continue
-        output = run_native(command, root, timeout=180)
-        if output["returncode"] != 0 and "already exists" not in output["stderr"].lower():
-            add_bucket_item(result["findings"], command[0], " ".join(command[:3]),
-                            output["stderr"], "error", "apply")
-            result["valid"] = False
-            return result
-    if not dry_run and not port_listening(4466):
-        subprocess.Popen(
-            ["kubectl", "-n", "headlamp", "port-forward", "--address", "127.0.0.1", "svc/headlamp", "4466:80"],
-            cwd=root, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        )
-    result["actions"].append({"path": "headlamp", "key": "url", "severity": "info",
-                              "message": "Headlamp exposed at http://127.0.0.1:4466. Create token manually with kubectl.", "phase": "apply"})
-    result["valid"] = True
-    return result
-
-
-def ensure_port_forwards(root: Path, dry_run: bool = False) -> dict[str, Any]:
-    """Start kubectl port-forwards for all environments."""
-    from ._shared import RANCHER_DESKTOP_CONTEXT
-    result = configure_result("EnsurePortForwards", dry_run, write_enabled=not dry_run)
-    if not selected_rancher(root):
-        result["actions"].append({"path": ".codex/project-profile.example.json", "key": "providers.deployment",
-                                  "severity": "info", "message": "Rancher Desktop is not selected; skipped.", "phase": "pre-start"})
-        result["valid"] = True
-        return result
-    context = run_native(["kubectl", "config", "current-context"], root, timeout=10)
-    if context["returncode"] != 0 or context["stdout"] != RANCHER_DESKTOP_CONTEXT:
-        add_bucket_item(result["findings"], "kubectl", "context",
-                        f"kubectl current context is '{context['stdout']}'; run EnsureCluster first.", "error", "pre-start")
-        result["valid"] = False
-        return result
-    for mapping in rancher_port_mappings():
-        service = run_native(
-            ["kubectl", "-n", mapping["namespace"], "get", "svc", mapping["service"], "-o", "json"],
-            root, timeout=10,
-        )
-        key = f"port-forward.{mapping['namespace']}.{mapping['service']}.{mapping['localPort']}"
-        if service["returncode"] != 0:
-            result["warnings"].append({"path": "kubectl", "key": key, "severity": "warning",
-                                       "message": f"Service not deployed yet; skipped port {mapping['localPort']}.", "phase": "post-start"})
-            continue
-        port = None
-        for item in json.loads(service["stdout"] or "{}").get("spec", {}).get("ports", []):
-            port = item.get("port")
-            if port:
-                break
-        if not port:
-            result["warnings"].append({"path": "kubectl", "key": key, "severity": "warning",
-                                       "message": "Service has no port; skipped.", "phase": "post-start"})
-            continue
-        if port_listening(mapping["localPort"]):
-            result["actions"].append({"path": "kubectl", "key": key, "severity": "info",
-                                      "message": f"Port {mapping['localPort']} already listening.", "phase": "apply"})
-            continue
-        if dry_run:
-            result["actions"].append({"path": "kubectl", "key": key, "severity": "info",
-                                      "message": f"Would start localhost port-forward {mapping['localPort']}:{port}.", "phase": "apply"})
-            continue
-        subprocess.Popen(
-            ["kubectl", "-n", mapping["namespace"], "port-forward", "--address", "127.0.0.1",
-             f"svc/{mapping['service']}", f"{mapping['localPort']}:{port}"],
-            cwd=root, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        )
-        result["actions"].append({"path": "kubectl", "key": key, "severity": "info",
-                                  "message": f"Started localhost port-forward {mapping['localPort']}:{port}.", "phase": "apply"})
-    _write_environment_urls(root, result, dry_run)
-    result["valid"] = not any(item.get("severity") == "error" for item in result["findings"])
-    return result
-
-
-def show_environment_urls(root: Path, dry_run: bool = False) -> dict[str, Any]:
-    """Display and write environment URLs."""
-    result = configure_result("ShowEnvironmentUrls", dry_run, write_enabled=not dry_run)
-    result["environmentUrls"] = _write_environment_urls(root, result, dry_run)
-    result["valid"] = True
-    return result
-
-
-def _write_environment_urls(root: Path, result: dict[str, Any], dry_run: bool) -> list[dict[str, Any]]:
-    """Write environment URLs registry and dashboard."""
-    entries = []
-    for mapping in rancher_port_mappings():
-        port = mapping["localPort"]
-        entry = {
-            **mapping,
-            "browserUrl": f"http://127.0.0.1:{port}",
-            "containerUrl": f"http://host.docker.internal:{port}",
-            "ingressHint": f"http://{mapping['environment']}-{mapping['kind']}.sdd.localhost",
-            "portForwardListening": port_listening(port),
-        }
-        entries.append(entry)
-    payload = {
-        "schemaVersion": 1,
-        "updatedAtUtc": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
-        "entries": entries,
-    }
-    if not dry_run:
-        write_json(root / ".codex" / "environment-urls.local.json", payload)
-    result["actions"].append({"path": ".codex/environment-urls.local.json", "key": "environment-url-registry",
-                              "severity": "info", "message": "Refreshed local environment URL registry.", "phase": "apply"})
-    dashboard = root / "infra" / "monitoring" / "grafana" / "dashboards.local" / "environment-urls-dashboard.json"
-    if not dry_run:
-        dashboard.parent.mkdir(parents=True, exist_ok=True)
-        write_json(dashboard, {"title": "Environment URLs", "entries": entries})
-    result["actions"].append({"path": "infra/monitoring/grafana/dashboards.local/environment-urls-dashboard.json",
-                              "key": "environment-urls-dashboard", "severity": "info",
-                              "message": "Refreshed Environment URLs dashboard.", "phase": "apply"})
-    return entries
-
-
-# ── Azure ────────────────────────────────────────────────────────────────
-
-def azure_deploy_environments(
-    location: str = "westcentralus",
-    dev_rg: str = "rg-agentic-dev",
-    qa_rg: str = "rg-agentic-qa",
-    prod_rg: str = "rg-agentic-prod",
-    what_if: bool = False,
-) -> dict[str, Any]:
-    """Deploy Azure environments via Bicep."""
-    azure_dir = REPO_ROOT / "infra" / "azure"
-    template = azure_dir / "main.bicep"
-    deployments = [
-        ("dev", dev_rg, azure_dir / "dev.parameters.json"),
-        ("qa", qa_rg, azure_dir / "qa.parameters.json"),
-        ("prod", prod_rg, azure_dir / "prod.parameters.json"),
-    ]
-
-    code = run_native(["az", "account", "show", "--output", "none"], REPO_ROOT, timeout=30)
-    if code["returncode"] != 0:
-        return {"command": "azure-deploy", "valid": False, "error": "Azure CLI not authenticated."}
-
-    results = []
-    for env_name, group, parameters in deployments:
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-        deployment_name = f"agentic-{env_name}-{stamp}"
-        if what_if:
-            group_check = run_native(["az", "group", "show", "--name", group, "--output", "none"], REPO_ROOT, timeout=30)
-            if group_check["returncode"] != 0:
-                results.append({"environment": env_name, "status": "what-if-skipped",
-                                "message": f"Resource group '{group}' does not exist yet."})
-                continue
-            command = [
-                "az", "deployment", "group", "what-if",
-                "--resource-group", group, "--name", deployment_name,
-                "--template-file", str(template), "--parameters", str(parameters),
-            ]
-        else:
-            create = run_native([
-                "az", "group", "create", "--name", group, "--location", location,
-                "--tags", "project=agentic-e2e", f"env={env_name}", "managedBy=bicep", "--output", "none",
-            ], REPO_ROOT, timeout=60)
-            if create["returncode"] != 0:
-                results.append({"environment": env_name, "status": "failed",
-                                "error": f"Could not create resource group: {create['stderr']}"})
-                continue
-            command = [
-                "az", "deployment", "group", "create",
-                "--resource-group", group, "--name", deployment_name,
-                "--template-file", str(template), "--parameters", str(parameters), "--output", "table",
-            ]
-        deploy_result = run_native(command, REPO_ROOT, timeout=600)
-        if deploy_result["returncode"] == 0:
-            results.append({"environment": env_name, "status": "deployed",
-                            "deploymentName": deployment_name})
-        else:
-            results.append({"environment": env_name, "status": "failed",
-                            "error": deploy_result["stderr"]})
-    return {"command": "azure-deploy", "valid": all(r.get("status") in ("deployed", "what-if-skipped") for r in results),
-            "results": results}
 
 
 # ── Configure modes (set client tools, stack, quality, recommendations) ──
@@ -810,6 +617,11 @@ def set_recommended_tools(root: Path, values: dict[str, Any], dry_run: bool = Fa
 def validate_gitea_runner(root: Path, dry_run: bool = False) -> dict[str, Any]:
     """Validate Gitea Actions runner prerequisites: Docker, images, tools."""
     result = configure_result("ValidateGiteaActionsRunner", dry_run, write_enabled=not dry_run)
+    if dry_run:
+        result["actions"].append({"path": "docker", "key": "validate.gitea-runner", "severity": "info",
+                                  "message": "Would validate Gitea Actions runner prerequisites.", "phase": "audit"})
+        result["valid"] = True
+        return result
     # Check Docker
     docker = run_native(["docker", "version"], root, timeout=30)
     if docker["returncode"] != 0:
@@ -885,11 +697,10 @@ def run_environment_lab(args: list[str]) -> int:
     from ._shared import parse_pairs, trim_remainder
 
     if not args:
-        print("Available: compose-up, compose-down, init-local-files, init-project-profile, "
+        print("Available: setup-lab, compose-up, compose-down, init-local-files, init-project-profile, "
               "init-quality-templates, set-openproject-env, set-monitoring-env, set-gitea-runner-env, "
               "split-infra-env, build-gitea-images, set-gitea-branch-protection, validate-observability, "
-              "validate-gitea-runner, ensure-cluster, ensure-headlamp, ensure-port-forwards, "
-              "show-environment-urls, azure-deploy, set-client-tools, set-project-stack, "
+              "validate-gitea-runner, set-client-tools, set-project-stack, "
               "set-project-stack-metadata, set-quality-config, set-recommended-tools", file=sys.stderr)
         return 1
 
@@ -901,6 +712,7 @@ def run_environment_lab(args: list[str]) -> int:
     values = _json.loads(values_raw) if values_raw else {}
 
     handlers: dict[str, Any] = {
+        "setup-lab": lambda: setup_lab(root, dry_run),
         "compose-up": lambda: compose_up(),
         "compose-down": lambda: compose_down(),
         "init-local-files": lambda: init_local_files(root, dry_run),
@@ -914,17 +726,6 @@ def run_environment_lab(args: list[str]) -> int:
         "set-gitea-branch-protection": lambda: set_gitea_branch_protection(root, dry_run),
         "validate-observability": lambda: validate_observability(root, dry_run),
         "validate-gitea-runner": lambda: validate_gitea_runner(root, dry_run),
-        "ensure-cluster": lambda: ensure_cluster(root, dry_run),
-        "ensure-headlamp": lambda: ensure_headlamp(root, dry_run),
-        "ensure-port-forwards": lambda: ensure_port_forwards(root, dry_run),
-        "show-environment-urls": lambda: show_environment_urls(root, dry_run),
-        "azure-deploy": lambda: azure_deploy_environments(
-            location=options.get("location", "westcentralus"),
-            dev_rg=options.get("dev-rg", "rg-agentic-dev"),
-            qa_rg=options.get("qa-rg", "rg-agentic-qa"),
-            prod_rg=options.get("prod-rg", "rg-agentic-prod"),
-            what_if=options.get("what-if", "false").lower() == "true",
-        ),
         "set-client-tools": lambda: set_client_tools(root, values, dry_run),
         "set-project-stack": lambda: set_project_stack(root, values, dry_run),
         "set-project-stack-metadata": lambda: set_project_stack_metadata(root, values, dry_run),

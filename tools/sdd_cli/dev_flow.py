@@ -475,10 +475,6 @@ def artifact_paths(commit: str, provider: str | None) -> dict[str, str]:
         "deployableAppsPath": f"app/{commit}/deployable-apps.json",
         "commitShaPath": f"app/{commit}/commit.sha",
     }
-    if selected == "rancher-desktop":
-        data["containerImages"] = f"app/{commit}/container-images.json"
-        data["monitoringSummaryPattern"] = f"app/{commit}/monitoring-summary-{{environment}}.json"
-        data["qaObservability"] = f"app/{commit}/qa-observability.json"
     return data
 
 
@@ -658,7 +654,7 @@ def detect_adversarial_trigger(
         "auth", "authorization", "persistence", "migration",
         "deploy", "secret", "secrets", "public-api", "health",
         "release", "rollback", "hotfix", "/health", ".gitea/",
-        "nexus", "azure", "docker", "k8s", "kubernetes",
+        "nexus", "docker", "k8s", "kubernetes",
     ]
     for p in paths:
         for pattern in high_risk_patterns:

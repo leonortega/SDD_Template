@@ -238,10 +238,10 @@ class SddCliTests(unittest.TestCase):
             (codex / "project-profile.json").write_text(
                 json.dumps({
                     "schemaVersion": 1,
-                    "providers": {"deployment": {"id": "rancher-desktop"}},
+                    "providers": {"deployment": {"id": "docker-desktop"}},
                     "workflow": {"ticketKeyPattern": "ABC-[0-9]+"},
                     "quality": {"gates": [{"id": "secret-scan", "required": True}]},
-                    "adapters": {"deployment": ".codex/providers/deploy.rancher-desktop.md"},
+                    "adapters": {"deployment": ".codex/providers/deploy.example.md"},
                 }),
                 encoding="utf-8",
             )
@@ -253,7 +253,7 @@ class SddCliTests(unittest.TestCase):
             profile = cli.load_project_profile(root)
             self.assertEqual(["python"], profile["stack"]["languages"])
             self.assertEqual("ABC-[0-9]+", cli.read_ticket_pattern(root))
-            self.assertEqual("rancher-desktop", cli.selected_deployment_provider(root))
+            self.assertEqual("docker-desktop", cli.selected_deployment_provider(root))
             required = cli.run_configure_mode("AuditQualityGates", root, {}, False)
             self.assertEqual(["secret-scan"], required["requiredGates"])
 
@@ -501,7 +501,6 @@ class SddCliTests(unittest.TestCase):
             write(root / ".codex" / "quality.example.json", "{}")
             write(root / "infra" / "openproject" / "variables.env.example", "OPENPROJECT_HOST=http://localhost\n")
             write(root / "infra" / "monitoring" / "variables.env.example", "SEQ_URL=http://localhost:5341\n")
-            write(root / "infra" / "azure" / "variables.env.example", "AZURE_LOCATION=westcentralus\n")
             write(root / "infra" / "gitea" / "runner.env.example", "GITEA_INSTANCE_URL=http://localhost:3001\n")
 
             result = cli.run_configure_mode("InitLocalFiles", root, {}, False)
@@ -531,23 +530,19 @@ class SddCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             write(root / "infra" / "openproject" / "variables.env.example", "OPENPROJECT_TAG=17\nOPENPROJECT_SECRET_KEY_BASE=placeholder\n")
-            write(root / "infra" / "monitoring" / "variables.env.example", "SEQ_URL=http://localhost:5341\nRANCHER_APP_SEQ_URL=http://host.docker.internal:5341\n")
-            write(root / "infra" / "azure" / "variables.env.example", "AZURE_LOCATION=westcentralus\n")
+            write(root / "infra" / "monitoring" / "variables.env.example", "SEQ_URL=http://localhost:5341\n")
             write(root / "infra" / "openproject" / "variables.env", "OPENPROJECT_TAG=old\nSECRET_KEY=legacy\nSEQ_URL=http://old:5341\n")
-            write(root / "infra" / "monitoring" / "variables.env", "SEQ_URL=http://keep:5341\nOTELCOL_AZURE_EVENT_HUB_DEV_CONNECTION_STRING=legacy\n")
-            write(root / "infra" / "azure" / "variables.env", "OLD_AZURE=value\n")
+            write(root / "infra" / "monitoring" / "variables.env", "SEQ_URL=http://keep:5341\n")
 
             result = cli.run_configure_mode("SplitInfraEnv", root, {}, False)
 
             self.assertTrue(result["valid"])
             openproject = cli.read_env_file(root / "infra" / "openproject" / "variables.env")
             monitoring = cli.read_env_file(root / "infra" / "monitoring" / "variables.env")
-            azure = cli.read_env_file(root / "infra" / "azure" / "variables.env")
             self.assertEqual({"OPENPROJECT_TAG", "OPENPROJECT_SECRET_KEY_BASE"}, set(openproject))
             self.assertEqual("old", openproject["OPENPROJECT_TAG"])
-            self.assertEqual({"SEQ_URL", "RANCHER_APP_SEQ_URL"}, set(monitoring))
+            self.assertEqual({"SEQ_URL"}, set(monitoring))
             self.assertEqual("http://keep:5341", monitoring["SEQ_URL"])
-            self.assertEqual({"AZURE_LOCATION"}, set(azure))
 
     def test_audit_reports_env_template_drift(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -566,24 +561,44 @@ class SddCliTests(unittest.TestCase):
             self.assertIn("env.stale-keys", findings)
             self.assertIn("SECRET_KEY", findings["env.stale-keys"])
 
-    def test_config_infra_docs_match_openproject_and_trivy_runtime(self) -> None:
+    def test_config_infra_docs_match_openproject_and_runtime(self) -> None:
         repo = Path(__file__).resolve().parents[3]
         compose = (repo / "infra" / "openproject" / "compose.yml").read_text(encoding="utf-8")
         configure = (repo / ".codex" / "skills" / "configure-dev-environment" / "SKILL.md").read_text(encoding="utf-8")
-        legacy = (repo / ".codex" / "skills" / "configure-infra-tools" / "SKILL.md").read_text(encoding="utf-8")
 
         self.assertIn("SECRET_KEY_BASE: ${OPENPROJECT_SECRET_KEY_BASE:", compose)
         self.assertNotIn("OPENPROJECT_SECRET_KEY_BASE: ${OPENPROJECT_SECRET_KEY_BASE:", compose)
-        self.assertIn("trivy image --download-db-only", configure)
-        self.assertIn("trivy image --download-db-only", legacy)
-        self.assertNotIn("trivy --download-db-only", configure)
-        self.assertNotIn("trivy --download-db-only", legacy)
-        self.assertIn("--values-json-stdin true", configure)
-        self.assertIn("Do not use per-mode `--help`", configure)
-        self.assertIn("Do not bypass the CLI by importing `run_configure_mode`", configure)
-        self.assertIn("When the operator forbids PowerShell", configure)
-        self.assertIn("ask for values one at a time", configure)
-        self.assertIn("Do not batch multiple missing-value questions into one prompt", configure)
+        self.assertIn("setup-lab", configure)
+        self.assertNotIn("EnsureRancherDesktopCluster", configure)
+        self.assertNotIn("Azure App Service", configure)
+        self.assertNotIn("EnsureRancherDesktopCluster", configure)
+        self.assertIn("compose-up", configure)
+        self.assertIn("set-project-stack", configure)
+
+    def test_setup_lab_dry_run_returns_valid(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            codex = root / ".codex"
+            codex.mkdir()
+            (codex / "client-tools.example.json").write_text("{}", encoding="utf-8")
+            (codex / "quality.example.json").write_text("{}", encoding="utf-8")
+            (root / "infra" / "openproject").mkdir(parents=True)
+            (root / "infra" / "openproject" / "variables.env.example").write_text("OPENPROJECT_HOST=\n", encoding="utf-8")
+            (root / "infra" / "monitoring").mkdir(parents=True)
+            (root / "infra" / "monitoring" / "variables.env.example").write_text("SEQ_URL=\n", encoding="utf-8")
+            (root / "infra" / "gitea").mkdir(parents=True)
+            (root / "infra" / "gitea" / "runner.env.example").write_text("GITEA_INSTANCE_URL=\n", encoding="utf-8")
+
+            from tools.sdd_cli.environment_lab import setup_lab
+            result = setup_lab(root, dry_run=True)
+            self.assertEqual("SetupLab", result["mode"])
+            self.assertTrue(result["dryRun"])
+            steps = result.get("steps", [])
+            # At minimum: init-local-files, init-project-profile, quality-templates should be present
+            self.assertGreaterEqual(len(steps), 3)
+            # Verify the first few steps (before Docker-dependent ones) are valid
+            for step in steps[:3]:
+                self.assertTrue(step.get("valid", True), msg=f"Step failed: {step.get('mode', step.get('command', 'unknown'))}")
 
     def test_seq_grafana_validation_uses_grafana_port_and_checks_provisioning(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

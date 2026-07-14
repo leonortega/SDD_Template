@@ -16,6 +16,27 @@ Then read only the stage-specific docs, OpenSpec artifacts, skills, provider ada
 
 Prefer repository-specific skills and scripts over ad hoc process decisions.
 
+## Environment Setup
+
+To configure the local development and delivery environment, run the idempotent all-in-one command:
+
+```bash
+python -m tools.sdd_cli environment-lab setup-lab
+```
+
+This initialises local files, builds Gitea Actions images, starts Docker Compose services (Gitea, OpenProject, Nexus, Monitoring), and validates observability and CI runner prerequisites. Use `--dry-run true` to preview without making changes.
+
+For step-by-step control, run individual subcommands:
+
+```bash
+python -m tools.sdd_cli environment-lab init-local-files
+python -m tools.sdd_cli environment-lab compose-up
+python -m tools.sdd_cli environment-lab build-gitea-images
+python -m tools.sdd_cli environment-lab set-project-stack --values-json '{"frontend": "react", "backend": "fastapi", "database": "postgresql"}'
+```
+
+See `.codex/skills/configure-dev-environment/SKILL.md` for available modes.
+
 ## Delivery Workflow
 
 - Use the OpenProject/OpenSpec workflow for ticketed implementation.
