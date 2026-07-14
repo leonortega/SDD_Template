@@ -1,4 +1,0 @@
-interface:
-  display_name: "Configure Azure Environments"
-  short_description: "Set up Azure DEV QA PROD"
-  default_prompt: "Use $configure-cloud-environments to configure Azure DEV, QA, and PROD App Service environments."

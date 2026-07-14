@@ -9,6 +9,8 @@ description: Configure this repo's local development and delivery environment. T
 
 The lab stack is **always** Docker Compose with Gitea + OpenProject + Nexus + Monitoring. No provider selection, no Rancher Desktop, no Azure.
 
+This skill replaces the old separate skills: `configure-ticket-workflow`, `configure-source-control`, `configure-ci-runner`, `configure-artifact-repository`, `configure-quality-gates`, and `configure-observability`. All domain setup flows are now inline below.
+
 ## Quick Setup
 
 Run the idempotent all-in-one command:
@@ -65,14 +67,82 @@ Useful `environment-lab` modes:
 - `validate-gitea-runner`: check Docker, Gitea runner images, and runner tools.
 - `build-gitea-images`: build Gitea Actions CI images.
 
-## Domain Routing
+## Domain-Specific Setup
 
-- OpenProject work packages: use `configure-ticket-workflow`.
-- Gitea PR automation: use `configure-source-control`.
-- Gitea Actions runner: use `configure-ci-runner`.
-- Quality gates and CI: use `configure-quality-gates`.
-- Nexus artifacts: use `configure-artifact-repository`.
-- Monitoring dashboards: use `configure-observability`.
+### OpenProject Work Packages
+
+Configure OpenProject API access, workspace/project identifiers, and workflow states.
+
+1. Check `.codex/client-tools.local.json` for `openProject.baseUrl`, `openProject.apiToken`, and `openProject.projectIdentifier`.
+2. Check `infra/openproject/variables.env` for OpenProject Docker env values.
+3. Run `python -m tools.sdd_cli environment-lab set-client-tools --values-json '{...}'` to set confirmed values.
+4. Run `python -m tools.sdd_cli environment-lab set-openproject-env --values-json '{...}'` for env vars.
+5. Validate by calling the OpenProject API health endpoint.
+
+**Values needed:** base URL, API token, project identifier, and status names (todo, in-progress, review, QA, done).
+**Safety:** Never print the API token. Never read secrets from Docker containers. Do not use OpenProject MCP or direct database access for ticket delivery.
+
+### Gitea PR Automation
+
+Configure repository owner/name, PR reviewers, approval minimums, and review labels.
+
+1. Infer owner/repo from `git remote get-url origin` when possible.
+2. Run `python -m tools.sdd_cli environment-lab set-client-tools --values-json '{...}'` with Gitea values.
+3. Run `python -m tools.sdd_cli environment-lab set-gitea-branch-protection` to apply approval rules.
+4. Validate token, repo, and collaborators only when Gitea is running.
+
+**Values needed:** Gitea base URL, API token, owner, repo, reviewers list, label names. Minimum approvals (`pr.minimumApprovals.dev`, `pr.minimumApprovals.main`) default to 1 each.
+**Safety:** Never print the API token. Do not create labels automatically without user approval.
+
+### Gitea Actions Runner
+
+Configure the CI runner for PR validation and deployment jobs.
+
+1. Run `python -m tools.sdd_cli environment-lab init-local-files` to create `infra/gitea/runner.env` if missing.
+2. Run `python -m tools.sdd_cli environment-lab set-gitea-runner-env --values-json '{...}'` with runner values.
+3. Run `python -m tools.sdd_cli environment-lab build-gitea-images` before any CI workflow runs.
+4. Run `python -m tools.sdd_cli environment-lab validate-gitea-runner` to check Docker, images, and tools.
+5. For old/floating Gitea/Gitea Runner images, check current stable upstream versions and update compose files.
+
+**Values needed:** Runner registration token, instance URL.
+**Safety:** Never print the registration token. Do not start/stop infra without approval.
+
+### Nexus Artifacts
+
+Configure artifact storage, release manifests, and DEV/QA/PROD promotion.
+
+1. Run `python -m tools.sdd_cli environment-lab set-client-tools --values-json '{...}'` with Nexus credentials.
+2. Guide the user to store Nexus credentials as Gitea Actions secrets for CI.
+3. Keep the release model: build once, promote the same artifact through DEV → QA → PROD.
+4. Ensure Nexus release manifests at `app/{commitSha}/release.json` carry machine-readable metadata.
+
+**Values needed:** Nexus base URL, username, password/token, repository name.
+**Safety:** Never print credentials. Never read the initial admin password from Docker containers.
+
+### Quality Gates
+
+Configure code quality thresholds, scanning tools, and local hooks.
+
+1. Run `python -m tools.sdd_cli environment-lab init-quality-templates` if templates are missing.
+2. Run `python -m tools.sdd_cli environment-lab set-quality-config --values-json '{...}'` for custom thresholds.
+3. Ensure `.codex/quality.local.json` exists (default coverage minimum: 80%).
+4. For missing SDKs/tools/scanners, provide install command, official URL, and validation command.
+5. Gitea PR validation is the authoritative gate — local hooks are lightweight.
+6. Ask whether Semgrep should be enabled only after real app code exists.
+
+**Values needed:** Coverage minimum percent, enabled gate IDs.
+**Safety:** Keep local hooks lightweight. Do not write scanner secrets into tracked files.
+
+### Observability (Seq & Grafana)
+
+Configure Seq log search and Grafana health dashboards.
+
+1. Run `python -m tools.sdd_cli environment-lab validate-observability` to check Seq and Grafana.
+2. Fix any issues before completing setup — observability is required for `config infra`.
+3. Required checks: Seq API/health `200`, Grafana health endpoint reachable, Grafana Infinity datasource and health alerts provisioned.
+
+**Values needed:** SEQ_URL (default `http://localhost:5341`), error alert window/threshold.
+**Safety:** Keep Seq data in Docker volume; do not export logs to tracked files.
 
 ## Output
 
@@ -82,4 +152,5 @@ Report: files created/updated, values still missing, observability health, missi
 
 - Stop when required user-supplied secrets or tokens are missing; provide source, destination, and setup path.
 - Stop before writing secrets to tracked files.
+- Stop before reading secrets from Docker containers, volumes, databases, or logs.
 - Do not start or stop infra automatically without asking first.

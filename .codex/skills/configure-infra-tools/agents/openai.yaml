@@ -1,4 +1,0 @@
-interface:
-  display_name: "Configure Infra Tools"
-  short_description: "Legacy setup router"
-  default_prompt: "Use $configure-infra-tools to route older infra setup requests through $configure-dev-environment."

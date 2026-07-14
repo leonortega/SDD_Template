@@ -1,4 +1,0 @@
-interface:
-  display_name: "Configure OpenProject Workflow"
-  short_description: "Set up OpenProject work packages and states"
-  default_prompt: "Use $configure-ticket-workflow to configure OpenProject work package workflow for this repo."
