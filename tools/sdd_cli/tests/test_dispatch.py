@@ -50,9 +50,9 @@ class TopLevelDispatchTests(unittest.TestCase):
             rc = cli.main(["environment-lab"])
         self.assertEqual(1, rc)
         output = stderr.getvalue()
+        self.assertIn("setup-lab", output)
         self.assertIn("compose-up", output)
         self.assertIn("init-local-files", output)
-        self.assertIn("azure-deploy", output)
         self.assertIn("validate-gitea-runner", output)
 
     def test_guidance_no_args(self) -> None:
@@ -265,8 +265,7 @@ class EnvironmentLabDispatchTests(unittest.TestCase):
             (root / "infra" / "openproject" / "variables.env.example").write_text("OPENPROJECT_HOST=\n", encoding="utf-8")
             (root / "infra" / "monitoring").mkdir(parents=True)
             (root / "infra" / "monitoring" / "variables.env.example").write_text("SEQ_URL=\n", encoding="utf-8")
-            (root / "infra" / "azure").mkdir(parents=True)
-            (root / "infra" / "azure" / "variables.env.example").write_text("AZURE_LOCATION=\n", encoding="utf-8")
+
             (root / "infra" / "gitea").mkdir(parents=True)
             (root / "infra" / "gitea" / "runner.env.example").write_text("GITEA_INSTANCE_URL=\n", encoding="utf-8")
 

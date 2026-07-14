@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import sys
 
 from ._shared import REPO_ROOT, CliError, parse_pairs, read_json
@@ -25,7 +26,6 @@ def main(argv: list[str] | None = None) -> int:
 # ── Parser ───────────────────────────────────────────────────────────────
 
 def _parse_cli(argv: list[str] | None):
-    import argparse
     parser = argparse.ArgumentParser(prog="python -m tools.sdd_cli")
     parser.set_defaults(func=_fallback)
     parser.add_argument("--root", default=str(REPO_ROOT), help="Repository root path")
@@ -34,37 +34,37 @@ def _parse_cli(argv: list[str] | None):
 
     # prereqs
     prereqs = sub.add_parser("prereqs")
-    prereqs.add_argument("prereqs_args", nargs="+")
+    prereqs.add_argument("prereqs_args", nargs=argparse.REMAINDER)
     prereqs.set_defaults(func=_dispatch_prereqs)
 
     # environment-lab
     envlab = sub.add_parser("environment-lab")
-    envlab.add_argument("envlab_args", nargs="+")
+    envlab.add_argument("envlab_args", nargs=argparse.REMAINDER)
     envlab.set_defaults(func=_dispatch_environment_lab)
 
     # tool-installer
     tools = sub.add_parser("tool-installer")
-    tools.add_argument("tool_args", nargs="+")
+    tools.add_argument("tool_args", nargs=argparse.REMAINDER)
     tools.set_defaults(func=_dispatch_tool_installer)
 
     # template-installer
     tmpl = sub.add_parser("template-installer")
-    tmpl.add_argument("tmpl_args", nargs="+")
+    tmpl.add_argument("tmpl_args", nargs=argparse.REMAINDER)
     tmpl.set_defaults(func=_dispatch_template_installer)
 
     # guidance
     guide = sub.add_parser("guidance")
-    guide.add_argument("guide_args", nargs="+")
+    guide.add_argument("guide_args", nargs=argparse.REMAINDER)
     guide.set_defaults(func=_dispatch_guidance)
 
     # dev-flow
     flow = sub.add_parser("dev-flow")
-    flow.add_argument("flow_args", nargs="+")
+    flow.add_argument("flow_args", nargs=argparse.REMAINDER)
     flow.set_defaults(func=_dispatch_dev_flow)
 
     # memory-search
     mem = sub.add_parser("memory-search")
-    mem.add_argument("mem_args", nargs="+")
+    mem.add_argument("mem_args", nargs=argparse.REMAINDER)
     mem.set_defaults(func=_dispatch_memory_search)
 
     return parser.parse_args(argv)
