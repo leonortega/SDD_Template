@@ -2,9 +2,18 @@
 
 This repository is a product-free SDD/SDLC agentic shell. Use the workflow files and Codex skills as the source of truth before making changes.
 
+## Mandatory First Step
+
+Before any tool call or file edit, every agent **must**:
+
+1. Call `skill('caveman')` and apply its full mode (terse fragments for commentary, status, blockers, summaries; normal prose only for authored artifacts).
+2. Read the **Start Here** section below and the files it lists.
+
+Failure to load Caveman first violates repo convention (authority level 5 per `docs/context-management.md`). If the skill tool reports "no skills available", report this as a setup gap and apply these rules manually: use terse fragments for commentary, status updates, blockers, summaries, and final handoff. Use normal prose only for authored artifacts (code blocks, documentation, config files).
+
 ## Start Here
 
-Before implementing, reviewing, or deploying work, inspect the relevant local context for the current workflow stage:
+After the mandatory first step, inspect the relevant local context for the current workflow stage:
 
 - `README.md`
 - `.codex/skills/_shared/skill-startup.md`

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Configure Artifact Delivery"
-  short_description: "Set up Nexus artifact flow"
-  default_prompt: "Use $configure-artifact-repository to configure Nexus artifact publication and promotion."
