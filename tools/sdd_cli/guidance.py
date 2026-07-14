@@ -12,19 +12,17 @@ from ._shared import (
     REPO_ROOT,
     SEARCH_PLAN_ID,
     CliError,
-    add_bucket_item,
-    any_contains,
     build_recommendations,
     build_research_topics,
     build_stack_context_findings,
     configure_result,
     detect_stack_tags,
+    ensure_used_in_steps,
     load_project_profile,
     load_tool_recommendations_catalog,
     merge_dicts,
     nested,
-    read_json,
-    run_native,
+    parse_pairs,
     write_json,
 )
 
@@ -33,7 +31,6 @@ from ._shared import (
 
 def discover_project_guidance(root: Path, dry_run: bool = False, **values: Any) -> dict[str, Any]:
     """Detect stack, research topics, and build recommendations."""
-    result = configure_result("DiscoverProjectGuidance", dry_run, write_enabled=False)
     audit_values = {**values, "skipAutoDiscovery": True}
     audit = _audit_recommended_tools(root, dry_run, **audit_values)
     blockers = [item for item in audit.get("findings", []) if item.get("severity") == "error"]
@@ -61,7 +58,7 @@ def discover_project_guidance(root: Path, dry_run: bool = False, **values: Any) 
         for item in recommendations:
             if item.get("type") not in {"skill", "mcp", "plugin", "tool", "practice", "standard", "reference"}:
                 continue
-            persisted = merge_dicts(existing_by_id.get(item.get("id"), {}), _ensure_used_in_steps(item))
+            persisted = merge_dicts(existing_by_id.get(item.get("id"), {}), ensure_used_in_steps(item))
             persisted_recommendations.append(persisted)
         payload = {
             "schemaVersion": 1,
@@ -72,10 +69,9 @@ def discover_project_guidance(root: Path, dry_run: bool = False, **values: Any) 
             "accepted": existing_catalog.get("accepted", []),
             "dismissed": existing_catalog.get("dismissed", []),
             "recommendations": persisted_recommendations,
-            "notRecommended": merge_dicts(
-                existing_catalog.get("notRecommended", []),
-                [item for item in recommendations if item["id"] == "openproject-mcp-for-ticket-delivery"],
-            ),
+            "notRecommended": existing_catalog.get("notRecommended", []) + [
+                item for item in recommendations if item["id"] == "openproject-mcp-for-ticket-delivery"
+            ],
         }
         write_json(local_path, payload)
         actions.append({"path": ".codex/tool-recommendations.local.json", "key": "persist-local-catalog",
@@ -118,7 +114,7 @@ def map_project_guidance_step(root: Path, workflow_step: str, recommendation_ids
             "sourceCatalog": ".codex/tool-recommendations.example.json",
             "detectedTags": [],
             "researchTopics": [],
-            "recommendations": [_ensure_used_in_steps(item) for item in
+            "recommendations": [ensure_used_in_steps(item) for item in
                                 build_recommendations(root, detect_stack_tags(root),
                                                       build_research_topics(detect_stack_tags(root)))
                                 if item["id"] != SEARCH_PLAN_ID],
@@ -239,7 +235,6 @@ def write_skill_index(root: Path, dry_run: bool = False) -> dict[str, Any]:
             continue
         # Parse frontmatter
         name = skill_name
-        description = ""
         fm_match = re.match(r"^---\s*\n(.*?)\n---", content, re.DOTALL)
         if fm_match:
             try:
@@ -251,17 +246,13 @@ def write_skill_index(root: Path, dry_run: bool = False) -> dict[str, Any]:
                     parsed = yaml.safe_load(fm_match.group(1))
                     if isinstance(parsed, dict):
                         name = str(parsed.get("name", skill_name))
-                        description = str(parsed.get("description", ""))
                 except Exception:
                     pass
             else:
-                # Fallback: extract name/description via regex
+                # Fallback: extract name via regex
                 name_m = re.search(r"(?m)^name:\s*(.+)$", fm_match.group(1))
-                desc_m = re.search(r"(?m)^description:\s*(.+)$", fm_match.group(1))
                 if name_m:
                     name = name_m.group(1).strip().strip('"')
-                if desc_m:
-                    description = desc_m.group(1).strip().strip('"')
         entries.append({
             "name": name,
             "path": path.relative_to(root).as_posix(),
@@ -297,7 +288,7 @@ def run_guidance(args: list[str]) -> int:
         print("Available: discover, map, acquire, write-skill-index", file=sys.stderr)
         return 1
     subcommand = args[0]
-    options = _parse_pairs(args[1:])
+    options = parse_pairs(args[1:])
     root = Path(options.get("root", REPO_ROOT))
     dry_run = options.get("dry-run", "false").lower() == "true"
     handlers: dict[str, Any] = {
@@ -333,6 +324,7 @@ def _map_handler(root: Path, dry_run: bool, options: dict[str, str]) -> dict[str
 
 
 def _acquire_handler(root: Path, dry_run: bool, options: dict[str, str]) -> dict[str, Any]:
+    import json as _json
     guidance_json = options.get("finalConfirmedGuidance", "[]")
     try:
         guidance = _json.loads(guidance_json) if guidance_json else []
@@ -342,22 +334,6 @@ def _acquire_handler(root: Path, dry_run: bool, options: dict[str, str]) -> dict
 
 
 # ── Private helpers ──────────────────────────────────────────────────────
-
-def _parse_pairs(items: list[str]) -> dict[str, str]:
-    from ._shared import trim_remainder
-    args = trim_remainder(items)
-    pairs: dict[str, str] = {}
-    index = 0
-    while index < len(args):
-        key = args[index]
-        if not key.startswith("--"):
-            raise CliError(f"Expected --option, got: {key}")
-        if index + 1 >= len(args):
-            raise CliError(f"Missing value for option {key}")
-        pairs[key[2:]] = args[index + 1]
-        index += 2
-    return pairs
-
 
 def _parse_list(value: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
@@ -380,12 +356,6 @@ def _normalize_added_guidance(items: list[Any]) -> list[dict[str, Any]]:
         elif isinstance(item, dict):
             normalized.append(item)
     return normalized
-
-
-def _ensure_used_in_steps(item: dict[str, Any]) -> dict[str, Any]:
-    clone = __import__("json").loads(__import__("json").dumps(item))
-    clone.setdefault("usedInSteps", [])
-    return clone
 
 
 def _stack_metadata_validation_finding(root: Path) -> dict[str, str] | None:

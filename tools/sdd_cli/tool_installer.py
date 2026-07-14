@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 import os
 import platform
+import shutil
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -15,9 +17,10 @@ from ._shared import (
     CliError,
     add_bucket_item,
     configure_result,
-    default_runner,
-    ensure_used_in_steps,
+    git_text,
+    parse_pairs,
     read_json,
+    remove_empty_parents,
     run_native,
     write_json,
 )
@@ -43,7 +46,7 @@ def install_lefthook(root: Path, dry_run: bool = False) -> dict[str, Any]:
                                       "message": "Would download and install lefthook to user-local bin.", "phase": "apply"})
             result["valid"] = True
             return result
-        lefthook_path = _install_lefthook_user_local(result)
+        lefthook_path = _install_lefthook_user_local(root, result)
         if lefthook_path is None:
             result["valid"] = False
             return result
@@ -350,11 +353,7 @@ def install_or_update_sdd_tool(
         SDD_TOOL_PRESERVE_FILES,
         SDD_TOOL_INCLUDE_EMPTY_DIRS,
         SDD_TOOL_INCLUDE_DIRS,
-        SDD_TOOL_INCLUDE_FILES,
         SDD_TOOL_TOOL_FILES,
-        SDD_TOOL_EXCLUDE_PARTS,
-        SDD_TOOL_EXCLUDE_SEGMENTS,
-        SDD_TOOL_EXCLUDE_SUFFIXES,
         is_preserved_local_json,
         sdd_tool_checksum,
         sdd_tool_files,
@@ -434,15 +433,15 @@ def install_or_update_sdd_tool(
         if dst.exists() and relative not in SDD_TOOL_PRESERVE_FILES and relative not in SDD_TOOL_PRESERVE_EXAMPLE_FILES and not is_preserved_local_json(relative):
             dst.unlink()
             removed.append(relative)
-            _remove_empty_parents(dst.parent, target)
+            remove_empty_parents(dst.parent, target)
     checksum = sdd_tool_checksum(target, files)
     git_bootstrap = _ensure_local_git_repo(target)
     manifest = {
         "schemaVersion": 1,
         "tool": "sdd-tool",
         "version": version or _latest_sdd_tool_version(source),
-        "sourceRepo": _git_text(source, ["config", "--get", "remote.origin.url"]) or str(source),
-        "sourceCommit": _git_text(source, ["rev-parse", "HEAD"]),
+        "sourceRepo": git_text(source, ["config", "--get", "remote.origin.url"]) or str(source),
+        "sourceCommit": git_text(source, ["rev-parse", "HEAD"]),
         "installedAtUtc": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "checksumSha256": checksum,
         "managedFiles": files,
@@ -577,7 +576,7 @@ def run_tool_installer(args: list[str]) -> int:
               "install-sdd-template, update-sdd-template", file=sys.stderr)
         return 1
     subcommand = args[0]
-    options = _parse_pairs(args[1:])
+    options = parse_pairs(args[1:])
     root = Path(options.get("root", REPO_ROOT))
     dry_run = options.get("dry-run", "false").lower() == "true"
     handlers: dict[str, Any] = {
@@ -608,40 +607,6 @@ def run_tool_installer(args: list[str]) -> int:
 
 # ── Private helpers ──────────────────────────────────────────────────────
 
-def _parse_pairs(items: list[str]) -> dict[str, str]:
-    from ._shared import trim_remainder
-    args = trim_remainder(items)
-    pairs: dict[str, str] = {}
-    index = 0
-    while index < len(args):
-        key = args[index]
-        if not key.startswith("--"):
-            raise CliError(f"Expected --option, got: {key}")
-        if index + 1 >= len(args):
-            raise CliError(f"Missing value for option {key}")
-        pairs[key[2:]] = args[index + 1]
-        index += 2
-    return pairs
-
-
-def _remove_empty_parents(path: Path, stop: Path) -> None:
-    path = path.resolve()
-    stop = stop.resolve()
-    while path != stop and str(path).startswith(str(stop)):
-        try:
-            path.rmdir()
-        except OSError:
-            return
-        path = path.parent
-
-
-def _git_text(root: Path, args: list[str]) -> str:
-    try:
-        result = subprocess.run(["git", *args], cwd=root, check=False, capture_output=True, text=True)
-    except OSError:
-        return ""
-    return result.stdout.strip() if result.returncode == 0 else ""
-
 
 def _ensure_local_git_repo(root: Path) -> dict[str, Any]:
     result = {"initialized": False, "branch": "", "remoteConfigured": False}
@@ -654,19 +619,19 @@ def _ensure_local_git_repo(root: Path) -> dict[str, Any]:
                     raise CliError(f"Could not initialize local Git repository: {completed.stderr.strip() or completed.stdout.strip()}")
                 subprocess.run(["git", "checkout", "-B", "dev"], cwd=root, check=False, capture_output=True, text=True)
             result["initialized"] = True
-        branch = _git_text(root, ["branch", "--show-current"])
+        branch = git_text(root, ["branch", "--show-current"])
         if branch != "dev":
             subprocess.run(["git", "checkout", "-B", "dev"], cwd=root, check=False, capture_output=True, text=True)
-            branch = _git_text(root, ["branch", "--show-current"])
+            branch = git_text(root, ["branch", "--show-current"])
         result["branch"] = branch
-        result["remoteConfigured"] = bool(_git_text(root, ["remote"]))
+        result["remoteConfigured"] = bool(git_text(root, ["remote"]))
     except OSError as ex:
         raise CliError(f"Could not initialize local Git repository: {ex}")
     return result
 
 
 def _latest_sdd_tool_version(source: Path) -> str:
-    tags = _git_text(source, ["tag", "--list", "v*"])
+    tags = git_text(source, ["tag", "--list", "v*"])
     versions: list[tuple[int, int, int, str]] = []
     for tag in tags.splitlines():
         match = __import__("re").match(r"^v(\d+)\.(\d+)\.(\d+)$", tag.strip())

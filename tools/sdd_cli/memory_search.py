@@ -5,8 +5,9 @@ from __future__ import annotations
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
-from ._shared import REPO_ROOT, CliError
+from ._shared import REPO_ROOT, CliError, find_meta, parse_pairs
 
 
 def search_memory(root: Path, queries: list[str], list_topics: bool) -> Any:
@@ -27,10 +28,10 @@ def search_memory(root: Path, queries: list[str], list_topics: bool) -> Any:
             entries.append({
                 "file": path.relative_to(root).as_posix(),
                 "title": match.group(1).strip(),
-                "type": _find_meta(body, "Type"),
-                "status": _find_meta(body, "Status"),
-                "source": _find_meta(body, "Source"),
-                "lastVerified": _find_meta(body, "Last verified"),
+                "type": find_meta(body, "Type"),
+                "status": find_meta(body, "Status"),
+                "source": find_meta(body, "Source"),
+                "lastVerified": find_meta(body, "Last verified"),
                 "excerpt": plain[:240] + ("..." if len(plain) > 240 else ""),
             })
     if list_topics:
@@ -45,11 +46,6 @@ def search_memory(root: Path, queries: list[str], list_topics: bool) -> Any:
     }
 
 
-def _find_meta(body: str, label: str) -> str:
-    match = re.search(rf"(?m)^-\s+{re.escape(label)}:\s*(.+)$", body)
-    return match.group(1).strip() if match else ""
-
-
 # ── CLI entry point ──────────────────────────────────────────────────────
 
 def run_memory_search(args: list[str]) -> int:
@@ -58,7 +54,7 @@ def run_memory_search(args: list[str]) -> int:
     if not args or args[0] != "search":
         print("Usage: memory-search search [--query TERM] [--list-topics] [--json] [--root PATH]", file=sys.stderr)
         return 1
-    options = _parse_pairs(args[1:])
+    options = parse_pairs(args[1:])
     root = Path(options.get("root", REPO_ROOT))
     queries = options.get("query", "").split(",") if options.get("query") else []
     list_topics = options.get("list-topics", "false").lower() == "true"
@@ -74,19 +70,3 @@ def run_memory_search(args: list[str]) -> int:
         for row in result:
             print(" | ".join(str(row.get(key, "")) for key in row))
     return 0
-
-
-def _parse_pairs(items: list[str]) -> dict[str, str]:
-    from ._shared import trim_remainder
-    args = trim_remainder(items)
-    pairs: dict[str, str] = {}
-    index = 0
-    while index < len(args):
-        key = args[index]
-        if not key.startswith("--"):
-            raise CliError(f"Expected --option, got: {key}")
-        if index + 1 >= len(args):
-            raise CliError(f"Missing value for option {key}")
-        pairs[key[2:]] = args[index + 1]
-        index += 2
-    return pairs

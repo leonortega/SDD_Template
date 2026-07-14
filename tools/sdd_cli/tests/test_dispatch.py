@@ -11,7 +11,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout, redirect_stderr
 from pathlib import Path
-from unittest.mock import patch
+
 
 from tools.sdd_cli import cli
 

@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import json
-import os
 import re
-import subprocess
 import sys
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -19,26 +17,22 @@ from ._shared import (
     REPO_ROOT,
     STANDARD_STAGES,
     CliError,
+    HIGH_RISK_PATTERNS,
     add_bucket_item,
-    audit_skill_contracts,
-    build_recommendations,
-    build_research_topics,
-    build_stack_context_findings,
     classify_delivery_risk,
     classify_ticket_readiness,
-    configure_result,
-    detect_stack_tags,
     fail,
     format_duration,
-    http_status,
-    load_project_profile,
-    merge_dicts,
+    max_text,
+    min_text,
     nested,
     new_configure_result,
+    parse_pairs,
     parse_time,
     profile_audit_findings,
     read_json,
-    run_native,
+    read_ticket_pattern,
+    selected_deployment_provider,
     split_list,
     write_json,
 )
@@ -540,22 +534,15 @@ def delivery_risk(paths: list[str], context: str, changed_lines: int) -> dict[st
 
 def check_git_ignored(root: Path, path: str) -> dict[str, Any]:
     """Check if a path is git-ignored."""
-    return {"path": path, "ignored": _check_git_ignored(root, path)}
-
-
-def _check_git_ignored(root: Path, path: str) -> bool:
-    completed = subprocess.run(
-        ["git", "check-ignore", path], cwd=root,
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
-    )
-    return completed.returncode == 0
+    from ._shared import check_git_ignored as _impl
+    return {"path": path, "ignored": _impl(root, path)}
 
 
 # ── Commit message validation ────────────────────────────────────────────
 
 def validate_commit_message(root: Path, message: str) -> dict[str, Any]:
     """Validate commit message against ticket pattern."""
-    pattern = _read_ticket_pattern(root)
+    pattern = read_ticket_pattern(root)
     allowed = re.compile(
         rf"^(\[SDD\] .+|{pattern}: .+|openspec/[a-z0-9][a-z0-9-]*: .+)",
         re.MULTILINE,
@@ -650,14 +637,8 @@ def detect_adversarial_trigger(
         trigger = True
         reasons.append(f"Delivery risk is '{risk_level}'.")
     # Check high-risk path patterns
-    high_risk_patterns = [
-        "auth", "authorization", "persistence", "migration",
-        "deploy", "secret", "secrets", "public-api", "health",
-        "release", "rollback", "hotfix", "/health", ".gitea/",
-        "nexus", "docker", "k8s", "kubernetes",
-    ]
     for p in paths:
-        for pattern in high_risk_patterns:
+        for pattern in HIGH_RISK_PATTERNS:
             if pattern in p.lower():
                 trigger = True
                 reasons.append(f"High-risk path pattern '{pattern}' in: {p}")
@@ -712,16 +693,6 @@ def _parse_time_comment(raw: str, ticket_key: str) -> dict[str, Any] | None:
     return data
 
 
-def _read_ticket_pattern(root: Path) -> str:
-    profile = load_project_profile(root)
-    pattern = nested(profile, "workflow", "ticketKeyPattern")
-    if pattern:
-        return pattern
-    policy = root / ".codex" / "delivery-policy.json"
-    data = read_json(policy, optional=True)
-    return data.get("ticketKeyPattern", "E2EPROJECT-[0-9]+")
-
-
 # ── CLI entry point ──────────────────────────────────────────────────────
 
 def run_dev_flow(args: list[str]) -> int:
@@ -738,7 +709,7 @@ def run_dev_flow(args: list[str]) -> int:
               "parse-workload-forecast, detect-adversarial-trigger", file=sys.stderr)
         return 1
     subcommand = args[0]
-    options = _parse_pairs(args[1:])
+    options = parse_pairs(args[1:])
     root = Path(options.get("root", REPO_ROOT))
     dry_run = options.get("dry-run", "false").lower() == "true"
     handlers: dict[str, Any] = {
@@ -800,22 +771,6 @@ def run_dev_flow(args: list[str]) -> int:
 
 
 # ── Private helpers ──────────────────────────────────────────────────────
-
-def _parse_pairs(items: list[str]) -> dict[str, str]:
-    from ._shared import trim_remainder
-    args = trim_remainder(items)
-    pairs: dict[str, str] = {}
-    index = 0
-    while index < len(args):
-        key = args[index]
-        if not key.startswith("--"):
-            raise CliError(f"Expected --option, got: {key}")
-        if index + 1 >= len(args):
-            raise CliError(f"Missing value for option {key}")
-        pairs[key[2:]] = args[index + 1]
-        index += 2
-    return pairs
-
 
 def _parse_values(options: dict[str, str]) -> dict[str, Any]:
     import json as _json

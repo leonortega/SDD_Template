@@ -35,6 +35,7 @@ If you need to run steps individually:
 | Set project stack | `python -m tools.sdd_cli environment-lab set-project-stack --values-json '{...}'` |
 | Validate observability | `python -m tools.sdd_cli environment-lab validate-observability` |
 | Build Gitea images | `python -m tools.sdd_cli environment-lab build-gitea-images` |
+| Setup MCP server (`setup-mcp-server`) | `python tools/bm25s_flashrank/setup_mcp.py` |
 
 ## Safety Rules
 
@@ -66,6 +67,7 @@ Useful `environment-lab` modes:
 - `validate-observability`: check Seq + Grafana endpoints and provisioning.
 - `validate-gitea-runner`: check Docker, Gitea runner images, and runner tools.
 - `build-gitea-images`: build Gitea Actions CI images.
+- `setup-mcp-server`: run the monorepo-docs-search MCP setup script via `python tools/bm25s_flashrank/setup_mcp.py` (standalone script, not an `environment-lab` subcommand).
 
 ## Domain-Specific Setup
 
@@ -143,6 +145,26 @@ Configure Seq log search and Grafana health dashboards.
 
 **Values needed:** SEQ_URL (default `http://localhost:5341`), error alert window/threshold.
 **Safety:** Keep Seq data in Docker volume; do not export logs to tracked files.
+
+### Documentation Search MCP (monorepo-docs-search)
+
+Configure the `monorepo-docs-search` MCP server for fast BM25 + FlashRank documentation search across Markdown (`.md`, `.mdx`) files. This MCP is used by agents to route documentation lookups per `.codex/mcp-instructions.md`.
+
+1. Run the automated setup script:
+   ```bash
+   python tools/bm25s_flashrank/setup_mcp.py
+   ```
+   This script:
+   - Checks Python >= 3.10.
+   - Creates a shared virtual environment at `%USERPROFILE%\.mcp_shared_venv` (Windows) or `~/.mcp_shared_venv` (macOS/Linux).
+   - Installs dependencies: `mcp`, `bm25s`, `flashrank`.
+   - Writes the MCP server configuration to `.vscode/mcp.json` and `.cline/mcp_settings.json`.
+   - Auto-starts the MCP server and writes a PID file to `.vscode/.mcp_monorepo_docs_search.pid`.
+2. Validate the configuration is present in `.vscode/mcp.json` under `servers.monorepo-docs-search`.
+3. Validate the server registers correctly by checking agent documentation search routing via `.codex/mcp-instructions.md`.
+
+**Prerequisites:** Python 3.10 or newer, internet access for pip package download.
+**Safety:** The setup script only writes to local config files (`.vscode/mcp.json`, `.cline/mcp_settings.json`). It does not send data externally or require API tokens.
 
 ## Output
 
