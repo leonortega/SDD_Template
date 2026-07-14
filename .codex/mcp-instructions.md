@@ -1,3 +1,4 @@
+<!-- TIER 1: STABLE PREFIX - Mandatory MCP routing contract, authority level 5 -->
 # MCP Routing Instructions — Mandatory
 
 This file defines the **mandatory** MCP server routing for all agent prompts. Every agent **must** follow this routing whenever the task requires reading or searching repository content.

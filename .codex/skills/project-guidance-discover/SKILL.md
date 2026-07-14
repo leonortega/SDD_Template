@@ -3,6 +3,8 @@ name: project-guidance-discover
 description: Discover project-relevant guidance from the current repository. Use when Codex needs to scan tech stack, tools, environments, QA/test setup, security gates, code standards, architecture, web UI, REST/API needs, MCP/plugin/tool/reference/IDE-extension needs, or "config infra" guidance findings; research extra useful skills, MCPs, plugins, tools, references, practices, standards, and Codex-applicable IDE helpers from detected project signals; show suggested missing guidance with guarded install metadata; and prepare confirmed items for local acquisition or mapping.
 ---
 
+<!-- TIER 3: STAGE-SPECIFIC - Guidance discovery skill -->
+
 # Project Guidance Discover
 
 ## Overview

@@ -1,3 +1,4 @@
+<!-- TIER 2: SEMI-STABLE - Memory retrieval and write policy, loaded at startup -->
 # Memory Retrieval And Write Policy
 
 Use this policy whenever an agent reads from or writes to `.codex/memory/`.

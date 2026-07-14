@@ -8,6 +8,62 @@
       "dynamicRuntimeContextLast": true,
       "trackCachedTokens": true
     },
+    "contextTiers": {
+      "enabled": true,
+      "tiers": [
+        {
+          "id": 1,
+          "name": "STABLE_PREFIX",
+          "description": "Repo identity, mandatory rules, core policy — never changes per turn. Cached once per session.",
+          "files": [
+            "AGENTS.md",
+            ".codex/skills/_shared/repo-startup.md",
+            ".codex/delivery-policy.json",
+            ".codex/mcp-instructions.md",
+            "docs/context-management.md"
+          ],
+          "cacheStrategy": "session",
+          "breakpointAfter": true
+        },
+        {
+          "id": 2,
+          "name": "SEMI_STABLE",
+          "description": "Core delivery contract and startup sequence — loaded every stage, changes rarely.",
+          "files": [
+            ".codex/skills/_shared/delivery-contract.md",
+            ".codex/skills/_shared/delivery-contract-core.md",
+            ".codex/skills/_shared/skill-startup.md",
+            ".codex/skills/_shared/provider-adapter-contract.md",
+            ".codex/project-profile.json"
+          ],
+          "cacheStrategy": "session",
+          "breakpointAfter": true
+        },
+        {
+          "id": 3,
+          "name": "STAGE_SPECIFIC",
+          "description": "Stage-specific delivery contracts and API helpers — changes per workflow stage.",
+          "files": [
+            ".codex/skills/_shared/delivery-contract-ticket.md",
+            ".codex/skills/_shared/delivery-contract-review.md",
+            ".codex/skills/_shared/delivery-contract-qa.md",
+            ".codex/skills/_shared/delivery-contract-deploy.md",
+            ".codex/skills/_shared/delivery-contract-parallel.md",
+            ".codex/skills/_shared/api-helpers.md"
+          ],
+          "cacheStrategy": "stage",
+          "breakpointAfter": true
+        },
+        {
+          "id": 4,
+          "name": "DYNAMIC",
+          "description": "Every-turn data: user message, conversation history, tool outputs, live state. Never cached.",
+          "files": [],
+          "cacheStrategy": "never",
+          "breakpointAfter": false
+        }
+      ]
+    },
     "telemetry": {
       "enabled": true,
       "localPath": ".codex/agent-telemetry.local.jsonl",
@@ -27,9 +83,14 @@
       ]
     },
     "workflowEvals": {
-      "casesPath": ".codex/agent-evals/workflow-cases.json",
+      "provider": "promptfoo",
+      "configPath": ".codex/agent-evals/promptfooconfig.yaml",
+      "providerPath": ".codex/agent-evals/routing_provider.py",
+      "legacyCasesPath": ".codex/agent-evals/workflow-cases.json",
       "resultsPath": ".codex/agent-evals/results.local.json",
-      "requireEvalEvidenceBeforeNewAgentRole": true
+      "requireEvalEvidenceBeforeNewAgentRole": true,
+      "ciWorkflow": ".gitea/workflows/agent-eval.yml",
+      "testCount": 22
     }
   }
 }

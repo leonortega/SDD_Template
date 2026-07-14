@@ -17,6 +17,7 @@ from ._shared import (
     CliError,
     add_bucket_item,
     configure_result,
+    get_sdd_tool_preserve_files,
     git_text,
     parse_pairs,
     read_json,
@@ -348,16 +349,22 @@ def install_or_update_sdd_tool(
 ) -> dict[str, Any]:
     """Install or update the SDD template tooling into a consumer repository."""
     from ._shared import (
-        SDD_TOOL_MANIFEST,
-        SDD_TOOL_PRESERVE_EXAMPLE_FILES,
-        SDD_TOOL_PRESERVE_FILES,
-        SDD_TOOL_INCLUDE_EMPTY_DIRS,
-        SDD_TOOL_INCLUDE_DIRS,
-        SDD_TOOL_TOOL_FILES,
+        get_sdd_tool_include_dirs,
+        get_sdd_tool_include_empty_dirs,
+        get_sdd_tool_manifest,
+        get_sdd_tool_preserve_example_files,
+        get_sdd_tool_preserve_files,
+        get_sdd_tool_tool_files,
         is_preserved_local_json,
         sdd_tool_checksum,
         sdd_tool_files,
     )
+    SDD_TOOL_MANIFEST = get_sdd_tool_manifest()
+    SDD_TOOL_INCLUDE_DIRS = get_sdd_tool_include_dirs()
+    SDD_TOOL_INCLUDE_EMPTY_DIRS = get_sdd_tool_include_empty_dirs()
+    SDD_TOOL_TOOL_FILES = get_sdd_tool_tool_files()
+    SDD_TOOL_PRESERVE_FILES = get_sdd_tool_preserve_files()
+    SDD_TOOL_PRESERVE_EXAMPLE_FILES = get_sdd_tool_preserve_example_files()
     source = source.resolve()
     target = target.resolve()
     if source == target:
@@ -647,11 +654,12 @@ def _unmanaged_collisions(
 ) -> list[str]:
     collisions: list[str] = []
     managed = set(files)
+    preserve = get_sdd_tool_preserve_files()
     for path in source.rglob("*"):
         if not path.is_file():
             continue
         relative = path.relative_to(source).as_posix()
-        if relative in managed or relative in _SHARED_PRESERVE or relative in owned:
+        if relative in managed or relative in preserve or relative in owned:
             continue
         if relative in preserve_examples:
             continue
@@ -662,20 +670,8 @@ def _unmanaged_collisions(
         dst = target / relative
         if not dst.exists() or relative in owned:
             continue
-        if relative in _SHARED_PRESERVE or relative in preserve_examples:
+        if relative in preserve or relative in preserve_examples:
             continue
         if dst.read_bytes() != (source / relative).read_bytes():
             collisions.append(relative)
     return collisions
-
-
-_SHARED_PRESERVE = {
-    ".codex/client-tools.local.json",
-    ".codex/environment-urls.local.json",
-    ".codex/project-profile.local.json",
-    ".codex/quality.local.json",
-    ".codex/tool-recommendations.local.json",
-    ".codex/memory/MEMORY.md",
-    ".codex/memory/memory_summary.md",
-    ".codex/memory/retrieval-policy.md",
-}

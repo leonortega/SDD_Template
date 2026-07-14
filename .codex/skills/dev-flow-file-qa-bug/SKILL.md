@@ -3,6 +3,8 @@ name: dev-flow-file-qa-bug
 description: Create a linked bug through the selected ticket adapter from failed QA evidence, preserve failure context, and start a focused fix workflow when code changes are required. Use when the configured QA gate finds a product defect, QA fails after deployment, or Codex needs to create a follow-up bug ticket from QA evidence.
 ---
 
+<!-- TIER 3: STAGE-SPECIFIC - QA bug filing workflow skill -->
+
 # File QA Bug
 
 ## Overview

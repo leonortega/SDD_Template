@@ -3,6 +3,8 @@ name: dev-ops-rollback-prod
 description: Roll back production to previously verified immutable artifacts through selected project-profile artifact, deployment, observability, and ticket adapters. Use when Codex needs to choose a known-good release from release metadata, redeploy existing artifacts without rebuilding, verify production page and health checks, check configured observability when available, and comment rollback evidence on the ticket system.
 ---
 
+<!-- TIER 3: STAGE-SPECIFIC - PROD rollback skill -->
+
 # Rollback PROD
 
 ## Overview

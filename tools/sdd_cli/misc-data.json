@@ -1,0 +1,28 @@
+{
+  "HIGH_RISK_PATTERNS": [
+    "auth",
+    "authorization",
+    "persistence",
+    "migration",
+    "deploy",
+    "secret",
+    "secrets",
+    "public-api",
+    "health",
+    "release",
+    "rollback",
+    "hotfix",
+    "/health",
+    ".gitea/",
+    "nexus",
+    "docker",
+    "k8s",
+    "kubernetes"
+  ],
+  "ALLOWLISTED_LOCAL_CONFIG": [
+    ".codex/client-tools.local.json",
+    ".codex/project-profile.local.json",
+    ".codex/quality.local.json",
+    ".codex/tool-recommendations.local.json"
+  ]
+}

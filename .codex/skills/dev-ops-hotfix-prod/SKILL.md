@@ -3,6 +3,8 @@ name: dev-ops-hotfix-prod
 description: Run an expedited but gated production hotfix workflow for urgent targeted code fixes, including incident/hotfix ticket creation, branch and PR handling, review, immutable artifact deployment, QA evidence, and explicit production promotion through selected project-profile adapters. Use when rollback is insufficient and a production regression needs a small code fix.
 ---
 
+<!-- TIER 3: STAGE-SPECIFIC - PROD hotfix skill -->
+
 # Hotfix PROD
 
 ## Overview

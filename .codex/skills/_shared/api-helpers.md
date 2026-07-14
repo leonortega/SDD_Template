@@ -1,3 +1,4 @@
+<!-- TIER 3: STAGE-SPECIFIC - API helper patterns, loaded when stage needs API calls -->
 # Shared Delivery API Helpers
 
 Use these patterns for repeated OpenProject, Gitea, Nexus, and Git operations. Load credentials from `.codex/client-tools.local.json` or approved environment overrides. Never print tokens or credential-bearing URLs.

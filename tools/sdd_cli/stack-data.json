@@ -1,0 +1,120 @@
+{
+  "_STACK_TAG_ALIASES": {
+    "react": ["react", "reactjs", "react.js"],
+    "typescript": ["typescript", "ts"],
+    "javascript": ["javascript", "js", "ecmascript"],
+    "python": ["python"],
+    "fastapi": ["fastapi"],
+    "flask": ["flask"],
+    "django": ["django"],
+    "postgresql": ["postgresql", "postgres", "psql"],
+    "sqlite": ["sqlite", "sqlite3"],
+    "mongodb": ["mongodb", "mongo"],
+    "csharp": ["csharp", "c#", ".net", "dotnet"],
+    "aspnetcore": ["aspnetcore", "asp.net core", ".net core", ".net 10", ".net-core"],
+    "go": ["golang", "go"],
+    "rust": ["rust"],
+    "java": ["java"],
+    "vue": ["vue", "vue.js", "vuejs"],
+    "angular": ["angular", "angular.js", "angularjs"],
+    "svelte": ["svelte"],
+    "nextjs": ["next", "next.js", "nextjs"],
+    "nuxt": ["nuxt", "nuxt.js"]
+  },
+  "_STACK_CANONICAL_MAP": {
+    "react": {
+      "technology": "React", "languages": ["TypeScript", "JavaScript"],
+      "frameworks": ["React"], "testFrameworks": ["Vitest", "Jest"],
+      "guidanceSearchTerms": ["React official docs", "React TypeScript testing"]
+    },
+    "typescript": {
+      "technology": "TypeScript", "languages": ["TypeScript"],
+      "frameworks": [], "testFrameworks": ["Vitest", "Jest", "ts-jest"],
+      "guidanceSearchTerms": ["TypeScript official docs"]
+    },
+    "javascript": {
+      "technology": "JavaScript", "languages": ["JavaScript"],
+      "frameworks": [], "testFrameworks": ["Jest"],
+      "guidanceSearchTerms": ["JavaScript MDN docs"]
+    },
+    "python": {
+      "technology": "Python", "languages": ["Python"],
+      "frameworks": [], "testFrameworks": ["pytest", "unittest"],
+      "guidanceSearchTerms": ["Python official docs"]
+    },
+    "fastapi": {
+      "technology": "FastAPI", "languages": ["Python"],
+      "frameworks": ["FastAPI"], "testFrameworks": ["pytest", "httpx"],
+      "guidanceSearchTerms": ["FastAPI official docs", "FastAPI testing"]
+    },
+    "flask": {
+      "technology": "Flask", "languages": ["Python"],
+      "frameworks": ["Flask"], "testFrameworks": ["pytest"],
+      "guidanceSearchTerms": ["Flask official docs"]
+    },
+    "django": {
+      "technology": "Django", "languages": ["Python"],
+      "frameworks": ["Django"], "testFrameworks": ["pytest-django"],
+      "guidanceSearchTerms": ["Django official docs"]
+    },
+    "postgresql": {
+      "technology": "PostgreSQL", "languages": [], "frameworks": [],
+      "testFrameworks": [], "guidanceSearchTerms": ["PostgreSQL official docs"]
+    },
+    "sqlite": {
+      "technology": "SQLite", "languages": [], "frameworks": [],
+      "testFrameworks": [], "guidanceSearchTerms": ["SQLite official docs"]
+    },
+    "mongodb": {
+      "technology": "MongoDB", "languages": [], "frameworks": [],
+      "testFrameworks": [], "guidanceSearchTerms": ["MongoDB official docs"]
+    },
+    "csharp": {
+      "technology": "C#", "languages": ["C#"], "frameworks": [],
+      "testFrameworks": ["xUnit", "NUnit"],
+      "guidanceSearchTerms": ["C# official docs"]
+    },
+    "aspnetcore": {
+      "technology": ".NET 10 / ASP.NET Core", "languages": ["C#"],
+      "frameworks": ["ASP.NET Core"], "testFrameworks": ["xUnit"],
+      "guidanceSearchTerms": ["ASP.NET Core official docs", ".NET 10 testing"]
+    },
+    "go": {
+      "technology": "Go", "languages": ["Go"], "frameworks": [],
+      "testFrameworks": ["go test"], "guidanceSearchTerms": ["Go official docs"]
+    },
+    "rust": {
+      "technology": "Rust", "languages": ["Rust"], "frameworks": [],
+      "testFrameworks": ["cargo test"], "guidanceSearchTerms": ["Rust official docs"]
+    },
+    "java": {
+      "technology": "Java", "languages": ["Java"], "frameworks": [],
+      "testFrameworks": ["JUnit"], "guidanceSearchTerms": ["Java official docs"]
+    },
+    "vue": {
+      "technology": "Vue.js", "languages": ["TypeScript", "JavaScript"],
+      "frameworks": ["Vue.js"], "testFrameworks": ["Vitest"],
+      "guidanceSearchTerms": ["Vue.js official docs"]
+    },
+    "angular": {
+      "technology": "Angular", "languages": ["TypeScript", "JavaScript"],
+      "frameworks": ["Angular"], "testFrameworks": ["Jasmine", "Karma"],
+      "guidanceSearchTerms": ["Angular official docs"]
+    },
+    "svelte": {
+      "technology": "Svelte", "languages": ["TypeScript", "JavaScript"],
+      "frameworks": ["Svelte"], "testFrameworks": ["Vitest"],
+      "guidanceSearchTerms": ["Svelte official docs"]
+    },
+    "nextjs": {
+      "technology": "Next.js", "languages": ["TypeScript", "JavaScript"],
+      "frameworks": ["Next.js", "React"], "testFrameworks": ["Vitest", "Jest"],
+      "guidanceSearchTerms": ["Next.js official docs"]
+    },
+    "nuxt": {
+      "technology": "Nuxt.js", "languages": ["TypeScript", "JavaScript"],
+      "frameworks": ["Nuxt.js", "Vue.js"], "testFrameworks": ["Vitest"],
+      "guidanceSearchTerms": ["Nuxt.js official docs"]
+    }
+  }
+}

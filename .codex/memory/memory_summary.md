@@ -1,3 +1,4 @@
+<!-- TIER 2: SEMI-STABLE - Repository memory summary, loaded at startup of every stage -->
 # Memory Summary
 
 This repository is a product-free SDD/SDLC delivery shell. The previous sample application and old stack guidance were removed. `.codex/project-profile.json` is the tracked common provider/workflow declaration; ignored `.codex/project-profile.local.json` is the local stack overlay and currently has no product stack selected.

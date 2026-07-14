@@ -3,6 +3,8 @@ name: dev-flow-pr-review-agent
 description: Review a specific pull request through the selected review adapter and post actionable findings. Use when Codex is asked to review a PR, review the PR just created by the implementation workflow, inspect PR diffs, use internet research to validate code quality, post review comments, or apply configured review outcome labels.
 ---
 
+<!-- TIER 3: STAGE-SPECIFIC - PR review workflow skill -->
+
 # repository PR Review Agent
 
 ## Overview

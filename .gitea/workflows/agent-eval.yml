@@ -1,0 +1,44 @@
+name: Agent evaluation
+
+on:
+  pull_request:
+    branches:
+      - dev
+    paths:
+      - '.codex/agent-evals/**'
+      - '.codex/delivery-policy.json'
+      - '.codex/skills/_shared/delivery-contract*.md'
+      - 'tools/sdd_cli/agent_eval.py'
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    container:
+      image: sdd-e2e-ci:local
+    steps:
+      - name: Checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          repo_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          repo_url="${repo_url/localhost/host.docker.internal}"
+          repo_url="${repo_url/gitea/host.docker.internal}"
+
+          git init .
+          git remote add origin "$repo_url"
+          git fetch --depth 1 origin "$GITHUB_SHA"
+          git checkout --force FETCH_HEAD
+
+      - name: Install promptfoo
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install -g promptfoo
+          promptfoo --version
+
+      - name: Run agent routing evaluation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m tools.sdd_cli agent-eval ci

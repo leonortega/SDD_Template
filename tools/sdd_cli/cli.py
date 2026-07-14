@@ -528,6 +528,11 @@ def _parse_cli(argv: list[str] | None):
     mem.add_argument("mem_args", nargs=argparse.REMAINDER)
     mem.set_defaults(func=_dispatch_memory_search)
 
+    # agent-eval
+    ae = sub.add_parser("agent-eval")
+    ae.add_argument("ae_args", nargs=argparse.REMAINDER)
+    ae.set_defaults(func=_dispatch_agent_eval)
+
     # configure (for run_configure_mode testing)
     cfg = sub.add_parser("configure")
     cfg.add_argument("cfg_mode", nargs=1)
@@ -579,6 +584,11 @@ def _dispatch_dev_flow(args: Any) -> int:
 def _dispatch_memory_search(args: Any) -> int:
     from .memory_search import run_memory_search
     return run_memory_search(getattr(args, "mem_args", []))
+
+
+def _dispatch_agent_eval(args: Any) -> int:
+    from .agent_eval import run_agent_eval
+    return run_agent_eval(getattr(args, "ae_args", []))
 
 
 def _dispatch_configure(args: Any) -> int:

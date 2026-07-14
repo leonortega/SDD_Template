@@ -29,65 +29,71 @@ STANDARD_STAGES = [
     "dev-ops-post-merge-deploy",
     "dev-ops-deploy-qa",
 ]
-ALLOWLISTED_LOCAL_CONFIG = [
-    ".codex/client-tools.local.json",
-    ".codex/project-profile.local.json",
-    ".codex/quality.local.json",
-    ".codex/tool-recommendations.local.json",
-]
+# ── Generic JSON cache (lazy-loading helper) ──────────────────────────
 
-# High-risk path patterns used by delivery risk classification and adversarial detection
-HIGH_RISK_PATTERNS: list[str] = [
-    "auth", "authorization", "persistence", "migration",
-    "deploy", "secret", "secrets", "public-api", "health",
-    "release", "rollback", "hotfix", "/health", ".gitea/",
-    "nexus", "docker", "k8s", "kubernetes",
-]
+_JSON_CACHE: dict[str, dict[str, Any]] = {}
 
 
-# ── SDD tool manifest constants ──────────────────────────────────────────
+def _load_json_cache(path: Path) -> dict[str, Any]:
+    """Load a JSON file, caching by its resolved string path."""
+    key = str(path.resolve())
+    if key not in _JSON_CACHE:
+        _JSON_CACHE[key] = json.loads(path.read_text(encoding="utf-8"))
+    return _JSON_CACHE[key]
 
-SDD_TOOL_MANIFEST = ".codex/sdd-tool-version.json"
-SDD_TOOL_INCLUDE_DIRS = [
-    ".agents",
-    ".cline",
-    ".codex/providers",
-    ".codex/skills",
-    ".gitea/workflows",
-    "docs",
-    "infra",
-    "tools",
-    "tools/bm25s_flashrank",
-    ".vscode",
-]
-SDD_TOOL_INCLUDE_EMPTY_DIRS = [
-    ".clinerules",
-]
-SDD_TOOL_TOOL_FILES = [
-    ".cline/create_skill_links.py",
-]
-SDD_TOOL_EXCLUDE_PARTS = {
-    "__pycache__",
-    ".git",
-    ".pytest_cache",
-    ".codex/agent-evals",
-    ".codex/ponytail",
-    "openspec/changes",
-    "tools/sdd_cli/tests",
-}
-SDD_TOOL_EXCLUDE_SEGMENTS = {"data", "logs", "pgdata"}
-SDD_TOOL_EXCLUDE_SUFFIXES = {".pyc", ".pyo"}
-SDD_TOOL_PRESERVE_FILES = {
-    ".codex/client-tools.local.json",
-    ".codex/environment-urls.local.json",
-    ".codex/project-profile.local.json",
-    ".codex/quality.local.json",
-    ".codex/tool-recommendations.local.json",
-    ".codex/memory/MEMORY.md",
-    ".codex/memory/memory_summary.md",
-    ".codex/memory/retrieval-policy.md",
-}
-SDD_TOOL_PRESERVE_EXAMPLE_FILES: set[str] = set()
+
+# ── Misc constants (lazy-loaded from JSON) ─────────────────────────────
+
+_MISC_DATA_PATH = Path(__file__).parent / "misc-data.json"
+
+
+def get_high_risk_patterns() -> list[str]:
+    return list(_load_json_cache(_MISC_DATA_PATH)["HIGH_RISK_PATTERNS"])
+
+
+def get_allowlisted_local_config() -> list[str]:
+    return list(_load_json_cache(_MISC_DATA_PATH)["ALLOWLISTED_LOCAL_CONFIG"])
+
+
+# ── SDD tool manifest constants (lazy-loaded from JSON) ────────────────
+
+_SDD_TOOL_DATA_PATH = Path(__file__).parent / "sdd-tool-data.json"
+
+
+def get_sdd_tool_manifest() -> str:
+    return str(_load_json_cache(_SDD_TOOL_DATA_PATH)["SDD_TOOL_MANIFEST"])
+
+
+def get_sdd_tool_include_dirs() -> list[str]:
+    return list(_load_json_cache(_SDD_TOOL_DATA_PATH)["SDD_TOOL_INCLUDE_DIRS"])
+
+
+def get_sdd_tool_include_empty_dirs() -> list[str]:
+    return list(_load_json_cache(_SDD_TOOL_DATA_PATH)["SDD_TOOL_INCLUDE_EMPTY_DIRS"])
+
+
+def get_sdd_tool_tool_files() -> list[str]:
+    return list(_load_json_cache(_SDD_TOOL_DATA_PATH)["SDD_TOOL_TOOL_FILES"])
+
+
+def get_sdd_tool_exclude_parts() -> set[str]:
+    return set(_load_json_cache(_SDD_TOOL_DATA_PATH)["SDD_TOOL_EXCLUDE_PARTS"])
+
+
+def get_sdd_tool_exclude_segments() -> set[str]:
+    return set(_load_json_cache(_SDD_TOOL_DATA_PATH)["SDD_TOOL_EXCLUDE_SEGMENTS"])
+
+
+def get_sdd_tool_exclude_suffixes() -> set[str]:
+    return set(_load_json_cache(_SDD_TOOL_DATA_PATH)["SDD_TOOL_EXCLUDE_SUFFIXES"])
+
+
+def get_sdd_tool_preserve_files() -> set[str]:
+    return set(_load_json_cache(_SDD_TOOL_DATA_PATH)["SDD_TOOL_PRESERVE_FILES"])
+
+
+def get_sdd_tool_preserve_example_files() -> set[str]:
+    return set(_load_json_cache(_SDD_TOOL_DATA_PATH)["SDD_TOOL_PRESERVE_EXAMPLE_FILES"])
 
 
 # ── Error / runner types ────────────────────────────────────────────────
@@ -104,6 +110,9 @@ Runner = Callable[[list[str], Path | None, dict[str, str] | None], int]
 def sdd_tool_files(source: Path) -> list[str]:
     """List all managed files in the SDD tool source."""
     files: list[str] = []
+    exclude_parts = get_sdd_tool_exclude_parts()
+    exclude_segments = get_sdd_tool_exclude_segments()
+    exclude_suffixes = get_sdd_tool_exclude_suffixes()
     for pattern in ("**/*",):
         for path in source.rglob(pattern):
             if not path.is_file():
@@ -111,21 +120,21 @@ def sdd_tool_files(source: Path) -> list[str]:
             relative = path.relative_to(source).as_posix()
             # Exclude excluded parts
             excluded = False
-            for part in SDD_TOOL_EXCLUDE_PARTS:
+            for part in exclude_parts:
                 if relative.startswith(part) or f"/{part}/" in f"/{relative}/":
                     excluded = True
                     break
             if excluded:
                 continue
             # Exclude by segment
-            for segment in SDD_TOOL_EXCLUDE_SEGMENTS:
+            for segment in exclude_segments:
                 if f"/{segment}/" in f"/{relative}/" or relative == segment:
                     excluded = True
                     break
             if excluded:
                 continue
             # Exclude by suffix
-            if any(relative.endswith(suffix) for suffix in SDD_TOOL_EXCLUDE_SUFFIXES):
+            if any(relative.endswith(suffix) for suffix in exclude_suffixes):
                 continue
             files.append(relative)
     return sorted(files)
@@ -603,125 +612,17 @@ def remove_empty_parents(path: Path, stop: Path) -> None:
 
 # ── Stack detection ──────────────────────────────────────────────────────
 
-_STACK_TAG_ALIASES: dict[str, list[str]] = {
-    "react": ["react", "reactjs", "react.js"],
-    "typescript": ["typescript", "ts"],
-    "javascript": ["javascript", "js", "ecmascript"],
-    "python": ["python"],
-    "fastapi": ["fastapi"],
-    "flask": ["flask"],
-    "django": ["django"],
-    "postgresql": ["postgresql", "postgres", "psql"],
-    "sqlite": ["sqlite", "sqlite3"],
-    "mongodb": ["mongodb", "mongo"],
-    "csharp": ["csharp", "c#", ".net", "dotnet"],
-    "aspnetcore": ["aspnetcore", "asp.net core", ".net core", ".net 10", ".net-core"],
-    "go": ["golang", "go"],
-    "rust": ["rust"],
-    "java": ["java"],
-    "vue": ["vue", "vue.js", "vuejs"],
-    "angular": ["angular", "angular.js", "angularjs"],
-    "svelte": ["svelte"],
-    "nextjs": ["next", "next.js", "nextjs"],
-    "nuxt": ["nuxt", "nuxt.js"],
-}
+_STACK_DATA_PATH = Path(__file__).parent / "stack-data.json"
 
-_STACK_CANONICAL_MAP: dict[str, dict[str, Any]] = {
-    "react": {
-        "technology": "React", "languages": ["TypeScript", "JavaScript"],
-        "frameworks": ["React"], "testFrameworks": ["Vitest", "Jest"],
-        "guidanceSearchTerms": ["React official docs", "React TypeScript testing"],
-    },
-    "typescript": {
-        "technology": "TypeScript", "languages": ["TypeScript"],
-        "frameworks": [], "testFrameworks": ["Vitest", "Jest", "ts-jest"],
-        "guidanceSearchTerms": ["TypeScript official docs"],
-    },
-    "javascript": {
-        "technology": "JavaScript", "languages": ["JavaScript"],
-        "frameworks": [], "testFrameworks": ["Jest"],
-        "guidanceSearchTerms": ["JavaScript MDN docs"],
-    },
-    "python": {
-        "technology": "Python", "languages": ["Python"],
-        "frameworks": [], "testFrameworks": ["pytest", "unittest"],
-        "guidanceSearchTerms": ["Python official docs"],
-    },
-    "fastapi": {
-        "technology": "FastAPI", "languages": ["Python"],
-        "frameworks": ["FastAPI"], "testFrameworks": ["pytest", "httpx"],
-        "guidanceSearchTerms": ["FastAPI official docs", "FastAPI testing"],
-    },
-    "flask": {
-        "technology": "Flask", "languages": ["Python"],
-        "frameworks": ["Flask"], "testFrameworks": ["pytest"],
-        "guidanceSearchTerms": ["Flask official docs"],
-    },
-    "django": {
-        "technology": "Django", "languages": ["Python"],
-        "frameworks": ["Django"], "testFrameworks": ["pytest-django"],
-        "guidanceSearchTerms": ["Django official docs"],
-    },
-    "postgresql": {
-        "technology": "PostgreSQL", "languages": [], "frameworks": [],
-        "testFrameworks": [], "guidanceSearchTerms": ["PostgreSQL official docs"],
-    },
-    "sqlite": {
-        "technology": "SQLite", "languages": [], "frameworks": [],
-        "testFrameworks": [], "guidanceSearchTerms": ["SQLite official docs"],
-    },
-    "mongodb": {
-        "technology": "MongoDB", "languages": [], "frameworks": [],
-        "testFrameworks": [], "guidanceSearchTerms": ["MongoDB official docs"],
-    },
-    "csharp": {
-        "technology": "C#", "languages": ["C#"], "frameworks": [],
-        "testFrameworks": ["xUnit", "NUnit"],
-        "guidanceSearchTerms": ["C# official docs"],
-    },
-    "aspnetcore": {
-        "technology": ".NET 10 / ASP.NET Core", "languages": ["C#"],
-        "frameworks": ["ASP.NET Core"], "testFrameworks": ["xUnit"],
-        "guidanceSearchTerms": ["ASP.NET Core official docs", ".NET 10 testing"],
-    },
-    "go": {
-        "technology": "Go", "languages": ["Go"], "frameworks": [],
-        "testFrameworks": ["go test"], "guidanceSearchTerms": ["Go official docs"],
-    },
-    "rust": {
-        "technology": "Rust", "languages": ["Rust"], "frameworks": [],
-        "testFrameworks": ["cargo test"], "guidanceSearchTerms": ["Rust official docs"],
-    },
-    "java": {
-        "technology": "Java", "languages": ["Java"], "frameworks": [],
-        "testFrameworks": ["JUnit"], "guidanceSearchTerms": ["Java official docs"],
-    },
-    "vue": {
-        "technology": "Vue.js", "languages": ["TypeScript", "JavaScript"],
-        "frameworks": ["Vue.js"], "testFrameworks": ["Vitest"],
-        "guidanceSearchTerms": ["Vue.js official docs"],
-    },
-    "angular": {
-        "technology": "Angular", "languages": ["TypeScript", "JavaScript"],
-        "frameworks": ["Angular"], "testFrameworks": ["Jasmine", "Karma"],
-        "guidanceSearchTerms": ["Angular official docs"],
-    },
-    "svelte": {
-        "technology": "Svelte", "languages": ["TypeScript", "JavaScript"],
-        "frameworks": ["Svelte"], "testFrameworks": ["Vitest"],
-        "guidanceSearchTerms": ["Svelte official docs"],
-    },
-    "nextjs": {
-        "technology": "Next.js", "languages": ["TypeScript", "JavaScript"],
-        "frameworks": ["Next.js", "React"], "testFrameworks": ["Vitest", "Jest"],
-        "guidanceSearchTerms": ["Next.js official docs"],
-    },
-    "nuxt": {
-        "technology": "Nuxt.js", "languages": ["TypeScript", "JavaScript"],
-        "frameworks": ["Nuxt.js", "Vue.js"], "testFrameworks": ["Vitest"],
-        "guidanceSearchTerms": ["Nuxt.js official docs"],
-    },
-}
+
+def get_stack_tag_aliases() -> dict[str, list[str]]:
+    """Return _STACK_TAG_ALIASES loaded from JSON."""
+    return _load_json_cache(_STACK_DATA_PATH)["_STACK_TAG_ALIASES"]
+
+
+def get_stack_canonical_map() -> dict[str, dict[str, Any]]:
+    """Return _STACK_CANONICAL_MAP loaded from JSON."""
+    return _load_json_cache(_STACK_DATA_PATH)["_STACK_CANONICAL_MAP"]
 
 
 def detect_stack_tags(root: Path) -> list[str]:
@@ -737,13 +638,13 @@ def detect_stack_tags(root: Path) -> list[str]:
         if isinstance(domain_info, dict):
             if domain_info.get("applies") is True:
                 raw_value = str(domain_info.get("value", "")).lower()
-                for tag, aliases in _STACK_TAG_ALIASES.items():
+                for tag, aliases in get_stack_tag_aliases().items():
                     if any(alias in raw_value for alias in aliases):
                         if tag not in tags:
                             tags.append(tag)
         elif isinstance(domain_info, str):
             raw_value = domain_info.lower()
-            for tag, aliases in _STACK_TAG_ALIASES.items():
+            for tag, aliases in get_stack_tag_aliases().items():
                 if any(alias in raw_value for alias in aliases):
                     if tag not in tags:
                         tags.append(tag)
@@ -753,7 +654,7 @@ def detect_stack_tags(root: Path) -> list[str]:
         if isinstance(items, list):
             for item in items:
                 item_lower = item.lower()
-                for tag, aliases in _STACK_TAG_ALIASES.items():
+                for tag, aliases in get_stack_tag_aliases().items():
                     if any(alias in item_lower for alias in aliases):
                         if tag not in tags:
                             tags.append(tag)
@@ -764,7 +665,7 @@ def detect_stack_tags(root: Path) -> list[str]:
             deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
             for dep in deps:
                 dep_lower = dep.lower()
-                for tag, aliases in _STACK_TAG_ALIASES.items():
+                for tag, aliases in get_stack_tag_aliases().items():
                     if any(alias in dep_lower for alias in aliases):
                         if tag not in tags:
                             tags.append(tag)
@@ -776,7 +677,7 @@ def detect_stack_tags(root: Path) -> list[str]:
             if req_file.exists():
                 for line in req_file.read_text(encoding="utf-8").splitlines():
                     line = line.strip().lower()
-                    for tag, aliases in _STACK_TAG_ALIASES.items():
+                    for tag, aliases in get_stack_tag_aliases().items():
                         if any(alias in line for alias in aliases):
                             if tag not in tags:
                                 tags.append(tag)
@@ -817,7 +718,7 @@ def build_research_topics(detected: list[str], root: Path | None = None) -> list
     topics: list[dict[str, Any]] = []
     seen: set[str] = set()
     for tag in detected:
-        canonical = _STACK_CANONICAL_MAP.get(tag)
+        canonical = get_stack_canonical_map().get(tag)
         if canonical and tag not in seen:
             seen.add(tag)
             topics.append({
@@ -958,7 +859,7 @@ def classify_delivery_risk(paths: list[str], context: str, changed_lines: int) -
     score = 0.0
     reasons: list[str] = []
     for p in paths:
-        for pattern in HIGH_RISK_PATTERNS:
+        for pattern in get_high_risk_patterns():
             if pattern in p.lower():
                 risk = "moderate" if risk == "low" else risk
                 score = max(score, 0.4)

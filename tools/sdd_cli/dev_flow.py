@@ -17,7 +17,7 @@ from ._shared import (
     REPO_ROOT,
     STANDARD_STAGES,
     CliError,
-    HIGH_RISK_PATTERNS,
+    get_high_risk_patterns,
     add_bucket_item,
     classify_delivery_risk,
     classify_ticket_readiness,
@@ -71,10 +71,10 @@ def ensure_delivery_context(root: Path, values: dict[str, Any], dry_run: bool = 
 
 def sync_worktree_local_config(root: Path, values: dict[str, Any], dry_run: bool = False) -> dict[str, Any]:
     """Copy allowlisted local config files to worktrees."""
-    from ._shared import ALLOWLISTED_LOCAL_CONFIG
+    from ._shared import get_allowlisted_local_config
     result = new_configure_result("SyncWorktreeLocalConfig", dry_run, write_enabled=not dry_run)
     worktrees = [Path(path) for path in values.get("worktreePaths", [])]
-    for relative in ALLOWLISTED_LOCAL_CONFIG:
+    for relative in get_allowlisted_local_config():
         source = root / relative
         required = relative != ".codex/tool-recommendations.local.json"
         if required and not source.exists():
@@ -638,7 +638,7 @@ def detect_adversarial_trigger(
         reasons.append(f"Delivery risk is '{risk_level}'.")
     # Check high-risk path patterns
     for p in paths:
-        for pattern in HIGH_RISK_PATTERNS:
+        for pattern in get_high_risk_patterns():
             if pattern in p.lower():
                 trigger = True
                 reasons.append(f"High-risk path pattern '{pattern}' in: {p}")

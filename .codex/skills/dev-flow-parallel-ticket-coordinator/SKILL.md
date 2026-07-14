@@ -3,6 +3,8 @@ name: dev-flow-parallel-ticket-coordinator
 description: Coordinate multiple configured tickets through role-specialized delivery agents by assigning one repository worktree and one local ticket lock per active ticket while serializing shared deployment lanes through selected project-profile adapters.
 ---
 
+<!-- TIER 3: STAGE-SPECIFIC - Parallel delivery coordination skill -->
+
 # Parallel Ticket Coordinator
 
 ## Overview

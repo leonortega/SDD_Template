@@ -3,6 +3,8 @@ name: project-guidance-mapper
 description: Map repository delivery workflow steps to repo-local skills and project guidance. Use when Codex needs to choose skills, tools, MCP/plugin guidance, references, practices, standards, and installed expert skills for config infra, first ticket setup, OpenSpec proposal/design/tasks/spec, implementation, review, QA, deploy, rollback, hotfix, retrospective, or discovered stack/tool guidance.
 ---
 
+<!-- TIER 3: STAGE-SPECIFIC - Guidance mapping skill -->
+
 # Project Guidance Mapper
 
 ## Overview

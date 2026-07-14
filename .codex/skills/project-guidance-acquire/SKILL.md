@@ -3,6 +3,8 @@ name: project-guidance-acquire
 description: Acquire confirmed project guidance locally. Use after project-guidance-discover has researched extra useful skills, MCPs, plugins, tools, references, practices, standards, and Codex-applicable IDE helpers, shown suggestions, received confirmation/dismissals/omissions, and produced the final confirmed list; auto-copy safe repo-local Codex skills into this repo's .codex/skills directory; prepare guarded install plans for MCPs, plugins, tools, IDE/global installs, secrets, or restart-required items; aggregate IDE restart/system reboot notices once at the end.
 ---
 
+<!-- TIER 3: STAGE-SPECIFIC - Guidance acquisition skill -->
+
 # Project Guidance Acquire
 
 ## Overview

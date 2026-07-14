@@ -3,6 +3,8 @@ name: dev-flow-retrospective-audit
 description: Inspect completed, failed, or blocked ticket provider/repository/review provider/OpenSpec delivery runs and convert repeated audit evidence into durable workflow improvements. Use when Codex is asked to audit the delivery flow, perform a retrospective, identify self-improvements, reduce recurring review/QA/CI failures, improve skills from past delivery evidence, or propose/apply updates to delivery skills, configure skills, templates, tests, quality gates, or shared workflow policy.
 ---
 
+<!-- TIER 3: STAGE-SPECIFIC - Retrospective audit skill -->
+
 # Delivery Retrospective Audit
 
 ## Overview

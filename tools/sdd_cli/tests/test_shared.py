@@ -7,9 +7,9 @@ import unittest
 from pathlib import Path
 
 from tools.sdd_cli._shared import (
-    HIGH_RISK_PATTERNS,
     ensure_used_in_steps,
     find_meta,
+    get_high_risk_patterns,
     normalize_stack_domain,
     profile_audit_findings,
     remove_empty_parents,
@@ -185,17 +185,19 @@ class ProfileAuditFindingsTests(unittest.TestCase):
 
 
 class HighRiskPatternsTests(unittest.TestCase):
-    """Tests for HIGH_RISK_PATTERNS constant."""
+    """Tests for get_high_risk_patterns() result."""
 
     def test_is_a_list(self) -> None:
-        self.assertIsInstance(HIGH_RISK_PATTERNS, list)
+        patterns = get_high_risk_patterns()
+        self.assertIsInstance(patterns, list)
 
     def test_contains_expected_patterns(self) -> None:
+        patterns = get_high_risk_patterns()
         expected = {"auth", "deploy", "secret", "docker", "k8s"}
-        self.assertTrue(expected.issubset(set(HIGH_RISK_PATTERNS)))
+        self.assertTrue(expected.issubset(set(patterns)))
 
     def test_all_patterns_are_lowercase(self) -> None:
-        for pattern in HIGH_RISK_PATTERNS:
+        for pattern in get_high_risk_patterns():
             with self.subTest(pattern=pattern):
                 self.assertEqual(pattern, pattern.lower())
 

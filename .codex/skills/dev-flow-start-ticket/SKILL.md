@@ -3,6 +3,8 @@ name: dev-flow-start-ticket
 description: Start configured work items from chat by listing Todo tickets, preparing safe repository branches, pushing new branches, generating OpenSpec-style planning notes, updating the ticket description, and commenting with the branch through selected project-profile adapters. Use when the user asks to start the next ticket, start a specific ticket key, list Todo tickets, prepare a ticket branch, or connect ticket work to the local repository/OpenSpec workflow.
 ---
 
+<!-- TIER 3: STAGE-SPECIFIC - Ticket start workflow skill -->
+
 # Start Ticket
 
 ## Overview
