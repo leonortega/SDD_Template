@@ -1,3 +1,4 @@
+<!-- TIER 1: STABLE PREFIX - Repo identity, mandatory rules, session-cached -->
 # AGENTS.md
 
 This repository is a product-free SDD/SDLC agentic shell. Use the workflow files and Codex skills as the source of truth before making changes.
@@ -13,8 +14,14 @@ Failure to load Caveman first violates repo convention (authority level 5 per `d
 
 ## Start Here
 
-After the mandatory first step, inspect the relevant local context for the current workflow stage:
+After the mandatory first step, inspect the relevant local context for the current workflow stage. **Assemble context in tier order** (see `.codex/delivery-policy.json` → `agentOptimization.contextTiers`):
 
+1. **TIER 1 — Stable prefix** (cache once per session): `AGENTS.md`, `.codex/skills/_shared/repo-startup.md`, `.codex/delivery-policy.json`, `.codex/mcp-instructions.md`
+2. **TIER 2 — Semi-stable** (cache once per session): `.codex/skills/_shared/delivery-contract.md`, `.codex/skills/_shared/delivery-contract-core.md`, `.codex/skills/_shared/skill-startup.md`
+3. **TIER 3 — Stage-specific** (cache per stage): relevant `delivery-contract-{stage}.md`, `api-helpers.md`
+4. **TIER 4 — Dynamic** (never cached): user message, conversation history, tool outputs, live state
+
+Always read in order:
 - `README.md`
 - `.codex/skills/_shared/skill-startup.md`
 - `.codex/memory/memory_summary.md`
@@ -24,6 +31,8 @@ After the mandatory first step, inspect the relevant local context for the curre
 Then read only the stage-specific docs, OpenSpec artifacts, skills, provider adapters, and workflow files needed for the task. Read local config only when the workflow needs those values, and never print secrets or credential-bearing values.
 
 Prefer repository-specific skills and scripts over ad hoc process decisions.
+
+<!-- CACHE BREAKPOINT: End Tier 1 - Stable session context. Dynamic per-turn data below. -->
 
 ## Environment Setup
 
@@ -120,11 +129,11 @@ Keep code blocks, commands, paths, API names, error messages, quoted text, and f
 
 When in doubt, first inspect the applicable skill under `.codex/skills/` and follow its workflow.
 
-When a required repo skill, command, memory rule, definition, or configured tool/install path cannot be applied, stop the affected flow. Report the failed required item, why it is required, the current-flow fix, the viable alternative, and the alternative's risk or impact, then ask the user whether to fix the current flow or continue with the alternative.
+Apply Tool And Skill Blocker Consent from `.codex/skills/_shared/delivery-contract-core.md` when a required repo skill, command, memory rule, or configured tool/install path cannot be applied.
 
 Use `.codex/memory/` as a reviewable repository memory layer. Memory is guidance only and must be verified against the current user request, OpenProject, OpenSpec, shared delivery contract, canonical docs, current files, and live tool output before acting.
 
-Before final handoff for any non-trivial repo work, perform a durable learning capture. Update `docs/`, `.codex/skills/_shared/delivery-contract.md` plus related skills/tests, or `.codex/memory/` according to `.codex/memory/retrieval-policy.md#update-process`, then report `Memory updated: <files>` or `Memory updated: none`.
+Before final handoff for any non-trivial repo work, run the Durable Learning Capture Gate from `delivery-contract-core.md`.
 
 ## Mandatory MCP Routing
 

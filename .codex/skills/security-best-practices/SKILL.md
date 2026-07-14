@@ -13,29 +13,28 @@ This information, if present, can be used to write new secure by default code, o
 
 ## Workflow
 
-The initial step for this skill is to identify ALL languages and ALL frameworks which you are being asked to use or already exist in the scope of the project you are working in. Focus on the primary core frameworks. Often you will want to identify both frontend and backend languages and frameworks.
+The initial step for this skill is to identify ALL languages and ALL frameworks in the project scope. Focus on the primary core frameworks, including both frontend and backend.
 
-Then check this skill's references directory to see if there are any relevant documentation for the language and or frameworks. Make sure you read ALL reference files which relate to the specific framework or language. The format of the filenames is `<language>-<framework>-<stack>-security.md`. You should also check if there is a `<language>-general-<stack>-security.md` which is agnostic to the framework you may be using.
+Then read `references/general-principles.md` — this covers cross-cutting security guidance for any framework.
 
-If working on a web application which includes a frontend and a backend, make sure you have checked for reference documents for BOTH the frontend and backend!
+If a product stack is selected and framework-specific rules are needed, load matching files from `references/_framework-specific/`. The filename format is `<language>-<framework>-<stack>-security.md`.
 
-If you are asked to make a web app which will include both a frontend and backend, but the frontend framework is not specified, also check out `javascript-general-web-frontend-security.md`. It is important that you understand how to secure both the frontend and backend.
+If working on a web application with both frontend and backend, read guidance for both sides when framework-specific files are available. For web apps with an unspecified frontend framework, check `references/_framework-specific/javascript-general-web-frontend-security.md`.
 
-If no relevant information is available in the skill's references directory, think a little bit about what you know about the language, the framework, and all well known security best practices for it. If you are unsure you can try to search online for documentation on security best practices.
+If no matching framework-specific guidance exists, use general security knowledge and OWASP Top 10 principles.
 
-From there it can operate in a few ways.
+From there it can operate in a few ways:
 
-1. The primary mode is to just use the information to write secure by default code from this point forward. This is useful for starting a new project or when writing new code.
-
-2. The secondary mode is to passively detect vulnerabilities while working in the project and writing code for the user. Critical or very important vulnerabilities or major issues going against security guidance can be flagged and the user can be told about them. This passive mode should focus on the largest impact vulnerabilities and secure defaults.
-
-3. The user can ask for a security report or to improve the security of the codebase. In this case a full report should be produced describe anyways the project fails to follow security best practices guidance. The report should be prioritized and have clear sections of severity and urgency. Then offer to start working on fixes for these issues. See #fixes below.
+1. **Generation mode (default)**: Use security best practices while writing new code.
+2. **Passive review mode**: Detect major vulnerabilities while editing — flag critical/high issues inline.
+3. **Active audit mode**: Produce a full prioritized security report when the user explicitly requests one.
 
 ## Workflow Decision Tree
 
 - If the language/framework is unclear, inspect the repo to determine it and list your evidence.
-- If matching guidance exists in `references/`, load only the relevant files and follow their instructions.
-- If no matching guidance exists, consider if you know any well known security best practices for the chosen language and or frameworks, but if asked to generate a report, let the user know that concrete guidance is not available (you can still generate the report or detect for sure critical vulnerabilities)
+- First load `references/general-principles.md` for cross-cutting guidance.
+- If a product stack is selected and matching framework-specific guidance exists in `references/_framework-specific/`, load only the relevant files and follow their instructions.
+- If no matching guidance exists, use general security best practices. If asked for a report, let the user know if concrete framework-specific guidance is unavailable.
 
 # Overrides
 

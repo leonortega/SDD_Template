@@ -3,6 +3,8 @@ name: dev-ops-deploy-qa
 description: Promote merged pull request artifacts through the selected artifact and deployment adapters into configured pre-production environments, then update the ticket adapter. Use when Codex needs to verify a merged PR, locate the linked ticket, confirm immutable artifacts and checksums, validate configured environment health checks, comment artifact and deployment links, and move the ticket to QA.
 ---
 
+<!-- TIER 3: STAGE-SPECIFIC - QA deployment skill -->
+
 # Deploy To QA
 
 ## Overview

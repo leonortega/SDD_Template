@@ -3,6 +3,8 @@ name: dev-ops-post-merge-deploy
 description: Coordinate the post-merge transition from a merged pull request into QA deployment by validating review labels, resolving the merge commit, waiting for artifact metadata, and delegating promotion to dev-ops-deploy-qa through selected project-profile adapters. Use after a PR merges or when Codex is asked to trigger or continue QA deployment for merged work.
 ---
 
+<!-- TIER 3: STAGE-SPECIFIC - Post-merge deployment skill -->
+
 # Post Merge Deploy
 
 ## Overview

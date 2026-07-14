@@ -3,6 +3,8 @@ name: configure-dev-environment
 description: Configure this repo's local development and delivery environment. The lab stack is fixed: Docker Compose with Gitea, OpenProject, Nexus, and Monitoring.
 ---
 
+<!-- TIER 3: STAGE-SPECIFIC - Environment setup skill -->
+
 # Configure Dev Environment
 
 ## Overview

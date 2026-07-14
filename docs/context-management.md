@@ -1,3 +1,4 @@
+<!-- TIER 1: STABLE PREFIX - Context management fundamentals, authority order, cache hygiene -->
 # Context Management Fundamentals
 
 This repository treats context as an SDLC asset. Durable project knowledge belongs in tracked documentation and workflow contracts, not only in chat history, temporary notes, PR comments, or OpenProject comments.
@@ -71,19 +72,67 @@ Every implementation, review, QA, deployment, PROD, rollback, or hotfix handoff 
 - memory updated or explicitly not updated when the workflow performs a memory update review
 - next required action
 
-## Prompt Cache Hygiene
+## Prompt Cache Hygiene & Tiered Context Assembly
 
-Long-running agent workflows should keep stable context before volatile runtime context so repeated calls can reuse cacheable prompt prefixes. Put repository policy, delivery contract excerpts, skill instructions, schemas, and stable examples before ticket-specific OpenProject comments, PR diffs, tool results, timestamps, logs, and health-check output.
+Long-running agent workflows must assemble prompts in tier order to maximize provider-side prompt caching. The four tiers are defined in `.codex/delivery-policy.json` → `agentOptimization.contextTiers`.
 
-Dynamic values belong near the end of the working context:
+### Tier 1 — Stable Prefix (cache once per session)
 
-- current user request
-- active ticket state and generated comments
-- Git branch, dirty state, commit SHA, PR state, labels, and CI status
-- Nexus manifests, QA evidence, and monitoring output
-- tool errors, retries, and latest observations
+Content that is identical across all agent turns for the entire session:
 
-Do not insert timestamps, random IDs, raw tool dumps, or refreshed status summaries into otherwise stable context blocks. If a run records model telemetry, use OpenProject time entries for the active ticket when the selected ticket adapter supports direct time telemetry; otherwise write to ignored local fallback output such as `.codex/agent-telemetry.local.jsonl`. Delivery stages maintain a concise generated OpenProject timing comment for the active ticket from OpenProject time entries first, or the fallback telemetry file when direct writes are unavailable, but only with per-stage outcome, duration, and UTC start/finish values; raw logs, token counts, prompts, and sensitive values stay out of OpenProject. E2E QA posts or patches the final timing comment after the E2E QA comment is verified because PROD promotion is a separate explicit release step.
+- `AGENTS.md` — repository identity, mandatory first-step rules
+- `.codex/skills/_shared/repo-startup.md` — always-active skills (caveman, ponytail)
+- `.codex/delivery-policy.json` — optimization configuration
+- `.codex/mcp-instructions.md` — mandatory MCP routing contract
+- This file (`docs/context-management.md`)
+
+Place all Tier 1 content first, then mark a **cache breakpoint**. The provider caches the KV tensors for this prefix and reuses them on every turn.
+
+### Tier 2 — Semi-Stable (cache once per session)
+
+Content that changes rarely, loaded every stage:
+
+- `.codex/skills/_shared/delivery-contract.md` — contract index
+- `.codex/skills/_shared/delivery-contract-core.md` — core delivery rules
+- `.codex/skills/_shared/skill-startup.md` — startup sequence
+- `.codex/skills/_shared/provider-adapter-contract.md` — adapter loading rules
+- `.codex/project-profile.json` — selected providers and stack
+
+Mark a **cache breakpoint** after Tier 2.
+
+### Tier 3 — Stage-Specific (cache per stage)
+
+Content that changes per workflow stage but stays stable within a stage:
+
+- `.codex/skills/_shared/delivery-contract-{ticket,review,qa,deploy,parallel}.md`
+- `.codex/skills/_shared/api-helpers.md`
+- Stage-specific skill files (`dev-flow-*`, `dev-ops-*`)
+- `docs/architecture.md`, `docs/development.md`, `docs/deployment.md`
+
+Mark a **cache breakpoint** after Tier 3 — beyond this point, content changes every turn.
+
+### Tier 4 — Dynamic (never cached)
+
+Content that changes every agent turn. Keep it as compact as possible:
+
+- Current user request / conversation turn
+- Active ticket state and generated comments
+- Git branch, dirty state, commit SHA, PR state, labels, CI status
+- Nexus manifests, QA evidence, monitoring output
+- Tool results, errors, retries, latest file contents
+- Live state fetched from OpenProject, Gitea, Nexus
+
+### Rules
+
+1. **Always order** as: `[Tier 1] → [BREAKPOINT] → [Tier 2] → [BREAKPOINT] → [Tier 3] → [BREAKPOINT] → [Tier 4]`
+2. **Never** intersperse dynamic Tier 4 data into cached Tier 1-3 blocks — doing so invalidates the entire cache.
+3. **Never** insert timestamps, random IDs, raw tool dumps, or refreshed status summaries into stable context blocks.
+4. **Keep dynamic blocks short** — only include what the current turn actually needs. Use `Claw Compactor` for pre-prompt compression of code/JSON/log content in Tier 4.
+5. **Do not reorder** Tier 1-2 files between turns — cache hits depend on identical prefixes.
+
+### Telemetry
+
+If a run records model telemetry, use OpenProject time entries for the active ticket when the selected ticket adapter supports direct time telemetry; otherwise write to ignored local fallback output such as `.codex/agent-telemetry.local.jsonl`. Delivery stages maintain a concise generated OpenProject timing comment for the active ticket from OpenProject time entries first, or the fallback telemetry file when direct writes are unavailable, but only with per-stage outcome, duration, and UTC start/finish values; raw logs, token counts, prompts, and sensitive values stay out of OpenProject. E2E QA posts or patches the final timing comment after the E2E QA comment is verified because PROD promotion is a separate explicit release step.
 
 ## Risk-Adaptive Context Loading
 

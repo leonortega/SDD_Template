@@ -1,10 +1,11 @@
+<!-- TIER 1: STABLE PREFIX - Repo-owned, always-active skill policy -->
 # Repository Startup — Always-Active Skills
 
 This file is repo-owned. External skill updates never touch it.
 
 ## Always-Active Skills
 
-Per `AGENTS.md` lines 83-85, these skills activate on every prompt:
+Per `AGENTS.md` these skills activate on every prompt:
 
 | Skill | When | Intensity |
 |-------|------|-----------|
@@ -26,6 +27,25 @@ Apply ponytail full on every prompt. Use the smallest working change, prefer sta
 
 Activate on demand when task matches their `description` trigger phrases. Do not force-activate skills unrelated to current task.
 
+Use `.codex/skills/manifest.json` to find the correct category for your current task type. Load only skills from that category + the always-active core skills.
+
 ## Priority
 
 caveman > ponytail > others
+
+## Skill Manifest
+
+`.codex/skills/manifest.json` maps task types to skill file paths:
+- `ticket`: start, propose, explore, implement, verify, archive
+- `implement`: continue-implementation, TDD
+- `review`: PR review, feedback loop, complexity review
+- `qa`: QA deploy, post-merge deploy, QA bug filing
+- `deploy`: PROD deploy, rollback, hotfix
+- `monitor`: pipeline status, retrospective
+- `parallel`: parallel ticket coordination
+- `config`: environment setup
+- `guidance`: project guidance discovery/acquisition/mapping
+- `plan`: domain modeling, grill
+- `security`: security best practices
+- `test`: Playwright browser testing
+- `quality`: ponytail audit, debt, help

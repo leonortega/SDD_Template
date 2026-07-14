@@ -1,0 +1,371 @@
+# Promptfoo Configuration for SDD Agent Routing Evaluation
+# 
+# This config evaluates agent workflow routing decisions based on ticket,
+# branch, PR, and deployment state. The Python custom provider simulates
+# the routing logic that the Codex agent would follow.
+#
+# Run: npx promptfoo eval --no-cache
+# View results: npx promptfoo view
+
+prompts:
+  # Single prompt template - the provider receives the scenario as vars
+  - "Evaluate the correct workflow route for this delivery scenario:\n\nScenario: {{scenario}}\nTicket state: {{ticketState}}\nBranch exists: {{branchExists}}\nPR exists: {{prExists}}\nPR merged: {{prMerged}}\nQA evidence: {{qaEvidence}}\nProduct stack: {{productStack}}"
+
+providers:
+  # Path relative to promptfooconfig.yaml's directory (same directory)
+  - id: 'file://./routing_provider.py'
+    config:
+      # No additional config needed
+
+tests:
+  # ═══════════════════════════════════════════════════════════════
+  # TICKET LIFECYCLE ROUTING
+  # ═══════════════════════════════════════════════════════════════
+
+  - description: "Todo ticket with no branch routes to dev-flow-start-ticket"
+    vars:
+      scenario: "First ticket in the project"
+      ticketState: "Todo"
+      branchExists: "false"
+      prExists: "false"
+      prMerged: "false"
+      qaEvidence: ""
+      productStack: "selected"
+    assert:
+      - type: is-json
+      - type: javascript
+        value: "JSON.parse(output).route === 'dev-flow-start-ticket'"
+
+  - description: "In Progress ticket with branch but no PR routes to dev-flow-implement-ticket"
+    vars:
+      scenario: "Implementation in progress"
+      ticketState: "In Progress"
+      branchExists: "true"
+      prExists: "false"
+      prMerged: "false"
+      qaEvidence: ""
+      productStack: "selected"
+    assert:
+      - type: is-json
+      - type: javascript
+        value: "JSON.parse(output).route === 'dev-flow-implement-ticket'"
+
+  - description: "Open PR exists routes to dev-flow-implement-ticket (review/fix loop)"
+    vars:
+      scenario: "PR is open and awaiting review"
+      ticketState: "In Progress"
+      branchExists: "true"
+      prExists: "true"
+      prMerged: "false"
+      qaEvidence: ""
+      productStack: "selected"
+    assert:
+      - type: is-json
+      - type: javascript
+        value: "JSON.parse(output).route === 'dev-flow-implement-ticket'"
+
+  - description: "PR merged to dev routes to dev-ops-post-merge-deploy"
+    vars:
+      scenario: "PR has been merged to dev branch"
+      ticketState: "In Progress"
+      branchExists: "true"
+      prExists: "true"
+      prMerged: "true"
+      qaEvidence: ""
+      productStack: "selected"
+    assert:
+      - type: is-json
+      - type: javascript
+        value: "JSON.parse(output).route === 'dev-ops-post-merge-deploy'"
+
+  - description: "Ticket in QA routes to configured QA gate"
+    vars:
+      scenario: "Artifact deployed to QA, awaiting E2E validation"
+      ticketState: "QA"
+      branchExists: "true"
+      prExists: "true"
+      prMerged: "true"
+      qaEvidence: "deployed"
+      productStack: "selected"
+    assert:
+      - type: is-json
+      - type: javascript
+        value: "JSON.parse(output).route === 'configured QA gate'"
+
+  - description: "QA failed with product defect routes to dev-flow-file-qa-bug"
+    vars:
+      scenario: "E2E QA found a product defect"
+      ticketState: "QA"
+      branchExists: "true"
+      prExists: "true"
+      prMerged: "true"
+      qaEvidence: "failed"
+      productStack: "selected"
+    assert:
+      - type: is-json
+      - type: javascript
+        value: "JSON.parse(output).route === 'dev-flow-file-qa-bug'"
+
+  - description: "Done ticket without PROD request is blocked (stops)"
+    vars:
+      scenario: "QA passed, ticket Done, but no PROD deployment requested"
+      ticketState: "Done"
+      branchExists: "false"
+      prExists: "false"
+      prMerged: "true"
+      qaEvidence: "passed"
+      productStack: "selected"
+    assert:
+      - type: is-json
+      - type: javascript
+        value: "JSON.parse(output).route === 'blocked-no-prod'"
+
+  # ═══════════════════════════════════════════════════════════════
+  # EDGE CASES
+  # ═══════════════════════════════════════════════════════════════
+
+  - description: "No product stack selected routes to dev-flow-pipeline-status"
+    vars:
+      scenario: "Project has no selected stack yet"
+      ticketState: "Todo"
+      branchExists: "false"
+      prExists: "false"
+      prMerged: "false"
+      qaEvidence: ""
+      productStack: "none"
+    assert:
+      - type: is-json
+      - type: javascript
+        value: "JSON.parse(output).route === 'dev-flow-pipeline-status'"
+
+  - description: "Ambiguous ticket state routes to dev-flow-pipeline-status"
+    vars:
+      scenario: "Multiple plausible targets, state is unclear"
+      ticketState: "unknown"
+      branchExists: "false"
+      prExists: "false"
+      prMerged: "false"
+      qaEvidence: ""
+      productStack: "selected"
+    assert:
+      - type: is-json
+      - type: javascript
+        value: "JSON.parse(output).route === 'dev-flow-pipeline-status'"
+
+  - description: "PROD incident/regression routes to dev-ops-rollback-prod"
+    vars:
+      scenario: "Production incident detected"
+      ticketState: "In Progress"
+      branchExists: "false"
+      prExists: "false"
+      prMerged: "false"
+      qaEvidence: ""
+      productStack: "selected"
+      incident: "true"
+    assert:
+      - type: is-json
+      - type: javascript
+        value: "JSON.parse(output).route === 'dev-ops-rollback-prod'"
+
+  - description: "PROD hotfix routes to dev-ops-hotfix-prod"
+    vars:
+      scenario: "Urgent targeted code fix needed in production"
+      ticketState: "In Progress"
+      branchExists: "false"
+      prExists: "false"
+      prMerged: "false"
+      qaEvidence: ""
+      productStack: "selected"
+      hotfix: "true"
+    assert:
+      - type: is-json
+      - type: javascript
+        value: "JSON.parse(output).route === 'dev-ops-hotfix-prod'"
+
+  # ═══════════════════════════════════════════════════════════════
+  # PARALLEL DELIVERY SCENARIOS
+  # ═══════════════════════════════════════════════════════════════
+
+  - description: "Parallel enabled, Todo, lane free, routes to start-ticket"
+    vars:
+      scenario: "Parallel delivery coordinator routing scenario"
+      ticketState: "Todo"
+      branchExists: "false"
+      prExists: "false"
+      prMerged: "false"
+      qaEvidence: ""
+      productStack: "selected"
+      parallelEnabled: "true"
+      maxActiveReached: "false"
+      laneOwner: "none"
+    assert:
+      - type: is-json
+      - type: javascript
+        value: "JSON.parse(output).route === 'dev-flow-start-ticket'"
+
+  - description: "Parallel enabled, PR merged, lane owned by other, blocked"
+    vars:
+      scenario: "Serialized deployment lane owned by another ticket"
+      ticketState: "In Progress"
+      branchExists: "true"
+      prExists: "true"
+      prMerged: "true"
+      qaEvidence: ""
+      productStack: "selected"
+      parallelEnabled: "true"
+      laneOwner: "OTHER-456"
+    assert:
+      - type: is-json
+      - type: javascript
+        value: "JSON.parse(output).route === 'blocked-lane-conflict'"
+
+  - description: "Parallel enabled, QA stage, lane owned by other, blocked"
+    vars:
+      scenario: "QA gate blocked because deployment lane is owned by another ticket"
+      ticketState: "QA"
+      branchExists: "true"
+      prExists: "true"
+      prMerged: "true"
+      qaEvidence: "deployed"
+      productStack: "selected"
+      parallelEnabled: "true"
+      laneOwner: "OTHER-456"
+    assert:
+      - type: is-json
+      - type: javascript
+        value: "JSON.parse(output).route === 'blocked-lane-conflict'"
+
+  - description: "Parallel enabled, max active tickets reached, blocked"
+    vars:
+      scenario: "Parallel delivery at capacity, cannot start new ticket"
+      ticketState: "Todo"
+      branchExists: "false"
+      prExists: "false"
+      prMerged: "false"
+      qaEvidence: ""
+      productStack: "selected"
+      parallelEnabled: "true"
+      maxActiveReached: "true"
+    assert:
+      - type: is-json
+      - type: javascript
+        value: "JSON.parse(output).route === 'blocked-max-active'"
+
+  - description: "Parallel enabled, worktree exists, reuse for implementation"
+    vars:
+      scenario: "Existing worktree matches ticket, reuse for continued implementation"
+      ticketState: "In Progress"
+      branchExists: "true"
+      prExists: "false"
+      prMerged: "false"
+      qaEvidence: ""
+      productStack: "selected"
+      parallelEnabled: "true"
+      worktreeExists: "true"
+    assert:
+      - type: is-json
+      - type: javascript
+        value: "JSON.parse(output).route === 'dev-flow-implement-ticket'"
+
+  # ═══════════════════════════════════════════════════════════════
+  # DEPLOYMENT LANE SCENARIOS
+  # ═══════════════════════════════════════════════════════════════
+
+  - description: "QA passed, PROD explicitly requested, routes to deploy-prod"
+    vars:
+      scenario: "Done ticket with explicit PROD promotion request"
+      ticketState: "Done"
+      branchExists: "false"
+      prExists: "false"
+      prMerged: "true"
+      qaEvidence: "passed"
+      productStack: "selected"
+      prodRequested: "true"
+    assert:
+      - type: is-json
+      - type: javascript
+        value: "JSON.parse(output).route === 'dev-ops-deploy-prod'"
+
+  - description: "PROD deploy blocked by lane owned by another ticket"
+    vars:
+      scenario: "PROD promotion blocked by serialized lane ownership"
+      ticketState: "Done"
+      branchExists: "false"
+      prExists: "false"
+      prMerged: "true"
+      qaEvidence: "passed"
+      productStack: "selected"
+      prodRequested: "true"
+      parallelEnabled: "true"
+      laneOwner: "OTHER-456"
+    assert:
+      - type: is-json
+      - type: javascript
+        value: "JSON.parse(output).route === 'blocked-lane-conflict'"
+
+  - description: "PR merged, missing Nexus artifact, blocked"
+    vars:
+      scenario: "Nexus artifact missing for the merged commit"
+      ticketState: "In Progress"
+      branchExists: "true"
+      prExists: "true"
+      prMerged: "true"
+      qaEvidence: ""
+      productStack: "selected"
+      nexusArtifactExists: "false"
+    assert:
+      - type: is-json
+      - type: javascript
+        value: "JSON.parse(output).route === 'blocked-missing-artifact'"
+
+  - description: "Release tag conflict blocks PROD deploy"
+    vars:
+      scenario: "Final release tag already exists"
+      ticketState: "In Progress"
+      branchExists: "true"
+      prExists: "true"
+      prMerged: "true"
+      qaEvidence: ""
+      productStack: "selected"
+      releaseTagConflict: "true"
+    assert:
+      - type: is-json
+      - type: javascript
+        value: "JSON.parse(output).route === 'blocked-tag-conflict'"
+
+  - description: "PR merged, lane acquired, post-merge deploy proceeds"
+    vars:
+      scenario: "Serialized lane acquired by this ticket, deployment proceeds"
+      ticketState: "In Progress"
+      branchExists: "true"
+      prExists: "true"
+      prMerged: "true"
+      qaEvidence: ""
+      productStack: "selected"
+      parallelEnabled: "true"
+      laneOwner: "current-ticket"
+    assert:
+      - type: is-json
+      - type: javascript
+        value: "JSON.parse(output).route === 'dev-ops-post-merge-deploy'"
+
+  # ═══════════════════════════════════════════════════════════════
+  # REGRESSION: original test case
+  # ═══════════════════════════════════════════════════════════════
+
+  - description: "Product-free shell status reports via pipeline-status (original test)"
+    vars:
+      scenario: "Repository is a product-free shell"
+      ticketState: "Todo"
+      branchExists: "false"
+      prExists: "false"
+      prMerged: "false"
+      qaEvidence: ""
+      productStack: "none"
+    assert:
+      - type: is-json
+      - type: javascript
+        value: "JSON.parse(output).route === 'dev-flow-pipeline-status'"
+        # "Recognize that no product stack is selected"
+        # "Do not invoke product-specific build or QA gates"
+        # "Report that app targets are unconfigured"

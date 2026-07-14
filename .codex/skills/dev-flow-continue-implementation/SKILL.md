@@ -3,6 +3,8 @@ name: dev-flow-continue-implementation
 description: Orchestrate the full configured ticket delivery lifecycle by inspecting current ticket, repository, review, artifact, OpenSpec, QA, tag, and production state through the selected project-profile adapters, then delegating to the correct focused skill. Use when Codex is asked to automatically continue, resume, implement, deploy, QA, or hand off a ticket without the user knowing the current workflow step.
 ---
 
+<!-- TIER 3: STAGE-SPECIFIC - Implementation orchestrator skill -->
+
 # Automatic Implement Ticket
 
 ## Overview

@@ -3,6 +3,8 @@ name: dev-flow-pr-review-feedback-loop
 description: Process AI review findings and later human PR comments for an active ticket pull request through selected ticket and review adapters by creating OpenSpec feedback tasks, recording feedback batches, applying fixes, validating, pushing, and rerunning AI review before handoff.
 ---
 
+<!-- TIER 3: STAGE-SPECIFIC - Review feedback loop skill -->
+
 # PR Review Feedback Loop
 
 ## Overview
