@@ -14,7 +14,7 @@
         {
           "id": 1,
           "name": "STABLE_PREFIX",
-          "description": "Repo identity, mandatory rules, core policy — never changes per turn. Cached once per session.",
+          "description": "Repo identity, mandatory rules, core policy \u2014 never changes per turn. Cached once per session.",
           "files": [
             "AGENTS.md",
             ".codex/skills/_shared/repo-startup.md",
@@ -28,7 +28,7 @@
         {
           "id": 2,
           "name": "SEMI_STABLE",
-          "description": "Core delivery contract and startup sequence — loaded every stage, changes rarely.",
+          "description": "Core delivery contract and startup sequence \u2014 loaded every stage, changes rarely.",
           "files": [
             ".codex/skills/_shared/delivery-contract.md",
             ".codex/skills/_shared/delivery-contract-core.md",
@@ -42,7 +42,7 @@
         {
           "id": 3,
           "name": "STAGE_SPECIFIC",
-          "description": "Stage-specific delivery contracts and API helpers — changes per workflow stage.",
+          "description": "Stage-specific delivery contracts and API helpers \u2014 changes per workflow stage.",
           "files": [
             ".codex/skills/_shared/delivery-contract-ticket.md",
             ".codex/skills/_shared/delivery-contract-review.md",
