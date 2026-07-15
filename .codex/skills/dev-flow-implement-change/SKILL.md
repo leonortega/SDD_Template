@@ -3,6 +3,8 @@ name: dev-flow-implement-change
 description: Implement an OpenSpec change through the complete local delivery workflow. Use when Codex is asked to run /opsx:apply, implement a ticket or OpenSpec change, add edge-case tests, verify the app, commit, push, open a repository pull request, invoke a PR review agent, move the ticket to review, or complete implementation handoff.
 ---
 
+<!-- TIER 3: STAGE-SPECIFIC - Implementation orchestration skill -->
+
 # OpenSpec Implement Change
 
 ## Overview

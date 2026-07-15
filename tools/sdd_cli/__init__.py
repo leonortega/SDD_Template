@@ -1,4 +1,5 @@
 """Stack-neutral SDD template automation CLI."""
 
-__all__ = ["main"]
+from .cli import main
 
+__all__ = ["main"]

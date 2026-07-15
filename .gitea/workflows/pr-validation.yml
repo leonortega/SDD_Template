@@ -7,8 +7,10 @@ on:
       - dev
 
 jobs:
-  validate-shell:
+  validate:
     runs-on: ubuntu-latest
+    container:
+      image: sdd-e2e-ci:local
     steps:
       - name: Checkout
         shell: bash
@@ -29,7 +31,7 @@ jobs:
         run: |
           set -euo pipefail
           find . -path './.git' -prune -o -name '*.json' -print | while IFS= read -r file; do
-            python -m json.tool "$file" >/dev/null
+            python3 -m json.tool "$file" >/dev/null
           done
 
       - name: Secret scan

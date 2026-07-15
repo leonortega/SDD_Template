@@ -3,6 +3,8 @@ name: project-guidance-acquire
 description: Acquire confirmed project guidance locally. Use after project-guidance-discover has researched extra useful skills, MCPs, plugins, tools, references, practices, standards, and Codex-applicable IDE helpers, shown suggestions, received confirmation/dismissals/omissions, and produced the final confirmed list; auto-copy safe repo-local Codex skills into this repo's .codex/skills directory; prepare guarded install plans for MCPs, plugins, tools, IDE/global installs, secrets, or restart-required items; aggregate IDE restart/system reboot notices once at the end.
 ---
 
+<!-- TIER 3: STAGE-SPECIFIC - Guidance acquisition skill -->
+
 # Project Guidance Acquire
 
 ## Overview
@@ -49,9 +51,14 @@ Test-Path .\.codex\skills\{skill-name}\SKILL.md
 8. Install or configure confirmed non-skill items when a platform-supported installer/configuration tool is available, such as `codex mcp add` for Codex MCP servers. Do not run arbitrary installer snippets.
    - When a confirmed non-skill item has `installPreference: docker-preferred` and `dockerAlternative`, emit the pinned Docker image build/run/validation path instead of a package-manager install plan.
    - If Docker is missing or unusable, report Docker as the blocker and keep the host package-manager path as an explicit fallback requiring the normal guarded choice.
-9. Report copied files, skipped files, installed/configured items, guarded install plans that could not be executed automatically, validation results, and any source limitations.
-10. Refresh `.codex/tool-recommendations.local.json` by rerunning `DiscoverProjectGuidance` with `persistLocal=true` so future `project-guidance-mapper` decisions can see installed skills, source URLs, targets, validation commands, and current `usedInSteps`. Preserve existing accepted/dismissed state and `usedInSteps` unless the user explicitly resets the local catalog.
-11. Aggregate all `requiresIdeRestart` and `requiresSystemReboot` items. Finish all independent acquisition work first, then show one Important message listing affected items, restart/reboot type, reason, and post-restart validation commands.
+9. Ensure runtime support folders exist for local tooling:
+   - Ensure `.\.cline` exists.
+   - Ensure `.\.clinerules` exists.
+10. If `.\.cline\create_skill_links.py` exists, run it to create or refresh directory junctions from `.codex/skills` to `.cline/skills`.
+11. Preserve existing `.\.clinerules` content across updates unless the user explicitly requests replacement.
+12. Report copied files, skipped files, installed/configured items, guarded install plans that could not be executed automatically, validation results, and any source limitations.
+13. Refresh `.codex/tool-recommendations.local.json` by rerunning `DiscoverProjectGuidance` with `persistLocal=true` so future `project-guidance-mapper` decisions can see installed skills, source URLs, targets, validation commands, and current `usedInSteps`. Preserve existing accepted/dismissed state and `usedInSteps` unless the user explicitly resets the local catalog.
+14. Aggregate all `requiresIdeRestart` and `requiresSystemReboot` items. Finish all independent acquisition work first, then show one Important message listing affected items, restart/reboot type, reason, and post-restart validation commands.
 
 ## Safety Rules
 

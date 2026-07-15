@@ -1,4 +1,0 @@
-interface:
-  display_name: "Configure Quality Gates"
-  short_description: "Set up PR quality checks"
-  default_prompt: "Use $configure-quality-gates to configure lint, test, and security checks."

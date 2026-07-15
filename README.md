@@ -8,7 +8,7 @@ This repository is not a production-ready product template yet. It is not a prod
 
 - A repeatable SDLC workflow driven by tickets, OpenSpec changes, and Codex skills.
 - A local DevOps platform shape built around free/open-source tools for source control, CI, artifacts, deployment, and observability.
-- Provider adapters for OpenProject, Gitea, Nexus, Rancher Desktop, Azure App Service, and observability tools.
+- Provider adapters for OpenProject, Gitea, Nexus, Docker Desktop, and observability tools.
 - Versioned install and update commands so a separate test repository can consume lab releases.
 - Guardrails for quality gates, secret safety, PR review, QA evidence, release lineage, and rollback.
 
@@ -66,19 +66,19 @@ Create them only in a separate test project repository or after a sample project
 From this lab repository, install the latest final release into a separate test repository:
 
 ```bash
-python -m tools.sdd_cli tool install --target C:\path\to\test-repo
+python -m tools.sdd_cli template-installer install --target C:\path\to\test-repo
 ```
 
 Install a specific pinned version:
 
 ```bash
-python -m tools.sdd_cli tool install --version v0.1.0 --target C:\path\to\test-repo
+python -m tools.sdd_cli template-installer install --version v0.1.0 --target C:\path\to\test-repo
 ```
 
 Update an installed test repository:
 
 ```bash
-python -m tools.sdd_cli tool update --version v0.2.0 --target C:\path\to\test-repo
+python -m tools.sdd_cli template-installer update --version v0.2.0 --target C:\path\to\test-repo
 ```
 
 If `--version` is omitted, the installer uses the latest final Git tag matching `vMAJOR.MINOR.PATCH`. Release candidates such as `v0.1.7-rc.2` are ignored by that default.
@@ -100,8 +100,7 @@ The installer also seeds the required `.codex/memory/MEMORY.md`, `.codex/memory/
 - OpenProject: ticket and work package workflow.
 - Gitea: repository hosting, pull requests, review, and Actions workflows.
 - Nexus: immutable artifact storage and release lineage.
-- Rancher Desktop: local Kubernetes deployment lane.
-- Azure App Service: optional cloud deployment provider for experiments beyond the free local lab.
+- Docker Desktop: local container runtime for the lab stack.
 - Seq: application log search and inspection.
 - Grafana: dashboards, health checks, and alert visibility.
 - Dozzle: container log visibility.
@@ -155,20 +154,20 @@ Start implementation.
 Start local delivery infrastructure:
 
 ```bash
-python -m tools.sdd_cli infra up
+python -m tools.sdd_cli environment-lab compose-up
 ```
 
 Stop local delivery infrastructure:
 
 ```bash
-python -m tools.sdd_cli infra down
+python -m tools.sdd_cli environment-lab compose-down
 ```
 
 In an installed test repository, run smoke checks for the installed helper CLI:
 
 ```bash
-python -m tools.sdd_cli configure Audit
-python -m tools.sdd_cli configure AuditRecommendedTools
+python -m tools.sdd_cli environment-lab audit
+python -m tools.sdd_cli guidance discover
 ```
 
 In this lab repository only, run helper tests when test dependencies are available:
@@ -214,8 +213,7 @@ This tool uses and integrates ideas, workflows, or runtime support from the foll
 - [OpenProject](https://www.openproject.org/) for project and ticket management.
 - [Gitea](https://about.gitea.com/) and [Gitea Actions](https://docs.gitea.com/usage/actions/overview) for Git hosting, pull requests, review, and CI automation.
 - [Sonatype Nexus Repository](https://www.sonatype.com/products/sonatype-nexus-repository) for artifact storage and promotion.
-- [Rancher Desktop](https://rancherdesktop.io/) and [Kubernetes](https://kubernetes.io/) for local deployment workflows.
-- [Microsoft Azure App Service](https://azure.microsoft.com/products/app-service) for optional cloud hosting.
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) and [Kubernetes](https://kubernetes.io/) for local deployment workflows.
 - [Grafana](https://grafana.com/), [Seq](https://datalust.co/seq), and [Dozzle](https://dozzle.dev/) for observability workflows.
 - [Playwright](https://playwright.dev/) for browser automation and QA validation.
 - [Python](https://www.python.org/) and the Python standard library for the local helper CLI.

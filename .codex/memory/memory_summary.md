@@ -1,3 +1,4 @@
+<!-- TIER 2: SEMI-STABLE - Repository memory summary, loaded at startup of every stage -->
 # Memory Summary
 
 This repository is a product-free SDD/SDLC delivery shell. The previous sample application and old stack guidance were removed. `.codex/project-profile.json` is the tracked common provider/workflow declaration; ignored `.codex/project-profile.local.json` is the local stack overlay and currently has no product stack selected.
@@ -16,6 +17,7 @@ Memory is guidance only. It must never override the latest user request, active 
 - Project profile: `.codex/project-profile.json` plus optional `.codex/project-profile.local.json`.
 - Provider adapters: `.codex/providers/`.
 - OpenSpec config: `openspec/config.yaml`.
+- MCP routing contract: `.codex/mcp-instructions.md` — mandatory routing for all content search (docs → `monorepo-docs-search`, code → `codebase-memory-mcp`).
 
 ## Core Workflow
 

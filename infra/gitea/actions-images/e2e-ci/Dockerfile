@@ -8,10 +8,14 @@ RUN apt-get update \
         curl \
         git \
         zip \
+        python3 \
+        gitleaks \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 RUN node --version >/dev/null \
     && npm --version >/dev/null \
     && test -d /ms-playwright \
-    && zip --version >/dev/null
+    && zip --version >/dev/null \
+    && python3 --version >/dev/null \
+    && gitleaks --version >/dev/null

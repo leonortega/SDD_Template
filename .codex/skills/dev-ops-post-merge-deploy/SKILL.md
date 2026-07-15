@@ -3,6 +3,8 @@ name: dev-ops-post-merge-deploy
 description: Coordinate the post-merge transition from a merged pull request into QA deployment by validating review labels, resolving the merge commit, waiting for artifact metadata, and delegating promotion to dev-ops-deploy-qa through selected project-profile adapters. Use after a PR merges or when Codex is asked to trigger or continue QA deployment for merged work.
 ---
 
+<!-- TIER 3: STAGE-SPECIFIC - Post-merge deployment skill -->
+
 # Post Merge Deploy
 
 ## Overview
@@ -13,11 +15,11 @@ Do not perform DEV/QA validation inside this skill. `dev-ops-deploy-qa` owns art
 
 ## Shared Context
 
-Before running, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Load selected repository/review, artifact, deployment, and ticket adapters. Use `python -m tools.sdd_cli delivery` helpers: `ValidateTicketLock` for `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, and `ArtifactPaths`.
+Before running, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Load selected repository/review, artifact, deployment, and ticket adapters. Use `python -m tools.sdd_cli dev-flow` helpers: `ValidateTicketLock` for `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, and `ArtifactPaths`.
 
 ## Workflow Telemetry
 
-Capture UTC start time after resolving the ticket key and before post-merge validation or artifact waiting. Prefer OpenProject time-entry telemetry and create or update the `dev-ops-post-merge-deploy` entry with marker `IA generated workflow telemetry: {ticketKey}:dev-ops-post-merge-deploy`. Use `python -m tools.sdd_cli delivery -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` only as the JSONL fallback when direct time telemetry is unavailable. On resume or idempotent reuse, append or update another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-ops-post-merge-deploy`, `agentRole=deployment`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. Do not duplicate the `dev-ops-deploy-qa` row; `dev-ops-deploy-qa` records its own stage when invoked.
+Capture UTC start time after resolving the ticket key and before post-merge validation or artifact waiting. Prefer OpenProject time-entry telemetry and create or update the `dev-ops-post-merge-deploy` entry with marker `IA generated workflow telemetry: {ticketKey}:dev-ops-post-merge-deploy`. Use `python -m tools.sdd_cli dev-flow append-telemetry -TicketKey {ticketKey}` only as the JSONL fallback when direct time telemetry is unavailable. On resume or idempotent reuse, append or update another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-ops-post-merge-deploy`, `agentRole=deployment`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. Do not duplicate the `dev-ops-deploy-qa` row; `dev-ops-deploy-qa` records its own stage when invoked.
 
 ## Configuration
 

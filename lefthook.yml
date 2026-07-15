@@ -6,4 +6,4 @@ pre-commit:
 commit-msg:
   commands:
     require-ticket:
-      run: python -m tools.sdd_cli hooks validate-commit-message "{1}"
+      run: python -m tools.sdd_cli dev-flow validate-commit-message "{1}"

@@ -3,6 +3,8 @@ name: project-guidance-mapper
 description: Map repository delivery workflow steps to repo-local skills and project guidance. Use when Codex needs to choose skills, tools, MCP/plugin guidance, references, practices, standards, and installed expert skills for config infra, first ticket setup, OpenSpec proposal/design/tasks/spec, implementation, review, QA, deploy, rollback, hotfix, retrospective, or discovered stack/tool guidance.
 ---
 
+<!-- TIER 3: STAGE-SPECIFIC - Guidance mapping skill -->
+
 # Project Guidance Mapper
 
 ## Overview
@@ -53,7 +55,7 @@ The installed-skill runtime index is separate, derived state. It contains only i
 To persist a confirmed mapping:
 
 ```bash
-python -m tools.sdd_cli configure MapProjectGuidanceStep --values-json-file .codex/guidance-map-values.local.json
+python -m tools.sdd_cli guidance map-step --values-json-file .codex/guidance-map-values.local.json
 ```
 
 Only persist mappings after a step is actually chosen, confirmed, or used. Do not let the local mapping override the active ticket, delivery contract, validation gates, or current repo contents.

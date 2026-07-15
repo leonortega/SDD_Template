@@ -22,7 +22,6 @@ artifacts/
 .codex/installed-skill-index.cache.local.json
 .codex/agent-telemetry.local.jsonl
 .codex/agent-evals/results.local.json
-.codegraph/
 TestResults/
 [Tt]est[Rr]esult*/
 coverage/
@@ -59,13 +58,14 @@ BenchmarkDotNet.Artifacts/
 *.sln.iml
 
 # VS Code
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-!.vscode/*.code-snippets
-!.vscode/copilot-instructions.md
+# Include all .vscode files for template distribution
+# .vscode/*
+# !.vscode/settings.json
+# !.vscode/tasks.json
+# !.vscode/launch.json
+# !.vscode/extensions.json
+# !.vscode/*.code-snippets
+# !.vscode/copilot-instructions.md
 
 # Node/frontend artifacts that may appear in future projects
 node_modules/
@@ -105,3 +105,5 @@ Thumbs.db
 ehthumbs.db
 Desktop.ini
 $RECYCLE.BIN/
+.cline/skills/
+.clinerules/

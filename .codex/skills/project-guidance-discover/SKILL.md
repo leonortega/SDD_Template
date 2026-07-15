@@ -3,6 +3,8 @@ name: project-guidance-discover
 description: Discover project-relevant guidance from the current repository. Use when Codex needs to scan tech stack, tools, environments, QA/test setup, security gates, code standards, architecture, web UI, REST/API needs, MCP/plugin/tool/reference/IDE-extension needs, or "config infra" guidance findings; research extra useful skills, MCPs, plugins, tools, references, practices, standards, and Codex-applicable IDE helpers from detected project signals; show suggested missing guidance with guarded install metadata; and prepare confirmed items for local acquisition or mapping.
 ---
 
+<!-- TIER 3: STAGE-SPECIFIC - Guidance discovery skill -->
+
 # Project Guidance Discover
 
 ## Overview
@@ -41,13 +43,13 @@ Read `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.m
 Use the configure router when deterministic scanning is needed:
 
 ```bash
-python -m tools.sdd_cli configure DiscoverProjectGuidance
+python -m tools.sdd_cli guidance discover
 ```
 
 To update the local project reference after the user confirms discovery, pass `persistLocal=true`:
 
 ```bash
-python -m tools.sdd_cli configure DiscoverProjectGuidance --values-json-file .codex/guidance-discovery-values.local.json
+python -m tools.sdd_cli guidance discover --values-json-file .codex/guidance-discovery-values.local.json
 ```
 
 The report must include:
@@ -63,7 +65,7 @@ The report must include:
 - `discoverySourcePriority`
 - `localRecommendationsPath`
 
-Use `AuditRecommendedTools` when the user also needs MCP, plugin, and non-skill recommendation findings.
+Run `python -m tools.sdd_cli guidance discover` when the user also needs MCP, plugin, and non-skill recommendation findings.
 
 The local file is intentionally ignored and shaped like `.codex/tool-recommendations.common.json`, but it is project-specific runtime state. `project-guidance-mapper` updates `usedInSteps` on recommendations after a step uses, confirms, or infers a guidance mapping.
 
@@ -94,7 +96,7 @@ If the user confirms the researched list, immediately record accepted ids, persi
 - Prefer pinned Docker alternatives over package-manager installs for recurring tools when the metadata proves the tool can run from the mounted workspace/cache without host secrets or interactive auth.
 - Do not read or print secrets.
 - Do not recommend MCP-based ticket delivery unless the selected ticket adapter explicitly requires it; repo-local skills must use the configured ticket adapter.
-- Record accepted or dismissed recommendation ids only with `SetRecommendedTools` after explicit user confirmation.
+- Record accepted or dismissed recommendation ids only with `python -m tools.sdd_cli guidance set-recommended-tools` after explicit user confirmation.
 - Do not commit `.codex/tool-recommendations.local.json`; it is local project state.
 - Do not list OpenSpec or configure skills as installable skill recommendations in the local or example catalog.
 

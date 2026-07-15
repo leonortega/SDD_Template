@@ -9,6 +9,8 @@ metadata:
   generatedBy: "1.3.1"
 ---
 
+<!-- TIER 3: STAGE-SPECIFIC - Proposal workflow skill -->
+
 Propose a new change - create the change and generate all artifacts in one step.
 
 I'll create a change with artifacts:

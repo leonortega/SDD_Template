@@ -3,6 +3,8 @@ name: dev-ops-rollback-prod
 description: Roll back production to previously verified immutable artifacts through selected project-profile artifact, deployment, observability, and ticket adapters. Use when Codex needs to choose a known-good release from release metadata, redeploy existing artifacts without rebuilding, verify production page and health checks, check configured observability when available, and comment rollback evidence on the ticket system.
 ---
 
+<!-- TIER 3: STAGE-SPECIFIC - PROD rollback skill -->
+
 # Rollback PROD
 
 ## Overview
@@ -11,7 +13,7 @@ Use this skill when PROD must be restored to a previous known-good artifact. Rol
 
 ## Shared Context
 
-Before rollback, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Load selected artifact, deployment, observability, repository, and ticket adapters. Use `python -m tools.sdd_cli delivery` helpers: `ArtifactPaths`, `ValidateReleaseManifest`, `ValidateTicketLock`, and `UpdateReleaseManifest`. Rollback may target an incident/release rather than the active ticket lock, but a mismatch must be explicit.
+Before rollback, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Load selected artifact, deployment, observability, repository, and ticket adapters. Use `python -m tools.sdd_cli dev-flow` helpers: `ArtifactPaths`, `ValidateReleaseManifest`, `ValidateTicketLock`, and `UpdateReleaseManifest`. Rollback may target an incident/release rather than the active ticket lock, but a mismatch must be explicit.
 
 ## Configuration
 
