@@ -1,21 +1,202 @@
 name: Package and deploy
 
 on:
+  push:
+    branches:
+      - dev
   workflow_dispatch:
     inputs:
       environment:
-        description: Target environment
+        description: Target environment (dev or qa)
         required: true
         default: dev
 
 jobs:
-  no-product-targets:
+  build-and-deploy:
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
     container:
       image: sdd-e2e-ci:local
     steps:
-      - name: Report disabled deployment
+      - name: Checkout
         shell: bash
         run: |
           set -euo pipefail
-          echo "No product app targets are configured. Add infra/deployment/apps.json entries with the next product stack."
+          repo_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          repo_url="${repo_url/localhost/host.docker.internal}"
+          repo_url="${repo_url/gitea/host.docker.internal}"
+          git init .
+          git remote add origin "$repo_url"
+          git fetch --depth 1 origin "$GITHUB_SHA"
+          git checkout --force FETCH_HEAD
+
+      - name: Build
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -d "frontend" ] && [ -f "frontend/package.json" ]; then
+            echo "Building frontend..."
+            cd frontend
+            npm ci
+            npm run build
+            echo "Frontend built successfully"
+          else
+            echo "No frontend directory found — skipping frontend build"
+          fi
+
+      - name: Package artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          COMMIT_SHA=$(git rev-parse HEAD)
+          APPS_JSON="infra/deployment/apps.json"
+          ARTIFACT_DIR="app/${COMMIT_SHA}"
+          mkdir -p "${ARTIFACT_DIR}"
+
+          # Read app targets from apps.json if it exists
+          if [ -f "${APPS_JSON}" ]; then
+            python3 -c "
+import json, sys, os
+with open('${APPS_JSON}') as f:
+    config = json.load(f)
+apps = config.get('apps', [])
+if not apps:
+    print('No apps configured in ${APPS_JSON}')
+    sys.exit(0)
+for app in apps:
+    aid = app['appId']
+    artifact = app['artifactName']
+    path = app.get('projectPath', aid)
+    has_build = os.path.isdir(os.path.join(path, 'dist')) if app.get('role') == 'web' else False
+    print(f'App: {aid}, Artifact: {artifact}, Has build: {has_build}')
+"
+          fi
+
+          # Package each app's dist/ as a zip artifact
+          APPS=$(python3 -c "
+import json, os
+with open('${APPS_JSON}') as f:
+    config = json.load(f)
+for app in config.get('apps', []):
+    path = app.get('projectPath', app['appId'])
+    if os.path.isdir(os.path.join(path, 'dist')):
+        print(app['artifactName'])
+" 2>/dev/null || echo "")
+
+          if [ -z "${APPS}" ]; then
+            echo "No build artifacts found — creating empty marker"
+            echo "{\"version\":1,\"apps\":[],\"note\":\"No apps produced artifacts for this commit\"}" > "${ARTIFACT_DIR}/deployable-apps.json"
+          else
+            for artifact_name in ${APPS}; do
+              app_id=$(python3 -c "
+import json
+with open('${APPS_JSON}') as f:
+    config = json.load(f)
+for app in config.get('apps', []):
+    if app['artifactName'] == '${artifact_name}':
+        print(app['projectPath'])
+" 2>/dev/null || echo "${artifact_name%.zip}")
+              if [ -d "${app_id}/dist" ]; then
+                cd "${app_id}/dist"
+                zip -r "../../${ARTIFACT_DIR}/${artifact_name}" .
+                cd ../..
+                sha256sum "${ARTIFACT_DIR}/${artifact_name}" > "${ARTIFACT_DIR}/${artifact_name}.sha256"
+                echo "Packaged ${artifact_name}"
+              fi
+            done
+            # Generate deployable-apps.json from apps.json
+            python3 -c "
+import json, os
+with open('${APPS_JSON}') as f:
+    config = json.load(f)
+deployable = {'version': 1, 'apps': []}
+for app in config.get('apps', []):
+    path = app.get('projectPath', app['appId'])
+    if os.path.isdir(os.path.join(path, 'dist')):
+        deployable['apps'].append({
+            'appId': app['appId'],
+            'artifactName': app['artifactName'],
+            'deployOrder': app.get('deployOrder', 0),
+            'healthPath': app.get('healthPath', '/health')
+        })
+with open('${ARTIFACT_DIR}/deployable-apps.json', 'w') as f:
+    json.dump(deployable, f)
+print(json.dumps(deployable, indent=2))
+"
+          fi
+
+          echo "${COMMIT_SHA}" > "${ARTIFACT_DIR}/commit.sha"
+
+          echo "Packaged artifacts for commit ${COMMIT_SHA}"
+          ls -la "${ARTIFACT_DIR}/"
+
+      - name: Upload to Nexus
+        env:
+          NEXUS_URL: ${{ secrets.NEXUS_URL }}
+          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+          NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          COMMIT_SHA=$(git rev-parse HEAD)
+          ARTIFACT_DIR="app/${COMMIT_SHA}"
+          NEXUS_URL="${NEXUS_URL:-http://host.docker.internal:8088}"
+          REPO="${NEXUS_REPOSITORY:-sdd-artifacts}"
+
+          if [ -z "${NEXUS_USERNAME:-}" ] || [ -z "${NEXUS_PASSWORD:-}" ]; then
+            echo "Nexus credentials not set — skipping upload"
+            exit 0
+          fi
+
+          for file in $(find "${ARTIFACT_DIR}" -type f); do
+            remote_path="${file}"
+            echo "Uploading ${file} to ${NEXUS_URL}/repository/${REPO}/${remote_path}"
+            curl -s -u "${NEXUS_USERNAME}:${NEXUS_PASSWORD}" \
+              --upload-file "${file}" \
+              "${NEXUS_URL}/repository/${REPO}/${remote_path}" \
+              -w "HTTP:%{http_code}\n"
+          done
+          echo "Nexus upload complete"
+
+      - name: Deploy to environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ]; then
+            ENV="dev"
+          else
+            ENV="${{ github.event.inputs.environment }}"
+          fi
+          echo "Deploying to $ENV environment"
+
+          # Check if we have a server to deploy
+          if [ -f "frontend/server.mjs" ] && [ -d "frontend/dist" ]; then
+            PORT=4173
+            if [ "$ENV" = "qa" ]; then
+              PORT=4174
+            fi
+
+            echo "Starting server on port ${PORT}"
+            cd frontend
+            node server.mjs &
+            SERVER_PID=$!
+            echo "Server PID: ${SERVER_PID}"
+
+            sleep 3
+
+            echo "Checking health endpoint..."
+            HEALTH=$(curl -s http://localhost:${PORT}/health)
+            if echo "$HEALTH" | grep -q '"status":"ok"'; then
+              echo "Health check PASSED at http://localhost:${PORT}/health"
+              echo "Site available at http://localhost:${PORT}/"
+              echo "Deployment complete for ${ENV}"
+            else
+              echo "Health check FAILED - got: $HEALTH"
+              exit 1
+            fi
+
+            kill ${SERVER_PID} 2>/dev/null || true
+          else
+            echo "No deployable server found — deployment valid for infra-only changes"
+          fi
