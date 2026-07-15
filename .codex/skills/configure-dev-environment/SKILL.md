@@ -103,12 +103,36 @@ Configure repository owner/name, PR reviewers, approval minimums, and review lab
 Configure the CI runner for PR validation and deployment jobs.
 
 1. Run `python -m tools.sdd_cli environment-lab init-local-files` to create `infra/gitea/runner.env` if missing.
-2. Run `python -m tools.sdd_cli environment-lab set-gitea-runner-env --values-json '{...}'` with runner values.
-3. Run `python -m tools.sdd_cli environment-lab build-gitea-images` before any CI workflow runs.
-4. Run `python -m tools.sdd_cli environment-lab validate-gitea-runner` to check Docker, images, and tools.
-5. For old/floating Gitea/Gitea Runner images, check current stable upstream versions and update compose files.
+2. **Generate a runner registration token** from Gitea via API:
+   ```bash
+   curl -s -X POST -u 'ADMIN_USER:ADMIN_PASS' \
+     http://localhost:3000/api/v1/admin/runners/registration-token \
+     | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])"
+   ```
+3. **Update `infra/gitea/runner.env`** with the correct values. The file is git-ignored:
+   ```bash
+   python -m tools.sdd_cli environment-lab set-gitea-runner-env --values-json '{
+     "GITEA_INSTANCE_URL": "http://gitea:3000",
+     "GITEA_RUNNER_REGISTRATION_TOKEN": "TOKEN_FROM_STEP_2",
+     "GITEA_RUNNER_LABELS": "ubuntu-latest,docker,windows"
+   }'
+   ```
+   - The instance URL **must** be `http://gitea:3000` (internal Docker network), not `localhost`.
+   - Labels **must** include `ubuntu-latest` — this matches the `runs-on` value used in `.gitea/workflows/*.yml`.
+4. **Restart the runner container** to pick up the new config:
+   ```bash
+   docker restart agentic-gitea-runner
+   ```
+5. Wait 5 seconds, then **verify the runner is registered and online**:
+   ```bash
+   curl -s -u 'ADMIN_USER:ADMIN_PASS' http://localhost:3000/api/v1/admin/runners | python3 -m json.tool
+   ```
+   The response should contain a runner with `"online": true`.
+6. Run `python -m tools.sdd_cli environment-lab build-gitea-images` before any CI workflow runs.
+7. Run `python -m tools.sdd_cli environment-lab validate-gitea-runner` to check Docker, images, and tools.
+8. For old/floating Gitea/Gitea Runner images, check current stable upstream versions and update compose files.
 
-**Values needed:** Runner registration token, instance URL.
+**Values needed:** Admin username/password (to generate token), runner registration token, instance URL.
 **Safety:** Never print the registration token. Do not start/stop infra without approval.
 
 ### Nexus Artifacts
