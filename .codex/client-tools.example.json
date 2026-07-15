@@ -1,6 +1,6 @@
 {
   "openProject": {
-    "baseUrl": "replace-with-openproject-base-url",
+    "baseUrl": "http://localhost:8080",
     "apiToken": "replace-with-openproject-api-token",
     "projectIdentifier": "replace-with-openproject-project-identifier",
     "todoStatus": "To do",
@@ -100,28 +100,28 @@
     "maxBranchLength": 100
   },
   "gitea": {
-    "baseUrl": "replace-with-gitea-base-url",
+    "baseUrl": "http://localhost:3000",
     "apiToken": "replace-with-gitea-api-token",
     "owner": "replace-with-gitea-owner",
     "repo": "replace-with-gitea-repo"
   },
   "nexus": {
-    "baseUrl": "replace-with-nexus-base-url",
-    "username": "replace-with-nexus-username",
+    "baseUrl": "http://localhost:8088",
+    "username": "admin",
     "password": "replace-with-nexus-password-or-token",
-    "repository": "replace-with-nexus-repository"
+    "repository": "sdd-artifacts"
   },
   "pr": {
-    "reviewers": "replace-with-reviewers",
+    "reviewers": "",
     "minimumApprovals": {
       "dev": 1,
       "main": 1
     },
     "labels": {
       "enabled": true,
-      "reviewed": "replace-with-reviewed-label",
-      "needsTests": "replace-with-needs-tests-label",
-      "needsChanges": "replace-with-needs-changes-label"
+      "reviewed": "codex-reviewed",
+      "needsTests": "needs-tests",
+      "needsChanges": "needs-changes"
     }
   },
   "parallelDelivery": {
@@ -187,7 +187,7 @@
     "dismissed": ["openproject-mcp"]
   },
   "openRouter": {
-    "baseUrl": "replace-with-openrouter-base-url",
+    "baseUrl": "https://openrouter.ai/api/v1",
     "apiKey": "replace-with-openrouter-api-key",
     "defaultChatModel": "openrouter/auto",
     "modelMapping": {
