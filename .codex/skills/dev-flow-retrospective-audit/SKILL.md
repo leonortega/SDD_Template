@@ -30,8 +30,8 @@ Default to read-only mode unless the user explicitly asks to apply changes.
 - **`Read-only audit`**: inspect evidence and report proposed improvements.
 - **`Proposal mode`**: draft exact skill/config/test changes without editing files.
 - **`Apply mode`**: edit skills, scripts, templates, or tests after evidence is clear and the user requested implementation.
-- **`post-prod-ticket-release`**: read-only audit mode invoked after successful `dev-ops-deploy-prod` for the just-promoted release; persist sanitized learning evidence. Receives eval results from the Post-PROD Eval step as evidence — include the eval summary (total, passed, failed) in the findings.
-- **`eval-driven-improvement`**: **Run Promptfoo eval directly** as the first step. Read results, classify failures as `eval-regression` or `eval-coverage` findings, and recommend concrete improvements. Supports read-only, proposal, and apply sub-modes.
+- **`post-prod-ticket-release`**: read-only audit mode invoked after successful `dev-ops-deploy-prod` for the just-promoted release; persist sanitized learning evidence. Receives eval results from the Post-PROD Eval step as evidence — include the eval summary (total, passed, failed) in the findings. If eval failures exist, `dev-ops-deploy-prod` automatically escalates into the full `eval-driven-improvement` cycle after this mode completes (see Triggers below).
+- **`eval-driven-improvement`**: **Run Promptfoo eval directly** as the first step. Read results, classify failures as `eval-regression` or `eval-coverage` findings, and recommend concrete improvements. Supports read-only, proposal, and apply sub-modes. When triggered automatically from `dev-ops-deploy-prod`, the sub-modes run sequentially (probe → diagnose → propose → apply) without manual intervention, limited to eval infrastructure files.
 
 ### Eval-Driven Improvement Modes
 
@@ -42,7 +42,7 @@ Within `eval-driven-improvement`. Choose the sub-mode based on what you want to 
 | `probe` | Quick health check — eval is working? All tests pass? | Run eval, show results, no recommendations |
 | `diagnose` | Eval results show failures and you need to understand why | Run eval, read results, classify failures, report findings |
 | `propose` | Findings are clear and you want to draft specific fixes without applying them | Run eval, classify, draft specific changes to config/provider/skills |
-| `apply` | Findings are clear and user confirms the fix should be applied | Run eval, classify, **apply** fixes (requires user confirmation per the Agent Self-Improvement Gate) |
+| `apply` | Findings are clear and fix should be applied | Run eval, classify, **apply** fixes. Requires user confirmation per the Agent Self-Improvement Gate **unless** triggered automatically from `dev-ops-deploy-prod`'s auto-escalation flow, where the gate is satisfied by the high-severity context of a PROD eval regression |
 
 **Decision rule for sub-mode selection:**
 1. No eval run exists yet → start with `probe`
@@ -62,7 +62,7 @@ This skill is safe to run as a manual quality lane through prompts such as:
 
 Run this audit after or between delivery work when one of these conditions occurs:
 
-- `dev-ops-deploy-prod` records a successful PROD deployment and invokes `post-prod-ticket-release` for the promoted release,
+- `dev-ops-deploy-prod` records a successful PROD deployment and invokes `post-prod-ticket-release` for the promoted release, then **auto-escalates** into `eval-driven-improvement` (probe → diagnose → propose → apply) when eval failures are detected,
 - a QA bug is filed or E2E QA fails,
 - `dev-flow-pr-review-agent` misses a meaningful issue,
 - repository workflow, local quality gates, or runner tooling fail in a way that blocks handoff,
@@ -246,13 +246,19 @@ For `eval-driven-improvement` in `apply` sub-mode, outcomes may be applied **onl
 2. User confirms the proposed change
 3. A new eval run confirms the fix passes all test cases
 
+**Exception:** When triggered automatically from `dev-ops-deploy-prod`'s auto-escalation flow, requirement 2 (user confirmation) is bypassed because:
+- A PROD eval regression is inherently high-severity (satisfies the Agent Self-Improvement Gate)
+- Only eval infrastructure files (`routing_provider.py`, `promptfooconfig.yaml`) are modified
+- Each fix is verified by re-running the eval before proceeding
+- Any fix that causes other test failures is reverted — no unsafe change is committed
+
 Before choosing any outcome other than `No change`, confirm the Agent Self-Improvement Gate in `.codex/skills/_shared/delivery-contract.md` is satisfied.
 
 ### 5. Apply Promptfoo Improvements
 
 This step is **only executed in `eval-driven-improvement apply` sub-mode**, after:
 1. The Agent Self-Improvement Gate is satisfied (repeated pattern, high-severity, or contract conflict)
-2. User confirmed the proposed change from Step 4
+2. User confirmed the proposed change from Step 4 (or triggered automatically from `dev-ops-deploy-prod`'s auto-escalation flow)
 
 For each failing test case or coverage gap, apply the specific fix based on the outcome chosen in Step 4:
 
