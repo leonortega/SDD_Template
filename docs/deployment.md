@@ -6,7 +6,6 @@ Deployment is currently a shell capability. No product app is configured for pac
 
 - `infra/deployment/apps.json` contains no app targets.
 - `infra/deployment/configuration.json` contains no app settings.
-- Provider adapters and platform infrastructure remain available.
 - Gitea workflows are placeholders until the next product stack defines real artifacts and environments.
 
 ## Adding Deployment For A New Product

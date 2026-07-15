@@ -1,0 +1,18 @@
+{
+  "servers": {
+    "monorepo-docs-search": {
+      "type": "stdio",
+      "command": "C:\\Users\\marce\\.mcp_shared_venv\\Scripts\\python.exe",
+      "args": [
+        "C:\\LeonRepository\\SDD_Template\\tools\\bm25s_flashrank\\mcp_doc_research.py"
+      ]
+    },
+    "codebase-memory-mcp": {
+      "type": "stdio",
+      "command": "C:\\Users\\marce\\AppData\\Local\\Microsoft\\WindowsApps\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\python.exe",
+      "args": [
+        "C:\\LeonRepository\\SDD_Template\\tools\\codebase_memory_mcp\\mcp_cap_shim.py"
+      ]
+    }
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "$schema": "./project-profile.schema.json",
+  "schemaVersion": 1,
+  "stack": {
+    "frontend": {
+      "applies": false,
+      "value": ""
+    },
+    "backend": {
+      "applies": false,
+      "value": ""
+    },
+    "database": {
+      "applies": false,
+      "value": ""
+    },
+    "languages": [],
+    "frameworks": [],
+    "testFrameworks": []
+  },
+  "providers": {
+    "ticket": {
+      "id": "openproject",
+      "adapter": ".codex/providers/ticket.openproject.md"
+    },
+    "repository": {
+      "id": "gitea",
+      "adapter": ".codex/providers/repo.gitea.md"
+    },
+    "review": {
+      "id": "gitea",
+      "adapter": ".codex/providers/repo.gitea.md"
+    },
+    "artifact": {
+      "id": "nexus",
+      "adapter": ".codex/providers/artifact.nexus.md"
+    },
+      "deployment": {
+        "id": "docker-desktop",
+        "adapter": ".codex/providers/deploy.docker-desktop.md"
+      },
+    "observability": [
+      {
+        "id": "seq"
+      },
+      {
+        "id": "grafana"
+      },
+      {
+        "id": "dozzle"
+      }
+    ]
+  },
+  "workflow": {
+    "ticketKeyPattern": "E2EPROJECT-[0-9]+",
+    "baseBranch": "dev",
+    "branchPrefix": "codex",
+    "branchPattern": "{prefix}/{ticketKeySlug}-{titleSlug}",
+    "environments": [
+      "dev",
+      "qa",
+      "prod"
+    ],
+    "releasePolicy": {
+      "buildOncePromoteSameArtifact": true,
+      "explicitProductionPromotion": true
+    }
+  },
+  "quality": {
+    "gates": [
+      {
+        "id": "secret-scan",
+        "type": "security",
+        "workflowJob": "pr-validation",
+        "required": true
+      }
+    ]
+  },
+  "adapters": {
+    "ticket": ".codex/providers/ticket.openproject.md",
+    "repository": ".codex/providers/repo.gitea.md",
+    "review": ".codex/providers/repo.gitea.md",
+    "artifact": ".codex/providers/artifact.nexus.md",
+    "deployment": ".codex/providers/deploy.docker-desktop.md"
+  }
+}

@@ -1,0 +1,197 @@
+{
+  "openProject": {
+    "baseUrl": "replace-with-openproject-base-url",
+    "apiToken": "replace-with-openproject-api-token",
+    "projectIdentifier": "replace-with-openproject-project-identifier",
+    "todoStatus": "To do",
+    "inProgressStatus": "In progress",
+    "reviewStatus": "In review",
+    "qaStatus": "QA",
+    "doneStatus": "Done",
+    "timeTelemetry": {
+      "enabled": true,
+      "defaultActivityName": "Other",
+      "activityFlow": {
+        "Management": [
+          "dev-ops-post-merge-deploy",
+          "dev-ops-deploy-prod"
+        ],
+        "Specification": [
+          "dev-flow-propose-change",
+          "dev-flow-start-ticket",
+          "dev-flow-verify-change",
+          "dev-flow-archive-change"
+        ],
+        "Development": [
+          "dev-flow-implement-ticket",
+          "dev-flow-pr-review-agent",
+          "dev-flow-pr-review-feedback-loop"
+        ],
+        "Testing": [
+          "dev-ops-deploy-qa",
+          "configured-qa-gate"
+        ],
+        "Support": [
+          "dev-flow-file-qa-bug",
+          "dev-ops-rollback-prod",
+          "dev-ops-hotfix-prod"
+        ],
+        "Other": [
+          "dev-flow-pipeline-status",
+          "dev-flow-retrospective-audit"
+        ]
+      },
+      "activityByStage": {
+        "dev-flow-propose-change": {
+          "activityName": "Specification"
+        },
+        "dev-flow-start-ticket": {
+          "activityName": "Specification"
+        },
+        "dev-flow-verify-change": {
+          "activityName": "Specification"
+        },
+        "dev-flow-archive-change": {
+          "activityName": "Specification"
+        },
+        "dev-flow-implement-ticket": {
+          "activityName": "Development"
+        },
+        "dev-flow-pr-review-agent": {
+          "activityName": "Development"
+        },
+        "dev-flow-pr-review-feedback-loop": {
+          "activityName": "Development"
+        },
+        "dev-ops-post-merge-deploy": {
+          "activityName": "Management"
+        },
+        "dev-ops-deploy-qa": {
+          "activityName": "Testing"
+        },
+        "configured-qa-gate": {
+          "activityName": "Testing"
+        },
+        "dev-flow-file-qa-bug": {
+          "activityName": "Support"
+        },
+        "dev-ops-deploy-prod": {
+          "activityName": "Management"
+        },
+        "dev-ops-rollback-prod": {
+          "activityName": "Support"
+        },
+        "dev-ops-hotfix-prod": {
+          "activityName": "Support"
+        },
+        "dev-flow-pipeline-status": {
+          "activityName": "Other"
+        },
+        "dev-flow-retrospective-audit": {
+          "activityName": "Other"
+        }
+      }
+    }
+  },
+  "git": {
+    "baseBranch": "dev",
+    "branchPrefix": "codex",
+    "branchPattern": "{prefix}/{ticketKeySlug}-{titleSlug}",
+    "maxBranchLength": 100
+  },
+  "gitea": {
+    "baseUrl": "replace-with-gitea-base-url",
+    "apiToken": "replace-with-gitea-api-token",
+    "owner": "replace-with-gitea-owner",
+    "repo": "replace-with-gitea-repo"
+  },
+  "nexus": {
+    "baseUrl": "replace-with-nexus-base-url",
+    "username": "replace-with-nexus-username",
+    "password": "replace-with-nexus-password-or-token",
+    "repository": "replace-with-nexus-repository"
+  },
+  "pr": {
+    "reviewers": "replace-with-reviewers",
+    "minimumApprovals": {
+      "dev": 1,
+      "main": 1
+    },
+    "labels": {
+      "enabled": true,
+      "reviewed": "replace-with-reviewed-label",
+      "needsTests": "replace-with-needs-tests-label",
+      "needsChanges": "replace-with-needs-changes-label"
+    }
+  },
+  "parallelDelivery": {
+    "enabled": false,
+    "maxActiveTickets": 2,
+    "worktreeRoot": "../ticket-worktrees",
+    "deploymentLanePolicy": "serialized",
+    "agentModelPolicy": {
+      "coordinator": {
+        "model": "inherit",
+        "reasoningEffort": "medium"
+      },
+      "pipelineStatus": {
+        "model": "gpt-5.4-mini",
+        "reasoningEffort": "low"
+      },
+      "ticketStarter": {
+        "model": "gpt-5.4-mini",
+        "reasoningEffort": "medium"
+      },
+      "implementation": {
+        "model": "gpt-5.3-codex",
+        "reasoningEffort": "medium"
+      },
+      "prReview": {
+        "model": "gpt-5.4",
+        "reasoningEffort": "high"
+      },
+      "postMergeDeploy": {
+        "model": "gpt-5.4-mini",
+        "reasoningEffort": "medium"
+      },
+      "deployToQa": {
+        "model": "gpt-5.4-mini",
+        "reasoningEffort": "medium"
+      },
+      "e2eQa": {
+        "model": "gpt-5.4",
+        "reasoningEffort": "medium"
+      },
+      "deployToProd": {
+        "model": "gpt-5.4",
+        "reasoningEffort": "high"
+      },
+      "fileQaBug": {
+        "model": "gpt-5.4",
+        "reasoningEffort": "medium"
+      },
+      "rollbackProd": {
+        "model": "gpt-5.4",
+        "reasoningEffort": "high"
+      },
+      "hotfixProd": {
+        "model": "gpt-5.3-codex",
+        "reasoningEffort": "high"
+      }
+    }
+  },
+  "recommendedTools": {
+    "enabled": true,
+    "mode": "guarded-auto",
+    "accepted": ["ponytail", "caveman", "playwright", "dev-flow-pr-review-agent-skill"],
+    "dismissed": ["openproject-mcp"]
+  },
+  "openRouter": {
+    "baseUrl": "replace-with-openrouter-base-url",
+    "apiKey": "replace-with-openrouter-api-key",
+    "defaultChatModel": "openrouter/auto",
+    "modelMapping": {
+      "chat": "openrouter/auto"
+    }
+  }
+}

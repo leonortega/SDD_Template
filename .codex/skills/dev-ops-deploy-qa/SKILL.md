@@ -3,6 +3,8 @@ name: dev-ops-deploy-qa
 description: Promote merged pull request artifacts through the selected artifact and deployment adapters into configured pre-production environments, then update the ticket adapter. Use when Codex needs to verify a merged PR, locate the linked ticket, confirm immutable artifacts and checksums, validate configured environment health checks, comment artifact and deployment links, and move the ticket to QA.
 ---
 
+<!-- TIER 3: STAGE-SPECIFIC - QA deployment skill -->
+
 # Deploy To QA
 
 ## Overview
@@ -17,13 +19,13 @@ feature branch -> dev -> DEV -> QA -> main -> PROD
 
 ## Shared Context
 
-Before promotion, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Load selected artifact, deployment, repository/review, and ticket adapters. Use `python -m tools.sdd_cli delivery` helpers: `ArtifactPaths`, `ValidateTicketLock` for `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, `UpdateReleaseManifest`, `ValidateReleaseManifest`, and `RenderTicketComment -Type QADeployment`.
+Before promotion, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Load selected artifact, deployment, repository/review, and ticket adapters. Use `python -m tools.sdd_cli dev-flow` helpers: `ArtifactPaths`, `ValidateTicketLock` for `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, `UpdateReleaseManifest`, `ValidateReleaseManifest`, and `RenderTicketComment -Type QADeployment`.
 
 For push-triggered pre-production deployment, the commit or merged PR title must start with the ticket key format configured in `.codex/project-profile.json` at `workflow.ticketKeyPattern`, and the change must touch configured application or test paths. Non-code changes outside those paths and non-ticket PRs must not deploy.
 
 ## Workflow Telemetry
 
-Capture UTC start time after resolving the ticket key and before artifact promotion checks. Prefer OpenProject time-entry telemetry and create or update the `dev-ops-deploy-qa` entry with marker `IA generated workflow telemetry: {ticketKey}:dev-ops-deploy-qa`. Use `python -m tools.sdd_cli delivery -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` only as the JSONL fallback when direct time telemetry is unavailable. On resume or idempotent reuse, append or update another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-ops-deploy-qa`, `agentRole=deployment`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`.
+Capture UTC start time after resolving the ticket key and before artifact promotion checks. Prefer OpenProject time-entry telemetry and create or update the `dev-ops-deploy-qa` entry with marker `IA generated workflow telemetry: {ticketKey}:dev-ops-deploy-qa`. Use `python -m tools.sdd_cli dev-flow append-telemetry -TicketKey {ticketKey}` only as the JSONL fallback when direct time telemetry is unavailable. On resume or idempotent reuse, append or update another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-ops-deploy-qa`, `agentRole=deployment`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`.
 
 ## Configuration
 

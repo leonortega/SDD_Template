@@ -3,6 +3,8 @@ name: dev-flow-pipeline-status
 description: Produce a read-only operator dashboard for configured tickets, pull requests, selected-provider artifacts, QA evidence, tags, environments, release state, and blockers through selected project-profile adapters. Use when the user asks where a ticket or release stands, what is deployed, what is blocked, or which workflow step should run next.
 ---
 
+<!-- TIER 3: STAGE-SPECIFIC - Pipeline visibility skill -->
+
 # Pipeline Status
 
 ## Overview

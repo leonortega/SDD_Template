@@ -1,5 +1,1 @@
-{
-  "$schema": "./apps.schema.json",
-  "version": 1,
-  "apps": []
-}
+{  "version": 1,  "apps": [  {  "appId": "openproject",  "projectPath": "infra/openproject",  "role": "admin",  "artifactName": "openproject-17.5.1.zip",  "healthPath": "/health",  "deployOrder": 0  }  ]  }

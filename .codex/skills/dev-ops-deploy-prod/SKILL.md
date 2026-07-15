@@ -1,7 +1,9 @@
-﻿---
+---
 name: dev-ops-deploy-prod
 description: Promote a QA-approved release artifact to production after configured ticket E2E QA approval. Use when Codex needs to verify one or more Done tickets included in a release, confirm the QA-approved artifact and checksum, ensure release/RC tag consistency, update the release branch, trigger production deployment, validate production page and health checks, verify configured observability when available, and comment the production result on every included ticket.
 ---
+
+<!-- TIER 3: STAGE-SPECIFIC - PROD deployment skill -->
 
 # Deploy To PROD
 
@@ -17,13 +19,13 @@ PROD must reuse the QA-approved Nexus artifact. Never rebuild, republish, or ren
 
 ## Shared Context
 
-Before production promotion, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Load selected ticket, repository/review, artifact, deployment, and observability adapters. Use `python -m tools.sdd_cli delivery` helpers: `ValidateTicketLock` for `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, `ArtifactPaths`, `ValidateReleaseManifest`, `UpdateReleaseManifest`, and `RenderTicketComment -Type ProdDeployment`.
+Before production promotion, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Load selected ticket, repository/review, artifact, deployment, and observability adapters. Use `python -m tools.sdd_cli dev-flow` helpers: `ValidateTicketLock` for `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, `ArtifactPaths`, `ValidateReleaseManifest`, `UpdateReleaseManifest`, and `RenderTicketComment -Type ProdDeployment`.
 
 For push-triggered production deployment from the release branch, the commit or merged PR title must start with the ticket key format configured in `.codex/project-profile.json` at `workflow.ticketKeyPattern`, and the change must touch configured application or test paths. Non-code changes outside those paths and non-ticket PRs must not deploy production.
 
 ## Configuration
 
-Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.common.json` only for structure, then apply environment overrides when present.
+Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.example.json` only for structure, then apply environment overrides when present.
 
 Required values:
 
@@ -35,7 +37,7 @@ Provider-supported environment variables may override local JSON when present. R
 
 ## Workflow
 
-Run preflight, main/tag promotion, PROD deployment, PROD verification, ticket-provider results, post-PROD retrospective, and release handoff steps in order. Do not continue to the next step until the prior validation evidence is present.
+Run preflight, main/tag promotion, PROD deployment, PROD verification, ticket-provider results, post-PROD eval, post-PROD retrospective, and release handoff steps in order. Do not continue to the next step until the prior validation evidence is present.
 
 ## Preflight
 
@@ -160,19 +162,154 @@ Add or update the PROD result on every included ticket. The comment must include
 
 Only write a success result after the workflow passed and direct PROD page plus `/health` verification passed. If app checks fail, write a failure comment on the primary ticket and stop. If only local monitoring is unavailable, deployment may still pass, but every included ticket comment must state monitoring verification was unavailable.
 
+## Post-PROD Eval
+
+After successful PROD result comments are recorded for every included ticket, run the Promptfoo eval to check for routing regressions:
+
+1. Run `npx promptfoo eval --config .codex/agent-evals/promptfooconfig.yaml --no-cache`
+2. Or use the CLI runner: `python -m tools.sdd_cli agent-eval run`
+3. Read the results:
+   - **All tests pass**: report "no routing regressions detected"
+   - **Any test fails**: flag the failures for the retrospective audit
+
+Persist the eval results to `.codex/agent-evals/results.local.json` with mode `post-prod-eval`, scope set to the final release version, and the list of failures (if any).
+
+If the eval cannot run (missing tool, missing deps), report the blocker as an evidence gap but do not fail the PROD deployment — the eval is advisory, not a gate.
+
 ## Post-PROD Retrospective
 
-After successful PROD result comments are recorded for every included ticket, automatically run `dev-flow-retrospective-audit` in read-only `post-prod-ticket-release` mode for the just-promoted release. Pass the primary ticket key, included ticket list, artifact commit, final release version, PROD URL, and Nexus release manifest path or URL as the audit scope.
+After the eval completes, automatically run `dev-flow-retrospective-audit` in `post-prod-ticket-release` mode for the just-promoted release. Pass the primary ticket key, included ticket list, artifact commit, final release version, PROD URL, Nexus release manifest path or URL, and **the eval results** as evidence.
 
 This retrospective is a learning-evidence step, not a release gate. PROD success remains based on the artifact, workflow, direct PROD page, and `/health` validation above. If the retrospective cannot inspect optional evidence, report the evidence gap in the final handoff and keep the successful PROD result intact.
+
+The retrospective must include the eval summary (total, passed, failed) in its findings:
+
+- **All tests passed**: report "no routing regressions detected"
+- **Any test failed**: report each failure as an `eval-regression` finding, then **automatically escalate** into the `eval-driven-improvement` cycle described below to classify and fix the failures
 
 The retrospective must persist compact, sanitized learning evidence:
 
 - append or update local audit result data in ignored `.codex/agent-evals/results.local.json`,
 - add or reuse a compact ticket comment with marker `IA generated post-PROD retrospective: {finalVersion}`,
-- include findings, recommended durable improvements, eval coverage gaps, residual evidence gaps, and follow-up ownership when applicable.
+- include the eval summary (total, passed, failed) in the findings,
+- include recommended durable improvements, eval coverage gaps, residual evidence gaps, and follow-up ownership when applicable.
 
-The retrospective must not mutate OpenProject status, deploy, promote, tag, rewrite branches, update release manifests, create tickets, schedule automations, or apply docs, contract, skill, eval, or memory changes unless the user separately asks for apply mode. Do not include secrets, raw tool payloads, full prompts, tokens, cookies, or credential-bearing URLs in the local result or ticket comment.
+The retrospective must not mutate OpenProject status, deploy, promote, tag, rewrite branches, update release manifests, create tickets, schedule automations, or apply docs, contract, skill, or memory changes. Eval infrastructure changes (routing_provider.py and promptfooconfig.yaml only) are handled by the auto-escalation flow below. Do not include secrets, raw tool payloads, full prompts, tokens, cookies, or credential-bearing URLs in the local result or ticket comment.
+
+## Eval-Driven Improvement Auto-Escalation
+
+If the Post-PROD Retrospective found any `eval-regression` failures, **automatically escalate** into the full `eval-driven-improvement` cycle. This runs sequentially after the retrospective completes and is fully automatic — no manual intervention needed.
+
+### Scope
+
+Auto-escalation is limited to **eval infrastructure files only**:
+- `.codex/agent-evals/routing_provider.py` — fix routing logic bugs
+- `.codex/agent-evals/promptfooconfig.yaml` — update test expectations or add coverage
+
+It must **never** auto-apply changes to delivery skills, shared contracts, configure skills, CI workflows, product code, docs, memory files, or any file outside the eval infrastructure.
+
+### Auto-Flow Steps
+
+#### Step 1 — Probe
+
+Run the eval again to get a fresh, detailed result set:
+
+```bash
+npx promptfoo eval --config .codex/agent-evals/promptfooconfig.yaml --no-cache
+```
+
+Read the output and identify every failing test case. Persist the full result set to `.codex/agent-evals/results.local.json` with mode `eval-driven-improvement` and sub-mode `probe`.
+
+**Outcome:** List of failing test cases with expected vs actual routes.
+
+#### Step 2 — Diagnose
+
+For each failing test case, determine the root cause:
+
+1. Check if the delivery contract has changed (git diff on `_shared/delivery-contract.md` and `_shared/delivery-contract-core.md`)
+2. Check if `routing_provider.py` was recently modified (git log or git diff)
+3. Check if `promptfooconfig.yaml` test expectations are stale
+4. Trace the failing test's input variables through `_evaluate_route()` in `routing_provider.py`
+
+**Heuristic for classification:**
+- If `routing_provider.py` has a condition that contradicts the delivery contract → **`Fix routing provider`** (bug in logic)
+- If `routing_provider.py` matches the delivery contract but the test expects an old route → **`Update test expectation`** (stale assertion)
+- If the failing scenario has no test coverage → **`Add new test case`** (eval-coverage gap)
+- If the routing logic change is correct and the test matches → **`No change — contract drift`** (do not auto-apply, report as finding)
+
+**Outcome:** Classification per failing test: `fix-routing`, `update-expectation`, `add-coverage`, or `defer`.
+
+Persist the diagnoses to `results.local.json` with sub-mode `diagnose`.
+
+#### Step 3 — Propose
+
+For each `fix-routing` or `update-expectation` or `add-coverage` diagnosis, draft the exact change:
+
+- **fix-routing**: Identify the incorrect condition/return in `_evaluate_route()` and the correct value. Produce the exact line change.
+- **update-expectation**: Identify the current expected route in the `javascript` assertion and the correct expected route.
+- **add-coverage**: Identify the missing scenario, input variables, and expected route for the new test case.
+
+**Outcome:** Concrete, executable change plan (one per fixing test).
+
+#### Step 4 — Apply
+
+Apply each proposed change in order. Apply the simplest fixes first (`update-expectation` and `add-coverage` before `fix-routing`):
+
+1. For `update-expectation`: Edit the assertion string in `promptfooconfig.yaml` to match the correct expected route.
+2. For `add-coverage`: Add a new test case entry to the `tests` array in `promptfooconfig.yaml` with the correct vars, provider, and assertion.
+3. For `fix-routing`: Edit `routing_provider.py` to correct the condition, return value, or missing check.
+
+After EACH change, run the full eval suite:
+```bash
+npx promptfoo eval --config .codex/agent-evals/promptfooconfig.yaml --no-cache
+```
+
+- If all tests pass → move to the next fix (or report success if all are done)
+- If any test fails → **revert the change**, report the attempted fix and the failure, and **stop the auto-escalation** — do not continue applying remaining fixes
+
+#### Step 5 — Commit
+
+After all fixes are applied and verified (all eval tests pass):
+
+1. Stage only the changed eval infrastructure files:
+   ```bash
+   git add .codex/agent-evals/routing_provider.py .codex/agent-evals/promptfooconfig.yaml .codex/agent-evals/results.local.json
+   ```
+2. Commit with message:
+   ```text
+   [SDD] Auto-fix eval regressions after PROD v{finalVersion}: {short summary of fixes}
+   ```
+3. Push to the current branch.
+
+### Safety Rules
+
+- **Stop if eval cannot run**: If `npx promptfoo eval` fails to execute (missing tool, missing deps), report the blocker and stop. Do not apply any changes.
+- **Stop on revert**: If a fix causes other tests to fail, revert the change and stop. Report the failed fix attempt and which test broke.
+- **Stop on contract drift**: If the diagnosis is `No change — contract drift` (neither routing provider nor test is wrong — the contract itself changed), do not auto-apply. Report the drift as a finding requiring manual review.
+- **Only eval files**: Never auto-apply changes outside `.codex/agent-evals/routing_provider.py` or `.codex/agent-evals/promptfooconfig.yaml`. If a fix would require changing a delivery skill, shared contract, or docs, stop and report the need for manual intervention.
+- **Re-run eval after every change**: Never apply two fixes without running eval between them.
+
+### Failure Handling
+
+If any step in the auto-escalation fails:
+
+1. Report what was attempted and what failed.
+2. If `git commit` or `git push` failed (hook rejection, network issue, merge conflict): do not retry — report the blocker and the **uncommitted state**. The eval files remain modified and verified but uncommitted — flag this in the output so manual action can commit them.
+3. For all other failures (eval run fails, fix causes test regression, etc.): leave all files in their original state by reverting any partial changes with `git checkout` on the modified eval files.
+4. Do not re-run PROD deployment — PROD already succeeded.
+5. Include the failure details in the final release output.
+6. Recommend manual inspection of the eval regression.
+
+### Output
+
+Include in the final release output:
+
+- Auto-escalation triggered? (yes/no and why)
+- Number of failures found → classified → fixed
+- Files changed (if any)
+- Final eval result (all pass / some fail)
+- Commit SHA (if changes were committed)
+- Any failures or skipped items with rationale
 
 ## Output
 

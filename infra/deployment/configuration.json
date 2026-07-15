@@ -2,5 +2,31 @@
   "$schema": "./configuration.schema.json",
   "version": 1,
   "ignoredPrefixes": [],
-  "settings": []
+  "settings": [
+    {
+      "database": {
+        "host": "localhost",
+        "port": 5432,
+        "name": "openproject",
+        "username": "openproject",
+        "password": "your-db-password"
+      },
+      "email": {
+        "server": "smtp.example.com",
+        "port": 587,
+        "username": "noreply@example.com",
+        "password": "your-email-password"
+      },
+      "cache": {
+        "host": "localhost",
+        "port": 6379
+      },
+      "redis": {
+        "host": "localhost",
+        "port": 6379
+      },
+      "timezone": "UTC",
+      "locale": "en"
+    }
+  ]
 }

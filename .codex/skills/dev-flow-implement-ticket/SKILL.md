@@ -1,7 +1,9 @@
-﻿---
+---
 name: dev-flow-implement-ticket
 description: Implement an already-started configured ticket through OpenSpec tasks, project-profile quality gates, repository/review adapter handoff, review-agent fixes, and ticket adapter review-state update. Use when a ticket already has an implementation branch and OpenSpec change, or when Codex is asked to continue, finish, validate, or hand off ticket implementation work.
 ---
+
+<!-- TIER 3: STAGE-SPECIFIC - Ticket implementation skill -->
 
 # Implement Ticket
 
@@ -15,13 +17,13 @@ Before implementation, handoff, or review work, follow `.codex/skills/_shared/sk
 
 ## Workflow Telemetry
 
-Capture UTC start time after resolving the ticket key and before implementation or PR handoff work. Prefer OpenProject time-entry telemetry and create or update the `dev-flow-implement-ticket` entry with marker `IA generated workflow telemetry: {ticketKey}:dev-flow-implement-ticket`. Use `python -m tools.sdd_cli delivery -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` only as the JSONL fallback when direct time telemetry is unavailable. On resume or idempotent reuse, append or update another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-flow-implement-ticket`, `agentRole=implementation`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If telemetry append fails in both primary and fallback paths, report workflow timing as blocked and continue only when the underlying implementation handoff rules still allow it.
+Capture UTC start time after resolving the ticket key and before implementation or PR handoff work. Prefer OpenProject time-entry telemetry and create or update the `dev-flow-implement-ticket` entry with marker `IA generated workflow telemetry: {ticketKey}:dev-flow-implement-ticket`. Use `python -m tools.sdd_cli dev-flow append-telemetry -TicketKey {ticketKey}` only as the JSONL fallback when direct time telemetry is unavailable. On resume or idempotent reuse, append or update another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-flow-implement-ticket`, `agentRole=implementation`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If telemetry append fails in both primary and fallback paths, report workflow timing as blocked and continue only when the underlying implementation handoff rules still allow it.
 
 ## Configuration
 
 Read `.codex/project-profile.json` first for stack, provider, branch, ticket-key, and quality-gate policy. Read `.codex/client-tools.local.json` only for selected adapter runtime values. Fall back to `.codex/client-tools.common.json` only for defaults and setup guidance.
 
-Read coverage config from `.codex/quality.local.json` when present. If it is missing, invalid, or missing `coverage.minimumPercent`, use `80` and report the configuration gap. The safe tracked template is `.codex/quality.common.json`.
+Read coverage config from `.codex/quality.local.json` when present. If it is missing, invalid, or missing `coverage.minimumPercent`, use `80` and report the configuration gap. The safe tracked template is `.codex/quality.example.json`.
 
 Required/defaulted values:
 
@@ -89,7 +91,7 @@ The local fallback is advisory for faster iteration. repository workflow remains
 When repository workflow runner, workflow container, or security tool compatibility is part of the configured gate, use the existing infra validation path instead of inventing ad hoc checks:
 
 ```bash
-python -m tools.sdd_cli configure AuditQualityGates
+python -m tools.sdd_cli dev-flow audit-skill-contracts
 the selected runner validation helper from `configure-dev-environment`
 ```
 

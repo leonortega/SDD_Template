@@ -1,0 +1,112 @@
+{
+  "schemaVersion": "1.0",
+  "description": "Maps task types to skill paths. Load only the category matching your current task. Core skills (caveman, ponytail) are always active per AGENTS.md.",
+  "categories": {
+    "core": {
+      "description": "Always-active skills (caveman, ponytail). Already auto-activated per repo-startup.md.",
+      "skills": [],
+      "alwaysActive": true
+    },
+    "ticket": {
+      "description": "Ticket lifecycle: start, propose, explore, implement, verify, archive",
+      "skills": [
+        "dev-flow-start-ticket/SKILL.md",
+        "dev-flow-propose-change/SKILL.md",
+        "dev-flow-explore-change/SKILL.md",
+        "dev-flow-implement-ticket/SKILL.md",
+        "dev-flow-implement-change/SKILL.md",
+        "dev-flow-apply-change/SKILL.md",
+        "dev-flow-verify-change/SKILL.md",
+        "dev-flow-archive-change/SKILL.md"
+      ]
+    },
+    "implement": {
+      "description": "Implementation flow: continue delivery, change implementation, TDD",
+      "skills": [
+        "dev-flow-continue-implementation/SKILL.md",
+        "tdd/SKILL.md"
+      ]
+    },
+    "review": {
+      "description": "PR review: agent review, feedback loop, complexity review",
+      "skills": [
+        "dev-flow-pr-review-agent/SKILL.md",
+        "dev-flow-pr-review-feedback-loop/SKILL.md",
+        "ponytail-review/SKILL.md"
+      ]
+    },
+    "qa": {
+      "description": "QA deployment and bug filing",
+      "skills": [
+        "dev-ops-deploy-qa/SKILL.md",
+        "dev-ops-post-merge-deploy/SKILL.md",
+        "dev-flow-file-qa-bug/SKILL.md"
+      ]
+    },
+    "deploy": {
+      "description": "Production deployment, rollback, hotfix",
+      "skills": [
+        "dev-ops-deploy-prod/SKILL.md",
+        "dev-ops-rollback-prod/SKILL.md",
+        "dev-ops-hotfix-prod/SKILL.md"
+      ]
+    },
+    "monitor": {
+      "description": "Pipeline status and retrospective audits",
+      "skills": [
+        "dev-flow-pipeline-status/SKILL.md",
+        "dev-flow-retrospective-audit/SKILL.md"
+      ]
+    },
+    "parallel": {
+      "description": "Multi-ticket parallel coordination",
+      "skills": [
+        "dev-flow-parallel-ticket-coordinator/SKILL.md"
+      ]
+    },
+    "config": {
+      "description": "Environment setup and configuration",
+      "skills": [
+        "configure-dev-environment/SKILL.md"
+      ]
+    },
+    "guidance": {
+      "description": "Project guidance discovery, acquisition, and mapping",
+      "skills": [
+        "project-guidance-discover/SKILL.md",
+        "project-guidance-acquire/SKILL.md",
+        "project-guidance-mapper/SKILL.md"
+      ]
+    },
+    "plan": {
+      "description": "Planning and design: domain modeling, grill-style questioning",
+      "skills": [
+        "domain-modeling/SKILL.md",
+        "grill-me/SKILL.md",
+        "grill-with-docs/SKILL.md",
+        "grilling/SKILL.md"
+      ]
+    },
+    "security": {
+      "description": "Security best practices review and secure coding",
+      "skills": [
+        "security-best-practices/SKILL.md"
+      ]
+    },
+    "test": {
+      "description": "Browser testing: Playwright automation, interactive debugging",
+      "skills": [
+        "playwright/SKILL.md",
+        "playwright-interactive/SKILL.md"
+      ]
+    },
+    "quality": {
+      "description": "Code quality: ponytail audit, debt detection, help",
+      "skills": [
+        "ponytail-audit/SKILL.md",
+        "ponytail-debt/SKILL.md",
+        "ponytail-help/SKILL.md"
+      ]
+    }
+  }
+}

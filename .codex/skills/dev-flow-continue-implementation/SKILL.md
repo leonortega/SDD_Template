@@ -1,7 +1,9 @@
-﻿---
+---
 name: dev-flow-continue-implementation
 description: Orchestrate the full configured ticket delivery lifecycle by inspecting current ticket, repository, review, artifact, OpenSpec, QA, tag, and production state through the selected project-profile adapters, then delegating to the correct focused skill. Use when Codex is asked to automatically continue, resume, implement, deploy, QA, or hand off a ticket without the user knowing the current workflow step.
 ---
+
+<!-- TIER 3: STAGE-SPECIFIC - Implementation orchestrator skill -->
 
 # Automatic Implement Ticket
 
@@ -17,7 +19,7 @@ Before routing, follow `.codex/skills/_shared/skill-startup.md`, which reads `.c
 
 ## Configuration
 
-Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.common.json` only for structure and defaults. Read `.codex/quality.local.json` when coverage context is needed.
+Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.example.json` only for structure and defaults. Read `.codex/quality.local.json` when coverage context is needed.
 
 Use ignored `.codex/delivery-context.local.json` as the ticket context lock according to the shared contract. If the lock or durable checkpoints conflict with the resolved ticket, stop or invoke `dev-flow-pipeline-status` instead of routing to a child skill.
 
@@ -32,7 +34,7 @@ Before delegating child work, apply the shared delivery contract's risk-adaptive
 - For high-risk routes, preserve full acceptance/spec context and tell the child skill whether adversarial review, deployment topology checks, or workload forecast resolution is required.
 - When a current installed-skill index exists, use it only to pass exact `SKILL.md` paths to child agents. If it is missing or stale, report that it should be regenerated; do not treat it as a replacement for `project-guidance-*`.
 
-Each child delivery skill owns its own workflow telemetry row. Do not append telemetry for a delegated child stage from this router, or the timing comment will double count the stage. This router may record one non-secret `dev-flow-continue-implementation` row through OpenProject time-entry telemetry, or through `python -m tools.sdd_cli delivery -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` as fallback, only when it performs meaningful routing work before or after delegation. Include `workflowStage`, `agentRole`, `startedUtc`, `finishedUtc`, `elapsedMilliseconds`, `retryCount`, and `outcome`; include blocker category when available, but do not put token counts, prompts, raw logs, or secrets in OpenProject time entries. On resume, create `.codex/agent-telemetry.local.jsonl` only when direct OpenProject time telemetry is unavailable, and do not clear existing rows for the same active ticket.
+Each child delivery skill owns its own workflow telemetry row. Do not append telemetry for a delegated child stage from this router, or the timing comment will double count the stage. This router may record one non-secret `dev-flow-continue-implementation` row through OpenProject time-entry telemetry, or through `python -m tools.sdd_cli dev-flow append-telemetry -TicketKey {ticketKey}` as fallback, only when it performs meaningful routing work before or after delegation. Include `workflowStage`, `agentRole`, `startedUtc`, `finishedUtc`, `elapsedMilliseconds`, `retryCount`, and `outcome`; include blocker category when available, but do not put token counts, prompts, raw logs, or secrets in OpenProject time entries. On resume, create `.codex/agent-telemetry.local.jsonl` only when direct OpenProject time telemetry is unavailable, and do not clear existing rows for the same active ticket.
 
 Workflow timing comments use stable marker `IA generated workflow timing: {ticketKey}` and are finalized by `configured QA gate` after the E2E QA ticket comment is verified. During routing, read existing ticket comments when the API allows it and report whether the workflow timing marker is present, missing, or blocked; do not derive timing from ticket-provider generated marker timestamps.
 When the ticket adapter is OpenProject, do not derive timing from OpenProject generated marker timestamps.

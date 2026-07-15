@@ -32,6 +32,31 @@ Use `.codex/client-tools.local.json` as the primary local configuration file. Ke
 - `GIT_BASE_BRANCH`
 - `GIT_BRANCH_PREFIX`
 - `GIT_BRANCH_PATTERN`
+- `OPENROUTER_BASE_URL`
+- `OPENROUTER_API_KEY`
+
+## OpenRouter Agent Runtime Configuration
+
+If the delivery workflow uses OpenRouter models such as `openrouter/free` or `openrouter/auto`, add the `openRouter` section to `.codex/client-tools.local.json`:
+
+```json
+{
+  "openRouter": {
+    "baseUrl": "https://api.openrouter.ai/v1",
+    "apiKey": "replace-with-openrouter-api-key",
+    "defaultChatModel": "openrouter/auto",
+    "modelMapping": {
+      "chat": {"model": "openrouter/auto", "reasoningEffort": "medium"}
+    }
+  }
+}
+```
+
+Keep the API key in ignored `.codex/client-tools.local.json` only and never commit it. This configuration is used by local delivery tools and agent sub-agents that select `openrouter/*` model ids.
+
+- `openRouter.defaultChatModel` is the fallback model for generic Copilot chat and other non-skill interactive sessions.
+- `openRouter.modelMapping.chat` can be used to set a specific OpenRouter model preference for chat-driven repo workflows.
+- `openRouter.modelMapping.<skillName>` can be used to customize model preferences for specific repo-local skills.
 
 ## Supported Branch Patterns
 

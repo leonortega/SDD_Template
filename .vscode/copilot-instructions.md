@@ -193,6 +193,14 @@ When a conversation requires multiple steps, Copilot may activate a skill-driven
 3. Follows the workflow sequentially
 4. Updates memory after significant steps
 
+### Copilot Chat Model Configuration
+Copilot chat sessions can use the repository's OpenRouter runtime configuration from `.codex/client-tools.local.json`:
+- `openRouter.baseUrl`
+- `openRouter.apiKey`
+- `openRouter.defaultChatModel`
+- `openRouter.modelMapping.chat`
+When present, `defaultChatModel` is the fallback for chat interactions and `modelMapping.chat` can override chat behavior for Copilot-driven repo workflows.
+
 ## Key Constraints & Policies
 
 - **Ticket Key Pattern**: `E2EPROJECT-[0-9]+` (from `delivery-policy.json`)

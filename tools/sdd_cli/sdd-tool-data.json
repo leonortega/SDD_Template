@@ -1,0 +1,50 @@
+{
+  "SDD_TOOL_MANIFEST": ".codex/sdd-tool-version.json",
+  "SDD_TOOL_INCLUDE_DIRS": [
+    ".agents",
+    ".cline",
+    ".codex/providers",
+    ".codex/skills",
+    ".gitea/workflows",
+    "docs",
+    "infra",
+    "tools",
+    "tools/bm25s_flashrank",
+    ".vscode"
+  ],
+  "SDD_TOOL_INCLUDE_EMPTY_DIRS": [
+    ".clinerules"
+  ],
+  "SDD_TOOL_TOOL_FILES": [
+    ".cline/create_skill_links.py"
+  ],
+  "SDD_TOOL_EXCLUDE_PARTS": [
+    "__pycache__",
+    ".git",
+    ".pytest_cache",
+    ".codex/agent-evals",
+    ".codex/ponytail",
+    "openspec/changes",
+    "tools/sdd_cli/tests"
+  ],
+  "SDD_TOOL_EXCLUDE_SEGMENTS": [
+    "data",
+    "logs",
+    "pgdata"
+  ],
+  "SDD_TOOL_EXCLUDE_SUFFIXES": [
+    ".pyc",
+    ".pyo"
+  ],
+  "SDD_TOOL_PRESERVE_FILES": [
+    ".codex/client-tools.local.json",
+    ".codex/environment-urls.local.json",
+    ".codex/project-profile.local.json",
+    ".codex/quality.local.json",
+    ".codex/tool-recommendations.local.json",
+    ".codex/memory/MEMORY.md",
+    ".codex/memory/memory_summary.md",
+    ".codex/memory/retrieval-policy.md"
+  ],
+  "SDD_TOOL_PRESERVE_EXAMPLE_FILES": []
+}

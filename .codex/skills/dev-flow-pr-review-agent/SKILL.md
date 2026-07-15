@@ -3,6 +3,8 @@ name: dev-flow-pr-review-agent
 description: Review a specific pull request through the selected review adapter and post actionable findings. Use when Codex is asked to review a PR, review the PR just created by the implementation workflow, inspect PR diffs, use internet research to validate code quality, post review comments, or apply configured review outcome labels.
 ---
 
+<!-- TIER 3: STAGE-SPECIFIC - PR review workflow skill -->
+
 # repository PR Review Agent
 
 ## Overview
@@ -17,7 +19,7 @@ Before posting review output, follow `.codex/skills/_shared/skill-startup.md`, w
 
 ## Workflow Telemetry
 
-When this skill runs as part of a ticket workflow and a ticket key is resolved, capture UTC start time before PR review reads. Prefer OpenProject time-entry telemetry and create or update the `dev-flow-pr-review-agent` entry with marker `IA generated workflow telemetry: {ticketKey}:dev-flow-pr-review-agent`. Use `python -m tools.sdd_cli delivery -Mode AppendWorkflowTelemetry -TicketKey {ticketKey}` only as the JSONL fallback when direct time telemetry is unavailable. On resume or idempotent reuse, append or update another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-flow-pr-review-agent`, `agentRole=prReview`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If the review is explicitly standalone and no ticket key can be safely resolved, report that workflow telemetry was skipped.
+When this skill runs as part of a ticket workflow and a ticket key is resolved, capture UTC start time before PR review reads. Prefer OpenProject time-entry telemetry and create or update the `dev-flow-pr-review-agent` entry with marker `IA generated workflow telemetry: {ticketKey}:dev-flow-pr-review-agent`. Use `python -m tools.sdd_cli dev-flow append-telemetry -TicketKey {ticketKey}` only as the JSONL fallback when direct time telemetry is unavailable. On resume or idempotent reuse, append or update another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-flow-pr-review-agent`, `agentRole=prReview`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If the review is explicitly standalone and no ticket key can be safely resolved, report that workflow telemetry was skipped.
 
 ## Configuration
 
