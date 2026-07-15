@@ -135,6 +135,32 @@ Use `.codex/memory/` as a reviewable repository memory layer. Memory is guidance
 
 Before final handoff for any non-trivial repo work, run the Durable Learning Capture Gate from `delivery-contract-core.md`.
 
+## Workflow Stage Routing
+
+Before responding to a user request, resolve the current workflow stage and load its corresponding skill. This routing is mandatory — do not implement workflow steps from general knowledge alone.
+
+| User request / context | Stage | Skill to load |
+|---|---|---|
+| Start a ticket (specific or next Todo) | `dev-flow-start-ticket` | `.codex/skills/dev-flow-start-ticket/SKILL.md` |
+| Create / propose an OpenSpec change | `dev-flow-propose-change` | `.codex/skills/dev-flow-propose-change/SKILL.md` |
+| Implement a ticket / change | `dev-flow-implement-ticket` | `.codex/skills/dev-flow-implement-ticket/SKILL.md` |
+| Continue implementation | `dev-flow-continue-implementation` | `.codex/skills/dev-flow-continue-implementation/SKILL.md` |
+| Review a pull request | `dev-flow-pr-review-agent` | `.codex/skills/dev-flow-pr-review-agent/SKILL.md` |
+| Address PR review feedback | `dev-flow-pr-review-feedback-loop` | `.codex/skills/dev-flow-pr-review-feedback-loop/SKILL.md` |
+| Verify an OpenSpec change | `dev-flow-verify-change` | `.codex/skills/dev-flow-verify-change/SKILL.md` |
+| Archive an OpenSpec change | `dev-flow-archive-change` | `.codex/skills/dev-flow-archive-change/SKILL.md` |
+| Deploy to QA | `dev-ops-deploy-qa` | `.codex/skills/dev-ops-deploy-qa/SKILL.md` |
+| Deploy to production | `dev-ops-deploy-prod` | `.codex/skills/dev-ops-deploy-prod/SKILL.md` |
+| Rollback production | `dev-ops-rollback-prod` | `.codex/skills/dev-ops-rollback-prod/SKILL.md` |
+| Hotfix production | `dev-ops-hotfix-prod` | `.codex/skills/dev-ops-hotfix-prod/SKILL.md` |
+| Post-merge deploy | `dev-ops-post-merge-deploy` | `.codex/skills/dev-ops-post-merge-deploy/SKILL.md` |
+| File a QA bug | `dev-flow-file-qa-bug` | `.codex/skills/dev-flow-file-qa-bug/SKILL.md` |
+| Check pipeline status | `dev-flow-pipeline-status` | `.codex/skills/dev-flow-pipeline-status/SKILL.md` |
+| Run retrospective audit | `dev-flow-retrospective-audit` | `.codex/skills/dev-flow-retrospective-audit/SKILL.md` |
+| Explore a change / ask questions | `dev-flow-explore-change` | `.codex/skills/dev-flow-explore-change/SKILL.md` |
+
+After loading the skill, follow its Workflow section step by step. Do not skip steps. Do not improvise. If a step requires an API call, comment, label, or state change that the skill defines, execute it — do not treat it as optional.
+
 ## Mandatory MCP Routing
 
 This repository has two MCP servers for content search — each with a strict domain. Every agent **must** follow `.codex/mcp-instructions.md` (the definitive MCP routing contract) when searching repository content:
