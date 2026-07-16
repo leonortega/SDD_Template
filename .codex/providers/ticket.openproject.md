@@ -33,11 +33,12 @@ Content-Type: application/json
 
 ## Status Mapping
 
-- Todo: `openProject.todoStatus`
-- In Progress: `openProject.inProgressStatus`
-- In Review: `openProject.reviewStatus`
-- QA: `openProject.qaStatus`
-- Done: `openProject.doneStatus`
+- New: `openProject.newStatus` (default: `New`)
+- To Do: `openProject.todoStatus` (default: `To Do`)
+- In Progress: `openProject.inProgressStatus` (default: `In Process`)
+- In Review: `openProject.reviewStatus` (default: `In Process`)
+- QA: `openProject.qaStatus` (default: `QA`)
+- Done: `openProject.doneStatus` (default: `Done`)
 
 ## Failure Rules
 
