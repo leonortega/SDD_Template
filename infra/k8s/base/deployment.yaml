@@ -1,0 +1,40 @@
+# Placeholder: Replace with actual deployment spec for your component
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${COMPONENT_NAME}
+spec:
+  replicas: ${REPLICAS}
+  selector:
+    matchLabels:
+      app: ${COMPONENT_NAME}
+  template:
+    metadata:
+      labels:
+        app: ${COMPONENT_NAME}
+    spec:
+      containers:
+        - name: ${COMPONENT_NAME}
+          image: ${REGISTRY}/${COMPONENT_NAME}:${IMAGE_TAG}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: ${CONTAINER_PORT}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: ${CONTAINER_PORT}
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: ${CONTAINER_PORT}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: ${CPU_REQUEST}
+              memory: ${MEMORY_REQUEST}
+            limits:
+              cpu: ${CPU_LIMIT}
+              memory: ${MEMORY_LIMIT}

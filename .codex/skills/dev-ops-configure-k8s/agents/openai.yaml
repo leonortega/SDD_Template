@@ -1,0 +1,4 @@
+interface:
+  display_name: "Configure K8s Deployment"
+  short_description: "Scaffold Dockerfiles, K8s manifests, and CI workflow for the configured project stack."
+  default_prompt: "Use $dev-ops-configure-k8s to set up Kubernetes as the deployment target for all apps in the project."
