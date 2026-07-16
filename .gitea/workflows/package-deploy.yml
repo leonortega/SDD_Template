@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: Target environment (dev or qa)
+        description: Target environment (dev, qa, or prod)
         required: true
         default: dev
 
@@ -19,118 +19,206 @@ jobs:
       image: sdd-e2e-ci:local
     steps:
       - name: Checkout
+        env:
+          GITEA_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          set -euo pipefail
-          repo_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
-          repo_url="${repo_url/localhost/host.docker.internal}"
-          repo_url="${repo_url/gitea/host.docker.internal}"
+          set -eo pipefail
+          export GIT_TERMINAL_PROMPT=0
+          TOKEN="${GITEA_TOKEN:-}"
+          repo_url="http://git:${TOKEN}@host.docker.internal:3000/${GITHUB_REPOSITORY}.git"
           git init .
           git remote add origin "$repo_url"
           git fetch --depth 1 origin "$GITHUB_SHA"
           git checkout --force FETCH_HEAD
 
-      - name: Build
+      - name: Determine environment
+        id: env
         shell: bash
         run: |
-          set -euo pipefail
-          if [ -d "frontend" ] && [ -f "frontend/package.json" ]; then
-            echo "Building frontend..."
-            cd frontend
-            npm ci
-            npm run build
-            echo "Frontend built successfully"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "ENV=dev" >> $GITHUB_OUTPUT
           else
-            echo "No frontend directory found — skipping frontend build"
+            echo "ENV=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
           fi
 
-      - name: Package artifacts
+      - name: Build and push Docker images
+        env:
+          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+          NEXUS_DOCKER_REGISTRY: ${{ secrets.NEXUS_DOCKER_REGISTRY }}
         shell: bash
         run: |
           set -euo pipefail
           COMMIT_SHA=$(git rev-parse HEAD)
-          APPS_JSON="infra/deployment/apps.json"
-          ARTIFACT_DIR="app/${COMMIT_SHA}"
-          mkdir -p "${ARTIFACT_DIR}"
+          REGISTRY="${NEXUS_DOCKER_REGISTRY:-host.docker.internal:8083}"
 
-          # Read app targets from apps.json if it exists
-          if [ -f "${APPS_JSON}" ]; then
-            python3 -c "
-import json, sys, os
-with open('${APPS_JSON}') as f:
-    config = json.load(f)
-apps = config.get('apps', [])
-if not apps:
-    print('No apps configured in ${APPS_JSON}')
-    sys.exit(0)
-for app in apps:
-    aid = app['appId']
-    artifact = app['artifactName']
-    path = app.get('projectPath', aid)
-    has_build = os.path.isdir(os.path.join(path, 'dist')) if app.get('role') == 'web' else False
-    print(f'App: {aid}, Artifact: {artifact}, Has build: {has_build}')
-"
+          # Login to Nexus Docker registry
+          if [ -n "${NEXUS_USERNAME:-}" ] && [ -n "${NEXUS_PASSWORD:-}" ]; then
+            echo "${NEXUS_PASSWORD}" | docker login "${REGISTRY}" \
+              -u "${NEXUS_USERNAME}" --password-stdin
           fi
 
-          # Package each app's dist/ as a zip artifact
+          # Read apps from apps.json
           APPS=$(python3 -c "
-import json, os
-with open('${APPS_JSON}') as f:
-    config = json.load(f)
-for app in config.get('apps', []):
-    path = app.get('projectPath', app['appId'])
-    if os.path.isdir(os.path.join(path, 'dist')):
-        print(app['artifactName'])
-" 2>/dev/null || echo "")
+          import json
+          with open('infra/deployment/apps.json') as f:
+              apps = json.load(f).get('apps', [])
+          for a in apps:
+              print(f\"{a['appId']}|{a.get('projectPath', a['appId'])}\")
+          " 2>/dev/null || echo "frontend|frontend")
 
-          if [ -z "${APPS}" ]; then
-            echo "No build artifacts found — creating empty marker"
-            echo "{\"version\":1,\"apps\":[],\"note\":\"No apps produced artifacts for this commit\"}" > "${ARTIFACT_DIR}/deployable-apps.json"
-          else
-            for artifact_name in ${APPS}; do
-              app_id=$(python3 -c "
-import json
-with open('${APPS_JSON}') as f:
-    config = json.load(f)
-for app in config.get('apps', []):
-    if app['artifactName'] == '${artifact_name}':
-        print(app['projectPath'])
-" 2>/dev/null || echo "${artifact_name%.zip}")
-              if [ -d "${app_id}/dist" ]; then
-                cd "${app_id}/dist"
-                zip -r "../../${ARTIFACT_DIR}/${artifact_name}" .
-                cd ../..
-                sha256sum "${ARTIFACT_DIR}/${artifact_name}" > "${ARTIFACT_DIR}/${artifact_name}.sha256"
-                echo "Packaged ${artifact_name}"
-              fi
-            done
-            # Generate deployable-apps.json from apps.json
-            python3 -c "
-import json, os
-with open('${APPS_JSON}') as f:
-    config = json.load(f)
-deployable = {'version': 1, 'apps': []}
-for app in config.get('apps', []):
-    path = app.get('projectPath', app['appId'])
-    if os.path.isdir(os.path.join(path, 'dist')):
-        deployable['apps'].append({
-            'appId': app['appId'],
-            'artifactName': app['artifactName'],
-            'deployOrder': app.get('deployOrder', 0),
-            'healthPath': app.get('healthPath', '/health')
-        })
-with open('${ARTIFACT_DIR}/deployable-apps.json', 'w') as f:
-    json.dump(deployable, f)
-print(json.dumps(deployable, indent=2))
-"
+          echo "${APPS}" | while IFS='|' read -r app_id project_path; do
+            if [ -f "${project_path}/Dockerfile" ]; then
+              IMAGE="${REGISTRY}/${app_id}:${COMMIT_SHA}"
+              echo "Building ${app_id}..."
+              docker build -t "${IMAGE}" -f "${project_path}/Dockerfile" "${project_path}"
+              echo "Pushing ${IMAGE}..."
+              docker push "${IMAGE}"
+              docker tag "${IMAGE}" "${REGISTRY}/${app_id}:latest"
+              docker push "${REGISTRY}/${app_id}:latest"
+              echo "${app_id} built and pushed"
+            else
+              echo "No Dockerfile found for ${app_id} — skipping build"
+            fi
+          done
+
+      - name: Deploy to K8s
+        env:
+          KUBECONFIG: ${{ secrets.KUBECONFIG }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ENV="${{ steps.env.outputs.ENV }}"
+          REGISTRY="${NEXUS_DOCKER_REGISTRY:-host.docker.internal:8083}"
+          COMMIT_SHA=$(git rev-parse HEAD)
+
+          OVERLAY_DIR="infra/k8s/overlays/${ENV}"
+
+          if [ ! -d "${OVERLAY_DIR}" ]; then
+            echo "No K8s overlay found for ${ENV} — skipping K8s deployment"
+            echo "Run 'python -m tools.sdd_cli environment-lab scaffold-k8s' first"
+            exit 0
           fi
 
-          echo "${COMMIT_SHA}" > "${ARTIFACT_DIR}/commit.sha"
+          # Read apps and set image tags (use abs path since we cd to overlay)
+          REPO_ROOT=$(pwd)
+          APPS_JSON="${REPO_ROOT}/infra/deployment/apps.json"
 
-          echo "Packaged artifacts for commit ${COMMIT_SHA}"
-          ls -la "${ARTIFACT_DIR}/"
+          python3 -c "
+          import json, subprocess, os
+          apps_json = '${APPS_JSON}'
+          registry = '${REGISTRY}'
+          commit_sha = '${COMMIT_SHA}'
+          with open(apps_json) as f:
+              apps = json.load(f).get('apps', [])
+          for app in apps:
+              app_id = app['appId']
+              image = f'{registry}/{app_id}:{commit_sha}'
+              subprocess.run(['kustomize', 'edit', 'set', 'image', image], check=True)
+              print(f'Set image for {app_id}: {image}')
+          "
 
-      - name: Upload to Nexus
+          # Apply to K8s
+          echo "Deploying to ${ENV}..."
+          kustomize build . | kubectl apply -f -
+
+          # Wait for rollout of each app
+          python3 -c "
+          import json, subprocess
+          namespace = 'sdd-${ENV}'
+          with open('${APPS_JSON}') as f:
+              apps = json.load(f).get('apps', [])
+          for app in apps:
+              app_id = app['appId']
+              print(f'Waiting for rollout of {app_id} in {namespace}...')
+              subprocess.run(
+                  ['kubectl', '-n', namespace, 'rollout', 'status', 'deployment', app_id, '--timeout=120s'],
+                  check=False
+              )
+          "
+
+          cd "${REPO_ROOT}"
+
+      - name: Discover environment URLs
+        id: urls
+        shell: bash
+        run: |
+          set -euo pipefail
+          export ENV="${{ steps.env.outputs.ENV }}"
+          COMMIT_SHA=$(git rev-parse HEAD)
+          mkdir -p "app/${COMMIT_SHA}"
+
+          # Single Python script: discover nodePorts + write JSON manifest
+          python3 << 'PYEOF'
+          import json, os, subprocess
+
+          env = os.environ.get('ENV', 'dev')
+          commit_sha = os.environ.get('COMMIT_SHA',
+              subprocess.run(['git', 'rev-parse', 'HEAD'],
+                  capture_output=True, text=True).stdout.strip())
+          namespace = f"sdd-{env}"
+
+          # Read apps from apps.json
+          apps = []
+          if os.path.exists('infra/deployment/apps.json'):
+              with open('infra/deployment/apps.json') as f:
+                  config = json.load(f)
+              apps = config.get('apps', [])
+          else:
+              apps = [{'appId': 'frontend', 'healthPath': '/health'}]
+
+          discovered = []
+          for app in apps:
+              app_id = app['appId']
+              health_path = app.get('healthPath', '/health')
+
+              # Discover nodePort from K8s service
+              node_port = ''
+              try:
+                  result = subprocess.run(
+                      ['kubectl', '-n', namespace, 'get', 'svc', app_id,
+                       '-o', 'jsonpath={.spec.ports[0].nodePort}',
+                       '--request-timeout=3s'],
+                      capture_output=True, text=True, timeout=10
+                  )
+                  if result.returncode == 0 and result.stdout.strip():
+                      node_port = result.stdout.strip()
+              except Exception as e:
+                  print(f"  Warning: kubectl failed for {app_id}: {e}")
+
+              url = f'http://localhost:{node_port}' if node_port else ''
+              health_url = f'{url}{health_path}' if url else ''
+
+              discovered.append({
+                  'appId': app_id,
+                  'url': url,
+                  'healthUrl': health_url,
+                  'healthPath': health_path
+              })
+
+              if url:
+                  print(f"  {app_id}: {url}")
+              else:
+                  print(f"  {app_id}: not deployed (port-forward needed)")
+
+          manifest = {
+              'environment': env,
+              'commitSha': commit_sha,
+              'apps': discovered,
+              'timestamp': subprocess.run(
+                  ['date', '-u', '+%Y-%m-%dT%H:%M:%SZ'],
+                  capture_output=True, text=True).stdout.strip()
+          }
+
+          urls_file = f'app/{commit_sha}/env-urls.json'
+          with open(urls_file, 'w') as f:
+              json.dump(manifest, f, indent=2)
+          print(f"\nURL manifest saved to {urls_file}")
+          print(json.dumps(manifest, indent=2))
+          PYEOF
+
+      - name: Upload artifacts to Nexus
         env:
           NEXUS_URL: ${{ secrets.NEXUS_URL }}
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
@@ -144,59 +232,42 @@ print(json.dumps(deployable, indent=2))
           NEXUS_URL="${NEXUS_URL:-http://host.docker.internal:8088}"
           REPO="${NEXUS_REPOSITORY:-sdd-artifacts}"
 
+          if [ ! -d "${ARTIFACT_DIR}" ]; then
+            echo "No artifacts to upload"
+            exit 0
+          fi
+
           if [ -z "${NEXUS_USERNAME:-}" ] || [ -z "${NEXUS_PASSWORD:-}" ]; then
             echo "Nexus credentials not set — skipping upload"
             exit 0
           fi
 
+          UPLOAD_FAILED=0
           for file in $(find "${ARTIFACT_DIR}" -type f); do
             remote_path="${file}"
             echo "Uploading ${file} to ${NEXUS_URL}/repository/${REPO}/${remote_path}"
-            curl -s -u "${NEXUS_USERNAME}:${NEXUS_PASSWORD}" \
+            if ! curl -s -f -u "${NEXUS_USERNAME}:${NEXUS_PASSWORD}" \
               --upload-file "${file}" \
               "${NEXUS_URL}/repository/${REPO}/${remote_path}" \
-              -w "HTTP:%{http_code}\n"
+              -w "HTTP:%{http_code}\n"; then
+              echo "ERROR: Failed to upload ${file} — see HTTP code in preceding line"
+              UPLOAD_FAILED=1
+            fi
           done
-          echo "Nexus upload complete"
 
-      - name: Deploy to environment
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ "${{ github.event_name }}" = "push" ]; then
-            ENV="dev"
-          else
-            ENV="${{ github.event.inputs.environment }}"
+          # Upload latest env URLs pointer
+          DEPLOY_ENV="${{ steps.env.outputs.ENV }}"
+          for file in $(find "${ARTIFACT_DIR}" -type f -name "env-urls.json"); do
+            LATEST_PATH="app/latest/env-urls-${DEPLOY_ENV:-dev}.json"
+            echo "Uploading ${file} as ${LATEST_PATH}"
+            curl -s -f -u "${NEXUS_USERNAME}:${NEXUS_PASSWORD}" \
+              -X PUT \
+              --upload-file "${file}" \
+              "${NEXUS_URL}/repository/${REPO}/${LATEST_PATH}" || true
+          done
+
+          if [ "$UPLOAD_FAILED" = "1" ]; then
+            echo "WARNING: Some artifacts failed to upload to Nexus"
           fi
-          echo "Deploying to $ENV environment"
 
-          # Check if we have a server to deploy
-          if [ -f "frontend/server.mjs" ] && [ -d "frontend/dist" ]; then
-            PORT=4173
-            if [ "$ENV" = "qa" ]; then
-              PORT=4174
-            fi
-
-            echo "Starting server on port ${PORT}"
-            cd frontend
-            node server.mjs &
-            SERVER_PID=$!
-            echo "Server PID: ${SERVER_PID}"
-
-            sleep 3
-
-            echo "Checking health endpoint..."
-            HEALTH=$(curl -s http://localhost:${PORT}/health)
-            if echo "$HEALTH" | grep -q '"status":"ok"'; then
-              echo "Health check PASSED at http://localhost:${PORT}/health"
-              echo "Site available at http://localhost:${PORT}/"
-              echo "Deployment complete for ${ENV}"
-            else
-              echo "Health check FAILED - got: $HEALTH"
-              exit 1
-            fi
-
-            kill ${SERVER_PID} 2>/dev/null || true
-          else
-            echo "No deployable server found — deployment valid for infra-only changes"
-          fi
+          echo "Upload complete"

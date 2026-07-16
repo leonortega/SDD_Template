@@ -675,6 +675,428 @@ def validate_gitea_runner(root: Path, dry_run: bool = False) -> dict[str, Any]:
     return result
 
 
+
+
+# ── K8s scaffolding ───────────────────────────────────────────────────────
+
+def scaffold_k8s(root, dry_run=False):
+    """Scaffold K8s deployment files: Dockerfile, manifests, overlays."""
+    result = configure_result("ScaffoldK8s", dry_run, write_enabled=not dry_run)
+
+    if dry_run:
+        result["actions"].append({"path": "infra/k8s", "key": "scaffold.plan", "severity": "info",
+                                  "message": (
+                                      "Would scaffold K8s deployment files:"
+                                      "\n  - Dockerfile per app (nginx for web)"
+                                      "\n  - .dockerignore per app"
+                                      "\n  - infra/k8s/base/ (namespace, deployment, service, kustomization)"
+                                      "\n  - infra/k8s/overlays/{dev,qa,prod}/ (env overlays)"
+                                      "\n  - nginx.conf for web apps"
+                                  ),
+                                  "phase": "apply"})
+        result["valid"] = True
+        return result
+
+    # Prerequisite: validate Docker Desktop K8s
+    k8s_check = validate_docker_desktop_k8s(root)
+    if not k8s_check.get("valid", False):
+        for f in k8s_check.get("findings", []):
+            result["findings"].append(f)
+        add_bucket_item(result["findings"], "k8s", "prerequisite",
+                        "Docker Desktop K8s validation failed — fix before scaffolding.",
+                        "error", "pre-start")
+        result["valid"] = False
+        return result
+
+    apps_path = root / "infra" / "deployment" / "apps.json"
+
+    if not apps_path.exists():
+        add_bucket_item(result["findings"], "infra/deployment/apps.json", "missing",
+                        "apps.json not found - cannot scaffold K8s.",
+                        "error", "pre-start")
+        result["valid"] = False
+        return result
+
+    try:
+        apps_data = read_json(apps_path, optional=False)
+        apps = apps_data.get("apps", [])
+    except Exception as ex:
+        add_bucket_item(result["findings"], "infra/deployment/apps.json", "read_error",
+                        f"Could not parse apps.json: {ex}", "error", "pre-start")
+        result["valid"] = False
+        return result
+
+    if not apps:
+        add_bucket_item(result["findings"], "infra/deployment/apps.json", "no_apps",
+                        "apps.json has no apps defined.",
+                        "warning", "pre-start")
+        result["valid"] = True
+        return result
+
+    k8s_base = root / "infra" / "k8s" / "base"
+    k8s_base.mkdir(parents=True, exist_ok=True)
+    overlays_dir = root / "infra" / "k8s" / "overlays"
+
+    first_app = apps[0]["appId"]
+    first_health = apps[0].get("healthPath", "/health")
+
+    # Generate Dockerfile for each web app
+    for app in apps:
+        app_id = app["appId"]
+        proj = app.get("projectPath", app_id)
+        role = app.get("role", "web")
+        app_dir = root / proj
+
+        if role == "web":
+            # .dockerignore
+            di = app_dir / ".dockerignore"
+            if not di.exists():
+                di.write_text("node_modules/\n.git/\n.env\n*.md\n", encoding="utf-8")
+                result["actions"].append({
+                    "path": f"{proj}/.dockerignore", "key": "file.created",
+                    "severity": "info",
+                    "message": f"Created .dockerignore for {app_id}.",
+                    "phase": "apply"
+                })
+
+            # nginx.conf
+            nc = app_dir / "nginx.conf"
+            if not nc.exists():
+                nc.write_text(
+                    'server {\n'
+                    '    listen 80;\n'
+                    '    server_name _;\n'
+                    '    root /usr/share/nginx/html;\n'
+                    '    index index.html;\n'
+                    '    location / {\n'
+                    '        try_files $uri $uri/ /index.html;\n'
+                    '    }\n'
+                    '    location /health {\n'
+                    "        return 200 '{\"status\":\"ok\"}';\n"
+                    '        add_header Content-Type application/json;\n'
+                    '    }\n'
+                    '}\n',
+                    encoding="utf-8"
+                )
+                result["actions"].append({
+                    "path": f"{proj}/nginx.conf", "key": "file.created",
+                    "severity": "info",
+                    "message": f"Created nginx.conf for {app_id}.",
+                    "phase": "apply"
+                })
+
+            # Dockerfile
+            df = app_dir / "Dockerfile"
+            if not df.exists():
+                dlines = [
+                    "# Stage 1: Build\n",
+                    "FROM node:20-alpine AS builder\n",
+                    "WORKDIR /app\n",
+                    "COPY package*.json ./\n",
+                    "RUN npm ci\n",
+                    "COPY . .\n",
+                    "RUN npm run build\n",
+                    "\n",
+                    "# Stage 2: Serve with nginx\n",
+                    "FROM nginx:alpine\n",
+                    "COPY --from=builder /app/dist /usr/share/nginx/html\n",
+                    "COPY nginx.conf /etc/nginx/conf.d/default.conf\n",
+                    "EXPOSE 80\n",
+                    "HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+",
+                    "  CMD wget -qO- http://localhost/health || exit 1\n",
+                    'CMD ["nginx", "-g", "daemon off;"]\n',
+                ]
+                df.write_text("".join(dlines), encoding="utf-8")
+                result["actions"].append({
+                    "path": f"{proj}/Dockerfile", "key": "file.created",
+                    "severity": "info",
+                    "message": f"Created Dockerfile for {app_id}.",
+                    "phase": "apply"
+                })
+            else:
+                result["actions"].append({
+                    "path": f"{proj}/Dockerfile", "key": "file.exists",
+                    "severity": "info",
+                    "message": f"Dockerfile already exists for {app_id}.",
+                    "phase": "audit"
+                })
+
+    # Base manifests
+    (k8s_base / "namespace.yaml").write_text(
+        "apiVersion: v1\nkind: Namespace\nmetadata:\n  name: sdd-${ENV}\n",
+        encoding="utf-8"
+    )
+
+    d_lines = [
+        "apiVersion: apps/v1\n",
+        "kind: Deployment\n",
+        "metadata:\n",
+        f"  name: {first_app}\n",
+        "spec:\n",
+        "  replicas: 1\n",
+        "  selector:\n",
+        "    matchLabels:\n",
+        f"      app: {first_app}\n",
+        "  template:\n",
+        "    metadata:\n",
+        "      labels:\n",
+        f"        app: {first_app}\n",
+        "    spec:\n",
+        "      containers:\n",
+        f"        - name: {first_app}\n",
+        f"          image: host.docker.internal:8083/{first_app}\n",
+        "          imagePullPolicy: IfNotPresent\n",
+        "          ports:\n",
+        "            - containerPort: 80\n",
+        "          livenessProbe:\n",
+        "            httpGet:\n",
+        f"              path: {first_health}\n",
+        "              port: 80\n",
+        "            initialDelaySeconds: 10\n",
+        "            periodSeconds: 30\n",
+        "          readinessProbe:\n",
+        "            httpGet:\n",
+        f"              path: {first_health}\n",
+        "              port: 80\n",
+        "            initialDelaySeconds: 5\n",
+        "            periodSeconds: 10\n",
+        "          resources:\n",
+        "            requests:\n",
+        '              cpu: "100m"\n',
+        '              memory: "128Mi"\n',
+        "            limits:\n",
+        '              cpu: "500m"\n',
+        '              memory: "256Mi"\n',
+    ]
+    (k8s_base / "deployment.yaml").write_text("".join(d_lines), encoding="utf-8")
+
+    s_lines = [
+        "apiVersion: v1\n",
+        "kind: Service\n",
+        "metadata:\n",
+        f"  name: {first_app}\n",
+        "spec:\n",
+        "  type: LoadBalancer\n",
+        "  selector:\n",
+        f"    app: {first_app}\n",
+        "  ports:\n",
+        "    - protocol: TCP\n",
+        "      port: 80\n",
+        "      targetPort: 80\n",
+    ]
+    (k8s_base / "service.yaml").write_text("".join(s_lines), encoding="utf-8")
+
+    k_lines = [
+        "apiVersion: kustomize.config.k8s.io/v1beta1\n",
+        "kind: Kustomization\n",
+        "resources:\n",
+        "  - namespace.yaml\n",
+        "  - deployment.yaml\n",
+        "  - service.yaml\n",
+        "commonLabels:\n",
+        "  app.kubernetes.io/managed-by: sdd-cli\n",
+    ]
+    (k8s_base / "kustomization.yaml").write_text("".join(k_lines), encoding="utf-8")
+
+    # Environment overlays
+    for env in ("dev", "qa", "prod"):
+        env_dir = overlays_dir / env
+        env_dir.mkdir(parents=True, exist_ok=True)
+        replicas = {"dev": 1, "qa": 2, "prod": 3}[env]
+
+        c_lines = [
+            f"# {env.upper()} config patch\n",
+            "apiVersion: apps/v1\n",
+            "kind: Deployment\n",
+            "metadata:\n",
+            f"  name: {first_app}\n",
+            "spec:\n",
+            f"  replicas: {replicas}\n",
+            "  template:\n",
+            "    spec:\n",
+            "      containers:\n",
+            f"        - name: {first_app}\n",
+            "          env:\n",
+            "            - name: ENVIRONMENT\n",
+            f'              value: "{env}"\n',
+        ]
+        (env_dir / "config-patch.yaml").write_text("".join(c_lines), encoding="utf-8")
+
+        ke_lines = [
+            "apiVersion: kustomize.config.k8s.io/v1beta1\n",
+            "kind: Kustomization\n",
+            f"namespace: sdd-{env}\n",
+            "resources:\n",
+            "  - ../../base\n",
+            "patches:\n",
+            "  - path: config-patch.yaml\n",
+            "images:\n",
+            f"  - name: host.docker.internal:8083/{first_app}\n",
+            "    newTag: latest\n",
+        ]
+        (env_dir / "kustomization.yaml").write_text("".join(ke_lines), encoding="utf-8")
+
+    result["valid"] = not any(item.get("severity") == "error" for item in result["findings"])
+    return result
+
+
+
+# ── Docker Desktop K8s validation ────────────────────────────────────────
+
+def validate_docker_desktop_k8s(root, dry_run=False):
+    """Check if Docker Desktop K8s is enabled and accessible."""
+    result = configure_result("ValidateDockerDesktopK8s", dry_run, write_enabled=False)
+
+    if dry_run:
+        result["actions"].append({"path": "docker-desktop", "key": "k8s.validate", "severity": "info",
+                                  "message": "Would check if Docker Desktop K8s is enabled.",
+                                  "phase": "audit"})
+        result["valid"] = True
+        return result
+
+    # Check kubectl
+    kubectl = run_native(["kubectl", "version", "--output=json"], root, timeout=15)
+    if kubectl["returncode"] != 0:
+        add_bucket_item(result["findings"], "kubectl", "missing",
+                        "kubectl not found or not working. Enable K8s in Docker Desktop Settings.",
+                        "error", "pre-start")
+        result["valid"] = False
+        return result
+
+    # Try to parse server version
+    try:
+        k8s_info = json.loads(kubectl["stdout"])
+        server = k8s_info.get("serverVersion", {})
+        git_version = server.get("gitVersion", "unknown")
+        result["actions"].append({"path": "docker-desktop", "key": "k8s.server", "severity": "info",
+                                  "message": f"Docker Desktop K8s is running (v{git_version}).",
+                                  "phase": "audit"})
+    except (json.JSONDecodeError, KeyError):
+        result["actions"].append({"path": "docker-desktop", "key": "k8s.server", "severity": "info",
+                                  "message": "Docker Desktop K8s is running (version unknown).",
+                                  "phase": "audit"})
+
+    # Check cluster info
+    cluster = run_native(["kubectl", "cluster-info", "--request-timeout=5s"], root, timeout=10)
+    if cluster["returncode"] != 0:
+        add_bucket_item(result["findings"], "k8s", "cluster.unreachable",
+                        "K8s cluster is not reachable via kubectl.",
+                        "error", "post-start")
+        result["valid"] = False
+        return result
+
+    # Check if this is Docker Desktop (check context name)
+    ctx = run_native(["kubectl", "config", "current-context"], root, timeout=5)
+    context_name = ctx["stdout"].strip() if ctx["returncode"] == 0 else "unknown"
+    if "docker" in context_name.lower() or "desktop" in context_name.lower():
+        result["actions"].append({"path": "k8s", "key": "context", "severity": "info",
+                                  "message": f"K8s context is '{context_name}' (Docker Desktop).",
+                                  "phase": "audit"})
+    else:
+        add_bucket_item(result["findings"], "k8s", "context.warning",
+                        f"K8s context is '{context_name}' - expected Docker Desktop context.",
+                        "warning", "audit")
+
+    result["valid"] = not any(item.get("severity") == "error" for item in result["findings"])
+    return result
+
+
+# ── K8s access setup (port-forward) ─────────────────────────────────────
+
+def setup_k8s_access(root, dry_run=False):
+    """Set up port-forward access to deployed apps and display URLs."""
+    result = configure_result("SetupK8sAccess", dry_run, write_enabled=not dry_run)
+    apps_path = root / "infra" / "deployment" / "apps.json"
+
+    if not apps_path.exists():
+        add_bucket_item(result["findings"], "infra/deployment/apps.json", "missing",
+                        "apps.json not found.", "error", "pre-start")
+        result["valid"] = False
+        return result
+
+    try:
+        apps_data = read_json(apps_path, optional=False)
+        apps = apps_data.get("apps", [])
+    except Exception as ex:
+        add_bucket_item(result["findings"], "infra/deployment/apps.json", "read_error",
+                        f"Could not parse: {ex}", "error", "pre-start")
+        result["valid"] = False
+        return result
+
+    if not apps:
+        add_bucket_item(result["findings"], "infra/deployment/apps.json", "no_apps",
+                        "No apps defined.", "warning", "pre-start")
+        result["valid"] = True
+        return result
+
+    if dry_run:
+        for app in apps:
+            result["actions"].append({
+                "path": f"k8s/port-forward/{app['appId']}", "key": "port-forward.plan",
+                "severity": "info",
+                "message": f"Would set up port-forward for {app['appId']} in dev/qa/prod.",
+                "phase": "apply"
+            })
+        result["valid"] = True
+        return result
+
+    # Validate K8s first
+    k8s_valid = validate_docker_desktop_k8s(root)
+    if not k8s_valid.get("valid", False):
+        for f in k8s_valid.get("findings", []):
+            result["findings"].append(f)
+        result["valid"] = False
+        return result
+
+    for app in apps:
+        app_id = app["appId"]
+        health_path = app.get("healthPath", "/health")
+
+        for env in ("dev", "qa", "prod"):
+            ns = f"sdd-{env}"
+            local_port = {"dev": 8081, "qa": 8082, "prod": 8083}[env]
+
+            # Check if namespace exists
+            ns_check = run_native(["kubectl", "get", "ns", ns, "--request-timeout=3s"], root, timeout=10)
+            if ns_check["returncode"] != 0:
+                result["actions"].append({
+                    "path": f"k8s/{ns}", "key": "namespace.missing",
+                    "severity": "info",
+                    "message": f"Namespace {ns} does not exist yet - deploy first.",
+                    "phase": "audit"
+                })
+                continue
+
+            # Check if service exists
+            svc_check = run_native(
+                ["kubectl", "-n", ns, "get", "svc", app_id,
+                 "-o", "jsonpath={.spec.ports[0].nodePort}", "--request-timeout=3s"],
+                root, timeout=10
+            )
+
+            if svc_check["returncode"] == 0 and svc_check["stdout"].strip():
+                node_port = svc_check["stdout"].strip()
+                url = f"http://localhost:{node_port}"
+                result["actions"].append({
+                    "path": f"k8s/{ns}/{app_id}", "key": "url.available",
+                    "severity": "info",
+                    "message": f"{env.upper()} {app_id} accessible at: {url}{health_path}",
+                    "phase": "audit"
+                })
+            else:
+                # Suggest port-forward command
+                pf_cmd = f"kubectl port-forward -n {ns} svc/{app_id} {local_port}:80"
+                result["actions"].append({
+                    "path": f"k8s/{ns}/{app_id}", "key": "port-forward.command",
+                    "severity": "info",
+                    "message": f"{env.upper()} {app_id}: run `{pf_cmd}` then visit http://localhost:{local_port}",
+                    "phase": "audit"
+                })
+
+    result["valid"] = not any(item.get("severity") == "error" for item in result["findings"])
+    return result
+
 # ── CLI entry point ──────────────────────────────────────────────────────
 
 def run_environment_lab(args: list[str]) -> int:
@@ -687,7 +1109,7 @@ def run_environment_lab(args: list[str]) -> int:
               "init-quality-templates, set-openproject-env, set-monitoring-env, set-gitea-runner-env, "
               "split-infra-env, build-gitea-images, set-gitea-branch-protection, validate-observability, "
               "validate-gitea-runner, set-client-tools, set-project-stack, "
-              "set-project-stack-metadata, set-quality-config, set-recommended-tools", file=sys.stderr)
+              "set-project-stack-metadata, set-quality-config, validate-docker-desktop-k8s, setup-k8s-access, scaffold-k8s, set-recommended-tools", file=sys.stderr)
         return 1
 
     subcommand = args[0]
@@ -716,6 +1138,9 @@ def run_environment_lab(args: list[str]) -> int:
         "set-project-stack": lambda: set_project_stack(root, values, dry_run),
         "set-project-stack-metadata": lambda: set_project_stack_metadata(root, values, dry_run),
         "set-quality-config": lambda: set_quality_config(root, values, dry_run),
+        "validate-docker-desktop-k8s": lambda: validate_docker_desktop_k8s(root, dry_run),
+        "setup-k8s-access": lambda: setup_k8s_access(root, dry_run),
+        "scaffold-k8s": lambda: scaffold_k8s(root, dry_run),
         "set-recommended-tools": lambda: set_recommended_tools(root, values, dry_run),
     }
 

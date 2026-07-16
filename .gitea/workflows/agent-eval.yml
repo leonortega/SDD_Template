@@ -17,13 +17,14 @@ jobs:
       image: sdd-e2e-ci:local
     steps:
       - name: Checkout
+        env:
+          GITEA_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          set -euo pipefail
-
-          repo_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
-          repo_url="${repo_url/localhost/host.docker.internal}"
-          repo_url="${repo_url/gitea/host.docker.internal}"
+          set -eo pipefail
+          export GIT_TERMINAL_PROMPT=0
+          TOKEN="${GITEA_TOKEN:-}"
+          repo_url="http://git:${TOKEN}@host.docker.internal:3000/${GITHUB_REPOSITORY}.git"
 
           git init .
           git remote add origin "$repo_url"
