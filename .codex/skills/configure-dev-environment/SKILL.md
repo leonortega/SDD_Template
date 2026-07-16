@@ -21,7 +21,22 @@ Run the idempotent all-in-one command:
 python -m tools.sdd_cli environment-lab setup-lab
 ```
 
-This runs: InitLocalFiles → InitProjectProfile → BuildGiteaImages → compose-up → ValidateObservability → ValidateGiteaRunner.
+This runs 11 steps in order. **All steps are fatal** — if any step fails, the setup stops immediately. Each step is validated before proceeding to the next.
+
+```
+ 1. InitLocalFiles        (config templates → local files)
+ 2. InitProjectProfile    (project schema, profile, adapters)
+ 3. InitQualityTemplates  (delivery-policy.json)
+ 4. BuildGiteaImages      (sdd-e2e-ci:local Docker image)
+ 5. compose-up            (Gitea + Nexus + Seq + Grafana + Dozzle)
+ 6. (skipped)             (Gitea branch protection — run separately)
+ 7. SetupNexus            (EULA acceptance + sdd-artifacts repo)
+ 8. ValidateNexusSecrets  (Gitea secrets: NEXUS_URL, NEXUS_USERNAME, etc.)
+ 9. SyncNexusSecrets      (sync Nexus password to Gitea Actions secrets)
+10. CheckCIWorkflows      (verify .gitea/workflows/*.yml exist)
+11. ValidateObservability (Seq + Grafana health endpoints)
+12. ValidateGiteaRunner   (Docker, images, tools, network, runner config)
+```
 
 ## Individual Steps
 
@@ -35,9 +50,13 @@ If you need to run steps individually:
 | Init project profile | `python -m tools.sdd_cli environment-lab init-project-profile` |
 | Set client tools | `python -m tools.sdd_cli environment-lab set-client-tools --values-json '{...}'` |
 | Set project stack | `python -m tools.sdd_cli environment-lab set-project-stack --values-json '{...}'` |
+| Setup Nexus (EULA + repo) | `python -m tools.sdd_cli environment-lab setup-nexus` |
+| Validate Nexus secrets | `python -m tools.sdd_cli environment-lab validate-nexus-secrets` |
+| Sync Nexus secrets to Gitea | `python -m tools.sdd_cli environment-lab sync-nexus-secrets` |
+| Check CI workflows | Included in `setup-lab` — run `configure-ci-workflows` skill if needed |
 | Validate observability | `python -m tools.sdd_cli environment-lab validate-observability` |
 | Build Gitea images | `python -m tools.sdd_cli environment-lab build-gitea-images` |
-| Setup MCP server (`setup-mcp-server`) | `python tools/bm25s_flashrank/setup_mcp.py` |
+| Setup MCP server | `python tools/bm25s_flashrank/setup_mcp.py` |
 
 ## Safety Rules
 
@@ -69,7 +88,130 @@ Useful `environment-lab` modes:
 - `validate-observability`: check Seq + Grafana endpoints and provisioning.
 - `validate-gitea-runner`: check Docker, Gitea runner images, and runner tools.
 - `build-gitea-images`: build Gitea Actions CI images.
+- `setup-nexus`: configure Nexus: accept EULA, create `sdd-artifacts` raw hosted repository, validate connectivity.
+- `validate-nexus-secrets`: check Gitea Actions Nexus secrets — warns if `NEXUS_URL`/`NEXUS_REPOSITORY` override workflow defaults, and checks `NEXUS_USERNAME`/`NEXUS_PASSWORD` exist.
+- `sync-nexus-secrets`: **auto-fix** — reads Nexus credentials from `client-tools.local.json` and creates/updates `NEXUS_USERNAME`/`NEXUS_PASSWORD` secrets in Gitea Actions. This ensures CI credentials always match the actual Nexus password (prevents `HTTP 401` on artifact uploads).
 - `setup-mcp-server`: run the monorepo-docs-search MCP setup script via `python tools/bm25s_flashrank/setup_mcp.py` (standalone script, not an `environment-lab` subcommand).
+
+## CI Workflow Configuration
+
+After the infrastructure is running and the project stack is set, generate or update the Gitea Actions workflow files to match the project's technology stack and app topology.
+
+Use the `configure-ci-workflows` skill:
+
+```bash
+# The skill is loaded automatically by the agent when needed
+# Ask the agent: "Run configure-ci-workflows"
+```
+
+### What It Does
+
+1. Reads the project stack from the project profile (frontend, backend, database technologies).
+2. Reads the app topology from `infra/deployment/apps.json`.
+3. Reads provider configuration from `client-tools.local.json` (Gitea URL, Nexus config).
+4. Generates or updates these workflow files:
+   - `.gitea/workflows/package-deploy.yml` — Build, package, upload to Nexus, deploy
+   - `.gitea/workflows/pr-validation.yml` — Checkout, JSON validation, secret scan
+   - `.gitea/workflows/agent-eval.yml` — Checkout, promptfoo evaluation
+
+### Stack-to-Build Mapping
+
+| Stack | Build Command | Output Dir |
+|-------|--------------|------------|
+| React, Vue, Angular | `npm ci && npm run build` | `dist/` |
+| FastAPI, Django, Flask | `pip install -r requirements.txt` | Source tree |
+| .NET / ASP.NET Core | `dotnet publish -c Release` | `bin/Release/publish/` |
+
+### When To Run
+
+- After `setup-lab` completes (the `CheckCIWorkflows` step will warn if files are missing)
+- After changing the project stack (e.g., adding a backend)
+- After adding or removing apps from `infra/deployment/apps.json`
+
+## Troubleshooting: Runner Image Failures
+
+If workflow runs fail with `pull access denied for sdd-e2e-ci`:
+
+1. **Check `force_pull` in runner config** — `setup-lab` step 12 (`ValidateGiteaRunner`) auto-detects and fixes this, along with the validations below:
+   - compose.yml has `extra_hosts: host.docker.internal:host-gateway` for the runner container
+   - config.yml has `container.options: '--add-host=host.docker.internal:host-gateway'` for job containers
+   - Workflow files use `host.docker.internal` instead of hardcoded IPs like `172.20.0.2`
+
+   ```bash
+   python -m tools.sdd_cli environment-lab validate-gitea-runner
+   ```
+   Fixes are auto-applied: `force_pull: true` → `false`, and hardcoded IPs are flagged as errors.
+
+2. **Restart the runner** after fixing config.yml:
+   ```bash
+   docker restart agentic-gitea-runner
+   ```
+
+3. **Verify the image exists**:
+   ```bash
+   docker images sdd-e2e-ci:local
+   ```
+   If missing, rebuild: `python -m tools.sdd_cli environment-lab build-gitea-images`
+
+## host.docker.internal Resolution
+
+The CI pipeline relies on `host.docker.internal` to reach Gitea and Nexus from within job containers. Without it, checkout steps fail with `Could not resolve host: host.docker.internal` or use fragile hardcoded IPs that break on container restarts.
+
+### What Needs host.docker.internal
+
+| Component | Where | Why |
+|---|---|---|
+| Runner container | `infra/gitea/compose.yml` → `runner.extra_hosts` | Runner itself needs to reach Gitea at `host.docker.internal:3000` |
+| Job containers | `infra/gitea/config.yml` → `container.options` | Gitea Actions passes `--add-host` to every job container spawned by the runner |
+| Workflow checkout URLs | `.gitea/workflows/*.yml` → checkout step `repo_url` | Git clone from inside job container needs to reach Gitea |
+| Nexus upload URL | `.gitea/workflows/*.yml` → upload step defaults to `host.docker.internal:8088` | Artifact upload from job container needs to reach Nexus |
+
+### Validation
+
+`setup-lab` step 12 (`ValidateGiteaRunner`) validates all four:
+1. **compose.yml** — checks `extra_hosts: host.docker.internal:host-gateway` ✅
+2. **config.yml** — checks `--add-host=host.docker.internal:host-gateway` in container.options ✅
+3. **Workflow files** — checks for hardcoded `172.20.0.x` IPs (error) and absence of `host.docker.internal` (warning) ✅
+4. **Nexus URL** — validates NEXUS_URL secret doesn't override the `host.docker.internal:8088` default (step 8) ✅
+
+### Manual Fix
+
+If `host.docker.internal` is not resolving inside job containers:
+
+**On Linux:** Docker Engine does not provide `host.docker.internal` by default. It must be added explicitly:
+
+```yml
+# In compose.yml runner service:
+extra_hosts:
+  - "host.docker.internal:host-gateway"
+
+# In config.yml under container:
+container:
+  options: '--add-host=host.docker.internal:host-gateway'
+```
+
+**On Windows/macOS:** `host.docker.internal` is provided automatically by Docker Desktop, but the `extra_hosts` and `--add-host` settings are still needed because Gitea Actions job containers are spawned from the runner container, not directly from the host.
+
+## Troubleshooting: Runner Image (`pull access denied`)
+
+If workflow runs fail with `pull access denied for sdd-e2e-ci`:
+
+1. **Check `force_pull` in runner config** — `setup-lab` step 12 auto-detects and fixes this.
+
+If workflow runs show `HTTP 401` during the Upload to Nexus step:
+
+1. **Check Nexus password** — verify it in client-tools config:
+   ```bash
+   python -c "import json; c=json.load(open('.codex/client-tools.local.json')); print(c['nexus']['password'])"
+   ```
+
+2. **Sync the secret** — `setup-lab` step 9 (`SyncNexusSecrets`) auto-fixes this, or run standalone:
+   ```bash
+   python -m tools.sdd_cli environment-lab sync-nexus-secrets
+   ```
+   This pushes the password from `client-tools.local.json` into the `NEXUS_PASSWORD` Gitea Actions secret.
+
+3. **Rerun the workflow** — dispatch a new run on `dev` to pick up the updated secret.
 
 ## Domain-Specific Setup
 
@@ -139,10 +281,38 @@ Configure the CI runner for PR validation and deployment jobs.
 
 Configure artifact storage, release manifests, and DEV/QA/PROD promotion.
 
+The `setup-lab` flow handles Nexus setup automatically, but you can also run steps individually.
+
 1. Run `python -m tools.sdd_cli environment-lab set-client-tools --values-json '{...}'` with Nexus credentials.
-2. Guide the user to store Nexus credentials as Gitea Actions secrets for CI.
-3. Keep the release model: build once, promote the same artifact through DEV → QA → PROD.
-4. Ensure Nexus release manifests at `app/{commitSha}/release.json` carry machine-readable metadata.
+
+2. **Full Nexus setup** — run this single command which handles everything below:
+   ```bash
+   python -m tools.sdd_cli environment-lab setup-nexus
+   ```
+   This automates all of the following:
+   - **Waits for Nexus to be reachable** (retries with backoff, ~30s total)
+   - **Accepts the Nexus EULA** automatically if not yet accepted (via `POST /service/rest/v1/system/eula`)
+   - **Creates the `sdd-artifacts` raw hosted repository** via REST API if it doesn't already exist
+     - Created with `writePolicy: ALLOW_ONCE` and `strictContentTypeValidation: true`
+   - **Idempotent**: skips any step already completed
+
+3. **Validate Nexus CI secrets** — check that Gitea Actions secrets for Nexus are correctly configured:
+   ```bash
+   python -m tools.sdd_cli environment-lab validate-nexus-secrets
+   ```
+   This checks:
+   - `NEXUS_URL` secret does **not** exist (workflow defaults to `host.docker.internal:8088`)
+   - `NEXUS_REPOSITORY` secret does **not** exist (workflow defaults to `sdd-artifacts`)
+   - `NEXUS_USERNAME` and `NEXUS_PASSWORD` secrets **do** exist
+
+4. **Known issues** (previous manual fixes, now automated):
+   - ❌ **EULA not accepted** — previously caused `HTTP 403` on upload. Now auto-accepted in step 2.
+   - ❌ **NEXUS_URL secret overriding default** — previously caused `curl exit code 6` (Couldn't resolve host). Now detected in step 3.
+   - ❌ **NEXUS_REPOSITORY secret overriding default** — same URL issue. Now detected in step 3.
+
+5. Keep the release model: build once, promote the same artifact through DEV → QA → PROD.
+
+6. Ensure Nexus release manifests at `app/{commitSha}/release.json` carry machine-readable metadata.
 
 **Values needed:** Nexus base URL, username, password/token, repository name.
 **Safety:** Never print credentials. Never read the initial admin password from Docker containers.

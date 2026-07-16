@@ -1,0 +1,26 @@
+log:
+  level: info
+
+runner:
+  capacity: 1
+  env_file: '.env'
+  timeout: '3h'
+  fetch_interval: '2s'
+  labels: []
+
+cache:
+  enabled: true
+
+container:
+  network: 'agentic-e2e_gitea'
+  options: '--add-host=host.docker.internal:host-gateway'
+  privileged: false
+  workdir_parent: '/workspace'
+  valid_volumes:
+    - '/var/run/docker.sock:/var/run/docker.sock'
+  force_pull: false
+  force_rebuild: false
+  bind_workdir: false
+
+host:
+  workdir_parent: ''

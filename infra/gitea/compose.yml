@@ -36,9 +36,16 @@ services:
       - gitea
     env_file:
       - runner.env
+    environment:
+      CONFIG_FILE: /config.yml
+      KUBECONFIG: /home/runner/.kube/config
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - runner-data:/data
-      - /var/run/docker.sock:/var/run/docker.sock
+      - ./config.yml:/config.yml
+      - //var/run/docker.sock:/var/run/docker.sock
+      - ~/.kube/config:/home/runner/.kube/config:ro
     networks:
       - gitea
     restart: unless-stopped

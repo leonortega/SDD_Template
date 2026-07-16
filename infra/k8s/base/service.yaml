@@ -1,0 +1,13 @@
+# Placeholder: Replace with actual service spec for your component
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${COMPONENT_NAME}
+spec:
+  type: ${SERVICE_TYPE}
+  selector:
+    app: ${COMPONENT_NAME}
+  ports:
+    - protocol: TCP
+      port: ${SERVICE_PORT}
+      targetPort: ${CONTAINER_PORT}

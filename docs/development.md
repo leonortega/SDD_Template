@@ -38,7 +38,6 @@ The consumer repo should not contain this tool's internal tests, memory, eval fi
 - Use the OpenProject/OpenSpec workflow for ticketed changes.
 - Keep changes scoped to the active ticket or explicit user request.
 - Use TDD for product behavior once a stack exists.
-- Use Playwright for browser-visible flows when the future product has a UI.
 - Keep docs, `.codex/project-profile.json`, and `.codex/project-profile.local.json` synchronized with stack and workflow changes.
 - Do not add speculative stack guidance, dependencies, or CI jobs before the new product needs them.
 

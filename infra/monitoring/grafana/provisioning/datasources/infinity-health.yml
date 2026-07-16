@@ -12,9 +12,7 @@ datasources:
     editable: true
     jsonData:
       allowedHosts:
-        - http://host.docker.internal:18081
-        - http://host.docker.internal:18082
-        - http://host.docker.internal:18083
-        - http://host.docker.internal:18084
-        - http://host.docker.internal:18085
-        - http://host.docker.internal:18086
+        - http://host.docker.internal:*
+        - http://localhost:*
+        - http://host.docker.internal:8088
+        - http://host.docker.internal:3000
