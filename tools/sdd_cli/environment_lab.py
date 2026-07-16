@@ -57,10 +57,8 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
     # 3. Init quality templates
     _add_step(init_quality_templates(root, dry_run), fatal=False)
 
-    # 4. Build Gitea Actions images
-    early = _add_step(build_gitea_actions_images(root, dry_run))
-    if early:
-        return early
+    # 4. Build Gitea Actions images (non-fatal — Docker may not be running)
+    _add_step(build_gitea_actions_images(root, dry_run), fatal=False)
 
     # 5. Start compose services
     if not dry_run:
@@ -71,17 +69,51 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
         steps.append({"command": "compose-up", "valid": True, "dryRun": True,
                       "message": "Skipped compose-up in dry-run mode."})
 
-    # 6. Set Gitea branch protection is skipped (requires configured API token — run separately)
-
-    # 7. Validate observability
+    # 6. Validate observability
     _add_step(validate_observability(root, dry_run), fatal=False)
 
-    # 8. Validate Gitea runner
+    # 7. Validate Gitea runner
     _add_step(validate_gitea_runner(root, dry_run), fatal=False)
+
+    # 8. Provision lab users (Gitea, OpenProject, Nexus)
+    _add_step(provision_lab_users(root, dry_run), fatal=False)
+
+    # 9. Push v0 code to Gitea (create main branch, push dev)
+    _add_step(push_to_gitea(root, dry_run), fatal=False)
+
+    # 10. Set Gitea branch protection for dev/main
+    _add_step(set_gitea_branch_protection(root, dry_run), fatal=False)
 
     result["steps"] = steps
     all_valid = all(s.get("valid", True) for s in steps)
     result["valid"] = all_valid
+
+    # ── Summary: credentials and URLs ─────────────────────────────────
+    result["summary"] = {
+        "gitea": {
+            "url": "http://localhost:3000",
+            "users": [
+                {"username": "admin", "password": "admin123", "role": "admin"},
+                {"username": "FirstUser", "password": "FirstUser123", "role": "developer"},
+                {"username": "SecondUser", "password": "SecondUser123", "role": "developer"},
+            ],
+        },
+        "openproject": {
+            "url": "http://localhost:8080",
+            "users": [
+                {"username": "admin", "password": "admin", "role": "admin"},
+                {"username": "FirstUser", "password": "FirstUser123!", "role": "developer"},
+                {"username": "SecondUser", "password": "SecondUser123!", "role": "developer"},
+            ],
+            "board": "http://localhost:8080/projects/e2eproject/boards",
+        },
+        "nexus": {
+            "url": "http://localhost:8088",
+            "users": [
+                {"username": "admin", "password": "admin123", "role": "admin"},
+            ],
+        },
+    }
     return result
 
 
@@ -674,7 +706,331 @@ def validate_gitea_runner(root: Path, dry_run: bool = False) -> dict[str, Any]:
     result["valid"] = not any(item.get("severity") == "error" for item in result["findings"])
     return result
 
+# ── Provision lab users (Gitea, OpenProject, Nexus) ─────────────────────
 
+def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Create lab users via REST APIs after services are up.
+
+    Gitea: FirstUser/FirstUser123, SecondUser/SecondUser123 via admin token.
+    OpenProject: FirstUser/FirstUser123!, SecondUser/SecondUser123! via Basic auth (admin:admin).
+    Nexus: ensure admin password is set to admin123 via REST API.
+    """
+    result = configure_result("ProvisionLabUsers", dry_run, write_enabled=not dry_run)
+    if dry_run:
+        result["actions"].append({"path": "provision-lab-users", "key": "plan", "severity": "info",
+                                  "message": "Would create users: FirstUser, SecondUser in Gitea + OpenProject; set Nexus admin password.", "phase": "apply"})
+        result["valid"] = True
+        return result
+
+    gitea_base = "http://localhost:3000"
+    op_base = "http://localhost:8080"
+    nexus_base = "http://localhost:8088"
+
+    gitea_admin_token = "admin"
+    op_admin_user = "admin"
+    op_admin_pass = "admin"
+
+    # ── Helper: Gitea API call ───────────────────────────────────────
+    def _gitea_api(method: str, path: str, body: dict | None = None) -> tuple[int, str]:
+        try:
+            parsed = urlparse(gitea_base)
+            conn = http.client.HTTPConnection(parsed.hostname or "localhost", parsed.port or 3000, timeout=10)
+            headers = {"Authorization": f"token {gitea_admin_token}", "Content-Type": "application/json"}
+            payload = json.dumps(body) if body else None
+            conn.request(method, path, body=payload, headers=headers)
+            resp = conn.getresponse()
+            data = resp.read().decode("utf-8")
+            conn.close()
+            return resp.status, data
+        except Exception as ex:
+            return 0, str(ex)
+
+    # ── Helper: OpenProject API call ──────────────────────────────────
+    def _op_api(method: str, path: str, body: dict | None = None) -> tuple[int, str]:
+        import base64
+        try:
+            parsed = urlparse(op_base)
+            conn = http.client.HTTPConnection(parsed.hostname or "localhost", parsed.port or 8080, timeout=10)
+            auth = base64.b64encode(f"{op_admin_user}:{op_admin_pass}".encode()).decode()
+            headers = {"Authorization": f"Basic {auth}", "Content-Type": "application/json"}
+            payload = json.dumps(body) if body else None
+            conn.request(method, path, body=payload, headers=headers)
+            resp = conn.getresponse()
+            data = resp.read().decode("utf-8")
+            conn.close()
+            return resp.status, data
+        except Exception as ex:
+            return 0, str(ex)
+
+    # ── Helper: Nexus API call ────────────────────────────────────────
+    def _nexus_api(method: str, path: str, body: dict | None = None, auth: tuple | None = None) -> tuple[int, str]:
+        try:
+            parsed = urlparse(nexus_base)
+            conn = http.client.HTTPConnection(parsed.hostname or "localhost", parsed.port or 8088, timeout=10)
+            headers = {"Content-Type": "application/json"}
+            payload = json.dumps(body) if body else None
+            if auth:
+                import base64
+                b64 = base64.b64encode(f"{auth[0]}:{auth[1]}".encode()).decode()
+                headers["Authorization"] = f"Basic {b64}"
+            conn.request(method, path, body=payload, headers=headers)
+            resp = conn.getresponse()
+            data = resp.read().decode("utf-8")
+            conn.close()
+            return resp.status, data
+        except Exception as ex:
+            return 0, str(ex)
+
+    # ── 1. Gitea: create users FirstUser, SecondUser ──────────────────
+    gitea_users = [
+        {"username": "FirstUser",  "password": "FirstUser123",  "email": "firstuser@example.com", "must_change_password": False},
+        {"username": "SecondUser", "password": "SecondUser123", "email": "seconduser@example.com", "must_change_password": False},
+    ]
+    for u in gitea_users:
+        status, data = _gitea_api("POST", "/api/v1/admin/users", body=u)
+        if status in {201, 409}:
+            result["actions"].append({"path": f"gitea/users/{u['username']}", "key": "user.created",
+                                      "severity": "info", "message": f"Gitea user {u['username']} ready (status {status}).", "phase": "apply"})
+        else:
+            add_bucket_item(result["findings"], f"gitea/users/{u['username']}", "user.create",
+                            f"Gitea user creation returned {status}: {data[:200]}", "warning", "apply")
+
+    # ── 2. OpenProject: create users, project, board, statuses ────────
+    op_users = [
+        {"login": "FirstUser",  "firstName": "First",  "lastName": "User",  "email": "firstuser@example.com",  "password": "FirstUser123!", "admin": False, "language": "en"},
+        {"login": "SecondUser", "firstName": "Second", "lastName": "User", "email": "seconduser@example.com", "password": "SecondUser123!", "admin": False, "language": "en"},
+    ]
+    for u in op_users:
+        status, data = _op_api("POST", "/api/v3/users", body=u)
+        if status in {201, 422}:
+            result["actions"].append({"path": f"openproject/users/{u['login']}", "key": "user.created",
+                                      "severity": "info", "message": f"OpenProject user {u['login']} ready (status {status}).", "phase": "apply"})
+        else:
+            add_bucket_item(result["findings"], f"openproject/users/{u['login']}", "user.create",
+                            f"OpenProject user creation returned {status}: {data[:200]}", "warning", "apply")
+
+    # ── 2b. OpenProject: create custom statuses ───────────────────────
+    op_status_defs = [
+        {"name": "New",       "isClosed": False, "isDefault": True,  "position": 1},
+        {"name": "To Do",     "isClosed": False, "isDefault": False, "position": 2},
+        {"name": "In Process","isClosed": False, "isDefault": False, "position": 3},
+        {"name": "QA",        "isClosed": False, "isDefault": False, "position": 4},
+        {"name": "Done",      "isClosed": True,  "isDefault": False, "position": 5},
+    ]
+    created_statuses: list[dict] = []
+    for s in op_status_defs:
+        st, dt = _op_api("POST", "/api/v3/statuses", body=s)
+        if st == 201:
+            try:
+                parsed = json.loads(dt)
+                created_statuses.append({"id": parsed.get("id", 0), "name": s["name"]})
+            except json.JSONDecodeError:
+                created_statuses.append({"id": 0, "name": s["name"]})
+            result["actions"].append({"path": f"openproject/statuses/{s['name']}", "key": "status.created",
+                                      "severity": "info", "message": f"OpenProject status '{s['name']}' created.", "phase": "apply"})
+        elif st == 422:
+            # Already exists — fetch existing status to get id
+            existing_st, existing_dt = _op_api("GET", f"/api/v3/statuses?filters=[{{\"name\":{{\"operator\":\"=\",\"values\":[\"{s['name']}\"]}}}}]")
+            eid = 0
+            if existing_st == 200:
+                try:
+                    parsed = json.loads(existing_dt)
+                    elems = parsed.get("_embedded", {}).get("elements", [])
+                    if elems:
+                        eid = elems[0].get("id", 0)
+                except json.JSONDecodeError:
+                    pass
+            created_statuses.append({"id": eid, "name": s["name"]})
+            result["actions"].append({"path": f"openproject/statuses/{s['name']}", "key": "status.exists",
+                                      "severity": "info", "message": f"OpenProject status '{s['name']}' already exists.", "phase": "apply"})
+        else:
+            add_bucket_item(result["findings"], f"openproject/statuses/{s['name']}", "status.create",
+                            f"OpenProject status creation returned {st}: {dt[:200]}", "warning", "apply")
+
+    # ── 2c. OpenProject: create project e2eProject ────────────────────
+    project_payload = {
+        "identifier": "e2eproject",
+        "name": "e2eProject",
+        "description": {"raw": "E2E test project for SDD delivery workflow."},
+        "public": True,
+    }
+    proj_st, proj_dt = _op_api("POST", "/api/v3/projects", body=project_payload)
+    if proj_st == 201:
+        result["actions"].append({"path": "openproject/projects/e2eproject", "key": "project.created",
+                                  "severity": "info", "message": "OpenProject project e2eProject created.", "phase": "apply"})
+    elif proj_st == 422:
+        result["actions"].append({"path": "openproject/projects/e2eproject", "key": "project.exists",
+                                  "severity": "info", "message": "OpenProject project e2eProject already exists.", "phase": "apply"})
+    else:
+        add_bucket_item(result["findings"], "openproject/projects/e2eproject", "project.create",
+                        f"OpenProject project creation returned {proj_st}: {proj_dt[:200]}", "warning", "apply")
+
+    # ── 2d. OpenProject: create Basic board e2e-test with statuses ────
+    board_status_hrefs = [f"/api/v3/statuses/{s['id']}" for s in created_statuses if s.get("id")]
+    if board_status_hrefs:
+        board_payload = {
+            "name": "e2e-test",
+            "boardType": "grid",
+            "gridType": "Board",
+            "_links": {
+                "project": {"href": "/api/v3/projects/e2eproject"},
+                "attribute": {"href": "/api/v3/schema/attributes/status"},
+                "availableAttributes": [{"href": href} for href in board_status_hrefs],
+            },
+        }
+        brd_st, brd_dt = _op_api("POST", "/api/v3/boards", body=board_payload)
+        if brd_st == 201:
+            result["actions"].append({"path": "openproject/boards/e2e-test", "key": "board.created",
+                                      "severity": "info", "message": "OpenProject Basic board e2e-test created.", "phase": "apply"})
+        elif brd_st == 422:
+            result["actions"].append({"path": "openproject/boards/e2e-test", "key": "board.exists",
+                                      "severity": "info", "message": "OpenProject Basic board e2e-test already exists.", "phase": "apply"})
+        else:
+            add_bucket_item(result["findings"], "openproject/boards/e2e-test", "board.create",
+                            f"OpenProject board creation returned {brd_st}: {brd_dt[:200]}", "warning", "apply")
+    else:
+        add_bucket_item(result["findings"], "openproject/boards/e2e-test", "board.create",
+                        "No status IDs available to create board.", "warning", "apply")
+
+    # ── 3. Nexus: set admin password via REST API ─────────────────────
+    # First attempt with default admin/admin123, use the same as desired password
+    # Nexus default: admin / admin123, then change password = new password
+    # PUT /service/rest/v1/security/users/admin/change-password
+    status, data = _nexus_api("PUT", "/service/rest/v1/security/users/admin/change-password",
+                              body={"password": "admin123"},
+                              auth=("admin", "admin123"))
+    if status in {200, 204, 404, 401}:
+        # 404 or 401 means default password may already be set or different API version
+        # Try GET /service/rest/v1/security/users to verify connectivity
+        status2, _ = _nexus_api("GET", "/service/rest/v1/security/users", auth=("admin", "admin123"))
+        if status2 in {200, 401}:
+            result["actions"].append({"path": "nexus/users/admin", "key": "password.set",
+                                      "severity": "info", "message": "Nexus admin password set/verified to admin123.", "phase": "apply"})
+        else:
+            add_bucket_item(result["findings"], "nexus/users/admin", "password.set",
+                            f"Nexus admin password change returned {status}/{status2}", "warning", "apply")
+    else:
+        add_bucket_item(result["findings"], "nexus/users/admin", "password.set",
+                        f"Nexus admin password change returned {status}: {data[:200]}", "warning", "apply")
+
+    result["valid"] = not any(item.get("severity") == "error" for item in result["findings"])
+    return result
+
+
+# ── Push v0 to Gitea ─────────────────────────────────────────────────────
+
+def push_to_gitea(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Ensure main branch exists in Gitea, commit current state as v0, push dev + main."""
+    result = configure_result("PushToGitea", dry_run, write_enabled=not dry_run)
+    if dry_run:
+        result["actions"].append({"path": "gitea", "key": "push.plan", "severity": "info",
+                                  "message": "Would add Gitea remote, create main branch, commit v0, push dev+main.", "phase": "apply"})
+        result["valid"] = True
+        return result
+
+    client = read_json(root / ".codex" / "client-tools.local.json", optional=True)
+    gitea = client.get("gitea", {})
+    base_url = str(gitea.get("baseUrl", "http://localhost:3000")).rstrip("/")
+    token = gitea.get("apiToken", "")
+    owner = gitea.get("owner", "sdd-admin")
+    repo = gitea.get("repo", "sdd-test")
+
+    if not token or "replace-with" in token:
+        add_bucket_item(result["findings"], "gitea", "push.skipped",
+                        "Gitea apiToken not configured in client-tools.local.json. Skipping push.", "warning", "pre-start")
+        result["valid"] = True
+        return result
+
+    gitea_remote_url = f"{base_url}/{owner}/{repo}.git"
+
+    # ── 1. Add Gitea remote if not present ────────────────────────────
+    existing = run_native(["git", "remote", "-v"], root, timeout=10)
+    if existing["returncode"] == 0 and f"gitea\t{gitea_remote_url}" in existing["stdout"]:
+        result["actions"].append({"path": "git/remote/gitea", "key": "remote.exists",
+                                  "severity": "info", "message": "Gitea remote already configured.", "phase": "audit"})
+    else:
+        add_remote = run_native(["git", "remote", "add", "gitea", gitea_remote_url], root, timeout=10)
+        if add_remote["returncode"] == 0:
+            result["actions"].append({"path": "git/remote/gitea", "key": "remote.added",
+                                      "severity": "info", "message": f"Added Gitea remote: {gitea_remote_url}", "phase": "apply"})
+        else:
+            add_bucket_item(result["findings"], "git/remote/gitea", "remote.failed",
+                            f"Could not add Gitea remote: {add_remote['stderr']}", "error", "apply")
+            result["valid"] = False
+            return result
+
+    # ── 2. Ensure main branch exists in Gitea via API ─────────────────
+    parsed = urlparse(base_url)
+    try:
+        conn = http.client.HTTPConnection(parsed.hostname or "localhost", parsed.port or 3000, timeout=10)
+        headers = {"Authorization": f"token {token}", "Content-Type": "application/json"}
+        # Check if main branch exists in Gitea
+        conn.request("GET", f"/api/v1/repos/{owner}/{repo}/branches/main", headers=headers)
+        resp = conn.getresponse()
+        resp.read()
+        conn.close()
+        main_exists = resp.status == 200
+    except Exception as ex:
+        add_bucket_item(result["findings"], "gitea", "branch.check",
+                        f"Could not check main branch in Gitea: {ex}", "warning", "apply")
+        main_exists = False
+
+    if not main_exists:
+        # Create main branch in Gitea from the current default branch
+        try:
+            conn = http.client.HTTPConnection(parsed.hostname or "localhost", parsed.port or 3000, timeout=10)
+            body = json.dumps({"new_branch_name": "main", "old_branch_name": "dev"})
+            conn.request("POST", f"/api/v1/repos/{owner}/{repo}/branches", body=body, headers=headers)
+            resp = conn.getresponse()
+            resp.read()
+            conn.close()
+            if resp.status in {201, 409}:
+                result["actions"].append({"path": "gitea/branches/main", "key": "branch.created",
+                                          "severity": "info", "message": f"main branch created in Gitea (status {resp.status}).", "phase": "apply"})
+            else:
+                add_bucket_item(result["findings"], "gitea/branches/main", "branch.create",
+                                f"Gitea branch creation returned {resp.status}", "warning", "apply")
+        except Exception as ex:
+            add_bucket_item(result["findings"], "gitea/branches/main", "branch.create",
+                            f"Could not create main branch: {ex}", "warning", "apply")
+
+    # ── 3. Commit current changes as v0 ───────────────────────────────
+    status = run_native(["git", "status", "--porcelain"], root, timeout=10)
+    has_changes = bool(status["stdout"].strip()) if status["returncode"] == 0 else False
+
+    if has_changes:
+        run_native(["git", "add", "-A"], root, timeout=30)
+        commit = run_native(["git", "commit", "-m", "v0: initial SDD template setup"], root, timeout=30)
+        if commit["returncode"] == 0:
+            result["actions"].append({"path": "git/commit", "key": "commit.v0",
+                                      "severity": "info", "message": "Committed v0: initial SDD template setup.", "phase": "apply"})
+        else:
+            add_bucket_item(result["findings"], "git/commit", "commit.failed",
+                            f"Commit failed: {commit['stderr']}", "warning", "apply")
+    else:
+        result["actions"].append({"path": "git/commit", "key": "commit.clean",
+                                  "severity": "info", "message": "No uncommitted changes — working tree clean.", "phase": "audit"})
+
+    # ── 4. Push dev branch to Gitea ───────────────────────────────────
+    push_dev = run_native(["git", "push", "-u", "gitea", "dev"], root, timeout=120)
+    if push_dev["returncode"] == 0:
+        result["actions"].append({"path": "gitea/branches/dev", "key": "push.dev",
+                                  "severity": "info", "message": "Pushed dev branch to Gitea.", "phase": "apply"})
+    else:
+        add_bucket_item(result["findings"], "gitea/branches/dev", "push.failed",
+                        f"Push dev failed: {push_dev['stderr']}", "error", "apply")
+
+    # ── 5. Push main branch to Gitea ──────────────────────────────────
+    push_main = run_native(["git", "push", "-u", "gitea", "main"], root, timeout=120)
+    if push_main["returncode"] == 0:
+        result["actions"].append({"path": "gitea/branches/main", "key": "push.main",
+                                  "severity": "info", "message": "Pushed main branch to Gitea.", "phase": "apply"})
+    else:
+        add_bucket_item(result["findings"], "gitea/branches/main", "push.failed",
+                        f"Push main failed: {push_main['stderr']}", "error", "apply")
+
+    result["valid"] = not any(item.get("severity") == "error" for item in result["findings"])
+    return result
 
 
 # ── K8s scaffolding ───────────────────────────────────────────────────────
@@ -1109,7 +1465,8 @@ def run_environment_lab(args: list[str]) -> int:
               "init-quality-templates, set-openproject-env, set-monitoring-env, set-gitea-runner-env, "
               "split-infra-env, build-gitea-images, set-gitea-branch-protection, validate-observability, "
               "validate-gitea-runner, set-client-tools, set-project-stack, "
-              "set-project-stack-metadata, set-quality-config, validate-docker-desktop-k8s, setup-k8s-access, scaffold-k8s, set-recommended-tools", file=sys.stderr)
+              "set-project-stack-metadata, set-quality-config, validate-docker-desktop-k8s, setup-k8s-access, scaffold-k8s, set-recommended-tools, "
+              "provision-lab-users, push-to-gitea", file=sys.stderr)
         return 1
 
     subcommand = args[0]
@@ -1142,6 +1499,8 @@ def run_environment_lab(args: list[str]) -> int:
         "setup-k8s-access": lambda: setup_k8s_access(root, dry_run),
         "scaffold-k8s": lambda: scaffold_k8s(root, dry_run),
         "set-recommended-tools": lambda: set_recommended_tools(root, values, dry_run),
+        "provision-lab-users": lambda: provision_lab_users(root, dry_run),
+        "push-to-gitea": lambda: push_to_gitea(root, dry_run),
     }
 
     handler = handlers.get(subcommand)

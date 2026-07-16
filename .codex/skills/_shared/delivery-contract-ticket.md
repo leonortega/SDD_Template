@@ -7,8 +7,12 @@ Stage-specific rules for ticket creation, implementation planning, and commit wo
 
 ## States And Flow
 
-Default OpenProject statuss:
-- Todo: work is not started.
+Default OpenProject statuses (set by provision-lab-users):
+- New (default): work is not started.
+- To Do: ready to work.
+- In Process: actively being worked on.
+- QA: pending QA validation.
+- Done: completed and verified.
 - In Progress: branch and implementation are active.
 - In Review: PR exists and awaits review/merge.
 - QA: artifact is deployed to QA and awaits E2E validation.

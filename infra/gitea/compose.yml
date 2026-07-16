@@ -20,6 +20,10 @@ services:
       GITEA__server__SSH_PORT: 2222
       GITEA__actions__ENABLED: "true"
       GITEA__packages__ENABLED: "false"
+      GITEA__admin__USERNAME: admin
+      GITEA__admin__PASSWORD: admin123
+      GITEA__admin__EMAIL: admin@example.com
+      GITEA__admin__MUST_CHANGE_PASSWORD: "false"
     ports:
       - "3000:3000"
       - "2222:22"
