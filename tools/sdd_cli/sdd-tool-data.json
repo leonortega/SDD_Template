@@ -20,11 +20,10 @@
   ],
   "SDD_TOOL_EXCLUDE_PARTS": [
     "__pycache__",
-    ".git",
+    ".git/",
     ".pytest_cache",
-    ".codex/agent-evals",
-    ".codex/ponytail",
     "openspec/changes",
+    "README.md",
     "tools/sdd_cli/tests"
   ],
   "SDD_TOOL_EXCLUDE_SEGMENTS": [
