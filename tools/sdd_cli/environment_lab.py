@@ -6,6 +6,7 @@ import http.client
 import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -84,6 +85,9 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
     # 10. Set Gitea branch protection for dev/main
     _add_step(set_gitea_branch_protection(root, dry_run), fatal=False)
 
+    # 11. Scaffold K8s deployment files (validates Docker Desktop K8s + creates manifests)
+    _add_step(scaffold_k8s(root, dry_run), fatal=False)
+
     result["steps"] = steps
     all_valid = all(s.get("valid", True) for s in steps)
     result["valid"] = all_valid
@@ -111,6 +115,19 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
             "url": "http://localhost:8088",
             "users": [
                 {"username": "admin", "password": "admin123", "role": "admin"},
+            ],
+        },
+        "k8s": {
+            "manifests": "infra/k8s/base/ (namespace, deployment, service, kustomization)",
+            "overlays": [
+                "infra/k8s/overlays/dev/ (1 replica, sdd-dev namespace)",
+                "infra/k8s/overlays/qa/ (2 replicas, sdd-qa namespace)",
+                "infra/k8s/overlays/prod/ (3 replicas, sdd-prod namespace)",
+            ],
+            "deploy": [
+                "kubectl apply -k infra/k8s/overlays/dev/",
+                "kubectl apply -k infra/k8s/overlays/qa/",
+                "kubectl apply -k infra/k8s/overlays/prod/",
             ],
         },
     }
@@ -748,14 +765,30 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
         except Exception as ex:
             return 0, str(ex)
 
-    # ── Helper: OpenProject API call ──────────────────────────────────
+    # ── Helper: OpenProject API call (uses Bearer token from client-tools) ──
+    _op_token = None
+
     def _op_api(method: str, path: str, body: dict | None = None) -> tuple[int, str]:
+        nonlocal _op_token
         import base64
+        # Read API token on first call
+        if _op_token is None:
+            try:
+                config_path = root / ".codex" / "client-tools.local.json"
+                config = read_json(config_path, optional=True)
+                op_config = config.get("openProject", config.get("openproject", {})) if config else {}
+                _op_token = op_config.get("apiToken", "")
+            except Exception:
+                _op_token = ""
         try:
             parsed = urlparse(op_base)
             conn = http.client.HTTPConnection(parsed.hostname or "localhost", parsed.port or 8080, timeout=10)
-            auth = base64.b64encode(f"{op_admin_user}:{op_admin_pass}".encode()).decode()
-            headers = {"Authorization": f"Basic {auth}", "Content-Type": "application/json"}
+            if _op_token:
+                headers = {"Authorization": f"Bearer {_op_token}", "Content-Type": "application/json"}
+            else:
+                # Fallback to Basic auth
+                auth = base64.b64encode(f"{op_admin_user}:{op_admin_pass}".encode()).decode()
+                headers = {"Authorization": f"Basic {auth}", "Content-Type": "application/json"}
             payload = json.dumps(body) if body else None
             conn.request(method, path, body=payload, headers=headers)
             resp = conn.getresponse()
@@ -812,43 +845,45 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
             add_bucket_item(result["findings"], f"openproject/users/{u['login']}", "user.create",
                             f"OpenProject user creation returned {status}: {data[:200]}", "warning", "apply")
 
-    # ── 2b. OpenProject: create custom statuses ───────────────────────
-    op_status_defs = [
-        {"name": "New",       "isClosed": False, "isDefault": True,  "position": 1},
-        {"name": "To Do",     "isClosed": False, "isDefault": False, "position": 2},
-        {"name": "In Process","isClosed": False, "isDefault": False, "position": 3},
-        {"name": "QA",        "isClosed": False, "isDefault": False, "position": 4},
-        {"name": "Done",      "isClosed": True,  "isDefault": False, "position": 5},
-    ]
-    created_statuses: list[dict] = []
-    for s in op_status_defs:
-        st, dt = _op_api("POST", "/api/v3/statuses", body=s)
-        if st == 201:
-            try:
-                parsed = json.loads(dt)
-                created_statuses.append({"id": parsed.get("id", 0), "name": s["name"]})
-            except json.JSONDecodeError:
-                created_statuses.append({"id": 0, "name": s["name"]})
-            result["actions"].append({"path": f"openproject/statuses/{s['name']}", "key": "status.created",
-                                      "severity": "info", "message": f"OpenProject status '{s['name']}' created.", "phase": "apply"})
-        elif st == 422:
-            # Already exists — fetch existing status to get id
-            existing_st, existing_dt = _op_api("GET", f"/api/v3/statuses?filters=[{{\"name\":{{\"operator\":\"=\",\"values\":[\"{s['name']}\"]}}}}]")
-            eid = 0
-            if existing_st == 200:
-                try:
-                    parsed = json.loads(existing_dt)
-                    elems = parsed.get("_embedded", {}).get("elements", [])
-                    if elems:
-                        eid = elems[0].get("id", 0)
-                except json.JSONDecodeError:
-                    pass
-            created_statuses.append({"id": eid, "name": s["name"]})
-            result["actions"].append({"path": f"openproject/statuses/{s['name']}", "key": "status.exists",
-                                      "severity": "info", "message": f"OpenProject status '{s['name']}' already exists.", "phase": "apply"})
+    # ── 2b. OpenProject: use existing statuses (creation via API not supported) ──
+    # OpenProject does not allow creating statuses via REST API (POST returns 404).
+    # Instead, we fetch the existing statuses and map them to our workflow names.
+    op_status_map: dict[str, int] = {}
+    st_all, st_all_dt = _op_api("GET", "/api/v3/statuses")
+    if st_all == 200:
+        try:
+            parsed = json.loads(st_all_dt)
+            for s in parsed.get("_embedded", {}).get("elements", []):
+                name = s.get("name", "")
+                sid = s.get("id", 0)
+                if name and sid:
+                    op_status_map[name] = sid
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+    # Map desired workflow status names to existing OpenProject status names
+    # Explicit mapping avoids fragile fuzzy matching across OP versions
+    STATUS_NAME_MAP: dict[str, str] = {
+        "New": "New",
+        "To Do": "To be scheduled",
+        "In Progress": "In progress",
+        "QA": "In testing",
+        "Done": "Closed",
+    }
+    status_name_to_id: dict[str, int] = {}
+    for desired_name, existing_name in STATUS_NAME_MAP.items():
+        sid = op_status_map.get(existing_name, 0)
+        if sid:
+            status_name_to_id[desired_name] = sid
+
+    created_statuses = [{"id": sid, "name": name} for name, sid in status_name_to_id.items() if sid]
+    for name, sid in status_name_to_id.items():
+        if sid:
+            result["actions"].append({"path": f"openproject/statuses/{name}", "key": "status.mapped",
+                                      "severity": "info", "message": f"OpenProject status '{name}' mapped to id={sid}.", "phase": "apply"})
         else:
-            add_bucket_item(result["findings"], f"openproject/statuses/{s['name']}", "status.create",
-                            f"OpenProject status creation returned {st}: {dt[:200]}", "warning", "apply")
+            add_bucket_item(result["findings"], f"openproject/statuses/{name}", "status.not-found",
+                            f"Could not find OpenProject status matching '{name}'.", "warning", "apply")
 
     # ── 2c. OpenProject: create project e2eProject ────────────────────
     project_payload = {
@@ -869,6 +904,7 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
                         f"OpenProject project creation returned {proj_st}: {proj_dt[:200]}", "warning", "apply")
 
     # ── 2d. OpenProject: create Basic board e2e-test with statuses ────
+    # OpenProject 17+ may not expose /api/v3/boards via REST — fall back to Rails console
     board_status_hrefs = [f"/api/v3/statuses/{s['id']}" for s in created_statuses if s.get("id")]
     if board_status_hrefs:
         board_payload = {
@@ -888,6 +924,85 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
         elif brd_st == 422:
             result["actions"].append({"path": "openproject/boards/e2e-test", "key": "board.exists",
                                       "severity": "info", "message": "OpenProject Basic board e2e-test already exists.", "phase": "apply"})
+        elif brd_st == 404:
+            # Boards API not exposed via REST — try Rails console
+            # Write Ruby script to local temp file, copy to container, execute
+            status_ids_str = ", ".join(str(s["id"]) for s in created_statuses if s.get("id"))
+            ruby_script = (
+                'require "yaml"\n'
+                'project = Project.find_by(identifier: "e2eproject")\n'
+                'admin = User.find_by(login: "admin")\n'
+                'unless project && admin\n'
+                '  puts "Project or admin not found"\n'
+                '  exit 1\n'
+                'end\n'
+                'existing = ::Boards::Grid.where(project: project, name: "e2e-test")\n'
+                'if existing.any?\n'
+                '  puts "Board already exists: id=#{existing.first.id}"\n'
+                '  exit 1\n'
+                'end\n'
+                f'status_ids = [{status_ids_str}]\n'
+                'board = ::Boards::Grid.create!(\n'
+                '  project: project,\n'
+                '  name: "e2e-test",\n'
+                '  row_count: 1,\n'
+                '  column_count: status_ids.length,\n'
+                '  user_id: admin.id\n'
+                ')\n'
+                'status_ids.each_with_index do |sid, idx|\n'
+                '  query = Query.new(\n'
+                '    name: "e2e-test-col-#{idx + 1}",\n'
+                '    project: project,\n'
+                '    user_id: admin.id,\n'
+                '    public: true\n'
+                '  )\n'
+                '  query.write_attribute(:filters, {"status_id" => {"operator" => "=", "values" => [sid.to_s]}}.to_yaml)\n'
+                '  query.save!(validate: false)\n'
+                '  widget = ::Grids::Widget.create!(\n'
+                '    grid: board,\n'
+                '    identifier: "work_package_query",\n'
+                '    start_row: 1,\n'
+                '    end_row: 2,\n'
+                '    start_column: idx + 1,\n'
+                '    end_column: idx + 2,\n'
+                '    options: {query_id: query.id, filters: [{status: {operator: "=", values: [sid.to_s]}}]}.to_yaml\n'
+                '  )\n'
+                'end\n'
+                'puts "Board created: id=#{board.id}"\n'
+            )
+            tmp_path = None
+            try:
+                tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".rb", delete=False)
+                tmp.write(ruby_script)
+                tmp.close()
+                tmp_path = tmp.name
+                subprocess.run(
+                    ["docker", "cp", tmp_path, "agentic-e2e-openproject-1:/tmp/create_board.rb"],
+                    capture_output=True, timeout=30,
+                )
+                rails_result = run_native(
+                    ["docker", "exec", "agentic-e2e-openproject-1", "sh", "-c",
+                     "cd /app && bundle exec rails runner /tmp/create_board.rb"],
+                    REPO_ROOT, timeout=60,
+                )
+            except Exception as ex:
+                add_bucket_item(result["findings"], "openproject/boards/e2e-test", "board.create",
+                                f"OpenProject board creation via Rails console failed: {ex}", "warning", "apply")
+                rails_result = {"returncode": -1, "stdout": "", "stderr": str(ex)}
+            finally:
+                if tmp_path:
+                    Path(tmp_path).unlink(missing_ok=True)
+            if rails_result["returncode"] == 0 and "Board created" in rails_result["stdout"]:
+                result["actions"].append({"path": "openproject/boards/e2e-test", "key": "board.created",
+                                          "severity": "info",
+                                          "message": "OpenProject Basic board e2e-test created via Rails console.", "phase": "apply"})
+            elif "already exists" in rails_result.get("stdout", "") or "already exists" in rails_result.get("stderr", ""):
+                result["actions"].append({"path": "openproject/boards/e2e-test", "key": "board.exists",
+                                          "severity": "info",
+                                          "message": "OpenProject Basic board e2e-test already exists.", "phase": "apply"})
+            else:
+                add_bucket_item(result["findings"], "openproject/boards/e2e-test", "board.create",
+                                f"OpenProject board creation via Rails console failed: {rails_result['stderr'][:200]}", "warning", "apply")
         else:
             add_bucket_item(result["findings"], "openproject/boards/e2e-test", "board.create",
                             f"OpenProject board creation returned {brd_st}: {brd_dt[:200]}", "warning", "apply")
@@ -1555,35 +1670,47 @@ def run_environment_lab(args: list[str]) -> int:
     summary = result.get("summary")
     if summary:
         print("=" * 60)
-        print("  🧪  SETUP-LAB COMPLETE — Credentials & URLs")
+        print("  SETUP-LAB COMPLETE - Credentials & URLs")
         print("=" * 60)
 
         # Gitea
         g = summary.get("gitea", {})
-        print(f"\n📦 GITEA — {g.get('url', 'N/A')}")
+        print(f"\n--- GITEA ({g.get('url', 'N/A')}) ---")
         print("-" * 40)
         for u in g.get("users", []):
-            print(f"  👤 {u.get('username', '?')}  |  pass: {u.get('password', '?')}  |  role: {u.get('role', '?')}")
+            print(f"  | username: {u.get('username', '?')} | pass: {u.get('password', '?')} | role: {u.get('role', '?')} |")
 
         # OpenProject
         op = summary.get("openproject", {})
-        print(f"\n📋 OPENPROJECT — {op.get('url', 'N/A')}")
+        print(f"\n--- OPENPROJECT ({op.get('url', 'N/A')}) ---")
         print("-" * 40)
         for u in op.get("users", []):
-            print(f"  👤 {u.get('username', '?')}  |  pass: {u.get('password', '?')}  |  role: {u.get('role', '?')}")
+            print(f"  | username: {u.get('username', '?')} | pass: {u.get('password', '?')} | role: {u.get('role', '?')} |")
         board_url = op.get("board", "")
         if board_url:
-            print(f"\n  📌 Basic Board: {board_url}")
+            print(f"  | Basic Board: {board_url} |")
 
         # Nexus
         nx = summary.get("nexus", {})
-        print(f"\n📦 NEXUS — {nx.get('url', 'N/A')}")
+        print(f"\n--- NEXUS ({nx.get('url', 'N/A')}) ---")
         print("-" * 40)
         for u in nx.get("users", []):
-            print(f"  👤 {u.get('username', '?')}  |  pass: {u.get('password', '?')}  |  role: {u.get('role', '?')}")
+            print(f"  | username: {u.get('username', '?')} | pass: {u.get('password', '?')} | role: {u.get('role', '?')} |")
+
+        # K8s
+        k = summary.get("k8s", {})
+        if k:
+            print("\n--- KUBERNETES ---")
+            print("-" * 40)
+            print(f"  | Manifests: {k.get('manifests', 'N/A')} |")
+            for overlay in k.get("overlays", []):
+                print(f"  | {overlay} |")
+            print(f"  | Deploy commands: |")
+            for cmd in k.get("deploy", []):
+                print(f"  |   $ {cmd} |")
 
         print("\n" + "=" * 60)
-        print("  ✅ Setup complete!")
+        print("  Setup complete!")
         print("=" * 60)
 
     return 0 if result.get("valid", True) else 1
