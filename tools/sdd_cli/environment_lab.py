@@ -726,7 +726,8 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
     op_base = "http://localhost:8080"
     nexus_base = "http://localhost:8088"
 
-    gitea_admin_token = "admin"
+    gitea_admin_user = "admin"
+    gitea_admin_pass = "admin123"
     op_admin_user = "admin"
     op_admin_pass = "admin"
 
@@ -735,7 +736,9 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
         try:
             parsed = urlparse(gitea_base)
             conn = http.client.HTTPConnection(parsed.hostname or "localhost", parsed.port or 3000, timeout=10)
-            headers = {"Authorization": f"token {gitea_admin_token}", "Content-Type": "application/json"}
+            import base64
+            b64_auth = base64.b64encode(f"{gitea_admin_user}:{gitea_admin_pass}".encode()).decode()
+            headers = {"Authorization": f"Basic {b64_auth}", "Content-Type": "application/json"}
             payload = json.dumps(body) if body else None
             conn.request(method, path, body=payload, headers=headers)
             resp = conn.getresponse()
