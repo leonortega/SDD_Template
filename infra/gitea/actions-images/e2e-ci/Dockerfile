@@ -23,7 +23,8 @@ RUN curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install kustomize v5.4.3
+# Install kustomize v5.4.3 (direct download)
+RUN curl -fsSL -o /tmp/kustomize.tar.gz     https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.4.3/kustomize_v5.4.3_linux_amd64.tar.gz     && tar xzf /tmp/kustomize.tar.gz -C /usr/local/bin/     && chmod +x /usr/local/bin/kustomize     && rm /tmp/kustomize.tar.gz     && kustomize version
 RUN curl -fsSL https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh \
     | bash -s -- /usr/local/bin kustomize v5.4.3 \
     && kustomize version 2>/dev/null || true

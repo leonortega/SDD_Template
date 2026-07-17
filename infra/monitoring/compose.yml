@@ -1,4 +1,5 @@
-name: agentic-e2e
+# NOTE: No `name:` field - inherits parent project name (agentic-e2e) when
+# included via infra/compose.yml.
 
 networks:
   monitoring:

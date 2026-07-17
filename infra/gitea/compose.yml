@@ -1,4 +1,6 @@
-name: agentic-gitea
+# NOTE: No `name:` field - inherits parent project name (agentic-e2e) when
+# included via infra/compose.yml. Run all services from infra/compose.yml
+# to keep volumes and networks consistent.
 
 networks:
   gitea:

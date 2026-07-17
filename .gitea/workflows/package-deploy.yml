@@ -84,6 +84,7 @@ jobs:
           done
 
       - name: Deploy to K8s
+      - name: Deploy to K8s
         env:
           KUBECONFIG: ${{ secrets.KUBECONFIG }}
         shell: bash
@@ -96,14 +97,25 @@ jobs:
           OVERLAY_DIR="infra/k8s/overlays/${ENV}"
 
           if [ ! -d "${OVERLAY_DIR}" ]; then
-            echo "No K8s overlay found for ${ENV} â€” skipping K8s deployment"
+            echo "No K8s overlay found for ${ENV} — skipping K8s deployment"
             echo "Run 'python -m tools.sdd_cli environment-lab scaffold-k8s' first"
             exit 0
           fi
 
-          # Read apps and set image tags (use abs path since we cd to overlay)
+          # Diagnostics: tool versions and connectivity
+          echo "=== K8s Deploy Diagnostics ==="
+          echo "kustomize: $(kustomize version 2>&1)"
+          echo "kubectl: $(kubectl version --client 2>&1 | head -1)"
+          echo "K8s API: $(kubectl cluster-info --request-timeout=5s 2>&1 | head -3)"
+          echo "Environment: ${ENV}"
+          echo "Overlay: ${OVERLAY_DIR}"
+          echo "============================"
+
+          # Read apps and set image tags
           REPO_ROOT=$(pwd)
           APPS_JSON="${REPO_ROOT}/infra/deployment/apps.json"
+
+          cd "${OVERLAY_DIR}"
 
           python3 -c "
           import json, subprocess, os
@@ -119,9 +131,23 @@ jobs:
               print(f'Set image for {app_id}: {image}')
           "
 
+          # Build manifest to temp file
+          echo "Building K8s manifest..."
+          kustomize build . > /tmp/k8s-manifest.yaml 2>/tmp/kustomize-err.log
+          if [ ! -s /tmp/k8s-manifest.yaml ]; then
+            echo "ERROR: kustomize build produced empty output"
+            cat /tmp/kustomize-err.log
+            exit 1
+          fi
+          echo "Manifest size: $(wc -l < /tmp/k8s-manifest.yaml) lines"
+
           # Apply to K8s
           echo "Deploying to ${ENV}..."
-          kustomize build . | kubectl apply -f -
+          if ! kubectl apply -f /tmp/k8s-manifest.yaml 2>&1; then
+            echo "ERROR: kubectl apply failed - running dry-run for diagnosis..."
+            kubectl apply --dry-run=client -f /tmp/k8s-manifest.yaml 2>&1 | head -20
+            exit 1
+          fi
 
           # Wait for rollout of each app
           python3 -c "
@@ -139,7 +165,6 @@ jobs:
           "
 
           cd "${REPO_ROOT}"
-
       - name: Discover environment URLs
         id: urls
         shell: bash

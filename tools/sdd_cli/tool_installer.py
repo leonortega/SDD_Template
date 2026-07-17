@@ -652,13 +652,39 @@ def _latest_sdd_tool_version(source: Path) -> str:
 def _unmanaged_collisions(
     source: Path, target: Path, files: list[str], owned: set[str], *, preserve_examples: set[str],
 ) -> list[str]:
+    from ._shared import (
+        get_sdd_tool_exclude_parts,
+        get_sdd_tool_exclude_segments,
+        get_sdd_tool_exclude_suffixes,
+    )
     collisions: list[str] = []
     managed = set(files)
     preserve = get_sdd_tool_preserve_files()
+    exclude_parts = get_sdd_tool_exclude_parts()
+    exclude_segments = get_sdd_tool_exclude_segments()
+    exclude_suffixes = get_sdd_tool_exclude_suffixes()
     for path in source.rglob("*"):
         if not path.is_file():
             continue
         relative = path.relative_to(source).as_posix()
+        # Skip excluded parts (same logic as sdd_tool_files)
+        excluded = False
+        for part in exclude_parts:
+            if relative.startswith(part) or f"/{part}/" in f"/{relative}/":
+                excluded = True
+                break
+        if excluded:
+            continue
+        # Skip excluded segments
+        for segment in exclude_segments:
+            if f"/{segment}/" in f"/{relative}/" or relative == segment:
+                excluded = True
+                break
+        if excluded:
+            continue
+        # Skip excluded suffixes
+        if any(relative.endswith(suffix) for suffix in exclude_suffixes):
+            continue
         if relative in managed or relative in preserve or relative in owned:
             continue
         if relative in preserve_examples:
@@ -668,9 +694,14 @@ def _unmanaged_collisions(
             collisions.append(relative)
     for relative in files:
         dst = target / relative
-        if not dst.exists() or relative in owned:
+        if not dst.exists():
+            continue
+        if relative in owned:
             continue
         if relative in preserve or relative in preserve_examples:
+            continue
+        # Managed files are intentionally overwritten during update
+        if relative in managed:
             continue
         if dst.read_bytes() != (source / relative).read_bytes():
             collisions.append(relative)
