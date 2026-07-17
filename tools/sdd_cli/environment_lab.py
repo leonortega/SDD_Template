@@ -913,6 +913,43 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
         add_bucket_item(result["findings"], "nexus/users/admin", "password.set",
                         f"Nexus admin password change returned {status}: {data[:200]}", "warning", "apply")
 
+    # ── 4. Save provisioning config to client-tools.local.json ────────
+    if not dry_run:
+        config_path = root / ".codex" / "client-tools.local.json"
+        config = read_json(config_path, optional=True)
+
+        # Build status name->id mapping
+        status_map = {s["name"]: s.get("id", 0) for s in created_statuses}
+
+        # Merge provisioning info into openProject section
+        op_provision = {
+            "project": {
+                "identifier": "e2eproject",
+                "name": "e2eProject",
+            },
+            "board": {
+                "name": "e2e-test",
+                "url": "http://localhost:8080/projects/e2eproject/boards",
+            },
+            "statuses": status_map,
+        }
+        config.setdefault("openProject", {})
+        config["openProject"]["provisioning"] = op_provision
+
+        # Also save Gitea provisioning info
+        gitea_provision = {
+            "users": [
+                {"username": "FirstUser", "password": "FirstUser123", "email": "firstuser@example.com"},
+                {"username": "SecondUser", "password": "SecondUser123", "email": "seconduser@example.com"},
+            ],
+        }
+        config.setdefault("gitea", {})
+        config["gitea"]["provisioning"] = gitea_provision
+
+        write_json(config_path, config)
+        result["actions"].append({"path": ".codex/client-tools.local.json", "key": "config.saved",
+                                  "severity": "info", "message": "Saved provisioning config (project, board, statuses, users).", "phase": "apply"})
+
     result["valid"] = not any(item.get("severity") == "error" for item in result["findings"])
     return result
 
@@ -1510,4 +1547,40 @@ def run_environment_lab(args: list[str]) -> int:
 
     result = handler()
     print(_json.dumps(result, indent=2))
+
+    # ── Pretty-print summary if present (e.g. setup-lab) ────────────
+    summary = result.get("summary")
+    if summary:
+        print("=" * 60)
+        print("  🧪  SETUP-LAB COMPLETE — Credentials & URLs")
+        print("=" * 60)
+
+        # Gitea
+        g = summary.get("gitea", {})
+        print(f"\n📦 GITEA — {g.get('url', 'N/A')}")
+        print("-" * 40)
+        for u in g.get("users", []):
+            print(f"  👤 {u.get('username', '?')}  |  pass: {u.get('password', '?')}  |  role: {u.get('role', '?')}")
+
+        # OpenProject
+        op = summary.get("openproject", {})
+        print(f"\n📋 OPENPROJECT — {op.get('url', 'N/A')}")
+        print("-" * 40)
+        for u in op.get("users", []):
+            print(f"  👤 {u.get('username', '?')}  |  pass: {u.get('password', '?')}  |  role: {u.get('role', '?')}")
+        board_url = op.get("board", "")
+        if board_url:
+            print(f"\n  📌 Basic Board: {board_url}")
+
+        # Nexus
+        nx = summary.get("nexus", {})
+        print(f"\n📦 NEXUS — {nx.get('url', 'N/A')}")
+        print("-" * 40)
+        for u in nx.get("users", []):
+            print(f"  👤 {u.get('username', '?')}  |  pass: {u.get('password', '?')}  |  role: {u.get('role', '?')}")
+
+        print("\n" + "=" * 60)
+        print("  ✅ Setup complete!")
+        print("=" * 60)
+
     return 0 if result.get("valid", True) else 1
