@@ -34,6 +34,26 @@ Prefer repository-specific skills and scripts over ad hoc process decisions.
 
 <!-- CACHE BREAKPOINT: End Tier 1 - Stable session context. Dynamic per-turn data below. -->
 
+## Mandatory Skill Declaration
+
+Every agent **must** declare which skills it is activating for each step of the lab flow or any repo interaction. This includes both auto-activated skills and on-demand skills.
+
+**Format**: At the start of each response (after Caveman loading), include a `Skills used:` block listing every activated skill with its intensity/purpose.
+
+**Authority level**: 5 (same as Mandatory First Step, Mandatory MCP Routing).
+
+**Examples**:
+
+```markdown
+Skills used: caveman (full), ponytail (full), security-best-practices (on-demand)
+
+- caveman: terse response format
+- ponytail: code quality review
+- security-best-practices: validating auth implementation
+```
+
+Failure to declare used skills violates repo convention. If a skill is auto-activated (caveman, ponytail), still declare it — do not assume it is implicit.
+
 ## Environment Setup
 
 To configure the local development and delivery environment, run the idempotent all-in-one command:
