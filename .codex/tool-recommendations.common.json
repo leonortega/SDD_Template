@@ -173,7 +173,8 @@
       "requiresIdeRestart": false,
       "requiresSystemReboot": false,
       "userActionRequired": false
-    }
+    },
+
   ],
   "notRecommended": [
     {

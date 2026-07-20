@@ -29,6 +29,7 @@ from ._shared import (
     write_env_file,
     write_json,
 )
+from .tool_installer import install_lefthook
 
 
 # ── Setup Lab (all-in-one idempotent) ───────────────────────────────────
@@ -52,16 +53,19 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
     if early:
         return early
 
-    # 2. Init project profile
+    # 2. Install lefthook git hooks (non-fatal — binary may not be in PATH)
+    _add_step(install_lefthook(root, dry_run), fatal=False)
+
+    # 3. Init project profile
     _add_step(init_project_profile(root, dry_run), fatal=False)
 
-    # 3. Init quality templates
+    # 4. Init quality templates
     _add_step(init_quality_templates(root, dry_run), fatal=False)
 
-    # 4. Build Gitea Actions images (non-fatal — Docker may not be running)
+    # 5. Build Gitea Actions images (non-fatal — Docker may not be running)
     _add_step(build_gitea_actions_images(root, dry_run), fatal=False)
 
-    # 5. Start compose services
+    # 6. Start compose services
     if not dry_run:
         early = _add_step(compose_up())
         if early:
@@ -70,22 +74,22 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
         steps.append({"command": "compose-up", "valid": True, "dryRun": True,
                       "message": "Skipped compose-up in dry-run mode."})
 
-    # 6. Validate observability
+    # 7. Validate observability
     _add_step(validate_observability(root, dry_run), fatal=False)
 
-    # 7. Validate Gitea runner
+    # 8. Validate Gitea runner
     _add_step(validate_gitea_runner(root, dry_run), fatal=False)
 
-    # 8. Provision lab users (Gitea, OpenProject, Nexus)
+    # 9. Provision lab users (Gitea, OpenProject, Nexus)
     _add_step(provision_lab_users(root, dry_run), fatal=False)
 
-    # 9. Push v0 code to Gitea (create main branch, push dev)
+    # 10. Push v0 code to Gitea (create main branch, push dev)
     _add_step(push_to_gitea(root, dry_run), fatal=False)
 
-    # 10. Set Gitea branch protection for dev/main
+    # 11. Set Gitea branch protection for dev/main
     _add_step(set_gitea_branch_protection(root, dry_run), fatal=False)
 
-    # 11. Scaffold K8s deployment files (validates Docker Desktop K8s + creates manifests)
+    # 12. Scaffold K8s deployment files (validates Docker Desktop K8s + creates manifests)
     _add_step(scaffold_k8s(root, dry_run), fatal=False)
 
     result["steps"] = steps
