@@ -54,6 +54,39 @@ Skills used: caveman (full), ponytail (full), security-best-practices (on-demand
 
 Failure to declare used skills violates repo convention. If a skill is auto-activated (caveman, ponytail), still declare it — do not assume it is implicit.
 
+## Mandatory Pre-Implementation Skill Review
+
+Before any code change — whether implementing a ticket, fixing a bug, or adding a feature — every agent **must** review all installed skills for relevance. This is a hard gate: no code is edited until the review is complete.
+
+**Authority level**: 5 (same as Mandatory First Step, Mandatory Skill Declaration, Mandatory MCP Routing).
+
+### Review Process
+
+1. **List installed skills:** Read the `.codex/skills/` directory and enumerate every installed skill (each subdirectory containing a `SKILL.md`).
+2. **Assess relevance:** For each skill, determine whether its rules, patterns, or constraints apply to the current task:
+   - **Relevant** → Load the skill via `skill('<name>')` and apply its rules during implementation.
+   - **Irrelevant** → State the specific reason it does not apply (e.g., "C# coding standards — this is a TypeScript project", "View transitions — no route animations in this ticket's scope").
+3. **Declare with justification:** The `Skills used:` block (required by Mandatory Skill Declaration) must document the outcome of this review:
+   - List every installed skill and whether it is active or skipped.
+   - For skipped skills, include a brief rationale.
+4. **Blockers:** If a required skill exists in `.codex/skills/` but cannot be loaded or applied (e.g., broken `SKILL.md`, conflicting instructions), stop and report the blocker before editing code. Apply Tool And Skill Blocker Consent from `delivery-contract-core.md`.
+
+### Example Declaration
+
+```markdown
+Skills used:
+- caveman (auto, full): terse format
+- ponytail (auto, full): code quality
+- vercel-react-best-practices (on-demand): React performance patterns for component optimization
+- clean-code (on-demand): naming, function size, error handling
+- solid-principles (on-demand): component interface design
+- modern-csharp-coding-standards (skipped — C# only, not a C# project)
+- vercel-react-view-transitions (skipped — no route animations in scope)
+- clean-architecture (skipped — overkill for a 6-component SPA landing page)
+```
+
+Omit this review only when the agent is performing purely read-only work (asking questions, exploring, reading files). Any mutation — including config changes, documentation edits, or code changes — triggers this gate.
+
 ## Environment Setup
 
 To configure the local development and delivery environment, run the idempotent all-in-one command:
@@ -198,4 +231,5 @@ This routing is mandatory (authority level 5 per `docs/context-management.md` �
 - Skills are applied in priority order: caveman > ponytail > others
 - Caveman skill auto-activates with intensity: full (unless specified otherwise)
 - Ponytail skill auto-activates on every prompt with intensity: full
-- Other skills, MCP servers, and capabilities activate on demand when relevant to the task
+- Other skills, MCP servers, and capabilities activate per the **Mandatory Pre-Implementation Skill Review** scan results — the scan determines which skills are relevant; activation triggers per-task when implementation begins
+- The scan is a **code-change gate**, not a conversation-start gate — purely read-only work (asking questions, exploring, reading files) does not require the scan
