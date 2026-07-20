@@ -1,6 +1,19 @@
 # Deployment
 
+## Technology Stack And Tool Set
+
 Kubernetes is the **only** deployment target for this project. The cluster runs on **Docker Desktop's built-in Kubernetes** (single-node, same Docker daemon as the host).
+
+| Layer | Status | Detail |
+|---|---|---|
+| Deployment target | Docker Desktop K8s | Single-node Kubernetes on Docker Desktop |
+| Container registry | Nexus (:8083) | Docker hosted repository for CI-built images |
+| Artifact storage | Nexus (:8088) | Raw hosted repository for build artifacts and manifests |
+| Environments | dev, qa, prod | Three K8s namespaces (sdd-dev, sdd-qa, sdd-prod) with Kustomize overlays |
+| CI/CD | Gitea Actions | PR validation + package-deploy workflows |
+| Observability | Grafana + Seq + Dozzle | Health dashboards, log search, container monitoring |
+
+No app target is currently deployable. Product apps will be added through `infra/deployment/apps.json` when the product stack is defined.
 
 ## Architecture Overview
 
