@@ -222,7 +222,6 @@ def run_configure_mode(mode: str, root: Path, values: dict[str, Any], dry_run: b
         set_project_stack,
         set_project_stack_metadata,
         set_quality_config,
-        set_recommended_tools,
         split_infra_env,
         validate_gitea_runner,
         validate_observability,
@@ -237,7 +236,6 @@ def run_configure_mode(mode: str, root: Path, values: dict[str, Any], dry_run: b
         "SetOpenProjectEnv": set_openproject_env,
         "SetMonitoringEnv": set_monitoring_env,
         "SetGiteaRunner": set_gitea_runner_env,
-        "SetRecommendedTools": set_recommended_tools,
     }
     if mode in direct_with_values:
         return direct_with_values[mode](root, values, dry_run)
@@ -256,8 +254,8 @@ def run_configure_mode(mode: str, root: Path, values: dict[str, Any], dry_run: b
         return direct_no_values[mode](root, dry_run)
 
     # Modes implemented in guidance module
-    if mode in ("DiscoverProjectGuidance", "AcquireProjectGuidance", "MapProjectGuidanceStep"):
-        from .guidance import acquire_project_guidance, discover_project_guidance, map_project_guidance_step
+    if mode in ("DiscoverProjectGuidance", "AcquireProjectGuidance", "MapProjectGuidanceStep", "SetRecommendedTools"):
+        from .guidance import acquire_project_guidance, discover_project_guidance, map_project_guidance_step, set_recommended_tools
 
         if mode == "DiscoverProjectGuidance":
             return discover_project_guidance(root, dry_run, **values)
@@ -269,6 +267,8 @@ def run_configure_mode(mode: str, root: Path, values: dict[str, Any], dry_run: b
             if isinstance(recommendation_ids, str):
                 recommendation_ids = [r.strip() for r in recommendation_ids.split(",") if r.strip()]
             return map_project_guidance_step(root, workflow_step, recommendation_ids, dry_run)
+        if mode == "SetRecommendedTools":
+            return set_recommended_tools(root, values, dry_run)
 
     # Modes implemented in dev_flow module
     if mode in ("SyncWorktreeLocalConfig", "EnsureDeliveryContext"):

@@ -1,5 +1,22 @@
 # Architecture
 
+## Technology Stack And Tool Set
+
+This repository is a product-free SDLC shell. No product stack is currently selected.
+
+| Layer | Status | Detail |
+|---|---|---|
+| Frontend | Not selected | No frontend framework configured |
+| Backend | Not selected | No backend framework configured |
+| Database | Not selected | No database engine configured |
+| Languages | None | Technology detection tags will be populated by `guidance discover` |
+| Frameworks | None | Framework guidance will be added when a product stack is chosen |
+| Test frameworks | None | TDD and Playwright skills remain available for future product work |
+
+**Delivery tooling:** Gitea (source control + CI), OpenProject (tickets), Nexus (artifacts), Grafana/Seq/Dozzle (observability), Docker Desktop K8s (deployment target).
+
+For stack configuration, see `.codex/project-profile.json` (tracked) and `.codex/project-profile.local.json` (local overlay).
+
 This repository is a product-free SDLC shell. The previous sample application has been removed so a new product can start from zero while reusing the delivery workflow.
 
 ## System Topology

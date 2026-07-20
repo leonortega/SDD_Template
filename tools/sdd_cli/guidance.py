@@ -281,11 +281,40 @@ def write_skill_index(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
 # ── CLI entry point ──────────────────────────────────────────────────────
 
+def set_recommended_tools(root: Path, values: dict[str, Any], dry_run: bool = False) -> dict[str, Any]:
+    """Set accepted/dismissed tool recommendations in tool-recommendations.local.json."""
+    from ._shared import configure_result, read_json, write_json as _write_json
+    result = configure_result("SetRecommendedTools", dry_run, write_enabled=not dry_run)
+    path = root / ".codex" / "tool-recommendations.local.json"
+    if "accepted" not in values and "dismissed" not in values:
+        return {"mode": "SetRecommendedTools", "valid": False,
+                "errors": ["values.accepted or values.dismissed is required."]}
+    config = read_json(path, optional=True) if path.exists() else {
+        "schemaVersion": 1, "mode": "guarded-auto",
+        "detectedTags": [], "researchTopics": [],
+        "accepted": [], "dismissed": [],
+        "recommendations": [], "notRecommended": [],
+    }
+    for key in ("accepted", "dismissed"):
+        existing = list(config.get(key, []))
+        for item in values.get(key, []):
+            if item not in existing:
+                existing.append(item)
+        config[key] = existing
+        if values.get(key):
+            result["actions"].append({"path": ".codex/tool-recommendations.local.json", "key": f"recommendedTools.{key}",
+                                      "severity": "info", "message": f"Recorded {key} recommendation ids.", "phase": "apply"})
+    result["valid"] = True
+    if not dry_run:
+        _write_json(path, config)
+    return result
+
+
 def run_guidance(args: list[str]) -> int:
     """CLI entry point for guidance commands."""
     import json as _json
     if not args:
-        print("Available: discover, map, acquire, write-skill-index", file=sys.stderr)
+        print("Available: discover, map, acquire, set-recommended-tools, write-skill-index", file=sys.stderr)
         return 1
     subcommand = args[0]
     options = parse_pairs(args[1:])
@@ -295,6 +324,7 @@ def run_guidance(args: list[str]) -> int:
         "discover": lambda: _discover_handler(root, dry_run, options),
         "map": lambda: _map_handler(root, dry_run, options),
         "acquire": lambda: _acquire_handler(root, dry_run, options),
+        "set-recommended-tools": lambda: set_recommended_tools(root, _parse_set_recommended_values(options), dry_run),
         "write-skill-index": lambda: write_skill_index(root, dry_run),
     }
     handler = handlers.get(subcommand)
@@ -337,6 +367,19 @@ def _acquire_handler(root: Path, dry_run: bool, options: dict[str, str]) -> dict
 
 def _parse_list(value: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _parse_set_recommended_values(options: dict[str, str]) -> dict[str, Any]:
+    """Parse accepted/dismissed JSON arrays from CLI options."""
+    import json as _json
+    values: dict[str, Any] = {}
+    for key in ("accepted", "dismissed"):
+        raw = options.get(key, "[]")
+        try:
+            values[key] = _json.loads(raw) if raw else []
+        except _json.JSONDecodeError:
+            values[key] = []
+    return values
 
 
 def _parse_json_list(value: str) -> list[Any]:

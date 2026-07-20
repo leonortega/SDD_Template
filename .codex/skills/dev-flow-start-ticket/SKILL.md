@@ -21,7 +21,7 @@ This skill owns initial creation of ignored `.codex/delivery-context.local.json`
 
 ## Workflow Telemetry
 
-Capture UTC start time before the first ticket-specific mutation. When OpenProject time-entry telemetry is available, create or update the `dev-flow-start-ticket` time entry with marker `IA generated workflow telemetry: {ticketKey}:dev-flow-start-ticket`. If direct time telemetry is unavailable, initialize fallback `.codex/agent-telemetry.local.jsonl` and append a row with `python -m tools.sdd_cli dev-flow append-telemetry -TicketKey {ticketKey}`. On resume or idempotent reuse, append or update another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-flow-start-ticket`, `agentRole=ticketStarter`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If a blocker happens before a ticket key is selected, report that no telemetry row was possible.
+Capture UTC start time before the first ticket-specific mutation. When OpenProject time-entry telemetry is available, create or update the `dev-flow-start-ticket` time entry with marker `IA generated workflow telemetry: {ticketKey}:dev-flow-start-ticket`. If direct time telemetry is unavailable, initialize fallback `.codex/agent-telemetry.local.jsonl` and append a row with `python -m tools.sdd_cli dev-flow append-telemetry --ticket-key {ticketKey} --input-json '{"workflowStage":"dev-flow-start-ticket","agentRole":"ticketStarter","outcome":"success"}'`. On resume or idempotent reuse, append or update another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-flow-start-ticket`, `agentRole=ticketStarter`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If a blocker happens before a ticket key is selected, report that no telemetry row was possible.
 
 ## Configuration
 
@@ -52,6 +52,22 @@ python -m tools.sdd_cli guidance discover
 
 If the audit reports any `stack-context.*` warning, if `DiscoverProjectGuidance` reports missing suggested skills or guidance that the operator has not reviewed, or if the required files are missing or placeholder-only, stop before branch creation, OpenProject description updates, comments, state changes, ticket-lock writes, or OpenSpec proposal creation. Route to `$configure-dev-environment` plus `project-guidance-discover` to define the stack/tooling docs, complete `openspec/config.yaml`, research extra useful guidance from detected project signals, confirm or dismiss suggestions, and update the local recommendation catalog first.
 
+After the user confirms or dismisses suggestions, persist the state with:
+
+```bash
+python -m tools.sdd_cli guidance set-recommended-tools --accepted '["id1","id2"]' --dismissed '["id3"]'
+```
+
+Before creating the OpenSpec proposal (step 15), verify that the `openspec` CLI is available and the project is initialized:
+
+```bash
+which openspec || where openspec || echo "openspec CLI not found — install via: npm install -g @fission-ai/openspec@latest"
+openspec init  # idempotent, preserves existing config
+openspec update  # sync AI agent instructions
+```
+
+If the CLI is missing, attempt auto-installation: `npm install -g @fission-ai/openspec@latest`, then run `openspec init && openspec update`.
+
 ## Workflow
 
 ### No Ticket Specified
@@ -71,14 +87,14 @@ If the audit reports any `stack-context.*` warning, if `DiscoverProjectGuidance`
    - `blocked`: stop before branch creation, ticket status updates, comments, ticket-lock writes, or OpenSpec proposal creation. Report the missing product or technical intent.
 3. Run the Stack Context Preflight. If stack/tooling docs, OpenSpec config, local project guidance catalog, or project guidance discovery review are missing or drifted, stop and route to `configure-dev-environment` and `project-guidance-discover` before mutating Git, ticket provider, or OpenSpec.
 4. Check `git status --porcelain`. If any output exists, stop and report changed files.
-5. Prepare workflow telemetry for the selected ticket. Prefer OpenProject time entries with the configured `openProject.timeTelemetry` activity. Initialize and clear `.codex/agent-telemetry.local.jsonl` with `python -m tools.sdd_cli dev-flow init-telemetry -TicketKey {ticketKey}` only when the OpenProject time-entry path is unavailable. Do not initialize telemetry when only listing Todo tickets.
+5. Prepare workflow telemetry for the selected ticket. Prefer OpenProject time entries with the configured `openProject.timeTelemetry` activity. Initialize and clear `.codex/agent-telemetry.local.jsonl` with `python -m tools.sdd_cli dev-flow init-telemetry --ticket-key {ticketKey}` only when the OpenProject time-entry path is unavailable. Do not initialize telemetry when only listing Todo tickets.
 6. Switch to the configured base branch and run `git pull --ff-only`.
 7. Create or reuse the configured branch name.
-8. Pre-scan branch conflicts before creating or switching branches:
+8. Derive the repository remote name from `git remote` output (e.g., `origin` or `gitea`). Pre-scan branch conflicts before creating or switching branches:
    - `git show-ref --verify refs/heads/{branchName}` for a local branch.
-   - `git ls-remote --heads origin {branchName}` for a remote branch.
+   - `git ls-remote --heads {remoteName} {branchName}` for a remote branch.
    If both exist and point to different commits, stop and report the conflict. If the remote branch exists and the local branch is missing, create the local branch from the remote only when it descends from the configured base branch.
-9. Push the branch to repository/review provider with upstream tracking using `git push -u origin {branchName}`. If the upstream branch already exists and points to the same commit, treat it as complete; if the push is rejected or would require a non-fast-forward update, stop and report the branch issue.
+9. Push the branch to repository/review provider with upstream tracking using `git push -u {remoteName} {branchName}` (where `{remoteName}` is the detected remote from step 8). If the upstream branch already exists and points to the same commit, treat it as complete; if the push is rejected or would require a non-fast-forward update, stop and report the branch issue.
 10. Analyze the ticket description in an OpenSpec explore style unless OpenSpec is explicitly skipped by policy below.
 11. Update only the managed generated block in the ticket description.
 12. Add a ticket comment with the branch name, base branch, pushed repository branch, and OpenSpec decision, unless a generated comment for the same branch already exists.

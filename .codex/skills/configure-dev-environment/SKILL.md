@@ -13,6 +13,24 @@ The lab stack is **always** Docker Compose with Gitea + OpenProject + Nexus + Mo
 
 This skill replaces the old separate skills: `configure-ticket-workflow`, `configure-source-control`, `configure-ci-runner`, `configure-artifact-repository`, `configure-quality-gates`, and `configure-observability`. All domain setup flows are now inline below.
 
+## Prerequisites
+
+Before running quick setup, ensure the following CLI tools are available on the host:
+
+| Tool | Install Command | Required For |
+|------|----------------|--------------|
+| Docker Desktop | [docker.com](https://www.docker.com/products/docker-desktop/) | Compose services, container builds |
+| Node.js (v20+) | [nodejs.org](https://nodejs.org/) or `winget install OpenJS.NodeJS` | OpenSpec CLI, frontend builds |
+| OpenSpec CLI | `npm install -g @fission-ai/openspec@latest` | OpenSpec proposal workflow (`/opsx:propose`, `openspec status`, `openspec instructions`) |
+
+Verify tools are installed:
+
+```bash
+node --version && npm --version && openspec --version
+```
+
+If OpenSpec CLI is missing, install with: `npm install -g @fission-ai/openspec@latest`
+
 ## Quick Setup
 
 Run the idempotent all-in-one command:
