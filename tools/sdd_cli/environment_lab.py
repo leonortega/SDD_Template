@@ -841,45 +841,14 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
             add_bucket_item(result["findings"], f"openproject/users/{u['login']}", "user.create",
                             f"OpenProject user creation returned {status}: {data[:200]}", "warning", "apply")
 
-    # ── 2b. OpenProject: use existing statuses (creation via API not supported) ──
-    # OpenProject does not allow creating statuses via REST API (POST returns 404).
-    # Instead, we fetch the existing statuses and map them to our workflow names.
-    op_status_map: dict[str, int] = {}
-    st_all, st_all_dt = _op_api("GET", "/api/v3/statuses")
-    if st_all == 200:
-        try:
-            parsed = json.loads(st_all_dt)
-            for s in parsed.get("_embedded", {}).get("elements", []):
-                name = s.get("name", "")
-                sid = s.get("id", 0)
-                if name and sid:
-                    op_status_map[name] = sid
-        except (json.JSONDecodeError, KeyError):
-            pass
-
-    # Map desired workflow status names to existing OpenProject status names
-    # Explicit mapping avoids fragile fuzzy matching across OP versions
-    STATUS_NAME_MAP: dict[str, str] = {
-        "New": "New",
-        "To Do": "To be scheduled",
-        "In Progress": "In progress",
-        "QA": "In testing",
-        "Done": "Closed",
-    }
-    status_name_to_id: dict[str, int] = {}
-    for desired_name, existing_name in STATUS_NAME_MAP.items():
-        sid = op_status_map.get(existing_name, 0)
-        if sid:
-            status_name_to_id[desired_name] = sid
-
-    created_statuses = [{"id": sid, "name": name} for name, sid in status_name_to_id.items() if sid]
-    for name, sid in status_name_to_id.items():
-        if sid:
-            result["actions"].append({"path": f"openproject/statuses/{name}", "key": "status.mapped",
-                                      "severity": "info", "message": f"OpenProject status '{name}' mapped to id={sid}.", "phase": "apply"})
-        else:
-            add_bucket_item(result["findings"], f"openproject/statuses/{name}", "status.not-found",
-                            f"Could not find OpenProject status matching '{name}'.", "warning", "apply")
+    # ── 2b. OpenProject: define board list names (not tied to OP statuses) ──
+    # These are pure labels on the board, NOT linked to OpenProject statuses.
+    # Dragging a work package between these columns does NOT trigger status
+    # transitions, so the board stays flexible regardless of OP workflow rules.
+    BOARD_LIST_NAMES = ["New", "To Do", "In Progress", "In Review", "QA", "Done"]
+    for name in BOARD_LIST_NAMES:
+        result["actions"].append({"path": f"openproject/boards/e2e-test/lists/{name}", "key": "board.list",
+                                  "severity": "info", "message": f"Board list '{name}' configured.", "phase": "apply"})
 
     # ── 2c. OpenProject: create project e2eProject ────────────────────
     project_payload = {
@@ -951,113 +920,103 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
         result["actions"].append({"path": "openproject/members", "key": "member.plan",
                                   "severity": "info", "message": "Would add FirstUser and SecondUser as project members.", "phase": "apply"})
 
-    # ── 2e. OpenProject: create Basic board e2e-test with statuses ────
-    # OpenProject 17+ may not expose /api/v3/boards via REST — fall back to Rails console
-    board_status_hrefs = [f"/api/v3/statuses/{s['id']}" for s in created_statuses if s.get("id")]
-    if board_status_hrefs:
-        board_payload = {
-            "name": "e2e-test",
-            "boardType": "grid",
-            "gridType": "Board",
-            "_links": {
-                "project": {"href": "/api/v3/projects/e2eproject"},
-                "attribute": {"href": "/api/v3/schema/attributes/status"},
-                "availableAttributes": [{"href": href} for href in board_status_hrefs],
-            },
-        }
-        brd_st, brd_dt = _op_api("POST", "/api/v3/boards", body=board_payload)
-        if brd_st == 201:
-            result["actions"].append({"path": "openproject/boards/e2e-test", "key": "board.created",
-                                      "severity": "info", "message": "OpenProject Basic board e2e-test created.", "phase": "apply"})
-        elif brd_st == 422:
-            result["actions"].append({"path": "openproject/boards/e2e-test", "key": "board.exists",
-                                      "severity": "info", "message": "OpenProject Basic board e2e-test already exists.", "phase": "apply"})
-        elif brd_st == 404:
-            # Boards API not exposed via REST — try Rails console
-            # Write Ruby script to local temp file, copy to container, execute
-            # Build status id and label lists from the already-resolved STATUS_NAME_MAP
-            status_id_list = [str(s["id"]) for s in created_statuses if s.get("id")]
-            status_ids_str = ", ".join(status_id_list)
-            status_labels_str = "[" + ", ".join(f'\"{n}\"' for n in STATUS_NAME_MAP) + "]"
-            ruby_script = (
-                'project = Project.find_by(identifier: "e2eproject")\n'
-                'admin = User.find_by(login: "admin")\n'
-                'unless project && admin\n'
-                '  puts "Project or admin not found"\n'
-                '  exit 1\n'
-                'end\n'
-                '::Boards::Grid.where(project: project, name: "e2e-test").destroy_all\n'
-                'status_ids = [' + status_ids_str + ']\n'
-                'status_labels = ' + status_labels_str + '\n'
-                'board = ::Boards::Grid.create!(\n'
-                '  project: project,\n'
-                '  name: "e2e-test",\n'
-                '  row_count: 1,\n'
-                '  column_count: status_ids.length,\n'
-                '  user_id: admin.id\n'
-                ')\n'
-                'status_ids.each_with_index do |sid, idx|\n'
-                '  query = ::Query.new(\n'
-                '    name: status_labels[idx],\n'
-                '    project: project,\n'
-                '    user_id: admin.id,\n'
-                '    public: true,\n'
-                '    include_subprojects: false,\n'
-                '    display_sums: false\n'
-                '  )\n'
-                '  query.add_filter("status_id", "=", [sid.to_s])\n'
-                '  query.save!(validate: false)\n'
-                '  ::Grids::Widget.create!(\n'
-                '    grid: board,\n'
-                '    identifier: "work_package_query",\n'
-                '    start_row: 1,\n'
-                '    end_row: 2,\n'
-                '    start_column: idx + 1,\n'
-                '    end_column: idx + 2,\n'
-                '    options: {"query_id" => query.id}\n'
-                '  )\n'
-                'end\n'
-                'puts "Board e2e-test created with #{status_ids.length} columns"\n'
+    # ── 2e. OpenProject: create Basic board e2e-test with list names ──
+    # OpenProject 17+ may not expose /api/v3/boards via REST — fall back to Rails console.
+    # Board columns are NOT tied to OpenProject statuses — they're plain label columns
+    # so work packages can be dragged freely between them without status transition blocks.
+    brd_st, brd_dt = _op_api("POST", "/api/v3/boards", body={
+        "name": "e2e-test",
+        "boardType": "grid",
+        "gridType": "Board",
+        "_links": {
+            "project": {"href": "/api/v3/projects/e2eproject"},
+        },
+    })
+    if brd_st == 201:
+        result["actions"].append({"path": "openproject/boards/e2e-test", "key": "board.created",
+                                  "severity": "info", "message": "OpenProject Basic board e2e-test created.", "phase": "apply"})
+    elif brd_st == 422:
+        result["actions"].append({"path": "openproject/boards/e2e-test", "key": "board.exists",
+                                  "severity": "info", "message": "OpenProject Basic board e2e-test already exists.", "phase": "apply"})
+    elif brd_st == 404:
+        # Boards API not exposed via REST — try Rails console
+        # Write Ruby script to local temp file, copy to container, execute
+        # Board lists are NOT status-filtered — they're plain label columns
+        board_lists_str = "[" + ", ".join(f'\"{n}\"' for n in BOARD_LIST_NAMES) + "]"
+        ruby_script = (
+            'project = Project.find_by(identifier: "e2eproject")\n'
+            'admin = User.find_by(login: "admin")\n'
+            'unless project && admin\n'
+            '  puts "Project or admin not found"\n'
+            '  exit 1\n'
+            'end\n'
+            '::Boards::Grid.where(project: project, name: "e2e-test").destroy_all\n'
+            'board_labels = ' + board_lists_str + '\n'
+            'board = ::Boards::Grid.create!(\n'
+            '  project: project,\n'
+            '  name: "e2e-test",\n'
+            '  row_count: 1,\n'
+            '  column_count: board_labels.length,\n'
+            '  user_id: admin.id\n'
+            ')\n'
+            'board_labels.each_with_index do |label, idx|\n'
+            '  query = ::Query.new(\n'
+            '    name: label,\n'
+            '    project: project,\n'
+            '    user_id: admin.id,\n'
+            '    public: true,\n'
+            '    include_subprojects: false,\n'
+            '    display_sums: false\n'
+            '  )\n'
+            '  query.save!(validate: false)\n'
+            '  ::Grids::Widget.create!(\n'
+            '    grid: board,\n'
+            '    identifier: "work_package_query",\n'
+            '    start_row: 1,\n'
+            '    end_row: 2,\n'
+            '    start_column: idx + 1,\n'
+            '    end_column: idx + 2,\n'
+            '    options: {"query_id" => query.id}\n'
+            '  )\n'
+            'end\n'
+            'puts "Board e2e-test created with #{board_labels.length} columns"\n'
+        )
+        tmp_path = None
+        try:
+            tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".rb", delete=False)
+            tmp.write(ruby_script)
+            tmp.close()
+            tmp_path = tmp.name
+            subprocess.run(
+                ["docker", "cp", tmp_path, "agentic-e2e-openproject-1:/tmp/create_board.rb"],
+                capture_output=True, timeout=30,
             )
-            tmp_path = None
-            try:
-                tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".rb", delete=False)
-                tmp.write(ruby_script)
-                tmp.close()
-                tmp_path = tmp.name
-                subprocess.run(
-                    ["docker", "cp", tmp_path, "agentic-e2e-openproject-1:/tmp/create_board.rb"],
-                    capture_output=True, timeout=30,
-                )
-                rails_result = run_native(
-                    ["docker", "exec", "agentic-e2e-openproject-1", "sh", "-c",
-                     "cd /app && bundle exec rails runner /tmp/create_board.rb"],
-                    REPO_ROOT, timeout=60,
-                )
-            except Exception as ex:
-                add_bucket_item(result["findings"], "openproject/boards/e2e-test", "board.create",
-                                f"OpenProject board creation via Rails console failed: {ex}", "warning", "apply")
-                rails_result = {"returncode": -1, "stdout": "", "stderr": str(ex)}
-            finally:
-                if tmp_path:
-                    Path(tmp_path).unlink(missing_ok=True)
-            if rails_result["returncode"] == 0 and "Board created" in rails_result["stdout"]:
-                result["actions"].append({"path": "openproject/boards/e2e-test", "key": "board.created",
-                                          "severity": "info",
-                                          "message": "OpenProject Basic board e2e-test created via Rails console.", "phase": "apply"})
-            elif "already exists" in rails_result.get("stdout", "") or "already exists" in rails_result.get("stderr", ""):
-                result["actions"].append({"path": "openproject/boards/e2e-test", "key": "board.exists",
-                                          "severity": "info",
-                                          "message": "OpenProject Basic board e2e-test already exists.", "phase": "apply"})
-            else:
-                add_bucket_item(result["findings"], "openproject/boards/e2e-test", "board.create",
-                                f"OpenProject board creation via Rails console failed: {rails_result['stderr'][:200]}", "warning", "apply")
+            rails_result = run_native(
+                ["docker", "exec", "agentic-e2e-openproject-1", "sh", "-c",
+                 "cd /app && bundle exec rails runner /tmp/create_board.rb"],
+                REPO_ROOT, timeout=60,
+            )
+        except Exception as ex:
+            add_bucket_item(result["findings"], "openproject/boards/e2e-test", "board.create",
+                            f"OpenProject board creation via Rails console failed: {ex}", "warning", "apply")
+            rails_result = {"returncode": -1, "stdout": "", "stderr": str(ex)}
+        finally:
+            if tmp_path:
+                Path(tmp_path).unlink(missing_ok=True)
+        if rails_result["returncode"] == 0 and "Board created" in rails_result["stdout"]:
+            result["actions"].append({"path": "openproject/boards/e2e-test", "key": "board.created",
+                                      "severity": "info",
+                                      "message": "OpenProject Basic board e2e-test created via Rails console with plain label columns.", "phase": "apply"})
+        elif "already exists" in rails_result.get("stdout", "") or "already exists" in rails_result.get("stderr", ""):
+            result["actions"].append({"path": "openproject/boards/e2e-test", "key": "board.exists",
+                                      "severity": "info",
+                                      "message": "OpenProject Basic board e2e-test already exists.", "phase": "apply"})
         else:
             add_bucket_item(result["findings"], "openproject/boards/e2e-test", "board.create",
-                            f"OpenProject board creation returned {brd_st}: {brd_dt[:200]}", "warning", "apply")
+                            f"OpenProject board creation via Rails console failed: {rails_result['stderr'][:200]}", "warning", "apply")
     else:
         add_bucket_item(result["findings"], "openproject/boards/e2e-test", "board.create",
-                        "No status IDs available to create board.", "warning", "apply")
+                        f"OpenProject board creation returned {brd_st}: {brd_dt[:200]}", "warning", "apply")
 
     # ── 5. OpenProject: generate API key and register MCP server ──────────
     op_api_key: str | None = None
@@ -1124,9 +1083,6 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
         config_path = root / ".codex" / "client-tools.local.json"
         config = read_json(config_path, optional=True)
 
-        # Build status name->id mapping
-        status_map = {s["name"]: s.get("id", 0) for s in created_statuses}
-
         # Merge provisioning info into openProject section
         op_provision = {
             "project": {
@@ -1136,8 +1092,8 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
             "board": {
                 "name": "e2e-test",
                 "url": "http://localhost:8080/projects/e2eproject/boards",
+                "lists": BOARD_LIST_NAMES,
             },
-            "statuses": status_map,
         }
         config.setdefault("openProject", {})
         config["openProject"]["provisioning"] = op_provision
@@ -1154,7 +1110,7 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
         write_json(config_path, config)
         result["actions"].append({"path": ".codex/client-tools.local.json", "key": "config.saved",
-                                  "severity": "info", "message": "Saved provisioning config (project, board, statuses, users).", "phase": "apply"})
+                                  "severity": "info", "message": "Saved provisioning config (project, board with plain lists, users).", "phase": "apply"})
 
     result["valid"] = not any(item.get("severity") == "error" for item in result["findings"])
     return result
@@ -1274,14 +1230,10 @@ def push_to_gitea(root: Path, dry_run: bool = False) -> dict[str, Any]:
                         f"Push main failed: {push_main['stderr']}", "error", "apply")
 
     # ── 6. Add provisioned users as repo collaborators ─────────────────
+    # Users are read from gitea config (loaded from client-tools.local.json at line 1174),
+    # populated by provision_lab_users() which runs before push_to_gitea() in setup-lab order.
     provisioning = gitea.get("provisioning", {})
     provisioned_users = provisioning.get("users", [])
-    if not provisioned_users:
-        # Fallback: read hard-coded users from client-tools if provisioning key missing
-        client_config = read_json(root / ".codex" / "client-tools.local.json", optional=True) or {}
-        gitea_config = client_config.get("gitea", {})
-        provisioning = gitea_config.get("provisioning", {})
-        provisioned_users = provisioning.get("users", [])
 
     if provisioned_users:
         parsed = urlparse(base_url)
