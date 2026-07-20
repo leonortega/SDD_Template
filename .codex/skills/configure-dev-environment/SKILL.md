@@ -275,7 +275,8 @@ Configure the CI runner for PR validation and deployment jobs.
 1. Run `python -m tools.sdd_cli environment-lab init-local-files` to create `infra/gitea/runner.env` if missing.
 2. **Generate a runner registration token** from Gitea via API:
    ```bash
-   curl -s -X POST -u 'ADMIN_USER:ADMIN_PASS' \
+   # gitleaks:allow
+   curl -s -X POST -u "${ADMIN_USER:?}:${ADMIN_PASS:?}" \
      http://localhost:3000/api/v1/admin/runners/registration-token \
      | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])"
    ```
@@ -295,7 +296,8 @@ Configure the CI runner for PR validation and deployment jobs.
    ```
 5. Wait 5 seconds, then **verify the runner is registered and online**:
    ```bash
-   curl -s -u 'ADMIN_USER:ADMIN_PASS' http://localhost:3000/api/v1/admin/runners | python3 -m json.tool
+   # gitleaks:allow
+   curl -s -u "${ADMIN_USER:?}:${ADMIN_PASS:?}" http://localhost:3000/api/v1/admin/runners | python3 -m json.tool
    ```
    The response should contain a runner with `"online": true`.
 6. Run `python -m tools.sdd_cli environment-lab build-gitea-images` before any CI workflow runs.
