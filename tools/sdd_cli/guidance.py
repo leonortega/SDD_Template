@@ -57,7 +57,9 @@ def discover_project_guidance(root: Path, dry_run: bool = False, **values: Any) 
 
     # Search for community skills from detected stack tags and general topics
     detected_tags = audit.get("detectedTags", [])
-    skill_search_results = _search_skills_from_tags(root, detected_tags, dry_run or bool(values.get("confirmed")))
+    # Always run the skill search when not in dry-run mode, even if --confirmed is set
+    # (confirmed controls persistence, not discovery)
+    skill_search_results = _search_skills_from_tags(root, detected_tags, dry_run)
     if skill_search_results:
         # Add community-sourced skills to suggestions
         existing_ids = {item["id"] for item in recommendations}
@@ -211,48 +213,39 @@ def acquire_project_guidance(root: Path, dry_run: bool = False, **values: Any) -
         if item.get("userActionRequired"):
             result["warnings"].append({"path": name, "key": "guarded-install-plan", "severity": "warning",
                                        "message": "User action is required for this guarded install.", "phase": "plan"})
-        # Handle skills-cli-add — install via npx skills add
+        # Handle skills-cli-add — install via npx skills add, with git clone fallback
         if install_method == "skills-cli-add":
             install_cmd = item.get("installCommand", "")
-            if install_cmd:
-                if dry_run:
-                    result["actions"].append({"path": name, "key": "skills-cli-add", "severity": "info",
-                                              "message": f"Would run: {install_cmd}", "phase": "plan"})
-                else:
-                    install_result = run_native(install_cmd.split(), root, timeout=120)
-                    if install_result["returncode"] == 0:
-                        result["actions"].append({"path": name, "key": "skills-cli-add", "severity": "info",
-                                                  "message": f"Installed skill via {install_cmd}", "phase": "apply"})
-                        # After installing a skill into .codex/skills, sync to .cline/skills via create_skill_links.py
-                        skill_links_script = root / ".cline" / "create_skill_links.py"
-                        if skill_links_script.exists():
-                            links_result = run_native([sys.executable, str(skill_links_script)], root, timeout=30)
-                            if links_result["returncode"] == 0:
-                                result["actions"].append({"path": ".cline/skills", "key": "skill-links", "severity": "info",
-                                                          "message": f"Ran create_skill_links.py to sync .codex/skills → .cline/skills.", "phase": "apply"})
-                            else:
-                                add_bucket_item(
-                                    result["findings"], ".cline/create_skill_links.py", "link-failed",
-                                    f"Could not sync skills to .cline: {links_result['stderr'][:200]}",
-                                    "warning", "apply",
-                                )
-                        else:
-                            add_bucket_item(
-                                result["findings"], ".cline/create_skill_links.py", "script-missing",
-                                "create_skill_links.py not found — .cline/skills will not be synced.",
-                                "warning", "post-start",
-                            )
-                    else:
-                        add_bucket_item(
-                            result["findings"], name, "install.failed",
-                            f"Could not install skill '{name}': {install_result['stderr'][:200]}",
-                            "warning", "apply",
-                        )
-            else:
+            if not install_cmd:
                 add_bucket_item(
                     result["findings"], name, "install.no-command",
                     f"skills-cli-add item '{name}' has no installCommand.",
                     "warning", "pre-start",
+                )
+                continue
+            if dry_run:
+                result["actions"].append({"path": name, "key": "skills-cli-add", "severity": "info",
+                                          "message": f"Would run: {install_cmd}", "phase": "plan"})
+                continue
+            # Attempt 1: npx skills add -y (non-interactive, short timeout)
+            install_result = run_native(install_cmd.split(), root, timeout=30)
+            if install_result["returncode"] == 0:
+                result["actions"].append({"path": name, "key": "skills-cli-add", "severity": "info",
+                                          "message": f"Installed skill via {install_cmd}", "phase": "apply"})
+                _run_skill_links(root, result)
+                continue
+            # Attempt 2: git clone fallback (when npx skills add fails/times out)
+            clone_ok = _install_skill_via_clone(root, install_cmd, name)
+            if clone_ok:
+                result["actions"].append({"path": name, "key": "skills-cli-add", "severity": "info",
+                                          "message": f"Installed skill via git clone fallback from {install_cmd}",
+                                          "phase": "apply"})
+                _run_skill_links(root, result)
+            else:
+                add_bucket_item(
+                    result["findings"], name, "install.failed",
+                    f"Could not install skill '{name}' via npx or git clone: {install_result['stderr'][:200]}",
+                    "warning", "apply",
                 )
             continue
         if item.get("installMethod") == "manual-copy" and item.get("sourceKind") is None:
@@ -438,24 +431,24 @@ def run_guidance(args: list[str]) -> int:
 
 def _discover_handler(root: Path, dry_run: bool, options: dict[str, str]) -> dict[str, Any]:
     confirmed = _parse_list(options.get("confirmed", ""))
-    additional = _parse_json_list(options.get("additionalSkills", "[]"))
+    additional = _parse_json_list(options.get("additional-skills", "[]"))
     return discover_project_guidance(
         root, dry_run,
         confirmed=confirmed,
-        persistLocal=options.get("persistLocal", "false").lower() == "true",
+        persistLocal=options.get("persist-local", "false").lower() == "true",
         additionalSkills=additional,
     )
 
 
 def _map_handler(root: Path, dry_run: bool, options: dict[str, str]) -> dict[str, Any]:
-    step = options.get("workflowStep", "")
-    ids = _parse_list(options.get("recommendationIds", ""))
+    step = options.get("workflow-step", "")
+    ids = _parse_list(options.get("recommendation-ids", ""))
     return map_project_guidance_step(root, step, ids, dry_run)
 
 
 def _acquire_handler(root: Path, dry_run: bool, options: dict[str, str]) -> dict[str, Any]:
     import json as _json
-    guidance_json = options.get("finalConfirmedGuidance", "[]")
+    guidance_json = options.get("final-confirmed-guidance", "[]")
     try:
         guidance = _json.loads(guidance_json) if guidance_json else []
     except Exception:
@@ -499,6 +492,130 @@ def _normalize_added_guidance(items: list[Any]) -> list[dict[str, Any]]:
         elif isinstance(item, dict):
             normalized.append(item)
     return normalized
+
+
+# ── Skill install helpers ─────────────────────────────────────────────────
+
+
+def _run_skill_links(root: Path, result: dict[str, Any]) -> None:
+    """Run create_skill_links.py after a successful install to sync .codex/skills → .cline/skills."""
+    skill_links_script = root / ".cline" / "create_skill_links.py"
+    if not skill_links_script.exists():
+        add_bucket_item(
+            result["findings"], ".cline/create_skill_links.py", "script-missing",
+            "create_skill_links.py not found — .cline/skills will not be synced.",
+            "warning", "post-start",
+        )
+        return
+    links_result = run_native([sys.executable, str(skill_links_script)], root, timeout=30)
+    if links_result["returncode"] == 0:
+        result["actions"].append({"path": ".cline/skills", "key": "skill-links", "severity": "info",
+                                  "message": "Ran create_skill_links.py to sync .codex/skills → .cline/skills.",
+                                  "phase": "apply"})
+    else:
+        add_bucket_item(
+            result["findings"], ".cline/create_skill_links.py", "link-failed",
+            f"Could not sync skills to .cline: {links_result['stderr'][:200]}",
+            "warning", "apply",
+        )
+
+
+def _install_skill_via_clone(root: Path, install_cmd: str, skill_name: str) -> bool:
+    """Fallback: clone the GitHub repo and copy the skill folder into .codex/skills/.
+
+    Used when npx skills add fails (e.g. interactive prompt timeout).
+    Parses install_cmd like 'npx skills add -y owner/repo@skill_name' to
+    determine the repo URL and skill to extract.
+    """
+    import shutil
+    import tempfile
+
+    # Parse install command: npx skills add -y? owner/repo@skill_name
+    cmd_match = re.match(
+        r"^npx\s+skills\s+add\s+(?:-y\s+)?([^/\s]+/[^@\s]+)@(\S+)$",
+        install_cmd.strip(),
+    )
+    if not cmd_match:
+        return False
+    owner_repo = cmd_match.group(1)  # e.g. "vercel-labs/agent-skills"
+    npx_skill_name = cmd_match.group(2)  # e.g. "vercel-react-best-practices"
+
+    # Use the skill_name from the npx registry for the target folder name
+    target_name = npx_skill_name
+    target_dir = root / ".codex" / "skills" / target_name
+    if target_dir.exists():
+        return True  # already installed
+
+    repo_url = f"https://github.com/{owner_repo}.git"
+    temp_dir = Path(tempfile.mkdtemp(prefix="skill-clone-"))
+
+    try:
+        # Clone the repo (shallow, depth 1)
+        clone_cmd = ["git", "clone", "--depth", "1", repo_url, str(temp_dir)]
+        clone_result = run_native(clone_cmd, root, timeout=60)
+        if clone_result["returncode"] != 0:
+            return False
+
+        # Search for the skill folder in the cloned repo
+        # The npx registry name may differ from the folder name:
+        #   npx: "vercel-react-view-transitions" → folder: "react-view-transitions"
+        # We match by: exact name, suffix match, or any dir with SKILL.md
+        def _has_skill_md(d: Path) -> bool:
+            return d.is_dir() and d.joinpath("SKILL.md").exists()
+
+        def _name_matches(dir_name: str, skill_name: str) -> bool:
+            """Check if dir_name matches skill_name (exact or suffix)."""
+            return dir_name == skill_name or skill_name.endswith(dir_name)
+
+        skill_source: Path | None = None
+
+        # Priority 1: skills/<npx_skill_name>/  or skills/<suffix>/
+        skills_dir = temp_dir / "skills"
+        if skills_dir.is_dir():
+            for subdir in skills_dir.iterdir():
+                if _has_skill_md(subdir) and _name_matches(subdir.name, npx_skill_name):
+                    skill_source = subdir
+                    break
+
+        # Priority 2: <npx_skill_name>/ or <suffix>/ in root
+        if skill_source is None:
+            for subdir in temp_dir.iterdir():
+                if _has_skill_md(subdir) and _name_matches(subdir.name, npx_skill_name):
+                    skill_source = subdir
+                    break
+
+        # Priority 3: any subdirectory with SKILL.md (flat repos like wondelai/skills)
+        if skill_source is None:
+            for subdir in temp_dir.iterdir():
+                if _has_skill_md(subdir):
+                    skill_source = subdir
+                    break
+
+        # Priority 4: deep search (nested like han/plugins/core/skills/solid-principles)
+        if skill_source is None:
+            for sk_md in temp_dir.rglob("SKILL.md"):
+                parent = sk_md.parent
+                if _name_matches(parent.name, npx_skill_name):
+                    skill_source = parent
+                    break
+            if skill_source is None:
+                # Last resort: the first SKILL.md found
+                for sk_md in temp_dir.rglob("SKILL.md"):
+                    skill_source = sk_md.parent
+                    break
+
+        if skill_source is None or not skill_source.is_dir():
+            return False
+
+        # Copy the skill folder to .codex/skills/<target_name>/
+        target_dir.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(str(skill_source), str(target_dir), dirs_exist_ok=True)
+        return True
+
+    finally:
+        # Clean up temp clone
+        if temp_dir.exists():
+            shutil.rmtree(str(temp_dir), ignore_errors=True)
 
 
 # ── Multi-source skill search ──────────────────────────────────────────────
@@ -659,7 +776,7 @@ def _source_npx_skills(
                         display_name=display_name,
                         source_kind="skills-sh",
                         install_method="skills-cli-add",
-                        install_command=f"npx skills add {owner}/{repo}@{skill_name}",
+                        install_command=f"npx skills add -y {owner}/{repo}@{skill_name}",
                         source_url=url,
                         skill_name=skill_name,
                         detected_tags=detected_tags,
@@ -921,7 +1038,7 @@ def _source_skills_web(
                             display_name=display_name,
                             source_kind="skills-sh-web",
                             install_method="skills-cli-add",
-                            install_command=f"npx skills add {owner_repo}@{skill_name}",
+                            install_command=f"npx skills add -y {owner_repo}@{skill_name}",
                             source_url="https://www.skills.sh/",
                             skill_name=skill_name,
                             detected_tags=detected_tags,
