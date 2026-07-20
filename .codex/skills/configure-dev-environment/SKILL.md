@@ -22,6 +22,7 @@ Before running quick setup, ensure the following CLI tools are available on the 
 | Docker Desktop | [docker.com](https://www.docker.com/products/docker-desktop/) | Compose services, container builds |
 | Node.js (v20+) | [nodejs.org](https://nodejs.org/) or `winget install OpenJS.NodeJS` | OpenSpec CLI, frontend builds |
 | OpenSpec CLI | `npm install -g @fission-ai/openspec@latest` | OpenSpec proposal workflow (`/opsx:propose`, `openspec status`, `openspec instructions`) |
+| Lefthook | `python -m tools.sdd_cli tool-installer install-lefthook` | Pre-commit hooks (gitleaks scan, commit-msg validation) |
 
 Verify tools are installed:
 
@@ -31,6 +32,12 @@ node --version && npm --version && openspec --version
 
 If OpenSpec CLI is missing, install with: `npm install -g @fission-ai/openspec@latest`
 
+Lefthook installs automatically during `setup-lab`. To install separately:
+
+```bash
+python -m tools.sdd_cli tool-installer install-lefthook
+```
+
 ## Quick Setup
 
 Run the idempotent all-in-one command:
@@ -39,21 +46,22 @@ Run the idempotent all-in-one command:
 python -m tools.sdd_cli environment-lab setup-lab
 ```
 
-This runs 11 steps in order. **All steps are fatal** — if any step fails, the setup stops immediately. Each step is validated before proceeding to the next.
+This runs 12 steps in order. **All steps are fatal** — if any step fails, the setup stops immediately. Each step is validated before proceeding to the next.
 
 ```
  1. InitLocalFiles        (config templates → local files)
- 2. InitProjectProfile    (project schema, profile, adapters)
- 3. InitQualityTemplates  (delivery-policy.json)
- 4. BuildGiteaImages      (sdd-e2e-ci:local Docker image)
- 5. compose-up            (Gitea + Nexus + Seq + Grafana + Dozzle)
- 6. (skipped)             (Gitea branch protection — run separately)
- 7. SetupNexus            (EULA acceptance + sdd-artifacts repo)
- 8. ValidateNexusSecrets  (Gitea secrets: NEXUS_URL, NEXUS_USERNAME, etc.)
- 9. SyncNexusSecrets      (sync Nexus password to Gitea Actions secrets)
-10. CheckCIWorkflows      (verify .gitea/workflows/*.yml exist)
-11. ValidateObservability (Seq + Grafana health endpoints)
-12. ValidateGiteaRunner   (Docker, images, tools, network, runner config)
+ 2. InstallLefthook       (lefthook binary + git hooks)
+ 3. InitProjectProfile    (project schema, profile, adapters)
+ 4. InitQualityTemplates  (delivery-policy.json)
+ 5. BuildGiteaImages      (sdd-e2e-ci:local Docker image)
+ 6. compose-up            (Gitea + Nexus + Seq + Grafana + Dozzle)
+ 7. (skipped)             (Gitea branch protection — run separately)
+ 8. SetupNexus            (EULA acceptance + sdd-artifacts repo)
+ 9. ValidateNexusSecrets  (Gitea secrets: NEXUS_URL, NEXUS_USERNAME, etc.)
+10. SyncNexusSecrets      (sync Nexus password to Gitea Actions secrets)
+11. CheckCIWorkflows      (verify .gitea/workflows/*.yml exist)
+12. ValidateObservability (Seq + Grafana health endpoints)
+13. ValidateGiteaRunner   (Docker, images, tools, network, runner config)
 ```
 
 ## Individual Steps
@@ -75,6 +83,7 @@ If you need to run steps individually:
 | Validate observability | `python -m tools.sdd_cli environment-lab validate-observability` |
 | Build Gitea images | `python -m tools.sdd_cli environment-lab build-gitea-images` |
 | Setup MCP server | `python tools/bm25s_flashrank/setup_mcp.py` |
+| Install lefthook | `python -m tools.sdd_cli tool-installer install-lefthook` |
 
 ## Safety Rules
 

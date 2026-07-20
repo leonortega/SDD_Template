@@ -60,6 +60,21 @@ def install_lefthook(root: Path, dry_run: bool = False) -> dict[str, Any]:
     if install["returncode"] == 0:
         result["actions"].append({"path": "lefthook", "key": "install", "severity": "info",
                                   "message": "Lefthook git hooks installed.", "phase": "apply"})
+        # Verify hooks are active by checking the git hooks directory
+        git_hooks = root / ".git" / "hooks" / "pre-commit"
+        if git_hooks.exists():
+            result["actions"].append({"path": ".git/hooks/pre-commit", "key": "verify", "severity": "info",
+                                      "message": "Lefthook pre-commit hook is active.", "phase": "apply"})
+        else:
+            # lefthook may use different hook file names; check for the lefthook wrapper
+            lefthook_hook = root / ".git" / "hooks" / "lefthook"
+            if lefthook_hook.exists():
+                result["actions"].append({"path": ".git/hooks/lefthook", "key": "verify", "severity": "info",
+                                          "message": "Lefthook wrapper hook is active.", "phase": "apply"})
+            else:
+                add_bucket_item(result["findings"], ".git/hooks", "verify",
+                                "Could not verify lefthook git hooks — check .git/hooks/ for expected files.",
+                                "warning", "post-start")
     else:
         add_bucket_item(result["findings"], "lefthook", "install",
                         f"Could not install lefthook: {install['stderr']}", "error", "apply")
