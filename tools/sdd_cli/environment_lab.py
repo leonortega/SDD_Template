@@ -903,7 +903,59 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
         add_bucket_item(result["findings"], "openproject/projects/e2eproject", "project.create",
                         f"OpenProject project creation returned {proj_st}: {proj_dt[:200]}", "warning", "apply")
 
-    # ── 2d. OpenProject: create Basic board e2e-test with statuses ────
+    # ── 2d. OpenProject: add FirstUser and SecondUser as project members ──
+    if not dry_run:
+        member_script = (
+            'project = Project.find_by!(identifier: "e2eproject")\n'
+            'member_role = Role.find_by!(name: "Member")\n'
+            'logins = ["FirstUser", "SecondUser"]\n'
+            'logins.each do |login|\n'
+            '  u = User.find_by(login: login)\n'
+            '  next unless u\n'
+            '  existing = Member.where(project: project, principal: u)\n'
+            '  if existing.any?\n'
+            '    puts "#{login} already member"\n'
+            '    next\n'
+            '  end\n'                '  ::Member.create(project: project, principal: u, roles: [member_role])\n'
+                '  puts "#{login} added as member"\n'
+            'end\n'
+        )
+        tmp_path = None
+        try:
+            tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".rb", delete=False)
+            tmp.write(member_script)
+            tmp.close()
+            tmp_path = tmp.name
+            subprocess.run(
+                ["docker", "cp", tmp_path, "agentic-e2e-openproject-1:/tmp/add_members.rb"],
+                capture_output=True, timeout=30,
+            )
+            member_result = run_native(
+                ["docker", "exec", "agentic-e2e-openproject-1", "sh", "-c",
+                 "cd /app && bundle exec rails runner /tmp/add_members.rb"],
+                REPO_ROOT, timeout=30,
+            )
+        except Exception as ex:
+            add_bucket_item(result["findings"], "openproject/members", "member.create",
+                            f"OpenProject member creation failed: {ex}", "warning", "apply")
+            member_result = {"returncode": -1, "stdout": "", "stderr": str(ex)}
+        finally:
+            if tmp_path:
+                Path(tmp_path).unlink(missing_ok=True)
+        if member_result["returncode"] == 0:
+            for line in member_result["stdout"].splitlines():
+                if "added as member" in line:
+                    name = line.split(" added")[0]
+                    result["actions"].append({"path": f"openproject/members/{name}", "key": "member.created",
+                                              "severity": "info", "message": f"OpenProject user {name} added to e2eProject.", "phase": "apply"})
+        else:
+            add_bucket_item(result["findings"], "openproject/members", "member.create",
+                            f"OpenProject member creation failed: {member_result['stderr'][:200]}", "warning", "apply")
+    else:
+        result["actions"].append({"path": "openproject/members", "key": "member.plan",
+                                  "severity": "info", "message": "Would add FirstUser and SecondUser as project members.", "phase": "apply"})
+
+    # ── 2e. OpenProject: create Basic board e2e-test with statuses ────
     # OpenProject 17+ may not expose /api/v3/boards via REST — fall back to Rails console
     board_status_hrefs = [f"/api/v3/statuses/{s['id']}" for s in created_statuses if s.get("id")]
     if board_status_hrefs:
@@ -927,21 +979,20 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
         elif brd_st == 404:
             # Boards API not exposed via REST — try Rails console
             # Write Ruby script to local temp file, copy to container, execute
-            status_ids_str = ", ".join(str(s["id"]) for s in created_statuses if s.get("id"))
+            # Build status id and label lists from the already-resolved STATUS_NAME_MAP
+            status_id_list = [str(s["id"]) for s in created_statuses if s.get("id")]
+            status_ids_str = ", ".join(status_id_list)
+            status_labels_str = "[" + ", ".join(f'\"{n}\"' for n in STATUS_NAME_MAP) + "]"
             ruby_script = (
-                'require "yaml"\n'
                 'project = Project.find_by(identifier: "e2eproject")\n'
                 'admin = User.find_by(login: "admin")\n'
                 'unless project && admin\n'
                 '  puts "Project or admin not found"\n'
                 '  exit 1\n'
                 'end\n'
-                'existing = ::Boards::Grid.where(project: project, name: "e2e-test")\n'
-                'if existing.any?\n'
-                '  puts "Board already exists: id=#{existing.first.id}"\n'
-                '  exit 1\n'
-                'end\n'
-                f'status_ids = [{status_ids_str}]\n'
+                '::Boards::Grid.where(project: project, name: "e2e-test").destroy_all\n'
+                'status_ids = [' + status_ids_str + ']\n'
+                'status_labels = ' + status_labels_str + '\n'
                 'board = ::Boards::Grid.create!(\n'
                 '  project: project,\n'
                 '  name: "e2e-test",\n'
@@ -950,25 +1001,27 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 '  user_id: admin.id\n'
                 ')\n'
                 'status_ids.each_with_index do |sid, idx|\n'
-                '  query = Query.new(\n'
-                '    name: "e2e-test-col-#{idx + 1}",\n'
+                '  query = ::Query.new(\n'
+                '    name: status_labels[idx],\n'
                 '    project: project,\n'
                 '    user_id: admin.id,\n'
-                '    public: true\n'
+                '    public: true,\n'
+                '    include_subprojects: false,\n'
+                '    display_sums: false\n'
                 '  )\n'
-                '  query.write_attribute(:filters, {"status_id" => {"operator" => "=", "values" => [sid.to_s]}}.to_yaml)\n'
+                '  query.add_filter("status_id", "=", [sid.to_s])\n'
                 '  query.save!(validate: false)\n'
-                '  widget = ::Grids::Widget.create!(\n'
+                '  ::Grids::Widget.create!(\n'
                 '    grid: board,\n'
                 '    identifier: "work_package_query",\n'
                 '    start_row: 1,\n'
                 '    end_row: 2,\n'
                 '    start_column: idx + 1,\n'
                 '    end_column: idx + 2,\n'
-                '    options: {query_id: query.id, filters: [{status: {operator: "=", values: [sid.to_s]}}]}.to_yaml\n'
+                '    options: {"query_id" => query.id}\n'
                 '  )\n'
                 'end\n'
-                'puts "Board created: id=#{board.id}"\n'
+                'puts "Board e2e-test created with #{status_ids.length} columns"\n'
             )
             tmp_path = None
             try:
@@ -1010,7 +1063,46 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
         add_bucket_item(result["findings"], "openproject/boards/e2e-test", "board.create",
                         "No status IDs available to create board.", "warning", "apply")
 
-    # ── 3. Nexus: set admin password via REST API ─────────────────────
+    # ── 5. OpenProject: generate API key and register MCP server ──────────
+    op_api_key: str | None = None
+    if not dry_run:
+        try:
+            rails_key_cmd = (
+                'cd /app && bundle exec rails runner '
+                '"u = User.find_by(login: \\"admin\\"); '
+                'token = Token::API.create!(user: u); '
+                'puts token.plain_value"'
+            )
+            key_result = run_native(
+                ["docker", "exec", "agentic-e2e-openproject-1", "sh", "-c", rails_key_cmd],
+                REPO_ROOT, timeout=30,
+            )
+            if key_result["returncode"] == 0:
+                api_key_line = key_result["stdout"].strip().splitlines()[-1] if key_result["stdout"].strip() else ""
+                if api_key_line and api_key_line.startswith("opapi-"):
+                    op_api_key = api_key_line
+        except Exception as ex:
+            add_bucket_item(result["findings"], "openproject/api-key", "key.create",
+                            f"OpenProject API key generation failed: {ex}", "warning", "apply")
+
+    if op_api_key:
+        result["actions"].append({"path": "openproject/api-key", "key": "key.created",
+                                  "severity": "info", "message": "OpenProject API key generated for admin user.", "phase": "apply"})
+        # Register the openproject MCP server in .vscode/mcp.json
+        try:
+            from tools.bm25s_flashrank.setup_mcp import setup_openproject_mcp
+            written = setup_openproject_mcp(root, "http://localhost:8080", op_api_key)
+            for p in written:
+                result["actions"].append({"path": p.relative_to(root).as_posix(), "key": "mcp.registered",
+                                          "severity": "info", "message": f"OpenProject MCP server registered in {p.name}.", "phase": "apply"})
+        except Exception as ex:
+            add_bucket_item(result["findings"], ".vscode/mcp.json", "mcp.register",
+                            f"OpenProject MCP server registration failed: {ex}", "warning", "apply")
+    else:
+        add_bucket_item(result["findings"], "openproject/api-key", "key.create",
+                        "Could not generate OpenProject API key. MCP server not registered.", "warning", "apply")
+
+    # ── 6. Nexus: set admin password via REST API ─────────────────────
     # First attempt with default admin/admin123, use the same as desired password
     # Nexus default: admin / admin123, then change password = new password
     # PUT /service/rest/v1/security/users/admin/change-password
