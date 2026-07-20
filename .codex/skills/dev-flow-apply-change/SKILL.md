@@ -174,6 +174,19 @@ Use this skill to apply an OpenSpec change inside the repository delivery workfl
 
 Before ticketed implementation, read `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md`. Keep changes scoped to the active ticket or explicit change, run the needed validation, and preserve handoff details for the caller.
 
+## Skill Pre-Analysis
+
+Before any code changes, the caller (`dev-flow-implement-ticket`) runs the **Skill Pre-Analysis** step to determine which skills are applicable based on the project stack and tool recommendations. See `dev-flow-implement-ticket/SKILL.md` §1 step 5 for the full analysis procedure.
+
+When called directly without the parent pre-analysis, perform a lightweight pre-analysis:
+
+1. Read `.codex/project-profile.local.json` → `stack` section for frontend/backend/database values (stack lives **only** in the ignored local overlay). If it does not exist, stack is empty. Read `.codex/project-profile.json` for non-stack config (providers, workflow, gates).
+2. Read `.codex/tool-recommendations.local.json` → `accepted` list to find which skills are enabled.
+3. Map the stack to skills per the table in `dev-flow-implement-ticket/SKILL.md` §1 step 5b.
+4. Load and declare every applicable skill before starting TDD cycles:
+   - Try the `skill` tool first. If it reports "no skills available", read the SKILL.md directly from `.codex/skills/<name>/SKILL.md` and apply its rules manually.
+5. If the stack is empty but the ticket implies a product, suggest running `python -m tools.sdd_cli guidance discover` or configuring via `set-project-stack`.
+
 ## Workflow
 
 Follow the OpenSpec apply steps above, then return control to the owning dev-flow skill for review, QA, deployment, or handoff.

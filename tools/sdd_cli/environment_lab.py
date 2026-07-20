@@ -222,14 +222,6 @@ def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
         profile = {
             "$schema": "./project-profile.schema.json",
             "schemaVersion": 1,
-            "stack": {
-                "frontend": {"applies": False, "value": ""},
-                "backend": {"applies": False, "value": ""},
-                "database": {"applies": False, "value": ""},
-                "languages": [],
-                "frameworks": [],
-                "testFrameworks": [],
-            },
             "providers": {
                 "ticket": {"id": "openproject", "adapter": ".codex/providers/ticket.openproject.md"},
                 "repository": {"id": "gitea", "adapter": ".codex/providers/repo.gitea.md"},
