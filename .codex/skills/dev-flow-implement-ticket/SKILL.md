@@ -64,6 +64,7 @@ Required/defaulted values:
       | **Any web frontend** | `playwright` (E2E browser tests), `playwright-interactive` (debugging) |
       | **Any implementation** | `tdd` (test-first cycles), `ponytail` (minimal code, standard library), `security-best-practices` |
       | **Gitea** (repo/review provider) | `dev-flow-pr-review-agent` (PR review automation) |
+      | **Any task (generic)** | **Scan all `.codex/skills/` directories.** Every installed skill must be assessed for relevance, not just stack-mapped ones. See sub-step f below. |
 
    c. **Load and declare each skill:**
       - Try loading each identified `SKILL.md` via the `skill` tool first. If the `skill` tool reports "no skills available" or is unavailable, read the SKILL.md file directly from `.codex/skills/<name>/SKILL.md` and apply its rules manually.
@@ -84,6 +85,30 @@ Required/defaulted values:
    e. **Stop and report when:**
       - Required skills are missing from `.codex/skills/` — route to `project-guidance-acquire`.
       - Stack implies a framework but relevant test frameworks are not configured in the recommendations.
+
+   f. **Scan all installed skills for relevance:** Beyond the stack-mapped skills above, enumerate every skill directory under `.codex/skills/` that has a `SKILL.md` and assess it:
+
+      - Read the skill's `SKILL.md` (or `metadata.json` → `description` when available) to determine what domain, language, or pattern it covers.
+      - Classify each skill:
+        - **active** — its rules, patterns, or constraints apply to the current implementation task.
+        - **skipped** — it does not apply (document the specific reason).
+      - Include all skills — both active and skipped — in the `Skills used:` declaration block.
+      - **Skipped skills must include a rationale.** A bare list of skipped names is insufficient. Examples:
+
+        ```markdown
+        Skills used:
+        - caveman (auto, full)
+        - ponytail (auto, full)
+        - vercel-react-best-practices (on-demand): React performance patterns
+        - clean-code (on-demand): naming, function size, error handling
+        - solid-principles (on-demand): component interface design
+        - modern-csharp-coding-standards (skipped — C# only, not a C# project)
+        - vercel-react-view-transitions (skipped — no route animations in scope)
+        - clean-architecture (skipped — overkill for a 6-component SPA landing page)
+        ```
+
+      - If assessing a skill's applicability requires understanding its full rules, load it via `skill('<name>')` (or read its `SKILL.md` directly) before deciding.
+      - **Failure to scan:** If a skill is installed in `.codex/skills/` but the agent does not list it in the declaration, it is a process violation (authority level 5). The implementation must stop and the agent must redo the scan.
 
 6. Detect resume checkpoints before doing new work:
    - completed and pending OpenSpec tasks,
