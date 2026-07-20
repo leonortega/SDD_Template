@@ -261,8 +261,9 @@ Configure repository owner/name, PR reviewers, approval minimums, and review lab
 
 1. Infer owner/repo from `git remote get-url origin` when possible.
 2. Run `python -m tools.sdd_cli environment-lab set-client-tools --values-json '{...}'` with Gitea values.
-3. Run `python -m tools.sdd_cli environment-lab set-gitea-branch-protection` to apply approval rules.
-4. Validate token, repo, and collaborators only when Gitea is running.
+3. **After provisioning users and pushing code**, `push_to_gitea()` automatically adds provisioned users (FirstUser, SecondUser) as repo collaborators with write permission via the Gitea API (`PUT /api/v1/repos/{owner}/{repo}/collaborators/{username}`).
+4. Run `python -m tools.sdd_cli environment-lab set-gitea-branch-protection` to apply approval rules.
+5. Validate token, repo, and collaborators only when Gitea is running.
 
 **Values needed:** Gitea base URL, API token, owner, repo, reviewers list, label names. Minimum approvals (`pr.minimumApprovals.dev`, `pr.minimumApprovals.main`) default to 1 each.
 **Safety:** Never print the API token. Do not create labels automatically without user approval.

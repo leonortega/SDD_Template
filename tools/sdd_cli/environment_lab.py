@@ -1163,7 +1163,8 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
 # ── Push v0 to Gitea ─────────────────────────────────────────────────────
 
 def push_to_gitea(root: Path, dry_run: bool = False) -> dict[str, Any]:
-    """Ensure main branch exists in Gitea, commit current state as v0, push dev + main."""
+    """Ensure main branch exists in Gitea, commit current state as v0, push dev + main,
+    then add provisioned users as repo collaborators."""
     result = configure_result("PushToGitea", dry_run, write_enabled=not dry_run)
     if dry_run:
         result["actions"].append({"path": "gitea", "key": "push.plan", "severity": "info",
@@ -1271,6 +1272,43 @@ def push_to_gitea(root: Path, dry_run: bool = False) -> dict[str, Any]:
     else:
         add_bucket_item(result["findings"], "gitea/branches/main", "push.failed",
                         f"Push main failed: {push_main['stderr']}", "error", "apply")
+
+    # ── 6. Add provisioned users as repo collaborators ─────────────────
+    provisioning = gitea.get("provisioning", {})
+    provisioned_users = provisioning.get("users", [])
+    if not provisioned_users:
+        # Fallback: read hard-coded users from client-tools if provisioning key missing
+        client_config = read_json(root / ".codex" / "client-tools.local.json", optional=True) or {}
+        gitea_config = client_config.get("gitea", {})
+        provisioning = gitea_config.get("provisioning", {})
+        provisioned_users = provisioning.get("users", [])
+
+    if provisioned_users:
+        parsed = urlparse(base_url)
+        for u in provisioned_users:
+            username = u.get("username", "")
+            if not username:
+                continue
+            try:
+                conn = http.client.HTTPConnection(parsed.hostname or "localhost", parsed.port or 3000, timeout=10)
+                body = json.dumps({"permission": "write"})
+                conn.request("PUT", f"/api/v1/repos/{owner}/{repo}/collaborators/{username}",
+                             body=body, headers=headers)
+                resp = conn.getresponse()
+                resp.read()
+                conn.close()
+                if resp.status in {201, 204, 409}:
+                    result["actions"].append({"path": f"gitea/collaborators/{username}", "key": "collaborator.added",
+                                              "severity": "info", "message": f"Gitea user {username} added as collaborator with write permission.", "phase": "apply"})
+                else:
+                    add_bucket_item(result["findings"], f"gitea/collaborators/{username}", "collaborator.failed",
+                                    f"Adding collaborator {username} returned HTTP {resp.status}", "warning", "apply")
+            except Exception as ex:
+                add_bucket_item(result["findings"], f"gitea/collaborators/{username}", "collaborator.failed",
+                                f"Could not add {username} as collaborator: {ex}", "warning", "apply")
+    else:
+        result["actions"].append({"path": "gitea/collaborators", "key": "collaborator.skipped",
+                                  "severity": "info", "message": "No provisioned Gitea users found — collaborator step skipped.", "phase": "audit"})
 
     result["valid"] = not any(item.get("severity") == "error" for item in result["findings"])
     return result
