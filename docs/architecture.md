@@ -15,7 +15,7 @@ This repository is a product-free SDLC shell. No product stack is currently sele
 
 **Delivery tooling:** Gitea (source control + CI), OpenProject (tickets), Nexus (artifacts), Grafana/Seq/Dozzle (observability), Docker Desktop K8s (deployment target).
 
-For stack configuration, see `.codex/project-profile.json` (tracked) and `.codex/project-profile.local.json` (local overlay).
+For stack configuration, see `.codex/project-profile.local.json` (ignored local overlay — stack lives only in this file). See `.codex/project-profile.json` for tracked provider and workflow defaults.
 
 This repository is a product-free SDLC shell. The previous sample application has been removed so a new product can start from zero while reusing the delivery workflow.
 

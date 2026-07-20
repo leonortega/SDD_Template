@@ -1,23 +1,6 @@
 {
   "$schema": "./project-profile.schema.json",
   "schemaVersion": 1,
-  "stack": {
-    "frontend": {
-      "applies": false,
-      "value": ""
-    },
-    "backend": {
-      "applies": false,
-      "value": ""
-    },
-    "database": {
-      "applies": false,
-      "value": ""
-    },
-    "languages": [],
-    "frameworks": [],
-    "testFrameworks": []
-  },
   "providers": {
     "ticket": {
       "id": "openproject",
@@ -35,10 +18,10 @@
       "id": "nexus",
       "adapter": ".codex/providers/artifact.nexus.md"
     },
-      "deployment": {
-        "id": "docker-desktop",
-        "adapter": ".codex/providers/deploy.docker-desktop.md"
-      },
+    "deployment": {
+      "id": "docker-desktop",
+      "adapter": ".codex/providers/deploy.docker-desktop.md"
+    },
     "observability": [
       {
         "id": "seq"

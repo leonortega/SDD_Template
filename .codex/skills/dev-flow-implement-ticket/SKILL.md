@@ -43,7 +43,49 @@ Required/defaulted values:
 2. Read `.codex/delivery-context.local.json` when present and verify the resolved ticket, current branch, OpenSpec change, existing PR, and any artifact commit match the locked `ticketKey`. If they resolve to another ticket, stop and report the mismatch.
 3. Stop if the branch or OpenSpec change is missing; tell the user to run the `dev-flow-start-ticket` flow first.
 4. Check `git status --porcelain`. If unrelated changes exist, stop before implementation and list the changed files.
-5. Detect resume checkpoints before doing new work:
+
+5. **Skill Pre-Analysis:** Before any code changes, analyze the project stack and tool recommendations to determine which skills are applicable:
+
+   a. **Read stack configuration:**
+      - Stack lives **only** in `.codex/project-profile.local.json` (the ignored local overlay). Read `.codex/project-profile.local.json` → `stack` section for frontend/backend/database values. If it does not exist, stack is empty.
+      - Read `.codex/project-profile.json` for **non-stack** config: providers, workflow, quality gates, adapters.
+      - Use the merged result from `load_project_profile()` (in `_shared.py`) when available, which overlays local.json on top of profile.json.
+      - Read `.codex/tool-recommendations.local.json` → `detectedTags`, `researchTopics`, `accepted` recommendations.
+
+   b. **Map stack to applicable skills:**
+
+      | Detected / Declared Technology | Skills to Activate |
+      |---|---|
+      | **React** + TypeScript | React component patterns, TypeScript typing, `@testing-library/react` for component tests, Vite for build |
+      | **TypeScript** (any) | TypeScript `tsconfig.json` configuration, type-safe patterns |
+      | **C# / ASP.NET Core** | Controller-service-repository layers, Entity Framework guidance |
+      | **Python / FastAPI / Flask / Django** | FastAPI/Flask/Django patterns, pytest for testing |
+      | **SQLite / PostgreSQL / MongoDB** | ORM/schema guidance, migration patterns |
+      | **Any web frontend** | `playwright` (E2E browser tests), `playwright-interactive` (debugging) |
+      | **Any implementation** | `tdd` (test-first cycles), `ponytail` (minimal code, standard library), `security-best-practices` |
+      | **Gitea** (repo/review provider) | `dev-flow-pr-review-agent` (PR review automation) |
+
+   c. **Load and declare each skill:**
+      - Try loading each identified `SKILL.md` via the `skill` tool first. If the `skill` tool reports "no skills available" or is unavailable, read the SKILL.md file directly from `.codex/skills/<name>/SKILL.md` and apply its rules manually.
+      - Declare all active skills at the start of every response body:
+        ```markdown
+        Skills used: caveman (auto, full), ponytail (auto, full),
+                     tdd (on-demand), playwright (on-demand),
+                     <tech-stack-skills> (on-demand)
+        ```
+      - If a skill recommendation is listed in `accepted` but not yet installed in `.codex/skills/`, report it as a gap and route to `project-guidance-acquire`. If the stack is empty (`applies: false` for all domains) but the ticket implies a product, suggest running `python -m tools.sdd_cli guidance discover` to auto-detect the stack from repo signals, or configure via `set-project-stack`.
+
+   d. **Apply architecture patterns based on stack:**
+      - **React frontend:** Component-per-file, custom hooks for logic, service modules for API calls, TypeScript types in a `types/` directory.
+      - **ASP.NET backend:** Controller → Service → Repository layering with dependency injection.
+      - **Python backend:** Route → Service → Repository or similar separation of concerns.
+      - **Clean Architecture:** Separate domain, application, infrastructure, and presentation layers — but only add layers the implementation actually needs (ponytail principle: no speculative abstractions).
+
+   e. **Stop and report when:**
+      - Required skills are missing from `.codex/skills/` — route to `project-guidance-acquire`.
+      - Stack implies a framework but relevant test frameworks are not configured in the recommendations.
+
+6. Detect resume checkpoints before doing new work:
    - completed and pending OpenSpec tasks,
    - existing implementation commits on the branch,
    - upstream branch and push status,
