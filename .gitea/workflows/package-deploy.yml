@@ -84,12 +84,22 @@ jobs:
           done
 
       - name: Deploy to K8s
-      - name: Deploy to K8s
         env:
-          KUBECONFIG: ${{ secrets.KUBECONFIG }}
+          KUBE_CONFIG_DATA: ${{ secrets.KUBECONFIG }}
         shell: bash
         run: |
           set -euo pipefail
+
+          # Write kubeconfig from secret to temp file (secret stores content, KUBECONFIG needs a path)
+          if [ -n "${KUBE_CONFIG_DATA:-}" ]; then
+            printf '%s\n' "${KUBE_CONFIG_DATA}" > /tmp/kubeconfig
+            chmod 600 /tmp/kubeconfig
+            export KUBECONFIG=/tmp/kubeconfig
+            echo "KUBECONFIG written to /tmp/kubeconfig"
+          else
+            echo "WARNING: KUBECONFIG secret not set — kubectl may fail to authenticate"
+          fi
+
           ENV="${{ steps.env.outputs.ENV }}"
           REGISTRY="${NEXUS_DOCKER_REGISTRY:-host.docker.internal:8083}"
           COMMIT_SHA=$(git rev-parse HEAD)
@@ -97,9 +107,16 @@ jobs:
           OVERLAY_DIR="infra/k8s/overlays/${ENV}"
 
           if [ ! -d "${OVERLAY_DIR}" ]; then
-            echo "No K8s overlay found for ${ENV} � skipping K8s deployment"
+            echo "No K8s overlay found for ${ENV} — skipping K8s deployment"
             echo "Run 'python -m tools.sdd_cli environment-lab scaffold-k8s' first"
             exit 0
+          fi
+
+          # Ensure K8s namespace exists
+          NAMESPACE="sdd-${ENV}"
+          if ! kubectl get namespace "${NAMESPACE}" > /dev/null 2>&1; then
+            echo "Creating namespace ${NAMESPACE}..."
+            kubectl create namespace "${NAMESPACE}"
           fi
 
           # Diagnostics: tool versions and connectivity
@@ -108,6 +125,7 @@ jobs:
           echo "kubectl: $(kubectl version --client 2>&1 | head -1)"
           echo "K8s API: $(kubectl cluster-info --request-timeout=5s 2>&1 | head -3)"
           echo "Environment: ${ENV}"
+          echo "Namespace: ${NAMESPACE}"
           echo "Overlay: ${OVERLAY_DIR}"
           echo "============================"
 
@@ -167,9 +185,18 @@ jobs:
           cd "${REPO_ROOT}"
       - name: Discover environment URLs
         id: urls
+        env:
+          KUBE_CONFIG_DATA: ${{ secrets.KUBECONFIG }}
         shell: bash
         run: |
           set -euo pipefail
+
+          # Write kubeconfig from secret to temp file (needed for kubectl in this step)
+          if [ -n "${KUBE_CONFIG_DATA:-}" ]; then
+            printf '%s\n' "${KUBE_CONFIG_DATA}" > /tmp/kubeconfig
+            export KUBECONFIG=/tmp/kubeconfig
+          fi
+
           export ENV="${{ steps.env.outputs.ENV }}"
           COMMIT_SHA=$(git rev-parse HEAD)
           mkdir -p "app/${COMMIT_SHA}"
