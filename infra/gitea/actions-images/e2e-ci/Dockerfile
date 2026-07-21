@@ -33,11 +33,24 @@ RUN curl -fsSL https://raw.githubusercontent.com/kubernetes-sigs/kustomize/maste
 # Install Semgrep (SAST) and Checkov (IaC) via pip (--break-system-packages for PEP 668)
 RUN pip3 install --break-system-packages --no-cache-dir semgrep checkov
 
+# Pre-cache Semgrep rules for all project languages (CI has no internet)
+RUN mkdir -p /tmp/semgrep-dummy \
+    && echo 'print("x")' > /tmp/semgrep-dummy/test.py \
+    && echo 'let x = 1' > /tmp/semgrep-dummy/test.js \
+    && echo 'let x: number = 1' > /tmp/semgrep-dummy/test.ts \
+    && echo 'const el = <div/>' > /tmp/semgrep-dummy/test.tsx \
+    && echo 'key: value' > /tmp/semgrep-dummy/test.yml \
+    && semgrep scan --config=auto --quiet /tmp/semgrep-dummy 2>&1 \
+    && rm -rf /tmp/semgrep-dummy
+
 # Install Trivy (SCA) from GitHub releases
 RUN curl -fsSL -o /tmp/trivy.deb \
     https://github.com/aquasecurity/trivy/releases/download/v0.72.0/trivy_0.72.0_Linux-64bit.deb \
     && dpkg -i /tmp/trivy.deb \
     && rm /tmp/trivy.deb
+
+# Pre-cache Trivy vulnerability DB (CI container has no internet, must fail if no connection)
+RUN trivy image --download-db-only --quiet 2>&1
 
 RUN node --version >/dev/null \
     && npm --version >/dev/null \
