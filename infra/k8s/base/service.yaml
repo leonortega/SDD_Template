@@ -1,13 +1,13 @@
-# Placeholder: Replace with actual service spec for your component
 apiVersion: v1
 kind: Service
 metadata:
-  name: ${COMPONENT_NAME}
+  name: openproject
+  namespace: sdd-${ENV}
 spec:
-  type: ${SERVICE_TYPE}
+  type: LoadBalancer
   selector:
-    app: ${COMPONENT_NAME}
+    app: openproject
   ports:
     - protocol: TCP
-      port: ${SERVICE_PORT}
-      targetPort: ${CONTAINER_PORT}
+      port: 80
+      targetPort: 80

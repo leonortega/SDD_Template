@@ -1,11 +1,10 @@
-# Placeholder: Dev overlay — replace placeholders with dev-specific values
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: ${ENV_NAMESPACE}
+namespace: sdd-dev
 resources:
   - ../../base
 patches:
   - path: config-patch.yaml
 images:
-  - name: ${REGISTRY}/${COMPONENT_NAME}
-    newTag: ${IMAGE_TAG}
+  - name: host.docker.internal:8083/openproject
+    newTag: stable
