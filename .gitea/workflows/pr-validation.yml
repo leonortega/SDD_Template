@@ -59,3 +59,16 @@ jobs:
       - name: IaC scan (Checkov)
         shell: bash
         run: checkov -d . --compact --soft-fail --config-file .checkov.yml 2>&1
+
+      - name: Dev flow gate (codex-reviewed label)
+        env:
+          GITEA_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          TOKEN="${GITEA_TOKEN:-}"
+          API_URL="http://host.docker.internal:3000/api/v1/repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/labels"
+          echo "Checking codex-reviewed label on PR #${PR_NUMBER}..."
+          LABELS=$(curl -s --user "git:${TOKEN}" "${API_URL}" 2>/dev/null)
+          CHECK=$(echo "${LABELS}" | python3 -c "import sys, json; data=json.load(sys.stdin); names=[l.get('name','') for l in data]; sys.exit(0 if 'codex-reviewed' in names else 1)" 2>&1) && echo "PASS: codex-reviewed label found." || { echo "FAIL: codex-reviewed label not found - run dev-flow-pr-review-agent first."; exit 1; }

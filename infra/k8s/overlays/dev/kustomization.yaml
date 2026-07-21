@@ -7,4 +7,4 @@ patches:
   - path: config-patch.yaml
 images:
   - name: host.docker.internal:8083/openproject
-    newTag: stable
+    newTag: latest

@@ -2,7 +2,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: openproject
-  namespace: sdd-${ENV}
 spec:
   replicas: 1
   selector:
@@ -13,35 +12,12 @@ spec:
       labels:
         app: openproject
     spec:
-      automountServiceAccountToken: false
-      securityContext:
-        seccompProfile:
-          type: RuntimeDefault
-        runAsNonRoot: true
-        runAsUser: 10001
-        runAsGroup: 3000
-        fsGroup: 2000
       containers:
         - name: openproject
-          image: host.docker.internal:8083/openproject:stable
-          imagePullPolicy: Always
+          image: host.docker.internal:8083/openproject
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 80
-          securityContext:
-            allowPrivilegeEscalation: false
-            runAsNonRoot: true
-            capabilities:
-              drop:
-                - ALL
-            readOnlyRootFilesystem: true
-            privileged: false
-          volumeMounts:
-            - name: tmp
-              mountPath: /tmp
-            - name: app-tmp
-              mountPath: /app/tmp
-            - name: app-log
-              mountPath: /app/log
           livenessProbe:
             httpGet:
               path: /health
@@ -61,10 +37,3 @@ spec:
             limits:
               cpu: "500m"
               memory: "256Mi"
-      volumes:
-        - name: tmp
-          emptyDir: {}
-        - name: app-tmp
-          emptyDir: {}
-        - name: app-log
-          emptyDir: {}
