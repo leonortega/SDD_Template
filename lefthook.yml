@@ -3,7 +3,7 @@ pre-commit:
     gitleaks-staged:
       run: gitleaks protect --staged --redact
     trunk-fmt:
-      run: npx trunk fmt --no-notifications
+      run: npx trunk fmt
 
 commit-msg:
   commands:
@@ -12,4 +12,4 @@ commit-msg:
     gitleaks-msg:
       run: gitleaks detect --source . --no-git --redact --verbose
     trunk-check:
-      run: npx trunk check --all --ci --no-fix --no-notifications
+      run: npx trunk check --all --ci --no-fix
