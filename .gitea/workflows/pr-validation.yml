@@ -45,22 +45,12 @@ jobs:
           set -euo pipefail
           # Read stack-specific semgrep rules from committed config, fallback to broad rules
           if [ -f .semgrep-rules.json ]; then
-            RULES=$(python3 -c "
-import json
-data = json.load(open('.semgrep-rules.json'))
-rules = data.get('rules', [])
-for r in rules:
-    print(r)
-" 2>/dev/null)
+            RULES=$(python3 -c "import json, sys; rules=json.load(open('.semgrep-rules.json')).get('rules',[]); [print(f'--config {r}') for r in rules]" 2>/dev/null)
           fi
           if [ -z "${RULES:-}" ]; then
-            RULES="p/typescript p/javascript p/python p/csharp"
+            RULES="--config p/typescript --config p/javascript --config p/python --config p/csharp"
           fi
-          CONFIG_FLAGS=""
-          for r in $RULES; do
-            CONFIG_FLAGS="$CONFIG_FLAGS --config $r"
-          done
-          semgrep scan $CONFIG_FLAGS --error --verbose . 2>&1
+          semgrep scan $RULES --error --verbose . 2>&1
 
       - name: SCA scan (Trivy)
         shell: bash

@@ -1,5 +1,4 @@
-# Placeholder: Replace with actual namespace for your environment
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: ${ENV_NAMESPACE}
+  name: sdd-${ENV}

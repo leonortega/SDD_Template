@@ -1,0 +1,5 @@
+# Checkov config
+# CKV_K8S_43 (image digest) skipped: impractical for local Nexus registry,
+# tags are the standard way to track locally-built artifacts
+skip-check:
+  - CKV_K8S_43
