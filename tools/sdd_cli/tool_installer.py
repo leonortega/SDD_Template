@@ -533,7 +533,7 @@ def ensure_codebase_memory(root: Path, dry_run: bool = False) -> dict[str, Any]:
 # ── Ensure quality tools ─────────────────────────────────────────────────
 
 def ensure_quality_tools(root: Path, dry_run: bool = False) -> dict[str, Any]:
-    """Ensure quality tools are installed: lefthook, gitleaks, trivy, coverage."""
+    """Ensure quality tools are installed: lefthook, gitleaks, trivy, trunk, coverage."""
     result = configure_result("EnsureQualityTools", dry_run, write_enabled=not dry_run)
     # Lefthook
     lf_result = install_lefthook(root, dry_run)
@@ -570,6 +570,19 @@ def ensure_quality_tools(root: Path, dry_run: bool = False) -> dict[str, Any]:
     else:
         result["actions"].append({"path": "trivy", "key": "check", "severity": "info",
                                   "message": "Would check trivy availability.", "phase": "audit"})
+    # Trunk (formatting) (skip in dry-run; resolves via npx from node_modules/.bin)
+    if not dry_run:
+        trunk_check = run_native(["npx", "--yes", "trunk", "--version"], root, timeout=30)
+        if trunk_check["returncode"] == 0:
+            result["actions"].append({"path": "trunk", "key": "check", "severity": "info",
+                                      "message": f"Trunk available: {trunk_check['stdout'][:60]}", "phase": "audit"})
+        else:
+            add_bucket_item(result["findings"], "trunk", "missing",
+                            "Trunk is not installed. Install via: npm install -D @trunkio/launcher",
+                            "warning", "pre-start")
+    else:
+        result["actions"].append({"path": "trunk", "key": "check", "severity": "info",
+                                  "message": "Would check trunk availability.", "phase": "audit"})
     # Coverage tool (dotnet or pytest or jest depending on project; skip in dry-run)
     if not dry_run:
         for tool_cmd, tool_name in [(["dotnet", "--version"], "dotnet"),

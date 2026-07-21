@@ -2,8 +2,14 @@ pre-commit:
   commands:
     gitleaks-staged:
       run: gitleaks protect --staged --redact
+    trunk-fmt:
+      run: npx trunk fmt --no-notifications
 
 commit-msg:
   commands:
     require-ticket:
       run: python -m tools.sdd_cli dev-flow validate-commit-message "{1}"
+    gitleaks-msg:
+      run: gitleaks detect --source . --no-git --redact --verbose
+    trunk-check:
+      run: npx trunk check --all --ci --no-fix --no-notifications

@@ -35,6 +35,22 @@ jobs:
             python3 -m json.tool "$file" >/dev/null
           done
 
-      - name: Secret scan
+      - name: Secret scan (Gitleaks)
         shell: bash
         run: gitleaks detect --source . --redact --no-git
+
+      - name: SAST scan (Semgrep)
+        shell: bash
+        run: semgrep scan --config=auto --error --verbose . 2>&1
+
+      - name: SCA scan (Trivy)
+        shell: bash
+        run: trivy fs --format table --exit-code 1 --no-progress . 2>&1
+
+      - name: IaC scan (Checkov)
+        shell: bash
+        run: checkov -d . --compact 2>&1
+
+      - name: Formatting check (Trunk)
+        shell: bash
+        run: npx trunk check --all --ci --no-fix 2>&1
