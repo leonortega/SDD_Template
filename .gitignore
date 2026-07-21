@@ -24,6 +24,8 @@ artifacts/
 .codex/agent-evals/results.local.json
 TestResults/
 [Tt]est[Rr]esult*/
+test-results/
+playwright-report/
 coverage/
 coverage.*
 *.coverage
@@ -58,14 +60,15 @@ BenchmarkDotNet.Artifacts/
 *.sln.iml
 
 # VS Code
-# Include all .vscode files for template distribution
-# .vscode/*
-# !.vscode/settings.json
-# !.vscode/tasks.json
-# !.vscode/launch.json
-# !.vscode/extensions.json
-# !.vscode/*.code-snippets
-# !.vscode/copilot-instructions.md
+# Include all .vscode files for template distribution (except local secrets)
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+!.vscode/copilot-instructions.md
+.vscode/mcp.json
 
 # Node/frontend artifacts that may appear in future projects
 node_modules/

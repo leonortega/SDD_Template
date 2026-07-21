@@ -233,8 +233,7 @@ Nexus must have a Docker hosted repository for image storage:
 
 ```bash
 # Create Docker hosted repository in Nexus
-# gitleaks:allow
-curl -u "${NEXUS_ADMIN:?}:${NEXUS_PASS:?}" -X POST \
+curl --user "${NEXUS_ADMIN:?}:${NEXUS_PASS:?}" -X POST \  # gitleaks:allow
   http://localhost:8088/service/rest/v1/repositories/docker/hosted \
   -H "Content-Type: application/json" \
   -d '{

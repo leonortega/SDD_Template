@@ -9,6 +9,7 @@ RUN apt-get update \
         git \
         zip \
         python3 \
+        python3-pip \
         gitleaks \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
@@ -29,9 +30,22 @@ RUN curl -fsSL https://raw.githubusercontent.com/kubernetes-sigs/kustomize/maste
     | bash -s -- /usr/local/bin kustomize v5.4.3 \
     && kustomize version 2>/dev/null || true
 
+# Install Semgrep (SAST) and Checkov (IaC) via pip (--break-system-packages for PEP 668)
+RUN pip3 install --break-system-packages --no-cache-dir semgrep checkov
+
+# Install Trivy (SCA) from GitHub releases
+RUN curl -fsSL -o /tmp/trivy.deb \
+    https://github.com/aquasecurity/trivy/releases/download/v0.72.0/trivy_0.72.0_Linux-64bit.deb \
+    && dpkg -i /tmp/trivy.deb \
+    && rm /tmp/trivy.deb
+
 RUN node --version >/dev/null \
     && npm --version >/dev/null \
     && test -d /ms-playwright \
     && zip --version >/dev/null \
     && python3 --version >/dev/null \
-    && gitleaks version >/dev/null
+    && pip3 --version >/dev/null \
+    && gitleaks version >/dev/null \
+    && semgrep --version >/dev/null \
+    && checkov --version >/dev/null \
+    && trivy --version >/dev/null
