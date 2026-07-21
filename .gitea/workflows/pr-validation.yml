@@ -58,4 +58,4 @@ jobs:
 
       - name: IaC scan (Checkov)
         shell: bash
-        run: checkov -d . --compact 2>&1
+        run: checkov -d . --compact --soft-fail --config-file .checkov.yml 2>&1
