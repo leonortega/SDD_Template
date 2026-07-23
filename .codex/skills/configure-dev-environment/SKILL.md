@@ -46,22 +46,26 @@ Run the idempotent all-in-one command:
 python -m tools.sdd_cli environment-lab setup-lab
 ```
 
-This runs 12 steps in order. **All steps are fatal** — if any step fails, the setup stops immediately. Each step is validated before proceeding to the next.
+This runs 17 steps in order. **All steps are fatal** — if any step fails, the setup stops immediately. Each step is validated before proceeding to the next.
 
 ```
- 1. InitLocalFiles        (config templates → local files)
- 2. InstallLefthook       (lefthook binary + git hooks)
- 3. InitProjectProfile    (project schema, profile, adapters)
- 4. InitQualityTemplates  (delivery-policy.json)
- 5. BuildGiteaImages      (sdd-e2e-ci:local Docker image)
- 6. compose-up            (Gitea + Nexus + Seq + Grafana + Dozzle)
- 7. (skipped)             (Gitea branch protection — run separately)
- 8. SetupNexus            (EULA acceptance + sdd-artifacts repo)
- 9. ValidateNexusSecrets  (Gitea secrets: NEXUS_URL, NEXUS_USERNAME, etc.)
-10. SyncNexusSecrets      (sync Nexus password to Gitea Actions secrets)
-11. CheckCIWorkflows      (verify .gitea/workflows/*.yml exist)
-12. ValidateObservability (Seq + Grafana health endpoints)
-13. ValidateGiteaRunner   (Docker, images, tools, network, runner config)
+ 1. InitLocalFiles            (config templates → local files)
+ 2. InstallLefthook           (lefthook binary + git hooks)
+ 3. InitProjectProfile        (project schema, profile, adapters)
+ 4. InitQualityTemplates      (delivery-policy.json)
+ 5. BuildGiteaActionsImages   (sdd-e2e-ci:local Docker image, checksum-based rebuild)
+ 6. ValidateAppConfig         (apps.json schema + Dockerfile existence check)
+ 7. ValidateDockerDesktop     (insecure-registries, socket, Compose, provider detection)
+ 8. ComposeUp                 (Gitea + Nexus + Seq + Grafana + Dozzle)
+ 9. ValidateObservability     (Seq + Grafana health endpoints)
+10. ValidateGiteaRunner       (Docker, images, tools, socket, docker_push.py, network)
+11. ProvisionLabUsers         (Gitea/OpenProject/Nexus users + runner registration token)
+12. ProvisionNexusRepositories (EULA acceptance + sdd-artifacts raw hosted repo)
+13. ProvisionGiteaSecrets     (NEXUS_USERNAME, KUBECONFIG_B64 credentials via Gitea API)
+14. PushToGitea               (create main branch, push dev with v0 code)
+15. SetGiteaBranchProtection  (PR approval rules via Gitea API)
+16. ScaffoldK8s               (validate Docker Desktop K8s, create manifests)
+17. SetSemgrepConfig           (stack-aware SAST rule generation)
 ```
 
 ## Individual Steps
@@ -76,14 +80,14 @@ If you need to run steps individually:
 | Init project profile        | `python -m tools.sdd_cli environment-lab init-project-profile`                    |
 | Set client tools            | `python -m tools.sdd_cli environment-lab set-client-tools --values-json '{...}'`  |
 | Set project stack           | `python -m tools.sdd_cli environment-lab set-project-stack --values-json '{...}'` |
-| Setup Nexus (EULA + repo)   | `python -m tools.sdd_cli environment-lab setup-nexus`                             |
-| Validate Nexus secrets      | `python -m tools.sdd_cli environment-lab validate-nexus-secrets`                  |
-| Sync Nexus secrets to Gitea | `python -m tools.sdd_cli environment-lab sync-nexus-secrets`                      |
-| Check CI workflows          | Included in `setup-lab` — run `configure-ci-workflows` skill if needed            |
-| Validate observability      | `python -m tools.sdd_cli environment-lab validate-observability`                  |
-| Build Gitea images          | `python -m tools.sdd_cli environment-lab build-gitea-images`                      |
-| Setup MCP server            | `python tools/bm25s_flashrank/setup_mcp.py`                                       |
-| Install lefthook            | `python -m tools.sdd_cli tool-installer install-lefthook`                         |
+| Build Gitea images (checksum-aware) | `python -m tools.sdd_cli environment-lab build-gitea-images`                      |
+| Validate app config                 | `python -m tools.sdd_cli environment-lab validate-app-config`                     |
+| Validate Docker Desktop             | `python -m tools.sdd_cli environment-lab validate-docker-desktop`                 |
+| Validate observability              | `python -m tools.sdd_cli environment-lab validate-observability`                  |
+| Validate Gitea runner               | `python -m tools.sdd_cli environment-lab validate-gitea-runner`                   |
+| Provision Gitea secrets             | `python -m tools.sdd_cli environment-lab provision-gitea-secrets`                 |
+| Setup MCP server                    | `python tools/bm25s_flashrank/setup_mcp.py`                                       |
+| Install lefthook                    | `python -m tools.sdd_cli tool-installer install-lefthook`                         |
 
 ## Safety Rules
 
@@ -115,9 +119,11 @@ Useful `environment-lab` modes:
 - `validate-observability`: check Seq + Grafana endpoints and provisioning.
 - `validate-gitea-runner`: check Docker, Gitea runner images, and runner tools.
 - `build-gitea-images`: build Gitea Actions CI images.
-- `setup-nexus`: configure Nexus: accept EULA, create `sdd-artifacts` raw hosted repository, validate connectivity.
-- `validate-nexus-secrets`: check Gitea Actions Nexus secrets — warns if `NEXUS_URL`/`NEXUS_REPOSITORY` override workflow defaults, and checks `NEXUS_USERNAME`/`NEXUS_PASSWORD` exist.
-- `sync-nexus-secrets`: **auto-fix** — reads Nexus credentials from `client-tools.local.json` and creates/updates `NEXUS_USERNAME`/`NEXUS_PASSWORD` secrets in Gitea Actions. This ensures CI credentials always match the actual Nexus password (prevents `HTTP 401` on artifact uploads).
+- `provision-nexus-repositories`: configure Nexus: accept EULA, create `sdd-artifacts` raw hosted repository.
+- `provision-gitea-secrets`: **auto-fix** — reads Nexus credentials and local kubeconfig, creates/updates `NEXUS_USERNAME`, `NEXUS_PASSWORD`, `NEXUS_URL`, `NEXUS_REPOSITORY`, and `KUBECONFIG_B64` secrets in Gitea Actions. This ensures CI credentials always match the actual Nexus password (prevents `HTTP 401` on artifact uploads).
+- `validate-app-config`: validate `infra/deployment/apps.json` against `apps.schema.json` and check every app's Dockerfile exists.
+- `validate-docker-desktop`: check Docker Desktop configuration — `insecure-registries` includes `host.docker.internal:5001`, Docker socket present, Docker Compose available.
+- `validate-gitea-runner`: check Docker, Gitea runner images, runner tools, Docker socket mount, and `tools/docker_push.py` existence.
 - `setup-mcp-server`: run the monorepo-docs-search MCP setup script via `python tools/bm25s_flashrank/setup_mcp.py` (standalone script, not an `environment-lab` subcommand).
 
 ## CI Workflow Configuration
