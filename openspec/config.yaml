@@ -29,6 +29,8 @@ rules:
     - Include recommendation-audit updates when tooling or stack guidance changes.
     - Include a Review Workload Forecast with estimated changed lines, 400-line budget risk, chained PR recommendation, apply decision, delivery strategy, and suggested work units.
     - Keep work units behavior-oriented with code, tests, and docs together; do not split only by file type.
+    - Tests must be created using TDD (test-driven development): write one behavior-focused test through a public interface, confirm RED, implement minimal code, confirm GREEN, then refactor only while GREEN. Repeat one vertical cycle at a time.
+    - Every acceptance criterion from the OpenProject ticket must map to committed automated coverage. Build an acceptance-to-test map before product code changes. Do not defer acceptance test creation to the QA gate.
   spec:
     - Use SHALL requirements with observable scenarios.
     - Avoid implementation-only details unless needed to prevent ambiguity.
