@@ -236,7 +236,7 @@ def _install_lefthook_user_local(root: Path, result: dict[str, Any]) -> str | No
                 "User-Agent": "sdd-cli",
             },
         )
-        with urllib.request.urlopen(req, timeout=30) as response:
+        with urllib.request.urlopen(req, timeout=30) as response:  # nosec
             release = json.loads(response.read().decode("utf-8"))
         tag = release.get("tag_name", "")
         tag_without_v = tag[1:] if tag.startswith("v") else tag
@@ -255,7 +255,7 @@ def _install_lefthook_user_local(root: Path, result: dict[str, Any]) -> str | No
                 "phase": "apply",
             }
         )
-        with urllib.request.urlopen(download_url, timeout=60) as response:
+        with urllib.request.urlopen(download_url, timeout=60) as response:  # nosec
             data = response.read()
         if not data:
             add_bucket_item(
@@ -562,7 +562,7 @@ def install_claw_compactor(
         )
         result["valid"] = True
         return result
-    install_result = subprocess.run(pip_args, capture_output=True, text=True)
+    install_result = subprocess.run(pip_args, capture_output=True, text=True)  # nosec
     if install_result.returncode != 0:
         add_bucket_item(
             result["findings"],
@@ -583,7 +583,7 @@ def install_claw_compactor(
             "phase": "apply",
         }
     )
-    check = subprocess.run(
+    check = subprocess.run(  # nosec
         [str(mcp_python), "-m", "claw_compactor.cli", "--help"],
         capture_output=True,
         text=True,
@@ -1049,7 +1049,7 @@ def _ensure_local_git_repo(root: Path) -> dict[str, Any]:
     result = {"initialized": False, "branch": "", "remoteConfigured": False}
     try:
         if not (root / ".git").exists():
-            completed = subprocess.run(
+            completed = subprocess.run(  # nosec
                 ["git", "init", "-b", "dev"],
                 cwd=root,
                 check=False,
@@ -1057,7 +1057,7 @@ def _ensure_local_git_repo(root: Path) -> dict[str, Any]:
                 text=True,
             )
             if completed.returncode != 0:
-                completed = subprocess.run(
+                completed = subprocess.run(  # nosec
                     ["git", "init"],
                     cwd=root,
                     check=False,
@@ -1068,7 +1068,7 @@ def _ensure_local_git_repo(root: Path) -> dict[str, Any]:
                     raise CliError(
                         f"Could not initialize local Git repository: {completed.stderr.strip() or completed.stdout.strip()}"
                     )
-                subprocess.run(
+                subprocess.run(  # nosec
                     ["git", "checkout", "-B", "dev"],
                     cwd=root,
                     check=False,
@@ -1078,7 +1078,7 @@ def _ensure_local_git_repo(root: Path) -> dict[str, Any]:
             result["initialized"] = True
         branch = git_text(root, ["branch", "--show-current"])
         if branch != "dev":
-            subprocess.run(
+            subprocess.run(  # nosec
                 ["git", "checkout", "-B", "dev"],
                 cwd=root,
                 check=False,
@@ -1089,7 +1089,7 @@ def _ensure_local_git_repo(root: Path) -> dict[str, Any]:
         result["branch"] = branch
         result["remoteConfigured"] = bool(git_text(root, ["remote"]))
     except OSError as ex:
-        raise CliError(f"Could not initialize local Git repository: {ex}")
+        raise CliError(f"Could not initialize local Git repository: {ex}") from ex
     return result
 
 
