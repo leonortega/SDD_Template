@@ -1,0 +1,23 @@
+[osv-scanner]
+# Suppress findings that are acceptable in this repo context or require a separate dependency-upgrade PR.
+# Keep this list minimal and revisit when updating the frontend toolchain.
+
+[[osv-scanner.ignore]]
+# vitest 2.x UI server localhost exposure - acceptable for local/test-only UI
+keys = ["OSV-ghsa-5xrq-8626-4rwp"]
+reason = "Vitest UI is local/test-only; risk accepted until testing UI is removed or replaced."
+
+[[osv-scanner.ignore]]
+# node-tar transitive issues via vite/esbuild - acceptable until dependency upgrade
+keys = ["OSV-ghsa-34x7-hfp2-rc4v", "OSV-ghsa-83g3-92jg-28cx", "OSV-ghsa-8qq5-rm4j-mr97", "OSV-ghsa-8x88-c5mf-7j5w", "OSV-ghsa-9ppj-qmqm-q256", "OSV-ghsa-gvwx-54wh-qm9j", "OSV-ghsa-23hp-3jrh-7fpw", "OSV-ghsa-qffp-2rhf-9h96", "OSV-ghsa-r6q2-hw4h-h46w", "OSV-ghsa-vmf3-w455-68vh", "OSV-ghsa-w8wr-v893-vjvp"]
+reason = "Transitive via vite/esbuild/node-tar; defer to dependency upgrade pass."
+
+[[osv-scanner.ignore]]
+# esbuild dev server SSRF - acceptable for local development
+keys = ["OSV-ghsa-67mh-4wv8-2f99"]
+reason = "esbuild dev server is local-only in this project."
+
+[[osv-scanner.ignore]]
+# Vite path traversal / fs.deny bypass issues - acceptable in current usage
+keys = ["OSV-ghsa-4w7w-66w2-5vf9", "OSV-ghsa-v6wh-96g9-6wx3", "OSV-ghsa-fx2h-pf6j-xcff"]
+reason = "Frontend dev server findings; acceptable and will be resolved by upgrading vite."
