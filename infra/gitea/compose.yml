@@ -20,15 +20,15 @@ services:
       GITEA__server__ROOT_URL: http://localhost:3000/
       GITEA__server__SSH_DOMAIN: localhost
       GITEA__server__SSH_PORT: 2222
-      GITEA__actions__ENABLED: "true"
+      GITEA__actions__ENABLED: true
       GITEA__database__DB_TYPE: sqlite3
-      GITEA__security__INSTALL_LOCK: "true"
-      GITEA__security__SECRET_KEY: "ChangeThisToALongRandomString123!"
-      GITEA__packages__ENABLED: "false"
+      GITEA__security__INSTALL_LOCK: true
+      GITEA__security__SECRET_KEY: ChangeThisToALongRandomString123!
+      GITEA__packages__ENABLED: false
       GITEA__admin__USERNAME: admin
       GITEA__admin__PASSWORD: admin123
       GITEA__admin__EMAIL: admin@example.com
-      GITEA__admin__MUST_CHANGE_PASSWORD: "false"
+      GITEA__admin__MUST_CHANGE_PASSWORD: false
     ports:
       - "3000:3000"
       - "2222:22"
@@ -78,16 +78,16 @@ services:
           level: info
         runner:
           capacity: 1
-          env_file: ".env"
-          timeout: "3h"
-          fetch_interval: "2s"
+          env_file: .env
+          timeout: 3h
+          fetch_interval: 2s
           labels: []
         cache:
           enabled: true
         container:
-          network: "agentic-e2e_nexus"
-          options: ""
-          workdir_parent: "/workspace"
+          network: agentic-e2e_nexus
+          options: 
+          workdir_parent: /workspace
           valid_volumes:
             - /var/run/docker.sock:/var/run/docker.sock
             - ${KUBE_SRC}:/home/runner/.kube/config:ro
@@ -95,7 +95,7 @@ services:
           force_rebuild: false
           bind_workdir: false
         host:
-          workdir_parent: ""
+          workdir_parent: 
         YAMLEOF
         export CONFIG_FILE=/tmp/config.yml
         echo "Runner config written with kubeconfig: ${KUBE_SRC}"

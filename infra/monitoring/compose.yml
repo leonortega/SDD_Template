@@ -26,7 +26,7 @@ services:
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
-      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ENABLED: true
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
       GF_PLUGINS_PREINSTALL_SYNC: yesoreyeram-infinity-datasource@3.8.0
       GRAFANA_HEALTH_ALERT_FOR: ${GRAFANA_HEALTH_ALERT_FOR:-2m}
@@ -45,8 +45,8 @@ services:
     image: datalust/seq:2025.2.16202
     container_name: agentic-seq
     environment:
-      ACCEPT_EULA: "Y"
-      SEQ_FIRSTRUN_NOAUTHENTICATION: "True"
+      ACCEPT_EULA: Y
+      SEQ_FIRSTRUN_NOAUTHENTICATION: True
       SEQ_API_CANONICALURI: http://localhost:5341/
     ports:
       - "127.0.0.1:5341:80"
