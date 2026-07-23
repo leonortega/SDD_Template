@@ -74,6 +74,12 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
     # 7. Validate Docker Desktop configuration (insecure-registries, socket, Compose)
     _add_step(validate_docker_desktop(root, dry_run), fatal=False)
 
+    # 7b. Enable K8s in Docker Desktop if needed (before compose, since Docker may restart)
+    #     K8s is required — if it can't be enabled, setup stops here
+    early = _add_step(enable_docker_desktop_k8s(root, dry_run), fatal=True)
+    if early:
+        return early
+
     # 8. Start compose services
     if not dry_run:
         early = _add_step(compose_up())
@@ -744,7 +750,7 @@ def set_gitea_branch_protection(root: Path, dry_run: bool = False) -> dict[str, 
                 },
             )
             response = conn.getresponse()
-            response.read()
+            resp_body = response.read()
             conn.close()
             if response.status in {200, 201, 204}:
                 result["actions"].append(
@@ -756,8 +762,12 @@ def set_gitea_branch_protection(root: Path, dry_run: bool = False) -> dict[str, 
                         "phase": "apply",
                     }
                 )
-            elif response.status == 409:
-                # Rule already exists — fall back to PATCH on branch_protections/{rule_name}
+            elif response.status == 409 or (
+                response.status == 403
+                and b"already exist" in resp_body
+            ):
+                # Rule already exists (Gitea returns 409 or 403 with 'already exist') —
+                # fall back to PATCH on branch_protections/{rule_name}
                 patch_path = f"/api/v1/repos/{owner}/{repo}/branch_protections/{branch}"
                 conn_patch = conn_cls(parsed.hostname or "", parsed.port, timeout=10)
                 conn_patch.request(
@@ -2638,25 +2648,30 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
     op_api_key: str | None = None
     if not dry_run:
         try:
-            rails_key_cmd = (
-                "cd /app && bundle exec rails runner "
-                '"u = User.find_by(login: \\"admin\\"); '
-                "u.force_password_change = false; u.save!; "
-                "token = Token::API.create!(user: u); "
-                'puts token.plain_value"'
+            # Write Ruby script to temp file to avoid shell quoting issues
+            ruby_key_script = (
+                'u = User.find_by(login: "admin")\n'
+                'u.force_password_change = false\n'
+                'u.save!\n'
+                'token = Token::API.create!(user: u)\n'
+                'puts token.plain_value\n'
             )
-            key_result = run_native(
-                [
-                    "docker",
-                    "exec",
-                    "agentic-e2e-openproject-1",
-                    "sh",
-                    "-c",
-                    rails_key_cmd,
-                ],
-                REPO_ROOT,
-                timeout=30,
-            )
+            key_tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".rb", delete=False)
+            key_tmp.write(ruby_key_script)
+            key_tmp.close()
+            key_tmp_path = key_tmp.name
+            try:
+                subprocess.run(
+                    ["docker", "cp", key_tmp_path, "agentic-e2e-openproject-1:/tmp/gen_api_key.rb"],
+                    capture_output=True, timeout=30,
+                )
+                key_result = run_native(
+                    ["docker", "exec", "agentic-e2e-openproject-1", "sh", "-c",
+                     "cd /app && bundle exec rails runner /tmp/gen_api_key.rb"],
+                    REPO_ROOT, timeout=30,
+                )
+            finally:
+                Path(key_tmp_path).unlink(missing_ok=True)
             if key_result["returncode"] == 0:
                 api_key_line = (
                     key_result["stdout"].strip().splitlines()[-1]
@@ -3532,6 +3547,298 @@ def scaffold_k8s(root, dry_run=False):
     result["valid"] = not any(
         item.get("severity") == "error" for item in result["findings"]
     )
+    return result# ── Docker Desktop K8s enablement ──────────────────────────────────────────
+
+
+def enable_docker_desktop_k8s(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Enable Kubernetes in Docker Desktop if not already running.
+
+    Checks if K8s is already accessible via kubectl. If not, looks at the
+    Docker Desktop settings.json to see if K8s is disabled in config, and
+    if so, enables it programmatically. If Docker Desktop needs a restart
+    to pick up the change, warns the user.
+
+    This runs BEFORE compose_up() so that any Docker restart happens before
+    our containers start, not after.
+    """
+    result = configure_result(
+        "EnableDockerDesktopK8s", dry_run, write_enabled=not dry_run
+    )
+    if dry_run:
+        result["actions"].append(
+            {
+                "path": "docker-desktop",
+                "key": "k8s.enable",
+                "severity": "info",
+                "message": "Would check K8s status and enable if needed.",
+                "phase": "audit",
+            }
+        )
+        result["valid"] = True
+        return result
+
+    # ── 1. Check if K8s is already accessible ──
+    kubectl = run_native(["kubectl", "version", "--output=json"], root, timeout=15)
+    if kubectl["returncode"] == 0:
+        try:
+            k8s_info = json.loads(kubectl["stdout"])
+            server = k8s_info.get("serverVersion", {})
+            git_version = server.get("gitVersion", "unknown")
+            result["actions"].append(
+                {
+                    "path": "docker-desktop",
+                    "key": "k8s.enable",
+                    "severity": "info",
+                    "message": f"Kubernetes is already running (v{git_version}).",
+                    "phase": "audit",
+                }
+            )
+            result["valid"] = True
+            return result
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+    # ── 2. Not running — check Docker Desktop settings ──
+    # On Windows, settings are in %APPDATA%\Docker\settings.json
+    # The key "kubernetesEnabled" controls whether K8s is enabled
+    settings_path = None
+    import platform
+    if sys.platform == "win32" or platform.system() == "Windows":
+        appdata = Path.home() / "AppData" / "Roaming"
+        candidate = appdata / "Docker" / "settings.json"
+        if candidate.exists():
+            settings_path = candidate
+
+    if settings_path is None or not settings_path.exists():
+        add_bucket_item(
+            result["findings"],
+            "docker-desktop",
+            "k8s.enable",
+            "Docker Desktop settings.json not found — cannot auto-enable K8s. "
+            "Enable Kubernetes manually in Docker Desktop Settings → Kubernetes → Enable Kubernetes, "
+            "then re-run setup-lab.",
+            "error",
+            "pre-start",
+        )
+        result["valid"] = False  # K8s is required
+        return result
+
+    # ── 3. Read settings.json to check K8s state ──
+    try:
+        settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as ex:
+        add_bucket_item(
+            result["findings"],
+            str(settings_path),
+            "k8s.enable",
+            f"Could not parse Docker Desktop settings.json: {ex}. "
+            "Enable Kubernetes manually in Docker Desktop Settings.",
+            "error",
+            "pre-start",
+        )
+        result["valid"] = False
+        return result
+
+    k8s_enabled = settings.get("kubernetesEnabled", False)
+    if k8s_enabled:
+        # K8s is enabled in settings but kubectl failed — Docker Desktop may be restarting
+        add_bucket_item(
+            result["findings"],
+            "docker-desktop",
+            "k8s.enable",
+            "K8s is enabled in Docker Desktop settings but kubectl is not responding. "
+            "Docker Desktop may still be starting its K8s cluster. Wait a moment and re-run setup-lab.",
+            "error",
+            "pre-start",
+        )
+        result["valid"] = False
+        return result
+
+    # ── 4. Enable K8s in settings.json ──
+    settings["kubernetesEnabled"] = True
+    try:
+        settings_path.write_text(
+            json.dumps(settings, indent=2), encoding="utf-8"
+        )
+        result["actions"].append(
+            {
+                "path": str(settings_path),
+                "key": "k8s.enable",
+                "severity": "info",
+                "message": "Set kubernetesEnabled=true in Docker Desktop settings.",
+                "phase": "apply",
+            }
+        )
+    except OSError as ex:
+        add_bucket_item(
+            result["findings"],
+            str(settings_path),
+            "k8s.enable",
+            f"Could not write Docker Desktop settings.json: {ex}. "
+            "Enable Kubernetes manually in Docker Desktop Settings → Kubernetes → Enable Kubernetes, "
+            "then re-run setup-lab.",
+            "error",
+            "pre-start",
+        )
+        result["valid"] = False
+        return result
+
+    # ── 5. Restart Docker Desktop to pick up K8s enablement ──
+    # On Windows, use the executable's --shutdown flag then restart
+    dd_exe = Path("C:/Program Files/Docker/Docker/Docker Desktop.exe")
+    if not dd_exe.exists():
+        add_bucket_item(
+            result["findings"],
+            str(dd_exe),
+            "k8s.restart",
+            f"Docker Desktop executable not found at {dd_exe}. "
+            "Restart Docker Desktop manually (right-click tray icon → Restart), wait for K8s to start, "
+            "then re-run setup-lab.",
+            "error",
+            "pre-start",
+        )
+        result["valid"] = False
+        return result
+
+    # Stop Docker Desktop gracefully
+    result["actions"].append(
+        {
+            "path": str(dd_exe),
+            "key": "k8s.restart",
+            "severity": "info",
+            "message": "Stopping Docker Desktop to enable K8s...",
+            "phase": "apply",
+        }
+    )
+    stop_cmd = run_native(
+        [str(dd_exe), "--shutdown"], root, timeout=30
+    )
+    if stop_cmd["returncode"] != 0:
+        # --shutdown might not work on older versions; try taskkill fallback
+        taskkill = run_native(
+            ["taskkill", "/F", "/IM", "Docker Desktop.exe"], root, timeout=15
+        )
+        if taskkill["returncode"] != 0:
+            add_bucket_item(
+                result["findings"],
+                "docker-desktop",
+                "k8s.restart",
+                "Could not stop Docker Desktop. Close it manually (right-click tray icon → Quit), "
+                "then re-run setup-lab.",
+                "error",
+                "pre-start",
+            )
+            result["valid"] = False
+            return result
+    # Wait for Docker process to fully exit
+    import time
+    time.sleep(5)
+
+    # Start Docker Desktop (use Popen with DETACHED_PROCESS — start is a cmd builtin, not an exe)
+    result["actions"].append(
+        {
+            "path": str(dd_exe),
+            "key": "k8s.restart",
+            "severity": "info",
+            "message": "Starting Docker Desktop (K8s enabled)...",
+            "phase": "apply",
+        }
+    )
+    subprocess.Popen(
+        [str(dd_exe)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=subprocess.DETACHED_PROCESS if sys.platform == "win32" else 0,
+    )
+    # Give Docker Desktop a moment to begin starting up
+    time.sleep(5)
+
+    # Wait for Docker daemon to be ready (up to 120s)
+    result["actions"].append(
+        {
+            "path": "docker",
+            "key": "k8s.restart",
+            "severity": "info",
+            "message": "Waiting for Docker daemon to start (up to 120s)...",
+            "phase": "apply",
+        }
+    )
+    daemon_ready = False
+    for attempt in range(24):  # 24 * 5 = 120 seconds
+        time.sleep(5)
+        check = run_native(["docker", "info", "--format", "{{.ServerVersion}}"], root, timeout=10)
+        if check["returncode"] == 0 and check["stdout"].strip():
+            daemon_ready = True
+            break
+    if not daemon_ready:
+        add_bucket_item(
+            result["findings"],
+            "docker",
+            "k8s.restart",
+            "Docker daemon did not become ready within 120s after restart. "
+            "Check Docker Desktop manually, wait for it to finish starting, then re-run setup-lab.",
+            "error",
+            "pre-start",
+        )
+        result["valid"] = False
+        return result
+
+    result["actions"].append(
+        {
+            "path": "docker",
+            "key": "k8s.restart",
+            "severity": "info",
+            "message": f"Docker daemon ready (v{check['stdout'].strip()}). Waiting for K8s cluster (up to 180s)...",
+            "phase": "apply",
+        }
+    )
+
+    # Wait for K8s to be ready (up to 180s)
+    k8s_ready = False
+    for attempt in range(18):  # 18 * 10 = 180 seconds
+        time.sleep(10)
+        k_check = run_native(
+            ["kubectl", "version", "--output=json"], root, timeout=10
+        )
+        if k_check["returncode"] == 0:
+            try:
+                k8s_info = json.loads(k_check["stdout"])
+                server = k8s_info.get("serverVersion", {})
+                git_version = server.get("gitVersion", "unknown")
+                k8s_ready = True
+                break
+            except (json.JSONDecodeError, KeyError):
+                pass
+
+    if not k8s_ready:
+        add_bucket_item(
+            result["findings"],
+            "docker-desktop",
+            "k8s.restart",
+            "Kubernetes did not become ready within 180s after Docker Desktop restart. "
+            "Wait for the K8s cluster to finish initializing in Docker Desktop, then re-run setup-lab.",
+            "error",
+            "pre-start",
+        )
+        result["valid"] = False
+        return result
+
+    result["actions"].append(
+        {
+            "path": "docker-desktop",
+            "key": "k8s.enable",
+            "severity": "info",
+            "message": f"Kubernetes is now running (v{git_version}).",
+            "phase": "apply",
+        }
+    )
+
+    # Also update the K8s context to docker-desktop
+    run_native(
+        ["kubectl", "config", "use-context", "docker-desktop"], root, timeout=10
+    )
+
+    result["valid"] = True
     return result
 
 
