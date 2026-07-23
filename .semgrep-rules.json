@@ -2,7 +2,7 @@
   "rules": [
     "p/typescript",
     "p/javascript",
-    "p/react",
+    "p/python",
     "p/csharp"
   ]
 }
