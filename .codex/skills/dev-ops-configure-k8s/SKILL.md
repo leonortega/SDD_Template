@@ -10,6 +10,7 @@ description: Scaffold and configure Kubernetes deployment for all apps in the pr
 ## Overview
 
 Kubernetes is the **only** deployment target for this project. No adapter pattern, no alternate providers, no docker-compose deployment. Every deployable app gets:
+
 - A production-grade `Dockerfile`
 - K8s manifests (Deployment + Service) per environment, using LoadBalancer for local access
 - CI workflow that builds Docker images, pushes to Nexus, deploys to K8s, and publishes environment URLs
@@ -24,38 +25,24 @@ The cluster runs on **Docker Desktop's built-in Kubernetes** — a single-node c
 - **kubectl included**: Docker Desktop bundles `kubectl`. Verify: `kubectl cluster-info`
 - **host.docker.internal works**: Pods can reach host services (Nexus at `host.docker.internal:8088`, Gitea at `host.docker.internal:3000`) naturally.
 
-
 ### Image Strategy
 
 Two modes — local dev (no registry push) and CI (registry push):
 
-| Mode | Docker Desktop K8s | Image Pull | Registry Needed |
-|------|-------------------|------------|----------------|
-| Local dev | `docker build -t frontend:latest` | `IfNotPresent` | No |
-| CI/Gitea Actions | Build + push to `host.docker.internal:8083/{appId}:{commitSha}` | `IfNotPresent` | Nexus Docker repo |
+| Mode             | Docker Desktop K8s                                              | Image Pull     | Registry Needed   |
+| ---------------- | --------------------------------------------------------------- | -------------- | ----------------- |
+| Local dev        | `docker build -t frontend:latest`                               | `IfNotPresent` | No                |
+| CI/Gitea Actions | Build + push to `host.docker.internal:5001/{appId}:{commitSha}` | `IfNotPresent` | Nexus Docker repo |
 
-For local dev, the overlay's `newTag` field is set to `latest` so manually built images are picked up automatically.
+For local dev, images built with `docker build` are available to the K8s cluster without pushing to a registry (same daemon).
 
-Environments use **Kustomize overlays** with a shared base plus environment-specific patches:
+Environments use a **single envsubst manifest** (`infra/k8s/deploy.yaml`) with placeholders for `${ENV}`, `${REPLICAS}`, `${REGISTRY}`, and `${COMMIT_SHA}`:
 
 ```
 infra/k8s/
-├── base/                  # Shared manifests
-│   ├── kustomization.yaml
-│   ├── deployment.yaml
-│   ├── service.yaml
-│   └── namespace.yaml
-├── overlays/
-│   ├── dev/               # DEV environment
-│   │   ├── kustomization.yaml
-│   │   └── config-patch.yaml
-│   ├── qa/                # QA environment
-│   │   ├── kustomization.yaml
-│   │   └── config-patch.yaml
-│   └── prod/              # PROD environment
-│       ├── kustomization.yaml
-│       └── config-patch.yaml
-└── Dockerfile             # Per-app Dockerfile (generated per app)
+├── deploy.yaml              # Single manifest: Namespace + Deployment + Service
+│                             # Placeholders: ENV, REPLICAS, REGISTRY, COMMIT_SHA
+└── ...
 ```
 
 ## Container Registry
@@ -63,14 +50,41 @@ infra/k8s/
 CI builds push images to a **Nexus Docker repository** (not a raw repository — a Docker hosted repository). For local Docker Desktop K8s, you can skip the registry entirely since images are available from the shared daemon.
 
 Nexus must have:
-- A Docker hosted repository (e.g., `sdd-docker`) with `http` connector enabled (default port `8083`)
+
+- A Docker hosted repository (e.g., `sdd-docker`) with `http` connector enabled (port `5001`)
 - Anonymous pull access enabled (or credentials configured via Gitea secrets)
 
 Image naming convention:
+
 ```
-host.docker.internal:8083/{appId}:{commitSha}    # CI builds (pushed to registry)
+host.docker.internal:5001/{appId}:{commitSha}    # CI builds (pushed to registry)
 {appId}:latest                                      # Local builds (shared daemon)
 ```
+
+### Docker Desktop K8s Registry Mirror Workaround
+
+Docker Desktop's built-in K8s has a `registry-mirror:1273` that intercepts ALL image pulls and returns HTTP 500 for custom registries. This causes `ErrImagePull` or rollout timeouts even when the registry is reachable from the CI container.
+
+**Avoid this by using local-only image references in the K8s manifest:**
+
+1. In the CI build step, tag the image locally with a bare name:
+   ```bash
+   docker build -t "ci-build:${COMMIT_SHA}" .
+   docker tag "ci-build:${COMMIT_SHA}" "${app_id}:${COMMIT_SHA}"
+   ```
+
+2. In `deploy.yaml`, use the local-only reference with `IfNotPresent`:
+   ```yaml
+   image: sdd-test:${COMMIT_SHA}
+   imagePullPolicy: IfNotPresent
+   ```
+
+3. Push to Nexus separately (for artifact storage), but the K8s manifest never references the registry hostname.
+
+4. **K8s node communication via Docker Desktop VM:**
+   - Image registry: `host.docker.internal:5001` (container → host-published port)
+   - K8s API: `host.docker.internal:55353` (container → host-published port)
+   - Both use host-published ports, not Docker Compose service names (job containers don't inherit Compose network when `container.volumes` is set)
 
 ## Prerequisites
 
@@ -82,17 +96,16 @@ Before running this skill:
 4. **Nexus must be running** with Docker hosted repository configured (or available to create one).
 5. **Docker Desktop K8s must be enabled** — Settings → Kubernetes → Enable Kubernetes in Docker Desktop. Verify with `kubectl cluster-info`.
 
-
 ## Configuration
 
 The skill reads configuration from:
 
-| Source | What it provides |
-|--------|-----------------|
-| Merged project profile (`project-profile.json` + `project-profile.local.json`) | Stack technologies, Nexus provider config |
-| `infra/deployment/apps.json` | App topology (appId, role, projectPath, healthPath) |
-| `client-tools.local.json → nexus` | Nexus URL, credentials for Docker registry setup |
-| User input | K8s cluster context, domain names per environment |
+| Source                                                                         | What it provides                                    |
+| ------------------------------------------------------------------------------ | --------------------------------------------------- |
+| Merged project profile (`project-profile.json` + `project-profile.local.json`) | Stack technologies, Nexus provider config           |
+| `infra/deployment/apps.json`                                                   | App topology (appId, role, projectPath, healthPath) |
+| `client-tools.local.json → nexus`                                              | Nexus URL, credentials for Docker registry setup    |
+| User input                                                                     | K8s cluster context, domain names per environment   |
 
 ## Shared Context
 
@@ -155,77 +168,80 @@ server {
 
 Generate appropriate multi-stage Dockerfile based on the backend stack.
 
-### 3. Generate K8s Base Manifests
+### 3. Generate K8s Manifest
 
-Create `infra/k8s/base/` with shared manifests:
+Create `infra/k8s/deploy.yaml` — a single envsubst-ready manifest:
 
-**`namespace.yaml`** — One namespace per environment pattern:
 ```yaml
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: sdd-{environment}
-```
-
-**`deployment.yaml`** — Parameterized Deployment:
-- `name: {appId}`
-- `replicas: 1` (DEV), `2` (QA), `3` (PROD) — configurable via patches
-- `image: host.docker.internal:8083/{appId}:{commitSha}` (placeholder)
-- `imagePullPolicy: IfNotPresent` (all environments — shares Docker daemon)
-- `livenessProbe` + `readinessProbe` pointing to `{healthPath}`
-- Resource limits/requests (defaults set in base, overridden per environment)
-
-**`service.yaml`** — LoadBalancer Service:
-- `type: LoadBalancer` — Docker Desktop assigns a localhost port automatically
-- `port: 80`
-- `targetPort: 80` (or app-specific port)
-
-**`kustomization.yaml`** — Base kustomization listing all resources:
-```yaml
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-resources:
-  - namespace.yaml
-  - deployment.yaml
-  - service.yaml
-commonLabels:
-  app.kubernetes.io/managed-by: sdd-cli
-```
-
-### 4. Generate K8s Environment Overlays
-
-For each environment (dev, qa, prod), create `infra/k8s/overlays/{env}/`:
-
-**`kustomization.yaml`** — Environment-specific overlay:
-```yaml
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-namespace: sdd-{env}
-resources:
-  - ../../base
-patches:
-  - path: config-patch.yaml
-images:
-  - name: host.docker.internal:8083/{appId}
-    newTag: latest
-```
-
-**`config-patch.yaml`** — Environment-specific config (replicas, resources, env vars):
-```yaml
+  name: sdd-${ENV}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {appId}
+  name: { appId }
+  namespace: sdd-${ENV}
 spec:
-  replicas: 1  # dev=1, qa=2, prod=3
+  replicas: ${REPLICAS}
+  selector:
+    matchLabels:
+      app: { appId }
   template:
+    metadata:
+      labels:
+        app: { appId }
     spec:
       containers:
-        - name: {appId}
+        - name: { appId }
+          image: ${REGISTRY}/{appId}:${COMMIT_SHA}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
           env:
             - name: ENVIRONMENT
-              value: {env}
+              value: "${ENV}"
+          livenessProbe:
+            httpGet:
+              path: { healthPath }
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: { healthPath }
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: { appId }
+  namespace: sdd-${ENV}
+spec:
+  type: LoadBalancer
+  selector:
+    app: { appId }
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
 ```
+
+Deploy with: `ENV=dev REPLICAS=1 REGISTRY=host.docker.internal:8083 COMMIT_SHA=latest envsubst < infra/k8s/deploy.yaml | kubectl apply -f -`
+
+### 4. Skip Kustomize
+
+No Kustomize overlays needed. The single `deploy.yaml` with envsubst replaces the base/overlay pattern entirely.
 
 ### 5. Configure Nexus Docker Registry
 
@@ -245,13 +261,14 @@ curl --user "${NEXUS_ADMIN:?}:${NEXUS_PASS:?}" -X POST \  # gitleaks:allow
       "writePolicy": "ALLOW_ONCE"
     },
     "docker": {
-      "httpPort": 8083,
+      "httpPort": 5001,
       "forceBasicAuth": true
     }
   }'
 ```
 
 Use the `scaffold-k8s` CLI command for this:
+
 ```bash
 python -m tools.sdd_cli environment-lab scaffold-k8s --values-json '{
   "apps": ["frontend"],
@@ -264,110 +281,74 @@ python -m tools.sdd_cli environment-lab scaffold-k8s --values-json '{
 
 Modify `.gitea/workflows/package-deploy.yml`:
 
-**Runner-to-K8s connectivity**: The Gitea Actions runner runs in a Docker container, while K8s runs on the host via Docker Desktop. The runner needs access to the host's Docker daemon and kubeconfig. Ensure `infra/gitea/compose.yml` mounts the Docker socket and kubeconfig into the runner container:
+**Runner-to-K8s connectivity**: The Gitea Actions runner runs in a Docker container, while K8s runs on the host via Docker Desktop. The runner needs access to the host's Docker daemon. Ensure `infra/gitea/compose.yml` mounts the Docker socket:
 
 ```yaml
 services:
   runner:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ~/.kube/config:/home/runner/.kube/config:ro
     environment:
-      - KUBECONFIG=/home/runner/.kube/config
       - DOCKER_HOST=unix:///var/run/docker.sock
 ```
 
-Without these mounts, the CI workflow's `docker build` and `kubectl apply` won't work — they'd target the runner's isolated environment instead of the host's Docker daemon and K8s cluster.
+Without this mount, the CI workflow's `docker build` won't work — it'd target the runner's isolated environment instead of the host's Docker daemon.
 
-**Replace the old deploy step** (which ran `node server.mjs` inline) with:
+**Replace the old deploy step** with:
 
 ```yaml
-      - name: Build and push Docker image
-        env:
-          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
-          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          COMMIT_SHA=$(git rev-parse HEAD)
-          REGISTRY="host.docker.internal:8083"
-          
-          # Login to Nexus Docker registry
-          echo "${NEXUS_PASSWORD}" | docker login "${REGISTRY}" \
-            -u "${NEXUS_USERNAME}" --password-stdin
-          
-          # Build and push each app
-          for app_dir in frontend; do
-            app_id=$(basename "${app_dir}")
-            IMAGE="${REGISTRY}/${app_id}:${COMMIT_SHA}"
-            docker build -t "${IMAGE}" -f "${app_dir}/Dockerfile" "${app_dir}"
-            docker push "${IMAGE}"
-            docker tag "${IMAGE}" "${REGISTRY}/${app_id}:latest"
-            docker push "${REGISTRY}/${app_id}:latest"
-          done
+- name: Build and push Docker image
+  env:
+    NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+    NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+  shell: bash
+  run: |
+    set -euo pipefail
+    COMMIT_SHA=$(git rev-parse HEAD)
+    REGISTRY="host.docker.internal:8083"
 
-      - name: Deploy to K8s
-        env:
-          KUBECONFIG: ${{ secrets.KUBECONFIG }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          ENV="dev"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            ENV="${{ github.event.inputs.environment }}"
-          fi
-          
-          # Set image tag
-          COMMIT_SHA=$(git rev-parse HEAD)
-          REGISTRY="host.docker.internal:8083"
-          
-          cd infra/k8s/overlays/${ENV}
-          kustomize edit set image "${REGISTRY}/frontend:${COMMIT_SHA}"
-          kustomize build . | kubectl apply -f -
-          
-          # Wait for rollout
-          for app_id in frontend; do
-            kubectl -n "sdd-${ENV}" rollout status deployment "${app_id}" --timeout=120s
-          done
-          
-          # Health check
-          NAMESPACE="sdd-${ENV}"
-          for app_id in frontend; do
-            HEALTH_PATH=$(python3 -c "
-          import json
-          with open('infra/deployment/apps.json') as f:
-              apps = json.load(f).get('apps', [])
-          for a in apps:
-              if a['appId'] == '${app_id}':
-                  print(a.get('healthPath', '/health'))
-          " 2>/dev/null || echo "/health")
-            
-            POD=$(kubectl -n "${NAMESPACE}" get pod -l app="${app_id}" -o jsonpath='{.items[0].metadata.name}')
-            kubectl -n "${NAMESPACE}" exec "${POD}" -- sh -c \
-              "wget -qO- http://localhost${HEALTH_PATH}" | grep '"status":"ok"'
-            echo "${app_id} health check PASSED"
-          done
+    echo "${NEXUS_PASSWORD}" | docker login "${REGISTRY}" \
+      -u "${NEXUS_USERNAME}" --password-stdin
+
+    for app_dir in frontend; do
+      app_id=$(basename "${app_dir}")
+      IMAGE="${REGISTRY}/${app_id}:${COMMIT_SHA}"
+      docker build -t "${IMAGE}" -f "${app_dir}/Dockerfile" "${app_dir}"
+      docker push "${IMAGE}"
+      docker tag "${IMAGE}" "${REGISTRY}/${app_id}:latest"
+      docker push "${REGISTRY}/${app_id}:latest"
+    done
+
+- name: Deploy to K8s
+  env:
+    COMMIT_SHA: ${{ steps.checkout.outputs.COMMIT_SHA }}
+    NEXUS_DOCKER_REGISTRY: ${{ secrets.NEXUS_DOCKER_REGISTRY }}
+    ENV: ${{ steps.env.outputs.ENV }}
+  shell: bash
+  run: |
+    set -euo pipefail
+    REGISTRY="${NEXUS_DOCKER_REGISTRY:-host.docker.internal:8083}"
+    REPLICAS=$(case "${ENV}" in dev) echo 1;; qa) echo 2;; prod) echo 3;; *) echo 1;; esac)
+
+    export ENV REGISTRY COMMIT_SHA REPLICAS
+    envsubst < infra/k8s/deploy.yaml | kubectl apply -f -
+
+    kubectl -n "sdd-${ENV}" rollout status deployment/openproject --timeout=120s
 ```
 
 ### 7. Add Gitea Secrets For K8s Access
 
 Ensure these secrets exist in Gitea:
 
-| Secret | Value |
-|--------|-------|
+| Secret           | Value                |
+| ---------------- | -------------------- |
 | `NEXUS_USERNAME` | Nexus admin username |
 | `NEXUS_PASSWORD` | Nexus admin password |
-| `KUBECONFIG` | Base64-encoded kubeconfig for the target cluster |
 
 Use the `sync-nexus-secrets` command for Nexus credentials:
+
 ```bash
 python -m tools.sdd_cli environment-lab sync-nexus-secrets
-```
-
-For `KUBECONFIG`, encode and add manually via Gitea UI or API:
-```bash
-cat ~/.kube/config | base64 -w0
-# Then add as KUBECONFIG secret in Gitea repository settings
 ```
 
 ### 8. Validate Deployment
@@ -375,8 +356,8 @@ cat ~/.kube/config | base64 -w0
 Verify end-to-end:
 
 1. **Docker build works**: `docker build -f frontend/Dockerfile frontend`
-2. **Kustomize builds**: `kustomize build infra/k8s/overlays/dev/`
-3. **Dry-run apply**: `kustomize build infra/k8s/overlays/dev/ | kubectl apply --dry-run=client -f -`
+2. **Envsubst renders**: `ENV=dev REPLICAS=1 REGISTRY=host.docker.internal:8083 COMMIT_SHA=test envsubst < infra/k8s/deploy.yaml`
+3. **Dry-run apply**: `ENV=dev REPLICAS=1 REGISTRY=host.docker.internal:8083 COMMIT_SHA=test envsubst < infra/k8s/deploy.yaml | kubectl apply --dry-run=client -f -`
 4. **Trigger CI**: Push to `dev` branch and verify the workflow succeeds
 
 ## CLI Commands
@@ -394,6 +375,7 @@ python -m tools.sdd_cli environment-lab scaffold-k8s
 This reads `infra/deployment/apps.json` to determine which apps to scaffold. Validates Docker Desktop K8s as a prerequisite before writing any files.
 
 Dry-run mode:
+
 ```bash
 python -m tools.sdd_cli environment-lab scaffold-k8s --dry-run true
 ```
@@ -407,6 +389,7 @@ python -m tools.sdd_cli environment-lab validate-docker-desktop-k8s
 ```
 
 Checks:
+
 - `kubectl` is available
 - K8s API server is reachable
 - Context is Docker Desktop
@@ -420,6 +403,7 @@ python -m tools.sdd_cli environment-lab setup-k8s-access
 ```
 
 For each app and environment:
+
 - Discovers the LoadBalancer `nodePort` if the service is already deployed
 - Shows the direct URL: `http://localhost:{nodePort}/health`
 - If not deployed, suggests the `kubectl port-forward` command
@@ -427,13 +411,14 @@ For each app and environment:
 ## Output
 
 Report:
-- Dockerfiles created/updated (path per app)    - K8s base manifests created (`infra/k8s/base/` — no Ingress, uses LoadBalancer for local access)
-- K8s environment overlays created (`infra/k8s/overlays/{dev,qa,prod}/`)
+
+- Dockerfiles created/updated (path per app)
+- K8s manifest created (`infra/k8s/deploy.yaml` — envsubst: ENV, REPLICAS, REGISTRY, COMMIT_SHA)
 - Nexus Docker repository configured (or already exists)
 - CI workflow changes applied (diff summary)
 - Gitea secrets required and current status
 - Environment URLs discovered (via `setup-k8s-access`)
-- Next steps for user: add `KUBECONFIG` secret, trigger first build
+- Next steps for user: trigger first build
 
 ## Failure Rules
 
@@ -443,15 +428,13 @@ Report:
 - **Nexus Docker repository creation fails**: stop — images need a Docker hosted repo, not a raw repo.
 - **Docker not available locally**: stop — cannot build images without Docker.
 - **Docker Desktop K8s not enabled**: stop and ask user to enable Kubernetes in Docker Desktop settings.
-- **kubectl not available**: warn but don't stop — CI will use its own kubeconfig or Docker Desktop's bundled kubectl.
-- **Kustomize not available**: install via `kubectl kustomize` or standalone binary.
+- **kubectl not available**: warn but don't stop — CI will use Docker Desktop's bundled kubectl.
 - **Never overwrite existing Dockerfiles or K8s manifests without showing a dry-run diff first.**
 - **Never hardcode secrets or tokens into manifest files.**
-- **Never store kubeconfig in tracked files — use Gitea secrets.**
 
 ### Known Limitations
 
 - **Single-app manifests**: The `scaffold-k8s` CLI generates K8s manifests for the first app in `apps.json` only. For multi-app projects, generate per-app manifests manually or extend the CLI.
 - **`npm ci` requirement**: The generated Dockerfile uses `npm ci`, which requires a lockfile (`package-lock.json`). If the project uses `yarn` or lacks a lockfile, update the Dockerfile build step accordingly.
 - **Docker Desktop single-node**: The built-in K8s is single-node — no pod anti-affinity, no multi-AZ, no load balancer. Fine for DEV/QA; PROD would need a proper cluster.
-- **Runner mounts required**: The Gitea Actions runner container needs `/var/run/docker.sock` and `~/.kube/config` mounted to build images and deploy to Docker Desktop K8s from CI.
+- **Runner mounts required**: The Gitea Actions runner container needs `/var/run/docker.sock` mounted to build images from CI.
