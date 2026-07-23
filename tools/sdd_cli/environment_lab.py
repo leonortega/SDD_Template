@@ -713,7 +713,7 @@ def set_gitea_branch_protection(root: Path, dry_run: bool = False) -> dict[str, 
     approvals = nested(client, "pr", "minimumApprovals") or {"dev": 1, "main": 1}
     for branch in ("dev", "main"):
         expected = int(approvals.get(branch, 1))
-        path = f"/api/v1/repos/{owner}/{repo}/branch-protections"
+        path = f"/api/v1/repos/{owner}/{repo}/branch_protections"
         parsed = urlparse(base_url)
         if dry_run:
             result["actions"].append(
@@ -746,16 +746,7 @@ def set_gitea_branch_protection(root: Path, dry_run: bool = False) -> dict[str, 
             response = conn.getresponse()
             response.read()
             conn.close()
-            if response.status not in {200, 201, 204}:
-                add_bucket_item(
-                    result["findings"],
-                    ".gitea/workflows/README.md",
-                    f"branch-protection.{branch}",
-                    f"Gitea returned HTTP {response.status}.",
-                    "error",
-                    "apply",
-                )
-            else:
+            if response.status in {200, 201, 204}:
                 result["actions"].append(
                     {
                         "path": ".gitea/workflows/README.md",
@@ -764,6 +755,50 @@ def set_gitea_branch_protection(root: Path, dry_run: bool = False) -> dict[str, 
                         "message": f"Set required_approvals={expected} for branch {branch}.",
                         "phase": "apply",
                     }
+                )
+            elif response.status == 409:
+                # Rule already exists — fall back to PATCH on branch_protections/{rule_name}
+                patch_path = f"/api/v1/repos/{owner}/{repo}/branch_protections/{branch}"
+                conn_patch = conn_cls(parsed.hostname or "", parsed.port, timeout=10)
+                conn_patch.request(
+                    "PATCH",
+                    patch_path,
+                    body=body,
+                    headers={
+                        "Authorization": f"token {token}",
+                        "Content-Type": "application/json",
+                    },
+                )
+                patch_resp = conn_patch.getresponse()
+                patch_resp.read()
+                conn_patch.close()
+                if patch_resp.status in {200, 201, 204}:
+                    result["actions"].append(
+                        {
+                            "path": ".gitea/workflows/README.md",
+                            "key": f"branch-protection.{branch}",
+                            "severity": "info",
+                            "message": f"Updated required_approvals={expected} for branch {branch} (PATCH).",
+                            "phase": "apply",
+                        }
+                    )
+                else:
+                    add_bucket_item(
+                        result["findings"],
+                        ".gitea/workflows/README.md",
+                        f"branch-protection.{branch}",
+                        f"Gitea returned HTTP {patch_resp.status} on PATCH fallback.",
+                        "error",
+                        "apply",
+                    )
+            else:
+                add_bucket_item(
+                    result["findings"],
+                    ".gitea/workflows/README.md",
+                    f"branch-protection.{branch}",
+                    f"Gitea returned HTTP {response.status}.",
+                    "error",
+                    "apply",
                 )
         except Exception as ex:
             add_bucket_item(
@@ -1550,8 +1585,8 @@ def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str,
         "POST", "/service/rest/v1/editions/eula/accept",
         body={"eulaAccepted": True}
     )
-    # Nexus EULA endpoint returns 204 on success, 400 if already accepted
-    if eula_status in {204, 200, 400}:
+    # Nexus EULA endpoint returns 204 on success, 400 if already accepted, 404 if not applicable (3.92+)
+    if eula_status in {204, 200, 400, 404}:
         result["actions"].append(
             {
                 "path": "nexus/eula",
@@ -2163,6 +2198,30 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
                                 "phase": "apply",
                             }
                         )
+                        # Restart runner container to pick up new token
+                        _restart = run_native(
+                            ["docker", "restart", "agentic-gitea-runner"],
+                            root, timeout=30
+                        )
+                        if _restart["returncode"] == 0:
+                            result["actions"].append(
+                                {
+                                    "path": "docker/container/agentic-gitea-runner",
+                                    "key": "runner.restart",
+                                    "severity": "info",
+                                    "message": "Restarted Gitea runner container to pick up new registration token.",
+                                    "phase": "apply",
+                                }
+                            )
+                        else:
+                            add_bucket_item(
+                                result["findings"],
+                                "docker/container/agentic-gitea-runner",
+                                "runner.restart",
+                                f"Could not restart Gitea runner: {_restart['stderr']}",
+                                "warning",
+                                "apply",
+                            )
                 except Exception:
                     pass
             else:
@@ -2533,7 +2592,7 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 Path(tmp_path).unlink(missing_ok=True)
         if (
             rails_result["returncode"] == 0
-            and "Board created" in rails_result["stdout"]
+            and "e2e-test created" in rails_result["stdout"]
         ):
             result["actions"].append(
                 {
@@ -2582,6 +2641,7 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
             rails_key_cmd = (
                 "cd /app && bundle exec rails runner "
                 '"u = User.find_by(login: \\"admin\\"); '
+                "u.force_password_change = false; u.save!; "
                 "token = Token::API.create!(user: u); "
                 'puts token.plain_value"'
             )
@@ -2946,10 +3006,7 @@ def push_to_gitea(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
     # ── 1. Add Gitea remote if not present ────────────────────────────
     existing = run_native(["git", "remote", "-v"], root, timeout=10)
-    if (
-        existing["returncode"] == 0
-        and f"gitea\t{gitea_remote_url}" in existing["stdout"]
-    ):
+    if existing["returncode"] == 0 and "gitea" in existing["stdout"]:
         result["actions"].append(
             {
                 "path": "git/remote/gitea",
