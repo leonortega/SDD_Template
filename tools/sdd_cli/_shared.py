@@ -136,6 +136,9 @@ def sdd_tool_files(source: Path) -> list[str]:
             # Exclude by suffix
             if any(relative.endswith(suffix) for suffix in exclude_suffixes):
                 continue
+            # Skip only the root README.md; subdirectory README files are managed.
+            if relative == "README.md":
+                continue
             files.append(relative)
     return sorted(files)
 

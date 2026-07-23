@@ -23,7 +23,6 @@
     ".git/",
     ".pytest_cache",
     "openspec/changes",
-    "README.md",
     "tools/sdd_cli/tests"
   ],
   "SDD_TOOL_EXCLUDE_SEGMENTS": [

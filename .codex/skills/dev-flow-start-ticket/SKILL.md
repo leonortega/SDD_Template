@@ -183,7 +183,7 @@ Definition of done:
 
 On rerun, replace only the content between `<!-- ia-generated:start -->` and `<!-- ia-generated:end -->`. Preserve all human-written text outside the markers exactly. If only one marker exists, stop and ask for manual cleanup.
 
-Acceptance criteria must be concrete and testable. Reject and regenerate criteria containing generic wording such as `works correctly`, `as expected`, or `properly implemented`.
+Acceptance criteria must be concrete and testable. Reject and regenerate criteria containing generic wording such as `works correctly`, `as expected`, or `properly implemented`. Every acceptance criterion will drive a vertical TDD cycle during implementation: one behavior-focused test through a public interface, RED confirmation, minimal code, GREEN confirmation. Criteria must be verifiable through committed automated test coverage — not manual checks deferred to QA.
 
 Concrete examples:
 
