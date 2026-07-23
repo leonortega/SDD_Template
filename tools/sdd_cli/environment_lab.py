@@ -713,7 +713,7 @@ def set_gitea_branch_protection(root: Path, dry_run: bool = False) -> dict[str, 
     approvals = nested(client, "pr", "minimumApprovals") or {"dev": 1, "main": 1}
     for branch in ("dev", "main"):
         expected = int(approvals.get(branch, 1))
-        path = f"/api/v1/repos/{owner}/{repo}/branch_protections/{branch}"
+        path = f"/api/v1/repos/{owner}/{repo}/branch-protections"
         parsed = urlparse(base_url)
         if dry_run:
             result["actions"].append(
@@ -727,7 +727,7 @@ def set_gitea_branch_protection(root: Path, dry_run: bool = False) -> dict[str, 
             )
             continue
         try:
-            body = json.dumps({"required_approvals": expected})
+            body = json.dumps({"rule_name": branch, "required_approvals": expected})
             conn_cls = (
                 http.client.HTTPSConnection
                 if parsed.scheme == "https"
@@ -735,7 +735,7 @@ def set_gitea_branch_protection(root: Path, dry_run: bool = False) -> dict[str, 
             )
             conn = conn_cls(parsed.hostname or "", parsed.port, timeout=10)
             conn.request(
-                "PATCH",
+                "POST",
                 path,
                 body=body,
                 headers={
@@ -761,7 +761,7 @@ def set_gitea_branch_protection(root: Path, dry_run: bool = False) -> dict[str, 
                         "path": ".gitea/workflows/README.md",
                         "key": f"branch-protection.{branch}",
                         "severity": "info",
-                        "message": f"Set required_approvals={expected}.",
+                        "message": f"Set required_approvals={expected} for branch {branch}.",
                         "phase": "apply",
                     }
                 )

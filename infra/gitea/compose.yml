@@ -21,6 +21,9 @@ services:
       GITEA__server__SSH_DOMAIN: localhost
       GITEA__server__SSH_PORT: 2222
       GITEA__actions__ENABLED: "true"
+      GITEA__database__DB_TYPE: sqlite3
+      GITEA__security__INSTALL_LOCK: "true"
+      GITEA__security__SECRET_KEY: "ChangeThisToALongRandomString123!"
       GITEA__packages__ENABLED: "false"
       GITEA__admin__USERNAME: admin
       GITEA__admin__PASSWORD: admin123
