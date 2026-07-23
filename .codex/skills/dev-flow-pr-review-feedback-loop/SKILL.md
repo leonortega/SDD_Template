@@ -62,28 +62,28 @@ Required/defaulted values:
 
    Include PR link, source ids or links, classifications, and OpenSpec feedback task ids.
    Use the ticket activities API with a `comment.raw` payload. Read activities back and verify the activity comment starts with the marker.
+
 8. Apply the requested code, test, documentation, or workflow change in the existing PR branch. Update OpenSpec specs or design artifacts when behavior changes.
 9. Run the relevant validation checks for changed files. Use the same quality-gate discovery and failure classification as `dev-flow-implement-ticket`. If feedback fixes touch deployable project files, deployment manifests, provider-specific deployment infrastructure, or configured package/deploy workflows, run Deployment Topology Review through the selected deployment configure skill and report `Deployment topology: updated`, `Deployment topology: verified`, or `Deployment topology: no deployable app changes` in the ticket provider fix comment.
 10. Mark OpenSpec feedback tasks complete only after code and validation are complete.
 11. Commit with the ticket key: commit the feedback batch as its own ticket-prefixed commit when tracked changes exist. Skip empty commits. Do not automatically stash normal ticket progress; use stash only for unrelated local or user changes that block the fix. Push the fix commit, then add a ticket comment with marker:
 
-   ```text
-   IA generated PR feedback fixes: {headSha}:{feedbackBatchId}
-   ```
+```text
+IA generated PR feedback fixes: {headSha}:{feedbackBatchId}
+```
 
-   Keep the marker as the first line by itself, followed by a blank line and a reviewer-facing Markdown summary. The body must be human-readable, not only automation evidence, and must include:
+Keep the marker as the first line by itself, followed by a blank line and a reviewer-facing Markdown summary. The body must be human-readable, not only automation evidence, and must include:
 
-   - `**Status:** READY FOR REVIEW | BLOCKED | PARTIAL - short outcome`
-   - `**Reviewer feedback addressed:**` source ids or links plus a short human summary of each comment
-   - `**How IA resolved it:**` concrete changes in reviewer language, not only file names or task ids
-   - `**Changed:**` commit SHA pushed, PR link, and completed OpenSpec feedback tasks
-   - `**Validation:**` checks run and results
-   - `**Reviewer readiness:**` what the reviewer should re-check, plus remaining blockers or `None`
-   - `**Skipped comments:**` only when non-actionable, stale, duplicate, generated, ambiguous, or conflicting comments were skipped
+- `**Status:** READY FOR REVIEW | BLOCKED | PARTIAL - short outcome`
+- `**Reviewer feedback addressed:**` source ids or links plus a short human summary of each comment
+- `**How IA resolved it:**` concrete changes in reviewer language, not only file names or task ids
+- `**Changed:**` commit SHA pushed, PR link, and completed OpenSpec feedback tasks
+- `**Validation:**` checks run and results
+- `**Reviewer readiness:**` what the reviewer should re-check, plus remaining blockers or `None`
+- `**Skipped comments:**` only when non-actionable, stale, duplicate, generated, ambiguous, or conflicting comments were skipped
 
-   Include stash notes when relevant without exposing secrets or noisy tool output.
-   Use the ticket activities API with a `comment.raw` payload. If a generated activity is missing or wrong, add a corrected marker activity and then read activities back before handoff.
-12. Rerun the AI review loop on the new head before returning to human review or implementation handoff.
+Include stash notes when relevant without exposing secrets or noisy tool output.
+Use the ticket activities API with a `comment.raw` payload. If a generated activity is missing or wrong, add a corrected marker activity and then read activities back before handoff. 12. Rerun the AI review loop on the new head before returning to human review or implementation handoff.
 
 Keep ticket provider in `In Review` while late human feedback fixes are applied. Do not move the ticket backward unless another workflow rule explicitly requires it.
 

@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Deployment app topology",
+  "type": "object",
+  "required": [
+    "version",
+    "apps"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "apps": {
+      "type": "array",
+      "minItems": 0,
+      "items": {
+        "type": "object",
+        "required": [
+          "appId",
+          "projectPath",
+          "role",
+          "healthPath",
+          "deployOrder"
+        ],
+        "properties": {
+          "appId": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]*$"
+          },
+          "projectPath": {
+            "type": "string",
+            "minLength": 1
+          },
+          "role": {
+            "type": "string",
+            "minLength": 1
+          },
+          "artifactName": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9.-]*\\.zip$"
+          },
+          "healthPath": {
+            "type": "string",
+            "pattern": "^/"
+          },
+          "deployOrder": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "dependsOn": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

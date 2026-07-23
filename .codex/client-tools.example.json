@@ -12,10 +12,7 @@
       "enabled": true,
       "defaultActivityName": "Other",
       "activityFlow": {
-        "Management": [
-          "dev-ops-post-merge-deploy",
-          "dev-ops-deploy-prod"
-        ],
+        "Management": ["dev-ops-post-merge-deploy", "dev-ops-deploy-prod"],
         "Specification": [
           "dev-flow-propose-change",
           "dev-flow-start-ticket",
@@ -27,19 +24,13 @@
           "dev-flow-pr-review-agent",
           "dev-flow-pr-review-feedback-loop"
         ],
-        "Testing": [
-          "dev-ops-deploy-qa",
-          "configured-qa-gate"
-        ],
+        "Testing": ["dev-ops-deploy-qa", "configured-qa-gate"],
         "Support": [
           "dev-flow-file-qa-bug",
           "dev-ops-rollback-prod",
           "dev-ops-hotfix-prod"
         ],
-        "Other": [
-          "dev-flow-pipeline-status",
-          "dev-flow-retrospective-audit"
-        ]
+        "Other": ["dev-flow-pipeline-status", "dev-flow-retrospective-audit"]
       },
       "activityByStage": {
         "dev-flow-propose-change": {
@@ -183,7 +174,12 @@
   "recommendedTools": {
     "enabled": true,
     "mode": "guarded-auto",
-    "accepted": ["ponytail", "caveman", "playwright", "dev-flow-pr-review-agent-skill"],
+    "accepted": [
+      "ponytail",
+      "caveman",
+      "playwright",
+      "dev-flow-pr-review-agent-skill"
+    ],
     "dismissed": ["openproject-mcp"]
   },
   "openRouter": {

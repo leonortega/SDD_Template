@@ -9,9 +9,8 @@ import io
 import json
 import tempfile
 import unittest
-from contextlib import redirect_stdout, redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
-
 
 from tools.sdd_cli import cli
 
@@ -121,11 +120,16 @@ class DevFlowDispatchTests(unittest.TestCase):
             )
             stdout = io.StringIO()
             with redirect_stdout(stdout):
-                rc = cli.main([
-                    "dev-flow", "validate-commit-message",
-                    "--root", str(root),
-                    "--message", "[SDD] maintenance",
-                ])
+                rc = cli.main(
+                    [
+                        "dev-flow",
+                        "validate-commit-message",
+                        "--root",
+                        str(root),
+                        "--message",
+                        "[SDD] maintenance",
+                    ]
+                )
             self.assertEqual(0, rc)
             result = json.loads(stdout.getvalue())
             self.assertTrue(result["valid"])
@@ -142,10 +146,14 @@ class DevFlowDispatchTests(unittest.TestCase):
         """dev-flow detect-adversarial-trigger works."""
         stdout = io.StringIO()
         with redirect_stdout(stdout):
-            rc = cli.main([
-                "dev-flow", "detect-adversarial-trigger",
-                "--risk-level", "high",
-            ])
+            rc = cli.main(
+                [
+                    "dev-flow",
+                    "detect-adversarial-trigger",
+                    "--risk-level",
+                    "high",
+                ]
+            )
         self.assertEqual(0, rc)
         result = json.loads(stdout.getvalue())
         self.assertTrue(result["trigger"])
@@ -154,10 +162,14 @@ class DevFlowDispatchTests(unittest.TestCase):
         """dev-flow parse-workload-forecast with missing file returns valid=False."""
         stdout = io.StringIO()
         with redirect_stdout(stdout):
-            rc = cli.main([
-                "dev-flow", "parse-workload-forecast",
-                "--tasks-path", "/nonexistent/tasks.md",
-            ])
+            rc = cli.main(
+                [
+                    "dev-flow",
+                    "parse-workload-forecast",
+                    "--tasks-path",
+                    "/nonexistent/tasks.md",
+                ]
+            )
         self.assertEqual(1, rc)
         result = json.loads(stdout.getvalue())
         self.assertFalse(result["valid"])
@@ -169,11 +181,16 @@ class DevFlowDispatchTests(unittest.TestCase):
             root = Path(tmp)
             stdout = io.StringIO()
             with redirect_stdout(stdout):
-                rc = cli.main([
-                    "dev-flow", "ensure-delivery-context",
-                    "--root", str(root),
-                    "--values-json", json.dumps({"ticketKey": "ABC-1", "branch": "feat/test"}),
-                ])
+                rc = cli.main(
+                    [
+                        "dev-flow",
+                        "ensure-delivery-context",
+                        "--root",
+                        str(root),
+                        "--values-json",
+                        json.dumps({"ticketKey": "ABC-1", "branch": "feat/test"}),
+                    ]
+                )
             self.assertEqual(0, rc)
             result = json.loads(stdout.getvalue())
             self.assertTrue(result["valid"])
@@ -188,11 +205,16 @@ class DevFlowDispatchTests(unittest.TestCase):
             root = Path(tmp)
             stdout = io.StringIO()
             with redirect_stdout(stdout):
-                rc = cli.main([
-                    "dev-flow", "init-telemetry",
-                    "--ticket-key", "ABC-1",
-                    "--root", str(root),
-                ])
+                rc = cli.main(
+                    [
+                        "dev-flow",
+                        "init-telemetry",
+                        "--ticket-key",
+                        "ABC-1",
+                        "--root",
+                        str(root),
+                    ]
+                )
             self.assertEqual(0, rc)
             result = json.loads(stdout.getvalue())
             self.assertTrue(result["exists"])
@@ -202,23 +224,40 @@ class DevFlowDispatchTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             # First initialize
-            cli.main(["dev-flow", "init-telemetry", "--ticket-key", "ABC-1", "--root", str(root)])
+            cli.main(
+                [
+                    "dev-flow",
+                    "init-telemetry",
+                    "--ticket-key",
+                    "ABC-1",
+                    "--root",
+                    str(root),
+                ]
+            )
             # Then append
             stdout = io.StringIO()
             with redirect_stdout(stdout):
-                rc = cli.main([
-                    "dev-flow", "append-telemetry",
-                    "--ticket-key", "ABC-1",
-                    "--root", str(root),
-                    "--input-json", json.dumps({
-                        "workflowStage": "test",
-                        "agentRole": "tester",
-                        "startedUtc": "2026-07-13T10:00:00Z",
-                        "finishedUtc": "2026-07-13T10:01:00Z",
-                        "retryCount": 0,
-                        "outcome": "PASS",
-                    }),
-                ])
+                rc = cli.main(
+                    [
+                        "dev-flow",
+                        "append-telemetry",
+                        "--ticket-key",
+                        "ABC-1",
+                        "--root",
+                        str(root),
+                        "--input-json",
+                        json.dumps(
+                            {
+                                "workflowStage": "test",
+                                "agentRole": "tester",
+                                "startedUtc": "2026-07-13T10:00:00Z",
+                                "finishedUtc": "2026-07-13T10:01:00Z",
+                                "retryCount": 0,
+                                "outcome": "PASS",
+                            }
+                        ),
+                    ]
+                )
             self.assertEqual(0, rc)
             result = json.loads(stdout.getvalue())
             self.assertTrue(result["appended"])
@@ -239,11 +278,16 @@ class GuidanceDispatchTests(unittest.TestCase):
             )
             stdout = io.StringIO()
             with redirect_stdout(stdout):
-                rc = cli.main([
-                    "guidance", "write-skill-index",
-                    "--root", str(root),
-                    "--dry-run", "true",
-                ])
+                rc = cli.main(
+                    [
+                        "guidance",
+                        "write-skill-index",
+                        "--root",
+                        str(root),
+                        "--dry-run",
+                        "true",
+                    ]
+                )
             self.assertEqual(0, rc)
             result = json.loads(stdout.getvalue())
             self.assertTrue(result["valid"])
@@ -262,19 +306,29 @@ class EnvironmentLabDispatchTests(unittest.TestCase):
             (codex / "client-tools.example.json").write_text("{}", encoding="utf-8")
             (codex / "quality.example.json").write_text("{}", encoding="utf-8")
             (root / "infra" / "openproject").mkdir(parents=True)
-            (root / "infra" / "openproject" / "variables.env.example").write_text("OPENPROJECT_HOST=\n", encoding="utf-8")
+            (root / "infra" / "openproject" / "variables.env.example").write_text(
+                "OPENPROJECT_HOST=\n", encoding="utf-8"
+            )
             (root / "infra" / "monitoring").mkdir(parents=True)
-            (root / "infra" / "monitoring" / "variables.env.example").write_text("SEQ_URL=\n", encoding="utf-8")
+            (root / "infra" / "monitoring" / "variables.env.example").write_text(
+                "SEQ_URL=\n", encoding="utf-8"
+            )
 
             (root / "infra" / "gitea").mkdir(parents=True)
-            (root / "infra" / "gitea" / "runner.env.example").write_text("GITEA_INSTANCE_URL=\n", encoding="utf-8")
+            (root / "infra" / "gitea" / "runner.env.example").write_text(
+                "GITEA_INSTANCE_URL=\n", encoding="utf-8"
+            )
 
             stdout = io.StringIO()
             with redirect_stdout(stdout):
-                rc = cli.main([
-                    "environment-lab", "init-local-files",
-                    "--root", str(root),
-                ])
+                rc = cli.main(
+                    [
+                        "environment-lab",
+                        "init-local-files",
+                        "--root",
+                        str(root),
+                    ]
+                )
             self.assertEqual(0, rc)
             result = json.loads(stdout.getvalue())
             self.assertTrue(result["valid"])
@@ -286,10 +340,14 @@ class EnvironmentLabDispatchTests(unittest.TestCase):
             root = Path(tmp)
             stdout = io.StringIO()
             with redirect_stdout(stdout):
-                rc = cli.main([
-                    "environment-lab", "init-project-profile",
-                    "--root", str(root),
-                ])
+                rc = cli.main(
+                    [
+                        "environment-lab",
+                        "init-project-profile",
+                        "--root",
+                        str(root),
+                    ]
+                )
             self.assertEqual(0, rc)
             self.assertTrue((root / ".codex" / "project-profile.example.json").exists())
 
@@ -299,10 +357,14 @@ class EnvironmentLabDispatchTests(unittest.TestCase):
             root = Path(tmp)
             stdout = io.StringIO()
             with redirect_stdout(stdout):
-                rc = cli.main([
-                    "environment-lab", "init-quality-templates",
-                    "--root", str(root),
-                ])
+                rc = cli.main(
+                    [
+                        "environment-lab",
+                        "init-quality-templates",
+                        "--root",
+                        str(root),
+                    ]
+                )
             self.assertEqual(0, rc)
             result = json.loads(stdout.getvalue())
             self.assertTrue(result.get("changed", False))
@@ -319,16 +381,25 @@ class EnvironmentLabDispatchTests(unittest.TestCase):
             )
             grafana = monitoring / "grafana" / "provisioning"
             (grafana / "datasources").mkdir(parents=True)
-            (grafana / "datasources" / "infinity-health.yml").write_text("datasource", encoding="utf-8")
+            (grafana / "datasources" / "infinity-health.yml").write_text(
+                "datasource", encoding="utf-8"
+            )
             (grafana / "alerting").mkdir(parents=True)
-            (grafana / "alerting" / "health-alerts.yml").write_text("alerts", encoding="utf-8")
+            (grafana / "alerting" / "health-alerts.yml").write_text(
+                "alerts", encoding="utf-8"
+            )
             stdout = io.StringIO()
             with redirect_stdout(stdout):
-                rc = cli.main([
-                    "environment-lab", "validate-observability",
-                    "--root", str(root),
-                    "--dry-run", "true",
-                ])
+                rc = cli.main(
+                    [
+                        "environment-lab",
+                        "validate-observability",
+                        "--root",
+                        str(root),
+                        "--dry-run",
+                        "true",
+                    ]
+                )
             self.assertEqual(0, rc)  # Dry-run skips HTTP checks
 
 
@@ -345,11 +416,16 @@ class ToolInstallerDispatchTests(unittest.TestCase):
             (shim / "mcp_cap_shim.py").write_text("# shim", encoding="utf-8")
             stdout = io.StringIO()
             with redirect_stdout(stdout):
-                rc = cli.main([
-                    "tool-installer", "ensure-codebase-memory",
-                    "--root", str(root),
-                    "--dry-run", "true",
-                ])
+                rc = cli.main(
+                    [
+                        "tool-installer",
+                        "ensure-codebase-memory",
+                        "--root",
+                        str(root),
+                        "--dry-run",
+                        "true",
+                    ]
+                )
             self.assertEqual(0, rc)
             result = json.loads(stdout.getvalue())
             self.assertTrue(result["valid"])
@@ -360,29 +436,42 @@ class ToolInstallerDispatchTests(unittest.TestCase):
             root = Path(tmp)
             (root / "lefthook.yml").write_text(
                 "commit-msg:\n  commands:\n    test:\n      run: echo ok\n",
-                encoding="utf-8"
+                encoding="utf-8",
             )
             stdout = io.StringIO()
             with redirect_stdout(stdout):
-                rc = cli.main([
-                    "tool-installer", "ensure-quality-tools",
-                    "--root", str(root),
-                    "--dry-run", "true",
-                ])
+                rc = cli.main(
+                    [
+                        "tool-installer",
+                        "ensure-quality-tools",
+                        "--root",
+                        str(root),
+                        "--dry-run",
+                        "true",
+                    ]
+                )
             self.assertEqual(0, rc)  # Dry-run skips external tool checks
 
     def test_install_lefthook_dry_run(self) -> None:
         """tool-installer install-lefthook --dry-run true works."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / "lefthook.yml").write_text("pre-commit:\n  commands:\n    test:\n      run: echo ok\n", encoding="utf-8")
+            (root / "lefthook.yml").write_text(
+                "pre-commit:\n  commands:\n    test:\n      run: echo ok\n",
+                encoding="utf-8",
+            )
             stdout = io.StringIO()
             with redirect_stdout(stdout):
-                rc = cli.main([
-                    "tool-installer", "install-lefthook",
-                    "--root", str(root),
-                    "--dry-run", "true",
-                ])
+                rc = cli.main(
+                    [
+                        "tool-installer",
+                        "install-lefthook",
+                        "--root",
+                        str(root),
+                        "--dry-run",
+                        "true",
+                    ]
+                )
             self.assertEqual(0, rc)
             result = json.loads(stdout.getvalue())
             self.assertTrue(result["valid"])
@@ -403,12 +492,16 @@ class MemorySearchDispatchTests(unittest.TestCase):
             )
             stdout = io.StringIO()
             with redirect_stdout(stdout):
-                rc = cli.main([
-                    "memory-search", "search",
-                    "--root", str(root),
-                    "--list-topics",
-                    "--json",
-                ])
+                rc = cli.main(
+                    [
+                        "memory-search",
+                        "search",
+                        "--root",
+                        str(root),
+                        "--list-topics",
+                        "--json",
+                    ]
+                )
             self.assertEqual(0, rc)
             results = json.loads(stdout.getvalue())
             self.assertIsInstance(results, list)
@@ -429,11 +522,16 @@ class ValidateGiteaRunnerDispatchTests(unittest.TestCase):
             (actions / "Dockerfile").write_text("FROM alpine\n", encoding="utf-8")
             stdout = io.StringIO()
             with redirect_stdout(stdout):
-                rc = cli.main([
-                    "environment-lab", "validate-gitea-runner",
-                    "--root", str(root),
-                    "--dry-run", "true",
-                ])
+                rc = cli.main(
+                    [
+                        "environment-lab",
+                        "validate-gitea-runner",
+                        "--root",
+                        str(root),
+                        "--dry-run",
+                        "true",
+                    ]
+                )
             self.assertEqual(0, rc)
 
 

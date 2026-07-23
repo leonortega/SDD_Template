@@ -1,4 +1,5 @@
 <!-- TIER 2: SEMI-STABLE - Core startup sequence, loaded every stage, changes rarely -->
+
 # Skill Startup
 
 Use this startup sequence for non-OpenSpec, non-configure delivery skills before reading or mutating delivery state.

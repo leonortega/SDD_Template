@@ -1,0 +1,102 @@
+# NOTE: No `name:` field - inherits parent project name (agentic-e2e) when
+# included via infra/compose.yml. Run all services from infra/compose.yml
+# to keep volumes and networks consistent.
+
+networks:
+  gitea:
+
+volumes:
+  gitea-data:
+  runner-data:
+
+services:
+  gitea:
+    image: gitea/gitea:1.26.2
+    container_name: agentic-gitea
+    environment:
+      USER_UID: 1000
+      USER_GID: 1000
+      GITEA__server__DOMAIN: localhost
+      GITEA__server__ROOT_URL: http://localhost:3000/
+      GITEA__server__SSH_DOMAIN: localhost
+      GITEA__server__SSH_PORT: 2222
+      GITEA__actions__ENABLED: true
+      GITEA__database__DB_TYPE: sqlite3
+      GITEA__security__INSTALL_LOCK: true
+      GITEA__security__SECRET_KEY: ChangeThisToALongRandomString123!
+      GITEA__packages__ENABLED: false
+      GITEA__admin__USERNAME: admin
+      GITEA__admin__PASSWORD: admin123
+      GITEA__admin__EMAIL: admin@example.com
+      GITEA__admin__MUST_CHANGE_PASSWORD: false
+    ports:
+      - "3000:3000"
+      - "2222:22"
+    volumes:
+      - gitea-data:/data
+    networks:
+      - gitea
+    restart: unless-stopped
+
+  runner:
+    image: gitea/runner:1.0.0
+    container_name: agentic-gitea-runner
+    depends_on:
+      - gitea
+    env_file:
+      - ./runner.env
+    environment:
+      KUBECONFIG: /home/runner/.kube/config
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # Docker Desktop Windows bind-mounts single files as directories (known gRPC FUSE bug),
+    # so we write config.yml from a heredoc instead of mounting it.
+    # The FUSE path for the kubeconfig uses $USERNAME env var (injected by Docker Desktop).
+    volumes:
+      - runner-data:/data
+      - //var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - gitea
+    restart: unless-stopped
+    command:
+      - sh
+      - -c
+      - |
+        WIN_USER="${USERNAME:-}"
+        if [ -z "${WIN_USER}" ] && [ -f "/home/runner/.kube/config" ]; then
+          KUBE_SRC="/home/runner/.kube/config"
+        elif [ -n "${WIN_USER}" ] && [ -f "/run/desktop/mnt/host/c/Users/${WIN_USER}/.kube/config" ]; then
+          KUBE_SRC="/run/desktop/mnt/host/c/Users/${WIN_USER}/.kube/config"
+        elif ls /run/desktop/mnt/host/c/Users/ 2>/dev/null | head -1 | read -r first_user && [ -f "/run/desktop/mnt/host/c/Users/${first_user}/.kube/config" ]; then
+          KUBE_SRC="/run/desktop/mnt/host/c/Users/${first_user}/.kube/config"
+        else
+          KUBE_SRC=""
+          echo "WARNING: Could not locate kubeconfig path."
+        fi
+        cat > /tmp/config.yml << YAMLEOF
+        log:
+          level: info
+        runner:
+          capacity: 1
+          env_file: .env
+          timeout: 3h
+          fetch_interval: 2s
+          labels: []
+        cache:
+          enabled: true
+        container:
+          network: agentic-e2e_nexus
+          options: 
+          workdir_parent: /workspace
+          valid_volumes:
+            - /var/run/docker.sock:/var/run/docker.sock
+            - ${KUBE_SRC}:/home/runner/.kube/config:ro
+          force_pull: false
+          force_rebuild: false
+          bind_workdir: false
+        host:
+          workdir_parent: 
+        YAMLEOF
+        export CONFIG_FILE=/tmp/config.yml
+        echo "Runner config written with kubeconfig: ${KUBE_SRC}"
+        exec run.sh

@@ -22,10 +22,7 @@
     },
     "implement": {
       "description": "Implementation flow: continue delivery, change implementation, TDD",
-      "skills": [
-        "dev-flow-continue-implementation/SKILL.md",
-        "tdd/SKILL.md"
-      ]
+      "skills": ["dev-flow-continue-implementation/SKILL.md", "tdd/SKILL.md"]
     },
     "review": {
       "description": "PR review: agent review, feedback loop, complexity review",
@@ -60,15 +57,11 @@
     },
     "parallel": {
       "description": "Multi-ticket parallel coordination",
-      "skills": [
-        "dev-flow-parallel-ticket-coordinator/SKILL.md"
-      ]
+      "skills": ["dev-flow-parallel-ticket-coordinator/SKILL.md"]
     },
     "config": {
       "description": "Environment setup and configuration",
-      "skills": [
-        "configure-dev-environment/SKILL.md"
-      ]
+      "skills": ["configure-dev-environment/SKILL.md"]
     },
     "guidance": {
       "description": "Project guidance discovery, acquisition, and mapping",
@@ -89,16 +82,11 @@
     },
     "security": {
       "description": "Security best practices review and secure coding",
-      "skills": [
-        "security-best-practices/SKILL.md"
-      ]
+      "skills": ["security-best-practices/SKILL.md"]
     },
     "test": {
       "description": "Browser testing: Playwright automation, interactive debugging",
-      "skills": [
-        "playwright/SKILL.md",
-        "playwright-interactive/SKILL.md"
-      ]
+      "skills": ["playwright/SKILL.md", "playwright-interactive/SKILL.md"]
     },
     "quality": {
       "description": "Code quality: ponytail audit, debt detection, help",

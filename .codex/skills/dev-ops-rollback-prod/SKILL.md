@@ -39,7 +39,7 @@ Run preflight, rollback deployment, verification, ticket-provider result, and fo
    - one `app/{commitSha}/{artifactName}.sha256` per topology app
    - `app/{commitSha}/commit.sha`
    - `app/{commitSha}/release.json`
-   selected deployment provider requires:
+     selected deployment provider requires:
    - `app/{commitSha}/container-images.json`
    - `app/{commitSha}/commit.sha`
    - `app/{commitSha}/release.json`

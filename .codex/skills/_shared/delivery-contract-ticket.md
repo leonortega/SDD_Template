@@ -1,4 +1,5 @@
 <!-- TIER 3: STAGE-SPECIFIC - Ticket stage (start, implement, propose, explore) -->
+
 # Delivery Contract — Ticket (start, implement, propose, explore)
 
 Stage-specific rules for ticket creation, implementation planning, and commit workflow. Read in addition to `delivery-contract-core.md`.
@@ -8,6 +9,7 @@ Stage-specific rules for ticket creation, implementation planning, and commit wo
 ## States And Flow
 
 Default OpenProject statuses (set by provision-lab-users):
+
 - New (default): work is not started.
 - To Do: ready to work.
 - In Process: actively being worked on.
@@ -19,7 +21,9 @@ Default OpenProject statuses (set by provision-lab-users):
 - Done: E2E QA passed with acceptance criteria proven by executable assertions against the deployed QA artifact, and the ticket is closed as QA accepted and eligible for a later explicit PROD release.
 
 Delivery flow:
+
 ```
+text
 OpenProject Todo → branch/OpenSpec → implementation → PR review → dev → DEV/QA → E2E QA → main → PROD → rollback/hotfix when needed
 ```
 
@@ -34,6 +38,7 @@ PROD promotion is explicit and release-centric. Do not promote to PROD only beca
 ## Ticket Refinement Gate
 
 Before `dev-flow-start-ticket` mutates Git, OpenProject status, the delivery lock, or OpenSpec, classify the ticket as:
+
 - `ready`: includes a user-visible goal, concrete acceptance criteria, and validation expectations.
 - `refinable`: intent is clear enough to proceed after adding Scrum-ready planning details to the managed OpenProject block.
 - `blocked`: product or technical intent is too vague to safely generate acceptance criteria.
@@ -43,6 +48,7 @@ For `refinable`, update only the generated OpenProject block and continue. For `
 ## Review Workload Forecast
 
 OpenSpec `tasks.md` for ticketed implementation must include a compact `Review Workload Forecast` near the top:
+
 ```
 Estimated changed lines: <rough range or number>
 400-line budget risk: Low|Medium|High
@@ -67,6 +73,7 @@ For each commit checkpoint: finish changes, review `git status` and diff, run th
 Project guidance remains the broad catalog for skills, tools, references, practices, standards, MCPs, and plugins. The installed-skill runtime index is only a derived cache of actual `.codex/skills/*/SKILL.md` files and exact paths for delegation.
 
 Rules:
+
 - The index must be ignored local state and secret-free.
 - Cache by schema version plus skill path, mtime, and size so unchanged skills are cheap to reuse.
 - `SKILL.md` remains the source of truth; the index does not summarize, rewrite, acquire, accept, dismiss, or replace project guidance.
@@ -77,6 +84,7 @@ Rules:
 Normal automatic delivery must stay locked to one OpenProject work package. Use ignored `.codex/delivery-context.local.json` as the local active delivery context lock. Never commit it. Do not delete the lock merely because E2E QA moved a ticket to `Done`; the lock can still carry QA-approved artifact, RC, and release context needed for explicit PROD promotion.
 
 Baseline shape:
+
 ```json
 {
   "ticketKey": "E2EPROJECT-123",
@@ -90,6 +98,7 @@ Baseline shape:
 ```
 
 Rules:
+
 - `dev-flow-continue-implementation` resolves or creates the lock before delegating.
 - `dev-flow-start-ticket` creates or updates the lock after the selected ticket, branch, and OpenSpec decision are known. If an existing lock names a different ticket that is `Done`, replace the lock. If the locked ticket is active, missing, ambiguous, or cannot be verified, stop and report the lock blocker.
 - Child skills must verify their resolved ticket, branch, PR, artifact `release.json.ticketKey`, QA evidence path, RC tag, and PROD release lineage match the locked `ticketKey` before mutating or promoting.

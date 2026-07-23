@@ -1,4 +1,5 @@
 <!-- TIER 3: STAGE-SPECIFIC - QA stage (deploy to QA, E2E QA, QA bug) -->
+
 # Delivery Contract — QA (deploy to QA, E2E QA, QA bug)
 
 Stage-specific rules for QA evidence, trigger branch cleanup, and OpenSpec archive. Read in addition to `delivery-contract-core.md`.
@@ -16,6 +17,7 @@ When a deployed browser E2E fails, use Playwright MCP or the configured Browser/
 Implementation owns acceptance test creation. `configured QA gate` owns deployed browser E2E execution, evidence, and QA pass/fail classification only; it must not create, repair, commit, or stage tests. After QA deployment, use the selected provider temporary QA trigger branch from the tested `dev` commit to run the committed suite remotely against the deployed QA URLs and publish evidence.
 
 Before `configured QA gate` may move a ticket to Done, it must:
+
 - resolve the OpenProject/OpenSpec acceptance criteria and validation expectations for the ticket,
 - map each criterion to at least one explicit test oracle or mark the criterion blocked,
 - execute the relevant checks against the exact deployed QA artifact commit and tested QA URLs,
@@ -26,6 +28,7 @@ Before `configured QA gate` may move a ticket to Done, it must:
 Ticket-scoped QA scenarios should use this taxonomy when relevant: navigation/rendering, user workflow, API/backend effect, state verification, validation and boundaries, error handling, environment correctness, evidence integrity.
 
 QA outcomes:
+
 - `PASS`: every required assertion passed and every acceptance criterion is proven.
 - `PASS WITH GAPS`: usable but a non-blocking weakness remains; keep ticket out of Done until resolved.
 - `FAIL`: required assertion failed, oracle missing, evidence contradictory, wrong environment tested, or product defect found.

@@ -46,7 +46,7 @@ If the delivery workflow uses OpenRouter models such as `openrouter/free` or `op
     "apiKey": "replace-with-openrouter-api-key",
     "defaultChatModel": "openrouter/auto",
     "modelMapping": {
-      "chat": {"model": "openrouter/auto", "reasoningEffort": "medium"}
+      "chat": { "model": "openrouter/auto", "reasoningEffort": "medium" }
     }
   }
 }

@@ -79,5 +79,16 @@ RECOMMENDATION_IDS = [
     "openai-security-best-practices-skill",
     "openai-playwright-skill",
 ]
-SOURCE_FAMILIES = ["repo-local", "skills-cli", "marketplace", "github.com/openai/skills", "skills.sh"]
-SEARCH_PLAN = ["project-guidance-search-plan", "guidance-search-plan", "research-then-guarded-install", "official-first-internet-search"]
+SOURCE_FAMILIES = [
+    "repo-local",
+    "skills-cli",
+    "marketplace",
+    "github.com/openai/skills",
+    "skills.sh",
+]
+SEARCH_PLAN = [
+    "project-guidance-search-plan",
+    "guidance-search-plan",
+    "research-then-guarded-install",
+    "official-first-internet-search",
+]

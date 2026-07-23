@@ -1,0 +1,57 @@
+# NOTE: No `name:` field - inherits parent project name (agentic-e2e) when
+# included via infra/compose.yml.
+
+networks:
+  monitoring:
+
+volumes:
+  grafana-data:
+  seq-data:
+
+services:
+  dozzle:
+    image: amir20/dozzle:v10.6.2
+    container_name: agentic-dozzle
+    ports:
+      - "8888:8080"
+    volumes:
+      - //var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana-oss:13.0.1-security-01
+    container_name: agentic-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: true
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_PLUGINS_PREINSTALL_SYNC: yesoreyeram-infinity-datasource@3.8.0
+      GRAFANA_HEALTH_ALERT_FOR: ${GRAFANA_HEALTH_ALERT_FOR:-2m}
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./grafana/dashboards.local:/var/lib/grafana/dashboards.local:ro
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  seq:
+    image: datalust/seq:2025.2.16202
+    container_name: agentic-seq
+    environment:
+      ACCEPT_EULA: Y
+      SEQ_FIRSTRUN_NOAUTHENTICATION: True
+      SEQ_API_CANONICALURI: http://localhost:5341/
+    ports:
+      - "127.0.0.1:5341:80"
+    volumes:
+      - seq-data:/data
+    networks:
+      - monitoring
+    restart: unless-stopped

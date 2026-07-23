@@ -1,0 +1,212 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Codex Project Profile",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "stack": {
+      "type": "object",
+      "required": [
+        "languages",
+        "frameworks",
+        "testFrameworks"
+      ],
+      "properties": {
+        "frontend": {
+          "$ref": "#/$defs/stackDomain"
+        },
+        "backend": {
+          "$ref": "#/$defs/stackDomain"
+        },
+        "database": {
+          "$ref": "#/$defs/stackDomain"
+        },
+        "languages": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "frameworks": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "testFrameworks": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "selectionRecorded": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    },
+    "providers": {
+      "type": "object",
+      "properties": {
+        "ticket": {
+          "$ref": "#/$defs/providerRef"
+        },
+        "repository": {
+          "$ref": "#/$defs/providerRef"
+        },
+        "review": {
+          "$ref": "#/$defs/providerRef"
+        },
+        "artifact": {
+          "$ref": "#/$defs/providerRef"
+        },
+        "deployment": {
+          "$ref": "#/$defs/providerRef"
+        },
+        "observability": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/providerRef"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "workflow": {
+      "type": "object",
+      "properties": {
+        "ticketKeyPattern": {
+          "type": "string",
+          "minLength": 1
+        },
+        "baseBranch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "branchPrefix": {
+          "type": "string",
+          "minLength": 1
+        },
+        "branchPattern": {
+          "type": "string",
+          "minLength": 1
+        },
+        "environments": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "releasePolicy": {
+          "type": "object",
+          "properties": {
+            "buildOncePromoteSameArtifact": {
+              "type": "boolean"
+            },
+            "explicitProductionPromotion": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "quality": {
+      "type": "object",
+      "properties": {
+        "gates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "type": {
+                "type": "string",
+                "minLength": 1
+              },
+              "command": {
+                "type": "string"
+              },
+              "workflowJob": {
+                "type": "string"
+              },
+              "required": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "adapters": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "stackDomain": {
+      "type": "object",
+      "required": [
+        "applies",
+        "value"
+      ],
+      "properties": {
+        "applies": {
+          "type": "boolean"
+        },
+        "value": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "providerRef": {
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "adapter": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

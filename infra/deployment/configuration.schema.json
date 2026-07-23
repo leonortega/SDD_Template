@@ -2,10 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Deployment configuration mapping",
   "type": "object",
-  "required": [
-    "version",
-    "settings"
-  ],
+  "required": ["version", "settings"],
   "properties": {
     "$schema": {
       "type": "string"
@@ -25,13 +22,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": [
-          "appId",
-          "name",
-          "source",
-          "required",
-          "secret"
-        ],
+        "required": ["appId", "name", "source", "required", "secret"],
         "properties": {
           "appId": {
             "type": "string",
@@ -61,10 +52,7 @@
           },
           "targetProperty": {
             "type": "string",
-            "enum": [
-              "url",
-              "name"
-            ]
+            "enum": ["url", "name"]
           },
           "secretName": {
             "type": "string"

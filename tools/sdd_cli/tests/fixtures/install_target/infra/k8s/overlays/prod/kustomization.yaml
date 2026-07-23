@@ -1,0 +1,10 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: sdd-prod
+resources:
+  - ../../base
+patches:
+  - path: config-patch.yaml
+images:
+  - name: host.docker.internal:8083/openproject
+    newTag: latest

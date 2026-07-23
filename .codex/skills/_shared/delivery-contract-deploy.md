@@ -1,4 +1,5 @@
 <!-- TIER 3: STAGE-SPECIFIC - Deploy stage (post-merge, CI, QA deploy, PROD deploy) -->
+
 # Delivery Contract — Deploy (post-merge, CI, QA deploy, PROD deploy)
 
 Stage-specific rules for CI quality split, Nexus artifacts, deployment configuration, release manifest, and versioning. Read in addition to `delivery-contract-core.md`.
@@ -18,7 +19,9 @@ Gitea PR validation is authoritative for restore, formatting verification, relea
 Nexus is mandatory for DEV, QA, PROD, and rollback promotion. Do not rebuild between environments and do not deploy from local files.
 
 Artifact identity is the commit SHA:
+
 ```
+text
 app/{commitSha}/deployable-apps.json
 app/{commitSha}/{artifactName}
 app/{commitSha}/{artifactName}.sha256
@@ -38,6 +41,7 @@ Human-readable Nexus version folders are aliases only. Do not move or rename can
 Every deployable app configuration key must be discovered, mapped, applied, and verified before DEV, QA, or PROD deployment can be reported as successful.
 
 Rules:
+
 - `configure-cloud-environments` owns `infra/deployment/configuration.json`, the tracked placeholder-safe mapping from flattened `appsettings*.json` keys to deploy-time settings.
 - The package workflow must build `deployment-config.json` and publish it next to `deployable-apps.json` in Nexus.
 - Deployment jobs must apply and verify `deployment-config.json` for every target environment before claiming success.
@@ -48,10 +52,12 @@ Rules:
 Validate `release.json` against `.codex/skills/_shared/release.schema.json` when reading or writing it. Preserve existing fields when adding stage-specific data.
 
 Required baseline fields:
+
 - `schemaVersion`, `commitSha`, `checksum`, `artifactUrl`, `ticketKey`, `versionStatus`
 - Optional `includedTickets` records the Done tickets included in a PROD release.
 
 Stage-specific fields:
+
 - DEV/QA deployment: DEV/QA URLs, statuses, health checks, PR URL, workflow URL.
 - E2E QA: source RC version, QA evidence URL, QA result, tested URLs, QA timestamp.
 - PROD: final release version, final tag, PROD URL, PROD statuses, monitoring status, PROD timestamp.

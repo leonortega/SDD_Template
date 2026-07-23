@@ -4,20 +4,21 @@
 
 Kubernetes is the **only** deployment target for this project. The cluster runs on **Docker Desktop's built-in Kubernetes** (single-node, same Docker daemon as the host).
 
-| Layer | Status | Detail |
-|---|---|---|
-| Deployment target | Docker Desktop K8s | Single-node Kubernetes on Docker Desktop |
-| Container registry | Nexus (:8083) | Docker hosted repository for CI-built images |
-| Artifact storage | Nexus (:8088) | Raw hosted repository for build artifacts and manifests |
-| Environments | dev, qa, prod | Three K8s namespaces (sdd-dev, sdd-qa, sdd-prod) with Kustomize overlays |
-| CI/CD | Gitea Actions | PR validation + package-deploy workflows |
-| Observability | Grafana + Seq + Dozzle | Health dashboards, log search, container monitoring |
+| Layer              | Status                 | Detail                                                                   |
+| ------------------ | ---------------------- | ------------------------------------------------------------------------ |
+| Deployment target  | Docker Desktop K8s     | Single-node Kubernetes on Docker Desktop                                 |
+| Container registry | Nexus (:8083)          | Docker hosted repository for CI-built images                             |
+| Artifact storage   | Nexus (:8088)          | Raw hosted repository for build artifacts and manifests                  |
+| Environments       | dev, qa, prod          | Three K8s namespaces (sdd-dev, sdd-qa, sdd-prod) with Kustomize overlays |
+| CI/CD              | Gitea Actions          | PR validation + package-deploy workflows                                 |
+| Observability      | Grafana + Seq + Dozzle | Health dashboards, log search, container monitoring                      |
 
 No app target is currently deployable. Product apps will be added through `infra/deployment/apps.json` when the product stack is defined.
 
 ## Architecture Overview
 
 ```
+text
 ┌──────────────────────────────────────────────────────────┐
 │  Docker Desktop Host                                     │
 │                                                          │
@@ -39,23 +40,23 @@ No app target is currently deployable. Product apps will be added through `infra
 
 ### Key Components
 
-| Component | Host | Port | Purpose |
-|-----------|------|------|---------|
-| K8s Cluster (Docker Desktop) | `localhost` | - | Runs app Deployments + Services |
-| Nexus Artifacts | `host.docker.internal` | `8088` | Stores build artifacts + env URL manifests |
-| Nexus Docker Registry | `host.docker.internal` | `8083` | Stores container images (CI pushes here) |
-| Gitea | `host.docker.internal` | `3000` | Source control + CI runner |
-| Grafana | `localhost` | `3001` | Health monitoring dashboards |
+| Component                    | Host                   | Port   | Purpose                                    |
+| ---------------------------- | ---------------------- | ------ | ------------------------------------------ |
+| K8s Cluster (Docker Desktop) | `localhost`            | -      | Runs app Deployments + Services            |
+| Nexus Artifacts              | `host.docker.internal` | `8088` | Stores build artifacts + env URL manifests |
+| Nexus Docker Registry        | `host.docker.internal` | `8083` | Stores container images (CI pushes here)   |
+| Gitea                        | `host.docker.internal` | `3000` | Source control + CI runner                 |
+| Grafana                      | `localhost`            | `3001` | Health monitoring dashboards               |
 
 ## Environment Model
 
 Three environments, each a separate K8s namespace:
 
-| Environment | Namespace | Replicas | Trigger |
-|-------------|-----------|----------|---------|
-| **dev** | `sdd-dev` | 1 | Push to `dev` branch |
-| **qa** | `sdd-qa` | 2 | `workflow_dispatch` with env=qa |
-| **prod** | `sdd-prod` | 3 | `workflow_dispatch` with env=prod |
+| Environment | Namespace  | Replicas | Trigger                           |
+| ----------- | ---------- | -------- | --------------------------------- |
+| **dev**     | `sdd-dev`  | 1        | Push to `dev` branch              |
+| **qa**      | `sdd-qa`   | 2        | `workflow_dispatch` with env=qa   |
+| **prod**    | `sdd-prod` | 3        | `workflow_dispatch` with env=prod |
 
 Each environment uses a **Kustomize overlay** that inherits from a shared base:
 
@@ -102,6 +103,7 @@ python -m tools.sdd_cli environment-lab scaffold-k8s
 ```
 
 Generates per app:
+
 - `frontend/Dockerfile` — multi-stage (node build → nginx serve)
 - `frontend/.dockerignore` — excludes node_modules, .git, .env
 - `frontend/nginx.conf` — SPA routing + /health endpoint
@@ -117,6 +119,7 @@ python -m tools.sdd_cli environment-lab validate-docker-desktop-k8s
 ```
 
 Validates:
+
 - `kubectl` CLI is available
 - K8s API server responds
 - Current context is Docker Desktop
@@ -130,6 +133,7 @@ python -m tools.sdd_cli environment-lab setup-k8s-access
 ```
 
 For each app and environment, it either:
+
 - **Discovers** the LoadBalancer nodePort and shows the direct URL
 - **Suggests** a `kubectl port-forward` command if not yet deployed
 
@@ -148,21 +152,25 @@ Checkout → Determine Env → Build Docker Images → Deploy to K8s → Discove
 **2. Determine Environment** — `dev` on push, or user-selected env on workflow_dispatch.
 
 **3. Build and Push Docker Images** — For each app in `apps.json`:
+
 - Logs into Nexus Docker registry (`host.docker.internal:8083`)
 - Runs `docker build` using the app's `Dockerfile`
 - Pushes `{appId}:{commitSha}` and `{appId}:latest` tags
 
 **4. Deploy to K8s** — For the target environment:
+
 - Reads `apps.json` to get app list
 - Runs `kustomize edit set image` to set the commit SHA tag
 - Runs `kustomize build . | kubectl apply -f -`
 - Waits for rollout of each deployment
 
 **5. Discover Environment URLs** — Single Python script:
+
 - Calls `kubectl get svc -o jsonpath='{.spec.ports[0].nodePort}'` for each app
 - Writes `app/{commitSha}/env-urls.json` with discovered URLs
 
 **6. Upload to Nexus** — Uploads artifacts including:
+
 - `app/{commitSha}/env-urls.json`
 - `app/latest/env-urls-{env}.json` (latest pointer, overwritten each deploy)
 
@@ -194,10 +202,10 @@ Before any deployment:
 
 ### Image Strategy
 
-| Mode | Build Command | Registry | Image Tag |
-|------|--------------|----------|-----------|
-| Local dev | `docker build -t frontend:latest frontend/` | None (shared daemon) | `frontend:latest` |
-| CI build | `docker build` + `docker push` | Nexus :8083 | `{appId}:{commitSha}` |
+| Mode      | Build Command                               | Registry             | Image Tag             |
+| --------- | ------------------------------------------- | -------------------- | --------------------- |
+| Local dev | `docker build -t frontend:latest frontend/` | None (shared daemon) | `frontend:latest`     |
+| CI build  | `docker build` + `docker push`              | Nexus :8083          | `{appId}:{commitSha}` |
 
 ## Accessing Deployed Apps
 
@@ -210,6 +218,7 @@ python -m tools.sdd_cli environment-lab setup-k8s-access
 ```
 
 Output:
+
 ```
 DEV frontend accessible at: http://localhost:32768/health
 DEV openproject accessible at: http://localhost:32769/health

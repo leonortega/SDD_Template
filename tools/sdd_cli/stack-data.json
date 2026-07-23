@@ -11,7 +11,13 @@
     "sqlite": ["sqlite", "sqlite3"],
     "mongodb": ["mongodb", "mongo"],
     "csharp": ["csharp", "c#", ".net", "dotnet"],
-    "aspnetcore": ["aspnetcore", "asp.net core", ".net core", ".net 10", ".net-core"],
+    "aspnetcore": [
+      "aspnetcore",
+      "asp.net core",
+      ".net core",
+      ".net 10",
+      ".net-core"
+    ],
     "go": ["golang", "go"],
     "rust": ["rust"],
     "java": ["java"],
@@ -23,116 +29,165 @@
   },
   "_STACK_CANONICAL_MAP": {
     "react": {
-      "technology": "React", "languages": ["TypeScript", "JavaScript"],
-      "frameworks": ["React"], "testFrameworks": ["Vitest", "Jest"],
-      "guidanceSearchTerms": ["React official docs", "React TypeScript testing"],
+      "technology": "React",
+      "languages": ["TypeScript", "JavaScript"],
+      "frameworks": ["React"],
+      "testFrameworks": ["Vitest", "Jest"],
+      "guidanceSearchTerms": [
+        "React official docs",
+        "React TypeScript testing"
+      ],
       "semgrepRules": ["p/typescript", "p/javascript", "p/react"]
     },
     "typescript": {
-      "technology": "TypeScript", "languages": ["TypeScript"],
-      "frameworks": [], "testFrameworks": ["Vitest", "Jest", "ts-jest"],
+      "technology": "TypeScript",
+      "languages": ["TypeScript"],
+      "frameworks": [],
+      "testFrameworks": ["Vitest", "Jest", "ts-jest"],
       "guidanceSearchTerms": ["TypeScript official docs"],
       "semgrepRules": ["p/typescript", "p/javascript"]
     },
     "javascript": {
-      "technology": "JavaScript", "languages": ["JavaScript"],
-      "frameworks": [], "testFrameworks": ["Jest"],
+      "technology": "JavaScript",
+      "languages": ["JavaScript"],
+      "frameworks": [],
+      "testFrameworks": ["Jest"],
       "guidanceSearchTerms": ["JavaScript MDN docs"],
       "semgrepRules": ["p/javascript"]
     },
     "python": {
-      "technology": "Python", "languages": ["Python"],
-      "frameworks": [], "testFrameworks": ["pytest", "unittest"],
+      "technology": "Python",
+      "languages": ["Python"],
+      "frameworks": [],
+      "testFrameworks": ["pytest", "unittest"],
       "guidanceSearchTerms": ["Python official docs"],
       "semgrepRules": ["p/python"]
     },
     "fastapi": {
-      "technology": "FastAPI", "languages": ["Python"],
-      "frameworks": ["FastAPI"], "testFrameworks": ["pytest", "httpx"],
+      "technology": "FastAPI",
+      "languages": ["Python"],
+      "frameworks": ["FastAPI"],
+      "testFrameworks": ["pytest", "httpx"],
       "guidanceSearchTerms": ["FastAPI official docs", "FastAPI testing"],
       "semgrepRules": ["p/python", "p/flask", "p/jwt"]
     },
     "flask": {
-      "technology": "Flask", "languages": ["Python"],
-      "frameworks": ["Flask"], "testFrameworks": ["pytest"],
+      "technology": "Flask",
+      "languages": ["Python"],
+      "frameworks": ["Flask"],
+      "testFrameworks": ["pytest"],
       "guidanceSearchTerms": ["Flask official docs"],
       "semgrepRules": ["p/python", "p/flask"]
     },
     "django": {
-      "technology": "Django", "languages": ["Python"],
-      "frameworks": ["Django"], "testFrameworks": ["pytest-django"],
+      "technology": "Django",
+      "languages": ["Python"],
+      "frameworks": ["Django"],
+      "testFrameworks": ["pytest-django"],
       "guidanceSearchTerms": ["Django official docs"],
       "semgrepRules": ["p/python", "p/django"]
     },
     "postgresql": {
-      "technology": "PostgreSQL", "languages": [], "frameworks": [],
-      "testFrameworks": [], "guidanceSearchTerms": ["PostgreSQL official docs"],
+      "technology": "PostgreSQL",
+      "languages": [],
+      "frameworks": [],
+      "testFrameworks": [],
+      "guidanceSearchTerms": ["PostgreSQL official docs"],
       "semgrepRules": ["p/sql-injection"]
     },
     "sqlite": {
-      "technology": "SQLite", "languages": [], "frameworks": [],
-      "testFrameworks": [], "guidanceSearchTerms": ["SQLite official docs"],
+      "technology": "SQLite",
+      "languages": [],
+      "frameworks": [],
+      "testFrameworks": [],
+      "guidanceSearchTerms": ["SQLite official docs"],
       "semgrepRules": []
     },
     "mongodb": {
-      "technology": "MongoDB", "languages": [], "frameworks": [],
-      "testFrameworks": [], "guidanceSearchTerms": ["MongoDB official docs"],
+      "technology": "MongoDB",
+      "languages": [],
+      "frameworks": [],
+      "testFrameworks": [],
+      "guidanceSearchTerms": ["MongoDB official docs"],
       "semgrepRules": []
     },
     "csharp": {
-      "technology": "C#", "languages": ["C#"], "frameworks": [],
+      "technology": "C#",
+      "languages": ["C#"],
+      "frameworks": [],
       "testFrameworks": ["xUnit", "NUnit"],
       "guidanceSearchTerms": ["C# official docs"],
       "semgrepRules": ["p/csharp"]
     },
     "aspnetcore": {
-      "technology": ".NET 10 / ASP.NET Core", "languages": ["C#"],
-      "frameworks": ["ASP.NET Core"], "testFrameworks": ["xUnit"],
+      "technology": ".NET 10 / ASP.NET Core",
+      "languages": ["C#"],
+      "frameworks": ["ASP.NET Core"],
+      "testFrameworks": ["xUnit"],
       "guidanceSearchTerms": ["ASP.NET Core official docs", ".NET 10 testing"],
       "semgrepRules": ["p/csharp"]
     },
     "go": {
-      "technology": "Go", "languages": ["Go"], "frameworks": [],
-      "testFrameworks": ["go test"], "guidanceSearchTerms": ["Go official docs"],
+      "technology": "Go",
+      "languages": ["Go"],
+      "frameworks": [],
+      "testFrameworks": ["go test"],
+      "guidanceSearchTerms": ["Go official docs"],
       "semgrepRules": ["p/golang"]
     },
     "rust": {
-      "technology": "Rust", "languages": ["Rust"], "frameworks": [],
-      "testFrameworks": ["cargo test"], "guidanceSearchTerms": ["Rust official docs"],
+      "technology": "Rust",
+      "languages": ["Rust"],
+      "frameworks": [],
+      "testFrameworks": ["cargo test"],
+      "guidanceSearchTerms": ["Rust official docs"],
       "semgrepRules": ["p/rust"]
     },
     "java": {
-      "technology": "Java", "languages": ["Java"], "frameworks": [],
-      "testFrameworks": ["JUnit"], "guidanceSearchTerms": ["Java official docs"],
+      "technology": "Java",
+      "languages": ["Java"],
+      "frameworks": [],
+      "testFrameworks": ["JUnit"],
+      "guidanceSearchTerms": ["Java official docs"],
       "semgrepRules": ["p/java"]
     },
     "vue": {
-      "technology": "Vue.js", "languages": ["TypeScript", "JavaScript"],
-      "frameworks": ["Vue.js"], "testFrameworks": ["Vitest"],
+      "technology": "Vue.js",
+      "languages": ["TypeScript", "JavaScript"],
+      "frameworks": ["Vue.js"],
+      "testFrameworks": ["Vitest"],
       "guidanceSearchTerms": ["Vue.js official docs"],
       "semgrepRules": ["p/typescript", "p/javascript", "p/vue"]
     },
     "angular": {
-      "technology": "Angular", "languages": ["TypeScript", "JavaScript"],
-      "frameworks": ["Angular"], "testFrameworks": ["Jasmine", "Karma"],
+      "technology": "Angular",
+      "languages": ["TypeScript", "JavaScript"],
+      "frameworks": ["Angular"],
+      "testFrameworks": ["Jasmine", "Karma"],
       "guidanceSearchTerms": ["Angular official docs"],
       "semgrepRules": ["p/typescript", "p/javascript"]
     },
     "svelte": {
-      "technology": "Svelte", "languages": ["TypeScript", "JavaScript"],
-      "frameworks": ["Svelte"], "testFrameworks": ["Vitest"],
+      "technology": "Svelte",
+      "languages": ["TypeScript", "JavaScript"],
+      "frameworks": ["Svelte"],
+      "testFrameworks": ["Vitest"],
       "guidanceSearchTerms": ["Svelte official docs"],
       "semgrepRules": ["p/typescript", "p/javascript"]
     },
     "nextjs": {
-      "technology": "Next.js", "languages": ["TypeScript", "JavaScript"],
-      "frameworks": ["Next.js", "React"], "testFrameworks": ["Vitest", "Jest"],
+      "technology": "Next.js",
+      "languages": ["TypeScript", "JavaScript"],
+      "frameworks": ["Next.js", "React"],
+      "testFrameworks": ["Vitest", "Jest"],
       "guidanceSearchTerms": ["Next.js official docs"],
       "semgrepRules": ["p/typescript", "p/javascript", "p/react", "p/nextjs"]
     },
     "nuxt": {
-      "technology": "Nuxt.js", "languages": ["TypeScript", "JavaScript"],
-      "frameworks": ["Nuxt.js", "Vue.js"], "testFrameworks": ["Vitest"],
+      "technology": "Nuxt.js",
+      "languages": ["TypeScript", "JavaScript"],
+      "frameworks": ["Nuxt.js", "Vue.js"],
+      "testFrameworks": ["Vitest"],
       "guidanceSearchTerms": ["Nuxt.js official docs"],
       "semgrepRules": ["p/typescript", "p/javascript", "p/vue"]
     }

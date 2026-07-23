@@ -12,11 +12,7 @@
     },
     "stack": {
       "type": "object",
-      "required": [
-        "languages",
-        "frameworks",
-        "testFrameworks"
-      ],
+      "required": ["languages", "frameworks", "testFrameworks"],
       "properties": {
         "frontend": {
           "$ref": "#/$defs/stackDomain"
@@ -133,10 +129,7 @@
           "type": "array",
           "items": {
             "type": "object",
-            "required": [
-              "id",
-              "type"
-            ],
+            "required": ["id", "type"],
             "properties": {
               "id": {
                 "type": "string",
@@ -174,10 +167,7 @@
   "$defs": {
     "stackDomain": {
       "type": "object",
-      "required": [
-        "applies",
-        "value"
-      ],
+      "required": ["applies", "value"],
       "properties": {
         "applies": {
           "type": "boolean"
@@ -193,9 +183,7 @@
     },
     "providerRef": {
       "type": "object",
-      "required": [
-        "id"
-      ],
+      "required": ["id"],
       "properties": {
         "id": {
           "type": "string",

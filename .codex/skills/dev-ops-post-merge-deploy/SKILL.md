@@ -44,6 +44,7 @@ Also requires Gitea API token with `write:repository` scope to trigger the `pack
    - `GITEA_API_TOKEN` from `gitea.apiToken`
 
    Then dispatch and capture the HTTP response code:
+
    ```bash
    RESP=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
      -H "Authorization: token ${GITEA_API_TOKEN}" \
@@ -62,7 +63,7 @@ Also requires Gitea API token with `write:repository` scope to trigger the `pack
    - one `app/{commitSha}/{artifactName}.sha256` per topology app
    - `app/{commitSha}/commit.sha`
    - `app/{commitSha}/release.json` when present
-   Also require any additional deployment metadata declared by the selected deployment adapter:
+     Also require any additional deployment metadata declared by the selected deployment adapter:
    - `app/{commitSha}/container-images.json`
    - `app/{commitSha}/commit.sha`
    - `app/{commitSha}/release.json`

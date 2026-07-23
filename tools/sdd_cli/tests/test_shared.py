@@ -40,7 +40,9 @@ class NormalizeStackDomainTests(unittest.TestCase):
 
     def test_handles_dict_input_with_value(self) -> None:
         result = normalize_stack_domain({"value": "PostgreSQL", "notes": "Primary DB"})
-        self.assertEqual({"applies": True, "value": "PostgreSQL", "notes": "Primary DB"}, result)
+        self.assertEqual(
+            {"applies": True, "value": "PostgreSQL", "notes": "Primary DB"}, result
+        )
 
     def test_handles_dict_input_ignores_empty_notes(self) -> None:
         result = normalize_stack_domain({"value": "SQLite", "notes": ""})
@@ -104,7 +106,9 @@ class EnsureUsedInStepsTests(unittest.TestCase):
         self.assertNotIn("usedInSteps", original)
 
     def test_preserves_other_keys(self) -> None:
-        result = ensure_used_in_steps({"id": "test", "name": "Test Skill", "type": "skill"})
+        result = ensure_used_in_steps(
+            {"id": "test", "name": "Test Skill", "type": "skill"}
+        )
         self.assertEqual("test", result["id"])
         self.assertEqual("Test Skill", result["name"])
         self.assertEqual("skill", result["type"])

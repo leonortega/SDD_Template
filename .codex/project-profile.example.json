@@ -39,11 +39,7 @@
     "baseBranch": "dev",
     "branchPrefix": "codex",
     "branchPattern": "{prefix}/{ticketKeySlug}-{titleSlug}",
-    "environments": [
-      "dev",
-      "qa",
-      "prod"
-    ],
+    "environments": ["dev", "qa", "prod"],
     "releasePolicy": {
       "buildOncePromoteSameArtifact": true,
       "explicitProductionPromotion": true

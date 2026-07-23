@@ -1,0 +1,93 @@
+---
+name: dev-ops-post-merge-deploy
+description: Coordinate the post-merge transition from a merged pull request into QA deployment by validating review labels, resolving the merge commit, waiting for artifact metadata, and delegating promotion to dev-ops-deploy-qa through selected project-profile adapters. Use after a PR merges or when Codex is asked to trigger or continue QA deployment for merged work.
+---
+
+<!-- TIER 3: STAGE-SPECIFIC - Post-merge deployment skill -->
+
+# Post Merge Deploy
+
+## Overview
+
+Use this skill after a PR has merged to `dev` but before QA promotion. It is an orchestration bridge: validate the merged PR is eligible, trigger the CI build, wait for the immutable artifact, then invoke `dev-ops-deploy-qa`.
+
+Do not perform DEV/QA validation inside this skill. `dev-ops-deploy-qa` owns artifact promotion and environment checks.
+
+## Shared Context
+
+Before running, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Load selected repository/review, artifact, deployment, and ticket adapters. Use `python -m tools.sdd_cli dev-flow` helpers: `ValidateTicketLock` for `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, and `ArtifactPaths`.
+
+## Workflow Telemetry
+
+Capture UTC start time after resolving the ticket key and before post-merge validation or artifact waiting. Prefer OpenProject time-entry telemetry and create or update the `dev-ops-post-merge-deploy` entry with marker `IA generated workflow telemetry: {ticketKey}:dev-ops-post-merge-deploy`. Use `python -m tools.sdd_cli dev-flow append-telemetry -TicketKey {ticketKey}` only as the JSONL fallback when direct time telemetry is unavailable. On resume or idempotent reuse, append or update another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-ops-post-merge-deploy`, `agentRole=deployment`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. Do not duplicate the `dev-ops-deploy-qa` row; `dev-ops-deploy-qa` records its own stage when invoked.
+
+## Configuration
+
+Read `.codex/client-tools.local.json` first. Required values are ticket provider, repository/review provider, and Nexus settings used by `dev-ops-deploy-qa`.
+
+Also requires Gitea API token with `write:repository` scope to trigger the `package-deploy` workflow after merge. The token and Gitea connection values (`baseUrl`, `owner`, `repo`) must be available via `gitea.*` keys in client-tools config.
+
+## Workflow
+
+1. Resolve the PR from user input, current branch, ticket comments, commit messages, or ticket key.
+2. Verify the PR is merged and its target branch is `dev`.
+3. Verify the PR does not currently have configured `pr.labels.needsChanges` or `pr.labels.needsTests`.
+4. Resolve the merge commit SHA from repository/review provider metadata.
+5. Resolve the ticket key from the PR title/body, branch name, commit messages, or ticket comments.
+6. Run `ValidateTicketLock` with the resolved ticket key, PR number, branch, and merge/artifact commit when known. If the result is invalid, stop before triggering the build.
+7. **Trigger the CI build** by dispatching the `package-deploy` Gitea Actions workflow on the `dev` branch.
+
+   Derive the connection values from `.codex/client-tools.local.json`:
+   - `GITEA_BASE_URL` from `gitea.baseUrl`
+   - `GITEA_OWNER` from `gitea.owner`
+   - `GITEA_REPO` from `gitea.repo`
+   - `GITEA_API_TOKEN` from `gitea.apiToken`
+
+   Then dispatch and capture the HTTP response code:
+   ```bash
+   RESP=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+     -H "Authorization: token ${GITEA_API_TOKEN}" \
+     -H "Content-Type: application/json" \
+     -d '{"ref":"dev"}' \
+     "${GITEA_BASE_URL}/api/v1/repos/${GITEA_OWNER}/${GITEA_REPO}/actions/workflows/package-deploy.yml/dispatches")
+   ```
+
+   Interpret the response:
+   - HTTP `204`: Workflow dispatched successfully. Continue to step 8.
+   - Any other status or connection error: stop and report the error. Do not proceed to artifact polling.
+
+8. Poll for the Nexus artifact files for the merge commit according to the selected artifact and deployment adapters. Require:
+   - `app/{commitSha}/deployable-apps.json`
+   - one `app/{commitSha}/{artifactName}` per topology app
+   - one `app/{commitSha}/{artifactName}.sha256` per topology app
+   - `app/{commitSha}/commit.sha`
+   - `app/{commitSha}/release.json` when present
+   Also require any additional deployment metadata declared by the selected deployment adapter:
+   - `app/{commitSha}/container-images.json`
+   - `app/{commitSha}/commit.sha`
+   - `app/{commitSha}/release.json`
+   - `app/{commitSha}/monitoring-summary-dev.json` and `app/{commitSha}/monitoring-summary-qa.json` when DEV/QA deployment already completed
+9. Use bounded waiting: check immediately, then retry with backoff for up to 10 minutes unless the user asked for a shorter wait.
+10. Verify `commit.sha` matches the merge commit before delegating.
+11. If `release.json` exists, verify `ticketKey` matches the locked/resolved ticket key.
+12. Invoke `dev-ops-deploy-qa` with the resolved PR, ticket key, and merge commit. If QA deployment is already complete, invoke `dev-ops-deploy-qa` in idempotent verification mode so that stage records its own telemetry row without duplicating ticket comments or state changes.
+
+## Idempotency
+
+- If the QA deployment marker `IA generated QA deployment: {commitSha}` already exists and the ticket is in QA, append `dev-ops-post-merge-deploy` telemetry, invoke `dev-ops-deploy-qa` idempotently, and report that QA promotion is already complete.
+- If the artifact exists, skip waiting and delegate immediately.
+- If labels were stale but have since been removed, continue.
+
+## Output
+
+Report the PR, merge commit, workflow dispatch status, artifact availability, validation status, deployment-lane result, invoked child skill, and handoff to QA or the blocker found.
+
+## Failure Rules
+
+- Unmerged PR: stop and report the PR state.
+- PR target is not `dev`: stop and report the mismatch.
+- Stale `needs-changes` or `needs-tests` labels: stop before artifact promotion.
+- **Workflow dispatch error**: if the `package-deploy` workflow dispatch returns non-`204` or a connection error, stop and report the error. Do not proceed without a successful build trigger.
+- Nexus artifact missing after the wait window: stop and report provider-specific artifact paths checked.
+- Nexus unavailable: stop; do not use a degraded artifact source.
+- Commit metadata mismatch: stop and report the expected and actual commit SHA.

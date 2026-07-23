@@ -12,6 +12,7 @@ from .tool_installer import install_or_update_sdd_tool
 def run_template_installer(args: list[str]) -> int:
     """CLI entry point for template-installer commands."""
     import json as _json
+
     if not args or args[0] not in ("install", "update"):
         print(
             "Usage: template-installer <install|update> --target PATH [--source PATH] "

@@ -5,7 +5,7 @@ description: Build and sharpen a project's domain model. Use when the user wants
 
 # Domain Modeling
 
-Actively build and sharpen the project's domain model as you design. This is the *active* discipline — challenging terms, inventing edge-case scenarios, and writing the glossary and decisions down the moment they crystallise. (Merely *reading* `CONTEXT.md` for vocabulary is not this skill — that's a one-line habit any skill can do. This skill is for when you're changing the model, not just consuming it.)
+Actively build and sharpen the project's domain model as you design. This is the _active_ discipline — challenging terms, inventing edge-case scenarios, and writing the glossary and decisions down the moment they crystallise. (Merely _reading_ `CONTEXT.md` for vocabulary is not this skill — that's a one-line habit any skill can do. This skill is for when you're changing the model, not just consuming it.)
 
 Repo-local adaptation: this repository does not use the upstream `CONTEXT.md` and ADR output convention by default. Preserve the domain-modeling behavior, but capture durable output in the existing SDD surfaces: OpenProject generated blocks for product or ticket clarity, OpenSpec artifacts for planned behavior and design, `docs/` for durable repository or process knowledge, and `.codex/memory/` for reusable non-authoritative lessons. Create `CONTEXT.md` or ADR files only after a separate explicit repo change adopts that model.
 
@@ -14,6 +14,7 @@ Repo-local adaptation: this repository does not use the upstream `CONTEXT.md` an
 Most repos have a single context:
 
 ```
+text
 /
 ├── CONTEXT.md
 ├── docs/

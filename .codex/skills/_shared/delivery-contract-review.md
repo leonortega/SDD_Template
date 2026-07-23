@@ -1,4 +1,5 @@
 <!-- TIER 3: STAGE-SPECIFIC - Review stage (PR review, feedback loop) -->
+
 # Delivery Contract — Review (PR review, feedback loop)
 
 Stage-specific rules for PR review, adversarial review, review feedback loop, labels, and handoff. Read in addition to `delivery-contract-core.md`.
@@ -18,6 +19,7 @@ Actionable `ponytail-review` findings are AI review findings and feed the same `
 `dev-flow-pr-review-agent` must run an adversarial pass when requested explicitly or when risk is `high`, including auth, authorization, persistence, migrations, deployment workflows, secrets, public APIs, `/health`, release manifests, rollback/hotfix, or large diffs. The pass reads OpenProject/OpenSpec acceptance criteria first, then tries to disprove implementation compliance through negative paths, idempotency, security, data-loss, deployment, and missing-test scenarios.
 
 Adversarial review output must include one verdict:
+
 - `PASS`: no blockers or meaningful gaps.
 - `PASS WITH GAPS`: no blockers, but warnings or tracked gaps remain.
 - `FAIL`: blocker, missing proof for required behavior, or high-risk unresolved issue.
@@ -33,11 +35,13 @@ Do not treat the Codex review-agent comment, `codex-reviewed` label, or passing 
 ## PR Labels And Review Severity
 
 Default labels:
+
 - Reviewed: `codex-reviewed`
 - Missing tests: `needs-tests`
 - Blocking changes: `needs-changes`
 
 Review findings must use:
+
 - `BLOCKER`: must be fixed before handoff/promotion.
 - `WARNING`: meaningful non-blocking risk.
 - `SUGGESTION`: optional improvement.
@@ -47,12 +51,14 @@ Severity describes risk and PR label behavior. In this repository, every AI revi
 ## PR Review Feedback
 
 PR review has two reconnectable loops:
+
 1. AI review runs immediately after PR creation. The PR is not ready for human review until the current head has a review-agent comment, AI findings have been converted into OpenSpec feedback tasks, all feedback tasks are complete, relevant validation has passed, and current-head `needs-tests` / `needs-changes` labels are clean.
 2. Human review happens later. The automatic workflow reconnects only when the operator manually resumes the ticket.
 
 Feedback batches are identified by source ids, not only by head SHA. Compute `feedbackBatchId` as a deterministic short id from the sorted source ids in the batch.
 
 When actionable AI or human feedback is found:
+
 - Add or update a `## PR Review Feedback` section in the active OpenSpec `tasks.md`.
 - Add one task for each feedback item. Each task must record source type, source id or link, head SHA, severity, and the requested change.
 - Add a OpenProject work package comment with marker `IA generated PR feedback detected: {headSha}:{feedbackBatchId}` before applying fixes.

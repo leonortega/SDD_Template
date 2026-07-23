@@ -93,7 +93,7 @@ If the CLI is missing, attempt auto-installation: `npm install -g @fission-ai/op
 8. Derive the repository remote name from `git remote` output (e.g., `origin` or `gitea`). Pre-scan branch conflicts before creating or switching branches:
    - `git show-ref --verify refs/heads/{branchName}` for a local branch.
    - `git ls-remote --heads {remoteName} {branchName}` for a remote branch.
-   If both exist and point to different commits, stop and report the conflict. If the remote branch exists and the local branch is missing, create the local branch from the remote only when it descends from the configured base branch.
+     If both exist and point to different commits, stop and report the conflict. If the remote branch exists and the local branch is missing, create the local branch from the remote only when it descends from the configured base branch.
 9. Push the branch to repository/review provider with upstream tracking using `git push -u {remoteName} {branchName}` (where `{remoteName}` is the detected remote from step 8). If the upstream branch already exists and points to the same commit, treat it as complete; if the push is rejected or would require a non-fast-forward update, stop and report the branch issue.
 10. Analyze the ticket description in an OpenSpec explore style unless OpenSpec is explicitly skipped by policy below.
 11. Update only the managed generated block in the ticket description.

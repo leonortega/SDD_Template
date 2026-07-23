@@ -4,14 +4,14 @@
 
 This repository currently has no product implementation. It is ready for a new product stack to be introduced through the normal ticket and OpenSpec workflow.
 
-| Layer | Status | Detail |
-|---|---|---|
-| Development languages | None | No product code exists yet |
-| Build system | None | Will be configured when a stack is selected |
-| Package manager | None | Depends on future framework choice |
-| Testing approach | Ready | TDD and Playwright skills available |
-| Linting/formatting | None | Will be configured when product code exists |
-| OpenSpec CLI | Required | `npm install -g @fission-ai/openspec@latest` — needed for proposal workflow |
+| Layer                 | Status   | Detail                                                                      |
+| --------------------- | -------- | --------------------------------------------------------------------------- |
+| Development languages | None     | No product code exists yet                                                  |
+| Build system          | None     | Will be configured when a stack is selected                                 |
+| Package manager       | None     | Depends on future framework choice                                          |
+| Testing approach      | Ready    | TDD and Playwright skills available                                         |
+| Linting/formatting    | None     | Will be configured when product code exists                                 |
+| OpenSpec CLI          | Required | `npm install -g @fission-ai/openspec@latest` — needed for proposal workflow |
 
 **Key principle:** Keep changes scoped to the active ticket or explicit user request. Do not add speculative stack guidance before the product needs it.
 
