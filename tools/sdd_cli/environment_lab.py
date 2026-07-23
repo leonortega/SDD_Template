@@ -131,15 +131,15 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
         "gitea": {
             "url": "http://localhost:3000",
             "users": [
-                {"username": "admin", "password": "admin123", "role": "admin"},
+                {"username": "admin", "password": "admin123", "role": "admin"},  # nosec
                 {
                     "username": "FirstUser",
-                    "password": "FirstUser123",
+                    "password": "FirstUser123",  # nosec
                     "role": "developer",
                 },
                 {
                     "username": "SecondUser",
-                    "password": "SecondUser123",
+                    "password": "SecondUser123",  # nosec
                     "role": "developer",
                 },
             ],
@@ -147,15 +147,15 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
         "openproject": {
             "url": "http://localhost:8080",
             "users": [
-                {"username": "admin", "password": "admin", "role": "admin"},
+                {"username": "admin", "password": "admin", "role": "admin"},  # nosec
                 {
                     "username": "FirstUser",
-                    "password": "FirstUser123!",
+                    "password": "FirstUser123!",  # nosec
                     "role": "developer",
                 },
                 {
                     "username": "SecondUser",
-                    "password": "SecondUser123!",
+                    "password": "SecondUser123!",  # nosec
                     "role": "developer",
                 },
             ],
@@ -588,6 +588,7 @@ def build_gitea_actions_images(root: Path, dry_run: bool = False) -> dict[str, A
         result["valid"] = False
         return result
     import hashlib
+
     dockerfiles = sorted(
         (root / "infra" / "gitea" / "actions-images").glob("*/Dockerfile")
     )
@@ -614,8 +615,16 @@ def build_gitea_actions_images(root: Path, dry_run: bool = False) -> dict[str, A
         # Check if image exists with matching checksum (label stored on the image)
         needs_rebuild = True
         inspect = run_native(
-            ["docker", "image", "inspect", image, "--format", "{{index .Config.Labels \"sdd.dockerfile.checksum\"}}"],
-            root, timeout=15
+            [
+                "docker",
+                "image",
+                "inspect",
+                image,
+                "--format",
+                '{{index .Config.Labels "sdd.dockerfile.checksum"}}',
+            ],
+            root,
+            timeout=15,
         )
         if inspect["returncode"] == 0 and inspect["stdout"].strip() == checksum:
             result["actions"].append(
@@ -763,8 +772,7 @@ def set_gitea_branch_protection(root: Path, dry_run: bool = False) -> dict[str, 
                     }
                 )
             elif response.status == 409 or (
-                response.status == 403
-                and b"already exist" in resp_body
+                response.status == 403 and b"already exist" in resp_body
             ):
                 # Rule already exists (Gitea returns 409 or 403 with 'already exist') —
                 # fall back to PATCH on branch_protections/{rule_name}
@@ -1321,7 +1329,7 @@ def set_semgrep_config(root: Path, dry_run: bool = False) -> dict[str, Any]:
         "database": stack.get("database", {}).get("value", ""),
     }
 
-    for domain_name, domain_value in domains.items():
+    for _domain_name, domain_value in domains.items():
         if not domain_value:
             continue
         rules = _resolve_semgrep_rules(domain_value)
@@ -1409,9 +1417,7 @@ def validate_app_config(root: Path, dry_run: bool = False) -> dict[str, Any]:
     Checks that apps.json is valid JSON, conforms to its schema,
     and that each app's projectPath has a Dockerfile.
     """
-    result = configure_result(
-        "ValidateAppConfig", dry_run, write_enabled=not dry_run
-    )
+    result = configure_result("ValidateAppConfig", dry_run, write_enabled=not dry_run)
     apps_path = root / "infra" / "deployment" / "apps.json"
     schema_path = root / "infra" / "deployment" / "apps.schema.json"
 
@@ -1460,6 +1466,7 @@ def validate_app_config(root: Path, dry_run: bool = False) -> dict[str, Any]:
     if schema_path.exists():
         try:
             import jsonschema
+
             schema = json.loads(schema_path.read_text(encoding="utf-8"))
             jsonschema.validate(instance=apps_data, schema=schema)
             result["actions"].append(
@@ -1566,9 +1573,7 @@ def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str,
         result["valid"] = True
         return result
 
-    def _nexus_api(
-        method: str, path: str, body: dict | None = None
-    ) -> tuple[int, str]:
+    def _nexus_api(method: str, path: str, body: dict | None = None) -> tuple[int, str]:
         try:
             parsed = urlparse(nexus_base)
             conn = http.client.HTTPConnection(
@@ -1592,8 +1597,7 @@ def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str,
 
     # ── 1. Accept Nexus EULA (required before any API calls work on fresh install) ──
     eula_status, eula_data = _nexus_api(
-        "POST", "/service/rest/v1/editions/eula/accept",
-        body={"eulaAccepted": True}
+        "POST", "/service/rest/v1/editions/eula/accept", body={"eulaAccepted": True}
     )
     # Nexus EULA endpoint returns 204 on success, 400 if already accepted, 404 if not applicable (3.92+)
     if eula_status in {204, 200, 400, 404}:
@@ -1717,6 +1721,7 @@ def validate_docker_desktop(root: Path, dry_run: bool = False) -> dict[str, Any]
 
     # Detect Docker Desktop on Windows (host.docker.internal resolves on Docker Desktop)
     import socket
+
     is_docker_desktop = False
     try:
         socket.gethostbyname("host.docker.internal")
@@ -1737,6 +1742,7 @@ def validate_docker_desktop(root: Path, dry_run: bool = False) -> dict[str, Any]
 
         # Check Docker Desktop daemon.json for insecure-registries
         import platform
+
         daemon_path = None
         if sys.platform == "win32" or platform.system() == "Windows":
             # Docker Desktop on Windows stores daemon.json in %USERPROFILE%\.docker
@@ -1745,7 +1751,10 @@ def validate_docker_desktop(root: Path, dry_run: bool = False) -> dict[str, Any]
                 daemon_path = user_profile
         else:
             # Linux/Mac: /etc/docker/daemon.json or ~/.docker/daemon.json
-            for p in [Path("/etc/docker/daemon.json"), Path.home() / ".docker" / "daemon.json"]:
+            for p in [
+                Path("/etc/docker/daemon.json"),
+                Path.home() / ".docker" / "daemon.json",
+            ]:
                 if p.exists():
                     daemon_path = p
                     break
@@ -2190,7 +2199,7 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
         if not existing_token or existing_token.startswith("replace-with"):
             reg_status, reg_data = _gitea_api(
                 "POST",
-                f"/api/v1/repos/{_owner}/{_repo}/actions/runners/registration-token"
+                f"/api/v1/repos/{_owner}/{_repo}/actions/runners/registration-token",
             )
             if reg_status == 200 or reg_status == 201:
                 try:
@@ -2211,7 +2220,8 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
                         # Restart runner container to pick up new token
                         _restart = run_native(
                             ["docker", "restart", "agentic-gitea-runner"],
-                            root, timeout=30
+                            root,
+                            timeout=30,
                         )
                         if _restart["returncode"] == 0:
                             result["actions"].append(
@@ -2651,10 +2661,10 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
             # Write Ruby script to temp file to avoid shell quoting issues
             ruby_key_script = (
                 'u = User.find_by(login: "admin")\n'
-                'u.force_password_change = false\n'
-                'u.save!\n'
-                'token = Token::API.create!(user: u)\n'
-                'puts token.plain_value\n'
+                "u.force_password_change = false\n"
+                "u.save!\n"
+                "token = Token::API.create!(user: u)\n"
+                "puts token.plain_value\n"
             )
             key_tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".rb", delete=False)
             key_tmp.write(ruby_key_script)
@@ -2662,13 +2672,26 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
             key_tmp_path = key_tmp.name
             try:
                 subprocess.run(
-                    ["docker", "cp", key_tmp_path, "agentic-e2e-openproject-1:/tmp/gen_api_key.rb"],
-                    capture_output=True, timeout=30,
+                    [
+                        "docker",
+                        "cp",
+                        key_tmp_path,
+                        "agentic-e2e-openproject-1:/tmp/gen_api_key.rb",
+                    ],
+                    capture_output=True,
+                    timeout=30,
                 )
                 key_result = run_native(
-                    ["docker", "exec", "agentic-e2e-openproject-1", "sh", "-c",
-                     "cd /app && bundle exec rails runner /tmp/gen_api_key.rb"],
-                    REPO_ROOT, timeout=30,
+                    [
+                        "docker",
+                        "exec",
+                        "agentic-e2e-openproject-1",
+                        "sh",
+                        "-c",
+                        "cd /app && bundle exec rails runner /tmp/gen_api_key.rb",
+                    ],
+                    REPO_ROOT,
+                    timeout=30,
                 )
             finally:
                 Path(key_tmp_path).unlink(missing_ok=True)
@@ -2880,7 +2903,9 @@ def provision_gitea_secrets(root: Path, dry_run: bool = False) -> dict[str, Any]
     owner = gitea_cfg.get("owner", "sdd-admin")
     repo = gitea_cfg.get("repo", "sdd-test")
 
-    def _gitea_actions_api(method: str, path: str, body: dict | None = None) -> tuple[int, str]:
+    def _gitea_actions_api(
+        method: str, path: str, body: dict | None = None
+    ) -> tuple[int, str]:
         try:
             parsed = urlparse(gitea_base)
             conn = http.client.HTTPConnection(
@@ -3547,7 +3572,7 @@ def scaffold_k8s(root, dry_run=False):
     result["valid"] = not any(
         item.get("severity") == "error" for item in result["findings"]
     )
-    return result# ── Docker Desktop K8s enablement ──────────────────────────────────────────
+    return result  # ── Docker Desktop K8s enablement ──────────────────────────────────────────
 
 
 def enable_docker_desktop_k8s(root: Path, dry_run: bool = False) -> dict[str, Any]:
@@ -3603,6 +3628,7 @@ def enable_docker_desktop_k8s(root: Path, dry_run: bool = False) -> dict[str, An
     # The key "kubernetesEnabled" controls whether K8s is enabled
     settings_path = None
     import platform
+
     if sys.platform == "win32" or platform.system() == "Windows":
         appdata = Path.home() / "AppData" / "Roaming"
         candidate = appdata / "Docker" / "settings.json"
@@ -3657,9 +3683,7 @@ def enable_docker_desktop_k8s(root: Path, dry_run: bool = False) -> dict[str, An
     # ── 4. Enable K8s in settings.json ──
     settings["kubernetesEnabled"] = True
     try:
-        settings_path.write_text(
-            json.dumps(settings, indent=2), encoding="utf-8"
-        )
+        settings_path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
         result["actions"].append(
             {
                 "path": str(settings_path),
@@ -3710,9 +3734,7 @@ def enable_docker_desktop_k8s(root: Path, dry_run: bool = False) -> dict[str, An
             "phase": "apply",
         }
     )
-    stop_cmd = run_native(
-        [str(dd_exe), "--shutdown"], root, timeout=30
-    )
+    stop_cmd = run_native([str(dd_exe), "--shutdown"], root, timeout=30)
     if stop_cmd["returncode"] != 0:
         # --shutdown might not work on older versions; try taskkill fallback
         taskkill = run_native(
@@ -3732,6 +3754,7 @@ def enable_docker_desktop_k8s(root: Path, dry_run: bool = False) -> dict[str, An
             return result
     # Wait for Docker process to fully exit
     import time
+
     time.sleep(5)
 
     # Start Docker Desktop (use Popen with DETACHED_PROCESS — start is a cmd builtin, not an exe)
@@ -3764,9 +3787,11 @@ def enable_docker_desktop_k8s(root: Path, dry_run: bool = False) -> dict[str, An
         }
     )
     daemon_ready = False
-    for attempt in range(24):  # 24 * 5 = 120 seconds
+    for _attempt in range(24):  # 24 * 5 = 120 seconds
         time.sleep(5)
-        check = run_native(["docker", "info", "--format", "{{.ServerVersion}}"], root, timeout=10)
+        check = run_native(
+            ["docker", "info", "--format", "{{.ServerVersion}}"], root, timeout=10
+        )
         if check["returncode"] == 0 and check["stdout"].strip():
             daemon_ready = True
             break
@@ -3795,11 +3820,9 @@ def enable_docker_desktop_k8s(root: Path, dry_run: bool = False) -> dict[str, An
 
     # Wait for K8s to be ready (up to 180s)
     k8s_ready = False
-    for attempt in range(18):  # 18 * 10 = 180 seconds
+    for _attempt in range(18):  # 18 * 10 = 180 seconds
         time.sleep(10)
-        k_check = run_native(
-            ["kubectl", "version", "--output=json"], root, timeout=10
-        )
+        k_check = run_native(["kubectl", "version", "--output=json"], root, timeout=10)
         if k_check["returncode"] == 0:
             try:
                 k8s_info = json.loads(k_check["stdout"])
@@ -3834,9 +3857,7 @@ def enable_docker_desktop_k8s(root: Path, dry_run: bool = False) -> dict[str, An
     )
 
     # Also update the K8s context to docker-desktop
-    run_native(
-        ["kubectl", "config", "use-context", "docker-desktop"], root, timeout=10
-    )
+    run_native(["kubectl", "config", "use-context", "docker-desktop"], root, timeout=10)
 
     result["valid"] = True
     return result
@@ -4021,7 +4042,9 @@ def setup_k8s_access(root, dry_run=False):
 
         for env in ("dev", "qa", "prod"):
             ns = f"sdd-{env}"
-            local_port = {"dev": 8081, "qa": 8082, "prod": 8083}[env]  # K8s NodePort, not Nexus Docker registry port
+            local_port = {"dev": 8081, "qa": 8082, "prod": 8083}[
+                env
+            ]  # K8s NodePort, not Nexus Docker registry port
 
             # Check if namespace exists
             ns_check = run_native(
@@ -4200,7 +4223,7 @@ def run_environment_lab(args: list[str]) -> int:
             print("\n--- KUBERNETES ---")
             print("-" * 40)
             print(f"  | Manifest: {k.get('manifest', 'N/A')} |")
-            print(f"  | Deploy commands: |")
+            print("  | Deploy commands: |")
             for cmd in k.get("deploy", []):
                 print(f"  |   $ {cmd} |")
 

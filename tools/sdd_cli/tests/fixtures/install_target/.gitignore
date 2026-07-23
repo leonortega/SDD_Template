@@ -1,0 +1,114 @@
+# Build results
+__pycache__/
+*.py[cod]
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+artifacts/
+.codex/delivery-context.local.json
+.codex/parallel-delivery.local.json
+.codex/tool-recommendations.local.json
+.codex/installed-skill-index.local.json
+.codex/installed-skill-index.cache.local.json
+.codex/agent-telemetry.local.jsonl
+.codex/agent-evals/results.local.json
+TestResults/
+[Tt]est[Rr]esult*/
+test-results/
+playwright-report/
+coverage/
+coverage.*
+*.coverage
+*.coveragexml
+*.trx
+*.vsp
+*.vspx
+*.sap
+
+# Visual Studio user and cache files
+.vs/
+*.user
+*.rsuser
+*.suo
+*.userosscache
+*.sln.docstates
+*.sln.DotSettings.user
+*.userprefs
+*.pidb
+*.svclog
+*.pdb
+*.ilk
+*.symbols.nupkg
+
+# Visual Studio profiling and diagnostics
+*.psess
+*.diagsession
+BenchmarkDotNet.Artifacts/
+
+# Rider / JetBrains
+.idea/
+*.sln.iml
+
+# VS Code
+# Include all .vscode files for template distribution (except local secrets)
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+!.vscode/copilot-instructions.md
+.vscode/mcp.json
+
+# Node/frontend artifacts that may appear in future projects
+node_modules/
+dist/
+.vite/
+.next/
+.nuxt/
+out/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local container runtime state
+infra/openproject/openproject/
+infra/openproject/plane/
+**/data/
+**/logs/
+
+# Local secrets and machine-specific environment files
+*.env
+!*.env.example
+.openproject.local.json
+.codex/client-tools.local.json
+.codex/project-profile.local.json
+.codex/quality.local.json
+.codex/azure-login.local.json
+.codex/environment-urls.local.json
+infra/monitoring/grafana/dashboards.local/
+*.db
+*.db-shm
+*.db-wal
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.cline/skills/
+.clinerules/
+.trunk/
+nul

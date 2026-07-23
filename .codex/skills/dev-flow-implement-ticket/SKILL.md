@@ -47,68 +47,69 @@ Required/defaulted values:
 5. **Skill Pre-Analysis:** Before any code changes, analyze the project stack and tool recommendations to determine which skills are applicable:
 
    a. **Read stack configuration:**
-      - Stack lives **only** in `.codex/project-profile.local.json` (the ignored local overlay). Read `.codex/project-profile.local.json` → `stack` section for frontend/backend/database values. If it does not exist, stack is empty.
-      - Read `.codex/project-profile.json` for **non-stack** config: providers, workflow, quality gates, adapters.
-      - Use the merged result from `load_project_profile()` (in `_shared.py`) when available, which overlays local.json on top of profile.json.
-      - Read `.codex/tool-recommendations.local.json` → `detectedTags`, `researchTopics`, `accepted` recommendations.
+   - Stack lives **only** in `.codex/project-profile.local.json` (the ignored local overlay). Read `.codex/project-profile.local.json` → `stack` section for frontend/backend/database values. If it does not exist, stack is empty.
+   - Read `.codex/project-profile.json` for **non-stack** config: providers, workflow, quality gates, adapters.
+   - Use the merged result from `load_project_profile()` (in `_shared.py`) when available, which overlays local.json on top of profile.json.
+   - Read `.codex/tool-recommendations.local.json` → `detectedTags`, `researchTopics`, `accepted` recommendations.
 
    b. **Map stack to applicable skills:**
 
-      | Detected / Declared Technology | Skills to Activate |
-      |---|---|
-      | **React** + TypeScript | React component patterns, TypeScript typing, `@testing-library/react` for component tests, Vite for build |
-      | **TypeScript** (any) | TypeScript `tsconfig.json` configuration, type-safe patterns |
-      | **C# / ASP.NET Core** | Controller-service-repository layers, Entity Framework guidance |
-      | **Python / FastAPI / Flask / Django** | FastAPI/Flask/Django patterns, pytest for testing |
-      | **SQLite / PostgreSQL / MongoDB** | ORM/schema guidance, migration patterns |
-      | **Any web frontend** | `playwright` (E2E browser tests), `playwright-interactive` (debugging) |
-      | **Any implementation** | `tdd` (test-first cycles), `ponytail` (minimal code, standard library), `security-best-practices` |
-      | **Gitea** (repo/review provider) | `dev-flow-pr-review-agent` (PR review automation) |
-      | **Any task (generic)** | **Scan all `.codex/skills/` directories.** Every installed skill must be assessed for relevance, not just stack-mapped ones. See sub-step f below. |
+   | Detected / Declared Technology        | Skills to Activate                                                                                                                                 |
+   | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+   | **React** + TypeScript                | React component patterns, TypeScript typing, `@testing-library/react` for component tests, Vite for build                                          |
+   | **TypeScript** (any)                  | TypeScript `tsconfig.json` configuration, type-safe patterns                                                                                       |
+   | **C# / ASP.NET Core**                 | Controller-service-repository layers, Entity Framework guidance                                                                                    |
+   | **Python / FastAPI / Flask / Django** | FastAPI/Flask/Django patterns, pytest for testing                                                                                                  |
+   | **SQLite / PostgreSQL / MongoDB**     | ORM/schema guidance, migration patterns                                                                                                            |
+   | **Any web frontend**                  | `playwright` (E2E browser tests), `playwright-interactive` (debugging)                                                                             |
+   | **Any implementation**                | `tdd` (test-first cycles), `ponytail` (minimal code, standard library), `security-best-practices`                                                  |
+   | **Gitea** (repo/review provider)      | `dev-flow-pr-review-agent` (PR review automation)                                                                                                  |
+   | **Any task (generic)**                | **Scan all `.codex/skills/` directories.** Every installed skill must be assessed for relevance, not just stack-mapped ones. See sub-step f below. |
 
    c. **Load and declare each skill:**
-      - Try loading each identified `SKILL.md` via the `skill` tool first. If the `skill` tool reports "no skills available" or is unavailable, read the SKILL.md file directly from `.codex/skills/<name>/SKILL.md` and apply its rules manually.
-      - Declare all active skills at the start of every response body:
-        ```markdown
-        Skills used: caveman (auto, full), ponytail (auto, full),
-                     tdd (on-demand), playwright (on-demand),
-                     <tech-stack-skills> (on-demand)
-        ```
-      - If a skill recommendation is listed in `accepted` but not yet installed in `.codex/skills/`, report it as a gap and route to `project-guidance-acquire`. If the stack is empty (`applies: false` for all domains) but the ticket implies a product, suggest running `python -m tools.sdd_cli guidance discover` to auto-detect the stack from repo signals, or configure via `set-project-stack`.
+   - Try loading each identified `SKILL.md` via the `skill` tool first. If the `skill` tool reports "no skills available" or is unavailable, read the SKILL.md file directly from `.codex/skills/<name>/SKILL.md` and apply its rules manually.
+   - Declare all active skills at the start of every response body:
+     ```markdown
+     Skills used: caveman (auto, full), ponytail (auto, full),
+     tdd (on-demand), playwright (on-demand),
+     <tech-stack-skills> (on-demand)
+     ```
+   - If a skill recommendation is listed in `accepted` but not yet installed in `.codex/skills/`, report it as a gap and route to `project-guidance-acquire`. If the stack is empty (`applies: false` for all domains) but the ticket implies a product, suggest running `python -m tools.sdd_cli guidance discover` to auto-detect the stack from repo signals, or configure via `set-project-stack`.
 
    d. **Apply architecture patterns based on stack:**
-      - **React frontend:** Component-per-file, custom hooks for logic, service modules for API calls, TypeScript types in a `types/` directory.
-      - **ASP.NET backend:** Controller → Service → Repository layering with dependency injection.
-      - **Python backend:** Route → Service → Repository or similar separation of concerns.
-      - **Clean Architecture:** Separate domain, application, infrastructure, and presentation layers — but only add layers the implementation actually needs (ponytail principle: no speculative abstractions).
+   - **React frontend:** Component-per-file, custom hooks for logic, service modules for API calls, TypeScript types in a `types/` directory.
+   - **ASP.NET backend:** Controller → Service → Repository layering with dependency injection.
+   - **Python backend:** Route → Service → Repository or similar separation of concerns.
+   - **Clean Architecture:** Separate domain, application, infrastructure, and presentation layers — but only add layers the implementation actually needs (ponytail principle: no speculative abstractions).
 
    e. **Stop and report when:**
-      - Required skills are missing from `.codex/skills/` — route to `project-guidance-acquire`.
-      - Stack implies a framework but relevant test frameworks are not configured in the recommendations.
+   - Required skills are missing from `.codex/skills/` — route to `project-guidance-acquire`.
+   - Stack implies a framework but relevant test frameworks are not configured in the recommendations.
 
    f. **Scan all installed skills for relevance:** Beyond the stack-mapped skills above, enumerate every skill directory under `.codex/skills/` that has a `SKILL.md` and assess it:
 
-      - Read the skill's `SKILL.md` (or `metadata.json` → `description` when available) to determine what domain, language, or pattern it covers.
-      - Classify each skill:
-        - **active** — its rules, patterns, or constraints apply to the current implementation task.
-        - **skipped** — it does not apply (document the specific reason).
-      - Include all skills — both active and skipped — in the `Skills used:` declaration block.
-      - **Skipped skills must include a rationale.** A bare list of skipped names is insufficient. Examples:
+   - Read the skill's `SKILL.md` (or `metadata.json` → `description` when available) to determine what domain, language, or pattern it covers.
+   - Classify each skill:
+     - **active** — its rules, patterns, or constraints apply to the current implementation task.
+     - **skipped** — it does not apply (document the specific reason).
+   - Include all skills — both active and skipped — in the `Skills used:` declaration block.
+   - **Skipped skills must include a rationale.** A bare list of skipped names is insufficient. Examples:
 
-        ```markdown
-        Skills used:
-        - caveman (auto, full)
-        - ponytail (auto, full)
-        - vercel-react-best-practices (on-demand): React performance patterns
-        - clean-code (on-demand): naming, function size, error handling
-        - solid-principles (on-demand): component interface design
-        - modern-csharp-coding-standards (skipped — C# only, not a C# project)
-        - vercel-react-view-transitions (skipped — no route animations in scope)
-        - clean-architecture (skipped — overkill for a 6-component SPA landing page)
-        ```
+     ```markdown
+     Skills used:
 
-      - If assessing a skill's applicability requires understanding its full rules, load it via `skill('<name>')` (or read its `SKILL.md` directly) before deciding.
-      - **Failure to scan:** If a skill is installed in `.codex/skills/` but the agent does not list it in the declaration, it is a process violation (authority level 5). The implementation must stop and the agent must redo the scan.
+     - caveman (auto, full)
+     - ponytail (auto, full)
+     - vercel-react-best-practices (on-demand): React performance patterns
+     - clean-code (on-demand): naming, function size, error handling
+     - solid-principles (on-demand): component interface design
+     - modern-csharp-coding-standards (skipped — C# only, not a C# project)
+     - vercel-react-view-transitions (skipped — no route animations in scope)
+     - clean-architecture (skipped — overkill for a 6-component SPA landing page)
+     ```
+
+   - If assessing a skill's applicability requires understanding its full rules, load it via `skill('<name>')` (or read its `SKILL.md` directly) before deciding.
+   - **Failure to scan:** If a skill is installed in `.codex/skills/` but the agent does not list it in the declaration, it is a process violation (authority level 5). The implementation must stop and the agent must redo the scan.
 
 6. Detect resume checkpoints before doing new work:
    - completed and pending OpenSpec tasks,
@@ -122,17 +123,17 @@ Required/defaulted values:
    - latest ticket provider `IA generated PR feedback fixes: {headSha}:{feedbackBatchId}` markers,
    - current `needs-tests` and `needs-changes` labels,
    - latest repository workflow status.
-   Continue from the latest completed checkpoint instead of restarting earlier steps.
-6. Confirm the OpenSpec change is active:
+     Continue from the latest completed checkpoint instead of restarting earlier steps.
+7. Confirm the OpenSpec change is active:
    ```bash
    openspec status --change "<change>" --json
    ```
-7. Load apply instructions:
+8. Load apply instructions:
    ```bash
    openspec instructions apply --change "<change>" --json
    ```
-8. Read every context file returned by the apply instructions.
-9. Classify delivery risk from ticket text, OpenSpec artifacts, changed/planned paths, and estimated changed lines using the shared delivery contract. Prefer repo-local helpers when available. Record `low`, `standard`, or `high` in the PR body and ticket handoff.
+9. Read every context file returned by the apply instructions.
+10. Classify delivery risk from ticket text, OpenSpec artifacts, changed/planned paths, and estimated changed lines using the shared delivery contract. Prefer repo-local helpers when available. Record `low`, `standard`, or `high` in the PR body and ticket handoff.
 
 ### 2. Discover Quality Gates
 

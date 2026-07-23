@@ -1,4 +1,5 @@
 <!-- TIER 1: STABLE PREFIX - Repo identity, mandatory rules, session-cached -->
+
 # AGENTS.md
 
 This repository is a product-free SDD/SDLC agentic shell. Use the workflow files and Codex skills as the source of truth before making changes.
@@ -22,6 +23,7 @@ After the mandatory first step, inspect the relevant local context for the curre
 4. **TIER 4 — Dynamic** (never cached): user message, conversation history, tool outputs, live state
 
 Always read in order:
+
 - `README.md`
 - `.codex/skills/_shared/skill-startup.md`
 - `.codex/memory/memory_summary.md`
@@ -75,6 +77,7 @@ Before any code change — whether implementing a ticket, fixing a bug, or addin
 
 ```markdown
 Skills used:
+
 - caveman (auto, full): terse format
 - ponytail (auto, full): code quality
 - vercel-react-best-practices (on-demand): React performance patterns for component optimization
@@ -174,7 +177,7 @@ compressed = result["compressed"]
 
 This is mandatory (authority level 5). Do not skip it. The fusion pipeline achieves 15–82% compression with zero LLM inference cost, preserving code identifiers, JSON structure, and log patterns.
 
-Apply Caveman full to all assistant chat prompts in this repository *after* claw compression. Use terse fragments for commentary, direct answers, status updates, debug findings, next steps, blockers, validation summaries, and final summaries. Write normal complete prose for authored artifacts.
+Apply Caveman full to all assistant chat prompts in this repository _after_ claw compression. Use terse fragments for commentary, direct answers, status updates, debug findings, next steps, blockers, validation summaries, and final summaries. Write normal complete prose for authored artifacts.
 
 Keep code blocks, commands, paths, API names, error messages, quoted text, and file content exact. Temporarily use normal prose for security warnings, irreversible actions, precise multi-step instructions, ambiguous order of operations, or clarification.
 
@@ -192,25 +195,25 @@ Before final handoff for any non-trivial repo work, run the Durable Learning Cap
 
 Before responding to a user request, resolve the current workflow stage and load its corresponding skill. This routing is mandatory — do not implement workflow steps from general knowledge alone.
 
-| User request / context | Stage | Skill to load |
-|---|---|---|
-| Start a ticket (specific or next Todo) | `dev-flow-start-ticket` | `.codex/skills/dev-flow-start-ticket/SKILL.md` |
-| Create / propose an OpenSpec change | `dev-flow-propose-change` | `.codex/skills/dev-flow-propose-change/SKILL.md` |
-| Implement a ticket / change | `dev-flow-implement-ticket` | `.codex/skills/dev-flow-implement-ticket/SKILL.md` |
-| Continue implementation | `dev-flow-continue-implementation` | `.codex/skills/dev-flow-continue-implementation/SKILL.md` |
-| Review a pull request | `dev-flow-pr-review-agent` | `.codex/skills/dev-flow-pr-review-agent/SKILL.md` |
-| Address PR review feedback | `dev-flow-pr-review-feedback-loop` | `.codex/skills/dev-flow-pr-review-feedback-loop/SKILL.md` |
-| Verify an OpenSpec change | `dev-flow-verify-change` | `.codex/skills/dev-flow-verify-change/SKILL.md` |
-| Archive an OpenSpec change | `dev-flow-archive-change` | `.codex/skills/dev-flow-archive-change/SKILL.md` |
-| Deploy to QA | `dev-ops-deploy-qa` | `.codex/skills/dev-ops-deploy-qa/SKILL.md` |
-| Deploy to production | `dev-ops-deploy-prod` | `.codex/skills/dev-ops-deploy-prod/SKILL.md` |
-| Rollback production | `dev-ops-rollback-prod` | `.codex/skills/dev-ops-rollback-prod/SKILL.md` |
-| Hotfix production | `dev-ops-hotfix-prod` | `.codex/skills/dev-ops-hotfix-prod/SKILL.md` |
-| Post-merge deploy | `dev-ops-post-merge-deploy` | `.codex/skills/dev-ops-post-merge-deploy/SKILL.md` |
-| File a QA bug | `dev-flow-file-qa-bug` | `.codex/skills/dev-flow-file-qa-bug/SKILL.md` |
-| Check pipeline status | `dev-flow-pipeline-status` | `.codex/skills/dev-flow-pipeline-status/SKILL.md` |
-| Run retrospective audit | `dev-flow-retrospective-audit` | `.codex/skills/dev-flow-retrospective-audit/SKILL.md` |
-| Explore a change / ask questions | `dev-flow-explore-change` | `.codex/skills/dev-flow-explore-change/SKILL.md` |
+| User request / context                 | Stage                              | Skill to load                                             |
+| -------------------------------------- | ---------------------------------- | --------------------------------------------------------- |
+| Start a ticket (specific or next Todo) | `dev-flow-start-ticket`            | `.codex/skills/dev-flow-start-ticket/SKILL.md`            |
+| Create / propose an OpenSpec change    | `dev-flow-propose-change`          | `.codex/skills/dev-flow-propose-change/SKILL.md`          |
+| Implement a ticket / change            | `dev-flow-implement-ticket`        | `.codex/skills/dev-flow-implement-ticket/SKILL.md`        |
+| Continue implementation                | `dev-flow-continue-implementation` | `.codex/skills/dev-flow-continue-implementation/SKILL.md` |
+| Review a pull request                  | `dev-flow-pr-review-agent`         | `.codex/skills/dev-flow-pr-review-agent/SKILL.md`         |
+| Address PR review feedback             | `dev-flow-pr-review-feedback-loop` | `.codex/skills/dev-flow-pr-review-feedback-loop/SKILL.md` |
+| Verify an OpenSpec change              | `dev-flow-verify-change`           | `.codex/skills/dev-flow-verify-change/SKILL.md`           |
+| Archive an OpenSpec change             | `dev-flow-archive-change`          | `.codex/skills/dev-flow-archive-change/SKILL.md`          |
+| Deploy to QA                           | `dev-ops-deploy-qa`                | `.codex/skills/dev-ops-deploy-qa/SKILL.md`                |
+| Deploy to production                   | `dev-ops-deploy-prod`              | `.codex/skills/dev-ops-deploy-prod/SKILL.md`              |
+| Rollback production                    | `dev-ops-rollback-prod`            | `.codex/skills/dev-ops-rollback-prod/SKILL.md`            |
+| Hotfix production                      | `dev-ops-hotfix-prod`              | `.codex/skills/dev-ops-hotfix-prod/SKILL.md`              |
+| Post-merge deploy                      | `dev-ops-post-merge-deploy`        | `.codex/skills/dev-ops-post-merge-deploy/SKILL.md`        |
+| File a QA bug                          | `dev-flow-file-qa-bug`             | `.codex/skills/dev-flow-file-qa-bug/SKILL.md`             |
+| Check pipeline status                  | `dev-flow-pipeline-status`         | `.codex/skills/dev-flow-pipeline-status/SKILL.md`         |
+| Run retrospective audit                | `dev-flow-retrospective-audit`     | `.codex/skills/dev-flow-retrospective-audit/SKILL.md`     |
+| Explore a change / ask questions       | `dev-flow-explore-change`          | `.codex/skills/dev-flow-explore-change/SKILL.md`          |
 
 After loading the skill, follow its Workflow section step by step. Do not skip steps. Do not improvise. If a step requires an API call, comment, label, or state change that the skill defines, execute it — do not treat it as optional.
 
@@ -218,15 +221,16 @@ After loading the skill, follow its Workflow section step by step. Do not skip s
 
 This repository has two MCP servers for content search — each with a strict domain. Every agent **must** follow `.codex/mcp-instructions.md` (the definitive MCP routing contract) when searching repository content:
 
-| Content Type | MCP Server | Tool | Reason |
-|---|---|---|---|
-| Documentation (`.md`, `.mdx`, skills, adapters) | `monorepo-docs-search` | `search_documentation` | BM25 + FlashRank cross-encoder — token-efficient snippets |
-| Source code (all other files) | `codebase-memory-mcp` | `search_graph`, `get_architecture`, `trace_path`, `get_code_snippet`, `query_graph` | BM25 ranking + structural boosting — definitions rank first |
-| Source code (all other files) | `codebase-memory-mcp` | `search_code` | Grep + graph-enriched dedup — for raw regex/pattern matching |
+| Content Type                                    | MCP Server             | Tool                                                                                | Reason                                                       |
+| ----------------------------------------------- | ---------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Documentation (`.md`, `.mdx`, skills, adapters) | `monorepo-docs-search` | `search_documentation`                                                              | BM25 + FlashRank cross-encoder — token-efficient snippets    |
+| Source code (all other files)                   | `codebase-memory-mcp`  | `search_graph`, `get_architecture`, `trace_path`, `get_code_snippet`, `query_graph` | BM25 ranking + structural boosting — definitions rank first  |
+| Source code (all other files)                   | `codebase-memory-mcp`  | `search_code`                                                                       | Grep + graph-enriched dedup — for raw regex/pattern matching |
 
 This routing is mandatory (authority level 5 per `docs/context-management.md` — alongside `.codex/skills/_shared/delivery-contract.md`). Do not skip it. Do not use raw grep as the first approach. Do not cross-search domains between MCPs.
 
 ## Skill Activation Configuration
+
 - All prompts must trigger skill evaluation by default
 - Skills are applied in priority order: caveman > ponytail > others
 - Caveman skill auto-activates with intensity: full (unless specified otherwise)

@@ -40,6 +40,7 @@ The `enrich` operation uses a managed block delimited by HTML comments. The orig
 The description is split into two zones:
 
 ```
+text
 [User-authored original description — preserved exactly as-is]
 
 <!-- ia-generated:start -->
@@ -93,8 +94,9 @@ Only the content between `<!-- ia-generated:start -->` and `<!-- ia-generated:en
    - Capture domain knowledge surfaced during the interview.
    - Write durable context to `docs/` or `.codex/memory/` as appropriate.
    - Use the clarified requirements to produce a richer, more accurate improved description.
-   
+
    This step is especially important when the ticket has gaps, ambiguous language, or missing acceptance criteria. Skip the interactive grill step only when the description is already complete and unambiguous.
+
 4. **Compose the improved content** using the knowledge gathered from `grill-with-docs` and any other relevant context (codebase exploration, existing docs, memory). Include:
    - Key clarifications or decisions made during the grill session.
    - Refined acceptance criteria.

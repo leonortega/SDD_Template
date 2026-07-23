@@ -1,0 +1,21 @@
+apiVersion: 1
+
+providers:
+  - name: Agentic E2E
+    orgId: 1
+    folder: Agentic E2E
+    type: file
+    disableDeletion: false
+    editable: true
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards
+  - name: Agentic E2E Local
+    orgId: 1
+    folder: Agentic E2E
+    type: file
+    disableDeletion: false
+    editable: true
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards.local

@@ -1,4 +1,5 @@
 <!-- TIER 2: SEMI-STABLE - Provider adapter contract, loaded with core delivery rules -->
+
 # Provider Adapter Contract
 
 Generic delivery skills must read `.codex/project-profile.json` and optional `.codex/project-profile.local.json` before provider-specific instructions.

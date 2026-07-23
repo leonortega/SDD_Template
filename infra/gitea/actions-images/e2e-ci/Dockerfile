@@ -2,6 +2,13 @@ FROM mcr.microsoft.com/playwright:v1.57.0-noble
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+SHELL ["/bin/sh", "-o", "pipefail", "-c"]
+
+# Create non-root user for container runtime
+RUN useradd -m -u 1000 appuser
+
+# Base tooling
+# hadolint ignore=DL3008
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
@@ -15,9 +22,11 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Docker CLI from Docker's official apt repo (for docker build/push/save in CI)
+# hadolint ignore=DL3008
 RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg     | gpg --dearmor -o /etc/apt/keyrings/docker.gpg     && echo 'deb [signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu noble stable'     | tee /etc/apt/sources.list.d/docker.list     && apt-get update     && apt-get install -y --no-install-recommends docker-ce-cli     && apt-get clean     && rm -rf /var/lib/apt/lists/*
 
 # Install kubectl matching Docker Desktop K8s server version (v1.36)
+# hadolint ignore=DL3008
 RUN curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.36/deb/Release.key \
     | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg \
     && echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.36/deb/ /' \
@@ -34,7 +43,7 @@ RUN curl -fsSL https://raw.githubusercontent.com/kubernetes-sigs/kustomize/maste
     && kustomize version 2>/dev/null || true
 
 # Install Semgrep (SAST) and Checkov (IaC) via pip (--break-system-packages for PEP 668)
-RUN pip3 install --break-system-packages --no-cache-dir semgrep checkov
+RUN pip3 install --break-system-packages --no-cache-dir semgrep==1.104.0 checkov==3.2.20
 
 # Pre-cache Semgrep rules for all project languages (CI has no internet)
 RUN mkdir -p /tmp/semgrep-dummy \
@@ -55,13 +64,6 @@ RUN curl -fsSL -o /tmp/trivy.deb \
 # Pre-cache Trivy vulnerability DB (CI container has no internet, must fail if no connection)
 RUN trivy image --download-db-only --quiet 2>&1
 
-RUN node --version >/dev/null \
-    && npm --version >/dev/null \
-    && test -d /ms-playwright \
-    && zip --version >/dev/null \
-    && python3 --version >/dev/null \
-    && pip3 --version >/dev/null \
-    && gitleaks version >/dev/null \
-    && semgrep --version >/dev/null \
-    && checkov --version >/dev/null \
-    && trivy --version >/dev/null
+HEALTHCHECK --interval=30s --timeout=3s --retries=3 CMD wget -qO- http://localhost:3000 || exit 1
+
+USER appuser

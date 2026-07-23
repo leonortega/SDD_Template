@@ -1,0 +1,325 @@
+name: Package and deploy
+
+on:
+  push:
+    branches:
+      - dev
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment (dev, qa, or prod)
+        required: true
+        default: dev
+
+jobs:
+  build-and-deploy:
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    container:
+      image: sdd-e2e-ci:local
+    steps:
+      - name: Checkout
+        env:
+          GITEA_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -eo pipefail
+          export GIT_TERMINAL_PROMPT=0
+          TOKEN="${GITEA_TOKEN:-}"
+          repo_url="http://git:${TOKEN}@host.docker.internal:3000/${GITHUB_REPOSITORY}.git"
+          git init .
+          git remote add origin "$repo_url"
+          git fetch --depth 1 origin "$GITHUB_SHA"
+          git checkout --force FETCH_HEAD
+
+      - name: Determine environment
+        id: env
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "ENV=dev" >> $GITHUB_OUTPUT
+          else
+            echo "ENV=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build and push Docker images
+        env:
+          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+          NEXUS_DOCKER_REGISTRY: ${{ secrets.NEXUS_DOCKER_REGISTRY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          COMMIT_SHA=$(git rev-parse HEAD)
+          REGISTRY="${NEXUS_DOCKER_REGISTRY:-host.docker.internal:8083}"
+
+          # Login to Nexus Docker registry
+          if [ -n "${NEXUS_USERNAME:-}" ] && [ -n "${NEXUS_PASSWORD:-}" ]; then
+            echo "${NEXUS_PASSWORD}" | docker login "${REGISTRY}" \
+              -u "${NEXUS_USERNAME}" --password-stdin
+          fi
+
+          # Read apps from apps.json
+          APPS=$(python3 -c "
+          import json
+          with open('infra/deployment/apps.json') as f:
+              apps = json.load(f).get('apps', [])
+          for a in apps:
+              print(f\"{a['appId']}|{a.get('projectPath', a['appId'])}\")
+          " 2>/dev/null || echo "frontend|frontend")
+
+          echo "${APPS}" | while IFS='|' read -r app_id project_path; do
+            if [ -f "${project_path}/Dockerfile" ]; then
+              IMAGE="${REGISTRY}/${app_id}:${COMMIT_SHA}"
+              echo "Building ${app_id}..."
+              docker build -t "${IMAGE}" -f "${project_path}/Dockerfile" "${project_path}"
+              echo "Pushing ${IMAGE}..."
+              docker push "${IMAGE}"
+              docker tag "${IMAGE}" "${REGISTRY}/${app_id}:latest"
+              docker push "${REGISTRY}/${app_id}:latest"
+              echo "${app_id} built and pushed"
+            else
+              echo "No Dockerfile found for ${app_id} — skipping build"
+            fi
+          done
+
+      - name: Deploy to K8s
+        env:
+          KUBE_CONFIG_DATA: ${{ secrets.KUBECONFIG }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Write kubeconfig from secret to temp file (secret stores content, KUBECONFIG needs a path)
+          if [ -n "${KUBE_CONFIG_DATA:-}" ]; then
+            printf '%s\n' "${KUBE_CONFIG_DATA}" > /tmp/kubeconfig
+            chmod 600 /tmp/kubeconfig
+            export KUBECONFIG=/tmp/kubeconfig
+            echo "KUBECONFIG written to /tmp/kubeconfig"
+          else
+            echo "WARNING: KUBECONFIG secret not set — kubectl may fail to authenticate"
+          fi
+
+          ENV="${{ steps.env.outputs.ENV }}"
+          REGISTRY="${NEXUS_DOCKER_REGISTRY:-host.docker.internal:8083}"
+          COMMIT_SHA=$(git rev-parse HEAD)
+
+          OVERLAY_DIR="infra/k8s/overlays/${ENV}"
+
+          if [ ! -d "${OVERLAY_DIR}" ]; then
+            echo "No K8s overlay found for ${ENV} — skipping K8s deployment"
+            echo "Run 'python -m tools.sdd_cli environment-lab scaffold-k8s' first"
+            exit 0
+          fi
+
+          # Ensure K8s namespace exists
+          NAMESPACE="sdd-${ENV}"
+          if ! kubectl get namespace "${NAMESPACE}" > /dev/null 2>&1; then
+            echo "Creating namespace ${NAMESPACE}..."
+            kubectl create namespace "${NAMESPACE}"
+          fi
+
+          # Diagnostics: tool versions and connectivity
+          echo "=== K8s Deploy Diagnostics ==="
+          echo "kustomize: $(kustomize version 2>&1)"
+          echo "kubectl: $(kubectl version --client 2>&1 | head -1)"
+          echo "K8s API: $(kubectl cluster-info --request-timeout=5s 2>&1 | head -3)"
+          echo "Environment: ${ENV}"
+          echo "Namespace: ${NAMESPACE}"
+          echo "Overlay: ${OVERLAY_DIR}"
+          echo "============================"
+
+          # Read apps and set image tags
+          REPO_ROOT=$(pwd)
+          APPS_JSON="${REPO_ROOT}/infra/deployment/apps.json"
+
+          cd "${OVERLAY_DIR}"
+
+          python3 -c "
+          import json, subprocess, os
+          apps_json = '${APPS_JSON}'
+          registry = '${REGISTRY}'
+          commit_sha = '${COMMIT_SHA}'
+          with open(apps_json) as f:
+              apps = json.load(f).get('apps', [])
+          for app in apps:
+              app_id = app['appId']
+              image = f'{registry}/{app_id}:{commit_sha}'
+              subprocess.run(['kustomize', 'edit', 'set', 'image', image], check=True)
+              print(f'Set image for {app_id}: {image}')
+          "
+
+          # Build manifest to temp file
+          echo "Building K8s manifest..."
+          kustomize build . > /tmp/k8s-manifest.yaml 2>/tmp/kustomize-err.log
+          if [ ! -s /tmp/k8s-manifest.yaml ]; then
+            echo "ERROR: kustomize build produced empty output"
+            cat /tmp/kustomize-err.log
+            exit 1
+          fi
+          echo "Manifest size: $(wc -l < /tmp/k8s-manifest.yaml) lines"
+
+          # Apply to K8s
+          echo "Deploying to ${ENV}..."
+          if ! kubectl apply -f /tmp/k8s-manifest.yaml 2>&1; then
+            echo "ERROR: kubectl apply failed - running dry-run for diagnosis..."
+            kubectl apply --dry-run=client -f /tmp/k8s-manifest.yaml 2>&1 | head -20
+            exit 1
+          fi
+
+          # Wait for rollout of each app
+          python3 -c "
+          import json, subprocess
+          namespace = 'sdd-${ENV}'
+          with open('${APPS_JSON}') as f:
+              apps = json.load(f).get('apps', [])
+          for app in apps:
+              app_id = app['appId']
+              print(f'Waiting for rollout of {app_id} in {namespace}...')
+              subprocess.run(
+                  ['kubectl', '-n', namespace, 'rollout', 'status', 'deployment', app_id, '--timeout=120s'],
+                  check=False
+              )
+          "
+
+          cd "${REPO_ROOT}"
+      - name: Discover environment URLs
+        id: urls
+        env:
+          KUBE_CONFIG_DATA: ${{ secrets.KUBECONFIG }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Write kubeconfig from secret to temp file (needed for kubectl in this step)
+          if [ -n "${KUBE_CONFIG_DATA:-}" ]; then
+            printf '%s\n' "${KUBE_CONFIG_DATA}" > /tmp/kubeconfig
+            export KUBECONFIG=/tmp/kubeconfig
+          fi
+
+          export ENV="${{ steps.env.outputs.ENV }}"
+          COMMIT_SHA=$(git rev-parse HEAD)
+          mkdir -p "app/${COMMIT_SHA}"
+
+          # Single Python script: discover nodePorts + write JSON manifest
+          python3 << 'PYEOF'
+          import json, os, subprocess
+
+          env = os.environ.get('ENV', 'dev')
+          commit_sha = os.environ.get('COMMIT_SHA',
+              subprocess.run(['git', 'rev-parse', 'HEAD'],
+                  capture_output=True, text=True).stdout.strip())
+          namespace = f"sdd-{env}"
+
+          # Read apps from apps.json
+          apps = []
+          if os.path.exists('infra/deployment/apps.json'):
+              with open('infra/deployment/apps.json') as f:
+                  config = json.load(f)
+              apps = config.get('apps', [])
+          else:
+              apps = [{'appId': 'frontend', 'healthPath': '/health'}]
+
+          discovered = []
+          for app in apps:
+              app_id = app['appId']
+              health_path = app.get('healthPath', '/health')
+
+              # Discover nodePort from K8s service
+              node_port = ''
+              try:
+                  result = subprocess.run(
+                      ['kubectl', '-n', namespace, 'get', 'svc', app_id,
+                       '-o', 'jsonpath={.spec.ports[0].nodePort}',
+                       '--request-timeout=3s'],
+                      capture_output=True, text=True, timeout=10
+                  )
+                  if result.returncode == 0 and result.stdout.strip():
+                      node_port = result.stdout.strip()
+              except Exception as e:
+                  print(f"  Warning: kubectl failed for {app_id}: {e}")
+
+              url = f'http://localhost:{node_port}' if node_port else ''
+              health_url = f'{url}{health_path}' if url else ''
+
+              discovered.append({
+                  'appId': app_id,
+                  'url': url,
+                  'healthUrl': health_url,
+                  'healthPath': health_path
+              })
+
+              if url:
+                  print(f"  {app_id}: {url}")
+              else:
+                  print(f"  {app_id}: not deployed (port-forward needed)")
+
+          manifest = {
+              'environment': env,
+              'commitSha': commit_sha,
+              'apps': discovered,
+              'timestamp': subprocess.run(
+                  ['date', '-u', '+%Y-%m-%dT%H:%M:%SZ'],
+                  capture_output=True, text=True).stdout.strip()
+          }
+
+          urls_file = f'app/{commit_sha}/env-urls.json'
+          with open(urls_file, 'w') as f:
+              json.dump(manifest, f, indent=2)
+          print(f"\nURL manifest saved to {urls_file}")
+          print(json.dumps(manifest, indent=2))
+          PYEOF
+
+      - name: Upload artifacts to Nexus
+        env:
+          NEXUS_URL: ${{ secrets.NEXUS_URL }}
+          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+          NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          COMMIT_SHA=$(git rev-parse HEAD)
+          ARTIFACT_DIR="app/${COMMIT_SHA}"
+          NEXUS_URL="${NEXUS_URL:-http://host.docker.internal:8088}"
+          REPO="${NEXUS_REPOSITORY:-sdd-artifacts}"
+
+          if [ ! -d "${ARTIFACT_DIR}" ]; then
+            echo "No artifacts to upload"
+            exit 0
+          fi
+
+          if [ -z "${NEXUS_USERNAME:-}" ] || [ -z "${NEXUS_PASSWORD:-}" ]; then
+            echo "Nexus credentials not set — skipping upload"
+            exit 0
+          fi
+
+          UPLOAD_FAILED=0
+          for file in $(find "${ARTIFACT_DIR}" -type f); do
+            remote_path="${file}"
+            echo "Uploading ${file} to ${NEXUS_URL}/repository/${REPO}/${remote_path}"
+            if ! curl -s -f -u "${NEXUS_USERNAME}:${NEXUS_PASSWORD}" \
+              --upload-file "${file}" \
+              "${NEXUS_URL}/repository/${REPO}/${remote_path}" \
+              -w "HTTP:%{http_code}\n"; then
+              echo "ERROR: Failed to upload ${file} — see HTTP code in preceding line"
+              UPLOAD_FAILED=1
+            fi
+          done
+
+          # Upload latest env URLs pointer
+          DEPLOY_ENV="${{ steps.env.outputs.ENV }}"
+          for file in $(find "${ARTIFACT_DIR}" -type f -name "env-urls.json"); do
+            LATEST_PATH="app/latest/env-urls-${DEPLOY_ENV:-dev}.json"
+            echo "Uploading ${file} as ${LATEST_PATH}"
+            curl -s -f -u "${NEXUS_USERNAME}:${NEXUS_PASSWORD}" \
+              -X PUT \
+              --upload-file "${file}" \
+              "${NEXUS_URL}/repository/${REPO}/${LATEST_PATH}" || true
+          done
+
+          if [ "$UPLOAD_FAILED" = "1" ]; then
+            echo "WARNING: Some artifacts failed to upload to Nexus"
+          fi
+
+          echo "Upload complete"

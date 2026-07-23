@@ -29,26 +29,42 @@ from ._shared import (
     write_json,
 )
 
-
 # ── Discover ─────────────────────────────────────────────────────────────
 
-def discover_project_guidance(root: Path, dry_run: bool = False, **values: Any) -> dict[str, Any]:
+
+def discover_project_guidance(
+    root: Path, dry_run: bool = False, **values: Any
+) -> dict[str, Any]:
     """Detect stack, research topics, and build recommendations."""
     audit_values = {**values, "skipAutoDiscovery": True}
     audit = _audit_recommended_tools(root, dry_run, **audit_values)
-    blockers = [item for item in audit.get("findings", []) if item.get("severity") == "error"]
+    blockers = [
+        item for item in audit.get("findings", []) if item.get("severity") == "error"
+    ]
     if blockers:
         return {
-            "mode": "DiscoverProjectGuidance", "valid": False, "writeEnabled": False,
+            "mode": "DiscoverProjectGuidance",
+            "valid": False,
+            "writeEnabled": False,
             "detectedTags": audit.get("detectedTags", []),
             "researchTopics": audit.get("researchTopics", []),
             "findings": blockers,
             "errors": [item["message"] for item in blockers],
             "actions": [],
         }
-    recommendations = [item for item in audit["recommendations"] if item["id"] != SEARCH_PLAN_ID]
-    missing_skills = [item for item in recommendations if item.get("type") == "skill" and item.get("detected", True) and not item.get("targetExists", False)]
-    suggested_guidance = [item for item in recommendations if item.get("type") != "skill"]
+    recommendations = [
+        item for item in audit["recommendations"] if item["id"] != SEARCH_PLAN_ID
+    ]
+    missing_skills = [
+        item
+        for item in recommendations
+        if item.get("type") == "skill"
+        and item.get("detected", True)
+        and not item.get("targetExists", False)
+    ]
+    suggested_guidance = [
+        item for item in recommendations if item.get("type") != "skill"
+    ]
     user_added = _normalize_added_guidance(values.get("additionalSkills", []))
     final_confirmed = recommendations + user_added if values.get("confirmed") else []
 
@@ -63,23 +79,34 @@ def discover_project_guidance(root: Path, dry_run: bool = False, **values: Any) 
     if skill_search_results:
         # Add community-sourced skills to suggestions
         existing_ids = {item["id"] for item in recommendations}
-        new_from_search = [s for s in skill_search_results if s["id"] not in existing_ids]
+        new_from_search = [
+            s for s in skill_search_results if s["id"] not in existing_ids
+        ]
         recommendations.extend(new_from_search)
         missing_skills.extend(
-            s for s in new_from_search
-            if s.get("type") == "skill" and s.get("detected", True) and not s.get("targetExists", False)
+            s
+            for s in new_from_search
+            if s.get("type") == "skill"
+            and s.get("detected", True)
+            and not s.get("targetExists", False)
         )
         # Build source summary
         source_counts: dict[str, int] = {}
         for s in new_from_search:
             sk = s.get("sourceKind", "?")
             source_counts[sk] = source_counts.get(sk, 0) + 1
-        source_summary = ", ".join(f"{k}: {v}" for k, v in sorted(source_counts.items()))
-        actions.append({
-            "path": "community-skills", "key": "skill-search", "severity": "info",
-            "message": f"Found {len(new_from_search)} community skill(s) from {len(source_counts)} source(s): {source_summary}.",
-            "phase": "audit",
-        })
+        source_summary = ", ".join(
+            f"{k}: {v}" for k, v in sorted(source_counts.items())
+        )
+        actions.append(
+            {
+                "path": "community-skills",
+                "key": "skill-search",
+                "severity": "info",
+                "message": f"Found {len(new_from_search)} community skill(s) from {len(source_counts)} source(s): {source_summary}.",
+                "phase": "audit",
+            }
+        )
 
     # Detect orphaned accepted items — items in the existing catalog's accepted list
     # that have no matching recommendation with install metadata.
@@ -90,24 +117,40 @@ def discover_project_guidance(root: Path, dry_run: bool = False, **values: Any) 
         recommendation_ids = {item["id"] for item in recommendations}
         orphaned_accepted = list(existing_accepted - recommendation_ids)
         if orphaned_accepted:
-            actions.append({
-                "path": ".codex/tool-recommendations.local.json",
-                "key": "orphaned-accepted-items",
-                "severity": "warning",
-                "message": f"{len(orphaned_accepted)} accepted item(s) have no installable recommendation: {', '.join(orphaned_accepted)}. "
-                           f"These items are recorded as accepted but no matching skill or reference exists in the catalog. "
-                           f"Consider adding them to .codex/tool-recommendations.common.json or removing from the accepted list.",
-                "phase": "audit",
-            })
-    write_enabled = bool(values.get("confirmed") and values.get("persistLocal") and not dry_run)
+            actions.append(
+                {
+                    "path": ".codex/tool-recommendations.local.json",
+                    "key": "orphaned-accepted-items",
+                    "severity": "warning",
+                    "message": f"{len(orphaned_accepted)} accepted item(s) have no installable recommendation: {', '.join(orphaned_accepted)}. "
+                    f"These items are recorded as accepted but no matching skill or reference exists in the catalog. "
+                    f"Consider adding them to .codex/tool-recommendations.common.json or removing from the accepted list.",
+                    "phase": "audit",
+                }
+            )
+    write_enabled = bool(
+        values.get("confirmed") and values.get("persistLocal") and not dry_run
+    )
     if write_enabled:
         existing_catalog = load_tool_recommendations_catalog(root)
-        existing_by_id = {item.get("id"): item for item in existing_catalog.get("recommendations", [])}
+        existing_by_id = {
+            item.get("id"): item for item in existing_catalog.get("recommendations", [])
+        }
         persisted_recommendations = []
         for item in recommendations:
-            if item.get("type") not in {"skill", "mcp", "plugin", "tool", "practice", "standard", "reference"}:
+            if item.get("type") not in {
+                "skill",
+                "mcp",
+                "plugin",
+                "tool",
+                "practice",
+                "standard",
+                "reference",
+            }:
                 continue
-            persisted = merge_dicts(existing_by_id.get(item.get("id"), {}), ensure_used_in_steps(item))
+            persisted = merge_dicts(
+                existing_by_id.get(item.get("id"), {}), ensure_used_in_steps(item)
+            )
             persisted_recommendations.append(persisted)
         payload = {
             "schemaVersion": 1,
@@ -118,13 +161,23 @@ def discover_project_guidance(root: Path, dry_run: bool = False, **values: Any) 
             "accepted": existing_catalog.get("accepted", []),
             "dismissed": existing_catalog.get("dismissed", []),
             "recommendations": persisted_recommendations,
-            "notRecommended": existing_catalog.get("notRecommended", []) + [
-                item for item in recommendations if item["id"] == "openproject-mcp-for-ticket-delivery"
+            "notRecommended": existing_catalog.get("notRecommended", [])
+            + [
+                item
+                for item in recommendations
+                if item["id"] == "openproject-mcp-for-ticket-delivery"
             ],
         }
         write_json(local_path, payload)
-        actions.append({"path": ".codex/tool-recommendations.local.json", "key": "persist-local-catalog",
-                        "severity": "info", "message": "Persist local project guidance catalog.", "phase": "apply"})
+        actions.append(
+            {
+                "path": ".codex/tool-recommendations.local.json",
+                "key": "persist-local-catalog",
+                "severity": "info",
+                "message": "Persist local project guidance catalog.",
+                "phase": "apply",
+            }
+        )
     return {
         "mode": "DiscoverProjectGuidance",
         "valid": True,
@@ -138,8 +191,13 @@ def discover_project_guidance(root: Path, dry_run: bool = False, **values: Any) 
         "finalConfirmedGuidance": final_confirmed,
         "finalConfirmedSkills": [],
         "discoverySourcePriority": [
-            "repo-local", "openai-official", "tool-official", "technology-owner",
-            "skills-cli", "marketplace", "community",
+            "repo-local",
+            "openai-official",
+            "tool-official",
+            "technology-owner",
+            "skills-cli",
+            "marketplace",
+            "community",
         ],
         "localRecommendationsPath": ".codex/tool-recommendations.local.json",
         "nextUserQuestion": "Confirm these suggestions to record and install/configure supported items now.",
@@ -149,11 +207,17 @@ def discover_project_guidance(root: Path, dry_run: bool = False, **values: Any) 
 
 # ── Map ──────────────────────────────────────────────────────────────────
 
-def map_project_guidance_step(root: Path, workflow_step: str, recommendation_ids: list[str], dry_run: bool = False) -> dict[str, Any]:
+
+def map_project_guidance_step(
+    root: Path, workflow_step: str, recommendation_ids: list[str], dry_run: bool = False
+) -> dict[str, Any]:
     """Map recommendations to a workflow step."""
     if not workflow_step:
-        return {"mode": "MapProjectGuidanceStep", "valid": False,
-                "errors": ["values.workflowStep is required."]}
+        return {
+            "mode": "MapProjectGuidanceStep",
+            "valid": False,
+            "errors": ["values.workflowStep is required."],
+        }
     path = root / ".codex" / "tool-recommendations.local.json"
     current = load_tool_recommendations_catalog(root)
     if not current:
@@ -163,10 +227,15 @@ def map_project_guidance_step(root: Path, workflow_step: str, recommendation_ids
             "sourceCatalog": ".codex/tool-recommendations.example.json",
             "detectedTags": [],
             "researchTopics": [],
-            "recommendations": [ensure_used_in_steps(item) for item in
-                                build_recommendations(root, detect_stack_tags(root),
-                                                      build_research_topics(detect_stack_tags(root)))
-                                if item["id"] != SEARCH_PLAN_ID],
+            "recommendations": [
+                ensure_used_in_steps(item)
+                for item in build_recommendations(
+                    root,
+                    detect_stack_tags(root),
+                    build_research_topics(detect_stack_tags(root)),
+                )
+                if item["id"] != SEARCH_PLAN_ID
+            ],
             "notRecommended": [],
         }
     ids = set(recommendation_ids)
@@ -178,98 +247,184 @@ def map_project_guidance_step(root: Path, workflow_step: str, recommendation_ids
             used.append(workflow_step)
     if not dry_run:
         write_json(path, current)
-    return {"mode": "MapProjectGuidanceStep", "valid": True, "writeEnabled": not dry_run,
-            "changed": True, "path": str(path), "dryRun": dry_run}
+    return {
+        "mode": "MapProjectGuidanceStep",
+        "valid": True,
+        "writeEnabled": not dry_run,
+        "changed": True,
+        "path": str(path),
+        "dryRun": dry_run,
+    }
 
 
 # ── Acquire ──────────────────────────────────────────────────────────────
 
-def acquire_project_guidance(root: Path, dry_run: bool = False, **values: Any) -> dict[str, Any]:
+
+def acquire_project_guidance(
+    root: Path, dry_run: bool = False, **values: Any
+) -> dict[str, Any]:
     """Plan/record final confirmed guidance actions."""
-    result = configure_result("AcquireProjectGuidance", dry_run, write_enabled=not dry_run)
+    result = configure_result(
+        "AcquireProjectGuidance", dry_run, write_enabled=not dry_run
+    )
     final_guidance = values.get("finalConfirmedGuidance", [])
     restart_items: list[str] = []
     for item in final_guidance:
         if "installCommand" in item:
-            raise CliError(f"{item.get('name', item.get('id', 'guidance'))} rejects installCommand.")
+            raise CliError(
+                f"{item.get('name', item.get('id', 'guidance'))} rejects installCommand."
+            )
         name = item.get("name", item.get("id", "guidance"))
         install_method = item.get("installMethod", "")
         # Handle reference-only items — no binary install needed, just documentation alignment
         if install_method == "manual-reference":
-            result["actions"].append({
-                "path": name, "key": "manual-reference", "severity": "info",
-                "message": f"Reference-only guidance '{name}' — consult source {item.get('source', 'N/A')} and ensure target {item.get('target', 'N/A')} aligns.",
-                "phase": "plan",
-            })
+            result["actions"].append(
+                {
+                    "path": name,
+                    "key": "manual-reference",
+                    "severity": "info",
+                    "message": f"Reference-only guidance '{name}' — consult source {item.get('source', 'N/A')} and ensure target {item.get('target', 'N/A')} aligns.",
+                    "phase": "plan",
+                }
+            )
             continue
         if item.get("installPreference") == "docker-preferred":
             docker = item.get("dockerAlternative")
             if docker and docker.get("image"):
-                result["actions"].append({"path": name, "key": "docker-preferred", "severity": "info",
-                                          "message": f"Use Docker-preferred runtime {docker['image']}.", "phase": "plan"})
+                result["actions"].append(
+                    {
+                        "path": name,
+                        "key": "docker-preferred",
+                        "severity": "info",
+                        "message": f"Use Docker-preferred runtime {docker['image']}.",
+                        "phase": "plan",
+                    }
+                )
             else:
-                result["warnings"].append({"path": name, "key": "docker-preferred.blocked", "severity": "warning",
-                                           "message": "Docker-preferred metadata is incomplete.", "phase": "plan"})
+                result["warnings"].append(
+                    {
+                        "path": name,
+                        "key": "docker-preferred.blocked",
+                        "severity": "warning",
+                        "message": "Docker-preferred metadata is incomplete.",
+                        "phase": "plan",
+                    }
+                )
         if item.get("userActionRequired"):
-            result["warnings"].append({"path": name, "key": "guarded-install-plan", "severity": "warning",
-                                       "message": "User action is required for this guarded install.", "phase": "plan"})
+            result["warnings"].append(
+                {
+                    "path": name,
+                    "key": "guarded-install-plan",
+                    "severity": "warning",
+                    "message": "User action is required for this guarded install.",
+                    "phase": "plan",
+                }
+            )
         # Handle skills-cli-add — install via npx skills add, with git clone fallback
         if install_method == "skills-cli-add":
             install_cmd = item.get("installCommand", "")
             if not install_cmd:
                 add_bucket_item(
-                    result["findings"], name, "install.no-command",
+                    result["findings"],
+                    name,
+                    "install.no-command",
                     f"skills-cli-add item '{name}' has no installCommand.",
-                    "warning", "pre-start",
+                    "warning",
+                    "pre-start",
                 )
                 continue
             if dry_run:
-                result["actions"].append({"path": name, "key": "skills-cli-add", "severity": "info",
-                                          "message": f"Would run: {install_cmd}", "phase": "plan"})
+                result["actions"].append(
+                    {
+                        "path": name,
+                        "key": "skills-cli-add",
+                        "severity": "info",
+                        "message": f"Would run: {install_cmd}",
+                        "phase": "plan",
+                    }
+                )
                 continue
             # Attempt 1: npx skills add -y (non-interactive, short timeout)
             install_result = run_native(install_cmd.split(), root, timeout=30)
             if install_result["returncode"] == 0:
-                result["actions"].append({"path": name, "key": "skills-cli-add", "severity": "info",
-                                          "message": f"Installed skill via {install_cmd}", "phase": "apply"})
+                result["actions"].append(
+                    {
+                        "path": name,
+                        "key": "skills-cli-add",
+                        "severity": "info",
+                        "message": f"Installed skill via {install_cmd}",
+                        "phase": "apply",
+                    }
+                )
                 _run_skill_links(root, result)
                 continue
             # Attempt 2: git clone fallback (when npx skills add fails/times out)
             clone_ok = _install_skill_via_clone(root, install_cmd, name)
             if clone_ok:
-                result["actions"].append({"path": name, "key": "skills-cli-add", "severity": "info",
-                                          "message": f"Installed skill via git clone fallback from {install_cmd}",
-                                          "phase": "apply"})
+                result["actions"].append(
+                    {
+                        "path": name,
+                        "key": "skills-cli-add",
+                        "severity": "info",
+                        "message": f"Installed skill via git clone fallback from {install_cmd}",
+                        "phase": "apply",
+                    }
+                )
                 _run_skill_links(root, result)
             else:
                 add_bucket_item(
-                    result["findings"], name, "install.failed",
+                    result["findings"],
+                    name,
+                    "install.failed",
                     f"Could not install skill '{name}' via npx or git clone: {install_result['stderr'][:200]}",
-                    "warning", "apply",
+                    "warning",
+                    "apply",
                 )
             continue
-        if item.get("installMethod") == "manual-copy" and item.get("sourceKind") is None:
-            result["warnings"].append({"path": name, "key": "validation", "severity": "warning",
-                                       "message": "manual-copy guidance should include sourceKind.", "phase": "plan"})
+        if (
+            item.get("installMethod") == "manual-copy"
+            and item.get("sourceKind") is None
+        ):
+            result["warnings"].append(
+                {
+                    "path": name,
+                    "key": "validation",
+                    "severity": "warning",
+                    "message": "manual-copy guidance should include sourceKind.",
+                    "phase": "plan",
+                }
+            )
         if item.get("requiresIdeRestart"):
             restart_items.append(f"{name} [ide-restart]")
         if item.get("requiresSystemReboot"):
             restart_items.append(f"{name} [system-reboot]")
     if restart_items:
-        result["findings"].append({"path": ".", "key": "important.restart-summary", "severity": "info",
-                                   "message": f"Complete all feasible installs first, then restart/reboot for: {', '.join(restart_items)}.", "phase": "handoff"})
+        result["findings"].append(
+            {
+                "path": ".",
+                "key": "important.restart-summary",
+                "severity": "info",
+                "message": f"Complete all feasible installs first, then restart/reboot for: {', '.join(restart_items)}.",
+                "phase": "handoff",
+            }
+        )
     result["valid"] = True
     return result
 
 
 # ── Audit recommended tools ──────────────────────────────────────────────
 
-def _audit_recommended_tools(root: Path, dry_run: bool = False, **values: Any) -> dict[str, Any]:
+
+def _audit_recommended_tools(
+    root: Path, dry_run: bool = False, **values: Any
+) -> dict[str, Any]:
     """Detect stack and build recommendations (internal helper)."""
     detected = detect_stack_tags(root)
     topics = build_research_topics(detected, root)
     recommendations = build_recommendations(root, detected, topics)
-    decisions = nested(load_tool_recommendations_catalog(root), "recommendedTools") or {}
+    decisions = (
+        nested(load_tool_recommendations_catalog(root), "recommendedTools") or {}
+    )
     accepted = set(decisions.get("accepted", []))
     dismissed = set(decisions.get("dismissed", []))
     filtered = []
@@ -283,24 +438,61 @@ def _audit_recommended_tools(root: Path, dry_run: bool = False, **values: Any) -
     metadata_finding = _stack_metadata_validation_finding(root)
     if metadata_finding:
         findings.append(metadata_finding)
-    skill_gaps = [item for item in filtered if item.get("type") == "skill" and item.get("detected") and not item.get("targetExists")]
-    if skill_gaps and not dry_run and not metadata_finding and not values.get("skipAutoDiscovery"):
+    skill_gaps = [
+        item
+        for item in filtered
+        if item.get("type") == "skill"
+        and item.get("detected")
+        and not item.get("targetExists")
+    ]
+    if (
+        skill_gaps
+        and not dry_run
+        and not metadata_finding
+        and not values.get("skipAutoDiscovery")
+    ):
         gap_ids = [item["id"] for item in skill_gaps]
-        discovery_values = {"confirmed": gap_ids, "persistLocal": True, "additionalSkills": []}
-        discovery_result = discover_project_guidance(root, dry_run=False, **discovery_values)
-        findings.extend([finding for finding in discovery_result.get("findings", []) if finding.get("severity") == "error"])
+        discovery_values = {
+            "confirmed": gap_ids,
+            "persistLocal": True,
+            "additionalSkills": [],
+        }
+        discovery_result = discover_project_guidance(
+            root, dry_run=False, **discovery_values
+        )
+        findings.extend(
+            [
+                finding
+                for finding in discovery_result.get("findings", [])
+                if finding.get("severity") == "error"
+            ]
+        )
         for action in discovery_result.get("actions", []):
             if action.get("key") == "persist-local-catalog":
-                findings.append({"path": action["path"], "key": "project-guidance.auto-discovered", "severity": "info",
-                                  "message": f"Auto-discovered and persisted {len(gap_ids)} missing skill(s): {', '.join(gap_ids)}.", "phase": "audit"})
+                findings.append(
+                    {
+                        "path": action["path"],
+                        "key": "project-guidance.auto-discovered",
+                        "severity": "info",
+                        "message": f"Auto-discovered and persisted {len(gap_ids)} missing skill(s): {', '.join(gap_ids)}.",
+                        "phase": "audit",
+                    }
+                )
     return {
         "mode": "AuditRecommendedTools",
         "valid": True,
         "writeEnabled": False,
         "detectedTags": detected,
         "researchTopics": topics,
-        "actions": [{"path": ".", "key": "detectedStack", "severity": "info",
-                     "message": f"Detected stack: {', '.join(detected)}", "phase": "audit"}],
+        "actions": [
+            {
+                "path": ".",
+                "key": "detectedStack",
+                "severity": "info",
+                "message": f"Detected stack: {', '.join(detected)}",
+                "phase": "audit",
+            }
+        ],
         "findings": findings,
         "recommendations": filtered,
     }
@@ -308,13 +500,19 @@ def _audit_recommended_tools(root: Path, dry_run: bool = False, **values: Any) -
 
 # ── Write installed skill index ──────────────────────────────────────────
 
+
 def write_skill_index(root: Path, dry_run: bool = False) -> dict[str, Any]:
     """Write or refresh the ignored installed-skill runtime index from SKILL.md files."""
-    result = configure_result("WriteInstalledSkillIndex", dry_run, write_enabled=not dry_run)
+    result = configure_result(
+        "WriteInstalledSkillIndex", dry_run, write_enabled=not dry_run
+    )
     skill_root = root / ".codex" / "skills"
     if not skill_root.exists():
-        return {"mode": "WriteInstalledSkillIndex", "valid": False,
-                "errors": ["Skills directory not found: .codex/skills"]}
+        return {
+            "mode": "WriteInstalledSkillIndex",
+            "valid": False,
+            "errors": ["Skills directory not found: .codex/skills"],
+        }
     entries: list[dict[str, Any]] = []
     cache: dict[str, dict[str, Any]] = {}
     for path in sorted(skill_root.rglob("SKILL.md")):
@@ -346,13 +544,15 @@ def write_skill_index(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 name_m = re.search(r"(?m)^name:\s*(.+)$", fm_match.group(1))
                 if name_m:
                     name = name_m.group(1).strip().strip('"')
-        entries.append({
-            "name": name,
-            "path": path.relative_to(root).as_posix(),
-            "relativePath": path.relative_to(skill_root.parent).as_posix(),
-            "mtimeNs": stat.st_mtime_ns,
-            "sizeBytes": stat.st_size,
-        })
+        entries.append(
+            {
+                "name": name,
+                "path": path.relative_to(root).as_posix(),
+                "relativePath": path.relative_to(skill_root.parent).as_posix(),
+                "mtimeNs": stat.st_mtime_ns,
+                "sizeBytes": stat.st_size,
+            }
+        )
         cache[skill_name] = {"fingerprint": fingerprint}
     payload = {
         "schemaVersion": 1,
@@ -364,8 +564,15 @@ def write_skill_index(root: Path, dry_run: bool = False) -> dict[str, Any]:
     output_path = root / ".codex" / "installed-skill-index.local.json"
     if not dry_run:
         write_json(output_path, payload)
-    result["actions"].append({"path": ".codex/installed-skill-index.local.json", "key": "write-skill-index",
-                              "severity": "info", "message": f"Wrote skill index with {len(entries)} skills.", "phase": "apply"})
+    result["actions"].append(
+        {
+            "path": ".codex/installed-skill-index.local.json",
+            "key": "write-skill-index",
+            "severity": "info",
+            "message": f"Wrote skill index with {len(entries)} skills.",
+            "phase": "apply",
+        }
+    )
     result["skillCount"] = len(entries)
     result["outputPath"] = str(output_path)
     result["valid"] = True
@@ -374,20 +581,36 @@ def write_skill_index(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
 # ── CLI entry point ──────────────────────────────────────────────────────
 
-def set_recommended_tools(root: Path, values: dict[str, Any], dry_run: bool = False) -> dict[str, Any]:
+
+def set_recommended_tools(
+    root: Path, values: dict[str, Any], dry_run: bool = False
+) -> dict[str, Any]:
     """Set accepted/dismissed tool recommendations in tool-recommendations.local.json."""
-    from ._shared import configure_result, read_json, write_json as _write_json
+    from ._shared import configure_result, read_json
+    from ._shared import write_json as _write_json
+
     result = configure_result("SetRecommendedTools", dry_run, write_enabled=not dry_run)
     path = root / ".codex" / "tool-recommendations.local.json"
     if "accepted" not in values and "dismissed" not in values:
-        return {"mode": "SetRecommendedTools", "valid": False,
-                "errors": ["values.accepted or values.dismissed is required."]}
-    config = read_json(path, optional=True) if path.exists() else {
-        "schemaVersion": 1, "mode": "guarded-auto",
-        "detectedTags": [], "researchTopics": [],
-        "accepted": [], "dismissed": [],
-        "recommendations": [], "notRecommended": [],
-    }
+        return {
+            "mode": "SetRecommendedTools",
+            "valid": False,
+            "errors": ["values.accepted or values.dismissed is required."],
+        }
+    config = (
+        read_json(path, optional=True)
+        if path.exists()
+        else {
+            "schemaVersion": 1,
+            "mode": "guarded-auto",
+            "detectedTags": [],
+            "researchTopics": [],
+            "accepted": [],
+            "dismissed": [],
+            "recommendations": [],
+            "notRecommended": [],
+        }
+    )
     for key in ("accepted", "dismissed"):
         existing = list(config.get(key, []))
         for item in values.get(key, []):
@@ -395,8 +618,15 @@ def set_recommended_tools(root: Path, values: dict[str, Any], dry_run: bool = Fa
                 existing.append(item)
         config[key] = existing
         if values.get(key):
-            result["actions"].append({"path": ".codex/tool-recommendations.local.json", "key": f"recommendedTools.{key}",
-                                      "severity": "info", "message": f"Recorded {key} recommendation ids.", "phase": "apply"})
+            result["actions"].append(
+                {
+                    "path": ".codex/tool-recommendations.local.json",
+                    "key": f"recommendedTools.{key}",
+                    "severity": "info",
+                    "message": f"Recorded {key} recommendation ids.",
+                    "phase": "apply",
+                }
+            )
     result["valid"] = True
     if not dry_run:
         _write_json(path, config)
@@ -406,8 +636,12 @@ def set_recommended_tools(root: Path, values: dict[str, Any], dry_run: bool = Fa
 def run_guidance(args: list[str]) -> int:
     """CLI entry point for guidance commands."""
     import json as _json
+
     if not args:
-        print("Available: discover, map, acquire, set-recommended-tools, write-skill-index", file=sys.stderr)
+        print(
+            "Available: discover, map, acquire, set-recommended-tools, write-skill-index",
+            file=sys.stderr,
+        )
         return 1
     subcommand = args[0]
     options = parse_pairs(args[1:])
@@ -417,7 +651,9 @@ def run_guidance(args: list[str]) -> int:
         "discover": lambda: _discover_handler(root, dry_run, options),
         "map": lambda: _map_handler(root, dry_run, options),
         "acquire": lambda: _acquire_handler(root, dry_run, options),
-        "set-recommended-tools": lambda: set_recommended_tools(root, _parse_set_recommended_values(options), dry_run),
+        "set-recommended-tools": lambda: set_recommended_tools(
+            root, _parse_set_recommended_values(options), dry_run
+        ),
         "write-skill-index": lambda: write_skill_index(root, dry_run),
     }
     handler = handlers.get(subcommand)
@@ -429,11 +665,14 @@ def run_guidance(args: list[str]) -> int:
     return 0 if result.get("valid", True) else 1
 
 
-def _discover_handler(root: Path, dry_run: bool, options: dict[str, str]) -> dict[str, Any]:
+def _discover_handler(
+    root: Path, dry_run: bool, options: dict[str, str]
+) -> dict[str, Any]:
     confirmed = _parse_list(options.get("confirmed", ""))
     additional = _parse_json_list(options.get("additional-skills", "[]"))
     return discover_project_guidance(
-        root, dry_run,
+        root,
+        dry_run,
         confirmed=confirmed,
         persistLocal=options.get("persist-local", "false").lower() == "true",
         additionalSkills=additional,
@@ -446,8 +685,11 @@ def _map_handler(root: Path, dry_run: bool, options: dict[str, str]) -> dict[str
     return map_project_guidance_step(root, step, ids, dry_run)
 
 
-def _acquire_handler(root: Path, dry_run: bool, options: dict[str, str]) -> dict[str, Any]:
+def _acquire_handler(
+    root: Path, dry_run: bool, options: dict[str, str]
+) -> dict[str, Any]:
     import json as _json
+
     guidance_json = options.get("final-confirmed-guidance", "[]")
     try:
         guidance = _json.loads(guidance_json) if guidance_json else []
@@ -458,6 +700,7 @@ def _acquire_handler(root: Path, dry_run: bool, options: dict[str, str]) -> dict
 
 # ── Private helpers ──────────────────────────────────────────────────────
 
+
 def _parse_list(value: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
@@ -465,6 +708,7 @@ def _parse_list(value: str) -> list[str]:
 def _parse_set_recommended_values(options: dict[str, str]) -> dict[str, Any]:
     """Parse accepted/dismissed JSON arrays from CLI options."""
     import json as _json
+
     values: dict[str, Any] = {}
     for key in ("accepted", "dismissed"):
         raw = options.get(key, "[]")
@@ -477,6 +721,7 @@ def _parse_set_recommended_values(options: dict[str, str]) -> dict[str, Any]:
 
 def _parse_json_list(value: str) -> list[Any]:
     import json as _json
+
     try:
         parsed = _json.loads(value)
         return parsed if isinstance(parsed, list) else []
@@ -502,21 +747,35 @@ def _run_skill_links(root: Path, result: dict[str, Any]) -> None:
     skill_links_script = root / ".cline" / "create_skill_links.py"
     if not skill_links_script.exists():
         add_bucket_item(
-            result["findings"], ".cline/create_skill_links.py", "script-missing",
+            result["findings"],
+            ".cline/create_skill_links.py",
+            "script-missing",
             "create_skill_links.py not found — .cline/skills will not be synced.",
-            "warning", "post-start",
+            "warning",
+            "post-start",
         )
         return
-    links_result = run_native([sys.executable, str(skill_links_script)], root, timeout=30)
+    links_result = run_native(
+        [sys.executable, str(skill_links_script)], root, timeout=30
+    )
     if links_result["returncode"] == 0:
-        result["actions"].append({"path": ".cline/skills", "key": "skill-links", "severity": "info",
-                                  "message": "Ran create_skill_links.py to sync .codex/skills → .cline/skills.",
-                                  "phase": "apply"})
+        result["actions"].append(
+            {
+                "path": ".cline/skills",
+                "key": "skill-links",
+                "severity": "info",
+                "message": "Ran create_skill_links.py to sync .codex/skills → .cline/skills.",
+                "phase": "apply",
+            }
+        )
     else:
         add_bucket_item(
-            result["findings"], ".cline/create_skill_links.py", "link-failed",
+            result["findings"],
+            ".cline/create_skill_links.py",
+            "link-failed",
             f"Could not sync skills to .cline: {links_result['stderr'][:200]}",
-            "warning", "apply",
+            "warning",
+            "apply",
         )
 
 
@@ -642,7 +901,20 @@ _TAG_QUERIES: dict[str, str] = {
     "javascript": "javascript",
     "node": "nodejs",
 }
-_DEFAULT_BLOCK_TAGS: set[str] = {"br", "p", "div", "li", "tr", "h1", "h2", "h3", "h4", "h5", "h6", "section"}
+_DEFAULT_BLOCK_TAGS: set[str] = {
+    "br",
+    "p",
+    "div",
+    "li",
+    "tr",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "section",
+}
 
 
 class _HtmlToText(HTMLParser):
@@ -811,11 +1083,14 @@ def _source_officialskills_web(
 
     # ── Fetch HTML ──────────────────────────────────────────────────────
     try:
-        req = urllib.request.Request(official_url, headers={
-            "User-Agent": "Mozilla/5.0 (compatible; SDD-CLI/1.0)",
-            "Accept": "text/html",
-        })
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        req = urllib.request.Request(
+            official_url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (compatible; SDD-CLI/1.0)",
+                "Accept": "text/html",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:  # nosec
             html = resp.read().decode("utf-8", errors="replace")
     except Exception:
         return []
@@ -829,7 +1104,11 @@ def _source_officialskills_web(
     find_idx = text.find("Find Skills")
     if find_idx < 0:
         # Try a broader search — look for "Official Agent Skills" or "Browse Official Skills"
-        for marker in ("Browse Official Skills", "Official Agent Skills", "Quick Stats"):
+        for marker in (
+            "Browse Official Skills",
+            "Official Agent Skills",
+            "Quick Stats",
+        ):
             idx = text.find(marker)
             if idx >= 0:
                 find_idx = idx
@@ -842,7 +1121,7 @@ def _source_officialskills_web(
     # Format (after HTMLParser extraction) — numbers on their own line:
     #   \n<number>\n\n<skill-name><Vendor>/skills\n\n<description>\n
     # Example:
-    #   
+    #
     #   1
     #
     #   accessibilityAddy Osmani/skills
@@ -859,9 +1138,9 @@ def _source_officialskills_web(
     num_re = re.compile(r"^(\d+)$")
     # Matches: <skill-name><Vendor>/skills  (skill-name is lowercase-hyphen, vendor starts uppercase)
     entry_re = re.compile(
-        r"^([a-z0-9][-a-z0-9]*[a-z0-9]?)"    # skill name (lowercase, hyphenated)
-        r"([A-Z][A-Za-z0-9 ./-]*?)"           # vendor name (starts uppercase, non-greedy)
-        r"(?:/skills)?"                        # optional /skills suffix
+        r"^([a-z0-9][-a-z0-9]*[a-z0-9]?)"  # skill name (lowercase, hyphenated)
+        r"([A-Z][A-Za-z0-9 ./-]*?)"  # vendor name (starts uppercase, non-greedy)
+        r"(?:/skills)?"  # optional /skills suffix
         r"\s*$"
     )
 
@@ -901,7 +1180,8 @@ def _source_officialskills_web(
             continue
         # Check relevance: does this skill match any search query or detected tag?
         if not any(
-            q.lower() in skill_name.lower() or any(t in skill_name.lower() for t in detected_tags)
+            q.lower() in skill_name.lower()
+            or any(t in skill_name.lower() for t in detected_tags)
             for q in search_queries
         ):
             i += 1
@@ -919,7 +1199,11 @@ def _source_officialskills_web(
                 source_url="https://officialskills.sh/",
                 skill_name=skill_name,
                 detected_tags=detected_tags,
-                purpose=f"Official skill from {vendor_raw}: {desc[:200]}." if desc else f"Official skill from {vendor_raw}.",
+                purpose=(
+                    f"Official skill from {vendor_raw}: {desc[:200]}."
+                    if desc
+                    else f"Official skill from {vendor_raw}."
+                ),
             )
             results.append(entry)
         i += 1
@@ -950,11 +1234,14 @@ def _source_skills_web(
 
     # ── Fetch HTML ──────────────────────────────────────────────────────
     try:
-        req = urllib.request.Request(skills_url, headers={
-            "User-Agent": "Mozilla/5.0 (compatible; SDD-CLI/1.0)",
-            "Accept": "text/html",
-        })
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        req = urllib.request.Request(
+            skills_url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (compatible; SDD-CLI/1.0)",
+                "Accept": "text/html",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:  # nosec
             html = resp.read().decode("utf-8", errors="replace")
     except Exception:
         return []
@@ -1025,7 +1312,8 @@ def _source_skills_web(
             if "/" in owner_repo:
                 # Check relevance: does this skill match any search query or detected tag?
                 if any(
-                    q.lower() in skill_name.lower() or q.lower() in owner_repo.lower()
+                    q.lower() in skill_name.lower()
+                    or q.lower() in owner_repo.lower()
                     or any(t in skill_name.lower() for t in detected_tags)
                     for q in search_queries
                 ):
@@ -1064,7 +1352,9 @@ _SOURCE_FUNCTIONS: dict[str, Any] = {
 }
 
 
-def _search_skills_from_tags(root: Path, detected_tags: list[str], dry_run: bool) -> list[dict[str, Any]]:
+def _search_skills_from_tags(
+    root: Path, detected_tags: list[str], dry_run: bool
+) -> list[dict[str, Any]]:
     """Search for skills from ALL configured sources.
 
     Queries each source in registry order, deduplicating by ID.
@@ -1096,7 +1386,7 @@ def _search_skills_from_tags(root: Path, detected_tags: list[str], dry_run: bool
         if source_fn is None:
             continue
         try:
-            source_results =        source_fn(
+            source_results = source_fn(
                 root, search_queries, detected_tags, found_ids, dry_run
             )
             if source_results:
@@ -1106,8 +1396,11 @@ def _search_skills_from_tags(root: Path, detected_tags: list[str], dry_run: bool
             # Source failed — log to stderr rather than crashing the whole search
             import sys
             import traceback
+
             traceback.print_exc(file=sys.stderr)
-            print(f"[guidance] source '{source_name}' failed — skipping.", file=sys.stderr)
+            print(
+                f"[guidance] source '{source_name}' failed — skipping.", file=sys.stderr
+            )
 
     return all_results
 
@@ -1118,7 +1411,9 @@ def _stack_metadata_validation_finding(root: Path) -> dict[str, str] | None:
         return None
     selection_recorded = profile.get("selectionRecorded") is True
     any_applies = any(
-        isinstance(profile.get(domain), dict) and profile.get(domain, {}).get("applies") and str(profile.get(domain, {}).get("value", "")).strip()
+        isinstance(profile.get(domain), dict)
+        and profile.get(domain, {}).get("applies")
+        and str(profile.get(domain, {}).get("value", "")).strip()
         for domain in ("frontend", "backend", "database")
     )
     if not selection_recorded and not any_applies:

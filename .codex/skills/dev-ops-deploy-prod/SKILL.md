@@ -56,7 +56,7 @@ Run preflight, main/tag promotion, PROD deployment, PROD verification, ticket-pr
    - one `app/{commitSha}/{artifactName}.sha256` per topology app
    - `app/{commitSha}/commit.sha`
    - `app/{commitSha}/release.json`
-   selected deployment provider requires:
+     selected deployment provider requires:
    - `app/{commitSha}/container-images.json`
    - `app/{commitSha}/commit.sha`
    - `app/{commitSha}/release.json`
@@ -203,6 +203,7 @@ If the Post-PROD Retrospective found any `eval-regression` failures, **automatic
 ### Scope
 
 Auto-escalation is limited to **eval infrastructure files only**:
+
 - `.codex/agent-evals/routing_provider.py` — fix routing logic bugs
 - `.codex/agent-evals/promptfooconfig.yaml` — update test expectations or add coverage
 
@@ -232,6 +233,7 @@ For each failing test case, determine the root cause:
 4. Trace the failing test's input variables through `_evaluate_route()` in `routing_provider.py`
 
 **Heuristic for classification:**
+
 - If `routing_provider.py` has a condition that contradicts the delivery contract → **`Fix routing provider`** (bug in logic)
 - If `routing_provider.py` matches the delivery contract but the test expects an old route → **`Update test expectation`** (stale assertion)
 - If the failing scenario has no test coverage → **`Add new test case`** (eval-coverage gap)
@@ -260,6 +262,7 @@ Apply each proposed change in order. Apply the simplest fixes first (`update-exp
 3. For `fix-routing`: Edit `routing_provider.py` to correct the condition, return value, or missing check.
 
 After EACH change, run the full eval suite:
+
 ```bash
 npx promptfoo eval --config .codex/agent-evals/promptfooconfig.yaml --no-cache
 ```

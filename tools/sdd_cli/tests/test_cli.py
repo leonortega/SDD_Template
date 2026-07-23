@@ -21,7 +21,11 @@ class SddCliTests(unittest.TestCase):
                 encoding="utf-8",
             )
             msg = root / "msg.txt"
-            for value in ("ABC-1: change", "openspec/add-thing: change", "[SDD] maintenance"):
+            for value in (
+                "ABC-1: change",
+                "openspec/add-thing: change",
+                "[SDD] maintenance",
+            ):
                 msg.write_text(value, encoding="utf-8")
                 self.assertEqual(0, cli.validate_commit_message(arg(root, msg)))
             msg.write_text("plain message", encoding="utf-8")
@@ -44,39 +48,70 @@ class SddCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             profile = root / "project-profile.json"
-            profile.write_text(json.dumps({"workflow": {"ticketKeyPattern": "ABC-[0-9]+"}}), encoding="utf-8")
-            self.assertEqual("ABC-[0-9]+", cli.run_delivery_mode("ReadProjectProfile", {"path": str(profile)}))
-            self.assertEqual("ABC-123", cli.run_delivery_mode("ExtractTicketKey", {"message": "ABC-123: test", "pattern": "ABC-[0-9]+"}))
-            ready = cli.run_delivery_mode("ClassifyTicketReadiness", {
-                "title": "Add search",
-                "description": "Acceptance criteria: users should search clients. Validation: add tests.",
-            })
+            profile.write_text(
+                json.dumps({"workflow": {"ticketKeyPattern": "ABC-[0-9]+"}}),
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                "ABC-[0-9]+",
+                cli.run_delivery_mode("ReadProjectProfile", {"path": str(profile)}),
+            )
+            self.assertEqual(
+                "ABC-123",
+                cli.run_delivery_mode(
+                    "ExtractTicketKey",
+                    {"message": "ABC-123: test", "pattern": "ABC-[0-9]+"},
+                ),
+            )
+            ready = cli.run_delivery_mode(
+                "ClassifyTicketReadiness",
+                {
+                    "title": "Add search",
+                    "description": "Acceptance criteria: users should search clients. Validation: add tests.",
+                },
+            )
             self.assertEqual("ready", ready["status"])
 
     def test_workflow_telemetry_round_trips_and_renders(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            result = cli.run_delivery_mode("InitializeWorkflowTelemetry", {"repo-root": str(root), "ticket-key": "ABC-1"})
+            result = cli.run_delivery_mode(
+                "InitializeWorkflowTelemetry",
+                {"repo-root": str(root), "ticket-key": "ABC-1"},
+            )
             self.assertTrue(result["exists"])
-            cli.run_delivery_mode("AppendWorkflowTelemetry", {
-                "repo-root": str(root),
-                "ticket-key": "ABC-1",
-                "input-json": json.dumps({
-                    "workflowStage": "dev-flow-start-ticket",
-                    "agentRole": "ticketStarter",
-                    "startedUtc": "2026-06-25T10:00:00Z",
-                    "finishedUtc": "2026-06-25T10:01:05Z",
-                    "retryCount": 1,
-                    "outcome": "PASS",
-                }),
-            })
-            read = cli.run_delivery_mode("ReadWorkflowTelemetry", {
-                "repo-root": str(root),
-                "ticket-key": "ABC-1",
-                "input-json": json.dumps({"status": "PASS", "currentRoute": "dev-flow-start-ticket"}),
-            })
+            cli.run_delivery_mode(
+                "AppendWorkflowTelemetry",
+                {
+                    "repo-root": str(root),
+                    "ticket-key": "ABC-1",
+                    "input-json": json.dumps(
+                        {
+                            "workflowStage": "dev-flow-start-ticket",
+                            "agentRole": "ticketStarter",
+                            "startedUtc": "2026-06-25T10:00:00Z",
+                            "finishedUtc": "2026-06-25T10:01:05Z",
+                            "retryCount": 1,
+                            "outcome": "PASS",
+                        }
+                    ),
+                },
+            )
+            read = cli.run_delivery_mode(
+                "ReadWorkflowTelemetry",
+                {
+                    "repo-root": str(root),
+                    "ticket-key": "ABC-1",
+                    "input-json": json.dumps(
+                        {"status": "PASS", "currentRoute": "dev-flow-start-ticket"}
+                    ),
+                },
+            )
             self.assertEqual(65000, read["totalElapsedMilliseconds"])
-            comment = cli.run_delivery_mode("RenderTicketComment", {"type": "WorkflowTiming", "input-json": json.dumps(read)})
+            comment = cli.run_delivery_mode(
+                "RenderTicketComment",
+                {"type": "WorkflowTiming", "input-json": json.dumps(read)},
+            )
             self.assertIn("IA generated workflow timing: ABC-1", comment)
             self.assertIn("| `dev-flow-start-ticket` | PASS | 1m 5s |", comment)
 
@@ -91,18 +126,27 @@ class SddCliTests(unittest.TestCase):
             }
         }
 
-        development = cli.run_delivery_mode("ResolveOpenProjectTimeActivity", {
-            "workflow-stage": "dev-flow-implement-ticket",
-            "input-json": json.dumps(config),
-        })
-        fallback = cli.run_delivery_mode("ResolveOpenProjectTimeActivity", {
-            "workflow-stage": "unknown-stage",
-            "input-json": json.dumps(config),
-        })
-        testing = cli.run_delivery_mode("ResolveOpenProjectTimeActivity", {
-            "workflow-stage": "dev-ops-deploy-qa",
-            "input-json": json.dumps(config),
-        })
+        development = cli.run_delivery_mode(
+            "ResolveOpenProjectTimeActivity",
+            {
+                "workflow-stage": "dev-flow-implement-ticket",
+                "input-json": json.dumps(config),
+            },
+        )
+        fallback = cli.run_delivery_mode(
+            "ResolveOpenProjectTimeActivity",
+            {
+                "workflow-stage": "unknown-stage",
+                "input-json": json.dumps(config),
+            },
+        )
+        testing = cli.run_delivery_mode(
+            "ResolveOpenProjectTimeActivity",
+            {
+                "workflow-stage": "dev-ops-deploy-qa",
+                "input-json": json.dumps(config),
+            },
+        )
 
         self.assertTrue(development["valid"])
         self.assertEqual("Development", development["activityName"])
@@ -115,29 +159,45 @@ class SddCliTests(unittest.TestCase):
             root = Path(tmp)
             write(root / ".codex" / "project-profile.json", "{}")
             write(root / ".codex" / "project-profile.schema.json", "{}")
-            write(root / ".codex" / "client-tools.local.json", json.dumps({
-                "openProject": {
-                    "timeTelemetry": {
-                        "enabled": True,
-                        "activityName": "Development",
+            write(
+                root / ".codex" / "client-tools.local.json",
+                json.dumps(
+                    {
+                        "openProject": {
+                            "timeTelemetry": {
+                                "enabled": True,
+                                "activityName": "Development",
+                            }
+                        }
                     }
-                }
-            }))
+                ),
+            )
 
             result = cli.run_configure_mode("Audit", root, {}, False)
             findings = {item["key"] for item in result["findings"]}
 
             self.assertIn("openProject.timeTelemetry.activityByStage", findings)
 
-            write(root / ".codex" / "client-tools.local.json", json.dumps({
-                "openProject": {
-                    "timeTelemetry": {
-                        "enabled": True,
-                        "activityFlow": {"Development": ["dev-flow-implement-ticket"]},
-                        "activityByStage": {"dev-flow-implement-ticket": {"activityName": "Testing"}},
+            write(
+                root / ".codex" / "client-tools.local.json",
+                json.dumps(
+                    {
+                        "openProject": {
+                            "timeTelemetry": {
+                                "enabled": True,
+                                "activityFlow": {
+                                    "Development": ["dev-flow-implement-ticket"]
+                                },
+                                "activityByStage": {
+                                    "dev-flow-implement-ticket": {
+                                        "activityName": "Testing"
+                                    }
+                                },
+                            }
+                        }
                     }
-                }
-            }))
+                ),
+            )
             drift = cli.run_configure_mode("Audit", root, {}, False)
             drift_findings = {item["key"] for item in drift["findings"]}
             self.assertIn("openProject.timeTelemetry.activityFlow", drift_findings)
@@ -147,22 +207,19 @@ class SddCliTests(unittest.TestCase):
             root = Path(tmp)
             write(root / ".codex" / "project-profile.json", "{}")
             write(root / ".codex" / "project-profile.schema.json", "{}")
-            write(root / ".codex" / "client-tools.local.json", json.dumps({
-                "openRouter": {
-                    "baseUrl": "https://api.openrouter.ai/v1"
-                }
-            }))
+            write(
+                root / ".codex" / "client-tools.local.json",
+                json.dumps({"openRouter": {"baseUrl": "https://api.openrouter.ai/v1"}}),
+            )
 
             result = cli.run_configure_mode("Audit", root, {}, False)
             findings = {item["key"] for item in result["findings"]}
             self.assertIn("openRouter.apiKey", findings)
 
-            write(root / ".codex" / "client-tools.local.json", json.dumps({
-                "openRouter": {
-                    "apiKey": "token",
-                    "modelMapping": []
-                }
-            }))
+            write(
+                root / ".codex" / "client-tools.local.json",
+                json.dumps({"openRouter": {"apiKey": "token", "modelMapping": []}}),
+            )
             result = cli.run_configure_mode("Audit", root, {}, False)
             findings = {item["key"] for item in result["findings"]}
             self.assertIn("openRouter.baseUrl", findings)
@@ -170,10 +227,19 @@ class SddCliTests(unittest.TestCase):
 
     def test_common_openproject_activity_flow_maps_each_activity_by_name(self) -> None:
         repo = Path(__file__).resolve().parents[3]
-        telemetry = json.loads((repo / ".codex" / "client-tools.example.json").read_text(encoding="utf-8"))["openProject"]["timeTelemetry"]
+        telemetry = json.loads(
+            (repo / ".codex" / "client-tools.example.json").read_text(encoding="utf-8")
+        )["openProject"]["timeTelemetry"]
         activity_flow = telemetry["activityFlow"]
         activity_by_stage = telemetry["activityByStage"]
-        expected = {"Management", "Specification", "Development", "Testing", "Support", "Other"}
+        expected = {
+            "Management",
+            "Specification",
+            "Development",
+            "Testing",
+            "Support",
+            "Other",
+        }
 
         self.assertEqual(expected, set(activity_flow))
         for activity, stages in activity_flow.items():
@@ -183,16 +249,24 @@ class SddCliTests(unittest.TestCase):
 
     def test_openrouter_model_mapping_keys_match_chat_or_skill_names(self) -> None:
         repo = Path(__file__).resolve().parents[3]
-        common = json.loads((repo / ".codex" / "client-tools.example.json").read_text(encoding="utf-8"))
+        common = json.loads(
+            (repo / ".codex" / "client-tools.example.json").read_text(encoding="utf-8")
+        )
         mapping = common.get("openRouter", {}).get("modelMapping", {})
         self.assertIsInstance(mapping, dict)
         self.assertIn("chat", mapping)
-        skill_dirs = {p.name for p in (repo / ".codex" / "skills").iterdir() if p.is_dir()}
+        skill_dirs = {
+            p.name for p in (repo / ".codex" / "skills").iterdir() if p.is_dir()
+        }
 
         for key in mapping:
             if key == "chat":
                 continue
-            self.assertIn(key, skill_dirs, msg=f"OpenRouter modelMapping key '{key}' should match a skill directory or be 'chat'.")
+            self.assertIn(
+                key,
+                skill_dirs,
+                msg=f"OpenRouter modelMapping key '{key}' should match a skill directory or be 'chat'.",
+            )
 
     def test_configure_audit_is_native_and_unsupported_modes_fail_closed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -211,24 +285,38 @@ class SddCliTests(unittest.TestCase):
                 target.write_text("x", encoding="utf-8")
             profile = root / ".codex" / "project-profile.json"
             profile.parent.mkdir(parents=True, exist_ok=True)
-            profile.write_text(json.dumps({"quality": {"gates": [{"id": "restore", "required": True}]}}), encoding="utf-8")
-            (root / ".codex" / "project-profile.schema.json").write_text("{}", encoding="utf-8")
+            profile.write_text(
+                json.dumps(
+                    {"quality": {"gates": [{"id": "restore", "required": True}]}}
+                ),
+                encoding="utf-8",
+            )
+            (root / ".codex" / "project-profile.schema.json").write_text(
+                "{}", encoding="utf-8"
+            )
 
             audit = cli.run_configure_mode("Audit", root, {}, False)
             self.assertTrue(audit["valid"])
             unsupported = cli.run_configure_mode("LegacyOnly", root, {}, False)
             self.assertFalse(unsupported["valid"])
-            self.assertIn("Port this mode into tools/sdd_cli", unsupported["nextAction"])
+            self.assertIn(
+                "Port this mode into tools/sdd_cli", unsupported["nextAction"]
+            )
             self.assertNotIn("fallback", json.dumps(unsupported).lower())
 
     def test_all_configure_modes_have_native_dispatch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            write(root / ".codex" / "project-profile.json", json.dumps({"providers": {"deployment": {"id": "example"}}}))
+            write(
+                root / ".codex" / "project-profile.json",
+                json.dumps({"providers": {"deployment": {"id": "example"}}}),
+            )
             write(root / ".codex" / "client-tools.local.json", "{}")
             for mode in cli.ALL_CONFIGURE_MODES:
                 result = cli.run_configure_mode(mode, root, {}, True)
-                self.assertNotIn("Mode is not implemented in native Python", json.dumps(result), mode)
+                self.assertNotIn(
+                    "Mode is not implemented in native Python", json.dumps(result), mode
+                )
 
     def test_project_profile_local_overlay_merges_with_common_profile(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -236,17 +324,29 @@ class SddCliTests(unittest.TestCase):
             codex = root / ".codex"
             codex.mkdir()
             (codex / "project-profile.json").write_text(
-                json.dumps({
-                    "schemaVersion": 1,
-                    "providers": {"deployment": {"id": "docker-desktop"}},
-                    "workflow": {"ticketKeyPattern": "ABC-[0-9]+"},
-                    "quality": {"gates": [{"id": "secret-scan", "required": True}]},
-                    "adapters": {"deployment": ".codex/providers/deploy.example.md"},
-                }),
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "providers": {"deployment": {"id": "docker-desktop"}},
+                        "workflow": {"ticketKeyPattern": "ABC-[0-9]+"},
+                        "quality": {"gates": [{"id": "secret-scan", "required": True}]},
+                        "adapters": {
+                            "deployment": ".codex/providers/deploy.example.md"
+                        },
+                    }
+                ),
                 encoding="utf-8",
             )
             (codex / "project-profile.local.json").write_text(
-                json.dumps({"stack": {"languages": ["python"], "frameworks": [], "testFrameworks": ["unittest"]}}),
+                json.dumps(
+                    {
+                        "stack": {
+                            "languages": ["python"],
+                            "frameworks": [],
+                            "testFrameworks": ["unittest"],
+                        }
+                    }
+                ),
                 encoding="utf-8",
             )
 
@@ -257,7 +357,9 @@ class SddCliTests(unittest.TestCase):
             required = cli.run_configure_mode("AuditQualityGates", root, {}, False)
             self.assertEqual(["secret-scan"], required["requiredGates"])
 
-    def test_set_project_stack_writes_local_profile_only_and_normalizes_answers(self) -> None:
+    def test_set_project_stack_writes_local_profile_only_and_normalizes_answers(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             codex = root / ".codex"
@@ -265,20 +367,37 @@ class SddCliTests(unittest.TestCase):
             common = codex / "project-profile.json"
             common.write_text(json.dumps({"schemaVersion": 1}), encoding="utf-8")
             local = codex / "project-profile.local.json"
-            local.write_text(json.dumps({"stack": {"languages": ["go"], "frameworks": [], "testFrameworks": ["pytest"]}}), encoding="utf-8")
+            local.write_text(
+                json.dumps(
+                    {
+                        "stack": {
+                            "languages": ["go"],
+                            "frameworks": [],
+                            "testFrameworks": ["pytest"],
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
             before_common = common.read_text(encoding="utf-8")
 
-            result = cli.run_configure_mode("SetProjectStack", root, {
-                "frontend": "React + TypeScript",
-                "backend": "none",
-                "database": "",
-            })
+            result = cli.run_configure_mode(
+                "SetProjectStack",
+                root,
+                {
+                    "frontend": "React + TypeScript",
+                    "backend": "none",
+                    "database": "",
+                },
+            )
 
             self.assertTrue(result["valid"])
             self.assertEqual(before_common, common.read_text(encoding="utf-8"))
             profile = json.loads(local.read_text(encoding="utf-8"))
             stack = profile["stack"]
-            self.assertEqual({"applies": True, "value": "React + TypeScript"}, stack["frontend"])
+            self.assertEqual(
+                {"applies": True, "value": "React + TypeScript"}, stack["frontend"]
+            )
             self.assertEqual({"applies": False, "value": ""}, stack["backend"])
             self.assertEqual({"applies": False, "value": ""}, stack["database"])
             self.assertEqual(["go"], stack["languages"])
@@ -287,68 +406,125 @@ class SddCliTests(unittest.TestCase):
             self.assertEqual("needs-user-validation", stack["metadataValidationStatus"])
             self.assertTrue(stack["selectionRecorded"])
             for empty_value in ("", "none", "no", "n/a"):
-                self.assertEqual({"applies": False, "value": ""}, cli.normalize_stack_domain(empty_value))
+                self.assertEqual(
+                    {"applies": False, "value": ""},
+                    cli.normalize_stack_domain(empty_value),
+                )
 
     def test_project_stack_metadata_validation_gates_guidance_discovery(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             codex = root / ".codex"
             codex.mkdir()
-            (codex / "project-profile.json").write_text(json.dumps({"schemaVersion": 1}), encoding="utf-8")
-            cli.run_configure_mode("SetProjectStack", root, {"frontend": "reactjs", "backend": ".net-core-10", "database": "sqlite"}, False)
+            (codex / "project-profile.json").write_text(
+                json.dumps({"schemaVersion": 1}), encoding="utf-8"
+            )
+            cli.run_configure_mode(
+                "SetProjectStack",
+                root,
+                {
+                    "frontend": "reactjs",
+                    "backend": ".net-core-10",
+                    "database": "sqlite",
+                },
+                False,
+            )
 
             blocked = cli.run_configure_mode("DiscoverProjectGuidance", root, {}, False)
             self.assertFalse(blocked["valid"])
-            self.assertIn("stack.metadata.validation", {item["key"] for item in blocked["findings"]})
+            self.assertIn(
+                "stack.metadata.validation",
+                {item["key"] for item in blocked["findings"]},
+            )
 
             metadata = {
-                "frontend": [{
-                    "rawValue": "reactjs",
-                    "canonicalName": "React",
-                    "aliases": ["reactjs"],
-                    "languages": ["TypeScript"],
-                    "frameworks": ["React"],
-                    "testFrameworks": ["Vitest"],
-                    "guidanceSearchTerms": ["React official docs", "React TypeScript testing"],
-                }],
-                "backend": [{
-                    "rawValue": ".net-core-10",
-                    "canonicalName": ".NET 10 / ASP.NET Core",
-                    "aliases": [".NET Core", "dotnet"],
-                    "languages": ["C#"],
-                    "frameworks": ["ASP.NET Core"],
-                    "testFrameworks": ["xUnit"],
-                    "guidanceSearchTerms": ["ASP.NET Core official docs", ".NET 10 testing"],
-                }],
-                "database": [{
-                    "rawValue": "sqlite",
-                    "canonicalName": "SQLite",
-                    "aliases": ["sqlite"],
-                    "languages": [],
-                    "frameworks": [],
-                    "testFrameworks": [],
-                    "guidanceSearchTerms": ["SQLite official docs"],
-                }],
+                "frontend": [
+                    {
+                        "rawValue": "reactjs",
+                        "canonicalName": "React",
+                        "aliases": ["reactjs"],
+                        "languages": ["TypeScript"],
+                        "frameworks": ["React"],
+                        "testFrameworks": ["Vitest"],
+                        "guidanceSearchTerms": [
+                            "React official docs",
+                            "React TypeScript testing",
+                        ],
+                    }
+                ],
+                "backend": [
+                    {
+                        "rawValue": ".net-core-10",
+                        "canonicalName": ".NET 10 / ASP.NET Core",
+                        "aliases": [".NET Core", "dotnet"],
+                        "languages": ["C#"],
+                        "frameworks": ["ASP.NET Core"],
+                        "testFrameworks": ["xUnit"],
+                        "guidanceSearchTerms": [
+                            "ASP.NET Core official docs",
+                            ".NET 10 testing",
+                        ],
+                    }
+                ],
+                "database": [
+                    {
+                        "rawValue": "sqlite",
+                        "canonicalName": "SQLite",
+                        "aliases": ["sqlite"],
+                        "languages": [],
+                        "frameworks": [],
+                        "testFrameworks": [],
+                        "guidanceSearchTerms": ["SQLite official docs"],
+                    }
+                ],
             }
-            cli.run_configure_mode("SetProjectStackMetadata", root, {"metadata": metadata, "metadataValidationStatus": "validated"}, False)
+            cli.run_configure_mode(
+                "SetProjectStackMetadata",
+                root,
+                {"metadata": metadata, "metadataValidationStatus": "validated"},
+                False,
+            )
 
             audit = cli.run_configure_mode("AuditRecommendedTools", root, {}, False)
             self.assertIn("react", audit["detectedTags"])
             self.assertIn("csharp", audit["detectedTags"])
             self.assertIn("aspnetcore", audit["detectedTags"])
             self.assertIn("sqlite", audit["detectedTags"])
-            stack_topics = [topic for topic in audit["researchTopics"] if topic["id"].startswith("stack-")]
+            stack_topics = [
+                topic
+                for topic in audit["researchTopics"]
+                if topic["id"].startswith("stack-")
+            ]
             self.assertIn("React", {topic["technology"] for topic in stack_topics})
-            self.assertIn(".NET 10 / ASP.NET Core", {topic["technology"] for topic in stack_topics})
+            self.assertIn(
+                ".NET 10 / ASP.NET Core",
+                {topic["technology"] for topic in stack_topics},
+            )
             self.assertIn("SQLite", {topic["technology"] for topic in stack_topics})
 
-    def test_audit_recommended_tools_uses_profile_stack_and_reports_missing_stack(self) -> None:
+    def test_audit_recommended_tools_uses_profile_stack_and_reports_missing_stack(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             codex = root / ".codex"
             codex.mkdir()
             (codex / "project-profile.local.json").write_text(
-                json.dumps({"stack": {"frontend": {"applies": True, "value": "React + TypeScript"}, "backend": {"applies": True, "value": "FastAPI + Python"}, "database": {"applies": True, "value": "PostgreSQL"}, "languages": [], "frameworks": [], "testFrameworks": []}}),
+                json.dumps(
+                    {
+                        "stack": {
+                            "frontend": {
+                                "applies": True,
+                                "value": "React + TypeScript",
+                            },
+                            "backend": {"applies": True, "value": "FastAPI + Python"},
+                            "database": {"applies": True, "value": "PostgreSQL"},
+                            "languages": [],
+                            "frameworks": [],
+                            "testFrameworks": [],
+                        }
+                    }
+                ),
                 encoding="utf-8",
             )
 
@@ -356,7 +532,9 @@ class SddCliTests(unittest.TestCase):
             self.assertIn("react", audit["detectedTags"])
             self.assertIn("typescript", audit["detectedTags"])
             self.assertIn("fastapi", audit["detectedTags"])
-            self.assertNotIn("stack-context.missing", {item["key"] for item in audit["findings"]})
+            self.assertNotIn(
+                "stack-context.missing", {item["key"] for item in audit["findings"]}
+            )
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -364,65 +542,173 @@ class SddCliTests(unittest.TestCase):
             audit = cli.run_configure_mode("AuditRecommendedTools", root, {}, False)
             findings = {item["key"]: item["message"] for item in audit["findings"]}
             self.assertIn("stack-context.missing", findings)
-            self.assertIn("frontend, backend, and database", findings["stack-context.missing"])
+            self.assertIn(
+                "frontend, backend, and database", findings["stack-context.missing"]
+            )
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / ".codex").mkdir()
-            cli.run_configure_mode("SetProjectStack", root, {"frontend": "none", "backend": "none", "database": "none"}, False)
+            cli.run_configure_mode(
+                "SetProjectStack",
+                root,
+                {"frontend": "none", "backend": "none", "database": "none"},
+                False,
+            )
             audit = cli.run_configure_mode("AuditRecommendedTools", root, {}, False)
-            self.assertNotIn("stack-context.missing", {item["key"] for item in audit["findings"]})
+            self.assertNotIn(
+                "stack-context.missing", {item["key"] for item in audit["findings"]}
+            )
 
     def test_configure_values_json_file_stdin_inline_and_invalid_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / ".codex").mkdir()
-            (root / ".codex" / "project-profile.local.json").write_text("{}", encoding="utf-8")
+            (root / ".codex" / "project-profile.local.json").write_text(
+                "{}", encoding="utf-8"
+            )
             values_file = root / "values.json"
             values_file.write_text(json.dumps({"frontend": "none"}), encoding="utf-8")
 
             with redirect_stdout(io.StringIO()):
-                self.assertEqual(0, cli.configure_mode(type("Args", (), {"mode": "SetProjectStack", "options": ["--root", str(root), "--values-json-file", "values.json"]})()))
-            profile = json.loads((root / ".codex" / "project-profile.local.json").read_text(encoding="utf-8"))
+                self.assertEqual(
+                    0,
+                    cli.configure_mode(
+                        type(
+                            "Args",
+                            (),
+                            {
+                                "mode": "SetProjectStack",
+                                "options": [
+                                    "--root",
+                                    str(root),
+                                    "--values-json-file",
+                                    "values.json",
+                                ],
+                            },
+                        )()
+                    ),
+                )
+            profile = json.loads(
+                (root / ".codex" / "project-profile.local.json").read_text(
+                    encoding="utf-8"
+                )
+            )
             self.assertFalse(profile["stack"]["frontend"]["applies"])
 
-            with patch("sys.stdin", io.StringIO(json.dumps({"backend": "FastAPI + Python"}))), redirect_stdout(io.StringIO()):
-                self.assertEqual(0, cli.configure_mode(type("Args", (), {"mode": "SetProjectStack", "options": ["--root", str(root), "--values-json-stdin", "true"]})()))
-            profile = json.loads((root / ".codex" / "project-profile.local.json").read_text(encoding="utf-8"))
+            with patch(
+                "sys.stdin", io.StringIO(json.dumps({"backend": "FastAPI + Python"}))
+            ), redirect_stdout(io.StringIO()):
+                self.assertEqual(
+                    0,
+                    cli.configure_mode(
+                        type(
+                            "Args",
+                            (),
+                            {
+                                "mode": "SetProjectStack",
+                                "options": [
+                                    "--root",
+                                    str(root),
+                                    "--values-json-stdin",
+                                    "true",
+                                ],
+                            },
+                        )()
+                    ),
+                )
+            profile = json.loads(
+                (root / ".codex" / "project-profile.local.json").read_text(
+                    encoding="utf-8"
+                )
+            )
             self.assertEqual("FastAPI + Python", profile["stack"]["backend"]["value"])
 
             with redirect_stdout(io.StringIO()):
-                self.assertEqual(0, cli.configure_mode(type("Args", (), {"mode": "SetProjectStack", "options": ["--root", str(root), "--values-json", json.dumps({"database": "PostgreSQL"})]})()))
-            profile = json.loads((root / ".codex" / "project-profile.local.json").read_text(encoding="utf-8"))
+                self.assertEqual(
+                    0,
+                    cli.configure_mode(
+                        type(
+                            "Args",
+                            (),
+                            {
+                                "mode": "SetProjectStack",
+                                "options": [
+                                    "--root",
+                                    str(root),
+                                    "--values-json",
+                                    json.dumps({"database": "PostgreSQL"}),
+                                ],
+                            },
+                        )()
+                    ),
+                )
+            profile = json.loads(
+                (root / ".codex" / "project-profile.local.json").read_text(
+                    encoding="utf-8"
+                )
+            )
             self.assertEqual("PostgreSQL", profile["stack"]["database"]["value"])
 
             stderr = io.StringIO()
             with redirect_stdout(io.StringIO()), redirect_stderr(stderr):
-                self.assertEqual(1, cli.main(["configure", "SetProjectStack", "--root", str(root), "--values-json", "{bad"]))
+                self.assertEqual(
+                    1,
+                    cli.main(
+                        [
+                            "configure",
+                            "SetProjectStack",
+                            "--root",
+                            str(root),
+                            "--values-json",
+                            "{bad",
+                        ]
+                    ),
+                )
             self.assertIn("Invalid JSON in --values-json", stderr.getvalue())
             self.assertNotIn("Traceback", stderr.getvalue())
 
-    def test_tool_recommendations_local_overlay_merges_with_example_catalog(self) -> None:
+    def test_tool_recommendations_local_overlay_merges_with_example_catalog(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             codex = root / ".codex"
             codex.mkdir()
             (codex / "tool-recommendations.common.json").write_text(
-                json.dumps({
-                    "schemaVersion": 1,
-                    "recommendations": [
-                        {"id": "playwright-guidance", "name": "Playwright guidance", "type": "skill", "usedInSteps": []}
-                    ],
-                }),
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "recommendations": [
+                            {
+                                "id": "playwright-guidance",
+                                "name": "Playwright guidance",
+                                "type": "skill",
+                                "usedInSteps": [],
+                            }
+                        ],
+                    }
+                ),
                 encoding="utf-8",
             )
             (codex / "tool-recommendations.local.json").write_text(
-                json.dumps({
-                    "recommendations": [
-                        {"id": "playwright-guidance", "usedInSteps": ["qa"], "accepted": True},
-                        {"id": "custom-guidance", "name": "Custom", "type": "reference", "usedInSteps": ["start"]},
-                    ],
-                }),
+                json.dumps(
+                    {
+                        "recommendations": [
+                            {
+                                "id": "playwright-guidance",
+                                "usedInSteps": ["qa"],
+                                "accepted": True,
+                            },
+                            {
+                                "id": "custom-guidance",
+                                "name": "Custom",
+                                "type": "reference",
+                                "usedInSteps": ["start"],
+                            },
+                        ],
+                    }
+                ),
                 encoding="utf-8",
             )
 
@@ -443,7 +729,9 @@ class SddCliTests(unittest.TestCase):
         self.assertIn("compose", calls[0])
         self.assertEqual(["up", "-d", "--remove-orphans"], calls[0][-3:])
 
-    def test_tool_install_copies_runtime_assets_and_excludes_tool_only_files(self) -> None:
+    def test_tool_install_copies_runtime_assets_and_excludes_tool_only_files(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             source = root / "tool"
@@ -461,24 +749,61 @@ class SddCliTests(unittest.TestCase):
             write(source / ".codex" / "memory" / "memory_summary.md", "summary")
             write(source / ".codex" / "memory" / "retrieval-policy.md", "policy")
             write(source / "infra" / "openproject" / "data" / "runtime.db", "no")
-            write(source / "infra" / "openproject" / "openproject" / "pgdata" / "base" / "1" / "2619", "no")
+            write(
+                source
+                / "infra"
+                / "openproject"
+                / "openproject"
+                / "pgdata"
+                / "base"
+                / "1"
+                / "2619",
+                "no",
+            )
 
             result = cli.install_sdd_tool(source, target, "v0.1.0", "install")
 
             self.assertEqual("v0.1.0", result["version"])
-            self.assertTrue((target / ".codex" / "skills" / "demo" / "SKILL.md").exists())
+            self.assertTrue(
+                (target / ".codex" / "skills" / "demo" / "SKILL.md").exists()
+            )
             self.assertTrue((target / "tools" / "sdd_cli" / "cli.py").exists())
-            self.assertFalse((target / "tools" / "sdd_cli" / "tests" / "test_cli.py").exists())
+            self.assertFalse(
+                (target / "tools" / "sdd_cli" / "tests" / "test_cli.py").exists()
+            )
             self.assertTrue((target / ".codex" / "memory" / "MEMORY.md").exists())
-            self.assertTrue((target / ".codex" / "memory" / "memory_summary.md").exists())
-            self.assertTrue((target / ".codex" / "memory" / "retrieval-policy.md").exists())
+            self.assertTrue(
+                (target / ".codex" / "memory" / "memory_summary.md").exists()
+            )
+            self.assertTrue(
+                (target / ".codex" / "memory" / "retrieval-policy.md").exists()
+            )
             self.assertTrue((target / ".git").exists())
             self.assertEqual("", cli.git_text(target, ["remote"]))
             self.assertEqual("dev", cli.git_text(target, ["branch", "--show-current"]))
-            self.assertFalse((target / "openspec" / "changes" / "internal" / "tasks.md").exists())
-            self.assertFalse((target / "infra" / "openproject" / "data" / "runtime.db").exists())
-            self.assertFalse((target / "infra" / "openproject" / "openproject" / "pgdata" / "base" / "1" / "2619").exists())
-            manifest = json.loads((target / ".codex" / "sdd-tool-version.json").read_text(encoding="utf-8"))
+            self.assertFalse(
+                (target / "openspec" / "changes" / "internal" / "tasks.md").exists()
+            )
+            self.assertFalse(
+                (target / "infra" / "openproject" / "data" / "runtime.db").exists()
+            )
+            self.assertFalse(
+                (
+                    target
+                    / "infra"
+                    / "openproject"
+                    / "openproject"
+                    / "pgdata"
+                    / "base"
+                    / "1"
+                    / "2619"
+                ).exists()
+            )
+            manifest = json.loads(
+                (target / ".codex" / "sdd-tool-version.json").read_text(
+                    encoding="utf-8"
+                )
+            )
             self.assertIn("tools/sdd_cli/cli.py", manifest["managedFiles"])
 
     def test_tool_install_includes_bm25s_flashrank_assets(self) -> None:
@@ -487,38 +812,65 @@ class SddCliTests(unittest.TestCase):
             source = root / "tool"
             target = root / "consumer"
             write(source / "tools" / "bm25s_flashrank" / "setup_mcp.py", "setup")
-            write(source / "tools" / "bm25s_flashrank" / "mcp_doc_research.py", "research")
+            write(
+                source / "tools" / "bm25s_flashrank" / "mcp_doc_research.py", "research"
+            )
 
             cli.install_sdd_tool(source, target, "v0.1.0", "install")
 
-            self.assertTrue((target / "tools" / "bm25s_flashrank" / "setup_mcp.py").exists())
-            self.assertTrue((target / "tools" / "bm25s_flashrank" / "mcp_doc_research.py").exists())
+            self.assertTrue(
+                (target / "tools" / "bm25s_flashrank" / "setup_mcp.py").exists()
+            )
+            self.assertTrue(
+                (target / "tools" / "bm25s_flashrank" / "mcp_doc_research.py").exists()
+            )
 
     def test_init_local_files_repairs_memory_and_env_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             write(root / ".codex" / "client-tools.example.json", "{}")
             write(root / ".codex" / "quality.example.json", "{}")
-            write(root / "infra" / "openproject" / "variables.env.example", "OPENPROJECT_HOST=http://localhost\n")
-            write(root / "infra" / "monitoring" / "variables.env.example", "SEQ_URL=http://localhost:5341\n")
-            write(root / "infra" / "gitea" / "runner.env.example", "GITEA_INSTANCE_URL=http://localhost:3001\n")
+            write(
+                root / "infra" / "openproject" / "variables.env.example",
+                "OPENPROJECT_HOST=http://localhost\n",
+            )
+            write(
+                root / "infra" / "monitoring" / "variables.env.example",
+                "SEQ_URL=http://localhost:5341\n",
+            )
+            write(
+                root / "infra" / "gitea" / "runner.env.example",
+                "GITEA_INSTANCE_URL=http://localhost:3001\n",
+            )
 
             result = cli.run_configure_mode("InitLocalFiles", root, {}, False)
 
             self.assertTrue(result["valid"])
             self.assertTrue((root / ".codex" / "memory" / "MEMORY.md").exists())
             self.assertTrue((root / ".codex" / "memory" / "memory_summary.md").exists())
-            self.assertTrue((root / ".codex" / "memory" / "retrieval-policy.md").exists())
+            self.assertTrue(
+                (root / ".codex" / "memory" / "retrieval-policy.md").exists()
+            )
             self.assertTrue((root / "infra" / "openproject" / "variables.env").exists())
 
     def test_env_update_modes_validate_example_keys_and_preserve_values(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            write(root / "infra" / "openproject" / "variables.env.example", "OPENPROJECT_HOST=\n")
-            write(root / "infra" / "openproject" / "variables.env", "OPENPROJECT_HOST=old\nOTHER=kept\n")
+            write(
+                root / "infra" / "openproject" / "variables.env.example",
+                "OPENPROJECT_HOST=\n",
+            )
+            write(
+                root / "infra" / "openproject" / "variables.env",
+                "OPENPROJECT_HOST=old\nOTHER=kept\n",
+            )
 
-            result = cli.run_configure_mode("SetOpenProjectEnv", root, {"OPENPROJECT_HOST": "new"}, False)
-            blocked = cli.run_configure_mode("SetOpenProjectEnv", root, {"BAD": "x"}, False)
+            result = cli.run_configure_mode(
+                "SetOpenProjectEnv", root, {"OPENPROJECT_HOST": "new"}, False
+            )
+            blocked = cli.run_configure_mode(
+                "SetOpenProjectEnv", root, {"BAD": "x"}, False
+            )
 
             self.assertTrue(result["valid"])
             self.assertFalse(blocked["valid"])
@@ -526,20 +878,40 @@ class SddCliTests(unittest.TestCase):
             self.assertEqual("new", env["OPENPROJECT_HOST"])
             self.assertEqual("kept", env["OTHER"])
 
-    def test_split_infra_env_prunes_stale_keys_and_preserves_current_values(self) -> None:
+    def test_split_infra_env_prunes_stale_keys_and_preserves_current_values(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            write(root / "infra" / "openproject" / "variables.env.example", "OPENPROJECT_TAG=17\nOPENPROJECT_SECRET_KEY_BASE=placeholder\n")
-            write(root / "infra" / "monitoring" / "variables.env.example", "SEQ_URL=http://localhost:5341\n")
-            write(root / "infra" / "openproject" / "variables.env", "OPENPROJECT_TAG=old\nSECRET_KEY=legacy\nSEQ_URL=http://old:5341\n")
-            write(root / "infra" / "monitoring" / "variables.env", "SEQ_URL=http://keep:5341\n")
+            write(
+                root / "infra" / "openproject" / "variables.env.example",
+                "OPENPROJECT_TAG=17\nOPENPROJECT_SECRET_KEY_BASE=placeholder\n",
+            )
+            write(
+                root / "infra" / "monitoring" / "variables.env.example",
+                "SEQ_URL=http://localhost:5341\n",
+            )
+            write(
+                root / "infra" / "openproject" / "variables.env",
+                "OPENPROJECT_TAG=old\nSECRET_KEY=legacy\nSEQ_URL=http://old:5341\n",
+            )
+            write(
+                root / "infra" / "monitoring" / "variables.env",
+                "SEQ_URL=http://keep:5341\n",
+            )
 
             result = cli.run_configure_mode("SplitInfraEnv", root, {}, False)
 
             self.assertTrue(result["valid"])
-            openproject = cli.read_env_file(root / "infra" / "openproject" / "variables.env")
-            monitoring = cli.read_env_file(root / "infra" / "monitoring" / "variables.env")
-            self.assertEqual({"OPENPROJECT_TAG", "OPENPROJECT_SECRET_KEY_BASE"}, set(openproject))
+            openproject = cli.read_env_file(
+                root / "infra" / "openproject" / "variables.env"
+            )
+            monitoring = cli.read_env_file(
+                root / "infra" / "monitoring" / "variables.env"
+            )
+            self.assertEqual(
+                {"OPENPROJECT_TAG", "OPENPROJECT_SECRET_KEY_BASE"}, set(openproject)
+            )
             self.assertEqual("old", openproject["OPENPROJECT_TAG"])
             self.assertEqual({"SEQ_URL"}, set(monitoring))
             self.assertEqual("http://keep:5341", monitoring["SEQ_URL"])
@@ -549,25 +921,39 @@ class SddCliTests(unittest.TestCase):
             root = Path(tmp)
             write(root / ".codex" / "project-profile.json", "{}")
             write(root / ".codex" / "project-profile.schema.json", "{}")
-            write(root / "infra" / "openproject" / "variables.env.example", "OPENPROJECT_TAG=17\nOPENPROJECT_SECRET_KEY_BASE=placeholder\n")
-            write(root / "infra" / "openproject" / "variables.env", "OPENPROJECT_TAG=17\nSECRET_KEY=legacy\n")
+            write(
+                root / "infra" / "openproject" / "variables.env.example",
+                "OPENPROJECT_TAG=17\nOPENPROJECT_SECRET_KEY_BASE=placeholder\n",
+            )
+            write(
+                root / "infra" / "openproject" / "variables.env",
+                "OPENPROJECT_TAG=17\nSECRET_KEY=legacy\n",
+            )
 
             result = cli.run_configure_mode("Audit", root, {}, False)
             findings = {item["key"]: item["message"] for item in result["findings"]}
 
             self.assertFalse(result["valid"])
             self.assertIn("env.missing-template-keys", findings)
-            self.assertIn("OPENPROJECT_SECRET_KEY_BASE", findings["env.missing-template-keys"])
+            self.assertIn(
+                "OPENPROJECT_SECRET_KEY_BASE", findings["env.missing-template-keys"]
+            )
             self.assertIn("env.stale-keys", findings)
             self.assertIn("SECRET_KEY", findings["env.stale-keys"])
 
     def test_config_infra_docs_match_openproject_and_runtime(self) -> None:
         repo = Path(__file__).resolve().parents[3]
-        compose = (repo / "infra" / "openproject" / "compose.yml").read_text(encoding="utf-8")
-        configure = (repo / ".codex" / "skills" / "configure-dev-environment" / "SKILL.md").read_text(encoding="utf-8")
+        compose = (repo / "infra" / "openproject" / "compose.yml").read_text(
+            encoding="utf-8"
+        )
+        configure = (
+            repo / ".codex" / "skills" / "configure-dev-environment" / "SKILL.md"
+        ).read_text(encoding="utf-8")
 
         self.assertIn("SECRET_KEY_BASE: ${OPENPROJECT_SECRET_KEY_BASE:", compose)
-        self.assertNotIn("OPENPROJECT_SECRET_KEY_BASE: ${OPENPROJECT_SECRET_KEY_BASE:", compose)
+        self.assertNotIn(
+            "OPENPROJECT_SECRET_KEY_BASE: ${OPENPROJECT_SECRET_KEY_BASE:", compose
+        )
         self.assertIn("setup-lab", configure)
         self.assertNotIn("EnsureRancherDesktopCluster", configure)
         self.assertNotIn("Azure App Service", configure)
@@ -583,13 +969,20 @@ class SddCliTests(unittest.TestCase):
             (codex / "client-tools.example.json").write_text("{}", encoding="utf-8")
             (codex / "quality.example.json").write_text("{}", encoding="utf-8")
             (root / "infra" / "openproject").mkdir(parents=True)
-            (root / "infra" / "openproject" / "variables.env.example").write_text("OPENPROJECT_HOST=\n", encoding="utf-8")
+            (root / "infra" / "openproject" / "variables.env.example").write_text(
+                "OPENPROJECT_HOST=\n", encoding="utf-8"
+            )
             (root / "infra" / "monitoring").mkdir(parents=True)
-            (root / "infra" / "monitoring" / "variables.env.example").write_text("SEQ_URL=\n", encoding="utf-8")
+            (root / "infra" / "monitoring" / "variables.env.example").write_text(
+                "SEQ_URL=\n", encoding="utf-8"
+            )
             (root / "infra" / "gitea").mkdir(parents=True)
-            (root / "infra" / "gitea" / "runner.env.example").write_text("GITEA_INSTANCE_URL=\n", encoding="utf-8")
+            (root / "infra" / "gitea" / "runner.env.example").write_text(
+                "GITEA_INSTANCE_URL=\n", encoding="utf-8"
+            )
 
             from tools.sdd_cli.environment_lab import setup_lab
+
             result = setup_lab(root, dry_run=True)
             self.assertEqual("SetupLab", result["mode"])
             self.assertTrue(result["dryRun"])
@@ -598,14 +991,40 @@ class SddCliTests(unittest.TestCase):
             self.assertGreaterEqual(len(steps), 3)
             # Verify the first few steps (before Docker-dependent ones) are valid
             for step in steps[:3]:
-                self.assertTrue(step.get("valid", True), msg=f"Step failed: {step.get('mode', step.get('command', 'unknown'))}")
+                self.assertTrue(
+                    step.get("valid", True),
+                    msg=f"Step failed: {step.get('mode', step.get('command', 'unknown'))}",
+                )
 
-    def test_seq_grafana_validation_uses_grafana_port_and_checks_provisioning(self) -> None:
+    def test_seq_grafana_validation_uses_grafana_port_and_checks_provisioning(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            write(root / "infra" / "monitoring" / "variables.env", "SEQ_URL=http://localhost:5341\nSEQ_ERROR_ALERT_WINDOW=1m\nSEQ_ERROR_ALERT_THRESHOLD=0\n")
-            write(root / "infra" / "monitoring" / "grafana" / "provisioning" / "datasources" / "infinity-health.yml", "datasource")
-            write(root / "infra" / "monitoring" / "grafana" / "provisioning" / "alerting" / "health-alerts.yml", "alerts")
+            write(
+                root / "infra" / "monitoring" / "variables.env",
+                "SEQ_URL=http://localhost:5341\nSEQ_ERROR_ALERT_WINDOW=1m\nSEQ_ERROR_ALERT_THRESHOLD=0\n",
+            )
+            write(
+                root
+                / "infra"
+                / "monitoring"
+                / "grafana"
+                / "provisioning"
+                / "datasources"
+                / "infinity-health.yml",
+                "datasource",
+            )
+            write(
+                root
+                / "infra"
+                / "monitoring"
+                / "grafana"
+                / "provisioning"
+                / "alerting"
+                / "health-alerts.yml",
+                "alerts",
+            )
             seen: list[str] = []
 
             def fake_http_status(url: str, timeout: int = 5):
@@ -613,7 +1032,9 @@ class SddCliTests(unittest.TestCase):
                 return 200, ""
 
             with patch.object(cli, "http_status", fake_http_status):
-                result = cli.run_configure_mode("ValidateObservability", root, {}, False)
+                result = cli.run_configure_mode(
+                    "ValidateObservability", root, {}, False
+                )
 
             self.assertTrue(result["valid"])
             self.assertEqual("ValidateObservability", result["mode"])
@@ -623,7 +1044,9 @@ class SddCliTests(unittest.TestCase):
             self.assertIn("grafana.infinity-health", keys)
             self.assertIn("grafana.health-alerts", keys)
 
-    def test_tool_update_replaces_owned_files_and_preserves_consumer_files(self) -> None:
+    def test_tool_update_replaces_owned_files_and_preserves_consumer_files(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             source = root / "tool"
@@ -632,7 +1055,10 @@ class SddCliTests(unittest.TestCase):
             write(source / ".codex" / "skills" / "demo" / "SKILL.md", "old")
             write(source / ".codex" / "skills" / "stale" / "SKILL.md", "remove later")
             cli.install_sdd_tool(source, target, "v0.1.0", "install")
-            write(target / ".codex" / "project-profile.local.json", '{"stack": "consumer"}')
+            write(
+                target / ".codex" / "project-profile.local.json",
+                '{"stack": "consumer"}',
+            )
             write(target / "src" / "app.txt", "product")
 
             write(source / ".codex" / "skills" / "demo" / "SKILL.md", "new")
@@ -640,10 +1066,24 @@ class SddCliTests(unittest.TestCase):
             result = cli.install_sdd_tool(source, target, "v0.2.0", "update")
 
             self.assertEqual("v0.2.0", result["version"])
-            self.assertEqual("new", (target / ".codex" / "skills" / "demo" / "SKILL.md").read_text(encoding="utf-8"))
-            self.assertFalse((target / ".codex" / "skills" / "stale" / "SKILL.md").exists())
-            self.assertEqual('{"stack": "consumer"}', (target / ".codex" / "project-profile.local.json").read_text(encoding="utf-8"))
-            self.assertEqual("product", (target / "src" / "app.txt").read_text(encoding="utf-8"))
+            self.assertEqual(
+                "new",
+                (target / ".codex" / "skills" / "demo" / "SKILL.md").read_text(
+                    encoding="utf-8"
+                ),
+            )
+            self.assertFalse(
+                (target / ".codex" / "skills" / "stale" / "SKILL.md").exists()
+            )
+            self.assertEqual(
+                '{"stack": "consumer"}',
+                (target / ".codex" / "project-profile.local.json").read_text(
+                    encoding="utf-8"
+                ),
+            )
+            self.assertEqual(
+                "product", (target / "src" / "app.txt").read_text(encoding="utf-8")
+            )
 
     def test_tool_install_refuses_unmanaged_collision(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -672,8 +1112,13 @@ class SddCliTests(unittest.TestCase):
                 result = cli.install_sdd_tool(source, target, None, "install")
 
             self.assertEqual("v0.1.7", result["version"])
-            manifest = json.loads((target / ".codex" / "sdd-tool-version.json").read_text(encoding="utf-8"))
+            manifest = json.loads(
+                (target / ".codex" / "sdd-tool-version.json").read_text(
+                    encoding="utf-8"
+                )
+            )
             self.assertEqual("v0.1.7", manifest["version"])
+
 
 def arg(root: Path, message: Path):
     return type("Args", (), {"root": str(root), "message_file": str(message)})()

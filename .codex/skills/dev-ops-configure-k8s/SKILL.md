@@ -39,6 +39,7 @@ For local dev, images built with `docker build` are available to the K8s cluster
 Environments use a **single envsubst manifest** (`infra/k8s/deploy.yaml`) with placeholders for `${ENV}`, `${REPLICAS}`, `${REGISTRY}`, and `${COMMIT_SHA}`:
 
 ```
+text
 infra/k8s/
 ├── deploy.yaml              # Single manifest: Namespace + Deployment + Service
 │                             # Placeholders: ENV, REPLICAS, REGISTRY, COMMIT_SHA
@@ -68,12 +69,14 @@ Docker Desktop's built-in K8s has a `registry-mirror:1273` that intercepts ALL i
 **Avoid this by using local-only image references in the K8s manifest:**
 
 1. In the CI build step, tag the image locally with a bare name:
+
    ```bash
    docker build -t "ci-build:${COMMIT_SHA}" .
    docker tag "ci-build:${COMMIT_SHA}" "${app_id}:${COMMIT_SHA}"
    ```
 
 2. In `deploy.yaml`, use the local-only reference with `IfNotPresent`:
+
    ```yaml
    image: sdd-test:${COMMIT_SHA}
    imagePullPolicy: IfNotPresent

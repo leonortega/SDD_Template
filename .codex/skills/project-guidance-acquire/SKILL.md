@@ -42,7 +42,7 @@ If a source is missing or ambiguous, return to `project-guidance-discover` for r
 5. Copy the full skill directory recursively, including nested `agents/`, `assets/`, `references/`, `scripts/`, templates, markdown guides, and empty subfolders.
 6. Verify that every source directory exists in the destination and every source file exists with byte-for-byte identical content.
 7. Inspect the copied `SKILL.md` for required frontmatter, matching name/description intent, and required relative references.
-7. Run the validation command, such as:
+8. Run the validation command, such as:
 
 ```powershell
 Test-Path .\.codex\skills\{skill-name}\SKILL.md

@@ -1,4 +1,5 @@
 <!-- TIER 1: STABLE PREFIX - Context management fundamentals, authority order, cache hygiene -->
+
 # Context Management Fundamentals
 
 This repository treats context as an SDLC asset. Durable project knowledge belongs in tracked documentation and workflow contracts, not only in chat history, temporary notes, PR comments, or OpenProject comments.
