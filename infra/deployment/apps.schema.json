@@ -23,14 +23,13 @@
           "appId",
           "projectPath",
           "role",
-          "artifactName",
           "healthPath",
           "deployOrder"
         ],
         "properties": {
           "appId": {
             "type": "string",
-            "pattern": "^[a-z][a-z0-9-]*$"
+            "pattern": "^[a-z][a-z0-9_-]*$"
           },
           "projectPath": {
             "type": "string",

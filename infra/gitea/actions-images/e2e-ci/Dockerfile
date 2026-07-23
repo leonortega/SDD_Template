@@ -14,10 +14,13 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install kubectl (latest stable)
-RUN curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key \
+# Install Docker CLI from Docker's official apt repo (for docker build/push/save in CI)
+RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg     | gpg --dearmor -o /etc/apt/keyrings/docker.gpg     && echo 'deb [signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu noble stable'     | tee /etc/apt/sources.list.d/docker.list     && apt-get update     && apt-get install -y --no-install-recommends docker-ce-cli     && apt-get clean     && rm -rf /var/lib/apt/lists/*
+
+# Install kubectl matching Docker Desktop K8s server version (v1.36)
+RUN curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.36/deb/Release.key \
     | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg \
-    && echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.30/deb/ /' \
+    && echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.36/deb/ /' \
     | tee /etc/apt/sources.list.d/kubernetes.list \
     && apt-get update \
     && apt-get install -y --no-install-recommends kubectl \

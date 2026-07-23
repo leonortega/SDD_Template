@@ -65,9 +65,16 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
     _add_step(init_quality_templates(root, dry_run), fatal=False)
 
     # 5. Build Gitea Actions images (non-fatal — Docker may not be running)
+    #    Includes checksum-based auto-rebuild detection
     _add_step(build_gitea_actions_images(root, dry_run), fatal=False)
 
-    # 6. Start compose services
+    # 6. Validate app deployment config (apps.json schema + Dockerfile existence)
+    _add_step(validate_app_config(root, dry_run), fatal=False)
+
+    # 7. Validate Docker Desktop configuration (insecure-registries, socket, Compose)
+    _add_step(validate_docker_desktop(root, dry_run), fatal=False)
+
+    # 8. Start compose services
     if not dry_run:
         early = _add_step(compose_up())
         if early:
@@ -82,25 +89,31 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
             }
         )
 
-    # 7. Validate observability
+    # 9. Validate observability
     _add_step(validate_observability(root, dry_run), fatal=False)
 
-    # 8. Validate Gitea runner
+    # 10. Validate Gitea runner (Docker, images, tools, socket, docker_push.py)
     _add_step(validate_gitea_runner(root, dry_run), fatal=False)
 
-    # 9. Provision lab users (Gitea, OpenProject, Nexus)
+    # 11. Provision lab users (Gitea, OpenProject, Nexus) + runner registration token
     _add_step(provision_lab_users(root, dry_run), fatal=False)
 
-    # 10. Push v0 code to Gitea (create main branch, push dev)
+    # 12. Provision Nexus repositories + accept EULA
+    _add_step(provision_nexus_repositories(root, dry_run), fatal=False)
+
+    # 13. Provision Gitea CI secrets (NEXUS_USERNAME, KUBECONFIG_B64, etc.)
+    _add_step(provision_gitea_secrets(root, dry_run), fatal=False)
+
+    # 14. Push v0 code to Gitea (create main branch, push dev)
     _add_step(push_to_gitea(root, dry_run), fatal=False)
 
-    # 11. Set Gitea branch protection for dev/main
+    # 15. Set Gitea branch protection for dev/main
     _add_step(set_gitea_branch_protection(root, dry_run), fatal=False)
 
-    # 12. Scaffold K8s deployment files (validates Docker Desktop K8s + creates manifests)
+    # 16. Scaffold K8s deployment files (validates Docker Desktop K8s + creates manifests)
     _add_step(scaffold_k8s(root, dry_run), fatal=False)
 
-    # 13. Generate Semgrep config from stack (non-fatal — stack may not be set yet)
+    # 17. Generate Semgrep config from stack (non-fatal — stack may not be set yet)
     _add_step(set_semgrep_config(root, dry_run), fatal=False)
 
     result["steps"] = steps
@@ -149,16 +162,11 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
             ],
         },
         "k8s": {
-            "manifests": "infra/k8s/base/ (namespace, deployment, service, kustomization)",
-            "overlays": [
-                "infra/k8s/overlays/dev/ (1 replica, sdd-dev namespace)",
-                "infra/k8s/overlays/qa/ (2 replicas, sdd-qa namespace)",
-                "infra/k8s/overlays/prod/ (3 replicas, sdd-prod namespace)",
-            ],
+            "manifest": "infra/k8s/deploy.yaml (envsubst: ENV, REPLICAS, REGISTRY, COMMIT_SHA)",
             "deploy": [
-                "kubectl apply -k infra/k8s/overlays/dev/",
-                "kubectl apply -k infra/k8s/overlays/qa/",
-                "kubectl apply -k infra/k8s/overlays/prod/",
+                "ENV=dev REPLICAS=1 REGISTRY=host.docker.internal:5001 COMMIT_SHA=latest envsubst < infra/k8s/deploy.yaml | kubectl apply -f -",
+                "ENV=qa REPLICAS=2 REGISTRY=host.docker.internal:5001 COMMIT_SHA=latest envsubst < infra/k8s/deploy.yaml | kubectl apply -f -",
+                "ENV=prod REPLICAS=3 REGISTRY=host.docker.internal:5001 COMMIT_SHA=latest envsubst < infra/k8s/deploy.yaml | kubectl apply -f -",
             ],
         },
     }
@@ -227,6 +235,14 @@ def init_local_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
         "infra/gitea/runner.env",
     ):
         copy_seed_file(root, relative + ".example", relative, result, dry_run)
+    # Also copy runner.env to infra/ for compose env_file resolution (project dir = infra/)
+    copy_seed_file(
+        root,
+        "infra/gitea/runner.env.example",
+        "infra/runner.env",
+        result,
+        dry_run,
+    )
     ensure_seed_file(
         root,
         ".codex/memory/memory_summary.md",
@@ -532,7 +548,12 @@ def split_infra_env(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
 
 def build_gitea_actions_images(root: Path, dry_run: bool = False) -> dict[str, Any]:
-    """Build Gitea Actions runner Docker images."""
+    """Build Gitea Actions runner Docker images.
+
+    Auto-detects Dockerfile changes via SHA256 checksum: if the Dockerfile
+    hasn't changed since last build, uses cached image. If changed, forces
+    --no-cache rebuild.
+    """
     result = configure_result(
         "BuildGiteaActionsImages", dry_run, write_enabled=not dry_run
     )
@@ -560,6 +581,7 @@ def build_gitea_actions_images(root: Path, dry_run: bool = False) -> dict[str, A
         )
         result["valid"] = False
         return result
+    import hashlib
     dockerfiles = sorted(
         (root / "infra" / "gitea" / "actions-images").glob("*/Dockerfile")
     )
@@ -574,47 +596,92 @@ def build_gitea_actions_images(root: Path, dry_run: bool = False) -> dict[str, A
         )
     for dockerfile in dockerfiles:
         image = f"sdd-{dockerfile.parent.name}:local"
-        command = [
-            "docker",
-            "build",
-            "--pull",
-            "-t",
-            image,
-            "-f",
-            str(dockerfile),
-            str(dockerfile.parent),
-        ]
-        if dry_run:
+
+        # Compute SHA256 checksum of Dockerfile + its context directory
+        checksum_input = dockerfile.read_bytes()
+        # Include all files in the context directory
+        for f in sorted(dockerfile.parent.rglob("*")):
+            if f.is_file() and f != dockerfile:
+                checksum_input += f.read_bytes()
+        checksum = hashlib.sha256(checksum_input).hexdigest()
+
+        # Check if image exists with matching checksum (label stored on the image)
+        needs_rebuild = True
+        inspect = run_native(
+            ["docker", "image", "inspect", image, "--format", "{{index .Config.Labels \"sdd.dockerfile.checksum\"}}"],
+            root, timeout=15
+        )
+        if inspect["returncode"] == 0 and inspect["stdout"].strip() == checksum:
             result["actions"].append(
                 {
                     "path": dockerfile.relative_to(root).as_posix(),
                     "key": "docker build",
                     "severity": "info",
-                    "message": f"Would build {image}.",
-                    "phase": "apply",
+                    "message": f"Image {image} is up-to-date (checksum match). Skipping build.",
+                    "phase": "audit",
                 }
             )
-            continue
-        built = run_native(command, root, timeout=600)
-        if built["returncode"] == 0:
-            result["actions"].append(
-                {
-                    "path": dockerfile.relative_to(root).as_posix(),
-                    "key": "docker build",
-                    "severity": "info",
-                    "message": f"Built {image}.",
-                    "phase": "apply",
-                }
-            )
+            needs_rebuild = False
+
+        if needs_rebuild:
+            command = [
+                "docker",
+                "build",
+                "--no-cache",  # Force rebuild when Dockerfile changes
+                "--pull",
+                "-t",
+                image,
+                "--label",
+                f"sdd.dockerfile.checksum={checksum}",
+                "-f",
+                str(dockerfile),
+                str(dockerfile.parent),
+            ]
+
+            if dry_run:
+                result["actions"].append(
+                    {
+                        "path": dockerfile.relative_to(root).as_posix(),
+                        "key": "docker build",
+                        "severity": "info",
+                        "message": f"Would build {image} (checksum changed or image missing).",
+                        "phase": "apply",
+                    }
+                )
+                continue
+
+            built = run_native(command, root, timeout=600)
+            if built["returncode"] == 0:
+                result["actions"].append(
+                    {
+                        "path": dockerfile.relative_to(root).as_posix(),
+                        "key": "docker build",
+                        "severity": "info",
+                        "message": f"Built {image}.",
+                        "phase": "apply",
+                    }
+                )
+            else:
+                add_bucket_item(
+                    result["findings"],
+                    dockerfile.relative_to(root).as_posix(),
+                    "docker build",
+                    f"Could not build {image}: {built['stderr']}",
+                    "error",
+                    "apply",
+                )
         else:
-            add_bucket_item(
-                result["findings"],
-                dockerfile.relative_to(root).as_posix(),
-                "docker build",
-                f"Could not build {image}: {built['stderr']}",
-                "error",
-                "apply",
+            # Image exists and is up-to-date - mark as valid
+            result["actions"].append(
+                {
+                    "path": dockerfile.relative_to(root).as_posix(),
+                    "key": "docker build.skipped",
+                    "severity": "info",
+                    "message": f"Skipped build of {image} (up-to-date).",
+                    "phase": "audit",
+                }
             )
+
     result["valid"] = not any(
         item.get("severity") == "error" for item in result["findings"]
     )
@@ -1192,7 +1259,9 @@ def set_semgrep_config(root: Path, dry_run: bool = False) -> dict[str, Any]:
         )
         for canonical_key, aliases in sorted_aliases:
             alias_lower = [a.lower() for a in aliases]
-            if dv_lower in alias_lower or any(alias in dv_lower for alias in alias_lower):
+            if dv_lower in alias_lower or any(
+                alias in dv_lower for alias in alias_lower
+            ):
                 entry = canonical_map.get(canonical_key, {})
                 return list(entry.get("semgrepRules", []))
 
@@ -1283,7 +1352,438 @@ def set_semgrep_config(root: Path, dry_run: bool = False) -> dict[str, Any]:
     return result
 
 
-# ── Validate Gitea Actions runner ───────────────────────────────────────
+# ── Provision Nexus repositories (sdd-artifacts raw hosted) ─────────────
+
+
+# ── Validate app deployment config ─────────────────────────────────────
+
+
+def validate_app_config(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Validate the app deployment configuration (apps.json).
+
+    Checks that apps.json is valid JSON, conforms to its schema,
+    and that each app's projectPath has a Dockerfile.
+    """
+    result = configure_result(
+        "ValidateAppConfig", dry_run, write_enabled=not dry_run
+    )
+    apps_path = root / "infra" / "deployment" / "apps.json"
+    schema_path = root / "infra" / "deployment" / "apps.schema.json"
+
+    if dry_run:
+        result["actions"].append(
+            {
+                "path": "infra/deployment/apps.json",
+                "key": "validate",
+                "severity": "info",
+                "message": "Would validate apps.json against schema.",
+                "phase": "audit",
+            }
+        )
+        result["valid"] = True
+        return result
+
+    # Check apps.json exists
+    if not apps_path.exists():
+        add_bucket_item(
+            result["findings"],
+            "infra/deployment/apps.json",
+            "missing",
+            "infra/deployment/apps.json not found. CI depends on this file.",
+            "error",
+            "pre-start",
+        )
+        result["valid"] = False
+        return result
+
+    # Parse and validate apps.json
+    try:
+        apps_data = json.loads(apps_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        add_bucket_item(
+            result["findings"],
+            "infra/deployment/apps.json",
+            "parse.error",
+            f"apps.json is not valid JSON: {e}",
+            "error",
+            "pre-start",
+        )
+        result["valid"] = False
+        return result
+
+    # Validate against schema if schema file exists
+    if schema_path.exists():
+        try:
+            import jsonschema
+            schema = json.loads(schema_path.read_text(encoding="utf-8"))
+            jsonschema.validate(instance=apps_data, schema=schema)
+            result["actions"].append(
+                {
+                    "path": "infra/deployment/apps.json",
+                    "key": "schema.validated",
+                    "severity": "info",
+                    "message": "apps.json is valid against apps.schema.json.",
+                    "phase": "audit",
+                }
+            )
+        except ImportError:
+            # jsonschema not installed — skip validation (common in minimal environments)
+            result["actions"].append(
+                {
+                    "path": "infra/deployment/apps.json",
+                    "key": "schema.skipped",
+                    "severity": "info",
+                    "message": "jsonschema package not installed — schema validation skipped.",
+                    "phase": "audit",
+                }
+            )
+        except jsonschema.ValidationError as e:
+            add_bucket_item(
+                result["findings"],
+                "infra/deployment/apps.json",
+                "schema.error",
+                f"apps.json failed schema validation: {e.message}",
+                "error",
+                "pre-start",
+            )
+            result["valid"] = False
+            return result
+
+    apps = apps_data.get("apps", [])
+    if not isinstance(apps, list):
+        add_bucket_item(
+            result["findings"],
+            "infra/deployment/apps.json",
+            "invalid.structure",
+            "apps.json 'apps' key must be an array.",
+            "error",
+            "pre-start",
+        )
+        result["valid"] = False
+        return result
+
+    all_valid = True
+    for i, app in enumerate(apps):
+        app_id = app.get("appId", f"app[{i}]")
+        project_path = app.get("projectPath", app_id)
+        dockerfile = root / project_path / "Dockerfile"
+        if not dockerfile.exists():
+            add_bucket_item(
+                result["findings"],
+                f"infra/deployment/apps.json#{app_id}",
+                "dockerfile.missing",
+                f"App '{app_id}': Dockerfile not found at '{dockerfile.relative_to(root)}'.",
+                "error",
+                "pre-start",
+            )
+            all_valid = False
+        else:
+            result["actions"].append(
+                {
+                    "path": f"infra/deployment/apps.json#{app_id}",
+                    "key": "app.validated",
+                    "severity": "info",
+                    "message": f"App '{app_id}': Dockerfile found at '{dockerfile.relative_to(root)}'.",
+                    "phase": "audit",
+                }
+            )
+
+    result["valid"] = all_valid and not any(
+        item.get("severity") == "error" for item in result["findings"]
+    )
+    return result
+
+
+def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Create required Nexus raw hosted repositories for CI artifacts.
+
+    The CI workflow uploads deployment artifacts (env-urls.json, etc.) to
+    a Nexus raw hosted repository named ``sdd-artifacts``. This step creates
+    that repository if it doesn't already exist.
+    """
+    result = configure_result(
+        "ProvisionNexusRepositories", dry_run, write_enabled=not dry_run
+    )
+    nexus_base = "http://localhost:8088"
+    nexus_user = "admin"
+    nexus_pass = "admin123"
+
+    if dry_run:
+        result["actions"].append(
+            {
+                "path": "nexus/repositories",
+                "key": "plan",
+                "severity": "info",
+                "message": "Would create Nexus raw hosted repository: sdd-artifacts.",
+                "phase": "apply",
+            }
+        )
+        result["valid"] = True
+        return result
+
+    def _nexus_api(
+        method: str, path: str, body: dict | None = None
+    ) -> tuple[int, str]:
+        try:
+            parsed = urlparse(nexus_base)
+            conn = http.client.HTTPConnection(
+                parsed.hostname or "localhost", parsed.port or 8088, timeout=10
+            )
+            import base64
+
+            b64 = base64.b64encode(f"{nexus_user}:{nexus_pass}".encode()).decode()
+            headers = {
+                "Authorization": f"Basic {b64}",
+                "Content-Type": "application/json",
+            }
+            payload = json.dumps(body) if body else None
+            conn.request(method, path, body=payload, headers=headers)
+            resp = conn.getresponse()
+            data = resp.read().decode("utf-8")
+            conn.close()
+            return resp.status, data
+        except Exception as ex:
+            return 0, str(ex)
+
+    # ── 1. Accept Nexus EULA (required before any API calls work on fresh install) ──
+    eula_status, eula_data = _nexus_api(
+        "POST", "/service/rest/v1/editions/eula/accept",
+        body={"eulaAccepted": True}
+    )
+    # Nexus EULA endpoint returns 204 on success, 400 if already accepted
+    if eula_status in {204, 200, 400}:
+        result["actions"].append(
+            {
+                "path": "nexus/eula",
+                "key": "eula.accepted",
+                "severity": "info",
+                "message": "Nexus EULA accepted.",
+                "phase": "apply",
+            }
+        )
+    else:
+        add_bucket_item(
+            result["findings"],
+            "nexus/eula",
+            "eula.accept",
+            f"Nexus EULA acceptance returned {eula_status}: {eula_data[:200]}",
+            "warning",
+            "apply",
+        )
+
+    # ── 2. Create sdd-artifacts raw hosted repository ──
+    repo_name = "sdd-artifacts"
+    repo_payload = {
+        "name": repo_name,
+        "online": True,
+        "storage": {
+            "blobStoreName": "default",
+            "strictContentTypeValidation": True,
+            "writePolicy": "ALLOW",
+        },
+    }
+
+    status, data = _nexus_api(
+        "POST", "/service/rest/v1/repositories/raw/hosted", body=repo_payload
+    )
+    if status == 201:
+        result["actions"].append(
+            {
+                "path": f"nexus/repositories/{repo_name}",
+                "key": "repository.created",
+                "severity": "info",
+                "message": f"Nexus raw hosted repository '{repo_name}' created.",
+                "phase": "apply",
+            }
+        )
+    elif status == 400 and "already exists" in data:
+        result["actions"].append(
+            {
+                "path": f"nexus/repositories/{repo_name}",
+                "key": "repository.exists",
+                "severity": "info",
+                "message": f"Nexus raw hosted repository '{repo_name}' already exists.",
+                "phase": "apply",
+            }
+        )
+    else:
+        add_bucket_item(
+            result["findings"],
+            f"nexus/repositories/{repo_name}",
+            "repository.create",
+            f"Nexus repository creation returned {status}: {data[:200]}",
+            "warning",
+            "apply",
+        )
+
+    result["valid"] = not any(
+        item.get("severity") == "error" for item in result["findings"]
+    )
+    return result
+
+
+# ── Validate Docker Desktop configuration
+
+
+def validate_docker_desktop(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Validate Docker Desktop configuration for CI compatibility.
+
+    Checks that Docker CLI is available, the socket is present, and that
+    insecure-registries includes the Nexus registry host:port if needed.
+    """
+    result = configure_result(
+        "ValidateDockerDesktop", dry_run, write_enabled=not dry_run
+    )
+    if dry_run:
+        result["actions"].append(
+            {
+                "path": "docker",
+                "key": "validate.docker-desktop",
+                "severity": "info",
+                "message": "Would validate Docker Desktop configuration.",
+                "phase": "audit",
+            }
+        )
+        result["valid"] = True
+        return result
+
+    # Check Docker CLI
+    docker = run_native(["docker", "version"], root, timeout=30)
+    if docker["returncode"] != 0:
+        add_bucket_item(
+            result["findings"],
+            "docker",
+            "",
+            f"Docker CLI is not usable: {docker['stderr']}",
+            "error",
+            "pre-start",
+        )
+        result["valid"] = False
+        return result
+    result["actions"].append(
+        {
+            "path": "docker",
+            "key": "cli.available",
+            "severity": "info",
+            "message": "Docker CLI is available.",
+            "phase": "audit",
+        }
+    )
+
+    # Detect Docker Desktop on Windows (host.docker.internal resolves on Docker Desktop)
+    import socket
+    is_docker_desktop = False
+    try:
+        socket.gethostbyname("host.docker.internal")
+        is_docker_desktop = True
+    except OSError:
+        pass
+
+    if is_docker_desktop:
+        result["actions"].append(
+            {
+                "path": "docker",
+                "key": "provider",
+                "severity": "info",
+                "message": "Docker Desktop detected (host.docker.internal resolves).",
+                "phase": "audit",
+            }
+        )
+
+        # Check Docker Desktop daemon.json for insecure-registries
+        import platform
+        daemon_path = None
+        if sys.platform == "win32" or platform.system() == "Windows":
+            # Docker Desktop on Windows stores daemon.json in %USERPROFILE%\.docker
+            user_profile = Path.home() / ".docker" / "daemon.json"
+            if user_profile.exists():
+                daemon_path = user_profile
+        else:
+            # Linux/Mac: /etc/docker/daemon.json or ~/.docker/daemon.json
+            for p in [Path("/etc/docker/daemon.json"), Path.home() / ".docker" / "daemon.json"]:
+                if p.exists():
+                    daemon_path = p
+                    break
+
+        nexus_registry = "host.docker.internal:5001"
+        if daemon_path and daemon_path.exists():
+            try:
+                daemon_config = json.loads(daemon_path.read_text(encoding="utf-8"))
+                insecure = daemon_config.get("insecure-registries", [])
+                if nexus_registry in insecure:
+                    result["actions"].append(
+                        {
+                            "path": str(daemon_path),
+                            "key": "insecure-registries",
+                            "severity": "info",
+                            "message": f"Nexus registry {nexus_registry} is in insecure-registries.",
+                            "phase": "audit",
+                        }
+                    )
+                else:
+                    add_bucket_item(
+                        result["findings"],
+                        str(daemon_path),
+                        "insecure-registries.missing",
+                        f"Nexus registry {nexus_registry} is NOT in Docker Desktop's insecure-registries. "
+                        "Add it via Docker Desktop Settings → Docker Engine to enable plain-HTTP registry pushes.",
+                        "warning",
+                        "pre-start",
+                    )
+            except Exception:
+                pass
+        else:
+            result["actions"].append(
+                {
+                    "path": "docker/daemon.json",
+                    "key": "config.notfound",
+                    "severity": "info",
+                    "message": f"Docker daemon.json not found at {daemon_path or '~/.docker/daemon.json'}. "
+                    "If using insecure registry, create it with: "
+                    f'{{"insecure-registries": ["{nexus_registry}"]}}',
+                    "phase": "audit",
+                }
+            )
+    else:
+        result["actions"].append(
+            {
+                "path": "docker",
+                "key": "provider",
+                "severity": "info",
+                "message": "Docker Desktop not detected (host.docker.internal does not resolve). Native Docker?",
+                "phase": "audit",
+            }
+        )
+
+    # Check Docker Compose
+    compose = run_native(["docker", "compose", "version"], root, timeout=15)
+    if compose["returncode"] == 0:
+        result["actions"].append(
+            {
+                "path": "docker",
+                "key": "compose.available",
+                "severity": "info",
+                "message": f"Docker Compose is available: {compose['stdout'][:60].strip()}.",
+                "phase": "audit",
+            }
+        )
+    else:
+        add_bucket_item(
+            result["findings"],
+            "docker",
+            "compose.missing",
+            "Docker Compose is not available. Run setup-lab requires Docker Compose.",
+            "error",
+            "pre-start",
+        )
+
+    result["valid"] = not any(
+        item.get("severity") == "error" for item in result["findings"]
+    )
+    return result
+
+
+# ── Validate Gitea Actions runner
 
 
 def validate_gitea_runner(root: Path, dry_run: bool = False) -> dict[str, Any]:
@@ -1413,6 +1913,50 @@ def validate_gitea_runner(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 "warning",
                 "pre-start",
             )
+    # Check Docker socket is available for in-container builds
+    docker_sock = Path("/var/run/docker.sock")
+    if docker_sock.exists():
+        result["actions"].append(
+            {
+                "path": "/var/run/docker.sock",
+                "key": "docker.socket",
+                "severity": "info",
+                "message": "Docker socket is available on the host.",
+                "phase": "audit",
+            }
+        )
+    else:
+        add_bucket_item(
+            result["findings"],
+            "/var/run/docker.sock",
+            "docker.socket.missing",
+            "Docker socket is not mounted. CI builds will fail if job containers need docker build.",
+            "warning",
+            "pre-start",
+        )
+
+    # Check docker_push.py helper exists
+    docker_push_script = root / "tools" / "docker_push.py"
+    if docker_push_script.exists():
+        result["actions"].append(
+            {
+                "path": "tools/docker_push.py",
+                "key": "script.present",
+                "severity": "info",
+                "message": "Docker push helper script exists.",
+                "phase": "audit",
+            }
+        )
+    else:
+        add_bucket_item(
+            result["findings"],
+            "tools/docker_push.py",
+            "script.missing",
+            "Docker push helper script is missing. CI registry push will fail.",
+            "warning",
+            "pre-start",
+        )
+
     # Validate Gitea checkout networking (ping gitea host)
     gitea_env = root / "infra" / "gitea" / "runner.env"
     if gitea_env.exists():
@@ -1586,6 +2130,60 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
             return resp.status, data
         except Exception as ex:
             return 0, str(ex)
+
+    # ── 0. Gitea: generate runner registration token and write to runner.env ──
+    # This is required for the act_runner to connect to Gitea
+    # Resolve owner/repo from client-tools config or use safe default
+    _client_cfg = read_json(root / ".codex" / "client-tools.local.json", optional=True)
+    _gitea_cfg = _client_cfg.get("gitea", {}) if _client_cfg else {}
+    _owner = _gitea_cfg.get("owner", "sdd-admin")
+    _repo = _gitea_cfg.get("repo", "sdd-test")
+    runner_token_path = root / "infra" / "gitea" / "runner.env"
+    if runner_token_path.exists():
+        runner_env = read_env_file(runner_token_path)
+        existing_token = runner_env.get("GITEA_RUNNER_REGISTRATION_TOKEN", "")
+        if not existing_token or existing_token.startswith("replace-with"):
+            reg_status, reg_data = _gitea_api(
+                "POST",
+                f"/api/v1/repos/{_owner}/{_repo}/actions/runners/registration-token"
+            )
+            if reg_status == 200 or reg_status == 201:
+                try:
+                    reg_json = json.loads(reg_data)
+                    token = reg_json.get("token", "")
+                    if token:
+                        runner_env["GITEA_RUNNER_REGISTRATION_TOKEN"] = token
+                        write_env_file(runner_token_path, runner_env)
+                        result["actions"].append(
+                            {
+                                "path": "infra/gitea/runner.env",
+                                "key": "registration.token",
+                                "severity": "info",
+                                "message": "Gitea runner registration token written to runner.env.",
+                                "phase": "apply",
+                            }
+                        )
+                except Exception:
+                    pass
+            else:
+                add_bucket_item(
+                    result["findings"],
+                    "infra/gitea/runner.env",
+                    "registration.token",
+                    f"Could not generate runner registration token: Gitea returned {reg_status}.",
+                    "warning",
+                    "apply",
+                )
+        else:
+            result["actions"].append(
+                {
+                    "path": "infra/gitea/runner.env",
+                    "key": "registration.token",
+                    "severity": "info",
+                    "message": "Runner registration token already exists.",
+                    "phase": "audit",
+                }
+            )
 
     # ── 1. Gitea: create users FirstUser, SecondUser ──────────────────
     gitea_users = [
@@ -2164,6 +2762,150 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
 # ── Push v0 to Gitea ─────────────────────────────────────────────────────
 
 
+# ── Provision Gitea secrets (for CI workflows) ──────────────────────────
+
+
+def provision_gitea_secrets(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Provision required Gitea secrets for CI workflows.
+
+    The CI workflow (package-deploy.yml) requires these secrets:
+    - NEXUS_USERNAME / NEXUS_PASSWORD: Nexus admin credentials
+    - NEXUS_DOCKER_REGISTRY: Override for registry host:port (optional)
+    - NEXUS_URL / NEXUS_REPOSITORY: Artifact upload target
+    - KUBECONFIG_B64: base64-encoded kubeconfig for K8s access
+
+    This function creates/updates these secrets via the Gitea API.
+    """
+    result = configure_result(
+        "ProvisionGiteaSecrets", dry_run, write_enabled=not dry_run
+    )
+    gitea_base = "http://localhost:3000"
+    gitea_admin_user = "admin"
+    gitea_admin_pass = "admin123"
+
+    if dry_run:
+        result["actions"].append(
+            {
+                "path": "gitea/secrets",
+                "key": "plan",
+                "severity": "info",
+                "message": "Would provision Gitea secrets: NEXUS_USERNAME, NEXUS_PASSWORD, NEXUS_URL, NEXUS_REPOSITORY, KUBECONFIG_B64.",
+                "phase": "apply",
+            }
+        )
+        result["valid"] = True
+        return result
+
+    import base64
+    from urllib.parse import urlparse
+
+    # Resolve owner/repo from client-tools.local.json or default
+    client = read_json(root / ".codex" / "client-tools.local.json", optional=True)
+    gitea_cfg = client.get("gitea", {})
+    owner = gitea_cfg.get("owner", "sdd-admin")
+    repo = gitea_cfg.get("repo", "sdd-test")
+
+    def _gitea_actions_api(method: str, path: str, body: dict | None = None) -> tuple[int, str]:
+        try:
+            parsed = urlparse(gitea_base)
+            conn = http.client.HTTPConnection(
+                parsed.hostname or "localhost", parsed.port or 3000, timeout=10
+            )
+            b64_auth = base64.b64encode(
+                f"{gitea_admin_user}:{gitea_admin_pass}".encode()
+            ).decode()
+            headers = {
+                "Authorization": f"Basic {b64_auth}",
+                "Content-Type": "application/json",
+            }
+            payload = json.dumps(body) if body else None
+            conn.request(method, path, body=payload, headers=headers)
+            resp = conn.getresponse()
+            data = resp.read().decode("utf-8")
+            conn.close()
+            return resp.status, data
+        except Exception as ex:
+            return 0, str(ex)
+
+    # Secrets to set
+    secrets = {
+        "NEXUS_USERNAME": "admin",
+        "NEXUS_PASSWORD": "admin123",
+        "NEXUS_URL": "http://host.docker.internal:8088",
+        "NEXUS_REPOSITORY": "sdd-artifacts",
+        "NEXUS_DOCKER_REGISTRY": "",  # Empty means use workflow default (host.docker.internal:5001)
+    }
+
+    # Read kubeconfig for KUBECONFIG_B64
+    kubeconfig_paths = [
+        Path.home() / ".kube" / "config",
+        Path("/home/runner/.kube/config"),
+        Path("/tmp/kubeconfig"),
+    ]
+    kubeconfig_data = None
+    for kp in kubeconfig_paths:
+        if kp.exists():
+            kubeconfig_data = kp.read_bytes()
+            break
+
+    if kubeconfig_data:
+        secrets["KUBECONFIG_B64"] = base64.b64encode(kubeconfig_data).decode()
+    else:
+        add_bucket_item(
+            result["findings"],
+            "kubeconfig",
+            "missing",
+            "Could not locate kubeconfig. KUBECONFIG_B64 secret will not be set.",
+            "warning",
+            "pre-start",
+        )
+
+    # Set each secret via Gitea API
+    for secret_name, secret_value in secrets.items():
+        if not secret_value:
+            result["actions"].append(
+                {
+                    "path": f"gitea/secrets/{secret_name}",
+                    "key": "secret.skipped",
+                    "severity": "info",
+                    "message": f"Secret '{secret_name}' is empty — skipping (workflow uses default).",
+                    "phase": "audit",
+                }
+            )
+            continue
+
+        # Gitea API: PUT /api/v1/repos/{owner}/{repo}/actions/secrets/{secretname}
+        status, data = _gitea_actions_api(
+            "PUT",
+            f"/api/v1/repos/{owner}/{repo}/actions/secrets/{secret_name}",
+            body={"data": secret_value},
+        )
+        if status in {201, 204}:
+            result["actions"].append(
+                {
+                    "path": f"gitea/secrets/{secret_name}",
+                    "key": "secret.created",
+                    "severity": "info",
+                    "message": f"Gitea secret '{secret_name}' provisioned.",
+                    "phase": "apply",
+                }
+            )
+        else:
+            add_bucket_item(
+                result["findings"],
+                f"gitea/secrets/{secret_name}",
+                "secret.create",
+                f"Gitea secret creation for '{secret_name}' returned {status}: {data[:200]}",
+                "warning",
+                "apply",
+            )
+
+    result["valid"] = not any(
+        item.get("severity") == "error" for item in result["findings"]
+    )
+    return result
+
+
 def push_to_gitea(root: Path, dry_run: bool = False) -> dict[str, Any]:
     """Ensure main branch exists in Gitea, commit current state as v0, push dev + main,
     then add provisioned users as repo collaborators."""
@@ -2475,7 +3217,7 @@ def push_to_gitea(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
 
 def scaffold_k8s(root, dry_run=False):
-    """Scaffold K8s deployment files: Dockerfile, manifests, overlays."""
+    """Scaffold K8s deployment files: Dockerfile and single envsubst manifest."""
     result = configure_result("ScaffoldK8s", dry_run, write_enabled=not dry_run)
 
     if dry_run:
@@ -2488,8 +3230,7 @@ def scaffold_k8s(root, dry_run=False):
                     "Would scaffold K8s deployment files:"
                     "\n  - Dockerfile per app (nginx for web)"
                     "\n  - .dockerignore per app"
-                    "\n  - infra/k8s/base/ (namespace, deployment, service, kustomization)"
-                    "\n  - infra/k8s/overlays/{dev,qa,prod}/ (env overlays)"
+                    "\n  - infra/k8s/deploy.yaml (envsubst: ENV, REPLICAS, REGISTRY, COMMIT_SHA)"
                     "\n  - nginx.conf for web apps"
                 ),
                 "phase": "apply",
@@ -2555,9 +3296,8 @@ def scaffold_k8s(root, dry_run=False):
         result["valid"] = True
         return result
 
-    k8s_base = root / "infra" / "k8s" / "base"
-    k8s_base.mkdir(parents=True, exist_ok=True)
-    overlays_dir = root / "infra" / "k8s" / "overlays"
+    k8s_dir = root / "infra" / "k8s"
+    k8s_dir.mkdir(parents=True, exist_ok=True)
 
     first_app = apps[0]["appId"]
     first_health = apps[0].get("healthPath", "/health")
@@ -2656,120 +3396,81 @@ def scaffold_k8s(root, dry_run=False):
                     }
                 )
 
-    # Base manifests
-    (k8s_base / "namespace.yaml").write_text(
-        "apiVersion: v1\nkind: Namespace\nmetadata:\n  name: sdd-${ENV}\n",
-        encoding="utf-8",
+    # Single envsubst manifest
+    deploy_yaml = (
+        "apiVersion: v1\n"
+        "kind: Namespace\n"
+        "metadata:\n"
+        "  name: sdd-${ENV}\n"
+        "---\n"
+        "apiVersion: apps/v1\n"
+        "kind: Deployment\n"
+        "metadata:\n"
+        f"  name: {first_app}\n"
+        "  namespace: sdd-${ENV}\n"
+        "spec:\n"
+        "  replicas: ${REPLICAS}\n"
+        "  selector:\n"
+        "    matchLabels:\n"
+        f"      app: {first_app}\n"
+        "  template:\n"
+        "    metadata:\n"
+        "      labels:\n"
+        f"        app: {first_app}\n"
+        "    spec:\n"
+        "      containers:\n"
+        f"        - name: {first_app}\n"
+        f"          image: ${{REGISTRY}}/{first_app}:${{COMMIT_SHA}}\n"
+        "          imagePullPolicy: IfNotPresent\n"
+        "          ports:\n"
+        "            - containerPort: 80\n"
+        "          env:\n"
+        "            - name: ENVIRONMENT\n"
+        '              value: "${ENV}"\n'
+        "          livenessProbe:\n"
+        "            httpGet:\n"
+        f"              path: {first_health}\n"
+        "              port: 80\n"
+        "            initialDelaySeconds: 10\n"
+        "            periodSeconds: 30\n"
+        "          readinessProbe:\n"
+        "            httpGet:\n"
+        f"              path: {first_health}\n"
+        "              port: 80\n"
+        "            initialDelaySeconds: 5\n"
+        "            periodSeconds: 10\n"
+        "          resources:\n"
+        "            requests:\n"
+        '              cpu: "100m"\n'
+        '              memory: "128Mi"\n'
+        "            limits:\n"
+        '              cpu: "500m"\n'
+        '              memory: "256Mi"\n'
+        "---\n"
+        "apiVersion: v1\n"
+        "kind: Service\n"
+        "metadata:\n"
+        f"  name: {first_app}\n"
+        "  namespace: sdd-${ENV}\n"
+        "spec:\n"
+        "  type: LoadBalancer\n"
+        "  selector:\n"
+        f"    app: {first_app}\n"
+        "  ports:\n"
+        "    - protocol: TCP\n"
+        "      port: 80\n"
+        "      targetPort: 80\n"
     )
-
-    d_lines = [
-        "apiVersion: apps/v1\n",
-        "kind: Deployment\n",
-        "metadata:\n",
-        f"  name: {first_app}\n",
-        "spec:\n",
-        "  replicas: 1\n",
-        "  selector:\n",
-        "    matchLabels:\n",
-        f"      app: {first_app}\n",
-        "  template:\n",
-        "    metadata:\n",
-        "      labels:\n",
-        f"        app: {first_app}\n",
-        "    spec:\n",
-        "      containers:\n",
-        f"        - name: {first_app}\n",
-        f"          image: host.docker.internal:8083/{first_app}\n",
-        "          imagePullPolicy: IfNotPresent\n",
-        "          ports:\n",
-        "            - containerPort: 80\n",
-        "          livenessProbe:\n",
-        "            httpGet:\n",
-        f"              path: {first_health}\n",
-        "              port: 80\n",
-        "            initialDelaySeconds: 10\n",
-        "            periodSeconds: 30\n",
-        "          readinessProbe:\n",
-        "            httpGet:\n",
-        f"              path: {first_health}\n",
-        "              port: 80\n",
-        "            initialDelaySeconds: 5\n",
-        "            periodSeconds: 10\n",
-        "          resources:\n",
-        "            requests:\n",
-        '              cpu: "100m"\n',
-        '              memory: "128Mi"\n',
-        "            limits:\n",
-        '              cpu: "500m"\n',
-        '              memory: "256Mi"\n',
-    ]
-    (k8s_base / "deployment.yaml").write_text("".join(d_lines), encoding="utf-8")
-
-    s_lines = [
-        "apiVersion: v1\n",
-        "kind: Service\n",
-        "metadata:\n",
-        f"  name: {first_app}\n",
-        "spec:\n",
-        "  type: LoadBalancer\n",
-        "  selector:\n",
-        f"    app: {first_app}\n",
-        "  ports:\n",
-        "    - protocol: TCP\n",
-        "      port: 80\n",
-        "      targetPort: 80\n",
-    ]
-    (k8s_base / "service.yaml").write_text("".join(s_lines), encoding="utf-8")
-
-    k_lines = [
-        "apiVersion: kustomize.config.k8s.io/v1beta1\n",
-        "kind: Kustomization\n",
-        "resources:\n",
-        "  - namespace.yaml\n",
-        "  - deployment.yaml\n",
-        "  - service.yaml\n",
-        "commonLabels:\n",
-        "  app.kubernetes.io/managed-by: sdd-cli\n",
-    ]
-    (k8s_base / "kustomization.yaml").write_text("".join(k_lines), encoding="utf-8")
-
-    # Environment overlays
-    for env in ("dev", "qa", "prod"):
-        env_dir = overlays_dir / env
-        env_dir.mkdir(parents=True, exist_ok=True)
-        replicas = {"dev": 1, "qa": 2, "prod": 3}[env]
-
-        c_lines = [
-            f"# {env.upper()} config patch\n",
-            "apiVersion: apps/v1\n",
-            "kind: Deployment\n",
-            "metadata:\n",
-            f"  name: {first_app}\n",
-            "spec:\n",
-            f"  replicas: {replicas}\n",
-            "  template:\n",
-            "    spec:\n",
-            "      containers:\n",
-            f"        - name: {first_app}\n",
-            "          env:\n",
-            "            - name: ENVIRONMENT\n",
-            f'              value: "{env}"\n',
-        ]
-        (env_dir / "config-patch.yaml").write_text("".join(c_lines), encoding="utf-8")
-
-        ke_lines = [
-            "apiVersion: kustomize.config.k8s.io/v1beta1\n",
-            "kind: Kustomization\n",
-            f"namespace: sdd-{env}\n",
-            "resources:\n",
-            "  - ../../base\n",
-            "patches:\n",
-            "  - path: config-patch.yaml\n",
-            "images:\n",
-            f"  - name: host.docker.internal:8083/{first_app}\n",
-            "    newTag: latest\n",
-        ]
-        (env_dir / "kustomization.yaml").write_text("".join(ke_lines), encoding="utf-8")
+    (k8s_dir / "deploy.yaml").write_text(deploy_yaml, encoding="utf-8")
+    result["actions"].append(
+        {
+            "path": "infra/k8s/deploy.yaml",
+            "key": "file.created",
+            "severity": "info",
+            "message": "Created envsubst manifest: infra/k8s/deploy.yaml.",
+            "phase": "apply",
+        }
+    )
 
     result["valid"] = not any(
         item.get("severity") == "error" for item in result["findings"]
@@ -2956,7 +3657,7 @@ def setup_k8s_access(root, dry_run=False):
 
         for env in ("dev", "qa", "prod"):
             ns = f"sdd-{env}"
-            local_port = {"dev": 8081, "qa": 8082, "prod": 8083}[env]
+            local_port = {"dev": 8081, "qa": 8082, "prod": 8083}[env]  # K8s NodePort, not Nexus Docker registry port
 
             # Check if namespace exists
             ns_check = run_native(
@@ -3134,9 +3835,7 @@ def run_environment_lab(args: list[str]) -> int:
         if k:
             print("\n--- KUBERNETES ---")
             print("-" * 40)
-            print(f"  | Manifests: {k.get('manifests', 'N/A')} |")
-            for overlay in k.get("overlays", []):
-                print(f"  | {overlay} |")
+            print(f"  | Manifest: {k.get('manifest', 'N/A')} |")
             print(f"  | Deploy commands: |")
             for cmd in k.get("deploy", []):
                 print(f"  |   $ {cmd} |")

@@ -41,17 +41,59 @@ services:
     depends_on:
       - gitea
     env_file:
-      - runner.env
+      - ./runner.env
     environment:
-      CONFIG_FILE: /config.yml
       KUBECONFIG: /home/runner/.kube/config
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # Docker Desktop Windows bind-mounts single files as directories (known gRPC FUSE bug),
+    # so we write config.yml from a heredoc instead of mounting it.
+    # The FUSE path for the kubeconfig uses $USERNAME env var (injected by Docker Desktop).
     volumes:
       - runner-data:/data
-      - ./config.yml:/config.yml
       - //var/run/docker.sock:/var/run/docker.sock
-      - ~/.kube/config:/home/runner/.kube/config:ro
     networks:
       - gitea
     restart: unless-stopped
+    command:
+      - sh
+      - -c
+      - |
+        WIN_USER="${USERNAME:-}"
+        if [ -z "${WIN_USER}" ] && [ -f "/home/runner/.kube/config" ]; then
+          KUBE_SRC="/home/runner/.kube/config"
+        elif [ -n "${WIN_USER}" ] && [ -f "/run/desktop/mnt/host/c/Users/${WIN_USER}/.kube/config" ]; then
+          KUBE_SRC="/run/desktop/mnt/host/c/Users/${WIN_USER}/.kube/config"
+        elif ls /run/desktop/mnt/host/c/Users/ 2>/dev/null | head -1 | read -r first_user && [ -f "/run/desktop/mnt/host/c/Users/${first_user}/.kube/config" ]; then
+          KUBE_SRC="/run/desktop/mnt/host/c/Users/${first_user}/.kube/config"
+        else
+          KUBE_SRC=""
+          echo "WARNING: Could not locate kubeconfig path."
+        fi
+        cat > /tmp/config.yml << YAMLEOF
+        log:
+          level: info
+        runner:
+          capacity: 1
+          env_file: ".env"
+          timeout: "3h"
+          fetch_interval: "2s"
+          labels: []
+        cache:
+          enabled: true
+        container:
+          network: "agentic-e2e_nexus"
+          options: ""
+          workdir_parent: "/workspace"
+          valid_volumes:
+            - /var/run/docker.sock:/var/run/docker.sock
+            - ${KUBE_SRC}:/home/runner/.kube/config:ro
+          force_pull: false
+          force_rebuild: false
+          bind_workdir: false
+        host:
+          workdir_parent: ""
+        YAMLEOF
+        export CONFIG_FILE=/tmp/config.yml
+        echo "Runner config written with kubeconfig: ${KUBE_SRC}"
+        exec run.sh
