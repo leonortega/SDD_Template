@@ -778,9 +778,10 @@ class SddCliTests(unittest.TestCase):
             self.assertTrue(
                 (target / ".codex" / "memory" / "retrieval-policy.md").exists()
             )
+            # Template install should initialize a git repo for lefthook hooks
             self.assertTrue((target / ".git").exists())
-            self.assertEqual("", cli.git_text(target, ["remote"]))
             self.assertEqual("dev", cli.git_text(target, ["branch", "--show-current"]))
+            self.assertEqual("", cli.git_text(target, ["remote"]))
             self.assertFalse(
                 (target / "openspec" / "changes" / "internal" / "tasks.md").exists()
             )

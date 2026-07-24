@@ -108,40 +108,70 @@ Runner = Callable[[list[str], Path | None, dict[str, str] | None], int]
 # ── SDD tool helpers ─────────────────────────────────────────────────────
 
 
-def sdd_tool_files(source: Path) -> list[str]:
-    """List all managed files in the SDD tool source."""
+def walk_sdd_source_files(source: Path) -> list[str]:
+    """Walk source directory using os.scandir, skipping excluded directories
+    entirely during traversal instead of walking them and filtering after.
+
+    Returns sorted list of relative posix paths for all non-excluded files.
+    """
     files: list[str] = []
     exclude_parts = get_sdd_tool_exclude_parts()
     exclude_segments = get_sdd_tool_exclude_segments()
     exclude_suffixes = get_sdd_tool_exclude_suffixes()
-    for pattern in ("**/*",):
-        for path in source.rglob(pattern):
-            if not path.is_file():
-                continue
-            relative = path.relative_to(source).as_posix()
-            # Exclude excluded parts
-            excluded = False
-            for part in exclude_parts:
-                if relative.startswith(part) or f"/{part}/" in f"/{relative}/":
-                    excluded = True
-                    break
-            if excluded:
-                continue
-            # Exclude by segment
-            for segment in exclude_segments:
-                if f"/{segment}/" in f"/{relative}/" or relative == segment:
-                    excluded = True
-                    break
-            if excluded:
-                continue
-            # Exclude by suffix
-            if any(relative.endswith(suffix) for suffix in exclude_suffixes):
-                continue
-            # Skip only the root README.md; subdirectory README files are managed.
-            if relative == "README.md":
-                continue
-            files.append(relative)
+
+    stack: list[tuple[Path, str]] = [(source, "")]
+    while stack:
+        dir_path, rel_prefix = stack.pop()
+        try:
+            with os.scandir(str(dir_path)) as entries:
+                for entry in entries:
+                    entry_rel = (
+                        f"{rel_prefix}/{entry.name}" if rel_prefix else entry.name
+                    )
+
+                    # Check exclusion BEFORE recursing into subdirectories
+                    excluded = False
+                    for part in exclude_parts:
+                        if entry_rel.startswith(part) or f"/{part}/" in f"/{entry_rel}/":
+                            excluded = True
+                            break
+                    if excluded:
+                        continue
+
+                    if entry.is_dir(follow_symlinks=False):
+                        stack.append((Path(entry.path), entry_rel))
+                    elif entry.is_file():
+                        # Exclude by segment
+                        excluded = False
+                        for segment in exclude_segments:
+                            if (
+                                f"/{segment}/" in f"/{entry_rel}/"
+                                or entry_rel == segment
+                            ):
+                                excluded = True
+                                break
+                        if excluded:
+                            continue
+                        # Exclude by suffix
+                        if any(
+                            entry_rel.endswith(suffix) for suffix in exclude_suffixes
+                        ):
+                            continue
+                        files.append(entry_rel)
+        except PermissionError:
+            continue
     return sorted(files)
+
+
+def sdd_tool_files(source: Path) -> list[str]:
+    """List all managed files in the SDD tool source.
+
+    Uses walk_sdd_source_files for efficient directory traversal that
+    skips excluded directories (e.g. node_modules, .git) entirely.
+    """
+    files = walk_sdd_source_files(source)
+    # Skip only the root README.md; subdirectory README files are managed.
+    return [f for f in files if f != "README.md"]
 
 
 def sdd_tool_checksum(root: Path, files: list[str]) -> str:

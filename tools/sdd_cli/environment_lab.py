@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import http.client
 import json
+import os
+import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -75,7 +78,7 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
     _add_step(validate_docker_desktop(root, dry_run), fatal=False)
 
     # 7b. Enable K8s in Docker Desktop if needed (before compose, since Docker may restart)
-    #     K8s is required — if it can't be enabled, setup stops here
+    #     K8s is required for lab deployment — fatal if it cannot be enabled.
     early = _add_step(enable_docker_desktop_k8s(root, dry_run), fatal=True)
     if early:
         return early
@@ -843,7 +846,7 @@ def _gitea_token_scopes() -> list[str]:
     - write:issue — add labels (PRs are issues in Gitea)
     - write:pull_request — create PRs, request reviewers
     """
-    return ["write:repository", "write:issue", "write:pull_request"]
+    return ["write:repository", "write:issue"]
 
 
 def verify_gitea_api_token(
@@ -1894,7 +1897,18 @@ def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str,
     )
     nexus_base = "http://localhost:8088"
     nexus_user = "admin"
+    # On first boot, Nexus generates a random admin password stored in /nexus-data/admin.password.
+    # Try to read it from the running container; fall back to admin123 (manually set or old install).
     nexus_pass = "admin123"
+    try:
+        r = subprocess.run(
+            ["docker", "exec", "agentic-nexus", "cat", "/nexus-data/admin.password"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            nexus_pass = r.stdout.strip()
+    except Exception:
+        pass
 
     if dry_run:
         result["actions"].append(
@@ -2424,6 +2438,85 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
     op_admin_user = "admin"
     op_admin_pass = "admin"
 
+    # ── Ensure Gitea admin user exists with admin privileges ─────────
+    # Gitea's env var-based admin creation (USERNAME/PASSWORD) may not
+    # create the user in the database with is_admin=True on all versions.
+    # Use the Gitea CLI inside the container to ensure it's properly set up.
+    try:
+        import base64
+        # Check if admin user exists and has admin privileges
+        b64 = base64.b64encode(f"{gitea_admin_user}:{gitea_admin_pass}".encode()).decode()
+        conn = http.client.HTTPConnection(
+            urlparse("http://localhost:3000").hostname or "localhost", 3000, timeout=10
+        )
+        conn.request("GET", "/api/v1/user", headers={"Authorization": f"Basic {b64}"})
+        resp = conn.getresponse()
+        body = resp.read().decode("utf-8")
+        conn.close()
+        if resp.status == 200:
+            user_data = json.loads(body)
+            if not user_data.get("is_admin", False):
+                # User exists but is not admin — delete and recreate with admin flag
+                # (gitea admin user change does NOT exist in the CLI)
+                subprocess.run(
+                    ["docker", "exec", "-u", "1000", "agentic-gitea",
+                     "gitea", "admin", "user", "delete",
+                     "--username", gitea_admin_user],
+                    capture_output=True, text=True, timeout=30,
+                )
+                r = subprocess.run(
+                    ["docker", "exec", "-u", "1000", "agentic-gitea",
+                     "gitea", "admin", "user", "create",
+                     "--username", gitea_admin_user,
+                     "--password", gitea_admin_pass,
+                     "--email", f"{gitea_admin_user}@example.com",
+                     "--must-change-password=false", "--admin"],
+                    capture_output=True, text=True, timeout=30,
+                )
+                if r.returncode == 0:
+                    result["actions"].append({
+                        "path": "gitea/admin", "key": "admin.recreated",
+                        "severity": "info",
+                        "message": f"Recreated '{gitea_admin_user}' with admin privileges via Gitea CLI.",
+                        "phase": "apply",
+                    })
+                else:
+                    add_bucket_item(
+                        result["findings"], "gitea/admin", "admin.create",
+                        f"Could not recreate admin user: {r.stderr[:200]}",
+                        "warning", "apply",
+                    )
+        else:
+            # Admin user doesn't exist — create via CLI
+            r = subprocess.run(
+                ["docker", "exec", "-u", "1000", "agentic-gitea",
+                 "gitea", "admin", "user", "create",
+                 "--username", gitea_admin_user,
+                 "--password", gitea_admin_pass,
+                 "--email", f"{gitea_admin_user}@example.com",
+                 "--must-change-password=false", "--admin"],
+                capture_output=True, text=True, timeout=30,
+            )
+            if r.returncode == 0:
+                result["actions"].append({
+                    "path": "gitea/admin", "key": "admin.created",
+                    "severity": "info",
+                    "message": f"Created admin user '{gitea_admin_user}' via Gitea CLI.",
+                    "phase": "apply",
+                })
+            else:
+                add_bucket_item(
+                    result["findings"], "gitea/admin", "admin.create",
+                    f"Could not create admin user: {r.stderr[:200]}",
+                    "warning", "apply",
+                )
+    except Exception as ex:
+        add_bucket_item(
+            result["findings"], "gitea/admin", "admin.check",
+            f"Could not verify admin user: {ex}",
+            "warning", "apply",
+        )
+
     # ── Helper: Gitea API call ───────────────────────────────────────
     def _gitea_api(method: str, path: str, body: dict | None = None) -> tuple[int, str]:
         try:
@@ -2450,7 +2543,45 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
             return 0, str(ex)
 
     # ── Helper: OpenProject API call (uses Bearer token from client-tools) ──
+    # OpenProject API v3 does NOT accept Basic auth with admin:admin — it requires
+    # API tokens. Generate one via the Rails console inside the container.
     _op_token = None
+    try:
+        # OpenProject API does NOT accept Basic auth with admin:admin.
+        # Generate an API token via the Rails console inside the container.
+        r = subprocess.run(
+            ["docker", "exec", "agentic-e2e-openproject-1",
+             "./bin/rails", "runner", "-e", "production",
+             "u=User.where(login:'admin').first;"
+             "t=Token::API.new(user:u);t.save!;puts t.plain_value"],
+            capture_output=True, text=True, timeout=60,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            # Rails runner mixes log output with the token value on stdout.
+            # Extract just the token line (starts with "opapi-").
+            for line in r.stdout.strip().splitlines():
+                line = line.strip()
+                if line.startswith("opapi-"):
+                    _op_token = line
+                    break
+            # Also save to client-tools.local.json for persistence
+            try:
+                config_path = root / ".codex" / "client-tools.local.json"
+                config = read_json(config_path, optional=True) or {}
+                op_config = config.setdefault("openProject", {})
+                op_config["apiToken"] = _op_token
+                write_json(config_path, config)
+            except Exception:
+                pass
+            result["actions"].append({
+                "path": "openproject/api", "key": "token.generated",
+                "severity": "info",
+                "message": "Generated OpenProject API token via Rails console.",
+                "phase": "apply",
+            })
+    except Exception:
+        # Container not ready yet; _op_api will try Basic auth as fallback
+        pass
 
     def _op_api(method: str, path: str, body: dict | None = None) -> tuple[int, str]:
         nonlocal _op_token
@@ -2637,7 +2768,51 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 "apply",
             )
 
-    # ── 1b. Gitea: generate API token with write scopes ──────────────
+    # ── 1b. Gitea: create repository and update config ────────────
+    #     Create the dev repo so push_to_gitea has a target, and update
+    #     client-tools.local.json with the actual owner/repo values.
+    _gitea_owner = gitea_admin_user  # "admin"
+    _gitea_repo = root.name.lower().replace("_", "-")
+    # Create repo if it doesn't already exist
+    _repo_status, _repo_data = _gitea_api(
+        "POST", "/api/v1/admin/users/" + _gitea_owner + "/repos",
+        body={"name": _gitea_repo, "auto_init": True, "default_branch": "dev",
+              "description": f"SDD lab repository for {root.name}"},
+    )
+    if _repo_status in {201, 409}:
+        result["actions"].append({
+            "path": f"gitea/repos/{_gitea_owner}/{_gitea_repo}",
+            "key": "repo.created",
+            "severity": "info",
+            "message": f"Gitea repo {_gitea_owner}/{_gitea_repo} ready.",
+            "phase": "apply",
+        })
+        # Update client-tools.local.json with actual owner/repo
+        try:
+            _config_path = root / ".codex" / "client-tools.local.json"
+            _config = read_json(_config_path, optional=True) or {}
+            _gitea_section = _config.setdefault("gitea", {})
+            _gitea_section["owner"] = _gitea_owner
+            _gitea_section["repo"] = _gitea_repo
+            _gitea_section.setdefault("baseUrl", "http://localhost:3000")
+            write_json(_config_path, _config)
+            result["actions"].append({
+                "path": ".codex/client-tools.local.json/gitea",
+                "key": "config.updated",
+                "severity": "info",
+                "message": f"Updated client-tools: owner={_gitea_owner}, repo={_gitea_repo}",
+                "phase": "apply",
+            })
+        except Exception as _ex:
+            add_bucket_item(result["findings"], ".codex/client-tools.local.json",
+                           "config.update", f"Could not update config: {_ex}",
+                           "warning", "apply")
+    else:
+        add_bucket_item(result["findings"], f"gitea/repos/{_gitea_owner}/{_gitea_repo}",
+                       "repo.create", f"Repo creation returned {_repo_status}: {_repo_data[:200]}",
+                       "warning", "apply")
+
+    # ── 1c. Gitea: generate API token with write scopes ──────────────
     #     This token is used by agents to create PRs, add labels, request reviewers.
     _api_token_result = generate_gitea_api_token(root, dry_run)
     for action in _api_token_result.get("actions", []):
@@ -4155,23 +4330,38 @@ def enable_docker_desktop_k8s(root: Path, dry_run: bool = False) -> dict[str, An
             pass
 
     # ── 2. Not running — check Docker Desktop settings ──
-    # On Windows, settings are in %APPDATA%\Docker\settings.json
-    # The key "kubernetesEnabled" controls whether K8s is enabled
+    # On Windows, settings are in one of several possible locations:
+    #   %APPDATA%\Docker\settings-store.json  (Docker Desktop 4.37+)
+    #   %APPDATA%\Docker\settings.json        (Docker Desktop 4.34 and earlier)
+    # The key can be either:
+    #   "kubernetes": {"enabled": true}       (nested, newer format)
+    #   "kubernetesEnabled": true             (flat, older format)
     settings_path = None
     import platform
 
     if sys.platform == "win32" or platform.system() == "Windows":
-        appdata = Path.home() / "AppData" / "Roaming"
-        candidate = appdata / "Docker" / "settings.json"
-        if candidate.exists():
-            settings_path = candidate
+        base_dirs = [
+            Path(os.environ.get("APPDATA", "")),
+            Path.home() / "AppData" / "Roaming",
+            Path(os.environ.get("LOCALAPPDATA", "")),
+            Path(os.environ.get("PROGRAMDATA", "")),
+        ]
+        # Try settings-store.json first (newer), then settings.json (older)
+        for settings_name in ("settings-store.json", "settings.json"):
+            for base in base_dirs:
+                candidate = base / "Docker" / settings_name
+                if candidate.exists():
+                    settings_path = candidate
+                    break
+            if settings_path:
+                break
 
     if settings_path is None or not settings_path.exists():
         add_bucket_item(
             result["findings"],
             "docker-desktop",
             "k8s.enable",
-            "Docker Desktop settings.json not found — cannot auto-enable K8s. "
+            "Docker Desktop settings file not found — cannot auto-enable K8s. "
             "Enable Kubernetes manually in Docker Desktop Settings → Kubernetes → Enable Kubernetes, "
             "then re-run setup-lab.",
             "error",
@@ -4180,7 +4370,7 @@ def enable_docker_desktop_k8s(root: Path, dry_run: bool = False) -> dict[str, An
         result["valid"] = False  # K8s is required
         return result
 
-    # ── 3. Read settings.json to check K8s state ──
+    # ── 3. Read settings file to check K8s state ──
     try:
         settings = json.loads(settings_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError) as ex:
@@ -4188,7 +4378,7 @@ def enable_docker_desktop_k8s(root: Path, dry_run: bool = False) -> dict[str, An
             result["findings"],
             str(settings_path),
             "k8s.enable",
-            f"Could not parse Docker Desktop settings.json: {ex}. "
+            f"Could not parse Docker Desktop settings: {ex}. "
             "Enable Kubernetes manually in Docker Desktop Settings.",
             "error",
             "pre-start",
@@ -4196,23 +4386,35 @@ def enable_docker_desktop_k8s(root: Path, dry_run: bool = False) -> dict[str, An
         result["valid"] = False
         return result
 
-    k8s_enabled = settings.get("kubernetesEnabled", False)
-    if k8s_enabled:
-        # K8s is enabled in settings but kubectl failed — Docker Desktop may be restarting
-        add_bucket_item(
-            result["findings"],
-            "docker-desktop",
-            "k8s.enable",
-            "K8s is enabled in Docker Desktop settings but kubectl is not responding. "
-            "Docker Desktop may still be starting its K8s cluster. Wait a moment and re-run setup-lab.",
-            "error",
-            "pre-start",
-        )
-        result["valid"] = False
-        return result
+    # Read K8s state: try nested "kubernetes.enabled" (newer) then flat "KubernetesEnabled" (older)
+    k8s_section = settings.get("kubernetes", {})
+    if isinstance(k8s_section, dict):
+        k8s_enabled = k8s_section.get("enabled", False)
+    else:
+        k8s_enabled = False
+    if not k8s_enabled:
+        k8s_enabled = settings.get("KubernetesEnabled", False)
 
-    # ── 4. Enable K8s in settings.json ──
-    settings["kubernetesEnabled"] = True
+    if k8s_enabled:
+        # K8s is enabled in settings but kubectl is not responding — Docker Desktop
+        # may need a restart to recover the cluster. Fall through to the restart
+        # logic instead of erroring out.
+        result["actions"].append(
+            {
+                "path": "docker-desktop",
+                "key": "k8s.restart",
+                "severity": "info",
+                "message": "K8s is enabled in settings but not responding. Restarting Docker Desktop to recover cluster...",
+                "phase": "apply",
+            }
+        )
+
+    # ── 4. Enable K8s in settings file ──
+    # Write both formats for backward compatibility
+    settings["KubernetesEnabled"] = True
+    if "kubernetes" not in settings or not isinstance(settings["kubernetes"], dict):
+        settings["kubernetes"] = {}
+    settings["kubernetes"]["enabled"] = True
     try:
         settings_path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
         result["actions"].append(
@@ -4220,7 +4422,7 @@ def enable_docker_desktop_k8s(root: Path, dry_run: bool = False) -> dict[str, An
                 "path": str(settings_path),
                 "key": "k8s.enable",
                 "severity": "info",
-                "message": "Set kubernetesEnabled=true in Docker Desktop settings.",
+                "message": "Set kubernetes.enabled=true in Docker Desktop settings.",
                 "phase": "apply",
             }
         )
@@ -4229,7 +4431,7 @@ def enable_docker_desktop_k8s(root: Path, dry_run: bool = False) -> dict[str, An
             result["findings"],
             str(settings_path),
             "k8s.enable",
-            f"Could not write Docker Desktop settings.json: {ex}. "
+            f"Could not write Docker Desktop settings: {ex}. "
             "Enable Kubernetes manually in Docker Desktop Settings → Kubernetes → Enable Kubernetes, "
             "then re-run setup-lab.",
             "error",
@@ -4239,35 +4441,21 @@ def enable_docker_desktop_k8s(root: Path, dry_run: bool = False) -> dict[str, An
         return result
 
     # ── 5. Restart Docker Desktop to pick up K8s enablement ──
-    # On Windows, use the executable's --shutdown flag then restart
-    dd_exe = Path("C:/Program Files/Docker/Docker/Docker Desktop.exe")
-    if not dd_exe.exists():
-        add_bucket_item(
-            result["findings"],
-            str(dd_exe),
-            "k8s.restart",
-            f"Docker Desktop executable not found at {dd_exe}. "
-            "Restart Docker Desktop manually (right-click tray icon → Restart), wait for K8s to start, "
-            "then re-run setup-lab.",
-            "error",
-            "pre-start",
-        )
-        result["valid"] = False
-        return result
-
-    # Stop Docker Desktop gracefully
+    # Use `docker desktop stop` / `docker desktop start` CLI (Docker Desktop 4.37+)
+    # Falls back to killing the process if CLI is not available
     result["actions"].append(
         {
-            "path": str(dd_exe),
+            "path": "docker",
             "key": "k8s.restart",
             "severity": "info",
             "message": "Stopping Docker Desktop to enable K8s...",
             "phase": "apply",
         }
     )
-    stop_cmd = run_native([str(dd_exe), "--shutdown"], root, timeout=30)
+    # Try docker desktop CLI first (Docker Desktop 4.37+), fallback to taskkill
+    stop_cmd = run_native(["docker", "desktop", "stop"], root, timeout=30)
     if stop_cmd["returncode"] != 0:
-        # --shutdown might not work on older versions; try taskkill fallback
+        # Fallback: taskkill
         taskkill = run_native(
             ["taskkill", "/F", "/IM", "Docker Desktop.exe"], root, timeout=15
         )
@@ -4284,30 +4472,48 @@ def enable_docker_desktop_k8s(root: Path, dry_run: bool = False) -> dict[str, An
             result["valid"] = False
             return result
     # Wait for Docker process to fully exit
-    import time
-
     time.sleep(5)
 
-    # Start Docker Desktop (use Popen with DETACHED_PROCESS — start is a cmd builtin, not an exe)
+    # Start Docker Desktop via CLI
     result["actions"].append(
         {
-            "path": str(dd_exe),
+            "path": "docker",
             "key": "k8s.restart",
             "severity": "info",
             "message": "Starting Docker Desktop (K8s enabled)...",
             "phase": "apply",
         }
     )
-    subprocess.Popen(
-        [str(dd_exe)],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        creationflags=subprocess.DETACHED_PROCESS if sys.platform == "win32" else 0,
-    )
-    # Give Docker Desktop a moment to begin starting up
+    start_cmd = run_native(["docker", "desktop", "start"], root, timeout=30)
+    if start_cmd["returncode"] != 0:
+        # Fallback: try launching Docker Desktop executable directly
+        dd_exe = shutil.which("docker")
+        if dd_exe:
+            dd_exe_path = Path(dd_exe).parent.parent / "Docker Desktop.exe"
+        else:
+            dd_exe_path = Path("C:/Program Files/Docker/Docker/Docker Desktop.exe")
+        if dd_exe_path.exists():
+            subprocess.Popen(
+                [str(dd_exe_path)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=subprocess.DETACHED_PROCESS if sys.platform == "win32" else 0,
+            )
+        else:
+            add_bucket_item(
+                result["findings"],
+                "docker-desktop",
+                "k8s.restart",
+                "Could not start Docker Desktop. Start it manually from the Start Menu, "
+                "then re-run setup-lab.",
+                "error",
+                "pre-start",
+            )
+            result["valid"] = False
+            return result
     time.sleep(5)
 
-    # Wait for Docker daemon to be ready (up to 120s)
+    # ── 6. Wait for Docker daemon to be ready (up to 120s) ──
     result["actions"].append(
         {
             "path": "docker",
@@ -4339,6 +4545,7 @@ def enable_docker_desktop_k8s(root: Path, dry_run: bool = False) -> dict[str, An
         result["valid"] = False
         return result
 
+    # ── 7. Wait for K8s to be ready (up to 180s) ──
     result["actions"].append(
         {
             "path": "docker",
@@ -4349,8 +4556,8 @@ def enable_docker_desktop_k8s(root: Path, dry_run: bool = False) -> dict[str, An
         }
     )
 
-    # Wait for K8s to be ready (up to 180s)
     k8s_ready = False
+    git_version = "unknown"
     for _attempt in range(18):  # 18 * 10 = 180 seconds
         time.sleep(10)
         k_check = run_native(["kubectl", "version", "--output=json"], root, timeout=10)
