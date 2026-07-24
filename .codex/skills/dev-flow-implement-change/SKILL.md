@@ -99,9 +99,9 @@ If implementation discovers durable knowledge, update the matching doc in the sa
 3. Create configured PR labels if they do not exist and labels are enabled.
 4. Create the PR with title from the branch in human-readable text and a body containing all commit message change lists, `Context findings: added/updated/none`, `Docs updated: <files>` or `Docs: no durable context changes`, and `Assumptions recorded: <short list or none>`.
 5. Verify human reviewers before review handoff:
-   - If reviewers were resolved but the PR create response does not show them as requested, call the selected review adapter's `request-reviewers` operation with the resolved reviewer usernames.
+   - If reviewers were resolved but the PR create response does not show them as requested, call the selected review adapter's `request-reviewers` operation with the resolved reviewer usernames. For Gitea, see `.codex/providers/repo.gitea.md` → `request-reviewers` Operation Details for the exact API endpoint and payload, or `.codex/skills/_shared/api-helpers.md` → Gitea for the shared reference.
    - Re-fetch the PR and confirm the requested reviewers are present in `requested_reviewers`.
-   - If the selected review adapter rejects reviewer assignment or the verification still shows no requested reviewers, document the gap in the PR body, ticket handoff comment, and final summary before moving on.
+   - **Do not skip this verification.** If the selected review adapter rejects reviewer assignment or the verification still shows no requested reviewers, document the gap in the PR body, ticket handoff comment, and final summary before moving on.
 6. Apply the configured reviewed label after the review agent completes. Apply `needs-tests` or `needs-changes` when the review agent reports those outcomes.
 
 ### 6. Review And Update Ticket Provider

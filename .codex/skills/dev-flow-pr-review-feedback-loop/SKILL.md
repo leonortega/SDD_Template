@@ -24,7 +24,11 @@ Read `.codex/delivery-context.local.json` when present and verify the resolved t
 
 ## Workflow Telemetry
 
-Capture UTC start time after resolving the active ticket and PR. Prefer OpenProject time-entry telemetry and create or update the `dev-flow-pr-review-feedback-loop` entry with marker `IA generated workflow telemetry: {ticketKey}:dev-flow-pr-review-feedback-loop`. Use `python -m tools.sdd_cli dev-flow append-telemetry -TicketKey {ticketKey}` only as the JSONL fallback when direct time telemetry is unavailable. On resume or idempotent reuse, append or update another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-flow-pr-review-feedback-loop`, `agentRole=reviewFeedback`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If no active feedback exists and the loop reuses an existing current-head review, record `outcome=SKIP`.
+Capture UTC start time after resolving the active ticket and PR. Prefer OpenProject time-entry telemetry and create or update the `dev-flow-pr-review-feedback-loop` entry via the `time-telemetry-upsert` operation (see `.codex/providers/ticket.openproject.md` → Operations → `time-telemetry-upsert` for the exact API payload with `spentOn`, `hours`, `comment`, and `_links`). Use marker `IA generated workflow telemetry: {ticketKey}:dev-flow-pr-review-feedback-loop`. Resolve the activity href by running `python -m tools.sdd_cli dev-flow resolve-openproject-activity --workflow-stage dev-flow-pr-review-feedback-loop --input-json '{"timeTelemetry":{...}}'` and reverse-lookup the activity ID from the resolved name.
+
+Use `python -m tools.sdd_cli dev-flow append-telemetry -TicketKey {ticketKey}` only as the JSONL fallback when direct time telemetry is unavailable. On resume or idempotent reuse, append or update another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-flow-pr-review-feedback-loop`, `agentRole=reviewFeedback`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If no active feedback exists and the loop reuses an existing current-head review, record `outcome=SKIP`.
+
+For shared API helpers including time-entry POST payload format and activity reverse-lookup, see `.codex/skills/_shared/api-helpers.md` → OpenProject → Workflow time telemetry.
 
 ## Configuration
 

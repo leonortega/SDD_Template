@@ -92,10 +92,33 @@ Workflow time telemetry uses OpenProject time entries first when the selected ti
 GET {openProject.baseUrl}/api/v3/time_entries
 POST {openProject.baseUrl}/api/v3/time_entries
 PATCH {openProject.baseUrl}/api/v3/time_entries/{timeEntryId}
-GET {openProject.baseUrl}/api/v3/time_entries/activity/{activityId}
+GET {openProject.baseUrl}/api/v3/time_entries/activities/{activityId}     # note: plural "activities"
 ```
 
-List existing generated telemetry with filters for `entity_type=WorkPackage` and `entity_id={workPackageId}`. Create or update a time entry whose comment starts with `IA generated workflow telemetry: {ticketKey}:{workflowStage}`. The payload uses `spentOn`, `hours`, `_links.entity.href` for `/api/v3/work_packages/{workPackageId}`, and `_links.activity.href` for the per-stage activity resolved from `openProject.timeTelemetry.activityByStage`, falling back to `defaultActivityId` or `defaultActivityName`. Use `ResolveOpenProjectTimeActivity` for deterministic stage-to-activity selection before API writes. If the time-entry API, permissions, or resolved per-stage activity cannot be used, record the fallback reason and use ignored `.codex/agent-telemetry.local.jsonl`.
+For the full API contract including required fields, activity ID mappings, and reverse-lookup from name to ID, see the `time-telemetry-upsert` operation in `.codex/providers/ticket.openproject.md`.
+
+List existing generated telemetry with filters for `entity_type=WorkPackage` and `entity_id={workPackageId}`. Create a time entry via `POST /api/v3/time_entries` with payload:
+
+```json
+{
+  "spentOn": "YYYY-MM-DD",
+  "hours": "PTnHnM",
+  "comment": {"raw": "IA generated workflow telemetry: {ticketKey}:{workflowStage}"},
+  "_links": {
+    "user": {"href": "/api/v3/users/{userId}"},
+    "entity": {"href": "/api/v3/work_packages/{workPackageId}"},
+    "project": {"href": "/api/v3/projects/{projectIdentifier}"},
+    "activity": {"href": "/api/v3/time_entries/activities/{activityId}"}
+  }
+}
+```
+
+Resolve the activity href via:
+1. Run `python -m tools.sdd_cli dev-flow resolve-openproject-activity --workflow-stage {stage} --input-json '{...}'` to get the `activityName` from `client-tools.local.json` config.
+2. Look up the numeric activity ID from the name using the mapping in `ticket.openproject.md` (e.g. "Specification" → 2, "Development" → 3).
+3. Construct the href as `/api/v3/time_entries/activities/{id}`.
+
+If the time-entry API, permissions, or resolved per-stage activity cannot be used, record the fallback reason and use ignored `.codex/agent-telemetry.local.jsonl`.
 
 ## Gitea
 
@@ -125,6 +148,28 @@ Fetch issue comments and labels:
 GET {gitea.baseUrl}/api/v1/repos/{owner}/{repo}/issues/{index}/comments
 GET {gitea.baseUrl}/api/v1/repos/{owner}/{repo}/issues/{index}/labels
 ```
+
+Request reviewers for a PR (always verify after PR create — Gitea may ignore the `reviewers` property in the create payload):
+
+```text
+POST {gitea.baseUrl}/api/v1/repos/{owner}/{repo}/pulls/{index}/requested_reviewers
+```
+
+Payload:
+
+```json
+{
+  "reviewers": ["username1", "username2"]
+}
+```
+
+List repository collaborators (when `pr.reviewers` is `"all"`):
+
+```text
+GET {gitea.baseUrl}/api/v1/repos/{owner}/{repo}/collaborators
+```
+
+Normalize the response before filtering: Gitea may return either a JSON array or a single collaborator object. Use each collaborator's `login` value first, then `username`. Exclude the PR author, the authenticated automation user, and empty/disabled/duplicate usernames.
 
 Apply labels by id:
 
