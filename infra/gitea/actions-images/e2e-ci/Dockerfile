@@ -2,10 +2,10 @@ FROM mcr.microsoft.com/playwright:v1.57.0-noble
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-SHELL ["/bin/sh", "-o", "pipefail", "-c"]
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# Create non-root user for container runtime
-RUN useradd -m -u 1000 appuser
+# Create non-root user for container runtime (skip if already exists)
+RUN id -u appuser >/dev/null 2>&1 || useradd -m appuser
 
 # Base tooling
 # hadolint ignore=DL3008

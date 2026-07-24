@@ -83,6 +83,20 @@ def install_lefthook(root: Path, dry_run: bool = False) -> dict[str, Any]:
         )
         result["valid"] = True
         return result
+    # Skip lefthook install if there's no .git directory (fresh template install, no repo yet)
+    if not (root / ".git").exists():
+        result["actions"].append(
+            {
+                "path": "lefthook",
+                "key": "install",
+                "severity": "info",
+                "message": "No .git directory found — skipping lefthook install (init git repo first).",
+                "phase": "audit",
+            }
+        )
+        result["valid"] = True
+        return result
+
     install = run_native([lefthook_path, "install"], root, timeout=30)
     if install["returncode"] == 0:
         result["actions"].append(
@@ -726,6 +740,8 @@ def install_or_update_sdd_tool(
             removed.append(relative)
             remove_empty_parents(dst.parent, target)
     checksum = sdd_tool_checksum(target, files)
+    # Initialize local git repo so lefthook can install hooks.
+    # Does NOT copy the source repo's .git — creates a fresh one.
     git_bootstrap = _ensure_local_git_repo(target)
     manifest = {
         "schemaVersion": 1,
@@ -1042,10 +1058,8 @@ def run_tool_installer(args: list[str]) -> int:
     return 0 if result.get("valid", False) else 1
 
 
-# ── Private helpers ──────────────────────────────────────────────────────
-
-
 def _ensure_local_git_repo(root: Path) -> dict[str, Any]:
+    """Initialize a local Git repo in the target so lefthook can install hooks."""
     result = {"initialized": False, "branch": "", "remoteConfigured": False}
     try:
         if not (root / ".git").exists():
@@ -1123,45 +1137,22 @@ def _unmanaged_collisions(
     preserve_examples: set[str],
 ) -> list[str]:
     from ._shared import (
-        get_sdd_tool_exclude_parts,
-        get_sdd_tool_exclude_segments,
-        get_sdd_tool_exclude_suffixes,
+        get_sdd_tool_preserve_files,
+        walk_sdd_source_files,
     )
 
     collisions: list[str] = []
     managed = set(files)
     preserve = get_sdd_tool_preserve_files()
-    exclude_parts = get_sdd_tool_exclude_parts()
-    exclude_segments = get_sdd_tool_exclude_segments()
-    exclude_suffixes = get_sdd_tool_exclude_suffixes()
-    for path in source.rglob("*"):
-        if not path.is_file():
-            continue
-        relative = path.relative_to(source).as_posix()
-        # Skip excluded parts (same logic as sdd_tool_files)
-        excluded = False
-        for part in exclude_parts:
-            if relative.startswith(part) or f"/{part}/" in f"/{relative}/":
-                excluded = True
-                break
-        if excluded:
-            continue
-        # Skip excluded segments
-        for segment in exclude_segments:
-            if f"/{segment}/" in f"/{relative}/" or relative == segment:
-                excluded = True
-                break
-        if excluded:
-            continue
-        # Skip excluded suffixes
-        if any(relative.endswith(suffix) for suffix in exclude_suffixes):
-            continue
+    # Uses walk_sdd_source_files which skips excluded dirs (node_modules, etc.)
+    # during traversal — much faster than rglob + post-filter.
+    for relative in walk_sdd_source_files(source):
         if relative in managed or relative in preserve or relative in owned:
             continue
         if relative in preserve_examples:
             continue
         dst = target / relative
-        if dst.exists() and dst.read_bytes() != path.read_bytes():
+        if dst.exists() and dst.read_bytes() != (source / relative).read_bytes():
             collisions.append(relative)
     for relative in files:
         dst = target / relative
