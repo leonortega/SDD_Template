@@ -93,6 +93,7 @@
   "gitea": {
     "baseUrl": "http://localhost:3000",
     "apiToken": "replace-with-gitea-api-token",
+    "tokenScopes": ["write:repository", "write:issue", "write:pull_request"],
     "owner": "replace-with-gitea-owner",
     "repo": "replace-with-gitea-repo"
   },

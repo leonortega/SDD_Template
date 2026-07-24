@@ -17,7 +17,11 @@ Before implementation, handoff, or review work, follow `.codex/skills/_shared/sk
 
 ## Workflow Telemetry
 
-Capture UTC start time after resolving the ticket key and before implementation or PR handoff work. Prefer OpenProject time-entry telemetry and create or update the `dev-flow-implement-ticket` entry with marker `IA generated workflow telemetry: {ticketKey}:dev-flow-implement-ticket`. Use `python -m tools.sdd_cli dev-flow append-telemetry -TicketKey {ticketKey}` only as the JSONL fallback when direct time telemetry is unavailable. On resume or idempotent reuse, append or update another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-flow-implement-ticket`, `agentRole=implementation`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If telemetry append fails in both primary and fallback paths, report workflow timing as blocked and continue only when the underlying implementation handoff rules still allow it.
+Capture UTC start time after resolving the ticket key and before implementation or PR handoff work. Prefer OpenProject time-entry telemetry and create or update the `dev-flow-implement-ticket` entry via the `time-telemetry-upsert` operation (see `.codex/providers/ticket.openproject.md` → Operations → `time-telemetry-upsert` for the exact API payload with `spentOn`, `hours`, `comment`, and `_links`). Use marker `IA generated workflow telemetry: {ticketKey}:dev-flow-implement-ticket`. Resolve the activity href by running `python -m tools.sdd_cli dev-flow resolve-openproject-activity --workflow-stage dev-flow-implement-ticket --input-json '{"timeTelemetry":{...}}'` and reverse-lookup the activity ID from the resolved name.
+
+Use `python -m tools.sdd_cli dev-flow append-telemetry -TicketKey {ticketKey}` only as the JSONL fallback when direct time telemetry is unavailable. On resume or idempotent reuse, append or update another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-flow-implement-ticket`, `agentRole=implementation`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If telemetry append fails in both primary and fallback paths, report workflow timing as blocked and continue only when the underlying implementation handoff rules still allow it.
+
+For shared API helpers including time-entry POST payload format and activity reverse-lookup, see `.codex/skills/_shared/api-helpers.md` → OpenProject → Workflow time telemetry.
 
 ## Configuration
 
@@ -171,15 +175,16 @@ Follow `dev-flow-apply-change`:
 
 1. Verify the active `tasks.md` contains the Review Workload Forecast required by the shared delivery contract. Prefer repo-local helpers when available.
 2. If the forecast requires a decision before apply, stop before editing code unless a split/chained work-unit plan, `size:exception`, or `exception-ok` is recorded in the prompt or OpenSpec artifacts.
-3. Apply `tdd` and build an acceptance-to-test map before product code changes. Map every acceptance criterion to committed automated coverage in the implementation PR, including Playwright/E2E tests when a criterion requires browser-level proof.
-4. Apply `ponytail full` before adding or changing project code: use the smallest working change, prefer standard library and native framework features, and avoid speculative abstractions or dependencies.
-5. Implement pending OpenSpec tasks one at a time through vertical TDD cycles: one behavior-focused test through a public interface, confirm RED, minimal implementation, confirm GREEN, refactor only while GREEN, then repeat.
-6. Mark a task complete only after its code, related tests, RED/GREEN validation evidence, and acceptance-to-test map entries are updated.
-7. If implementation reveals extra required work, add a new OpenSpec task before doing that work.
-8. Keep OpenSpec specs, design notes, and tasks aligned with the latest implementation.
-9. Do not defer acceptance test creation to the QA gate. QA runs existing committed tests and fails or blocks when coverage is missing.
-10. Commit after each completed workflow step when tracked changes exist, then start the next step from a clean working tree. Use ticket- or OpenSpec-prefixed messages, skip empty commits, and keep code, tests, docs, and OpenSpec changes together when splitting them would leave a broken intermediate commit.
-11. Do not automatically stash normal ticket progress. Use stash only for unrelated local or user changes that block the current step.
+3. **Parse the estimated total hours** from the Review Workload Forecast using `python -m tools.sdd_cli dev-flow parse-workload-forecast --tasks-path {tasksPath}`. If `estimatedTotalHours` is a positive number, set the work package's `estimatedTime` (Work property) via the ticket adapter's `set-estimated-time` operation (see `.codex/providers/ticket.openproject.md` → Operations → `set-estimated-time` for the exact API payload). Convert the hours to ISO-8601 duration (e.g. `5` hours → `PT5H`, `2.5` hours → `PT2H30M`). Fetch the current `lockVersion` before PATCHing.
+4. Apply `tdd` and build an acceptance-to-test map before product code changes. Map every acceptance criterion to committed automated coverage in the implementation PR, including Playwright/E2E tests when a criterion requires browser-level proof.
+5. Apply `ponytail full` before adding or changing project code: use the smallest working change, prefer standard library and native framework features, and avoid speculative abstractions or dependencies.
+6. Implement pending OpenSpec tasks one at a time through vertical TDD cycles: one behavior-focused test through a public interface, confirm RED, minimal implementation, confirm GREEN, refactor only while GREEN, then repeat.
+7. Mark a task complete only after its code, related tests, RED/GREEN validation evidence, and acceptance-to-test map entries are updated.
+8. If implementation reveals extra required work, add a new OpenSpec task before doing that work.
+9. Keep OpenSpec specs, design notes, and tasks aligned with the latest implementation.
+10. Do not defer acceptance test creation to the QA gate. QA runs existing committed tests and fails or blocks when coverage is missing.
+11. Commit after each completed workflow step when tracked changes exist, then start the next step from a clean working tree. Use ticket- or OpenSpec-prefixed messages, skip empty commits, and keep code, tests, docs, and OpenSpec changes together when splitting them would leave a broken intermediate commit.
+12. Do not automatically stash normal ticket progress. Use stash only for unrelated local or user changes that block the current step.
 
 ### 4. Quality And Coverage Completion
 
@@ -248,7 +253,11 @@ If implementation discovers durable authoritative knowledge, update the matching
 
 Reuse an existing open PR for the branch when present. Otherwise create a PR targeting the configured base branch.
 
-Resolve configured human reviewers before PR handoff. When `pr.reviewers` is `"all"`, list current repository collaborators and exclude the PR author plus the authenticated automation user. Normalize the collaborator response before filtering because the selected repository adapter may return either an array or a single object; Gitea may return either an array or a single object. Use each collaborator's `login` value, falling back to `username`, and discard empty or duplicate names. When `pr.reviewers` is an array, use the configured usernames after trimming empty values. If eligible reviewers are resolved but the PR create or reuse response does not show them as requested, call the selected review adapter's `request-reviewers` operation, then re-fetch the PR and verify the requested reviewers are present. Inspect `requested_reviewers` in the refreshed PR response.
+Resolve configured human reviewers before PR handoff. When `pr.reviewers` is `"all"`, list current repository collaborators and exclude the PR author plus the authenticated automation user. Normalize the collaborator response before filtering because the selected repository adapter may return either an array or a single object; Gitea may return either an array or a single object. Use each collaborator's `login` value, falling back to `username`, and discard empty or duplicate names. When `pr.reviewers` is an array, use the configured usernames after trimming empty values.
+
+After PR creation or reuse, always verify requested reviewers are present in the PR response. Gitea may ignore the `reviewers` property in the PR create payload, so a separate call is required. If eligible reviewers are resolved but the PR create or reuse response does not show them as requested, call the selected review adapter's `request-reviewers` operation (for Gitea, see `.codex/providers/repo.gitea.md` → `request-reviewers` Operation Details or `.codex/skills/_shared/api-helpers.md` → Gitea for the exact endpoint and payload), then re-fetch the PR and verify the requested reviewers are present. Inspect `requested_reviewers` in the refreshed PR response.
+
+**Do not skip this verification.** If reviewer assignment fails or is rejected, document the reviewer gap in the PR body, ticket handoff comment, and final summary.
 
 Do not move the OpenProject work package to review until human reviewers are requested and verified, or until the reviewer gap is documented in the PR body, ticket handoff comment, and final summary. Keep OpenProject in `In Review` while reconnectable PR feedback batches are being handled. The Codex review-agent comment, `codex-reviewed` label, and passing PR validation are not substitutes for requested human reviewers.
 

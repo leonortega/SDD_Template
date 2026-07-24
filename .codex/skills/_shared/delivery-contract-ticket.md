@@ -51,6 +51,7 @@ OpenSpec `tasks.md` for ticketed implementation must include a compact `Review W
 
 ```
 Estimated changed lines: <rough range or number>
+Estimated total hours: <hours as number>
 400-line budget risk: Low|Medium|High
 Chained PRs recommended: Yes|No
 Decision needed before apply: Yes|No

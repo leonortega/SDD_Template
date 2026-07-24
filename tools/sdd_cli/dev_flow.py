@@ -786,6 +786,9 @@ def parse_workload_forecast(
     estimated_lines = _extract_forecast_field(
         body, r"Estimated changed lines:\s*<([^>]+)>|Estimated changed lines:\s*(\S+)"
     )
+    estimated_hours = _extract_forecast_field(
+        body, r"Estimated total hours:\s*<([^>]+)>|Estimated total hours:\s*(\S+)"
+    )
     budget_risk = _extract_forecast_field(body, r"400-line budget risk:\s*(\S+)")
     chained_prs = _extract_forecast_field(body, r"Chained PRs recommended:\s*(\S+)")
     decision_needed = _extract_forecast_field(
@@ -800,6 +803,7 @@ def parse_workload_forecast(
         "path": tasks_path,
         "openspecChange": openspec_change or "",
         "estimatedChangedLines": estimated_lines,
+        "estimatedTotalHours": estimated_hours,
         "fourHundredLineBudgetRisk": budget_risk,
         "chainedPRsRecommended": chained_prs,
         "decisionNeededBeforeApply": decision_needed,

@@ -833,6 +833,342 @@ def set_gitea_branch_protection(root: Path, dry_run: bool = False) -> dict[str, 
     return result
 
 
+# ── Gitea API Token management ──────────────────────────────────────────
+
+
+def _gitea_token_scopes() -> list[str]:
+    """Return the required Gitea token scopes for agent operations.
+
+    - write:repository — push code, create branches
+    - write:issue — add labels (PRs are issues in Gitea)
+    - write:pull_request — create PRs, request reviewers
+    """
+    return ["write:repository", "write:issue", "write:pull_request"]
+
+
+def verify_gitea_api_token(
+    root: Path, dry_run: bool = False
+) -> dict[str, Any]:
+    """Verify the Gitea API token by calling GET /api/v1/user.
+
+    Returns valid=True if the token works, False otherwise.
+    """
+    result = configure_result(
+        "VerifyGiteaApiToken", dry_run, write_enabled=not dry_run
+    )
+    client = read_json(root / ".codex" / "client-tools.local.json", optional=True)
+    gitea = client.get("gitea", {}) if client else {}
+    token = gitea.get("apiToken", "")
+    base_url = str(gitea.get("baseUrl", "http://localhost:3000")).rstrip("/")
+
+    if not token or "replace-with" in token:
+        result["valid"] = False
+        result["tokenValid"] = False
+        add_bucket_item(
+            result["findings"],
+            "gitea.apiToken",
+            "token.missing",
+            "Gitea API token is missing or is a placeholder. Run generate-gitea-token first.",
+            "error",
+        )
+        return result
+
+    if dry_run:
+        result["actions"].append(
+            {
+                "path": "gitea/api/user",
+                "key": "verify.token",
+                "severity": "info",
+                "message": "Would verify Gitea API token via GET /api/v1/user.",
+                "phase": "audit",
+            }
+        )
+        result["tokenValid"] = True
+        result["valid"] = True
+        return result
+
+    try:
+        parsed = urlparse(base_url)
+        conn = http.client.HTTPConnection(
+            parsed.hostname or "localhost", parsed.port or 3000, timeout=10
+        )
+        conn.request(
+            "GET",
+            "/api/v1/user",
+            headers={
+                "Authorization": f"token {token}",
+                "Content-Type": "application/json",
+            },
+        )
+        resp = conn.getresponse()
+        resp.read()
+        conn.close()
+        if resp.status == 200:
+            result["tokenValid"] = True
+            result["actions"].append(
+                {
+                    "path": "gitea/api/user",
+                    "key": "verify.token",
+                    "severity": "info",
+                    "message": "Gitea API token is valid (GET /api/v1/user returned 200).",
+                    "phase": "audit",
+                }
+            )
+        else:
+            result["tokenValid"] = False
+            result["valid"] = False
+            add_bucket_item(
+                result["findings"],
+                "gitea.apiToken",
+                "token.invalid",
+                f"Gitea API token is invalid (GET /api/v1/user returned HTTP {resp.status}). Run renovate-gitea-token.",
+                "error",
+            )
+    except Exception as ex:
+        result["tokenValid"] = False
+        result["valid"] = False
+        add_bucket_item(
+            result["findings"],
+            "gitea/api/user",
+            "verify.error",
+            f"Could not verify Gitea API token: {ex}",
+            "warning",
+        )
+    return result
+
+
+def generate_gitea_api_token(
+    root: Path, dry_run: bool = False
+) -> dict[str, Any]:
+    """Generate a new Gitea API token with write scopes using admin Basic auth.
+
+    The token is written to .codex/client-tools.local.json under gitea.apiToken.
+    Uses the admin credentials (admin/admin123) via Basic auth to create the token
+    for the admin user via POST /api/v1/users/admin/tokens.
+    """
+    result = configure_result(
+        "GenerateGiteaApiToken", dry_run, write_enabled=not dry_run
+    )
+    client_path = root / ".codex" / "client-tools.local.json"
+    client = read_json(client_path, optional=True)
+    gitea = client.get("gitea", {}) if client else {}
+    base_url = str(gitea.get("baseUrl", "http://localhost:3000")).rstrip("/")
+    owner = gitea.get("owner", "sdd-admin")
+    repo = gitea.get("repo", "sdd-test")
+
+    if dry_run:
+        result["actions"].append(
+            {
+                "path": ".codex/client-tools.local.json",
+                "key": "token.generate",
+                "severity": "info",
+                "message": "Would generate Gitea API token with scopes: write:repository, write:issue, write:pull_request.",
+                "phase": "apply",
+            }
+        )
+        result["valid"] = True
+        return result
+
+    gitea_admin_user = "admin"
+    gitea_admin_pass = "admin123"
+
+    try:
+        import base64
+
+        parsed = urlparse(base_url)
+        conn = http.client.HTTPConnection(
+            parsed.hostname or "localhost", parsed.port or 3000, timeout=10
+        )
+        b64_auth = base64.b64encode(
+            f"{gitea_admin_user}:{gitea_admin_pass}".encode()
+        ).decode()
+        headers = {
+            "Authorization": f"Basic {b64_auth}",
+            "Content-Type": "application/json",
+        }
+        body = json.dumps(
+            {
+                "name": f"sdd-agent-{owner}-{repo}",
+                "scopes": _gitea_token_scopes(),
+            }
+        )
+        conn.request(
+            "POST",
+            f"/api/v1/users/{gitea_admin_user}/tokens",
+            body=body,
+            headers=headers,
+        )
+        resp = conn.getresponse()
+        data = resp.read().decode("utf-8")
+        conn.close()
+
+        if resp.status == 201:
+            resp_json = json.loads(data)
+            new_token = resp_json.get("sha1", "") or resp_json.get("token", "")
+            if new_token:
+                # Write token to client-tools.local.json
+                if client is None:
+                    client = {}
+                gitea_section = client.setdefault("gitea", {})
+                gitea_section["apiToken"] = new_token
+                gitea_section.setdefault("baseUrl", base_url)
+                gitea_section.setdefault("owner", owner)
+                gitea_section.setdefault("repo", repo)
+                write_json(client_path, client)
+                result["actions"].append(
+                    {
+                        "path": ".codex/client-tools.local.json/gitea.apiToken",
+                        "key": "token.generated",
+                        "severity": "info",
+                        "message": "Generated and saved new Gitea API token with write scopes.",
+                        "phase": "apply",
+                    }
+                )
+                result["token"] = new_token[:8] + "..."  # show partial for safety
+            else:
+                add_bucket_item(
+                    result["findings"],
+                    "gitea/api/tokens",
+                    "token.empty",
+                    "Gitea returned 201 but no token in response.",
+                    "error",
+                )
+        elif resp.status == 409:
+            # Token with same name already exists — delete and retry
+            # First list existing tokens
+            list_conn = http.client.HTTPConnection(
+                parsed.hostname or "localhost", parsed.port or 3000, timeout=10
+            )
+            list_conn.request(
+                "GET",
+                f"/api/v1/users/{gitea_admin_user}/tokens",
+                headers={"Authorization": f"Basic {b64_auth}"},
+            )
+            list_resp = list_conn.getresponse()
+            list_data = list_resp.read().decode("utf-8")
+            list_conn.close()
+
+            if list_resp.status == 200:
+                tokens = json.loads(list_data)
+                token_name = f"sdd-agent-{owner}-{repo}"
+                token_id = None
+                for t in tokens:
+                    if t.get("name") == token_name:
+                        token_id = t.get("id")
+                        break
+                if token_id is not None:
+                    # Delete the existing token
+                    del_conn = http.client.HTTPConnection(
+                        parsed.hostname or "localhost", parsed.port or 3000, timeout=10
+                    )
+                    del_conn.request(
+                        "DELETE",
+                        f"/api/v1/users/{gitea_admin_user}/tokens/{token_id}",
+                        headers={"Authorization": f"Basic {b64_auth}"},
+                    )
+                    del_resp = del_conn.getresponse()
+                    del_resp.read()
+                    del_conn.close()
+                    if del_resp.status in {204, 200}:
+                        result["actions"].append(
+                            {
+                                "path": ".codex/client-tools.local.json/gitea.apiToken",
+                                "key": "token.deleted",
+                                "severity": "info",
+                                "message": "Deleted old Gitea API token to allow regeneration.",
+                                "phase": "apply",
+                            }
+                        )
+                        # Retry: call ourselves recursively (only once)
+                        return generate_gitea_api_token(root, dry_run)
+
+            add_bucket_item(
+                result["findings"],
+                "gitea/api/tokens",
+                "token.conflict",
+                f"Gitea returned status {resp.status} when creating token: {data[:200]}",
+                "error",
+            )
+        else:
+            add_bucket_item(
+                result["findings"],
+                "gitea/api/tokens",
+                "token.create",
+                f"Gitea returned HTTP {resp.status}: {data[:200]}",
+                "error",
+            )
+    except Exception as ex:
+        add_bucket_item(
+            result["findings"],
+            "gitea/api/tokens",
+            "token.create",
+            f"Could not generate Gitea API token: {ex}",
+            "error",
+        )
+    result["valid"] = not any(
+        item.get("severity") == "error" for item in result["findings"]
+    )
+    return result
+
+
+def renovate_gitea_api_token(
+    root: Path, dry_run: bool = False
+) -> dict[str, Any]:
+    """Verify the current Gitea API token and regenerate if invalid."""
+    result = configure_result(
+        "RenovateGiteaApiToken", dry_run, write_enabled=not dry_run
+    )
+    # Step 1: verify current token
+    verify_result = verify_gitea_api_token(root, dry_run)
+    if not dry_run and verify_result.get("tokenValid") is True:
+        result["actions"].append(
+            {
+                "path": ".codex/client-tools.local.json/gitea.apiToken",
+                "key": "token.verified",
+                "severity": "info",
+                "message": "Current Gitea API token is valid. No renovation needed.",
+                "phase": "audit",
+            }
+        )
+        result["valid"] = True
+        result["renovated"] = False
+        return result
+
+    # Step 2: generate new token
+    if dry_run:
+        result["actions"].append(
+            {
+                "path": ".codex/client-tools.local.json/gitea.apiToken",
+                "key": "token.renovate",
+                "severity": "info",
+                "message": "Would renovate Gitea API token (verify + generate if invalid).",
+                "phase": "apply",
+            }
+        )
+        result["valid"] = True
+        result["renovated"] = True
+        return result
+
+    gen_result = generate_gitea_api_token(root, dry_run)
+    if gen_result.get("valid", False):
+        result["actions"].append(
+            {
+                "path": ".codex/client-tools.local.json/gitea.apiToken",
+                "key": "token.renovated",
+                "severity": "info",
+                "message": "Renovated Gitea API token (old token was invalid or missing).",
+                "phase": "apply",
+            }
+        )
+        result["renovated"] = True
+        result["valid"] = True
+    else:
+        result["findings"] = gen_result.get("findings", [])
+        result["renovated"] = False
+        result["valid"] = False
+    return result
+
+
 # ── Observability ────────────────────────────────────────────────────────
 
 
@@ -2301,6 +2637,14 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 "apply",
             )
 
+    # ── 1b. Gitea: generate API token with write scopes ──────────────
+    #     This token is used by agents to create PRs, add labels, request reviewers.
+    _api_token_result = generate_gitea_api_token(root, dry_run)
+    for action in _api_token_result.get("actions", []):
+        result["actions"].append(action)
+    for finding in _api_token_result.get("findings", []):
+        result["findings"].append(finding)
+
     # ── 2. OpenProject: create users, project, board, statuses ────────
     op_users = [
         {
@@ -2344,18 +2688,24 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 "apply",
             )
 
-    # ── 2b. OpenProject: define board list names (not tied to OP statuses) ──
-    # These are pure labels on the board, NOT linked to OpenProject statuses.
-    # Dragging a work package between these columns does NOT trigger status
-    # transitions, so the board stays flexible regardless of OP workflow rules.
-    BOARD_LIST_NAMES = ["New", "To Do", "In Progress", "In Review", "QA", "Done"]
-    for name in BOARD_LIST_NAMES:
+    # ── 2b. OpenProject: kanban columns — hardcoded statuses (matches seed data) ──
+    # Status action board with 7 standard OpenProject statuses.
+    _KANBAN_COLUMNS = [
+        ("New", "New"),
+        ("Specified", "Specified"),
+        ("In progress", "In progress"),
+        ("Developed", "Developed"),
+        ("In testing", "In testing"),
+        ("Closed", "Closed"),
+        ("Rejected", "Rejected"),
+    ]
+    for label, status_name in _KANBAN_COLUMNS:
         result["actions"].append(
             {
-                "path": f"openproject/boards/e2e-test/lists/{name}",
-                "key": "board.list",
+                "path": f"openproject/boards/e2e-kanban/lists/{label}",
+                "key": "board.kanban-column",
                 "severity": "info",
-                "message": f"Board list '{name}' configured.",
+                "message": f"Kanban column '{label}' (status: {status_name}) configured.",
                 "phase": "apply",
             }
         )
@@ -2490,15 +2840,184 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
             }
         )
 
-    # ── 2e. OpenProject: create Basic board e2e-test with list names ──
+    # ── 2d1. OpenProject: add admin as project member for workflow/API access ──
+    # The admin user needs Member role in the project for workflow transitions to
+    # apply when using the admin's API token.
+    if not dry_run:
+        admin_member_script = (
+            'project = Project.find_by!(identifier: "e2eproject")\n'
+            'member_role = Role.find_by!(name: "Member")\n'
+            'admin = User.find_by(login: "admin")\n'
+            "unless admin\n"
+            '  puts "ERROR: admin not found"\n'
+            "  exit 1\n"
+            "end\n"
+            "existing = Member.where(project: project, principal: admin)\n"
+            "if existing.any?\n"
+            '  puts "Admin already a member"\n'
+            "else\n"
+            '  ::Member.create(project: project, principal: admin, roles: [member_role])\n'
+            '  puts "Admin added as member"\n'
+            "end\n"
+        )
+        tmp_path = None
+        try:
+            tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".rb", delete=False)
+            tmp.write(admin_member_script)
+            tmp.close()
+            tmp_path = tmp.name
+            subprocess.run(
+                ["docker", "cp", tmp_path, "agentic-e2e-openproject-1:/tmp/add_admin_member.rb"],
+                capture_output=True, timeout=30,
+            )
+            adm_result = run_native(
+                ["docker", "exec", "agentic-e2e-openproject-1",
+                 "sh", "-c", "cd /app && bundle exec rails runner /tmp/add_admin_member.rb"],
+                REPO_ROOT, timeout=30,
+            )
+        except Exception as ex:
+            add_bucket_item(
+                result["findings"], "openproject/members/admin", "member.create",
+                f"Admin member creation failed: {ex}", "warning", "apply",
+            )
+            adm_result = {"returncode": -1, "stdout": "", "stderr": str(ex)}
+        finally:
+            if tmp_path:
+                Path(tmp_path).unlink(missing_ok=True)
+        if adm_result["returncode"] == 0:
+            result["actions"].append({
+                "path": "openproject/members/admin",
+                "key": "member.created",
+                "severity": "info",
+                "message": "Admin added as Member in e2eproject.",
+                "phase": "apply",
+            })
+        else:
+            add_bucket_item(
+                result["findings"], "openproject/members/admin", "member.create",
+                f"Admin member creation failed: {adm_result['stderr'][:200]}",
+                "warning", "apply",
+            )
+    else:
+        result["actions"].append({
+            "path": "openproject/members/admin",
+            "key": "member.plan",
+            "severity": "info",
+            "message": "Would add admin as Member in e2eproject.",
+            "phase": "apply",
+        })
+
+    # ── 2da. OpenProject: create workflow transitions for Task type + Member role ──
+    # Without workflow transitions, the kanban board cannot move work packages between
+    # status columns (OpenProject blocks all status changes when no workflow is defined).
+    # This creates transitions between ALL status pairs for Task + Member roles.
+    # Uses find_by(name:) for portability across OpenProject installations.
+    if not dry_run:
+        workflow_script = (
+            "type = Type.find_by(name: 'Task')\n"
+            "role = Role.find_by(name: 'Member')\n"
+            "unless type && role\n"
+            '  puts "ERROR: Task type or Member role not found"\n'
+            "  exit 1\n"
+            "end\n"
+            "statuses = Status.all\n"
+            "created = 0\n"
+            "skipped = 0\n"
+            "statuses.each do |from|\n"
+            "  statuses.each do |to|\n"
+            "    next if from.id == to.id\n"
+            "    exists = Workflow.where(\n"
+            "      type_id: type.id,\n"
+            "      role_id: role.id,\n"
+            "      old_status_id: from.id,\n"
+            "      new_status_id: to.id\n"
+            "    ).exists?\n"
+            "    if exists\n"
+            "      skipped += 1\n"
+            "    else\n"
+            "      Workflow.create!(\n"
+            "        type_id: type.id,\n"
+            "        role_id: role.id,\n"
+            "        old_status_id: from.id,\n"
+            "        new_status_id: to.id\n"
+            "      )\n"
+            "      created += 1\n"
+            "    end\n"
+            "  end\n"
+            "end\n"
+            'puts "Created #{created} workflow transitions (skipped #{skipped} existing)"\n'
+        )
+        tmp_path = None
+        try:
+            tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".rb", delete=False)
+            tmp.write(workflow_script)
+            tmp.close()
+            tmp_path = tmp.name
+            subprocess.run(
+                ["docker", "cp", tmp_path, "agentic-e2e-openproject-1:/tmp/create_workflows.rb"],
+                capture_output=True,
+                timeout=30,
+            )
+            wf_result = run_native(
+                [
+                    "docker", "exec", "agentic-e2e-openproject-1",
+                    "sh", "-c", "cd /app && bundle exec rails runner /tmp/create_workflows.rb",
+                ],
+                REPO_ROOT,
+                timeout=60,
+            )
+        except Exception as ex:
+            add_bucket_item(
+                result["findings"],
+                "openproject/workflows",
+                "workflow.create",
+                f"OpenProject workflow creation via Rails console failed: {ex}",
+                "warning", "apply",
+            )
+            wf_result = {"returncode": -1, "stdout": "", "stderr": str(ex)}
+        finally:
+            if tmp_path:
+                Path(tmp_path).unlink(missing_ok=True)
+        if wf_result["returncode"] == 0:
+            result["actions"].append(
+                {
+                    "path": "openproject/workflows",
+                    "key": "workflow.created",
+                    "severity": "info",
+                    "message": f"OpenProject workflow transitions created: {wf_result['stdout'][:100].strip()}.",
+                    "phase": "apply",
+                }
+            )
+        else:
+            add_bucket_item(
+                result["findings"],
+                "openproject/workflows",
+                "workflow.create",
+                f"OpenProject workflow creation failed: {wf_result['stderr'][:200]}",
+                "warning", "apply",
+            )
+    else:
+        result["actions"].append(
+            {
+                "path": "openproject/workflows",
+                "key": "workflow.plan",
+                "severity": "info",
+                "message": "Would create workflow transitions for Task type + Member role (all status pairs).",
+                "phase": "apply",
+            }
+        )
+
+    # ── 2e. OpenProject: create Action board e2e-kanban with status columns ──
+    # Note: The Grids API (/api/v3/grids) does not expose the work_package_query
+    # widget type needed for board widgets — creation must use the Rails console.
+    # Action board driven by work package status: each column maps to an OpenProject
+    # status. Dragging a work package between columns triggers status transitions.
     # OpenProject 17+ may not expose /api/v3/boards via REST — fall back to Rails console.
-    # Board columns are NOT tied to OpenProject statuses — they're plain label columns
-    # so work packages can be dragged freely between them without status transition blocks.
     brd_st, brd_dt = _op_api(
         "POST",
         "/api/v3/boards",
         body={
-            "name": "e2e-test",
+            "name": "e2e-kanban",
             "boardType": "grid",
             "gridType": "Board",
             "_links": {
@@ -2509,28 +3028,31 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
     if brd_st == 201:
         result["actions"].append(
             {
-                "path": "openproject/boards/e2e-test",
+                "path": "openproject/boards/e2e-kanban",
                 "key": "board.created",
                 "severity": "info",
-                "message": "OpenProject Basic board e2e-test created.",
+                "message": "OpenProject Action board e2e-kanban created.",
                 "phase": "apply",
             }
         )
     elif brd_st == 422:
         result["actions"].append(
             {
-                "path": "openproject/boards/e2e-test",
+                "path": "openproject/boards/e2e-kanban",
                 "key": "board.exists",
                 "severity": "info",
-                "message": "OpenProject Basic board e2e-test already exists.",
+                "message": "OpenProject Action board e2e-kanban already exists.",
                 "phase": "apply",
             }
         )
     elif brd_st == 404:
         # Boards API not exposed via REST — try Rails console
-        # Write Ruby script to local temp file, copy to container, execute
-        # Board lists are NOT status-filtered — they're plain label columns
-        board_lists_str = "[" + ", ".join(f'"{n}"' for n in BOARD_LIST_NAMES) + "]"
+        # Build columns as [[label, status_name], ...] for the Ruby script
+        board_lists_str = (
+            "["
+            + ", ".join(f'["{label}", "{status}"]' for label, status in _KANBAN_COLUMNS)
+            + "]"
+        )
         ruby_script = (
             'project = Project.find_by(identifier: "e2eproject")\n'
             'admin = User.find_by(login: "admin")\n'
@@ -2538,16 +3060,22 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
             '  puts "Project or admin not found"\n'
             "  exit 1\n"
             "end\n"
-            '::Boards::Grid.where(project: project, name: "e2e-test").destroy_all\n'
-            "board_labels = " + board_lists_str + "\n"
+            '::Boards::Grid.where(project: project, name: "e2e-kanban").destroy_all\n'
+            "columns = " + board_lists_str + "\n"
             "board = ::Boards::Grid.create!(\n"
             "  project: project,\n"
-            '  name: "e2e-test",\n'
+            '  name: "e2e-kanban",\n'
             "  row_count: 1,\n"
-            "  column_count: board_labels.length,\n"
-            "  user_id: admin.id\n"
+            "  column_count: columns.length,\n"
+            "  user_id: admin.id,\n"
+            '  options: {"type" => "action", "attribute" => "status", "highlightingMode" => "priority"}\n'
             ")\n"
-            "board_labels.each_with_index do |label, idx|\n"
+            "columns.each_with_index do |(label, status_name), idx|\n"
+            "  status_obj = Status.find_by(name: status_name)\n"
+            "  unless status_obj\n"
+            '    puts "Status #{status_name} not found"\n'
+            "    exit 1\n"
+            "  end\n"
             "  query = ::Query.new(\n"
             "    name: label,\n"
             "    project: project,\n"
@@ -2556,7 +3084,10 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
             "    include_subprojects: false,\n"
             "    display_sums: false\n"
             "  )\n"
+            "  query.add_filter('status_id', '=', [status_obj.id.to_s])\n"
             "  query.save!(validate: false)\n"
+            "  # Create View record so the query is not hidden (hidden=views.empty?)\n"
+            "  View.create!(query_id: query.id, type: 'board_view')\n"
             "  ::Grids::Widget.create!(\n"
             "    grid: board,\n"
             '    identifier: "work_package_query",\n'
@@ -2564,10 +3095,10 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
             "    end_row: 2,\n"
             "    start_column: idx + 1,\n"
             "    end_column: idx + 2,\n"
-            '    options: {"query_id" => query.id}\n'
+            '    options: {\"query_id\" => query.id, \"filters\" => [{\"status\" => {\"operator\" => \"=\", \"values\" => [status_obj.id.to_s]}}]}\n'
             "  )\n"
             "end\n"
-            'puts "Board e2e-test created with #{board_labels.length} columns"\n'
+            'puts "Board e2e-kanban created with #{columns.length} columns"\n'
         )
         tmp_path = None
         try:
@@ -2600,7 +3131,7 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
         except Exception as ex:
             add_bucket_item(
                 result["findings"],
-                "openproject/boards/e2e-test",
+                "openproject/boards/e2e-kanban",
                 "board.create",
                 f"OpenProject board creation via Rails console failed: {ex}",
                 "warning",
@@ -2612,14 +3143,14 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 Path(tmp_path).unlink(missing_ok=True)
         if (
             rails_result["returncode"] == 0
-            and "e2e-test created" in rails_result["stdout"]
+            and "e2e-kanban created" in rails_result["stdout"]
         ):
             result["actions"].append(
                 {
-                    "path": "openproject/boards/e2e-test",
+                    "path": "openproject/boards/e2e-kanban",
                     "key": "board.created",
                     "severity": "info",
-                    "message": "OpenProject Basic board e2e-test created via Rails console with plain label columns.",
+                    "message": "OpenProject Action board e2e-kanban created via Rails console with status columns.",
                     "phase": "apply",
                 }
             )
@@ -2628,17 +3159,17 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
         ) or "already exists" in rails_result.get("stderr", ""):
             result["actions"].append(
                 {
-                    "path": "openproject/boards/e2e-test",
+                    "path": "openproject/boards/e2e-kanban",
                     "key": "board.exists",
                     "severity": "info",
-                    "message": "OpenProject Basic board e2e-test already exists.",
+                    "message": "OpenProject Action board e2e-kanban already exists.",
                     "phase": "apply",
                 }
             )
         else:
             add_bucket_item(
                 result["findings"],
-                "openproject/boards/e2e-test",
+                "openproject/boards/e2e-kanban",
                 "board.create",
                 f"OpenProject board creation via Rails console failed: {rails_result['stderr'][:200]}",
                 "warning",
@@ -2647,7 +3178,7 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
     else:
         add_bucket_item(
             result["findings"],
-            "openproject/boards/e2e-test",
+            "openproject/boards/e2e-kanban",
             "board.create",
             f"OpenProject board creation returned {brd_st}: {brd_dt[:200]}",
             "warning",
@@ -2814,9 +3345,9 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 "name": "e2eProject",
             },
             "board": {
-                "name": "e2e-test",
+                "name": "e2e-kanban",
                 "url": "http://localhost:8080/projects/e2eproject/boards",
-                "lists": BOARD_LIST_NAMES,
+                "columns": [label for label, _status in _KANBAN_COLUMNS],
             },
         }
         config.setdefault("openProject", {})
@@ -3163,7 +3694,7 @@ def push_to_gitea(root: Path, dry_run: bool = False) -> dict[str, Any]:
     if has_changes:
         run_native(["git", "add", "-A"], root, timeout=30)
         commit = run_native(
-            ["git", "commit", "-m", "v0: initial SDD template setup"], root, timeout=30
+            ["git", "commit", "-m", "v0: initial SDD template setup [skip ci]"], root, timeout=30
         )
         if commit["returncode"] == 0:
             result["actions"].append(
@@ -3171,7 +3702,7 @@ def push_to_gitea(root: Path, dry_run: bool = False) -> dict[str, Any]:
                     "path": "git/commit",
                     "key": "commit.v0",
                     "severity": "info",
-                    "message": "Committed v0: initial SDD template setup.",
+                    "message": "Committed v0 with [skip ci] (initial SDD template setup).",
                     "phase": "apply",
                 }
             )
@@ -4126,7 +4657,7 @@ def run_environment_lab(args: list[str]) -> int:
             "split-infra-env, build-gitea-images, set-gitea-branch-protection, validate-observability, "
             "validate-gitea-runner, set-client-tools, set-project-stack, "
             "set-project-stack-metadata, set-semgrep-config, set-quality-config, validate-docker-desktop-k8s, setup-k8s-access, scaffold-k8s, set-recommended-tools, "
-            "provision-lab-users, push-to-gitea",
+            "provision-lab-users, push-to-gitea, verify-gitea-token, generate-gitea-token, renovate-gitea-token",
             file=sys.stderr,
         )
         return 1
@@ -4168,6 +4699,9 @@ def run_environment_lab(args: list[str]) -> int:
         "scaffold-k8s": lambda: scaffold_k8s(root, dry_run),
         "set-recommended-tools": lambda: set_recommended_tools(root, values, dry_run),
         "set-semgrep-config": lambda: set_semgrep_config(root, dry_run),
+        "verify-gitea-token": lambda: verify_gitea_api_token(root, dry_run),
+        "generate-gitea-token": lambda: generate_gitea_api_token(root, dry_run),
+        "renovate-gitea-token": lambda: renovate_gitea_api_token(root, dry_run),
         "provision-lab-users": lambda: provision_lab_users(root, dry_run),
         "push-to-gitea": lambda: push_to_gitea(root, dry_run),
     }

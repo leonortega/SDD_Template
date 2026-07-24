@@ -33,7 +33,7 @@ If an adapter path is missing or points outside the repository, stop before muta
 
 Skills should describe workflow intent with these provider-neutral operation names:
 
-- Ticket: `list`, `read`, `enrich`, `move-state`, `comment`, `verify-marker`.
+- Ticket: `list`, `read`, `enrich`, `set-estimated-time`, `move-state`, `comment`, `verify-marker`.
 - Repo/review: `branch`, `push`, `pull-request`, `status`, `label`, `comment`, `request-reviewers`.
 - Artifact: `publish`, `retrieve`, `verify`, `promote-alias`, `publish-evidence`.
 - Deploy: `deploy-artifact`, `apply-config`, `verify-config`, `health`, `record`.

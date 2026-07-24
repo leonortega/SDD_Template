@@ -21,7 +21,11 @@ This skill owns initial creation of ignored `.codex/delivery-context.local.json`
 
 ## Workflow Telemetry
 
-Capture UTC start time before the first ticket-specific mutation. When OpenProject time-entry telemetry is available, create or update the `dev-flow-start-ticket` time entry with marker `IA generated workflow telemetry: {ticketKey}:dev-flow-start-ticket`. If direct time telemetry is unavailable, initialize fallback `.codex/agent-telemetry.local.jsonl` and append a row with `python -m tools.sdd_cli dev-flow append-telemetry --ticket-key {ticketKey} --input-json '{"workflowStage":"dev-flow-start-ticket","agentRole":"ticketStarter","outcome":"success"}'`. On resume or idempotent reuse, append or update another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-flow-start-ticket`, `agentRole=ticketStarter`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If a blocker happens before a ticket key is selected, report that no telemetry row was possible.
+Capture UTC start time before the first ticket-specific mutation. When OpenProject time-entry telemetry is available, create or update the `dev-flow-start-ticket` time entry via the `time-telemetry-upsert` operation (see `.codex/providers/ticket.openproject.md` → Operations → `time-telemetry-upsert` for the exact API payload with `spentOn`, `hours`, `comment`, `_links.user`, `_links.entity`, `_links.project`, and `_links.activity`). Use marker `IA generated workflow telemetry: {ticketKey}:dev-flow-start-ticket`. Resolve the activity href by running `python -m tools.sdd_cli dev-flow resolve-openproject-activity --workflow-stage dev-flow-start-ticket --input-json '{"timeTelemetry":{...}}'` and reverse-lookup the activity ID from the resolved name against the mapping in the adapter doc.
+
+If direct time telemetry is unavailable, initialize fallback `.codex/agent-telemetry.local.jsonl` and append a row with `python -m tools.sdd_cli dev-flow append-telemetry --ticket-key {ticketKey} --input-json '{"workflowStage":"dev-flow-start-ticket","agentRole":"ticketStarter","outcome":"success"}'`. On resume or idempotent reuse, append or update another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-flow-start-ticket`, `agentRole=ticketStarter`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If a blocker happens before a ticket key is selected, report that no telemetry row was possible.
+
+For shared API helpers including time-entry POST payload format and activity reverse-lookup, see `.codex/skills/_shared/api-helpers.md` → OpenProject → Workflow time telemetry.
 
 ## Configuration
 
@@ -96,7 +100,7 @@ If the CLI is missing, attempt auto-installation: `npm install -g @fission-ai/op
      If both exist and point to different commits, stop and report the conflict. If the remote branch exists and the local branch is missing, create the local branch from the remote only when it descends from the configured base branch.
 9. Push the branch to repository/review provider with upstream tracking using `git push -u {remoteName} {branchName}` (where `{remoteName}` is the detected remote from step 8). If the upstream branch already exists and points to the same commit, treat it as complete; if the push is rejected or would require a non-fast-forward update, stop and report the branch issue.
 10. Analyze the ticket description in an OpenSpec explore style unless OpenSpec is explicitly skipped by policy below.
-11. Update only the managed generated block in the ticket description.
+11. **Read** the current ticket description via the ticket adapter. **Append** the IA generated block (separator + `IA generated` header + markers + generated content) AFTER the original human-authored description. Preserve all text outside `<!-- ia-generated:start -->` and `<!-- ia-generated:end -->` markers exactly. On subsequent runs, replace only the content between the markers.
 12. Add a ticket comment with the branch name, base branch, pushed repository branch, and OpenSpec decision, unless a generated comment for the same branch already exists.
 13. Create or update `.codex/delivery-context.local.json` with `ticketKey`, `branch`, `openspecChange` when applicable, and any known PR/artifact/version fields. If an existing lock names a different ticket, fetch the locked ticket through the OpenProject API when OpenProject is selected, otherwise through the selected ticket adapter, and compare its status with the configured `openProject.doneStatus` or default `Done`. If the locked ticket is `Done`, call `EnsureDeliveryContext` with `replaceExisting=true` for the new selected ticket. If the locked ticket is active, missing, ambiguous, or cannot be verified, stop and report the stale-lock blocker. Do not delete the lock merely because the old ticket is QA Done or ready for PROD; replacement is lazy on the next ticket start.
 14. Move the ticket to the configured in-progress status, unless it is already there.
@@ -143,9 +147,21 @@ feat/e2eproject-1-create-files-and-folders-for-a-site
 
 The managed generated block is the durable destination for grill-style product and ticket clarity. Do not add a separate `CONTEXT.md`, ADR, or upstream-default grill skill artifact while starting a ticket.
 
-Use this exact generated section in the ticket description:
+### ⚠️ CRITICAL: Append — Never Replace
+
+The IA generated block MUST be APPENDED after the original human-written description, never replacing it. The PATCH payload sent to the ticket provider MUST contain the FULL description (original human text + separator + IA generated block).
+
+### On First Creation (no markers exist yet)
+
+When this is the first time writing to the ticket description:
+
+1. **Fetch** the current description from the ticket provider (this is the human-authored original).
+2. **Append** the separator, `IA generated` header, markers, and generated content AFTER the original text.
+3. **PATCH** with the full reconstructed description:
 
 ```text
+[Human-authored original description — preserved exactly as-is]
+
 ---
 
 IA generated
@@ -181,7 +197,59 @@ Definition of done:
 <!-- ia-generated:end -->
 ```
 
-On rerun, replace only the content between `<!-- ia-generated:start -->` and `<!-- ia-generated:end -->`. Preserve all human-written text outside the markers exactly. If only one marker exists, stop and ask for manual cleanup.
+### On Subsequent Updates (markers exist)
+
+On rerun:
+
+1. **Fetch** the current description from the ticket provider.
+2. **Keep everything before** `<!-- ia-generated:start -->` unchanged (this includes the original human text).
+3. **Replace only** the content between `<!-- ia-generated:start -->` and `<!-- ia-generated:end -->`.
+4. **PATCH** with the full description, preserving the human-authored portion outside the markers.
+
+If only one marker exists (`<!-- ia-generated:start -->` without a matching `<!-- ia-generated:end -->`, or vice versa), stop and ask for manual cleanup.
+
+### Generated Block Format Reference
+
+This is the block that gets appended after the original human text (shown here in isolation):
+
+```text
+
+---
+
+IA generated
+
+<!-- ia-generated:start -->
+
+Problem / opportunity:
+...
+
+User story:
+- As a ...
+- I want ...
+- So that ...
+
+Acceptance criteria:
+- ...
+
+Scope / affected areas:
+- ...
+
+Dependencies / assumptions:
+- ...
+
+Validation expectations:
+- ...
+
+Risks:
+- ...
+
+Definition of done:
+- ...
+
+<!-- ia-generated:end -->
+```
+
+### Acceptance Criteria Quality
 
 Acceptance criteria must be concrete and testable. Reject and regenerate criteria containing generic wording such as `works correctly`, `as expected`, or `properly implemented`. Every acceptance criterion will drive a vertical TDD cycle during implementation: one behavior-focused test through a public interface, RED confirmation, minimal code, GREEN confirmation. Criteria must be verifiable through committed automated test coverage — not manual checks deferred to QA.
 
