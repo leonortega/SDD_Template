@@ -181,7 +181,7 @@
       "playwright",
       "dev-flow-pr-review-agent-skill"
     ],
-    "dismissed": ["openproject-mcp"]
+    "dismissed": []
   },
   "openRouter": {
     "baseUrl": "https://openrouter.ai/api/v1",

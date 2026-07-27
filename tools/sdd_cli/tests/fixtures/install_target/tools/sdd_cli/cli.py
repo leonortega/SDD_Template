@@ -18,11 +18,9 @@ ALL_CONFIGURE_MODES: list[str] = [
     "AuditRecommendedTools",
     "BuildGiteaActionsImages",
     "DiscoverProjectGuidance",
-    "AcquireProjectGuidance",
     "InitLocalFiles",
     "InitProjectProfile",
     "InitQualityGateTemplates",
-    "MapProjectGuidanceStep",
     "SetClientTools",
     "SetGiteaBranchProtection",
     "SetGiteaRunner",
@@ -31,7 +29,6 @@ ALL_CONFIGURE_MODES: list[str] = [
     "SetProjectStack",
     "SetProjectStackMetadata",
     "SetQualityConfig",
-    "SetRecommendedTools",
     "SetSemgrepConfig",
     "SplitInfraEnv",
     "SyncWorktreeLocalConfig",
@@ -314,35 +311,10 @@ def run_configure_mode(
         return direct_no_values[mode](root, dry_run)
 
     # Modes implemented in guidance module
-    if mode in (
-        "DiscoverProjectGuidance",
-        "AcquireProjectGuidance",
-        "MapProjectGuidanceStep",
-        "SetRecommendedTools",
-    ):
-        from .guidance import (
-            acquire_project_guidance,
-            discover_project_guidance,
-            map_project_guidance_step,
-            set_recommended_tools,
-        )
+    if mode == "DiscoverProjectGuidance":
+        from .guidance import discover_project_guidance
 
-        if mode == "DiscoverProjectGuidance":
-            return discover_project_guidance(root, dry_run, **values)
-        if mode == "AcquireProjectGuidance":
-            return acquire_project_guidance(root, dry_run, **values)
-        if mode == "MapProjectGuidanceStep":
-            workflow_step = values.get("workflowStep", "")
-            recommendation_ids = values.get("recommendationIds", [])
-            if isinstance(recommendation_ids, str):
-                recommendation_ids = [
-                    r.strip() for r in recommendation_ids.split(",") if r.strip()
-                ]
-            return map_project_guidance_step(
-                root, workflow_step, recommendation_ids, dry_run
-            )
-        if mode == "SetRecommendedTools":
-            return set_recommended_tools(root, values, dry_run)
+        return discover_project_guidance(root, dry_run, **values)
 
     # Modes implemented in dev_flow module
     if mode in ("SyncWorktreeLocalConfig", "EnsureDeliveryContext"):

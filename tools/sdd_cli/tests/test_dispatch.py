@@ -62,9 +62,6 @@ class TopLevelDispatchTests(unittest.TestCase):
         self.assertEqual(1, rc)
         output = stderr.getvalue()
         self.assertIn("discover", output)
-        self.assertIn("map", output)
-        self.assertIn("acquire", output)
-        self.assertIn("write-skill-index", output)
 
     def test_dev_flow_no_args(self) -> None:
         """dev-flow with no args shows available subcommands."""
@@ -266,14 +263,14 @@ class DevFlowDispatchTests(unittest.TestCase):
 class GuidanceDispatchTests(unittest.TestCase):
     """Test guidance subcommand dispatch."""
 
-    def test_write_skill_index_dry_run(self) -> None:
-        """guidance write-skill-index --dry-run true works."""
+    def test_discover_dry_run(self) -> None:
+        """guidance discover --dry-run true works."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            skills = root / ".codex" / "skills" / "test-skill"
+            skills = root / ".codex" / "skills"
             skills.mkdir(parents=True)
-            (skills / "SKILL.md").write_text(
-                "---\nname: test-skill\ndescription: A test skill\n---\n\n# Test\n\nContent\n",
+            (skills / "manifest.json").write_text(
+                json.dumps({"categories": {"test": {"skills": ["demo/SKILL.md"]}}}),
                 encoding="utf-8",
             )
             stdout = io.StringIO()
@@ -281,7 +278,7 @@ class GuidanceDispatchTests(unittest.TestCase):
                 rc = cli.main(
                     [
                         "guidance",
-                        "write-skill-index",
+                        "discover",
                         "--root",
                         str(root),
                         "--dry-run",

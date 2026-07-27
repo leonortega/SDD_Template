@@ -38,57 +38,60 @@ Prefer repository-specific skills and scripts over ad hoc process decisions.
 
 ## Mandatory Skill Declaration
 
-Every agent **must** declare which skills it is activating for each step of the lab flow or any repo interaction. This includes both auto-activated skills and on-demand skills.
+Every agent **must** declare which skills it is activating for each step of the lab flow or any repo interaction. This includes both auto-activated skills and on-demand skills. The skills to list are determined by the **Mandatory Skill Catalog Review** process (see below).
 
-**Format**: At the start of each response (after Caveman loading), include a `Skills used:` block listing every activated skill with its intensity/purpose.
+**Format**: At the start of each response (after Caveman loading), include a `Skills used:` block. Reference each skill by its manifest category and name, and note whether it's active or skipped.
 
 **Authority level**: 5 (same as Mandatory First Step, Mandatory MCP Routing).
 
 **Examples**:
 
 ```markdown
-Skills used: caveman (full), ponytail (full), security-best-practices (on-demand)
+Skills used: caveman (full), ponytail (full)
 
-- caveman: terse response format
-- ponytail: code quality review
-- security-best-practices: validating auth implementation
+- caveman (auto, full): terse format
+- ponytail (auto, full): code quality
+- architecture/clean-architecture (manifest → architecture): dependency rule guidance for module boundaries
+- test/e2e-testing-patterns (manifest → test): flaky test debugging
+- deploy/release-it (manifest → deploy): circuit breaker pattern for retry logic
+- security/owasp-security (skipped — no user input or auth in this scaffold)
+- kubernetes/kubernetes-manifest-authoring (skipped — no K8s deployment in this ticket)
 ```
 
 Failure to declare used skills violates repo convention. If a skill is auto-activated (caveman, ponytail), still declare it — do not assume it is implicit.
 
-## Mandatory Pre-Implementation Skill Review
+## Mandatory Skill Catalog Review
 
-Before any code change — whether implementing a ticket, fixing a bug, or adding a feature — every agent **must** review all installed skills for relevance. This is a hard gate: no code is edited until the review is complete.
+Before every task (read-only work excluded), every agent **must** consult the skill manifest at `.codex/skills/manifest.json` and determine which skills are relevant. This is a hard gate: no work begins until the catalog is reviewed and skills are declared.
 
 **Authority level**: 5 (same as Mandatory First Step, Mandatory Skill Declaration, Mandatory MCP Routing).
 
 ### Review Process
 
-1. **List installed skills:** Read the `.codex/skills/` directory and enumerate every installed skill (each subdirectory containing a `SKILL.md`).
-2. **Assess relevance:** For each skill, determine whether its rules, patterns, or constraints apply to the current task:
-   - **Relevant** → Load the skill via `skill('<name>')` and apply its rules during implementation.
-   - **Irrelevant** → State the specific reason it does not apply (e.g., "C# coding standards — this is a TypeScript project", "View transitions — no route animations in this ticket's scope").
+1. **Read the manifest:** Open `.codex/skills/manifest.json` and inspect the `categories` section to find skill groups relevant to the current task.
+2. **Assess relevance:** For each relevant category, review its skills and determine which rules, patterns, or constraints apply:
+   - **Relevant** → Load the skill via `skill('<name>')` and apply its rules during the task.
+   - **Irrelevant** → State the specific reason it does not apply (e.g., "C# coding standards — this is a TypeScript project", "View transitions — no route animations in scope").
 3. **Declare with justification:** The `Skills used:` block (required by Mandatory Skill Declaration) must document the outcome of this review:
-   - List every installed skill and whether it is active or skipped.
+   - List every skill and whether it is active or skipped.
    - For skipped skills, include a brief rationale.
-4. **Blockers:** If a required skill exists in `.codex/skills/` but cannot be loaded or applied (e.g., broken `SKILL.md`, conflicting instructions), stop and report the blocker before editing code. Apply Tool And Skill Blocker Consent from `delivery-contract-core.md`.
+4. **Blockers:** If a required skill exists but cannot be loaded or applied (e.g., broken `SKILL.md`, conflicting instructions), stop and report the blocker. Apply Tool And Skill Blocker Consent from `delivery-contract-core.md`.
 
 ### Example Declaration
 
 ```markdown
-Skills used:
+Skills used: caveman (full), ponytail (full)
 
 - caveman (auto, full): terse format
 - ponytail (auto, full): code quality
-- vercel-react-best-practices (on-demand): React performance patterns for component optimization
-- clean-code (on-demand): naming, function size, error handling
-- solid-principles (on-demand): component interface design
-- modern-csharp-coding-standards (skipped — C# only, not a C# project)
-- vercel-react-view-transitions (skipped — no route animations in scope)
-- clean-architecture (skipped — overkill for a 6-component SPA landing page)
+- architecture/clean-architecture (manifest → architecture): dependency rule guidance for module boundaries
+- test/e2e-testing-patterns (manifest → test): flaky test debugging
+- deploy/release-it (manifest → deploy): circuit breaker pattern for retry logic
+- security/owasp-security (skipped — no user input or auth in this scaffold)
+- kubernetes/kubernetes-manifest-authoring (skipped — no K8s deployment in this ticket)
 ```
 
-Omit this review only when the agent is performing purely read-only work (asking questions, exploring, reading files). Any mutation — including config changes, documentation edits, or code changes — triggers this gate.
+Omit this review only for purely read-only work (asking questions, exploring, reading files without changing them). Any mutation — including code changes, config edits, documentation updates, or PR reviews — triggers this gate.
 
 ## Environment Setup
 

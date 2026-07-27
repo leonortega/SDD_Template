@@ -83,6 +83,20 @@ def install_lefthook(root: Path, dry_run: bool = False) -> dict[str, Any]:
         )
         result["valid"] = True
         return result
+    # Skip lefthook install if there's no .git directory (fresh template install, no repo yet)
+    if not (root / ".git").exists():
+        result["actions"].append(
+            {
+                "path": "lefthook",
+                "key": "install",
+                "severity": "info",
+                "message": "No .git directory found — skipping lefthook install (init git repo first).",
+                "phase": "audit",
+            }
+        )
+        result["valid"] = True
+        return result
+
     install = run_native([lefthook_path, "install"], root, timeout=30)
     if install["returncode"] == 0:
         result["actions"].append(
@@ -236,7 +250,7 @@ def _install_lefthook_user_local(root: Path, result: dict[str, Any]) -> str | No
                 "User-Agent": "sdd-cli",
             },
         )
-        with urllib.request.urlopen(req, timeout=30) as response:
+        with urllib.request.urlopen(req, timeout=30) as response:  # nosec
             release = json.loads(response.read().decode("utf-8"))
         tag = release.get("tag_name", "")
         tag_without_v = tag[1:] if tag.startswith("v") else tag
@@ -255,7 +269,7 @@ def _install_lefthook_user_local(root: Path, result: dict[str, Any]) -> str | No
                 "phase": "apply",
             }
         )
-        with urllib.request.urlopen(download_url, timeout=60) as response:
+        with urllib.request.urlopen(download_url, timeout=60) as response:  # nosec
             data = response.read()
         if not data:
             add_bucket_item(
@@ -442,89 +456,7 @@ def install_codebase_memory(root: Path, dry_run: bool = False) -> dict[str, Any]
         "command": sys.executable,
         "args": [str(shim_path)],
     }
-    if not mcp_path.exists():
-        if dry_run:
-            result["actions"].append(
-                {
-                    "path": ".vscode/mcp.json",
-                    "key": "create",
-                    "severity": "info",
-                    "message": f"Would create .vscode/mcp.json with {server_name}.",
-                    "phase": "apply",
-                }
-            )
-            result["valid"] = True
-            return result
-        config: dict[str, Any] = {"servers": {}}
-    else:
-        try:
-            config = read_json(mcp_path, optional=False)
-        except Exception:
-            add_bucket_item(
-                result["findings"],
-                ".vscode/mcp.json",
-                "parse.error",
-                "Could not parse existing .vscode/mcp.json.",
-                "error",
-                "pre-start",
-            )
-            result["valid"] = False
-            return result
-    servers = config.get("servers", {})
-    if not isinstance(servers, dict):
-        add_bucket_item(
-            result["findings"],
-            ".vscode/mcp.json",
-            "invalid.servers",
-            "servers key must be a JSON object.",
-            "error",
-            "pre-start",
-        )
-        result["valid"] = False
-        return result
-    existing = servers.get(server_name)
-    if existing == expected_entry:
-        result["actions"].append(
-            {
-                "path": ".vscode/mcp.json",
-                "key": server_name,
-                "severity": "info",
-                "message": f"{server_name} is already configured in .vscode/mcp.json.",
-                "phase": "apply",
-            }
-        )
-        result["valid"] = True
-        return result
-    if existing is not None:
-        changed_keys = [
-            k for k in expected_entry if existing.get(k) != expected_entry[k]
-        ]
-        result["actions"].append(
-            {
-                "path": ".vscode/mcp.json",
-                "key": server_name,
-                "severity": "info",
-                "message": f"Updating {server_name} config (changed: {', '.join(changed_keys)}).",
-                "phase": "apply",
-            }
-        )
-    else:
-        result["actions"].append(
-            {
-                "path": ".vscode/mcp.json",
-                "key": server_name,
-                "severity": "info",
-                "message": f"Adding {server_name} server to .vscode/mcp.json.",
-                "phase": "apply",
-            }
-        )
-    if not dry_run:
-        servers[server_name] = expected_entry
-        config["servers"] = servers
-        mcp_path.parent.mkdir(parents=True, exist_ok=True)
-        write_json(mcp_path, config)
-    result["valid"] = True
-    return result
+    return _register_mcp_entry(root, mcp_path, server_name, expected_entry, result, dry_run)
 
 
 # ── Claw-compactor ───────────────────────────────────────────────────────
@@ -562,7 +494,7 @@ def install_claw_compactor(
         )
         result["valid"] = True
         return result
-    install_result = subprocess.run(pip_args, capture_output=True, text=True)
+    install_result = subprocess.run(pip_args, capture_output=True, text=True)  # nosec
     if install_result.returncode != 0:
         add_bucket_item(
             result["findings"],
@@ -583,7 +515,7 @@ def install_claw_compactor(
             "phase": "apply",
         }
     )
-    check = subprocess.run(
+    check = subprocess.run(  # nosec
         [str(mcp_python), "-m", "claw_compactor.cli", "--help"],
         capture_output=True,
         text=True,
@@ -726,6 +658,8 @@ def install_or_update_sdd_tool(
             removed.append(relative)
             remove_empty_parents(dst.parent, target)
     checksum = sdd_tool_checksum(target, files)
+    # Initialize local git repo so lefthook can install hooks.
+    # Does NOT copy the source repo's .git — creates a fresh one.
     git_bootstrap = _ensure_local_git_repo(target)
     manifest = {
         "schemaVersion": 1,
@@ -758,6 +692,536 @@ def install_or_update_sdd_tool(
         "checksumSha256": checksum,
         "gitBootstrap": git_bootstrap,
     }
+
+
+# ── MCP registration helper ──────────────────────────────────────────────
+
+
+def _register_mcp_entry(
+    root: Path,
+    mcp_path: Path,
+    server_name: str,
+    expected_entry: dict[str, Any],
+    result: dict[str, Any],
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Register a single MCP entry under the mcpServers key in .vscode/mcp.json.
+
+    Shared helper used by all install_*_mcp functions.
+    """
+    if not mcp_path.exists():
+        if dry_run:
+            result["actions"].append(
+                {
+                    "path": ".vscode/mcp.json",
+                    "key": "create",
+                    "severity": "info",
+                    "message": f"Would create .vscode/mcp.json with {server_name}.",
+                    "phase": "apply",
+                }
+            )
+            result["valid"] = True
+            return result
+        config: dict[str, Any] = {"mcpServers": {}}
+    else:
+        try:
+            config = read_json(mcp_path, optional=False)
+        except Exception:
+            add_bucket_item(
+                result["findings"],
+                ".vscode/mcp.json",
+                "parse.error",
+                "Could not parse existing .vscode/mcp.json.",
+                "error",
+                "pre-start",
+            )
+            result["valid"] = False
+            return result
+    servers = config.get("mcpServers", {})
+    if not isinstance(servers, dict):
+        add_bucket_item(
+            result["findings"],
+            ".vscode/mcp.json",
+            "invalid.mcpServers",
+            "mcpServers key must be a JSON object.",
+            "error",
+            "pre-start",
+        )
+        result["valid"] = False
+        return result
+    existing = servers.get(server_name)
+    if existing == expected_entry:
+        result["actions"].append(
+            {
+                "path": ".vscode/mcp.json",
+                "key": server_name,
+                "severity": "info",
+                "message": f"{server_name} is already configured in .vscode/mcp.json.",
+                "phase": "apply",
+            }
+        )
+        result["valid"] = True
+        return result
+    if existing is not None:
+        changed_keys = [
+            k for k in expected_entry if existing.get(k) != expected_entry[k]
+        ]
+        result["actions"].append(
+            {
+                "path": ".vscode/mcp.json",
+                "key": server_name,
+                "severity": "info",
+                "message": f"Updating {server_name} config (changed: {', '.join(changed_keys)}).",
+                "phase": "apply",
+            }
+        )
+    else:
+        result["actions"].append(
+            {
+                "path": ".vscode/mcp.json",
+                "key": server_name,
+                "severity": "info",
+                "message": f"Adding {server_name} server to .vscode/mcp.json.",
+                "phase": "apply",
+            }
+        )
+    if not dry_run:
+        servers[server_name] = expected_entry
+        config["mcpServers"] = servers
+        mcp_path.parent.mkdir(parents=True, exist_ok=True)
+        write_json(mcp_path, config)
+    result["valid"] = True
+    return result
+
+
+# ── monorepo-docs-search MCP ─────────────────────────────────────────────
+
+
+def install_monorepo_docs_search(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Set up the monorepo-docs-search MCP server (shared venv + registration).
+
+    Creates a shared venv at ~/.mcp_shared_venv, installs mcp + bm25s + flashrank,
+    then registers the server in .vscode/mcp.json.
+    """
+    result = configure_result(
+        "InstallMonorepoDocsSearch", dry_run, write_enabled=not dry_run
+    )
+    user_profile = os.environ.get("USERPROFILE") or os.path.expandvars("%USERPROFILE%")
+    if not user_profile:
+        add_bucket_item(
+            result["findings"],
+            "monorepo-docs-search",
+            "env.userprofile",
+            "USERPROFILE env var not found.",
+            "error",
+            "pre-start",
+        )
+        result["valid"] = False
+        return result
+
+    venv_dir = os.path.join(user_profile, ".mcp_shared_venv")
+    python_exe = os.path.join(venv_dir, "Scripts", "python.exe")
+    pip_exe = os.path.join(venv_dir, "Scripts", "pip.exe")
+    script_path = str(root / "tools" / "bm25s_flashrank" / "mcp_doc_research.py")
+
+    if not os.path.exists(script_path):
+        add_bucket_item(
+            result["findings"],
+            "tools/bm25s_flashrank/mcp_doc_research.py",
+            "missing.script",
+            "mcp_doc_research.py not found. Is the SDD tool installed?",
+            "error",
+            "pre-start",
+        )
+        result["valid"] = False
+        return result
+
+    if dry_run:
+        result["actions"].append(
+            {
+                "path": ".mcp_shared_venv",
+                "key": "create",
+                "severity": "info",
+                "message": "Would create shared venv and install mcp, bm25s, flashrank.",
+                "phase": "apply",
+            }
+        )
+        result["actions"].append(
+            {
+                "path": ".vscode/mcp.json",
+                "key": "monorepo-docs-search",
+                "severity": "info",
+                "message": "Would register monorepo-docs-search MCP server.",
+                "phase": "apply",
+            }
+        )
+        result["valid"] = True
+        return result
+
+    # Create venv if needed
+    if not os.path.exists(venv_dir):
+        import venv
+        venv.create(venv_dir, with_pip=True)
+        result["actions"].append(
+            {
+                "path": ".mcp_shared_venv",
+                "key": "venv",
+                "severity": "info",
+                "message": "Created shared virtual environment.",
+                "phase": "apply",
+            }
+        )
+    else:
+        result["actions"].append(
+            {
+                "path": ".mcp_shared_venv",
+                "key": "venv",
+                "severity": "info",
+                "message": "Shared virtual environment already exists.",
+                "phase": "audit",
+            }
+        )
+
+    # Upgrade pip
+    subprocess.run(
+        [pip_exe, "install", "--upgrade", "pip", "--quiet"],
+        check=False,
+    )
+    # Install deps
+    deps_result = subprocess.run(
+        [pip_exe, "install", "mcp", "bm25s", "flashrank", "--quiet"],
+        capture_output=True, text=True, check=False,
+    )
+    if deps_result.returncode != 0:
+        add_bucket_item(
+            result["findings"],
+            ".mcp_shared_venv",
+            "pip.install",
+            f"Failed to install packages: {deps_result.stderr.strip()}",
+            "error",
+            "apply",
+        )
+        result["valid"] = False
+        return result
+    result["actions"].append(
+        {
+            "path": ".mcp_shared_venv",
+            "key": "pip.install",
+            "severity": "info",
+            "message": "Installed mcp, bm25s, flashrank.",
+            "phase": "apply",
+        }
+    )
+
+    # Register in .vscode/mcp.json
+    mcp_path = root / ".vscode" / "mcp.json"
+    expected_entry = {
+        "command": python_exe,
+        "args": [script_path],
+    }
+    return _register_mcp_entry(root, mcp_path, "monorepo-docs-search", expected_entry, result, dry_run)
+
+
+# ── Playwright MCP ───────────────────────────────────────────────────────
+
+
+def install_playwright_mcp(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Register the Playwright MCP server in .vscode/mcp.json.
+
+    Requires Playwright browsers to be installed (npx playwright install chromium).
+    """
+    result = configure_result(
+        "InstallPlaywrightMCP", dry_run, write_enabled=not dry_run
+    )
+    mcp_path = root / ".vscode" / "mcp.json"
+    expected_entry = {
+        "command": "npx",
+        "args": ["-y", "@playwright/mcp@latest"],
+    }
+    if dry_run:
+        result["actions"].append(
+            {
+                "path": ".vscode/mcp.json",
+                "key": "playwright",
+                "severity": "info",
+                "message": "Would register playwright MCP server.",
+                "phase": "apply",
+            }
+        )
+        result["valid"] = True
+        return result
+    return _register_mcp_entry(root, mcp_path, "playwright", expected_entry, result, dry_run)
+
+
+# ── Grafana MCP ──────────────────────────────────────────────────────────
+
+
+def install_grafana_mcp(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Register the Grafana MCP server in .vscode/mcp.json.
+
+    Reads GRAFANA_SERVICE_ACCOUNT_TOKEN from infra/monitoring/variables.env.
+    Requires a running Grafana instance at localhost:3000 or configured URL.
+    """
+    result = configure_result(
+        "InstallGrafanaMCP", dry_run, write_enabled=not dry_run
+    )
+    mcp_path = root / ".vscode" / "mcp.json"
+
+    # Read grafana env vars
+    monitoring_env = root / "infra" / "monitoring" / "variables.env"
+    grafana_token = ""
+    grafana_url = "http://localhost:3000"
+    if monitoring_env.exists():
+        env_vars = read_env_file(monitoring_env)
+        grafana_token = env_vars.get("GRAFANA_SERVICE_ACCOUNT_TOKEN", "")
+        grafana_url = env_vars.get("GRAFANA_URL", "http://localhost:3000")
+
+    if not grafana_token or "replace-with" in grafana_token:
+        result["actions"].append(
+            {
+                "path": "infra/monitoring/variables.env",
+                "key": "grafana.token",
+                "severity": "warning",
+                "message": "GRAFANA_SERVICE_ACCOUNT_TOKEN not configured. Registering server config without token placeholder.",
+                "phase": "audit",
+            }
+        )
+
+    expected_entry: dict[str, Any] = {
+        "command": "uvx",
+        "args": ["mcp-grafana"],
+    }
+    env_dict: dict[str, str] = {
+        "GRAFANA_URL": grafana_url,
+    }
+    if grafana_token and "replace-with" not in grafana_token:
+        env_dict["GRAFANA_SERVICE_ACCOUNT_TOKEN"] = grafana_token
+    expected_entry["env"] = env_dict
+
+    if dry_run:
+        result["actions"].append(
+            {
+                "path": ".vscode/mcp.json",
+                "key": "grafana",
+                "severity": "info",
+                "message": "Would register grafana MCP server.",
+                "phase": "apply",
+            }
+        )
+        result["valid"] = True
+        return result
+    return _register_mcp_entry(root, mcp_path, "grafana", expected_entry, result, dry_run)
+
+
+# ── Kubernetes MCP ───────────────────────────────────────────────────────
+
+
+def install_k8s_mcp(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Register the Kubernetes MCP server in .vscode/mcp.json.
+
+    Reads KUBECONFIG env var or defaults to ~/.kube/config.
+    Requires a running Kubernetes cluster (e.g. Docker Desktop K8s).
+    """
+    result = configure_result(
+        "InstallK8sMCP", dry_run, write_enabled=not dry_run
+    )
+    mcp_path = root / ".vscode" / "mcp.json"
+
+    # Determine kubeconfig path
+    kubeconfig = os.environ.get("KUBECONFIG", "")
+    if not kubeconfig:
+        default_kube = Path.home() / ".kube" / "config"
+        if default_kube.exists():
+            kubeconfig = str(default_kube)
+
+    expected_entry: dict[str, Any] = {
+        "command": "npx",
+        "args": ["-y", "kubernetes-mcp-server@latest"],
+    }
+    if kubeconfig:
+        expected_entry["env"] = {"KUBECONFIG": kubeconfig}
+
+    if not kubeconfig:
+        result["actions"].append(
+            {
+                "path": "kubeconfig",
+                "key": "k8s.kubeconfig",
+                "severity": "warning",
+                "message": "No kubeconfig found. K8s MCP will use default kubectl context (might fail if no cluster is configured).",
+                "phase": "audit",
+            }
+        )
+
+    if dry_run:
+        result["actions"].append(
+            {
+                "path": ".vscode/mcp.json",
+                "key": "kubernetes",
+                "severity": "info",
+                "message": "Would register kubernetes MCP server.",
+                "phase": "apply",
+            }
+        )
+        result["valid"] = True
+        return result
+    return _register_mcp_entry(root, mcp_path, "kubernetes", expected_entry, result, dry_run)
+
+
+# ── Gitea MCP ────────────────────────────────────────────────────────────
+
+
+def install_gitea_mcp(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Register the Gitea MCP server in .vscode/mcp.json.
+
+    Reads Gitea base URL and API token from .codex/client-tools.local.json.
+    Requires a running Gitea instance and a valid API token (generated by
+    generate_gitea_api_token or provision_lab_users).
+    """
+    result = configure_result(
+        "InstallGiteaMCP", dry_run, write_enabled=not dry_run
+    )
+    mcp_path = root / ".vscode" / "mcp.json"
+
+    # Read gitea credentials from client-tools.local.json
+    client_path = root / ".codex" / "client-tools.local.json"
+    gitea_url = "http://localhost:3000"
+    gitea_token = ""
+    if client_path.exists():
+        client = read_json(client_path, optional=True)
+        if client:
+            gitea_section = client.get("gitea", {})
+            gitea_url = str(gitea_section.get("baseUrl", "http://localhost:3000")).rstrip("/")
+            gitea_token = gitea_section.get("apiToken", "")
+
+    if not gitea_token or "replace-with" in gitea_token:
+        result["actions"].append(
+            {
+                "path": ".codex/client-tools.local.json",
+                "key": "gitea.token",
+                "severity": "warning",
+                "message": "Gitea API token not configured. Run provision_lab_users or generate_gitea_api_token first.",
+                "phase": "audit",
+            }
+        )
+
+    expected_entry: dict[str, Any] = {
+        "command": "docker",
+        "args": [
+            "run",
+            "--rm",
+            "-i",
+            "docker.gitea.com/gitea-mcp-server",
+            "--host",
+            gitea_url,
+        ],
+    }
+    if gitea_token and "replace-with" not in gitea_token:
+        expected_entry["env"] = {"GITEA_ACCESS_TOKEN": gitea_token}
+
+    if dry_run:
+        result["actions"].append(
+            {
+                "path": ".vscode/mcp.json",
+                "key": "gitea",
+                "severity": "info",
+                "message": "Would register gitea MCP server.",
+                "phase": "apply",
+            }
+        )
+        result["valid"] = True
+        return result
+    return _register_mcp_entry(root, mcp_path, "gitea", expected_entry, result, dry_run)
+
+
+# ── OpenProject MCP ──────────────────────────────────────────────────────
+
+
+def install_openproject_mcp(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Register the OpenProject MCP server in .vscode/mcp.json.
+
+    Reads OPENPROJECT_URL and OPENPROJECT_API_KEY from infra/openproject/variables.env.
+    Requires a running OpenProject instance at the configured URL.
+    """
+    result = configure_result(
+        "InstallOpenProjectMCP", dry_run, write_enabled=not dry_run
+    )
+    mcp_path = root / ".vscode" / "mcp.json"
+
+    # Read openproject env vars
+    op_env_path = root / "infra" / "openproject" / "variables.env"
+    op_url = "http://localhost:8080"
+    op_api_key = ""
+    if op_env_path.exists():
+        env_vars = read_env_file(op_env_path)
+        op_url = env_vars.get("OPENPROJECT_URL", "http://localhost:8080")
+        op_api_key = env_vars.get("OPENPROJECT_API_KEY", "")
+
+    if not op_api_key or "replace-with" in op_api_key:
+        result["actions"].append(
+            {
+                "path": "infra/openproject/variables.env",
+                "key": "openproject.apikey",
+                "severity": "warning",
+                "message": "OPENPROJECT_API_KEY not configured. Registering server without API key.",
+                "phase": "audit",
+            }
+        )
+
+    env_dict: dict[str, str] = {
+        "OPENPROJECT_URL": op_url,
+    }
+    if op_api_key and "replace-with" not in op_api_key:
+        env_dict["OPENPROJECT_API_KEY"] = op_api_key
+
+    expected_entry: dict[str, Any] = {
+        "command": "npx",
+        "args": ["-y", "openproject-mcp"],
+    }
+    if env_dict:
+        expected_entry["env"] = env_dict
+
+    if dry_run:
+        result["actions"].append(
+            {
+                "path": ".vscode/mcp.json",
+                "key": "openproject",
+                "severity": "info",
+                "message": "Would register openproject MCP server.",
+                "phase": "apply",
+            }
+        )
+        result["valid"] = True
+        return result
+    return _register_mcp_entry(root, mcp_path, "openproject", expected_entry, result, dry_run)
+
+
+# ── Ensure MCP servers ───────────────────────────────────────────────────
+
+
+def ensure_mcp_servers(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Install all non-optional MCP servers: monorepo-docs-search, codebase-memory-mcp, playwright.
+
+    OpenProject and Grafana MCPs are not installed automatically by this function
+    because they require service credentials. Use the individual install_*_mcp
+    functions when the services are provisioned.
+    """
+    result = configure_result("EnsureMCPServers", dry_run, write_enabled=not dry_run)
+
+    results = [
+        install_codebase_memory(root, dry_run),
+        install_monorepo_docs_search(root, dry_run),
+        install_playwright_mcp(root, dry_run),
+    ]
+    for r in results:
+        for action in r.get("actions", []):
+            result["actions"].append(action)
+        for finding in r.get("findings", []):
+            result["findings"].append(finding)
+
+    result["valid"] = not any(
+        item.get("severity") == "error" for item in result["findings"]
+    )
+    return result
 
 
 # ── Ensure codebase memory ───────────────────────────────────────────────
@@ -835,6 +1299,107 @@ def ensure_codebase_memory(root: Path, dry_run: bool = False) -> dict[str, Any]:
         result["valid"] = not any(
             item.get("severity") == "error" for item in result["findings"]
         )
+    return result
+
+
+# ── Validate skill manifest ──────────────────────────────────────────────
+
+
+def validate_manifest(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Validate that every skill in .codex/skills/manifest.json maps to an existing SKILL.md on disk.
+
+    Reads the manifest categories, collects all skill paths, and checks each one
+    exists relative to the .codex/skills/ directory. Reports missing skills as errors.
+    """
+    result = configure_result(
+        "ValidateManifest", dry_run, write_enabled=False
+    )
+    manifest_path = root / ".codex" / "skills" / "manifest.json"
+    skills_dir = root / ".codex" / "skills"
+
+    if not manifest_path.exists():
+        add_bucket_item(
+            result["findings"],
+            ".codex/skills/manifest.json",
+            "missing.manifest",
+            "Manifest file not found at .codex/skills/manifest.json.",
+            "error",
+            "pre-start",
+        )
+        result["valid"] = False
+        return result
+
+    try:
+        manifest = read_json(manifest_path, optional=False)
+    except Exception as ex:
+        add_bucket_item(
+            result["findings"],
+            ".codex/skills/manifest.json",
+            "parse.error",
+            f"Could not parse manifest JSON: {ex}",
+            "error",
+            "pre-start",
+        )
+        result["valid"] = False
+        return result
+
+    categories = manifest.get("categories", {})
+    if not isinstance(categories, dict):
+        add_bucket_item(
+            result["findings"],
+            ".codex/skills/manifest.json",
+            "invalid.categories",
+            "'categories' key must be a JSON object.",
+            "error",
+            "pre-start",
+        )
+        result["valid"] = False
+        return result
+
+    total_skills = 0
+    missing: list[str] = []
+    valid: list[str] = []
+
+    for cat_name, cat_data in categories.items():
+        if not isinstance(cat_data, dict):
+            continue
+        cat_skills = cat_data.get("skills", [])
+        if not isinstance(cat_skills, list):
+            continue
+        for skill_path in cat_skills:
+            total_skills += 1
+            full_path = skills_dir / skill_path
+            if full_path.exists():
+                valid.append(f"{cat_name}/{skill_path}")
+            else:
+                missing.append(f"{cat_name}/{skill_path}")
+
+    result["totalSkills"] = total_skills
+    result["validSkills"] = len(valid)
+    result["missingSkills"] = len(missing)
+
+    for path in valid:
+        result["actions"].append(
+            {
+                "path": path,
+                "key": "skill.exists",
+                "severity": "info",
+                "message": "SKILL.md found on disk.",
+                "phase": "audit",
+            }
+        )
+
+    for path in missing:
+        add_bucket_item(
+            result["findings"],
+            path,
+            "skill.missing",
+            f"SKILL.md not found: {skills_dir / path}",
+            "error",
+            "pre-start",
+        )
+
+    result["valid"] = len(missing) == 0
     return result
 
 
@@ -1003,8 +1568,10 @@ def run_tool_installer(args: list[str]) -> int:
     if not args:
         print(
             "Available: install-lefthook, install-codegraph, install-codebase-memory, "
-            "install-claw, ensure-codebase-memory, ensure-quality-tools, "
-            "install-sdd-template, update-sdd-template",
+            "install-monorepo-docs-search, install-playwright-mcp, "
+            "install-grafana-mcp, install-openproject-mcp, "
+            "validate-manifest, install-k8s-mcp, install-gitea-mcp, install-claw, ensure-mcp-servers, ensure-codebase-memory, "
+            "ensure-quality-tools, install-sdd-template, update-sdd-template",
             file=sys.stderr,
         )
         return 1
@@ -1016,11 +1583,19 @@ def run_tool_installer(args: list[str]) -> int:
         "install-lefthook": lambda: install_lefthook(root, dry_run),
         "install-codegraph": lambda: install_codegraph(root, dry_run),
         "install-codebase-memory": lambda: install_codebase_memory(root, dry_run),
+        "install-monorepo-docs-search": lambda: install_monorepo_docs_search(root, dry_run),
+        "install-playwright-mcp": lambda: install_playwright_mcp(root, dry_run),
+        "install-grafana-mcp": lambda: install_grafana_mcp(root, dry_run),
+        "install-openproject-mcp": lambda: install_openproject_mcp(root, dry_run),
+        "install-gitea-mcp": lambda: install_gitea_mcp(root, dry_run),
+        "install-k8s-mcp": lambda: install_k8s_mcp(root, dry_run),
         "install-claw": lambda: install_claw_compactor(
             root,
             version=options.get("version"),
             dry_run=dry_run,
         ),
+        "validate-manifest": lambda: validate_manifest(root, dry_run),
+        "ensure-mcp-servers": lambda: ensure_mcp_servers(root, dry_run),
         "ensure-codebase-memory": lambda: ensure_codebase_memory(root, dry_run),
         "ensure-quality-tools": lambda: ensure_quality_tools(root, dry_run),
     }
@@ -1042,14 +1617,12 @@ def run_tool_installer(args: list[str]) -> int:
     return 0 if result.get("valid", False) else 1
 
 
-# ── Private helpers ──────────────────────────────────────────────────────
-
-
 def _ensure_local_git_repo(root: Path) -> dict[str, Any]:
+    """Initialize a local Git repo in the target so lefthook can install hooks."""
     result = {"initialized": False, "branch": "", "remoteConfigured": False}
     try:
         if not (root / ".git").exists():
-            completed = subprocess.run(
+            completed = subprocess.run(  # nosec
                 ["git", "init", "-b", "dev"],
                 cwd=root,
                 check=False,
@@ -1057,7 +1630,7 @@ def _ensure_local_git_repo(root: Path) -> dict[str, Any]:
                 text=True,
             )
             if completed.returncode != 0:
-                completed = subprocess.run(
+                completed = subprocess.run(  # nosec
                     ["git", "init"],
                     cwd=root,
                     check=False,
@@ -1068,7 +1641,7 @@ def _ensure_local_git_repo(root: Path) -> dict[str, Any]:
                     raise CliError(
                         f"Could not initialize local Git repository: {completed.stderr.strip() or completed.stdout.strip()}"
                     )
-                subprocess.run(
+                subprocess.run(  # nosec
                     ["git", "checkout", "-B", "dev"],
                     cwd=root,
                     check=False,
@@ -1078,7 +1651,7 @@ def _ensure_local_git_repo(root: Path) -> dict[str, Any]:
             result["initialized"] = True
         branch = git_text(root, ["branch", "--show-current"])
         if branch != "dev":
-            subprocess.run(
+            subprocess.run(  # nosec
                 ["git", "checkout", "-B", "dev"],
                 cwd=root,
                 check=False,
@@ -1089,7 +1662,7 @@ def _ensure_local_git_repo(root: Path) -> dict[str, Any]:
         result["branch"] = branch
         result["remoteConfigured"] = bool(git_text(root, ["remote"]))
     except OSError as ex:
-        raise CliError(f"Could not initialize local Git repository: {ex}")
+        raise CliError(f"Could not initialize local Git repository: {ex}") from ex
     return result
 
 
@@ -1123,45 +1696,22 @@ def _unmanaged_collisions(
     preserve_examples: set[str],
 ) -> list[str]:
     from ._shared import (
-        get_sdd_tool_exclude_parts,
-        get_sdd_tool_exclude_segments,
-        get_sdd_tool_exclude_suffixes,
+        get_sdd_tool_preserve_files,
+        walk_sdd_source_files,
     )
 
     collisions: list[str] = []
     managed = set(files)
     preserve = get_sdd_tool_preserve_files()
-    exclude_parts = get_sdd_tool_exclude_parts()
-    exclude_segments = get_sdd_tool_exclude_segments()
-    exclude_suffixes = get_sdd_tool_exclude_suffixes()
-    for path in source.rglob("*"):
-        if not path.is_file():
-            continue
-        relative = path.relative_to(source).as_posix()
-        # Skip excluded parts (same logic as sdd_tool_files)
-        excluded = False
-        for part in exclude_parts:
-            if relative.startswith(part) or f"/{part}/" in f"/{relative}/":
-                excluded = True
-                break
-        if excluded:
-            continue
-        # Skip excluded segments
-        for segment in exclude_segments:
-            if f"/{segment}/" in f"/{relative}/" or relative == segment:
-                excluded = True
-                break
-        if excluded:
-            continue
-        # Skip excluded suffixes
-        if any(relative.endswith(suffix) for suffix in exclude_suffixes):
-            continue
+    # Uses walk_sdd_source_files which skips excluded dirs (node_modules, etc.)
+    # during traversal — much faster than rglob + post-filter.
+    for relative in walk_sdd_source_files(source):
         if relative in managed or relative in preserve or relative in owned:
             continue
         if relative in preserve_examples:
             continue
         dst = target / relative
-        if dst.exists() and dst.read_bytes() != path.read_bytes():
+        if dst.exists() and dst.read_bytes() != (source / relative).read_bytes():
             collisions.append(relative)
     for relative in files:
         dst = target / relative

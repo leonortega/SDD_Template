@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import http.client
 import json
+import os
+import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -29,7 +32,7 @@ from ._shared import (
     write_env_file,
     write_json,
 )
-from .tool_installer import install_lefthook
+from .tool_installer import install_lefthook, install_grafana_mcp, install_gitea_mcp, install_k8s_mcp, install_openproject_mcp
 
 # ── Setup Lab (all-in-one idempotent) ───────────────────────────────────
 
@@ -75,10 +78,13 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
     _add_step(validate_docker_desktop(root, dry_run), fatal=False)
 
     # 7b. Enable K8s in Docker Desktop if needed (before compose, since Docker may restart)
-    #     K8s is required — if it can't be enabled, setup stops here
+    #     K8s is required for lab deployment — fatal if it cannot be enabled.
     early = _add_step(enable_docker_desktop_k8s(root, dry_run), fatal=True)
     if early:
         return early
+
+    # 7c. Install Kubernetes MCP (after K8s is enabled, before compose since no dependency on services)
+    _add_step(install_k8s_mcp(root, dry_run), fatal=False)
 
     # 8. Start compose services
     if not dry_run:
@@ -98,11 +104,20 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
     # 9. Validate observability
     _add_step(validate_observability(root, dry_run), fatal=False)
 
+    # 9b. Install Grafana MCP (after Grafana is confirmed running)
+    _add_step(install_grafana_mcp(root, dry_run), fatal=False)
+
     # 10. Validate Gitea runner (Docker, images, tools, socket, docker_push.py)
     _add_step(validate_gitea_runner(root, dry_run), fatal=False)
 
     # 11. Provision lab users (Gitea, OpenProject, Nexus) + runner registration token
     _add_step(provision_lab_users(root, dry_run), fatal=False)
+
+    # 11b. Install OpenProject MCP (after user provisioning writes API key to env file)
+    _add_step(install_openproject_mcp(root, dry_run), fatal=False)
+
+    # 11c. Install Gitea MCP (after API token is generated and stored in client-tools.local.json)
+    _add_step(install_gitea_mcp(root, dry_run), fatal=False)
 
     # 12. Provision Nexus repositories + accept EULA
     _add_step(provision_nexus_repositories(root, dry_run), fatal=False)
@@ -131,15 +146,15 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
         "gitea": {
             "url": "http://localhost:3000",
             "users": [
-                {"username": "admin", "password": "admin123", "role": "admin"},
+                {"username": "admin", "password": "admin123", "role": "admin"},  # nosec
                 {
                     "username": "FirstUser",
-                    "password": "FirstUser123",
+                    "password": "FirstUser123",  # nosec
                     "role": "developer",
                 },
                 {
                     "username": "SecondUser",
-                    "password": "SecondUser123",
+                    "password": "SecondUser123",  # nosec
                     "role": "developer",
                 },
             ],
@@ -147,15 +162,15 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
         "openproject": {
             "url": "http://localhost:8080",
             "users": [
-                {"username": "admin", "password": "admin", "role": "admin"},
+                {"username": "admin", "password": "admin", "role": "admin"},  # nosec
                 {
                     "username": "FirstUser",
-                    "password": "FirstUser123!",
+                    "password": "FirstUser123!",  # nosec
                     "role": "developer",
                 },
                 {
                     "username": "SecondUser",
-                    "password": "SecondUser123!",
+                    "password": "SecondUser123!",  # nosec
                     "role": "developer",
                 },
             ],
@@ -588,6 +603,7 @@ def build_gitea_actions_images(root: Path, dry_run: bool = False) -> dict[str, A
         result["valid"] = False
         return result
     import hashlib
+
     dockerfiles = sorted(
         (root / "infra" / "gitea" / "actions-images").glob("*/Dockerfile")
     )
@@ -614,8 +630,16 @@ def build_gitea_actions_images(root: Path, dry_run: bool = False) -> dict[str, A
         # Check if image exists with matching checksum (label stored on the image)
         needs_rebuild = True
         inspect = run_native(
-            ["docker", "image", "inspect", image, "--format", "{{index .Config.Labels \"sdd.dockerfile.checksum\"}}"],
-            root, timeout=15
+            [
+                "docker",
+                "image",
+                "inspect",
+                image,
+                "--format",
+                '{{index .Config.Labels "sdd.dockerfile.checksum"}}',
+            ],
+            root,
+            timeout=15,
         )
         if inspect["returncode"] == 0 and inspect["stdout"].strip() == checksum:
             result["actions"].append(
@@ -763,8 +787,7 @@ def set_gitea_branch_protection(root: Path, dry_run: bool = False) -> dict[str, 
                     }
                 )
             elif response.status == 409 or (
-                response.status == 403
-                and b"already exist" in resp_body
+                response.status == 403 and b"already exist" in resp_body
             ):
                 # Rule already exists (Gitea returns 409 or 403 with 'already exist') —
                 # fall back to PATCH on branch_protections/{rule_name}
@@ -822,6 +845,342 @@ def set_gitea_branch_protection(root: Path, dry_run: bool = False) -> dict[str, 
     result["valid"] = not any(
         item.get("severity") == "error" for item in result["findings"]
     )
+    return result
+
+
+# ── Gitea API Token management ──────────────────────────────────────────
+
+
+def _gitea_token_scopes() -> list[str]:
+    """Return the required Gitea token scopes for agent operations.
+
+    - write:repository — push code, create branches
+    - write:issue — add labels (PRs are issues in Gitea)
+    - write:pull_request — create PRs, request reviewers
+    """
+    return ["write:repository", "write:issue"]
+
+
+def verify_gitea_api_token(
+    root: Path, dry_run: bool = False
+) -> dict[str, Any]:
+    """Verify the Gitea API token by calling GET /api/v1/user.
+
+    Returns valid=True if the token works, False otherwise.
+    """
+    result = configure_result(
+        "VerifyGiteaApiToken", dry_run, write_enabled=not dry_run
+    )
+    client = read_json(root / ".codex" / "client-tools.local.json", optional=True)
+    gitea = client.get("gitea", {}) if client else {}
+    token = gitea.get("apiToken", "")
+    base_url = str(gitea.get("baseUrl", "http://localhost:3000")).rstrip("/")
+
+    if not token or "replace-with" in token:
+        result["valid"] = False
+        result["tokenValid"] = False
+        add_bucket_item(
+            result["findings"],
+            "gitea.apiToken",
+            "token.missing",
+            "Gitea API token is missing or is a placeholder. Run generate-gitea-token first.",
+            "error",
+        )
+        return result
+
+    if dry_run:
+        result["actions"].append(
+            {
+                "path": "gitea/api/user",
+                "key": "verify.token",
+                "severity": "info",
+                "message": "Would verify Gitea API token via GET /api/v1/user.",
+                "phase": "audit",
+            }
+        )
+        result["tokenValid"] = True
+        result["valid"] = True
+        return result
+
+    try:
+        parsed = urlparse(base_url)
+        conn = http.client.HTTPConnection(
+            parsed.hostname or "localhost", parsed.port or 3000, timeout=10
+        )
+        conn.request(
+            "GET",
+            "/api/v1/user",
+            headers={
+                "Authorization": f"token {token}",
+                "Content-Type": "application/json",
+            },
+        )
+        resp = conn.getresponse()
+        resp.read()
+        conn.close()
+        if resp.status == 200:
+            result["tokenValid"] = True
+            result["actions"].append(
+                {
+                    "path": "gitea/api/user",
+                    "key": "verify.token",
+                    "severity": "info",
+                    "message": "Gitea API token is valid (GET /api/v1/user returned 200).",
+                    "phase": "audit",
+                }
+            )
+        else:
+            result["tokenValid"] = False
+            result["valid"] = False
+            add_bucket_item(
+                result["findings"],
+                "gitea.apiToken",
+                "token.invalid",
+                f"Gitea API token is invalid (GET /api/v1/user returned HTTP {resp.status}). Run renovate-gitea-token.",
+                "error",
+            )
+    except Exception as ex:
+        result["tokenValid"] = False
+        result["valid"] = False
+        add_bucket_item(
+            result["findings"],
+            "gitea/api/user",
+            "verify.error",
+            f"Could not verify Gitea API token: {ex}",
+            "warning",
+        )
+    return result
+
+
+def generate_gitea_api_token(
+    root: Path, dry_run: bool = False
+) -> dict[str, Any]:
+    """Generate a new Gitea API token with write scopes using admin Basic auth.
+
+    The token is written to .codex/client-tools.local.json under gitea.apiToken.
+    Uses the admin credentials (admin/admin123) via Basic auth to create the token
+    for the admin user via POST /api/v1/users/admin/tokens.
+    """
+    result = configure_result(
+        "GenerateGiteaApiToken", dry_run, write_enabled=not dry_run
+    )
+    client_path = root / ".codex" / "client-tools.local.json"
+    client = read_json(client_path, optional=True)
+    gitea = client.get("gitea", {}) if client else {}
+    base_url = str(gitea.get("baseUrl", "http://localhost:3000")).rstrip("/")
+    owner = gitea.get("owner", "sdd-admin")
+    repo = gitea.get("repo", "sdd-test")
+
+    if dry_run:
+        result["actions"].append(
+            {
+                "path": ".codex/client-tools.local.json",
+                "key": "token.generate",
+                "severity": "info",
+                "message": "Would generate Gitea API token with scopes: write:repository, write:issue, write:pull_request.",
+                "phase": "apply",
+            }
+        )
+        result["valid"] = True
+        return result
+
+    gitea_admin_user = "admin"
+    gitea_admin_pass = "admin123"
+
+    try:
+        import base64
+
+        parsed = urlparse(base_url)
+        conn = http.client.HTTPConnection(
+            parsed.hostname or "localhost", parsed.port or 3000, timeout=10
+        )
+        b64_auth = base64.b64encode(
+            f"{gitea_admin_user}:{gitea_admin_pass}".encode()
+        ).decode()
+        headers = {
+            "Authorization": f"Basic {b64_auth}",
+            "Content-Type": "application/json",
+        }
+        body = json.dumps(
+            {
+                "name": f"sdd-agent-{owner}-{repo}",
+                "scopes": _gitea_token_scopes(),
+            }
+        )
+        conn.request(
+            "POST",
+            f"/api/v1/users/{gitea_admin_user}/tokens",
+            body=body,
+            headers=headers,
+        )
+        resp = conn.getresponse()
+        data = resp.read().decode("utf-8")
+        conn.close()
+
+        if resp.status == 201:
+            resp_json = json.loads(data)
+            new_token = resp_json.get("sha1", "") or resp_json.get("token", "")
+            if new_token:
+                # Write token to client-tools.local.json
+                if client is None:
+                    client = {}
+                gitea_section = client.setdefault("gitea", {})
+                gitea_section["apiToken"] = new_token
+                gitea_section.setdefault("baseUrl", base_url)
+                gitea_section.setdefault("owner", owner)
+                gitea_section.setdefault("repo", repo)
+                write_json(client_path, client)
+                result["actions"].append(
+                    {
+                        "path": ".codex/client-tools.local.json/gitea.apiToken",
+                        "key": "token.generated",
+                        "severity": "info",
+                        "message": "Generated and saved new Gitea API token with write scopes.",
+                        "phase": "apply",
+                    }
+                )
+                result["token"] = new_token[:8] + "..."  # show partial for safety
+            else:
+                add_bucket_item(
+                    result["findings"],
+                    "gitea/api/tokens",
+                    "token.empty",
+                    "Gitea returned 201 but no token in response.",
+                    "error",
+                )
+        elif resp.status == 409:
+            # Token with same name already exists — delete and retry
+            # First list existing tokens
+            list_conn = http.client.HTTPConnection(
+                parsed.hostname or "localhost", parsed.port or 3000, timeout=10
+            )
+            list_conn.request(
+                "GET",
+                f"/api/v1/users/{gitea_admin_user}/tokens",
+                headers={"Authorization": f"Basic {b64_auth}"},
+            )
+            list_resp = list_conn.getresponse()
+            list_data = list_resp.read().decode("utf-8")
+            list_conn.close()
+
+            if list_resp.status == 200:
+                tokens = json.loads(list_data)
+                token_name = f"sdd-agent-{owner}-{repo}"
+                token_id = None
+                for t in tokens:
+                    if t.get("name") == token_name:
+                        token_id = t.get("id")
+                        break
+                if token_id is not None:
+                    # Delete the existing token
+                    del_conn = http.client.HTTPConnection(
+                        parsed.hostname or "localhost", parsed.port or 3000, timeout=10
+                    )
+                    del_conn.request(
+                        "DELETE",
+                        f"/api/v1/users/{gitea_admin_user}/tokens/{token_id}",
+                        headers={"Authorization": f"Basic {b64_auth}"},
+                    )
+                    del_resp = del_conn.getresponse()
+                    del_resp.read()
+                    del_conn.close()
+                    if del_resp.status in {204, 200}:
+                        result["actions"].append(
+                            {
+                                "path": ".codex/client-tools.local.json/gitea.apiToken",
+                                "key": "token.deleted",
+                                "severity": "info",
+                                "message": "Deleted old Gitea API token to allow regeneration.",
+                                "phase": "apply",
+                            }
+                        )
+                        # Retry: call ourselves recursively (only once)
+                        return generate_gitea_api_token(root, dry_run)
+
+            add_bucket_item(
+                result["findings"],
+                "gitea/api/tokens",
+                "token.conflict",
+                f"Gitea returned status {resp.status} when creating token: {data[:200]}",
+                "error",
+            )
+        else:
+            add_bucket_item(
+                result["findings"],
+                "gitea/api/tokens",
+                "token.create",
+                f"Gitea returned HTTP {resp.status}: {data[:200]}",
+                "error",
+            )
+    except Exception as ex:
+        add_bucket_item(
+            result["findings"],
+            "gitea/api/tokens",
+            "token.create",
+            f"Could not generate Gitea API token: {ex}",
+            "error",
+        )
+    result["valid"] = not any(
+        item.get("severity") == "error" for item in result["findings"]
+    )
+    return result
+
+
+def renovate_gitea_api_token(
+    root: Path, dry_run: bool = False
+) -> dict[str, Any]:
+    """Verify the current Gitea API token and regenerate if invalid."""
+    result = configure_result(
+        "RenovateGiteaApiToken", dry_run, write_enabled=not dry_run
+    )
+    # Step 1: verify current token
+    verify_result = verify_gitea_api_token(root, dry_run)
+    if not dry_run and verify_result.get("tokenValid") is True:
+        result["actions"].append(
+            {
+                "path": ".codex/client-tools.local.json/gitea.apiToken",
+                "key": "token.verified",
+                "severity": "info",
+                "message": "Current Gitea API token is valid. No renovation needed.",
+                "phase": "audit",
+            }
+        )
+        result["valid"] = True
+        result["renovated"] = False
+        return result
+
+    # Step 2: generate new token
+    if dry_run:
+        result["actions"].append(
+            {
+                "path": ".codex/client-tools.local.json/gitea.apiToken",
+                "key": "token.renovate",
+                "severity": "info",
+                "message": "Would renovate Gitea API token (verify + generate if invalid).",
+                "phase": "apply",
+            }
+        )
+        result["valid"] = True
+        result["renovated"] = True
+        return result
+
+    gen_result = generate_gitea_api_token(root, dry_run)
+    if gen_result.get("valid", False):
+        result["actions"].append(
+            {
+                "path": ".codex/client-tools.local.json/gitea.apiToken",
+                "key": "token.renovated",
+                "severity": "info",
+                "message": "Renovated Gitea API token (old token was invalid or missing).",
+                "phase": "apply",
+            }
+        )
+        result["renovated"] = True
+        result["valid"] = True
+    else:
+        result["findings"] = gen_result.get("findings", [])
+        result["renovated"] = False
+        result["valid"] = False
     return result
 
 
@@ -1067,6 +1426,12 @@ def set_project_stack(
         write_json(path, current)
         # Auto-generate Semgrep config after stack change
         set_semgrep_config(root, dry_run)
+
+    # Auto-trigger guidance discovery: return relevant skills based on the new stack
+    from .guidance import discover_project_guidance
+
+    guidance = discover_project_guidance(root, dry_run)
+
     return {
         "mode": "SetProjectStack",
         "valid": True,
@@ -1083,6 +1448,7 @@ def set_project_stack(
                 "phase": "apply",
             }
         ],
+        "guidance": guidance,
     }
 
 
@@ -1160,8 +1526,7 @@ def set_quality_config(
         "SetOpenProjectEnv",
         "SetMonitoringEnv",
         "SetGiteaRunner",
-        "SetRecommendedTools",
-        "MapProjectGuidanceStep",
+
     }
     filtered_values = {}
     invalid_keys = []
@@ -1206,50 +1571,6 @@ def set_quality_config(
         "path": str(path),
         "dryRun": dry_run,
     }
-
-
-def set_recommended_tools(
-    root: Path, values: dict[str, Any], dry_run: bool = False
-) -> dict[str, Any]:
-    """Set accepted/dismissed tool recommendations."""
-    result = configure_result("SetRecommendedTools", dry_run, write_enabled=not dry_run)
-    path = root / ".codex" / "client-tools.local.json"
-    if not path.exists():
-        return {
-            "mode": "SetRecommendedTools",
-            "valid": False,
-            "errors": [
-                "Missing .codex/client-tools.local.json. Run InitLocalFiles first."
-            ],
-        }
-    if "accepted" not in values and "dismissed" not in values:
-        return {
-            "mode": "SetRecommendedTools",
-            "valid": False,
-            "errors": ["values.accepted or values.dismissed is required."],
-        }
-    config = read_json(path, optional=True)
-    recommended = config.setdefault("recommendedTools", {})
-    for key in ("accepted", "dismissed"):
-        existing = list(recommended.get(key, []))
-        for item in values.get(key, []):
-            if item not in existing:
-                existing.append(item)
-        recommended[key] = existing
-        if values.get(key):
-            result["actions"].append(
-                {
-                    "path": ".codex/client-tools.local.json",
-                    "key": f"recommendedTools.{key}",
-                    "severity": "info",
-                    "message": f"Recorded {key} recommendation ids.",
-                    "phase": "apply",
-                }
-            )
-    if not dry_run:
-        write_json(path, config)
-    result["valid"] = True
-    return result
 
 
 # ── Set Semgrep config (stack-aware SAST rules) ─────────────────────────
@@ -1321,7 +1642,7 @@ def set_semgrep_config(root: Path, dry_run: bool = False) -> dict[str, Any]:
         "database": stack.get("database", {}).get("value", ""),
     }
 
-    for domain_name, domain_value in domains.items():
+    for _domain_name, domain_value in domains.items():
         if not domain_value:
             continue
         rules = _resolve_semgrep_rules(domain_value)
@@ -1409,9 +1730,7 @@ def validate_app_config(root: Path, dry_run: bool = False) -> dict[str, Any]:
     Checks that apps.json is valid JSON, conforms to its schema,
     and that each app's projectPath has a Dockerfile.
     """
-    result = configure_result(
-        "ValidateAppConfig", dry_run, write_enabled=not dry_run
-    )
+    result = configure_result("ValidateAppConfig", dry_run, write_enabled=not dry_run)
     apps_path = root / "infra" / "deployment" / "apps.json"
     schema_path = root / "infra" / "deployment" / "apps.schema.json"
 
@@ -1460,6 +1779,7 @@ def validate_app_config(root: Path, dry_run: bool = False) -> dict[str, Any]:
     if schema_path.exists():
         try:
             import jsonschema
+
             schema = json.loads(schema_path.read_text(encoding="utf-8"))
             jsonschema.validate(instance=apps_data, schema=schema)
             result["actions"].append(
@@ -1551,7 +1871,18 @@ def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str,
     )
     nexus_base = "http://localhost:8088"
     nexus_user = "admin"
+    # On first boot, Nexus generates a random admin password stored in /nexus-data/admin.password.
+    # Try to read it from the running container; fall back to admin123 (manually set or old install).
     nexus_pass = "admin123"
+    try:
+        r = subprocess.run(
+            ["docker", "exec", "agentic-nexus", "cat", "/nexus-data/admin.password"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            nexus_pass = r.stdout.strip()
+    except Exception:
+        pass
 
     if dry_run:
         result["actions"].append(
@@ -1566,9 +1897,7 @@ def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str,
         result["valid"] = True
         return result
 
-    def _nexus_api(
-        method: str, path: str, body: dict | None = None
-    ) -> tuple[int, str]:
+    def _nexus_api(method: str, path: str, body: dict | None = None) -> tuple[int, str]:
         try:
             parsed = urlparse(nexus_base)
             conn = http.client.HTTPConnection(
@@ -1592,8 +1921,7 @@ def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str,
 
     # ── 1. Accept Nexus EULA (required before any API calls work on fresh install) ──
     eula_status, eula_data = _nexus_api(
-        "POST", "/service/rest/v1/editions/eula/accept",
-        body={"eulaAccepted": True}
+        "POST", "/service/rest/v1/editions/eula/accept", body={"eulaAccepted": True}
     )
     # Nexus EULA endpoint returns 204 on success, 400 if already accepted, 404 if not applicable (3.92+)
     if eula_status in {204, 200, 400, 404}:
@@ -1717,6 +2045,7 @@ def validate_docker_desktop(root: Path, dry_run: bool = False) -> dict[str, Any]
 
     # Detect Docker Desktop on Windows (host.docker.internal resolves on Docker Desktop)
     import socket
+
     is_docker_desktop = False
     try:
         socket.gethostbyname("host.docker.internal")
@@ -1737,6 +2066,7 @@ def validate_docker_desktop(root: Path, dry_run: bool = False) -> dict[str, Any]
 
         # Check Docker Desktop daemon.json for insecure-registries
         import platform
+
         daemon_path = None
         if sys.platform == "win32" or platform.system() == "Windows":
             # Docker Desktop on Windows stores daemon.json in %USERPROFILE%\.docker
@@ -1745,7 +2075,10 @@ def validate_docker_desktop(root: Path, dry_run: bool = False) -> dict[str, Any]
                 daemon_path = user_profile
         else:
             # Linux/Mac: /etc/docker/daemon.json or ~/.docker/daemon.json
-            for p in [Path("/etc/docker/daemon.json"), Path.home() / ".docker" / "daemon.json"]:
+            for p in [
+                Path("/etc/docker/daemon.json"),
+                Path.home() / ".docker" / "daemon.json",
+            ]:
                 if p.exists():
                     daemon_path = p
                     break
@@ -2079,6 +2412,85 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
     op_admin_user = "admin"
     op_admin_pass = "admin"
 
+    # ── Ensure Gitea admin user exists with admin privileges ─────────
+    # Gitea's env var-based admin creation (USERNAME/PASSWORD) may not
+    # create the user in the database with is_admin=True on all versions.
+    # Use the Gitea CLI inside the container to ensure it's properly set up.
+    try:
+        import base64
+        # Check if admin user exists and has admin privileges
+        b64 = base64.b64encode(f"{gitea_admin_user}:{gitea_admin_pass}".encode()).decode()
+        conn = http.client.HTTPConnection(
+            urlparse("http://localhost:3000").hostname or "localhost", 3000, timeout=10
+        )
+        conn.request("GET", "/api/v1/user", headers={"Authorization": f"Basic {b64}"})
+        resp = conn.getresponse()
+        body = resp.read().decode("utf-8")
+        conn.close()
+        if resp.status == 200:
+            user_data = json.loads(body)
+            if not user_data.get("is_admin", False):
+                # User exists but is not admin — delete and recreate with admin flag
+                # (gitea admin user change does NOT exist in the CLI)
+                subprocess.run(
+                    ["docker", "exec", "-u", "1000", "agentic-gitea",
+                     "gitea", "admin", "user", "delete",
+                     "--username", gitea_admin_user],
+                    capture_output=True, text=True, timeout=30,
+                )
+                r = subprocess.run(
+                    ["docker", "exec", "-u", "1000", "agentic-gitea",
+                     "gitea", "admin", "user", "create",
+                     "--username", gitea_admin_user,
+                     "--password", gitea_admin_pass,
+                     "--email", f"{gitea_admin_user}@example.com",
+                     "--must-change-password=false", "--admin"],
+                    capture_output=True, text=True, timeout=30,
+                )
+                if r.returncode == 0:
+                    result["actions"].append({
+                        "path": "gitea/admin", "key": "admin.recreated",
+                        "severity": "info",
+                        "message": f"Recreated '{gitea_admin_user}' with admin privileges via Gitea CLI.",
+                        "phase": "apply",
+                    })
+                else:
+                    add_bucket_item(
+                        result["findings"], "gitea/admin", "admin.create",
+                        f"Could not recreate admin user: {r.stderr[:200]}",
+                        "warning", "apply",
+                    )
+        else:
+            # Admin user doesn't exist — create via CLI
+            r = subprocess.run(
+                ["docker", "exec", "-u", "1000", "agentic-gitea",
+                 "gitea", "admin", "user", "create",
+                 "--username", gitea_admin_user,
+                 "--password", gitea_admin_pass,
+                 "--email", f"{gitea_admin_user}@example.com",
+                 "--must-change-password=false", "--admin"],
+                capture_output=True, text=True, timeout=30,
+            )
+            if r.returncode == 0:
+                result["actions"].append({
+                    "path": "gitea/admin", "key": "admin.created",
+                    "severity": "info",
+                    "message": f"Created admin user '{gitea_admin_user}' via Gitea CLI.",
+                    "phase": "apply",
+                })
+            else:
+                add_bucket_item(
+                    result["findings"], "gitea/admin", "admin.create",
+                    f"Could not create admin user: {r.stderr[:200]}",
+                    "warning", "apply",
+                )
+    except Exception as ex:
+        add_bucket_item(
+            result["findings"], "gitea/admin", "admin.check",
+            f"Could not verify admin user: {ex}",
+            "warning", "apply",
+        )
+
     # ── Helper: Gitea API call ───────────────────────────────────────
     def _gitea_api(method: str, path: str, body: dict | None = None) -> tuple[int, str]:
         try:
@@ -2105,7 +2517,45 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
             return 0, str(ex)
 
     # ── Helper: OpenProject API call (uses Bearer token from client-tools) ──
+    # OpenProject API v3 does NOT accept Basic auth with admin:admin — it requires
+    # API tokens. Generate one via the Rails console inside the container.
     _op_token = None
+    try:
+        # OpenProject API does NOT accept Basic auth with admin:admin.
+        # Generate an API token via the Rails console inside the container.
+        r = subprocess.run(
+            ["docker", "exec", "agentic-e2e-openproject-1",
+             "./bin/rails", "runner", "-e", "production",
+             "u=User.where(login:'admin').first;"
+             "t=Token::API.new(user:u);t.save!;puts t.plain_value"],
+            capture_output=True, text=True, timeout=60,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            # Rails runner mixes log output with the token value on stdout.
+            # Extract just the token line (starts with "opapi-").
+            for line in r.stdout.strip().splitlines():
+                line = line.strip()
+                if line.startswith("opapi-"):
+                    _op_token = line
+                    break
+            # Also save to client-tools.local.json for persistence
+            try:
+                config_path = root / ".codex" / "client-tools.local.json"
+                config = read_json(config_path, optional=True) or {}
+                op_config = config.setdefault("openProject", {})
+                op_config["apiToken"] = _op_token
+                write_json(config_path, config)
+            except Exception:
+                pass
+            result["actions"].append({
+                "path": "openproject/api", "key": "token.generated",
+                "severity": "info",
+                "message": "Generated OpenProject API token via Rails console.",
+                "phase": "apply",
+            })
+    except Exception:
+        # Container not ready yet; _op_api will try Basic auth as fallback
+        pass
 
     def _op_api(method: str, path: str, body: dict | None = None) -> tuple[int, str]:
         nonlocal _op_token
@@ -2190,7 +2640,7 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
         if not existing_token or existing_token.startswith("replace-with"):
             reg_status, reg_data = _gitea_api(
                 "POST",
-                f"/api/v1/repos/{_owner}/{_repo}/actions/runners/registration-token"
+                f"/api/v1/repos/{_owner}/{_repo}/actions/runners/registration-token",
             )
             if reg_status == 200 or reg_status == 201:
                 try:
@@ -2211,7 +2661,8 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
                         # Restart runner container to pick up new token
                         _restart = run_native(
                             ["docker", "restart", "agentic-gitea-runner"],
-                            root, timeout=30
+                            root,
+                            timeout=30,
                         )
                         if _restart["returncode"] == 0:
                             result["actions"].append(
@@ -2291,6 +2742,58 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 "apply",
             )
 
+    # ── 1b. Gitea: create repository and update config ────────────
+    #     Create the dev repo so push_to_gitea has a target, and update
+    #     client-tools.local.json with the actual owner/repo values.
+    _gitea_owner = gitea_admin_user  # "admin"
+    _gitea_repo = root.name.lower().replace("_", "-")
+    # Create repo if it doesn't already exist
+    _repo_status, _repo_data = _gitea_api(
+        "POST", "/api/v1/admin/users/" + _gitea_owner + "/repos",
+        body={"name": _gitea_repo, "auto_init": True, "default_branch": "dev",
+              "description": f"SDD lab repository for {root.name}"},
+    )
+    if _repo_status in {201, 409}:
+        result["actions"].append({
+            "path": f"gitea/repos/{_gitea_owner}/{_gitea_repo}",
+            "key": "repo.created",
+            "severity": "info",
+            "message": f"Gitea repo {_gitea_owner}/{_gitea_repo} ready.",
+            "phase": "apply",
+        })
+        # Update client-tools.local.json with actual owner/repo
+        try:
+            _config_path = root / ".codex" / "client-tools.local.json"
+            _config = read_json(_config_path, optional=True) or {}
+            _gitea_section = _config.setdefault("gitea", {})
+            _gitea_section["owner"] = _gitea_owner
+            _gitea_section["repo"] = _gitea_repo
+            _gitea_section.setdefault("baseUrl", "http://localhost:3000")
+            write_json(_config_path, _config)
+            result["actions"].append({
+                "path": ".codex/client-tools.local.json/gitea",
+                "key": "config.updated",
+                "severity": "info",
+                "message": f"Updated client-tools: owner={_gitea_owner}, repo={_gitea_repo}",
+                "phase": "apply",
+            })
+        except Exception as _ex:
+            add_bucket_item(result["findings"], ".codex/client-tools.local.json",
+                           "config.update", f"Could not update config: {_ex}",
+                           "warning", "apply")
+    else:
+        add_bucket_item(result["findings"], f"gitea/repos/{_gitea_owner}/{_gitea_repo}",
+                       "repo.create", f"Repo creation returned {_repo_status}: {_repo_data[:200]}",
+                       "warning", "apply")
+
+    # ── 1c. Gitea: generate API token with write scopes ──────────────
+    #     This token is used by agents to create PRs, add labels, request reviewers.
+    _api_token_result = generate_gitea_api_token(root, dry_run)
+    for action in _api_token_result.get("actions", []):
+        result["actions"].append(action)
+    for finding in _api_token_result.get("findings", []):
+        result["findings"].append(finding)
+
     # ── 2. OpenProject: create users, project, board, statuses ────────
     op_users = [
         {
@@ -2334,18 +2837,24 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 "apply",
             )
 
-    # ── 2b. OpenProject: define board list names (not tied to OP statuses) ──
-    # These are pure labels on the board, NOT linked to OpenProject statuses.
-    # Dragging a work package between these columns does NOT trigger status
-    # transitions, so the board stays flexible regardless of OP workflow rules.
-    BOARD_LIST_NAMES = ["New", "To Do", "In Progress", "In Review", "QA", "Done"]
-    for name in BOARD_LIST_NAMES:
+    # ── 2b. OpenProject: kanban columns — hardcoded statuses (matches seed data) ──
+    # Status action board with 7 standard OpenProject statuses.
+    _KANBAN_COLUMNS = [
+        ("New", "New"),
+        ("Specified", "Specified"),
+        ("In progress", "In progress"),
+        ("Developed", "Developed"),
+        ("In testing", "In testing"),
+        ("Closed", "Closed"),
+        ("Rejected", "Rejected"),
+    ]
+    for label, status_name in _KANBAN_COLUMNS:
         result["actions"].append(
             {
-                "path": f"openproject/boards/e2e-test/lists/{name}",
-                "key": "board.list",
+                "path": f"openproject/boards/e2e-kanban/lists/{label}",
+                "key": "board.kanban-column",
                 "severity": "info",
-                "message": f"Board list '{name}' configured.",
+                "message": f"Kanban column '{label}' (status: {status_name}) configured.",
                 "phase": "apply",
             }
         )
@@ -2480,15 +2989,184 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
             }
         )
 
-    # ── 2e. OpenProject: create Basic board e2e-test with list names ──
+    # ── 2d1. OpenProject: add admin as project member for workflow/API access ──
+    # The admin user needs Member role in the project for workflow transitions to
+    # apply when using the admin's API token.
+    if not dry_run:
+        admin_member_script = (
+            'project = Project.find_by!(identifier: "e2eproject")\n'
+            'member_role = Role.find_by!(name: "Member")\n'
+            'admin = User.find_by(login: "admin")\n'
+            "unless admin\n"
+            '  puts "ERROR: admin not found"\n'
+            "  exit 1\n"
+            "end\n"
+            "existing = Member.where(project: project, principal: admin)\n"
+            "if existing.any?\n"
+            '  puts "Admin already a member"\n'
+            "else\n"
+            '  ::Member.create(project: project, principal: admin, roles: [member_role])\n'
+            '  puts "Admin added as member"\n'
+            "end\n"
+        )
+        tmp_path = None
+        try:
+            tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".rb", delete=False)
+            tmp.write(admin_member_script)
+            tmp.close()
+            tmp_path = tmp.name
+            subprocess.run(
+                ["docker", "cp", tmp_path, "agentic-e2e-openproject-1:/tmp/add_admin_member.rb"],
+                capture_output=True, timeout=30,
+            )
+            adm_result = run_native(
+                ["docker", "exec", "agentic-e2e-openproject-1",
+                 "sh", "-c", "cd /app && bundle exec rails runner /tmp/add_admin_member.rb"],
+                REPO_ROOT, timeout=30,
+            )
+        except Exception as ex:
+            add_bucket_item(
+                result["findings"], "openproject/members/admin", "member.create",
+                f"Admin member creation failed: {ex}", "warning", "apply",
+            )
+            adm_result = {"returncode": -1, "stdout": "", "stderr": str(ex)}
+        finally:
+            if tmp_path:
+                Path(tmp_path).unlink(missing_ok=True)
+        if adm_result["returncode"] == 0:
+            result["actions"].append({
+                "path": "openproject/members/admin",
+                "key": "member.created",
+                "severity": "info",
+                "message": "Admin added as Member in e2eproject.",
+                "phase": "apply",
+            })
+        else:
+            add_bucket_item(
+                result["findings"], "openproject/members/admin", "member.create",
+                f"Admin member creation failed: {adm_result['stderr'][:200]}",
+                "warning", "apply",
+            )
+    else:
+        result["actions"].append({
+            "path": "openproject/members/admin",
+            "key": "member.plan",
+            "severity": "info",
+            "message": "Would add admin as Member in e2eproject.",
+            "phase": "apply",
+        })
+
+    # ── 2da. OpenProject: create workflow transitions for Task type + Member role ──
+    # Without workflow transitions, the kanban board cannot move work packages between
+    # status columns (OpenProject blocks all status changes when no workflow is defined).
+    # This creates transitions between ALL status pairs for Task + Member roles.
+    # Uses find_by(name:) for portability across OpenProject installations.
+    if not dry_run:
+        workflow_script = (
+            "type = Type.find_by(name: 'Task')\n"
+            "role = Role.find_by(name: 'Member')\n"
+            "unless type && role\n"
+            '  puts "ERROR: Task type or Member role not found"\n'
+            "  exit 1\n"
+            "end\n"
+            "statuses = Status.all\n"
+            "created = 0\n"
+            "skipped = 0\n"
+            "statuses.each do |from|\n"
+            "  statuses.each do |to|\n"
+            "    next if from.id == to.id\n"
+            "    exists = Workflow.where(\n"
+            "      type_id: type.id,\n"
+            "      role_id: role.id,\n"
+            "      old_status_id: from.id,\n"
+            "      new_status_id: to.id\n"
+            "    ).exists?\n"
+            "    if exists\n"
+            "      skipped += 1\n"
+            "    else\n"
+            "      Workflow.create!(\n"
+            "        type_id: type.id,\n"
+            "        role_id: role.id,\n"
+            "        old_status_id: from.id,\n"
+            "        new_status_id: to.id\n"
+            "      )\n"
+            "      created += 1\n"
+            "    end\n"
+            "  end\n"
+            "end\n"
+            'puts "Created #{created} workflow transitions (skipped #{skipped} existing)"\n'
+        )
+        tmp_path = None
+        try:
+            tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".rb", delete=False)
+            tmp.write(workflow_script)
+            tmp.close()
+            tmp_path = tmp.name
+            subprocess.run(
+                ["docker", "cp", tmp_path, "agentic-e2e-openproject-1:/tmp/create_workflows.rb"],
+                capture_output=True,
+                timeout=30,
+            )
+            wf_result = run_native(
+                [
+                    "docker", "exec", "agentic-e2e-openproject-1",
+                    "sh", "-c", "cd /app && bundle exec rails runner /tmp/create_workflows.rb",
+                ],
+                REPO_ROOT,
+                timeout=60,
+            )
+        except Exception as ex:
+            add_bucket_item(
+                result["findings"],
+                "openproject/workflows",
+                "workflow.create",
+                f"OpenProject workflow creation via Rails console failed: {ex}",
+                "warning", "apply",
+            )
+            wf_result = {"returncode": -1, "stdout": "", "stderr": str(ex)}
+        finally:
+            if tmp_path:
+                Path(tmp_path).unlink(missing_ok=True)
+        if wf_result["returncode"] == 0:
+            result["actions"].append(
+                {
+                    "path": "openproject/workflows",
+                    "key": "workflow.created",
+                    "severity": "info",
+                    "message": f"OpenProject workflow transitions created: {wf_result['stdout'][:100].strip()}.",
+                    "phase": "apply",
+                }
+            )
+        else:
+            add_bucket_item(
+                result["findings"],
+                "openproject/workflows",
+                "workflow.create",
+                f"OpenProject workflow creation failed: {wf_result['stderr'][:200]}",
+                "warning", "apply",
+            )
+    else:
+        result["actions"].append(
+            {
+                "path": "openproject/workflows",
+                "key": "workflow.plan",
+                "severity": "info",
+                "message": "Would create workflow transitions for Task type + Member role (all status pairs).",
+                "phase": "apply",
+            }
+        )
+
+    # ── 2e. OpenProject: create Action board e2e-kanban with status columns ──
+    # Note: The Grids API (/api/v3/grids) does not expose the work_package_query
+    # widget type needed for board widgets — creation must use the Rails console.
+    # Action board driven by work package status: each column maps to an OpenProject
+    # status. Dragging a work package between columns triggers status transitions.
     # OpenProject 17+ may not expose /api/v3/boards via REST — fall back to Rails console.
-    # Board columns are NOT tied to OpenProject statuses — they're plain label columns
-    # so work packages can be dragged freely between them without status transition blocks.
     brd_st, brd_dt = _op_api(
         "POST",
         "/api/v3/boards",
         body={
-            "name": "e2e-test",
+            "name": "e2e-kanban",
             "boardType": "grid",
             "gridType": "Board",
             "_links": {
@@ -2499,28 +3177,31 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
     if brd_st == 201:
         result["actions"].append(
             {
-                "path": "openproject/boards/e2e-test",
+                "path": "openproject/boards/e2e-kanban",
                 "key": "board.created",
                 "severity": "info",
-                "message": "OpenProject Basic board e2e-test created.",
+                "message": "OpenProject Action board e2e-kanban created.",
                 "phase": "apply",
             }
         )
     elif brd_st == 422:
         result["actions"].append(
             {
-                "path": "openproject/boards/e2e-test",
+                "path": "openproject/boards/e2e-kanban",
                 "key": "board.exists",
                 "severity": "info",
-                "message": "OpenProject Basic board e2e-test already exists.",
+                "message": "OpenProject Action board e2e-kanban already exists.",
                 "phase": "apply",
             }
         )
     elif brd_st == 404:
         # Boards API not exposed via REST — try Rails console
-        # Write Ruby script to local temp file, copy to container, execute
-        # Board lists are NOT status-filtered — they're plain label columns
-        board_lists_str = "[" + ", ".join(f'"{n}"' for n in BOARD_LIST_NAMES) + "]"
+        # Build columns as [[label, status_name], ...] for the Ruby script
+        board_lists_str = (
+            "["
+            + ", ".join(f'["{label}", "{status}"]' for label, status in _KANBAN_COLUMNS)
+            + "]"
+        )
         ruby_script = (
             'project = Project.find_by(identifier: "e2eproject")\n'
             'admin = User.find_by(login: "admin")\n'
@@ -2528,16 +3209,22 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
             '  puts "Project or admin not found"\n'
             "  exit 1\n"
             "end\n"
-            '::Boards::Grid.where(project: project, name: "e2e-test").destroy_all\n'
-            "board_labels = " + board_lists_str + "\n"
+            '::Boards::Grid.where(project: project, name: "e2e-kanban").destroy_all\n'
+            "columns = " + board_lists_str + "\n"
             "board = ::Boards::Grid.create!(\n"
             "  project: project,\n"
-            '  name: "e2e-test",\n'
+            '  name: "e2e-kanban",\n'
             "  row_count: 1,\n"
-            "  column_count: board_labels.length,\n"
-            "  user_id: admin.id\n"
+            "  column_count: columns.length,\n"
+            "  user_id: admin.id,\n"
+            '  options: {"type" => "action", "attribute" => "status", "highlightingMode" => "priority"}\n'
             ")\n"
-            "board_labels.each_with_index do |label, idx|\n"
+            "columns.each_with_index do |(label, status_name), idx|\n"
+            "  status_obj = Status.find_by(name: status_name)\n"
+            "  unless status_obj\n"
+            '    puts "Status #{status_name} not found"\n'
+            "    exit 1\n"
+            "  end\n"
             "  query = ::Query.new(\n"
             "    name: label,\n"
             "    project: project,\n"
@@ -2546,7 +3233,10 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
             "    include_subprojects: false,\n"
             "    display_sums: false\n"
             "  )\n"
+            "  query.add_filter('status_id', '=', [status_obj.id.to_s])\n"
             "  query.save!(validate: false)\n"
+            "  # Create View record so the query is not hidden (hidden=views.empty?)\n"
+            "  View.create!(query_id: query.id, type: 'board_view')\n"
             "  ::Grids::Widget.create!(\n"
             "    grid: board,\n"
             '    identifier: "work_package_query",\n'
@@ -2554,10 +3244,10 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
             "    end_row: 2,\n"
             "    start_column: idx + 1,\n"
             "    end_column: idx + 2,\n"
-            '    options: {"query_id" => query.id}\n'
+            '    options: {\"query_id\" => query.id, \"filters\" => [{\"status\" => {\"operator\" => \"=\", \"values\" => [status_obj.id.to_s]}}]}\n'
             "  )\n"
             "end\n"
-            'puts "Board e2e-test created with #{board_labels.length} columns"\n'
+            'puts "Board e2e-kanban created with #{columns.length} columns"\n'
         )
         tmp_path = None
         try:
@@ -2590,7 +3280,7 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
         except Exception as ex:
             add_bucket_item(
                 result["findings"],
-                "openproject/boards/e2e-test",
+                "openproject/boards/e2e-kanban",
                 "board.create",
                 f"OpenProject board creation via Rails console failed: {ex}",
                 "warning",
@@ -2602,14 +3292,14 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 Path(tmp_path).unlink(missing_ok=True)
         if (
             rails_result["returncode"] == 0
-            and "e2e-test created" in rails_result["stdout"]
+            and "e2e-kanban created" in rails_result["stdout"]
         ):
             result["actions"].append(
                 {
-                    "path": "openproject/boards/e2e-test",
+                    "path": "openproject/boards/e2e-kanban",
                     "key": "board.created",
                     "severity": "info",
-                    "message": "OpenProject Basic board e2e-test created via Rails console with plain label columns.",
+                    "message": "OpenProject Action board e2e-kanban created via Rails console with status columns.",
                     "phase": "apply",
                 }
             )
@@ -2618,17 +3308,17 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
         ) or "already exists" in rails_result.get("stderr", ""):
             result["actions"].append(
                 {
-                    "path": "openproject/boards/e2e-test",
+                    "path": "openproject/boards/e2e-kanban",
                     "key": "board.exists",
                     "severity": "info",
-                    "message": "OpenProject Basic board e2e-test already exists.",
+                    "message": "OpenProject Action board e2e-kanban already exists.",
                     "phase": "apply",
                 }
             )
         else:
             add_bucket_item(
                 result["findings"],
-                "openproject/boards/e2e-test",
+                "openproject/boards/e2e-kanban",
                 "board.create",
                 f"OpenProject board creation via Rails console failed: {rails_result['stderr'][:200]}",
                 "warning",
@@ -2637,7 +3327,7 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
     else:
         add_bucket_item(
             result["findings"],
-            "openproject/boards/e2e-test",
+            "openproject/boards/e2e-kanban",
             "board.create",
             f"OpenProject board creation returned {brd_st}: {brd_dt[:200]}",
             "warning",
@@ -2651,10 +3341,10 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
             # Write Ruby script to temp file to avoid shell quoting issues
             ruby_key_script = (
                 'u = User.find_by(login: "admin")\n'
-                'u.force_password_change = false\n'
-                'u.save!\n'
-                'token = Token::API.create!(user: u)\n'
-                'puts token.plain_value\n'
+                "u.force_password_change = false\n"
+                "u.save!\n"
+                "token = Token::API.create!(user: u)\n"
+                "puts token.plain_value\n"
             )
             key_tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".rb", delete=False)
             key_tmp.write(ruby_key_script)
@@ -2662,13 +3352,26 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
             key_tmp_path = key_tmp.name
             try:
                 subprocess.run(
-                    ["docker", "cp", key_tmp_path, "agentic-e2e-openproject-1:/tmp/gen_api_key.rb"],
-                    capture_output=True, timeout=30,
+                    [
+                        "docker",
+                        "cp",
+                        key_tmp_path,
+                        "agentic-e2e-openproject-1:/tmp/gen_api_key.rb",
+                    ],
+                    capture_output=True,
+                    timeout=30,
                 )
                 key_result = run_native(
-                    ["docker", "exec", "agentic-e2e-openproject-1", "sh", "-c",
-                     "cd /app && bundle exec rails runner /tmp/gen_api_key.rb"],
-                    REPO_ROOT, timeout=30,
+                    [
+                        "docker",
+                        "exec",
+                        "agentic-e2e-openproject-1",
+                        "sh",
+                        "-c",
+                        "cd /app && bundle exec rails runner /tmp/gen_api_key.rb",
+                    ],
+                    REPO_ROOT,
+                    timeout=30,
                 )
             finally:
                 Path(key_tmp_path).unlink(missing_ok=True)
@@ -2700,30 +3403,12 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 "phase": "apply",
             }
         )
-        # Register the openproject MCP server in .vscode/mcp.json
-        try:
-            from tools.bm25s_flashrank.setup_mcp import setup_openproject_mcp
-
-            written = setup_openproject_mcp(root, "http://localhost:8080", op_api_key)
-            for p in written:
-                result["actions"].append(
-                    {
-                        "path": p.relative_to(root).as_posix(),
-                        "key": "mcp.registered",
-                        "severity": "info",
-                        "message": f"OpenProject MCP server registered in {p.name}.",
-                        "phase": "apply",
-                    }
-                )
-        except Exception as ex:
-            add_bucket_item(
-                result["findings"],
-                ".vscode/mcp.json",
-                "mcp.register",
-                f"OpenProject MCP server registration failed: {ex}",
-                "warning",
-                "apply",
-            )
+        # Write the API key to the env file so the standalone install step can read it
+        op_env_path = root / "infra" / "openproject" / "variables.env"
+        if not dry_run and op_env_path.exists():
+            op_env = read_env_file(op_env_path)
+            op_env["OPENPROJECT_API_KEY"] = op_api_key
+            write_env_file(op_env_path, op_env)
     else:
         add_bucket_item(
             result["findings"],
@@ -2791,9 +3476,9 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 "name": "e2eProject",
             },
             "board": {
-                "name": "e2e-test",
+                "name": "e2e-kanban",
                 "url": "http://localhost:8080/projects/e2eproject/boards",
-                "lists": BOARD_LIST_NAMES,
+                "columns": [label for label, _status in _KANBAN_COLUMNS],
             },
         }
         config.setdefault("openProject", {})
@@ -2880,7 +3565,9 @@ def provision_gitea_secrets(root: Path, dry_run: bool = False) -> dict[str, Any]
     owner = gitea_cfg.get("owner", "sdd-admin")
     repo = gitea_cfg.get("repo", "sdd-test")
 
-    def _gitea_actions_api(method: str, path: str, body: dict | None = None) -> tuple[int, str]:
+    def _gitea_actions_api(
+        method: str, path: str, body: dict | None = None
+    ) -> tuple[int, str]:
         try:
             parsed = urlparse(gitea_base)
             conn = http.client.HTTPConnection(
@@ -3138,7 +3825,7 @@ def push_to_gitea(root: Path, dry_run: bool = False) -> dict[str, Any]:
     if has_changes:
         run_native(["git", "add", "-A"], root, timeout=30)
         commit = run_native(
-            ["git", "commit", "-m", "v0: initial SDD template setup"], root, timeout=30
+            ["git", "commit", "-m", "v0: initial SDD template setup [skip ci]"], root, timeout=30
         )
         if commit["returncode"] == 0:
             result["actions"].append(
@@ -3146,7 +3833,7 @@ def push_to_gitea(root: Path, dry_run: bool = False) -> dict[str, Any]:
                     "path": "git/commit",
                     "key": "commit.v0",
                     "severity": "info",
-                    "message": "Committed v0: initial SDD template setup.",
+                    "message": "Committed v0 with [skip ci] (initial SDD template setup).",
                     "phase": "apply",
                 }
             )
@@ -3547,7 +4234,7 @@ def scaffold_k8s(root, dry_run=False):
     result["valid"] = not any(
         item.get("severity") == "error" for item in result["findings"]
     )
-    return result# ── Docker Desktop K8s enablement ──────────────────────────────────────────
+    return result  # ── Docker Desktop K8s enablement ──────────────────────────────────────────
 
 
 def enable_docker_desktop_k8s(root: Path, dry_run: bool = False) -> dict[str, Any]:
@@ -3599,22 +4286,38 @@ def enable_docker_desktop_k8s(root: Path, dry_run: bool = False) -> dict[str, An
             pass
 
     # ── 2. Not running — check Docker Desktop settings ──
-    # On Windows, settings are in %APPDATA%\Docker\settings.json
-    # The key "kubernetesEnabled" controls whether K8s is enabled
+    # On Windows, settings are in one of several possible locations:
+    #   %APPDATA%\Docker\settings-store.json  (Docker Desktop 4.37+)
+    #   %APPDATA%\Docker\settings.json        (Docker Desktop 4.34 and earlier)
+    # The key can be either:
+    #   "kubernetes": {"enabled": true}       (nested, newer format)
+    #   "kubernetesEnabled": true             (flat, older format)
     settings_path = None
     import platform
+
     if sys.platform == "win32" or platform.system() == "Windows":
-        appdata = Path.home() / "AppData" / "Roaming"
-        candidate = appdata / "Docker" / "settings.json"
-        if candidate.exists():
-            settings_path = candidate
+        base_dirs = [
+            Path(os.environ.get("APPDATA", "")),
+            Path.home() / "AppData" / "Roaming",
+            Path(os.environ.get("LOCALAPPDATA", "")),
+            Path(os.environ.get("PROGRAMDATA", "")),
+        ]
+        # Try settings-store.json first (newer), then settings.json (older)
+        for settings_name in ("settings-store.json", "settings.json"):
+            for base in base_dirs:
+                candidate = base / "Docker" / settings_name
+                if candidate.exists():
+                    settings_path = candidate
+                    break
+            if settings_path:
+                break
 
     if settings_path is None or not settings_path.exists():
         add_bucket_item(
             result["findings"],
             "docker-desktop",
             "k8s.enable",
-            "Docker Desktop settings.json not found — cannot auto-enable K8s. "
+            "Docker Desktop settings file not found — cannot auto-enable K8s. "
             "Enable Kubernetes manually in Docker Desktop Settings → Kubernetes → Enable Kubernetes, "
             "then re-run setup-lab.",
             "error",
@@ -3623,7 +4326,7 @@ def enable_docker_desktop_k8s(root: Path, dry_run: bool = False) -> dict[str, An
         result["valid"] = False  # K8s is required
         return result
 
-    # ── 3. Read settings.json to check K8s state ──
+    # ── 3. Read settings file to check K8s state ──
     try:
         settings = json.loads(settings_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError) as ex:
@@ -3631,7 +4334,7 @@ def enable_docker_desktop_k8s(root: Path, dry_run: bool = False) -> dict[str, An
             result["findings"],
             str(settings_path),
             "k8s.enable",
-            f"Could not parse Docker Desktop settings.json: {ex}. "
+            f"Could not parse Docker Desktop settings: {ex}. "
             "Enable Kubernetes manually in Docker Desktop Settings.",
             "error",
             "pre-start",
@@ -3639,33 +4342,43 @@ def enable_docker_desktop_k8s(root: Path, dry_run: bool = False) -> dict[str, An
         result["valid"] = False
         return result
 
-    k8s_enabled = settings.get("kubernetesEnabled", False)
-    if k8s_enabled:
-        # K8s is enabled in settings but kubectl failed — Docker Desktop may be restarting
-        add_bucket_item(
-            result["findings"],
-            "docker-desktop",
-            "k8s.enable",
-            "K8s is enabled in Docker Desktop settings but kubectl is not responding. "
-            "Docker Desktop may still be starting its K8s cluster. Wait a moment and re-run setup-lab.",
-            "error",
-            "pre-start",
-        )
-        result["valid"] = False
-        return result
+    # Read K8s state: try nested "kubernetes.enabled" (newer) then flat "KubernetesEnabled" (older)
+    k8s_section = settings.get("kubernetes", {})
+    if isinstance(k8s_section, dict):
+        k8s_enabled = k8s_section.get("enabled", False)
+    else:
+        k8s_enabled = False
+    if not k8s_enabled:
+        k8s_enabled = settings.get("KubernetesEnabled", False)
 
-    # ── 4. Enable K8s in settings.json ──
-    settings["kubernetesEnabled"] = True
-    try:
-        settings_path.write_text(
-            json.dumps(settings, indent=2), encoding="utf-8"
+    if k8s_enabled:
+        # K8s is enabled in settings but kubectl is not responding — Docker Desktop
+        # may need a restart to recover the cluster. Fall through to the restart
+        # logic instead of erroring out.
+        result["actions"].append(
+            {
+                "path": "docker-desktop",
+                "key": "k8s.restart",
+                "severity": "info",
+                "message": "K8s is enabled in settings but not responding. Restarting Docker Desktop to recover cluster...",
+                "phase": "apply",
+            }
         )
+
+    # ── 4. Enable K8s in settings file ──
+    # Write both formats for backward compatibility
+    settings["KubernetesEnabled"] = True
+    if "kubernetes" not in settings or not isinstance(settings["kubernetes"], dict):
+        settings["kubernetes"] = {}
+    settings["kubernetes"]["enabled"] = True
+    try:
+        settings_path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
         result["actions"].append(
             {
                 "path": str(settings_path),
                 "key": "k8s.enable",
                 "severity": "info",
-                "message": "Set kubernetesEnabled=true in Docker Desktop settings.",
+                "message": "Set kubernetes.enabled=true in Docker Desktop settings.",
                 "phase": "apply",
             }
         )
@@ -3674,7 +4387,7 @@ def enable_docker_desktop_k8s(root: Path, dry_run: bool = False) -> dict[str, An
             result["findings"],
             str(settings_path),
             "k8s.enable",
-            f"Could not write Docker Desktop settings.json: {ex}. "
+            f"Could not write Docker Desktop settings: {ex}. "
             "Enable Kubernetes manually in Docker Desktop Settings → Kubernetes → Enable Kubernetes, "
             "then re-run setup-lab.",
             "error",
@@ -3684,37 +4397,21 @@ def enable_docker_desktop_k8s(root: Path, dry_run: bool = False) -> dict[str, An
         return result
 
     # ── 5. Restart Docker Desktop to pick up K8s enablement ──
-    # On Windows, use the executable's --shutdown flag then restart
-    dd_exe = Path("C:/Program Files/Docker/Docker/Docker Desktop.exe")
-    if not dd_exe.exists():
-        add_bucket_item(
-            result["findings"],
-            str(dd_exe),
-            "k8s.restart",
-            f"Docker Desktop executable not found at {dd_exe}. "
-            "Restart Docker Desktop manually (right-click tray icon → Restart), wait for K8s to start, "
-            "then re-run setup-lab.",
-            "error",
-            "pre-start",
-        )
-        result["valid"] = False
-        return result
-
-    # Stop Docker Desktop gracefully
+    # Use `docker desktop stop` / `docker desktop start` CLI (Docker Desktop 4.37+)
+    # Falls back to killing the process if CLI is not available
     result["actions"].append(
         {
-            "path": str(dd_exe),
+            "path": "docker",
             "key": "k8s.restart",
             "severity": "info",
             "message": "Stopping Docker Desktop to enable K8s...",
             "phase": "apply",
         }
     )
-    stop_cmd = run_native(
-        [str(dd_exe), "--shutdown"], root, timeout=30
-    )
+    # Try docker desktop CLI first (Docker Desktop 4.37+), fallback to taskkill
+    stop_cmd = run_native(["docker", "desktop", "stop"], root, timeout=30)
     if stop_cmd["returncode"] != 0:
-        # --shutdown might not work on older versions; try taskkill fallback
+        # Fallback: taskkill
         taskkill = run_native(
             ["taskkill", "/F", "/IM", "Docker Desktop.exe"], root, timeout=15
         )
@@ -3731,29 +4428,48 @@ def enable_docker_desktop_k8s(root: Path, dry_run: bool = False) -> dict[str, An
             result["valid"] = False
             return result
     # Wait for Docker process to fully exit
-    import time
     time.sleep(5)
 
-    # Start Docker Desktop (use Popen with DETACHED_PROCESS — start is a cmd builtin, not an exe)
+    # Start Docker Desktop via CLI
     result["actions"].append(
         {
-            "path": str(dd_exe),
+            "path": "docker",
             "key": "k8s.restart",
             "severity": "info",
             "message": "Starting Docker Desktop (K8s enabled)...",
             "phase": "apply",
         }
     )
-    subprocess.Popen(
-        [str(dd_exe)],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        creationflags=subprocess.DETACHED_PROCESS if sys.platform == "win32" else 0,
-    )
-    # Give Docker Desktop a moment to begin starting up
+    start_cmd = run_native(["docker", "desktop", "start"], root, timeout=30)
+    if start_cmd["returncode"] != 0:
+        # Fallback: try launching Docker Desktop executable directly
+        dd_exe = shutil.which("docker")
+        if dd_exe:
+            dd_exe_path = Path(dd_exe).parent.parent / "Docker Desktop.exe"
+        else:
+            dd_exe_path = Path("C:/Program Files/Docker/Docker/Docker Desktop.exe")
+        if dd_exe_path.exists():
+            subprocess.Popen(
+                [str(dd_exe_path)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=subprocess.DETACHED_PROCESS if sys.platform == "win32" else 0,
+            )
+        else:
+            add_bucket_item(
+                result["findings"],
+                "docker-desktop",
+                "k8s.restart",
+                "Could not start Docker Desktop. Start it manually from the Start Menu, "
+                "then re-run setup-lab.",
+                "error",
+                "pre-start",
+            )
+            result["valid"] = False
+            return result
     time.sleep(5)
 
-    # Wait for Docker daemon to be ready (up to 120s)
+    # ── 6. Wait for Docker daemon to be ready (up to 120s) ──
     result["actions"].append(
         {
             "path": "docker",
@@ -3764,9 +4480,11 @@ def enable_docker_desktop_k8s(root: Path, dry_run: bool = False) -> dict[str, An
         }
     )
     daemon_ready = False
-    for attempt in range(24):  # 24 * 5 = 120 seconds
+    for _attempt in range(24):  # 24 * 5 = 120 seconds
         time.sleep(5)
-        check = run_native(["docker", "info", "--format", "{{.ServerVersion}}"], root, timeout=10)
+        check = run_native(
+            ["docker", "info", "--format", "{{.ServerVersion}}"], root, timeout=10
+        )
         if check["returncode"] == 0 and check["stdout"].strip():
             daemon_ready = True
             break
@@ -3783,6 +4501,7 @@ def enable_docker_desktop_k8s(root: Path, dry_run: bool = False) -> dict[str, An
         result["valid"] = False
         return result
 
+    # ── 7. Wait for K8s to be ready (up to 180s) ──
     result["actions"].append(
         {
             "path": "docker",
@@ -3793,13 +4512,11 @@ def enable_docker_desktop_k8s(root: Path, dry_run: bool = False) -> dict[str, An
         }
     )
 
-    # Wait for K8s to be ready (up to 180s)
     k8s_ready = False
-    for attempt in range(18):  # 18 * 10 = 180 seconds
+    git_version = "unknown"
+    for _attempt in range(18):  # 18 * 10 = 180 seconds
         time.sleep(10)
-        k_check = run_native(
-            ["kubectl", "version", "--output=json"], root, timeout=10
-        )
+        k_check = run_native(["kubectl", "version", "--output=json"], root, timeout=10)
         if k_check["returncode"] == 0:
             try:
                 k8s_info = json.loads(k_check["stdout"])
@@ -3834,9 +4551,7 @@ def enable_docker_desktop_k8s(root: Path, dry_run: bool = False) -> dict[str, An
     )
 
     # Also update the K8s context to docker-desktop
-    run_native(
-        ["kubectl", "config", "use-context", "docker-desktop"], root, timeout=10
-    )
+    run_native(["kubectl", "config", "use-context", "docker-desktop"], root, timeout=10)
 
     result["valid"] = True
     return result
@@ -4021,7 +4736,9 @@ def setup_k8s_access(root, dry_run=False):
 
         for env in ("dev", "qa", "prod"):
             ns = f"sdd-{env}"
-            local_port = {"dev": 8081, "qa": 8082, "prod": 8083}[env]  # K8s NodePort, not Nexus Docker registry port
+            local_port = {"dev": 8081, "qa": 8082, "prod": 8083}[
+                env
+            ]  # K8s NodePort, not Nexus Docker registry port
 
             # Check if namespace exists
             ns_check = run_native(
@@ -4103,7 +4820,7 @@ def run_environment_lab(args: list[str]) -> int:
             "split-infra-env, build-gitea-images, set-gitea-branch-protection, validate-observability, "
             "validate-gitea-runner, set-client-tools, set-project-stack, "
             "set-project-stack-metadata, set-semgrep-config, set-quality-config, validate-docker-desktop-k8s, setup-k8s-access, scaffold-k8s, set-recommended-tools, "
-            "provision-lab-users, push-to-gitea",
+            "provision-lab-users, push-to-gitea, verify-gitea-token, generate-gitea-token, renovate-gitea-token",
             file=sys.stderr,
         )
         return 1
@@ -4145,6 +4862,9 @@ def run_environment_lab(args: list[str]) -> int:
         "scaffold-k8s": lambda: scaffold_k8s(root, dry_run),
         "set-recommended-tools": lambda: set_recommended_tools(root, values, dry_run),
         "set-semgrep-config": lambda: set_semgrep_config(root, dry_run),
+        "verify-gitea-token": lambda: verify_gitea_api_token(root, dry_run),
+        "generate-gitea-token": lambda: generate_gitea_api_token(root, dry_run),
+        "renovate-gitea-token": lambda: renovate_gitea_api_token(root, dry_run),
         "provision-lab-users": lambda: provision_lab_users(root, dry_run),
         "push-to-gitea": lambda: push_to_gitea(root, dry_run),
     }
@@ -4200,7 +4920,7 @@ def run_environment_lab(args: list[str]) -> int:
             print("\n--- KUBERNETES ---")
             print("-" * 40)
             print(f"  | Manifest: {k.get('manifest', 'N/A')} |")
-            print(f"  | Deploy commands: |")
+            print("  | Deploy commands: |")
             for cmd in k.get("deploy", []):
                 print(f"  |   $ {cmd} |")
 
