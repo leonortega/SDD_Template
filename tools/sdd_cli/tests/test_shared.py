@@ -7,7 +7,6 @@ import unittest
 from pathlib import Path
 
 from tools.sdd_cli._shared import (
-    ensure_used_in_steps,
     find_meta,
     get_high_risk_patterns,
     normalize_stack_domain,
@@ -86,32 +85,6 @@ class FindMetaTests(unittest.TestCase):
     def test_extracts_label_with_colon_in_value(self) -> None:
         body = "- Source: https://example.com:8080\n"
         self.assertEqual("https://example.com:8080", find_meta(body, "Source"))
-
-
-class EnsureUsedInStepsTests(unittest.TestCase):
-    """Tests for ensure_used_in_steps — ensures items have a usedInSteps list."""
-
-    def test_adds_used_in_steps_when_missing(self) -> None:
-        result = ensure_used_in_steps({"id": "test-skill", "name": "Test"})
-        self.assertEqual([], result["usedInSteps"])
-
-    def test_preserves_existing_used_in_steps(self) -> None:
-        result = ensure_used_in_steps({"id": "test", "usedInSteps": ["dev-flow"]})
-        self.assertEqual(["dev-flow"], result["usedInSteps"])
-
-    def test_does_not_mutate_original_input(self) -> None:
-        original = {"id": "test"}
-        result = ensure_used_in_steps(original)
-        result["usedInSteps"].append("modified")
-        self.assertNotIn("usedInSteps", original)
-
-    def test_preserves_other_keys(self) -> None:
-        result = ensure_used_in_steps(
-            {"id": "test", "name": "Test Skill", "type": "skill"}
-        )
-        self.assertEqual("test", result["id"])
-        self.assertEqual("Test Skill", result["name"])
-        self.assertEqual("skill", result["type"])
 
 
 class RemoveEmptyParentsTests(unittest.TestCase):

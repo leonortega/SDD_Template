@@ -100,8 +100,7 @@ def sync_worktree_local_config(
     worktrees = [Path(path) for path in values.get("worktreePaths", [])]
     for relative in get_allowlisted_local_config():
         source = root / relative
-        required = relative != ".codex/tool-recommendations.local.json"
-        if required and not source.exists():
+        if not source.exists():
             add_bucket_item(
                 result["findings"],
                 relative,
@@ -109,8 +108,6 @@ def sync_worktree_local_config(
                 f"Coordinator checkout is missing required local runtime file '{relative}'.",
                 "error",
             )
-            continue
-        if not source.exists():
             continue
         for worktree in worktrees:
             target = worktree / relative

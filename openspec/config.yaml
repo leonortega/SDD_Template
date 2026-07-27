@@ -11,7 +11,7 @@ context: |
 
   QA automation should prefer repo-native tests for repeatable implementation checks. Playwright guidance remains available for future browser-visible behavior when a UI exists.
 
-  Recommendation audits scan the repository for detected tools, frameworks, environments, test frameworks, QA practices, code standards, web UI, REST/API, and security signals. project-guidance-discover owns project guidance suggestions and should avoid recommending stack-specific items before a stack exists.
+  Skills are selected from the manifest based on the project stack. Stack-specific skills are added after the tech stack is selected.
 
   Use official-first research for platform and tooling guidance. Prefer official Gitea, Sonatype Nexus, Docker Desktop, Kubernetes, Grafana, Seq, Dozzle, Playwright, and selected future stack sources.
 

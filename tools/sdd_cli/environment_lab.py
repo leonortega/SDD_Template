@@ -299,9 +299,7 @@ def init_local_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
 def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
     """Create project profile schema, example, and local overlay."""
     codex = root / ".codex"
-    providers = codex / "providers"
     codex.mkdir(parents=True, exist_ok=True)
-    providers.mkdir(parents=True, exist_ok=True)
     schema_path = codex / "project-profile.schema.json"
     profile_path = codex / "project-profile.example.json"
     local_profile_path = codex / "project-profile.local.json"
@@ -343,37 +341,13 @@ def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
         profile = {
             "$schema": "./project-profile.schema.json",
             "schemaVersion": 1,
-            "providers": {
-                "ticket": {
-                    "id": "openproject",
-                    "adapter": ".codex/providers/ticket.openproject.md",
-                },
-                "repository": {
-                    "id": "gitea",
-                    "adapter": ".codex/providers/repo.gitea.md",
-                },
-                "review": {"id": "gitea", "adapter": ".codex/providers/repo.gitea.md"},
-                "artifact": {
-                    "id": "nexus",
-                    "adapter": ".codex/providers/artifact.nexus.md",
-                },
-                "deployment": {
-                    "id": "docker-desktop",
-                    "adapter": ".codex/providers/deploy.example.md",
-                },
-            },
-            "workflow": {
-                "ticketKeyPattern": "TICKET-[0-9]+",
-                "baseBranch": "dev",
-                "branchPrefix": "codex",
-            },
-            "quality": {"coverageMinimumPercent": 80, "gates": []},
-            "adapters": {
-                "ticket": ".codex/providers/ticket.openproject.md",
-                "repository": ".codex/providers/repo.gitea.md",
-                "review": ".codex/providers/repo.gitea.md",
-                "artifact": ".codex/providers/artifact.nexus.md",
-                "deployment": ".codex/providers/deploy.example.md",
+            "stack": {
+                "frontend": {"applies": False, "value": ""},
+                "backend": {"applies": False, "value": ""},
+                "database": {"applies": False, "value": ""},
+                "languages": [],
+                "frameworks": [],
+                "testFrameworks": [],
             },
         }
         if not dry_run:
@@ -402,6 +376,7 @@ def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
         changed = True
         local_profile = {
             "$schema": "./project-profile.schema.json",
+            "schemaVersion": 1,
             "stack": {
                 "frontend": {"applies": False, "value": ""},
                 "backend": {"applies": False, "value": ""},
@@ -410,7 +385,6 @@ def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 "frameworks": [],
                 "testFrameworks": [],
             },
-            "adapters": {},
         }
         if not dry_run:
             write_json(local_profile_path, local_profile)
@@ -433,20 +407,6 @@ def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 "phase": "apply",
             }
         )
-
-    for name in (
-        "ticket.example.md",
-        "repo.example.md",
-        "artifact.example.md",
-        "deploy.example.md",
-    ):
-        example = providers / name
-        if not example.exists():
-            changed = True
-            if not dry_run:
-                example.write_text(
-                    f"# {name}\n\nprovider-neutral scaffold\n", encoding="utf-8"
-                )
 
     return {
         "mode": "InitProjectProfile",
@@ -1427,11 +1387,6 @@ def set_project_stack(
         # Auto-generate Semgrep config after stack change
         set_semgrep_config(root, dry_run)
 
-    # Auto-trigger guidance discovery: return relevant skills based on the new stack
-    from .guidance import discover_project_guidance
-
-    guidance = discover_project_guidance(root, dry_run)
-
     return {
         "mode": "SetProjectStack",
         "valid": True,
@@ -1448,7 +1403,6 @@ def set_project_stack(
                 "phase": "apply",
             }
         ],
-        "guidance": guidance,
     }
 
 
@@ -1576,25 +1530,42 @@ def set_quality_config(
 # ── Set Semgrep config (stack-aware SAST rules) ─────────────────────────
 
 
+_SEMGREP_RULE_MAP: dict[str, list[str]] = {
+    # Frontend
+    "react": ["p/typescript", "p/javascript", "p/react"],
+    "typescript": ["p/typescript", "p/javascript"],
+    "javascript": ["p/javascript"],
+    "vue": ["p/typescript", "p/javascript", "p/vue"],
+    "angular": ["p/typescript", "p/javascript"],
+    "svelte": ["p/typescript", "p/javascript"],
+    "nextjs": ["p/typescript", "p/javascript", "p/react", "p/nextjs"],
+    # Backend
+    "python": ["p/python"],
+    "fastapi": ["p/python", "p/flask", "p/jwt"],
+    "flask": ["p/python", "p/flask"],
+    "django": ["p/python", "p/django"],
+    "csharp": ["p/csharp"],
+    "aspnetcore": ["p/csharp"],
+    "go": ["p/golang"],
+    "rust": ["p/rust"],
+    "java": ["p/java"],
+    # Database
+    "postgresql": ["p/sql-injection"],
+}
+
+
 def set_semgrep_config(root: Path, dry_run: bool = False) -> dict[str, Any]:
     """Generate .semgrep.yml from project stack for offline CI scanning.
 
-    Reads the project stack from project-profile.local.json, looks up the
-    corresponding semgrep rule packs from stack-data.json, and writes a
-    .semgrep.yml config file in the repo root. The rules list is also
-    stored in project-profile.local.json under stack.semgrepRules, which
-    the CI workflow reads at scan time.
+    Reads the project stack from project-profile.local.json and writes a
+    .semgrep.yml config file in the repo root using a simple hardcoded
+    rule map. The rules list is also stored in project-profile.local.json
+    under stack.semgrepRules, which the CI workflow reads at scan time.
 
     The Docker image pre-caches all rule packs at build time so the CI
     container can run Semgrep offline.
     """
     result = configure_result("SetSemgrepConfig", dry_run, write_enabled=not dry_run)
-
-    # Read stack data mapping
-    stack_data_path = root / "tools" / "sdd_cli" / "stack-data.json"
-    stack_data = read_json(stack_data_path, optional=True)
-    canonical_map = stack_data.get("_STACK_CANONICAL_MAP", {})
-    tag_aliases = stack_data.get("_STACK_TAG_ALIASES", {})
 
     # Read project profile
     profile_path = root / ".codex" / "project-profile.local.json"
@@ -1602,35 +1573,11 @@ def set_semgrep_config(root: Path, dry_run: bool = False) -> dict[str, Any]:
     stack = profile.get("stack", {}) if isinstance(profile.get("stack"), dict) else {}
 
     def _resolve_semgrep_rules(domain_value: str) -> list[str]:
-        """Resolve a stack domain value to semgrep rule packs using case-insensitive
-        and alias-aware matching against the canonical map."""
-        # 1. Direct lookup
-        if domain_value in canonical_map:
-            return list(canonical_map[domain_value].get("semgrepRules", []))
-
-        # 2. Lowercase direct lookup
-        lc = domain_value.lower()
-        if lc in canonical_map:
-            return list(canonical_map[lc].get("semgrepRules", []))
-
-        # 3. Search tag aliases for matching canonical key
-        #    Uses substring containment so compound values like "C# (.NET)" match alias "c#"
-        #    Aliases are sorted by longest match first to prevent short substrings
-        #    (e.g. "java" in "javascript") from matching before the correct longer one.
+        """Resolve a stack domain value to semgrep rule packs using simple keyword matching."""
         dv_lower = domain_value.lower()
-        sorted_aliases = sorted(
-            tag_aliases.items(),
-            key=lambda item: max(len(a) for a in item[1]),
-            reverse=True,
-        )
-        for canonical_key, aliases in sorted_aliases:
-            alias_lower = [a.lower() for a in aliases]
-            if dv_lower in alias_lower or any(
-                alias in dv_lower for alias in alias_lower
-            ):
-                entry = canonical_map.get(canonical_key, {})
-                return list(entry.get("semgrepRules", []))
-
+        for keyword, rules in _SEMGREP_RULE_MAP.items():
+            if keyword in dv_lower:
+                return rules
         return []
 
     # Collect all semgrep rules from the three stack domains
@@ -1660,7 +1607,6 @@ def set_semgrep_config(root: Path, dry_run: bool = False) -> dict[str, Any]:
     yml_lines = [
         "# Semgrep configuration for this project",
         "# Auto-generated by set-semgrep-config",
-        "# Rules are resolved from stack-data.json based on project stack",
         "# Registry rules are pre-cached in the CI Docker image",
         "",
         "rules: []",
@@ -4819,7 +4765,7 @@ def run_environment_lab(args: list[str]) -> int:
             "init-quality-templates, set-openproject-env, set-monitoring-env, set-gitea-runner-env, "
             "split-infra-env, build-gitea-images, set-gitea-branch-protection, validate-observability, "
             "validate-gitea-runner, set-client-tools, set-project-stack, "
-            "set-project-stack-metadata, set-semgrep-config, set-quality-config, validate-docker-desktop-k8s, setup-k8s-access, scaffold-k8s, set-recommended-tools, "
+            "set-project-stack-metadata, set-semgrep-config, set-quality-config, validate-docker-desktop-k8s, setup-k8s-access, scaffold-k8s, "
             "provision-lab-users, push-to-gitea, verify-gitea-token, generate-gitea-token, renovate-gitea-token",
             file=sys.stderr,
         )
@@ -4860,7 +4806,7 @@ def run_environment_lab(args: list[str]) -> int:
         ),
         "setup-k8s-access": lambda: setup_k8s_access(root, dry_run),
         "scaffold-k8s": lambda: scaffold_k8s(root, dry_run),
-        "set-recommended-tools": lambda: set_recommended_tools(root, values, dry_run),
+
         "set-semgrep-config": lambda: set_semgrep_config(root, dry_run),
         "verify-gitea-token": lambda: verify_gitea_api_token(root, dry_run),
         "generate-gitea-token": lambda: generate_gitea_api_token(root, dry_run),

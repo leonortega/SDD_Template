@@ -64,24 +64,7 @@
         }
       ]
     },
-    "telemetry": {
-      "enabled": true,
-      "localPath": ".codex/agent-telemetry.local.jsonl",
-      "requiredFields": [
-        "timestampUtc",
-        "workflowStage",
-        "agentRole",
-        "model",
-        "reasoningEffort",
-        "inputTokens",
-        "outputTokens",
-        "cachedTokens",
-        "toolCallCount",
-        "retryCount",
-        "elapsedMilliseconds",
-        "outcome"
-      ]
-    },
+
     "workflowEvals": {
       "provider": "promptfoo",
       "configPath": ".codex/agent-evals/promptfooconfig.yaml",

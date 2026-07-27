@@ -22,7 +22,6 @@
   "ALLOWLISTED_LOCAL_CONFIG": [
     ".codex/client-tools.local.json",
     ".codex/project-profile.local.json",
-    ".codex/quality.local.json",
-    ".codex/tool-recommendations.local.json"
+    ".codex/quality.local.json"
   ]
 }

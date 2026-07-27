@@ -28,7 +28,7 @@ Always read in order:
 - `.codex/memory/MEMORY.md`
 - `.codex/delivery-policy.json`
 
-Then read only the stage-specific docs, OpenSpec artifacts, skills, provider adapters, and workflow files needed for the task. Read local config only when the workflow needs those values, and never print secrets or credential-bearing values.
+Then read only the stage-specific docs, OpenSpec artifacts, skills, and workflow files needed for the task. Read local config only when the workflow needs those values, and never print secrets or credential-bearing values.
 
 Prefer repository-specific skills and scripts over ad hoc process decisions.
 

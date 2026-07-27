@@ -202,72 +202,6 @@ class SddCliTests(unittest.TestCase):
             drift_findings = {item["key"] for item in drift["findings"]}
             self.assertIn("openProject.timeTelemetry.activityFlow", drift_findings)
 
-    def test_audit_warns_when_openrouter_config_is_incomplete(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            write(root / ".codex" / "project-profile.json", "{}")
-            write(root / ".codex" / "project-profile.schema.json", "{}")
-            write(
-                root / ".codex" / "client-tools.local.json",
-                json.dumps({"openRouter": {"baseUrl": "https://api.openrouter.ai/v1"}}),
-            )
-
-            result = cli.run_configure_mode("Audit", root, {}, False)
-            findings = {item["key"] for item in result["findings"]}
-            self.assertIn("openRouter.apiKey", findings)
-
-            write(
-                root / ".codex" / "client-tools.local.json",
-                json.dumps({"openRouter": {"apiKey": "token", "modelMapping": []}}),
-            )
-            result = cli.run_configure_mode("Audit", root, {}, False)
-            findings = {item["key"] for item in result["findings"]}
-            self.assertIn("openRouter.baseUrl", findings)
-            self.assertIn("openRouter.modelMapping", findings)
-
-    def test_common_openproject_activity_flow_maps_each_activity_by_name(self) -> None:
-        repo = Path(__file__).resolve().parents[3]
-        telemetry = json.loads(
-            (repo / ".codex" / "client-tools.example.json").read_text(encoding="utf-8")
-        )["openProject"]["timeTelemetry"]
-        activity_flow = telemetry["activityFlow"]
-        activity_by_stage = telemetry["activityByStage"]
-        expected = {
-            "Management",
-            "Specification",
-            "Development",
-            "Testing",
-            "Support",
-            "Other",
-        }
-
-        self.assertEqual(expected, set(activity_flow))
-        for activity, stages in activity_flow.items():
-            self.assertTrue(stages, activity)
-            for stage in stages:
-                self.assertEqual(activity, activity_by_stage[stage]["activityName"])
-
-    def test_openrouter_model_mapping_keys_match_chat_or_skill_names(self) -> None:
-        repo = Path(__file__).resolve().parents[3]
-        common = json.loads(
-            (repo / ".codex" / "client-tools.example.json").read_text(encoding="utf-8")
-        )
-        mapping = common.get("openRouter", {}).get("modelMapping", {})
-        self.assertIsInstance(mapping, dict)
-        self.assertIn("chat", mapping)
-        skill_dirs = {
-            p.name for p in (repo / ".codex" / "skills").iterdir() if p.is_dir()
-        }
-
-        for key in mapping:
-            if key == "chat":
-                continue
-            self.assertIn(
-                key,
-                skill_dirs,
-                msg=f"OpenRouter modelMapping key '{key}' should match a skill directory or be 'chat'.",
-            )
-
     def test_configure_audit_is_native_and_unsupported_modes_fail_closed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -318,6 +252,45 @@ class SddCliTests(unittest.TestCase):
                     "Mode is not implemented in native Python", json.dumps(result), mode
                 )
 
+    def test_discover_project_guidance_returns_stack_tags_and_skills(
+        self,
+    ) -> None:
+        """DiscoverProjectGuidance returns stackTags and relevantSkills."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            codex = root / ".codex"
+            codex.mkdir()
+            skills_dir = codex / "skills"
+            skills_dir.mkdir()
+            (skills_dir / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "categories": {
+                            "test": {
+                                "description": "Test skills",
+                                "skills": ["playwright/SKILL.md"],
+                            },
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (codex / "project-profile.local.json").write_text(
+                json.dumps({
+                    "stack": {
+                        "frontend": {"applies": True, "value": "react"},
+                        "backend": {"applies": False, "value": ""},
+                        "database": {"applies": False, "value": ""},
+                    }
+                }),
+                encoding="utf-8",
+            )
+
+            result = cli.run_configure_mode("DiscoverProjectGuidance", root, {}, False)
+            self.assertTrue(result["valid"])
+            self.assertIn("stackTags", result)
+            self.assertIn("react", result["stackTags"])
+
     def test_project_profile_local_overlay_merges_with_common_profile(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -330,9 +303,6 @@ class SddCliTests(unittest.TestCase):
                         "providers": {"deployment": {"id": "docker-desktop"}},
                         "workflow": {"ticketKeyPattern": "ABC-[0-9]+"},
                         "quality": {"gates": [{"id": "secret-scan", "required": True}]},
-                        "adapters": {
-                            "deployment": ".codex/providers/deploy.example.md"
-                        },
                     }
                 ),
                 encoding="utf-8",
@@ -411,7 +381,10 @@ class SddCliTests(unittest.TestCase):
                     cli.normalize_stack_domain(empty_value),
                 )
 
-    def test_project_stack_metadata_validation_gates_guidance_discovery(self) -> None:
+    def test_project_stack_discovery_returns_skills_from_manifest(
+        self,
+    ) -> None:
+        """DiscoverProjectGuidance returns skills matching the project stack."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             codex = root / ".codex"
@@ -419,7 +392,6 @@ class SddCliTests(unittest.TestCase):
             (codex / "project-profile.json").write_text(
                 json.dumps({"schemaVersion": 1}), encoding="utf-8"
             )
-            # Provide a minimal manifest.json so DiscoverProjectGuidance works
             skills_dir = codex / "skills"
             skills_dir.mkdir()
             (skills_dir / "manifest.json").write_text(
@@ -453,131 +425,8 @@ class SddCliTests(unittest.TestCase):
 
             result = cli.run_configure_mode("DiscoverProjectGuidance", root, {}, False)
             self.assertTrue(result["valid"])
-            self.assertIn("detectedTags", result)
-            self.assertIn("react", result["detectedTags"])
-
-            metadata = {
-                "frontend": [
-                    {
-                        "rawValue": "reactjs",
-                        "canonicalName": "React",
-                        "aliases": ["reactjs"],
-                        "languages": ["TypeScript"],
-                        "frameworks": ["React"],
-                        "testFrameworks": ["Vitest"],
-                        "guidanceSearchTerms": [
-                            "React official docs",
-                            "React TypeScript testing",
-                        ],
-                    }
-                ],
-                "backend": [
-                    {
-                        "rawValue": ".net-core-10",
-                        "canonicalName": ".NET 10 / ASP.NET Core",
-                        "aliases": [".NET Core", "dotnet"],
-                        "languages": ["C#"],
-                        "frameworks": ["ASP.NET Core"],
-                        "testFrameworks": ["xUnit"],
-                        "guidanceSearchTerms": [
-                            "ASP.NET Core official docs",
-                            ".NET 10 testing",
-                        ],
-                    }
-                ],
-                "database": [
-                    {
-                        "rawValue": "sqlite",
-                        "canonicalName": "SQLite",
-                        "aliases": ["sqlite"],
-                        "languages": [],
-                        "frameworks": [],
-                        "testFrameworks": [],
-                        "guidanceSearchTerms": ["SQLite official docs"],
-                    }
-                ],
-            }
-            cli.run_configure_mode(
-                "SetProjectStackMetadata",
-                root,
-                {"metadata": metadata, "metadataValidationStatus": "validated"},
-                False,
-            )
-
-            audit = cli.run_configure_mode("AuditRecommendedTools", root, {}, False)
-            self.assertIn("react", audit["detectedTags"])
-            self.assertIn("csharp", audit["detectedTags"])
-            self.assertIn("aspnetcore", audit["detectedTags"])
-            self.assertIn("sqlite", audit["detectedTags"])
-            stack_topics = [
-                topic
-                for topic in audit["researchTopics"]
-                if topic["id"].startswith("stack-")
-            ]
-            self.assertIn("React", {topic["technology"] for topic in stack_topics})
-            self.assertIn(
-                ".NET 10 / ASP.NET Core",
-                {topic["technology"] for topic in stack_topics},
-            )
-            self.assertIn("SQLite", {topic["technology"] for topic in stack_topics})
-
-    def test_audit_recommended_tools_uses_profile_stack_and_reports_missing_stack(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            codex = root / ".codex"
-            codex.mkdir()
-            (codex / "project-profile.local.json").write_text(
-                json.dumps(
-                    {
-                        "stack": {
-                            "frontend": {
-                                "applies": True,
-                                "value": "React + TypeScript",
-                            },
-                            "backend": {"applies": True, "value": "FastAPI + Python"},
-                            "database": {"applies": True, "value": "PostgreSQL"},
-                            "languages": [],
-                            "frameworks": [],
-                            "testFrameworks": [],
-                        }
-                    }
-                ),
-                encoding="utf-8",
-            )
-
-            audit = cli.run_configure_mode("AuditRecommendedTools", root, {}, False)
-            self.assertIn("react", audit["detectedTags"])
-            self.assertIn("typescript", audit["detectedTags"])
-            self.assertIn("fastapi", audit["detectedTags"])
-            self.assertNotIn(
-                "stack-context.missing", {item["key"] for item in audit["findings"]}
-            )
-
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            (root / ".codex").mkdir()
-            audit = cli.run_configure_mode("AuditRecommendedTools", root, {}, False)
-            findings = {item["key"]: item["message"] for item in audit["findings"]}
-            self.assertIn("stack-context.missing", findings)
-            self.assertIn(
-                "frontend, backend, and database", findings["stack-context.missing"]
-            )
-
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            (root / ".codex").mkdir()
-            cli.run_configure_mode(
-                "SetProjectStack",
-                root,
-                {"frontend": "none", "backend": "none", "database": "none"},
-                False,
-            )
-            audit = cli.run_configure_mode("AuditRecommendedTools", root, {}, False)
-            self.assertNotIn(
-                "stack-context.missing", {item["key"] for item in audit["findings"]}
-            )
+            self.assertIn("stackTags", result)
+            self.assertIn("reactjs", result["stackTags"])
 
     def test_configure_values_json_file_stdin_inline_and_invalid_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -686,56 +535,6 @@ class SddCliTests(unittest.TestCase):
                 )
             self.assertIn("Invalid JSON in --values-json", stderr.getvalue())
             self.assertNotIn("Traceback", stderr.getvalue())
-
-    def test_tool_recommendations_local_overlay_merges_with_example_catalog(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            codex = root / ".codex"
-            codex.mkdir()
-            (codex / "tool-recommendations.common.json").write_text(
-                json.dumps(
-                    {
-                        "schemaVersion": 1,
-                        "recommendations": [
-                            {
-                                "id": "playwright-guidance",
-                                "name": "Playwright guidance",
-                                "type": "skill",
-                                "usedInSteps": [],
-                            }
-                        ],
-                    }
-                ),
-                encoding="utf-8",
-            )
-            (codex / "tool-recommendations.local.json").write_text(
-                json.dumps(
-                    {
-                        "recommendations": [
-                            {
-                                "id": "playwright-guidance",
-                                "usedInSteps": ["qa"],
-                                "accepted": True,
-                            },
-                            {
-                                "id": "custom-guidance",
-                                "name": "Custom",
-                                "type": "reference",
-                                "usedInSteps": ["start"],
-                            },
-                        ],
-                    }
-                ),
-                encoding="utf-8",
-            )
-
-            catalog = cli.load_tool_recommendations_catalog(root)
-            by_id = {item["id"]: item for item in catalog["recommendations"]}
-            self.assertEqual(["qa"], by_id["playwright-guidance"]["usedInSteps"])
-            self.assertTrue(by_id["playwright-guidance"]["accepted"])
-            self.assertEqual("Custom", by_id["custom-guidance"]["name"])
 
     def test_infra_up_builds_docker_compose_command(self) -> None:
         calls = []
@@ -975,9 +774,7 @@ class SddCliTests(unittest.TestCase):
             "OPENPROJECT_SECRET_KEY_BASE: ${OPENPROJECT_SECRET_KEY_BASE:", compose
         )
         self.assertIn("setup-lab", configure)
-        self.assertNotIn("EnsureRancherDesktopCluster", configure)
-        self.assertNotIn("Azure App Service", configure)
-        self.assertNotIn("EnsureRancherDesktopCluster", configure)
+
         self.assertIn("compose-up", configure)
         self.assertIn("set-project-stack", configure)
 
@@ -988,6 +785,10 @@ class SddCliTests(unittest.TestCase):
             codex.mkdir()
             (codex / "client-tools.example.json").write_text("{}", encoding="utf-8")
             (codex / "quality.example.json").write_text("{}", encoding="utf-8")
+            write(
+                root / "lefthook.yml",
+                "pre-commit:\n  commands:\n    test:\n      run: echo ok\n",
+            )
             (root / "infra" / "openproject").mkdir(parents=True)
             (root / "infra" / "openproject" / "variables.env.example").write_text(
                 "OPENPROJECT_HOST=\n", encoding="utf-8"

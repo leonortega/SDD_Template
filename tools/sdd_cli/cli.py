@@ -15,7 +15,6 @@ from ._shared import REPO_ROOT, CliError, parse_pairs, read_json
 ALL_CONFIGURE_MODES: list[str] = [
     "Audit",
     "AuditQualityGates",
-    "AuditRecommendedTools",
     "BuildGiteaActionsImages",
     "DiscoverProjectGuidance",
     "InitLocalFiles",
@@ -63,12 +62,6 @@ def git_text(root: Path, args: list[str]) -> str:
     from ._shared import git_text as _impl
 
     return _impl(root, args)
-
-
-def load_tool_recommendations_catalog(root: Path) -> dict[str, Any]:
-    from ._shared import load_tool_recommendations_catalog as _impl
-
-    return _impl(root)
 
 
 def selected_deployment_provider(root: Path) -> str:
@@ -337,9 +330,6 @@ def run_configure_mode(
     if mode == "AuditQualityGates":
         return _run_audit_quality_gates(root, dry_run)
 
-    if mode == "AuditRecommendedTools":
-        return _run_audit_recommended_tools(root, dry_run)
-
     # Unknown mode
     return {
         "mode": mode,
@@ -445,35 +435,6 @@ def _run_audit(root: Path, dry_run: bool) -> dict[str, Any]:
                                     "audit",
                                 )
 
-        openrouter = client_tools.get("openRouter", {})
-        if isinstance(openrouter, dict):
-            if not openrouter.get("apiKey"):
-                add_bucket_item(
-                    result["findings"],
-                    ".codex/client-tools.local.json",
-                    "openRouter.apiKey",
-                    "OpenRouter API key is not configured.",
-                    "warning",
-                    "audit",
-                )
-            if not openrouter.get("baseUrl"):
-                add_bucket_item(
-                    result["findings"],
-                    ".codex/client-tools.local.json",
-                    "openRouter.baseUrl",
-                    "OpenRouter base URL is not configured.",
-                    "warning",
-                    "audit",
-                )
-            if not openrouter.get("modelMapping"):
-                add_bucket_item(
-                    result["findings"],
-                    ".codex/client-tools.local.json",
-                    "openRouter.modelMapping",
-                    "OpenRouter model mapping is not configured.",
-                    "warning",
-                    "audit",
-                )
 
     result["valid"] = not any(
         item.get("severity") == "error" for item in result["findings"]
@@ -512,66 +473,6 @@ def _run_audit_quality_gates(root: Path, dry_run: bool) -> dict[str, Any]:
         item.get("severity") == "error" for item in result["findings"]
     )
     return result
-
-
-def _run_audit_recommended_tools(root: Path, dry_run: bool) -> dict[str, Any]:
-    """Audit recommended tools using stack detection and guidance discovery."""
-    from ._shared import (
-        add_bucket_item,
-        build_recommendations,
-        build_research_topics,
-        build_stack_context_findings,
-        configure_result,
-        detect_stack_tags,
-        load_project_profile,
-        nested,
-    )
-
-    result = configure_result("AuditRecommendedTools", dry_run, write_enabled=False)
-    detected = detect_stack_tags(root)
-    topics = build_research_topics(detected, root)
-    recommendations = build_recommendations(root, detected, topics)
-    findings = build_stack_context_findings(root, detected)
-    for finding in findings:
-        result["findings"].append(finding)
-
-    result["detectedTags"] = detected
-    result["researchTopics"] = topics
-    result["recommendations"] = recommendations
-    result["actions"] = [
-        {
-            "path": ".",
-            "key": "detectedStack",
-            "severity": "info",
-            "message": f"Detected stack: {', '.join(detected)}",
-            "phase": "audit",
-        }
-    ]
-
-    # Check if stack metadata needs validation
-    profile = load_project_profile(root)
-    stack = nested(profile, "stack") or {}
-    if (
-        isinstance(stack, dict)
-        and stack.get("selectionRecorded")
-        and stack.get("metadataValidationStatus") != "validated"
-    ):
-        add_bucket_item(
-            result["findings"],
-            ".codex/project-profile.local.json",
-            "stack.metadata.validation",
-            "Validate stack metadata before project guidance discovery.",
-            "error",
-            "pre-discovery",
-        )
-
-    result["valid"] = not any(
-        item.get("severity") == "error" for item in result["findings"]
-    )
-    return result
-
-
-# ── Audit modes ──────────────────────────────────────────────────────────
 
 
 # ── Entry point ──────────────────────────────────────────────────────────
