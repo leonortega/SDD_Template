@@ -32,7 +32,7 @@ from ._shared import (
     write_env_file,
     write_json,
 )
-from .tool_installer import install_lefthook
+from .tool_installer import install_lefthook, install_grafana_mcp, install_gitea_mcp, install_k8s_mcp, install_openproject_mcp
 
 # ── Setup Lab (all-in-one idempotent) ───────────────────────────────────
 
@@ -83,6 +83,9 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
     if early:
         return early
 
+    # 7c. Install Kubernetes MCP (after K8s is enabled, before compose since no dependency on services)
+    _add_step(install_k8s_mcp(root, dry_run), fatal=False)
+
     # 8. Start compose services
     if not dry_run:
         early = _add_step(compose_up())
@@ -101,11 +104,20 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
     # 9. Validate observability
     _add_step(validate_observability(root, dry_run), fatal=False)
 
+    # 9b. Install Grafana MCP (after Grafana is confirmed running)
+    _add_step(install_grafana_mcp(root, dry_run), fatal=False)
+
     # 10. Validate Gitea runner (Docker, images, tools, socket, docker_push.py)
     _add_step(validate_gitea_runner(root, dry_run), fatal=False)
 
     # 11. Provision lab users (Gitea, OpenProject, Nexus) + runner registration token
     _add_step(provision_lab_users(root, dry_run), fatal=False)
+
+    # 11b. Install OpenProject MCP (after user provisioning writes API key to env file)
+    _add_step(install_openproject_mcp(root, dry_run), fatal=False)
+
+    # 11c. Install Gitea MCP (after API token is generated and stored in client-tools.local.json)
+    _add_step(install_gitea_mcp(root, dry_run), fatal=False)
 
     # 12. Provision Nexus repositories + accept EULA
     _add_step(provision_nexus_repositories(root, dry_run), fatal=False)
@@ -1414,6 +1426,12 @@ def set_project_stack(
         write_json(path, current)
         # Auto-generate Semgrep config after stack change
         set_semgrep_config(root, dry_run)
+
+    # Auto-trigger guidance discovery: return relevant skills based on the new stack
+    from .guidance import discover_project_guidance
+
+    guidance = discover_project_guidance(root, dry_run)
+
     return {
         "mode": "SetProjectStack",
         "valid": True,
@@ -1430,6 +1448,7 @@ def set_project_stack(
                 "phase": "apply",
             }
         ],
+        "guidance": guidance,
     }
 
 
@@ -1507,8 +1526,7 @@ def set_quality_config(
         "SetOpenProjectEnv",
         "SetMonitoringEnv",
         "SetGiteaRunner",
-        "SetRecommendedTools",
-        "MapProjectGuidanceStep",
+
     }
     filtered_values = {}
     invalid_keys = []
@@ -1553,50 +1571,6 @@ def set_quality_config(
         "path": str(path),
         "dryRun": dry_run,
     }
-
-
-def set_recommended_tools(
-    root: Path, values: dict[str, Any], dry_run: bool = False
-) -> dict[str, Any]:
-    """Set accepted/dismissed tool recommendations."""
-    result = configure_result("SetRecommendedTools", dry_run, write_enabled=not dry_run)
-    path = root / ".codex" / "client-tools.local.json"
-    if not path.exists():
-        return {
-            "mode": "SetRecommendedTools",
-            "valid": False,
-            "errors": [
-                "Missing .codex/client-tools.local.json. Run InitLocalFiles first."
-            ],
-        }
-    if "accepted" not in values and "dismissed" not in values:
-        return {
-            "mode": "SetRecommendedTools",
-            "valid": False,
-            "errors": ["values.accepted or values.dismissed is required."],
-        }
-    config = read_json(path, optional=True)
-    recommended = config.setdefault("recommendedTools", {})
-    for key in ("accepted", "dismissed"):
-        existing = list(recommended.get(key, []))
-        for item in values.get(key, []):
-            if item not in existing:
-                existing.append(item)
-        recommended[key] = existing
-        if values.get(key):
-            result["actions"].append(
-                {
-                    "path": ".codex/client-tools.local.json",
-                    "key": f"recommendedTools.{key}",
-                    "severity": "info",
-                    "message": f"Recorded {key} recommendation ids.",
-                    "phase": "apply",
-                }
-            )
-    if not dry_run:
-        write_json(path, config)
-    result["valid"] = True
-    return result
 
 
 # ── Set Semgrep config (stack-aware SAST rules) ─────────────────────────
@@ -3429,30 +3403,12 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 "phase": "apply",
             }
         )
-        # Register the openproject MCP server in .vscode/mcp.json
-        try:
-            from tools.bm25s_flashrank.setup_mcp import setup_openproject_mcp
-
-            written = setup_openproject_mcp(root, "http://localhost:8080", op_api_key)
-            for p in written:
-                result["actions"].append(
-                    {
-                        "path": p.relative_to(root).as_posix(),
-                        "key": "mcp.registered",
-                        "severity": "info",
-                        "message": f"OpenProject MCP server registered in {p.name}.",
-                        "phase": "apply",
-                    }
-                )
-        except Exception as ex:
-            add_bucket_item(
-                result["findings"],
-                ".vscode/mcp.json",
-                "mcp.register",
-                f"OpenProject MCP server registration failed: {ex}",
-                "warning",
-                "apply",
-            )
+        # Write the API key to the env file so the standalone install step can read it
+        op_env_path = root / "infra" / "openproject" / "variables.env"
+        if not dry_run and op_env_path.exists():
+            op_env = read_env_file(op_env_path)
+            op_env["OPENPROJECT_API_KEY"] = op_api_key
+            write_env_file(op_env_path, op_env)
     else:
         add_bucket_item(
             result["findings"],

@@ -41,11 +41,12 @@
       ]
     },
     "deploy": {
-      "description": "Production deployment, rollback, hotfix",
+      "description": "Production deployment, rollback, hotfix, and resilience patterns",
       "skills": [
         "dev-ops-deploy-prod/SKILL.md",
         "dev-ops-rollback-prod/SKILL.md",
-        "dev-ops-hotfix-prod/SKILL.md"
+        "dev-ops-hotfix-prod/SKILL.md",
+        "release-it/SKILL.md"
       ]
     },
     "monitor": {
@@ -61,39 +62,89 @@
     },
     "config": {
       "description": "Environment setup and configuration",
-      "skills": ["configure-dev-environment/SKILL.md"]
-    },
-    "guidance": {
-      "description": "Project guidance discovery, acquisition, and mapping",
       "skills": [
-        "project-guidance-discover/SKILL.md",
-        "project-guidance-acquire/SKILL.md",
-        "project-guidance-mapper/SKILL.md"
+        "configure-dev-environment/SKILL.md",
+        "configure-ci-workflows/SKILL.md"
       ]
     },
+    "guidance": {
+      "description": "Project stack detection and skill discovery from manifest",
+      "skills": ["project-guidance-discover/SKILL.md"]
+    },
     "plan": {
-      "description": "Planning and design: domain modeling, grill-style questioning",
+      "description": "Planning and design: domain modeling, architecture, grill-style questioning",
       "skills": [
         "domain-modeling/SKILL.md",
+        "domain-driven-design/SKILL.md",
         "grill-me/SKILL.md",
         "grill-with-docs/SKILL.md",
         "grilling/SKILL.md"
       ]
     },
+    "architecture": {
+      "description": "Architectural patterns: clean architecture, CQRS, event sourcing, microservices, sagas, design patterns",
+      "skills": [
+        "clean-architecture/SKILL.md",
+        "cqrs-implementation/SKILL.md",
+        "design-pattern-review/SKILL.md",
+        "event-store-design/SKILL.md",
+        "microservices-architect/SKILL.md",
+        "projection-patterns/SKILL.md",
+        "saga-orchestration/SKILL.md"
+      ]
+    },
     "security": {
-      "description": "Security best practices review and secure coding",
-      "skills": ["security-best-practices/SKILL.md"]
+      "description": "Security reviews, threat modeling, secure coding, dependency auditing",
+      "skills": [
+        "security-best-practices/SKILL.md",
+        "owasp-security/SKILL.md",
+        "security-audit/SKILL.md",
+        "threat-modeling/SKILL.md"
+      ]
     },
     "test": {
-      "description": "Browser testing: Playwright automation, interactive debugging",
-      "skills": ["playwright/SKILL.md", "playwright-interactive/SKILL.md"]
+      "description": "Testing: Playwright automation, E2E patterns, webapp testing, TDD",
+      "skills": [
+        "playwright/SKILL.md",
+        "playwright-interactive/SKILL.md",
+        "e2e-testing-patterns/SKILL.md",
+        "test-driven-development/SKILL.md",
+        "webapp-testing/SKILL.md"
+      ]
     },
     "quality": {
-      "description": "Code quality: ponytail audit, debt detection, help",
+      "description": "Code quality: clean code, refactoring, SOLID, ponytail audit",
       "skills": [
         "ponytail-audit/SKILL.md",
         "ponytail-debt/SKILL.md",
-        "ponytail-help/SKILL.md"
+        "ponytail-help/SKILL.md",
+        "clean-code/SKILL.md",
+        "refactoring-patterns/SKILL.md",
+        "solid/SKILL.md"
+      ]
+    },
+    "gitea": {
+      "description": "Gitea Actions workflows, runner management, branch protection",
+      "skills": ["gitea-actions-workflow/SKILL.md"]
+    },
+    "openproject": {
+      "description": "OpenProject sprint planning, backlog grooming, status reporting",
+      "skills": ["openproject-sprint-backlog/SKILL.md"]
+    },
+    "nexus": {
+      "description": "Nexus repository management, artifact promotion, REST API scripting",
+      "skills": ["nexus-repository-management/SKILL.md"]
+    },
+    "observability": {
+      "description": "Grafana, Seq, Dozzle — dashboards, queries, alerting, log correlation",
+      "skills": ["grafana-observability/SKILL.md"]
+    },
+    "kubernetes": {
+      "description": "K8s manifest authoring, Docker Compose conversion, cluster maintenance",
+      "stackTags": ["kubernetes", "k8s", "docker"],
+      "skills": [
+        "kubernetes-manifest-authoring/SKILL.md",
+        "docker-maintenance/SKILL.md"
       ]
     }
   }
