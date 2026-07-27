@@ -191,9 +191,30 @@ Use `.codex/memory/` as a reviewable repository memory layer. Memory is guidance
 
 Before final handoff for any non-trivial repo work, run the Durable Learning Capture Gate from `delivery-contract-core.md`.
 
-## Workflow Stage Routing
+## Mandatory Pre-Action Routing Check
 
-Before responding to a user request, resolve the current workflow stage and load its corresponding skill. This routing is mandatory — do not implement workflow steps from general knowledge alone.
+**Before every response that mutates state** (git, ticket provider, OpenSpec, comments, labels, API calls), every agent **must**:
+
+1. **Resolve the stage** — Identify which workflow stage the user's request maps to.
+2. **Check the routing table below** — Find the matching `User request / context` row.
+3. **Load the skill** — Read the corresponding SKILL.md and follow its Workflow section step by step.
+4. **If no match** — Stop and ask the user which workflow stage they want (e.g., "Start a ticket? Implement? Review? Deploy?").
+
+**This is a hard gate (authority level 5).** Do not:
+- Skip the routing check.
+- Implement workflow steps from general knowledge alone.
+- Rely on what a previous agent did — always re-check the table.
+- Use any fallback mechanism instead of `time-telemetry-upsert`.
+
+### ⚠️ Common Mistakes That Trigger This Gate
+
+- User says "implement" → MUST load `dev-flow-implement-ticket` skill. Do NOT start coding without it.
+- Step 15 in start-ticket says "use dev-flow-propose-change skill" → MUST load that skill and run its full artifact-generation workflow.
+- Telemetry says "OpenProject time entries" → MUST call `time-telemetry-upsert` via POST /api/v3/time_entries. If the API fails, stop and report. There is no alternative path.
+
+---
+
+## Workflow Stage Routing
 
 | User request / context                 | Stage                              | Skill to load                                             |
 | -------------------------------------- | ---------------------------------- | --------------------------------------------------------- |
