@@ -19,7 +19,7 @@ Before implementation, handoff, or review work, follow `.codex/skills/_shared/sk
 
 Capture UTC start time after resolving the ticket key and before implementation or PR handoff work. Prefer OpenProject time-entry telemetry and create or update the `dev-flow-implement-ticket` entry via the `time-telemetry-upsert` operation (see `.codex/providers/ticket.openproject.md` → Operations → `time-telemetry-upsert` for the exact API payload with `spentOn`, `hours`, `comment`, and `_links`). Use marker `IA generated workflow telemetry: {ticketKey}:dev-flow-implement-ticket`. Resolve the activity href by running `python -m tools.sdd_cli dev-flow resolve-openproject-activity --workflow-stage dev-flow-implement-ticket --input-json '{"timeTelemetry":{...}}'` and reverse-lookup the activity ID from the resolved name.
 
-Use `python -m tools.sdd_cli dev-flow append-telemetry -TicketKey {ticketKey}` only as the JSONL fallback when direct time telemetry is unavailable. On resume or idempotent reuse, append or update another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-flow-implement-ticket`, `agentRole=implementation`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If telemetry append fails in both primary and fallback paths, report workflow timing as blocked and continue only when the underlying implementation handoff rules still allow it.
+On resume or idempotent reuse, create or update another time entry for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-flow-implement-ticket`, `agentRole=implementation`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If `time-telemetry-upsert` fails (returns a 4xx or 5xx error), stop and report the failure. Do not use any fallback mechanism.
 
 For shared API helpers including time-entry POST payload format and activity reverse-lookup, see `.codex/skills/_shared/api-helpers.md` → OpenProject → Workflow time telemetry.
 
@@ -48,7 +48,38 @@ Required/defaulted values:
 3. Stop if the branch or OpenSpec change is missing; tell the user to run the `dev-flow-start-ticket` flow first.
 4. Check `git status --porcelain`. If unrelated changes exist, stop before implementation and list the changed files.
 
-5. **Skill Pre-Analysis:** Before any code changes, analyze the project stack and tool recommendations to determine which skills are applicable:
+4.5. **Pre-Flight Gate: Verify OpenSpec and time entries exist.** Before any analysis or implementation work, verify the following. If any check fails, stop and route back to `dev-flow-start-ticket`:
+
+    a. **OpenSpec artifacts are complete:**
+       ```bash
+       openspec status --change "<change-name>" --json
+       ```
+       Verify all artifacts in `applyRequires` have `status: "done"`. If any are missing, stop and report: "OpenSpec change `<change-name>` is incomplete. Run the full propose flow first."
+
+    b. **Work package has estimatedTime set:**
+       ```bash
+       curl -s -H "Authorization: Bearer <token>" "<openproject-url>/api/v3/work_packages/<id>" | python -c "import sys,json; d=json.load(sys.stdin); print(d.get('estimatedTime'))"
+       ```
+       If `estimatedTime` is null or empty, stop and report: "Work package has no estimated time. Complete step 17 of dev-flow-start-ticket first."
+
+    c. **Time entry exists for dev-flow-start-ticket:**
+       ```bash
+       python -c "
+import json, urllib.request
+filters = json.dumps([{'work_package': {'operator': '=', 'values': ['<wpId>']}}])
+url = f'<openproject-url>/api/v3/time_entries?filters={{\"filters\": {filters}}}'
+# Use urllib with auth header
+req = urllib.request.Request(url)
+req.add_header('Authorization', 'Bearer <token>')
+resp = urllib.request.urlopen(req)
+d = json.loads(resp.read())
+print(len(d.get('_embedded', {}).get('elements', [])))
+"
+       ```
+       Replace `<wpId>` with the work package ID and `<token>` with the API token from `.codex/client-tools.local.json`.
+       If no time entries exist, log one via `time-telemetry-upsert` (see Workflow Telemetry section) before proceeding. If logging fails, stop and report: "Cannot start implementation without time entries for dev-flow-start-ticket."
+
+    **This is a hard gate (authority level 5).** Do not skip these checks even on resume. A previous agent may have skipped them.
 
    a. **Read stack configuration:**
    - Stack lives **only** in `.codex/project-profile.local.json` (the ignored local overlay). Read `.codex/project-profile.local.json` → `stack` section for frontend/backend/database values. If it does not exist, stack is empty.
@@ -169,22 +200,39 @@ the selected runner validation helper from `configure-dev-environment`
 
 Use the selected runner validation helper whenever repository workflow fails before repository validation commands run, or logs show image pull failures, missing runtime tools, checkout networking failures, missing scanners, missing shell tools, or job-container tool incompatibility.
 
-### 3. Implement Tasks
+### 3. Implement — Tests First, Then Code
 
-Follow `dev-flow-apply-change`:
+The input for implementation is the **IA curated block** in the ticket description (from enrich steps 10-12 in `dev-flow-start-ticket`). This contains the acceptance criteria, scope, out of scope, dependencies, and risks. OpenSpec tasks track progress but the **acceptance criteria in the ticket description are the source of truth** for what to build.
 
-1. Verify the active `tasks.md` contains the Review Workload Forecast required by the shared delivery contract. Prefer repo-local helpers when available.
-2. If the forecast requires a decision before apply, stop before editing code unless a split/chained work-unit plan, `size:exception`, or `exception-ok` is recorded in the prompt or OpenSpec artifacts.
-3. **Parse the estimated total hours** from the Review Workload Forecast using `python -m tools.sdd_cli dev-flow parse-workload-forecast --tasks-path {tasksPath}`. If `estimatedTotalHours` is a positive number, set the work package's `estimatedTime` (Work property) via the ticket adapter's `set-estimated-time` operation (see `.codex/providers/ticket.openproject.md` → Operations → `set-estimated-time` for the exact API payload). Convert the hours to ISO-8601 duration (e.g. `5` hours → `PT5H`, `2.5` hours → `PT2H30M`). Fetch the current `lockVersion` before PATCHing.
-4. Apply `tdd` and build an acceptance-to-test map before product code changes. Map every acceptance criterion to committed automated coverage in the implementation PR, including Playwright/E2E tests when a criterion requires browser-level proof.
-5. Apply `ponytail full` before adding or changing project code: use the smallest working change, prefer standard library and native framework features, and avoid speculative abstractions or dependencies.
-6. Implement pending OpenSpec tasks one at a time through vertical TDD cycles: one behavior-focused test through a public interface, confirm RED, minimal implementation, confirm GREEN, refactor only while GREEN, then repeat.
-7. Mark a task complete only after its code, related tests, RED/GREEN validation evidence, and acceptance-to-test map entries are updated.
-8. If implementation reveals extra required work, add a new OpenSpec task before doing that work.
-9. Keep OpenSpec specs, design notes, and tasks aligned with the latest implementation.
-10. Do not defer acceptance test creation to the QA gate. QA runs existing committed tests and fails or blocks when coverage is missing.
-11. Commit after each completed workflow step when tracked changes exist, then start the next step from a clean working tree. Use ticket- or OpenSpec-prefixed messages, skip empty commits, and keep code, tests, docs, and OpenSpec changes together when splitting them would leave a broken intermediate commit.
+Follow this order strictly:
+
+**Phase A — Write all tests first (zero product code):**
+
+1. **Read the IA curated block** from the ticket description. Extract all acceptance criteria (ACs). These are the contract.
+2. **Build the acceptance-to-test map** — map every AC to one or more automated tests. Each AC must have at least one test that can fail or pass independently.
+3. **Write tests for ALL acceptance criteria** before writing any product code. One test file per component/module. Use the stack's test framework (Vitest, pytest, etc.).
+4. **Confirm every test is RED** — run the test suite and verify all new tests fail as expected (no product code yet = tests cannot pass).
+
+**Phase B — Then implement with ponytail:**
+
+5. **Run openspec apply** to load the task list:
+   ```bash
+   openspec instructions apply --change "<change>" --json
+   ```
+   Read the tasks.md to know the implementation order.
+6. **Apply `ponytail full`** — use the smallest working change, prefer standard library and native framework features, avoid speculative abstractions or dependencies. Every line of product code must exist only to make a test pass.
+7. **Implement one task at a time** through vertical TDD cycles:
+   - Pick one task from OpenSpec
+   - The test already exists from Phase A (RED)
+   - Write minimal product code to make it pass (GREEN)
+   - Refactor only while GREEN, then repeat
+8. **Mark task complete** only after its tests pass and acceptance-to-test map entries are verified.
+9. If implementation reveals extra required work, add a new OpenSpec task before doing that work.
+10. Keep OpenSpec specs, design notes, and tasks aligned with the latest implementation.
+11. **Commit after each GREEN cycle** when tracked changes exist. Use ticket- or OpenSpec-prefixed messages. Keep code + tests + docs together.
 12. Do not automatically stash normal ticket progress. Use stash only for unrelated local or user changes that block the current step.
+
+**⚠️ HARD RULE**: Product code changed before the first test is written = process violation. Stop, record the gap, write the missing test, confirm RED, then continue.
 
 ### 4. Quality And Coverage Completion
 
