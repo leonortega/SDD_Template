@@ -133,6 +133,50 @@ See `.codex/skills/configure-dev-environment/SKILL.md` for available modes.
 - Do not commit generated artifacts unless the workflow explicitly requires them.
 - Use Ponytail full mode for code changes. Run `ponytail-review` during PR review as an extra complexity pass, not during implementation.
 
+### Skill Installation (Hybrid: npx skills + GitHub)
+
+Skills are installed using a hybrid approach:
+1. **Primary**: `npx skills add <owner/repo> --skill <name> --yes` (skills.sh registry)
+2. **Fallback**: GitHub raw content copy from configured sources
+
+The `install-skill` command tries npx first, and if that fails or npx is unavailable, falls back to fetching files directly from GitHub.
+
+#### List available skills from GitHub sources
+
+```bash
+python -m tools.sdd_cli tool-installer list-skills
+```
+
+Reads configured sources from `.codex/skill-sources.json` (or `.codex/skill-sources.example.json`) and lists all discoverable skill directories from each GitHub repo.
+
+#### Install a skill
+
+```bash
+# By source name (looks up repo + path from config):
+python -m tools.sdd_cli tool-installer install-skill --source awesome-copilot --skill-name my-skill
+
+# Direct (repo + path + name):
+python -m tools.sdd_cli tool-installer install-skill --repo owner/repo --skill-path path/to/skill --skill-name my-skill
+```
+
+#### Preview without downloading
+
+```bash
+python -m tools.sdd_cli tool-installer list-skills --dry-run true
+python -m tools.sdd_cli tool-installer install-skill --source awesome-copilot --skill-name my-skill --dry-run true
+```
+
+#### Default configured sources
+
+The shipped `.codex/skill-sources.example.json` includes:
+
+| Name | Repo | Description |
+|------|------|-------------|
+| `awesome-copilot` | `github/awesome-copilot` (skills/) | GitHub's awesome-copilot skills collection |
+| `anthropics` | `anthropics/skills` (skills/) | Anthropic's skills collection |
+
+Users can also install skills from any GitHub repo by passing `--repo`, `--skill-path`, and optionally `--token` for authenticated requests.
+
 ## Quality Gates
 
 Run configured quality checks before handoff whenever code or workflow behavior changes. Current gates are shell-level until a product stack is added.

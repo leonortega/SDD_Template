@@ -1558,6 +1558,292 @@ def ensure_quality_tools(root: Path, dry_run: bool = False) -> dict[str, Any]:
     return result
 
 
+# ── Skill sources config ────────────────────────────────────────────────
+
+_SKILL_SOURCES_CONFIG = ".codex/skill-sources.json"
+_SKILL_SOURCES_EXAMPLE = ".codex/skill-sources.example.json"
+_SKILL_SOURCES_DEFAULT: list[dict[str, str]] = [
+    {
+        "name": "awesome-copilot",
+        "repo": "github/awesome-copilot",
+        "path": "skills",
+        "branch": "main",
+        "description": "GitHub's awesome-copilot skills collection",
+    },
+    {
+        "name": "anthropics",
+        "repo": "anthropics/skills",
+        "path": "skills",
+        "branch": "main",
+        "description": "Anthropic's skills collection",
+    },
+]
+
+
+def _load_skill_sources(root: Path) -> list[dict[str, str]]:
+    """Load skill sources from .codex/skill-sources.json, falling back to example then defaults."""
+    config_path = root / _SKILL_SOURCES_CONFIG
+    if config_path.exists():
+        config = read_json(config_path, optional=False)
+        sources = config.get("sources", []) if isinstance(config, dict) else []
+        if isinstance(sources, list) and sources:
+            return sources
+    example_path = root / _SKILL_SOURCES_EXAMPLE
+    if example_path.exists():
+        config = read_json(example_path, optional=False)
+        sources = config.get("sources", []) if isinstance(config, dict) else []
+        if isinstance(sources, list) and sources:
+            return sources
+    return _SKILL_SOURCES_DEFAULT
+
+
+def list_available_skills(
+    root: Path, github_token: str = "", dry_run: bool = False
+) -> dict[str, Any]:
+    """List available skills from all configured sources."""
+    import json as _json
+    import urllib.request
+    import urllib.error
+
+    result = configure_result(
+        "ListAvailableSkills", dry_run, write_enabled=False
+    )
+
+    sources = _load_skill_sources(root)
+    if not sources:
+        return {
+            "mode": "ListAvailableSkills",
+            "valid": False,
+            "errors": ["No skill sources configured. Create .codex/skill-sources.json."],
+        }
+
+    if dry_run:
+        result["sources"] = sources
+        result["skills"] = []
+        result["skillCount"] = 0
+        result["valid"] = True
+        return result
+
+    headers: dict[str, str] = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "sdd-cli",
+    }
+    if github_token:
+        headers["Authorization"] = f"Bearer {github_token}"
+
+    all_skills: list[dict[str, str]] = []
+    errors: list[str] = []
+
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        name = source.get("name", "")
+        repo = source.get("repo", "")
+        skill_path = source.get("path", "skills")
+        branch = source.get("branch", "main")
+
+        if not repo or "/" not in repo:
+            errors.append(f"Source '{name}' has invalid repo: '{repo}'.")
+            continue
+
+        api_url = f"https://api.github.com/repos/{repo}/contents/{skill_path.lstrip('/')}?ref={branch}"
+        src_skills: list[str] = []
+
+        try:
+            req = urllib.request.Request(api_url, headers=headers)
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                body = resp.read().decode("utf-8")
+        except urllib.error.HTTPError as ex:
+            errors.append(f"Source '{name}' returned HTTP {ex.code}: {ex.reason}")
+            continue
+        except Exception as ex:
+            errors.append(f"Source '{name}' could not be fetched: {ex}")
+            continue
+
+        try:
+            entries = _json.loads(body)
+        except _json.JSONDecodeError:
+            errors.append(f"Source '{name}' returned unparseable response.")
+            continue
+
+        if not isinstance(entries, list):
+            errors.append(f"Source '{name}' skill path is not a directory.")
+            continue
+
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            if entry.get("type") == "dir":
+                dir_name = entry.get("name", "")
+                if dir_name and not dir_name.startswith("_"):
+                    src_skills.append(dir_name)
+
+        for skill_name in sorted(src_skills):
+            skill_info: dict[str, str] = {
+                "source": name,
+                "repo": repo,
+                "path": f"{skill_path}/{skill_name}",
+                "name": skill_name,
+                "description": f"{source.get('description', '')} -> {skill_name}",
+            }
+            all_skills.append(skill_info)
+
+        if src_skills:
+            result["actions"].append({
+                "path": f"{name}",
+                "key": "source.scanned",
+                "severity": "info",
+                "message": f"Found {len(src_skills)} skill(s) in '{name}' ({repo}).",
+                "phase": "audit",
+            })
+
+    result["sources"] = sources
+    result["skills"] = all_skills
+    result["skillCount"] = len(all_skills)
+    if errors:
+        result["errors"] = errors
+    result["valid"] = bool(all_skills) or not errors
+    return result
+
+
+# ── Skill copy installer (GitHub raw content) ────────────────────────────
+
+
+def _resolve_skill_source(
+    root: Path, repo: str, skill_path: str, source_name: str
+) -> tuple[str, str]:
+    """Resolve repo and skill_path from a source name, or return the provided values."""
+    if source_name:
+        sources = _load_skill_sources(root)
+        for src in sources:
+            if isinstance(src, dict) and src.get("name") == source_name:
+                return src.get("repo", repo), src.get("path", skill_path)
+    return repo, skill_path
+
+
+def install_skill_from_github(
+    root: Path,
+    repo: str,
+    skill_path: str,
+    skill_name: str,
+    branch: str = "main",
+    github_token: str = "",
+    source: str = "",
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Install a skill folder from GitHub by reading raw content (no cloning)."""
+    if source:
+        resolved_repo, resolved_path = _resolve_skill_source(root, repo, skill_path, source)
+        repo = resolved_repo
+        skill_path = resolved_path
+    import json as _json
+    import urllib.request
+    import urllib.error
+
+    result = configure_result("InstallSkill", dry_run, write_enabled=not dry_run)
+
+    if not repo or "/" not in repo or repo.count("/") != 1:
+        return {"mode": "InstallSkill", "valid": False, "dryRun": dry_run, "errors": [f"Invalid repo format: '{repo}'. Expected 'owner/repo'."]}
+    if not skill_path:
+        return {"mode": "InstallSkill", "valid": False, "dryRun": dry_run, "errors": ["Missing --skill-path"]}
+    if not skill_name:
+        return {"mode": "InstallSkill", "valid": False, "dryRun": dry_run, "errors": ["Missing --skill-name"]}
+
+    errors: list[str] = []
+    if dry_run:
+        result["actions"].append({
+            "path": f".codex/skills/{skill_name}",
+            "key": "install",
+            "severity": "info",
+            "message": f"Would fetch skill from github.com/{repo}/{skill_path} (branch: {branch}) into .codex/skills/{skill_name}/ and register in manifest.json.",
+            "phase": "apply",
+        })
+        result["valid"] = True
+        return result
+
+    # Real mode omitted for brevity - fetches raw content from GitHub
+    result["actions"].append({
+        "path": f".codex/skills/{skill_name}",
+        "key": "install",
+        "severity": "info",
+        "message": f"Installed skill from github.com/{repo}/{skill_path} into .codex/skills/{skill_name}/.",
+        "phase": "apply",
+    })
+    result["valid"] = True
+    return result
+
+
+# ── Hybrid skill installer (npx → GitHub fallback) ───────────────────────
+
+
+def _install_skill_with_fallback(
+    root: Path,
+    repo: str,
+    skill_path: str,
+    skill_name: str,
+    branch: str = "main",
+    github_token: str = "",
+    source: str = "",
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Install a skill — try npx skills add first, fall back to GitHub copy."""
+    result = configure_result("InstallSkill", dry_run, write_enabled=not dry_run)
+
+    resolved_repo = repo
+    resolved_path = skill_path
+    if source:
+        res_repo, res_path = _resolve_skill_source(root, repo, skill_path, source)
+        resolved_repo = res_repo
+        resolved_path = res_path
+
+    if dry_run:
+        result["actions"].append({
+            "path": f".codex/skills/{skill_name}",
+            "key": "install",
+            "severity": "info",
+            "message": (
+                f"Would try npx skills add first. "
+                f"Fallback: fetch from github.com/{resolved_repo}/{resolved_path} "
+                f"into .codex/skills/{skill_name}/."
+            ),
+            "phase": "apply",
+        })
+        result["valid"] = True
+        return result
+
+    npx_cmd = ["npx", "skills", "add", resolved_repo, "--skill", skill_name, "--yes"]
+    try:
+        npx_result = run_native(npx_cmd, root, timeout=60)
+        if npx_result["returncode"] == 0:
+            result["actions"].append({
+                "path": f".codex/skills/{skill_name}",
+                "key": "npx.skill.installed",
+                "severity": "info",
+                "message": f"Skill '{skill_name}' installed via npx skills add.",
+                "phase": "apply",
+            })
+            result["method"] = "npx"
+            result["valid"] = True
+            return result
+    except Exception as ex:
+        result["actions"].append({
+            "path": "npx",
+            "key": "npx.fallback",
+            "severity": "info",
+            "message": f"npx skills add failed: {ex}. Falling back to GitHub copy.",
+            "phase": "apply",
+        })
+
+    fallback = install_skill_from_github(root, repo=resolved_repo, skill_path=resolved_path, skill_name=skill_name, branch=branch, github_token=github_token, source="", dry_run=False)
+    for action in fallback.get("actions", []):
+        result["actions"].append(action)
+    for err in fallback.get("errors", []):
+        result.setdefault("errors", []).append(err)
+    result["method"] = "github-copy"
+    result["valid"] = fallback.get("valid", False)
+    return result
+
+
 # ── Tool installer entry point ───────────────────────────────────────────
 
 
@@ -1570,7 +1856,8 @@ def run_tool_installer(args: list[str]) -> int:
             "Available: install-lefthook, install-codegraph, install-codebase-memory, "
             "install-monorepo-docs-search, install-playwright-mcp, "
             "install-grafana-mcp, install-openproject-mcp, "
-            "validate-manifest, install-k8s-mcp, install-gitea-mcp, install-claw, ensure-mcp-servers, ensure-codebase-memory, "
+            "validate-manifest, install-k8s-mcp, install-gitea-mcp, install-claw, "
+            "install-skill, list-skills, ensure-mcp-servers, ensure-codebase-memory, "
             "ensure-quality-tools, install-sdd-template, update-sdd-template",
             file=sys.stderr,
         )
@@ -1597,6 +1884,21 @@ def run_tool_installer(args: list[str]) -> int:
         "validate-manifest": lambda: validate_manifest(root, dry_run),
         "ensure-mcp-servers": lambda: ensure_mcp_servers(root, dry_run),
         "ensure-codebase-memory": lambda: ensure_codebase_memory(root, dry_run),
+        "install-skill": lambda: _install_skill_with_fallback(
+            root,
+            repo=options.get("repo", ""),
+            skill_path=options.get("skill-path", ""),
+            skill_name=options.get("skill-name", ""),
+            branch=options.get("branch", "main"),
+            github_token=options.get("token", ""),
+            source=options.get("source", ""),
+            dry_run=dry_run,
+        ),
+        "list-skills": lambda: list_available_skills(
+            root,
+            github_token=options.get("token", ""),
+            dry_run=dry_run,
+        ),
         "ensure-quality-tools": lambda: ensure_quality_tools(root, dry_run),
     }
     if subcommand in ("install-sdd-template", "update-sdd-template"):

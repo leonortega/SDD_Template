@@ -72,49 +72,6 @@ class SddCliTests(unittest.TestCase):
             )
             self.assertEqual("ready", ready["status"])
 
-    def test_workflow_telemetry_round_trips_and_renders(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            result = cli.run_delivery_mode(
-                "InitializeWorkflowTelemetry",
-                {"repo-root": str(root), "ticket-key": "ABC-1"},
-            )
-            self.assertTrue(result["exists"])
-            cli.run_delivery_mode(
-                "AppendWorkflowTelemetry",
-                {
-                    "repo-root": str(root),
-                    "ticket-key": "ABC-1",
-                    "input-json": json.dumps(
-                        {
-                            "workflowStage": "dev-flow-start-ticket",
-                            "agentRole": "ticketStarter",
-                            "startedUtc": "2026-06-25T10:00:00Z",
-                            "finishedUtc": "2026-06-25T10:01:05Z",
-                            "retryCount": 1,
-                            "outcome": "PASS",
-                        }
-                    ),
-                },
-            )
-            read = cli.run_delivery_mode(
-                "ReadWorkflowTelemetry",
-                {
-                    "repo-root": str(root),
-                    "ticket-key": "ABC-1",
-                    "input-json": json.dumps(
-                        {"status": "PASS", "currentRoute": "dev-flow-start-ticket"}
-                    ),
-                },
-            )
-            self.assertEqual(65000, read["totalElapsedMilliseconds"])
-            comment = cli.run_delivery_mode(
-                "RenderTicketComment",
-                {"type": "WorkflowTiming", "input-json": json.dumps(read)},
-            )
-            self.assertIn("IA generated workflow timing: ABC-1", comment)
-            self.assertIn("| `dev-flow-start-ticket` | PASS | 1m 5s |", comment)
-
     def test_openproject_time_activity_resolves_per_stage_with_default(self) -> None:
         config = {
             "timeTelemetry": {

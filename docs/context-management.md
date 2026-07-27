@@ -132,7 +132,9 @@ Content that changes every agent turn. Keep it as compact as possible:
 
 ### Telemetry
 
-If a run records model telemetry, use OpenProject time entries for the active ticket via the `time-telemetry-upsert` operation (POST `/api/v3/time_entries`). There is no fallback — if the API fails, stop and report the failure. Delivery stages maintain a concise generated OpenProject timing comment for the active ticket from OpenProject time entries with per-stage outcome, duration, and UTC start/finish values; raw logs, token counts, prompts, and sensitive values stay out of OpenProject. E2E QA posts or patches the final timing comment after the E2E QA comment is verified because PROD promotion is a separate explicit release step.
+Telemetry is posted directly to OpenProject time entries for the active ticket via the `time-telemetry-upsert` operation (POST `/api/v3/time_entries`) on a per-stage basis. There is no local telemetry file — each stage immediately POSTs its telemetry record to OpenProject when completed. There is no fallback — if the API fails, stop and report the failure.
+
+Delivery stages maintain a concise generated OpenProject timing comment for the active ticket from OpenProject time entries with per-stage outcome, duration, and UTC start/finish values; raw logs, token counts, prompts, and sensitive values stay out of OpenProject. E2E QA posts or patches the final timing comment after the E2E QA comment is verified because PROD promotion is a separate explicit release step.
 
 ## Risk-Adaptive Context Loading
 
