@@ -115,10 +115,8 @@ def run_delivery_mode(mode: str, options: dict[str, Any]) -> Any:
         check_git_ignored,
         delivery_risk,
         extract_ticket_key,
-        initialize_workflow_telemetry,
         next_rc_version_output,
         read_openproject_time_telemetry,
-        read_workflow_telemetry,
         render_openproject_time_telemetry_comment,
         render_ticket_comment,
         resolve_openproject_time_activity,
@@ -151,19 +149,6 @@ def run_delivery_mode(mode: str, options: dict[str, Any]) -> Any:
         "ValidateReleaseManifest": lambda: validate_release_manifest(
             Path(options["path"])
         ),
-        "InitializeWorkflowTelemetry": lambda: initialize_workflow_telemetry(
-            Path(options.get("repo-root", REPO_ROOT)), options.get("ticket-key", "")
-        ),
-        "AppendWorkflowTelemetry": lambda: append_workflow_telemetry(
-            Path(options.get("repo-root", REPO_ROOT)),
-            options.get("ticket-key", ""),
-            options.get("input-json", "{}"),
-        ),
-        "ReadWorkflowTelemetry": lambda: read_workflow_telemetry(
-            Path(options.get("repo-root", REPO_ROOT)),
-            options.get("ticket-key", ""),
-            options.get("input-json", "{}"),
-        ),
         "ReadOpenProjectTimeTelemetry": lambda: read_openproject_time_telemetry(
             options.get("ticket-key", ""), options.get("input-json", "{}")
         ),
@@ -187,8 +172,6 @@ def run_delivery_mode(mode: str, options: dict[str, Any]) -> Any:
             int(options.get("changed-lines", "0")),
         ),
     }
-    from .dev_flow import append_workflow_telemetry
-
     handler = runners.get(mode)
     if handler is None:
         return {"valid": False, "error": f"Unknown delivery mode: {mode}"}

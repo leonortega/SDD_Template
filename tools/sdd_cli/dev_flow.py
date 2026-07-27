@@ -249,70 +249,6 @@ def validate_parallel_delivery_dry_run(root: Path, input_json: str) -> dict[str,
     }
 
 
-# ── Workflow telemetry ───────────────────────────────────────────────────
-
-
-def _telemetry_path(root: Path) -> Path:
-    return root / ".codex" / "agent-telemetry.local.jsonl"
-
-
-def initialize_workflow_telemetry(root: Path, ticket_key: str) -> dict[str, Any]:
-    """Initialize workflow telemetry file."""
-    path = _telemetry_path(root)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    existed = path.exists()
-    path.write_text("", encoding="utf-8")
-    return {
-        "exists": path.exists(),
-        "cleared": existed,
-        "ticketKey": ticket_key,
-        "path": str(path),
-    }
-
-
-def append_workflow_telemetry(
-    root: Path, ticket_key: str, input_json: str
-) -> dict[str, Any]:
-    """Append a stage to workflow telemetry."""
-    path = _telemetry_path(root)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    row = json.loads(input_json)
-    started = parse_time(row.get("startedUtc"))
-    finished = parse_time(row.get("finishedUtc"))
-    if started and finished:
-        row["elapsedMilliseconds"] = int((finished - started).total_seconds() * 1000)
-    row["ticketKey"] = ticket_key
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(row, separators=(",", ":")) + "\n")
-    return {"appended": True, "path": str(path)}
-
-
-def read_workflow_telemetry(
-    root: Path, ticket_key: str, input_json: str
-) -> dict[str, Any]:
-    """Read workflow telemetry for a ticket."""
-    context = json.loads(input_json)
-    rows: list[dict[str, Any]] = []
-    path = _telemetry_path(root)
-    if path.exists():
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            row = json.loads(line)
-            if row.get("ticketKey") == ticket_key:
-                rows.append(row)
-    stages = _collapse_stages(rows)
-    return {
-        "ticketKey": ticket_key,
-        "status": context.get("status", ""),
-        "currentRoute": context.get("currentRoute", ""),
-        "totalElapsedMilliseconds": sum(
-            stage.get("elapsedMilliseconds", 0) for stage in stages
-        ),
-        "stages": stages,
-    }
-
-
 # ── OpenProject time telemetry ───────────────────────────────────────────
 
 
@@ -925,8 +861,7 @@ def run_dev_flow(args: list[str]) -> int:
     if not args:
         print(
             "Available: ensure-delivery-context, sync-worktree-config, validate-ticket-lock, "
-            "validate-deployment-lane, validate-parallel-dry-run, init-telemetry, append-telemetry, "
-            "read-telemetry, read-openproject-telemetry, resolve-openproject-activity, "
+            "validate-deployment-lane, validate-parallel-dry-run, read-openproject-telemetry, resolve-openproject-activity, "
             "render-openproject-comment, render-ticket-comment, validate-release-manifest, "
             "create-release-manifest, create-artifact-pointer, update-release-manifest, "
             "artifact-paths, next-rc-version, ticket-readiness, delivery-risk, check-git-ignored, "
@@ -956,15 +891,6 @@ def run_dev_flow(args: list[str]) -> int:
         ),
         "validate-parallel-dry-run": lambda: validate_parallel_delivery_dry_run(
             root, require(options, "input-json")
-        ),
-        "init-telemetry": lambda: initialize_workflow_telemetry(
-            root, require(options, "ticket-key")
-        ),
-        "append-telemetry": lambda: append_workflow_telemetry(
-            root, require(options, "ticket-key"), require(options, "input-json")
-        ),
-        "read-telemetry": lambda: read_workflow_telemetry(
-            root, require(options, "ticket-key"), options.get("input-json", "{}")
         ),
         "read-openproject-telemetry": lambda: read_openproject_time_telemetry(
             require(options, "ticket-key"), require(options, "input-json")

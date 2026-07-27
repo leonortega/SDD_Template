@@ -197,69 +197,6 @@ class DevFlowDispatchTests(unittest.TestCase):
             data = json.loads(lock.read_text(encoding="utf-8"))
             self.assertEqual("ABC-1", data["ticketKey"])
 
-    def test_initialize_telemetry(self) -> None:
-        """dev-flow init-telemetry works."""
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            stdout = io.StringIO()
-            with redirect_stdout(stdout):
-                rc = cli.main(
-                    [
-                        "dev-flow",
-                        "init-telemetry",
-                        "--ticket-key",
-                        "ABC-1",
-                        "--root",
-                        str(root),
-                    ]
-                )
-            self.assertEqual(0, rc)
-            result = json.loads(stdout.getvalue())
-            self.assertTrue(result["exists"])
-
-    def test_append_telemetry(self) -> None:
-        """dev-flow append-telemetry works."""
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            # First initialize
-            cli.main(
-                [
-                    "dev-flow",
-                    "init-telemetry",
-                    "--ticket-key",
-                    "ABC-1",
-                    "--root",
-                    str(root),
-                ]
-            )
-            # Then append
-            stdout = io.StringIO()
-            with redirect_stdout(stdout):
-                rc = cli.main(
-                    [
-                        "dev-flow",
-                        "append-telemetry",
-                        "--ticket-key",
-                        "ABC-1",
-                        "--root",
-                        str(root),
-                        "--input-json",
-                        json.dumps(
-                            {
-                                "workflowStage": "test",
-                                "agentRole": "tester",
-                                "startedUtc": "2026-07-13T10:00:00Z",
-                                "finishedUtc": "2026-07-13T10:01:00Z",
-                                "retryCount": 0,
-                                "outcome": "PASS",
-                            }
-                        ),
-                    ]
-                )
-            self.assertEqual(0, rc)
-            result = json.loads(stdout.getvalue())
-            self.assertTrue(result["appended"])
-
 
 class GuidanceDispatchTests(unittest.TestCase):
     """Test guidance subcommand dispatch."""
@@ -473,6 +410,183 @@ class ToolInstallerDispatchTests(unittest.TestCase):
             self.assertEqual(0, rc)
             result = json.loads(stdout.getvalue())
             self.assertTrue(result["valid"])
+
+    def test_install_skill_dry_run_validates_repo_format(self) -> None:
+        """tool-installer install-skill --dry-run true validates repo format."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli.main(
+                    [
+                        "tool-installer",
+                        "install-skill",
+                        "--root",
+                        str(root),
+                        "--repo",
+                        "owner/repo",
+                        "--skill-path",
+                        "path/to/skill",
+                        "--skill-name",
+                        "test-skill",
+                        "--dry-run",
+                        "true",
+                    ]
+                )
+            self.assertEqual(0, rc)
+            result = json.loads(stdout.getvalue())
+            self.assertTrue(result["dryRun"])
+            self.assertEqual("test-skill", result["skillName"])
+
+    def test_install_skill_rejects_invalid_repo(self) -> None:
+        """tool-installer install-skill rejects invalid repo format."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli.main(
+                    [
+                        "tool-installer",
+                        "install-skill",
+                        "--root",
+                        str(root),
+                        "--repo",
+                        "invalid-format",
+                        "--skill-path",
+                        "test",
+                        "--skill-name",
+                        "test",
+                    ]
+                )
+            self.assertEqual(1, rc)
+            result = json.loads(stdout.getvalue())
+            self.assertFalse(result["valid"])
+            self.assertIn("Invalid repo format", str(result))
+
+    def test_tool_installer_available_includes_install_skill(self) -> None:
+        """tool-installer with no args lists install-skill."""
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            rc = cli.main(["tool-installer"])
+        self.assertEqual(1, rc)
+        self.assertIn("install-skill", stderr.getvalue())
+
+    def test_list_skills_dry_run_with_config(self) -> None:
+        """tool-installer list-skills --dry-run true with source config works."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            codex = root / ".codex"
+            codex.mkdir()
+            (codex / "skill-sources.json").write_text(
+                json.dumps({
+                    "sources": [
+                        {
+                            "name": "test-source",
+                            "repo": "test/test",
+                            "path": "skills",
+                            "branch": "main",
+                            "description": "Test source",
+                        }
+                    ]
+                }),
+                encoding="utf-8",
+            )
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli.main(
+                    [
+                        "tool-installer",
+                        "list-skills",
+                        "--root",
+                        str(root),
+                        "--dry-run",
+                        "true",
+                    ]
+                )
+            self.assertEqual(0, rc)
+            result = json.loads(stdout.getvalue())
+            self.assertTrue(result["valid"])
+            self.assertIn("sources", result)
+            self.assertIn("skills", result)
+
+    def test_list_skills_uses_example_config_when_no_local(self) -> None:
+        """list-skills falls back to .codex/skill-sources.example.json."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            codex = root / ".codex"
+            codex.mkdir()
+            # Only create the example file, not the local one
+            (codex / "skill-sources.example.json").write_text(
+                json.dumps({
+                    "sources": [
+                        {
+                            "name": "example-source",
+                            "repo": "example/example",
+                            "path": "skills",
+                            "branch": "main",
+                            "description": "Example source",
+                        }
+                    ]
+                }),
+                encoding="utf-8",
+            )
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli.main(
+                    [
+                        "tool-installer",
+                        "list-skills",
+                        "--root",
+                        str(root),
+                        "--dry-run",
+                        "true",
+                    ]
+                )
+            self.assertEqual(0, rc)
+            result = json.loads(stdout.getvalue())
+            self.assertTrue(result["valid"])
+
+    def test_install_skill_with_source(self) -> None:
+        """tool-installer install-skill --source works with dry-run."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            codex = root / ".codex"
+            codex.mkdir()
+            (codex / "skill-sources.json").write_text(
+                json.dumps({
+                    "sources": [
+                        {
+                            "name": "test-skills",
+                            "repo": "owner/skills-repo",
+                            "path": "skills/my-skill",
+                            "branch": "main",
+                            "description": "Test",
+                        }
+                    ]
+                }),
+                encoding="utf-8",
+            )
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli.main(
+                    [
+                        "tool-installer",
+                        "install-skill",
+                        "--root",
+                        str(root),
+                        "--source",
+                        "test-skills",
+                        "--skill-name",
+                        "my-skill",
+                        "--dry-run",
+                        "true",
+                    ]
+                )
+            self.assertEqual(0, rc)
+            result = json.loads(stdout.getvalue())
+            # The source resolves the repo and path, then dry-run reports it
+            self.assertTrue(result["valid"])
+            self.assertEqual("my-skill", result["skillName"])
 
 
 class MemorySearchDispatchTests(unittest.TestCase):

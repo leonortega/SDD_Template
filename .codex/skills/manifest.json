@@ -141,7 +141,6 @@
     },
     "kubernetes": {
       "description": "K8s manifest authoring, Docker Compose conversion, cluster maintenance",
-      "stackTags": ["kubernetes", "k8s", "docker"],
       "skills": [
         "kubernetes-manifest-authoring/SKILL.md",
         "docker-maintenance/SKILL.md"
