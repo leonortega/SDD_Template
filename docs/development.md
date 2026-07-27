@@ -28,7 +28,7 @@ This repository currently has no product implementation. It is ready for a new p
 
 When the stack is chosen:
 
-1. Add languages, frameworks, test frameworks, and stack-specific adapters to ignored `.codex/project-profile.local.json` while exploring the new project.
+1. Add languages, frameworks, and test frameworks to ignored `.codex/project-profile.local.json` while exploring the new project.
 2. Add product source and test folders.
 3. Add OpenSpec specs for product behavior.
 4. Add deployment app targets and configuration mappings.

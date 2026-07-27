@@ -24,16 +24,12 @@ The lab infrastructure provides dedicated MCP servers for each service. Route to
 
 **Note on availability:**
 - Gitea MCP uses the official Docker image `docker.gitea.com/gitea-mcp-server`
-  - Alternative: `Saravanan-Madhesh/GiteaMCPServer` — lighter, PR-review focused (diffs, inline comments, labels)
 - OpenProject MCP uses the community `openproject-mcp` package (read/write)
-  - Built-in MCP (OpenProject 17.2+ Enterprise): `{baseUrl}/mcp` — **read-only** today, also Enterprise add-on
-  - Cross-ref API adapter at `.codex/providers/ticket.openproject.md` for direct REST API calls
+  - Cross-ref API adapter at `.codex/skills/openproject-sprint-backlog/references/openproject-api.md` for direct REST API calls
 - Grafana MCP uses the official `grafana/mcp-grafana` via `uvx`
 - Kubernetes MCP uses the official `containers/kubernetes-mcp-server` via `npx`
-  - Alternative: `Flux159/mcp-server-kubernetes` — wraps kubectl/helm directly, easier for existing kubectl users
-  - Docker Desktop MCP Catalog: ships a packaged `mcp/kubernetes` image — one-click add in Docker Desktop MCP settings
-- **Seq and Dozzle** have no dedicated MCP servers. Seq exposes a REST/OData API you can wrap generically; Dozzle is read-only container log tailing with minimal API.
-- **Nexus** has no official MCP. Its REST API is well-documented; a generic HTTP/OpenAPI-based MCP wrapper is possible but not installed here. Use the Nexus skill + provider adapter instead.
+- **Seq and Dozzle** have no dedicated MCP servers. Use the Repo / monitoring skills for those.
+- **Nexus** has no official MCP. Use the Nexus skill + provider adapter instead.
 
 See `.vscode/mcp.json` for exact configuration.
 

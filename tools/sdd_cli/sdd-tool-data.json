@@ -3,7 +3,6 @@
   "SDD_TOOL_INCLUDE_DIRS": [
     ".agents",
     ".cline",
-    ".codex/providers",
     ".codex/skills",
     ".gitea/workflows",
     "docs",
@@ -30,7 +29,6 @@
     ".codex/environment-urls.local.json",
     ".codex/project-profile.local.json",
     ".codex/quality.local.json",
-    ".codex/tool-recommendations.local.json",
     ".codex/memory/MEMORY.md",
     ".codex/memory/memory_summary.md",
     ".codex/memory/retrieval-policy.md"
