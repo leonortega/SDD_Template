@@ -34,6 +34,39 @@ from ._shared import (
 )
 from .tool_installer import install_lefthook, install_grafana_mcp, install_gitea_mcp, install_k8s_mcp, install_openproject_mcp
 
+# ── Health check helpers ───────────────────────────────────────────────────
+
+
+def wait_for_service(url: str, timeout: int = 180, interval: int = 5) -> dict[str, Any]:
+    """Poll an HTTP endpoint until it responds or the timeout is reached.
+
+    Returns a step-compatible dict with valid=True if the service responded,
+    valid=False if the timeout was reached.
+    """
+    import time as _time
+
+    deadline = _time.time() + timeout
+    last_error = ""
+    while _time.time() < deadline:
+        try:
+            status, err = http_status(url)
+            if status is not None and status < 500:
+                return {
+                    "command": f"wait-for-service {url}",
+                    "valid": True,
+                    "message": f"Service ready after polling {url}: HTTP {status}.",
+                }
+            last_error = err or f"HTTP {status}"
+        except Exception as ex:
+            last_error = str(ex)
+        _time.sleep(interval)
+    return {
+        "command": f"wait-for-service {url}",
+        "valid": False,
+        "message": f"Service at {url} did not respond within {timeout}s. Last error: {last_error}",
+    }
+
+
 # ── Setup Lab (all-in-one idempotent) ───────────────────────────────────
 
 
@@ -77,15 +110,6 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
     # 7. Validate Docker Desktop configuration (insecure-registries, socket, Compose)
     _add_step(validate_docker_desktop(root, dry_run), fatal=False)
 
-    # 7b. Enable K8s in Docker Desktop if needed (before compose, since Docker may restart)
-    #     K8s is required for lab deployment — fatal if it cannot be enabled.
-    early = _add_step(enable_docker_desktop_k8s(root, dry_run), fatal=True)
-    if early:
-        return early
-
-    # 7c. Install Kubernetes MCP (after K8s is enabled, before compose since no dependency on services)
-    _add_step(install_k8s_mcp(root, dry_run), fatal=False)
-
     # 8. Start compose services
     if not dry_run:
         early = _add_step(compose_up())
@@ -99,6 +123,31 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 "dryRun": True,
                 "message": "Skipped compose-up in dry-run mode.",
             }
+        )
+
+    # 8b. Wait for critical services to be reachable before provisioning
+    #     If a service doesn't start, later provisioning steps will fail
+    #     and the user will be told what went wrong.
+    if not dry_run:
+        _add_step(
+            wait_for_service("http://localhost:3000/api/v1/user", timeout=120),
+            fatal=False,
+        )
+        _add_step(
+            wait_for_service("http://localhost:8080", timeout=180),
+            fatal=False,
+        )
+        _add_step(
+            wait_for_service("http://localhost:8088/service/rest/v1/status", timeout=120),
+            fatal=False,
+        )
+        _add_step(
+            wait_for_service("http://localhost:3001/api/health", timeout=120),
+            fatal=False,
+        )
+        _add_step(
+            wait_for_service("http://localhost:5341/api", timeout=120),
+            fatal=False,
         )
 
     # 9. Validate observability
@@ -131,66 +180,93 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
     # 15. Set Gitea branch protection for dev/main
     _add_step(set_gitea_branch_protection(root, dry_run), fatal=False)
 
-    # 16. Scaffold K8s deployment files (validates Docker Desktop K8s + creates manifests)
+    # 16. Enable K8s in Docker Desktop (after compose & provisioning — restarting Docker
+    #     would disrupt running services like OpenProject)
+    #     K8s is required for lab deployment — fatal if it cannot be enabled.
+    early = _add_step(enable_docker_desktop_k8s(root, dry_run), fatal=True)
+    if early:
+        return early
+
+    # 17. Install Kubernetes MCP (after K8s is enabled)
+    _add_step(install_k8s_mcp(root, dry_run), fatal=False)
+
+    # 18. Scaffold K8s deployment files (validates Docker Desktop K8s + creates manifests)
     _add_step(scaffold_k8s(root, dry_run), fatal=False)
 
-    # 17. Generate Semgrep config from stack (non-fatal — stack may not be set yet)
+    # 19. Generate Semgrep config from stack (non-fatal — stack may not be set yet)
     _add_step(set_semgrep_config(root, dry_run), fatal=False)
 
     result["steps"] = steps
     all_valid = all(s.get("valid", True) for s in steps)
     result["valid"] = all_valid
 
-    # ── Summary: credentials and URLs ─────────────────────────────────
-    result["summary"] = {
-        "gitea": {
+    # ── Collect failed steps for the user ──────────────────────────────
+    failed = [
+        {
+            "step": s.get("command") or s.get("mode", "unknown"),
+            "message": s.get("message", s.get("errors", ["No details"])) if not s.get("valid", True) else None,
+        }
+        for s in steps
+        if not s.get("valid", True)
+    ]
+    result["failed_steps"] = failed
+
+    # ── Determine which services are actually up ───────────────────────
+    # Check health/provisioning steps to decide if credentials are real
+    _gitea_ok = any(s.get("command") == "wait-for-service http://localhost:3000/api/v1/user" and s.get("valid") for s in steps)
+    _op_ok = any(s.get("command") == "wait-for-service http://localhost:8080" and s.get("valid") for s in steps)
+    _nexus_ok = any(s.get("command") == "wait-for-service http://localhost:8088/service/rest/v1/status" and s.get("valid") for s in steps)
+
+    # ── Summary: credentials and URLs (only show what's actually running) ─
+    summary: dict[str, Any] = {}
+
+    if _gitea_ok:
+        summary["gitea"] = {
             "url": "http://localhost:3000",
             "users": [
-                {"username": "admin", "password": "admin123", "role": "admin"},  # nosec
-                {
-                    "username": "FirstUser",
-                    "password": "FirstUser123",  # nosec
-                    "role": "developer",
-                },
-                {
-                    "username": "SecondUser",
-                    "password": "SecondUser123",  # nosec
-                    "role": "developer",
-                },
+                {"username": "admin", "password": "admin123", "role": "admin"},
+                {"username": "FirstUser", "password": "FirstUser123", "role": "developer"},
+                {"username": "SecondUser", "password": "SecondUser123", "role": "developer"},
             ],
-        },
-        "openproject": {
+        }
+    else:
+        summary["gitea"] = {"url": "http://localhost:3000", "status": "NOT REACHABLE — check Docker Desktop and re-run setup-lab"}
+
+    summary["openproject"] = (
+        {
             "url": "http://localhost:8080",
             "users": [
-                {"username": "admin", "password": "admin", "role": "admin"},  # nosec
-                {
-                    "username": "FirstUser",
-                    "password": "FirstUser123!",  # nosec
-                    "role": "developer",
-                },
-                {
-                    "username": "SecondUser",
-                    "password": "SecondUser123!",  # nosec
-                    "role": "developer",
-                },
+                {"username": "admin", "password": "admin", "role": "admin"},
+                {"username": "FirstUser", "password": "FirstUser123!", "role": "developer"},
+                {"username": "SecondUser", "password": "SecondUser123!", "role": "developer"},
             ],
             "board": "http://localhost:8080/projects/e2eproject/boards",
-        },
-        "nexus": {
+        }
+        if _op_ok
+        else {"url": "http://localhost:8080", "status": "NOT REACHABLE — check Docker logs and re-run setup-lab"}
+    )
+
+    summary["nexus"] = (
+        {
             "url": "http://localhost:8088",
             "users": [
                 {"username": "admin", "password": "admin123", "role": "admin"},
             ],
-        },
-        "k8s": {
-            "manifest": "infra/k8s/deploy.yaml (envsubst: ENV, REPLICAS, REGISTRY, COMMIT_SHA)",
-            "deploy": [
-                "ENV=dev REPLICAS=1 REGISTRY=host.docker.internal:5001 COMMIT_SHA=latest envsubst < infra/k8s/deploy.yaml | kubectl apply -f -",
-                "ENV=qa REPLICAS=2 REGISTRY=host.docker.internal:5001 COMMIT_SHA=latest envsubst < infra/k8s/deploy.yaml | kubectl apply -f -",
-                "ENV=prod REPLICAS=3 REGISTRY=host.docker.internal:5001 COMMIT_SHA=latest envsubst < infra/k8s/deploy.yaml | kubectl apply -f -",
-            ],
-        },
+        }
+        if _nexus_ok
+        else {"url": "http://localhost:8088", "status": "NOT REACHABLE — check Docker logs and re-run setup-lab"}
+    )
+
+    summary["k8s"] = {
+        "manifest": "infra/k8s/deploy.yaml (envsubst: ENV, REPLICAS, REGISTRY, COMMIT_SHA)",
+        "deploy": [
+            "ENV=dev REPLICAS=1 REGISTRY=host.docker.internal:5001 COMMIT_SHA=latest envsubst < infra/k8s/deploy.yaml | kubectl apply -f -",
+            "ENV=qa REPLICAS=2 REGISTRY=host.docker.internal:5001 COMMIT_SHA=latest envsubst < infra/k8s/deploy.yaml | kubectl apply -f -",
+            "ENV=prod REPLICAS=3 REGISTRY=host.docker.internal:5001 COMMIT_SHA=latest envsubst < infra/k8s/deploy.yaml | kubectl apply -f -",
+        ],
     }
+
+    result["summary"] = summary
     return result
 
 
@@ -223,10 +299,12 @@ def _compose(action: str) -> dict[str, Any]:
     ]
     command += ["up", "-d", "--remove-orphans"] if action == "up" else ["down"]
     result = subprocess.run(command, cwd=REPO_ROOT, check=False)
+    ok = result.returncode == 0
     return {
         "command": f"compose-{action}",
-        "valid": result.returncode == 0,
+        "valid": ok,
         "returncode": result.returncode,
+        "message": "" if ok else f"docker compose {action} failed with exit code {result.returncode}",
     }
 
 
@@ -1530,24 +1608,42 @@ def set_quality_config(
 # ── Set Semgrep config (stack-aware SAST rules) ─────────────────────────
 
 
+_SEMGREP_RULE_MAP: dict[str, list[str]] = {
+    # Frontend
+    "react": ["p/typescript", "p/javascript", "p/react"],
+    "typescript": ["p/typescript", "p/javascript"],
+    "javascript": ["p/javascript"],
+    "vue": ["p/typescript", "p/javascript", "p/vue"],
+    "angular": ["p/typescript", "p/javascript"],
+    "svelte": ["p/typescript", "p/javascript"],
+    "nextjs": ["p/typescript", "p/javascript", "p/react", "p/nextjs"],
+    # Backend
+    "python": ["p/python"],
+    "fastapi": ["p/python", "p/flask", "p/jwt"],
+    "flask": ["p/python", "p/flask"],
+    "django": ["p/python", "p/django"],
+    "csharp": ["p/csharp"],
+    "aspnetcore": ["p/csharp"],
+    "go": ["p/golang"],
+    "rust": ["p/rust"],
+    "java": ["p/java"],
+    # Database
+    "postgresql": ["p/sql-injection"],
+}
+
+
 def set_semgrep_config(root: Path, dry_run: bool = False) -> dict[str, Any]:
     """Generate .semgrep.yml from project stack for offline CI scanning.
 
-    Reads the project stack from project-profile.local.json, looks up the
-    corresponding semgrep rule packs for the stack, and writes a
-    .semgrep.yml config file in the repo root. The rules list is also
-    stored in project-profile.local.json under stack.semgrepRules, which
-    the CI workflow reads at scan time.
+    Reads the project stack from project-profile.local.json and writes a
+    .semgrep.yml config file in the repo root using a simple hardcoded
+    rule map. The rules list is also stored in project-profile.local.json
+    under stack.semgrepRules, which the CI workflow reads at scan time.
 
     The Docker image pre-caches all rule packs at build time so the CI
     container can run Semgrep offline.
     """
     result = configure_result("SetSemgrepConfig", dry_run, write_enabled=not dry_run)
-
-    # Read stack data mapping
-    stack_data = read_json(stack_data_path, optional=True)
-    canonical_map = stack_data.get("_STACK_CANONICAL_MAP", {})
-    tag_aliases = stack_data.get("_STACK_TAG_ALIASES", {})
 
     # Read project profile
     profile_path = root / ".codex" / "project-profile.local.json"
@@ -1555,35 +1651,11 @@ def set_semgrep_config(root: Path, dry_run: bool = False) -> dict[str, Any]:
     stack = profile.get("stack", {}) if isinstance(profile.get("stack"), dict) else {}
 
     def _resolve_semgrep_rules(domain_value: str) -> list[str]:
-        """Resolve a stack domain value to semgrep rule packs using case-insensitive
-        and alias-aware matching against the canonical map."""
-        # 1. Direct lookup
-        if domain_value in canonical_map:
-            return list(canonical_map[domain_value].get("semgrepRules", []))
-
-        # 2. Lowercase direct lookup
-        lc = domain_value.lower()
-        if lc in canonical_map:
-            return list(canonical_map[lc].get("semgrepRules", []))
-
-        # 3. Search tag aliases for matching canonical key
-        #    Uses substring containment so compound values like "C# (.NET)" match alias "c#"
-        #    Aliases are sorted by longest match first to prevent short substrings
-        #    (e.g. "java" in "javascript") from matching before the correct longer one.
+        """Resolve a stack domain value to semgrep rule packs using simple keyword matching."""
         dv_lower = domain_value.lower()
-        sorted_aliases = sorted(
-            tag_aliases.items(),
-            key=lambda item: max(len(a) for a in item[1]),
-            reverse=True,
-        )
-        for canonical_key, aliases in sorted_aliases:
-            alias_lower = [a.lower() for a in aliases]
-            if dv_lower in alias_lower or any(
-                alias in dv_lower for alias in alias_lower
-            ):
-                entry = canonical_map.get(canonical_key, {})
-                return list(entry.get("semgrepRules", []))
-
+        for keyword, rules in _SEMGREP_RULE_MAP.items():
+            if keyword in dv_lower:
+                return rules
         return []
 
     # Collect all semgrep rules from the three stack domains
@@ -1613,7 +1685,6 @@ def set_semgrep_config(root: Path, dry_run: bool = False) -> dict[str, Any]:
     yml_lines = [
         "# Semgrep configuration for this project",
         "# Auto-generated by set-semgrep-config",
-        "# Rules are resolved based on project stack",
         "# Registry rules are pre-cached in the CI Docker image",
         "",
         "rules: []",
@@ -4813,6 +4884,7 @@ def run_environment_lab(args: list[str]) -> int:
         ),
         "setup-k8s-access": lambda: setup_k8s_access(root, dry_run),
         "scaffold-k8s": lambda: scaffold_k8s(root, dry_run),
+
         "set-semgrep-config": lambda: set_semgrep_config(root, dry_run),
         "verify-gitea-token": lambda: verify_gitea_api_token(root, dry_run),
         "generate-gitea-token": lambda: generate_gitea_api_token(root, dry_run),
@@ -4832,30 +4904,47 @@ def run_environment_lab(args: list[str]) -> int:
     # ── Pretty-print summary if present (e.g. setup-lab) ────────────
     summary = result.get("summary")
     if summary:
-        print("=" * 60)
-        print("  SETUP-LAB COMPLETE - Credentials & URLs")
-        print("=" * 60)
+        failed_steps = result.get("failed_steps", [])
+        all_valid = result.get("valid", True)
+
+        # Only print the 'COMPLETE' banner if all steps succeeded
+        if all_valid:
+            print("=" * 60)
+            print("  SETUP-LAB COMPLETE ✓")
+            print("=" * 60)
+        else:
+            print("=" * 60)
+            print("  SETUP-LAB FINISHED WITH ERRORS ✗")
+            print("=" * 60)
 
         # Gitea
         g = summary.get("gitea", {})
+        gitea_status = g.get("status", "")
         print(f"\n--- GITEA ({g.get('url', 'N/A')}) ---")
         print("-" * 40)
-        for u in g.get("users", []):
-            print(
-                f"  | username: {u.get('username', '?')} | pass: {u.get('password', '?')} | role: {u.get('role', '?')} |"
-            )
+        if gitea_status and "NOT REACHABLE" in gitea_status:
+            print(f"  ⚠ {gitea_status}")
+        else:
+            for u in g.get("users", []):
+                print(
+                    f"  | username: {u.get('username', '?')} | pass: {u.get('password', '?')} | role: {u.get('role', '?')} |"
+                )
 
         # OpenProject
         op = summary.get("openproject", {})
+        op_status = op.get("status", "")
         print(f"\n--- OPENPROJECT ({op.get('url', 'N/A')}) ---")
         print("-" * 40)
-        for u in op.get("users", []):
-            print(
-                f"  | username: {u.get('username', '?')} | pass: {u.get('password', '?')} | role: {u.get('role', '?')} |"
-            )
-        board_url = op.get("board", "")
-        if board_url:
-            print(f"  | Basic Board: {board_url} |")
+        if op_status and "NOT REACHABLE" in op_status:
+            print(f"  ⚠ {op_status}")
+        else:
+            for u in op.get("users", []):
+                print(
+                    f"  | username: {u.get('username', '?')} | pass: {u.get('password', '?')} | role: {u.get('role', '?')} |"
+                )
+            board_url = op.get("board", "")
+            if board_url:
+                print(f"  | Basic Board: {board_url} |")
 
         # Nexus
         nx = summary.get("nexus", {})
@@ -4876,8 +4965,28 @@ def run_environment_lab(args: list[str]) -> int:
             for cmd in k.get("deploy", []):
                 print(f"  |   $ {cmd} |")
 
-        print("\n" + "=" * 60)
-        print("  Setup complete!")
-        print("=" * 60)
+        # ── Error summary banner ────────────────────────────────────────
+        if not all_valid and failed_steps:
+            print("\n" + "!" * 60)
+            print("  SETUP-LAB FINISHED WITH ERRORS")
+            print("!" * 60)
+            print(f"\n  {len(failed_steps)} step(s) failed or reported issues:")
+            for fs in failed_steps:
+                msg = fs.get("message", "No details")
+                if isinstance(msg, list):
+                    msg = "; ".join(msg)
+                print(f"    ✗ {fs.get('step', '?')}: {msg[:300]}")
+            print("\n  ℹ  Common fixes:")
+            print("     - Check Docker Desktop is running and healthy")
+            print('     - Run `docker compose logs` to check container errors')
+            print("     - Re-run `setup-lab` — it is idempotent and will skip completed steps")
+            print("     - If a service (Gitea, OpenProject, Nexus) is not reachable,")
+            print("       check its container logs and ensure it started correctly")
+            print("!" * 60)
+            print()
+        else:
+            print("\n" + "=" * 60)
+            print("  Setup complete! All steps passed.")
+            print("=" * 60)
 
     return 0 if result.get("valid", True) else 1
