@@ -232,6 +232,31 @@ class GuidanceDispatchTests(unittest.TestCase):
 class EnvironmentLabDispatchTests(unittest.TestCase):
     """Test environment-lab subcommand dispatch."""
 
+    def test_setup_lab_delegates_to_full_setup(self) -> None:
+        """environment-lab setup-lab now delegates to full-setup."""
+        from unittest.mock import patch
+
+        with patch("tools.sdd_cli.full_setup.run_full_setup",
+                   return_value=0) as mock_full:
+            rc = cli.main(["environment-lab", "setup-lab", "--dry-run", "true"])
+
+        self.assertEqual(0, rc)
+        mock_full.assert_called_once()
+        # Should pass remaining args and root
+        args, kwargs = mock_full.call_args
+        self.assertEqual(["--dry-run", "true"], args[0])
+        self.assertIn("root", kwargs)
+
+    def test_other_envlab_commands_still_work(self) -> None:
+        """Other environment-lab subcommands still dispatch normally."""
+        from unittest.mock import patch
+
+        with patch("tools.sdd_cli.full_setup.run_full_setup") as mock_full:
+            rc = cli.main(["environment-lab", "init-local-files", "--dry-run", "true"])
+
+        # Should NOT have delegated to full-setup
+        mock_full.assert_not_called()
+
     def test_init_local_files_creates_memory_seeds(self) -> None:
         """environment-lab init-local-files works."""
         with tempfile.TemporaryDirectory() as tmp:

@@ -29,6 +29,7 @@ ALL_CONFIGURE_MODES: list[str] = [
     "SetProjectStackMetadata",
     "SetQualityConfig",
     "SetSemgrepConfig",
+    "SetupProjectGuidance",
     "SplitInfraEnv",
     "SyncWorktreeLocalConfig",
     "EnsureDeliveryContext",
@@ -292,6 +293,11 @@ def run_configure_mode(
 
         return discover_project_guidance(root, dry_run, **values)
 
+    if mode == "SetupProjectGuidance":
+        from .guidance import setup_project_guidance
+
+        return setup_project_guidance(root, values, dry_run)
+
     # Modes implemented in dev_flow module
     if mode in ("SyncWorktreeLocalConfig", "EnsureDeliveryContext"):
         from .dev_flow import ensure_delivery_context, sync_worktree_local_config
@@ -524,6 +530,13 @@ def _parse_cli(argv: list[str] | None):
     ae.add_argument("ae_args", nargs=argparse.REMAINDER)
     ae.set_defaults(func=_dispatch_agent_eval)
 
+    # full-setup
+    full = sub.add_parser("full-setup")
+    full.add_argument("--dry-run", action="store_true", default=False)
+    full.add_argument("--root", default=str(REPO_ROOT))
+    full.add_argument("full_args", nargs=argparse.REMAINDER)
+    full.set_defaults(func=_dispatch_full_setup)
+
     # configure (for run_configure_mode testing)
     cfg = sub.add_parser("configure")
     cfg.add_argument("cfg_mode", nargs=1)
@@ -539,7 +552,7 @@ def _parse_cli(argv: list[str] | None):
 def _fallback(args: Any) -> int:
     print(
         "Top-level commands: prereqs, environment-lab, tool-installer, "
-        "template-installer, guidance, dev-flow, memory-search, configure",
+        "template-installer, guidance, dev-flow, full-setup, memory-search, configure",
         file=sys.stderr,
     )
     return 1
@@ -553,9 +566,18 @@ def _dispatch_prereqs(args: Any) -> int:
 
 
 def _dispatch_environment_lab(args: Any) -> int:
+    raw = getattr(args, "envlab_args", [])
+    # Intercept "setup-lab" — delegate to the full 4-stage setup
+    if raw and raw[0] == "setup-lab":
+        from .full_setup import run_full_setup
+
+        return run_full_setup(
+            raw[1:],  # strip "setup-lab", pass remaining (--dry-run, etc.)
+            root=Path(getattr(args, "root", REPO_ROOT)),
+        )
     from .environment_lab import run_environment_lab
 
-    return run_environment_lab(getattr(args, "envlab_args", []))
+    return run_environment_lab(raw)
 
 
 def _dispatch_tool_installer(args: Any) -> int:
@@ -592,6 +614,16 @@ def _dispatch_agent_eval(args: Any) -> int:
     from .agent_eval import run_agent_eval
 
     return run_agent_eval(getattr(args, "ae_args", []))
+
+
+def _dispatch_full_setup(args: Any) -> int:
+    from .full_setup import run_full_setup
+
+    return run_full_setup(
+        getattr(args, "full_args", []),
+        root=Path(getattr(args, "root", REPO_ROOT)),
+        dry_run=getattr(args, "dry_run", False),
+    )
 
 
 def _dispatch_configure(args: Any) -> int:

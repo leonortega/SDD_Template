@@ -64,7 +64,6 @@
         }
       ]
     },
-
     "workflowEvals": {
       "provider": "promptfoo",
       "configPath": ".codex/agent-evals/promptfooconfig.yaml",
