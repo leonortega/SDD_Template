@@ -1,34 +1,39 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: openproject
+  name: backend
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: openproject
+      app: backend
   template:
     metadata:
       labels:
-        app: openproject
+        app: backend
     spec:
       containers:
-        - name: openproject
-          image: host.docker.internal:5001/openproject
+        - name: backend
+          image: host.docker.internal:5001/backend
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 80
+            - containerPort: 5000
+          env:
+            - name: ASPNETCORE_ENVIRONMENT
+              value: "Production"
+            - name: ASPNETCORE_URLS
+              value: "http://+:5000"
           livenessProbe:
             httpGet:
-              path: /health
-              port: 80
-            initialDelaySeconds: 10
+              path: /api/todos
+              port: 5000
+            initialDelaySeconds: 15
             periodSeconds: 30
           readinessProbe:
             httpGet:
-              path: /health
-              port: 80
-            initialDelaySeconds: 5
+              path: /api/todos
+              port: 5000
+            initialDelaySeconds: 10
             periodSeconds: 10
           resources:
             requests:

@@ -142,9 +142,117 @@ kubectl get events --sort-by='.lastTimestamp'
 - **Kubeconfig location**: `%USERPROFILE%\.kube\config`
 - **Context selection**: `kubectl config use-context docker-desktop`
 
+## CI Pipeline Integration
+
+When authoring K8s manifests for Gitea Actions CI, follow these patterns.
+
+### Runner Configuration (infra/gitea/compose.yml)
+
+The Gitea Actions runner must be configured with specific options for CI containers to work:
+
+```yaml
+container:
+  network: agentic-e2e_nexus
+  options: --user root --add-host host.docker.internal:host-gateway
+  valid_volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
+    - ${KUBE_SRC}:/home/runner/.kube/config:ro
+```
+
+**Key rules:**
+- `labels: ["ubuntu-latest"]` must match the workflow's `runs-on: ubuntu-latest`
+- Docker socket is mounted by `valid_volumes` — do NOT also add `--volume` in `options`
+- Always run `docker compose` from the **root `infra/compose.yml`** (not from subdirectory) to use the correct network namespace
+
+See `dev-ops-configure-k8s/SKILL.md` for complete runner configuration details.
+
+### Workflow Container Options (package-deploy.yml)
+
+The CI job container's `options` should only include `--user root` and `--add-host`:
+
+```yaml
+container:
+  image: sdd-e2e-ci:local
+  options: --user root --add-host host.docker.internal:host-gateway
+  # NO --volume /var/run/docker.sock (handled by runner valid_volumes)
+```
+
+### Kustomize Overlays
+
+When creating Kustomize overlays for CI deployment:
+
+**🚫 NEVER use unresolvable placeholder variables in patches:**
+
+```yaml
+# ❌ WRONG: causes 'no resource matches strategic merge patch' error
+patches:
+  - path: config-patch.yaml
+# config-patch.yaml contains:
+# metadata:
+#   name: ${COMPONENT_NAME}  ← kustomize treats this as literal string
+```
+
+```yaml
+# ✅ CORRECT: remove patches that don't target real deployments
+resources:
+  - ../../base
+images:
+  - name: host.docker.internal:8083/openproject
+    newTag: latest
+```
+
+Best practices:
+- Every patch must target a `metadata.name` that **actually exists** in the base resources
+- Kustomize does NOT support shell-style `${VARIABLE}` substitution — those are treated as literal strings
+- If a patch is unused, remove it (don't leave orphaned files)
+- The CI sets images via `kustomize edit set image`, which modifies the overlay's `images` field
+- Verify overlays locally: `kustomize build .` or `kubectl kustomize .`
+
+### CI Troubleshooting
+
+| Error | Root Cause | Fix |
+|-------|-----------|-----|
+| `Duplicate mount point: /var/run/docker.sock` | Socket mounted twice | Remove `--volume` from both runner `options` and workflow `container.options` |
+| `permission denied while trying to connect to the docker API` | Container runs as non-root | Add `--user root` to `container.options` |
+| `no resource matches strategic merge patch` | Kustomize patch references non-existent deployment name | Remove or fix the patch to target real deployment names |
+| `tls: failed to verify certificate: ... not host.docker.internal` | kind TLS cert doesn't include `host.docker.internal` | Add `insecure-skip-tls-verify: true` to kubeconfig |
+| Runner doesn't pick up jobs | Labels don't match `runs-on` | Set `labels: ["ubuntu-latest"]` in runner config |
+
+## kind Cluster Setup (Alternative K8s)
+
+When Docker Desktop K8s is not available, use **kind** (Kubernetes in Docker):
+
+```bash
+# Install
+winget install Kubernetes.kind  # Windows
+brew install kind               # macOS
+
+# Create cluster
+kind create cluster --name sdd-cluster
+
+# Connect to project Docker networks (so CI containers can reach it)
+docker network connect agentic-e2e_gitea sdd-cluster-control-plane
+docker network connect agentic-e2e_nexus sdd-cluster-control-plane
+```
+
+For CI access, modify the kubeconfig:
+- Change server address from `127.0.0.1:<port>` to `host.docker.internal:<port>`
+- Add `insecure-skip-tls-verify: true` (TLS cert is for kind container name, not `host.docker.internal`)
+- Set the modified kubeconfig as a Gitea `KUBECONFIG` secret
+
+See `dev-ops-configure-k8s/SKILL.md` for the complete setup procedure.
+
+## Docker Desktop for Windows Notes
+
+- Docker uses named pipes (`npipe:////./pipe/dockerDesktopLinuxEngine`), not Unix sockets
+- Use `//var/run/docker.sock` (double forward slash) for bind mounts in Docker Compose on Windows
+- `host.docker.internal` resolves inside containers when `--add-host host.docker.internal:host-gateway` is set
+- Run `docker compose` from the project root compose file (not subdirectories) to maintain correct network naming
+
 ## References
 
 - K8s MCP: `kubernetes` server in `.vscode/mcp.json`
 - Kubernetes MCP tools: pods, deployments, logs, helm, events
 - Docker Desktop K8s: Enable in Docker Desktop Settings → Kubernetes
 - CLI helpers: `python -m tools.sdd_cli environment-lab scaffold-k8s`
+- K8s DevOps skill: `.codex/skills/dev-ops-configure-k8s/SKILL.md` (runner config, kind setup, troubleshooting)

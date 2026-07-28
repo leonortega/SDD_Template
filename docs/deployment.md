@@ -2,11 +2,11 @@
 
 ## Technology Stack And Tool Set
 
-Kubernetes is the **only** deployment target for this project. The cluster runs on **Docker Desktop's built-in Kubernetes** (single-node, same Docker daemon as the host).
+Kubernetes is the **only** deployment target for this project. The cluster runs on **kind** (Kubernetes in Docker) by default, with Docker Desktop's built-in K8s as a fallback.
 
 | Layer              | Status                 | Detail                                                                   |
 | ------------------ | ---------------------- | ------------------------------------------------------------------------ |
-| Deployment target  | Docker Desktop K8s     | Single-node Kubernetes on Docker Desktop                                 |
+| Deployment target  | kind cluster           | Single-node K8s cluster (`sdd-cluster`) via kind (installed by `setup-lab`) |
 | Container registry | Nexus (:8083)          | Docker hosted repository for CI-built images                             |
 | Artifact storage   | Nexus (:8088)          | Raw hosted repository for build artifacts and manifests                  |
 | Environments       | dev, qa, prod          | Three K8s namespaces (sdd-dev, sdd-qa, sdd-prod) with Kustomize overlays |
@@ -22,13 +22,16 @@ text
 ┌──────────────────────────────────────────────────────────┐
 │  Docker Desktop Host                                     │
 │                                                          │
-│  ┌─ Docker Desktop K8s ───────────────────────────────┐  │
+│  ┌─ kind cluster ─────────────────────────────────────┐  │
 │  │  Namespace: sdd-dev                                 │  │
 │  │  ┌──────────────┐    ┌──────────────┐              │  │
 │  │  │ Deployment:   │    │ Service:     │              │  │
 │  │  │ frontend      │───▶│ frontend     │── LoadBalancer│  │
 │  │  │ (nginx:80)    │    │ type:        │── localhost:3xxxx│  │
 │  │  └──────────────┘    └──────────────┘              │  │
+│  │                                                    │  │
+│  │  Connected to: agentic-e2e_gitea,                   │  │
+│  │  agentic-e2e_nexus networks (for CI access)         │  │
 │  └────────────────────────────────────────────────────┘  │
 │                                                          │
 │  ┌─ Docker Compose ───────────────────────────────────┐  │
@@ -42,7 +45,7 @@ text
 
 | Component                    | Host                   | Port   | Purpose                                    |
 | ---------------------------- | ---------------------- | ------ | ------------------------------------------ |
-| K8s Cluster (Docker Desktop) | `localhost`            | -      | Runs app Deployments + Services            |
+| K8s Cluster (kind)            | `localhost` / `host.docker.internal` | 64366 | Runs app Deployments + Services (kind cluster `sdd-cluster`) |
 | Nexus Artifacts              | `host.docker.internal` | `8088` | Stores build artifacts + env URL manifests |
 | Nexus Docker Registry        | `host.docker.internal` | `8083` | Stores container images (CI pushes here)   |
 | Gitea                        | `host.docker.internal` | `3000` | Source control + CI runner                 |
@@ -65,20 +68,18 @@ infra/k8s/
 ├── base/                        # Shared manifests
 │   ├── kustomization.yaml
 │   ├── deployment.yaml          # Deployment with ContainerPort 80
-│   ├── service.yaml             # LoadBalancer type
-│   └── namespace.yaml           # sdd-{ENV}
+│   └── service.yaml             # LoadBalancer type
 ├── overlays/
 │   ├── dev/
-│   │   ├── kustomization.yaml   # images.newTag: latest
-│   │   └── config-patch.yaml    # replicas: 1
+│   │   └── kustomization.yaml   # images.newTag: latest
 │   ├── qa/
-│   │   ├── kustomization.yaml
-│   │   └── config-patch.yaml    # replicas: 2
+│   │   └── kustomization.yaml
 │   └── prod/
-│       ├── kustomization.yaml
-│       └── config-patch.yaml    # replicas: 3
+│       └── kustomization.yaml
 └── Dockerfile                   # Per-app multi-stage build
 ```
+
+**Note:** The base `namespace.yaml` and overlay `config-patch.yaml` files were removed to fix a Kustomize build failure (unresolved `${COMPONENT_NAME}` placeholders blocked `kustomize build`). Namespaces are created by the CI workflow via `kubectl create namespace`, and image tags are set by `kustomize edit set image`. If you need per-overlay environment variables, add patches targeting actual deployment names (not placeholder variables).
 
 ### Service Type: LoadBalancer
 
@@ -107,12 +108,40 @@ Generates per app:
 - `frontend/Dockerfile` — multi-stage (node build → nginx serve)
 - `frontend/.dockerignore` — excludes node_modules, .git, .env
 - `frontend/nginx.conf` — SPA routing + /health endpoint
-- `infra/k8s/base/` — namespace, deployment, service, kustomization
-- `infra/k8s/overlays/{dev,qa,prod}/` — env-specific patches
+- `infra/k8s/deploy.yaml` — single envsubst manifest (Namespace, Deployment, Service)
+
+**Note:** The CI workflow uses a Kustomize overlay structure (`infra/k8s/base/` + `infra/k8s/overlays/`) instead of the envsubst manifest. The Kustomize overlays must be created/updated separately from `scaffold-k8s`. See the `dev-ops-configure-k8s` skill for overlay setup guidance.
+
+### setup-kind-cluster
+
+Creates a kind cluster with extraPortMappings for direct host access (no kubectl port-forward).
+Run automatically by `setup-lab`, or manually:
+
+```bash
+python -m tools.sdd_cli environment-lab setup-kind-cluster
+```
+
+**Idempotent** — skips creation if `sdd-cluster` already exists.
+
+Uses `infra/k8s/kind-config.yaml` which defines fixed port mappings:
+
+| Host Port | Service   | NodePort |
+|-----------|-----------|----------|
+| `8081`    | frontend  | `30080`  |
+| `5001`    | backend   | `30500`  |
+| `8083`    | openproject | `30780` |
+
+This replaces the old Docker Desktop K8s requirement. Steps:
+
+1. **Installs kind** — via winget (Windows), brew (macOS), or direct download (Linux)
+2. **Creates `sdd-cluster`** — with extraPortMappings from `infra/k8s/kind-config.yaml`
+3. **Saves CI kubeconfig** — to `infra/k8s/kind-kubeconfig-ci.yaml` (replaces `127.0.0.1` → `host.docker.internal`, sets `insecure-skip-tls-verify: true`)
+4. **Exports host kubeconfig** — merges into `~/.kube/config`
+5. **Connects to Docker networks** — attaches `sdd-cluster-control-plane` to `agentic-e2e_gitea` and `agentic-e2e_nexus` for CI access
 
 ### validate-docker-desktop-k8s
 
-Check that Docker Desktop K8s is enabled and reachable:
+Check that K8s cluster (Docker Desktop or kind) is reachable:
 
 ```bash
 python -m tools.sdd_cli environment-lab validate-docker-desktop-k8s
@@ -122,7 +151,7 @@ Validates:
 
 - `kubectl` CLI is available
 - K8s API server responds
-- Current context is Docker Desktop
+- Current context (Docker Desktop, kind, or sdd-cluster)
 
 ### setup-k8s-access
 
@@ -176,28 +205,90 @@ Checkout → Determine Env → Build Docker Images → Deploy to K8s → Discove
 
 ### Runner Requirements
 
-The Gitea Actions runner container needs access to the host's Docker daemon and kubeconfig. Ensure `infra/gitea/compose.yml` mounts these:
+The Gitea Actions runner container needs specific configuration to work with CI. The config is written via heredoc in `infra/gitea/compose.yml`:
 
 ```yaml
 services:
   runner:
+    image: gitea/runner:1.0.0
+    container_name: agentic-gitea-runner
+    depends_on:
+      - gitea
+    env_file:
+      - ./runner.env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ~/.kube/config:/home/runner/.kube/config:ro
-    environment:
-      - KUBECONFIG=/home/runner/.kube/config
-      - DOCKER_HOST=unix:///var/run/docker.sock
+      - runner-data:/data
+      - //var/run/docker.sock:/var/run/docker.sock  # Note: // prefix on Windows
+    # Config is written via heredoc command:
+    command:
+      - sh
+      - -c
+      - |
+        cat > /tmp/config.yml << YAMLEOF
+        runner:
+          labels: ["ubuntu-latest"]   # ⚠️ Must match workflow's runs-on
+        container:
+          network: agentic-e2e_nexus
+          options: --user root --add-host host.docker.internal:host-gateway
+          valid_volumes:
+            - /var/run/docker.sock:/var/run/docker.sock  # Auto-mounted to CI containers
+            - ${KUBE_SRC}:/home/runner/.kube/config:ro
+        YAMLEOF
+        export CONFIG_FILE=/tmp/config.yml
+        exec run.sh
 ```
+
+**Critical rules:**
+
+1. **`labels: ["ubuntu-latest"]`** — Required for runner to match workflow's `runs-on: ubuntu-latest`
+2. **Docker socket mount** — Mounted via `valid_volumes` (auto-mounts to CI containers). Do **NOT** add `--volume /var/run/docker.sock` in `options` — that creates a duplicate mount causing `Duplicate mount point` error
+3. **`options: --user root --add-host host.docker.internal:host-gateway`** — `--user root` fixes `permission denied` on Docker socket; `--add-host` enables `host.docker.internal` DNS resolution
+4. **Compose directory matters** — Always run `docker compose up -d --no-deps runner` from the **project root** (`infra/compose.yml`), not from `infra/gitea/compose.yml`. The root compose sets the project name which prefixes all networks; running from the wrong directory creates the runner on a different Docker network, causing DNS resolution failures.
+
+### CI Job Container Options
+
+The CI workflow (`.gitea/workflows/package-deploy.yml`) also specifies options for the CI job container:
+
+```yaml
+container:
+  image: sdd-e2e-ci:local
+  options: --user root --add-host host.docker.internal:host-gateway
+  # NO --volume /var/run/docker.sock:/var/run/docker.sock
+  # (socket is auto-mounted by runner's valid_volumes)
+```
+
+### Gitea Secrets for CI
+
+Required secrets set via API:
+
+```bash
+# API: PUT /api/v1/repos/{owner}/{repo}/actions/secrets/{secretname}
+# Body: {"data": "<raw-value>"}
+# Gitea handles base64 encoding internally — do NOT pre-encode
+
+curl -u 'admin:admin123' -X PUT \
+  'http://localhost:3000/api/v1/repos/admin/sdd-test/actions/secrets/KUBECONFIG' \
+  -H 'Content-Type: application/json' \
+  -d '{"data": "<raw-kubeconfig-yaml>"}'
+```
+
+| Secret | Description |
+|--------|-------------|
+| `KUBECONFIG` | Raw kubeconfig YAML for K8s cluster access (set via API) |
+| `NEXUS_USERNAME` | Nexus admin username |
+| `NEXUS_PASSWORD` | Nexus admin password |
 
 ## Prerequisites
 
 Before any deployment:
 
-1. **Docker Desktop K8s enabled** — Settings → Kubernetes → Enable Kubernetes → Apply & Restart
+1. **kind cluster** — Run `setup-lab` (step 16) or `python -m tools.sdd_cli environment-lab setup-kind-cluster` to create `sdd-cluster`
 2. **Apps defined** — `infra/deployment/apps.json` must list every deployable app
 3. **K8s manifests scaffolded** — Run `scaffold-k8s` to generate Dockerfiles + manifests
 4. **Nexus Docker registry configured** — Docker hosted repository on port `8083` (created by `setup-lab`)
-5. **Gitea secrets** — `NEXUS_USERNAME`, `NEXUS_PASSWORD`, `KUBECONFIG` (base64 of `~/.kube/config`)
+5. **Gitea secrets** — `NEXUS_USERNAME`, `NEXUS_PASSWORD`, `KUBECONFIG` (provisioned automatically by `setup-lab`)
 6. **Runner mounts** — Docker socket and kubeconfig mounted into the runner container
 
 ### Image Strategy
@@ -209,9 +300,33 @@ Before any deployment:
 
 ## Accessing Deployed Apps
 
-### Via LoadBalancer (direct)
+### Via kind extraPortMappings (direct — no port-forward needed)
 
-After the CI pipeline deploys, each service gets a nodePort. Discover it:
+The kind cluster is created with `infra/k8s/kind-config.yaml` which defines fixed
+port mappings from the Windows host directly into the kind node container:
+
+| Host Port | Service   | NodePort |
+|-----------|-----------|----------|
+| `8081`    | frontend  | `30080`  |
+| `5001`    | backend   | `30500`  |
+| `8083`    | openproject | `30780` |
+
+After the CI pipeline deploys, you can access apps **directly at localhost**
+without any `kubectl port-forward`:
+
+```bash
+# Frontend
+curl http://localhost:8081/health
+# Open in browser: http://localhost:8081
+
+# Backend API
+curl http://localhost:5001/health
+
+# OpenProject
+curl http://localhost:8083/health
+```
+
+To discover all deployed URLs:
 
 ```bash
 python -m tools.sdd_cli environment-lab setup-k8s-access
@@ -220,17 +335,9 @@ python -m tools.sdd_cli environment-lab setup-k8s-access
 Output:
 
 ```
-DEV frontend accessible at: http://localhost:32768/health
-DEV openproject accessible at: http://localhost:32769/health
-```
-
-### Via Port-Forward (manual)
-
-If the service isn't deployed yet, the CLI suggests the command:
-
-```bash
-kubectl port-forward -n sdd-dev svc/frontend 8081:80
-# Then visit http://localhost:8081
+DEV frontend accessible at: http://localhost:8081/health (kind nodePort 30080 mapped to host:8081)
+DEV backend accessible at: http://localhost:5001/health (kind nodePort 30500 mapped to host:5001)
+DEV openproject accessible at: http://localhost:8083/health (kind nodePort 30780 mapped to host:8083)
 ```
 
 ## Grafana Monitoring
@@ -250,7 +357,8 @@ Grafana runs at `http://localhost:3001` (provisioned via Docker Compose).
 
 ## Known Limitations
 
-- **Single-node K8s**: Docker Desktop's built-in K8s is single-node — no pod anti-affinity, no multi-AZ. Fine for DEV/QA; PROD would need a proper cluster.
+- **Single-node K8s**: kind creates a single-node cluster — no pod anti-affinity, no multi-AZ. Fine for DEV/QA; PROD would need a proper cluster.
+- **kind cluster not persistent**: If Docker is restarted, the kind cluster goes away. Re-run `setup-kind-cluster` to recreate it.
 - **Dynamic nodePorts**: LoadBalancer ports change on service recreation. Run `setup-k8s-access` after each deploy to discover current URLs.
 - **Runner mounts**: The Gitea Actions runner needs host Docker socket and kubeconfig mounted.
 - **Single-app manifests**: `scaffold-k8s` generates manifests for the first app in `apps.json` only. Extend manually for multi-app.
