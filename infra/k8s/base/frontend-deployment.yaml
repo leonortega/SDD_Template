@@ -1,20 +1,20 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: openproject
+  name: frontend
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: openproject
+      app: frontend
   template:
     metadata:
       labels:
-        app: openproject
+        app: frontend
     spec:
       containers:
-        - name: openproject
-          image: host.docker.internal:5001/openproject
+        - name: frontend
+          image: host.docker.internal:5001/frontend
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 80

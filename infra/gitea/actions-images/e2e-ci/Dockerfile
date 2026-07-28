@@ -42,6 +42,12 @@ RUN curl -fsSL https://raw.githubusercontent.com/kubernetes-sigs/kustomize/maste
     | bash -s -- /usr/local/bin kustomize v5.4.3 \
     && kustomize version 2>/dev/null || true
 
+# Install kind (Kubernetes in Docker) for loading images into kind cluster from CI
+# hadolint ignore=DL3008
+RUN curl -fsSL -o /usr/local/bin/kind https://kind.sigs.k8s.io/dl/v0.32.0/kind-linux-amd64 \
+    && chmod +x /usr/local/bin/kind \
+    && kind version
+
 # Install Semgrep (SAST) and Checkov (IaC) via pip (--break-system-packages for PEP 668)
 RUN pip3 install --break-system-packages --no-cache-dir semgrep==1.104.0 checkov==3.2.20
 

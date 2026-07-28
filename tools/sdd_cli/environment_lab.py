@@ -180,17 +180,20 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
     # 15. Set Gitea branch protection for dev/main
     _add_step(set_gitea_branch_protection(root, dry_run), fatal=False)
 
-    # 16. Enable K8s in Docker Desktop (after compose & provisioning — restarting Docker
-    #     would disrupt running services like OpenProject)
-    #     K8s is required for lab deployment — fatal if it cannot be enabled.
-    early = _add_step(enable_docker_desktop_k8s(root, dry_run), fatal=True)
+    # 16. Create kind cluster (or verify existing) with port mappings for direct host access.
+    #     Uses infra/k8s/kind-config.yaml which maps:
+    #       host:8081 -> nodePort:30080 -> frontend:80
+    #       host:5001 -> nodePort:30500 -> backend:5000
+    #     This replaces Docker Desktop K8s — kind runs as a container, avoids
+    #     Docker Engine restart that would disrupt running compose services.
+    early = _add_step(setup_kind_cluster(root, dry_run), fatal=True)
     if early:
         return early
 
     # 17. Install Kubernetes MCP (after K8s is enabled)
     _add_step(install_k8s_mcp(root, dry_run), fatal=False)
 
-    # 18. Scaffold K8s deployment files (validates Docker Desktop K8s + creates manifests)
+    # 18. Scaffold K8s deployment files (creates Kustomize manifests)
     _add_step(scaffold_k8s(root, dry_run), fatal=False)
 
     # 19. Generate Semgrep config from stack (non-fatal — stack may not be set yet)
@@ -258,11 +261,12 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
     )
 
     summary["k8s"] = {
-        "manifest": "infra/k8s/deploy.yaml (envsubst: ENV, REPLICAS, REGISTRY, COMMIT_SHA)",
+        "base": "infra/k8s/base/kustomization.yaml (all apps from apps.json)",
+        "overlays": "infra/k8s/overlays/{dev,qa,prod}/kustomization.yaml (env-specific image tags)",
         "deploy": [
-            "ENV=dev REPLICAS=1 REGISTRY=host.docker.internal:5001 COMMIT_SHA=latest envsubst < infra/k8s/deploy.yaml | kubectl apply -f -",
-            "ENV=qa REPLICAS=2 REGISTRY=host.docker.internal:5001 COMMIT_SHA=latest envsubst < infra/k8s/deploy.yaml | kubectl apply -f -",
-            "ENV=prod REPLICAS=3 REGISTRY=host.docker.internal:5001 COMMIT_SHA=latest envsubst < infra/k8s/deploy.yaml | kubectl apply -f -",
+            "cd infra/k8s/overlays/dev && kustomize build . | kubectl apply -f -",
+            "cd infra/k8s/overlays/qa && kustomize build . | kubectl apply -f -",
+            "cd infra/k8s/overlays/prod && kustomize build . | kubectl apply -f -",
         ],
     }
 
@@ -1911,18 +1915,37 @@ def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str,
     )
     nexus_base = "http://localhost:8088"
     nexus_user = "admin"
-    # On first boot, Nexus generates a random admin password stored in /nexus-data/admin.password.
-    # Try to read it from the running container; fall back to admin123 (manually set or old install).
-    nexus_pass = "admin123"
+    nexus_pass = _get_nexus_admin_password()
+
+    # ── Helper to read Nexus admin password from container ──
+
+
+def _get_nexus_admin_password() -> str:
+    """Read Nexus admin password from container, fall back to admin123.
+
+    On first boot, Nexus generates a random admin password stored in
+    /nexus-data/admin.password inside the container. Reading it is the
+    only reliable way to get the correct password since we never set it.
+
+    ⚠️ Uses // prefix on Windows to prevent Git Bash from translating
+    /nexus-data to a Windows absolute path (e.g., C:/Users/.../nexus-data).
+    """
     try:
         r = subprocess.run(
-            ["docker", "exec", "agentic-nexus", "cat", "/nexus-data/admin.password"],
+            ["docker", "exec", "agentic-nexus", "cat", "//nexus-data/admin.password"],
             capture_output=True, text=True, timeout=10,
         )
         if r.returncode == 0 and r.stdout.strip():
-            nexus_pass = r.stdout.strip()
+            return r.stdout.strip()
     except Exception:
         pass
+    return "admin123"
+
+
+# ── Provision Nexus repositories ────────────────────────────────────────
+
+
+def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
     if dry_run:
         result["actions"].append(
@@ -1960,26 +1983,87 @@ def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str,
             return 0, str(ex)
 
     # ── 1. Accept Nexus EULA (required before any API calls work on fresh install) ──
-    eula_status, eula_data = _nexus_api(
-        "POST", "/service/rest/v1/editions/eula/accept", body={"eulaAccepted": True}
+    # Nexus 3.x EULA API uses a two-step process:
+    #   1. GET /service/rest/v1/system/eula  — returns disclaimer text + accepted: false
+    #   2. POST /service/rest/v1/system/eula — send exact JSON back with accepted: true
+    # The old endpoint (/editions/eula/accept) was removed in newer Nexus 3 versions.
+    eula_get_status, eula_get_data = _nexus_api(
+        "GET", "/service/rest/v1/system/eula"
     )
-    # Nexus EULA endpoint returns 204 on success, 400 if already accepted, 404 if not applicable (3.92+)
-    if eula_status in {204, 200, 400, 404}:
+    if eula_get_status == 200:
+        try:
+            eula_json = json.loads(eula_get_data)
+            if eula_json.get("accepted", False):
+                result["actions"].append(
+                    {
+                        "path": "nexus/eula",
+                        "key": "eula.already_accepted",
+                        "severity": "info",
+                        "message": "Nexus EULA already accepted.",
+                        "phase": "audit",
+                    }
+                )
+            else:
+                # Accept EULA by POSTing the exact JSON back with accepted=true
+                eula_json["accepted"] = True
+                eula_post_status, eula_post_data = _nexus_api(
+                    "POST", "/service/rest/v1/system/eula", body=eula_json
+                )
+                if eula_post_status in {200, 204}:
+                    result["actions"].append(
+                        {
+                            "path": "nexus/eula",
+                            "key": "eula.accepted",
+                            "severity": "info",
+                            "message": "Nexus EULA accepted successfully.",
+                            "phase": "apply",
+                        }
+                    )
+                elif eula_post_status == 400 and "already" in eula_post_data.lower():
+                    result["actions"].append(
+                        {
+                            "path": "nexus/eula",
+                            "key": "eula.already_accepted",
+                            "severity": "info",
+                            "message": "Nexus EULA already accepted (POST confirmed).",
+                            "phase": "audit",
+                        }
+                    )
+                else:
+                    add_bucket_item(
+                        result["findings"],
+                        "nexus/eula",
+                        "eula.accept_failed",
+                        f"Nexus EULA acceptance returned {eula_post_status}: {eula_post_data[:300]}",
+                        "warning",
+                        "apply",
+                    )
+        except json.JSONDecodeError:
+            add_bucket_item(
+                result["findings"],
+                "nexus/eula",
+                "eula.parse_failed",
+                f"Could not parse EULA response: {eula_get_data[:200]}",
+                "warning",
+                "apply",
+            )
+    elif eula_get_status == 404:
+        # EULA endpoint not found — likely an older Nexus version without this API
         result["actions"].append(
             {
                 "path": "nexus/eula",
-                "key": "eula.accepted",
+                "key": "eula.not_applicable",
                 "severity": "info",
-                "message": "Nexus EULA accepted.",
-                "phase": "apply",
+                "message": "Nexus EULA endpoint not found (older version) — skipping.",
+                "phase": "audit",
             }
         )
     else:
         add_bucket_item(
             result["findings"],
             "nexus/eula",
-            "eula.accept",
-            f"Nexus EULA acceptance returned {eula_status}: {eula_data[:200]}",
+            "eula.check_failed",
+            f"Nexus EULA check returned {eula_get_status}: {eula_get_data[:200]}",
             "warning",
             "apply",
         )
@@ -3629,10 +3713,12 @@ def provision_gitea_secrets(root: Path, dry_run: bool = False) -> dict[str, Any]
         except Exception as ex:
             return 0, str(ex)
 
+    nexus_pass = _get_nexus_admin_password()
+
     # Secrets to set
     secrets = {
         "NEXUS_USERNAME": "admin",
-        "NEXUS_PASSWORD": "admin123",
+        "NEXUS_PASSWORD": nexus_pass,
         "NEXUS_URL": "http://host.docker.internal:8088",
         "NEXUS_REPOSITORY": "sdd-artifacts",
         "NEXUS_DOCKER_REGISTRY": "",  # Empty means use workflow default (host.docker.internal:5001)
@@ -4016,7 +4102,21 @@ def push_to_gitea(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
 
 def scaffold_k8s(root, dry_run=False):
-    """Scaffold K8s deployment files: Dockerfile and single envsubst manifest."""
+    """Scaffold K8s deployment files: Dockerfile, Kustomize base, and environment overlays.
+
+    Reads infra/deployment/apps.json and generates for each app:
+    - Dockerfile (nginx for web, generic for api)
+    - nginx.conf (for web apps, with /health endpoint)
+    - infra/k8s/base/{app}-deployment.yaml
+    - infra/k8s/base/{app}-service.yaml
+    - infra/k8s/base/kustomization.yaml (references all apps)
+    - infra/k8s/overlays/{dev,qa,prod}/kustomization.yaml (image entries per app)
+
+    ⚠️ Health probe lesson: Always use /health as the default health check path
+    for all app roles. Web apps get /health via nginx.conf. API apps must
+    implement a GET /health endpoint in their code. This prevents rollout
+    failures where probes point to non-existent endpoints.
+    """
     result = configure_result("ScaffoldK8s", dry_run, write_enabled=not dry_run)
 
     if dry_run:
@@ -4029,8 +4129,11 @@ def scaffold_k8s(root, dry_run=False):
                     "Would scaffold K8s deployment files:"
                     "\n  - Dockerfile per app (nginx for web)"
                     "\n  - .dockerignore per app"
-                    "\n  - infra/k8s/deploy.yaml (envsubst: ENV, REPLICAS, REGISTRY, COMMIT_SHA)"
-                    "\n  - nginx.conf for web apps"
+                    "\n  - nginx.conf for web apps (with /health)"
+                    "\n  - infra/k8s/base/{app}-deployment.yaml per app"
+                    "\n  - infra/k8s/base/{app}-service.yaml per app"
+                    "\n  - infra/k8s/base/kustomization.yaml (all apps)"
+                    "\n  - infra/k8s/overlays/{dev,qa,prod}/kustomization.yaml"
                 ),
                 "phase": "apply",
             }
@@ -4038,16 +4141,14 @@ def scaffold_k8s(root, dry_run=False):
         result["valid"] = True
         return result
 
-    # Prerequisite: validate Docker Desktop K8s
-    k8s_check = validate_docker_desktop_k8s(root)
-    if not k8s_check.get("valid", False):
-        for f in k8s_check.get("findings", []):
-            result["findings"].append(f)
+    # Prerequisite: validate kubectl is available (kind or Docker Desktop K8s)
+    k8s_check = run_native(["kubectl", "version", "--output=json"], root, timeout=15)
+    if k8s_check["returncode"] != 0:
         add_bucket_item(
             result["findings"],
-            "k8s",
-            "prerequisite",
-            "Docker Desktop K8s validation failed — fix before scaffolding.",
+            "kubectl",
+            "missing",
+            "kubectl not available — run setup-kind-cluster first or ensure K8s is running.",
             "error",
             "pre-start",
         )
@@ -4098,10 +4199,24 @@ def scaffold_k8s(root, dry_run=False):
     k8s_dir = root / "infra" / "k8s"
     k8s_dir.mkdir(parents=True, exist_ok=True)
 
-    first_app = apps[0]["appId"]
-    first_health = apps[0].get("healthPath", "/health")
+    # ── Port mapping by role ──
+    _port_map = {"web": 80, "api": 5000}
+    # Fixed nodePorts for kind extraPortMappings (defined in infra/k8s/kind-config.yaml)
+    # Host → nodePort: 8081→30080 (web), 5001→30500 (api), 8083→30780 (openproject)
+    _node_port_base = {"web": 30080, "api": 30500}
+    _used_node_ports: set[int] = set()
 
-    # Generate Dockerfile for each web app
+    def _port_for_role(role: str) -> int:
+        return _port_map.get(role, 80)
+
+    def _node_port_for_role(role: str) -> int:
+        base = _node_port_base.get(role, 30080)
+        port = base
+        while port in _used_node_ports:
+            port += 1
+        _used_node_ports.add(port)
+        return port
+    # ── Generate Dockerfile, nginx.conf, .dockerignore for each app ──
     for app in apps:
         app_id = app["appId"]
         proj = app.get("projectPath", app_id)
@@ -4123,7 +4238,7 @@ def scaffold_k8s(root, dry_run=False):
                     }
                 )
 
-            # nginx.conf
+            # nginx.conf — /health endpoint required for K8s health probes
             nc = app_dir / "nginx.conf"
             if not nc.exists():
                 nc.write_text(
@@ -4147,12 +4262,12 @@ def scaffold_k8s(root, dry_run=False):
                         "path": f"{proj}/nginx.conf",
                         "key": "file.created",
                         "severity": "info",
-                        "message": f"Created nginx.conf for {app_id}.",
+                        "message": f"Created nginx.conf for {app_id} with /health endpoint.",
                         "phase": "apply",
                     }
                 )
 
-            # Dockerfile
+            # Dockerfile (multi-stage node build -> nginx serve)
             df = app_dir / "Dockerfile"
             if not df.exists():
                 dlines = [
@@ -4195,86 +4310,509 @@ def scaffold_k8s(root, dry_run=False):
                     }
                 )
 
-    # Single envsubst manifest
-    deploy_yaml = (
-        "apiVersion: v1\n"
-        "kind: Namespace\n"
-        "metadata:\n"
-        "  name: sdd-${ENV}\n"
-        "---\n"
-        "apiVersion: apps/v1\n"
-        "kind: Deployment\n"
-        "metadata:\n"
-        f"  name: {first_app}\n"
-        "  namespace: sdd-${ENV}\n"
-        "spec:\n"
-        "  replicas: ${REPLICAS}\n"
-        "  selector:\n"
-        "    matchLabels:\n"
-        f"      app: {first_app}\n"
-        "  template:\n"
-        "    metadata:\n"
-        "      labels:\n"
-        f"        app: {first_app}\n"
-        "    spec:\n"
-        "      containers:\n"
-        f"        - name: {first_app}\n"
-        f"          image: ${{REGISTRY}}/{first_app}:${{COMMIT_SHA}}\n"
-        "          imagePullPolicy: IfNotPresent\n"
-        "          ports:\n"
-        "            - containerPort: 80\n"
-        "          env:\n"
-        "            - name: ENVIRONMENT\n"
-        '              value: "${ENV}"\n'
-        "          livenessProbe:\n"
-        "            httpGet:\n"
-        f"              path: {first_health}\n"
-        "              port: 80\n"
-        "            initialDelaySeconds: 10\n"
-        "            periodSeconds: 30\n"
-        "          readinessProbe:\n"
-        "            httpGet:\n"
-        f"              path: {first_health}\n"
-        "              port: 80\n"
-        "            initialDelaySeconds: 5\n"
-        "            periodSeconds: 10\n"
-        "          resources:\n"
-        "            requests:\n"
-        '              cpu: "100m"\n'
-        '              memory: "128Mi"\n'
-        "            limits:\n"
-        '              cpu: "500m"\n'
-        '              memory: "256Mi"\n'
-        "---\n"
-        "apiVersion: v1\n"
-        "kind: Service\n"
-        "metadata:\n"
-        f"  name: {first_app}\n"
-        "  namespace: sdd-${ENV}\n"
-        "spec:\n"
-        "  type: LoadBalancer\n"
-        "  selector:\n"
-        f"    app: {first_app}\n"
-        "  ports:\n"
-        "    - protocol: TCP\n"
-        "      port: 80\n"
-        "      targetPort: 80\n"
-    )
-    (k8s_dir / "deploy.yaml").write_text(deploy_yaml, encoding="utf-8")
-    result["actions"].append(
-        {
-            "path": "infra/k8s/deploy.yaml",
-            "key": "file.created",
-            "severity": "info",
-            "message": "Created envsubst manifest: infra/k8s/deploy.yaml.",
-            "phase": "apply",
-        }
-    )
+    # ── Generate Kustomize base manifests (one Deployment + Service per app) ──
+    base_dir = k8s_dir / "base"
+    base_dir.mkdir(parents=True, exist_ok=True)
+    base_resources = []
+
+    for app in apps:
+        app_id = app["appId"]
+        role = app.get("role", "web")
+        port = _port_for_role(role)
+        health_path = "/health"  # Always use /health — nginx.conf has it for web, api apps must implement it
+
+        # Deployment YAML
+        dep_file = f"{app_id}-deployment.yaml"
+        dep_path = base_dir / dep_file
+        if not dep_path.exists():
+            dep_yaml = (
+                "apiVersion: apps/v1\n"
+                "kind: Deployment\n"
+                "metadata:\n"
+                f"  name: {app_id}\n"
+                "spec:\n"
+                "  replicas: 1\n"
+                "  selector:\n"
+                "    matchLabels:\n"
+                f"      app: {app_id}\n"
+                "  template:\n"
+                "    metadata:\n"
+                "      labels:\n"
+                f"        app: {app_id}\n"
+                "    spec:\n"
+                "      containers:\n"
+                f"        - name: {app_id}\n"
+                f"          image: host.docker.internal:5001/{app_id}\n"
+                "          imagePullPolicy: IfNotPresent\n"
+                "          ports:\n"
+                f"            - containerPort: {port}\n"
+            )
+            # Add ASPNETCORE_URLS for .NET backends
+            if role == "api":
+                dep_yaml += (
+                    "          env:\n"
+                    '            - name: ASPNETCORE_ENVIRONMENT\n'
+                    '              value: "Production"\n'
+                    '            - name: ASPNETCORE_URLS\n'
+                    f'              value: "http://+:{port}"\n'
+                )
+            dep_yaml += (
+                "          livenessProbe:\n"
+                "            httpGet:\n"
+                f"              path: {health_path}\n"
+                f"              port: {port}\n"
+                "            initialDelaySeconds: 10\n"
+                "            periodSeconds: 30\n"
+                "          readinessProbe:\n"
+                "            httpGet:\n"
+                f"              path: {health_path}\n"
+                f"              port: {port}\n"
+                "            initialDelaySeconds: 5\n"
+                "            periodSeconds: 10\n"
+                "          resources:\n"
+                "            requests:\n"
+                '              cpu: "100m"\n'
+                '              memory: "128Mi"\n'
+                "            limits:\n"
+                '              cpu: "500m"\n'
+                '              memory: "256Mi"\n'
+            )
+            dep_path.write_text(dep_yaml, encoding="utf-8")
+            result["actions"].append(
+                {
+                    "path": f"infra/k8s/base/{dep_file}",
+                    "key": "file.created",
+                    "severity": "info",
+                    "message": f"Created K8s Deployment for {app_id} (role={role}, port={port}).",
+                    "phase": "apply",
+                }
+            )
+        else:
+            result["actions"].append(
+                {
+                    "path": f"infra/k8s/base/{dep_file}",
+                    "key": "file.exists",
+                    "severity": "info",
+                    "message": f"Deployment YAML already exists for {app_id}.",
+                    "phase": "audit",
+                }
+            )
+
+        # Service YAML
+        svc_file = f"{app_id}-service.yaml"
+        svc_path = base_dir / svc_file
+        if not svc_path.exists():
+            node_port = _node_port_for_role(role)
+            svc_yaml = (
+                "apiVersion: v1\n"
+                "kind: Service\n"
+                "metadata:\n"
+                f"  name: {app_id}\n"
+                "spec:\n"
+                "  type: NodePort\n"
+                "  selector:\n"
+                f"    app: {app_id}\n"
+                "  ports:\n"
+                "    - protocol: TCP\n"
+                f"      port: {port}\n"
+                f"      targetPort: {port}\n"
+                f"      nodePort: {node_port}\n"
+            )
+            svc_path.write_text(svc_yaml, encoding="utf-8")
+            result["actions"].append(
+                {
+                    "path": f"infra/k8s/base/{svc_file}",
+                    "key": "file.created",
+                    "severity": "info",
+                    "message": f"Created K8s Service for {app_id} (LoadBalancer, port {port}).",
+                    "phase": "apply",
+                }
+            )
+        else:
+            result["actions"].append(
+                {
+                    "path": f"infra/k8s/base/{svc_file}",
+                    "key": "file.exists",
+                    "severity": "info",
+                    "message": f"Service YAML already exists for {app_id}.",
+                    "phase": "audit",
+                }
+            )
+
+        base_resources.append(f"  - {dep_file}")
+        base_resources.append(f"  - {svc_file}")
+
+    # Base kustomization.yaml
+    base_kustomization = base_dir / "kustomization.yaml"
+    if not base_kustomization.exists():
+        kustomize_yaml = (
+            "apiVersion: kustomize.config.k8s.io/v1beta1\n"
+            "kind: Kustomization\n"
+            "resources:\n"
+            + "\n".join(base_resources)
+            + "\n"
+            "commonLabels:\n"
+            "  app.kubernetes.io/managed-by: sdd-cli\n"
+        )
+        base_kustomization.write_text(kustomize_yaml, encoding="utf-8")
+        app_names = ", ".join(a["appId"] for a in apps)
+        result["actions"].append(
+            {
+                "path": "infra/k8s/base/kustomization.yaml",
+                "key": "file.created",
+                "severity": "info",
+                "message": f"Created base kustomization.yaml with {len(apps)} app(s): {app_names}.",
+                "phase": "apply",
+            }
+        )
+    else:
+        result["actions"].append(
+            {
+                "path": "infra/k8s/base/kustomization.yaml",
+                "key": "file.exists",
+                "severity": "info",
+                "message": "Base kustomization.yaml already exists — add new apps manually if needed.",
+                "phase": "audit",
+            }
+        )
+
+    # ── Generate environment overlays (dev, qa, prod) ──
+    registry = "host.docker.internal:5001"
+    for env_name in ("dev", "qa", "prod"):
+        overlay_dir = k8s_dir / "overlays" / env_name
+        overlay_dir.mkdir(parents=True, exist_ok=True)
+
+        overlay_file = overlay_dir / "kustomization.yaml"
+        if not overlay_file.exists():
+            image_entries = []
+            for app in apps:
+                app_id = app["appId"]
+                image_entries.append(
+                    f"  - name: {registry}/{app_id}\n"
+                    "    newTag: latest\n"
+                )
+
+            overlay_yaml = (
+                "apiVersion: kustomize.config.k8s.io/v1beta1\n"
+                "kind: Kustomization\n"
+                f"namespace: sdd-{env_name}\n"
+                "resources:\n"
+                "  - ../../base\n"
+                "images:\n"
+                + "".join(image_entries)
+            )
+            overlay_file.write_text(overlay_yaml, encoding="utf-8")
+            count = len(apps)
+            label = "entry" if count == 1 else "entries"
+            result["actions"].append(
+                {
+                    "path": f"infra/k8s/overlays/{env_name}/kustomization.yaml",
+                    "key": "file.created",
+                    "severity": "info",
+                    "message": f"Created {env_name} overlay kustomization.yaml with {count} app image {label}.",
+                    "phase": "apply",
+                }
+            )
+        else:
+            result["actions"].append(
+                {
+                    "path": f"infra/k8s/overlays/{env_name}/kustomization.yaml",
+                    "key": "file.exists",
+                    "severity": "info",
+                    "message": f"{env_name} overlay already exists.",
+                    "phase": "audit",
+                }
+            )
 
     result["valid"] = not any(
         item.get("severity") == "error" for item in result["findings"]
     )
-    return result  # ── Docker Desktop K8s enablement ──────────────────────────────────────────
+    return result  # ── kind cluster setup ────────────────────────────────────────────────
+
+
+def setup_kind_cluster(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Create a kind cluster with extraPortMappings for direct host access.
+
+    Uses infra/k8s/kind-config.yaml which defines fixed nodePort → host port mappings:
+      host:8081 → nodePort:30080 → frontend:80
+      host:5001 → nodePort:30500 → backend:5000
+      host:8083 → nodePort:30780 → openproject:80
+
+    This replaces Docker Desktop K8s — kind runs as a Docker container, avoids
+    Docker Engine restart, and requires no Docker Desktop Kubernetes toggle.
+
+    Steps:
+    1. Install kind if not present (Windows/macOS/Linux)
+    2. Create kind cluster 'sdd-cluster' with infra/k8s/kind-config.yaml
+    3. Save kubeconfig for CI access (replace 127.0.0.1 with host.docker.internal)
+    4. Connect to Docker networks for CI access
+    """
+    result = configure_result(
+        "SetupKindCluster", dry_run, write_enabled=not dry_run
+    )
+
+    if dry_run:
+        result["actions"].append(
+            {
+                "path": "kind",
+                "key": "cluster.create",
+                "severity": "info",
+                "message": "Would create kind cluster 'sdd-cluster' with extraPortMappings (8081→frontend, 5001→backend).",
+                "phase": "apply",
+            }
+        )
+        result["valid"] = True
+        return result
+
+    # ── 1. Check if kubectl is already connected to a cluster ──
+    kubectl_check = run_native(["kubectl", "version", "--output=json"], root, timeout=15)
+    if kubectl_check["returncode"] == 0:
+        try:
+            k8s_info = json.loads(kubectl_check["stdout"])
+            server = k8s_info.get("serverVersion", {})
+            git_version = server.get("gitVersion", "unknown")
+
+            # Check if it's a kind cluster
+            current_ctx = run_native(
+                ["kubectl", "config", "current-context"], root, timeout=5
+            )
+            ctx_name = current_ctx["stdout"].strip() if current_ctx["returncode"] == 0 else "unknown"
+
+            result["actions"].append(
+                {
+                    "path": "kubectl",
+                    "key": "cluster.ready",
+                    "severity": "info",
+                    "message": f"K8s cluster is already reachable (context={ctx_name}, v{git_version}).",
+                    "phase": "audit",
+                }
+            )
+            result["valid"] = True
+            return result
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+    # ── 2. Ensure kind is installed ──
+    kind_check = run_native(["kind", "version"], root, timeout=10)
+    if kind_check["returncode"] != 0:
+        import platform
+
+        pf = platform.system().lower()
+        result["actions"].append(
+            {
+                "path": "kind",
+                "key": "binary.install",
+                "severity": "info",
+                "message": "kind not found — installing v0.32.0...",
+                "phase": "apply",
+            }
+        )
+        if pf == "windows":
+            install_cmd = [
+                "winget", "install", "Kubernetes.kind", "--accept-package-agreements"
+            ]
+            install = run_native(install_cmd, root, timeout=120)
+            if install["returncode"] != 0:
+                add_bucket_item(
+                    result["findings"],
+                    "kind",
+                    "install.failed",
+                    "Could not install kind via winget. Download manually from https://kind.sigs.k8s.io/docs/user/quick-start/",
+                    "error",
+                    "pre-start",
+                )
+                result["valid"] = False
+                return result
+        elif pf == "darwin":
+            run_native(["brew", "install", "kind"], root, timeout=120)
+        else:
+            # Linux — direct download
+            kind_url = (
+                "https://kind.sigs.k8s.io/dl/v0.32.0/kind-linux-amd64"
+            )
+            run_native(
+                [
+                    "curl", "-fsSL", "-o", "/usr/local/bin/kind", kind_url,
+                    "&&", "chmod", "+x", "/usr/local/bin/kind",
+                ],
+                root,
+                timeout=60,
+            )
+
+    # Verify kind is now available
+    kind_check2 = run_native(["kind", "version"], root, timeout=10)
+    if kind_check2["returncode"] != 0:
+        add_bucket_item(
+            result["findings"],
+            "kind",
+            "not.found",
+            "kind is still not available after install attempt. Install manually: https://kind.sigs.k8s.io/docs/user/quick-start/",
+            "error",
+            "pre-start",
+        )
+        result["valid"] = False
+        return result
+    else:
+        result["actions"].append(
+            {
+                "path": "kind",
+                "key": "binary.installed",
+                "severity": "info",
+                "message": f"kind is available: {kind_check2['stdout'].strip()}.",
+                "phase": "audit",
+            }
+        )
+
+    # ── 3. Check if sdd-cluster already exists ──
+    clusters = run_native(["kind", "get", "clusters"], root, timeout=15)
+    if clusters["returncode"] == 0 and "sdd-cluster" in clusters["stdout"]:
+        result["actions"].append(
+            {
+                "path": "kind/sdd-cluster",
+                "key": "cluster.exists",
+                "severity": "info",
+                "message": "Cluster 'sdd-cluster' already exists. Skipping creation.",
+                "phase": "audit",
+            }
+        )
+    else:
+        # ── 4. Create kind cluster with extraPortMappings ──
+        kind_config = root / "infra" / "k8s" / "kind-config.yaml"
+        if not kind_config.exists():
+            add_bucket_item(
+                result["findings"],
+                "infra/k8s/kind-config.yaml",
+                "missing",
+                "kind-config.yaml not found — run scaffold-k8s first or create it manually.",
+                "error",
+                "pre-start",
+            )
+            result["valid"] = False
+            return result
+
+        result["actions"].append(
+            {
+                "path": "kind/sdd-cluster",
+                "key": "cluster.create",
+                "severity": "info",
+                "message": "Creating kind cluster 'sdd-cluster' with extraPortMappings...",
+                "phase": "apply",
+            }
+        )
+        create = run_native(
+            ["kind", "create", "cluster", "--name", "sdd-cluster", "--config", str(kind_config)],
+            root,
+            timeout=300,
+        )
+        if create["returncode"] != 0:
+            add_bucket_item(
+                result["findings"],
+                "kind/sdd-cluster",
+                "create.failed",
+                f"kind create cluster failed: {create['stderr']}",
+                "error",
+                "apply",
+            )
+            result["valid"] = False
+            return result
+
+        result["actions"].append(
+            {
+                "path": "kind/sdd-cluster",
+                "key": "cluster.created",
+                "severity": "info",
+                "message": "kind cluster 'sdd-cluster' created successfully.",
+                "phase": "apply",
+            }
+        )
+
+    # ── 5. Save kubeconfig for CI access ──
+    # Get kubeconfig
+    kc_get = run_native(
+        ["kind", "get", "kubeconfig", "--name", "sdd-cluster"], root, timeout=15
+    )
+    if kc_get["returncode"] == 0 and kc_get["stdout"]:
+        kc_data = kc_get["stdout"]
+
+        # Replace 127.0.0.1:<port> with host.docker.internal:<port> for CI container access
+        # Use YAML-safe approach: replace server address and strip CA data
+        kc_lines = kc_data.splitlines()
+        kc_ci_lines = []
+        skip_ca = False
+        for line in kc_lines:
+            stripped = line.strip()
+            if "127.0.0.1" in line and "server:" in line:
+                kc_ci_lines.append("    server: https://host.docker.internal:6443")
+            elif "certificate-authority-data:" in stripped:
+                kc_ci_lines.append("    insecure-skip-tls-verify: true")
+                skip_ca = True
+            elif skip_ca and (stripped.startswith("-") or "client-" in stripped or "user:" in stripped or stripped == "" or not stripped):
+                skip_ca = False
+                kc_ci_lines.append(line)
+            elif skip_ca and stripped and not stripped.startswith("#"):
+                # Skip CA data lines (PEM content)
+                continue
+            else:
+                kc_ci_lines.append(line)
+        kc_ci = "\n".join(kc_ci_lines)
+
+        # Write CI kubeconfig
+        kc_path = root / "infra" / "k8s" / "kind-kubeconfig-ci.yaml"
+        if not dry_run:
+            kc_path.write_text(kc_ci, encoding="utf-8")
+            result["actions"].append(
+                {
+                    "path": "infra/k8s/kind-kubeconfig-ci.yaml",
+                    "key": "kubeconfig.written",
+                    "severity": "info",
+                    "message": "Saved CI kubeconfig (host.docker.internal endpoint, insecure-skip-tls-verify).",
+                    "phase": "apply",
+                }
+            )
+
+        # Merge into default kubeconfig for local access
+        merge = run_native(
+            ["kind", "export", "kubeconfig", "--name", "sdd-cluster"],
+            root,
+            timeout=15,
+        )
+        if merge["returncode"] == 0:
+            result["actions"].append(
+                {
+                    "path": "~/.kube/config",
+                    "key": "kubeconfig.merged",
+                    "severity": "info",
+                    "message": "Merged kind kubeconfig into ~/.kube/config.",
+                    "phase": "apply",
+                }
+            )
+
+    # ── 6. Connect to Docker networks for CI access ──
+    for network in ("agentic-e2e_gitea", "agentic-e2e_nexus"):
+        connect = run_native(
+            ["docker", "network", "connect", network, "sdd-cluster-control-plane"],
+            root,
+            timeout=15,
+        )
+        if connect["returncode"] == 0:
+            result["actions"].append(
+                {
+                    "path": f"docker/{network}",
+                    "key": "network.connected",
+                    "severity": "info",
+                    "message": f"Connected sdd-cluster-control-plane to {network}.",
+                    "phase": "apply",
+                }
+            )
+        # Non-fatal if network doesn't exist yet
+
+    result["valid"] = not any(
+        item.get("severity") == "error" for item in result["findings"]
+    )
+    return result
+
+
+# ── Docker Desktop K8s enablement (legacy fallback) ─────────────────────
 
 
 def enable_docker_desktop_k8s(root: Path, dry_run: bool = False) -> dict[str, Any]:
@@ -4705,7 +5243,15 @@ def validate_docker_desktop_k8s(root, dry_run=False):
 
 
 def setup_k8s_access(root, dry_run=False):
-    """Set up port-forward access to deployed apps and display URLs."""
+    """Discover deployed app URLs via kind extraPortMappings (no kubectl port-forward needed).
+
+    The kind cluster is configured with extraPortMappings in infra/k8s/kind-config.yaml:
+      host:8081 → kind-node:30080 → frontend:80
+      host:5001 → kind-node:30500 → backend:5000
+      host:8083 → kind-node:30780 → openproject:80
+
+    These mappings make services directly accessible at localhost without port-forward.
+    """
     result = configure_result("SetupK8sAccess", dry_run, write_enabled=not dry_run)
     apps_path = root / "infra" / "deployment" / "apps.json"
 
@@ -4748,14 +5294,22 @@ def setup_k8s_access(root, dry_run=False):
         result["valid"] = True
         return result
 
+    # Map app roles to their kind extraPortMapping host ports (defined in kind-config.yaml)
+    # Role-based defaults: web→8081, api→5001
+    _HOST_PORT_MAP: dict[str, int] = {
+        "frontend": 8081,
+        "backend": 5001,
+        "openproject": 8083,
+    }
+
     if dry_run:
         for app in apps:
             result["actions"].append(
                 {
-                    "path": f"k8s/port-forward/{app['appId']}",
-                    "key": "port-forward.plan",
+                    "path": f"k8s/url/{app['appId']}",
+                    "key": "url.discover",
                     "severity": "info",
-                    "message": f"Would set up port-forward for {app['appId']} in dev/qa/prod.",
+                    "message": f"Would discover URL for {app['appId']} via extraPortMapping.",
                     "phase": "apply",
                 }
             )
@@ -4763,22 +5317,32 @@ def setup_k8s_access(root, dry_run=False):
         return result
 
     # Validate K8s first
-    k8s_valid = validate_docker_desktop_k8s(root)
-    if not k8s_valid.get("valid", False):
-        for f in k8s_valid.get("findings", []):
-            result["findings"].append(f)
+    k8s_valid = run_native(["kubectl", "version", "--output=json"], root, timeout=15)
+    if k8s_valid["returncode"] != 0:
+        add_bucket_item(
+            result["findings"],
+            "kubectl",
+            "missing",
+            "kubectl not available — run setup-kind-cluster first.",
+            "error",
+            "pre-start",
+        )
         result["valid"] = False
         return result
 
     for app in apps:
         app_id = app["appId"]
         health_path = app.get("healthPath", "/health")
+        role = app.get("role", "web")
 
         for env in ("dev", "qa", "prod"):
             ns = f"sdd-{env}"
-            local_port = {"dev": 8081, "qa": 8082, "prod": 8083}[
-                env
-            ]  # K8s NodePort, not Nexus Docker registry port
+
+            # Determine host port from app-specific map or role default
+            host_port = _HOST_PORT_MAP.get(app_id)
+            if host_port is None:
+                # Fallback: suggest port-forward if no extraPortMapping is configured
+                host_port = {"dev": 8081, "qa": 8082, "prod": 8083}[env]
 
             # Check if namespace exists
             ns_check = run_native(
@@ -4815,28 +5379,46 @@ def setup_k8s_access(root, dry_run=False):
 
             if svc_check["returncode"] == 0 and svc_check["stdout"].strip():
                 node_port = svc_check["stdout"].strip()
-                url = f"http://localhost:{node_port}"
+                # Show direct URL via the kind extraPortMapping host port
+                url = f"http://localhost:{host_port}"
                 result["actions"].append(
                     {
                         "path": f"k8s/{ns}/{app_id}",
                         "key": "url.available",
                         "severity": "info",
-                        "message": f"{env.upper()} {app_id} accessible at: {url}{health_path}",
+                        "message": (
+                            f"{env.upper()} {app_id} accessible at: {url}{health_path}\
+"
+                            f" (kind nodePort {node_port} mapped to host:{host_port})"
+                        ),
                         "phase": "audit",
                     }
                 )
             else:
-                # Suggest port-forward command
-                pf_cmd = f"kubectl port-forward -n {ns} svc/{app_id} {local_port}:80"
-                result["actions"].append(
-                    {
-                        "path": f"k8s/{ns}/{app_id}",
-                        "key": "port-forward.command",
-                        "severity": "info",
-                        "message": f"{env.upper()} {app_id}: run `{pf_cmd}` then visit http://localhost:{local_port}",
-                        "phase": "audit",
-                    }
-                )
+                # Service not deployed — show expected URL if extraPortMapping exists
+                if app_id in _HOST_PORT_MAP:
+                    url = f"http://localhost:{host_port}"
+                    result["actions"].append(
+                        {
+                            "path": f"k8s/{ns}/{app_id}",
+                            "key": "url.pending",
+                            "severity": "info",
+                            "message": f"{env.upper()} {app_id}: service not deployed yet — will be accessible at {url}{health_path} after deployment.",
+                            "phase": "audit",
+                        }
+                    )
+                else:
+                    # Unknown app — suggest port-forward as fallback
+                    pf_cmd = f"kubectl port-forward -n {ns} svc/{app_id} {host_port}:80"
+                    result["actions"].append(
+                        {
+                            "path": f"k8s/{ns}/{app_id}",
+                            "key": "port-forward.command",
+                            "severity": "info",
+                            "message": f"{env.upper()} {app_id}: run `{pf_cmd}` then visit http://localhost:{host_port}",
+                            "phase": "audit",
+                        }
+                    )
 
     result["valid"] = not any(
         item.get("severity") == "error" for item in result["findings"]
@@ -4859,7 +5441,8 @@ def run_environment_lab(args: list[str]) -> int:
             "init-quality-templates, set-openproject-env, set-monitoring-env, set-gitea-runner-env, "
             "split-infra-env, build-gitea-images, set-gitea-branch-protection, validate-observability, "
             "validate-gitea-runner, set-client-tools, set-project-stack, "
-            "set-project-stack-metadata, set-semgrep-config, set-quality-config, validate-docker-desktop-k8s, setup-k8s-access, scaffold-k8s, "
+            "set-project-stack-metadata, set-semgrep-config, set-quality-config, "
+            "validate-docker-desktop-k8s, setup-kind-cluster, setup-k8s-access, scaffold-k8s, "
             "provision-lab-users, push-to-gitea, verify-gitea-token, generate-gitea-token, renovate-gitea-token",
             file=sys.stderr,
         )
@@ -4898,6 +5481,7 @@ def run_environment_lab(args: list[str]) -> int:
         "validate-docker-desktop-k8s": lambda: validate_docker_desktop_k8s(
             root, dry_run
         ),
+        "setup-kind-cluster": lambda: setup_kind_cluster(root, dry_run),
         "setup-k8s-access": lambda: setup_k8s_access(root, dry_run),
         "scaffold-k8s": lambda: scaffold_k8s(root, dry_run),
 
