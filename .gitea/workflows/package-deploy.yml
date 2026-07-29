@@ -186,6 +186,24 @@ jobs:
           fi
           echo "Manifest size: $(wc -l < /tmp/k8s-manifest.yaml) lines"
 
+          # Delete existing apps to avoid "field is immutable" errors when K8s
+          # resources change their selector/matchLabels (e.g. commonLabels→labels).
+          # The CI pipeline is the sole deployer, so delete-then-recreate is safe.
+          echo "Removing existing apps for clean apply..."
+          # Delete existing deployments to avoid "field is immutable" errors when
+          # spec.selector.matchLabels changes (e.g. commonLabels→labels migration).
+          # Services are NOT deleted — their selectors are mutable.
+          python3 << PYEOF
+          import json, subprocess
+          apps_json = '${APPS_JSON}'
+          namespace = '${NAMESPACE}'
+          with open(apps_json) as f:
+              apps = json.load(f).get('apps', [])
+          for app in apps:
+              app_id = app['appId']
+              subprocess.run(['kubectl', '-n', namespace, 'delete', 'deploy', app_id, '--ignore-not-found'], check=False)
+          PYEOF
+
           # Apply to K8s
           echo "Deploying to ${ENV}..."
           if ! kubectl apply -f /tmp/k8s-manifest.yaml 2>&1; then
@@ -296,6 +314,97 @@ jobs:
           print(f"\nURL manifest saved to {urls_file}")
           print(json.dumps(manifest, indent=2))
           PYEOF
+
+      - name: Generate Nexus metadata artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          COMMIT_SHA=$(git rev-parse HEAD)
+          ENV="${{ steps.env.outputs.ENV }}"
+          mkdir -p "app/${COMMIT_SHA}"
+
+          # Write commit.sha
+          echo "${COMMIT_SHA}" > "app/${COMMIT_SHA}/commit.sha"
+
+          # Write deployable-apps.json from apps.json
+          python3 -c "
+import json
+with open('infra/deployment/apps.json') as f:
+    deploy_config = json.load(f)
+deployable = {
+    'version': 1,
+    'commitSha': '${COMMIT_SHA}',
+    'apps': [
+        {
+            'appId': app['appId'],
+            'artifactName': f\"{app['appId']}-sdd-app.zip\",
+            'healthPath': app.get('healthPath', '/health'),
+            'role': app.get('role', 'web'),
+            'deployOrder': app.get('deployOrder', 0)
+        }
+        for app in deploy_config.get('apps', [])
+    ]
+}
+with open('app/${COMMIT_SHA}/deployable-apps.json', 'w') as f:
+    json.dump(deployable, f, indent=2)
+print('Created deployable-apps.json')
+"
+
+          # Write container-images.json (for deployment tracking)
+          python3 << PYEOF
+import json, os
+
+commit_sha = "${COMMIT_SHA}"
+registry = "${NEXUS_DOCKER_REGISTRY:-host.docker.internal:5001}"
+
+with open('infra/deployment/apps.json') as f:
+    deploy_config = json.load(f)
+
+images = {
+    'version': 1,
+    'commitSha': commit_sha,
+    'apps': [
+        {
+            'appId': app['appId'],
+            'image': f'{registry}/{app["appId"]}:{commit_sha}'
+        }
+        for app in deploy_config.get('apps', [])
+    ]
+}
+
+path = f'app/{commit_sha}/container-images.json'
+with open(path, 'w') as f:
+    json.dump(images, f, indent=2)
+print(f'Created {path}')
+PYEOF
+
+          # Write release.json with deployment metadata
+          # Extract ticket key from the latest commit message (e.g. 'E2EPROJECT-37: ...')
+          TICKET_KEY=$(git log -1 --format='%s' | grep -oE '[A-Z]+-[0-9]+' | head -1 || echo '')
+          python3 << PYEOF
+import json
+from datetime import datetime, timezone
+
+commit_sha = "${COMMIT_SHA}"
+env = "${ENV}"
+ticket_key = "${TICKET_KEY}"
+
+release = {
+    'version': '0.1.0',
+    'commitSha': commit_sha,
+    'environment': env,
+    'timestamp': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+    'versionStatus': 'unversioned'
+}
+if ticket_key:
+    release['ticketKey'] = ticket_key
+
+path = f'app/{commit_sha}/release.json'
+with open(path, 'w') as f:
+    json.dump(release, f, indent=2)
+print(f'Created {path}')
+print(f'  ticketKey: {ticket_key or "(not found)"}')
+PYEOF
 
       - name: Upload artifacts to Nexus
         env:

@@ -49,6 +49,9 @@ Run preflight, main/tag promotion, PROD deployment, PROD verification, ticket-pr
 4. Fetch every included ticket with expanded state/project data and verify each one is in `configured Done state`.
 5. Read ticket comments for every included ticket and find `IA generated E2E QA: {ticketKey}` for the same commit/artifact or for a commit reachable from the promoted artifact commit.
 6. Verify every included ticket's E2E QA comment includes pass result, PR URL, QA URL, Nexus artifact URL, QA evidence URL, and source RC version.
+
+   **⚠️ E2E QA gate:** If any included ticket is missing a passing E2E QA comment (`IA generated E2E QA: {ticketKey}` with PASS result), stop before PROD promotion. The E2E QA gate must pass for every ticket in the release. Run the E2E QA evidence contract in `.codex/skills/_shared/delivery-contract-qa.md` first if E2E QA has not been performed.
+
 7. Verify Nexus contains the selected provider artifact set. selected deployment provider requires:
    - `app/{commitSha}/deployable-apps.json`
    - `app/{commitSha}/deployment-config.json`
@@ -130,6 +133,19 @@ After the workflow succeeds, run direct verification before commenting success:
 7. Use `CreateArtifactPointer` to create the final release alias pointer, then upload `app/releases/{finalReleaseVersion}/artifact-pointer.json` and `app/releases/{finalReleaseVersion}/release.json`. The release alias must point back to canonical `app/{commitSha}/`; do not duplicate ZIP files into the version folder.
 
 PROD success must never be based on screenshots alone.
+
+## Grafana Dashboard Update
+
+After PROD verification passes, **automatically run the `grafana-board-update` skill** to update the Grafana SDD Service Status dashboard with the latest PROD URLs.
+
+1. Fetch `app/latest/env-urls-{env}.json` for every deployed environment (DEV, QA, PROD) from Nexus
+2. Follow the workflow in `.codex/skills/grafana-board-update/SKILL.md` to intelligently merge changes into `infra/monitoring/grafana/dashboards/health-board.json`
+3. Add the new PROD rows to the Service Health and Service Quick Access panels
+4. Update the Environment Matrix panel to mark PROD as Active
+5. Commit and push the updated dashboard JSON
+6. Optionally push to Grafana API at `http://localhost:3001` for immediate effect
+
+   **⚠️ Note:** If the dashboard is **provisioned from disk** (via `infra/monitoring/grafana/provisioning/dashboards/dashboards.yml`), Grafana rejects API writes with `"Cannot save provisioned dashboard"`. The file-based change is sufficient — provisioning picks it up on next restart (version bump ensures it overwrites the DB entry).
 
 ## Ticket Provider Result
 
@@ -316,7 +332,7 @@ Include in the final release output:
 
 ## Output
 
-Report the final release version, included tickets, PROD URL, final tag, deployed artifact commit, validation results, ticket-provider PROD comment status for every included ticket, post-PROD retrospective result path and ticket provider marker status, and any handoff, audit, or monitoring gaps.
+Report the final release version, included tickets, PROD URL, final tag, deployed artifact commit, validation results, ticket-provider PROD comment status for every included ticket, Grafana dashboard update status, post-PROD retrospective result path and ticket provider marker status, and any handoff, audit, or monitoring gaps.
 
 ## Failure Rules
 

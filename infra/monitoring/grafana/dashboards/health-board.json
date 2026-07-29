@@ -1,7 +1,7 @@
 {
   "title": "🚀 SDD Service Status",
   "uid": "agentic-e2e-health-board",
-  "version": 27,
+  "version": 28,
   "schemaVersion": 39,
   "timezone": "browser",
   "editable": true,
@@ -30,7 +30,7 @@
       "description": "Real-time health status for all deployed services — green indicates the service is reachable and responding",
       "gridPos": { "h": 10, "w": 24, "x": 0, "y": 2 },
       "options": {
-        "content": "| Environment | Service | Status | Direct URL | Health Endpoint | K8s NodePort |\n|---|---|---|---|---|---|\n| **🔷 DEV** | **🖥️ Frontend** (React) | 🟢 **UP** | http://localhost:8081 | http://localhost:8081/health | `30080` |\n| **🔷 DEV** | **🔄 Backend** (.NET API) | 🟢 **UP** | http://localhost:5002 | http://localhost:5002/health | `30500` |",
+        "content": "| Environment | Service | Status | Direct URL | Health Endpoint | K8s NodePort |\n|---|---|---|---|---|---|\n| **🔷 DEV** | **🖥️ Frontend** (React) | 🟢 **UP** | http://localhost:8081 | http://localhost:8081/health | `30080` |\n| **🔷 DEV** | **🔄 Backend** (.NET API) | 🟢 **UP** | http://localhost:5002 | http://localhost:5002/health | `30500` |\n| **🟢 QA** | **🖥️ Frontend** (React) | 🟢 **UP** | http://localhost:8082 | http://localhost:8082/health | `30081` |\n| **🟢 QA** | **🔄 Backend** (.NET API) | 🟢 **UP** | http://localhost:5003 | http://localhost:5003/health | `30501` |",
         "mode": "markdown"
       }
     },
@@ -58,10 +58,7 @@
           {
             "matcher": { "id": "byName", "options": "Direct URL (click to open)" },
             "properties": [
-              {
-                "id": "custom.width",
-                "value": 350
-              },
+              { "id": "custom.width", "value": 350 },
               {
                 "id": "links",
                 "value": [
@@ -76,30 +73,15 @@
           },
           {
             "matcher": { "id": "byName", "options": "Service" },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 160
-              }
-            ]
+            "properties": [ { "id": "custom.width", "value": 200 } ]
           },
           {
             "matcher": { "id": "byName", "options": "K8s NodePort" },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 130
-              }
-            ]
+            "properties": [ { "id": "custom.width", "value": 130 } ]
           },
           {
             "matcher": { "id": "byName", "options": "Host Port" },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 110
-              }
-            ]
+            "properties": [ { "id": "custom.width", "value": 110 } ]
           }
         ]
       },
@@ -109,7 +91,7 @@
           "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "infinity-health" },
           "queryType": "json",
           "source": "inline",
-          "data": "{\"data\":[{\"service\":\"🖥️ Frontend (React)\",\"directUrl\":\"http://localhost:8081\",\"k8sPort\":\"30080\",\"hostPort\":\"8081\"},{\"service\":\"🔄 Backend API (.NET)\",\"directUrl\":\"http://localhost:5002\",\"k8sPort\":\"30500\",\"hostPort\":\"5002\"},{\"service\":\"📊 Grafana\",\"directUrl\":\"http://localhost:3001\",\"k8sPort\":\"-\",\"hostPort\":\"3001\"},{\"service\":\"🔧 Gitea\",\"directUrl\":\"http://localhost:3000\",\"k8sPort\":\"-\",\"hostPort\":\"3000\"}]}",
+          "data": "{\"data\":[{\"service\":\"🔷 DEV 🖥️ Frontend (React)\",\"directUrl\":\"http://localhost:8081\",\"k8sPort\":\"30080\",\"hostPort\":\"8081\"},{\"service\":\"🔷 DEV 🔄 Backend API (.NET)\",\"directUrl\":\"http://localhost:5002\",\"k8sPort\":\"30500\",\"hostPort\":\"5002\"},{\"service\":\"🟢 QA 🖥️ Frontend (React)\",\"directUrl\":\"http://localhost:8082\",\"k8sPort\":\"30081\",\"hostPort\":\"8082\"},{\"service\":\"🟢 QA 🔄 Backend API (.NET)\",\"directUrl\":\"http://localhost:5003\",\"k8sPort\":\"30501\",\"hostPort\":\"5003\"},{\"service\":\"📊 Grafana\",\"directUrl\":\"http://localhost:3001\",\"k8sPort\":\"-\",\"hostPort\":\"3001\"},{\"service\":\"🔧 Gitea\",\"directUrl\":\"http://localhost:3000\",\"k8sPort\":\"-\",\"hostPort\":\"3000\"}]}",
           "format": "table",
           "parser": "backend",
           "root_selector": "data",
@@ -133,10 +115,7 @@
       "options": {
         "footer": { "show": false },
         "sortBy": [
-          {
-            "desc": false,
-            "displayName": "Environment"
-          }
+          { "desc": false, "displayName": "Environment" }
         ]
       },
       "fieldConfig": {
@@ -150,7 +129,7 @@
           "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "infinity-health" },
           "queryType": "json",
           "source": "inline",
-          "data": "{\"rows\":[{\"env\":\"DEV\",\"namespace\":\"sdd-dev\",\"trigger\":\"Push to dev branch\",\"feUrl\":\"localhost:8081\",\"beUrl\":\"localhost:5002\",\"status\":\"Active\"},{\"env\":\"QA\",\"namespace\":\"sdd-qa\",\"trigger\":\"Workflow dispatch\",\"feUrl\":\"TBD\",\"beUrl\":\"TBD\",\"status\":\"Not deployed\"},{\"env\":\"PROD\",\"namespace\":\"sdd-prod\",\"trigger\":\"Workflow dispatch\",\"feUrl\":\"TBD\",\"beUrl\":\"TBD\",\"status\":\"Not deployed\"}]}",
+          "data": "{\"rows\":[{\"env\":\"DEV\",\"namespace\":\"sdd-dev\",\"trigger\":\"Push to dev branch\",\"feUrl\":\"localhost:8081\",\"beUrl\":\"localhost:5002\",\"status\":\"Active\"},{\"env\":\"QA\",\"namespace\":\"sdd-qa\",\"trigger\":\"Workflow dispatch\",\"feUrl\":\"localhost:8082\",\"beUrl\":\"localhost:5003\",\"status\":\"Active\"},{\"env\":\"PROD\",\"namespace\":\"sdd-prod\",\"trigger\":\"Workflow dispatch\",\"feUrl\":\"TBD\",\"beUrl\":\"TBD\",\"status\":\"Not deployed\"}]}",
           "format": "table",
           "parser": "backend",
           "root_selector": "rows",
@@ -173,7 +152,7 @@
       "description": "Quick access to all infrastructure services with URLs and default credentials",
       "gridPos": { "h": 6, "w": 24, "x": 0, "y": 28 },
       "options": {
-        "content": "| Service | URL | Default Credentials |\n|---|---|---|\n| **📊 Grafana** | http://localhost:3001 | `admin` / `admin` |\n| **🔧 Gitea** (Git) | http://localhost:3000 | `admin` / `admin123` |\n| **📦 Nexus** (Artifacts) | http://localhost:8088 | `admin` / `admin123` |\n| **📋 Dozzle** (Logs) | http://localhost:8888 | — |\n\n```bash\n# Kubernetes\nkubectl -n sdd-dev get po -o wide\nkubectl -n sdd-dev get svc\n```\n\n> 🔄 Services are deployed via **Gitea Actions CI** → **kind K8s cluster** → **sdd-dev namespace**",
+        "content": "| Service | URL | Default Credentials |\n|---|---|---|\n| **📊 Grafana** | http://localhost:3001 | `admin` / `admin` |\n| **🔧 Gitea** (Git) | http://localhost:3000 | `admin` / `admin123` |\n| **📦 Nexus** (Artifacts) | http://localhost:8088 | `admin` / `admin123` |\n| **📋 Dozzle** (Logs) | http://localhost:8888 | — |\n\n```bash\n# Kubernetes\nkubectl -n sdd-dev get po -o wide\nkubectl -n sdd-dev get svc\nkubectl -n sdd-qa get po -o wide\nkubectl -n sdd-qa get svc\n```\n\n> 🔄 Services are deployed via **Gitea Actions CI** → **kind K8s cluster**\n",
         "mode": "markdown"
       }
     }
