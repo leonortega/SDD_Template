@@ -16,6 +16,7 @@ Updates are done via the `template-installer` CLI tool built into `tools/sdd_cli
 ## Agent Routing
 
 Trigger this skill when the user says:
+
 - "Update from template"
 - "Update to latest version / last version"
 - "Update SDD template to vX.Y.Z"
@@ -56,10 +57,12 @@ Final releases look like `v1.0.25`. Pre-release tags look like `v0.1.7-rc.2`.
 ## What Gets Updated
 
 **Managed files** (from `sdd-tool-data.json` → `SDD_TOOL_INCLUDE_DIRS`):
+
 - `.agents/`, `.cline/`, `.codex/providers/`, `.codex/skills/`
 - `.gitea/workflows/`, `docs/`, `infra/`, `tools/`, `.vscode/`
 
 **Preserved files** (not overwritten):
+
 - `.codex/project-profile.local.json`
 - `.codex/memory/MEMORY.md`, `memory_summary.md`, `retrieval-policy.md`
 - `.codex/client-tools.local.json`, `.codex/quality.local.json`

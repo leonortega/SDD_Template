@@ -49,6 +49,7 @@ python -m tools.sdd_cli environment-lab setup-lab
 This runs 17 steps in order. **All steps are fatal** — if any step fails, the setup stops immediately. Each step is validated before proceeding to the next.
 
 ```
+text
  1. InitLocalFiles            (config templates → local files)
  2. InstallLefthook           (lefthook binary + git hooks)
  3. InitProjectProfile        (project schema, profile, adapters)
@@ -72,14 +73,14 @@ This runs 17 steps in order. **All steps are fatal** — if any step fails, the 
 
 If you need to run steps individually:
 
-| Step                        | Command                                                                           |
-| --------------------------- | --------------------------------------------------------------------------------- |
-| Start services              | `python -m tools.sdd_cli environment-lab compose-up`                              |
-| Stop services               | `python -m tools.sdd_cli environment-lab compose-down`                            |
-| Init local files            | `python -m tools.sdd_cli environment-lab init-local-files`                        |
-| Init project profile        | `python -m tools.sdd_cli environment-lab init-project-profile`                    |
-| Set client tools            | `python -m tools.sdd_cli environment-lab set-client-tools --values-json '{...}'`  |
-| Set project stack           | `python -m tools.sdd_cli environment-lab set-project-stack --values-json '{...}'` |
+| Step                                | Command                                                                           |
+| ----------------------------------- | --------------------------------------------------------------------------------- |
+| Start services                      | `python -m tools.sdd_cli environment-lab compose-up`                              |
+| Stop services                       | `python -m tools.sdd_cli environment-lab compose-down`                            |
+| Init local files                    | `python -m tools.sdd_cli environment-lab init-local-files`                        |
+| Init project profile                | `python -m tools.sdd_cli environment-lab init-project-profile`                    |
+| Set client tools                    | `python -m tools.sdd_cli environment-lab set-client-tools --values-json '{...}'`  |
+| Set project stack                   | `python -m tools.sdd_cli environment-lab set-project-stack --values-json '{...}'` |
 | Build Gitea images (checksum-aware) | `python -m tools.sdd_cli environment-lab build-gitea-images`                      |
 | Validate app config                 | `python -m tools.sdd_cli environment-lab validate-app-config`                     |
 | Validate Docker Desktop             | `python -m tools.sdd_cli environment-lab validate-docker-desktop`                 |

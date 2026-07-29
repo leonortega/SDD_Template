@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import http.client
 import json
+import os
+import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -29,7 +32,40 @@ from ._shared import (
     write_env_file,
     write_json,
 )
-from .tool_installer import install_lefthook
+from .tool_installer import install_lefthook, install_grafana_mcp, install_gitea_mcp, install_k8s_mcp, install_openproject_mcp
+
+# ── Health check helpers ───────────────────────────────────────────────────
+
+
+def wait_for_service(url: str, timeout: int = 180, interval: int = 5) -> dict[str, Any]:
+    """Poll an HTTP endpoint until it responds or the timeout is reached.
+
+    Returns a step-compatible dict with valid=True if the service responded,
+    valid=False if the timeout was reached.
+    """
+    import time as _time
+
+    deadline = _time.time() + timeout
+    last_error = ""
+    while _time.time() < deadline:
+        try:
+            status, err = http_status(url)
+            if status is not None and status < 500:
+                return {
+                    "command": f"wait-for-service {url}",
+                    "valid": True,
+                    "message": f"Service ready after polling {url}: HTTP {status}.",
+                }
+            last_error = err or f"HTTP {status}"
+        except Exception as ex:
+            last_error = str(ex)
+        _time.sleep(interval)
+    return {
+        "command": f"wait-for-service {url}",
+        "valid": False,
+        "message": f"Service at {url} did not respond within {timeout}s. Last error: {last_error}",
+    }
+
 
 # ── Setup Lab (all-in-one idempotent) ───────────────────────────────────
 
@@ -89,8 +125,36 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
             }
         )
 
+    # 8b. Wait for critical services to be reachable before provisioning
+    #     If a service doesn't start, later provisioning steps will fail
+    #     and the user will be told what went wrong.
+    if not dry_run:
+        _add_step(
+            wait_for_service("http://localhost:3000/api/v1/user", timeout=120),
+            fatal=False,
+        )
+        _add_step(
+            wait_for_service("http://localhost:8080", timeout=180),
+            fatal=False,
+        )
+        _add_step(
+            wait_for_service("http://localhost:8088/service/rest/v1/status", timeout=120),
+            fatal=False,
+        )
+        _add_step(
+            wait_for_service("http://localhost:3001/api/health", timeout=120),
+            fatal=False,
+        )
+        _add_step(
+            wait_for_service("http://localhost:5341/api", timeout=120),
+            fatal=False,
+        )
+
     # 9. Validate observability
     _add_step(validate_observability(root, dry_run), fatal=False)
+
+    # 9b. Install Grafana MCP (after Grafana is confirmed running)
+    _add_step(install_grafana_mcp(root, dry_run), fatal=False)
 
     # 10. Validate Gitea runner (Docker, images, tools, socket, docker_push.py)
     _add_step(validate_gitea_runner(root, dry_run), fatal=False)
@@ -98,10 +162,16 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
     # 11. Provision lab users (Gitea, OpenProject, Nexus) + runner registration token
     _add_step(provision_lab_users(root, dry_run), fatal=False)
 
+    # 11b. Install OpenProject MCP (after user provisioning writes API key to env file)
+    _add_step(install_openproject_mcp(root, dry_run), fatal=False)
+
+    # 11c. Install Gitea MCP (after API token is generated and stored in client-tools.local.json)
+    _add_step(install_gitea_mcp(root, dry_run), fatal=False)
+
     # 12. Provision Nexus repositories + accept EULA
     _add_step(provision_nexus_repositories(root, dry_run), fatal=False)
 
-    # 13. Provision Gitea CI secrets (NEXUS_USERNAME, KUBECONFIG_B64, etc.)
+    # 13. Provision Gitea CI secrets (NEXUS_USERNAME, KUBECONFIG, etc.)
     _add_step(provision_gitea_secrets(root, dry_run), fatal=False)
 
     # 14. Push v0 code to Gitea (create main branch, push dev)
@@ -110,66 +180,97 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
     # 15. Set Gitea branch protection for dev/main
     _add_step(set_gitea_branch_protection(root, dry_run), fatal=False)
 
-    # 16. Scaffold K8s deployment files (validates Docker Desktop K8s + creates manifests)
+    # 16. Create kind cluster (or verify existing) with port mappings for direct host access.
+    #     Uses infra/k8s/kind-config.yaml which maps:
+    #       host:8081 -> nodePort:30080 -> frontend:80
+    #       host:5002 -> nodePort:30500 -> backend:5000
+    #     This replaces Docker Desktop K8s — kind runs as a container, avoids
+    #     Docker Engine restart that would disrupt running compose services.
+    early = _add_step(setup_kind_cluster(root, dry_run), fatal=True)
+    if early:
+        return early
+
+    # 17. Install Kubernetes MCP (after K8s is enabled)
+    _add_step(install_k8s_mcp(root, dry_run), fatal=False)
+
+    # 18. Scaffold K8s deployment files (creates Kustomize manifests)
     _add_step(scaffold_k8s(root, dry_run), fatal=False)
 
-    # 17. Generate Semgrep config from stack (non-fatal — stack may not be set yet)
+    # 19. Generate Semgrep config from stack (non-fatal — stack may not be set yet)
     _add_step(set_semgrep_config(root, dry_run), fatal=False)
 
     result["steps"] = steps
     all_valid = all(s.get("valid", True) for s in steps)
     result["valid"] = all_valid
 
-    # ── Summary: credentials and URLs ─────────────────────────────────
-    result["summary"] = {
-        "gitea": {
+    # ── Collect failed steps for the user ──────────────────────────────
+    failed = [
+        {
+            "step": s.get("command") or s.get("mode", "unknown"),
+            "message": s.get("message", s.get("errors", ["No details"])) if not s.get("valid", True) else None,
+        }
+        for s in steps
+        if not s.get("valid", True)
+    ]
+    result["failed_steps"] = failed
+
+    # ── Determine which services are actually up ───────────────────────
+    # Check health/provisioning steps to decide if credentials are real
+    _gitea_ok = any(s.get("command") == "wait-for-service http://localhost:3000/api/v1/user" and s.get("valid") for s in steps)
+    _op_ok = any(s.get("command") == "wait-for-service http://localhost:8080" and s.get("valid") for s in steps)
+    _nexus_ok = any(s.get("command") == "wait-for-service http://localhost:8088/service/rest/v1/status" and s.get("valid") for s in steps)
+
+    # ── Summary: credentials and URLs (only show what's actually running) ─
+    summary: dict[str, Any] = {}
+
+    if _gitea_ok:
+        summary["gitea"] = {
             "url": "http://localhost:3000",
             "users": [
                 {"username": "admin", "password": "admin123", "role": "admin"},
-                {
-                    "username": "FirstUser",
-                    "password": "FirstUser123",
-                    "role": "developer",
-                },
-                {
-                    "username": "SecondUser",
-                    "password": "SecondUser123",
-                    "role": "developer",
-                },
+                {"username": "FirstUser", "password": "FirstUser123", "role": "developer"},
+                {"username": "SecondUser", "password": "SecondUser123", "role": "developer"},
             ],
-        },
-        "openproject": {
+        }
+    else:
+        summary["gitea"] = {"url": "http://localhost:3000", "status": "NOT REACHABLE — check Docker Desktop and re-run setup-lab"}
+
+    summary["openproject"] = (
+        {
             "url": "http://localhost:8080",
             "users": [
                 {"username": "admin", "password": "admin", "role": "admin"},
-                {
-                    "username": "FirstUser",
-                    "password": "FirstUser123!",
-                    "role": "developer",
-                },
-                {
-                    "username": "SecondUser",
-                    "password": "SecondUser123!",
-                    "role": "developer",
-                },
+                {"username": "FirstUser", "password": "FirstUser123!", "role": "developer"},
+                {"username": "SecondUser", "password": "SecondUser123!", "role": "developer"},
             ],
             "board": "http://localhost:8080/projects/e2eproject/boards",
-        },
-        "nexus": {
+        }
+        if _op_ok
+        else {"url": "http://localhost:8080", "status": "NOT REACHABLE — check Docker logs and re-run setup-lab"}
+    )
+
+    summary["nexus"] = (
+        {
             "url": "http://localhost:8088",
             "users": [
                 {"username": "admin", "password": "admin123", "role": "admin"},
             ],
-        },
-        "k8s": {
-            "manifest": "infra/k8s/deploy.yaml (envsubst: ENV, REPLICAS, REGISTRY, COMMIT_SHA)",
-            "deploy": [
-                "ENV=dev REPLICAS=1 REGISTRY=host.docker.internal:5001 COMMIT_SHA=latest envsubst < infra/k8s/deploy.yaml | kubectl apply -f -",
-                "ENV=qa REPLICAS=2 REGISTRY=host.docker.internal:5001 COMMIT_SHA=latest envsubst < infra/k8s/deploy.yaml | kubectl apply -f -",
-                "ENV=prod REPLICAS=3 REGISTRY=host.docker.internal:5001 COMMIT_SHA=latest envsubst < infra/k8s/deploy.yaml | kubectl apply -f -",
-            ],
-        },
+        }
+        if _nexus_ok
+        else {"url": "http://localhost:8088", "status": "NOT REACHABLE — check Docker logs and re-run setup-lab"}
+    )
+
+    summary["k8s"] = {
+        "base": "infra/k8s/base/kustomization.yaml (all apps from apps.json)",
+        "overlays": "infra/k8s/overlays/{dev,qa,prod}/kustomization.yaml (env-specific image tags)",
+        "deploy": [
+            "cd infra/k8s/overlays/dev && kustomize build . | kubectl apply -f -",
+            "cd infra/k8s/overlays/qa && kustomize build . | kubectl apply -f -",
+            "cd infra/k8s/overlays/prod && kustomize build . | kubectl apply -f -",
+        ],
     }
+
+    result["summary"] = summary
     return result
 
 
@@ -202,10 +303,12 @@ def _compose(action: str) -> dict[str, Any]:
     ]
     command += ["up", "-d", "--remove-orphans"] if action == "up" else ["down"]
     result = subprocess.run(command, cwd=REPO_ROOT, check=False)
+    ok = result.returncode == 0
     return {
         "command": f"compose-{action}",
-        "valid": result.returncode == 0,
+        "valid": ok,
         "returncode": result.returncode,
+        "message": "" if ok else f"docker compose {action} failed with exit code {result.returncode}",
     }
 
 
@@ -278,9 +381,7 @@ def init_local_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
 def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
     """Create project profile schema, example, and local overlay."""
     codex = root / ".codex"
-    providers = codex / "providers"
     codex.mkdir(parents=True, exist_ok=True)
-    providers.mkdir(parents=True, exist_ok=True)
     schema_path = codex / "project-profile.schema.json"
     profile_path = codex / "project-profile.example.json"
     local_profile_path = codex / "project-profile.local.json"
@@ -322,37 +423,13 @@ def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
         profile = {
             "$schema": "./project-profile.schema.json",
             "schemaVersion": 1,
-            "providers": {
-                "ticket": {
-                    "id": "openproject",
-                    "adapter": ".codex/providers/ticket.openproject.md",
-                },
-                "repository": {
-                    "id": "gitea",
-                    "adapter": ".codex/providers/repo.gitea.md",
-                },
-                "review": {"id": "gitea", "adapter": ".codex/providers/repo.gitea.md"},
-                "artifact": {
-                    "id": "nexus",
-                    "adapter": ".codex/providers/artifact.nexus.md",
-                },
-                "deployment": {
-                    "id": "docker-desktop",
-                    "adapter": ".codex/providers/deploy.example.md",
-                },
-            },
-            "workflow": {
-                "ticketKeyPattern": "TICKET-[0-9]+",
-                "baseBranch": "dev",
-                "branchPrefix": "codex",
-            },
-            "quality": {"coverageMinimumPercent": 80, "gates": []},
-            "adapters": {
-                "ticket": ".codex/providers/ticket.openproject.md",
-                "repository": ".codex/providers/repo.gitea.md",
-                "review": ".codex/providers/repo.gitea.md",
-                "artifact": ".codex/providers/artifact.nexus.md",
-                "deployment": ".codex/providers/deploy.example.md",
+            "stack": {
+                "frontend": {"applies": False, "value": ""},
+                "backend": {"applies": False, "value": ""},
+                "database": {"applies": False, "value": ""},
+                "languages": [],
+                "frameworks": [],
+                "testFrameworks": [],
             },
         }
         if not dry_run:
@@ -381,6 +458,7 @@ def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
         changed = True
         local_profile = {
             "$schema": "./project-profile.schema.json",
+            "schemaVersion": 1,
             "stack": {
                 "frontend": {"applies": False, "value": ""},
                 "backend": {"applies": False, "value": ""},
@@ -389,7 +467,6 @@ def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 "frameworks": [],
                 "testFrameworks": [],
             },
-            "adapters": {},
         }
         if not dry_run:
             write_json(local_profile_path, local_profile)
@@ -412,20 +489,6 @@ def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 "phase": "apply",
             }
         )
-
-    for name in (
-        "ticket.example.md",
-        "repo.example.md",
-        "artifact.example.md",
-        "deploy.example.md",
-    ):
-        example = providers / name
-        if not example.exists():
-            changed = True
-            if not dry_run:
-                example.write_text(
-                    f"# {name}\n\nprovider-neutral scaffold\n", encoding="utf-8"
-                )
 
     return {
         "mode": "InitProjectProfile",
@@ -582,6 +645,7 @@ def build_gitea_actions_images(root: Path, dry_run: bool = False) -> dict[str, A
         result["valid"] = False
         return result
     import hashlib
+
     dockerfiles = sorted(
         (root / "infra" / "gitea" / "actions-images").glob("*/Dockerfile")
     )
@@ -608,8 +672,16 @@ def build_gitea_actions_images(root: Path, dry_run: bool = False) -> dict[str, A
         # Check if image exists with matching checksum (label stored on the image)
         needs_rebuild = True
         inspect = run_native(
-            ["docker", "image", "inspect", image, "--format", "{{index .Config.Labels \"sdd.dockerfile.checksum\"}}"],
-            root, timeout=15
+            [
+                "docker",
+                "image",
+                "inspect",
+                image,
+                "--format",
+                '{{index .Config.Labels "sdd.dockerfile.checksum"}}',
+            ],
+            root,
+            timeout=15,
         )
         if inspect["returncode"] == 0 and inspect["stdout"].strip() == checksum:
             result["actions"].append(
@@ -713,7 +785,7 @@ def set_gitea_branch_protection(root: Path, dry_run: bool = False) -> dict[str, 
     approvals = nested(client, "pr", "minimumApprovals") or {"dev": 1, "main": 1}
     for branch in ("dev", "main"):
         expected = int(approvals.get(branch, 1))
-        path = f"/api/v1/repos/{owner}/{repo}/branch_protections/{branch}"
+        path = f"/api/v1/repos/{owner}/{repo}/branch_protections"
         parsed = urlparse(base_url)
         if dry_run:
             result["actions"].append(
@@ -727,7 +799,7 @@ def set_gitea_branch_protection(root: Path, dry_run: bool = False) -> dict[str, 
             )
             continue
         try:
-            body = json.dumps({"required_approvals": expected})
+            body = json.dumps({"rule_name": branch, "required_approvals": expected})
             conn_cls = (
                 http.client.HTTPSConnection
                 if parsed.scheme == "https"
@@ -735,7 +807,7 @@ def set_gitea_branch_protection(root: Path, dry_run: bool = False) -> dict[str, 
             )
             conn = conn_cls(parsed.hostname or "", parsed.port, timeout=10)
             conn.request(
-                "PATCH",
+                "POST",
                 path,
                 body=body,
                 headers={
@@ -744,9 +816,57 @@ def set_gitea_branch_protection(root: Path, dry_run: bool = False) -> dict[str, 
                 },
             )
             response = conn.getresponse()
-            response.read()
+            resp_body = response.read()
             conn.close()
-            if response.status not in {200, 201, 204}:
+            if response.status in {200, 201, 204}:
+                result["actions"].append(
+                    {
+                        "path": ".gitea/workflows/README.md",
+                        "key": f"branch-protection.{branch}",
+                        "severity": "info",
+                        "message": f"Set required_approvals={expected} for branch {branch}.",
+                        "phase": "apply",
+                    }
+                )
+            elif response.status == 409 or (
+                response.status == 403 and b"already exist" in resp_body
+            ):
+                # Rule already exists (Gitea returns 409 or 403 with 'already exist') —
+                # fall back to PATCH on branch_protections/{rule_name}
+                patch_path = f"/api/v1/repos/{owner}/{repo}/branch_protections/{branch}"
+                conn_patch = conn_cls(parsed.hostname or "", parsed.port, timeout=10)
+                conn_patch.request(
+                    "PATCH",
+                    patch_path,
+                    body=body,
+                    headers={
+                        "Authorization": f"token {token}",
+                        "Content-Type": "application/json",
+                    },
+                )
+                patch_resp = conn_patch.getresponse()
+                patch_resp.read()
+                conn_patch.close()
+                if patch_resp.status in {200, 201, 204}:
+                    result["actions"].append(
+                        {
+                            "path": ".gitea/workflows/README.md",
+                            "key": f"branch-protection.{branch}",
+                            "severity": "info",
+                            "message": f"Updated required_approvals={expected} for branch {branch} (PATCH).",
+                            "phase": "apply",
+                        }
+                    )
+                else:
+                    add_bucket_item(
+                        result["findings"],
+                        ".gitea/workflows/README.md",
+                        f"branch-protection.{branch}",
+                        f"Gitea returned HTTP {patch_resp.status} on PATCH fallback.",
+                        "error",
+                        "apply",
+                    )
+            else:
                 add_bucket_item(
                     result["findings"],
                     ".gitea/workflows/README.md",
@@ -754,16 +874,6 @@ def set_gitea_branch_protection(root: Path, dry_run: bool = False) -> dict[str, 
                     f"Gitea returned HTTP {response.status}.",
                     "error",
                     "apply",
-                )
-            else:
-                result["actions"].append(
-                    {
-                        "path": ".gitea/workflows/README.md",
-                        "key": f"branch-protection.{branch}",
-                        "severity": "info",
-                        "message": f"Set required_approvals={expected}.",
-                        "phase": "apply",
-                    }
                 )
         except Exception as ex:
             add_bucket_item(
@@ -777,6 +887,342 @@ def set_gitea_branch_protection(root: Path, dry_run: bool = False) -> dict[str, 
     result["valid"] = not any(
         item.get("severity") == "error" for item in result["findings"]
     )
+    return result
+
+
+# ── Gitea API Token management ──────────────────────────────────────────
+
+
+def _gitea_token_scopes() -> list[str]:
+    """Return the required Gitea token scopes for agent operations.
+
+    - write:repository — push code, create branches
+    - write:issue — add labels (PRs are issues in Gitea)
+    - write:pull_request — create PRs, request reviewers
+    """
+    return ["write:repository", "write:issue"]
+
+
+def verify_gitea_api_token(
+    root: Path, dry_run: bool = False
+) -> dict[str, Any]:
+    """Verify the Gitea API token by calling GET /api/v1/user.
+
+    Returns valid=True if the token works, False otherwise.
+    """
+    result = configure_result(
+        "VerifyGiteaApiToken", dry_run, write_enabled=not dry_run
+    )
+    client = read_json(root / ".codex" / "client-tools.local.json", optional=True)
+    gitea = client.get("gitea", {}) if client else {}
+    token = gitea.get("apiToken", "")
+    base_url = str(gitea.get("baseUrl", "http://localhost:3000")).rstrip("/")
+
+    if not token or "replace-with" in token:
+        result["valid"] = False
+        result["tokenValid"] = False
+        add_bucket_item(
+            result["findings"],
+            "gitea.apiToken",
+            "token.missing",
+            "Gitea API token is missing or is a placeholder. Run generate-gitea-token first.",
+            "error",
+        )
+        return result
+
+    if dry_run:
+        result["actions"].append(
+            {
+                "path": "gitea/api/user",
+                "key": "verify.token",
+                "severity": "info",
+                "message": "Would verify Gitea API token via GET /api/v1/user.",
+                "phase": "audit",
+            }
+        )
+        result["tokenValid"] = True
+        result["valid"] = True
+        return result
+
+    try:
+        parsed = urlparse(base_url)
+        conn = http.client.HTTPConnection(
+            parsed.hostname or "localhost", parsed.port or 3000, timeout=10
+        )
+        conn.request(
+            "GET",
+            "/api/v1/user",
+            headers={
+                "Authorization": f"token {token}",
+                "Content-Type": "application/json",
+            },
+        )
+        resp = conn.getresponse()
+        resp.read()
+        conn.close()
+        if resp.status == 200:
+            result["tokenValid"] = True
+            result["actions"].append(
+                {
+                    "path": "gitea/api/user",
+                    "key": "verify.token",
+                    "severity": "info",
+                    "message": "Gitea API token is valid (GET /api/v1/user returned 200).",
+                    "phase": "audit",
+                }
+            )
+        else:
+            result["tokenValid"] = False
+            result["valid"] = False
+            add_bucket_item(
+                result["findings"],
+                "gitea.apiToken",
+                "token.invalid",
+                f"Gitea API token is invalid (GET /api/v1/user returned HTTP {resp.status}). Run renovate-gitea-token.",
+                "error",
+            )
+    except Exception as ex:
+        result["tokenValid"] = False
+        result["valid"] = False
+        add_bucket_item(
+            result["findings"],
+            "gitea/api/user",
+            "verify.error",
+            f"Could not verify Gitea API token: {ex}",
+            "warning",
+        )
+    return result
+
+
+def generate_gitea_api_token(
+    root: Path, dry_run: bool = False
+) -> dict[str, Any]:
+    """Generate a new Gitea API token with write scopes using admin Basic auth.
+
+    The token is written to .codex/client-tools.local.json under gitea.apiToken.
+    Uses the admin credentials (admin/admin123) via Basic auth to create the token
+    for the admin user via POST /api/v1/users/admin/tokens.
+    """
+    result = configure_result(
+        "GenerateGiteaApiToken", dry_run, write_enabled=not dry_run
+    )
+    client_path = root / ".codex" / "client-tools.local.json"
+    client = read_json(client_path, optional=True)
+    gitea = client.get("gitea", {}) if client else {}
+    base_url = str(gitea.get("baseUrl", "http://localhost:3000")).rstrip("/")
+    owner = gitea.get("owner", "sdd-admin")
+    repo = gitea.get("repo", "sdd-test")
+
+    if dry_run:
+        result["actions"].append(
+            {
+                "path": ".codex/client-tools.local.json",
+                "key": "token.generate",
+                "severity": "info",
+                "message": "Would generate Gitea API token with scopes: write:repository, write:issue, write:pull_request.",
+                "phase": "apply",
+            }
+        )
+        result["valid"] = True
+        return result
+
+    gitea_admin_user = "admin"
+    gitea_admin_pass = "admin123"
+
+    try:
+        import base64
+
+        parsed = urlparse(base_url)
+        conn = http.client.HTTPConnection(
+            parsed.hostname or "localhost", parsed.port or 3000, timeout=10
+        )
+        b64_auth = base64.b64encode(
+            f"{gitea_admin_user}:{gitea_admin_pass}".encode()
+        ).decode()
+        headers = {
+            "Authorization": f"Basic {b64_auth}",
+            "Content-Type": "application/json",
+        }
+        body = json.dumps(
+            {
+                "name": f"sdd-agent-{owner}-{repo}",
+                "scopes": _gitea_token_scopes(),
+            }
+        )
+        conn.request(
+            "POST",
+            f"/api/v1/users/{gitea_admin_user}/tokens",
+            body=body,
+            headers=headers,
+        )
+        resp = conn.getresponse()
+        data = resp.read().decode("utf-8")
+        conn.close()
+
+        if resp.status == 201:
+            resp_json = json.loads(data)
+            new_token = resp_json.get("sha1", "") or resp_json.get("token", "")
+            if new_token:
+                # Write token to client-tools.local.json
+                if client is None:
+                    client = {}
+                gitea_section = client.setdefault("gitea", {})
+                gitea_section["apiToken"] = new_token
+                gitea_section.setdefault("baseUrl", base_url)
+                gitea_section.setdefault("owner", owner)
+                gitea_section.setdefault("repo", repo)
+                write_json(client_path, client)
+                result["actions"].append(
+                    {
+                        "path": ".codex/client-tools.local.json/gitea.apiToken",
+                        "key": "token.generated",
+                        "severity": "info",
+                        "message": "Generated and saved new Gitea API token with write scopes.",
+                        "phase": "apply",
+                    }
+                )
+                result["token"] = new_token[:8] + "..."  # show partial for safety
+            else:
+                add_bucket_item(
+                    result["findings"],
+                    "gitea/api/tokens",
+                    "token.empty",
+                    "Gitea returned 201 but no token in response.",
+                    "error",
+                )
+        elif resp.status == 409:
+            # Token with same name already exists — delete and retry
+            # First list existing tokens
+            list_conn = http.client.HTTPConnection(
+                parsed.hostname or "localhost", parsed.port or 3000, timeout=10
+            )
+            list_conn.request(
+                "GET",
+                f"/api/v1/users/{gitea_admin_user}/tokens",
+                headers={"Authorization": f"Basic {b64_auth}"},
+            )
+            list_resp = list_conn.getresponse()
+            list_data = list_resp.read().decode("utf-8")
+            list_conn.close()
+
+            if list_resp.status == 200:
+                tokens = json.loads(list_data)
+                token_name = f"sdd-agent-{owner}-{repo}"
+                token_id = None
+                for t in tokens:
+                    if t.get("name") == token_name:
+                        token_id = t.get("id")
+                        break
+                if token_id is not None:
+                    # Delete the existing token
+                    del_conn = http.client.HTTPConnection(
+                        parsed.hostname or "localhost", parsed.port or 3000, timeout=10
+                    )
+                    del_conn.request(
+                        "DELETE",
+                        f"/api/v1/users/{gitea_admin_user}/tokens/{token_id}",
+                        headers={"Authorization": f"Basic {b64_auth}"},
+                    )
+                    del_resp = del_conn.getresponse()
+                    del_resp.read()
+                    del_conn.close()
+                    if del_resp.status in {204, 200}:
+                        result["actions"].append(
+                            {
+                                "path": ".codex/client-tools.local.json/gitea.apiToken",
+                                "key": "token.deleted",
+                                "severity": "info",
+                                "message": "Deleted old Gitea API token to allow regeneration.",
+                                "phase": "apply",
+                            }
+                        )
+                        # Retry: call ourselves recursively (only once)
+                        return generate_gitea_api_token(root, dry_run)
+
+            add_bucket_item(
+                result["findings"],
+                "gitea/api/tokens",
+                "token.conflict",
+                f"Gitea returned status {resp.status} when creating token: {data[:200]}",
+                "error",
+            )
+        else:
+            add_bucket_item(
+                result["findings"],
+                "gitea/api/tokens",
+                "token.create",
+                f"Gitea returned HTTP {resp.status}: {data[:200]}",
+                "error",
+            )
+    except Exception as ex:
+        add_bucket_item(
+            result["findings"],
+            "gitea/api/tokens",
+            "token.create",
+            f"Could not generate Gitea API token: {ex}",
+            "error",
+        )
+    result["valid"] = not any(
+        item.get("severity") == "error" for item in result["findings"]
+    )
+    return result
+
+
+def renovate_gitea_api_token(
+    root: Path, dry_run: bool = False
+) -> dict[str, Any]:
+    """Verify the current Gitea API token and regenerate if invalid."""
+    result = configure_result(
+        "RenovateGiteaApiToken", dry_run, write_enabled=not dry_run
+    )
+    # Step 1: verify current token
+    verify_result = verify_gitea_api_token(root, dry_run)
+    if not dry_run and verify_result.get("tokenValid") is True:
+        result["actions"].append(
+            {
+                "path": ".codex/client-tools.local.json/gitea.apiToken",
+                "key": "token.verified",
+                "severity": "info",
+                "message": "Current Gitea API token is valid. No renovation needed.",
+                "phase": "audit",
+            }
+        )
+        result["valid"] = True
+        result["renovated"] = False
+        return result
+
+    # Step 2: generate new token
+    if dry_run:
+        result["actions"].append(
+            {
+                "path": ".codex/client-tools.local.json/gitea.apiToken",
+                "key": "token.renovate",
+                "severity": "info",
+                "message": "Would renovate Gitea API token (verify + generate if invalid).",
+                "phase": "apply",
+            }
+        )
+        result["valid"] = True
+        result["renovated"] = True
+        return result
+
+    gen_result = generate_gitea_api_token(root, dry_run)
+    if gen_result.get("valid", False):
+        result["actions"].append(
+            {
+                "path": ".codex/client-tools.local.json/gitea.apiToken",
+                "key": "token.renovated",
+                "severity": "info",
+                "message": "Renovated Gitea API token (old token was invalid or missing).",
+                "phase": "apply",
+            }
+        )
+        result["renovated"] = True
+        result["valid"] = True
+    else:
+        result["findings"] = gen_result.get("findings", [])
+        result["renovated"] = False
+        result["valid"] = False
     return result
 
 
@@ -893,6 +1339,173 @@ def _observability_checks(
                 "phase": "audit",
             }
         )
+
+    # ── Grafana dashboard provisioning check ──────────────────────────
+    # Verify the dashboards directory has valid JSON files and at least
+    # one dashboard was provisioned (known bug: forgetting to bump version
+    # causes silent provisioning failure).
+    dashboards_dir = root / "infra" / "monitoring" / "grafana" / "dashboards"
+    if dashboards_dir.exists() and dashboards_dir.is_dir():
+        for dash_file in sorted(dashboards_dir.glob("*.json")):
+            if not dry_run:
+                try:
+                    dash_data = json.loads(dash_file.read_text(encoding="utf-8"))
+                    dash_uid = dash_data.get("uid", "unknown")
+                    dash_version = dash_data.get("version", 0)
+                    dash_title = dash_data.get("title", "Untitled")
+                    # Check if dashboard is actually served by Grafana API
+                    try:
+                        conn = http.client.HTTPConnection("localhost", 3001, timeout=5)
+                        conn.request(
+                            "GET",
+                            f"/api/dashboards/uid/{dash_uid}",
+                            headers={"Content-Type": "application/json"},
+                        )
+                        resp = conn.getresponse()
+                        resp_data = resp.read()
+                        conn.close()
+                        if resp.status == 200:
+                            provisioned_version = json.loads(resp_data)["dashboard"]["version"]
+                            result["actions"].append(
+                                {
+                                    "path": dash_file.relative_to(root).as_posix(),
+                                    "key": f"grafana.dashboard.{dash_uid}",
+                                    "severity": "info",
+                                    "message": f"Dashboard '{dash_title}' (v{dash_version}) provisioned and served (API v{provisioned_version}).",
+                                    "phase": "post-start",
+                                }
+                            )
+                            if provisioned_version < dash_version:
+                                add_bucket_item(
+                                    result["findings"],
+                                    dash_file.relative_to(root).as_posix(),
+                                    f"grafana.dashboard.{dash_uid}.version",
+                                    f"Dashboard file has v{dash_version} but Grafana serves v{provisioned_version}. "
+                                    "Provisioning may have failed — check Grafana logs for JSON parse errors.",
+                                    "warning",
+                                    "post-start",
+                                )
+                        elif resp.status == 404:
+                            add_bucket_item(
+                                result["findings"],
+                                dash_file.relative_to(root).as_posix(),
+                                f"grafana.dashboard.{dash_uid}.missing",
+                                f"Dashboard '{dash_title}' (uid: {dash_uid}) not found in Grafana API (HTTP 404). "
+                                "Check JSON syntax, version number, and Grafana logs.",
+                                "warning",
+                                "post-start",
+                            )
+                        else:
+                            add_bucket_item(
+                                result["findings"],
+                                dash_file.relative_to(root).as_posix(),
+                                f"grafana.dashboard.{dash_uid}.api",
+                                f"Grafana API returned HTTP {resp.status} for dashboard '{dash_uid}'.",
+                                "warning",
+                                "post-start",
+                            )
+                    except Exception as ex:
+                        add_bucket_item(
+                            result["findings"],
+                            dash_file.relative_to(root).as_posix(),
+                            "grafana.dashboard.api",
+                            f"Could not verify dashboard via API: {ex}",
+                            "warning",
+                            "post-start",
+                        )
+                except json.JSONDecodeError as e:
+                    add_bucket_item(
+                        result["findings"],
+                        dash_file.relative_to(root).as_posix(),
+                        "grafana.dashboard.invalid-json",
+                        f"Dashboard JSON file has invalid syntax: {e}. "
+                        "Grafana provisioning will reject this file.",
+                        "error",
+                        "pre-start",
+                    )
+                except Exception as ex:
+                    add_bucket_item(
+                        result["findings"],
+                        dash_file.relative_to(root).as_posix(),
+                        "grafana.dashboard.error",
+                        f"Could not validate dashboard JSON: {ex}",
+                        "warning",
+                        "pre-start",
+                    )
+            else:
+                result["actions"].append(
+                    {
+                        "path": dash_file.relative_to(root).as_posix(),
+                        "key": "grafana.dashboard.validate",
+                        "severity": "info",
+                        "message": f"Would validate dashboard JSON and check provisioning via Grafana API.",
+                        "phase": "audit",
+                    }
+                )
+
+    # ── Infinity datasource health check ──────────────────────────────
+    # Verify the Infinity datasource plugin is installed and configured.
+    # The datasource must exist for dashboard table panels to work.
+    if not dry_run:
+        try:
+            conn = http.client.HTTPConnection("localhost", 3001, timeout=5)
+            conn.request(
+                "GET",
+                "/api/datasources/uid/infinity-health/health",
+                headers={"Content-Type": "application/json"},
+            )
+            resp = conn.getresponse()
+            resp_data = resp.read()
+            conn.close()
+            if resp.status == 200:
+                result["actions"].append(
+                    {
+                        "path": "grafana/datasources/infinity-health",
+                        "key": "grafana.infinity-health.healthy",
+                        "severity": "info",
+                        "message": "Infinity health datasource is configured and responding.",
+                        "phase": "post-start",
+                    }
+                )
+            elif resp.status == 404:
+                add_bucket_item(
+                    result["findings"],
+                    "infra/monitoring/grafana/provisioning/datasources/infinity-health.yml",
+                    "grafana.infinity-health.missing",
+                    "Infinity datasource 'infinity-health' not found (HTTP 404). "
+                    "Check that the Infinity plugin is installed and the YAML provisioning file is valid.",
+                    "warning",
+                    "post-start",
+                )
+            else:
+                add_bucket_item(
+                    result["findings"],
+                    "infra/monitoring/grafana/provisioning/datasources/infinity-health.yml",
+                    "grafana.infinity-health.unhealthy",
+                    f"Infinity datasource health check returned HTTP {resp.status}.",
+                    "warning",
+                    "post-start",
+                )
+        except Exception as ex:
+            add_bucket_item(
+                result["findings"],
+                "grafana/datasources",
+                "grafana.infinity-health.check",
+                f"Could not check Infinity datasource health: {ex}",
+                "warning",
+                "post-start",
+            )
+    else:
+        result["actions"].append(
+            {
+                "path": "grafana/datasources/infinity-health",
+                "key": "grafana.infinity-health.health",
+                "severity": "info",
+                "message": "Would check Infinity datasource health via Grafana API.",
+                "phase": "audit",
+            }
+        )
+
     datasource_path = (
         root
         / "infra"
@@ -1022,6 +1635,21 @@ def set_project_stack(
         write_json(path, current)
         # Auto-generate Semgrep config after stack change
         set_semgrep_config(root, dry_run)
+
+    # After stack is set, automatically trigger project guidance setup
+    guidance_result: dict[str, Any] = {}
+    if not dry_run:
+        try:
+            from .guidance import setup_project_guidance
+
+            guidance_result = setup_project_guidance(root, dict(values), dry_run)
+        except Exception:
+            guidance_result = {
+                "mode": "SetupProjectGuidance",
+                "valid": False,
+                "errors": ["Project guidance setup encountered an error."],
+            }
+
     return {
         "mode": "SetProjectStack",
         "valid": True,
@@ -1038,6 +1666,8 @@ def set_project_stack(
                 "phase": "apply",
             }
         ],
+        "guidanceResult": guidance_result.get("valid", True),
+        "guidanceDetails": guidance_result,
     }
 
 
@@ -1115,8 +1745,7 @@ def set_quality_config(
         "SetOpenProjectEnv",
         "SetMonitoringEnv",
         "SetGiteaRunner",
-        "SetRecommendedTools",
-        "MapProjectGuidanceStep",
+
     }
     filtered_values = {}
     invalid_keys = []
@@ -1163,72 +1792,45 @@ def set_quality_config(
     }
 
 
-def set_recommended_tools(
-    root: Path, values: dict[str, Any], dry_run: bool = False
-) -> dict[str, Any]:
-    """Set accepted/dismissed tool recommendations."""
-    result = configure_result("SetRecommendedTools", dry_run, write_enabled=not dry_run)
-    path = root / ".codex" / "client-tools.local.json"
-    if not path.exists():
-        return {
-            "mode": "SetRecommendedTools",
-            "valid": False,
-            "errors": [
-                "Missing .codex/client-tools.local.json. Run InitLocalFiles first."
-            ],
-        }
-    if "accepted" not in values and "dismissed" not in values:
-        return {
-            "mode": "SetRecommendedTools",
-            "valid": False,
-            "errors": ["values.accepted or values.dismissed is required."],
-        }
-    config = read_json(path, optional=True)
-    recommended = config.setdefault("recommendedTools", {})
-    for key in ("accepted", "dismissed"):
-        existing = list(recommended.get(key, []))
-        for item in values.get(key, []):
-            if item not in existing:
-                existing.append(item)
-        recommended[key] = existing
-        if values.get(key):
-            result["actions"].append(
-                {
-                    "path": ".codex/client-tools.local.json",
-                    "key": f"recommendedTools.{key}",
-                    "severity": "info",
-                    "message": f"Recorded {key} recommendation ids.",
-                    "phase": "apply",
-                }
-            )
-    if not dry_run:
-        write_json(path, config)
-    result["valid"] = True
-    return result
-
-
 # ── Set Semgrep config (stack-aware SAST rules) ─────────────────────────
+
+
+_SEMGREP_RULE_MAP: dict[str, list[str]] = {
+    # Frontend
+    "react": ["p/typescript", "p/javascript", "p/react"],
+    "typescript": ["p/typescript", "p/javascript"],
+    "javascript": ["p/javascript"],
+    "vue": ["p/typescript", "p/javascript", "p/vue"],
+    "angular": ["p/typescript", "p/javascript"],
+    "svelte": ["p/typescript", "p/javascript"],
+    "nextjs": ["p/typescript", "p/javascript", "p/react", "p/nextjs"],
+    # Backend
+    "python": ["p/python"],
+    "fastapi": ["p/python", "p/flask", "p/jwt"],
+    "flask": ["p/python", "p/flask"],
+    "django": ["p/python", "p/django"],
+    "csharp": ["p/csharp"],
+    "aspnetcore": ["p/csharp"],
+    "go": ["p/golang"],
+    "rust": ["p/rust"],
+    "java": ["p/java"],
+    # Database
+    "postgresql": ["p/sql-injection"],
+}
 
 
 def set_semgrep_config(root: Path, dry_run: bool = False) -> dict[str, Any]:
     """Generate .semgrep.yml from project stack for offline CI scanning.
 
-    Reads the project stack from project-profile.local.json, looks up the
-    corresponding semgrep rule packs from stack-data.json, and writes a
-    .semgrep.yml config file in the repo root. The rules list is also
-    stored in project-profile.local.json under stack.semgrepRules, which
-    the CI workflow reads at scan time.
+    Reads the project stack from project-profile.local.json and writes a
+    .semgrep.yml config file in the repo root using a simple hardcoded
+    rule map. The rules list is also stored in project-profile.local.json
+    under stack.semgrepRules, which the CI workflow reads at scan time.
 
     The Docker image pre-caches all rule packs at build time so the CI
     container can run Semgrep offline.
     """
     result = configure_result("SetSemgrepConfig", dry_run, write_enabled=not dry_run)
-
-    # Read stack data mapping
-    stack_data_path = root / "tools" / "sdd_cli" / "stack-data.json"
-    stack_data = read_json(stack_data_path, optional=True)
-    canonical_map = stack_data.get("_STACK_CANONICAL_MAP", {})
-    tag_aliases = stack_data.get("_STACK_TAG_ALIASES", {})
 
     # Read project profile
     profile_path = root / ".codex" / "project-profile.local.json"
@@ -1236,35 +1838,11 @@ def set_semgrep_config(root: Path, dry_run: bool = False) -> dict[str, Any]:
     stack = profile.get("stack", {}) if isinstance(profile.get("stack"), dict) else {}
 
     def _resolve_semgrep_rules(domain_value: str) -> list[str]:
-        """Resolve a stack domain value to semgrep rule packs using case-insensitive
-        and alias-aware matching against the canonical map."""
-        # 1. Direct lookup
-        if domain_value in canonical_map:
-            return list(canonical_map[domain_value].get("semgrepRules", []))
-
-        # 2. Lowercase direct lookup
-        lc = domain_value.lower()
-        if lc in canonical_map:
-            return list(canonical_map[lc].get("semgrepRules", []))
-
-        # 3. Search tag aliases for matching canonical key
-        #    Uses substring containment so compound values like "C# (.NET)" match alias "c#"
-        #    Aliases are sorted by longest match first to prevent short substrings
-        #    (e.g. "java" in "javascript") from matching before the correct longer one.
+        """Resolve a stack domain value to semgrep rule packs using simple keyword matching."""
         dv_lower = domain_value.lower()
-        sorted_aliases = sorted(
-            tag_aliases.items(),
-            key=lambda item: max(len(a) for a in item[1]),
-            reverse=True,
-        )
-        for canonical_key, aliases in sorted_aliases:
-            alias_lower = [a.lower() for a in aliases]
-            if dv_lower in alias_lower or any(
-                alias in dv_lower for alias in alias_lower
-            ):
-                entry = canonical_map.get(canonical_key, {})
-                return list(entry.get("semgrepRules", []))
-
+        for keyword, rules in _SEMGREP_RULE_MAP.items():
+            if keyword in dv_lower:
+                return rules
         return []
 
     # Collect all semgrep rules from the three stack domains
@@ -1276,7 +1854,7 @@ def set_semgrep_config(root: Path, dry_run: bool = False) -> dict[str, Any]:
         "database": stack.get("database", {}).get("value", ""),
     }
 
-    for domain_name, domain_value in domains.items():
+    for _domain_name, domain_value in domains.items():
         if not domain_value:
             continue
         rules = _resolve_semgrep_rules(domain_value)
@@ -1294,7 +1872,6 @@ def set_semgrep_config(root: Path, dry_run: bool = False) -> dict[str, Any]:
     yml_lines = [
         "# Semgrep configuration for this project",
         "# Auto-generated by set-semgrep-config",
-        "# Rules are resolved from stack-data.json based on project stack",
         "# Registry rules are pre-cached in the CI Docker image",
         "",
         "rules: []",
@@ -1364,9 +1941,7 @@ def validate_app_config(root: Path, dry_run: bool = False) -> dict[str, Any]:
     Checks that apps.json is valid JSON, conforms to its schema,
     and that each app's projectPath has a Dockerfile.
     """
-    result = configure_result(
-        "ValidateAppConfig", dry_run, write_enabled=not dry_run
-    )
+    result = configure_result("ValidateAppConfig", dry_run, write_enabled=not dry_run)
     apps_path = root / "infra" / "deployment" / "apps.json"
     schema_path = root / "infra" / "deployment" / "apps.schema.json"
 
@@ -1415,6 +1990,7 @@ def validate_app_config(root: Path, dry_run: bool = False) -> dict[str, Any]:
     if schema_path.exists():
         try:
             import jsonschema
+
             schema = json.loads(schema_path.read_text(encoding="utf-8"))
             jsonschema.validate(instance=apps_data, schema=schema)
             result["actions"].append(
@@ -1506,7 +2082,18 @@ def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str,
     )
     nexus_base = "http://localhost:8088"
     nexus_user = "admin"
+    # On first boot, Nexus generates a random admin password stored in /nexus-data/admin.password.
+    # Try to read it from the running container; fall back to admin123 (manually set or old install).
     nexus_pass = "admin123"
+    try:
+        r = subprocess.run(
+            ["docker", "exec", "agentic-nexus", "cat", "/nexus-data/admin.password"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            nexus_pass = r.stdout.strip()
+    except Exception:
+        pass
 
     if dry_run:
         result["actions"].append(
@@ -1521,9 +2108,7 @@ def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str,
         result["valid"] = True
         return result
 
-    def _nexus_api(
-        method: str, path: str, body: dict | None = None
-    ) -> tuple[int, str]:
+    def _nexus_api(method: str, path: str, body: dict | None = None) -> tuple[int, str]:
         try:
             parsed = urlparse(nexus_base)
             conn = http.client.HTTPConnection(
@@ -1547,11 +2132,10 @@ def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str,
 
     # ── 1. Accept Nexus EULA (required before any API calls work on fresh install) ──
     eula_status, eula_data = _nexus_api(
-        "POST", "/service/rest/v1/editions/eula/accept",
-        body={"eulaAccepted": True}
+        "POST", "/service/rest/v1/editions/eula/accept", body={"eulaAccepted": True}
     )
-    # Nexus EULA endpoint returns 204 on success, 400 if already accepted
-    if eula_status in {204, 200, 400}:
+    # Nexus EULA endpoint returns 204 on success, 400 if already accepted, 404 if not applicable (3.92+)
+    if eula_status in {204, 200, 400, 404}:
         result["actions"].append(
             {
                 "path": "nexus/eula",
@@ -1672,6 +2256,7 @@ def validate_docker_desktop(root: Path, dry_run: bool = False) -> dict[str, Any]
 
     # Detect Docker Desktop on Windows (host.docker.internal resolves on Docker Desktop)
     import socket
+
     is_docker_desktop = False
     try:
         socket.gethostbyname("host.docker.internal")
@@ -1692,6 +2277,7 @@ def validate_docker_desktop(root: Path, dry_run: bool = False) -> dict[str, Any]
 
         # Check Docker Desktop daemon.json for insecure-registries
         import platform
+
         daemon_path = None
         if sys.platform == "win32" or platform.system() == "Windows":
             # Docker Desktop on Windows stores daemon.json in %USERPROFILE%\.docker
@@ -1700,7 +2286,10 @@ def validate_docker_desktop(root: Path, dry_run: bool = False) -> dict[str, Any]
                 daemon_path = user_profile
         else:
             # Linux/Mac: /etc/docker/daemon.json or ~/.docker/daemon.json
-            for p in [Path("/etc/docker/daemon.json"), Path.home() / ".docker" / "daemon.json"]:
+            for p in [
+                Path("/etc/docker/daemon.json"),
+                Path.home() / ".docker" / "daemon.json",
+            ]:
                 if p.exists():
                     daemon_path = p
                     break
@@ -2034,6 +2623,85 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
     op_admin_user = "admin"
     op_admin_pass = "admin"
 
+    # ── Ensure Gitea admin user exists with admin privileges ─────────
+    # Gitea's env var-based admin creation (USERNAME/PASSWORD) may not
+    # create the user in the database with is_admin=True on all versions.
+    # Use the Gitea CLI inside the container to ensure it's properly set up.
+    try:
+        import base64
+        # Check if admin user exists and has admin privileges
+        b64 = base64.b64encode(f"{gitea_admin_user}:{gitea_admin_pass}".encode()).decode()
+        conn = http.client.HTTPConnection(
+            urlparse("http://localhost:3000").hostname or "localhost", 3000, timeout=10
+        )
+        conn.request("GET", "/api/v1/user", headers={"Authorization": f"Basic {b64}"})
+        resp = conn.getresponse()
+        body = resp.read().decode("utf-8")
+        conn.close()
+        if resp.status == 200:
+            user_data = json.loads(body)
+            if not user_data.get("is_admin", False):
+                # User exists but is not admin — delete and recreate with admin flag
+                # (gitea admin user change does NOT exist in the CLI)
+                subprocess.run(
+                    ["docker", "exec", "-u", "1000", "agentic-gitea",
+                     "gitea", "admin", "user", "delete",
+                     "--username", gitea_admin_user],
+                    capture_output=True, text=True, timeout=30,
+                )
+                r = subprocess.run(
+                    ["docker", "exec", "-u", "1000", "agentic-gitea",
+                     "gitea", "admin", "user", "create",
+                     "--username", gitea_admin_user,
+                     "--password", gitea_admin_pass,
+                     "--email", f"{gitea_admin_user}@example.com",
+                     "--must-change-password=false", "--admin"],
+                    capture_output=True, text=True, timeout=30,
+                )
+                if r.returncode == 0:
+                    result["actions"].append({
+                        "path": "gitea/admin", "key": "admin.recreated",
+                        "severity": "info",
+                        "message": f"Recreated '{gitea_admin_user}' with admin privileges via Gitea CLI.",
+                        "phase": "apply",
+                    })
+                else:
+                    add_bucket_item(
+                        result["findings"], "gitea/admin", "admin.create",
+                        f"Could not recreate admin user: {r.stderr[:200]}",
+                        "warning", "apply",
+                    )
+        else:
+            # Admin user doesn't exist — create via CLI
+            r = subprocess.run(
+                ["docker", "exec", "-u", "1000", "agentic-gitea",
+                 "gitea", "admin", "user", "create",
+                 "--username", gitea_admin_user,
+                 "--password", gitea_admin_pass,
+                 "--email", f"{gitea_admin_user}@example.com",
+                 "--must-change-password=false", "--admin"],
+                capture_output=True, text=True, timeout=30,
+            )
+            if r.returncode == 0:
+                result["actions"].append({
+                    "path": "gitea/admin", "key": "admin.created",
+                    "severity": "info",
+                    "message": f"Created admin user '{gitea_admin_user}' via Gitea CLI.",
+                    "phase": "apply",
+                })
+            else:
+                add_bucket_item(
+                    result["findings"], "gitea/admin", "admin.create",
+                    f"Could not create admin user: {r.stderr[:200]}",
+                    "warning", "apply",
+                )
+    except Exception as ex:
+        add_bucket_item(
+            result["findings"], "gitea/admin", "admin.check",
+            f"Could not verify admin user: {ex}",
+            "warning", "apply",
+        )
+
     # ── Helper: Gitea API call ───────────────────────────────────────
     def _gitea_api(method: str, path: str, body: dict | None = None) -> tuple[int, str]:
         try:
@@ -2060,7 +2728,45 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
             return 0, str(ex)
 
     # ── Helper: OpenProject API call (uses Bearer token from client-tools) ──
+    # OpenProject API v3 does NOT accept Basic auth with admin:admin — it requires
+    # API tokens. Generate one via the Rails console inside the container.
     _op_token = None
+    try:
+        # OpenProject API does NOT accept Basic auth with admin:admin.
+        # Generate an API token via the Rails console inside the container.
+        r = subprocess.run(
+            ["docker", "exec", "agentic-e2e-openproject-1",
+             "./bin/rails", "runner", "-e", "production",
+             "u=User.where(login:'admin').first;"
+             "t=Token::API.new(user:u);t.save!;puts t.plain_value"],
+            capture_output=True, text=True, timeout=60,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            # Rails runner mixes log output with the token value on stdout.
+            # Extract just the token line (starts with "opapi-").
+            for line in r.stdout.strip().splitlines():
+                line = line.strip()
+                if line.startswith("opapi-"):
+                    _op_token = line
+                    break
+            # Also save to client-tools.local.json for persistence
+            try:
+                config_path = root / ".codex" / "client-tools.local.json"
+                config = read_json(config_path, optional=True) or {}
+                op_config = config.setdefault("openProject", {})
+                op_config["apiToken"] = _op_token
+                write_json(config_path, config)
+            except Exception:
+                pass
+            result["actions"].append({
+                "path": "openproject/api", "key": "token.generated",
+                "severity": "info",
+                "message": "Generated OpenProject API token via Rails console.",
+                "phase": "apply",
+            })
+    except Exception:
+        # Container not ready yet; _op_api will try Basic auth as fallback
+        pass
 
     def _op_api(method: str, path: str, body: dict | None = None) -> tuple[int, str]:
         nonlocal _op_token
@@ -2145,7 +2851,7 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
         if not existing_token or existing_token.startswith("replace-with"):
             reg_status, reg_data = _gitea_api(
                 "POST",
-                f"/api/v1/repos/{_owner}/{_repo}/actions/runners/registration-token"
+                f"/api/v1/repos/{_owner}/{_repo}/actions/runners/registration-token",
             )
             if reg_status == 200 or reg_status == 201:
                 try:
@@ -2163,6 +2869,31 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
                                 "phase": "apply",
                             }
                         )
+                        # Restart runner container to pick up new token
+                        _restart = run_native(
+                            ["docker", "restart", "agentic-gitea-runner"],
+                            root,
+                            timeout=30,
+                        )
+                        if _restart["returncode"] == 0:
+                            result["actions"].append(
+                                {
+                                    "path": "docker/container/agentic-gitea-runner",
+                                    "key": "runner.restart",
+                                    "severity": "info",
+                                    "message": "Restarted Gitea runner container to pick up new registration token.",
+                                    "phase": "apply",
+                                }
+                            )
+                        else:
+                            add_bucket_item(
+                                result["findings"],
+                                "docker/container/agentic-gitea-runner",
+                                "runner.restart",
+                                f"Could not restart Gitea runner: {_restart['stderr']}",
+                                "warning",
+                                "apply",
+                            )
                 except Exception:
                     pass
             else:
@@ -2222,6 +2953,58 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 "apply",
             )
 
+    # ── 1b. Gitea: create repository and update config ────────────
+    #     Create the dev repo so push_to_gitea has a target, and update
+    #     client-tools.local.json with the actual owner/repo values.
+    _gitea_owner = gitea_admin_user  # "admin"
+    _gitea_repo = root.name.lower().replace("_", "-")
+    # Create repo if it doesn't already exist
+    _repo_status, _repo_data = _gitea_api(
+        "POST", "/api/v1/admin/users/" + _gitea_owner + "/repos",
+        body={"name": _gitea_repo, "auto_init": True, "default_branch": "dev",
+              "description": f"SDD lab repository for {root.name}"},
+    )
+    if _repo_status in {201, 409}:
+        result["actions"].append({
+            "path": f"gitea/repos/{_gitea_owner}/{_gitea_repo}",
+            "key": "repo.created",
+            "severity": "info",
+            "message": f"Gitea repo {_gitea_owner}/{_gitea_repo} ready.",
+            "phase": "apply",
+        })
+        # Update client-tools.local.json with actual owner/repo
+        try:
+            _config_path = root / ".codex" / "client-tools.local.json"
+            _config = read_json(_config_path, optional=True) or {}
+            _gitea_section = _config.setdefault("gitea", {})
+            _gitea_section["owner"] = _gitea_owner
+            _gitea_section["repo"] = _gitea_repo
+            _gitea_section.setdefault("baseUrl", "http://localhost:3000")
+            write_json(_config_path, _config)
+            result["actions"].append({
+                "path": ".codex/client-tools.local.json/gitea",
+                "key": "config.updated",
+                "severity": "info",
+                "message": f"Updated client-tools: owner={_gitea_owner}, repo={_gitea_repo}",
+                "phase": "apply",
+            })
+        except Exception as _ex:
+            add_bucket_item(result["findings"], ".codex/client-tools.local.json",
+                           "config.update", f"Could not update config: {_ex}",
+                           "warning", "apply")
+    else:
+        add_bucket_item(result["findings"], f"gitea/repos/{_gitea_owner}/{_gitea_repo}",
+                       "repo.create", f"Repo creation returned {_repo_status}: {_repo_data[:200]}",
+                       "warning", "apply")
+
+    # ── 1c. Gitea: generate API token with write scopes ──────────────
+    #     This token is used by agents to create PRs, add labels, request reviewers.
+    _api_token_result = generate_gitea_api_token(root, dry_run)
+    for action in _api_token_result.get("actions", []):
+        result["actions"].append(action)
+    for finding in _api_token_result.get("findings", []):
+        result["findings"].append(finding)
+
     # ── 2. OpenProject: create users, project, board, statuses ────────
     op_users = [
         {
@@ -2265,18 +3048,24 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 "apply",
             )
 
-    # ── 2b. OpenProject: define board list names (not tied to OP statuses) ──
-    # These are pure labels on the board, NOT linked to OpenProject statuses.
-    # Dragging a work package between these columns does NOT trigger status
-    # transitions, so the board stays flexible regardless of OP workflow rules.
-    BOARD_LIST_NAMES = ["New", "To Do", "In Progress", "In Review", "QA", "Done"]
-    for name in BOARD_LIST_NAMES:
+    # ── 2b. OpenProject: kanban columns — hardcoded statuses (matches seed data) ──
+    # Status action board with 7 standard OpenProject statuses.
+    _KANBAN_COLUMNS = [
+        ("New", "New"),
+        ("Specified", "Specified"),
+        ("In progress", "In progress"),
+        ("Developed", "Developed"),
+        ("In testing", "In testing"),
+        ("Closed", "Closed"),
+        ("Rejected", "Rejected"),
+    ]
+    for label, status_name in _KANBAN_COLUMNS:
         result["actions"].append(
             {
-                "path": f"openproject/boards/e2e-test/lists/{name}",
-                "key": "board.list",
+                "path": f"openproject/boards/e2e-kanban/lists/{label}",
+                "key": "board.kanban-column",
                 "severity": "info",
-                "message": f"Board list '{name}' configured.",
+                "message": f"Kanban column '{label}' (status: {status_name}) configured.",
                 "phase": "apply",
             }
         )
@@ -2411,15 +3200,184 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
             }
         )
 
-    # ── 2e. OpenProject: create Basic board e2e-test with list names ──
+    # ── 2d1. OpenProject: add admin as project member for workflow/API access ──
+    # The admin user needs Member role in the project for workflow transitions to
+    # apply when using the admin's API token.
+    if not dry_run:
+        admin_member_script = (
+            'project = Project.find_by!(identifier: "e2eproject")\n'
+            'member_role = Role.find_by!(name: "Member")\n'
+            'admin = User.find_by(login: "admin")\n'
+            "unless admin\n"
+            '  puts "ERROR: admin not found"\n'
+            "  exit 1\n"
+            "end\n"
+            "existing = Member.where(project: project, principal: admin)\n"
+            "if existing.any?\n"
+            '  puts "Admin already a member"\n'
+            "else\n"
+            '  ::Member.create(project: project, principal: admin, roles: [member_role])\n'
+            '  puts "Admin added as member"\n'
+            "end\n"
+        )
+        tmp_path = None
+        try:
+            tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".rb", delete=False)
+            tmp.write(admin_member_script)
+            tmp.close()
+            tmp_path = tmp.name
+            subprocess.run(
+                ["docker", "cp", tmp_path, "agentic-e2e-openproject-1:/tmp/add_admin_member.rb"],
+                capture_output=True, timeout=30,
+            )
+            adm_result = run_native(
+                ["docker", "exec", "agentic-e2e-openproject-1",
+                 "sh", "-c", "cd /app && bundle exec rails runner /tmp/add_admin_member.rb"],
+                REPO_ROOT, timeout=30,
+            )
+        except Exception as ex:
+            add_bucket_item(
+                result["findings"], "openproject/members/admin", "member.create",
+                f"Admin member creation failed: {ex}", "warning", "apply",
+            )
+            adm_result = {"returncode": -1, "stdout": "", "stderr": str(ex)}
+        finally:
+            if tmp_path:
+                Path(tmp_path).unlink(missing_ok=True)
+        if adm_result["returncode"] == 0:
+            result["actions"].append({
+                "path": "openproject/members/admin",
+                "key": "member.created",
+                "severity": "info",
+                "message": "Admin added as Member in e2eproject.",
+                "phase": "apply",
+            })
+        else:
+            add_bucket_item(
+                result["findings"], "openproject/members/admin", "member.create",
+                f"Admin member creation failed: {adm_result['stderr'][:200]}",
+                "warning", "apply",
+            )
+    else:
+        result["actions"].append({
+            "path": "openproject/members/admin",
+            "key": "member.plan",
+            "severity": "info",
+            "message": "Would add admin as Member in e2eproject.",
+            "phase": "apply",
+        })
+
+    # ── 2da. OpenProject: create workflow transitions for Task type + Member role ──
+    # Without workflow transitions, the kanban board cannot move work packages between
+    # status columns (OpenProject blocks all status changes when no workflow is defined).
+    # This creates transitions between ALL status pairs for Task + Member roles.
+    # Uses find_by(name:) for portability across OpenProject installations.
+    if not dry_run:
+        workflow_script = (
+            "type = Type.find_by(name: 'Task')\n"
+            "role = Role.find_by(name: 'Member')\n"
+            "unless type && role\n"
+            '  puts "ERROR: Task type or Member role not found"\n'
+            "  exit 1\n"
+            "end\n"
+            "statuses = Status.all\n"
+            "created = 0\n"
+            "skipped = 0\n"
+            "statuses.each do |from|\n"
+            "  statuses.each do |to|\n"
+            "    next if from.id == to.id\n"
+            "    exists = Workflow.where(\n"
+            "      type_id: type.id,\n"
+            "      role_id: role.id,\n"
+            "      old_status_id: from.id,\n"
+            "      new_status_id: to.id\n"
+            "    ).exists?\n"
+            "    if exists\n"
+            "      skipped += 1\n"
+            "    else\n"
+            "      Workflow.create!(\n"
+            "        type_id: type.id,\n"
+            "        role_id: role.id,\n"
+            "        old_status_id: from.id,\n"
+            "        new_status_id: to.id\n"
+            "      )\n"
+            "      created += 1\n"
+            "    end\n"
+            "  end\n"
+            "end\n"
+            'puts "Created #{created} workflow transitions (skipped #{skipped} existing)"\n'
+        )
+        tmp_path = None
+        try:
+            tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".rb", delete=False)
+            tmp.write(workflow_script)
+            tmp.close()
+            tmp_path = tmp.name
+            subprocess.run(
+                ["docker", "cp", tmp_path, "agentic-e2e-openproject-1:/tmp/create_workflows.rb"],
+                capture_output=True,
+                timeout=30,
+            )
+            wf_result = run_native(
+                [
+                    "docker", "exec", "agentic-e2e-openproject-1",
+                    "sh", "-c", "cd /app && bundle exec rails runner /tmp/create_workflows.rb",
+                ],
+                REPO_ROOT,
+                timeout=60,
+            )
+        except Exception as ex:
+            add_bucket_item(
+                result["findings"],
+                "openproject/workflows",
+                "workflow.create",
+                f"OpenProject workflow creation via Rails console failed: {ex}",
+                "warning", "apply",
+            )
+            wf_result = {"returncode": -1, "stdout": "", "stderr": str(ex)}
+        finally:
+            if tmp_path:
+                Path(tmp_path).unlink(missing_ok=True)
+        if wf_result["returncode"] == 0:
+            result["actions"].append(
+                {
+                    "path": "openproject/workflows",
+                    "key": "workflow.created",
+                    "severity": "info",
+                    "message": f"OpenProject workflow transitions created: {wf_result['stdout'][:100].strip()}.",
+                    "phase": "apply",
+                }
+            )
+        else:
+            add_bucket_item(
+                result["findings"],
+                "openproject/workflows",
+                "workflow.create",
+                f"OpenProject workflow creation failed: {wf_result['stderr'][:200]}",
+                "warning", "apply",
+            )
+    else:
+        result["actions"].append(
+            {
+                "path": "openproject/workflows",
+                "key": "workflow.plan",
+                "severity": "info",
+                "message": "Would create workflow transitions for Task type + Member role (all status pairs).",
+                "phase": "apply",
+            }
+        )
+
+    # ── 2e. OpenProject: create Action board e2e-kanban with status columns ──
+    # Note: The Grids API (/api/v3/grids) does not expose the work_package_query
+    # widget type needed for board widgets — creation must use the Rails console.
+    # Action board driven by work package status: each column maps to an OpenProject
+    # status. Dragging a work package between columns triggers status transitions.
     # OpenProject 17+ may not expose /api/v3/boards via REST — fall back to Rails console.
-    # Board columns are NOT tied to OpenProject statuses — they're plain label columns
-    # so work packages can be dragged freely between them without status transition blocks.
     brd_st, brd_dt = _op_api(
         "POST",
         "/api/v3/boards",
         body={
-            "name": "e2e-test",
+            "name": "e2e-kanban",
             "boardType": "grid",
             "gridType": "Board",
             "_links": {
@@ -2430,28 +3388,31 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
     if brd_st == 201:
         result["actions"].append(
             {
-                "path": "openproject/boards/e2e-test",
+                "path": "openproject/boards/e2e-kanban",
                 "key": "board.created",
                 "severity": "info",
-                "message": "OpenProject Basic board e2e-test created.",
+                "message": "OpenProject Action board e2e-kanban created.",
                 "phase": "apply",
             }
         )
     elif brd_st == 422:
         result["actions"].append(
             {
-                "path": "openproject/boards/e2e-test",
+                "path": "openproject/boards/e2e-kanban",
                 "key": "board.exists",
                 "severity": "info",
-                "message": "OpenProject Basic board e2e-test already exists.",
+                "message": "OpenProject Action board e2e-kanban already exists.",
                 "phase": "apply",
             }
         )
     elif brd_st == 404:
         # Boards API not exposed via REST — try Rails console
-        # Write Ruby script to local temp file, copy to container, execute
-        # Board lists are NOT status-filtered — they're plain label columns
-        board_lists_str = "[" + ", ".join(f'"{n}"' for n in BOARD_LIST_NAMES) + "]"
+        # Build columns as [[label, status_name], ...] for the Ruby script
+        board_lists_str = (
+            "["
+            + ", ".join(f'["{label}", "{status}"]' for label, status in _KANBAN_COLUMNS)
+            + "]"
+        )
         ruby_script = (
             'project = Project.find_by(identifier: "e2eproject")\n'
             'admin = User.find_by(login: "admin")\n'
@@ -2459,16 +3420,22 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
             '  puts "Project or admin not found"\n'
             "  exit 1\n"
             "end\n"
-            '::Boards::Grid.where(project: project, name: "e2e-test").destroy_all\n'
-            "board_labels = " + board_lists_str + "\n"
+            '::Boards::Grid.where(project: project, name: "e2e-kanban").destroy_all\n'
+            "columns = " + board_lists_str + "\n"
             "board = ::Boards::Grid.create!(\n"
             "  project: project,\n"
-            '  name: "e2e-test",\n'
+            '  name: "e2e-kanban",\n'
             "  row_count: 1,\n"
-            "  column_count: board_labels.length,\n"
-            "  user_id: admin.id\n"
+            "  column_count: columns.length,\n"
+            "  user_id: admin.id,\n"
+            '  options: {"type" => "action", "attribute" => "status", "highlightingMode" => "priority"}\n'
             ")\n"
-            "board_labels.each_with_index do |label, idx|\n"
+            "columns.each_with_index do |(label, status_name), idx|\n"
+            "  status_obj = Status.find_by(name: status_name)\n"
+            "  unless status_obj\n"
+            '    puts "Status #{status_name} not found"\n'
+            "    exit 1\n"
+            "  end\n"
             "  query = ::Query.new(\n"
             "    name: label,\n"
             "    project: project,\n"
@@ -2477,7 +3444,10 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
             "    include_subprojects: false,\n"
             "    display_sums: false\n"
             "  )\n"
+            "  query.add_filter('status_id', '=', [status_obj.id.to_s])\n"
             "  query.save!(validate: false)\n"
+            "  # Create View record so the query is not hidden (hidden=views.empty?)\n"
+            "  View.create!(query_id: query.id, type: 'board_view')\n"
             "  ::Grids::Widget.create!(\n"
             "    grid: board,\n"
             '    identifier: "work_package_query",\n'
@@ -2485,10 +3455,10 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
             "    end_row: 2,\n"
             "    start_column: idx + 1,\n"
             "    end_column: idx + 2,\n"
-            '    options: {"query_id" => query.id}\n'
+            '    options: {\"query_id\" => query.id, \"filters\" => [{\"status\" => {\"operator\" => \"=\", \"values\" => [status_obj.id.to_s]}}]}\n'
             "  )\n"
             "end\n"
-            'puts "Board e2e-test created with #{board_labels.length} columns"\n'
+            'puts "Board e2e-kanban created with #{columns.length} columns"\n'
         )
         tmp_path = None
         try:
@@ -2521,7 +3491,7 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
         except Exception as ex:
             add_bucket_item(
                 result["findings"],
-                "openproject/boards/e2e-test",
+                "openproject/boards/e2e-kanban",
                 "board.create",
                 f"OpenProject board creation via Rails console failed: {ex}",
                 "warning",
@@ -2533,14 +3503,14 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 Path(tmp_path).unlink(missing_ok=True)
         if (
             rails_result["returncode"] == 0
-            and "Board created" in rails_result["stdout"]
+            and "e2e-kanban created" in rails_result["stdout"]
         ):
             result["actions"].append(
                 {
-                    "path": "openproject/boards/e2e-test",
+                    "path": "openproject/boards/e2e-kanban",
                     "key": "board.created",
                     "severity": "info",
-                    "message": "OpenProject Basic board e2e-test created via Rails console with plain label columns.",
+                    "message": "OpenProject Action board e2e-kanban created via Rails console with status columns.",
                     "phase": "apply",
                 }
             )
@@ -2549,17 +3519,17 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
         ) or "already exists" in rails_result.get("stderr", ""):
             result["actions"].append(
                 {
-                    "path": "openproject/boards/e2e-test",
+                    "path": "openproject/boards/e2e-kanban",
                     "key": "board.exists",
                     "severity": "info",
-                    "message": "OpenProject Basic board e2e-test already exists.",
+                    "message": "OpenProject Action board e2e-kanban already exists.",
                     "phase": "apply",
                 }
             )
         else:
             add_bucket_item(
                 result["findings"],
-                "openproject/boards/e2e-test",
+                "openproject/boards/e2e-kanban",
                 "board.create",
                 f"OpenProject board creation via Rails console failed: {rails_result['stderr'][:200]}",
                 "warning",
@@ -2568,7 +3538,7 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
     else:
         add_bucket_item(
             result["findings"],
-            "openproject/boards/e2e-test",
+            "openproject/boards/e2e-kanban",
             "board.create",
             f"OpenProject board creation returned {brd_st}: {brd_dt[:200]}",
             "warning",
@@ -2579,24 +3549,43 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
     op_api_key: str | None = None
     if not dry_run:
         try:
-            rails_key_cmd = (
-                "cd /app && bundle exec rails runner "
-                '"u = User.find_by(login: \\"admin\\"); '
-                "token = Token::API.create!(user: u); "
-                'puts token.plain_value"'
+            # Write Ruby script to temp file to avoid shell quoting issues
+            ruby_key_script = (
+                'u = User.find_by(login: "admin")\n'
+                "u.force_password_change = false\n"
+                "u.save!\n"
+                "token = Token::API.create!(user: u)\n"
+                "puts token.plain_value\n"
             )
-            key_result = run_native(
-                [
-                    "docker",
-                    "exec",
-                    "agentic-e2e-openproject-1",
-                    "sh",
-                    "-c",
-                    rails_key_cmd,
-                ],
-                REPO_ROOT,
-                timeout=30,
-            )
+            key_tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".rb", delete=False)
+            key_tmp.write(ruby_key_script)
+            key_tmp.close()
+            key_tmp_path = key_tmp.name
+            try:
+                subprocess.run(
+                    [
+                        "docker",
+                        "cp",
+                        key_tmp_path,
+                        "agentic-e2e-openproject-1:/tmp/gen_api_key.rb",
+                    ],
+                    capture_output=True,
+                    timeout=30,
+                )
+                key_result = run_native(
+                    [
+                        "docker",
+                        "exec",
+                        "agentic-e2e-openproject-1",
+                        "sh",
+                        "-c",
+                        "cd /app && bundle exec rails runner /tmp/gen_api_key.rb",
+                    ],
+                    REPO_ROOT,
+                    timeout=30,
+                )
+            finally:
+                Path(key_tmp_path).unlink(missing_ok=True)
             if key_result["returncode"] == 0:
                 api_key_line = (
                     key_result["stdout"].strip().splitlines()[-1]
@@ -2625,30 +3614,12 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 "phase": "apply",
             }
         )
-        # Register the openproject MCP server in .vscode/mcp.json
-        try:
-            from tools.bm25s_flashrank.setup_mcp import setup_openproject_mcp
-
-            written = setup_openproject_mcp(root, "http://localhost:8080", op_api_key)
-            for p in written:
-                result["actions"].append(
-                    {
-                        "path": p.relative_to(root).as_posix(),
-                        "key": "mcp.registered",
-                        "severity": "info",
-                        "message": f"OpenProject MCP server registered in {p.name}.",
-                        "phase": "apply",
-                    }
-                )
-        except Exception as ex:
-            add_bucket_item(
-                result["findings"],
-                ".vscode/mcp.json",
-                "mcp.register",
-                f"OpenProject MCP server registration failed: {ex}",
-                "warning",
-                "apply",
-            )
+        # Write the API key to the env file so the standalone install step can read it
+        op_env_path = root / "infra" / "openproject" / "variables.env"
+        if not dry_run and op_env_path.exists():
+            op_env = read_env_file(op_env_path)
+            op_env["OPENPROJECT_API_KEY"] = op_api_key
+            write_env_file(op_env_path, op_env)
     else:
         add_bucket_item(
             result["findings"],
@@ -2716,9 +3687,9 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 "name": "e2eProject",
             },
             "board": {
-                "name": "e2e-test",
+                "name": "e2e-kanban",
                 "url": "http://localhost:8080/projects/e2eproject/boards",
-                "lists": BOARD_LIST_NAMES,
+                "columns": [label for label, _status in _KANBAN_COLUMNS],
             },
         }
         config.setdefault("openProject", {})
@@ -2772,7 +3743,7 @@ def provision_gitea_secrets(root: Path, dry_run: bool = False) -> dict[str, Any]
     - NEXUS_USERNAME / NEXUS_PASSWORD: Nexus admin credentials
     - NEXUS_DOCKER_REGISTRY: Override for registry host:port (optional)
     - NEXUS_URL / NEXUS_REPOSITORY: Artifact upload target
-    - KUBECONFIG_B64: base64-encoded kubeconfig for K8s access
+    - KUBECONFIG: raw kubeconfig YAML (modified for CI: insecure-skip-tls-verify, host.docker.internal)
 
     This function creates/updates these secrets via the Gitea API.
     """
@@ -2789,7 +3760,7 @@ def provision_gitea_secrets(root: Path, dry_run: bool = False) -> dict[str, Any]
                 "path": "gitea/secrets",
                 "key": "plan",
                 "severity": "info",
-                "message": "Would provision Gitea secrets: NEXUS_USERNAME, NEXUS_PASSWORD, NEXUS_URL, NEXUS_REPOSITORY, KUBECONFIG_B64.",
+                "message": "Would provision Gitea secrets: NEXUS_USERNAME, NEXUS_PASSWORD, NEXUS_URL, NEXUS_REPOSITORY, KUBECONFIG.",
                 "phase": "apply",
             }
         )
@@ -2805,7 +3776,9 @@ def provision_gitea_secrets(root: Path, dry_run: bool = False) -> dict[str, Any]
     owner = gitea_cfg.get("owner", "sdd-admin")
     repo = gitea_cfg.get("repo", "sdd-test")
 
-    def _gitea_actions_api(method: str, path: str, body: dict | None = None) -> tuple[int, str]:
+    def _gitea_actions_api(
+        method: str, path: str, body: dict | None = None
+    ) -> tuple[int, str]:
         try:
             parsed = urlparse(gitea_base)
             conn = http.client.HTTPConnection(
@@ -2836,29 +3809,39 @@ def provision_gitea_secrets(root: Path, dry_run: bool = False) -> dict[str, Any]
         "NEXUS_DOCKER_REGISTRY": "",  # Empty means use workflow default (host.docker.internal:5001)
     }
 
-    # Read kubeconfig for KUBECONFIG_B64
-    kubeconfig_paths = [
-        Path.home() / ".kube" / "config",
-        Path("/home/runner/.kube/config"),
-        Path("/tmp/kubeconfig"),
-    ]
+    # Read kubeconfig from kind cluster and prepare for CI access.
+    # The CI runner connects via Docker DNS (host.docker.internal), so we must:
+    # 1. Replace 127.0.0.1 with host.docker.internal in the server URL
+    # 2. Remove certificate-authority-data (it won't match host.docker.internal)
+    # 3. Add insecure-skip-tls-verify: true
     kubeconfig_data = None
-    for kp in kubeconfig_paths:
-        if kp.exists():
-            kubeconfig_data = kp.read_bytes()
-            break
-
-    if kubeconfig_data:
-        secrets["KUBECONFIG_B64"] = base64.b64encode(kubeconfig_data).decode()
-    else:
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["kind", "get", "kubeconfig", "--name", "sdd-cluster"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            import yaml
+            data = yaml.safe_load(result.stdout)
+            for cluster in data.get("clusters", []):
+                cluster["cluster"].pop("certificate-authority-data", None)
+                cluster["cluster"]["insecure-skip-tls-verify"] = True
+                server = cluster["cluster"].get("server", "")
+                cluster["cluster"]["server"] = server.replace("127.0.0.1", "host.docker.internal")
+            kubeconfig_data = yaml.dump(data, default_flow_style=False)
+    except Exception as ex:
         add_bucket_item(
             result["findings"],
             "kubeconfig",
-            "missing",
-            "Could not locate kubeconfig. KUBECONFIG_B64 secret will not be set.",
+            "kind.get",
+            f"Could not get kind kubeconfig: {ex}. KUBECONFIG secret will not be set.",
             "warning",
             "pre-start",
         )
+
+    if kubeconfig_data:
+        secrets["KUBECONFIG"] = kubeconfig_data
 
     # Set each secret via Gitea API
     for secret_name, secret_value in secrets.items():
@@ -2946,10 +3929,7 @@ def push_to_gitea(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
     # ── 1. Add Gitea remote if not present ────────────────────────────
     existing = run_native(["git", "remote", "-v"], root, timeout=10)
-    if (
-        existing["returncode"] == 0
-        and f"gitea\t{gitea_remote_url}" in existing["stdout"]
-    ):
+    if existing["returncode"] == 0 and "gitea" in existing["stdout"]:
         result["actions"].append(
             {
                 "path": "git/remote/gitea",
@@ -3066,7 +4046,7 @@ def push_to_gitea(root: Path, dry_run: bool = False) -> dict[str, Any]:
     if has_changes:
         run_native(["git", "add", "-A"], root, timeout=30)
         commit = run_native(
-            ["git", "commit", "-m", "v0: initial SDD template setup"], root, timeout=30
+            ["git", "commit", "-m", "v0: initial SDD template setup [skip ci]"], root, timeout=30
         )
         if commit["returncode"] == 0:
             result["actions"].append(
@@ -3074,7 +4054,7 @@ def push_to_gitea(root: Path, dry_run: bool = False) -> dict[str, Any]:
                     "path": "git/commit",
                     "key": "commit.v0",
                     "severity": "info",
-                    "message": "Committed v0: initial SDD template setup.",
+                    "message": "Committed v0 with [skip ci] (initial SDD template setup).",
                     "phase": "apply",
                 }
             )
@@ -3217,7 +4197,21 @@ def push_to_gitea(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
 
 def scaffold_k8s(root, dry_run=False):
-    """Scaffold K8s deployment files: Dockerfile and single envsubst manifest."""
+    """Scaffold K8s deployment files: Dockerfile, Kustomize base, and environment overlays.
+
+    Reads infra/deployment/apps.json and generates for each app:
+    - Dockerfile (nginx for web, generic for api)
+    - nginx.conf (for web apps, with /health endpoint)
+    - infra/k8s/base/{app}-deployment.yaml
+    - infra/k8s/base/{app}-service.yaml
+    - infra/k8s/base/kustomization.yaml (references all apps)
+    - infra/k8s/overlays/{dev,qa,prod}/kustomization.yaml (image entries per app)
+
+    ⚠️ Health probe lesson: Always use /health as the default health check path
+    for all app roles. Web apps get /health via nginx.conf. API apps must
+    implement a GET /health endpoint in their code. This prevents rollout
+    failures where probes point to non-existent endpoints.
+    """
     result = configure_result("ScaffoldK8s", dry_run, write_enabled=not dry_run)
 
     if dry_run:
@@ -3230,8 +4224,11 @@ def scaffold_k8s(root, dry_run=False):
                     "Would scaffold K8s deployment files:"
                     "\n  - Dockerfile per app (nginx for web)"
                     "\n  - .dockerignore per app"
-                    "\n  - infra/k8s/deploy.yaml (envsubst: ENV, REPLICAS, REGISTRY, COMMIT_SHA)"
-                    "\n  - nginx.conf for web apps"
+                    "\n  - nginx.conf for web apps (with /health)"
+                    "\n  - infra/k8s/base/{app}-deployment.yaml per app"
+                    "\n  - infra/k8s/base/{app}-service.yaml per app"
+                    "\n  - infra/k8s/base/kustomization.yaml (all apps)"
+                    "\n  - infra/k8s/overlays/{dev,qa,prod}/kustomization.yaml"
                 ),
                 "phase": "apply",
             }
@@ -3239,16 +4236,14 @@ def scaffold_k8s(root, dry_run=False):
         result["valid"] = True
         return result
 
-    # Prerequisite: validate Docker Desktop K8s
-    k8s_check = validate_docker_desktop_k8s(root)
-    if not k8s_check.get("valid", False):
-        for f in k8s_check.get("findings", []):
-            result["findings"].append(f)
+    # Prerequisite: validate kubectl is available (kind or Docker Desktop K8s)
+    k8s_check = run_native(["kubectl", "version", "--output=json"], root, timeout=15)
+    if k8s_check["returncode"] != 0:
         add_bucket_item(
             result["findings"],
-            "k8s",
-            "prerequisite",
-            "Docker Desktop K8s validation failed — fix before scaffolding.",
+            "kubectl",
+            "missing",
+            "kubectl not available — run setup-kind-cluster first or ensure K8s is running.",
             "error",
             "pre-start",
         )
@@ -3299,10 +4294,24 @@ def scaffold_k8s(root, dry_run=False):
     k8s_dir = root / "infra" / "k8s"
     k8s_dir.mkdir(parents=True, exist_ok=True)
 
-    first_app = apps[0]["appId"]
-    first_health = apps[0].get("healthPath", "/health")
+    # ── Port mapping by role ──
+    _port_map = {"web": 80, "api": 5000}
+    # Fixed nodePorts for kind extraPortMappings (defined in infra/k8s/kind-config.yaml)
+    # Host → nodePort: 8081→30080 (web), 5002→30500 (api)
+    _node_port_base = {"web": 30080, "api": 30500}
+    _used_node_ports: set[int] = set()
 
-    # Generate Dockerfile for each web app
+    def _port_for_role(role: str) -> int:
+        return _port_map.get(role, 80)
+
+    def _node_port_for_role(role: str) -> int:
+        base = _node_port_base.get(role, 30080)
+        port = base
+        while port in _used_node_ports:
+            port += 1
+        _used_node_ports.add(port)
+        return port
+    # ── Generate Dockerfile, nginx.conf, .dockerignore for each app ──
     for app in apps:
         app_id = app["appId"]
         proj = app.get("projectPath", app_id)
@@ -3324,7 +4333,7 @@ def scaffold_k8s(root, dry_run=False):
                     }
                 )
 
-            # nginx.conf
+            # nginx.conf — /health endpoint required for K8s health probes
             nc = app_dir / "nginx.conf"
             if not nc.exists():
                 nc.write_text(
@@ -3348,12 +4357,12 @@ def scaffold_k8s(root, dry_run=False):
                         "path": f"{proj}/nginx.conf",
                         "key": "file.created",
                         "severity": "info",
-                        "message": f"Created nginx.conf for {app_id}.",
+                        "message": f"Created nginx.conf for {app_id} with /health endpoint.",
                         "phase": "apply",
                     }
                 )
 
-            # Dockerfile
+            # Dockerfile (multi-stage node build -> nginx serve)
             df = app_dir / "Dockerfile"
             if not df.exists():
                 dlines = [
@@ -3396,85 +4405,1094 @@ def scaffold_k8s(root, dry_run=False):
                     }
                 )
 
-    # Single envsubst manifest
-    deploy_yaml = (
-        "apiVersion: v1\n"
-        "kind: Namespace\n"
-        "metadata:\n"
-        "  name: sdd-${ENV}\n"
-        "---\n"
-        "apiVersion: apps/v1\n"
-        "kind: Deployment\n"
-        "metadata:\n"
-        f"  name: {first_app}\n"
-        "  namespace: sdd-${ENV}\n"
-        "spec:\n"
-        "  replicas: ${REPLICAS}\n"
-        "  selector:\n"
-        "    matchLabels:\n"
-        f"      app: {first_app}\n"
-        "  template:\n"
-        "    metadata:\n"
-        "      labels:\n"
-        f"        app: {first_app}\n"
-        "    spec:\n"
-        "      containers:\n"
-        f"        - name: {first_app}\n"
-        f"          image: ${{REGISTRY}}/{first_app}:${{COMMIT_SHA}}\n"
-        "          imagePullPolicy: IfNotPresent\n"
-        "          ports:\n"
-        "            - containerPort: 80\n"
-        "          env:\n"
-        "            - name: ENVIRONMENT\n"
-        '              value: "${ENV}"\n'
-        "          livenessProbe:\n"
-        "            httpGet:\n"
-        f"              path: {first_health}\n"
-        "              port: 80\n"
-        "            initialDelaySeconds: 10\n"
-        "            periodSeconds: 30\n"
-        "          readinessProbe:\n"
-        "            httpGet:\n"
-        f"              path: {first_health}\n"
-        "              port: 80\n"
-        "            initialDelaySeconds: 5\n"
-        "            periodSeconds: 10\n"
-        "          resources:\n"
-        "            requests:\n"
-        '              cpu: "100m"\n'
-        '              memory: "128Mi"\n'
-        "            limits:\n"
-        '              cpu: "500m"\n'
-        '              memory: "256Mi"\n'
-        "---\n"
-        "apiVersion: v1\n"
-        "kind: Service\n"
-        "metadata:\n"
-        f"  name: {first_app}\n"
-        "  namespace: sdd-${ENV}\n"
-        "spec:\n"
-        "  type: LoadBalancer\n"
-        "  selector:\n"
-        f"    app: {first_app}\n"
-        "  ports:\n"
-        "    - protocol: TCP\n"
-        "      port: 80\n"
-        "      targetPort: 80\n"
-    )
-    (k8s_dir / "deploy.yaml").write_text(deploy_yaml, encoding="utf-8")
-    result["actions"].append(
-        {
-            "path": "infra/k8s/deploy.yaml",
-            "key": "file.created",
-            "severity": "info",
-            "message": "Created envsubst manifest: infra/k8s/deploy.yaml.",
-            "phase": "apply",
-        }
-    )
+    # ── Generate Kustomize base manifests (one Deployment + Service per app) ──
+    base_dir = k8s_dir / "base"
+    base_dir.mkdir(parents=True, exist_ok=True)
+    base_resources = []
+
+    for app in apps:
+        app_id = app["appId"]
+        role = app.get("role", "web")
+        port = _port_for_role(role)
+        health_path = "/health"  # Always use /health — nginx.conf has it for web, api apps must implement it
+
+        # Deployment YAML
+        dep_file = f"{app_id}-deployment.yaml"
+        dep_path = base_dir / dep_file
+        if not dep_path.exists():
+            dep_yaml = (
+                "apiVersion: apps/v1\n"
+                "kind: Deployment\n"
+                "metadata:\n"
+                f"  name: {app_id}\n"
+                "spec:\n"
+                "  replicas: 1\n"
+                "  selector:\n"
+                "    matchLabels:\n"
+                f"      app: {app_id}\n"
+                "  template:\n"
+                "    metadata:\n"
+                "      labels:\n"
+                f"        app: {app_id}\n"
+                "    spec:\n"
+                "      containers:\n"
+                f"        - name: {app_id}\n"
+                f"          image: host.docker.internal:5001/{app_id}\n"
+                "          imagePullPolicy: IfNotPresent\n"
+                "          ports:\n"
+                f"            - containerPort: {port}\n"
+            )
+            # Add ASPNETCORE_URLS for .NET backends
+            if role == "api":
+                dep_yaml += (
+                    "          env:\n"
+                    '            - name: ASPNETCORE_ENVIRONMENT\n'
+                    '              value: "Production"\n'
+                    '            - name: ASPNETCORE_URLS\n'
+                    f'              value: "http://+:{port}"\n'
+                )
+            dep_yaml += (
+                "          livenessProbe:\n"
+                "            httpGet:\n"
+                f"              path: {health_path}\n"
+                f"              port: {port}\n"
+                "            initialDelaySeconds: 10\n"
+                "            periodSeconds: 30\n"
+                "          readinessProbe:\n"
+                "            httpGet:\n"
+                f"              path: {health_path}\n"
+                f"              port: {port}\n"
+                "            initialDelaySeconds: 5\n"
+                "            periodSeconds: 10\n"
+                "          resources:\n"
+                "            requests:\n"
+                '              cpu: "100m"\n'
+                '              memory: "128Mi"\n'
+                "            limits:\n"
+                '              cpu: "500m"\n'
+                '              memory: "256Mi"\n'
+            )
+            dep_path.write_text(dep_yaml, encoding="utf-8")
+            result["actions"].append(
+                {
+                    "path": f"infra/k8s/base/{dep_file}",
+                    "key": "file.created",
+                    "severity": "info",
+                    "message": f"Created K8s Deployment for {app_id} (role={role}, port={port}).",
+                    "phase": "apply",
+                }
+            )
+        else:
+            result["actions"].append(
+                {
+                    "path": f"infra/k8s/base/{dep_file}",
+                    "key": "file.exists",
+                    "severity": "info",
+                    "message": f"Deployment YAML already exists for {app_id}.",
+                    "phase": "audit",
+                }
+            )
+
+        # Service YAML
+        svc_file = f"{app_id}-service.yaml"
+        svc_path = base_dir / svc_file
+        if not svc_path.exists():
+            node_port = _node_port_for_role(role)
+            svc_yaml = (
+                "apiVersion: v1\n"
+                "kind: Service\n"
+                "metadata:\n"
+                f"  name: {app_id}\n"
+                "spec:\n"
+                "  type: NodePort\n"
+                "  selector:\n"
+                f"    app: {app_id}\n"
+                "  ports:\n"
+                "    - protocol: TCP\n"
+                f"      port: {port}\n"
+                f"      targetPort: {port}\n"
+                f"      nodePort: {node_port}\n"
+            )
+            svc_path.write_text(svc_yaml, encoding="utf-8")
+            result["actions"].append(
+                {
+                    "path": f"infra/k8s/base/{svc_file}",
+                    "key": "file.created",
+                    "severity": "info",
+                    "message": f"Created K8s Service for {app_id} (LoadBalancer, port {port}).",
+                    "phase": "apply",
+                }
+            )
+        else:
+            result["actions"].append(
+                {
+                    "path": f"infra/k8s/base/{svc_file}",
+                    "key": "file.exists",
+                    "severity": "info",
+                    "message": f"Service YAML already exists for {app_id}.",
+                    "phase": "audit",
+                }
+            )
+
+        base_resources.append(f"  - {dep_file}")
+        base_resources.append(f"  - {svc_file}")
+
+    # Base kustomization.yaml
+    base_kustomization = base_dir / "kustomization.yaml"
+    if not base_kustomization.exists():
+        kustomize_yaml = (
+            "apiVersion: kustomize.config.k8s.io/v1beta1\n"
+            "kind: Kustomization\n"
+            "resources:\n"
+            + "\n".join(base_resources)
+            + "\n"
+            "commonLabels:\n"
+            "  app.kubernetes.io/managed-by: sdd-cli\n"
+        )
+        base_kustomization.write_text(kustomize_yaml, encoding="utf-8")
+        app_names = ", ".join(a["appId"] for a in apps)
+        result["actions"].append(
+            {
+                "path": "infra/k8s/base/kustomization.yaml",
+                "key": "file.created",
+                "severity": "info",
+                "message": f"Created base kustomization.yaml with {len(apps)} app(s): {app_names}.",
+                "phase": "apply",
+            }
+        )
+    else:
+        result["actions"].append(
+            {
+                "path": "infra/k8s/base/kustomization.yaml",
+                "key": "file.exists",
+                "severity": "info",
+                "message": "Base kustomization.yaml already exists — add new apps manually if needed.",
+                "phase": "audit",
+            }
+        )
+
+    # ── Generate environment overlays (dev, qa, prod) ──
+    registry = "host.docker.internal:5001"
+    for env_name in ("dev", "qa", "prod"):
+        overlay_dir = k8s_dir / "overlays" / env_name
+        overlay_dir.mkdir(parents=True, exist_ok=True)
+
+        overlay_file = overlay_dir / "kustomization.yaml"
+        if not overlay_file.exists():
+            image_entries = []
+            for app in apps:
+                app_id = app["appId"]
+                image_entries.append(
+                    f"  - name: {registry}/{app_id}\n"
+                    "    newTag: latest\n"
+                )
+
+            overlay_yaml = (
+                "apiVersion: kustomize.config.k8s.io/v1beta1\n"
+                "kind: Kustomization\n"
+                f"namespace: sdd-{env_name}\n"
+                "resources:\n"
+                "  - ../../base\n"
+                "images:\n"
+                + "".join(image_entries)
+            )
+            overlay_file.write_text(overlay_yaml, encoding="utf-8")
+            count = len(apps)
+            label = "entry" if count == 1 else "entries"
+            result["actions"].append(
+                {
+                    "path": f"infra/k8s/overlays/{env_name}/kustomization.yaml",
+                    "key": "file.created",
+                    "severity": "info",
+                    "message": f"Created {env_name} overlay kustomization.yaml with {count} app image {label}.",
+                    "phase": "apply",
+                }
+            )
+        else:
+            result["actions"].append(
+                {
+                    "path": f"infra/k8s/overlays/{env_name}/kustomization.yaml",
+                    "key": "file.exists",
+                    "severity": "info",
+                    "message": f"{env_name} overlay already exists.",
+                    "phase": "audit",
+                }
+            )
 
     result["valid"] = not any(
         item.get("severity") == "error" for item in result["findings"]
     )
+    return result  # ── kind cluster setup ────────────────────────────────────────────────
+
+
+def setup_kind_cluster(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Create a kind cluster with extraPortMappings for direct host access.
+
+    Uses infra/k8s/kind-config.yaml which defines fixed nodePort → host port mappings:
+      host:8081 → nodePort:30080 → frontend:80
+      host:5002 → nodePort:30500 → backend:5000
+      host:8083 → nodePort:30780 → openproject:80
+
+    This replaces Docker Desktop K8s — kind runs as a Docker container, avoids
+    Docker Engine restart, and requires no Docker Desktop Kubernetes toggle.
+
+    Steps:
+    1. Install kind if not present (Windows/macOS/Linux)
+    2. Create kind cluster 'sdd-cluster' with infra/k8s/kind-config.yaml
+    3. Save kubeconfig for CI access (replace 127.0.0.1 with host.docker.internal)
+    4. Connect to Docker networks for CI access
+    """
+    result = configure_result(
+        "SetupKindCluster", dry_run, write_enabled=not dry_run
+    )
+
+    if dry_run:
+        result["actions"].append(
+            {
+                "path": "kind",
+                "key": "cluster.create",
+                "severity": "info",
+                "message": "Would create kind cluster 'sdd-cluster' with extraPortMappings (8081→frontend, 5002→backend).",
+                "phase": "apply",
+            }
+        )
+        result["valid"] = True
+        return result
+
+    # ── 1. Check if kubectl is already connected to a cluster ──
+    kubectl_check = run_native(["kubectl", "version", "--output=json"], root, timeout=15)
+    if kubectl_check["returncode"] == 0:
+        try:
+            k8s_info = json.loads(kubectl_check["stdout"])
+            server = k8s_info.get("serverVersion", {})
+            git_version = server.get("gitVersion", "unknown")
+
+            # Check if it's a kind cluster
+            current_ctx = run_native(
+                ["kubectl", "config", "current-context"], root, timeout=5
+            )
+            ctx_name = current_ctx["stdout"].strip() if current_ctx["returncode"] == 0 else "unknown"
+
+            result["actions"].append(
+                {
+                    "path": "kubectl",
+                    "key": "cluster.ready",
+                    "severity": "info",
+                    "message": f"K8s cluster is already reachable (context={ctx_name}, v{git_version}).",
+                    "phase": "audit",
+                }
+            )
+            cluster_exists = True
+        except (json.JSONDecodeError, KeyError):
+            cluster_exists = False
+    else:
+        cluster_exists = False
+
+    if not cluster_exists:
+        # ── 2. Ensure kind is installed ──
+        kind_check = run_native(["kind", "version"], root, timeout=10)
+        if kind_check["returncode"] != 0:
+            import platform
+
+            pf = platform.system().lower()
+            result["actions"].append(
+                {
+                    "path": "kind",
+                    "key": "binary.install",
+                    "severity": "info",
+                    "message": "kind not found — installing v0.32.0...",
+                    "phase": "apply",
+                }
+            )
+            if pf == "windows":
+                install_cmd = [
+                    "winget", "install", "Kubernetes.kind", "--accept-package-agreements"
+                ]
+                install = run_native(install_cmd, root, timeout=120)
+                if install["returncode"] != 0:
+                    add_bucket_item(
+                        result["findings"],
+                        "kind",
+                        "install.failed",
+                        "Could not install kind via winget. Download manually from https://kind.sigs.k8s.io/docs/user/quick-start/",
+                        "error",
+                        "pre-start",
+                    )
+                    result["valid"] = False
+                    return result
+            elif pf == "darwin":
+                run_native(["brew", "install", "kind"], root, timeout=120)
+            else:
+                # Linux — direct download
+                kind_url = (
+                    "https://kind.sigs.k8s.io/dl/v0.32.0/kind-linux-amd64"
+                )
+                run_native(
+                    [
+                        "curl", "-fsSL", "-o", "/usr/local/bin/kind", kind_url,
+                        "&&", "chmod", "+x", "/usr/local/bin/kind",
+                    ],
+                    root,
+                    timeout=60,
+                )
+
+        # Verify kind is now available
+        kind_check2 = run_native(["kind", "version"], root, timeout=10)
+        if kind_check2["returncode"] != 0:
+            add_bucket_item(
+                result["findings"],
+                "kind",
+                "not.found",
+                "kind is still not available after install attempt. Install manually: https://kind.sigs.k8s.io/docs/user/quick-start/",
+                "error",
+                "pre-start",
+            )
+            result["valid"] = False
+            return result
+        else:
+            result["actions"].append(
+                {
+                    "path": "kind",
+                    "key": "binary.installed",
+                    "severity": "info",
+                    "message": f"kind is available: {kind_check2['stdout'].strip()}.",
+                    "phase": "audit",
+                }
+            )
+
+        # ── 3. Check if sdd-cluster already exists ──
+        clusters = run_native(["kind", "get", "clusters"], root, timeout=15)
+        if clusters["returncode"] == 0 and "sdd-cluster" in clusters["stdout"]:
+            result["actions"].append(
+                {
+                    "path": "kind/sdd-cluster",
+                    "key": "cluster.exists",
+                    "severity": "info",
+                    "message": "Cluster 'sdd-cluster' already exists. Skipping creation.",
+                    "phase": "audit",
+                }
+            )
+        else:
+            # ── 4. Create kind cluster with extraPortMappings ──
+            kind_config = root / "infra" / "k8s" / "kind-config.yaml"
+            if not kind_config.exists():
+                add_bucket_item(
+                    result["findings"],
+                    "infra/k8s/kind-config.yaml",
+                    "missing",
+                    "kind-config.yaml not found — run scaffold-k8s first or create it manually.",
+                    "error",
+                    "pre-start",
+                )
+                result["valid"] = False
+                return result
+
+            result["actions"].append(
+                {
+                    "path": "kind/sdd-cluster",
+                    "key": "cluster.create",
+                    "severity": "info",
+                    "message": "Creating kind cluster 'sdd-cluster' with extraPortMappings...",
+                    "phase": "apply",
+                }
+            )
+            create = run_native(
+                ["kind", "create", "cluster", "--name", "sdd-cluster", "--config", str(kind_config)],
+                root,
+                timeout=300,
+            )
+            if create["returncode"] != 0:
+                add_bucket_item(
+                    result["findings"],
+                    "kind/sdd-cluster",
+                    "create.failed",
+                    f"kind create cluster failed: {create['stderr']}",
+                    "error",
+                    "apply",
+                )
+                result["valid"] = False
+                return result
+
+            result["actions"].append(
+                {
+                    "path": "kind/sdd-cluster",
+                    "key": "cluster.created",
+                    "severity": "info",
+                    "message": "kind cluster 'sdd-cluster' created successfully.",
+                    "phase": "apply",
+                }
+            )
+
+        # ── 5. Save kubeconfig for CI access ──
+        # Get kubeconfig
+        kc_get = run_native(
+            ["kind", "get", "kubeconfig", "--name", "sdd-cluster"], root, timeout=15
+        )
+        if kc_get["returncode"] == 0 and kc_get["stdout"]:
+            kc_data = kc_get["stdout"]
+
+            # Replace 127.0.0.1:<port> with host.docker.internal:<port> for CI container access
+            # Use YAML-safe approach: replace server address and strip CA data
+            kc_lines = kc_data.splitlines()
+            kc_ci_lines = []
+            skip_ca = False
+            for line in kc_lines:
+                stripped = line.strip()
+                if "127.0.0.1" in line and "server:" in line:
+                    kc_ci_lines.append("    server: https://host.docker.internal:6443")
+                elif "certificate-authority-data:" in stripped:
+                    kc_ci_lines.append("    insecure-skip-tls-verify: true")
+                    skip_ca = True
+                elif skip_ca and (stripped.startswith("-") or "client-" in stripped or "user:" in stripped or stripped == "" or not stripped):
+                    skip_ca = False
+                    kc_ci_lines.append(line)
+                elif skip_ca and stripped and not stripped.startswith("#"):
+                    # Skip CA data lines (PEM content)
+                    continue
+                else:
+                    kc_ci_lines.append(line)
+            kc_ci = "\n".join(kc_ci_lines)
+
+            # Write CI kubeconfig
+            kc_path = root / "infra" / "k8s" / "kind-kubeconfig-ci.yaml"
+            if not dry_run:
+                kc_path.write_text(kc_ci, encoding="utf-8")
+                result["actions"].append(
+                    {
+                        "path": "infra/k8s/kind-kubeconfig-ci.yaml",
+                        "key": "kubeconfig.written",
+                        "severity": "info",
+                        "message": "Saved CI kubeconfig (host.docker.internal endpoint, insecure-skip-tls-verify).",
+                        "phase": "apply",
+                    }
+                )
+
+            # Merge into default kubeconfig for local access
+            merge = run_native(
+                ["kind", "export", "kubeconfig", "--name", "sdd-cluster"],
+                root,
+                timeout=15,
+            )
+            if merge["returncode"] == 0:
+                result["actions"].append(
+                    {
+                        "path": "~/.kube/config",
+                        "key": "kubeconfig.merged",
+                        "severity": "info",
+                        "message": "Merged kind kubeconfig into ~/.kube/config.",
+                        "phase": "apply",
+                    }
+                )
+
+    # ── 6. Connect to Docker networks for CI access and Grafana monitoring ──
+    # Grafana's Infinity datasource queries kind nodePorts directly using
+    # Docker DNS (sdd-cluster-control-plane:<nodePort>). Without this network
+    # connection, Grafana can't reach kind's kube-proxy iptables rules.
+    #
+    # The CI runner containers also need access to Gitea and Nexus via
+    # host.docker.internal or Docker DNS.
+    for network in ("agentic-e2e_gitea", "agentic-e2e_nexus", "agentic-e2e_monitoring"):
+        connect = run_native(
+            ["docker", "network", "connect", network, "sdd-cluster-control-plane"],
+            root,
+            timeout=15,
+        )
+        if connect["returncode"] == 0:
+            result["actions"].append(
+                {
+                    "path": f"docker/{network}",
+                    "key": "network.connected",
+                    "severity": "info",
+                    "message": f"Connected sdd-cluster-control-plane to {network}.",
+                    "phase": "apply",
+                }
+            )
+        # Non-fatal if network doesn't exist yet
+
+    # ── 7. Connect Grafana to the kind network (so dashboard DNS names resolve) ──
+    # The Grafana Health Check Board uses sdd-cluster-control-plane:<nodePort> URLs.
+    # These resolve via Docker DNS when Grafana is on the same network as the kind node.
+    # The compose.yml only attaches to 'monitoring' network, so we add 'kind' network
+    # at runtime. This is idempotent — 'already connected' is a non-error.
+    grafana_connect = run_native(
+        ["docker", "network", "connect", "kind", "agentic-grafana"],
+        root,
+        timeout=15,
+    )
+    if grafana_connect["returncode"] == 0:
+        result["actions"].append(
+            {
+                "path": "docker/kind",
+                "key": "grafana.network_connected",
+                "severity": "info",
+                "message": "Connected agentic-grafana to kind network for health check queries.",
+                "phase": "apply",
+            }
+        )
+    else:
+        output_lower = (grafana_connect.get("stdout", "") + grafana_connect.get("stderr", "")).lower()
+        if "already" in output_lower:
+            result["actions"].append(
+                {
+                    "path": "docker/kind",
+                    "key": "grafana.network_already_connected",
+                    "severity": "info",
+                    "message": "Grafana is already connected to kind network.",
+                    "phase": "audit",
+                }
+            )
+        else:
+            add_bucket_item(
+                result["findings"],
+                "docker/kind",
+                "grafana.network_connect_failed",
+                f"Could not connect Grafana to kind network: {grafana_connect.get('stderr', '')[:200]}",
+                "warning",
+                "apply",
+            )
+
+    result["valid"] = not any(
+        item.get("severity") == "error" for item in result["findings"]
+    )
+    return result
+    if kind_check["returncode"] != 0:
+        import platform
+
+        pf = platform.system().lower()
+        result["actions"].append(
+            {
+                "path": "kind",
+                "key": "binary.install",
+                "severity": "info",
+                "message": "kind not found — installing v0.32.0...",
+                "phase": "apply",
+            }
+        )
+        if pf == "windows":
+            install_cmd = [
+                "winget", "install", "Kubernetes.kind", "--accept-package-agreements"
+            ]
+            install = run_native(install_cmd, root, timeout=120)
+            if install["returncode"] != 0:
+                add_bucket_item(
+                    result["findings"],
+                    "kind",
+                    "install.failed",
+                    "Could not install kind via winget. Download manually from https://kind.sigs.k8s.io/docs/user/quick-start/",
+                    "error",
+                    "pre-start",
+                )
+                result["valid"] = False
+                return result
+        elif pf == "darwin":
+            run_native(["brew", "install", "kind"], root, timeout=120)
+        else:
+            # Linux — direct download
+            kind_url = (
+                "https://kind.sigs.k8s.io/dl/v0.32.0/kind-linux-amd64"
+            )
+            run_native(
+                [
+                    "curl", "-fsSL", "-o", "/usr/local/bin/kind", kind_url,
+                    "&&", "chmod", "+x", "/usr/local/bin/kind",
+                ],
+                root,
+                timeout=60,
+            )
+
+    # Verify kind is now available
+    kind_check2 = run_native(["kind", "version"], root, timeout=10)
+    if kind_check2["returncode"] != 0:
+        add_bucket_item(
+            result["findings"],
+            "kind",
+            "not.found",
+            "kind is still not available after install attempt. Install manually: https://kind.sigs.k8s.io/docs/user/quick-start/",
+            "error",
+            "pre-start",
+        )
+        result["valid"] = False
+        return result
+    else:
+        result["actions"].append(
+            {
+                "path": "kind",
+                "key": "binary.installed",
+                "severity": "info",
+                "message": f"kind is available: {kind_check2['stdout'].strip()}.",
+                "phase": "audit",
+            }
+        )
+
+    # ── 3. Check if sdd-cluster already exists ──
+    clusters = run_native(["kind", "get", "clusters"], root, timeout=15)
+    if clusters["returncode"] == 0 and "sdd-cluster" in clusters["stdout"]:
+        result["actions"].append(
+            {
+                "path": "kind/sdd-cluster",
+                "key": "cluster.exists",
+                "severity": "info",
+                "message": "Cluster 'sdd-cluster' already exists. Skipping creation.",
+                "phase": "audit",
+            }
+        )
+    else:
+        # ── 4. Create kind cluster with extraPortMappings ──
+        kind_config = root / "infra" / "k8s" / "kind-config.yaml"
+        if not kind_config.exists():
+            add_bucket_item(
+                result["findings"],
+                "infra/k8s/kind-config.yaml",
+                "missing",
+                "kind-config.yaml not found — run scaffold-k8s first or create it manually.",
+                "error",
+                "pre-start",
+            )
+            result["valid"] = False
+            return result
+
+        result["actions"].append(
+            {
+                "path": "kind/sdd-cluster",
+                "key": "cluster.create",
+                "severity": "info",
+                "message": "Creating kind cluster 'sdd-cluster' with extraPortMappings...",
+                "phase": "apply",
+            }
+        )
+        create = run_native(
+            ["kind", "create", "cluster", "--name", "sdd-cluster", "--config", str(kind_config)],
+            root,
+            timeout=300,
+        )
+        if create["returncode"] != 0:
+            add_bucket_item(
+                result["findings"],
+                "kind/sdd-cluster",
+                "create.failed",
+                f"kind create cluster failed: {create['stderr']}",
+                "error",
+                "apply",
+            )
+            result["valid"] = False
+            return result
+
+        result["actions"].append(
+            {
+                "path": "kind/sdd-cluster",
+                "key": "cluster.created",
+                "severity": "info",
+                "message": "kind cluster 'sdd-cluster' created successfully.",
+                "phase": "apply",
+            }
+        )
+
+    # ── 5. Save kubeconfig for CI access ──
+    # Get kubeconfig
+    kc_get = run_native(
+        ["kind", "get", "kubeconfig", "--name", "sdd-cluster"], root, timeout=15
+    )
+    if kc_get["returncode"] == 0 and kc_get["stdout"]:
+        kc_data = kc_get["stdout"]
+
+        # Replace 127.0.0.1:<port> with host.docker.internal:<port> for CI container access
+        # Use YAML-safe approach: replace server address and strip CA data
+        kc_lines = kc_data.splitlines()
+        kc_ci_lines = []
+        skip_ca = False
+        for line in kc_lines:
+            stripped = line.strip()
+            if "127.0.0.1" in line and "server:" in line:
+                kc_ci_lines.append("    server: https://host.docker.internal:6443")
+            elif "certificate-authority-data:" in stripped:
+                kc_ci_lines.append("    insecure-skip-tls-verify: true")
+                skip_ca = True
+            elif skip_ca and (stripped.startswith("-") or "client-" in stripped or "user:" in stripped or stripped == "" or not stripped):
+                skip_ca = False
+                kc_ci_lines.append(line)
+            elif skip_ca and stripped and not stripped.startswith("#"):
+                # Skip CA data lines (PEM content)
+                continue
+            else:
+                kc_ci_lines.append(line)
+        kc_ci = "\n".join(kc_ci_lines)
+
+        # Write CI kubeconfig
+        kc_path = root / "infra" / "k8s" / "kind-kubeconfig-ci.yaml"
+        if not dry_run:
+            kc_path.write_text(kc_ci, encoding="utf-8")
+            result["actions"].append(
+                {
+                    "path": "infra/k8s/kind-kubeconfig-ci.yaml",
+                    "key": "kubeconfig.written",
+                    "severity": "info",
+                    "message": "Saved CI kubeconfig (host.docker.internal endpoint, insecure-skip-tls-verify).",
+                    "phase": "apply",
+                }
+            )
+
+        # Merge into default kubeconfig for local access
+        merge = run_native(
+            ["kind", "export", "kubeconfig", "--name", "sdd-cluster"],
+            root,
+            timeout=15,
+        )
+        if merge["returncode"] == 0:
+            result["actions"].append(
+                {
+                    "path": "~/.kube/config",
+                    "key": "kubeconfig.merged",
+                    "severity": "info",
+                    "message": "Merged kind kubeconfig into ~/.kube/config.",
+                    "phase": "apply",
+                }
+            )
+
+    # ── 6. Connect to Docker networks for CI access ──
+    for network in ("agentic-e2e_gitea", "agentic-e2e_nexus"):
+        connect = run_native(
+            ["docker", "network", "connect", network, "sdd-cluster-control-plane"],
+            root,
+            timeout=15,
+        )
+        if connect["returncode"] == 0:
+            result["actions"].append(
+                {
+                    "path": f"docker/{network}",
+                    "key": "network.connected",
+                    "severity": "info",
+                    "message": f"Connected sdd-cluster-control-plane to {network}.",
+                    "phase": "apply",
+                }
+            )
+        # Non-fatal if network doesn't exist yet
+
+    result["valid"] = not any(
+        item.get("severity") == "error" for item in result["findings"]
+    )
+    return result
+
+
+# ── Docker Desktop K8s enablement (legacy fallback) ─────────────────────
+
+
+def enable_docker_desktop_k8s(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Enable Kubernetes in Docker Desktop if not already running.
+
+    Checks if K8s is already accessible via kubectl. If not, looks at the
+    Docker Desktop settings.json to see if K8s is disabled in config, and
+    if so, enables it programmatically. If Docker Desktop needs a restart
+    to pick up the change, warns the user.
+
+    This runs BEFORE compose_up() so that any Docker restart happens before
+    our containers start, not after.
+    """
+    result = configure_result(
+        "EnableDockerDesktopK8s", dry_run, write_enabled=not dry_run
+    )
+    if dry_run:
+        result["actions"].append(
+            {
+                "path": "docker-desktop",
+                "key": "k8s.enable",
+                "severity": "info",
+                "message": "Would check K8s status and enable if needed.",
+                "phase": "audit",
+            }
+        )
+        result["valid"] = True
+        return result
+
+    # ── 1. Check if K8s is already accessible ──
+    kubectl = run_native(["kubectl", "version", "--output=json"], root, timeout=15)
+    if kubectl["returncode"] == 0:
+        try:
+            k8s_info = json.loads(kubectl["stdout"])
+            server = k8s_info.get("serverVersion", {})
+            git_version = server.get("gitVersion", "unknown")
+            result["actions"].append(
+                {
+                    "path": "docker-desktop",
+                    "key": "k8s.enable",
+                    "severity": "info",
+                    "message": f"Kubernetes is already running (v{git_version}).",
+                    "phase": "audit",
+                }
+            )
+            result["valid"] = True
+            return result
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+    # ── 2. Not running — check Docker Desktop settings ──
+    # On Windows, settings are in one of several possible locations:
+    #   %APPDATA%\Docker\settings-store.json  (Docker Desktop 4.37+)
+    #   %APPDATA%\Docker\settings.json        (Docker Desktop 4.34 and earlier)
+    # The key can be either:
+    #   "kubernetes": {"enabled": true}       (nested, newer format)
+    #   "kubernetesEnabled": true             (flat, older format)
+    settings_path = None
+    import platform
+
+    if sys.platform == "win32" or platform.system() == "Windows":
+        base_dirs = [
+            Path(os.environ.get("APPDATA", "")),
+            Path.home() / "AppData" / "Roaming",
+            Path(os.environ.get("LOCALAPPDATA", "")),
+            Path(os.environ.get("PROGRAMDATA", "")),
+        ]
+        # Try settings-store.json first (newer), then settings.json (older)
+        for settings_name in ("settings-store.json", "settings.json"):
+            for base in base_dirs:
+                candidate = base / "Docker" / settings_name
+                if candidate.exists():
+                    settings_path = candidate
+                    break
+            if settings_path:
+                break
+
+    if settings_path is None or not settings_path.exists():
+        add_bucket_item(
+            result["findings"],
+            "docker-desktop",
+            "k8s.enable",
+            "Docker Desktop settings file not found — cannot auto-enable K8s. "
+            "Enable Kubernetes manually in Docker Desktop Settings → Kubernetes → Enable Kubernetes, "
+            "then re-run setup-lab.",
+            "error",
+            "pre-start",
+        )
+        result["valid"] = False  # K8s is required
+        return result
+
+    # ── 3. Read settings file to check K8s state ──
+    try:
+        settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as ex:
+        add_bucket_item(
+            result["findings"],
+            str(settings_path),
+            "k8s.enable",
+            f"Could not parse Docker Desktop settings: {ex}. "
+            "Enable Kubernetes manually in Docker Desktop Settings.",
+            "error",
+            "pre-start",
+        )
+        result["valid"] = False
+        return result
+
+    # Read K8s state: try nested "kubernetes.enabled" (newer) then flat "KubernetesEnabled" (older)
+    k8s_section = settings.get("kubernetes", {})
+    if isinstance(k8s_section, dict):
+        k8s_enabled = k8s_section.get("enabled", False)
+    else:
+        k8s_enabled = False
+    if not k8s_enabled:
+        k8s_enabled = settings.get("KubernetesEnabled", False)
+
+    if k8s_enabled:
+        # K8s is enabled in settings but kubectl is not responding — Docker Desktop
+        # may need a restart to recover the cluster. Fall through to the restart
+        # logic instead of erroring out.
+        result["actions"].append(
+            {
+                "path": "docker-desktop",
+                "key": "k8s.restart",
+                "severity": "info",
+                "message": "K8s is enabled in settings but not responding. Restarting Docker Desktop to recover cluster...",
+                "phase": "apply",
+            }
+        )
+
+    # ── 4. Enable K8s in settings file ──
+    # Write both formats for backward compatibility
+    settings["KubernetesEnabled"] = True
+    if "kubernetes" not in settings or not isinstance(settings["kubernetes"], dict):
+        settings["kubernetes"] = {}
+    settings["kubernetes"]["enabled"] = True
+    try:
+        settings_path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
+        result["actions"].append(
+            {
+                "path": str(settings_path),
+                "key": "k8s.enable",
+                "severity": "info",
+                "message": "Set kubernetes.enabled=true in Docker Desktop settings.",
+                "phase": "apply",
+            }
+        )
+    except OSError as ex:
+        add_bucket_item(
+            result["findings"],
+            str(settings_path),
+            "k8s.enable",
+            f"Could not write Docker Desktop settings: {ex}. "
+            "Enable Kubernetes manually in Docker Desktop Settings → Kubernetes → Enable Kubernetes, "
+            "then re-run setup-lab.",
+            "error",
+            "pre-start",
+        )
+        result["valid"] = False
+        return result
+
+    # ── 5. Restart Docker Desktop to pick up K8s enablement ──
+    # Use `docker desktop stop` / `docker desktop start` CLI (Docker Desktop 4.37+)
+    # Falls back to killing the process if CLI is not available
+    result["actions"].append(
+        {
+            "path": "docker",
+            "key": "k8s.restart",
+            "severity": "info",
+            "message": "Stopping Docker Desktop to enable K8s...",
+            "phase": "apply",
+        }
+    )
+    # Try docker desktop CLI first (Docker Desktop 4.37+), fallback to taskkill
+    stop_cmd = run_native(["docker", "desktop", "stop"], root, timeout=30)
+    if stop_cmd["returncode"] != 0:
+        # Fallback: taskkill
+        taskkill = run_native(
+            ["taskkill", "/F", "/IM", "Docker Desktop.exe"], root, timeout=15
+        )
+        if taskkill["returncode"] != 0:
+            add_bucket_item(
+                result["findings"],
+                "docker-desktop",
+                "k8s.restart",
+                "Could not stop Docker Desktop. Close it manually (right-click tray icon → Quit), "
+                "then re-run setup-lab.",
+                "error",
+                "pre-start",
+            )
+            result["valid"] = False
+            return result
+    # Wait for Docker process to fully exit
+    time.sleep(5)
+
+    # Start Docker Desktop via CLI
+    result["actions"].append(
+        {
+            "path": "docker",
+            "key": "k8s.restart",
+            "severity": "info",
+            "message": "Starting Docker Desktop (K8s enabled)...",
+            "phase": "apply",
+        }
+    )
+    start_cmd = run_native(["docker", "desktop", "start"], root, timeout=30)
+    if start_cmd["returncode"] != 0:
+        # Fallback: try launching Docker Desktop executable directly
+        dd_exe = shutil.which("docker")
+        if dd_exe:
+            dd_exe_path = Path(dd_exe).parent.parent / "Docker Desktop.exe"
+        else:
+            dd_exe_path = Path("C:/Program Files/Docker/Docker/Docker Desktop.exe")
+        if dd_exe_path.exists():
+            subprocess.Popen(
+                [str(dd_exe_path)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=subprocess.DETACHED_PROCESS if sys.platform == "win32" else 0,
+            )
+        else:
+            add_bucket_item(
+                result["findings"],
+                "docker-desktop",
+                "k8s.restart",
+                "Could not start Docker Desktop. Start it manually from the Start Menu, "
+                "then re-run setup-lab.",
+                "error",
+                "pre-start",
+            )
+            result["valid"] = False
+            return result
+    time.sleep(5)
+
+    # ── 6. Wait for Docker daemon to be ready (up to 120s) ──
+    result["actions"].append(
+        {
+            "path": "docker",
+            "key": "k8s.restart",
+            "severity": "info",
+            "message": "Waiting for Docker daemon to start (up to 120s)...",
+            "phase": "apply",
+        }
+    )
+    daemon_ready = False
+    for _attempt in range(24):  # 24 * 5 = 120 seconds
+        time.sleep(5)
+        check = run_native(
+            ["docker", "info", "--format", "{{.ServerVersion}}"], root, timeout=10
+        )
+        if check["returncode"] == 0 and check["stdout"].strip():
+            daemon_ready = True
+            break
+    if not daemon_ready:
+        add_bucket_item(
+            result["findings"],
+            "docker",
+            "k8s.restart",
+            "Docker daemon did not become ready within 120s after restart. "
+            "Check Docker Desktop manually, wait for it to finish starting, then re-run setup-lab.",
+            "error",
+            "pre-start",
+        )
+        result["valid"] = False
+        return result
+
+    # ── 7. Wait for K8s to be ready (up to 180s) ──
+    result["actions"].append(
+        {
+            "path": "docker",
+            "key": "k8s.restart",
+            "severity": "info",
+            "message": f"Docker daemon ready (v{check['stdout'].strip()}). Waiting for K8s cluster (up to 180s)...",
+            "phase": "apply",
+        }
+    )
+
+    k8s_ready = False
+    git_version = "unknown"
+    for _attempt in range(18):  # 18 * 10 = 180 seconds
+        time.sleep(10)
+        k_check = run_native(["kubectl", "version", "--output=json"], root, timeout=10)
+        if k_check["returncode"] == 0:
+            try:
+                k8s_info = json.loads(k_check["stdout"])
+                server = k8s_info.get("serverVersion", {})
+                git_version = server.get("gitVersion", "unknown")
+                k8s_ready = True
+                break
+            except (json.JSONDecodeError, KeyError):
+                pass
+
+    if not k8s_ready:
+        add_bucket_item(
+            result["findings"],
+            "docker-desktop",
+            "k8s.restart",
+            "Kubernetes did not become ready within 180s after Docker Desktop restart. "
+            "Wait for the K8s cluster to finish initializing in Docker Desktop, then re-run setup-lab.",
+            "error",
+            "pre-start",
+        )
+        result["valid"] = False
+        return result
+
+    result["actions"].append(
+        {
+            "path": "docker-desktop",
+            "key": "k8s.enable",
+            "severity": "info",
+            "message": f"Kubernetes is now running (v{git_version}).",
+            "phase": "apply",
+        }
+    )
+
+    # Also update the K8s context to docker-desktop
+    run_native(["kubectl", "config", "use-context", "docker-desktop"], root, timeout=10)
+
+    result["valid"] = True
     return result
 
 
@@ -3586,7 +5604,15 @@ def validate_docker_desktop_k8s(root, dry_run=False):
 
 
 def setup_k8s_access(root, dry_run=False):
-    """Set up port-forward access to deployed apps and display URLs."""
+    """Discover deployed app URLs via kind extraPortMappings (no kubectl port-forward needed).
+
+    The kind cluster is configured with extraPortMappings in infra/k8s/kind-config.yaml:
+      host:8081 → kind-node:30080 → frontend:80
+      host:5002 → kind-node:30500 → backend:5000
+      host:8083 → kind-node:30780 → openproject:80
+
+    These mappings make services directly accessible at localhost without port-forward.
+    """
     result = configure_result("SetupK8sAccess", dry_run, write_enabled=not dry_run)
     apps_path = root / "infra" / "deployment" / "apps.json"
 
@@ -3629,14 +5655,21 @@ def setup_k8s_access(root, dry_run=False):
         result["valid"] = True
         return result
 
+    # Map app roles to their kind extraPortMapping host ports (defined in kind-config.yaml)
+    # Role-based defaults: web→8081, api→5002
+    _HOST_PORT_MAP: dict[str, int] = {
+        "frontend": 8081,
+        "backend": 5002,
+    }
+
     if dry_run:
         for app in apps:
             result["actions"].append(
                 {
-                    "path": f"k8s/port-forward/{app['appId']}",
-                    "key": "port-forward.plan",
+                    "path": f"k8s/url/{app['appId']}",
+                    "key": "url.discover",
                     "severity": "info",
-                    "message": f"Would set up port-forward for {app['appId']} in dev/qa/prod.",
+                    "message": f"Would discover URL for {app['appId']} via extraPortMapping.",
                     "phase": "apply",
                 }
             )
@@ -3644,20 +5677,32 @@ def setup_k8s_access(root, dry_run=False):
         return result
 
     # Validate K8s first
-    k8s_valid = validate_docker_desktop_k8s(root)
-    if not k8s_valid.get("valid", False):
-        for f in k8s_valid.get("findings", []):
-            result["findings"].append(f)
+    k8s_valid = run_native(["kubectl", "version", "--output=json"], root, timeout=15)
+    if k8s_valid["returncode"] != 0:
+        add_bucket_item(
+            result["findings"],
+            "kubectl",
+            "missing",
+            "kubectl not available — run setup-kind-cluster first.",
+            "error",
+            "pre-start",
+        )
         result["valid"] = False
         return result
 
     for app in apps:
         app_id = app["appId"]
         health_path = app.get("healthPath", "/health")
+        role = app.get("role", "web")
 
         for env in ("dev", "qa", "prod"):
             ns = f"sdd-{env}"
-            local_port = {"dev": 8081, "qa": 8082, "prod": 8083}[env]  # K8s NodePort, not Nexus Docker registry port
+
+            # Determine host port from app-specific map or role default
+            host_port = _HOST_PORT_MAP.get(app_id)
+            if host_port is None:
+                # Fallback: suggest port-forward if no extraPortMapping is configured
+                host_port = {"dev": 8081, "qa": 8082, "prod": 8083}[env]
 
             # Check if namespace exists
             ns_check = run_native(
@@ -3694,28 +5739,46 @@ def setup_k8s_access(root, dry_run=False):
 
             if svc_check["returncode"] == 0 and svc_check["stdout"].strip():
                 node_port = svc_check["stdout"].strip()
-                url = f"http://localhost:{node_port}"
+                # Show direct URL via the kind extraPortMapping host port
+                url = f"http://localhost:{host_port}"
                 result["actions"].append(
                     {
                         "path": f"k8s/{ns}/{app_id}",
                         "key": "url.available",
                         "severity": "info",
-                        "message": f"{env.upper()} {app_id} accessible at: {url}{health_path}",
+                        "message": (
+                            f"{env.upper()} {app_id} accessible at: {url}{health_path}\
+"
+                            f" (kind nodePort {node_port} mapped to host:{host_port})"
+                        ),
                         "phase": "audit",
                     }
                 )
             else:
-                # Suggest port-forward command
-                pf_cmd = f"kubectl port-forward -n {ns} svc/{app_id} {local_port}:80"
-                result["actions"].append(
-                    {
-                        "path": f"k8s/{ns}/{app_id}",
-                        "key": "port-forward.command",
-                        "severity": "info",
-                        "message": f"{env.upper()} {app_id}: run `{pf_cmd}` then visit http://localhost:{local_port}",
-                        "phase": "audit",
-                    }
-                )
+                # Service not deployed — show expected URL if extraPortMapping exists
+                if app_id in _HOST_PORT_MAP:
+                    url = f"http://localhost:{host_port}"
+                    result["actions"].append(
+                        {
+                            "path": f"k8s/{ns}/{app_id}",
+                            "key": "url.pending",
+                            "severity": "info",
+                            "message": f"{env.upper()} {app_id}: service not deployed yet — will be accessible at {url}{health_path} after deployment.",
+                            "phase": "audit",
+                        }
+                    )
+                else:
+                    # Unknown app — suggest port-forward as fallback
+                    pf_cmd = f"kubectl port-forward -n {ns} svc/{app_id} {host_port}:80"
+                    result["actions"].append(
+                        {
+                            "path": f"k8s/{ns}/{app_id}",
+                            "key": "port-forward.command",
+                            "severity": "info",
+                            "message": f"{env.upper()} {app_id}: run `{pf_cmd}` then visit http://localhost:{host_port}",
+                            "phase": "audit",
+                        }
+                    )
 
     result["valid"] = not any(
         item.get("severity") == "error" for item in result["findings"]
@@ -3738,8 +5801,9 @@ def run_environment_lab(args: list[str]) -> int:
             "init-quality-templates, set-openproject-env, set-monitoring-env, set-gitea-runner-env, "
             "split-infra-env, build-gitea-images, set-gitea-branch-protection, validate-observability, "
             "validate-gitea-runner, set-client-tools, set-project-stack, "
-            "set-project-stack-metadata, set-semgrep-config, set-quality-config, validate-docker-desktop-k8s, setup-k8s-access, scaffold-k8s, set-recommended-tools, "
-            "provision-lab-users, push-to-gitea",
+            "set-project-stack-metadata, set-semgrep-config, set-quality-config, "
+            "validate-docker-desktop-k8s, setup-kind-cluster, setup-k8s-access, scaffold-k8s, "
+            "provision-lab-users, push-to-gitea, verify-gitea-token, generate-gitea-token, renovate-gitea-token",
             file=sys.stderr,
         )
         return 1
@@ -3777,10 +5841,14 @@ def run_environment_lab(args: list[str]) -> int:
         "validate-docker-desktop-k8s": lambda: validate_docker_desktop_k8s(
             root, dry_run
         ),
+        "setup-kind-cluster": lambda: setup_kind_cluster(root, dry_run),
         "setup-k8s-access": lambda: setup_k8s_access(root, dry_run),
         "scaffold-k8s": lambda: scaffold_k8s(root, dry_run),
-        "set-recommended-tools": lambda: set_recommended_tools(root, values, dry_run),
+
         "set-semgrep-config": lambda: set_semgrep_config(root, dry_run),
+        "verify-gitea-token": lambda: verify_gitea_api_token(root, dry_run),
+        "generate-gitea-token": lambda: generate_gitea_api_token(root, dry_run),
+        "renovate-gitea-token": lambda: renovate_gitea_api_token(root, dry_run),
         "provision-lab-users": lambda: provision_lab_users(root, dry_run),
         "push-to-gitea": lambda: push_to_gitea(root, dry_run),
     }
@@ -3796,30 +5864,47 @@ def run_environment_lab(args: list[str]) -> int:
     # ── Pretty-print summary if present (e.g. setup-lab) ────────────
     summary = result.get("summary")
     if summary:
-        print("=" * 60)
-        print("  SETUP-LAB COMPLETE - Credentials & URLs")
-        print("=" * 60)
+        failed_steps = result.get("failed_steps", [])
+        all_valid = result.get("valid", True)
+
+        # Only print the 'COMPLETE' banner if all steps succeeded
+        if all_valid:
+            print("=" * 60)
+            print("  SETUP-LAB COMPLETE ✓")
+            print("=" * 60)
+        else:
+            print("=" * 60)
+            print("  SETUP-LAB FINISHED WITH ERRORS ✗")
+            print("=" * 60)
 
         # Gitea
         g = summary.get("gitea", {})
+        gitea_status = g.get("status", "")
         print(f"\n--- GITEA ({g.get('url', 'N/A')}) ---")
         print("-" * 40)
-        for u in g.get("users", []):
-            print(
-                f"  | username: {u.get('username', '?')} | pass: {u.get('password', '?')} | role: {u.get('role', '?')} |"
-            )
+        if gitea_status and "NOT REACHABLE" in gitea_status:
+            print(f"  ⚠ {gitea_status}")
+        else:
+            for u in g.get("users", []):
+                print(
+                    f"  | username: {u.get('username', '?')} | pass: {u.get('password', '?')} | role: {u.get('role', '?')} |"
+                )
 
         # OpenProject
         op = summary.get("openproject", {})
+        op_status = op.get("status", "")
         print(f"\n--- OPENPROJECT ({op.get('url', 'N/A')}) ---")
         print("-" * 40)
-        for u in op.get("users", []):
-            print(
-                f"  | username: {u.get('username', '?')} | pass: {u.get('password', '?')} | role: {u.get('role', '?')} |"
-            )
-        board_url = op.get("board", "")
-        if board_url:
-            print(f"  | Basic Board: {board_url} |")
+        if op_status and "NOT REACHABLE" in op_status:
+            print(f"  ⚠ {op_status}")
+        else:
+            for u in op.get("users", []):
+                print(
+                    f"  | username: {u.get('username', '?')} | pass: {u.get('password', '?')} | role: {u.get('role', '?')} |"
+                )
+            board_url = op.get("board", "")
+            if board_url:
+                print(f"  | Basic Board: {board_url} |")
 
         # Nexus
         nx = summary.get("nexus", {})
@@ -3836,12 +5921,32 @@ def run_environment_lab(args: list[str]) -> int:
             print("\n--- KUBERNETES ---")
             print("-" * 40)
             print(f"  | Manifest: {k.get('manifest', 'N/A')} |")
-            print(f"  | Deploy commands: |")
+            print("  | Deploy commands: |")
             for cmd in k.get("deploy", []):
                 print(f"  |   $ {cmd} |")
 
-        print("\n" + "=" * 60)
-        print("  Setup complete!")
-        print("=" * 60)
+        # ── Error summary banner ────────────────────────────────────────
+        if not all_valid and failed_steps:
+            print("\n" + "!" * 60)
+            print("  SETUP-LAB FINISHED WITH ERRORS")
+            print("!" * 60)
+            print(f"\n  {len(failed_steps)} step(s) failed or reported issues:")
+            for fs in failed_steps:
+                msg = fs.get("message", "No details")
+                if isinstance(msg, list):
+                    msg = "; ".join(msg)
+                print(f"    ✗ {fs.get('step', '?')}: {msg[:300]}")
+            print("\n  ℹ  Common fixes:")
+            print("     - Check Docker Desktop is running and healthy")
+            print('     - Run `docker compose logs` to check container errors')
+            print("     - Re-run `setup-lab` — it is idempotent and will skip completed steps")
+            print("     - If a service (Gitea, OpenProject, Nexus) is not reachable,")
+            print("       check its container logs and ensure it started correctly")
+            print("!" * 60)
+            print()
+        else:
+            print("\n" + "=" * 60)
+            print("  Setup complete! All steps passed.")
+            print("=" * 60)
 
     return 0 if result.get("valid", True) else 1

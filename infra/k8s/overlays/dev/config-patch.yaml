@@ -11,4 +11,4 @@ spec:
         - name: ${COMPONENT_NAME}
           env:
             - name: ENVIRONMENT
-              value: "dev"
+              value: dev

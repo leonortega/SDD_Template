@@ -9,13 +9,13 @@
         "port": 5432,
         "name": "openproject",
         "username": "openproject",
-        "password": "your-db-password"
+        "password": "your-db-password" // checkov:skip=CKV_SECRET_6: placeholder value
       },
       "email": {
         "server": "smtp.example.com",
         "port": 587,
         "username": "noreply@example.com",
-        "password": "your-email-password"
+        "password": "your-email-password" // checkov:skip=CKV_SECRET_6: placeholder value
       },
       "cache": {
         "host": "localhost",

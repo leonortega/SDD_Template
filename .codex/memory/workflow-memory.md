@@ -1,4 +1,5 @@
 <!-- TIER 2: SEMI-STABLE - Workflow memory, loaded at startup -->
+
 # Workflow Memory
 
 The repository keeps the configured delivery workflow but has no product implementation.

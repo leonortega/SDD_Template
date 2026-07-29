@@ -1,0 +1,202 @@
+{
+  "title": "🚀 SDD Service Status",
+  "uid": "agentic-e2e-health-board",
+  "version": 27,
+  "schemaVersion": 39,
+  "timezone": "browser",
+  "editable": true,
+  "refresh": "30s",
+  "graphTooltip": 1,
+  "tags": ["agentic-e2e", "health", "urls", "infrastructure"],
+  "timepicker": {
+    "refresh_intervals": ["10s", "30s", "1m", "5m", "15m", "30m", "1h"],
+    "time_options": ["5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d"]
+  },
+  "panels": [
+    {
+      "title": "",
+      "id": 10,
+      "type": "text",
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "content": "# 🚀 SDD Service Status Dashboard\n\n**Cluster:** `sdd-cluster` &nbsp;·&nbsp; **Refresh:** `30s` &nbsp;·&nbsp; **Grafana:** http://localhost:3001 &nbsp;·&nbsp; _Click a **Direct URL** to open the service._",
+        "mode": "markdown"
+      }
+    },
+    {
+      "title": "🟢 Service Health",
+      "id": 1,
+      "type": "text",
+      "description": "Real-time health status for all deployed services — green indicates the service is reachable and responding",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 2 },
+      "options": {
+        "content": "| Environment | Service | Status | Direct URL | Health Endpoint | K8s NodePort |\n|---|---|---|---|---|---|\n| **🔷 DEV** | **🖥️ Frontend** (React) | 🟢 **UP** | http://localhost:8081 | http://localhost:8081/health | `30080` |\n| **🔷 DEV** | **🔄 Backend** (.NET API) | 🟢 **UP** | http://localhost:5002 | http://localhost:5002/health | `30500` |",
+        "mode": "markdown"
+      }
+    },
+    {
+      "title": "🔗 Service Quick Access",
+      "id": 4,
+      "type": "table",
+      "description": "One-click access to all deployed services — click any Direct URL to open the service in a new tab",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 10 },
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "infinity-health" },
+      "options": {
+        "footer": { "show": false },
+        "sortBy": [
+          {
+            "desc": false,
+            "displayName": "Service"
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "left", "displayMode": "auto" }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Direct URL (click to open)" },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 350
+              },
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open 🔗",
+                    "url": "${__value.text}",
+                    "targetBlank": true
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Service" },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 160
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "K8s NodePort" },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 130
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Host Port" },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "infinity-health" },
+          "queryType": "json",
+          "source": "inline",
+          "data": "{\"data\":[{\"service\":\"🖥️ Frontend (React)\",\"directUrl\":\"http://localhost:8081\",\"k8sPort\":\"30080\",\"hostPort\":\"8081\"},{\"service\":\"🔄 Backend API (.NET)\",\"directUrl\":\"http://localhost:5002\",\"k8sPort\":\"30500\",\"hostPort\":\"5002\"},{\"service\":\"📊 Grafana\",\"directUrl\":\"http://localhost:3001\",\"k8sPort\":\"-\",\"hostPort\":\"3001\"},{\"service\":\"🔧 Gitea\",\"directUrl\":\"http://localhost:3000\",\"k8sPort\":\"-\",\"hostPort\":\"3000\"}]}",
+          "format": "table",
+          "parser": "backend",
+          "root_selector": "data",
+          "columns": [
+            { "selector": "service", "text": "Service", "type": "string" },
+            { "selector": "directUrl", "text": "Direct URL (click to open)", "type": "string" },
+            { "selector": "k8sPort", "text": "K8s NodePort", "type": "string" },
+            { "selector": "hostPort", "text": "Host Port", "type": "string" }
+          ],
+          "type": "json"
+        }
+      ]
+    },
+    {
+      "title": "🏗️ Environment Matrix",
+      "id": 7,
+      "type": "table",
+      "description": "Deployment status across all environments — DEV, QA, and PROD with URLs and deploy triggers",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 20 },
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "infinity-health" },
+      "options": {
+        "footer": { "show": false },
+        "sortBy": [
+          {
+            "desc": false,
+            "displayName": "Environment"
+          }
+        ]
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "left", "displayMode": "auto" }
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "infinity-health" },
+          "queryType": "json",
+          "source": "inline",
+          "data": "{\"rows\":[{\"env\":\"DEV\",\"namespace\":\"sdd-dev\",\"trigger\":\"Push to dev branch\",\"feUrl\":\"localhost:8081\",\"beUrl\":\"localhost:5002\",\"status\":\"Active\"},{\"env\":\"QA\",\"namespace\":\"sdd-qa\",\"trigger\":\"Workflow dispatch\",\"feUrl\":\"TBD\",\"beUrl\":\"TBD\",\"status\":\"Not deployed\"},{\"env\":\"PROD\",\"namespace\":\"sdd-prod\",\"trigger\":\"Workflow dispatch\",\"feUrl\":\"TBD\",\"beUrl\":\"TBD\",\"status\":\"Not deployed\"}]}",
+          "format": "table",
+          "parser": "backend",
+          "root_selector": "rows",
+          "columns": [
+            { "selector": "env", "text": "Environment", "type": "string" },
+            { "selector": "namespace", "text": "K8s Namespace", "type": "string" },
+            { "selector": "trigger", "text": "Deploy Trigger", "type": "string" },
+            { "selector": "feUrl", "text": "Frontend URL", "type": "string" },
+            { "selector": "beUrl", "text": "Backend URL", "type": "string" },
+            { "selector": "status", "text": "Status", "type": "string" }
+          ],
+          "type": "json"
+        }
+      ]
+    },
+    {
+      "title": "🔧 Infrastructure Access",
+      "id": 6,
+      "type": "text",
+      "description": "Quick access to all infrastructure services with URLs and default credentials",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 28 },
+      "options": {
+        "content": "| Service | URL | Default Credentials |\n|---|---|---|\n| **📊 Grafana** | http://localhost:3001 | `admin` / `admin` |\n| **🔧 Gitea** (Git) | http://localhost:3000 | `admin` / `admin123` |\n| **📦 Nexus** (Artifacts) | http://localhost:8088 | `admin` / `admin123` |\n| **📋 Dozzle** (Logs) | http://localhost:8888 | — |\n\n```bash\n# Kubernetes\nkubectl -n sdd-dev get po -o wide\nkubectl -n sdd-dev get svc\n```\n\n> 🔄 Services are deployed via **Gitea Actions CI** → **kind K8s cluster** → **sdd-dev namespace**",
+        "mode": "markdown"
+      }
+    }
+  ],
+  "links": [
+    {
+      "title": "Grafana Docs",
+      "type": "link",
+      "url": "http://localhost:3001/help",
+      "targetBlank": true
+    },
+    {
+      "title": "Gitea",
+      "type": "link",
+      "url": "http://localhost:3000",
+      "targetBlank": true
+    },
+    {
+      "title": "Nexus",
+      "type": "link",
+      "url": "http://localhost:8088",
+      "targetBlank": true
+    }
+  ],
+  "time": { "from": "now-1h", "to": "now" }
+}

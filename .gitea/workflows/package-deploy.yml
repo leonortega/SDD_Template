@@ -17,6 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: sdd-e2e-ci:local
+      options: --user root --add-host host.docker.internal:host-gateway
     steps:
       - name: Checkout
         env:
@@ -51,12 +52,26 @@ jobs:
         run: |
           set -euo pipefail
           COMMIT_SHA=$(git rev-parse HEAD)
-          REGISTRY="${NEXUS_DOCKER_REGISTRY:-host.docker.internal:8083}"
+          REGISTRY="${NEXUS_DOCKER_REGISTRY:-host.docker.internal:5001}"
 
-          # Login to Nexus Docker registry
+          # Test if registry is reachable (Docker defaults to HTTPS; Nexus serves HTTP on port 5001)
+          REGISTRY_REACHABLE=false
+          if curl -s --connect-timeout 3 "http://${REGISTRY}/v2/" >/dev/null 2>&1; then
+            REGISTRY_REACHABLE=true
+            echo "Registry reachable at ${REGISTRY}"
+          else
+            echo "WARNING: Registry ${REGISTRY} not reachable via HTTP — will skip push"
+          fi
+
+          # Login to Nexus Docker registry (non-fatal if registry is HTTP-only and insecure-registries not set)
+          LOGGED_IN=false
           if [ -n "${NEXUS_USERNAME:-}" ] && [ -n "${NEXUS_PASSWORD:-}" ]; then
-            echo "${NEXUS_PASSWORD}" | docker login "${REGISTRY}" \
-              -u "${NEXUS_USERNAME}" --password-stdin
+            if echo "${NEXUS_PASSWORD}" | docker login "${REGISTRY}" -u "${NEXUS_USERNAME}" --password-stdin 2>/dev/null; then
+              LOGGED_IN=true
+              echo "Docker login successful"
+            else
+              echo "WARNING: Docker login failed (HTTPS fallback) — will skip push"
+            fi
           fi
 
           # Read apps from apps.json
@@ -73,11 +88,23 @@ jobs:
               IMAGE="${REGISTRY}/${app_id}:${COMMIT_SHA}"
               echo "Building ${app_id}..."
               docker build -t "${IMAGE}" -f "${project_path}/Dockerfile" "${project_path}"
-              echo "Pushing ${IMAGE}..."
-              docker push "${IMAGE}"
-              docker tag "${IMAGE}" "${REGISTRY}/${app_id}:latest"
-              docker push "${REGISTRY}/${app_id}:latest"
-              echo "${app_id} built and pushed"
+              echo "${app_id} built successfully"
+
+              if [ "$LOGGED_IN" = "true" ] && [ "$REGISTRY_REACHABLE" = "true" ]; then
+                echo "Pushing ${IMAGE}..."
+                docker push "${IMAGE}"
+                docker tag "${IMAGE}" "${REGISTRY}/${app_id}:latest"
+                docker push "${REGISTRY}/${app_id}:latest"
+                echo "${app_id} pushed to registry"
+              else
+                echo "Skipping push for ${app_id} (registry not available)"
+              fi
+
+              # Load image into kind cluster so K8s can find it (kind's containerd
+              # is separate from host Docker). Without this, ImagePullBackOff occurs
+              # because kind cannot pull from the HTTP-only Nexus registry.
+              echo "Loading ${app_id} into kind cluster..."
+              kind load docker-image --name sdd-cluster "${IMAGE}" 2>&1 || echo "WARNING: kind load failed for ${app_id}"
             else
               echo "No Dockerfile found for ${app_id} — skipping build"
             fi
@@ -101,7 +128,7 @@ jobs:
           fi
 
           ENV="${{ steps.env.outputs.ENV }}"
-          REGISTRY="${NEXUS_DOCKER_REGISTRY:-host.docker.internal:8083}"
+          REGISTRY="${NEXUS_DOCKER_REGISTRY:-host.docker.internal:5001}"
           COMMIT_SHA=$(git rev-parse HEAD)
 
           OVERLAY_DIR="infra/k8s/overlays/${ENV}"

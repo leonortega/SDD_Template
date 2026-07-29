@@ -1,4 +1,5 @@
 <!-- TIER 2: SEMI-STABLE - Project map, loaded at startup -->
+
 # Project Map
 
 Current repository shape:

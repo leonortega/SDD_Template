@@ -1,0 +1,74 @@
+name: PR validation
+
+on:
+  pull_request:
+    branches:
+      - main
+      - dev
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    container:
+      image: sdd-e2e-ci:local
+    steps:
+      - name: Checkout
+        env:
+          GITEA_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -eo pipefail
+          export GIT_TERMINAL_PROMPT=0
+          TOKEN="${GITEA_TOKEN:-}"
+          repo_url="http://git:${TOKEN}@host.docker.internal:3000/${GITHUB_REPOSITORY}.git"
+
+          git init .
+          git remote add origin "$repo_url"
+          git fetch --depth 1 origin "$GITHUB_SHA"
+          git checkout --force FETCH_HEAD
+
+      - name: Validate JSON files
+        shell: bash
+        run: |
+          set -euo pipefail
+          find . -path './.git' -prune -o -name '*.json' -print | while IFS= read -r file; do
+            python3 -m json.tool "$file" >/dev/null
+          done
+
+      - name: Secret scan (Gitleaks)
+        shell: bash
+        run: gitleaks detect --source . --redact --no-git
+
+      - name: SAST scan (Semgrep)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Read stack-specific semgrep rules from committed config, fallback to broad rules
+          if [ -f .semgrep-rules.json ]; then
+            RULES=$(python3 -c "import json, sys; rules=json.load(open('.semgrep-rules.json')).get('rules',[]); [print(f'--config {r}') for r in rules]" 2>/dev/null)
+          fi
+          if [ -z "${RULES:-}" ]; then
+            RULES="--config p/typescript --config p/javascript --config p/python --config p/csharp"
+          fi
+          semgrep scan $RULES --error --verbose . 2>&1
+
+      - name: SCA scan (Trivy)
+        shell: bash
+        run: trivy fs --format table --exit-code 1 --no-progress . 2>&1
+
+      - name: IaC scan (Checkov)
+        shell: bash
+        run: checkov -d . --compact --soft-fail --config-file .checkov.yml 2>&1
+
+      - name: Dev flow gate (codex-reviewed label)
+        env:
+          GITEA_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          TOKEN="${GITEA_TOKEN:-}"
+          API_URL="http://host.docker.internal:3000/api/v1/repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/labels"
+          echo "Checking codex-reviewed label on PR #${PR_NUMBER}..."
+          LABELS=$(curl -s --user "git:${TOKEN}" "${API_URL}" 2>/dev/null)
+          CHECK=$(echo "${LABELS}" | python3 -c "import sys, json; data=json.load(sys.stdin); names=[l.get('name','') for l in data]; sys.exit(0 if 'codex-reviewed' in names else 1)" 2>&1) && echo "PASS: codex-reviewed label found." || { echo "FAIL: codex-reviewed label not found - run dev-flow-pr-review-agent first."; exit 1; }

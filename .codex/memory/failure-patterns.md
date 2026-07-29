@@ -1,4 +1,5 @@
 <!-- TIER 2: SEMI-STABLE - Failure patterns, loaded at startup -->
+
 # Failure Patterns
 
 Add future entries only when source-backed, current, and not tied to the removed sample product.

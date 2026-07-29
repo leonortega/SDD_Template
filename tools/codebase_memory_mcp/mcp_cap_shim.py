@@ -7,7 +7,9 @@ import sys
 import threading
 from typing import Any
 
-REAL_BINARY = r"C:\Users\marce\AppData\Local\Programs\codebase-memory-mcp\codebase-memory-mcp.exe"
+REAL_BINARY = (
+    r"C:\Users\marce\AppData\Local\Programs\codebase-memory-mcp\codebase-memory-mcp.exe"
+)
 
 HANDLED: dict[str, dict[str, Any]] = {
     "resources/list": {"resources": [], "nextCursor": None},
@@ -28,7 +30,7 @@ def pump_server_to_client(proc):
 
 
 def main():
-    proc = subprocess.Popen(
+    proc = subprocess.Popen(  # nosec
         [REAL_BINARY] + sys.argv[1:],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,

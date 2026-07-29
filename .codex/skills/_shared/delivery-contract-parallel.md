@@ -1,4 +1,5 @@
 <!-- TIER 3: STAGE-SPECIFIC - Parallel delivery (multi-ticket coordination) -->
+
 # Delivery Contract — Parallel (multi-ticket coordination)
 
 Stage-specific rules for parallel delivery, worktree management, and serialized deployment lanes. Read in addition to `delivery-contract-core.md` and `delivery-contract-ticket.md`.
@@ -10,6 +11,7 @@ Stage-specific rules for parallel delivery, worktree management, and serialized 
 Parallel delivery uses role-specialized agents and Git worktrees to let multiple tickets progress through planning, implementation, PR validation, and review at the same time. The default local runtime state file is ignored `.codex/parallel-delivery.local.json`; never commit it or print secret-derived values copied into a worktree.
 
 Baseline shape:
+
 ```json
 {
   "maxActiveTickets": 2,
@@ -23,6 +25,7 @@ Baseline shape:
 ```
 
 Rules:
+
 - `parallelDelivery.maxActiveTickets` limits active ticket worktrees. If the limit is reached, report the active tickets and do not start another one.
 - `parallelDelivery.worktreeRoot` is the only supported isolation model. Fresh clones and shared-checkout parallelism are unsupported.
 - `parallelDelivery.agentModelPolicy` maps each delivery role to a model and reasoning effort. `model: inherit` means omit the model override.
@@ -35,6 +38,7 @@ Rules:
 - After QA evidence is recorded and OpenProject is moved to Done, the coordinator checkout owns ticket worktree teardown.
 
 Role contracts:
+
 - `coordinator`: owns preflight, routing, runtime-state synthesis, lane ownership, and all cross-ticket decisions.
 - `ticketStarter`: prepares ticket branch, worktree, OpenProject/OpenSpec setup, and ticket lock only.
 - `implementation`: edits and tests one assigned ticket worktree only.

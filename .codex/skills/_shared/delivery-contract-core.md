@@ -1,4 +1,5 @@
 <!-- TIER 2: SEMI-STABLE - Core delivery rules, loaded every stage, changes rarely -->
+
 # Delivery Contract — Core (always-read)
 
 Use this reference before reading stage-specific contracts. Skill-local instructions may add stricter checks, but must not weaken these rules.
@@ -18,6 +19,7 @@ When an agent cannot apply a required repository skill, command, memory rule, de
 IDE-owned and global skill roots are read-only for this repository. Do not edit, patch, or install into those roots for repo-specific behavior. Restore-only cleanup is allowed when an earlier run changed an IDE-owned skill; after restoration, put all repo-specific skill acquisition behavior in `.codex/skills/project-guidance-acquire` and repo-owned configure scripts.
 
 The blocker response must include:
+
 - failed required item
 - why it is required
 - current-flow fix
@@ -32,6 +34,7 @@ The agent may continue unrelated read-only investigation, but must not mutate re
 When changing any non-OpenSpec delivery skill or any `configure-*` skill, check for policy drift across related skills before finishing.
 
 Source-of-truth order:
+
 1. `_shared/delivery-contract-core.md` + stage-specific contracts
 2. `.codex/project-profile.json`, optional `.codex/project-profile.local.json`, and selected `.codex/providers/*.md` adapter files
 3. `docs/context-management.md`, `docs/architecture.md`, `docs/development.md`, `docs/deployment.md`
@@ -51,6 +54,7 @@ Implementation PR bodies and OpenProject handoff comments must include `Context 
 Before final handoff for any non-trivial repository work, classify whether the run discovered reusable knowledge using `.codex/memory/retrieval-policy.md#update-process`. This applies to implementation, review feedback, DEV/QA deployment, E2E QA, PROD deployment, rollback, hotfix, retrospective workflow maintenance, local tooling fixes, configuration repairs, debugging, and any prompt where an error, issue, blocker, or fix was diagnosed.
 
 This gate is mandatory even when no memory update is needed. The final handoff must include one of:
+
 - `Memory updated: <files>` when reusable non-authoritative knowledge was added or updated.
 - `Memory updated: none` when the run produced no reusable memory candidates.
 
@@ -61,6 +65,7 @@ Do not treat OpenProject comments, PR comments, QA evidence, logs, or chat summa
 Agent self-improvement is a controlled quality lane, not an automatic permission to rewrite workflow behavior. Use `dev-flow-retrospective-audit` for prompts such as `Audit recent delivery workflow`, `Audit failed QA/review/CI run`, or `Run agent self-improvement audit`. The audit is read-only by default.
 
 Before changing any skill, workflow policy, configure template, or quality gate from retrospective evidence, at least one gate must be met:
+
 - repeated pattern across multiple delivery runs,
 - high-severity failure that could recur or affect QA, PROD, artifacts, secrets, or user-visible behavior,
 - direct conflict with this delivery contract,
@@ -73,6 +78,7 @@ When a retrospective changes delivery behavior, update this contract first when 
 Strict delivery gates remain mandatory. Risk-adaptive depth changes how much planning, review, and context loading is required, not whether gates can be skipped.
 
 Classify delivery risk as:
+
 - `low`: localized docs, text, or clearly bounded low-impact changes with no deployable, API, data, auth, secret, workflow, or release-surface impact.
 - `standard`: normal feature, bug, test, or workflow work that crosses implementation and validation but does not touch high-risk surfaces.
 - `high`: work touching auth, authorization, persistence, migrations, deployment workflows, secrets, public APIs, `/health`, release manifests, rollback/hotfix, or large diffs.
@@ -91,6 +97,7 @@ Use grill-style questioning as a planning stance inside the existing delivery wo
 - `grill-me` is the lightweight style for temporary alignment only.
 
 Map resolved durable knowledge into the existing context surfaces:
+
 - product or ticket clarity → the managed OpenProject generated block,
 - planned behavior or design → OpenSpec artifacts,
 - durable repository or process knowledge → `docs/`,
@@ -101,6 +108,7 @@ Do not create a standalone `CONTEXT.md`, ADR convention, global grill skill inst
 ## Stable Markers
 
 Use these exact markers for idempotency:
+
 - Branch start: `IA generated branch: {branchName}`
 - QA deployment: `IA generated QA deployment: {commitSha}`
 - E2E QA: `IA generated E2E QA: {ticketKey}`
@@ -128,11 +136,12 @@ Generated OpenProject comments must keep the stable marker as the first line by 
 4. `**Evidence:**` durable links to Nexus manifests, evidence ZIPs, screenshots, logs, or local fallback paths.
 5. `**Notes:**` only when defects, blockers, assumptions, or tooling issues matter.
 
-Prefer Markdown links for long URLs, short commit display text such as ``8acc4d4`` with the full SHA recorded in a field when needed, and grouped sections over long flat lists. Keep automation-critical values present and searchable; do not hide the stable marker, commit SHA, ticket key, release version, artifact URL, or evidence URL inside prose only.
+Prefer Markdown links for long URLs, short commit display text such as `8acc4d4` with the full SHA recorded in a field when needed, and grouped sections over long flat lists. Keep automation-critical values present and searchable; do not hide the stable marker, commit SHA, ticket key, release version, artifact URL, or evidence URL inside prose only.
 
 ## Reusable Delivery Tools
 
 Use `python -m tools.sdd_cli dev-flow <subcommand>` for deterministic delivery mechanics instead of duplicating script logic in skills:
+
 - `artifact-paths`, `check-git-ignored`, `next-rc-version`, `extract-ticket-key`, `validate-release-manifest`, `create-artifact-pointer`, `validate-ticket-lock`, `validate-deployment-lane`, `validate-parallel-dry-run`, `ticket-readiness`, `delivery-risk`, `parse-workload-forecast`, `detect-adversarial-trigger`, `resolve-openproject-activity`, `render-openproject-comment`, `read-openproject-telemetry`, `init-telemetry`, `append-telemetry`, `read-telemetry`, `render-ticket-comment`, `update-release-manifest`, `ReadProjectProfile`, `ReadDeliveryPolicy`, `ReadCoverageThreshold`, `ReadCoberturaLineRate`
 
 See the full contract in `delivery-contract-deploy.md` for Nexus/release-specific helpers. Skills remain responsible for API calls, user-facing decisions, blocker classification, and whether a mutation is allowed.
@@ -142,6 +151,7 @@ See the full contract in `delivery-contract-deploy.md` for Nexus/release-specifi
 Reruns must continue from the latest completed marker, branch, PR, artifact, tag, or manifest checkpoint.
 
 Stop instead of guessing when:
+
 - the ticket, PR, commit, artifact, or target state is ambiguous,
 - Nexus is unavailable for promotion,
 - PR labels still indicate blocking review/test work,

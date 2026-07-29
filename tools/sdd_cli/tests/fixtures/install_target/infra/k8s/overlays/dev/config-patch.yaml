@@ -1,0 +1,14 @@
+# Placeholder: Dev overlay patch — replace with dev-specific config
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${COMPONENT_NAME}
+spec:
+  replicas: ${REPLICAS}
+  template:
+    spec:
+      containers:
+        - name: ${COMPONENT_NAME}
+          env:
+            - name: ENVIRONMENT
+              value: dev

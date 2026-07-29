@@ -31,12 +31,12 @@ Also follow `.codex/skills/_shared/skill-startup.md` for the standard startup se
 
 The skill derives configuration from these sources:
 
-| Source | What it provides |
-|--------|-----------------|
+| Source                                                                         | What it provides                                                                                        |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
 | Merged project profile (`project-profile.json` + `project-profile.local.json`) | Stack: frontend/backend/database technologies. Providers: artifact (Nexus), deployment (docker-desktop) |
-| `infra/deployment/apps.json` | App topology: what to build, package, and deploy |
-| `client-tools.local.json → gitea` | Gitea URL for checkout step |
-| `client-tools.local.json → nexus` | Nexus URL, repository for upload step |
+| `infra/deployment/apps.json`                                                   | App topology: what to build, package, and deploy                                                        |
+| `client-tools.local.json → gitea`                                              | Gitea URL for checkout step                                                                             |
+| `client-tools.local.json → nexus`                                              | Nexus URL, repository for upload step                                                                   |
 
 ## Workflow Generation Rules
 
@@ -44,13 +44,13 @@ The skill derives configuration from these sources:
 
 Read `project-profile.local.json → stack` and determine build commands per domain:
 
-| Stack value | Build command | Output directory | Artifact pattern | Deploy command |
-|---|---|---|---|---|
-| `react`, `vue`, `angular` | `npm ci && npm run build` | `dist/` | `{appId}-*.zip` | `node server.mjs` |
-| `fastapi` | `pip install -r requirements.txt` | — | `backend-*.zip` | `uvicorn main:app` |
-| `django` | `pip install -r requirements.txt` | — | `backend-*.zip` | `gunicorn wsgi:application` |
-| `flask` | `pip install -r requirements.txt` | — | `backend-*.zip` | `flask run` |
-| `dotnet`, `aspnetcore` | `dotnet publish -c Release` | `bin/Release/net*/publish/` | `backend-*.zip` | `dotnet {assembly}.dll` |
+| Stack value               | Build command                     | Output directory            | Artifact pattern | Deploy command              |
+| ------------------------- | --------------------------------- | --------------------------- | ---------------- | --------------------------- |
+| `react`, `vue`, `angular` | `npm ci && npm run build`         | `dist/`                     | `{appId}-*.zip`  | `node server.mjs`           |
+| `fastapi`                 | `pip install -r requirements.txt` | —                           | `backend-*.zip`  | `uvicorn main:app`          |
+| `django`                  | `pip install -r requirements.txt` | —                           | `backend-*.zip`  | `gunicorn wsgi:application` |
+| `flask`                   | `pip install -r requirements.txt` | —                           | `backend-*.zip`  | `flask run`                 |
+| `dotnet`, `aspnetcore`    | `dotnet publish -c Release`       | `bin/Release/net*/publish/` | `backend-*.zip`  | `dotnet {assembly}.dll`     |
 
 If a domain's `applies` is `false`, skip its build step.
 
@@ -258,79 +258,79 @@ jobs:
 ### 3. Nexus Upload Step (when `providers.artifact.id == "nexus"`)
 
 ```yaml
-      - name: Upload to Nexus
-        env:
-          NEXUS_URL: ${{ secrets.NEXUS_URL }}
-          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
-          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
-          NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          COMMIT_SHA=$(git rev-parse HEAD)
-          ARTIFACT_DIR="app/${COMMIT_SHA}"
-          NEXUS_URL="${NEXUS_URL:-http://host.docker.internal:8088}"
-          REPO="${NEXUS_REPOSITORY:-sdd-artifacts}"
-          if [ -z "${NEXUS_USERNAME:-}" ] || [ -z "${NEXUS_PASSWORD:-}" ]; then
-            echo "Nexus credentials not set — skipping upload"
-            exit 0
-          fi
-          for file in $(find "${ARTIFACT_DIR}" -type f); do
-            remote_path="${file}"
-            echo "Uploading ${file} to ${NEXUS_URL}/repository/${REPO}/${remote_path}"
-            curl -s -u "${NEXUS_USERNAME}:${NEXUS_PASSWORD}" \
-              --upload-file "${file}" \
-              "${NEXUS_URL}/repository/${REPO}/${remote_path}" \
-              -w "HTTP:%{http_code}\n"
-          done
-          echo "Nexus upload complete"
+- name: Upload to Nexus
+  env:
+    NEXUS_URL: ${{ secrets.NEXUS_URL }}
+    NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+    NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+    NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
+  shell: bash
+  run: |
+    set -euo pipefail
+    COMMIT_SHA=$(git rev-parse HEAD)
+    ARTIFACT_DIR="app/${COMMIT_SHA}"
+    NEXUS_URL="${NEXUS_URL:-http://host.docker.internal:8088}"
+    REPO="${NEXUS_REPOSITORY:-sdd-artifacts}"
+    if [ -z "${NEXUS_USERNAME:-}" ] || [ -z "${NEXUS_PASSWORD:-}" ]; then
+      echo "Nexus credentials not set — skipping upload"
+      exit 0
+    fi
+    for file in $(find "${ARTIFACT_DIR}" -type f); do
+      remote_path="${file}"
+      echo "Uploading ${file} to ${NEXUS_URL}/repository/${REPO}/${remote_path}"
+      curl -s -u "${NEXUS_USERNAME}:${NEXUS_PASSWORD}" \
+        --upload-file "${file}" \
+        "${NEXUS_URL}/repository/${REPO}/${remote_path}" \
+        -w "HTTP:%{http_code}\n"
+    done
+    echo "Nexus upload complete"
 ```
 
 ### 4. Docker Desktop Deploy Step (when `providers.deployment.id == "docker-desktop"`)
 
 ```yaml
-      - name: Deploy to environment
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ "${{ github.event_name }}" = "push" ]; then
-            ENV="dev"
-          else
-            ENV="${{ github.event.inputs.environment }}"
-          fi
-          echo "Deploying to $ENV environment"
+- name: Deploy to environment
+  shell: bash
+  run: |
+    set -euo pipefail
+    if [ "${{ github.event_name }}" = "push" ]; then
+      ENV="dev"
+    else
+      ENV="${{ github.event.inputs.environment }}"
+    fi
+    echo "Deploying to $ENV environment"
 
-          # Deploy apps in deployOrder
-          python3 -c "
-          import json, os, subprocess, time
-          with open('infra/deployment/apps.json') as f:
-              config = json.load(f)
-          sorted_apps = sorted(config.get('apps', []), key=lambda a: a.get('deployOrder', 0))
-          for app in sorted_apps:
-              aid = app['appId']
-              health = app.get('healthPath', '/health')
-              role = app.get('role', 'web')
-              port_map = {'dev': 4173, 'qa': 4174}
-              port = port_map.get(os.environ.get('ENV', 'dev'), 4173)
-              
-              if role == 'web' and os.path.isfile(os.path.join(app.get('projectPath', aid), 'server.mjs')):
-                  print(f'Starting {aid} on port {port}')
-                  os.chdir(app.get('projectPath', aid))
-                  proc = subprocess.Popen(['node', 'server.mjs'], env={**os.environ, 'PORT': str(port)})
-                  time.sleep(3)
-                  health_check = subprocess.run(
-                      ['curl', '-s', f'http://localhost:{port}{health}'],
-                      capture_output=True, text=True
-                  )
-                  if 'status\":\"ok\"' in health_check.stdout:
-                      print(f'{aid} health PASSED')
-                  else:
-                      print(f'{aid} health FAILED')
-                      exit(1)
-                  proc.terminate()
-              else:
-                  print(f'{aid}: no deployable server — infra-only')
-          "
+    # Deploy apps in deployOrder
+    python3 -c "
+    import json, os, subprocess, time
+    with open('infra/deployment/apps.json') as f:
+        config = json.load(f)
+    sorted_apps = sorted(config.get('apps', []), key=lambda a: a.get('deployOrder', 0))
+    for app in sorted_apps:
+        aid = app['appId']
+        health = app.get('healthPath', '/health')
+        role = app.get('role', 'web')
+        port_map = {'dev': 4173, 'qa': 4174}
+        port = port_map.get(os.environ.get('ENV', 'dev'), 4173)
+        
+        if role == 'web' and os.path.isfile(os.path.join(app.get('projectPath', aid), 'server.mjs')):
+            print(f'Starting {aid} on port {port}')
+            os.chdir(app.get('projectPath', aid))
+            proc = subprocess.Popen(['node', 'server.mjs'], env={**os.environ, 'PORT': str(port)})
+            time.sleep(3)
+            health_check = subprocess.run(
+                ['curl', '-s', f'http://localhost:{port}{health}'],
+                capture_output=True, text=True
+            )
+            if 'status\":\"ok\"' in health_check.stdout:
+                print(f'{aid} health PASSED')
+            else:
+                print(f'{aid} health FAILED')
+                exit(1)
+            proc.terminate()
+        else:
+            print(f'{aid}: no deployable server — infra-only')
+    "
 ```
 
 ### 5. Generate `pr-validation.yml`
@@ -391,10 +391,10 @@ on:
     branches:
       - dev
     paths:
-      - '.codex/agent-evals/**'
-      - '.codex/delivery-policy.json'
-      - '.codex/skills/_shared/delivery-contract*.md'
-      - 'tools/sdd_cli/agent_eval.py'
+      - ".codex/agent-evals/**"
+      - ".codex/delivery-policy.json"
+      - ".codex/skills/_shared/delivery-contract*.md"
+      - "tools/sdd_cli/agent_eval.py"
 
 jobs:
   eval:
@@ -435,6 +435,7 @@ jobs:
 Before writing any files, offer a dry-run preview:
 
 ```
+text
 Would update .gitea/workflows/package-deploy.yml:
   + Build frontend (React): npm ci → dist/
   + Package artifacts: frontend-landing-page.zip, openproject-17.5.1.zip

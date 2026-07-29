@@ -37,14 +37,15 @@ Default to read-only mode unless the user explicitly asks to apply changes.
 
 Within `eval-driven-improvement`. Choose the sub-mode based on what you want to do:
 
-| Sub-mode | Use When | Behavior |
-|----------|----------|----------|
-| `probe` | Quick health check — eval is working? All tests pass? | Run eval, show results, no recommendations |
-| `diagnose` | Eval results show failures and you need to understand why | Run eval, read results, classify failures, report findings |
-| `propose` | Findings are clear and you want to draft specific fixes without applying them | Run eval, classify, draft specific changes to config/provider/skills |
-| `apply` | Findings are clear and fix should be applied | Run eval, classify, **apply** fixes. Requires user confirmation per the Agent Self-Improvement Gate **unless** triggered automatically from `dev-ops-deploy-prod`'s auto-escalation flow, where the gate is satisfied by the high-severity context of a PROD eval regression |
+| Sub-mode   | Use When                                                                      | Behavior                                                                                                                                                                                                                                                                     |
+| ---------- | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `probe`    | Quick health check — eval is working? All tests pass?                         | Run eval, show results, no recommendations                                                                                                                                                                                                                                   |
+| `diagnose` | Eval results show failures and you need to understand why                     | Run eval, read results, classify failures, report findings                                                                                                                                                                                                                   |
+| `propose`  | Findings are clear and you want to draft specific fixes without applying them | Run eval, classify, draft specific changes to config/provider/skills                                                                                                                                                                                                         |
+| `apply`    | Findings are clear and fix should be applied                                  | Run eval, classify, **apply** fixes. Requires user confirmation per the Agent Self-Improvement Gate **unless** triggered automatically from `dev-ops-deploy-prod`'s auto-escalation flow, where the gate is satisfied by the high-severity context of a PROD eval regression |
 
 **Decision rule for sub-mode selection:**
+
 1. No eval run exists yet → start with `probe`
 2. Failures detected → escalate to `diagnose`
 3. Root cause understood → escalate to `propose` (or directly to `apply` if user already confirmed)
@@ -114,6 +115,7 @@ npx promptfoo eval --config .codex/agent-evals/promptfooconfig.yaml --no-cache
 ```
 
 Or use the CLI runner:
+
 ```bash
 python -m tools.sdd_cli agent-eval run
 ```
@@ -143,6 +145,7 @@ Read the output and persist key results to `.codex/agent-evals/results.local.jso
 ```
 
 **Persistence rules:**
+
 - If no previous `results.local.json` exists → create it
 - If a previous run exists with a **different** scope or timestamp → append as a new entry (keep history)
 - If a previous run exists with the **same** scope → overwrite it (replace with latest results)
@@ -206,21 +209,21 @@ Use `templates/audit-checklist.md` as the default report skeleton when producing
 
 Apply one of these outcomes:
 
-| Outcome | When To Use | What To Do |
-|---------|-------------|------------|
-| `No change` | One-off, already covered, not actionable | — |
-| `Fix routing provider` | `eval-regression` caused by bug in `_evaluate_route()` | Edit `routing_provider.py` to fix logic |
-| `Update test expectation` | `eval-regression` caused by intentional routing change | Edit `promptfooconfig.yaml` assertion |
-| `Promptfoo eval` (add test) | `eval-coverage`: missing test for a known scenario | Add new test case in `promptfooconfig.yaml` |
-| `Promptfoo eval` (modify test) | `eval-coverage`: existing test doesn't capture the right behavior | Refine test vars or assertions |
-| `Skill instruction update` | Skill needs clearer routing, classification, validation, or handoff rules | Edit the relevant `SKILL.md` |
-| `Shared contract update` | Multiple skills need a new common rule | Edit `_shared/delivery-contract-core.md` |
-| `Configure sync update` | Setup docs, templates, audit scripts, or tests must match delivery behavior | Edit `configure-*` skill |
-| `Regression test` | A script/template/check should enforce the rule | Add test |
-| `Quality gate update` | CI or local validation should catch the issue | Update CI workflow |
-| `Docs update` | Durable knowledge → promote to `docs/` | Edit relevant `docs/*.md` |
-| `Memory update` | Reusable non-authoritative → store in `.codex/memory/` | Edit memory file |
-| `Follow-up ticket` | Change is product work, infra work, or too large | Create ticket |
+| Outcome                        | When To Use                                                                 | What To Do                                  |
+| ------------------------------ | --------------------------------------------------------------------------- | ------------------------------------------- |
+| `No change`                    | One-off, already covered, not actionable                                    | —                                           |
+| `Fix routing provider`         | `eval-regression` caused by bug in `_evaluate_route()`                      | Edit `routing_provider.py` to fix logic     |
+| `Update test expectation`      | `eval-regression` caused by intentional routing change                      | Edit `promptfooconfig.yaml` assertion       |
+| `Promptfoo eval` (add test)    | `eval-coverage`: missing test for a known scenario                          | Add new test case in `promptfooconfig.yaml` |
+| `Promptfoo eval` (modify test) | `eval-coverage`: existing test doesn't capture the right behavior           | Refine test vars or assertions              |
+| `Skill instruction update`     | Skill needs clearer routing, classification, validation, or handoff rules   | Edit the relevant `SKILL.md`                |
+| `Shared contract update`       | Multiple skills need a new common rule                                      | Edit `_shared/delivery-contract-core.md`    |
+| `Configure sync update`        | Setup docs, templates, audit scripts, or tests must match delivery behavior | Edit `configure-*` skill                    |
+| `Regression test`              | A script/template/check should enforce the rule                             | Add test                                    |
+| `Quality gate update`          | CI or local validation should catch the issue                               | Update CI workflow                          |
+| `Docs update`                  | Durable knowledge → promote to `docs/`                                      | Edit relevant `docs/*.md`                   |
+| `Memory update`                | Reusable non-authoritative → store in `.codex/memory/`                      | Edit memory file                            |
+| `Follow-up ticket`             | Change is product work, infra work, or too large                            | Create ticket                               |
 
 For `eval-regression` findings, diagnose the root cause before choosing an outcome:
 
@@ -229,6 +232,7 @@ For `eval-regression` findings, diagnose the root cause before choosing an outco
 3. Check if `promptfooconfig.yaml` tests are stale (expectations don't match current routing)
 
 **Heuristic: routing bug vs intentional change**
+
 - If `routing_provider.py` was recently modified AND the change contradicts the delivery contract → **bug in routing provider** → outcome: `Fix routing provider`
 - If `routing_provider.py` was recently modified AND the change matches the delivery contract → **test expectations are stale** → outcome: `Update test expectation`
 - If `promptfooconfig.yaml` was not modified and `routing_provider.py` was not modified → **delivery contract drift** → outcome: `Shared contract update` or `Fix routing provider`
@@ -242,11 +246,13 @@ Prefer tests or deterministic validation for enforceable rules. Prefer skill tex
 For automatic `post-prod-ticket-release`, recommendation outcomes are advisory only. Repeated or high-severity findings may recommend docs, delivery contract, skill, configure, test, memory, or Promptfoo eval test case updates, but they must not be applied during the automatic audit.
 
 For `eval-driven-improvement` in `apply` sub-mode, outcomes may be applied **only after**:
+
 1. The Agent Self-Improvement Gate is satisfied (repeated pattern, high-severity, or contract conflict)
 2. User confirms the proposed change
 3. A new eval run confirms the fix passes all test cases
 
 **Exception:** When triggered automatically from `dev-ops-deploy-prod`'s auto-escalation flow, requirement 2 (user confirmation) is bypassed because:
+
 - A PROD eval regression is inherently high-severity (satisfies the Agent Self-Improvement Gate)
 - Only eval infrastructure files (`routing_provider.py`, `promptfooconfig.yaml`) are modified
 - Each fix is verified by re-running the eval before proceeding
@@ -257,6 +263,7 @@ Before choosing any outcome other than `No change`, confirm the Agent Self-Impro
 ### 5. Apply Promptfoo Improvements
 
 This step is **only executed in `eval-driven-improvement apply` sub-mode**, after:
+
 1. The Agent Self-Improvement Gate is satisfied (repeated pattern, high-severity, or contract conflict)
 2. User confirmed the proposed change from Step 4 (or triggered automatically from `dev-ops-deploy-prod`'s auto-escalation flow)
 
@@ -339,7 +346,7 @@ For `eval-driven-improvement`, persist the eval results and findings:
    ```text
    IA generated post-PROD retrospective: {finalVersion}
    ```
-   
+
    or for eval-specific findings:
 
    ```text

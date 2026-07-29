@@ -1,4 +1,5 @@
 <!-- TIER 1: STABLE PREFIX - Context management fundamentals, authority order, cache hygiene -->
+
 # Context Management Fundamentals
 
 This repository treats context as an SDLC asset. Durable project knowledge belongs in tracked documentation and workflow contracts, not only in chat history, temporary notes, PR comments, or OpenProject comments.
@@ -14,7 +15,7 @@ When sources disagree, use this order until the conflict is resolved:
 1. Latest explicit user request in the current conversation.
 2. Active ticket-provider state, description, acceptance criteria, and generated markers.
 3. Active OpenSpec proposal, design, specs, and tasks.
-4. `.codex/project-profile.json`, optional `.codex/project-profile.local.json` (stack lives only in this file), and selected `.codex/providers/*.md` adapter files for project stack/provider selection.
+4. `.codex/project-profile.json`, optional `.codex/project-profile.local.json` (stack lives only in this file), and selected `.codex/skills/*/references/*.md` adapter files for fixed-tool API behavior.
 5. `.codex/skills/_shared/delivery-contract.md` for agent-enforced delivery behavior.
 6. Canonical docs in `docs/`.
 7. Current code, tests, workflow files, and configuration templates.
@@ -95,7 +96,6 @@ Content that changes rarely, loaded every stage:
 - `.codex/skills/_shared/delivery-contract.md` — contract index
 - `.codex/skills/_shared/delivery-contract-core.md` — core delivery rules
 - `.codex/skills/_shared/skill-startup.md` — startup sequence
-- `.codex/skills/_shared/provider-adapter-contract.md` — adapter loading rules
 - `.codex/project-profile.json` — selected providers and workflow defaults (stack lives **only** in `.codex/project-profile.local.json`)
 
 Mark a **cache breakpoint** after Tier 2.
@@ -132,7 +132,9 @@ Content that changes every agent turn. Keep it as compact as possible:
 
 ### Telemetry
 
-If a run records model telemetry, use OpenProject time entries for the active ticket when the selected ticket adapter supports direct time telemetry; otherwise write to ignored local fallback output such as `.codex/agent-telemetry.local.jsonl`. Delivery stages maintain a concise generated OpenProject timing comment for the active ticket from OpenProject time entries first, or the fallback telemetry file when direct writes are unavailable, but only with per-stage outcome, duration, and UTC start/finish values; raw logs, token counts, prompts, and sensitive values stay out of OpenProject. E2E QA posts or patches the final timing comment after the E2E QA comment is verified because PROD promotion is a separate explicit release step.
+Telemetry is posted directly to OpenProject time entries for the active ticket via the `time-telemetry-upsert` operation (POST `/api/v3/time_entries`) on a per-stage basis. There is no local telemetry file — each stage immediately POSTs its telemetry record to OpenProject when completed. There is no fallback — if the API fails, stop and report the failure.
+
+Delivery stages maintain a concise generated OpenProject timing comment for the active ticket from OpenProject time entries with per-stage outcome, duration, and UTC start/finish values; raw logs, token counts, prompts, and sensitive values stay out of OpenProject. E2E QA posts or patches the final timing comment after the E2E QA comment is verified because PROD promotion is a separate explicit release step.
 
 ## Risk-Adaptive Context Loading
 
@@ -142,23 +144,11 @@ Strict gates do not require every run to load every long instruction body. Agent
 - `standard` risk: use the normal stage context bundle.
 - `high` risk: load full acceptance/spec context, affected deployment/security/release guidance, and adversarial review evidence.
 
-Project guidance remains the broad catalog for skills, tools, references, practices, standards, MCPs, and plugins. The installed-skill runtime index is only an ignored cache of exact installed `SKILL.md` paths used to avoid repeated scans and pass precise skill paths during delegation.
+Skills, tools, and MCPs are fixed for the lab stack. Product-specific skills are added from `.codex/skills/manifest.json` when the tech stack is selected. The manifest is the single source of truth for available skills.
 
 Avoid duplicate context systems. Ticket refinement belongs in the managed OpenProject block; implementation planning belongs in OpenSpec; recurring workflow learning belongs in `dev-flow-retrospective-audit`, docs, the shared contract, or `.codex/memory/` according to the existing authority order.
 
 Grill-style planning is a questioning stance inside those same surfaces. Use `grill-with-docs` as the preferred style when answers should become durable context, with or without existing code. Use `grill-me` only for lightweight temporary alignment where no durable repo context is expected. Product or ticket clarity goes to the managed OpenProject block, planned behavior and design go to OpenSpec, durable repository or process knowledge goes to `docs/`, and reusable non-authoritative lessons go to `.codex/memory/`. Do not introduce a separate `CONTEXT.md`, ADR convention, global grill skill installation, or upstream-default grill artifact path unless a separate explicit change adopts that model. Repo-local external grill skills are allowed under `.codex/skills/` when cataloged and governed by this mapping.
-
-## Agent Telemetry
-
-When the platform exposes usage data, delivery agents should record non-secret optimization telemetry for retrospective analysis:
-
-- workflow stage and agent role
-- model and reasoning effort
-- input, output, reasoning, and cached token counts when available
-- tool-call count, retry count, elapsed time, and outcome
-- blocker category when the run stops
-
-Telemetry is evidence for model routing, prompt-cache hygiene, tool-description changes, and eval coverage. It is not an authority source and must not contain secrets, full prompts, raw credentials, private payloads, or large tool results.
 
 ## Context Findings
 

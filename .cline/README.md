@@ -30,7 +30,7 @@ This implementation uses individual directory junctions because they provide sev
 
 All skills from `.codex/skills/` (except the `_shared` directory) are mapped to `.cline/skills/`. This includes:
 
-- Core workflow skills (dev-flow-*, configure-*)
+- Core workflow skills (dev-flow-_, configure-_)
 - Utility skills (caveman, ponytail, grill-*, etc.)
 - Technical skills (playwright, tdd, security-best-practices, etc.)
 - Project management skills (project-guidance-*, domain-modeling)
@@ -45,6 +45,7 @@ To update the mappings if new skills are added:
 ## Python Script Features
 
 The Python script provides several advantages:
+
 - **Cross-platform compatible** (though junctions are Windows-specific)
 - **Better error handling** and progress reporting
 - **Automatic directory creation** if needed
