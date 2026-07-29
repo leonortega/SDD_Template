@@ -50,3 +50,127 @@ Run OpenSpec automation with `OPENSPEC_TELEMETRY=0` in the process environment s
 If a ticket is already in Done or has QA evidence but lacks the canonical `IA generated E2E QA: {ticketKey}` marker, treat the QA finalization as incomplete. Repair the canonical E2E QA marker, workflow timing marker, and OpenSpec archive gate before reporting the ticket workflow complete.
 
 `dev-flow-archive-change` must fail closed: incomplete artifacts, incomplete tasks, missing `tasks.md`, failed spec sync, failed archive movement, or a still-active change after archive are blockers.
+
+## E2E QA Workflow
+
+This section defines the executable workflow for the E2E QA evidence gate. Run this after the QA deployment is confirmed successful, ticket comments are posted, and the Grafana dashboard is updated.
+
+### Prerequisites
+
+Before starting, confirm:
+- QA frontend returns HTTP 200 and renders the application
+- QA backend `/health` returns HTTP 200 and `{"status":"ok"}`
+- The commit SHA deployed to QA is resolved (from `IA generated QA deployment: {commitSha}`)
+- The ticket key is resolved
+- Playwright is installed: `npx playwright --version`
+- Chrome/Chromium browser is installed: `npx playwright install chromium` (if missing)
+
+### Step 1 — Resolve Acceptance Criteria
+
+1. Fetch the linked ticket from OpenProject using the resolved ticket key
+2. Expand the ticket's acceptance criteria, description, and OpenSpec change
+3. Run `openspec list --json` to identify the active OpenSpec change matching the ticket key
+4. Read the OpenSpec change's `tasks.md` to enumerate every acceptance criterion
+5. Map each criterion to the committed Playwright test that covers it:
+   - `e2e/login-flow.spec.ts` covers: landing page rendering, navigation, form validation, login success/failure, logout, authenticated redirects, forgot password flow
+   - `e2e/responsive.spec.ts` covers: mobile/tablet/desktop viewport rendering, responsive layout, hamburger menu, KPI grid layout
+6. If any criterion has no committed test coverage, mark it blocked and stop — do not proceed to testing
+
+### Step 2 — Run Playwright E2E Tests Against QA
+
+Run the full Playwright test suite targeting the deployed QA frontend:
+
+```bash
+BASE_URL="${QA_FRONTEND_URL}" npx playwright test --reporter=list,json
+```
+
+**How it works:** The `playwright.config.ts` now reads the `BASE_URL` environment variable at the top of the config:
+
+```ts
+const baseURL = process.env.BASE_URL || 'http://localhost:4173';
+```
+
+When `BASE_URL` is set (e.g., `BASE_URL=http://localhost:8082`), the entire test suite runs against that deployed QA URL instead of the default local Vite dev server. This is the only change needed — no config file switching, no server restarts.
+
+**Test behavior notes:**
+- Tests that mock API routes via `page.route('**/api/auth/login', ...)` intercept at the browser level and work unchanged against any target URL
+- Tests that assert real page content (landing page, KPI values, footer text, responsive layouts) validate the deployed app, not a local server
+- When `BASE_URL` is set, the local Vite dev server is still started but unused — tests connect to the QA URL instead. This is harmless.
+
+Capture the output to a file for evidence:
+
+```bash
+BASE_URL="${QA_FRONTEND_URL}" npx playwright test --reporter=list,json > e2e-qa-output.json 2>&1
+PLAYWRIGHT_EXIT_CODE=$?
+```
+
+### Step 3 — Classify Results
+
+Read the test results and classify the outcome per the QA outcomes taxonomy:
+
+| Condition | Outcome |
+|---|---|
+| All tests pass, every acceptance criterion proven | `PASS` |
+| All tests pass, but non-blocking weakness remains (e.g., untestable criterion) | `PASS WITH GAPS` |
+| Any test fails, oracle missing, evidence contradictory, or product defect found | `FAIL` |
+
+**On `PASS`:**
+1. Add a ticket comment with marker `IA generated E2E QA: {ticketKey}` including:
+   - Commit SHA and QA URL tested
+   - Test results: passed/failed/skipped counts
+   - Pass verdict with acceptance criteria mapping summary
+   - Screenshots of any failed tests (if any)
+2. Move the ticket to the configured `Done` state (or `Tested` if `Done` is reserved for PROD)
+3. Update Nexus `release.json` with `e2eQaStatus: "passed"` and `versionStatus: "RC candidate"`
+4. Optionally create an RC tag on the QA-approved commit: `git tag -a "v{MAJOR}.{MINOR}.{PATCH}-rc.{N}"`
+
+**On `PASS WITH GAPS`:**
+1. Add a ticket comment documenting which criteria are gapped and why
+2. Keep the ticket out of `Done` state
+3. Do not create an RC tag
+4. Report the gaps for resolution before PROD
+
+**On `FAIL`:**
+1. Add a ticket comment with marker `IA generated E2E QA: {ticketKey}` including:
+   - Failing test names and assertion details
+   - Console errors, screenshots, or trace evidence
+   - Classification: product defect, test defect, or environment issue
+2. Leave the ticket in `QA` or `In testing` state
+3. Do not create an RC tag
+4. Recommend fix and re-run
+
+### Step 4 — Archive OpenSpec Change
+
+On `PASS` only, after moving the ticket to Done:
+
+1. Set `OPENSPEC_TELEMETRY=0` in environment
+2. Re-check `openspec list --json` to confirm the change is still active
+3. Invoke `dev-flow-archive-change` with the ticket key
+4. Confirm the change is archived (no longer active in `openspec list`)
+
+If archiving fails, report `OpenSpec archive blocker: <reason>` and do not report workflow complete.
+
+### Step 5 — Clean Up QA Trigger Branch
+
+On `PASS` only, after Nexus evidence exists, comment verified, and RC tag created:
+
+1. Identify the temporary QA trigger branch (e.g., `qa-trigger/{ticketKey}-{commitSha}`)
+2. Delete it from the remote: `git push origin --delete {triggerBranch}`
+3. Confirm the branch no longer exists in Gitea
+
+If any blocking step is incomplete (evidence publication, comment verification, RC tagging, Done mutation), keep the branch until resolved.
+
+### Stable Markers
+
+- QA deployment: `IA generated QA deployment: {commitSha}`
+- E2E QA result: `IA generated E2E QA: {ticketKey}` (canonical marker — single source of truth for the E2E QA gate)
+
+### Failure Rules
+
+- Do not run E2E tests against a broken or unverified QA deployment.
+- Do not accept PASS if any acceptance criterion lacks committed test coverage.
+- Do not accept PASS if any test fails.
+- Do not move the ticket to Done on `PASS WITH GAPS`.
+- Do not create an RC tag on `FAIL` or `PASS WITH GAPS`.
+- Do not skip OpenSpec archiving — report blocker if it fails.
+- Do not leave QA trigger branches behind after E2E QA completes.
