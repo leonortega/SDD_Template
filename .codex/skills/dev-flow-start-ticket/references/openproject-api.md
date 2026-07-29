@@ -6,8 +6,8 @@ Use OpenProject API v3 for the chat-driven ticket workflow. Use `Authorization: 
 
 - `baseUrl`: e.g. `http://localhost:8080`
 - `projectIdentifier`: e.g. `e2eproject`
-- `todoStatus`: e.g. `Todo`
-- `inProgressStatus`: e.g. `In Progress`
+- `featureStatus`: e.g. `Specified` (feature starting point, ID 3)
+- `inProgressStatus`: e.g. `In progress` (lowercase p, ID 7)
 
 ## Read-Only Checks
 
@@ -105,7 +105,7 @@ Payload:
 }
 ```
 
-### Move Ticket to In Progress
+### Move Ticket to In progress
 
 ```text
 PATCH {baseUrl}/api/v3/work_packages/{workPackageId}

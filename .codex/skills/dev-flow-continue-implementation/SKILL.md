@@ -25,9 +25,55 @@ Use ignored `.codex/delivery-context.local.json` as the ticket context lock acco
 
 ## Workflow
 
-Run state inspection, routing, rerun handling, and output reporting as one read-first workflow. Use validation evidence from child skills and durable checkpoints before routing to the next handoff stage.
+Run pre-flight, state inspection, routing, rerun handling, and output reporting as one read-first workflow. Use validation evidence from child skills and durable checkpoints before routing to the next handoff stage.
 
-Before delegating child work, apply the shared delivery contract's risk-adaptive depth and installed-skill runtime index rules:
+### Pre-Flight: Branch Auto-Checkout
+
+Before any state inspection or routing, ensure the working tree is on the correct branch:
+
+1. Read `.codex/delivery-context.local.json` if it exists. Extract the `branch` field using `python3 -c "import json; print(json.load(open('.codex/delivery-context.local.json')).get('branch', ''))"` or equivalent. If the file is malformed JSON (parse fails), skip auto-checkout and report the corrupted file in the output — do not block on it.
+2. If `branch` is not set or empty, skip auto-checkout (this is a normal start-ticket flow with no handoff context).
+3. Check for dirty working tree before switching:
+   ```bash
+   if [ -n "$(git status --porcelain)" ]; then
+     echo "Working tree is dirty — stashing before branch switch"
+     git stash push -m "auto-checkout-pre-switch-$(date +%s)"
+   fi
+   ```
+   This prevents checkout failures from uncommitted changes. The stash is left for the agent to pop during implementation, or cleaned up when no longer needed.
+4. If `branch` is set, run:
+   ```bash
+   TARGET_BRANCH="{branch}"
+   CURRENT_BRANCH=$(git branch --show-current)
+   if [ "$CURRENT_BRANCH" != "$TARGET_BRANCH" ]; then
+     echo "Auto-checkout: switching from $CURRENT_BRANCH to $TARGET_BRANCH"
+     if git checkout "$TARGET_BRANCH" 2>/dev/null; then
+       echo "Switched to $TARGET_BRANCH"
+     else
+       echo "Branch $TARGET_BRANCH not local — fetching from origin first"
+       git fetch origin "$TARGET_BRANCH" 2>/dev/null && git checkout "$TARGET_BRANCH" 2>/dev/null
+     fi
+   fi
+   ```
+5. Verify the checkout succeeded. If both local checkout and fetch+checkout fail:
+   - Run `git branch -a` to list all branches
+   - If the branch exists under a different name (e.g., hyphens vs slashes), suggest the correction
+   - If the branch truly doesn't exist anywhere, stop and report: `"Branch '{branch}' from delivery-context.local.json does not exist locally or on origin. The handoff context is stale — route to dev-flow-pipeline-status."`
+
+6. After checkout succeeds, pull the latest:
+   ```bash
+   if git rev-parse --abbrev-ref --symbolic-full-name @{upstream} >/dev/null 2>&1; then
+     git pull --ff-only
+   else
+     echo "No upstream configured — skipping pull"
+   fi
+   ```
+   This checks for an upstream before pulling. If upstream exists but the network is down, `git pull --ff-only` will fail loudly (preventing the agent from proceeding on a stale branch). Local-only branches (e.g., freshly created in the bug flow) have no upstream and skip the pull cleanly.
+7. Report the checkout action (switched / already correct / branch not found / corrupted file) in the output summary.
+
+### State Inspection
+
+Before delegating, inspect as much context as is safely available:
 
 - Resolve delivery risk from ticket, OpenSpec, PR/diff, artifact, and deployment evidence when enough information exists.
 - Use compact summaries for low-risk routing, but never skip ticket, branch, PR, validation, QA, artifact, PROD, rollback, or secret-safety gates.

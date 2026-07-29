@@ -1,6 +1,6 @@
 ---
 name: dev-flow-start-ticket
-description: Start configured work items from chat by listing Todo tickets, preparing safe repository branches, pushing new branches, generating OpenSpec-style planning notes, updating the ticket description, and commenting with the branch through selected project-profile adapters. Use when the user asks to start the next ticket, start a specific ticket key, list Todo tickets, prepare a ticket branch, or connect ticket work to the local repository/OpenSpec workflow.
+description: Start configured work items from chat by listing Specified tickets (feature starting point), preparing safe repository branches, pushing new branches, generating OpenSpec-style planning notes, updating the ticket description, and commenting with the branch through selected project-profile adapters. Use when the user asks to start the next feature ticket, start a specific ticket key, list Specified tickets, prepare a ticket branch, or connect ticket work to the local repository/OpenSpec workflow.
 ---
 
 <!-- TIER 3: STAGE-SPECIFIC - Ticket start workflow skill -->
@@ -42,15 +42,15 @@ For shared API helpers including time-entry POST payload format and activity rev
 
 Read `.codex/project-profile.json` first for the selected ticket provider, ticket key pattern, branch policy, and adapter path. Read `.codex/client-tools.local.json` only for selected adapter runtime values. Fall back to `.codex/client-tools.example.json` only for defaults and setup guidance, then apply provider-supported environment variable overrides only when present. Defaults are:
 
-- Todo state: `Todo`
-- In-progress state: `In Progress`
+- Feature starting state: `Specified` (feature tickets start here — see `delivery-contract-ticket.md`)
+- In-progress state: `In progress` (lowercase p — matches OpenProject status ID 7)
 - Base branch, branch prefix, branch pattern, ticket key pattern, and maximum branch length from `.codex/project-profile.json` or the selected repository adapter.
 
 Before any mutating step, validate that the selected ticket adapter has the runtime values it requires, that the configured base branch exists, and that the branch pattern includes `{ticketKeySlug}`.
 
 ## Stack Context Preflight
 
-Before starting the first ticket, and before mutating any Todo ticket when stack context has not been verified, confirm the project tool set and tech stack are configured. This prevents the first OpenSpec proposal and generated ticket block from being created with generic or stale assumptions.
+Before starting the first ticket, and before mutating any feature ticket when stack context has not been verified, confirm the project tool set and tech stack are configured. This prevents the first OpenSpec proposal and generated ticket block from being created with generic or stale assumptions.
 
 Required stack context:
 
@@ -87,9 +87,9 @@ If the CLI is missing, attempt auto-installation: `npm install -g @fission-ai/op
 
 ### No Ticket Specified
 
-1. List tickets in the configured Todo state using the selected ticket adapter with credentials from local JSON config or optional environment overrides.
+1. List tickets in the feature starting state (`Specified`) using the selected ticket adapter with credentials from local JSON config or optional environment overrides.
 2. Show ticket key, title, and state.
-3. Ask the user to choose a ticket, even if there is exactly one Todo ticket.
+3. Ask the user to choose a ticket, even if there is exactly one ticket.
 4. Do not mutate Git or ticket provider while only listing tickets.
 
 ### Ticket Specified
@@ -102,7 +102,7 @@ If the CLI is missing, attempt auto-installation: `npm install -g @fission-ai/op
    - `blocked`: stop before branch creation, ticket status updates, comments, ticket-lock writes, or OpenSpec proposal creation. Report the missing product or technical intent.
 3. Run the Stack Context Preflight. If stack/tooling docs, OpenSpec config, local project guidance catalog, or project guidance discovery review are missing or drifted, stop and route to `configure-dev-environment` and `project-guidance-discover` before mutating Git, ticket provider, or OpenSpec.
 4. Check `git status --porcelain`. If any output exists, stop and report changed files.
-5. Log a time entry for the selected ticket via `time-telemetry-upsert` (POST `/api/v3/time_entries`). See Workflow Telemetry section above for the exact payload format. Do not initialize telemetry when only listing Todo tickets.
+5. Log a time entry for the selected ticket via `time-telemetry-upsert` (POST `/api/v3/time_entries`). See Workflow Telemetry section above for the exact payload format. Do not initialize telemetry when only listing tickets.
 6. Switch to the configured base branch and run `git pull --ff-only`.
 7. Create or reuse the configured branch name.
 8. Derive the repository remote name from `git remote` output (e.g., `origin` or `gitea`). Pre-scan branch conflicts before creating or switching branches:
