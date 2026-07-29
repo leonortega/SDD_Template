@@ -278,6 +278,7 @@ Before final handoff for any non-trivial repo work, run the Durable Learning Cap
 | Rollback production                    | `dev-ops-rollback-prod`            | `.codex/skills/dev-ops-rollback-prod/SKILL.md`            |
 | Hotfix production                      | `dev-ops-hotfix-prod`              | `.codex/skills/dev-ops-hotfix-prod/SKILL.md`              |
 | Post-merge deploy                      | `dev-ops-post-merge-deploy`        | `.codex/skills/dev-ops-post-merge-deploy/SKILL.md`        |
+| CI deploy completed / post-deploy update | `grafana-board-update`             | `.codex/skills/grafana-board-update/SKILL.md`             |
 | File a QA bug                          | `dev-flow-file-qa-bug`             | `.codex/skills/dev-flow-file-qa-bug/SKILL.md`             |
 | Check pipeline status                  | `dev-flow-pipeline-status`         | `.codex/skills/dev-flow-pipeline-status/SKILL.md`         |
 | Run retrospective audit                | `dev-flow-retrospective-audit`     | `.codex/skills/dev-flow-retrospective-audit/SKILL.md`     |
