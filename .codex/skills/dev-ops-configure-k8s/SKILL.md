@@ -167,15 +167,41 @@ CMD ["nginx", "-g", "daemon off;"]
 
 Also generate `nginx.conf` for web apps:
 
+**⚠️ Critical — add runtime DNS resolver for backend upstream.**
+
+Without the resolver and variable `proxy_pass`, nginx resolves the backend hostname **at config load time**. If the backend service DNS entry hasn't propagated yet (e.g. first deploy to a new namespace), nginx fails to start — causing **CrashLoopBackOff**. Always include:
+
+- `resolver kube-dns.kube-system.svc.cluster.local valid=10s;` in the `server` block
+- `set $backend_upstream http://backend:5000;` and `proxy_pass $backend_upstream;` — using a variable forces nginx to resolve the hostname at runtime via the resolver, not at startup
+
 ```nginx
 server {
     listen 80;
     server_name _;
     root /usr/share/nginx/html;
     index index.html;
+
+    # Resolver for dynamic DNS resolution of upstream services.
+    # Prevents CrashLoopBackOff when the backend service DNS entry
+    # hasn't propagated yet at pod startup time.
+    resolver kube-dns.kube-system.svc.cluster.local valid=10s;
+
     location / {
         try_files $uri $uri/ /index.html;
     }
+
+    # Use a variable in proxy_pass so nginx resolves the backend
+    # hostname at runtime (via the resolver) instead of at startup.
+    # Without this, nginx fails to start if 'backend' isn't resolvable
+    # immediately (e.g. on first deploy to a new namespace).
+    location /api/ {
+        set $backend_upstream http://backend:5000;
+        proxy_pass $backend_upstream;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
     location /health {
         return 200 '{"status":"ok"}';
         add_header Content-Type application/json;
@@ -218,6 +244,47 @@ infra/k8s/
 - **Health probes always point to `/health`**: Web apps get `/health` via generated `nginx.conf`. API apps must implement a GET `/health` endpoint in their code. This prevents rollout failures where probes point to non-existent endpoints.
 - **Image references**: Base manifests use `image: host.docker.internal:5001/{appId}` without tags — overlays set the actual tag via `newTag`
 - **API env vars**: `ASPNETCORE_URLS=http://+:5000` is set for `api`-role apps
+
+**⚠️ QA Overlay: Dedicated NodePorts via Service Patch**
+
+The base K8s services use `type: LoadBalancer`, which assigns random high NodePorts. For the QA overlay, you **must** create a `service-patch.yaml` to assign dedicated NodePorts so host port mappings work reliably without port conflicts between DEV and QA:
+
+```yaml
+# infra/k8s/overlays/qa/service-patch.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+spec:
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+      nodePort: 30081          # QA frontend NodePort
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+spec:
+  ports:
+    - protocol: TCP
+      port: 5000
+      targetPort: 5000
+      nodePort: 30501          # QA backend NodePort
+```
+
+Then reference it in the QA overlay's `kustomization.yaml`:
+```yaml
+patches:
+  - path: service-patch.yaml
+```
+
+The kind cluster's `extraPortMappings` in `infra/k8s/kind-config.yaml` maps these NodePorts to host ports:
+- **30081 → 8082** (QA frontend)
+- **30501 → 5003** (QA backend)
+
+See the kind-config section below for the full mapping.
 
 **⚠️ Critical: K8s manifests must match apps.json**
 
@@ -582,8 +649,26 @@ chmod +x ./kind && sudo mv ./kind /usr/local/bin/
 #### Create a cluster
 
 ```bash
-kind create cluster --name sdd-cluster
+kind create cluster --name sdd-cluster --config infra/k8s/kind-config.yaml
 ```
+
+Always use the project's `kind-config.yaml` to ensure `extraPortMappings` are applied. The config maps:
+
+| Host Port | NodePort | Service |
+|-----------|----------|--------|
+| `8081` | `30080` | Frontend (DEV) |
+| `5002` | `30500` | Backend (DEV) |
+| `8082` | `30081` | Frontend (QA) |
+| `5003` | `30501` | Backend (QA) |
+
+**Note:** `5001` is reserved by Nexus Docker registry.
+
+If the cluster already exists without the expected port mappings, you must recreate it:
+```bash
+kind delete cluster --name sdd-cluster
+kind create cluster --name sdd-cluster --config infra/k8s/kind-config.yaml
+```
+This destroys all cluster state (including running deployments) — only do this when adding new port mappings.
 
 #### Configure kubeconfig for CI access
 
