@@ -12,7 +12,7 @@ description: Promote merged pull request artifacts through the selected artifact
 Use this skill after a feature PR has merged to `dev` and the package/deploy workflow has produced a Nexus artifact. For automatic post-merge coordination and artifact waiting, use `dev-ops-post-merge-deploy` first. The release rule is:
 
 ```text
-feature branch -> dev -> DEV -> QA -> main -> PROD
+feature branch -> dev -> DEV -> QA -> E2E QA OK -> main -> PROD
 ```
 
 `main` is updated only after QA passes. PROD promotion is separate and must reuse the QA-passed artifact commit.
@@ -121,9 +121,30 @@ The comment must include:
 - version status: `unversioned QA candidate` unless an RC tag already exists for the commit
 - source RC version when already known, otherwise state that RC assignment happens during E2E QA before Done
 
+## Grafana Dashboard Update
+
+After the QA deployment is confirmed successful and the ticket comments are posted, **automatically run the `grafana-board-update` skill** to update the Grafana SDD Service Status dashboard with the latest DEV and QA URLs.
+
+1. Fetch `app/latest/env-urls-dev.json` and `app/latest/env-urls-qa.json` from Nexus
+2. Follow the workflow in `.codex/skills/grafana-board-update/SKILL.md` to intelligently merge changes into `infra/monitoring/grafana/dashboards/health-board.json`
+3. Commit and push the updated dashboard JSON
+4. Optionally push to Grafana API at `http://localhost:3001` for immediate effect
+
+   **⚠️ Note:** If the dashboard is **provisioned from disk** (via `infra/monitoring/grafana/provisioning/dashboards/dashboards.yml`), Grafana rejects API writes with `"Cannot save provisioned dashboard"`. The file-based change is sufficient — provisioning picks it up on next restart (version bump ensures it overwrites the DB entry).
+
+## E2E QA Evidence Gate
+
+After the QA deployment is confirmed successful, all ticket comments are posted, and the Grafana dashboard is updated, **apply the E2E QA evidence contract** in `.codex/skills/_shared/delivery-contract-qa.md` to validate the deployment against the ticket's acceptance criteria.
+
+**This is a required gate.** Do not skip the E2E QA evidence step — the release pipeline must not proceed to PROD without:
+- PASS result and `IA generated E2E QA: {ticketKey}` marker in the ticket comment
+- Nexus release manifest updated with `e2eQaStatus: "passed"`
+- OpenSpec change archived (per delivery-contract-qa.md → OpenSpec Completion Archive Gate)
+- QA trigger branch cleaned up (per delivery-contract-qa.md → QA Evidence Trigger Branch Cleanup)
+
 ## Output
 
-Report the ticket, merged PR, artifact commit, DEV/QA URLs, health validation, Nexus release manifest, ticket provider QA-state update, and next handoff to E2E QA.
+Report the ticket, merged PR, artifact commit, DEV/QA URLs, health validation, Nexus release manifest, ticket provider QA-state update, Grafana dashboard update status, E2E QA evidence gate status, and next handoff to PROD promotion.
 
 ## Failure Rules
 
