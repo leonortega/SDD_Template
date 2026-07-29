@@ -38,7 +38,7 @@ Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.c
 Required or defaulted values:
 
 - `selected ticket adapter runtime values`
-- `configured QA state`: target state after QA validation. Default: `QA`.
+- `configured QA state`: target state after QA validation. Default: `In testing` (matches OpenProject status ID 9).
 - `selected repository/review adapter runtime values`
 - `nexus.baseUrl`, `nexus.username`, `nexus.password`, `nexus.repository`
 

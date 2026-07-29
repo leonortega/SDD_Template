@@ -33,7 +33,7 @@
       ]
     },
     "qa": {
-      "description": "QA deployment and bug filing",
+      "description": "QA deployment, bug lifecycle (file → fix → PR → handoff), and E2E QA",
       "skills": [
         "dev-ops-deploy-qa/SKILL.md",
         "dev-ops-post-merge-deploy/SKILL.md",
@@ -139,11 +139,7 @@
       "description": "Grafana, Seq, Dozzle — dashboards, queries, alerting, log correlation",
       "skills": [
         "grafana-observability/SKILL.md",
-        "grafana-board-update/SKILL.md",
-        "dashboarding/SKILL.md",
-        "grafana-dashboards/SKILL.md",
-        "grafana-oss/SKILL.md",
-        "promql/SKILL.md"
+        "grafana-board-update/SKILL.md"
       ]
     },
     "kubernetes": {

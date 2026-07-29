@@ -1,6 +1,6 @@
 ---
 name: dev-ops-deploy-prod
-description: Promote a QA-approved release artifact to production after configured ticket E2E QA approval. Use when Codex needs to verify one or more Done tickets included in a release, confirm the QA-approved artifact and checksum, ensure release/RC tag consistency, update the release branch, trigger production deployment, validate production page and health checks, verify configured observability when available, and comment the production result on every included ticket.
+description: Promote a QA-approved release artifact to production after configured ticket E2E QA approval. Use when Codex needs to verify one or more QA-approved tickets (Tested state in OpenProject) included in a release, confirm the QA-approved artifact and checksum, ensure release/RC tag consistency, update the release branch, trigger production deployment, validate production page and health checks, verify configured observability when available, and comment the production result on every included ticket.
 ---
 
 <!-- TIER 3: STAGE-SPECIFIC - PROD deployment skill -->
@@ -9,7 +9,7 @@ description: Promote a QA-approved release artifact to production after configur
 
 ## Overview
 
-Use this skill after the configured QA gate has passed and moved each included ticket to `configured Done state`. `Done` means QA accepted and PROD eligible; PROD remains an explicit release event that may include one or more Done tickets. The release rule is:
+Use this skill after the configured QA gate has passed and moved each included ticket to the configured QA-approved state (e.g., `Tested` in OpenProject — status ID 10, E2E QA passed). QA-approved means QA accepted and PROD eligible; PROD remains an explicit release event that may include one or more QA-approved tickets. The release rule is:
 
 ```text
 feature branch -> dev -> DEV -> QA -> E2E QA OK -> main -> PROD
