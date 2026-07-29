@@ -840,3 +840,75 @@ curl -s -u 'admin:admin123' -X PUT \
   -H 'Content-Type: application/json' \
   -d "{\"data\": \"$NEXUS_PASS\"}"
 ```
+
+### 9. KUBECONFIG Secret: CA Cert + insecure-skip-tls-verify Conflict
+
+When configuring the `KUBECONFIG` Gitea secret for CI access to a kind cluster, **never include both `certificate-authority-data` and `insecure-skip-tls-verify: true`** in the kubeconfig — kubectl rejects this with:
+
+```
+error: specifying a root certificates file with the insecure flag is not allowed
+```
+
+#### Root Cause
+
+The kind cluster's API server TLS certificate is issued for SANs including `localhost`, `kubernetes`, `sdd-cluster-control-plane`, etc. — but **not** `host.docker.internal`. When the CI runner container connects to `host.docker.internal:<port>`, the hostname doesn't match any SAN, so TLS verification fails.
+
+Adding `insecure-skip-tls-verify: true` skips this hostname check. But if `certificate-authority-data` is also present, kubectl treats it as mutually exclusive and errors out.
+
+#### Fix
+
+When generating the kubeconfig for CI, **remove** `certificate-authority-data` entirely:
+
+```python
+import subprocess, yaml
+
+result = subprocess.run(['kind', 'get', 'kubeconfig', '--name', 'sdd-cluster'], capture_output=True, text=True, check=True)
+data = yaml.safe_load(result.stdout)
+
+for cluster in data.get('clusters', []):
+    cluster['cluster'].pop('certificate-authority-data', None)  # ⚠️ Remove CA cert
+    cluster['cluster']['insecure-skip-tls-verify'] = True
+    server = cluster['cluster'].get('server', '')
+    cluster['cluster']['server'] = server.replace('127.0.0.1', 'host.docker.internal')
+
+kubeconfig_yaml = yaml.dump(data, default_flow_style=False)
+# Store kubeconfig_yaml as the raw KUBECONFIG secret value
+```
+
+**⚠️ Do NOT base64-encode the kubeconfig for the Gitea secret.** Gitea handles encoding internally. Set it via API as `{"data": "<raw-yaml>"}`.
+
+### 10. Deployment Selector Immutability (commonLabels → labels Migration)
+
+When a Deployment already exists in the cluster with a `spec.selector.matchLabels` that includes labels like `app.kubernetes.io/managed-by: sdd-cli` (from kustomize's deprecated `commonLabels`), and you change the kustomization to use the modern `labels` field instead, `kubectl apply` will fail with:
+
+```
+Deployment.apps "frontend" is invalid: spec.selector: Invalid value: {"matchLabels":{"app":"frontend"}}: field is immutable
+```
+
+#### Root Cause
+
+- **`commonLabels`** (deprecated) adds labels to **both** `metadata.labels` and `spec.selector.matchLabels` — so the old deployment's selector includes `app.kubernetes.io/managed-by: sdd-cli`
+- **`labels`** (modern) adds labels only to `metadata.labels` and `spec.template.metadata.labels` — **not** to `spec.selector.matchLabels`
+- When `kubectl apply` tries to remove `app.kubernetes.io/managed-by` from the selector, Kubernetes rejects it because selectors are immutable
+
+#### Fix
+
+**In the CI workflow**, delete existing deployments before applying new manifests. Only deployments need deletion — Services have mutable selectors and can be updated in-place.
+
+```yaml
+# Add this step BEFORE kubectl apply in your CI workflow:
+- name: Delete existing deployments for clean apply
+  run: |
+    python3 << PYEOF
+    import json, subprocess
+    with open('infra/deployment/apps.json') as f:
+        apps = json.load(f).get('apps', [])
+    for app in apps:
+        app_id = app['appId']
+        subprocess.run(['kubectl', '-n', 'sdd-dev', 'delete', 'deploy', app_id, '--ignore-not-found'], check=False)
+    PYEOF
+```
+
+**Important:** Use an **unquoted** `PYEOF` heredoc delimiter (`<< PYEOF` not `<< 'PYEOF'`) so bash expands shell variables like `${APPS_JSON}` and `${NAMESPACE}` inside the Python script.
+
+**⚠️ Only delete Deployments, not Services.** Service `spec.selector` IS mutable in Kubernetes, so services can be patched in-place. Deleting them would cause unnecessary traffic interruption.

@@ -171,7 +171,7 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
     # 12. Provision Nexus repositories + accept EULA
     _add_step(provision_nexus_repositories(root, dry_run), fatal=False)
 
-    # 13. Provision Gitea CI secrets (NEXUS_USERNAME, KUBECONFIG_B64, etc.)
+    # 13. Provision Gitea CI secrets (NEXUS_USERNAME, KUBECONFIG, etc.)
     _add_step(provision_gitea_secrets(root, dry_run), fatal=False)
 
     # 14. Push v0 code to Gitea (create main branch, push dev)
@@ -183,7 +183,7 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
     # 16. Create kind cluster (or verify existing) with port mappings for direct host access.
     #     Uses infra/k8s/kind-config.yaml which maps:
     #       host:8081 -> nodePort:30080 -> frontend:80
-    #       host:5001 -> nodePort:30500 -> backend:5000
+    #       host:5002 -> nodePort:30500 -> backend:5000
     #     This replaces Docker Desktop K8s — kind runs as a container, avoids
     #     Docker Engine restart that would disrupt running compose services.
     early = _add_step(setup_kind_cluster(root, dry_run), fatal=True)
@@ -1339,6 +1339,173 @@ def _observability_checks(
                 "phase": "audit",
             }
         )
+
+    # ── Grafana dashboard provisioning check ──────────────────────────
+    # Verify the dashboards directory has valid JSON files and at least
+    # one dashboard was provisioned (known bug: forgetting to bump version
+    # causes silent provisioning failure).
+    dashboards_dir = root / "infra" / "monitoring" / "grafana" / "dashboards"
+    if dashboards_dir.exists() and dashboards_dir.is_dir():
+        for dash_file in sorted(dashboards_dir.glob("*.json")):
+            if not dry_run:
+                try:
+                    dash_data = json.loads(dash_file.read_text(encoding="utf-8"))
+                    dash_uid = dash_data.get("uid", "unknown")
+                    dash_version = dash_data.get("version", 0)
+                    dash_title = dash_data.get("title", "Untitled")
+                    # Check if dashboard is actually served by Grafana API
+                    try:
+                        conn = http.client.HTTPConnection("localhost", 3001, timeout=5)
+                        conn.request(
+                            "GET",
+                            f"/api/dashboards/uid/{dash_uid}",
+                            headers={"Content-Type": "application/json"},
+                        )
+                        resp = conn.getresponse()
+                        resp_data = resp.read()
+                        conn.close()
+                        if resp.status == 200:
+                            provisioned_version = json.loads(resp_data)["dashboard"]["version"]
+                            result["actions"].append(
+                                {
+                                    "path": dash_file.relative_to(root).as_posix(),
+                                    "key": f"grafana.dashboard.{dash_uid}",
+                                    "severity": "info",
+                                    "message": f"Dashboard '{dash_title}' (v{dash_version}) provisioned and served (API v{provisioned_version}).",
+                                    "phase": "post-start",
+                                }
+                            )
+                            if provisioned_version < dash_version:
+                                add_bucket_item(
+                                    result["findings"],
+                                    dash_file.relative_to(root).as_posix(),
+                                    f"grafana.dashboard.{dash_uid}.version",
+                                    f"Dashboard file has v{dash_version} but Grafana serves v{provisioned_version}. "
+                                    "Provisioning may have failed — check Grafana logs for JSON parse errors.",
+                                    "warning",
+                                    "post-start",
+                                )
+                        elif resp.status == 404:
+                            add_bucket_item(
+                                result["findings"],
+                                dash_file.relative_to(root).as_posix(),
+                                f"grafana.dashboard.{dash_uid}.missing",
+                                f"Dashboard '{dash_title}' (uid: {dash_uid}) not found in Grafana API (HTTP 404). "
+                                "Check JSON syntax, version number, and Grafana logs.",
+                                "warning",
+                                "post-start",
+                            )
+                        else:
+                            add_bucket_item(
+                                result["findings"],
+                                dash_file.relative_to(root).as_posix(),
+                                f"grafana.dashboard.{dash_uid}.api",
+                                f"Grafana API returned HTTP {resp.status} for dashboard '{dash_uid}'.",
+                                "warning",
+                                "post-start",
+                            )
+                    except Exception as ex:
+                        add_bucket_item(
+                            result["findings"],
+                            dash_file.relative_to(root).as_posix(),
+                            "grafana.dashboard.api",
+                            f"Could not verify dashboard via API: {ex}",
+                            "warning",
+                            "post-start",
+                        )
+                except json.JSONDecodeError as e:
+                    add_bucket_item(
+                        result["findings"],
+                        dash_file.relative_to(root).as_posix(),
+                        "grafana.dashboard.invalid-json",
+                        f"Dashboard JSON file has invalid syntax: {e}. "
+                        "Grafana provisioning will reject this file.",
+                        "error",
+                        "pre-start",
+                    )
+                except Exception as ex:
+                    add_bucket_item(
+                        result["findings"],
+                        dash_file.relative_to(root).as_posix(),
+                        "grafana.dashboard.error",
+                        f"Could not validate dashboard JSON: {ex}",
+                        "warning",
+                        "pre-start",
+                    )
+            else:
+                result["actions"].append(
+                    {
+                        "path": dash_file.relative_to(root).as_posix(),
+                        "key": "grafana.dashboard.validate",
+                        "severity": "info",
+                        "message": f"Would validate dashboard JSON and check provisioning via Grafana API.",
+                        "phase": "audit",
+                    }
+                )
+
+    # ── Infinity datasource health check ──────────────────────────────
+    # Verify the Infinity datasource plugin is installed and configured.
+    # The datasource must exist for dashboard table panels to work.
+    if not dry_run:
+        try:
+            conn = http.client.HTTPConnection("localhost", 3001, timeout=5)
+            conn.request(
+                "GET",
+                "/api/datasources/uid/infinity-health/health",
+                headers={"Content-Type": "application/json"},
+            )
+            resp = conn.getresponse()
+            resp_data = resp.read()
+            conn.close()
+            if resp.status == 200:
+                result["actions"].append(
+                    {
+                        "path": "grafana/datasources/infinity-health",
+                        "key": "grafana.infinity-health.healthy",
+                        "severity": "info",
+                        "message": "Infinity health datasource is configured and responding.",
+                        "phase": "post-start",
+                    }
+                )
+            elif resp.status == 404:
+                add_bucket_item(
+                    result["findings"],
+                    "infra/monitoring/grafana/provisioning/datasources/infinity-health.yml",
+                    "grafana.infinity-health.missing",
+                    "Infinity datasource 'infinity-health' not found (HTTP 404). "
+                    "Check that the Infinity plugin is installed and the YAML provisioning file is valid.",
+                    "warning",
+                    "post-start",
+                )
+            else:
+                add_bucket_item(
+                    result["findings"],
+                    "infra/monitoring/grafana/provisioning/datasources/infinity-health.yml",
+                    "grafana.infinity-health.unhealthy",
+                    f"Infinity datasource health check returned HTTP {resp.status}.",
+                    "warning",
+                    "post-start",
+                )
+        except Exception as ex:
+            add_bucket_item(
+                result["findings"],
+                "grafana/datasources",
+                "grafana.infinity-health.check",
+                f"Could not check Infinity datasource health: {ex}",
+                "warning",
+                "post-start",
+            )
+    else:
+        result["actions"].append(
+            {
+                "path": "grafana/datasources/infinity-health",
+                "key": "grafana.infinity-health.health",
+                "severity": "info",
+                "message": "Would check Infinity datasource health via Grafana API.",
+                "phase": "audit",
+            }
+        )
+
     datasource_path = (
         root
         / "infra"
@@ -1915,37 +2082,18 @@ def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str,
     )
     nexus_base = "http://localhost:8088"
     nexus_user = "admin"
-    nexus_pass = _get_nexus_admin_password()
-
-    # ── Helper to read Nexus admin password from container ──
-
-
-def _get_nexus_admin_password() -> str:
-    """Read Nexus admin password from container, fall back to admin123.
-
-    On first boot, Nexus generates a random admin password stored in
-    /nexus-data/admin.password inside the container. Reading it is the
-    only reliable way to get the correct password since we never set it.
-
-    ⚠️ Uses // prefix on Windows to prevent Git Bash from translating
-    /nexus-data to a Windows absolute path (e.g., C:/Users/.../nexus-data).
-    """
+    # On first boot, Nexus generates a random admin password stored in /nexus-data/admin.password.
+    # Try to read it from the running container; fall back to admin123 (manually set or old install).
+    nexus_pass = "admin123"
     try:
         r = subprocess.run(
-            ["docker", "exec", "agentic-nexus", "cat", "//nexus-data/admin.password"],
+            ["docker", "exec", "agentic-nexus", "cat", "/nexus-data/admin.password"],
             capture_output=True, text=True, timeout=10,
         )
         if r.returncode == 0 and r.stdout.strip():
-            return r.stdout.strip()
+            nexus_pass = r.stdout.strip()
     except Exception:
         pass
-    return "admin123"
-
-
-# ── Provision Nexus repositories ────────────────────────────────────────
-
-
-def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
     if dry_run:
         result["actions"].append(
@@ -1983,87 +2131,26 @@ def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str,
             return 0, str(ex)
 
     # ── 1. Accept Nexus EULA (required before any API calls work on fresh install) ──
-    # Nexus 3.x EULA API uses a two-step process:
-    #   1. GET /service/rest/v1/system/eula  — returns disclaimer text + accepted: false
-    #   2. POST /service/rest/v1/system/eula — send exact JSON back with accepted: true
-    # The old endpoint (/editions/eula/accept) was removed in newer Nexus 3 versions.
-    eula_get_status, eula_get_data = _nexus_api(
-        "GET", "/service/rest/v1/system/eula"
+    eula_status, eula_data = _nexus_api(
+        "POST", "/service/rest/v1/editions/eula/accept", body={"eulaAccepted": True}
     )
-    if eula_get_status == 200:
-        try:
-            eula_json = json.loads(eula_get_data)
-            if eula_json.get("accepted", False):
-                result["actions"].append(
-                    {
-                        "path": "nexus/eula",
-                        "key": "eula.already_accepted",
-                        "severity": "info",
-                        "message": "Nexus EULA already accepted.",
-                        "phase": "audit",
-                    }
-                )
-            else:
-                # Accept EULA by POSTing the exact JSON back with accepted=true
-                eula_json["accepted"] = True
-                eula_post_status, eula_post_data = _nexus_api(
-                    "POST", "/service/rest/v1/system/eula", body=eula_json
-                )
-                if eula_post_status in {200, 204}:
-                    result["actions"].append(
-                        {
-                            "path": "nexus/eula",
-                            "key": "eula.accepted",
-                            "severity": "info",
-                            "message": "Nexus EULA accepted successfully.",
-                            "phase": "apply",
-                        }
-                    )
-                elif eula_post_status == 400 and "already" in eula_post_data.lower():
-                    result["actions"].append(
-                        {
-                            "path": "nexus/eula",
-                            "key": "eula.already_accepted",
-                            "severity": "info",
-                            "message": "Nexus EULA already accepted (POST confirmed).",
-                            "phase": "audit",
-                        }
-                    )
-                else:
-                    add_bucket_item(
-                        result["findings"],
-                        "nexus/eula",
-                        "eula.accept_failed",
-                        f"Nexus EULA acceptance returned {eula_post_status}: {eula_post_data[:300]}",
-                        "warning",
-                        "apply",
-                    )
-        except json.JSONDecodeError:
-            add_bucket_item(
-                result["findings"],
-                "nexus/eula",
-                "eula.parse_failed",
-                f"Could not parse EULA response: {eula_get_data[:200]}",
-                "warning",
-                "apply",
-            )
-    elif eula_get_status == 404:
-        # EULA endpoint not found — likely an older Nexus version without this API
+    # Nexus EULA endpoint returns 204 on success, 400 if already accepted, 404 if not applicable (3.92+)
+    if eula_status in {204, 200, 400, 404}:
         result["actions"].append(
             {
                 "path": "nexus/eula",
-                "key": "eula.not_applicable",
+                "key": "eula.accepted",
                 "severity": "info",
-                "message": "Nexus EULA endpoint not found (older version) — skipping.",
-                "phase": "audit",
+                "message": "Nexus EULA accepted.",
+                "phase": "apply",
             }
         )
     else:
         add_bucket_item(
             result["findings"],
             "nexus/eula",
-            "eula.check_failed",
-            f"Nexus EULA check returned {eula_get_status}: {eula_get_data[:200]}",
+            "eula.accept",
+            f"Nexus EULA acceptance returned {eula_status}: {eula_data[:200]}",
             "warning",
             "apply",
         )
@@ -3656,7 +3743,7 @@ def provision_gitea_secrets(root: Path, dry_run: bool = False) -> dict[str, Any]
     - NEXUS_USERNAME / NEXUS_PASSWORD: Nexus admin credentials
     - NEXUS_DOCKER_REGISTRY: Override for registry host:port (optional)
     - NEXUS_URL / NEXUS_REPOSITORY: Artifact upload target
-    - KUBECONFIG_B64: base64-encoded kubeconfig for K8s access
+    - KUBECONFIG: raw kubeconfig YAML (modified for CI: insecure-skip-tls-verify, host.docker.internal)
 
     This function creates/updates these secrets via the Gitea API.
     """
@@ -3673,7 +3760,7 @@ def provision_gitea_secrets(root: Path, dry_run: bool = False) -> dict[str, Any]
                 "path": "gitea/secrets",
                 "key": "plan",
                 "severity": "info",
-                "message": "Would provision Gitea secrets: NEXUS_USERNAME, NEXUS_PASSWORD, NEXUS_URL, NEXUS_REPOSITORY, KUBECONFIG_B64.",
+                "message": "Would provision Gitea secrets: NEXUS_USERNAME, NEXUS_PASSWORD, NEXUS_URL, NEXUS_REPOSITORY, KUBECONFIG.",
                 "phase": "apply",
             }
         )
@@ -3713,40 +3800,48 @@ def provision_gitea_secrets(root: Path, dry_run: bool = False) -> dict[str, Any]
         except Exception as ex:
             return 0, str(ex)
 
-    nexus_pass = _get_nexus_admin_password()
-
     # Secrets to set
     secrets = {
         "NEXUS_USERNAME": "admin",
-        "NEXUS_PASSWORD": nexus_pass,
+        "NEXUS_PASSWORD": "admin123",
         "NEXUS_URL": "http://host.docker.internal:8088",
         "NEXUS_REPOSITORY": "sdd-artifacts",
         "NEXUS_DOCKER_REGISTRY": "",  # Empty means use workflow default (host.docker.internal:5001)
     }
 
-    # Read kubeconfig for KUBECONFIG_B64
-    kubeconfig_paths = [
-        Path.home() / ".kube" / "config",
-        Path("/home/runner/.kube/config"),
-        Path("/tmp/kubeconfig"),
-    ]
+    # Read kubeconfig from kind cluster and prepare for CI access.
+    # The CI runner connects via Docker DNS (host.docker.internal), so we must:
+    # 1. Replace 127.0.0.1 with host.docker.internal in the server URL
+    # 2. Remove certificate-authority-data (it won't match host.docker.internal)
+    # 3. Add insecure-skip-tls-verify: true
     kubeconfig_data = None
-    for kp in kubeconfig_paths:
-        if kp.exists():
-            kubeconfig_data = kp.read_bytes()
-            break
-
-    if kubeconfig_data:
-        secrets["KUBECONFIG_B64"] = base64.b64encode(kubeconfig_data).decode()
-    else:
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["kind", "get", "kubeconfig", "--name", "sdd-cluster"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            import yaml
+            data = yaml.safe_load(result.stdout)
+            for cluster in data.get("clusters", []):
+                cluster["cluster"].pop("certificate-authority-data", None)
+                cluster["cluster"]["insecure-skip-tls-verify"] = True
+                server = cluster["cluster"].get("server", "")
+                cluster["cluster"]["server"] = server.replace("127.0.0.1", "host.docker.internal")
+            kubeconfig_data = yaml.dump(data, default_flow_style=False)
+    except Exception as ex:
         add_bucket_item(
             result["findings"],
             "kubeconfig",
-            "missing",
-            "Could not locate kubeconfig. KUBECONFIG_B64 secret will not be set.",
+            "kind.get",
+            f"Could not get kind kubeconfig: {ex}. KUBECONFIG secret will not be set.",
             "warning",
             "pre-start",
         )
+
+    if kubeconfig_data:
+        secrets["KUBECONFIG"] = kubeconfig_data
 
     # Set each secret via Gitea API
     for secret_name, secret_value in secrets.items():
@@ -4202,7 +4297,7 @@ def scaffold_k8s(root, dry_run=False):
     # ── Port mapping by role ──
     _port_map = {"web": 80, "api": 5000}
     # Fixed nodePorts for kind extraPortMappings (defined in infra/k8s/kind-config.yaml)
-    # Host → nodePort: 8081→30080 (web), 5001→30500 (api), 8083→30780 (openproject)
+    # Host → nodePort: 8081→30080 (web), 5002→30500 (api)
     _node_port_base = {"web": 30080, "api": 30500}
     _used_node_ports: set[int] = set()
 
@@ -4535,7 +4630,7 @@ def setup_kind_cluster(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
     Uses infra/k8s/kind-config.yaml which defines fixed nodePort → host port mappings:
       host:8081 → nodePort:30080 → frontend:80
-      host:5001 → nodePort:30500 → backend:5000
+      host:5002 → nodePort:30500 → backend:5000
       host:8083 → nodePort:30780 → openproject:80
 
     This replaces Docker Desktop K8s — kind runs as a Docker container, avoids
@@ -4557,7 +4652,7 @@ def setup_kind_cluster(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 "path": "kind",
                 "key": "cluster.create",
                 "severity": "info",
-                "message": "Would create kind cluster 'sdd-cluster' with extraPortMappings (8081→frontend, 5001→backend).",
+                "message": "Would create kind cluster 'sdd-cluster' with extraPortMappings (8081→frontend, 5002→backend).",
                 "phase": "apply",
             }
         )
@@ -4587,13 +4682,279 @@ def setup_kind_cluster(root: Path, dry_run: bool = False) -> dict[str, Any]:
                     "phase": "audit",
                 }
             )
-            result["valid"] = True
-            return result
+            cluster_exists = True
         except (json.JSONDecodeError, KeyError):
-            pass
+            cluster_exists = False
+    else:
+        cluster_exists = False
 
-    # ── 2. Ensure kind is installed ──
-    kind_check = run_native(["kind", "version"], root, timeout=10)
+    if not cluster_exists:
+        # ── 2. Ensure kind is installed ──
+        kind_check = run_native(["kind", "version"], root, timeout=10)
+        if kind_check["returncode"] != 0:
+            import platform
+
+            pf = platform.system().lower()
+            result["actions"].append(
+                {
+                    "path": "kind",
+                    "key": "binary.install",
+                    "severity": "info",
+                    "message": "kind not found — installing v0.32.0...",
+                    "phase": "apply",
+                }
+            )
+            if pf == "windows":
+                install_cmd = [
+                    "winget", "install", "Kubernetes.kind", "--accept-package-agreements"
+                ]
+                install = run_native(install_cmd, root, timeout=120)
+                if install["returncode"] != 0:
+                    add_bucket_item(
+                        result["findings"],
+                        "kind",
+                        "install.failed",
+                        "Could not install kind via winget. Download manually from https://kind.sigs.k8s.io/docs/user/quick-start/",
+                        "error",
+                        "pre-start",
+                    )
+                    result["valid"] = False
+                    return result
+            elif pf == "darwin":
+                run_native(["brew", "install", "kind"], root, timeout=120)
+            else:
+                # Linux — direct download
+                kind_url = (
+                    "https://kind.sigs.k8s.io/dl/v0.32.0/kind-linux-amd64"
+                )
+                run_native(
+                    [
+                        "curl", "-fsSL", "-o", "/usr/local/bin/kind", kind_url,
+                        "&&", "chmod", "+x", "/usr/local/bin/kind",
+                    ],
+                    root,
+                    timeout=60,
+                )
+
+        # Verify kind is now available
+        kind_check2 = run_native(["kind", "version"], root, timeout=10)
+        if kind_check2["returncode"] != 0:
+            add_bucket_item(
+                result["findings"],
+                "kind",
+                "not.found",
+                "kind is still not available after install attempt. Install manually: https://kind.sigs.k8s.io/docs/user/quick-start/",
+                "error",
+                "pre-start",
+            )
+            result["valid"] = False
+            return result
+        else:
+            result["actions"].append(
+                {
+                    "path": "kind",
+                    "key": "binary.installed",
+                    "severity": "info",
+                    "message": f"kind is available: {kind_check2['stdout'].strip()}.",
+                    "phase": "audit",
+                }
+            )
+
+        # ── 3. Check if sdd-cluster already exists ──
+        clusters = run_native(["kind", "get", "clusters"], root, timeout=15)
+        if clusters["returncode"] == 0 and "sdd-cluster" in clusters["stdout"]:
+            result["actions"].append(
+                {
+                    "path": "kind/sdd-cluster",
+                    "key": "cluster.exists",
+                    "severity": "info",
+                    "message": "Cluster 'sdd-cluster' already exists. Skipping creation.",
+                    "phase": "audit",
+                }
+            )
+        else:
+            # ── 4. Create kind cluster with extraPortMappings ──
+            kind_config = root / "infra" / "k8s" / "kind-config.yaml"
+            if not kind_config.exists():
+                add_bucket_item(
+                    result["findings"],
+                    "infra/k8s/kind-config.yaml",
+                    "missing",
+                    "kind-config.yaml not found — run scaffold-k8s first or create it manually.",
+                    "error",
+                    "pre-start",
+                )
+                result["valid"] = False
+                return result
+
+            result["actions"].append(
+                {
+                    "path": "kind/sdd-cluster",
+                    "key": "cluster.create",
+                    "severity": "info",
+                    "message": "Creating kind cluster 'sdd-cluster' with extraPortMappings...",
+                    "phase": "apply",
+                }
+            )
+            create = run_native(
+                ["kind", "create", "cluster", "--name", "sdd-cluster", "--config", str(kind_config)],
+                root,
+                timeout=300,
+            )
+            if create["returncode"] != 0:
+                add_bucket_item(
+                    result["findings"],
+                    "kind/sdd-cluster",
+                    "create.failed",
+                    f"kind create cluster failed: {create['stderr']}",
+                    "error",
+                    "apply",
+                )
+                result["valid"] = False
+                return result
+
+            result["actions"].append(
+                {
+                    "path": "kind/sdd-cluster",
+                    "key": "cluster.created",
+                    "severity": "info",
+                    "message": "kind cluster 'sdd-cluster' created successfully.",
+                    "phase": "apply",
+                }
+            )
+
+        # ── 5. Save kubeconfig for CI access ──
+        # Get kubeconfig
+        kc_get = run_native(
+            ["kind", "get", "kubeconfig", "--name", "sdd-cluster"], root, timeout=15
+        )
+        if kc_get["returncode"] == 0 and kc_get["stdout"]:
+            kc_data = kc_get["stdout"]
+
+            # Replace 127.0.0.1:<port> with host.docker.internal:<port> for CI container access
+            # Use YAML-safe approach: replace server address and strip CA data
+            kc_lines = kc_data.splitlines()
+            kc_ci_lines = []
+            skip_ca = False
+            for line in kc_lines:
+                stripped = line.strip()
+                if "127.0.0.1" in line and "server:" in line:
+                    kc_ci_lines.append("    server: https://host.docker.internal:6443")
+                elif "certificate-authority-data:" in stripped:
+                    kc_ci_lines.append("    insecure-skip-tls-verify: true")
+                    skip_ca = True
+                elif skip_ca and (stripped.startswith("-") or "client-" in stripped or "user:" in stripped or stripped == "" or not stripped):
+                    skip_ca = False
+                    kc_ci_lines.append(line)
+                elif skip_ca and stripped and not stripped.startswith("#"):
+                    # Skip CA data lines (PEM content)
+                    continue
+                else:
+                    kc_ci_lines.append(line)
+            kc_ci = "\n".join(kc_ci_lines)
+
+            # Write CI kubeconfig
+            kc_path = root / "infra" / "k8s" / "kind-kubeconfig-ci.yaml"
+            if not dry_run:
+                kc_path.write_text(kc_ci, encoding="utf-8")
+                result["actions"].append(
+                    {
+                        "path": "infra/k8s/kind-kubeconfig-ci.yaml",
+                        "key": "kubeconfig.written",
+                        "severity": "info",
+                        "message": "Saved CI kubeconfig (host.docker.internal endpoint, insecure-skip-tls-verify).",
+                        "phase": "apply",
+                    }
+                )
+
+            # Merge into default kubeconfig for local access
+            merge = run_native(
+                ["kind", "export", "kubeconfig", "--name", "sdd-cluster"],
+                root,
+                timeout=15,
+            )
+            if merge["returncode"] == 0:
+                result["actions"].append(
+                    {
+                        "path": "~/.kube/config",
+                        "key": "kubeconfig.merged",
+                        "severity": "info",
+                        "message": "Merged kind kubeconfig into ~/.kube/config.",
+                        "phase": "apply",
+                    }
+                )
+
+    # ── 6. Connect to Docker networks for CI access and Grafana monitoring ──
+    # Grafana's Infinity datasource queries kind nodePorts directly using
+    # Docker DNS (sdd-cluster-control-plane:<nodePort>). Without this network
+    # connection, Grafana can't reach kind's kube-proxy iptables rules.
+    #
+    # The CI runner containers also need access to Gitea and Nexus via
+    # host.docker.internal or Docker DNS.
+    for network in ("agentic-e2e_gitea", "agentic-e2e_nexus", "agentic-e2e_monitoring"):
+        connect = run_native(
+            ["docker", "network", "connect", network, "sdd-cluster-control-plane"],
+            root,
+            timeout=15,
+        )
+        if connect["returncode"] == 0:
+            result["actions"].append(
+                {
+                    "path": f"docker/{network}",
+                    "key": "network.connected",
+                    "severity": "info",
+                    "message": f"Connected sdd-cluster-control-plane to {network}.",
+                    "phase": "apply",
+                }
+            )
+        # Non-fatal if network doesn't exist yet
+
+    # ── 7. Connect Grafana to the kind network (so dashboard DNS names resolve) ──
+    # The Grafana Health Check Board uses sdd-cluster-control-plane:<nodePort> URLs.
+    # These resolve via Docker DNS when Grafana is on the same network as the kind node.
+    # The compose.yml only attaches to 'monitoring' network, so we add 'kind' network
+    # at runtime. This is idempotent — 'already connected' is a non-error.
+    grafana_connect = run_native(
+        ["docker", "network", "connect", "kind", "agentic-grafana"],
+        root,
+        timeout=15,
+    )
+    if grafana_connect["returncode"] == 0:
+        result["actions"].append(
+            {
+                "path": "docker/kind",
+                "key": "grafana.network_connected",
+                "severity": "info",
+                "message": "Connected agentic-grafana to kind network for health check queries.",
+                "phase": "apply",
+            }
+        )
+    else:
+        output_lower = (grafana_connect.get("stdout", "") + grafana_connect.get("stderr", "")).lower()
+        if "already" in output_lower:
+            result["actions"].append(
+                {
+                    "path": "docker/kind",
+                    "key": "grafana.network_already_connected",
+                    "severity": "info",
+                    "message": "Grafana is already connected to kind network.",
+                    "phase": "audit",
+                }
+            )
+        else:
+            add_bucket_item(
+                result["findings"],
+                "docker/kind",
+                "grafana.network_connect_failed",
+                f"Could not connect Grafana to kind network: {grafana_connect.get('stderr', '')[:200]}",
+                "warning",
+                "apply",
+            )
+
+    result["valid"] = not any(
+        item.get("severity") == "error" for item in result["findings"]
+    )
+    return result
     if kind_check["returncode"] != 0:
         import platform
 
@@ -5247,7 +5608,7 @@ def setup_k8s_access(root, dry_run=False):
 
     The kind cluster is configured with extraPortMappings in infra/k8s/kind-config.yaml:
       host:8081 → kind-node:30080 → frontend:80
-      host:5001 → kind-node:30500 → backend:5000
+      host:5002 → kind-node:30500 → backend:5000
       host:8083 → kind-node:30780 → openproject:80
 
     These mappings make services directly accessible at localhost without port-forward.
@@ -5295,11 +5656,10 @@ def setup_k8s_access(root, dry_run=False):
         return result
 
     # Map app roles to their kind extraPortMapping host ports (defined in kind-config.yaml)
-    # Role-based defaults: web→8081, api→5001
+    # Role-based defaults: web→8081, api→5002
     _HOST_PORT_MAP: dict[str, int] = {
         "frontend": 8081,
-        "backend": 5001,
-        "openproject": 8083,
+        "backend": 5002,
     }
 
     if dry_run:

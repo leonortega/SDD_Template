@@ -344,9 +344,114 @@ DEV openproject accessible at: http://localhost:8083/health (kind nodePort 30780
 
 Grafana runs at `http://localhost:3001` (provisioned via Docker Compose).
 
-- **Datasource**: Infinity datasource (`infinity-health`) allows `http://localhost:*` and `http://host.docker.internal:*`
-- **Health alerts**: Currently disabled (empty `rules: []`). After deployment, discover URLs via `setup-k8s-access` and add alert rules using the template in `infra/monitoring/grafana/provisioning/alerting/health-alerts.yml`
-- **Environment URLs**: CI publishes `app/latest/env-urls-{env}.json` to Nexus, which can be queried via the infinity datasource
+### Dashboard Provisioning
+
+Dashboards are **provisioned from disk** — Grafana watches the `infra/monitoring/grafana/dashboards/` directory and auto-loads any JSON file dropped there:
+
+```bash
+# Architecture
+infra/monitoring/grafana/
+├── compose.yml                    # Grafana service definition
+├── variables.env                  # Grafana env vars
+├── variables.env.example          # Template
+├── provisioning/
+│   ├── dashboards/dashboards.yml  # Dashboard provider config
+│   ├── datasources/
+│   │   └── infinity-health.yml    # Infinity datasource for health checks
+│   └── alerting/
+│       └── health-alerts.yml      # Alert rules (disabled by default)
+└── dashboards/
+    └── health-board.json          # 🚀 SDD Service Status dashboard
+```
+
+**Critical rule — version bump on every change:** Grafana provisioning only overwrites a dashboard when the file version is **higher** than the DB version. If you edit `health-board.json`, always increment the `"version": N` field. Otherwise, changes won't take effect after restart.
+
+### Grafana Dashboard Best Practices
+
+Based on the official Grafana skills (`dashboarding`, `grafana-oss`, `grafana-dashboards`):
+
+1. **Add `description` fields** to every panel — this shows as a tooltip on the panel title's ℹ️ icon. Use it to explain what the panel shows.
+2. **Set `graphTooltip: 1`** — enables shared crosshair tooltip across all panels.
+3. **Configure `timepicker`** — set `refresh_intervals` and `time_options` for better UX.
+4. **Set column widths** on table panels via `fieldConfig.overrides` → `custom.width`.
+5. **Use `sortBy`** on tables for consistent row ordering.
+6. **Add dashboard-level `links`** — creates a navigation dropdown in the top-left corner.
+7. **Use meaningful panel titles** — prefixed with emojis for quick visual scanning.
+
+### Infinity Datasource — Known Issues
+
+The Infinity datasource plugin (`yesoreyeram-infinity-datasource`) is used for health check panels. It has two known frontend bugs that cause JS console errors:
+
+#### Issue 1: `TypeError: Cannot read properties of undefined (reading 'method')`
+
+**Cause:** Using `source: "url"` with `parser: "backend"` + `format: "table"` on simple JSON responses like `{"status":"ok"}`. The Infinity plugin tries to parse the single-object response as an array and crashes.
+
+**Fix:** Don't use stat or table panels with `source: "url"`. Instead:
+- Use **text (markdown) panels** to display health status manually.
+- Use **`source: "inline"`** for table panels that need dynamic data (the inline parser doesn't trigger this bug).
+
+#### Issue 2: `TypeError: Cannot read properties of undefined (reading 'Not deployed')`
+
+**Cause:** Value mappings on Infinity-driven table columns with `"color": "green"` or `"color": "text"` properties inside the mapping object. The Infinity frontend code crashes when processing inline color values.
+
+**Fix:** Remove the `"color"` property from inside mapping objects. Use text-only transformations:
+
+```json
+// ❌ BAD — crashes Infinity
+"mappings": [{
+  "type": "value",
+  "value": "Active",
+  "text": "✅ Active",
+  "color": "green"    // <-- crashes Infinity
+}]
+
+// ✅ GOOD — works fine
+"mappings": [{
+  "type": "value",
+  "value": "Active",
+  "text": "✅ Active"   // no color property
+}]
+```
+
+#### What works reliably with Infinity
+
+| Source type | Parser | Panel types | Status |
+|---|---|---|---|
+| **`inline`** | `backend` | `table` | ✅ Works perfectly |
+| **`inline`** | `backend` | `stat` | ✅ Works perfectly |
+| **`url`** | `backend` | `table` | ❌ JS crash (#1) |
+| **`url`** | `backend` | `stat` | ❌ JS crash (#1) |
+| **`url`** | `default` | `stat` | ❌ JS crash (#1) |
+| — (no datasource) | — | **`text`** (markdown) | ✅ Always works |
+
+### Dashboard JSON Layout Reference
+
+This project uses `schemaVersion: 39` which uses a **24-column grid** (`w: 24` = full width). Key `gridPos` properties:
+
+- `w: 24` — Full width
+- `w: 12` — Half width (side-by-side panels)
+- `w: 8` — One-third width
+- `h: N` — Height in grid rows (~30px per row at 100% zoom)
+
+On a 1080p monitor at 100% zoom, ~22 grid rows are visible without scrolling. For a "one-glance" dashboard, keep total height ≤ 22 rows.
+
+#### Grafana Sidebar Width
+
+The Grafana left navigation sidebar takes ~250px when expanded (showing text labels). This can make panels appear to occupy only half the screen. **Fix:** Collapse the sidebar by clicking the ☰ hamburger icon at the top-left. The sidebar state is saved per-user in browser local storage.
+
+### Health Alerts
+
+Alert rules are currently **disabled** (empty `rules: []` in `health-alerts.yml`). To enable:
+
+1. Deploy apps to K8s via the CI pipeline
+2. Discover nodePorts: `python -m tools.sdd_cli environment-lab setup-k8s-access`
+3. Copy the template blocks from `health-alerts.yml` into the `rules` array
+4. Update `NODE_PORT` placeholders with actual ports
+5. Restart Grafana: `docker restart agentic-grafana`
+
+### Environment URLs
+
+CI publishes `app/latest/env-urls-{env}.json` to Nexus after each deploy. The Grafana health dashboard can reference these via the Infinity datasource (using `source: "inline"` to avoid the URL bug).
 
 ## Adding a New App
 

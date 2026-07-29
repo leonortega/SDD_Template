@@ -4,8 +4,6 @@ namespace: sdd-prod
 resources:
   - ../../base
 images:
-  - name: host.docker.internal:5001/openproject
-    newTag: latest
   - name: host.docker.internal:5001/frontend
     newTag: latest
   - name: host.docker.internal:5001/backend
