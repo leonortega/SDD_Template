@@ -1,1134 +1,587 @@
-"""Project guidance: discover, map, acquire recommendations and skills."""
+"""Project guidance: list relevant skills from manifest based on project stack."""
 
 from __future__ import annotations
 
-import re
+import json
 import sys
-import time
-from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 
 from ._shared import (
     REPO_ROOT,
-    SEARCH_PLAN_ID,
-    CliError,
-    add_bucket_item,
-    build_recommendations,
-    build_research_topics,
-    build_stack_context_findings,
     configure_result,
-    detect_stack_tags,
-    ensure_used_in_steps,
     load_project_profile,
-    load_tool_recommendations_catalog,
-    merge_dicts,
-    nested,
     parse_pairs,
+    read_json,
     run_native,
     write_json,
 )
 
 
-# ── Discover ─────────────────────────────────────────────────────────────
+def _read_stack_tags(profile: dict[str, Any]) -> list[str]:
+    """Extract simple stack tags from the project profile.
 
-def discover_project_guidance(root: Path, dry_run: bool = False, **values: Any) -> dict[str, Any]:
-    """Detect stack, research topics, and build recommendations."""
-    audit_values = {**values, "skipAutoDiscovery": True}
-    audit = _audit_recommended_tools(root, dry_run, **audit_values)
-    blockers = [item for item in audit.get("findings", []) if item.get("severity") == "error"]
-    if blockers:
+    Returns lowercase tags for the three stack domains (frontend, backend, database)
+    when they have ``applies: true`` and a non-empty value.
+    """
+    tags: list[str] = []
+    stack = profile.get("stack", {})
+    if not isinstance(stack, dict):
+        return tags
+    for domain in ("frontend", "backend", "database"):
+        domain_info = stack.get(domain, {})
+        if isinstance(domain_info, dict):
+            if domain_info.get("applies") is True:
+                raw = str(domain_info.get("value", "")).lower().strip()
+                if raw:
+                    tags.append(raw)
+        elif isinstance(domain_info, str):
+            raw = domain_info.lower().strip()
+            if raw and raw not in ("none", "n/a", "na"):
+                tags.append(raw)
+    return tags
+
+
+def discover_project_guidance(
+    root: Path, dry_run: bool = False, **values: Any
+) -> dict[str, Any]:
+    """List relevant skills from .codex/skills/manifest.json for the project stack.
+
+    Reads the project stack from profile, finds matching skills from the manifest
+    categories, and returns them. Categories with ``stackTags`` are only included
+    when the stack value overlaps with that field. Categories without ``stackTags``
+    are always included (stack-agnostic methodology/process skills).
+    """
+    result = configure_result(
+        "DiscoverProjectGuidance", dry_run, write_enabled=not dry_run
+    )
+    manifest_path = root / ".codex" / "skills" / "manifest.json"
+    if not manifest_path.exists():
         return {
-            "mode": "DiscoverProjectGuidance", "valid": False, "writeEnabled": False,
-            "detectedTags": audit.get("detectedTags", []),
-            "researchTopics": audit.get("researchTopics", []),
-            "findings": blockers,
-            "errors": [item["message"] for item in blockers],
-            "actions": [],
+            "mode": "DiscoverProjectGuidance",
+            "valid": False,
+            "errors": ["Manifest not found at .codex/skills/manifest.json"],
         }
-    recommendations = [item for item in audit["recommendations"] if item["id"] != SEARCH_PLAN_ID]
-    missing_skills = [item for item in recommendations if item.get("type") == "skill" and item.get("detected", True) and not item.get("targetExists", False)]
-    suggested_guidance = [item for item in recommendations if item.get("type") != "skill"]
-    user_added = _normalize_added_guidance(values.get("additionalSkills", []))
-    final_confirmed = recommendations + user_added if values.get("confirmed") else []
 
-    local_path = root / ".codex" / "tool-recommendations.local.json"
-    actions: list[dict[str, str]] = []
+    manifest = read_json(manifest_path, optional=True)
+    if not manifest:
+        return {
+            "mode": "DiscoverProjectGuidance",
+            "valid": False,
+            "errors": ["Could not parse .codex/skills/manifest.json"],
+        }
 
-    # Search for community skills from detected stack tags and general topics
-    detected_tags = audit.get("detectedTags", [])
-    # Always run the skill search when not in dry-run mode, even if --confirmed is set
-    # (confirmed controls persistence, not discovery)
-    skill_search_results = _search_skills_from_tags(root, detected_tags, dry_run)
-    if skill_search_results:
-        # Add community-sourced skills to suggestions
-        existing_ids = {item["id"] for item in recommendations}
-        new_from_search = [s for s in skill_search_results if s["id"] not in existing_ids]
-        recommendations.extend(new_from_search)
-        missing_skills.extend(
-            s for s in new_from_search
-            if s.get("type") == "skill" and s.get("detected", True) and not s.get("targetExists", False)
-        )
-        # Build source summary
-        source_counts: dict[str, int] = {}
-        for s in new_from_search:
-            sk = s.get("sourceKind", "?")
-            source_counts[sk] = source_counts.get(sk, 0) + 1
-        source_summary = ", ".join(f"{k}: {v}" for k, v in sorted(source_counts.items()))
-        actions.append({
-            "path": "community-skills", "key": "skill-search", "severity": "info",
-            "message": f"Found {len(new_from_search)} community skill(s) from {len(source_counts)} source(s): {source_summary}.",
+    categories = manifest.get("categories", {})
+    profile = load_project_profile(root)
+    stack_tags = _read_stack_tags(profile)
+    stack_tags_lower = [t.lower() for t in stack_tags]
+
+    # Collect skills from non-core categories, filtering by stackTags when present
+    relevant_skills: list[dict[str, Any]] = []
+    filtered_categories: list[dict[str, Any]] = []
+    for cat_name, cat_data in categories.items():
+        if not isinstance(cat_data, dict):
+            continue
+        if cat_data.get("alwaysActive"):
+            continue
+
+        # Check stackTag filter if present
+        cat_stack_tags = cat_data.get("stackTags")
+        if isinstance(cat_stack_tags, list) and cat_stack_tags:
+            if stack_tags and not any(
+                _tag_matches_stack(tag, stack_tags_lower) for tag in cat_stack_tags
+            ):
+                # Stack set but no match — skip
+                filtered_categories.append({
+                    "category": cat_name,
+                    "reason": f"No stack tag matches {cat_stack_tags}",
+                })
+                continue
+
+        cat_skills = cat_data.get("skills", [])
+        if not isinstance(cat_skills, list):
+            continue
+        for skill_path in cat_skills:
+            skill_dir = root / ".codex" / "skills" / skill_path
+            exists = skill_dir.exists()
+            relevant_skills.append({
+                "category": cat_name,
+                "path": skill_path,
+                "exists": exists,
+            })
+
+    if stack_tags:
+        result["actions"].append({
+            "path": "stack",
+            "key": "detected",
+            "severity": "info",
+            "message": f"Stack values from profile: {', '.join(stack_tags)}",
             "phase": "audit",
         })
 
-    # Detect orphaned accepted items — items in the existing catalog's accepted list
-    # that have no matching recommendation with install metadata.
-    orphaned_accepted: list[str] = []
-    if values.get("confirmed"):
-        existing_catalog = load_tool_recommendations_catalog(root)
-        existing_accepted = set(existing_catalog.get("accepted", []))
-        recommendation_ids = {item["id"] for item in recommendations}
-        orphaned_accepted = list(existing_accepted - recommendation_ids)
-        if orphaned_accepted:
-            actions.append({
-                "path": ".codex/tool-recommendations.local.json",
-                "key": "orphaned-accepted-items",
-                "severity": "warning",
-                "message": f"{len(orphaned_accepted)} accepted item(s) have no installable recommendation: {', '.join(orphaned_accepted)}. "
-                           f"These items are recorded as accepted but no matching skill or reference exists in the catalog. "
-                           f"Consider adding them to .codex/tool-recommendations.common.json or removing from the accepted list.",
+    result["stackTags"] = stack_tags
+    result["relevantSkills"] = relevant_skills
+    result["skillCount"] = len(relevant_skills)
+    result["filteredCategories"] = filtered_categories
+    result["valid"] = True
+    return result
+
+
+def _tag_matches_stack(tag: str, stack_lower: list[str]) -> bool:
+    """Check if a manifest tag matches any of the stack values.
+
+    Uses substring matching (e.g. 'react' matches 'react + typescript').
+    """
+    tag_lower = tag.lower()
+    return any(tag_lower in s for s in stack_lower)
+
+
+# ── Internet skill search ──────────────────────────────────────────────
+
+_MAX_SKILLS_PER_QUERY = 3  # Take top N results from each internet search
+
+
+def _normalize_stack_value(v: Any) -> str:
+    """Extract the 'value' string from a normalized stack domain dict or a raw string."""
+    if isinstance(v, dict):
+        return str(v.get("value", "")).lower().strip()
+    return str(v).lower().strip() if v else ""
+
+
+def _search_skills_internet(root: Path, query: str, dry_run: bool) -> list[dict[str, Any]]:
+    """Search the internet skill registry for skills matching a query.
+
+    Uses ``npx skills find <query>`` to search the public skills.sh registry.
+    Results are sorted by install count (most popular first).
+
+    Returns a list of dicts with keys:
+        - ``package``: GitHub owner/repo
+        - ``skill``: skill name within the package
+        - ``installs``: integer install count
+        - ``package_skill``: ``owner/repo@skill`` format for ``npx skills add``
+    """
+    if dry_run:
+        return []
+
+    result = run_native(["npx", "skills", "find", query], root, timeout=30)
+    if result["returncode"] != 0 or not result["stdout"].strip():
+        return []
+
+    skills: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for line in result["stdout"].splitlines():
+        line = line.strip()
+        # Match: owner/repo@skill-name XXX installs
+        if "/" not in line or "@" not in line:
+            continue
+        if "installs" not in line:
+            continue
+
+        parts = line.split()
+        package_skill = parts[0]  # e.g. "owner/repo@skill-name"
+        if package_skill in seen:
+            continue
+        seen.add(package_skill)
+
+        if "@" not in package_skill:
+            continue
+        # Split only on the LAST @ to handle repo names with @
+        at_idx = package_skill.rindex("@")
+        package = package_skill[:at_idx]  # owner/repo
+        skill_name = package_skill[at_idx + 1:]  # skill-name
+
+        # Parse install count from parts like "585.8K"
+        installs_str = parts[1] if len(parts) > 1 else "0"
+        installs = _parse_installs_value(installs_str)
+
+        skills.append({
+            "package": package,
+            "skill": skill_name,
+            "installs": installs,
+            "package_skill": package_skill,
+        })
+
+    # Sort by popularity descending, take top N
+    skills.sort(key=lambda s: s.get("installs", 0), reverse=True)
+    return skills[:_MAX_SKILLS_PER_QUERY]
+
+
+def _skill_exists_locally(root: Path, skill_name: str) -> bool:
+    """Check if a skill directory with SKILL.md already exists under .codex/skills/."""
+    skill_dir = root / ".codex" / "skills" / skill_name
+    return skill_dir.is_dir() and (skill_dir / "SKILL.md").exists()
+
+
+def _parse_installs_value(raw: str) -> int:
+    """Parse install-count strings like '585.8K' or '1.4K' or '50' into integers."""
+    raw = raw.replace(",", "").strip()
+    if raw.endswith("K"):
+        try:
+            return int(float(raw[:-1]) * 1000)
+        except ValueError:
+            return 0
+    if raw.endswith("M"):
+        try:
+            return int(float(raw[:-1]) * 1000000)
+        except ValueError:
+            return 0
+    try:
+        return int(raw)
+    except ValueError:
+        return 0
+
+
+def _install_skill_via_npx(
+    root: Path,
+    package: str,
+    skill_name: str,
+    dry_run: bool,
+) -> dict[str, Any]:
+    """Install a skill from the internet using npx skills add with --copy.
+
+    Uses ``npx skills add <package> --skill <skill-name> --yes --copy``
+    to copy the skill files into the project.
+    """
+    result = configure_result(
+        "InstallInternetSkill", dry_run, write_enabled=not dry_run
+    )
+
+    if dry_run:
+        result["actions"].append({
+            "path": f".codex/skills/{skill_name}",
+            "key": "internet.install",
+            "severity": "info",
+            "message": f"Would install '{skill_name}' from {package} via npx skills add.",
+            "phase": "apply",
+        })
+        result["skillName"] = skill_name
+        result["valid"] = True
+        return result
+
+    cmd = ["npx", "skills", "add", package, "--skill", skill_name, "--yes", "--copy"]
+    try:
+        install_result = run_native(cmd, root, timeout=60)
+        if install_result["returncode"] == 0:
+            result["actions"].append({
+                "path": f".codex/skills/{skill_name}",
+                "key": "internet.installed",
+                "severity": "info",
+                "message": f"Skill '{skill_name}' installed from {package} via npx skills add.",
+                "phase": "apply",
+            })
+            result["skillName"] = skill_name
+            result["valid"] = True
+        else:
+            from .tool_installer import install_skill_from_github
+
+            # Fallback: try the GitHub copy approach using the source repo
+            # Note: GitHub repos may store skills at different paths; we try
+            # 'skills/<skill_name>' as a common convention.
+            fallback_res = install_skill_from_github(
+                root=root,
+                repo=package,
+                skill_path=f"skills/{skill_name}",
+                skill_name=skill_name,
+                dry_run=False,
+            )
+            fallback_valid = fallback_res.get("valid", False)
+            result["actions"].append({
+                "path": f".codex/skills/{skill_name}",
+                "key": "internet.fallback",
+                "severity": "info" if fallback_valid else "warning",
+                "message": (
+                    f"npx skills add failed. GitHub fallback {'succeeded' if fallback_valid else 'also failed'}."
+                ),
+                "phase": "apply",
+            })
+            result["skillName"] = skill_name
+            result["valid"] = fallback_valid
+            for action in fallback_res.get("actions", []):
+                result["actions"].append(action)
+            for finding in fallback_res.get("findings", []):
+                result["findings"].append(finding)
+    except Exception as ex:
+        result["actions"].append({
+            "path": f"skill/{skill_name}",
+            "key": "internet.error",
+            "severity": "warning",
+            "message": f"Could not install '{skill_name}' from internet: {ex}",
+            "phase": "apply",
+        })
+        result["skillName"] = skill_name
+        result["valid"] = False
+
+    return result
+
+
+def _update_manifest_with_skills(
+    root: Path,
+    installed: list[dict[str, Any]],
+    dry_run: bool,
+) -> dict[str, Any]:
+    """Update .codex/skills/manifest.json to include newly installed internet skills.
+
+    Creates or updates a ``"stack"`` category with ``stackTags`` matching the
+    installed skill names, so :func:`discover_project_guidance` can find them
+    and agents can discover what skills are available for their task.
+    """
+    result = configure_result(
+        "UpdateManifest", dry_run, write_enabled=not dry_run
+    )
+
+    manifest_path = root / ".codex" / "skills" / "manifest.json"
+    if manifest_path.exists():
+        manifest = read_json(manifest_path, optional=False)
+    else:
+        manifest = {
+            "schemaVersion": "1.0",
+            "description": "Maps task types to skill paths.",
+            "categories": {},
+        }
+
+    categories = manifest.get("categories", {})
+    if not isinstance(categories, dict):
+        categories = {}
+
+    # Collect newly installed skill names
+    new_skill_names: set[str] = set()
+    for install_result in installed:
+        sname = install_result.get("skillName", "")
+        if sname and install_result.get("valid", False):
+            new_skill_names.add(sname)
+
+    if not new_skill_names:
+        result["actions"].append({
+            "path": ".codex/skills/manifest.json",
+            "key": "manifest.update",
+            "severity": "info",
+            "message": "No new skills installed; manifest unchanged.",
+            "phase": "audit",
+        })
+        result["valid"] = True
+        return result
+
+    # Upsert the "stack" category with stackTags so discover_project_guidance() can find them
+    if "stack" not in categories:
+        categories["stack"] = {
+            "description": "Stack-relevant skills (installed from internet based on project profile)",
+            "skills": [],
+            "stackTags": [],
+        }
+
+    stack_cat = categories["stack"]
+    if not isinstance(stack_cat, dict):
+        stack_cat = {"description": "", "skills": [], "stackTags": []}
+        categories["stack"] = stack_cat
+
+    existing_skills = set(stack_cat.get("skills", []))
+    existing_tags = set(stack_cat.get("stackTags", []))
+
+    for sname in sorted(new_skill_names):
+        skill_path = f"{sname}/SKILL.md"
+        if skill_path not in existing_skills:
+            existing_skills.add(skill_path)
+            result["actions"].append({
+                "path": skill_path,
+                "key": "manifest.add-skill",
+                "severity": "info",
+                "message": f"Added '{skill_path}' to manifest 'stack' category.",
+                "phase": "apply",
+            })
+        if sname not in existing_tags:
+            existing_tags.add(sname)
+
+    stack_cat["skills"] = sorted(existing_skills)
+    stack_cat["stackTags"] = sorted(existing_tags)
+    manifest["categories"] = categories
+
+    if not dry_run:
+        write_json(manifest_path, manifest)
+        result["actions"].append({
+            "path": ".codex/skills/manifest.json",
+            "key": "manifest.written",
+            "severity": "info",
+            "message": f"Updated manifest with {len(new_skill_names)} new skill(s) in 'stack' category.",
+            "phase": "apply",
+        })
+
+    result["newSkills"] = sorted(new_skill_names)
+    result["valid"] = True
+    return result
+
+
+def setup_project_guidance(
+    root: Path, values: dict[str, Any], dry_run: bool = False
+) -> dict[str, Any]:
+    """Search the internet for stack-relevant skills, install them, update manifest.
+
+    Called after the user sets their project stack (frontend, backend, database).
+    The flow:
+
+    1. Reads stack values from ``values`` or the project profile
+    2. For each stack value, searches the public skills.sh registry via
+       ``npx skills find <query>`` and picks the top results by popularity
+    3. Installs each skill via ``npx skills add`` (falls back to GitHub copy)
+    4. Updates ``.codex/skills/manifest.json`` with the new skills and their
+       stack category tags, so :func:`discover_project_guidance` and agents
+       can discover what skills are available for each task
+
+    Args:
+        root: Repository root.
+        values: Stack values (keys: frontend, backend, database).
+        dry_run: If True, only report what would be done (no side effects).
+
+    Returns:
+        Dict with mode, valid, actions, per-skill internet results, and manifest status.
+    """
+    result = configure_result(
+        "SetupProjectGuidance", dry_run, write_enabled=not dry_run
+    )
+
+    # 1. Read stack values — accept raw strings or read from profile
+    stack_values: dict[str, str] = {}
+    for domain in ("frontend", "backend", "database"):
+        if domain in values and values[domain]:
+            raw = _normalize_stack_value(values[domain])
+            if raw:
+                stack_values[domain] = raw
+
+    if not stack_values:
+        profile = load_project_profile(root)
+        profile_stack = profile.get("stack", {})
+        if isinstance(profile_stack, dict):
+            for domain in ("frontend", "backend", "database"):
+                entry = profile_stack.get(domain, {})
+                if isinstance(entry, dict):
+                    if entry.get("applies") is True:
+                        raw = str(entry.get("value", "")).lower().strip()
+                        if raw:
+                            stack_values[domain] = raw
+                elif isinstance(entry, str):
+                    raw = entry.lower().strip()
+                    if raw and raw not in ("none", "n/a", "na"):
+                        stack_values[domain] = raw
+
+    result["stackInput"] = stack_values
+
+    if not stack_values:
+        result["actions"].append({
+            "path": "stack",
+            "key": "guidance.skip",
+            "severity": "info",
+            "message": "No stack values provided or configured. Skipping project guidance setup.",
+            "phase": "audit",
+        })
+        result["valid"] = True
+        return result
+
+    # 2. Search internet for each stack value
+    #    Split compound values like "React + TypeScript" into tokens
+    all_internet_skills: list[dict[str, Any]] = []
+    seen_package_skill: set[str] = set()
+
+    for domain, raw_value in sorted(stack_values.items()):
+        tokens = raw_value.replace("+", " ").replace(",", " ").replace("/", " ").split()
+        for token in tokens:
+            token_clean = token.strip().lower()
+            if not token_clean:
+                continue
+
+            result["actions"].append({
+                "path": f"internet-search/{domain}",
+                "key": "search.query",
+                "severity": "info",
+                "message": f"Searching internet for skills matching '{token_clean}'.",
                 "phase": "audit",
             })
-    write_enabled = bool(values.get("confirmed") and values.get("persistLocal") and not dry_run)
-    if write_enabled:
-        existing_catalog = load_tool_recommendations_catalog(root)
-        existing_by_id = {item.get("id"): item for item in existing_catalog.get("recommendations", [])}
-        persisted_recommendations = []
-        for item in recommendations:
-            if item.get("type") not in {"skill", "mcp", "plugin", "tool", "practice", "standard", "reference"}:
-                continue
-            persisted = merge_dicts(existing_by_id.get(item.get("id"), {}), ensure_used_in_steps(item))
-            persisted_recommendations.append(persisted)
-        payload = {
-            "schemaVersion": 1,
-            "mode": "guarded-auto",
-            "sourceCatalog": ".codex/tool-recommendations.example.json",
-            "detectedTags": audit["detectedTags"],
-            "researchTopics": audit["researchTopics"],
-            "accepted": existing_catalog.get("accepted", []),
-            "dismissed": existing_catalog.get("dismissed", []),
-            "recommendations": persisted_recommendations,
-            "notRecommended": existing_catalog.get("notRecommended", []) + [
-                item for item in recommendations if item["id"] == "openproject-mcp-for-ticket-delivery"
-            ],
-        }
-        write_json(local_path, payload)
-        actions.append({"path": ".codex/tool-recommendations.local.json", "key": "persist-local-catalog",
-                        "severity": "info", "message": "Persist local project guidance catalog.", "phase": "apply"})
-    return {
-        "mode": "DiscoverProjectGuidance",
-        "valid": True,
-        "writeEnabled": write_enabled,
-        "detectedTags": audit["detectedTags"],
-        "researchTopics": audit["researchTopics"],
-        "existingSkills": [],
-        "suggestedMissingSkills": missing_skills,
-        "suggestedGuidance": suggested_guidance,
-        "userAddedRequestedGuidance": user_added,
-        "finalConfirmedGuidance": final_confirmed,
-        "finalConfirmedSkills": [],
-        "discoverySourcePriority": [
-            "repo-local", "openai-official", "tool-official", "technology-owner",
-            "skills-cli", "marketplace", "community",
-        ],
-        "localRecommendationsPath": ".codex/tool-recommendations.local.json",
-        "nextUserQuestion": "Confirm these suggestions to record and install/configure supported items now.",
-        "actions": actions,
-    }
 
+            found = _search_skills_internet(root, token_clean, dry_run)
+            for skill in found:
+                ps = skill.get("package_skill", "")
+                if ps and ps not in seen_package_skill:
+                    seen_package_skill.add(ps)
+                    all_internet_skills.append(skill)
+                    result["actions"].append({
+                        "path": f"internet/{skill['package']}/{skill['skill']}",
+                        "key": "internet.found",
+                        "severity": "info",
+                        "message": (
+                            f"Found '{skill['skill']}' from {skill['package']} "
+                            f"({skill['installs']:,} installs)."
+                        ),
+                        "phase": "audit",
+                    })
 
-# ── Map ──────────────────────────────────────────────────────────────────
+    result["foundSkills"] = [s["package_skill"] for s in all_internet_skills]
 
-def map_project_guidance_step(root: Path, workflow_step: str, recommendation_ids: list[str], dry_run: bool = False) -> dict[str, Any]:
-    """Map recommendations to a workflow step."""
-    if not workflow_step:
-        return {"mode": "MapProjectGuidanceStep", "valid": False,
-                "errors": ["values.workflowStep is required."]}
-    path = root / ".codex" / "tool-recommendations.local.json"
-    current = load_tool_recommendations_catalog(root)
-    if not current:
-        current = {
-            "schemaVersion": 1,
-            "mode": "guarded-auto",
-            "sourceCatalog": ".codex/tool-recommendations.example.json",
-            "detectedTags": [],
-            "researchTopics": [],
-            "recommendations": [ensure_used_in_steps(item) for item in
-                                build_recommendations(root, detect_stack_tags(root),
-                                                      build_research_topics(detect_stack_tags(root)))
-                                if item["id"] != SEARCH_PLAN_ID],
-            "notRecommended": [],
-        }
-    ids = set(recommendation_ids)
-    for item in current.get("recommendations", []):
-        if item.get("id") not in ids:
-            continue
-        used = item.setdefault("usedInSteps", [])
-        if workflow_step not in used:
-            used.append(workflow_step)
-    if not dry_run:
-        write_json(path, current)
-    return {"mode": "MapProjectGuidanceStep", "valid": True, "writeEnabled": not dry_run,
-            "changed": True, "path": str(path), "dryRun": dry_run}
-
-
-# ── Acquire ──────────────────────────────────────────────────────────────
-
-def acquire_project_guidance(root: Path, dry_run: bool = False, **values: Any) -> dict[str, Any]:
-    """Plan/record final confirmed guidance actions."""
-    result = configure_result("AcquireProjectGuidance", dry_run, write_enabled=not dry_run)
-    final_guidance = values.get("finalConfirmedGuidance", [])
-    restart_items: list[str] = []
-    for item in final_guidance:
-        if "installCommand" in item:
-            raise CliError(f"{item.get('name', item.get('id', 'guidance'))} rejects installCommand.")
-        name = item.get("name", item.get("id", "guidance"))
-        install_method = item.get("installMethod", "")
-        # Handle reference-only items — no binary install needed, just documentation alignment
-        if install_method == "manual-reference":
-            result["actions"].append({
-                "path": name, "key": "manual-reference", "severity": "info",
-                "message": f"Reference-only guidance '{name}' — consult source {item.get('source', 'N/A')} and ensure target {item.get('target', 'N/A')} aligns.",
-                "phase": "plan",
-            })
-            continue
-        if item.get("installPreference") == "docker-preferred":
-            docker = item.get("dockerAlternative")
-            if docker and docker.get("image"):
-                result["actions"].append({"path": name, "key": "docker-preferred", "severity": "info",
-                                          "message": f"Use Docker-preferred runtime {docker['image']}.", "phase": "plan"})
-            else:
-                result["warnings"].append({"path": name, "key": "docker-preferred.blocked", "severity": "warning",
-                                           "message": "Docker-preferred metadata is incomplete.", "phase": "plan"})
-        if item.get("userActionRequired"):
-            result["warnings"].append({"path": name, "key": "guarded-install-plan", "severity": "warning",
-                                       "message": "User action is required for this guarded install.", "phase": "plan"})
-        # Handle skills-cli-add — install via npx skills add, with git clone fallback
-        if install_method == "skills-cli-add":
-            install_cmd = item.get("installCommand", "")
-            if not install_cmd:
-                add_bucket_item(
-                    result["findings"], name, "install.no-command",
-                    f"skills-cli-add item '{name}' has no installCommand.",
-                    "warning", "pre-start",
-                )
-                continue
-            if dry_run:
-                result["actions"].append({"path": name, "key": "skills-cli-add", "severity": "info",
-                                          "message": f"Would run: {install_cmd}", "phase": "plan"})
-                continue
-            # Attempt 1: npx skills add -y (non-interactive, short timeout)
-            install_result = run_native(install_cmd.split(), root, timeout=30)
-            if install_result["returncode"] == 0:
-                result["actions"].append({"path": name, "key": "skills-cli-add", "severity": "info",
-                                          "message": f"Installed skill via {install_cmd}", "phase": "apply"})
-                _run_skill_links(root, result)
-                continue
-            # Attempt 2: git clone fallback (when npx skills add fails/times out)
-            clone_ok = _install_skill_via_clone(root, install_cmd, name)
-            if clone_ok:
-                result["actions"].append({"path": name, "key": "skills-cli-add", "severity": "info",
-                                          "message": f"Installed skill via git clone fallback from {install_cmd}",
-                                          "phase": "apply"})
-                _run_skill_links(root, result)
-            else:
-                add_bucket_item(
-                    result["findings"], name, "install.failed",
-                    f"Could not install skill '{name}' via npx or git clone: {install_result['stderr'][:200]}",
-                    "warning", "apply",
-                )
-            continue
-        if item.get("installMethod") == "manual-copy" and item.get("sourceKind") is None:
-            result["warnings"].append({"path": name, "key": "validation", "severity": "warning",
-                                       "message": "manual-copy guidance should include sourceKind.", "phase": "plan"})
-        if item.get("requiresIdeRestart"):
-            restart_items.append(f"{name} [ide-restart]")
-        if item.get("requiresSystemReboot"):
-            restart_items.append(f"{name} [system-reboot]")
-    if restart_items:
-        result["findings"].append({"path": ".", "key": "important.restart-summary", "severity": "info",
-                                   "message": f"Complete all feasible installs first, then restart/reboot for: {', '.join(restart_items)}.", "phase": "handoff"})
-    result["valid"] = True
-    return result
-
-
-# ── Audit recommended tools ──────────────────────────────────────────────
-
-def _audit_recommended_tools(root: Path, dry_run: bool = False, **values: Any) -> dict[str, Any]:
-    """Detect stack and build recommendations (internal helper)."""
-    detected = detect_stack_tags(root)
-    topics = build_research_topics(detected, root)
-    recommendations = build_recommendations(root, detected, topics)
-    decisions = nested(load_tool_recommendations_catalog(root), "recommendedTools") or {}
-    accepted = set(decisions.get("accepted", []))
-    dismissed = set(decisions.get("dismissed", []))
-    filtered = []
-    for item in recommendations:
-        if item.get("id") in dismissed:
-            continue
-        if item.get("id") in accepted:
-            item["accepted"] = True
-        filtered.append(item)
-    findings = build_stack_context_findings(root, detected)
-    metadata_finding = _stack_metadata_validation_finding(root)
-    if metadata_finding:
-        findings.append(metadata_finding)
-    skill_gaps = [item for item in filtered if item.get("type") == "skill" and item.get("detected") and not item.get("targetExists")]
-    if skill_gaps and not dry_run and not metadata_finding and not values.get("skipAutoDiscovery"):
-        gap_ids = [item["id"] for item in skill_gaps]
-        discovery_values = {"confirmed": gap_ids, "persistLocal": True, "additionalSkills": []}
-        discovery_result = discover_project_guidance(root, dry_run=False, **discovery_values)
-        findings.extend([finding for finding in discovery_result.get("findings", []) if finding.get("severity") == "error"])
-        for action in discovery_result.get("actions", []):
-            if action.get("key") == "persist-local-catalog":
-                findings.append({"path": action["path"], "key": "project-guidance.auto-discovered", "severity": "info",
-                                  "message": f"Auto-discovered and persisted {len(gap_ids)} missing skill(s): {', '.join(gap_ids)}.", "phase": "audit"})
-    return {
-        "mode": "AuditRecommendedTools",
-        "valid": True,
-        "writeEnabled": False,
-        "detectedTags": detected,
-        "researchTopics": topics,
-        "actions": [{"path": ".", "key": "detectedStack", "severity": "info",
-                     "message": f"Detected stack: {', '.join(detected)}", "phase": "audit"}],
-        "findings": findings,
-        "recommendations": filtered,
-    }
-
-
-# ── Write installed skill index ──────────────────────────────────────────
-
-def write_skill_index(root: Path, dry_run: bool = False) -> dict[str, Any]:
-    """Write or refresh the ignored installed-skill runtime index from SKILL.md files."""
-    result = configure_result("WriteInstalledSkillIndex", dry_run, write_enabled=not dry_run)
-    skill_root = root / ".codex" / "skills"
-    if not skill_root.exists():
-        return {"mode": "WriteInstalledSkillIndex", "valid": False,
-                "errors": ["Skills directory not found: .codex/skills"]}
-    entries: list[dict[str, Any]] = []
-    cache: dict[str, dict[str, Any]] = {}
-    for path in sorted(skill_root.rglob("SKILL.md")):
-        skill_name = path.parent.name
-        stat = path.stat()
-        # Compute cache fingerprint: mtime + size
-        fingerprint = f"{stat.st_mtime_ns}:{stat.st_size}"
-        try:
-            content = path.read_text(encoding="utf-8")
-        except OSError:
-            continue
-        # Parse frontmatter
-        name = skill_name
-        fm_match = re.match(r"^---\s*\n(.*?)\n---", content, re.DOTALL)
-        if fm_match:
-            try:
-                import yaml  # type: ignore[import]
-            except ImportError:
-                yaml = None
-            if yaml:
-                try:
-                    parsed = yaml.safe_load(fm_match.group(1))
-                    if isinstance(parsed, dict):
-                        name = str(parsed.get("name", skill_name))
-                except Exception:
-                    pass
-            else:
-                # Fallback: extract name via regex
-                name_m = re.search(r"(?m)^name:\s*(.+)$", fm_match.group(1))
-                if name_m:
-                    name = name_m.group(1).strip().strip('"')
-        entries.append({
-            "name": name,
-            "path": path.relative_to(root).as_posix(),
-            "relativePath": path.relative_to(skill_root.parent).as_posix(),
-            "mtimeNs": stat.st_mtime_ns,
-            "sizeBytes": stat.st_size,
+    if not all_internet_skills:
+        result["actions"].append({
+            "path": "stack",
+            "key": "internet.no-results",
+            "severity": "info",
+            "message": "No skills found on the internet for the configured stack values.",
+            "phase": "audit",
         })
-        cache[skill_name] = {"fingerprint": fingerprint}
-    payload = {
-        "schemaVersion": 1,
-        "generatedAtUtc": int(time.time()),
-        "skillCount": len(entries),
-        "skills": entries,
-        "cache": cache,
-    }
-    output_path = root / ".codex" / "installed-skill-index.local.json"
-    if not dry_run:
-        write_json(output_path, payload)
-    result["actions"].append({"path": ".codex/installed-skill-index.local.json", "key": "write-skill-index",
-                              "severity": "info", "message": f"Wrote skill index with {len(entries)} skills.", "phase": "apply"})
-    result["skillCount"] = len(entries)
-    result["outputPath"] = str(output_path)
-    result["valid"] = True
-    return result
+        result["valid"] = True
+        return result
 
+    # 3. Check each discovered skill locally — skip if already installed
+    install_results: list[dict[str, Any]] = []
+    for skill in all_internet_skills:
+        package = skill.get("package", "")
+        skill_name = skill.get("skill", "")
+        if not package or not skill_name:
+            continue
 
-# ── CLI entry point ──────────────────────────────────────────────────────
+        # Idempotency: skip if the skill already exists on disk
+        if _skill_exists_locally(root, skill_name):
+            result["actions"].append({
+                "path": f".codex/skills/{skill_name}",
+                "key": "internet.skipped",
+                "severity": "info",
+                "message": f"Skill '{skill_name}' already exists locally — skipping install.",
+                "phase": "audit",
+            })
+            # Record a valid pseudo-result so manifest update picks it up
+            install_results.append({"valid": True, "skillName": skill_name})
+            continue
 
-def set_recommended_tools(root: Path, values: dict[str, Any], dry_run: bool = False) -> dict[str, Any]:
-    """Set accepted/dismissed tool recommendations in tool-recommendations.local.json."""
-    from ._shared import configure_result, read_json, write_json as _write_json
-    result = configure_result("SetRecommendedTools", dry_run, write_enabled=not dry_run)
-    path = root / ".codex" / "tool-recommendations.local.json"
-    if "accepted" not in values and "dismissed" not in values:
-        return {"mode": "SetRecommendedTools", "valid": False,
-                "errors": ["values.accepted or values.dismissed is required."]}
-    config = read_json(path, optional=True) if path.exists() else {
-        "schemaVersion": 1, "mode": "guarded-auto",
-        "detectedTags": [], "researchTopics": [],
-        "accepted": [], "dismissed": [],
-        "recommendations": [], "notRecommended": [],
-    }
-    for key in ("accepted", "dismissed"):
-        existing = list(config.get(key, []))
-        for item in values.get(key, []):
-            if item not in existing:
-                existing.append(item)
-        config[key] = existing
-        if values.get(key):
-            result["actions"].append({"path": ".codex/tool-recommendations.local.json", "key": f"recommendedTools.{key}",
-                                      "severity": "info", "message": f"Recorded {key} recommendation ids.", "phase": "apply"})
-    result["valid"] = True
-    if not dry_run:
-        _write_json(path, config)
+        install_res = _install_skill_via_npx(root, package, skill_name, dry_run)
+        install_results.append(install_res)
+        for action in install_res.get("actions", []):
+            result["actions"].append(action)
+        for finding in install_res.get("findings", []):
+            result["findings"].append(finding)
+
+    result["installResults"] = install_results
+
+    # 4. Update manifest with newly installed skills
+    manifest_result = _update_manifest_with_skills(root, install_results, dry_run)
+    for action in manifest_result.get("actions", []):
+        result["actions"].append(action)
+    for finding in manifest_result.get("findings", []):
+        result["findings"].append(finding)
+
+    result["valid"] = not any(
+        item.get("severity") == "error" for item in result["findings"]
+    )
     return result
 
 
 def run_guidance(args: list[str]) -> int:
     """CLI entry point for guidance commands."""
-    import json as _json
     if not args:
-        print("Available: discover, map, acquire, set-recommended-tools, write-skill-index", file=sys.stderr)
+        print("Available: discover", file=sys.stderr)
         return 1
     subcommand = args[0]
     options = parse_pairs(args[1:])
     root = Path(options.get("root", REPO_ROOT))
     dry_run = options.get("dry-run", "false").lower() == "true"
-    handlers: dict[str, Any] = {
-        "discover": lambda: _discover_handler(root, dry_run, options),
-        "map": lambda: _map_handler(root, dry_run, options),
-        "acquire": lambda: _acquire_handler(root, dry_run, options),
-        "set-recommended-tools": lambda: set_recommended_tools(root, _parse_set_recommended_values(options), dry_run),
-        "write-skill-index": lambda: write_skill_index(root, dry_run),
-    }
-    handler = handlers.get(subcommand)
-    if not handler:
-        print(f"Unknown guidance subcommand: {subcommand}", file=sys.stderr)
-        return 1
-    result = handler()
-    print(_json.dumps(result, indent=2))
-    return 0 if result.get("valid", True) else 1
 
+    if subcommand == "discover":
+        result = discover_project_guidance(root, dry_run)
+        print(json.dumps(result, indent=2))
+        return 0 if result.get("valid", True) else 1
 
-def _discover_handler(root: Path, dry_run: bool, options: dict[str, str]) -> dict[str, Any]:
-    confirmed = _parse_list(options.get("confirmed", ""))
-    additional = _parse_json_list(options.get("additional-skills", "[]"))
-    return discover_project_guidance(
-        root, dry_run,
-        confirmed=confirmed,
-        persistLocal=options.get("persist-local", "false").lower() == "true",
-        additionalSkills=additional,
-    )
-
-
-def _map_handler(root: Path, dry_run: bool, options: dict[str, str]) -> dict[str, Any]:
-    step = options.get("workflow-step", "")
-    ids = _parse_list(options.get("recommendation-ids", ""))
-    return map_project_guidance_step(root, step, ids, dry_run)
-
-
-def _acquire_handler(root: Path, dry_run: bool, options: dict[str, str]) -> dict[str, Any]:
-    import json as _json
-    guidance_json = options.get("final-confirmed-guidance", "[]")
-    try:
-        guidance = _json.loads(guidance_json) if guidance_json else []
-    except Exception:
-        guidance = []
-    return acquire_project_guidance(root, dry_run, finalConfirmedGuidance=guidance)
-
-
-# ── Private helpers ──────────────────────────────────────────────────────
-
-def _parse_list(value: str) -> list[str]:
-    return [item.strip() for item in value.split(",") if item.strip()]
-
-
-def _parse_set_recommended_values(options: dict[str, str]) -> dict[str, Any]:
-    """Parse accepted/dismissed JSON arrays from CLI options."""
-    import json as _json
-    values: dict[str, Any] = {}
-    for key in ("accepted", "dismissed"):
-        raw = options.get(key, "[]")
-        try:
-            values[key] = _json.loads(raw) if raw else []
-        except _json.JSONDecodeError:
-            values[key] = []
-    return values
-
-
-def _parse_json_list(value: str) -> list[Any]:
-    import json as _json
-    try:
-        parsed = _json.loads(value)
-        return parsed if isinstance(parsed, list) else []
-    except Exception:
-        return []
-
-
-def _normalize_added_guidance(items: list[Any]) -> list[dict[str, Any]]:
-    normalized: list[dict[str, Any]] = []
-    for item in items:
-        if isinstance(item, str):
-            normalized.append({"name": item})
-        elif isinstance(item, dict):
-            normalized.append(item)
-    return normalized
-
-
-# ── Skill install helpers ─────────────────────────────────────────────────
-
-
-def _run_skill_links(root: Path, result: dict[str, Any]) -> None:
-    """Run create_skill_links.py after a successful install to sync .codex/skills → .cline/skills."""
-    skill_links_script = root / ".cline" / "create_skill_links.py"
-    if not skill_links_script.exists():
-        add_bucket_item(
-            result["findings"], ".cline/create_skill_links.py", "script-missing",
-            "create_skill_links.py not found — .cline/skills will not be synced.",
-            "warning", "post-start",
-        )
-        return
-    links_result = run_native([sys.executable, str(skill_links_script)], root, timeout=30)
-    if links_result["returncode"] == 0:
-        result["actions"].append({"path": ".cline/skills", "key": "skill-links", "severity": "info",
-                                  "message": "Ran create_skill_links.py to sync .codex/skills → .cline/skills.",
-                                  "phase": "apply"})
-    else:
-        add_bucket_item(
-            result["findings"], ".cline/create_skill_links.py", "link-failed",
-            f"Could not sync skills to .cline: {links_result['stderr'][:200]}",
-            "warning", "apply",
-        )
-
-
-def _install_skill_via_clone(root: Path, install_cmd: str, skill_name: str) -> bool:
-    """Fallback: clone the GitHub repo and copy the skill folder into .codex/skills/.
-
-    Used when npx skills add fails (e.g. interactive prompt timeout).
-    Parses install_cmd like 'npx skills add -y owner/repo@skill_name' to
-    determine the repo URL and skill to extract.
-    """
-    import shutil
-    import tempfile
-
-    # Parse install command: npx skills add -y? owner/repo@skill_name
-    cmd_match = re.match(
-        r"^npx\s+skills\s+add\s+(?:-y\s+)?([^/\s]+/[^@\s]+)@(\S+)$",
-        install_cmd.strip(),
-    )
-    if not cmd_match:
-        return False
-    owner_repo = cmd_match.group(1)  # e.g. "vercel-labs/agent-skills"
-    npx_skill_name = cmd_match.group(2)  # e.g. "vercel-react-best-practices"
-
-    # Use the skill_name from the npx registry for the target folder name
-    target_name = npx_skill_name
-    target_dir = root / ".codex" / "skills" / target_name
-    if target_dir.exists():
-        return True  # already installed
-
-    repo_url = f"https://github.com/{owner_repo}.git"
-    temp_dir = Path(tempfile.mkdtemp(prefix="skill-clone-"))
-
-    try:
-        # Clone the repo (shallow, depth 1)
-        clone_cmd = ["git", "clone", "--depth", "1", repo_url, str(temp_dir)]
-        clone_result = run_native(clone_cmd, root, timeout=60)
-        if clone_result["returncode"] != 0:
-            return False
-
-        # Search for the skill folder in the cloned repo
-        # The npx registry name may differ from the folder name:
-        #   npx: "vercel-react-view-transitions" → folder: "react-view-transitions"
-        # We match by: exact name, suffix match, or any dir with SKILL.md
-        def _has_skill_md(d: Path) -> bool:
-            return d.is_dir() and d.joinpath("SKILL.md").exists()
-
-        def _name_matches(dir_name: str, skill_name: str) -> bool:
-            """Check if dir_name matches skill_name (exact or suffix)."""
-            return dir_name == skill_name or skill_name.endswith(dir_name)
-
-        skill_source: Path | None = None
-
-        # Priority 1: skills/<npx_skill_name>/  or skills/<suffix>/
-        skills_dir = temp_dir / "skills"
-        if skills_dir.is_dir():
-            for subdir in skills_dir.iterdir():
-                if _has_skill_md(subdir) and _name_matches(subdir.name, npx_skill_name):
-                    skill_source = subdir
-                    break
-
-        # Priority 2: <npx_skill_name>/ or <suffix>/ in root
-        if skill_source is None:
-            for subdir in temp_dir.iterdir():
-                if _has_skill_md(subdir) and _name_matches(subdir.name, npx_skill_name):
-                    skill_source = subdir
-                    break
-
-        # Priority 3: any subdirectory with SKILL.md (flat repos like wondelai/skills)
-        if skill_source is None:
-            for subdir in temp_dir.iterdir():
-                if _has_skill_md(subdir):
-                    skill_source = subdir
-                    break
-
-        # Priority 4: deep search (nested like han/plugins/core/skills/solid-principles)
-        if skill_source is None:
-            for sk_md in temp_dir.rglob("SKILL.md"):
-                parent = sk_md.parent
-                if _name_matches(parent.name, npx_skill_name):
-                    skill_source = parent
-                    break
-            if skill_source is None:
-                # Last resort: the first SKILL.md found
-                for sk_md in temp_dir.rglob("SKILL.md"):
-                    skill_source = sk_md.parent
-                    break
-
-        if skill_source is None or not skill_source.is_dir():
-            return False
-
-        # Copy the skill folder to .codex/skills/<target_name>/
-        target_dir.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(str(skill_source), str(target_dir), dirs_exist_ok=True)
-        return True
-
-    finally:
-        # Clean up temp clone
-        if temp_dir.exists():
-            shutil.rmtree(str(temp_dir), ignore_errors=True)
-
-
-# ── Multi-source skill search ──────────────────────────────────────────────
-# Source registry: each source is a callable with signature:
-#   fn(root, search_queries, detected_tags, found_ids, dry_run)
-#   -> list[dict[str, Any]]
-# Sources are tried in registry order; results dedup'd by unique_id across all sources.
-# To add a new source:
-#   1. Define a _source_<name>() function with the above signature
-#   2. Add it to _SKILL_SOURCES and _SOURCE_FUNCTIONS below
-# The source_kind set via _build_skill_entry() becomes the prefix for skill IDs.
-
-
-_TAG_QUERIES: dict[str, str] = {
-    "react": "react",
-    "typescript": "typescript",
-    "csharp": "csharp .net",
-    "aspnetcore": "aspnetcore",
-    "sqlite": "sqlite",
-    "entityframework": "entity-framework",
-    "python": "python",
-    "fastapi": "fastapi",
-    "postgresql": "postgresql",
-    "javascript": "javascript",
-    "node": "nodejs",
-}
-_DEFAULT_BLOCK_TAGS: set[str] = {"br", "p", "div", "li", "tr", "h1", "h2", "h3", "h4", "h5", "h6", "section"}
-
-
-class _HtmlToText(HTMLParser):
-    """Extract visible text from HTML, preserving line breaks at block boundaries.
-
-    Strips all HTML tags. Inserts newlines when entering/exiting block-level
-    elements so the extracted text preserves the document's line structure.
-    """
-
-    def __init__(self, block_tags: set[str] | None = None) -> None:
-        super().__init__()
-        self._parts: list[str] = []
-        self._block_tags = block_tags if block_tags is not None else _DEFAULT_BLOCK_TAGS
-
-    def handle_data(self, data: str) -> None:
-        self._parts.append(data)
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag in self._block_tags:
-            self._parts.append("\n")
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag in self._block_tags:
-            self._parts.append("\n")
-
-    def text(self) -> str:
-        return re.sub(r"\n{3,}", "\n\n", "".join(self._parts))
-
-
-_GENERAL_TOPICS: list[tuple[str, str]] = [
-    ("clean-architecture", "clean architecture"),
-    ("clean-code", "clean code"),
-    ("solid-principles", "SOLID principles"),
-    ("best-practices", "software best practices"),
-]
-
-
-def _build_skill_entry(
-    unique_id: str,
-    display_name: str,
-    source_kind: str,
-    install_method: str,
-    install_command: str,
-    source_url: str,
-    skill_name: str,
-    detected_tags: list[str],
-    purpose: str,
-) -> dict[str, Any]:
-    """Build a standard skill recommendation entry.
-
-    Uses module-level _GENERAL_TOPICS for tag alignment.
-    """
-    skill_lower = skill_name.lower()
-    aligned_tags = [tag for tag in detected_tags if tag in skill_lower]
-    if not aligned_tags:
-        for topic_id, topic_query in _GENERAL_TOPICS:
-            if topic_id in skill_lower or topic_query.split()[0] in skill_lower:
-                aligned_tags.append(topic_id.replace("-", ""))
-    if not aligned_tags:
-        aligned_tags = ["general"]
-    return {
-        "id": f"{source_kind}:{unique_id}",
-        "name": display_name,
-        "type": "skill",
-        "requires": aligned_tags,
-        "purpose": purpose,
-        "installMethod": install_method,
-        "installCommand": install_command,
-        "source": f"{source_kind}:{unique_id}",
-        "sourceUrl": source_url,
-        "target": f".codex/skills/{skill_name}/SKILL.md",
-        "validation": f"Test-Path .\\.codex\\skills\\{skill_name}\\SKILL.md",
-        "sourceKind": source_kind,
-        "installScope": "repo-local",
-        "installerKind": "skills-cli" if install_method == "skills-cli-add" else "web",
-        "detected": True,
-        "targetExists": False,
-        "requiresIdeRestart": False,
-        "requiresSystemReboot": False,
-        "userActionRequired": False,
-        "usedInSteps": [],
-    }
-
-
-def _source_npx_skills(
-    root: Path,
-    search_queries: list[str],
-    detected_tags: list[str],
-    found_ids: set[str],
-    dry_run: bool,
-) -> list[dict[str, Any]]:
-    """Source: npx skills find CLI — queries the skills.sh registry (community skills).
-
-    Signature: (root, search_queries, detected_tags, found_ids, dry_run) -> list[dict]
-    See _SKILL_SOURCES / _SOURCE_FUNCTIONS for the source registry pattern.
-    """
-    ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
-    skill_line_re = re.compile(r"^(\S+?)/(\S+?)@(\S+?)\s+([\d.]+[KMB]?)\s+installs$")
-    url_line_re = re.compile(r"^└\s+(https?://\S+)$")
-
-    results: list[dict[str, Any]] = []
-
-    for query in search_queries:
-        if dry_run:
-            continue
-        output = run_native(["npx", "skills", "find", query], root, timeout=60)
-        if output["returncode"] != 0 or not output["stdout"]:
-            continue
-        clean_stdout = ansi_escape.sub("", output["stdout"])
-        lines = clean_stdout.split("\n")
-        i = 0
-        while i < len(lines):
-            line = lines[i].strip()
-            skill_match = skill_line_re.match(line)
-            if skill_match:
-                owner = skill_match.group(1)
-                repo = skill_match.group(2)
-                skill_name = skill_match.group(3)
-                installs_str = skill_match.group(4)
-                url = ""
-                if i + 1 < len(lines):
-                    url_match = url_line_re.match(lines[i + 1].strip())
-                    if url_match:
-                        url = url_match.group(1)
-                unique_id = f"{owner}/{repo}@{skill_name}"
-                if unique_id not in found_ids:
-                    found_ids.add(unique_id)
-                    display_name = f"{skill_name.replace('-', ' ').replace(':', ' ').title()} ({owner}/{repo})"
-                    entry = _build_skill_entry(
-                        unique_id=unique_id,
-                        display_name=display_name,
-                        source_kind="skills-sh",
-                        install_method="skills-cli-add",
-                        install_command=f"npx skills add -y {owner}/{repo}@{skill_name}",
-                        source_url=url,
-                        skill_name=skill_name,
-                        detected_tags=detected_tags,
-                        purpose=f"Community skill from {owner}/{repo} — {installs_str} installs.",
-                    )
-                    results.append(entry)
-                i += 2
-            else:
-                i += 1
-    return results
-
-
-def _source_officialskills_web(
-    root: Path,
-    search_queries: list[str],
-    detected_tags: list[str],
-    found_ids: set[str],
-    dry_run: bool,
-) -> list[dict[str, Any]]:
-    """Source: officialskills.sh — curated official skills from vendor dev teams.
-
-    Uses stdlib HTMLParser to extract skill entries: number → name → vendor → description.
-    Signature: (root, search_queries, detected_tags, found_ids, dry_run) -> list[dict]
-    """
-    import urllib.request
-
-    if dry_run:
-        return []
-
-    results: list[dict[str, Any]] = []
-    official_url = "https://officialskills.sh/"
-
-    # ── Fetch HTML ──────────────────────────────────────────────────────
-    try:
-        req = urllib.request.Request(official_url, headers={
-            "User-Agent": "Mozilla/5.0 (compatible; SDD-CLI/1.0)",
-            "Accept": "text/html",
-        })
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            html = resp.read().decode("utf-8", errors="replace")
-    except Exception:
-        return []
-
-    # ── Extract visible text preserving line structure ───────────────────
-    extractor = _HtmlToText()
-    extractor.feed(html)
-    text = extractor.text()
-
-    # Find the "Find Skills" section header
-    find_idx = text.find("Find Skills")
-    if find_idx < 0:
-        # Try a broader search — look for "Official Agent Skills" or "Browse Official Skills"
-        for marker in ("Browse Official Skills", "Official Agent Skills", "Quick Stats"):
-            idx = text.find(marker)
-            if idx >= 0:
-                find_idx = idx
-                break
-        if find_idx < 0:
-            return []
-    text = text[find_idx:]
-
-    # ── Parse skill entries ──────────────────────────────────────────────
-    # Format (after HTMLParser extraction) — numbers on their own line:
-    #   \n<number>\n\n<skill-name><Vendor>/skills\n\n<description>\n
-    # Example:
-    #   
-    #   1
-    #
-    #   accessibilityAddy Osmani/skills
-    #
-    #   Audits and improves web accessibility against WCAG 2.
-    #
-    #   2
-    #
-    #   agent-email-inboxResend/skills
-    #
-    #   Sets up a secure email inbox for AI agents using Resend webhooks.
-
-    lines = text.split("\n")
-    num_re = re.compile(r"^(\d+)$")
-    # Matches: <skill-name><Vendor>/skills  (skill-name is lowercase-hyphen, vendor starts uppercase)
-    entry_re = re.compile(
-        r"^([a-z0-9][-a-z0-9]*[a-z0-9]?)"    # skill name (lowercase, hyphenated)
-        r"([A-Z][A-Za-z0-9 ./-]*?)"           # vendor name (starts uppercase, non-greedy)
-        r"(?:/skills)?"                        # optional /skills suffix
-        r"\s*$"
-    )
-
-    i = 0
-    while i < len(lines):
-        line = lines[i].strip()
-        num_match = num_re.match(line)
-        if not num_match:
-            i += 1
-            continue
-        # Found a number line — look ahead for the name+vendor line
-        skill_name = ""
-        vendor_raw = ""
-        desc = ""
-        for j in range(i + 1, min(i + 6, len(lines))):
-            stripped = lines[j].strip()
-            if not stripped:
-                continue
-            # Try to parse as skill entry: name+vendor[/skills]
-            em = entry_re.match(stripped)
-            if em:
-                skill_name = em.group(1)
-                vendor_raw = em.group(2).replace("/skills", "").strip()
-                # Remaining lines (up to 4) are the description
-                desc_parts: list[str] = []
-                for k in range(j + 1, min(j + 5, len(lines))):
-                    next_s = lines[k].strip()
-                    if not next_s or num_re.match(next_s):
-                        break
-                    if next_s == "/skills":
-                        continue
-                    desc_parts.append(next_s)
-                desc = " ".join(desc_parts)
-                break
-        if not skill_name:
-            i += 1
-            continue
-        # Check relevance: does this skill match any search query or detected tag?
-        if not any(
-            q.lower() in skill_name.lower() or any(t in skill_name.lower() for t in detected_tags)
-            for q in search_queries
-        ):
-            i += 1
-            continue
-        unique_id = f"official:{skill_name}"
-        if unique_id not in found_ids:
-            found_ids.add(unique_id)
-            display_name = f"{skill_name.replace('-', ' ').replace(':', ' ').title()} — Official ({vendor_raw})"
-            entry = _build_skill_entry(
-                unique_id=unique_id,
-                display_name=display_name,
-                source_kind="official-skills",
-                install_method="manual-reference",
-                install_command="",
-                source_url="https://officialskills.sh/",
-                skill_name=skill_name,
-                detected_tags=detected_tags,
-                purpose=f"Official skill from {vendor_raw}: {desc[:200]}." if desc else f"Official skill from {vendor_raw}.",
-            )
-            results.append(entry)
-        i += 1
-
-    return results
-
-
-def _source_skills_web(
-    root: Path,
-    search_queries: list[str],
-    detected_tags: list[str],
-    found_ids: set[str],
-    dry_run: bool,
-) -> list[dict[str, Any]]:
-    """Source: www.skills.sh — web scrape of the skills.sh leaderboard.
-
-    Used as a fallback when npx CLI is not available. Parses the HTML
-    leaderboard to extract: skill name, owner/repo, and install counts.
-    Signature: (root, search_queries, detected_tags, found_ids, dry_run) -> list[dict]
-    """
-    import urllib.request
-
-    if dry_run:
-        return []
-
-    results: list[dict[str, Any]] = []
-    skills_url = "https://www.skills.sh/"
-
-    # ── Fetch HTML ──────────────────────────────────────────────────────
-    try:
-        req = urllib.request.Request(skills_url, headers={
-            "User-Agent": "Mozilla/5.0 (compatible; SDD-CLI/1.0)",
-            "Accept": "text/html",
-        })
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            html = resp.read().decode("utf-8", errors="replace")
-    except Exception:
-        return []
-
-    # ── Extract visible text preserving line structure ───────────────────
-    # skills.sh uses table-based layout — add td/table to block tags
-    block_tags = _DEFAULT_BLOCK_TAGS | {"td", "table"}
-    extractor = _HtmlToText(block_tags)
-    extractor.feed(html)
-    text = extractor.text()
-
-    # Find the "Skills Leaderboard" section — entries start after this header
-    lb_idx = text.find("Skills Leaderboard")
-    if lb_idx < 0:
-        return []
-    section = text[lb_idx:]
-
-    # ── Parse skill entries ──────────────────────────────────────────────
-    # Format (after HTMLParser extraction):
-    #   <number>
-    #
-    #   <skill-name>
-    #
-    #   <owner/repo>
-    #
-    #   <installs>
-    #
-    #   <next-number>
-    #
-    # Example:
-    #   1
-    #
-    #   find-skills
-    #
-    #   vercel-labs/skills
-    #
-    #   2.6M
-
-    lines = section.split("\n")
-    num_re = re.compile(r"^\d+$")
-    aggregate_re = re.compile(r"^\+\d+\s+more from")
-
-    i = 0
-    while i < len(lines):
-        line = lines[i].strip()
-        if not num_re.match(line):
-            i += 1
-            continue
-
-        # Found a ranking number — collect the next 3 non-empty, non-aggregate values
-        values: list[str] = []
-        for j in range(i + 1, min(i + 12, len(lines))):
-            s = lines[j].strip()
-            if not s:
-                continue
-            if aggregate_re.match(s):
-                values = []  # aggregate rows have no individual skill data
-                break
-            if num_re.match(s):
-                break  # reached next entry without completing — incomplete data
-            values.append(s)
-            if len(values) == 3:
-                break
-
-        if len(values) == 3:
-            skill_name, owner_repo, installs_str = values
-            # Validate: owner/repo must contain a slash
-            if "/" in owner_repo:
-                # Check relevance: does this skill match any search query or detected tag?
-                if any(
-                    q.lower() in skill_name.lower() or q.lower() in owner_repo.lower()
-                    or any(t in skill_name.lower() for t in detected_tags)
-                    for q in search_queries
-                ):
-                    unique_id = f"{owner_repo}@{skill_name}"
-                    if unique_id not in found_ids:
-                        found_ids.add(unique_id)
-                        display_name = f"{skill_name.replace('-', ' ').replace(':', ' ').title()} ({owner_repo})"
-                        entry = _build_skill_entry(
-                            unique_id=unique_id,
-                            display_name=display_name,
-                            source_kind="skills-sh-web",
-                            install_method="skills-cli-add",
-                            install_command=f"npx skills add -y {owner_repo}@{skill_name}",
-                            source_url="https://www.skills.sh/",
-                            skill_name=skill_name,
-                            detected_tags=detected_tags,
-                            purpose=f"Community skill from {owner_repo} — {installs_str} installs.",
-                        )
-                        results.append(entry)
-        i += 1
-
-    return results
-
-
-# Source registry — order determines priority for dedup (first source wins)
-# Each source is keyed by its registry name and mapped to a callable.
-# "skills-sh" = skills.sh community registry via npx CLI (https://www.skills.sh/)
-# "skills-sh-web" = skills.sh web scrape fallback when npx CLI is not available
-# "officialskills-web" = officialskills.sh curated directory (https://officialskills.sh/)
-# Add new sources by appending to this list and adding a matching function below.
-_SKILL_SOURCES = ["skills-sh", "skills-sh-web", "officialskills-web"]
-_SOURCE_FUNCTIONS: dict[str, Any] = {
-    "skills-sh": _source_npx_skills,
-    "skills-sh-web": _source_skills_web,
-    "officialskills-web": _source_officialskills_web,
-}
-
-
-def _search_skills_from_tags(root: Path, detected_tags: list[str], dry_run: bool) -> list[dict[str, Any]]:
-    """Search for skills from ALL configured sources.
-
-    Queries each source in registry order, deduplicating by ID.
-    Covers: skills.sh (via npx CLI), officialskills.sh (via web fetch),
-    and any future sources added to the _SKILL_SOURCES registry.
-    """
-    search_queries: list[str] = []
-
-    # Build search queries from detected tags
-    for tag in detected_tags:
-        query = _TAG_QUERIES.get(tag)
-        if query and query not in search_queries:
-            search_queries.append(query)
-
-    # Always add general topics
-    for _, query in _GENERAL_TOPICS:
-        if query not in search_queries:
-            search_queries.append(query)
-
-    if not search_queries:
-        return []
-
-    all_results: list[dict[str, Any]] = []
-    found_ids: set[str] = set()
-    source_counts: dict[str, int] = {}
-
-    for source_name in _SKILL_SOURCES:
-        source_fn = _SOURCE_FUNCTIONS.get(source_name)
-        if source_fn is None:
-            continue
-        try:
-            source_results =        source_fn(
-                root, search_queries, detected_tags, found_ids, dry_run
-            )
-            if source_results:
-                source_counts[source_name] = len(source_results)
-                all_results.extend(source_results)
-        except Exception as _exc:
-            # Source failed — log to stderr rather than crashing the whole search
-            import sys
-            import traceback
-            traceback.print_exc(file=sys.stderr)
-            print(f"[guidance] source '{source_name}' failed — skipping.", file=sys.stderr)
-
-    return all_results
-
-
-def _stack_metadata_validation_finding(root: Path) -> dict[str, str] | None:
-    profile = load_project_profile(root).get("stack")
-    if not isinstance(profile, dict):
-        return None
-    selection_recorded = profile.get("selectionRecorded") is True
-    any_applies = any(
-        isinstance(profile.get(domain), dict) and profile.get(domain, {}).get("applies") and str(profile.get(domain, {}).get("value", "")).strip()
-        for domain in ("frontend", "backend", "database")
-    )
-    if not selection_recorded and not any_applies:
-        return None
-    if profile.get("metadataValidationStatus") == "validated":
-        return None
-    return {
-        "key": "stack.metadata.validation",
-        "severity": "error",
-        "phase": "pre-discovery",
-        "message": "Validate stack metadata before project guidance discovery.",
-        "path": ".codex/project-profile.local.json",
-    }
+    print(f"Unknown guidance subcommand: {subcommand}", file=sys.stderr)
+    return 1

@@ -5,10 +5,10 @@ on:
     branches:
       - dev
     paths:
-      - '.codex/agent-evals/**'
-      - '.codex/delivery-policy.json'
-      - '.codex/skills/_shared/delivery-contract*.md'
-      - 'tools/sdd_cli/agent_eval.py'
+      - ".codex/agent-evals/**"
+      - ".codex/delivery-policy.json"
+      - ".codex/skills/_shared/delivery-contract*.md"
+      - "tools/sdd_cli/agent_eval.py"
 
 jobs:
   eval:

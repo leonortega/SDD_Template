@@ -15,14 +15,11 @@ from ._shared import REPO_ROOT, CliError, parse_pairs, read_json
 ALL_CONFIGURE_MODES: list[str] = [
     "Audit",
     "AuditQualityGates",
-    "AuditRecommendedTools",
     "BuildGiteaActionsImages",
     "DiscoverProjectGuidance",
-    "AcquireProjectGuidance",
     "InitLocalFiles",
     "InitProjectProfile",
     "InitQualityGateTemplates",
-    "MapProjectGuidanceStep",
     "SetClientTools",
     "SetGiteaBranchProtection",
     "SetGiteaRunner",
@@ -31,8 +28,8 @@ ALL_CONFIGURE_MODES: list[str] = [
     "SetProjectStack",
     "SetProjectStackMetadata",
     "SetQualityConfig",
-    "SetRecommendedTools",
     "SetSemgrepConfig",
+    "SetupProjectGuidance",
     "SplitInfraEnv",
     "SyncWorktreeLocalConfig",
     "EnsureDeliveryContext",
@@ -66,12 +63,6 @@ def git_text(root: Path, args: list[str]) -> str:
     from ._shared import git_text as _impl
 
     return _impl(root, args)
-
-
-def load_tool_recommendations_catalog(root: Path) -> dict[str, Any]:
-    from ._shared import load_tool_recommendations_catalog as _impl
-
-    return _impl(root)
 
 
 def selected_deployment_provider(root: Path) -> str:
@@ -125,10 +116,8 @@ def run_delivery_mode(mode: str, options: dict[str, Any]) -> Any:
         check_git_ignored,
         delivery_risk,
         extract_ticket_key,
-        initialize_workflow_telemetry,
         next_rc_version_output,
         read_openproject_time_telemetry,
-        read_workflow_telemetry,
         render_openproject_time_telemetry_comment,
         render_ticket_comment,
         resolve_openproject_time_activity,
@@ -161,19 +150,6 @@ def run_delivery_mode(mode: str, options: dict[str, Any]) -> Any:
         "ValidateReleaseManifest": lambda: validate_release_manifest(
             Path(options["path"])
         ),
-        "InitializeWorkflowTelemetry": lambda: initialize_workflow_telemetry(
-            Path(options.get("repo-root", REPO_ROOT)), options.get("ticket-key", "")
-        ),
-        "AppendWorkflowTelemetry": lambda: append_workflow_telemetry(
-            Path(options.get("repo-root", REPO_ROOT)),
-            options.get("ticket-key", ""),
-            options.get("input-json", "{}"),
-        ),
-        "ReadWorkflowTelemetry": lambda: read_workflow_telemetry(
-            Path(options.get("repo-root", REPO_ROOT)),
-            options.get("ticket-key", ""),
-            options.get("input-json", "{}"),
-        ),
         "ReadOpenProjectTimeTelemetry": lambda: read_openproject_time_telemetry(
             options.get("ticket-key", ""), options.get("input-json", "{}")
         ),
@@ -197,8 +173,6 @@ def run_delivery_mode(mode: str, options: dict[str, Any]) -> Any:
             int(options.get("changed-lines", "0")),
         ),
     }
-    from .dev_flow import append_workflow_telemetry
-
     handler = runners.get(mode)
     if handler is None:
         return {"valid": False, "error": f"Unknown delivery mode: {mode}"}
@@ -314,35 +288,15 @@ def run_configure_mode(
         return direct_no_values[mode](root, dry_run)
 
     # Modes implemented in guidance module
-    if mode in (
-        "DiscoverProjectGuidance",
-        "AcquireProjectGuidance",
-        "MapProjectGuidanceStep",
-        "SetRecommendedTools",
-    ):
-        from .guidance import (
-            acquire_project_guidance,
-            discover_project_guidance,
-            map_project_guidance_step,
-            set_recommended_tools,
-        )
+    if mode == "DiscoverProjectGuidance":
+        from .guidance import discover_project_guidance
 
-        if mode == "DiscoverProjectGuidance":
-            return discover_project_guidance(root, dry_run, **values)
-        if mode == "AcquireProjectGuidance":
-            return acquire_project_guidance(root, dry_run, **values)
-        if mode == "MapProjectGuidanceStep":
-            workflow_step = values.get("workflowStep", "")
-            recommendation_ids = values.get("recommendationIds", [])
-            if isinstance(recommendation_ids, str):
-                recommendation_ids = [
-                    r.strip() for r in recommendation_ids.split(",") if r.strip()
-                ]
-            return map_project_guidance_step(
-                root, workflow_step, recommendation_ids, dry_run
-            )
-        if mode == "SetRecommendedTools":
-            return set_recommended_tools(root, values, dry_run)
+        return discover_project_guidance(root, dry_run, **values)
+
+    if mode == "SetupProjectGuidance":
+        from .guidance import setup_project_guidance
+
+        return setup_project_guidance(root, values, dry_run)
 
     # Modes implemented in dev_flow module
     if mode in ("SyncWorktreeLocalConfig", "EnsureDeliveryContext"):
@@ -364,9 +318,6 @@ def run_configure_mode(
 
     if mode == "AuditQualityGates":
         return _run_audit_quality_gates(root, dry_run)
-
-    if mode == "AuditRecommendedTools":
-        return _run_audit_recommended_tools(root, dry_run)
 
     # Unknown mode
     return {
@@ -473,35 +424,6 @@ def _run_audit(root: Path, dry_run: bool) -> dict[str, Any]:
                                     "audit",
                                 )
 
-        openrouter = client_tools.get("openRouter", {})
-        if isinstance(openrouter, dict):
-            if not openrouter.get("apiKey"):
-                add_bucket_item(
-                    result["findings"],
-                    ".codex/client-tools.local.json",
-                    "openRouter.apiKey",
-                    "OpenRouter API key is not configured.",
-                    "warning",
-                    "audit",
-                )
-            if not openrouter.get("baseUrl"):
-                add_bucket_item(
-                    result["findings"],
-                    ".codex/client-tools.local.json",
-                    "openRouter.baseUrl",
-                    "OpenRouter base URL is not configured.",
-                    "warning",
-                    "audit",
-                )
-            if not openrouter.get("modelMapping"):
-                add_bucket_item(
-                    result["findings"],
-                    ".codex/client-tools.local.json",
-                    "openRouter.modelMapping",
-                    "OpenRouter model mapping is not configured.",
-                    "warning",
-                    "audit",
-                )
 
     result["valid"] = not any(
         item.get("severity") == "error" for item in result["findings"]
@@ -540,66 +462,6 @@ def _run_audit_quality_gates(root: Path, dry_run: bool) -> dict[str, Any]:
         item.get("severity") == "error" for item in result["findings"]
     )
     return result
-
-
-def _run_audit_recommended_tools(root: Path, dry_run: bool) -> dict[str, Any]:
-    """Audit recommended tools using stack detection and guidance discovery."""
-    from ._shared import (
-        add_bucket_item,
-        build_recommendations,
-        build_research_topics,
-        build_stack_context_findings,
-        configure_result,
-        detect_stack_tags,
-        load_project_profile,
-        nested,
-    )
-
-    result = configure_result("AuditRecommendedTools", dry_run, write_enabled=False)
-    detected = detect_stack_tags(root)
-    topics = build_research_topics(detected, root)
-    recommendations = build_recommendations(root, detected, topics)
-    findings = build_stack_context_findings(root, detected)
-    for finding in findings:
-        result["findings"].append(finding)
-
-    result["detectedTags"] = detected
-    result["researchTopics"] = topics
-    result["recommendations"] = recommendations
-    result["actions"] = [
-        {
-            "path": ".",
-            "key": "detectedStack",
-            "severity": "info",
-            "message": f"Detected stack: {', '.join(detected)}",
-            "phase": "audit",
-        }
-    ]
-
-    # Check if stack metadata needs validation
-    profile = load_project_profile(root)
-    stack = nested(profile, "stack") or {}
-    if (
-        isinstance(stack, dict)
-        and stack.get("selectionRecorded")
-        and stack.get("metadataValidationStatus") != "validated"
-    ):
-        add_bucket_item(
-            result["findings"],
-            ".codex/project-profile.local.json",
-            "stack.metadata.validation",
-            "Validate stack metadata before project guidance discovery.",
-            "error",
-            "pre-discovery",
-        )
-
-    result["valid"] = not any(
-        item.get("severity") == "error" for item in result["findings"]
-    )
-    return result
-
-
-# ── Audit modes ──────────────────────────────────────────────────────────
 
 
 # ── Entry point ──────────────────────────────────────────────────────────
@@ -668,6 +530,13 @@ def _parse_cli(argv: list[str] | None):
     ae.add_argument("ae_args", nargs=argparse.REMAINDER)
     ae.set_defaults(func=_dispatch_agent_eval)
 
+    # full-setup
+    full = sub.add_parser("full-setup")
+    full.add_argument("--dry-run", action="store_true", default=False)
+    full.add_argument("--root", default=str(REPO_ROOT))
+    full.add_argument("full_args", nargs=argparse.REMAINDER)
+    full.set_defaults(func=_dispatch_full_setup)
+
     # configure (for run_configure_mode testing)
     cfg = sub.add_parser("configure")
     cfg.add_argument("cfg_mode", nargs=1)
@@ -683,7 +552,7 @@ def _parse_cli(argv: list[str] | None):
 def _fallback(args: Any) -> int:
     print(
         "Top-level commands: prereqs, environment-lab, tool-installer, "
-        "template-installer, guidance, dev-flow, memory-search, configure",
+        "template-installer, guidance, dev-flow, full-setup, memory-search, configure",
         file=sys.stderr,
     )
     return 1
@@ -697,9 +566,18 @@ def _dispatch_prereqs(args: Any) -> int:
 
 
 def _dispatch_environment_lab(args: Any) -> int:
+    raw = getattr(args, "envlab_args", [])
+    # Intercept "setup-lab" — delegate to the full 4-stage setup
+    if raw and raw[0] == "setup-lab":
+        from .full_setup import run_full_setup
+
+        return run_full_setup(
+            raw[1:],  # strip "setup-lab", pass remaining (--dry-run, etc.)
+            root=Path(getattr(args, "root", REPO_ROOT)),
+        )
     from .environment_lab import run_environment_lab
 
-    return run_environment_lab(getattr(args, "envlab_args", []))
+    return run_environment_lab(raw)
 
 
 def _dispatch_tool_installer(args: Any) -> int:
@@ -736,6 +614,16 @@ def _dispatch_agent_eval(args: Any) -> int:
     from .agent_eval import run_agent_eval
 
     return run_agent_eval(getattr(args, "ae_args", []))
+
+
+def _dispatch_full_setup(args: Any) -> int:
+    from .full_setup import run_full_setup
+
+    return run_full_setup(
+        getattr(args, "full_args", []),
+        root=Path(getattr(args, "root", REPO_ROOT)),
+        dry_run=getattr(args, "dry_run", False),
+    )
 
 
 def _dispatch_configure(args: Any) -> int:

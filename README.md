@@ -8,7 +8,7 @@ This repository is not a production-ready product template yet. It is not a prod
 
 - A repeatable SDLC workflow driven by tickets, OpenSpec changes, and Codex skills.
 - A local DevOps platform shape built around free/open-source tools for source control, CI, artifacts, deployment, and observability.
-- Provider adapters for OpenProject, Gitea, Nexus, Docker Desktop, and observability tools.
+- Reference docs for OpenProject, Gitea, Nexus, Docker Desktop, and observability tools.
 - Versioned install and update commands so a separate test repository can consume lab releases.
 - Guardrails for quality gates, secret safety, PR review, QA evidence, release lineage, and rollback.
 
@@ -43,7 +43,7 @@ The tool is intentionally conservative:
 ## Repository Shape
 
 ```text
-.codex/             AI workflow skills, provider adapters, policies, and profile files
+.codex/             AI workflow skills, policies, and profile files
 .gitea/             Gitea Actions workflow templates
 docs/               Architecture, development, deployment, and context guidance
 infra/              Local platform templates and deployment topology
@@ -167,7 +167,6 @@ In an installed test repository, run smoke checks for the installed helper CLI:
 
 ```bash
 python -m tools.sdd_cli environment-lab audit
-python -m tools.sdd_cli guidance discover
 ```
 
 In this lab repository only, run helper tests when test dependencies are available:

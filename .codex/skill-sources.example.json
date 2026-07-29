@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "1.0",
+  "description": "Configured GitHub repositories where skills can be discovered and installed.",
+  "sources": [
+    {
+      "name": "awesome-copilot",
+      "repo": "github/awesome-copilot",
+      "path": "skills",
+      "branch": "main",
+      "description": "GitHub's awesome-copilot skills collection"
+    },
+    {
+      "name": "anthropics",
+      "repo": "anthropics/skills",
+      "path": "skills",
+      "branch": "main",
+      "description": "Anthropic's skills collection"
+    }
+  ]
+}

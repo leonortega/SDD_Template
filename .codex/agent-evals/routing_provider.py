@@ -35,7 +35,9 @@ def call_api(
 
     # Extract test variables
     ticket_state = str(vars_data.get("ticketState", "")).strip().lower()
-    branch_exists = str(vars_data.get("branchExists", "false")).strip().lower() == "true"
+    branch_exists = (
+        str(vars_data.get("branchExists", "false")).strip().lower() == "true"
+    )
     pr_exists = str(vars_data.get("prExists", "false")).strip().lower() == "true"
     pr_merged = str(vars_data.get("prMerged", "false")).strip().lower() == "true"
     qa_evidence = str(vars_data.get("qaEvidence", "")).strip().lower()
@@ -44,13 +46,25 @@ def call_api(
     hotfix = str(vars_data.get("hotfix", "false")).strip().lower() == "true"
 
     # --- PARALLEL DELIVERY & DEPLOYMENT LANE VARS ---
-    parallel_enabled = str(vars_data.get("parallelEnabled", "false")).strip().lower() == "true"
-    max_active_reached = str(vars_data.get("maxActiveReached", "false")).strip().lower() == "true"
+    parallel_enabled = (
+        str(vars_data.get("parallelEnabled", "false")).strip().lower() == "true"
+    )
+    max_active_reached = (
+        str(vars_data.get("maxActiveReached", "false")).strip().lower() == "true"
+    )
     lane_owner = str(vars_data.get("laneOwner", "")).strip().lower()
-    prod_requested = str(vars_data.get("prodRequested", "false")).strip().lower() == "true"
-    nexus_artifact_exists = str(vars_data.get("nexusArtifactExists", "true")).strip().lower() == "true"
-    release_tag_conflict = str(vars_data.get("releaseTagConflict", "false")).strip().lower() == "true"
-    worktree_exists = str(vars_data.get("worktreeExists", "false")).strip().lower() == "true"
+    prod_requested = (
+        str(vars_data.get("prodRequested", "false")).strip().lower() == "true"
+    )
+    nexus_artifact_exists = (
+        str(vars_data.get("nexusArtifactExists", "true")).strip().lower() == "true"
+    )
+    release_tag_conflict = (
+        str(vars_data.get("releaseTagConflict", "false")).strip().lower() == "true"
+    )
+    worktree_exists = (
+        str(vars_data.get("worktreeExists", "false")).strip().lower() == "true"
+    )
 
     # Evaluate routing logic
     route = _evaluate_route(
@@ -141,7 +155,12 @@ def _evaluate_route(
         return "dev-flow-pipeline-status"
 
     # Lane blocked helper
-    lane_blocked = parallel_enabled and lane_owner not in ("", "current-ticket", "self", "none")
+    lane_blocked = parallel_enabled and lane_owner not in (
+        "",
+        "current-ticket",
+        "self",
+        "none",
+    )
 
     # Priority 3: Parallel delivery max capacity
     if parallel_enabled and max_active_reached:
@@ -149,7 +168,11 @@ def _evaluate_route(
 
     # Priority 4: Ticket state routing
     if ticket_state == "todo":
-        return "dev-flow-start-ticket" if not branch_exists else "dev-flow-implement-ticket"
+        return (
+            "dev-flow-start-ticket"
+            if not branch_exists
+            else "dev-flow-implement-ticket"
+        )
 
     if ticket_state in ("in progress", "in_progress"):
         if not branch_exists:

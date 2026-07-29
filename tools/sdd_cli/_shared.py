@@ -15,12 +15,11 @@ from pathlib import Path
 from typing import Any, Callable, NoReturn
 from urllib.parse import urlparse
 
-
 # ── Core constants ───────────────────────────────────────────────────────
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PYTHON_REQUIRES = (3, 11)
-SEARCH_PLAN_ID = "project-guidance-search-plan"
+
 STANDARD_STAGES = [
     "dev-flow-start-ticket",
     "dev-flow-implement-ticket",
@@ -98,6 +97,7 @@ def get_sdd_tool_preserve_example_files() -> set[str]:
 
 # ── Error / runner types ────────────────────────────────────────────────
 
+
 class CliError(RuntimeError):
     pass
 
@@ -107,37 +107,71 @@ Runner = Callable[[list[str], Path | None, dict[str, str] | None], int]
 
 # ── SDD tool helpers ─────────────────────────────────────────────────────
 
-def sdd_tool_files(source: Path) -> list[str]:
-    """List all managed files in the SDD tool source."""
+
+def walk_sdd_source_files(source: Path) -> list[str]:
+    """Walk source directory using os.scandir, skipping excluded directories
+    entirely during traversal instead of walking them and filtering after.
+
+    Returns sorted list of relative posix paths for all non-excluded files.
+    """
     files: list[str] = []
     exclude_parts = get_sdd_tool_exclude_parts()
     exclude_segments = get_sdd_tool_exclude_segments()
     exclude_suffixes = get_sdd_tool_exclude_suffixes()
-    for pattern in ("**/*",):
-        for path in source.rglob(pattern):
-            if not path.is_file():
-                continue
-            relative = path.relative_to(source).as_posix()
-            # Exclude excluded parts
-            excluded = False
-            for part in exclude_parts:
-                if relative.startswith(part) or f"/{part}/" in f"/{relative}/":
-                    excluded = True
-                    break
-            if excluded:
-                continue
-            # Exclude by segment
-            for segment in exclude_segments:
-                if f"/{segment}/" in f"/{relative}/" or relative == segment:
-                    excluded = True
-                    break
-            if excluded:
-                continue
-            # Exclude by suffix
-            if any(relative.endswith(suffix) for suffix in exclude_suffixes):
-                continue
-            files.append(relative)
+
+    stack: list[tuple[Path, str]] = [(source, "")]
+    while stack:
+        dir_path, rel_prefix = stack.pop()
+        try:
+            with os.scandir(str(dir_path)) as entries:
+                for entry in entries:
+                    entry_rel = (
+                        f"{rel_prefix}/{entry.name}" if rel_prefix else entry.name
+                    )
+
+                    # Check exclusion BEFORE recursing into subdirectories
+                    excluded = False
+                    for part in exclude_parts:
+                        if entry_rel.startswith(part) or f"/{part}/" in f"/{entry_rel}/":
+                            excluded = True
+                            break
+                    if excluded:
+                        continue
+
+                    if entry.is_dir(follow_symlinks=False):
+                        stack.append((Path(entry.path), entry_rel))
+                    elif entry.is_file():
+                        # Exclude by segment
+                        excluded = False
+                        for segment in exclude_segments:
+                            if (
+                                f"/{segment}/" in f"/{entry_rel}/"
+                                or entry_rel == segment
+                            ):
+                                excluded = True
+                                break
+                        if excluded:
+                            continue
+                        # Exclude by suffix
+                        if any(
+                            entry_rel.endswith(suffix) for suffix in exclude_suffixes
+                        ):
+                            continue
+                        files.append(entry_rel)
+        except PermissionError:
+            continue
     return sorted(files)
+
+
+def sdd_tool_files(source: Path) -> list[str]:
+    """List all managed files in the SDD tool source.
+
+    Uses walk_sdd_source_files for efficient directory traversal that
+    skips excluded directories (e.g. node_modules, .git) entirely.
+    """
+    files = walk_sdd_source_files(source)
+    # Skip only the root README.md; subdirectory README files are managed.
+    return [f for f in files if f != "README.md"]
 
 
 def sdd_tool_checksum(root: Path, files: list[str]) -> str:
@@ -156,6 +190,7 @@ def is_preserved_local_json(relative: str) -> bool:
 
 
 # ── General helpers ──────────────────────────────────────────────────────
+
 
 def fail(message: str) -> NoReturn:
     """Raise CliError with the given message."""
@@ -282,10 +317,17 @@ def find_meta(body: str, label: str) -> str:
 def run_native(command: list[str], root: Path, timeout: int = 30) -> dict[str, Any]:
     """Run a native shell command and return structured output."""
     try:
-        command_str = " ".join(f'"{arg}"' if " " in arg else arg for arg in command)
         completed = subprocess.run(
-            command_str, cwd=root, check=False, capture_output=True, text=True,
-            encoding="utf-8", errors="replace", timeout=timeout, env=os.environ, shell=True,
+            command,
+            cwd=root,
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            env=os.environ,
+            shell=False,
         )
         return {
             "returncode": completed.returncode,
@@ -295,14 +337,22 @@ def run_native(command: list[str], root: Path, timeout: int = 30) -> dict[str, A
     except FileNotFoundError:
         return {"returncode": 127, "stdout": "", "stderr": f"{command[0]} is missing."}
     except subprocess.TimeoutExpired:
-        return {"returncode": 124, "stdout": "", "stderr": f"{command[0]} timed out after {timeout} seconds."}
+        return {
+            "returncode": 124,
+            "stdout": "",
+            "stderr": f"{command[0]} timed out after {timeout} seconds.",
+        }
 
 
 def http_status(url: str, timeout: int = 5) -> tuple[int | None, str]:
     """Check HTTP status of a URL, returning (status_code, error_message)."""
     try:
         parsed = urlparse(url)
-        connection_cls = http.client.HTTPSConnection if parsed.scheme == "https" else http.client.HTTPConnection
+        connection_cls = (
+            http.client.HTTPSConnection
+            if parsed.scheme == "https"
+            else http.client.HTTPConnection
+        )
         connection = connection_cls(parsed.hostname or "", parsed.port, timeout=timeout)
         path = (parsed.path or "/") + (("?" + parsed.query) if parsed.query else "")
         connection.request("GET", path)
@@ -315,6 +365,7 @@ def http_status(url: str, timeout: int = 5) -> tuple[int | None, str]:
 
 
 # ── Project profile helpers ──────────────────────────────────────────────
+
 
 def load_project_profile(root: Path) -> dict[str, Any]:
     """Load the project profile, merging base and local overlays."""
@@ -362,59 +413,25 @@ def profile_audit_findings(root: Path) -> list[dict[str, str]]:
     """Audit the project profile and return findings."""
     findings: list[dict[str, str]] = []
     if not (root / ".codex" / "project-profile.json").exists():
-        add_bucket_item(findings, ".codex/project-profile.json", "missing.profile",
-                        "Project profile is missing.", "warning", "pre-start")
+        add_bucket_item(
+            findings,
+            ".codex/project-profile.json",
+            "missing.profile",
+            "Project profile is missing.",
+            "warning",
+            "pre-start",
+        )
     if not (root / ".codex" / "project-profile.schema.json").exists():
-        add_bucket_item(findings, ".codex/project-profile.schema.json", "missing.schema",
-                        "Project profile schema is missing.", "warning", "pre-start")
-    return findings
+        add_bucket_item(
+            findings,
+            ".codex/project-profile.schema.json",
+            "missing.schema",
+            "Project profile schema is missing.",
+            "warning",
+            "pre-start",
+        )
+    return findings# ── Local file helpers ───────────────────────────────────────────────────
 
-
-# ── Tool recommendations helpers ─────────────────────────────────────────
-
-def load_tool_recommendations_catalog(root: Path) -> dict[str, Any]:
-    """Load and merge the tool recommendations catalog from base and local files."""
-    base = read_json(root / ".codex" / "tool-recommendations.example.json", optional=True)
-    local = read_json(root / ".codex" / "tool-recommendations.local.json", optional=True)
-    merged = merge_dicts(
-        {key: value for key, value in base.items() if key not in {"recommendations", "notRecommended"}},
-        {key: value for key, value in local.items() if key not in {"recommendations", "notRecommended"}},
-    )
-    merged["recommendations"] = merge_catalog_items(base.get("recommendations", []), local.get("recommendations", []))
-    merged["notRecommended"] = merge_catalog_items(base.get("notRecommended", []), local.get("notRecommended", []))
-    return {key: value for key, value in merged.items() if value not in ({}, [])}
-
-
-def merge_catalog_items(base_items: list[dict[str, Any]], local_items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Merge base and local catalog items by ID, with local overlays taking priority."""
-    output: list[dict[str, Any]] = []
-    positions: dict[str, int] = {}
-    for item in base_items:
-        item_id = item.get("id")
-        if not item_id:
-            continue
-        positions[item_id] = len(output)
-        output.append(ensure_used_in_steps(item))
-    for item in local_items:
-        item_id = item.get("id")
-        if not item_id:
-            continue
-        if item_id in positions:
-            output[positions[item_id]] = merge_dicts(output[positions[item_id]], ensure_used_in_steps(item))
-        else:
-            positions[item_id] = len(output)
-            output.append(ensure_used_in_steps(item))
-    return output
-
-
-def ensure_used_in_steps(item: dict[str, Any]) -> dict[str, Any]:
-    """Ensure an item has a 'usedInSteps' key, defaulting to []."""
-    clone = json.loads(json.dumps(item))
-    clone.setdefault("usedInSteps", [])
-    return clone
-
-
-# ── Local file helpers ───────────────────────────────────────────────────
 
 def local_path(root: Path, relative: str) -> Path:
     """Resolve a relative path against root, normalizing OS path separators."""
@@ -422,55 +439,97 @@ def local_path(root: Path, relative: str) -> Path:
 
 
 def ensure_seed_file(
-    root: Path, relative: str, default_text: str, result: dict[str, Any], dry_run: bool,
+    root: Path,
+    relative: str,
+    default_text: str,
+    result: dict[str, Any],
+    dry_run: bool,
 ) -> None:
     """Create a seed file from default text if it does not already exist."""
     target = local_path(root, relative)
     if target.exists():
-        result["actions"].append({
-            "path": relative, "key": "exists", "severity": "info",
-            "message": "Template already exists.", "phase": "apply",
-        })
+        result["actions"].append(
+            {
+                "path": relative,
+                "key": "exists",
+                "severity": "info",
+                "message": "Template already exists.",
+                "phase": "apply",
+            }
+        )
         return
     if not dry_run:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(default_text, encoding="utf-8")
-    result["actions"].append({
-        "path": relative, "key": "created", "severity": "info",
-        "message": "Created missing local seed file.", "phase": "apply",
-    })
+    result["actions"].append(
+        {
+            "path": relative,
+            "key": "created",
+            "severity": "info",
+            "message": "Created missing local seed file.",
+            "phase": "apply",
+        }
+    )
 
 
 def copy_seed_file(
-    root: Path, source_relative: str, target_relative: str, result: dict[str, Any], dry_run: bool,
+    root: Path,
+    source_relative: str,
+    target_relative: str,
+    result: dict[str, Any],
+    dry_run: bool,
 ) -> None:
     """Copy a seed file from source to target, skipping if target exists."""
     source = local_path(root, source_relative)
     target = local_path(root, target_relative)
     if target.exists():
-        result["actions"].append({
-            "path": target_relative, "key": "exists", "severity": "info",
-            "message": "Local file already exists; preserved.", "phase": "apply",
-        })
+        result["actions"].append(
+            {
+                "path": target_relative,
+                "key": "exists",
+                "severity": "info",
+                "message": "Local file already exists; preserved.",
+                "phase": "apply",
+            }
+        )
         return
     if not source.exists():
-        add_bucket_item(result["findings"], source_relative, "missing.template",
-                        f"Missing template: {source_relative}", "warning", "pre-start")
+        add_bucket_item(
+            result["findings"],
+            source_relative,
+            "missing.template",
+            f"Missing template: {source_relative}",
+            "warning",
+            "pre-start",
+        )
         return
     if not dry_run:
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, target)
-    result["actions"].append({
-        "path": target_relative, "key": "created", "severity": "info",
-        "message": f"Created from {source_relative}.", "phase": "apply",
-    })
+    result["actions"].append(
+        {
+            "path": target_relative,
+            "key": "created",
+            "severity": "info",
+            "message": f"Created from {source_relative}.",
+            "phase": "apply",
+        }
+    )
 
 
-def new_configure_result(mode: str, dry_run: bool, write_enabled: bool) -> dict[str, Any]:
+def new_configure_result(
+    mode: str, dry_run: bool, write_enabled: bool
+) -> dict[str, Any]:
     """Create a fresh empty configure result dict."""
     return {
-        "mode": mode, "dryRun": dry_run, "writeEnabled": write_enabled,
-        "actions": [], "findings": [], "recommendations": [], "warnings": [], "valid": True,
+        "mode": mode,
+        "dryRun": dry_run,
+        "writeEnabled": write_enabled,
+        "actions": [],
+        "findings": [],
+        "recommendations": [],
+        "warnings": [],
+        "valid": True,
     }
 
 
@@ -480,14 +539,27 @@ def configure_result(mode: str, dry_run: bool, write_enabled: bool) -> dict[str,
 
 
 def add_bucket_item(
-    bucket: list[dict[str, str]], path: str, key: str, message: str,
-    severity: str, phase: str = "post-start",
+    bucket: list[dict[str, str]],
+    path: str,
+    key: str,
+    message: str,
+    severity: str,
+    phase: str = "post-start",
 ) -> None:
     """Append a structured finding item to a findings bucket list."""
-    bucket.append({"path": path, "key": key, "severity": severity, "phase": phase, "message": message})
+    bucket.append(
+        {
+            "path": path,
+            "key": key,
+            "severity": severity,
+            "phase": phase,
+            "message": message,
+        }
+    )
 
 
 # ── Env file helpers ─────────────────────────────────────────────────────
+
 
 def read_env_file(path: Path) -> dict[str, str]:
     """Read a .env file into a dict of key-value pairs, skipping comments and blanks."""
@@ -506,7 +578,9 @@ def read_env_file(path: Path) -> dict[str, str]:
 def write_env_file(path: Path, values: dict[str, str]) -> None:
     """Write a dict of key-value pairs as a .env file."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("".join(f"{key}={value}\n" for key, value in values.items()), encoding="utf-8")
+    path.write_text(
+        "".join(f"{key}={value}\n" for key, value in values.items()), encoding="utf-8"
+    )
 
 
 def env_template_keys(root: Path, target_relative: str) -> set[str]:
@@ -536,42 +610,68 @@ def add_env_drift_findings(root: Path, result: dict[str, Any]) -> None:
         missing = sorted(set(template) - set(current))
         stale = sorted(set(current) - set(template))
         if missing:
-            add_bucket_item(result["findings"], relative, "env.missing-template-keys",
-                            f"Missing current template keys: {', '.join(missing[:8])}.", "error")
+            add_bucket_item(
+                result["findings"],
+                relative,
+                "env.missing-template-keys",
+                f"Missing current template keys: {', '.join(missing[:8])}.",
+                "error",
+            )
         if stale:
             stale_msg = f"Stale non-template keys present: {', '.join(stale[:8])}."
             if len(stale) > 8:
                 stale_msg += f" Plus {len(stale) - 8} more."
-            add_bucket_item(result["findings"], relative, "env.stale-keys",
-                            stale_msg, "warning")
+            add_bucket_item(
+                result["findings"], relative, "env.stale-keys", stale_msg, "warning"
+            )
 
 
 def configure_set_env_mode(
-    root: Path, mode: str, target_relative: str, values: dict[str, Any], dry_run: bool,
+    root: Path,
+    mode: str,
+    target_relative: str,
+    values: dict[str, Any],
+    dry_run: bool,
 ) -> dict[str, Any]:
     """Configure environment variables for a specific service from a mode/values payload."""
     result = configure_result(mode, dry_run, write_enabled=not dry_run)
     target = local_path(root, target_relative)
     if not target.exists():
-        return {"mode": mode, "valid": False, "errors": [f"Missing {target_relative}. Run InitLocalFiles first."]}
+        return {
+            "mode": mode,
+            "valid": False,
+            "errors": [f"Missing {target_relative}. Run InitLocalFiles first."],
+        }
     if not values:
-        return {"mode": mode, "valid": False, "errors": [
-            "Config values are required. Use --values-json-file, --values-json-stdin true, or --values-json.",
-        ]}
+        return {
+            "mode": mode,
+            "valid": False,
+            "errors": [
+                "Config values are required. Use --values-json-file, --values-json-stdin true, or --values-json.",
+            ],
+        }
     allowed = env_template_keys(root, target_relative)
     blocked = sorted(key for key in values if allowed and key not in allowed)
     if blocked:
         return {
-            "mode": mode, "valid": False,
-            "errors": [f"Unsupported env key(s) for {target_relative}: {', '.join(blocked)}"],
+            "mode": mode,
+            "valid": False,
+            "errors": [
+                f"Unsupported env key(s) for {target_relative}: {', '.join(blocked)}"
+            ],
         }
     current = read_env_file(target)
     for key, value in values.items():
         current[str(key)] = str(value)
-        result["actions"].append({
-            "path": target_relative, "key": str(key), "severity": "info",
-            "message": "Set confirmed value.", "phase": "apply",
-        })
+        result["actions"].append(
+            {
+                "path": target_relative,
+                "key": str(key),
+                "severity": "info",
+                "message": "Set confirmed value.",
+                "phase": "apply",
+            }
+        )
     if not dry_run:
         write_env_file(target, current)
     result["valid"] = True
@@ -580,10 +680,13 @@ def configure_set_env_mode(
 
 # ── Git helpers ──────────────────────────────────────────────────────────
 
+
 def git_text(root: Path, args: list[str]) -> str:
     """Run a git command and return stdout, or '' on failure."""
     try:
-        result = subprocess.run(["git", *args], cwd=root, check=False, capture_output=True, text=True)
+        result = subprocess.run(  # nosec
+            ["git", *args], cwd=root, check=False, capture_output=True, text=True
+        )
     except OSError:
         return ""
     return result.stdout.strip() if result.returncode == 0 else ""
@@ -592,7 +695,11 @@ def git_text(root: Path, args: list[str]) -> str:
 def check_git_ignored(root: Path, path: str) -> bool:
     """Check if a path is git-ignored."""
     completed = subprocess.run(
-        ["git", "check-ignore", path], cwd=root, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
+        ["git", "check-ignore", path],
+        cwd=root,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
     )
     return completed.returncode == 0
 
@@ -610,219 +717,13 @@ def remove_empty_parents(path: Path, stop: Path) -> None:
         path = path.parent
 
 
-# ── Stack detection ──────────────────────────────────────────────────────
-
-_STACK_DATA_PATH = Path(__file__).parent / "stack-data.json"
-
-
-def get_stack_tag_aliases() -> dict[str, list[str]]:
-    """Return _STACK_TAG_ALIASES loaded from JSON."""
-    return _load_json_cache(_STACK_DATA_PATH)["_STACK_TAG_ALIASES"]
-
-
-def get_stack_canonical_map() -> dict[str, dict[str, Any]]:
-    """Return _STACK_CANONICAL_MAP loaded from JSON."""
-    return _load_json_cache(_STACK_DATA_PATH)["_STACK_CANONICAL_MAP"]
-
-
-def detect_stack_tags(root: Path) -> list[str]:
-    """Detect technology stack tags from project profile and files."""
-    tags: list[str] = []
-    profile = load_project_profile(root)
-    stack = profile.get("stack", {})
-    if not isinstance(stack, dict):
-        return tags
-    # Check explicit stack values
-    for domain in ("frontend", "backend", "database"):
-        domain_info = stack.get(domain, {})
-        if isinstance(domain_info, dict):
-            if domain_info.get("applies") is True:
-                raw_value = str(domain_info.get("value", "")).lower()
-                for tag, aliases in get_stack_tag_aliases().items():
-                    if any(alias in raw_value for alias in aliases):
-                        if tag not in tags:
-                            tags.append(tag)
-        elif isinstance(domain_info, str):
-            raw_value = domain_info.lower()
-            for tag, aliases in get_stack_tag_aliases().items():
-                if any(alias in raw_value for alias in aliases):
-                    if tag not in tags:
-                        tags.append(tag)
-    # Check explicit languages/frameworks
-    for key in ("languages", "frameworks"):
-        items = stack.get(key, [])
-        if isinstance(items, list):
-            for item in items:
-                item_lower = item.lower()
-                for tag, aliases in get_stack_tag_aliases().items():
-                    if any(alias in item_lower for alias in aliases):
-                        if tag not in tags:
-                            tags.append(tag)
-    # Check project files for technology indicators
-    if root.joinpath("package.json").exists():
-        if "react" not in tags:
-            pkg = read_json(root / "package.json", optional=True)
-            deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
-            for dep in deps:
-                dep_lower = dep.lower()
-                for tag, aliases in get_stack_tag_aliases().items():
-                    if any(alias in dep_lower for alias in aliases):
-                        if tag not in tags:
-                            tags.append(tag)
-    if root.joinpath("requirements.txt").exists() or root.joinpath("pyproject.toml").exists():
-        if "python" not in tags:
-            tags.append("python")
-        for req_path in ("requirements.txt",):
-            req_file = root / req_path
-            if req_file.exists():
-                for line in req_file.read_text(encoding="utf-8").splitlines():
-                    line = line.strip().lower()
-                    for tag, aliases in get_stack_tag_aliases().items():
-                        if any(alias in line for alias in aliases):
-                            if tag not in tags:
-                                tags.append(tag)
-    return tags
-
-
-def build_stack_context_findings(root: Path, detected: list[str]) -> list[dict[str, str]]:
-    """Build findings about stack context completeness."""
-    profile = load_project_profile(root)
-    stack = profile.get("stack", {})
-    if not isinstance(stack, dict):
-        return [_missing_stack_finding()]
-    selection_recorded = stack.get("selectionRecorded") is True
-    any_applies = any(
-        isinstance(stack.get(domain), dict) and stack.get(domain, {}).get("applies") is True
-        for domain in ("frontend", "backend", "database")
-    )
-    if selection_recorded or any_applies:
-        return []
-    # Check if there's any stack definition at all
-    if not detected and not any_applies:
-        return [_missing_stack_finding()]
-    return []
-
-
-def _missing_stack_finding() -> dict[str, str]:
-    return {
-        "path": ".codex/project-profile.local.json",
-        "key": "stack-context.missing",
-        "severity": "error",
-        "phase": "pre-discovery",
-        "message": "Stack context is missing: frontend, backend, and database are not configured.",
-    }
-
-
-def build_research_topics(detected: list[str], root: Path | None = None) -> list[dict[str, Any]]:
-    """Build research topics from detected stack tags."""
-    topics: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for tag in detected:
-        canonical = get_stack_canonical_map().get(tag)
-        if canonical and tag not in seen:
-            seen.add(tag)
-            topics.append({
-                "id": f"stack-{tag}",
-                "technology": canonical["technology"],
-                "languages": list(canonical["languages"]),
-                "frameworks": list(canonical["frameworks"]),
-                "testFrameworks": list(canonical["testFrameworks"]),
-                "guidanceSearchTerms": list(canonical["guidanceSearchTerms"]),
-            })
-    return topics
-
-
-def build_recommendations(root: Path, detected: list[str], topics: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Build tool/skill recommendations from detected stack and topics."""
-    catalog = load_tool_recommendations_catalog(root)
-    catalog_recommendations = catalog.get("recommendations", [])
-    if catalog_recommendations:
-        return catalog_recommendations
-    # Fallback: generate inline recommendations from detected tags
-    recommendations: list[dict[str, Any]] = []
-    # Add a search plan entry as the first item (used by guidance flow)
-    recommendations.append({
-        "id": SEARCH_PLAN_ID,
-        "name": "Project Guidance Search Plan",
-        "type": "practice",
-        "detected": True,
-        "targetExists": True,
-        "usedInSteps": [],
-    })
-    # Recommendations from stack metadata
-    tag_recommendations: dict[str, list[dict[str, Any]]] = {
-        "react": [
-            {
-                "id": "react-dev-setup", "name": "React Development Setup",
-                "type": "skill", "detected": True,
-                "targetExists": False, "usedInSteps": [],
-            },
-        ],
-        "typescript": [
-            {
-                "id": "typescript-guidance", "name": "TypeScript Guidance",
-                "type": "reference", "detected": True,
-                "targetExists": True, "usedInSteps": [],
-            },
-        ],
-        "python": [
-            {
-                "id": "python-dev-setup", "name": "Python Development Setup",
-                "type": "skill", "detected": True,
-                "targetExists": False, "usedInSteps": [],
-            },
-        ],
-        "fastapi": [
-            {
-                "id": "fastapi-guidance", "name": "FastAPI Guidance",
-                "type": "reference", "detected": True,
-                "targetExists": True, "usedInSteps": [],
-            },
-        ],
-        "postgresql": [
-            {
-                "id": "postgresql-guidance", "name": "PostgreSQL Guidance",
-                "type": "reference", "detected": True,
-                "targetExists": True, "usedInSteps": [],
-            },
-        ],
-        "csharp": [
-            {
-                "id": "csharp-dev-setup", "name": "C# Development Setup",
-                "type": "skill", "detected": True,
-                "targetExists": False, "usedInSteps": [],
-            },
-        ],
-        "aspnetcore": [
-            {
-                "id": "aspnetcore-guidance", "name": "ASP.NET Core Guidance",
-                "type": "reference", "detected": True,
-                "targetExists": True, "usedInSteps": [],
-            },
-        ],
-        "sqlite": [
-            {
-                "id": "sqlite-guidance", "name": "SQLite Guidance",
-                "type": "reference", "detected": True,
-                "targetExists": True, "usedInSteps": [],
-            },
-        ],
-    }
-    seen_ids: set[str] = {SEARCH_PLAN_ID}
-    for tag in detected:
-        for rec in tag_recommendations.get(tag, []):
-            if rec["id"] not in seen_ids:
-                seen_ids.add(rec["id"])
-                recommendations.append(rec)
-    return recommendations
-
-
 # ── Ticket readiness / delivery risk ─────────────────────────────────────
 
 
 @dataclass
 class TicketReadiness:
     """Result of classifying ticket readiness from title/description."""
+
     status: str = ""
     score: float = 0.0
     reasons: list[str] = field(default_factory=list)
@@ -831,6 +732,7 @@ class TicketReadiness:
 @dataclass
 class DeliveryRisk:
     """Result of classifying delivery risk from paths, context, and changed lines."""
+
     risk: str = "low"
     score: float = 0.0
     reasons: list[str] = field(default_factory=list)
@@ -844,13 +746,25 @@ def classify_ticket_readiness(title: str, description: str) -> TicketReadiness:
     has_ac = bool(re.search(r"(?i)acceptance\s*criteria", description))
     has_validation = bool(re.search(r"(?i)validation", description))
     if has_ac and has_validation:
-        return TicketReadiness(status="ready", score=1.0, reasons=["Has acceptance criteria and validation."])
+        return TicketReadiness(
+            status="ready",
+            score=1.0,
+            reasons=["Has acceptance criteria and validation."],
+        )
     if has_ac or has_validation:
-        return TicketReadiness(status="needs-work", score=0.5, reasons=["Partial readiness markers found."])
-    return TicketReadiness(status="not-ready", score=0.0, reasons=["Missing acceptance criteria and validation."])
+        return TicketReadiness(
+            status="needs-work", score=0.5, reasons=["Partial readiness markers found."]
+        )
+    return TicketReadiness(
+        status="not-ready",
+        score=0.0,
+        reasons=["Missing acceptance criteria and validation."],
+    )
 
 
-def classify_delivery_risk(paths: list[str], context: str, changed_lines: int) -> DeliveryRisk:
+def classify_delivery_risk(
+    paths: list[str], context: str, changed_lines: int
+) -> DeliveryRisk:
     """Classify delivery risk from changed paths, context, and line count.
 
     Returns 'high' when changed lines > 500 or high-risk paths are touched.

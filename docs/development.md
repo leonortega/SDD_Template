@@ -4,14 +4,14 @@
 
 This repository currently has no product implementation. It is ready for a new product stack to be introduced through the normal ticket and OpenSpec workflow.
 
-| Layer | Status | Detail |
-|---|---|---|
-| Development languages | None | No product code exists yet |
-| Build system | None | Will be configured when a stack is selected |
-| Package manager | None | Depends on future framework choice |
-| Testing approach | Ready | TDD and Playwright skills available |
-| Linting/formatting | None | Will be configured when product code exists |
-| OpenSpec CLI | Required | `npm install -g @fission-ai/openspec@latest` — needed for proposal workflow |
+| Layer                 | Status   | Detail                                                                      |
+| --------------------- | -------- | --------------------------------------------------------------------------- |
+| Development languages | None     | No product code exists yet                                                  |
+| Build system          | None     | Will be configured when a stack is selected                                 |
+| Package manager       | None     | Depends on future framework choice                                          |
+| Testing approach      | Ready    | TDD and Playwright skills available                                         |
+| Linting/formatting    | None     | Will be configured when product code exists                                 |
+| OpenSpec CLI          | Required | `npm install -g @fission-ai/openspec@latest` — needed for proposal workflow |
 
 **Key principle:** Keep changes scoped to the active ticket or explicit user request. Do not add speculative stack guidance before the product needs it.
 
@@ -28,7 +28,7 @@ This repository currently has no product implementation. It is ready for a new p
 
 When the stack is chosen:
 
-1. Add languages, frameworks, test frameworks, and stack-specific adapters to ignored `.codex/project-profile.local.json` while exploring the new project.
+1. Add languages, frameworks, and test frameworks to ignored `.codex/project-profile.local.json` while exploring the new project.
 2. Add product source and test folders.
 3. Add OpenSpec specs for product behavior.
 4. Add deployment app targets and configuration mappings.

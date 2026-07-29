@@ -1,4 +1,5 @@
 <!-- TIER 2: SEMI-STABLE - Memory index, loaded at startup of every stage -->
+
 # Repository Memory Index
 
 This file indexes durable, source-backed memory for the product-free SDD/SDLC shell.

@@ -1,4 +1,5 @@
 <!-- TIER 1: STABLE PREFIX - Repo-owned, always-active skill policy -->
+
 # Repository Startup — Always-Active Skills
 
 This file is repo-owned. External skill updates never touch it.
@@ -7,11 +8,11 @@ This file is repo-owned. External skill updates never touch it.
 
 Per `AGENTS.md` these skills activate on every prompt:
 
-| Skill | When | Intensity |
-|-------|------|-----------|
-| **caveman** | Every prompt | full |
-| **ponytail** | Every prompt | full |
-| **security** | When security context detected | default |
+| Skill        | When                           | Intensity |
+| ------------ | ------------------------------ | --------- |
+| **caveman**  | Every prompt                   | full      |
+| **ponytail** | Every prompt                   | full      |
+| **security** | When security context detected | default   |
 
 ### Caveman (every prompt)
 
@@ -36,6 +37,7 @@ caveman > ponytail > others
 ## Skill Manifest
 
 `.codex/skills/manifest.json` maps task types to skill file paths:
+
 - `ticket`: start, propose, explore, implement, verify, archive
 - `implement`: continue-implementation, TDD
 - `review`: PR review, feedback loop, complexity review

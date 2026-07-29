@@ -3,8 +3,8 @@ kind: Kustomization
 namespace: sdd-qa
 resources:
   - ../../base
-patches:
-  - path: config-patch.yaml
 images:
-  - name: host.docker.internal:8083/openproject
+  - name: host.docker.internal:5001/frontend
+    newTag: latest
+  - name: host.docker.internal:5001/backend
     newTag: latest

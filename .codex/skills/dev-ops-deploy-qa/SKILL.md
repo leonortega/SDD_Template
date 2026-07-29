@@ -25,7 +25,11 @@ For push-triggered pre-production deployment, the commit or merged PR title must
 
 ## Workflow Telemetry
 
-Capture UTC start time after resolving the ticket key and before artifact promotion checks. Prefer OpenProject time-entry telemetry and create or update the `dev-ops-deploy-qa` entry with marker `IA generated workflow telemetry: {ticketKey}:dev-ops-deploy-qa`. Use `python -m tools.sdd_cli dev-flow append-telemetry -TicketKey {ticketKey}` only as the JSONL fallback when direct time telemetry is unavailable. On resume or idempotent reuse, append or update another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-ops-deploy-qa`, `agentRole=deployment`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`.
+Capture UTC start time after resolving the ticket key and before artifact promotion checks. Prefer OpenProject time-entry telemetry and create or update the `dev-ops-deploy-qa` entry via the `time-telemetry-upsert` operation (see `.codex/providers/ticket.openproject.md` → Operations → `time-telemetry-upsert` for the exact API payload with `spentOn`, `hours`, `comment`, and `_links`). Use marker `IA generated workflow telemetry: {ticketKey}:dev-ops-deploy-qa`. Resolve the activity href by running `python -m tools.sdd_cli dev-flow resolve-openproject-activity --workflow-stage dev-ops-deploy-qa --input-json '{"timeTelemetry":{...}}'` and reverse-lookup the activity ID from the resolved name.
+
+Use `python -m tools.sdd_cli dev-flow append-telemetry -TicketKey {ticketKey}` only as the JSONL fallback when direct time telemetry is unavailable. On resume or idempotent reuse, append or update another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-ops-deploy-qa`, `agentRole=deployment`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`.
+
+For shared API helpers including time-entry POST payload format and activity reverse-lookup, see `.codex/skills/_shared/api-helpers.md` → OpenProject → Workflow time telemetry.
 
 ## Configuration
 
@@ -60,7 +64,7 @@ In idempotent verification mode, do not redeploy or duplicate ticket comments. R
    - one `app/{commitSha}/{artifactName}.sha256` per topology app
    - `app/{commitSha}/commit.sha`
    - `app/{commitSha}/release.json`
-   selected deployment provider requires:
+     selected deployment provider requires:
    - `app/{commitSha}/container-images.json`
    - `app/{commitSha}/commit.sha`
    - `app/{commitSha}/release.json`

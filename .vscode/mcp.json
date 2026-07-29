@@ -1,18 +1,73 @@
 {
-  "servers": {
+  "mcpServers": {
     "monorepo-docs-search": {
-      "type": "stdio",
-      "command": "C:\\Users\\marce\\.mcp_shared_venv\\Scripts\\python.exe",
+      "command": "${env:USERPROFILE}\\.mcp_shared_venv\\Scripts\\python.exe",
       "args": [
-        "C:\\LeonRepository\\SDD_Test\\tools\\bm25s_flashrank\\mcp_doc_research.py"
-      ]
+        "${workspaceFolder}\\tools\\bm25s_flashrank\\mcp_doc_research.py"
+      ],
+      "description": "BM25 + FlashRank search over .md/.mdx files"
     },
     "codebase-memory-mcp": {
-      "type": "stdio",
-      "command": "C:\\Users\\marce\\AppData\\Local\\Microsoft\\WindowsApps\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\python.exe",
+      "command": "${env:USERPROFILE}\\AppData\\Local\\Programs\\codebase-memory-mcp\\codebase-memory-mcp.exe",
+      "args": [],
+      "description": "Graph-based code search with BM25 and Neo4j"
+    },
+    "gitea": {
+      "command": "docker",
       "args": [
-        "C:\\LeonRepository\\SDD_Test\\tools\\codebase_memory_mcp\\mcp_cap_shim.py"
-      ]
+        "run",
+        "--rm",
+        "-i",
+        "docker.gitea.com/gitea-mcp-server",
+        "--host",
+        "http://localhost:3000"
+      ],
+      "env": {
+        "GITEA_ACCESS_TOKEN": "${GITEA_ACCESS_TOKEN}"
+      },
+      "description": "Official Gitea MCP — repos, issues, PRs, Actions"
+    },
+    "grafana": {
+      "command": "uvx",
+      "args": [
+        "mcp-grafana"
+      ],
+      "env": {
+        "GRAFANA_URL": "http://localhost:3000",
+        "GRAFANA_SERVICE_ACCOUNT_TOKEN": "${GRAFANA_SERVICE_ACCOUNT_TOKEN}"
+      },
+      "description": "Official Grafana MCP — dashboards, queries, alerts, incidents"
+    },
+    "kubernetes": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "kubernetes-mcp-server@latest"
+      ],
+      "env": {
+        "KUBECONFIG": "${env:USERPROFILE}\\.kube\\config"
+      },
+      "description": "Native Go K8s MCP — pods, deployments, logs, helm"
+    },
+    "openproject": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "openproject-mcp"
+      ],
+      "env": {
+        "OPENPROJECT_URL": "http://localhost:8080",
+        "OPENPROJECT_API_KEY": "${OPENPROJECT_API_KEY}"
+      },
+      "description": "Community OpenProject MCP — work packages, projects, time entries"
+    },
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest"
+      ],
+      "description": "Official Playwright MCP (Microsoft) — browser automation, navigation, snapshots, element interaction"
     }
   }
 }
