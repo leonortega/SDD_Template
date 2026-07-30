@@ -71,10 +71,6 @@ npx promptfoo view
 | --- | ---------------------------------------- | -------------------------- |
 | 22  | Product-free shell (original regression) | `dev-flow-pipeline-status` |
 
-## CI Integration
-
-The Gitea workflow `.gitea/workflows/agent-eval.yml` runs evals automatically on PRs to `dev`.
-
 ## Adding Test Cases
 
 1. Add a new entry under `tests:` in `promptfooconfig.yaml`

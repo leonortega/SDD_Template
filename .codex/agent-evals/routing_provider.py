@@ -65,6 +65,10 @@ def call_api(
     worktree_exists = (
         str(vars_data.get("worktreeExists", "false")).strip().lower() == "true"
     )
+    # --- INFRASTRUCTURE VALIDATION VARS ---
+    infra_validation_failed = (
+        str(vars_data.get("infraValidationFailed", "false")).strip().lower() == "true"
+    )
 
     # Evaluate routing logic
     route = _evaluate_route(
@@ -83,6 +87,7 @@ def call_api(
         nexus_artifact_exists=nexus_artifact_exists,
         release_tag_conflict=release_tag_conflict,
         worktree_exists=worktree_exists,
+        infra_validation_failed=infra_validation_failed,
     )
 
     inputs = {
@@ -101,6 +106,7 @@ def call_api(
         "nexusArtifactExists": nexus_artifact_exists,
         "releaseTagConflict": release_tag_conflict,
         "worktreeExists": worktree_exists,
+        "infraValidationFailed": infra_validation_failed,
     }
 
     reasoning = _build_reasoning(inputs, route)
@@ -134,6 +140,7 @@ def _evaluate_route(
     nexus_artifact_exists: bool = True,
     release_tag_conflict: bool = False,
     worktree_exists: bool = False,
+    infra_validation_failed: bool = False,
 ) -> str:
     """Determine the correct workflow route based on the delivery contract.
 
@@ -144,7 +151,11 @@ def _evaluate_route(
     4. Ticket state routing (todo → in progress → qa → done)
     """
 
-    # Priority 1: Incident / hotfix overrides normal routing
+    # Priority 1: Infrastructure validation failure (e.g. NodePort collision)
+    if infra_validation_failed:
+        return "blocked-infra-validation"
+
+    # Priority 2: Incident / hotfix overrides normal routing
     if incident:
         return "dev-ops-rollback-prod"
     if hotfix:

@@ -43,6 +43,18 @@ jobs:
             echo "ENV=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
           fi
 
+      - name: Determine target environments
+        id: targets
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # On push to dev: deploy to DEV then auto-promote to QA
+            echo "TARGETS=dev qa" >> $GITHUB_OUTPUT
+          else
+            # On workflow_dispatch: deploy only to the specified environment
+            echo "TARGETS=${{ steps.env.outputs.ENV }}" >> $GITHUB_OUTPUT
+          fi
+
       - name: Build and push Docker images
         env:
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
@@ -110,14 +122,56 @@ jobs:
             fi
           done
 
-      - name: Deploy to K8s
+      - name: Validate NodePort uniqueness across target overlays
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 << 'PYEOF'
+          import json, os, re
+
+          node_port_pattern = re.compile(r'^\s*nodePort:\s*(\d+)')
+          all_ports = {}  # port -> [(env, service)]
+          overlay_dirs = [d for d in os.listdir('infra/k8s/overlays')
+                         if os.path.isdir(os.path.join('infra/k8s/overlays', d))]
+
+          for env_name in sorted(overlay_dirs):
+              patch_file = os.path.join('infra/k8s/overlays', env_name, 'service-patch.yaml')
+              if not os.path.exists(patch_file):
+                  continue
+              with open(patch_file) as f:
+                  content = f.read()
+              current_service = None
+              for line in content.split('\n'):
+                  m = re.match(r'^metadata:\s*$', line)
+                  if m:
+                      current_service = None
+                      continue
+                  m_name = re.match(r'^  name:\s*(\S+)', line)
+                  if m_name:
+                      current_service = m_name.group(1)
+                  m_port = node_port_pattern.search(line)
+                  if m_port:
+                      port = int(m_port.group(1))
+                      if port in all_ports:
+                          existing = all_ports[port]
+                          print(f'COLLISION: NodePort {port} used by {existing[0]}/{existing[1]}'
+                                f' and {env_name}/{current_service}')
+                          exit(1)
+                      all_ports[port] = (env_name, current_service or 'unknown')
+
+          print('NodePort uniqueness check passed:')
+          for port, (env, svc) in sorted(all_ports.items()):
+              print(f'  {port} -> {env}/{svc}')
+          PYEOF
+
+      - name: Deploy to K8s (all targets)
         env:
           KUBE_CONFIG_DATA: ${{ secrets.KUBECONFIG }}
         shell: bash
         run: |
           set -euo pipefail
 
-          # Write kubeconfig from secret to temp file (secret stores content, KUBECONFIG needs a path)
+          # Write kubeconfig from secret to temp file (shared across all environments)
           if [ -n "${KUBE_CONFIG_DATA:-}" ]; then
             printf '%s\n' "${KUBE_CONFIG_DATA}" > /tmp/kubeconfig
             chmod 600 /tmp/kubeconfig
@@ -127,108 +181,112 @@ jobs:
             echo "WARNING: KUBECONFIG secret not set — kubectl may fail to authenticate"
           fi
 
-          ENV="${{ steps.env.outputs.ENV }}"
           REGISTRY="${NEXUS_DOCKER_REGISTRY:-host.docker.internal:5001}"
           COMMIT_SHA=$(git rev-parse HEAD)
-
-          OVERLAY_DIR="infra/k8s/overlays/${ENV}"
-
-          if [ ! -d "${OVERLAY_DIR}" ]; then
-            echo "No K8s overlay found for ${ENV} — skipping K8s deployment"
-            echo "Run 'python -m tools.sdd_cli environment-lab scaffold-k8s' first"
-            exit 0
-          fi
-
-          # Ensure K8s namespace exists
-          NAMESPACE="sdd-${ENV}"
-          if ! kubectl get namespace "${NAMESPACE}" > /dev/null 2>&1; then
-            echo "Creating namespace ${NAMESPACE}..."
-            kubectl create namespace "${NAMESPACE}"
-          fi
-
-          # Diagnostics: tool versions and connectivity
-          echo "=== K8s Deploy Diagnostics ==="
-          echo "kustomize: $(kustomize version 2>&1)"
-          echo "kubectl: $(kubectl version --client 2>&1 | head -1)"
-          echo "K8s API: $(kubectl cluster-info --request-timeout=5s 2>&1 | head -3)"
-          echo "Environment: ${ENV}"
-          echo "Namespace: ${NAMESPACE}"
-          echo "Overlay: ${OVERLAY_DIR}"
-          echo "============================"
-
-          # Read apps and set image tags
           REPO_ROOT=$(pwd)
           APPS_JSON="${REPO_ROOT}/infra/deployment/apps.json"
 
-          cd "${OVERLAY_DIR}"
+          for ENV in ${{ steps.targets.outputs.TARGETS }}; do
+            echo ""
+            echo "=== Deploying to ${ENV} ==="
 
-          python3 -c "
-          import json, subprocess, os
-          apps_json = '${APPS_JSON}'
-          registry = '${REGISTRY}'
-          commit_sha = '${COMMIT_SHA}'
-          with open(apps_json) as f:
-              apps = json.load(f).get('apps', [])
-          for app in apps:
-              app_id = app['appId']
-              image = f'{registry}/{app_id}:{commit_sha}'
-              subprocess.run(['kustomize', 'edit', 'set', 'image', image], check=True)
-              print(f'Set image for {app_id}: {image}')
-          "
+            OVERLAY_DIR="infra/k8s/overlays/${ENV}"
 
-          # Build manifest to temp file
-          echo "Building K8s manifest..."
-          kustomize build . > /tmp/k8s-manifest.yaml 2>/tmp/kustomize-err.log
-          if [ ! -s /tmp/k8s-manifest.yaml ]; then
-            echo "ERROR: kustomize build produced empty output"
-            cat /tmp/kustomize-err.log
-            exit 1
-          fi
-          echo "Manifest size: $(wc -l < /tmp/k8s-manifest.yaml) lines"
+            if [ ! -d "${OVERLAY_DIR}" ]; then
+              echo "No K8s overlay found for ${ENV} — skipping"
+              continue
+            fi
 
-          # Delete existing apps to avoid "field is immutable" errors when K8s
-          # resources change their selector/matchLabels (e.g. commonLabels→labels).
-          # The CI pipeline is the sole deployer, so delete-then-recreate is safe.
-          echo "Removing existing apps for clean apply..."
-          # Delete existing deployments to avoid "field is immutable" errors when
-          # spec.selector.matchLabels changes (e.g. commonLabels→labels migration).
-          # Services are NOT deleted — their selectors are mutable.
-          python3 << PYEOF
-          import json, subprocess
-          apps_json = '${APPS_JSON}'
-          namespace = '${NAMESPACE}'
-          with open(apps_json) as f:
-              apps = json.load(f).get('apps', [])
-          for app in apps:
-              app_id = app['appId']
-              subprocess.run(['kubectl', '-n', namespace, 'delete', 'deploy', app_id, '--ignore-not-found'], check=False)
-          PYEOF
+            # Ensure K8s namespace exists
+            NAMESPACE="sdd-${ENV}"
+            if ! kubectl get namespace "${NAMESPACE}" > /dev/null 2>&1; then
+              echo "Creating namespace ${NAMESPACE}..."
+              kubectl create namespace "${NAMESPACE}"
+            fi
 
-          # Apply to K8s
-          echo "Deploying to ${ENV}..."
-          if ! kubectl apply -f /tmp/k8s-manifest.yaml 2>&1; then
-            echo "ERROR: kubectl apply failed - running dry-run for diagnosis..."
-            kubectl apply --dry-run=client -f /tmp/k8s-manifest.yaml 2>&1 | head -20
-            exit 1
-          fi
+            # Diagnostics: tool versions and connectivity
+            echo "=== K8s Deploy Diagnostics (${ENV}) ==="
+            echo "kustomize: $(kustomize version 2>&1)"
+            echo "kubectl: $(kubectl version --client 2>&1 | head -1)"
+            echo "K8s API: $(kubectl cluster-info --request-timeout=5s 2>&1 | head -3)"
+            echo "Environment: ${ENV}"
+            echo "Namespace: ${NAMESPACE}"
+            echo "Overlay: ${OVERLAY_DIR}"
+            echo "================================"
 
-          # Wait for rollout of each app
-          python3 -c "
-          import json, subprocess
-          namespace = 'sdd-${ENV}'
-          with open('${APPS_JSON}') as f:
-              apps = json.load(f).get('apps', [])
-          for app in apps:
-              app_id = app['appId']
-              print(f'Waiting for rollout of {app_id} in {namespace}...')
-              subprocess.run(
-                  ['kubectl', '-n', namespace, 'rollout', 'status', 'deployment', app_id, '--timeout=120s'],
-                  check=False
-              )
-          "
+            # Read apps and set image tags
+            cd "${OVERLAY_DIR}"
 
-          cd "${REPO_ROOT}"
-      - name: Discover environment URLs
+            python3 -c "
+            import json, subprocess, os
+            apps_json = '${APPS_JSON}'
+            registry = '${REGISTRY}'
+            commit_sha = '${COMMIT_SHA}'
+            with open(apps_json) as f:
+                apps = json.load(f).get('apps', [])
+            for app in apps:
+                app_id = app['appId']
+                image = f'{registry}/{app_id}:{commit_sha}'
+                subprocess.run(['kustomize', 'edit', 'set', 'image', image], check=True)
+                print(f'Set image for {app_id}: {image}')
+            "
+
+            # Build manifest to temp file
+            echo "Building K8s manifest..."
+            kustomize build . > /tmp/k8s-manifest.yaml 2>/tmp/kustomize-err.log
+            if [ ! -s /tmp/k8s-manifest.yaml ]; then
+              echo "ERROR: kustomize build produced empty output"
+              cat /tmp/kustomize-err.log
+              exit 1
+            fi
+            echo "Manifest size: $(wc -l < /tmp/k8s-manifest.yaml) lines"
+
+            # Delete existing apps to avoid "field is immutable" errors when K8s
+            # resources change their selector/matchLabels (e.g. commonLabels→labels).
+            # The CI pipeline is the sole deployer, so delete-then-recreate is safe.
+            echo "Removing existing apps for clean apply..."
+            # Delete existing deployments to avoid "field is immutable" errors when
+            # spec.selector.matchLabels changes (e.g. commonLabels→labels migration).
+            # Services are NOT deleted — their selectors are mutable.
+            python3 << PYEOF
+            import json, subprocess
+            apps_json = '${APPS_JSON}'
+            namespace = '${NAMESPACE}'
+            with open(apps_json) as f:
+                apps = json.load(f).get('apps', [])
+            for app in apps:
+                app_id = app['appId']
+                subprocess.run(['kubectl', '-n', namespace, 'delete', 'deploy', app_id, '--ignore-not-found'], check=False)
+            PYEOF
+
+            # Apply to K8s
+            echo "Deploying to ${ENV}..."
+            if ! kubectl apply -f /tmp/k8s-manifest.yaml 2>&1; then
+              echo "ERROR: kubectl apply failed - running dry-run for diagnosis..."
+              kubectl apply --dry-run=client -f /tmp/k8s-manifest.yaml 2>&1 | head -20
+              exit 1
+            fi
+
+            # Wait for rollout of each app
+            python3 -c "
+            import json, subprocess
+            namespace = 'sdd-${ENV}'
+            with open('${APPS_JSON}') as f:
+                apps = json.load(f).get('apps', [])
+            for app in apps:
+                app_id = app['appId']
+                print(f'Waiting for rollout of {app_id} in {namespace}...')
+                subprocess.run(
+                    ['kubectl', '-n', namespace, 'rollout', 'status', 'deployment', app_id, '--timeout=120s'],
+                    check=False
+                )
+            "
+
+            cd "${REPO_ROOT}"
+            echo "=== ${ENV} deployment complete ==="
+          done
+
+      - name: Discover environment URLs (all targets)
         id: urls
         env:
           KUBE_CONFIG_DATA: ${{ secrets.KUBECONFIG }}
@@ -242,169 +300,180 @@ jobs:
             export KUBECONFIG=/tmp/kubeconfig
           fi
 
-          export ENV="${{ steps.env.outputs.ENV }}"
           COMMIT_SHA=$(git rev-parse HEAD)
           mkdir -p "app/${COMMIT_SHA}"
 
-          # Single Python script: discover nodePorts + write JSON manifest
-          python3 << 'PYEOF'
-          import json, os, subprocess
+          for ENV in ${{ steps.targets.outputs.TARGETS }}; do
+            echo "=== Discovering ${ENV} URLs ==="
+            export ENV
+            # Single Python script: discover nodePorts + write JSON manifest
+            python3 << 'PYEOF'
+            import json, os, subprocess
 
-          env = os.environ.get('ENV', 'dev')
-          commit_sha = os.environ.get('COMMIT_SHA',
-              subprocess.run(['git', 'rev-parse', 'HEAD'],
-                  capture_output=True, text=True).stdout.strip())
-          namespace = f"sdd-{env}"
+            env = os.environ.get('ENV', 'dev')
+            commit_sha = os.environ.get('COMMIT_SHA',
+                subprocess.run(['git', 'rev-parse', 'HEAD'],
+                    capture_output=True, text=True).stdout.strip())
+            namespace = f"sdd-{env}"
 
-          # Read apps from apps.json
-          apps = []
-          if os.path.exists('infra/deployment/apps.json'):
-              with open('infra/deployment/apps.json') as f:
-                  config = json.load(f)
-              apps = config.get('apps', [])
-          else:
-              apps = [{'appId': 'frontend', 'healthPath': '/health'}]
+            # Read apps from apps.json
+            apps = []
+            if os.path.exists('infra/deployment/apps.json'):
+                with open('infra/deployment/apps.json') as f:
+                    config = json.load(f)
+                apps = config.get('apps', [])
+            else:
+                apps = [{'appId': 'frontend', 'healthPath': '/health'}]
 
-          discovered = []
-          for app in apps:
-              app_id = app['appId']
-              health_path = app.get('healthPath', '/health')
+            discovered = []
+            for app in apps:
+                app_id = app['appId']
+                health_path = app.get('healthPath', '/health')
 
-              # Discover nodePort from K8s service
-              node_port = ''
-              try:
-                  result = subprocess.run(
-                      ['kubectl', '-n', namespace, 'get', 'svc', app_id,
-                       '-o', 'jsonpath={.spec.ports[0].nodePort}',
-                       '--request-timeout=3s'],
-                      capture_output=True, text=True, timeout=10
-                  )
-                  if result.returncode == 0 and result.stdout.strip():
-                      node_port = result.stdout.strip()
-              except Exception as e:
-                  print(f"  Warning: kubectl failed for {app_id}: {e}")
+                # Discover nodePort from K8s service
+                node_port = ''
+                try:
+                    result = subprocess.run(
+                        ['kubectl', '-n', namespace, 'get', 'svc', app_id,
+                         '-o', 'jsonpath={.spec.ports[0].nodePort}',
+                         '--request-timeout=3s'],
+                        capture_output=True, text=True, timeout=10
+                    )
+                    if result.returncode == 0 and result.stdout.strip():
+                        node_port = result.stdout.strip()
+                except Exception as e:
+                    print(f"  Warning: kubectl failed for {app_id}: {e}")
 
-              url = f'http://localhost:{node_port}' if node_port else ''
-              health_url = f'{url}{health_path}' if url else ''
+                url = f'http://localhost:{node_port}' if node_port else ''
+                health_url = f'{url}{health_path}' if url else ''
 
-              discovered.append({
-                  'appId': app_id,
-                  'url': url,
-                  'healthUrl': health_url,
-                  'healthPath': health_path
-              })
+                discovered.append({
+                    'appId': app_id,
+                    'url': url,
+                    'healthUrl': health_url,
+                    'healthPath': health_path
+                })
 
-              if url:
-                  print(f"  {app_id}: {url}")
-              else:
-                  print(f"  {app_id}: not deployed (port-forward needed)")
+                if url:
+                    print(f"  {app_id}: {url}")
+                else:
+                    print(f"  {app_id}: not deployed (port-forward needed)")
 
-          manifest = {
-              'environment': env,
-              'commitSha': commit_sha,
-              'apps': discovered,
-              'timestamp': subprocess.run(
-                  ['date', '-u', '+%Y-%m-%dT%H:%M:%SZ'],
-                  capture_output=True, text=True).stdout.strip()
-          }
+            manifest = {
+                'environment': env,
+                'commitSha': commit_sha,
+                'apps': discovered,
+                'timestamp': subprocess.run(
+                    ['date', '-u', '+%Y-%m-%dT%H:%M:%SZ'],
+                    capture_output=True, text=True).stdout.strip()
+            }
 
-          urls_file = f'app/{commit_sha}/env-urls.json'
-          with open(urls_file, 'w') as f:
-              json.dump(manifest, f, indent=2)
-          print(f"\nURL manifest saved to {urls_file}")
-          print(json.dumps(manifest, indent=2))
-          PYEOF
+            urls_file = f'app/{commit_sha}/env-urls-{env}.json'
+            with open(urls_file, 'w') as f:
+                json.dump(manifest, f, indent=2)
+            print(f"\nURL manifest saved to {urls_file}")
+            print(json.dumps(manifest, indent=2))
+            PYEOF
+          done
 
       - name: Generate Nexus metadata artifacts
         shell: bash
         run: |
           set -euo pipefail
           COMMIT_SHA=$(git rev-parse HEAD)
-          ENV="${{ steps.env.outputs.ENV }}"
           mkdir -p "app/${COMMIT_SHA}"
 
-          # Write commit.sha
+          # Write commit.sha (shared across all environments)
           echo "${COMMIT_SHA}" > "app/${COMMIT_SHA}/commit.sha"
 
-          # Write deployable-apps.json from apps.json
-          python3 -c "
-import json
-with open('infra/deployment/apps.json') as f:
-    deploy_config = json.load(f)
-deployable = {
-    'version': 1,
-    'commitSha': '${COMMIT_SHA}',
-    'apps': [
-        {
-            'appId': app['appId'],
-            'artifactName': f\"{app['appId']}-sdd-app.zip\",
-            'healthPath': app.get('healthPath', '/health'),
-            'role': app.get('role', 'web'),
-            'deployOrder': app.get('deployOrder', 0)
-        }
-        for app in deploy_config.get('apps', [])
-    ]
-}
-with open('app/${COMMIT_SHA}/deployable-apps.json', 'w') as f:
-    json.dump(deployable, f, indent=2)
-print('Created deployable-apps.json')
-"
-
-          # Write container-images.json (for deployment tracking)
+          # Write deployable-apps.json from apps.json (shared across all environments)
           python3 << PYEOF
-import json, os
+          import json
 
-commit_sha = "${COMMIT_SHA}"
-registry = "${NEXUS_DOCKER_REGISTRY:-host.docker.internal:5001}"
+          commit_sha = "${COMMIT_SHA}"
 
-with open('infra/deployment/apps.json') as f:
-    deploy_config = json.load(f)
+          with open('infra/deployment/apps.json') as f:
+              deploy_config = json.load(f)
 
-images = {
-    'version': 1,
-    'commitSha': commit_sha,
-    'apps': [
-        {
-            'appId': app['appId'],
-            'image': f'{registry}/{app["appId"]}:{commit_sha}'
-        }
-        for app in deploy_config.get('apps', [])
-    ]
-}
+          deployable = {
+              'version': 1,
+              'commitSha': commit_sha,
+              'apps': [
+                  {
+                      'appId': app['appId'],
+                      'artifactName': f'{app["appId"]}-sdd-app.zip',
+                      'healthPath': app.get('healthPath', '/health'),
+                      'role': app.get('role', 'web'),
+                      'deployOrder': app.get('deployOrder', 0)
+                  }
+                  for app in deploy_config.get('apps', [])
+              ]
+          }
 
-path = f'app/{commit_sha}/container-images.json'
-with open(path, 'w') as f:
-    json.dump(images, f, indent=2)
-print(f'Created {path}')
-PYEOF
+          with open(f'app/{commit_sha}/deployable-apps.json', 'w') as f:
+              json.dump(deployable, f, indent=2)
+          print('Created deployable-apps.json')
+          PYEOF
 
-          # Write release.json with deployment metadata
+          # Write container-images.json (for deployment tracking, shared across all environments)
+          python3 << PYEOF
+          import json, os
+
+          commit_sha = "${COMMIT_SHA}"
+          registry = "${NEXUS_DOCKER_REGISTRY:-host.docker.internal:5001}"
+
+          with open('infra/deployment/apps.json') as f:
+              deploy_config = json.load(f)
+
+          images = {
+              'version': 1,
+              'commitSha': commit_sha,
+              'apps': [
+                  {
+                      'appId': app['appId'],
+                      'image': f'{registry}/{app["appId"]}:{commit_sha}'
+                  }
+                  for app in deploy_config.get('apps', [])
+              ]
+          }
+
+          path = f'app/{commit_sha}/container-images.json'
+          with open(path, 'w') as f:
+              json.dump(images, f, indent=2)
+          print(f'Created {path}')
+          PYEOF
+
           # Extract ticket key from the latest commit message (e.g. 'E2EPROJECT-37: ...')
           TICKET_KEY=$(git log -1 --format='%s' | grep -oE '[A-Z]+-[0-9]+' | head -1 || echo '')
-          python3 << PYEOF
-import json
-from datetime import datetime, timezone
 
-commit_sha = "${COMMIT_SHA}"
-env = "${ENV}"
-ticket_key = "${TICKET_KEY}"
+          # Write release.json per deployed environment
+          for ENV in ${{ steps.targets.outputs.TARGETS }}; do
+            echo "=== Generating release metadata for ${ENV} ==="
+            python3 << PYEOF
+            import json
+            from datetime import datetime, timezone
 
-release = {
-    'version': '0.1.0',
-    'commitSha': commit_sha,
-    'environment': env,
-    'timestamp': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
-    'versionStatus': 'unversioned'
-}
-if ticket_key:
-    release['ticketKey'] = ticket_key
+            commit_sha = "${COMMIT_SHA}"
+            env = "${ENV}"
+            ticket_key = "${TICKET_KEY}"
 
-path = f'app/{commit_sha}/release.json'
-with open(path, 'w') as f:
-    json.dump(release, f, indent=2)
-print(f'Created {path}')
-print(f'  ticketKey: {ticket_key or "(not found)"}')
-PYEOF
+            release = {
+                'version': '0.1.0',
+                'commitSha': commit_sha,
+                'environment': env,
+                'timestamp': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+                'versionStatus': 'unversioned'
+            }
+            if ticket_key:
+                release['ticketKey'] = ticket_key
+
+            path = f'app/{commit_sha}/release-{env}.json'
+            with open(path, 'w') as f:
+                json.dump(release, f, indent=2)
+            print(f'Created {path}')
+            print(f'  ticketKey: {ticket_key or "(not found)"}')
+            PYEOF
+          done
 
       - name: Upload artifacts to Nexus
         env:
@@ -443,10 +512,12 @@ PYEOF
             fi
           done
 
-          # Upload latest env URLs pointer
-          DEPLOY_ENV="${{ steps.env.outputs.ENV }}"
-          for file in $(find "${ARTIFACT_DIR}" -type f -name "env-urls.json"); do
-            LATEST_PATH="app/latest/env-urls-${DEPLOY_ENV:-dev}.json"
+          # Upload latest env URLs pointer for every deployed environment
+          for file in $(find "${ARTIFACT_DIR}" -type f -name "env-urls-*.json"); do
+            filename=$(basename "$file")
+            env_name="${filename#env-urls-}"
+            env_name="${env_name%.json}"
+            LATEST_PATH="app/latest/env-urls-${env_name}.json"
             echo "Uploading ${file} as ${LATEST_PATH}"
             curl -s -f -u "${NEXUS_USERNAME}:${NEXUS_PASSWORD}" \
               -X PUT \

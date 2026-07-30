@@ -2101,7 +2101,7 @@ def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str,
                 "path": "nexus/repositories",
                 "key": "plan",
                 "severity": "info",
-                "message": "Would create Nexus raw hosted repository: sdd-artifacts.",
+                "message": "Would create Nexus raw hosted repositories: sdd-artifacts, app-releases.",
                 "phase": "apply",
             }
         )
@@ -2196,6 +2196,51 @@ def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str,
             f"nexus/repositories/{repo_name}",
             "repository.create",
             f"Nexus repository creation returned {status}: {data[:200]}",
+            "warning",
+            "apply",
+        )
+
+    # ── 3. Create app-releases raw hosted repository (for release manifests) ──
+    repo_name_rel = "app-releases"
+    repo_payload_rel = {
+        "name": repo_name_rel,
+        "online": True,
+        "storage": {
+            "blobStoreName": "default",
+            "strictContentTypeValidation": True,
+            "writePolicy": "ALLOW",
+        },
+    }
+
+    status_rel, data_rel = _nexus_api(
+        "POST", "/service/rest/v1/repositories/raw/hosted", body=repo_payload_rel
+    )
+    if status_rel == 201:
+        result["actions"].append(
+            {
+                "path": f"nexus/repositories/{repo_name_rel}",
+                "key": "repository.created",
+                "severity": "info",
+                "message": f"Nexus raw hosted repository '{repo_name_rel}' created.",
+                "phase": "apply",
+            }
+        )
+    elif status_rel == 400 and "already exists" in data_rel:
+        result["actions"].append(
+            {
+                "path": f"nexus/repositories/{repo_name_rel}",
+                "key": "repository.exists",
+                "severity": "info",
+                "message": f"Nexus raw hosted repository '{repo_name_rel}' already exists.",
+                "phase": "apply",
+            }
+        )
+    else:
+        add_bucket_item(
+            result["findings"],
+            f"nexus/repositories/{repo_name_rel}",
+            "repository.create",
+            f"Nexus repository creation returned {status_rel}: {data_rel[:200]}",
             "warning",
             "apply",
         )

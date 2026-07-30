@@ -350,6 +350,41 @@ tests:
         value: JSON.parse(output).route === 'dev-ops-post-merge-deploy'
 
   # ═══════════════════════════════════════════════════════════════
+  # INFRASTRUCTURE VALIDATION SCENARIOS
+  # ═══════════════════════════════════════════════════════════════
+
+  - description: "PROD deploy blocked by NodePort collision across environments"
+    vars:
+      scenario: PROD deployment failed because NodePorts 30080/30500 were already allocated by DEV
+      ticketState: Done
+      branchExists: false
+      prExists: false
+      prMerged: true
+      qaEvidence: passed
+      productStack: selected
+      prodRequested: true
+      infraValidationFailed: true
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'blocked-infra-validation'
+
+  - description: "DEV deploy blocked by infrastructure collision, routes to diagnostic"
+    vars:
+      scenario: DEV deployment blocked by NodePort collision with another environment
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: true
+      qaEvidence:
+      productStack: selected
+      infraValidationFailed: true
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'blocked-infra-validation'
+
+  # ═══════════════════════════════════════════════════════════════
   # REGRESSION: original test case
   # ═══════════════════════════════════════════════════════════════
 
