@@ -6,6 +6,24 @@ Stage-specific rules for ticket creation, implementation planning, and commit wo
 
 ---
 
+## Status Mapping
+
+External-facing status labels and their corresponding OpenProject statuses. Use this mapping when referring to ticket states across different tools and the delivery workflow:
+
+| External Label | OpenProject Status | ID | Description |
+|---|---|---|---|
+| **New** | New | 1 | Bug starting point — filed from E2E QA failure |
+| **TO DO** | Specified | 3 | Feature starting point — acceptance criteria defined |
+| **In progress** | In progress | 7 | Implementation active on the branch |
+| **IN REVIEW** | **Developed** | 8 | Code complete, PR exists for review |
+| **IN QA** | **In testing** | 9 | Artifact deployed to QA, awaiting E2E validation |
+| **Tested** | Tested | 10 | E2E QA passed with acceptance criteria proven |
+| **Closed** | Closed | 12 | Ticket is done |
+
+**Key corrections from previous workflow:**
+- `IN REVIEW` → **Developed** (ID 8), not `In Review` (which does not exist in OpenProject)
+- `IN QA` → **In testing** (ID 9), not `QA` (which does not exist in OpenProject)
+
 ## States And Flow
 
 Real OpenProject statuses from the provisioned instance (verified via `GET /api/v3/statuses`):
@@ -26,14 +44,17 @@ Real OpenProject statuses from the provisioned instance (verified via `GET /api/
 - **On hold** (ID 13): work is paused temporarily.
 - **Rejected** (ID 14, isClosed): ticket is declined.
 
-Feature flow: `Specified → In progress → Developed → In testing → Tested → Closed`
-Bug fix flow:   `New → Specified → In progress → Developed → In testing → Tested → Closed`
-Bug revert flow: `Test failed → (file child bug) → New → Specified → In progress → Developed → In testing → Tested → Closed`
+**Standard flow:** `TO DO (Specified) → In progress → IN REVIEW (Developed) → IN QA (In testing) → Tested → Closed`
+
+**Feature flow:** `Specified → In progress → Developed → In testing → Tested → Closed`
+
+**Bug fix flow:** `New → Specified → In progress → Developed → In testing → Tested → Closed`
+
+**Bug revert flow:** `Test failed → (file child bug) → New → Specified → In progress → Developed → In testing → Tested → Closed`
 
 Delivery flow:
 
-```
-text
+```text
 OpenProject → branch/OpenSpec → implementation → PR → merge to dev → DEV deploy → QA deploy → E2E QA → PROD → rollback/hotfix when needed
 ```
 
@@ -59,7 +80,7 @@ For `refinable`, update only the generated OpenProject block and continue. For `
 
 OpenSpec `tasks.md` for ticketed implementation must include a compact `Review Workload Forecast` near the top:
 
-```
+```text
 Estimated changed lines: <rough range or number>
 Estimated total hours: <hours as number>
 400-line budget risk: Low|Medium|High

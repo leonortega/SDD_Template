@@ -294,8 +294,7 @@ def audit_skill_contracts(root: Path, include_configure: bool = False) -> dict[s
                            "ponytail", "ponytail-audit", "ponytail-debt", "ponytail-help", "ponytail-review"}
     if not skill_root.exists():
         return {"checked": 0, "passed": 0, "failed": 0, "profilePassed": not profile_findings,
-                "profileFindings": profile_findings, "providerSpecificPassed": True,
-                "providerSpecificFindings": [], "results": []}
+                "profileFindings": profile_findings, "results": []}
     required_sections = ["Overview", "Shared Context", "Workflow", "Output", "Failure Rules"]
     required_terms = [".codex/skills/_shared/delivery-contract.md", "docs/context-management.md", "ticket", "validation", "handoff"]
     for path in sorted(skill_root.rglob("SKILL.md")):
@@ -320,8 +319,6 @@ def audit_skill_contracts(root: Path, include_configure: bool = False) -> dict[s
         "failed": sum(1 for item in results if not item["passed"]),
         "profilePassed": not profile_findings,
         "profileFindings": profile_findings,
-        "providerSpecificPassed": True,
-        "providerSpecificFindings": [],
         "results": results,
     }
 

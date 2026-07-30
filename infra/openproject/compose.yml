@@ -11,3 +11,9 @@ services:
     volumes:
       - ${OPENPROJECT_DATA_DIR:-./openproject}/assets:/var/openproject/assets
       - ${OPENPROJECT_DATA_DIR:-./openproject}/pgdata:/var/openproject/pgdata
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:80/health_checks || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s

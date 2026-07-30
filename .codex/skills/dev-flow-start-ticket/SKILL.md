@@ -1,5 +1,6 @@
 ---
 name: dev-flow-start-ticket
+license: MIT
 description: Start configured work items from chat by listing Specified tickets (feature starting point), preparing safe repository branches, pushing new branches, generating OpenSpec-style planning notes, updating the ticket description, and commenting with the branch through selected project-profile adapters. Bug tickets (status: New) are automatically re-routed to the dedicated bug fix lifecycle (dev-flow-file-qa-bug). Use when the user asks to start the next feature ticket, start a specific ticket key, list Specified tickets, prepare a ticket branch, or connect ticket work to the local repository/OpenSpec workflow.
 ---
 
@@ -87,15 +88,13 @@ After the user confirms or dismisses suggestions, persist the state with:
 python -m tools.sdd_cli guidance set-recommended-tools --accepted '["id1","id2"]' --dismissed '["id3"]'
 ```
 
-Before creating the OpenSpec proposal (step 16), verify that the `openspec` CLI is available and the project is initialized:
+Before creating the OpenSpec proposal (step 16), verify that the `openspec` CLI is available and initialize the project:    ```bash
+    which openspec || where openspec || echo "openspec CLI not found — install via: npm install -g @fission-ai/openspec@latest"
+    openspec init --tools codex
+    openspec update
+    ```
 
-```bash
-which openspec || where openspec || echo "openspec CLI not found — install via: npm install -g @fission-ai/openspec@latest"
-openspec init  # idempotent, preserves existing config
-openspec update  # sync AI agent instructions
-```
-
-If the CLI is missing, attempt auto-installation: `npm install -g @fission-ai/openspec@latest`, then run `openspec init && openspec update`.
+    If the CLI is missing, attempt auto-installation: `npm install -g @fission-ai/openspec@latest`, then run `openspec init --tools codex && openspec update`.
 
 ## Workflow
 
@@ -123,6 +122,18 @@ If the CLI is missing, attempt auto-installation: `npm install -g @fission-ai/op
    - `blocked`: stop before branch creation, ticket status updates, comments, ticket-lock writes, or OpenSpec proposal creation. Report the missing product or technical intent.
 
 4. Run the Stack Context Preflight. If stack/tooling docs, OpenSpec config, local project guidance catalog, or project guidance discovery review are missing or drifted, stop and route to `configure-dev-environment` and `project-guidance-discover` before mutating Git, ticket provider, or OpenSpec.
+
+4.5. **Initialize trunk.io after tech stack is confirmed.** The lefthook pre-commit hook runs `npx trunk fmt` and `npx trunk check --all --ci --no-fix` on every commit. If trunk hasn't been initialized, these hooks fail and block the first commit. After the tech stack is confirmed, initialize trunk:
+
+    ```bash
+    # Initialize trunk if not already done
+    if [ ! -f .trunk/trunk.yaml ]; then
+      echo "Initializing trunk.io..."
+      npx trunk init 2>&1 || echo "trunk init skipped — will auto-init on first trunk fmt run"
+    fi
+    ```
+
+    Verify trunk is initialized by checking `.trunk/trunk.yaml` exists after the command. If trunk is not available (`npx trunk` not found), report it as a non-blocking warning: "Trunk.io not initialized — first commit may fail if trunk-fmt or trunk-check hooks run." The user can fix it later with `npx trunk init`.
 
 5. Check `git status --porcelain`. If any output exists, stop and report changed files.
 
@@ -177,7 +188,7 @@ If the CLI is missing, attempt auto-installation: `npm install -g @fission-ai/op
 
 15. Move the ticket to the configured in-progress status, unless it is already there.
 
-16. **Run the full OpenSpec propose flow.** Load the `dev-flow-propose-change` skill and follow its entire Workflow section:
+16. **Run the OpenSpec propose flow.** Load the `dev-flow-propose-change` skill and follow its Workflow section to propose the change and generate all planning artifacts in one flow:
 
     a. **Scaffold the change** if not already created:
        ```bash
@@ -185,32 +196,19 @@ If the CLI is missing, attempt auto-installation: `npm install -g @fission-ai/op
        ```
        Use the branch name converted to kebab-case: replace `/` with `-`. Example: branch `feat/e2eproject-1-files` becomes `feat-e2eproject-1-files`.
 
-    b. **Check artifact dependencies:**
-       ```bash
-       openspec status --change "<change-name>" --json
-       ```
-       Parse the JSON to find `applyRequires` (artifact IDs needed) and their dependency order.
+    b. **Generate all planning artifacts in one propose flow.** Use the ticket context, project context from `openspec/config.yaml`, and the `spec-driven` schema rules to create ALL artifacts:
+       - `proposal.md` — what & why
+       - `specs/**/*.md` — behavior specs
+       - `design.md` — how
+       - `tasks.md` — implementation steps with Review Workload Forecast
 
-    c. **Create each required artifact iteratively.** For each artifact that has its dependencies satisfied:
-       - Get instructions:
-         ```bash
-         openspec instructions <artifact-id> --change "<change-name>" --json
-         ```
-       - Read the `template` and `outputPath` from the instructions.
-       - Read any completed dependency artifacts for context.
-       - Create the artifact file following the template. Do NOT copy `<context>`, `<rules>`, or `<project_context>` into the file.
-       - Re-run `openspec status --change "<change-name>" --json` after each artifact.
+       Apply the OpenSpec `/opsx:propose` pattern: the AI reads the schema context and rules from `openspec/config.yaml`, reads the ticket description and generated planning block as input, and creates all artifacts in dependency order in a single coherent pass. Do NOT iterate manually with `openspec instructions` — the AI generates each artifact based on the schema template and project context.
 
-    d. **Stop when all `applyRequires` artifacts are `status: done`**.
-
-    e. **Verify final status:**
+    c. **Verify all artifacts were created:**
        ```bash
        openspec status --change "<change-name>"
        ```
-
-    Use the ticket title and generated planning block as proposal input.
-
-    **Do NOT stop after `openspec new change`.** That only creates an empty scaffold. The full propose flow must create `proposal.md`, `design.md`, `tasks.md`, and `specs/` in dependency order.
+       Confirm that `proposal.md`, `design.md`, `specs/`, and `tasks.md` all show as complete (`[x]`).
 
 17. **Parse workload forecast and set estimated time on the work package:**
 

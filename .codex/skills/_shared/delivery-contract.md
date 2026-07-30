@@ -24,7 +24,8 @@ For tiered context assembly rules (prompt ordering, cache breakpoints, tier defi
 
 ## Cross-References
 
-- Generic delivery skills: provider-neutral, read project profile + provider-adapter-contract.md
+- Generic delivery skills: provider-neutral, read project profile for provider selection
 - Startup sequence: `.codex/skills/_shared/skill-startup.md`
+- Pre-flight Skills & MCP gate: `.codex/skills/_shared/preflight-skills-mcp.md`
 - Durable context policy: `docs/context-management.md`
 - API helper patterns: `.codex/skills/_shared/api-helpers.md`

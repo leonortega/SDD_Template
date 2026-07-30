@@ -105,7 +105,7 @@ Since the CI pipeline now auto-deploys to QA after DEV (on push to `dev`), this 
 9. If DEV or QA page, `/health`, or deployment configuration validation fails, add a ticket provider failure comment and do not move the ticket state.
 10. Use `UpdateReleaseManifest` to create or update `app/{commitSha}/release-qa.json` with commit SHA, representative checksum/artifact URL, PR URL, ticket key, DEV/QA URLs, DEV/QA status, per-app health status, deployment configuration status, workflow run URL, and `versionStatus=unversioned QA candidate` unless an RC tag already exists.
 11. Validate and upload `release-qa.json` to Nexus next to the artifact.
-12. If QA passes, move the ticket to `configured QA state`, default `QA`.
+12. If QA passes, move the ticket to `configured QA state`, default `In testing` (OpenProject ID 9).
 
 ## Ticket Provider Updates
 

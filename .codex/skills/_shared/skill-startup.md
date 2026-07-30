@@ -22,6 +22,7 @@ Load context in this order to maximize prompt caching. The tier markers indicate
 4. `.codex/project-profile.local.json` when present
 5. `.codex/skills/_shared/provider-adapter-contract.md`
 6. `.codex/skills/_shared/delivery-contract-core.md` — always-read core rules
+7. `.codex/skills/_shared/preflight-skills-mcp.md` — mandatory Skills & MCP pre-flight gate
 
 > `<!-- CACHE BREAKPOINT: Tier 2 / Tier 3 boundary -->`
 

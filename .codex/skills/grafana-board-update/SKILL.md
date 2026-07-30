@@ -1,5 +1,6 @@
 ---
 name: grafana-board-update
+license: MIT
 description: After a CI deploy completes, intelligently update the Grafana SDD Service Status dashboard with live URLs, new apps, and multi-environment support. Use when a deploy finishes and you need to refresh the Grafana dashboard — either from scratch or by merging changes into the existing JSON. Handles app additions, environment sections (DEV/QA/PROD), stale entry cleanup, and Grafana API push.
 ---
 

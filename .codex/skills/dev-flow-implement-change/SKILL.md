@@ -24,7 +24,7 @@ Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.c
 Required or defaulted values:
 
 - `selected ticket adapter runtime values`
-- `configured review state`: target state after PR creation and review. Default: `In Review`.
+- `configured developed state`: target state after PR creation. Default: `Developed` (OpenProject ID 8).
 - `git.baseBranch`, `git.branchPattern`, `git.maxBranchLength`
 - `selected repository/review adapter runtime values`
 - `selected repository/review adapter token`: required for repository/review provider API mutations.
@@ -43,9 +43,23 @@ Never print, commit, paste into tickets, or write real API tokens into tracked f
 1. Select the OpenSpec change using the existing `dev-flow-apply-change` rules. If ambiguous, list active changes and ask the user to choose.
 2. Announce the selected change and how to override it.
 3. Run the equivalent of `/opsx:apply <change>` by following `.codex/skills/dev-flow-apply-change/SKILL.md`.
-4. Read every context file returned by `openspec instructions apply --change "<name>" --json`.
-5. Implement every pending task unless blocked by unclear requirements or a design conflict.
-6. Mark each task complete only after its code and validation are complete.
+4. Read context files directly from the change directory:
+   - `openspec/changes/<name>/proposal.md`
+   - `openspec/changes/<name>/specs/*.md`
+   - `openspec/changes/<name>/design.md`
+   - `openspec/changes/<name>/tasks.md`
+5. **Before coding, activate skills from the Skill Pre-Analysis.** Load and apply the skills declared via `dev-flow-apply-change`'s Skill Pre-Analysis section. Actively apply them per TDD cycle:
+   - **RED**: `tdd` + stack test framework + `clean-code` test structure
+   - **GREEN**: `ponytail full` + stack conventions + `clean-code` + `security-best-practices` + `solid`
+   - **REFACTOR**: `clean-architecture` + `clean-code` + `solid` + stack arch patterns
+6. **Check MCP routing before code searches.** Per `.codex/mcp-instructions.md`: source code → `codebase-memory-mcp`, documentation → `monorepo-docs-search`, services → service MCPs.
+7. **⚠️ MANDATORY: Write tests based on tasks before product code.** See `.codex/skills/_shared/pipeline-tdd-cycle.md` for the common TDD test-first pattern. Use:
+   - **AC source:** the OpenSpec change specs and tasks
+   - **Task source:** `openspec/changes/<name>/tasks.md`
+   - **Test levels:** unit (per component), integration (per endpoint/feature), architecture (project-wide, one file for the entire change).
+8. Implement every pending task unless blocked by unclear requirements or a design conflict.
+9. Mark each task complete only after its code and validation are complete.
+10. Declare active skills with applied rationale at the start of each response body via `Skills used:` block.
 
 ### 2. Add Edge-Case Tests
 
@@ -98,18 +112,27 @@ If implementation discovers durable knowledge, update the matching doc in the sa
    - If no reviewers can be resolved, create the PR without reviewers and document the gap in the PR body.
 3. Create configured PR labels if they do not exist and labels are enabled.
 4. Create the PR with title from the branch in human-readable text and a body containing all commit message change lists, `Context findings: added/updated/none`, `Docs updated: <files>` or `Docs: no durable context changes`, and `Assumptions recorded: <short list or none>`.
-5. Verify human reviewers before review handoff:
-   - If reviewers were resolved but the PR create response does not show them as requested, call the selected review adapter's `request-reviewers` operation with the resolved reviewer usernames. For Gitea, see `.codex/providers/repo.gitea.md` → `request-reviewers` Operation Details for the exact API endpoint and payload, or `.codex/skills/_shared/api-helpers.md` → Gitea for the shared reference.
-   - Re-fetch the PR and confirm the requested reviewers are present in `requested_reviewers`.
-   - **Do not skip this verification.** If the selected review adapter rejects reviewer assignment or the verification still shows no requested reviewers, document the gap in the PR body, ticket handoff comment, and final summary before moving on.
-6. Apply the configured reviewed label after the review agent completes. Apply `needs-tests` or `needs-changes` when the review agent reports those outcomes.
+5. **Do NOT call `request-reviewers` during PR creation.** Human reviewers are requested after the AI review completes (see Step 6). Resolve reviewers only for the PR body and ticket comment documentation. Store the resolved reviewer list for later use.
+6. Apply the configured reviewed label after the review agent completes (see Step 6). Apply `needs-tests` or `needs-changes` when the review agent reports those outcomes.
 
 ### 6. Review And Update Ticket Provider
 
 1. Invoke the `dev-flow-pr-review-agent` skill against the newly created PR.
-2. Move the linked ticket to `configured review state`, default `In Review`, only after PR creation, human reviewer request verification or documented reviewer gap, and review-agent posting complete.
-3. Add a ticket comment containing the PR link, `Context findings: added/updated/none`, `Docs updated: <files>` or `Docs: no durable context changes`, and `Assumptions recorded: <short list or none>`.
-4. If the configured ticket status is missing, stop after PR creation and review, report the missing state, and do not guess another state.
+
+2. **❌ HARD GATE — Request human reviewers after AI review completes.** See `.codex/skills/_shared/pipeline-review-handoff.md` for the common AI review → human reviewers pattern.
+
+3. Apply the configured reviewed label. Apply `needs-tests` or `needs-changes` when the review agent reports those outcomes.
+
+4. Move the linked ticket to `Developed` (OpenProject ID 8) — the configured `configured developed state`.
+
+5. **Verify the PR comment was created and retry if missing.** See `.codex/skills/_shared/pipeline-ticket-comment.md` for the common comment verification pattern. Use:
+   - Marker: `IA generated PR: {prUrl}`
+   - Comment body: `**Branch:** {branchName}\n**OpenSpec change:** {openspecChangeName}\n**Reviewers:** {reviewers}`
+   - Severity: `blocking` (stop if comment cannot be created)
+
+6. Add a ticket comment containing the PR link, `Context findings: added/updated/none`, `Docs updated: <files>` or `Docs: no durable context changes`, `Reviewers: <usernames>`, and `Assumptions recorded: <short list or none>`.
+
+7. If the configured ticket status is missing, stop after PR creation and review, report the missing state, and do not guess another state.
 
 ## Idempotency And Failure Rules
 

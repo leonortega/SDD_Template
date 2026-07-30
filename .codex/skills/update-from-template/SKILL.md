@@ -1,5 +1,6 @@
 ---
 name: update-from-template
+license: MIT
 description: Update this consumer repository from the canonical SDD_Template source. Use when the user asks to update to the latest template version or to a specific tagged release.
 ---
 

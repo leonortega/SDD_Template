@@ -1,5 +1,6 @@
 ---
 name: project-guidance-acquire
+license: MIT
 description: Install skills from configured GitHub sources using the SDD CLI tool installer. Uses GitHub raw content API (no cloning required).
 ---
 

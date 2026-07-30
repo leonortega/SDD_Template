@@ -1,5 +1,6 @@
 ---
 name: dev-ops-configure-k8s
+license: MIT
 description: Scaffold and configure Kubernetes deployment for all apps in the project. K8s is the single deployment target — no adapter pattern, no alternate providers.
 ---
 

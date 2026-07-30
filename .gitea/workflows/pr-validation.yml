@@ -6,6 +6,11 @@ on:
       - main
       - dev
 
+# Dev flow gate: requires the `codex-reviewed` label to be set on the PR.
+# This is applied by the AI review-agent (dev-flow-pr-review-agent skill)
+# after reviewing the diff. Without it, CI fails — ensuring every PR
+# receives automated review before merge.
+
 jobs:
   validate:
     runs-on: ubuntu-latest

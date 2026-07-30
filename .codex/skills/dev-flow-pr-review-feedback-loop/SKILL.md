@@ -24,11 +24,15 @@ Read `.codex/delivery-context.local.json` when present and verify the resolved t
 
 ## Workflow Telemetry
 
-Capture UTC start time after resolving the active ticket and PR. Prefer OpenProject time-entry telemetry and create or update the `dev-flow-pr-review-feedback-loop` entry via the `time-telemetry-upsert` operation (see `.codex/providers/ticket.openproject.md` → Operations → `time-telemetry-upsert` for the exact API payload with `spentOn`, `hours`, `comment`, and `_links`). Use marker `IA generated workflow telemetry: {ticketKey}:dev-flow-pr-review-feedback-loop`. Resolve the activity href by running `python -m tools.sdd_cli dev-flow resolve-openproject-activity --workflow-stage dev-flow-pr-review-feedback-loop --input-json '{"timeTelemetry":{...}}'` and reverse-lookup the activity ID from the resolved name.
+See `.codex/skills/_shared/pipeline-workflow-telemetry.md` for the common workflow telemetry pattern. Use:
 
-Use `python -m tools.sdd_cli dev-flow append-telemetry -TicketKey {ticketKey}` only as the JSONL fallback when direct time telemetry is unavailable. On resume or idempotent reuse, append or update another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-flow-pr-review-feedback-loop`, `agentRole=reviewFeedback`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If no active feedback exists and the loop reuses an existing current-head review, record `outcome=SKIP`.
+- `{workflowStage}` = `dev-flow-pr-review-feedback-loop`
+- `{agentRole}` = `reviewFeedback`
 
-For shared API helpers including time-entry POST payload format and activity reverse-lookup, see `.codex/skills/_shared/api-helpers.md` → OpenProject → Workflow time telemetry.
+**Unique additions for this skill:**
+
+- **JSONL fallback:** Use `python -m tools.sdd_cli dev-flow append-telemetry -TicketKey {ticketKey}` only as the JSONL fallback when direct time telemetry is unavailable.
+- **SKIP outcome:** If no active feedback exists and the loop reuses an existing current-head review, record `outcome=SKIP`.
 
 ## Configuration
 
@@ -89,7 +93,7 @@ Keep the marker as the first line by itself, followed by a blank line and a revi
 Include stash notes when relevant without exposing secrets or noisy tool output.
 Use the ticket activities API with a `comment.raw` payload. If a generated activity is missing or wrong, add a corrected marker activity and then read activities back before handoff. 12. Rerun the AI review loop on the new head before returning to human review or implementation handoff.
 
-Keep ticket provider in `In Review` while late human feedback fixes are applied. Do not move the ticket backward unless another workflow rule explicitly requires it.
+Keep ticket provider in `Developed` (OpenProject ID 8) while late human feedback fixes are applied. Do not move the ticket backward unless another workflow rule explicitly requires it.
 
 ## Output
 

@@ -8,7 +8,7 @@ Memory is guidance only. It must never override the latest user request, active 
 
 ## High-Signal Operating Context
 
-- Repository root: `C:\Endava\EndevLocal\Personal\SDD_template`.
+- Repository root: (varies by machine — local clone of `SDD_Template`).
 - Product source: not present.
 - Product tests: not present.
 - Delivery helpers: `tools/sdd_cli`.
