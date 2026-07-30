@@ -1,6 +1,6 @@
 ---
 name: dev-flow-start-ticket
-description: Start configured work items from chat by listing Specified tickets (feature starting point), preparing safe repository branches, pushing new branches, generating OpenSpec-style planning notes, updating the ticket description, and commenting with the branch through selected project-profile adapters. Use when the user asks to start the next feature ticket, start a specific ticket key, list Specified tickets, prepare a ticket branch, or connect ticket work to the local repository/OpenSpec workflow.
+description: Start configured work items from chat by listing Specified tickets (feature starting point), preparing safe repository branches, pushing new branches, generating OpenSpec-style planning notes, updating the ticket description, and commenting with the branch through selected project-profile adapters. Bug tickets (status: New) are automatically re-routed to the dedicated bug fix lifecycle (dev-flow-file-qa-bug). Use when the user asks to start the next feature ticket, start a specific ticket key, list Specified tickets, prepare a ticket branch, or connect ticket work to the local repository/OpenSpec workflow.
 ---
 
 <!-- TIER 3: STAGE-SPECIFIC - Ticket start workflow skill -->
@@ -10,6 +10,20 @@ description: Start configured work items from chat by listing Specified tickets 
 ## Overview
 
 Use this skill for a chat-driven ticket workflow. The user should not need to run a command; Codex should call the selected ticket adapter and local Git commands from the conversation.
+
+### Bug Routing
+
+When the user asks to start a ticket or a ticket is fetched that is a **bug** (status is `New`, ID 1), this skill **does not** continue with the normal feature flow. Instead, it routes to `dev-flow-file-qa-bug` which handles the full bug fix lifecycle:
+
+```text
+E2E QA fails → File bug → Move to Specified → Update parent OpenSpec → Commit → Move to In progress → Branch → PR → Merge & deploy to QA → Close bug → Return to parent QA
+```
+
+**How routing works:**
+1. The ticket is fetched and its status is checked
+2. If status is `New` (ID 1) → route to `dev-flow-file-qa-bug`
+3. After the bug flow completes, the parent ticket continues its normal QA flow
+4. If status is `Specified` or any other state → continue with the normal feature flow below
 
 For setup details and branch pattern options, read `references/configuration.md` when configuration is missing or the user asks how to configure the tools. Before making ticket-provider calls, read `.codex/project-profile.json` and the selected ticket adapter path; read provider-specific references only when that adapter requires them.
 
@@ -95,24 +109,39 @@ If the CLI is missing, attempt auto-installation: `npm install -g @fission-ai/op
 ### Ticket Specified
 
 1. Fetch the ticket by key or id.
-2. Run the Ticket Refinement Gate from the shared delivery contract before mutating Git, ticket status, the ticket lock, or OpenSpec:
+
+2. **Check if the ticket is a bug.** If the ticket's status is `New` (ID 1, the bug starting state — see `delivery-contract-ticket.md`), route to the dedicated bug fix lifecycle:
+   - Load `dev-flow-file-qa-bug` and follow its full Workflow section
+   - This skill does NOT create a branch, OpenSpec proposal, or feature-scoped planning for bugs
+   - After the bug flow completes (Phase 7: Close Bug & Return To Parent QA), the parent ticket `{parentTicketKey}` resumes its QA flow
+   - **Do not continue** with the normal feature steps below — the bug flow handles everything
+
+3. Run the Ticket Refinement Gate from the shared delivery contract before mutating Git, ticket status, the ticket lock, or OpenSpec:
    - Prefer repo-local readiness helpers when available.
    - `ready`: continue.
    - `refinable`: use grill-style refinement before writing the managed ticket provider block. Prefer `grill-with-docs` style when answers create durable product, domain, acceptance, or rationale knowledge; use `grill-me` style only for temporary alignment. Generate Scrum-ready planning details with a problem or opportunity, user story, concrete acceptance criteria, scope or affected areas, dependencies or assumptions, validation expectations, risks, and definition of done in the managed ticket provider block, then continue.
    - `blocked`: stop before branch creation, ticket status updates, comments, ticket-lock writes, or OpenSpec proposal creation. Report the missing product or technical intent.
-3. Run the Stack Context Preflight. If stack/tooling docs, OpenSpec config, local project guidance catalog, or project guidance discovery review are missing or drifted, stop and route to `configure-dev-environment` and `project-guidance-discover` before mutating Git, ticket provider, or OpenSpec.
-4. Check `git status --porcelain`. If any output exists, stop and report changed files.
-5. Log a time entry for the selected ticket via `time-telemetry-upsert` (POST `/api/v3/time_entries`). See Workflow Telemetry section above for the exact payload format. Do not initialize telemetry when only listing tickets.
-6. Switch to the configured base branch and run `git pull --ff-only`.
-7. Create or reuse the configured branch name.
-8. Derive the repository remote name from `git remote` output (e.g., `origin` or `gitea`). Pre-scan branch conflicts before creating or switching branches:
+
+4. Run the Stack Context Preflight. If stack/tooling docs, OpenSpec config, local project guidance catalog, or project guidance discovery review are missing or drifted, stop and route to `configure-dev-environment` and `project-guidance-discover` before mutating Git, ticket provider, or OpenSpec.
+
+5. Check `git status --porcelain`. If any output exists, stop and report changed files.
+
+6. Log a time entry for the selected ticket via `time-telemetry-upsert` (POST `/api/v3/time_entries`). See Workflow Telemetry section above for the exact payload format. Do not initialize telemetry when only listing tickets.
+
+7. Switch to the configured base branch and run `git pull --ff-only`.
+
+8. Create or reuse the configured branch name.
+
+9. Derive the repository remote name from `git remote` output (e.g., `origin` or `gitea`). Pre-scan branch conflicts before creating or switching branches:
    - `git show-ref --verify refs/heads/{branchName}` for a local branch.
    - `git ls-remote --heads {remoteName} {branchName}` for a remote branch.
      If both exist and point to different commits, stop and report the conflict. If the remote branch exists and the local branch is missing, create the local branch from the remote only when it descends from the configured base branch.
-9. Push the branch to repository/review provider with upstream tracking using `git push -u {remoteName} {branchName}` (where `{remoteName}` is the detected remote from step 8). If the upstream branch already exists and points to the same commit, treat it as complete; if the push is rejected or would require a non-fast-forward update, stop and report the branch issue.
-10. **Feed human ticket text to openspec-explore skill.** Load `.codex/skills/openspec-explore/SKILL.md`. Feed it the human-authored ticket description (fetched in step 1). It produces an exploratory analysis with structure, gaps, risks, and insights.
 
-11. **Run iterative grill-with-docs cycles on the human ticket text (up to 4 cycles).** Load `.codex/skills/grill-with-docs/SKILL.md`. Feed it the human-authored ticket description. This is an iterative process:
+10. Push the branch to repository/review provider with upstream tracking using `git push -u {remoteName} {branchName}` (where `{remoteName}` is the detected remote from step 9). If the upstream branch already exists and points to the same commit, treat it as complete; if the push is rejected or would require a non-fast-forward update, stop and report the branch issue.
+
+11. **Feed human ticket text to openspec-explore skill.** Load `.codex/skills/openspec-explore/SKILL.md`. Feed it the human-authored ticket description (fetched in step 1). It produces an exploratory analysis with structure, gaps, risks, and insights.
+
+12. **Run iterative grill-with-docs cycles on the human ticket text (up to 4 cycles).**
 
     a. **Cycle 1:** grill-with-docs interviews the user on unclear aspects, generating questions about gaps, ambiguities, and missing context.
     b. **IA answers each question** with the best possible answer based on available context.
@@ -122,7 +151,7 @@ If the CLI is missing, attempt auto-installation: `npm install -g @fission-ai/op
 
     Uses `/grilling` + `/domain-modeling` under the hood. Output: a single comprehensive refined-requirements document built from all cycles.
 
-12. **Curate both outputs into one agile-format IA block.** Take output from step 10 (openspec-explore analysis) + output from step 11 (grill-with-docs refined requirements). The IA curates, merges, and improves both into a single cohesive agile-format block with all sections below. **Critically, extract every "will not implement" decision from grill-with-docs cycles and consolidate them into the "Out of scope" section** — do not leave these decisions scattered in different comments or omitted entirely.
+13. **Curate both outputs into one agile-format IA block.** Take output from step 11 (openspec-explore analysis) + output from step 12 (grill-with-docs refined requirements). The IA curates, merges, and improves both into a single cohesive agile-format block with all sections below. **Critically, extract every "will not implement" decision from grill-with-docs cycles and consolidate them into the "Out of scope" section** — do not leave these decisions scattered in different comments or omitted entirely.
 
     Full agile-format sections:
     - Problem / opportunity
@@ -142,9 +171,12 @@ If the CLI is missing, attempt auto-installation: `npm install -g @fission-ai/op
     - On subsequent runs, replace only the content between the markers.
     - Include current `lockVersion` in the PATCH payload.
 
-13. Add a ticket comment with the branch name, base branch, pushed repository branch, and OpenSpec decision, unless a generated comment for the same branch already exists.
-13. Create or update `.codex/delivery-context.local.json` with `ticketKey`, `branch`, `openspecChange` when applicable, and any known PR/artifact/version fields. If an existing lock names a different ticket, fetch the locked ticket through the OpenProject API when OpenProject is selected, otherwise through the selected ticket adapter, and compare its status with the configured `openProject.doneStatus` or default `Done`. If the locked ticket is `Done`, call `EnsureDeliveryContext` with `replaceExisting=true` for the new selected ticket. If the locked ticket is active, missing, ambiguous, or cannot be verified, stop and report the stale-lock blocker. Do not delete the lock merely because the old ticket is QA Done or ready for PROD; replacement is lazy on the next ticket start.
+14. Add a ticket comment with the branch name, base branch, pushed repository branch, and OpenSpec decision, unless a generated comment for the same branch already exists.
+
+14. Create or update `.codex/delivery-context.local.json` with `ticketKey`, `branch`, `openspecChange` when applicable, and any known PR/artifact/version fields. If an existing lock names a different ticket, fetch the locked ticket through the OpenProject API when OpenProject is selected, otherwise through the selected ticket adapter, and compare its status with the configured `openProject.doneStatus` or default `Done`. If the locked ticket is `Done`, call `EnsureDeliveryContext` with `replaceExisting=true` for the new selected ticket. If the locked ticket is active, missing, ambiguous, or cannot be verified, stop and report the stale-lock blocker. Do not delete the lock merely because the old ticket is QA Done or ready for PROD; replacement is lazy on the next ticket start.
+
 15. Move the ticket to the configured in-progress status, unless it is already there.
+
 16. **Run the full OpenSpec propose flow.** Load the `dev-flow-propose-change` skill and follow its entire Workflow section:
 
     a. **Scaffold the change** if not already created:
@@ -192,11 +224,13 @@ If the CLI is missing, attempt auto-installation: `npm install -g @fission-ai/op
 
     c. **Log a time entry for the start-ticket stage** via `time-telemetry-upsert` if not already logged (see Workflow Telemetry section above).
 
-Only move the ticket to the in-progress status after branch creation, repository/review provider push, generated description update (steps 10-12), and branch comment (step 13) all succeed or are confirmed idempotently already complete. Only create the OpenSpec proposal (step 16) after the ticket is in the in-progress status.
+Only move the ticket to the in-progress status after branch creation, repository/review provider push, generated description update (steps 11-13), and branch comment (step 14) all succeed or are confirmed idempotently already complete. Only create the OpenSpec proposal (step 16) after the ticket is in the in-progress status.
 
 ## OpenSpec Decision
 
-Default to creating an OpenSpec proposal for feature, bug, and hotfix tickets. Skip OpenSpec only when one of these is true:
+Default to creating an OpenSpec proposal for feature and hotfix tickets. Bug OpenSpec handling is delegated to `dev-flow-file-qa-bug` (Phase 3: Update Parent OpenSpec With Bug Tasks) — bugs append tasks to the **parent's** existing OpenSpec change and do NOT create a new one.
+
+Skip OpenSpec only when one of these is true:
 
 - the ticket contains an explicit `no-openspec` marker,
 - the ticket is clearly labeled or titled as `chore` or `ops-only`,
@@ -363,8 +397,11 @@ Use `IA generated branch: {branchName}` as the stable branch comment marker. If 
 
 Report the selected ticket, branch, OpenSpec change or explicit no-OpenSpec rationale, ticket lock path, telemetry initialization, validation performed, ticket comment marker, and handoff to `dev-flow-implement-ticket`.
 
+If the ticket was a bug (status: New) and was re-routed to `dev-flow-file-qa-bug`, report the bug ticket, parent ticket, and the full bug flow output (see `dev-flow-file-qa-bug` → Output section).
+
 ## Failure Rules
 
+- Bug routing failure: if the ticket is a bug (status: New) but `dev-flow-file-qa-bug` cannot be loaded or followed, stop and report the routing failure — do not apply the feature flow to a bug.
 - Dirty working tree: stop before branch creation or ticket-provider mutation.
 - Missing selected ticket adapter config: explain the missing setup and reference `references/configuration.md`.
 - Invalid or empty title slug: fall back to a ticket-key-only branch segment.

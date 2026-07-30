@@ -32,7 +32,7 @@ Load only the context needed for the workflow stage.
 - Ticket start: project profile, selected ticket/repository adapters, ticket, current ticket state, base branch, branch policy, OpenSpec decision rules, and existing generated markers.
 - Implementation: project profile, selected stack/repository/review adapters, ticket lock, ticket, OpenSpec apply context files, relevant code, relevant tests, quality gates, and local docs for architecture/development/deployment constraints.
 - PR review: PR diff, ticket, OpenSpec artifacts, relevant tests, CI status, review labels, and current head SHA.
-- QA and deploy: ticket lock, merged PR, artifact commit, Nexus paths, `release.json`, workflow run, DEV/QA URLs, health checks, and QA evidence rules.
+- QA and deploy: ticket lock, merged PR, artifact commit, Nexus paths, `release-{env}.json`, workflow run, DEV/QA URLs, health checks, and QA evidence rules.
 - PROD: QA-approved artifact, source RC tag, final version, `main` target commit, release manifest, PROD health checks, and monitoring status.
 - Rollback or hotfix: incident/ticket context, current PROD release, known-good artifact, rollback lineage, active ticket lock mismatch, and follow-up ownership.
 
@@ -43,7 +43,7 @@ Before mutating OpenProject, Git, Gitea, Nexus, tags, or release manifests, refr
 - OpenProject status, ticket description, and generated comments.
 - Current Git branch, dirty state, remote branch, and tags.
 - Gitea PR status, labels, reviews, head SHA, merge commit, and CI status.
-- Nexus artifact files under `app/{commitSha}/`, including `release.json`.
+- Nexus artifact files under `app/{commitSha}/`, including `release-{env}.json`.
 - DEV, QA, and PROD health evidence when deployment state matters.
 - QA evidence, RC tags, final tags, and rollback lineage before promotion or rollback.
 

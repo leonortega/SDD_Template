@@ -121,7 +121,7 @@ Read the test results and classify the outcome per the QA outcomes taxonomy:
    - Pass verdict with acceptance criteria mapping summary
    - Screenshots of any failed tests (if any)
 2. Move the ticket to the configured `Done` state (or `Tested` if `Done` is reserved for PROD)
-3. Update Nexus `release.json` with `e2eQaStatus: "passed"` and `versionStatus: "RC candidate"`
+3. Update Nexus `release-qa.json` with `e2eQaStatus: "passed"` and `versionStatus: "RC candidate"`
 4. Optionally create an RC tag on the QA-approved commit: `git tag -a "v{MAJOR}.{MINOR}.{PATCH}-rc.{N}"`
 
 **On `PASS WITH GAPS`:**

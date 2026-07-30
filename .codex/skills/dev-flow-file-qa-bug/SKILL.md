@@ -1,6 +1,6 @@
 ---
 name: dev-flow-file-qa-bug
-description: Create a linked bug ticket from failed QA evidence, move it through the bug fix lifecycle (New → Specified → In progress), modify the parent ticket's OpenSpec with bug-fix tasks, create a fix/ branch, and hand off to implementation. Use when E2E QA fails with a product defect, a committed-test defect, or any QA-identified issue requiring code changes.
+description: Create a linked bug ticket from failed QA evidence, move it through the full bug fix lifecycle (New → Specified → In progress), modify the parent ticket's OpenSpec with bug-fix tasks, create a fix/ branch, create PR, deploy to QA, close the bug, and return to the parent ticket's QA flow. Use when E2E QA fails with a product defect, a committed-test defect, or any QA-identified issue requiring code changes.
 ---
 
 <!-- TIER 3: STAGE-SPECIFIC - QA bug filing and fix workflow skill -->
@@ -12,7 +12,7 @@ description: Create a linked bug ticket from failed QA evidence, move it through
 Use this skill when E2E QA fails against the QA deployment. This skill handles the full bug fix lifecycle:
 
 ```text
-E2E QA fails → File bug → Move to Specified → Update parent OpenSpec → Commit → Move to In progress → Branch → PR → Hand off to implementation
+E2E QA fails → File bug → Move to Specified → Update parent OpenSpec → Commit → Move to In progress → Branch → PR → Merge & deploy to QA → Close bug → Return to parent QA
 ```
 
 **Key differences from feature flow:**
@@ -137,24 +137,115 @@ Run these steps in order. Do not skip any step.
     IA generated bug PR: {prUrl}
     ```
 
-### Phase 6 — Hand Off To Implementation
+22. **Add reviewers to the PR** via the repository provider API. Use the configured reviewers from `project-profile.json → workflow.prDefaultReviewers` or, as a fallback, use the default reviewer list (`FirstUser`, `SecondUser`):
+    ```bash
+    POST /api/v1/repos/{owner}/{repo}/pulls/{prNumber}/requested_reviewers
+    {"reviewers": ["FirstUser", "SecondUser"]}
+    ```
+    This ensures the PR has assigned reviewers before the AI review runs. If no reviewers are configured or available, report this as a warning but continue.
 
-22. Update `.codex/delivery-context.local.json` with:
-    - `ticketKey`: bug ticket key
-    - `parentTicketKey`: parent ticket key (advisory for cross-referencing)
-    - `branch`: fix branch name (✅ `dev-flow-continue-implementation` auto-checkouts this branch via its Pre-Flight step)
-    - `openspecChange`: parent's OpenSpec change name (bug tasks live there)
-    - `evidencePath`: E2E QA evidence path or URL
+23. **Run AI review on the PR.** Load and follow the `dev-flow-pr-review-agent` skill to review the PR diffs, post findings, and apply labels (e.g., `codex-reviewed`, `needs-changes`, `needs-tests`).
 
-23. Hand off to `dev-flow-continue-implementation` or the user to implement the fix on the fix branch.
+    This step runs immediately after PR creation so the developer has AI review feedback before starting implementation. If the AI review finds blocking issues (`BLOCKER` severity), the implementation phase should address them before merging.
 
-    **Note:** The orchestrator's Pre-Flight step will auto-checkout the fix branch from the `branch` field set above. No manual checkout needed.
+### Phase 6 — Merge & Deploy To QA
 
-    **Important:** After implementation is complete, the implementer must:
-    - Run E2E QA against the fix before merging
-    - If QA re-runs pass, merge the PR back to `dev`
-    - Move the bug ticket to `Done`
-    - The parent ticket `{parentTicketKey}` remains in its current state (e.g., `Tested` or `QA`) — it does NOT move when the bug is closed
+After the implementer completes the fix on the branch and merges the PR to `dev`, the AI automatically handles deployment, bug closure, and return to the parent ticket's QA flow.
+
+24. Confirm the PR has been merged to `dev`. Check:
+    - Gitea API: `GET /api/v1/repos/{owner}/{repo}/pulls/{prNumber}` — `merged_at` must not be null
+    - If the PR is still open, report the PR URL and stop — wait for the implementer to merge
+
+25. Move the bug ticket to `Developed` (ID 8) — code is merged:
+    ```bash
+    PATCH /api/v3/work_packages/{bugId}
+    {"lockVersion": {n}, "_links": {"status": {"href": "/api/v3/statuses/8"}}}
+    ```
+
+26. Update `.codex/delivery-context.local.json` to switch context to the bug ticket for deployment tracking:
+    ```json
+    {
+      "ticketKey": "{bugKey}",
+      "parentTicketKey": "{parentTicketKey}",
+      "branch": "dev",
+      "openspecChange": "{parentChangeName}",
+      "prNumber": {prNumber},
+      "artifactCommitSha": "{mergeCommitSha}"
+    }
+    ```
+
+27. Invoke `dev-ops-post-merge-deploy` with the resolved PR number and bug ticket key. This skill:
+    - Validates the merged PR is clean (no `needs-changes` or `needs-tests` labels)
+    - Dispatches the CI pipeline on `dev`
+    - Waits for Nexus artifacts to appear for the merge commit
+    - Delegates to `dev-ops-deploy-qa` for DEV → QA promotion
+
+28. Verify the QA deployment succeeded:
+    - Check for `IA generated QA deployment: {mergeCommitSha}` marker in the bug ticket comments
+    - Confirm QA frontend URL returns HTTP 200
+    - Confirm QA backend `/health` returns `{"status":"ok"}`
+    - If QA deployment fails, follow the failure rules and stop — do not close the bug
+
+### Phase 7 — Close Bug & Return To Parent QA
+
+29. Mark all bug-fix tasks as completed in the parent's OpenSpec `tasks.md`. Change every unchecked `- [ ]` to `- [x]` for the bug's section:
+    ```bash
+    sed -i "/^## Bug Fix: {bugKey}/,/^## /{s/- \[ \]/- [x]/}" openspec/changes/{parentChangeName}/tasks.md
+    ```
+    This marks the bug-fix tasks as done. Other sections of `tasks.md` are not affected.
+
+30. Commit and push the `tasks.md` update:
+    ```bash
+    git add openspec/changes/{parentChangeName}/tasks.md
+    git commit -m "{bugKey}: mark bug-fix tasks as completed"
+    git push
+    ```
+
+31. Delete the fix branch (local and remote) — it is no longer needed:
+    ```bash
+    git branch -d fix/{bugKeySlug}-{short-description}
+    git push {remoteName} --delete fix/{bugKeySlug}-{short-description}
+    ```
+
+32. Add a comment on the bug ticket documenting the closure, then move it to `Closed` (ID 12):
+    - Marker: `IA generated bug closed: {bugKey}`
+    - Comment body:
+      ```text
+      IA generated bug closed: {bugKey}
+      
+      **Parent ticket:** {parentTicketKey}
+      **Fix commit:** {mergeCommitSha}
+      **QA deployed:** {qaUrl}
+      
+      Bug-fix tasks marked completed, fix branch deleted, deployment verified.
+      ```
+    - Move status:
+      ```bash
+      PATCH /api/v3/work_packages/{bugId}
+      {"lockVersion": {n}, "_links": {"status": {"href": "/api/v3/statuses/12"}}}
+      ```
+
+33. Update `.codex/delivery-context.local.json` to point back to the **parent ticket**:
+    ```json
+    {
+      "ticketKey": "{parentTicketKey}",
+      "branch": "dev",
+      "openspecChange": "{parentChangeName}",
+      "artifactCommitSha": "{mergeCommitSha}",
+      "evidencePath": "QA URL: {qaUrl}"
+    }
+    ```
+
+34. Move the parent ticket `{parentTicketKey}` from `Test failed` (ID 11) back to `In testing` (ID 9) — the bug is fixed, deployed, and the parent can be re-tested:
+    ```bash
+    PATCH /api/v3/work_packages/{parentId}
+    {"lockVersion": {n}, "_links": {"status": {"href": "/api/v3/statuses/9"}}}
+    ```
+
+35. Continue with the normal QA flow for the parent ticket:
+    - Run the E2E QA evidence gate per `delivery-contract-qa.md`
+    - If E2E QA passes, proceed to PROD promotion per `dev-ops-deploy-prod`
+    - The bug is already closed — it does not block the parent
 
 ### Non-Code Defects
 
@@ -179,9 +270,9 @@ Skip OpenSpec modification only when:
 
 ## Output
 
-Report the parent ticket, bug ticket (with link), E2E QA evidence path, bug specification state (with fallback if used), parent OpenSpec change updated with bug tasks, fix branch name and remote with initial commit, PR URL, bug ticket In progress state, handoff to implementation, and post-implementation summary (E2E QA re-run result, merge status, bug closed, parent remains in current state).
+Report the parent ticket, bug ticket (with link), E2E QA evidence path, bug specification state (with fallback if used), parent OpenSpec change updated with bug tasks, fix branch name and remote with initial commit, PR URL, AI review result (passed / blocking findings with ids), merge commit SHA, deployment status (DEV ✓ / QA ✓), bug-closure status (tasks marked done, branch deleted, ticket moved to Closed), parent ticket returned to In testing, and handoff to E2E QA for the parent.
 
-For non-code defects, report the parent ticket, evidence path, and required non-code owner.
+For non-code defects, report the parent ticket, evidence path, and required non-code owner and stop (no branch, no deploy, no close).
 
 ## Failure Rules
 
@@ -193,3 +284,7 @@ For non-code defects, report the parent ticket, evidence path, and required non-
 - Dirty working tree: stop before branch creation.
 - Parent ticket has no active OpenSpec change: report this as an anomaly but continue (create branch without OpenSpec update).
 - openspec CLI unavailable: report the blocker but continue with branch creation (skip OpenSpec update).
+- AI review fails to run (network error, missing token, skill unavailable): report the blocker but continue — AI review is advisory for the implementer, not a hard gate. If it ran and found `BLOCKER` findings, document them in the handoff output.
+- PR not merged before Phase 6: stop and report the PR URL — do not deploy unmerged changes.
+- QA deployment fails (Phase 6 step 28): stop and report deployment failure — do not close the bug or return the parent to QA.
+- Parent ticket is not in `Test failed` when moving back to `In testing`: report the current state but continue — the parent may already be in a valid retest state.

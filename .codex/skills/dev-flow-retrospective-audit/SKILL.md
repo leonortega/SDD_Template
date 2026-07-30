@@ -30,7 +30,7 @@ Default to read-only mode unless the user explicitly asks to apply changes.
 - **`Read-only audit`**: inspect evidence and report proposed improvements.
 - **`Proposal mode`**: draft exact skill/config/test changes without editing files.
 - **`Apply mode`**: edit skills, scripts, templates, or tests after evidence is clear and the user requested implementation.
-- **`post-prod-ticket-release`**: read-only audit mode invoked after successful `dev-ops-deploy-prod` for the just-promoted release; persist sanitized learning evidence. Receives eval results from the Post-PROD Eval step as evidence — include the eval summary (total, passed, failed) in the findings. If eval failures exist, `dev-ops-deploy-prod` automatically escalates into the full `eval-driven-improvement` cycle after this mode completes (see Triggers below).
+- **`post-prod-ticket-release`**: audit mode invoked after successful `dev-ops-deploy-prod` for the just-promoted release; persist sanitized learning evidence. Receives eval results from the Post-PROD Eval step as evidence — include the eval summary (total, passed, failed) in the findings. After persisting findings, **auto-escalates** into `eval-driven-improvement apply` when findings include `eval-coverage` or `deployment` gaps that can be converted to new Promptfoo test cases (see Step 5e). If eval failures exist, `dev-ops-deploy-prod` automatically escalates into the full `eval-driven-improvement` cycle (probe → diagnose → propose → apply).
 - **`eval-driven-improvement`**: **Run Promptfoo eval directly** as the first step. Read results, classify failures as `eval-regression` or `eval-coverage` findings, and recommend concrete improvements. Supports read-only, proposal, and apply sub-modes. When triggered automatically from `dev-ops-deploy-prod`, the sub-modes run sequentially (probe → diagnose → propose → apply) without manual intervention, limited to eval infrastructure files.
 
 ### Eval-Driven Improvement Modes
@@ -63,7 +63,7 @@ This skill is safe to run as a manual quality lane through prompts such as:
 
 Run this audit after or between delivery work when one of these conditions occurs:
 
-- `dev-ops-deploy-prod` records a successful PROD deployment and invokes `post-prod-ticket-release` for the promoted release, then **auto-escalates** into `eval-driven-improvement` (probe → diagnose → propose → apply) when eval failures are detected,
+- `dev-ops-deploy-prod` records a successful PROD deployment and invokes `post-prod-ticket-release` for the promoted release, then **auto-escalates** into `eval-driven-improvement` (probe → diagnose → propose → apply) when eval failures are detected, or into `eval-driven-improvement apply` (directly to Step 5d) when findings are `eval-coverage` or `deployment` gaps,
 - a QA bug is filed or E2E QA fails,
 - `dev-flow-pr-review-agent` misses a meaningful issue,
 - repository workflow, local quality gates, or runner tooling fail in a way that blocks handoff,
@@ -312,7 +312,71 @@ When a routing scenario has no corresponding test:
 4. Run the full eval suite to confirm the new test passes AND all existing tests still pass.
 5. Commit the change.
 
-#### 5d. Apply Safely (all changes)
+#### 5d. Convert Retrospective Findings to Eval Test Cases
+
+**Triggered by:** auto-escalation from `post-prod-ticket-release` when findings include `eval-coverage` or `deployment` gaps that can be converted to Promptfoo tests.
+
+When auto-escalated from `post-prod-ticket-release` mode with `eval-coverage` or `deployment` findings, convert each actionable finding into a new Promptfoo eval test case:
+
+1. **Read findings** from `.codex/agent-evals/results.local.json` — identify findings where `recommendation` contains `Promptfoo eval` or outcome would be `Promptfoo eval (add test)`.
+
+2. **For each finding, determine the test case variables:**
+   - `scenario`: human-readable description from the finding's evidence
+   - `ticketState`, `branchExists`, `prExists`, `prMerged`, `qaEvidence`: the delivery state that triggered the failure
+   - `productStack`: `"selected"` or `"none"`
+   - Any new routing variables needed (e.g., `infraValidationFailed`, `nodePortCollision`)
+   - The expected route (e.g., `'blocked-infra-validation'`)
+
+3. **Add the test case** to `promptfooconfig.yaml` under the appropriate section:
+   ```yaml
+   - description: "{scenario description}"
+     vars:
+       scenario: "{evidence summary}"
+       ticketState: "{state}"
+       branchExists: {true/false}
+       prExists: {true/false}
+       prMerged: {true/false}
+       qaEvidence: "{evidence}"
+       productStack: "{selected/none}"
+       {newVar}: {true/false}
+     assert:
+       - type: is-json
+       - type: javascript
+         value: "JSON.parse(output).route === '{expected-route}'"
+   ```
+
+4. **Add any new routing parameters** to `routing_provider.py` **only if** the finding requires a new variable (e.g., `infraValidationFailed`). If the scenario can be covered by existing variables, skip `routing_provider.py` changes:
+   - Extract the new variable in `call_api()` from `vars_data`
+   - Add it to the `_evaluate_route()` function signature
+   - Add the priority routing logic (e.g., `if infra_validation_failed: return "blocked-infra-validation"`)
+   - Add it to the `inputs` dict in `call_api()`
+   - Add it to the `_build_reasoning()` if relevant
+
+5. **Run the full eval suite** to confirm the new test passes AND all existing tests still pass:
+   ```bash
+   npx promptfoo eval --config .codex/agent-evals/promptfooconfig.yaml --no-cache
+   ```
+
+6. **Update `.codex/agent-evals/results.local.json`** to record the applied changes:
+   - Set `appliedChanges: true`
+   - Add the list of modified files to `modifiedFiles`
+   - Update `ticketCommentStatus` to `completed`
+
+7. **Commit and push** the changes:
+   ```bash
+   git add .codex/agent-evals/promptfooconfig.yaml .codex/agent-evals/routing_provider.py .codex/agent-evals/results.local.json
+   git commit -m "eval: add test case for {finding description}"
+   git push
+   ```
+
+**Safety rules:**
+
+- Only convert findings with clear, actionable scenarios — skip vague or one-off findings
+- Each finding becomes exactly one test case; do not batch unrelated scenarios
+- If the eval fails after adding the test case, fix the routing logic or assertion before committing
+- If adding the test case causes OTHER tests to fail, revert and report the conflict
+
+#### 5e. Apply Safely (all changes)
 
 Regardless of the fix type, apply these safety rules:
 
@@ -336,7 +400,7 @@ For `eval-driven-improvement`, persist the eval results and findings:
    - finding summaries and recommendation outcomes,
    - `appliedChanges: false` or `appliedChanges: true` with file list.
 
-2. For `post-prod-ticket-release`, write only compact, sanitized evidence:
+2. For `post-prod-ticket-release`, write only compact, sanitized evidence. **After writing evidence, if findings include `eval-coverage` or `deployment` gaps**, auto-escalate to Step 5d to convert them into eval test cases. Update `appliedChanges: true` with the list of files modified (`promptfooconfig.yaml`, `routing_provider.py`).:
    - Include schema version, timestamp, mode, ticket key, artifact commit, final release version, PROD URL host or safe URL, release manifest path or URL, inspected evidence categories, finding summaries, recommendation outcomes, eval coverage gaps, residual evidence gaps, and `appliedChanges: false`.
 
 3. Do not store secrets, tokens, cookies, credential-bearing URLs, raw prompts, raw tool payloads, large logs, private request/response bodies, or unredacted local config values.

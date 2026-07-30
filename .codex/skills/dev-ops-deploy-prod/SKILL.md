@@ -58,14 +58,16 @@ Run preflight, main/tag promotion, PROD deployment, PROD verification, ticket-pr
    - one `app/{commitSha}/{artifactName}` per topology app
    - one `app/{commitSha}/{artifactName}.sha256` per topology app
    - `app/{commitSha}/commit.sha`
-   - `app/{commitSha}/release.json`
+   - `app/{commitSha}/release-dev.json`
+   - `app/{commitSha}/release-qa.json` (QA-passed artifact)
      selected deployment provider requires:
    - `app/{commitSha}/container-images.json`
    - `app/{commitSha}/commit.sha`
-   - `app/{commitSha}/release.json`
+   - `app/{commitSha}/release-dev.json`
+   - `app/{commitSha}/release-qa.json`
    - `app/{commitSha}/qa-observability.json` when observability is enabled
 8. Download checksum metadata only as needed and verify `commit.sha` exactly matches the QA-approved commit.
-9. Read `release.json` and verify it references the same commit SHA, checksum, primary ticket, QA evidence URL, and source RC version as the ticket provider E2E QA evidence. If `includedTickets` exists, every included ticket must have Done state, E2E QA PASS evidence, source RC lineage, and release membership proof. Treat a different `ticketKey` as blocking only when no `includedTickets` release membership proves the batch release.
+9. Read `release-qa.json` and verify it references the same commit SHA, checksum, primary ticket, QA evidence URL, and source RC version as the ticket provider E2E QA evidence. If `includedTickets` exists, every included ticket must have Done state, E2E QA PASS evidence, source RC lineage, and release membership proof. Treat a different `ticketKey` as blocking only when no `includedTickets` release membership proves the batch release.
 10. Verify the source RC tag exists and points to the QA-approved commit.
 11. Verify the final release tag does not already exist.
 12. If `app/qa-approved/latest.json` is used to resolve the commit, verify its `artifactCommitSha`, `version`, `canonicalPath`, `releaseManifestPath`, `ticketKey`, and `includedTickets` match the selected release context before any `main` or tag mutation.
@@ -129,7 +131,7 @@ After the workflow succeeds, run direct verification before commenting success:
 3. Verify the PROD workflow applied and verified the configuration, artifact metadata, and monitoring evidence required by the selected deployment adapter. Missing proof is blocking.
 4. If Seq log validation is unavailable, classify monitoring as unavailable. Direct HTTP, deployment configuration, and `/health` checks remain authoritative for app success.
 5. If direct page, deployment configuration, or `/health` checks fail, classify PROD verification as failed and do not claim success.
-6. When PROD verification passes, use `UpdateReleaseManifest` to update `app/{commitSha}/release.json` with final release version, final tag, included tickets, PROD URL, PROD page status, PROD deployment configuration status, PROD `/health` status, workflow run URL, monitoring status, and PROD deployment timestamp. Validate and upload the updated manifest to Nexus.
+6. When PROD verification passes, use `UpdateReleaseManifest` to create or update `app/{commitSha}/release-prod.json` with final release version, final tag, included tickets, PROD URL, PROD page status, PROD deployment configuration status, PROD `/health` status, workflow run URL, monitoring status, and PROD deployment timestamp. Validate and upload the updated manifest to Nexus.
 7. Use `CreateArtifactPointer` to create the final release alias pointer, then upload `app/releases/{finalReleaseVersion}/artifact-pointer.json` and `app/releases/{finalReleaseVersion}/release.json`. The release alias must point back to canonical `app/{commitSha}/`; do not duplicate ZIP files into the version folder.
 
 PROD success must never be based on screenshots alone.

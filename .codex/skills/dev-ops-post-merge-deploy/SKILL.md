@@ -9,9 +9,9 @@ description: Coordinate the post-merge transition from a merged pull request int
 
 ## Overview
 
-Use this skill after a PR has merged to `dev` but before QA promotion. It is an orchestration bridge: validate the merged PR is eligible, trigger the CI build, wait for the immutable artifact, then invoke `dev-ops-deploy-qa`.
+Use this skill after a PR has merged to `dev`. It is an orchestration bridge: validate the merged PR is eligible, trigger the CI build (which now deploys to DEV **and auto-promotes to QA** in the same pipeline run), wait for the immutable artifacts, then invoke `dev-ops-deploy-qa` for verification and ticket updates.
 
-Do not perform DEV/QA validation inside this skill. `dev-ops-deploy-qa` owns artifact promotion and environment checks.
+Do not perform DEV/QA validation inside this skill. `dev-ops-deploy-qa` owns environment checks and ticket updates.
 
 ## Shared Context
 
@@ -39,7 +39,7 @@ Also requires Gitea API token with `write:repository` scope to trigger the `pack
 4. Resolve the merge commit SHA from repository/review provider metadata.
 5. Resolve the ticket key from the PR title/body, branch name, commit messages, or ticket comments.
 6. Run `ValidateTicketLock` with the resolved ticket key, PR number, branch, and merge/artifact commit when known. If the result is invalid, stop before triggering the build.
-7. **Trigger the CI build** by dispatching the `package-deploy` Gitea Actions workflow on the `dev` branch.
+7. **Trigger the CI build** by dispatching the `package-deploy` Gitea Actions workflow on the `dev` branch. The CI pipeline now deploys to DEV **and auto-promotes to QA** on the same pipeline run.
 
    Derive the connection values from `.codex/client-tools.local.json`:
    - `GITEA_BASE_URL` from `gitea.baseUrl`
@@ -61,26 +61,30 @@ Also requires Gitea API token with `write:repository` scope to trigger the `pack
    - HTTP `204`: Workflow dispatched successfully. Continue to step 8.
    - Any other status or connection error: stop and report the error. Do not proceed to artifact polling.
 
-8. Poll for the Nexus artifact files for the merge commit according to the selected artifact and deployment adapters. Require:
+8. Poll for the Nexus artifact files for the merge commit. Since the CI pipeline now deploys both DEV and QA, wait for artifacts from both environments:
    - `app/{commitSha}/deployable-apps.json`
    - one `app/{commitSha}/{artifactName}` per topology app
    - one `app/{commitSha}/{artifactName}.sha256` per topology app
    - `app/{commitSha}/commit.sha`
-   - `app/{commitSha}/release.json` when present
+   - `app/{commitSha}/release-dev.json` (DEV deployment metadata)
+   - `app/{commitSha}/release-qa.json` (QA auto-promote deployment metadata)
+   - `app/{commitSha}/env-urls-dev.json` (DEV URLs)
+   - `app/{commitSha}/env-urls-qa.json` (QA URLs)
      Also require any additional deployment metadata declared by the selected deployment adapter:
    - `app/{commitSha}/container-images.json`
    - `app/{commitSha}/commit.sha`
-   - `app/{commitSha}/release.json`
+   - `app/{commitSha}/release-dev.json`
+   - `app/{commitSha}/release-qa.json`
    - `app/{commitSha}/monitoring-summary-dev.json` and `app/{commitSha}/monitoring-summary-qa.json` when DEV/QA deployment already completed
 9. Use bounded waiting: check immediately, then retry with backoff for up to 10 minutes unless the user asked for a shorter wait.
 10. Verify `commit.sha` matches the merge commit before delegating.
-11. If `release.json` exists, verify `ticketKey` matches the locked/resolved ticket key.
-12. Invoke `dev-ops-deploy-qa` with the resolved PR, ticket key, and merge commit. If QA deployment is already complete, invoke `dev-ops-deploy-qa` in idempotent verification mode so that stage records its own telemetry row without duplicating ticket comments or state changes.
+11. If `release-dev.json` exists, verify `ticketKey` matches the locked/resolved ticket key.
+12. Invoke `dev-ops-deploy-qa` with the resolved PR, ticket key, and merge commit. Since the CI pipeline already deployed both DEV and QA, `dev-ops-deploy-qa` runs in verification mode: validate QA health, update the ticket, and call E2E QA gate. If QA verification is already complete, invoke `dev-ops-deploy-qa` in idempotent verification mode so that stage records its own telemetry row without duplicating ticket comments or state changes.
 
 ## Idempotency
 
 - If the QA deployment marker `IA generated QA deployment: {commitSha}` already exists and the ticket is in QA, append `dev-ops-post-merge-deploy` telemetry, invoke `dev-ops-deploy-qa` idempotently, and report that QA promotion is already complete.
-- If the artifact exists, skip waiting and delegate immediately.
+- If the artifact exists (both `release-dev.json` and `release-qa.json`), skip waiting and delegate immediately.
 - If labels were stale but have since been removed, continue.
 
 ## Output
