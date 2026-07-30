@@ -1,5 +1,6 @@
 ---
 name: project-guidance-mapper
+license: MIT
 description: This skill is deprecated — skill selection is handled by the Mandatory Skill Catalog Review process in AGENTS.md and the Workflow Stage Routing table. Use project-guidance-discover to list relevant skills from manifest.json.
 ---
 

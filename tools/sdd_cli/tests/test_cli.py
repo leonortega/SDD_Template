@@ -514,7 +514,6 @@ class SddCliTests(unittest.TestCase):
             write(source / "README.md", "readme")
             write(source / "AGENTS.md", "agents")
             write(source / ".codex" / "skills" / "demo" / "SKILL.md", "skill")
-            write(source / ".codex" / "providers" / "repo.example.md", "provider")
             write(source / ".codex" / "project-profile.json", "{}")
             write(source / "openspec" / "config.yaml", "config")
             write(source / "openspec" / "changes" / "internal" / "tasks.md", "no")

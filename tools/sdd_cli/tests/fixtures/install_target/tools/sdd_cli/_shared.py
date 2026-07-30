@@ -19,7 +19,7 @@ from urllib.parse import urlparse
 # ── Core constants ───────────────────────────────────────────────────────
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-PYTHON_REQUIRES = (3, 11)
+PYTHON_REQUIRES = (3, 14)
 
 STANDARD_STAGES = [
     "dev-flow-start-ticket",

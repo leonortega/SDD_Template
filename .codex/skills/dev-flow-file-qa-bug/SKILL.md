@@ -1,5 +1,6 @@
 ---
 name: dev-flow-file-qa-bug
+license: MIT
 description: Create a linked bug ticket from failed QA evidence, move it through the full bug fix lifecycle (New → Specified → In progress), modify the parent ticket's OpenSpec with bug-fix tasks, create a fix/ branch, create PR, deploy to QA, close the bug, and return to the parent ticket's QA flow. Use when E2E QA fails with a product defect, a committed-test defect, or any QA-identified issue requiring code changes.
 ---
 
@@ -52,7 +53,12 @@ Run these steps in order. Do not skip any step.
    - evidence link or local fallback path,
    - severity and user impact,
    - marker `IA generated QA bug: {parentTicketKey}`.
-5. Comment on the parent ticket with the bug link. Leave the parent in its current state (e.g., `Tested` or `QA`). The parent does NOT move until the bug is fixed and E2E QA re-runs successfully.
+5. Comment on the parent ticket with the bug link. See `.codex/skills/_shared/pipeline-ticket-comment.md` for the common comment pattern. Use:
+   - Marker: `IA generated QA bug: {parentTicketKey}`
+   - Comment body: `**Bug ticket:** {bugUrl}\n**Evidence:** {evidencePath}`
+   - Severity: `advisory` (log and continue on failure)
+
+    Leave the parent in its current state (e.g., `Tested` or `QA`). The parent does NOT move until the bug is fixed and E2E QA re-runs successfully.
 
 ### Phase 2 — Move Bug To Specified
 
@@ -115,10 +121,25 @@ Run these steps in order. Do not skip any step.
     ```bash
     git push -u {remoteName} fix/{bugKeySlug}-{short-description}
     ```
-19. Add a comment on the bug ticket with the branch name, base branch, and remote:
-    ```text
-    IA generated bug branch: fix/{bugKeySlug}-{short-description}
-    ```
+19. Add a comment on the bug ticket with the branch name, base branch, and remote. See `.codex/skills/_shared/pipeline-ticket-comment.md` for the common comment pattern. Use:
+   - Marker: `IA generated bug branch: fix/{bugKeySlug}-{short-description}`
+   - Comment body: `**Base branch:** dev\n**Remote:** {remoteName}`
+   - Severity: `advisory` (log and continue on failure)
+
+### Phase 4.5 — ⚠️ MANDATORY: Implement Fix With Tests
+
+See `.codex/skills/_shared/pipeline-tdd-cycle.md` for the common TDD test-first pattern. Bug-flow-specific details:
+
+- **AC source:** the bug ticket description (the IA generated block set in Phase 2 step 7). These are the contract for the fix.
+- **Task source:** the parent's `tasks.md` for any additional bug-fix tasks (appended in Phase 3).
+- **Test levels:** unit tests (per component), integration tests (per endpoint/feature), architecture tests (update existing project-wide file if structure changes).
+
+Commit on the fix branch:
+```bash
+git add -A
+git commit -m "{bugKey}: implement fix with tests"
+git push
+```
 
 ### Phase 5 — Create Pull Request
 
@@ -128,25 +149,22 @@ Run these steps in order. Do not skip any step.
       - The bug ticket link
       - The parent ticket link
       - A summary of the fix
+      - Acceptance-to-test map (ACs → unit/integration/architecture tests)
+      - TDD RED/GREEN evidence
       - Link to E2E QA evidence
       - Any affected files
     - Labels: `bug`, `qa-verified` if applicable
 
-21. Add a comment on the bug ticket with the PR link:
-    ```text
-    IA generated bug PR: {prUrl}
-    ```
+21. **Add a comment on the bug ticket with the PR link — verify and retry if missing.** See `.codex/skills/_shared/pipeline-ticket-comment.md` for the common comment pattern. Use:
+   - Marker: `IA generated bug PR: {prUrl}`
+   - Comment body: `**Branch:** fix/{bugKeySlug}-{short-description}\n**Parent ticket:** {parentTicketKey}`
+   - Severity: `blocking` (stop if comment cannot be created — the PR link is required for traceability)
 
-22. **Add reviewers to the PR** via the repository provider API. Use the configured reviewers from `project-profile.json → workflow.prDefaultReviewers` or, as a fallback, use the default reviewer list (`FirstUser`, `SecondUser`):
-    ```bash
-    POST /api/v1/repos/{owner}/{repo}/pulls/{prNumber}/requested_reviewers
-    {"reviewers": ["FirstUser", "SecondUser"]}
-    ```
-    This ensures the PR has assigned reviewers before the AI review runs. If no reviewers are configured or available, report this as a warning but continue.
+22. **Run AI review on the PR.** Load and follow the `dev-flow-pr-review-agent` skill to review the PR diffs, post findings, and apply labels (e.g., `codex-reviewed`, `needs-changes`, `needs-tests`).
 
-23. **Run AI review on the PR.** Load and follow the `dev-flow-pr-review-agent` skill to review the PR diffs, post findings, and apply labels (e.g., `codex-reviewed`, `needs-changes`, `needs-tests`).
+    This step runs immediately after PR creation so the developer has AI review feedback before merging. If the AI review finds blocking issues (`BLOCKER` severity), the implementation phase should address them before merging.
 
-    This step runs immediately after PR creation so the developer has AI review feedback before starting implementation. If the AI review finds blocking issues (`BLOCKER` severity), the implementation phase should address them before merging.
+23. **Add reviewers to the PR** after the AI review completes. See `.codex/skills/_shared/pipeline-review-handoff.md` for the common reviewer request pattern.
 
 ### Phase 6 — Merge & Deploy To QA
 
@@ -201,25 +219,24 @@ After the implementer completes the fix on the branch and merges the PR to `dev`
     git push
     ```
 
-31. Delete the fix branch (local and remote) — it is no longer needed:
+31. Delete the fix branch (local and remote) — it is no longer needed. This is best-effort cleanup since `dev-ops-post-merge-deploy` (Phase 6 step 27) may have already deleted it:
     ```bash
-    git branch -d fix/{bugKeySlug}-{short-description}
-    git push {remoteName} --delete fix/{bugKeySlug}-{short-description}
+    BRANCH="fix/{bugKeySlug}-{short-description}"
+    # Delete remote first (safer — local can be cleaned up later)
+    git push "{remoteName}" --delete "$BRANCH" 2>/dev/null || \
+      echo "Remote branch '$BRANCH' already deleted or not found"
+    # Delete local branch if it exists
+    git branch -d "$BRANCH" 2>/dev/null || \
+      echo "Local branch '$BRANCH' not found or not fully merged"
+    echo "Branch '$BRANCH' cleanup complete"
     ```
 
-32. Add a comment on the bug ticket documenting the closure, then move it to `Closed` (ID 12):
-    - Marker: `IA generated bug closed: {bugKey}`
-    - Comment body:
-      ```text
-      IA generated bug closed: {bugKey}
-      
-      **Parent ticket:** {parentTicketKey}
-      **Fix commit:** {mergeCommitSha}
-      **QA deployed:** {qaUrl}
-      
-      Bug-fix tasks marked completed, fix branch deleted, deployment verified.
-      ```
-    - Move status:
+32. Add a comment on the bug ticket documenting the closure, then move it to `Closed` (ID 12). See `.codex/skills/_shared/pipeline-ticket-comment.md` for the common comment pattern. Use:
+   - Marker: `IA generated bug closed: {bugKey}`
+   - Comment body: `**Parent ticket:** {parentTicketKey}\n**Fix commit:** {mergeCommitSha}\n**QA deployed:** {qaUrl}\n\nBug-fix tasks marked completed, fix branch deleted, deployment verified.`
+   - Severity: `advisory` (retry once, then continue)
+
+    - **Move status:**
       ```bash
       PATCH /api/v3/work_packages/{bugId}
       {"lockVersion": {n}, "_links": {"status": {"href": "/api/v3/statuses/12"}}}

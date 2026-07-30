@@ -1,5 +1,6 @@
 ---
 name: dev-ops-post-merge-deploy
+license: MIT
 description: Coordinate the post-merge transition from a merged pull request into QA deployment by validating review labels, resolving the merge commit, waiting for artifact metadata, and delegating promotion to dev-ops-deploy-qa through selected project-profile adapters. Use after a PR merges or when Codex is asked to trigger or continue QA deployment for merged work.
 ---
 
@@ -35,7 +36,33 @@ Also requires Gitea API token with `write:repository` scope to trigger the `pack
 
 1. Resolve the PR from user input, current branch, ticket comments, commit messages, or ticket key.
 2. Verify the PR is merged and its target branch is `dev`.
-3. Verify the PR does not currently have configured `pr.labels.needsChanges` or `pr.labels.needsTests`.
+
+3. **Delete the source branch** (local and remote) — it is no longer needed after merge. First extract the PR number and source branch from the resolved PR metadata:
+
+   ```bash
+   # PR_NUMBER must be set from the resolved PR in step 1
+   # Fetch PR metadata to get source branch name
+   PR_JSON=$(curl -s -H "Authorization: token ${GITEA_API_TOKEN}" \
+     "${GITEA_BASE_URL}/api/v1/repos/${GITEA_OWNER}/${GITEA_REPO}/pulls/${PR_NUMBER}")
+   BRANCH=$(echo "$PR_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('head',{}).get('ref',''))")
+
+   if [ -n "$BRANCH" ]; then
+     # Delete remote branch (use embedded auth in URL matching CI checkout pattern)
+     REMOTE_URL="http://git:${GITEA_API_TOKEN}@host.docker.internal:3000/${GITEA_OWNER}/${GITEA_REPO}.git"
+     git push "$REMOTE_URL" --delete "$BRANCH" 2>/dev/null || \
+       echo "Remote branch '$BRANCH' already deleted or not found"
+     # Delete local branch if it exists
+     git branch -d "$BRANCH" 2>/dev/null || \
+       echo "Local branch '$BRANCH' not found or not fully merged"
+     echo "Branch '$BRANCH' cleaned up after merge"
+   else
+     echo "Could not resolve source branch name from PR metadata — skipping branch deletion"
+   fi
+   ```
+   
+   **Note:** The PR number must be stored as `PR_NUMBER` from the resolved PR object before this command runs. This is best-effort cleanup — if the branch cannot be deleted (already deleted, protected, or name not resolvable), log it as a non-blocking note and continue.
+
+4. Verify the PR does not currently have configured `pr.labels.needsChanges` or `pr.labels.needsTests`.
 4. Resolve the merge commit SHA from repository/review provider metadata.
 5. Resolve the ticket key from the PR title/body, branch name, commit messages, or ticket comments.
 6. Run `ValidateTicketLock` with the resolved ticket key, PR number, branch, and merge/artifact commit when known. If the result is invalid, stop before triggering the build.

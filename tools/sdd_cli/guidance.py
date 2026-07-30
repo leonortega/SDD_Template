@@ -411,9 +411,10 @@ def _update_manifest_with_skills(
 
 
 def setup_project_guidance(
-    root: Path, values: dict[str, Any], dry_run: bool = False
+    root: Path, values: dict[str, Any], dry_run: bool = False,
+    interactive: bool = False,
 ) -> dict[str, Any]:
-    """Search the internet for stack-relevant skills, install them, update manifest.
+    """Search the internet for stack-relevant skills, optionally ask user which to install.
 
     Called after the user sets their project stack (frontend, backend, database).
     The flow:
@@ -421,8 +422,9 @@ def setup_project_guidance(
     1. Reads stack values from ``values`` or the project profile
     2. For each stack value, searches the public skills.sh registry via
        ``npx skills find <query>`` and picks the top results by popularity
-    3. Installs each skill via ``npx skills add`` (falls back to GitHub copy)
-    4. Updates ``.codex/skills/manifest.json`` with the new skills and their
+    3. If interactive=True in a TTY: shows discovered skills and asks user which to install
+    4. Installs each selected skill via ``npx skills add`` (falls back to GitHub copy)
+    5. Updates ``.codex/skills/manifest.json`` with the new skills and their
        stack category tags, so :func:`discover_project_guidance` and agents
        can discover what skills are available for each task
 
@@ -430,6 +432,7 @@ def setup_project_guidance(
         root: Repository root.
         values: Stack values (keys: frontend, backend, database).
         dry_run: If True, only report what would be done (no side effects).
+        interactive: If True and running in a TTY, prompt user to select which skills to install.
 
     Returns:
         Dict with mode, valid, actions, per-skill internet results, and manifest status.
@@ -524,6 +527,44 @@ def setup_project_guidance(
         })
         result["valid"] = True
         return result
+
+    # 2.5 Interactive: let user select which skills to install
+    if interactive and sys.stdin.isatty():
+        print(f"\n  Found {len(all_internet_skills)} stack-relevant skill(s) online:")
+        for i, skill in enumerate(all_internet_skills, 1):
+            exists = _skill_exists_locally(root, skill["skill"])
+            suffix = " (already installed)" if exists else ""
+            print(f"    [{i:2d}] {skill['package_skill']} ({skill['installs']:,} installs){suffix}")
+
+        print()
+        choice = input(
+            "  Which to install? (numbers/comma-sep, 'all', 'none'): "
+        ).strip().lower()
+
+        selected: list[dict[str, Any]] = []
+        if choice in ("all", "a"):
+            selected = all_internet_skills
+        elif choice not in ("none", "n", ""):
+            indices: list[int] = []
+            for token in choice.split(","):
+                token = token.strip()
+                if token.isdigit():
+                    indices.append(int(token))
+            for idx in indices:
+                if 1 <= idx <= len(all_internet_skills):
+                    selected.append(all_internet_skills[idx - 1])
+        # If user selected nothing, skip install
+        if not selected:
+            result["actions"].append({
+                "path": "stack",
+                "key": "interactive.skipped",
+                "severity": "info",
+                "message": "User chose not to install any skills.",
+                "phase": "audit",
+            })
+            result["valid"] = True
+            return result
+        all_internet_skills = selected
 
     # 3. Check each discovered skill locally — skip if already installed
     install_results: list[dict[str, Any]] = []

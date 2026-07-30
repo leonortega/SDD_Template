@@ -11,15 +11,16 @@ metadata:
 
 <!-- TIER 3: STAGE-SPECIFIC - Proposal workflow skill -->
 
-Propose a new change - create the change and generate all artifacts in one step.
+Propose a new change — create the change and generate all planning artifacts in one step following the `/opsx:propose` pattern.
 
-I'll create a change with artifacts:
+I'll create a change with all planning artifacts:
 
 - proposal.md (what & why)
+- specs/**/*.md (behavior specs)
 - design.md (how)
-- tasks.md (implementation steps)
+- tasks.md (implementation steps with Review Workload Forecast)
 
-When ready to implement, run /opsx:apply
+When ready to implement, run /opsx:apply.
 
 ---
 
@@ -45,52 +46,33 @@ When ready to implement, run /opsx:apply
 
    This creates a scaffolded change at `openspec/changes/<name>/` with `.openspec.yaml`.
 
-3. **Get the artifact build order**
+3. **Propose — generate all planning artifacts in one flow**
 
-   ```bash
-   openspec status --change "<name>" --json
-   ```
+   Follow the `/opsx:propose` pattern. Read the project context from `openspec/config.yaml` (context + rules) and the schema definition. Generate ALL artifacts in a single coherent pass, in dependency order:
 
-   Parse the JSON to get:
-   - `applyRequires`: array of artifact IDs needed before implementation (e.g., `["tasks"]`)
-   - `artifacts`: list of all artifacts with their status and dependencies
+   1. **Read context**: Load `openspec/config.yaml` for `context:`, `rules:`, and schema information. Read any existing specs in `openspec/specs/` for existing behavior standards.
 
-4. **Create artifacts in sequence until apply-ready**
+   2. **Create `proposal.md`** — Problem / opportunity, user story, scope, acceptance criteria, out of scope, risks. Use the ticket description and refined planning as input.
 
-   Use the **TodoWrite tool** to track progress through the artifacts.
+   3. **Create `specs/`** — Behavior specs as `specs/*.md` in the change folder. Each spec covers one capability with concrete scenarios.
 
-   Loop through artifacts in dependency order (artifacts with no pending dependencies first):
+   4. **Create `design.md`** — Architecture decisions, technology choices, component structure, data flow, alternatives considered.
 
-   a. **For each artifact that is `ready` (dependencies satisfied)**:
-   - Get instructions:
-     ```bash
-     openspec instructions <artifact-id> --change "<name>" --json
-     ```
-   - The instructions JSON includes:
-     - `context`: Project background (constraints for you - do NOT include in output)
-     - `rules`: Artifact-specific rules (constraints for you - do NOT include in output)
-     - `template`: The structure to use for your output file
-     - `instruction`: Schema-specific guidance for this artifact type
-     - `outputPath`: Where to write the artifact
-     - `dependencies`: Completed artifacts to read for context
-   - Read any completed dependency files for context
-   - Create the artifact file using `template` as the structure
-   - Apply `context` and `rules` as constraints - but do NOT copy them into the file
-   - Show brief progress: "Created <artifact-id>"
+   5. **Create `tasks.md`** — Implementation tasks with checkboxes, grouped by concern, including a Review Workload Forecast with estimated changed lines, budget risk, and delivery strategy.
 
-   b. **Continue until all `applyRequires` artifacts are complete**
-   - After creating each artifact, re-run `openspec status --change "<name>" --json`
-   - Check if every artifact ID in `applyRequires` has `status: "done"` in the artifacts array
-   - Stop when all `applyRequires` artifacts are done
+   **Apply these guidelines:**
+   - Use `openspec/config.yaml` context and rules as constraints for what you write — do NOT copy them into the artifacts.
+   - Read completed dependency artifacts before creating the next one (e.g., read `proposal.md` before writing `design.md`).
+   - Capture resolved grill-style decisions: planned behavior in specs, design choices in design, implementation steps in tasks.
+   - Each artifact file must be written to the correct path inside `openspec/changes/<name>/`.
 
-   c. **If an artifact requires user input** (unclear context):
-   - Use **AskUserQuestion tool** to clarify
-   - Then continue with creation
+4. **Verify all artifacts**
 
-5. **Show final status**
    ```bash
    openspec status --change "<name>"
    ```
+
+   Confirm all required artifacts show `[x]` (complete). If any are missing, create the file and re-verify.
 
 **Output**
 
@@ -103,22 +85,24 @@ After completing all artifacts, summarize:
 
 **Artifact Creation Guidelines**
 
-- Follow the `instruction` field from `openspec instructions` for each artifact type
-- The schema defines what each artifact should contain - follow it
-- Read dependency artifacts for context before creating new ones
+- Use `openspec/config.yaml` context and rules as constraints for what you write — do NOT copy them into artifacts.
+- The schema (`spec-driven`) defines what each artifact should contain. Follow the expected structure for each type.
+- Read dependency artifacts before creating the next one (e.g., read `proposal.md` before writing `design.md`).
 - Capture resolved grill-style decisions in the normal OpenSpec artifacts: planned behavior in specs, design choices and rationale in design, and implementation steps in tasks.
-- Use `template` as the structure for your output file - fill in its sections
-- **IMPORTANT**: `context` and `rules` are constraints for YOU, not content for the file
-  - Do NOT copy `<context>`, `<rules>`, `<project_context>` blocks into the artifact
-  - These guide what you write, but should never appear in the output
+- Write each artifact to its correct path inside `openspec/changes/<name>/`:
+  - `proposal.md`
+  - `specs/<area>.md` (one or more spec files by capability area)
+  - `design.md`
+  - `tasks.md`
+- **IMPORTANT**: `context` and `rules` from config.yaml guide what you write but must NEVER appear in the artifact files.
 
 **Guardrails**
 
-- Create ALL artifacts needed for implementation (as defined by schema's `apply.requires`)
+- Create ALL artifacts needed for implementation (schema's `apply.requires`: at minimum `tasks`)
 - Always read dependency artifacts before creating a new one
 - If context is critically unclear, ask the user - but prefer making reasonable decisions to keep momentum
 - If a change with that name already exists, ask if user wants to continue it or create a new one
-- Verify each artifact file exists after writing before proceeding to next
+- Verify all artifacts exist with `openspec status` before declaring the propose flow complete
 
 ## Overview
 

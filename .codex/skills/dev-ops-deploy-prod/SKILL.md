@@ -1,5 +1,6 @@
 ---
 name: dev-ops-deploy-prod
+license: MIT
 description: Promote a QA-approved release artifact to production after configured ticket E2E QA approval. Use when Codex needs to verify one or more QA-approved tickets (Tested state in OpenProject) included in a release, confirm the QA-approved artifact and checksum, ensure release/RC tag consistency, update the release branch, trigger production deployment, validate production page and health checks, verify configured observability when available, and comment the production result on every included ticket.
 ---
 

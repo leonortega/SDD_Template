@@ -122,6 +122,19 @@ See `.codex/skills/configure-dev-environment/SKILL.md` for available modes.
 - Update task, review, QA, and deployment state through the configured tools when applicable.
 - Do not skip required review, QA, artifact, or deployment gates.
 
+## Never Assume Tech Stack
+
+**Before any stack-dependent operation** (generating CI workflows, scaffolding code, selecting skills, configuring build commands, or any other task that depends on the product technology stack), every agent **must**:
+
+1. **Ask the user** explicitly what tech stack they want to use.
+2. **Wait for user confirmation** before reading or using any stack value from the project profile.
+3. **Never auto-detect or infer** the tech stack from file extensions, package.json, requirements.txt, or any other source code patterns.
+4. **Never assume** a default stack or fallback.
+
+This is a hard gate (authority level 5). The stack must come from an explicit user decision, not from automated detection or assumptions.
+
+**Rationale:** The repository is a product-free SDLC shell. The tech stack is a user decision, not something the agent should guess. Auto-detection can select the wrong stack, skip important user preferences, or generate incorrect configuration.
+
 ## Code Changes
 
 - This shell currently has no product source tree.
@@ -132,6 +145,20 @@ See `.codex/skills/configure-dev-environment/SKILL.md` for available modes.
 - Do not revert unrelated user or workspace changes.
 - Do not commit generated artifacts unless the workflow explicitly requires them.
 - Use Ponytail full mode for code changes. Run `ponytail-review` during PR review as an extra complexity pass, not during implementation.
+
+### JSON Files: No Comments Allowed
+
+**Never add `//` or `/* */` comments to JSON files.** JSON is a data-interchange format, not a programming language — it does not support comments. Adding inline or block comments to `.json` files produces invalid JSON and breaks parsers, CI validators, and tools like `json.tool`.
+
+This applies to all `.json` files in the repository: `project-profile.json`, `delivery-policy.json`, `client-tools.*.json`, `quality.*.json`, `compose.yml` adjacent config files, and any other JSON configuration or data file.
+
+**Correct approach for adding context to JSON configuration:**
+
+1. Use a companion `.md` or `README.md` file adjacent to the JSON file to document fields, defaults, and usage.
+2. Use `.example.json` files with descriptive placeholder values (e.g., `"apiKey": "replace-with-your-api-key"`) — still no comments inside the JSON. Document field meanings in the companion `.md` file.
+3. Use descriptive key names and structured values within the JSON itself.
+
+**❌ HARD RULE (authority level 5):** If an agent adds `//` or `/* */` comments to a `.json` file, it is a process violation. Stop, remove the comments, validate the JSON with `python -m json.tool`, and retry.
 
 ### Skill Installation (Hybrid: npx skills + GitHub)
 

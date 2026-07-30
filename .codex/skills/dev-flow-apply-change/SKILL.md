@@ -26,55 +26,35 @@ Implement tasks from an OpenSpec change.
 
    Always announce: "Using change: <name>" and how to override (e.g., `/opsx:apply <other>`).
 
-2. **Check status to understand the schema**
+2. **Follow the `/opsx:apply` pattern — implement tasks**
 
-   ```bash
-   openspec status --change "<name>" --json
-   ```
+   Read `tasks.md` directly from `openspec/changes/<name>/tasks.md` to get the task list with checkboxes.
 
-   Parse the JSON to understand:
-   - `schemaName`: The workflow being used (e.g., "spec-driven")
-   - Which artifact contains the tasks (typically "tasks" for spec-driven, check status for others)
-
-3. **Get apply instructions**
-
-   ```bash
-   openspec instructions apply --change "<name>" --json
-   ```
-
-   This returns:
-   - `contextFiles`: artifact ID -> array of concrete file paths (varies by schema - could be proposal/specs/design/tasks or spec/tests/implementation/docs)
-   - Progress (total, complete, remaining)
-   - Task list with status
-   - Dynamic instruction based on current state
+   Read context files for implementation guidance:
+   - `proposal.md` — what & why
+   - `specs/*.md` — behavior specs
+   - `design.md` — how
 
    **Handle states:**
-   - If `state: "blocked"` (missing artifacts): show message, suggest using openspec-continue-change
-   - If `state: "all_done"`: congratulate, suggest archive
+   - If `tasks.md` is missing: show message, suggest running the propose flow first
+   - If all tasks are marked `[x]`: congratulate, suggest archive
    - Otherwise: proceed to implementation
 
-4. **Read context files**
-
-   Read every file path listed under `contextFiles` from the apply instructions output.
-   The files depend on the schema being used:
-   - **spec-driven**: proposal, specs, design, tasks
-   - Other schemas: follow the contextFiles from CLI output
-
-5. **Show current progress**
+4. **Show current progress**
 
    Display:
-   - Schema being used
+   - Change name and location
    - Progress: "N/M tasks complete"
-   - Remaining tasks overview
-   - Dynamic instruction from CLI
+   - Remaining tasks list
 
-6. **Implement tasks (loop until done or blocked)**
-
-   For each pending task:
+5. **⚠️ MANDATORY: Write tests based on tasks before product code.** For each pending task:
+   - Load the `tdd` skill via `skill('tdd')` (or read `.codex/skills/tdd/SKILL.md`) and apply its test-first cycles throughout.
    - Show which task is being worked on
    - Build or update the acceptance-to-test map for the task before product code changes
-   - Write one behavior-focused test through a public interface for the next acceptance criterion or task behavior
+   - The test map must cover **three levels** (per component, not per task) as defined in `.codex/skills/_shared/test-requirements.md` — unit tests (per component), integration tests (per endpoint/feature), and architecture tests (project-wide, one file for the entire change)
+   - Write the behavior-focused test through a public interface for the next acceptance criterion or task behavior
    - Run the smallest relevant test command and confirm it fails for the expected reason (RED)
+   - **❌ HARD RULE**: No product code change is allowed until all three test levels (unit per component, integration per feature, architecture project-wide) are written and confirmed RED for the current task. This is a process violation (authority level 5).
    - Make the smallest product code change required to pass that test
    - Rerun the focused test and confirm it passes (GREEN)
    - Repeat one vertical RED/GREEN cycle at a time until every acceptance criterion has committed automated coverage
@@ -85,11 +65,11 @@ Implement tasks from an OpenSpec change.
 
    **Pause if:**
    - Task is unclear → ask for clarification
-   - Implementation reveals a design issue → suggest updating artifacts
+   - Implementation reveals a design issue → suggest updating artifacts via `/opsx:update`
    - Error or blocker encountered → report and wait for guidance
    - User interrupts
 
-7. **On completion or pause, show status**
+6. **On completion or pause, show status**
 
    Display:
    - Tasks completed this session
@@ -148,10 +128,27 @@ All tasks complete! Ready to archive this change.
 What would you like to do?
 ```
 
+**Apply declared skills during TDD cycles**
+
+Skills loaded in the Skill Pre-Analysis above are NOT decorative. In EVERY TDD cycle phase, actively apply them:
+
+- **RED phase**: Apply `tdd` + stack-specific testing patterns + `clean-code` (test structure) + `security-best-practices` (test security boundaries)
+- **GREEN phase**: Apply `ponytail full` (minimal code) + stack-specific framework conventions + `clean-code` (naming, functions) + `security-best-practices` (input validation) + `solid` (focused interfaces)
+- **REFACTOR phase**: Apply `clean-architecture` (Dependency Rule) + `clean-code` (smell removal) + `solid` (SRP, OCP) + stack-specific architecture patterns
+
+**Check MCP routing before code searches**
+
+Before searching code or documentation, route through the correct MCP channel per `.codex/mcp-instructions.md`:
+- Source code → `codebase-memory-mcp` (`search_graph`, `get_code_snippet`, etc.)
+- Documentation/skills → `monorepo-docs-search` (`search_documentation`)
+- Service interaction → service MCPs (gitea, openproject, grafana)
+
+Declare which skills were actively applied at the start of each response body with a `Skills used:` block including per-skill rationale.
+
 **Guardrails**
 
 - Keep going through tasks until done or blocked
-- Always read context files before starting (from the apply instructions output)
+- Always read context files before starting from the change directory (proposal.md, specs/*.md, design.md, tasks.md)
 - Use `tdd` for ticketed implementation: tests first, public-interface behavior tests, one vertical RED/GREEN cycle at a time
 - Do not write all tests first and then all implementation; do not write product code before the acceptance-to-test map and first failing test for the current behavior
 - Stop before implementation handoff when any acceptance criterion lacks committed automated coverage
@@ -160,7 +157,7 @@ What would you like to do?
 - Keep code changes minimal and scoped to each task
 - Update task checkbox immediately after completing each task
 - Pause on errors, blockers, or unclear requirements - don't guess
-- Use contextFiles from CLI output, don't assume specific file names
+- Read context files directly from openspec/changes/<name>/ — don't rely on external CLI output
 
 **Fluid Workflow Integration**
 

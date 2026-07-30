@@ -82,7 +82,7 @@
       ]
     },
     "architecture": {
-      "description": "Architectural patterns: clean architecture, CQRS, event sourcing, microservices, sagas, design patterns",
+      "description": "Architectural patterns: clean architecture, CQRS, event sourcing, microservices, sagas, design patterns, ADRs, codebase improvement",
       "skills": [
         "clean-architecture/SKILL.md",
         "cqrs-implementation/SKILL.md",
@@ -90,7 +90,10 @@
         "event-store-design/SKILL.md",
         "microservices-architect/SKILL.md",
         "projection-patterns/SKILL.md",
-        "saga-orchestration/SKILL.md"
+        "saga-orchestration/SKILL.md",
+        "architecture-patterns/SKILL.md",
+        "architecture-decision-records/SKILL.md",
+        "improve-codebase-architecture/SKILL.md"
       ]
     },
     "security": {
@@ -124,8 +127,12 @@
       ]
     },
     "gitea": {
-      "description": "Gitea Actions workflows, runner management, branch protection",
-      "skills": ["gitea-actions-workflow/SKILL.md"]
+      "description": "Gitea Actions workflows, runner management, branch protection, CLI tools",
+      "skills": [
+        "gitea-actions-workflow/SKILL.md",
+        "gitea/SKILL.md",
+        "gitea-tea/SKILL.md"
+      ]
     },
     "openproject": {
       "description": "OpenProject sprint planning, backlog grooming, status reporting",
@@ -136,17 +143,25 @@
       "skills": ["nexus-repository-management/SKILL.md"]
     },
     "observability": {
-      "description": "Grafana, Seq, Dozzle — dashboards, queries, alerting, log correlation",
+      "description": "Grafana, Seq, Dozzle — dashboards, queries, alerting, log correlation, logging patterns",
       "skills": [
         "grafana-observability/SKILL.md",
-        "grafana-board-update/SKILL.md"
+        "grafana-board-update/SKILL.md",
+        "dashboarding/SKILL.md",
+        "grafana-oss/SKILL.md",
+        "promql/SKILL.md",
+        "dozzle-logs/SKILL.md",
+        "logging-best-practices/SKILL.md"
       ]
     },
     "kubernetes": {
-      "description": "K8s manifest authoring, Docker Compose conversion, cluster maintenance",
+      "description": "K8s manifest authoring, Docker Compose conversion, cluster maintenance, K8s patterns, Docker builds",
       "skills": [
         "kubernetes-manifest-authoring/SKILL.md",
-        "docker-maintenance/SKILL.md"
+        "docker-maintenance/SKILL.md",
+        "kubernetes-specialist/SKILL.md",
+        "kubernetes-patterns/SKILL.md",
+        "multi-stage-dockerfile/SKILL.md"
       ]
     }
   }

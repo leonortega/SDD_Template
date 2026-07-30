@@ -666,7 +666,7 @@ def install_or_update_sdd_tool(
         "schemaVersion": 1,
         "tool": "sdd-tool",
         "version": version or _latest_sdd_tool_version(source),
-        "sourceRepo": git_text(source, ["config", "--get", "remote.origin.url"])
+        "sourceRepo": git_text(source, ["config", "--get", "remote.gitea.url"])
         or str(source),
         "sourceCommit": git_text(source, ["rev-parse", "HEAD"]),
         "installedAtUtc": datetime.now(timezone.utc)
@@ -706,92 +706,164 @@ def _register_mcp_entry(
     result: dict[str, Any],
     dry_run: bool = False,
 ) -> dict[str, Any]:
-    """Register a single MCP entry under the mcpServers key in .vscode/mcp.json.
+    """Register a single MCP entry under the mcpServers key.
+
+    Writes to both .vscode/mcp.json and Cline's global MCP settings
+    (at %APPDATA%/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json
+    on Windows, or ~/.config/... on Linux/macOS).
 
     Shared helper used by all install_*_mcp functions.
     """
-    if not mcp_path.exists():
-        if dry_run:
-            result["actions"].append(
-                {
-                    "path": ".vscode/mcp.json",
-                    "key": "create",
-                    "severity": "info",
-                    "message": f"Would create .vscode/mcp.json with {server_name}.",
-                    "phase": "apply",
-                }
-            )
-            result["valid"] = True
-            return result
-        config: dict[str, Any] = {"mcpServers": {}}
-    else:
-        try:
-            config = read_json(mcp_path, optional=False)
-        except Exception:
+    # ── Helper: build mcp entry dict ──────────────────────────────────
+    def _build_entry() -> dict[str, Any]:
+        entry: dict[str, Any] = {
+            "command": expected_entry["command"],
+            "args": expected_entry["args"],
+        }
+        if "env" in expected_entry:
+            entry["env"] = expected_entry["env"]
+        if "type" in expected_entry:
+            entry["type"] = expected_entry["type"]
+        return entry
+
+    # ── Write to .vscode/mcp.json ─────────────────────────────────────
+    def _write_vscode() -> bool:
+        nonlocal mcp_path
+        if not mcp_path.exists():
+            cfg: dict[str, Any] = {"mcpServers": {}}
+        else:
+            try:
+                cfg = read_json(mcp_path, optional=False)
+            except Exception:
+                add_bucket_item(
+                    result["findings"],
+                    ".vscode/mcp.json",
+                    "parse.error",
+                    "Could not parse existing .vscode/mcp.json.",
+                    "error",
+                    "pre-start",
+                )
+                return False
+        servers = cfg.get("mcpServers", {})
+        if not isinstance(servers, dict):
             add_bucket_item(
                 result["findings"],
                 ".vscode/mcp.json",
-                "parse.error",
-                "Could not parse existing .vscode/mcp.json.",
+                "invalid.mcpServers",
+                "mcpServers key must be a JSON object.",
                 "error",
                 "pre-start",
             )
-            result["valid"] = False
-            return result
-    servers = config.get("mcpServers", {})
-    if not isinstance(servers, dict):
-        add_bucket_item(
-            result["findings"],
-            ".vscode/mcp.json",
-            "invalid.mcpServers",
-            "mcpServers key must be a JSON object.",
-            "error",
-            "pre-start",
-        )
-        result["valid"] = False
-        return result
-    existing = servers.get(server_name)
-    if existing == expected_entry:
-        result["actions"].append(
-            {
+            return False
+        existing = servers.get(server_name)
+        entry = _build_entry()
+        servers[server_name] = entry
+        cfg["mcpServers"] = servers
+        mcp_path.parent.mkdir(parents=True, exist_ok=True)
+        write_json(mcp_path, cfg)
+        if existing and existing != entry:
+            changed_keys = [k for k in entry if existing.get(k) != entry[k]]
+            result["actions"].append({
                 "path": ".vscode/mcp.json",
                 "key": server_name,
                 "severity": "info",
-                "message": f"{server_name} is already configured in .vscode/mcp.json.",
+                "message": f"Updated {server_name} in .vscode/mcp.json (changed: {', '.join(changed_keys)}).",
                 "phase": "apply",
-            }
-        )
+            })
+        else:
+            result["actions"].append({
+                "path": ".vscode/mcp.json",
+                "key": server_name,
+                "severity": "info",
+                "message": f"Added {server_name} to .vscode/mcp.json.",
+                "phase": "apply",
+            })
+        return True
+
+    # ── Write to Cline global settings ────────────────────────────────
+    def _write_cline() -> bool:
+        """Write the MCP entry to Cline's global mcp_settings.json."""
+        if sys.platform.startswith("win"):
+            appdata = os.environ.get("APPDATA")
+            if not appdata:
+                add_bucket_item(
+                    result["findings"],
+                    "cline_mcp_settings.json",
+                    "env.appdata",
+                    "APPDATA env var not found — cannot write Cline MCP settings.",
+                    "warning",
+                )
+                return True  # Non-fatal: .vscode/mcp.json is the primary target
+            cline_path = (
+                Path(appdata)
+                / "Code"
+                / "User"
+                / "globalStorage"
+                / "saoudrizwan.claude-dev"
+                / "settings"
+                / "cline_mcp_settings.json"
+            )
+        elif sys.platform == "darwin":
+            cline_path = (
+                Path.home()
+                / "Library"
+                / "Application Support"
+                / "Code"
+                / "User"
+                / "globalStorage"
+                / "saoudrizwan.claude-dev"
+                / "settings"
+                / "cline_mcp_settings.json"
+            )
+        else:
+            cline_path = (
+                Path.home()
+                / ".config"
+                / "Code"
+                / "User"
+                / "globalStorage"
+                / "saoudrizwan.claude-dev"
+                / "settings"
+                / "cline_mcp_settings.json"
+            )
+
+        cline_path.parent.mkdir(parents=True, exist_ok=True)
+        if not cline_path.exists():
+            cline_data: dict[str, Any] = {"mcpServers": {}}
+        else:
+            try:
+                cline_data = read_json(cline_path, optional=True)
+            except Exception:
+                cline_data = {"mcpServers": {}}
+        cline_servers = cline_data.setdefault("mcpServers", {})
+        entry = _build_entry()
+        cline_servers[server_name] = entry
+        cline_data["mcpServers"] = cline_servers
+        write_json(cline_path, cline_data)
+        result["actions"].append({
+            "path": str(cline_path),
+            "key": server_name,
+            "severity": "info",
+            "message": f"Synced {server_name} to Cline global MCP settings.",
+            "phase": "apply",
+        })
+        return True
+
+    if dry_run:
+        result["actions"].append({
+            "path": ".vscode/mcp.json",
+            "key": server_name,
+            "severity": "info",
+            "message": f"Would register {server_name} in .vscode/mcp.json and Cline settings.",
+            "phase": "apply",
+        })
         result["valid"] = True
         return result
-    if existing is not None:
-        changed_keys = [
-            k for k in expected_entry if existing.get(k) != expected_entry[k]
-        ]
-        result["actions"].append(
-            {
-                "path": ".vscode/mcp.json",
-                "key": server_name,
-                "severity": "info",
-                "message": f"Updating {server_name} config (changed: {', '.join(changed_keys)}).",
-                "phase": "apply",
-            }
-        )
-    else:
-        result["actions"].append(
-            {
-                "path": ".vscode/mcp.json",
-                "key": server_name,
-                "severity": "info",
-                "message": f"Adding {server_name} server to .vscode/mcp.json.",
-                "phase": "apply",
-            }
-        )
-    if not dry_run:
-        servers[server_name] = expected_entry
-        config["mcpServers"] = servers
-        mcp_path.parent.mkdir(parents=True, exist_ok=True)
-        write_json(mcp_path, config)
-    result["valid"] = True
+
+    vscode_ok = _write_vscode()
+    cline_ok = _write_cline()
+
+    result["valid"] = vscode_ok
     return result
 
 

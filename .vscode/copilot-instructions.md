@@ -57,12 +57,10 @@ OpenProject Ticket (Todo)
 
 ### Key Repository Locations
 
-- **Solution**: `SDDTemplate.slnx`
-- **App**: `src/SDDTemplate.Site` (Blazor + ASP.NET Core)
-- **API**: `src/SDDTemplate.Api` (ASP.NET Core)
-- **Tests**: `tests/SDDTemplate.Site.Tests`, `tests/SDDTemplate.E2ETests`
-- **Infrastructure**: `infra/` (Docker Compose + Azure)
-- **Documentation**: `docs/` (architecture, development, deployment, context-management)
+- **Skills**: `.codex/skills/` — delivery workflow skills for every SDLC stage
+- **Infrastructure**: `infra/` — Docker Compose services, K8s manifests, deployment configs
+- **Documentation**: `docs/` — architecture, development, deployment, context-management
+- **Delivery CLI**: `tools/sdd_cli/` — Python CLI helpers for environment lab, dev flow, tooling
 
 ## Critical `.codex/` Resources
 
@@ -236,31 +234,33 @@ Copilot chat sessions can use the repository's OpenRouter runtime configuration 
 ## Common Commands
 
 ```powershell
-# Build & Test
-dotnet build .\SDDTemplate.slnx
-dotnet test .\SDDTemplate.slnx
-dotnet format --verify-no-changes
+# Environment Lab
+python -m tools.sdd_cli environment-lab health-check     # Check all lab services
+python -m tools.sdd_cli environment-lab compose-up        # Start Docker Compose services
+python -m tools.sdd_cli environment-lab setup-lab         # Full idempotent lab setup
 
-# Infrastructure
-.\infra\up.ps1              # Start local Docker Compose
-.\infra\down.ps1            # Stop local Docker Compose
+# Delivery CLI
+python -m tools.sdd_cli dev-flow validate-commit-message "E2EPROJECT-123: message"
+python -m tools.sdd_cli dev-flow create-release-manifest --version v1.0.30
 
-# Memory Search (when needed)
-.\.codex\memory\search_memory.ps1 -Query "deployment issue"
+# Tests
+python -m pytest tools/sdd_cli/tests/ -q                   # Run CLI tests
+
+# New stack: add product-specific build/test commands here
 ```
 
-## Quality Gates Checklist
+## Quality Gates Checklist (Shell Level)
 
-Before handoff for any code change:
+Before handoff for any repo change:
 
-1. ✅ **Build**: `dotnet build` passes
-2. ✅ **Tests**: `dotnet test` passes with ≥80% coverage
-3. ✅ **Format**: `dotnet format --verify-no-changes` passes
-4. ✅ **Lint**: No warnings (checked via build)
-5. ✅ **Security**: No secrets or credentials in code
-6. ✅ **Artifacts**: Pushed to Nexus (if deployment)
+1. ✅ **Tests**: `python -m pytest tools/sdd_cli/tests/ -q` passes
+2. ✅ **JSON validity**: All `.json` files are valid JSON
+3. ✅ **Security**: No secrets or credentials in code
+4. ✅ **Consistency**: Changes follow the delivery contract and skills
 
-See `.codex/quality.local.json` for the authoritative gate configuration.
+**Product gates** (add when a stack is selected): build, unit tests, coverage, formatting, linting, package verification.
+
+See `.codex/quality.local.json` for the authoritative gate configuration when populated.
 
 ## Session Protocol
 

@@ -1,5 +1,6 @@
 ---
 name: dev-ops-hotfix-prod
+license: MIT
 description: Run an expedited but gated production hotfix workflow for urgent targeted code fixes, including incident/hotfix ticket creation, branch and PR handling, review, immutable artifact deployment, QA evidence, and explicit production promotion through selected project-profile adapters. Use when rollback is insufficient and a production regression needs a small code fix.
 ---
 
@@ -28,7 +29,13 @@ Read `.codex/project-profile.json` first. Read `.codex/client-tools.local.json` 
 3. Create or reuse a ticket provider incident/hotfix ticket with marker `IA generated PROD hotfix: {incidentOrTicketKey}`.
 4. Branch from `main` unless the user explicitly supplies a release branch policy.
 5. Use `dev-flow-start-ticket` for branch/comment setup, ticket lock creation, and OpenSpec creation unless the ticket is explicitly `no-openspec` or ops-only.
-6. Use `dev-flow-implement-ticket` for the code fix, tests, PR, review-agent loop, and handoff.
+
+6. **⚠️ MANDATORY: Implement Fix With Tests** — delegate to `dev-flow-implement-ticket` for the code fix, tests, PR, review-agent loop, and handoff. The TDD test-first pattern is defined in `.codex/skills/_shared/pipeline-tdd-cycle.md`. Key hotfix-specific details:
+
+   - **AC source:** the incident/hotfix ticket description (set in step 3).
+   - **Task source:** the OpenSpec `tasks.md` for any tasks created in step 5.
+   - **Tests are non-negotiable even for hotfixes.** The mandatory test requirement (unit + integration + architecture, RED before fix code) applies equally to hotfixes. An expedited schedule is not an excuse to skip tests.
+   - **Expect the PR body** (created by `dev-flow-implement-ticket`) to include the acceptance-to-test map and TDD RED/GREEN evidence.
 7. After merge, use `dev-ops-post-merge-deploy` and the configured QA gate for artifact promotion and QA evidence.
 8. Invoke `dev-ops-deploy-prod` only when the user explicitly asks for PROD promotion after QA passes.
 9. Comment the incident ticket with release lineage, evidence, and any temporary divergence from normal cadence.
@@ -37,11 +44,12 @@ Read `.codex/project-profile.json` first. Read `.codex/client-tools.local.json` 
 
 - Keep hotfixes narrowly scoped to the production defect.
 - Do not bundle unrelated cleanup or feature work.
+- **Tests are non-negotiable even for hotfixes.** The mandatory test requirement (unit + integration + architecture, RED before fix code) applies equally to hotfixes. An expedited schedule is not an excuse to skip tests.
 - If the fix grows beyond a targeted change, stop and route to the normal `dev-flow-continue-implementation` flow.
 
 ## Output
 
-Report the incident or hotfix ticket, branch, PR, validation performed, artifact/QA/PROD status when reached, and the next handoff or blocker.
+Report the incident or hotfix ticket, branch, PR, **acceptance-to-test map** (ACs → unit/integration/architecture tests with RED/GREEN evidence), validation performed, artifact/QA/PROD status when reached, and the next handoff or blocker.
 
 ## Failure Rules
 

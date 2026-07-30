@@ -37,6 +37,50 @@ from .tool_installer import install_lefthook, install_grafana_mcp, install_gitea
 # ── Health check helpers ───────────────────────────────────────────────────
 
 
+def health_check(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Quick health check of all lab services.
+
+    Pings each service endpoint once with a short timeout and returns a
+    table of results. Unlike wait_for_service, this does not poll — it
+    reports the current state immediately.
+    """
+    services: list[dict[str, str]] = [
+        {"name": "Gitea", "url": "http://localhost:3000", "healthPath": "/api/v1/user"},
+        {"name": "OpenProject", "url": "http://localhost:8080", "healthPath": "/"},
+        {"name": "Nexus", "url": "http://localhost:8088", "healthPath": "/service/rest/v1/status"},
+        {"name": "Grafana", "url": "http://localhost:3001", "healthPath": "/api/health"},
+        {"name": "Seq", "url": "http://localhost:5341", "healthPath": "/api"},
+        {"name": "Dozzle", "url": "http://localhost:8888", "healthPath": "/"},
+    ]
+
+    results: list[dict[str, Any]] = []
+    all_up = True
+    for svc in services:
+        url = svc["url"]
+        health_url = f"{url.rstrip('/')}{svc['healthPath']}"
+        if dry_run:
+            results.append({"name": svc["name"], "url": url, "status": "would-check"})
+            continue
+        status, error = http_status(health_url, timeout=5)
+        is_up = status is not None and status < 500
+        results.append({
+            "name": svc["name"],
+            "url": url,
+            "status": "✅ UP" if is_up else "❌ DOWN",
+            "httpStatus": status,
+            "error": error if not is_up else "",
+        })
+        if not is_up:
+            all_up = False
+
+    return {
+        "command": "health-check",
+        "valid": all_up,
+        "services": results,
+        "message": "All services healthy" if all_up else "Some services are not reachable",
+    }
+
+
 def wait_for_service(url: str, timeout: int = 180, interval: int = 5) -> dict[str, Any]:
     """Poll an HTTP endpoint until it responds or the timeout is reached.
 
@@ -379,11 +423,12 @@ def init_local_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
 
 def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
-    """Create project profile schema, example, and local overlay."""
+    """Create project profile schema, example, tracked common profile, and local overlay."""
     codex = root / ".codex"
     codex.mkdir(parents=True, exist_ok=True)
     schema_path = codex / "project-profile.schema.json"
     profile_path = codex / "project-profile.example.json"
+    common_path = codex / "project-profile.json"
     local_profile_path = codex / "project-profile.local.json"
     changed = False
     actions: list[dict[str, str]] = []
@@ -423,6 +468,9 @@ def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
         profile = {
             "$schema": "./project-profile.schema.json",
             "schemaVersion": 1,
+            "providers": {
+                "deployment": {"id": "docker-desktop"},
+            },
             "stack": {
                 "frontend": {"applies": False, "value": ""},
                 "backend": {"applies": False, "value": ""},
@@ -454,11 +502,53 @@ def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
             }
         )
 
+    if not common_path.exists():
+        changed = True
+        common_profile = {
+            "$schema": "./project-profile.schema.json",
+            "schemaVersion": 1,
+            "providers": {
+                "deployment": {"id": "docker-desktop"},
+            },
+            "stack": {
+                "frontend": {"applies": False, "value": ""},
+                "backend": {"applies": False, "value": ""},
+                "database": {"applies": False, "value": ""},
+                "languages": [],
+                "frameworks": [],
+                "testFrameworks": [],
+            },
+        }
+        if not dry_run:
+            write_json(common_path, common_profile)
+        actions.append(
+            {
+                "path": ".codex/project-profile.json",
+                "key": "created",
+                "severity": "info",
+                "message": "Created .codex/project-profile.json (tracked common profile).",
+                "phase": "apply",
+            }
+        )
+    else:
+        actions.append(
+            {
+                "path": ".codex/project-profile.json",
+                "key": "exists",
+                "severity": "info",
+                "message": "Template already exists: .codex/project-profile.json",
+                "phase": "apply",
+            }
+        )
+
     if not local_profile_path.exists():
         changed = True
         local_profile = {
             "$schema": "./project-profile.schema.json",
             "schemaVersion": 1,
+            "providers": {
+                "deployment": {"id": "docker-desktop"},
+            },
             "stack": {
                 "frontend": {"applies": False, "value": ""},
                 "backend": {"applies": False, "value": ""},
@@ -2095,6 +2185,17 @@ def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str,
     except Exception:
         pass
 
+    # Also save Nexus password to client-tools.local.json for persistence
+    if not dry_run and nexus_pass:
+        try:
+            _cfg_path = root / ".codex" / "client-tools.local.json"
+            _cfg = read_json(_cfg_path, optional=True) or {}
+            _cfg.setdefault("nexus", {})["password"] = nexus_pass
+            _cfg["nexus"].setdefault("baseUrl", nexus_base)
+            write_json(_cfg_path, _cfg)
+        except Exception:
+            pass
+
     if dry_run:
         result["actions"].append(
             {
@@ -3676,46 +3777,64 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
         )
 
     # ── 6. Nexus: set admin password via REST API ─────────────────────
-    # First attempt with default admin/admin123, use the same as desired password
-    # Nexus default: admin / admin123, then change password = new password
-    # PUT /service/rest/v1/security/users/admin/change-password
-    status, data = _nexus_api(
-        "PUT",
-        "/service/rest/v1/security/users/admin/change-password",
-        body={"password": "admin123"},
-        auth=("admin", "admin123"),
-    )
-    if status in {200, 204, 404, 401}:
-        # 404 or 401 means default password may already be set or different API version
-        # Try GET /service/rest/v1/security/users to verify connectivity
-        status2, _ = _nexus_api(
-            "GET", "/service/rest/v1/security/users", auth=("admin", "admin123")
+    # On first boot, Nexus generates a random admin password stored in
+    # /nexus-data/admin.password. Read it from the container first, then
+    # use it to authenticate and change to a known value (admin123).
+    _nexus_initial_pass = "admin123"
+    try:
+        _r = subprocess.run(
+            ["docker", "exec", "agentic-nexus", "cat", "/nexus-data/admin.password"],
+            capture_output=True, text=True, timeout=10,
         )
-        if status2 in {200, 401}:
-            result["actions"].append(
-                {
-                    "path": "nexus/users/admin",
-                    "key": "password.set",
-                    "severity": "info",
-                    "message": "Nexus admin password set/verified to admin123.",
-                    "phase": "apply",
-                }
-            )
-        else:
-            add_bucket_item(
-                result["findings"],
-                "nexus/users/admin",
-                "password.set",
-                f"Nexus admin password change returned {status}/{status2}",
-                "warning",
-                "apply",
-            )
+        if _r.returncode == 0 and _r.stdout.strip():
+            _nexus_initial_pass = _r.stdout.strip()
+    except Exception:
+        pass
+
+    # Step 1: try to authenticate with the discovered (or default) password
+    # and change it to admin123.
+    _change_ok = False
+    for _attempt_pass in [_nexus_initial_pass, "admin123"]:
+        _status, _data = _nexus_api(
+            "PUT",
+            "/service/rest/v1/security/users/admin/change-password",
+            body={"password": "admin123"},
+            auth=("admin", _attempt_pass),
+        )
+        if _status in {200, 204}:
+            _change_ok = True
+            break
+        # 404 means change-password endpoint doesn't exist (older Nexus version)
+        # 401 means wrong password — try next fallback
+        if _status != 401 and _status != 404:
+            break
+
+    # Step 2: verify admin:admin123 works
+    _verify_status, _ = _nexus_api(
+        "GET", "/service/rest/v1/security/users", auth=("admin", "admin123")
+    )
+    if _verify_status == 200 and _change_ok:
+        result["actions"].append(
+            {
+                "path": "nexus/users/admin",
+                "key": "password.set",
+                "severity": "info",
+                "message": "Nexus admin password set to admin123.",
+                "phase": "apply",
+            }
+        )
     else:
+        _reason = (
+            "password change API call failed" if not _change_ok
+            else "verify GET returned non-200 (credentials may be wrong)"
+        )
         add_bucket_item(
             result["findings"],
             "nexus/users/admin",
             "password.set",
-            f"Nexus admin password change returned {status}: {data[:200]}",
+            f"Nexus admin password change: {_reason}."
+            f" change_ok={_change_ok}, verify_status={_verify_status}."
+            " The admin password may still be the auto-generated one from /nexus-data/admin.password.",
             "warning",
             "apply",
         )
@@ -3757,6 +3876,11 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
         }
         config.setdefault("gitea", {})
         config["gitea"]["provisioning"] = gitea_provision
+
+        # Also save Nexus password
+        nexus_config = config.setdefault("nexus", {})
+        nexus_config["password"] = "admin123"
+        nexus_config.setdefault("baseUrl", "http://localhost:8088")
 
         write_json(config_path, config)
         result["actions"].append(
@@ -5842,7 +5966,7 @@ def run_environment_lab(args: list[str]) -> int:
 
     if not args:
         print(
-            "Available: setup-lab, compose-up, compose-down, init-local-files, init-project-profile, "
+            "Available: setup-lab, compose-up, compose-down, health-check, init-local-files, init-project-profile, "
             "init-quality-templates, set-openproject-env, set-monitoring-env, set-gitea-runner-env, "
             "split-infra-env, build-gitea-images, set-gitea-branch-protection, validate-observability, "
             "validate-gitea-runner, set-client-tools, set-project-stack, "
@@ -5895,6 +6019,7 @@ def run_environment_lab(args: list[str]) -> int:
         "generate-gitea-token": lambda: generate_gitea_api_token(root, dry_run),
         "renovate-gitea-token": lambda: renovate_gitea_api_token(root, dry_run),
         "provision-lab-users": lambda: provision_lab_users(root, dry_run),
+        "health-check": lambda: health_check(root, dry_run),
         "push-to-gitea": lambda: push_to_gitea(root, dry_run),
     }
 

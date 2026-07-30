@@ -665,7 +665,7 @@ def install_or_update_sdd_tool(
         "schemaVersion": 1,
         "tool": "sdd-tool",
         "version": version or _latest_sdd_tool_version(source),
-        "sourceRepo": git_text(source, ["config", "--get", "remote.origin.url"])
+        "sourceRepo": git_text(source, ["config", "--get", "remote.gitea.url"])
         or str(source),
         "sourceCommit": git_text(source, ["rev-parse", "HEAD"]),
         "installedAtUtc": datetime.now(timezone.utc)

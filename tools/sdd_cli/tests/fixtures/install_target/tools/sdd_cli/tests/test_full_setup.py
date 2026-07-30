@@ -17,7 +17,7 @@ import pytest
 
 @pytest.fixture
 def tool_installer_mocks() -> list[patch]:
-    """Patch all 6 tool_installer functions used by Stage 3 with defaults."""
+    """Patch all 7 tool_installer functions used by Stage 3 with defaults."""
     dummy_ok = {"valid": True, "actions": [], "findings": []}
     return [
         patch("tools.sdd_cli.tool_installer.install_codegraph", return_value=dummy_ok),
@@ -25,22 +25,23 @@ def tool_installer_mocks() -> list[patch]:
         patch("tools.sdd_cli.tool_installer.install_claw_compactor", return_value=dummy_ok),
         patch("tools.sdd_cli.tool_installer.install_monorepo_docs_search", return_value=dummy_ok),
         patch("tools.sdd_cli.tool_installer.install_playwright_mcp", return_value=dummy_ok),
+        patch("tools.sdd_cli.tool_installer.ensure_quality_tools", return_value=dummy_ok),
         patch("tools.sdd_cli.tool_installer.validate_manifest", return_value=dummy_ok),
     ]
 
 
 @pytest.fixture
 def guidance_mocks() -> list[patch]:
-    """Patch discover_project_guidance used by Stage 4."""
+    """Patch setup_project_guidance used by Stage 4."""
     dummy_guidance = {
         "valid": True,
-        "skillCount": 3,
-        "stackTags": ["react", "fastapi", "postgresql"],
+        "foundSkills": ["owner/repo@skill-1"],
+        "installResults": [],
         "actions": [],
         "findings": [],
     }
     return [
-        patch("tools.sdd_cli.guidance.discover_project_guidance",
+        patch("tools.sdd_cli.guidance.setup_project_guidance",
                return_value=dummy_guidance),
     ]
 
@@ -61,7 +62,7 @@ def test_stage3_tool_installation_dry_run(tmp_path: Path) -> None:
                         with patch("tools.sdd_cli.tool_installer.validate_manifest", return_value=dummy_ok):
                             result = stage3_tool_installation(tmp_path, dry_run=True)
     assert result["valid"] is True
-    assert len(result["steps"]) == 6
+    assert len(result["steps"]) == 7
     for step in result["steps"]:
         assert step.get("valid") is True
         assert "OK" in step.get("message", "")
@@ -81,7 +82,7 @@ def test_stage3_tool_installation_success(tmp_path: Path) -> None:
                             result = stage3_tool_installation(tmp_path, dry_run=False)
 
     assert result["valid"] is True
-    assert len(result["steps"]) == 6
+    assert len(result["steps"]) == 7
     assert all(s.get("valid") for s in result["steps"])
 
 
@@ -102,15 +103,14 @@ def test_stage3_tool_installation_partial_failure(tmp_path: Path) -> None:
                             result = stage3_tool_installation(tmp_path, dry_run=False)
 
     assert result["valid"] is False
-    assert len(result["steps"]) == 6
-    # codegraph (index 0) fails, monorepo-docs-search (index 1) fails
+    assert len(result["steps"]) == 7
     assert result["steps"][0]["valid"] is False
     assert result["steps"][1]["valid"] is False
-    # Other steps still succeed
     assert result["steps"][2]["valid"] is True
     assert result["steps"][3]["valid"] is True
     assert result["steps"][4]["valid"] is True
     assert result["steps"][5]["valid"] is True
+    assert result["steps"][6]["valid"] is True
 
 
 def test_stage3_tool_installation_exception(tmp_path: Path) -> None:
@@ -142,7 +142,7 @@ def test_run_full_setup_help(capsys: Any, tool_installer_mocks: Any, guidance_mo
 
     mock_lab_ok = {"valid": True, "steps": [], "summary": {}}
 
-    with patch.object(sys, "version_info", (3, 11)):
+    with patch.object(sys, "version_info", (3, 15)):
         with patch(
             "tools.sdd_cli.full_setup.run_native",
             return_value={"returncode": 0, "stdout": "v20.0.0", "stderr": ""},
@@ -164,7 +164,7 @@ def test_run_full_setup_dry_run(capsys: Any, tool_installer_mocks: Any, guidance
     """full-setup --dry-run true runs without side effects."""
     from tools.sdd_cli.full_setup import run_full_setup
 
-    with patch.object(sys, "version_info", (3, 11)):
+    with patch.object(sys, "version_info", (3, 15)):
         with patch(
             "tools.sdd_cli.full_setup.run_native",
             return_value={"returncode": 0, "stdout": "v20.0.0", "stderr": ""},
@@ -205,7 +205,7 @@ def test_run_full_setup_node_fails(capsys: Any, tool_installer_mocks: Any, guida
 
     mock_lab_ok = {"valid": True, "steps": [], "summary": {}}
 
-    with patch.object(sys, "version_info", (3, 11)):
+    with patch.object(sys, "version_info", (3, 15)):
         with patch(
             "tools.sdd_cli.full_setup.run_native",
             side_effect=[
@@ -230,7 +230,7 @@ def test_run_full_setup_docker_fails(capsys: Any, tool_installer_mocks: Any, gui
 
     mock_lab_ok = {"valid": True, "steps": [], "summary": {}}
 
-    with patch.object(sys, "version_info", (3, 11)):
+    with patch.object(sys, "version_info", (3, 15)):
         with patch(
             "tools.sdd_cli.full_setup.run_native",
             side_effect=[
@@ -330,7 +330,7 @@ def test_stage1_prerequisites_all_pass() -> None:
     """All prerequisites pass."""
     from tools.sdd_cli.full_setup import stage1_prerequisites
 
-    with patch.object(sys, "version_info", (3, 11)):
+    with patch.object(sys, "version_info", (3, 15)):
         with patch(
             "tools.sdd_cli.full_setup.run_native",
             return_value={"returncode": 0, "stdout": "v20.0.0", "stderr": ""},
@@ -379,17 +379,17 @@ def test_stage1_prerequisites_findings_structure() -> None:
 
 
 def test_check_python_ok() -> None:
-    """_check_python returns valid for 3.11+."""
+    """_check_python returns valid for 3.14+."""
     from tools.sdd_cli.full_setup import _check_python
 
-    with patch.object(sys, "version_info", (3, 11)):
+    with patch.object(sys, "version_info", (3, 14)):
         result = _check_python()
     assert result["valid"] is True
-    assert result["current"] == "3.11"
+    assert result["current"] == "3.14"
 
 
 def test_check_python_too_old() -> None:
-    """_check_python returns invalid for < 3.11."""
+    """_check_python returns invalid for < 3.14."""
     from tools.sdd_cli.full_setup import _check_python
 
     with patch.object(sys, "version_info", (3, 9)):
@@ -465,19 +465,18 @@ def test_stage4_project_guidance_no_profile(tmp_path: Path) -> None:
     """stage4 handles missing project profile gracefully."""
     from tools.sdd_cli.full_setup import stage4_project_guidance
 
-    dummy_guidance = {"valid": True, "skillCount": 0, "stackTags": [], "actions": [], "findings": []}
-    with patch("tools.sdd_cli.guidance.discover_project_guidance",
-               return_value=dummy_guidance):
-        result = stage4_project_guidance(tmp_path, dry_run=False)
+    result = stage4_project_guidance(tmp_path, dry_run=False)
 
     assert result["valid"] is True
     steps = result["steps"]
     assert len(steps) == 2
-    assert "No project profile found" in steps[0]["message"]
+    # First step: no profile, second: no stack configured
+    assert "No project profile configured" in steps[0]["message"]
+    assert "No stack configured" in steps[1]["message"]
 
 
 def test_stage4_project_guidance_with_profile(tmp_path: Path) -> None:
-    """stage4 detects stack when project profile is configured."""
+    """stage4 detects stack and searches internet when profile is configured."""
     from tools.sdd_cli.full_setup import stage4_project_guidance
 
     profile_dir = tmp_path / ".codex"
@@ -491,8 +490,14 @@ def test_stage4_project_guidance_with_profile(tmp_path: Path) -> None:
     }
     (profile_dir / "project-profile.json").write_text(json.dumps(profile), encoding="utf-8")
 
-    dummy_guidance = {"valid": True, "skillCount": 3, "stackTags": ["react"], "actions": [], "findings": []}
-    with patch("tools.sdd_cli.guidance.discover_project_guidance",
+    dummy_guidance = {
+        "valid": True,
+        "foundSkills": ["owner/repo@react-skills", "owner/repo@fastapi-skills"],
+        "installResults": [{ "valid": True, "skillName": "react-skills" }],
+        "actions": [],
+        "findings": [],
+    }
+    with patch("tools.sdd_cli.guidance.setup_project_guidance",
                return_value=dummy_guidance):
         result = stage4_project_guidance(tmp_path, dry_run=False)
 
@@ -500,30 +505,57 @@ def test_stage4_project_guidance_with_profile(tmp_path: Path) -> None:
     steps = result["steps"]
     assert len(steps) == 2
     assert "Stack configured" in steps[0]["message"]
+    assert "Found 2 skill(s)" in steps[1]["message"]
 
 
-def test_stage4_project_guidance_no_manifest(tmp_path: Path) -> None:
-    """stage4 handles missing skill manifest gracefully."""
+def test_stage4_project_guidance_no_stack(tmp_path: Path) -> None:
+    """stage4 handles profile without fully configured stack."""
     from tools.sdd_cli.full_setup import stage4_project_guidance
 
-    with patch("tools.sdd_cli.guidance.discover_project_guidance",
-               return_value={"valid": False, "errors": ["Manifest not found"]}):
-        result = stage4_project_guidance(tmp_path, dry_run=False)
+    profile_dir = tmp_path / ".codex"
+    profile_dir.mkdir(exist_ok=True)
+    profile = {
+        "stack": {
+            "frontend": {"value": "react", "applies": False},
+            "backend": {"value": "fastapi", "applies": False},
+            "database": {"value": "postgresql", "applies": False},
+        }
+    }
+    (profile_dir / "project-profile.json").write_text(json.dumps(profile), encoding="utf-8")
+
+    result = stage4_project_guidance(tmp_path, dry_run=False)
 
     assert result["valid"] is True
-    assert "not available" in result["steps"][1]["message"]
+    steps = result["steps"]
+    assert len(steps) == 2
+    assert "not fully configured" in steps[0]["message"]
+    assert "No stack configured" in steps[1]["message"]
 
 
 def test_stage4_project_guidance_exception(tmp_path: Path) -> None:
-    """stage4 handles discover_project_guidance raising an exception."""
+    """stage4 handles setup_project_guidance raising an exception."""
     from tools.sdd_cli.full_setup import stage4_project_guidance
 
-    with patch("tools.sdd_cli.guidance.discover_project_guidance",
-               side_effect=RuntimeError("Unexpected error")):
+    profile_dir = tmp_path / ".codex"
+    profile_dir.mkdir(exist_ok=True)
+    profile = {
+        "stack": {
+            "frontend": {"value": "react", "applies": True},
+            "backend": {"value": "fastapi", "applies": True},
+            "database": {"value": "postgresql", "applies": True},
+        }
+    }
+    (profile_dir / "project-profile.json").write_text(json.dumps(profile), encoding="utf-8")
+
+    with patch("tools.sdd_cli.guidance.setup_project_guidance",
+               side_effect=RuntimeError("Network error")):
         result = stage4_project_guidance(tmp_path, dry_run=False)
 
     assert result["valid"] is True
-    assert "skipped" in result["steps"][1]["message"]
+    steps = result["steps"]
+    assert len(steps) == 2
+    assert "Stack configured" in steps[0]["message"]
+    assert "Network error" in steps[1]["message"]
 
 
 # ── CLI wiring ───────────────────────────────────────────────────────────

@@ -1,9 +1,9 @@
 import json
 import os
-import shlex
 import subprocess
 import sys
 import time
+import venv
 from pathlib import Path
 
 
@@ -386,23 +386,23 @@ def setup_mcp() -> int:
     script_path = os.path.join(current_dir, "mcp_doc_research.py")
 
     if not os.path.exists(venv_dir):
-        _safe_print(f"📦 Creando entorno virtual centralizado en: {venv_dir}")
+        _safe_print(f"Creando entorno virtual centralizado en: {venv_dir}")
         venv.create(venv_dir, with_pip=True)
     else:
-        _safe_print(f"ℹ️ El entorno virtual ya existe en: {venv_dir}")
+        _safe_print(f"El entorno virtual ya existe en: {venv_dir}")
 
-    _safe_print("📥 Instalando dependencias (BM25S + FlashRank)...")
+    _safe_print("Instalando dependencias (BM25S + FlashRank)...")
     try:
         subprocess.run(  # nosec
-            [shlex.quote(pip_exe), "install", "--upgrade", "pip", "--quiet"],
+            [pip_exe, "install", "--upgrade", "pip", "--quiet"],
             check=True,
         )
         subprocess.run(  # nosec
-            [shlex.quote(pip_exe), "install", "mcp", "bm25s", "flashrank", "--quiet"],
+            [pip_exe, "install", "mcp", "bm25s", "flashrank", "--quiet"],
             check=True,
         )
     except subprocess.CalledProcessError as e:
-        _safe_print(f"❌ Error durante la instalación de paquetes: {e}")
+        _safe_print(f"Error durante la instalacion de paquetes: {e}")
         sys.exit(1)
 
     config = build_mcp_config(python_exe, script_path)
@@ -410,8 +410,8 @@ def setup_mcp() -> int:
     write_workspace_mcp_config(repo_root, config)
     auto_start_mcp(repo_root, config)
 
-    _safe_print("\n✅ ¡Configuración completada con éxito desde Python!")
-    _safe_print("🚀 El servidor MCP fue iniciado automáticamente.")
+    _safe_print("\nConfiguracion completada con exito desde Python!")
+    _safe_print("El servidor MCP fue iniciado automaticamente.")
     return 0
 
 

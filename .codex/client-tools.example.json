@@ -13,8 +13,5 @@
   "nexus": {
     "baseUrl": "http://localhost:8088",
     "password": "replace-with-nexus-password-or-token"
-  },
-  "openRouter": {
-    "apiKey": "replace-with-openrouter-api-key"
   }
 }

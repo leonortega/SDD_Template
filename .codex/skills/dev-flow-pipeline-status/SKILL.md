@@ -1,5 +1,6 @@
 ---
 name: dev-flow-pipeline-status
+license: MIT
 description: Produce a read-only operator dashboard for configured tickets, pull requests, selected-provider artifacts, QA evidence, tags, environments, release state, and blockers through selected project-profile adapters. Use when the user asks where a ticket or release stands, what is deployed, what is blocked, or which workflow step should run next.
 ---
 
@@ -27,7 +28,7 @@ Collect read-only status sources, compare them against the ticket context lock, 
 
 Collect what is relevant to the request:
 
-- tickets by configured states: Todo, In Progress, In Review, QA, Done.
+- tickets by configured states: TO DO, In Progress, Developed, In testing (IN QA), Tested, Closed.
 - Current ticket generated markers: branch, PR, QA deployment, E2E QA, PROD deployment, rollback, QA bug.
 - Active `.codex/delivery-context.local.json` lock, including ticket key, branch, PR, artifact commit, RC/final versions, and any mismatch with discovered state.
 - repository/review provider open PRs, merged PRs, target branches, labels, latest review markers, and CI status when available.

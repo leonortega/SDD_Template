@@ -404,8 +404,6 @@ def audit_skill_contracts(
             "failed": 0,
             "profilePassed": not profile_findings,
             "profileFindings": profile_findings,
-            "providerSpecificPassed": True,
-            "providerSpecificFindings": [],
             "results": [],
         }
     required_sections = [
@@ -449,8 +447,6 @@ def audit_skill_contracts(
         "failed": sum(1 for item in results if not item["passed"]),
         "profilePassed": not profile_findings,
         "profileFindings": profile_findings,
-        "providerSpecificPassed": True,
-        "providerSpecificFindings": [],
         "results": results,
     }
 

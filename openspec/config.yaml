@@ -13,7 +13,7 @@ context: |
 
   Skills are selected from the manifest based on the project stack. Stack-specific skills are added after the tech stack is selected.
 
-  Use official-first research for platform and tooling guidance. Prefer official Gitea, Sonatype Nexus, Docker Desktop, Kubernetes, Grafana, Seq, Dozzle, Playwright, and selected future stack sources.
+  Use official-first research for platform and tooling guidance. Prefer official Gitea, Sonatype Nexus, Docker Desktop, Kubernetes, Grafana, Seq, Dozzle, Playwright, OpenProject, and selected future stack sources.
 
 rules:
   proposal:

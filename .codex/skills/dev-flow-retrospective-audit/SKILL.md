@@ -1,5 +1,6 @@
 ---
 name: dev-flow-retrospective-audit
+license: MIT
 description: Inspect delivery runs and Promptfoo eval results, convert repeated misses and eval regressions into durable workflow improvements. Use as the Promptfoo-driven improvement hub: run the eval, read results, classify failures, recommend or apply routing fixes, test updates, and eval-coverage additions.
 ---
 
@@ -81,8 +82,6 @@ Inspect the smallest useful set first, then expand as needed:
 - `.codex/agent-evals/promptfooconfig.yaml` — Promptfoo test cases, expected routes, assertions
 - `.codex/agent-evals/routing_provider.py` — Python routing logic that runs during eval
 - `.codex/agent-evals/results.local.json` — persisted eval results (pass/fail per test, failure details, timestamps)
-- `.codex/delivery-policy.json` → `agentOptimization.workflowEvals` — eval configuration (test count, CI path, block flag)
-- `.gitea/workflows/agent-eval.yml` — CI eval workflow triggering
 - CI eval run output logs and artifacts — when diagnosing a CI-reported eval failure
 
 ### General Evidence (read for all audit types)

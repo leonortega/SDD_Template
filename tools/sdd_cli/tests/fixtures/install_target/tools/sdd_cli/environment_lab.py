@@ -375,11 +375,12 @@ def init_local_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
 
 def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
-    """Create project profile schema, example, and local overlay."""
+    """Create project profile schema, example, tracked common profile, and local overlay."""
     codex = root / ".codex"
     codex.mkdir(parents=True, exist_ok=True)
     schema_path = codex / "project-profile.schema.json"
     profile_path = codex / "project-profile.example.json"
+    common_path = codex / "project-profile.json"
     local_profile_path = codex / "project-profile.local.json"
     changed = False
     actions: list[dict[str, str]] = []
@@ -419,6 +420,9 @@ def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
         profile = {
             "$schema": "./project-profile.schema.json",
             "schemaVersion": 1,
+            "providers": {
+                "deployment": {"id": "docker-desktop"},
+            },
             "stack": {
                 "frontend": {"applies": False, "value": ""},
                 "backend": {"applies": False, "value": ""},
@@ -450,11 +454,53 @@ def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
             }
         )
 
+    if not common_path.exists():
+        changed = True
+        common_profile = {
+            "$schema": "./project-profile.schema.json",
+            "schemaVersion": 1,
+            "providers": {
+                "deployment": {"id": "docker-desktop"},
+            },
+            "stack": {
+                "frontend": {"applies": False, "value": ""},
+                "backend": {"applies": False, "value": ""},
+                "database": {"applies": False, "value": ""},
+                "languages": [],
+                "frameworks": [],
+                "testFrameworks": [],
+            },
+        }
+        if not dry_run:
+            write_json(common_path, common_profile)
+        actions.append(
+            {
+                "path": ".codex/project-profile.json",
+                "key": "created",
+                "severity": "info",
+                "message": "Created .codex/project-profile.json (tracked common profile).",
+                "phase": "apply",
+            }
+        )
+    else:
+        actions.append(
+            {
+                "path": ".codex/project-profile.json",
+                "key": "exists",
+                "severity": "info",
+                "message": "Template already exists: .codex/project-profile.json",
+                "phase": "apply",
+            }
+        )
+
     if not local_profile_path.exists():
         changed = True
         local_profile = {
             "$schema": "./project-profile.schema.json",
             "schemaVersion": 1,
+            "providers": {
+                "deployment": {"id": "docker-desktop"},
+            },
             "stack": {
                 "frontend": {"applies": False, "value": ""},
                 "backend": {"applies": False, "value": ""},

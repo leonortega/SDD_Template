@@ -266,14 +266,16 @@ def stage3_tool_installation(root: Path, dry_run: bool = False) -> dict[str, Any
     The lab already installs: lefthook, grafana-mcp, openproject-mcp, gitea-mcp, k8s-mcp.
     Stage 3 installs the remaining tools:
         1. codegraph (npx verify + MCP config)
-        2. codebase-memory (seed files + MCP registration)
+        2. monorepo-docs-search (shared venv + MCP registration)
         3. claw-compactor (pip install into shared venv)
-        4. monorepo-docs-search (shared venv + MCP registration)
+        4. codebase-memory (seed files + MCP registration)
         5. playwright MCP (register in .vscode/mcp.json)
-        6. validate-manifest (check skill manifest integrity)
+        6. quality tools (gitleaks, trivy, trunk, coverage check)
+        7. validate-manifest (check skill manifest integrity)
     """
     from .tool_installer import (  # type: ignore[import-not-found]
         ensure_codebase_memory,
+        ensure_quality_tools,
         install_claw_compactor,
         install_codegraph,
         install_monorepo_docs_search,
@@ -288,12 +290,14 @@ def stage3_tool_installation(root: Path, dry_run: bool = False) -> dict[str, Any
     #   - install-monorepo-docs-search creates the shared MCP venv (~/.mcp_shared_venv)
     #   - install-claw-compactor depends on that venv existing
     #   - ensure-codebase-memory, install-playwright-mcp only register in .vscode/mcp.json
+    #   - ensure-quality-tools checks gitleaks, trivy, trunk, coverage (non-MCP)
     installers: list[tuple[str, Any]] = [
         ("install-codegraph", install_codegraph),
         ("install-monorepo-docs-search", install_monorepo_docs_search),
         ("install-claw-compactor", install_claw_compactor),
         ("ensure-codebase-memory", ensure_codebase_memory),
         ("install-playwright-mcp", install_playwright_mcp),
+        ("ensure-quality-tools", ensure_quality_tools),
         ("validate-manifest", validate_manifest),
     ]
 
@@ -331,19 +335,24 @@ def stage3_tool_installation(root: Path, dry_run: bool = False) -> dict[str, Any
     return result
 
 
-# ── Stage 4: Project Guidance ────────────────────────────────────────────
+# ── Stage 4: Project Guidance ────────────────────────────────────────────def stage4_project_guidance(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Stage 4: Interactive project guidance.
 
+    1. Inspect project profile status
+    2. Search internet for stack-relevant skills
+    3. Show found skills and ask user which to install
+    4. Install selected skills via npx skills add
 
-def stage4_project_guidance(root: Path, dry_run: bool = False) -> dict[str, Any]:
-    """Stage 4: Inspect project profile, discover relevant skills, print next steps.
-
-    This is an advisory stage — it never sets valid=False. Even if the manifest
-    or profile is missing, it provides helpful guidance and returns valid=True.
+    Non-interactive (CI): just logs what would be done.
     """
     result = configure_result(
         "Stage4-ProjectGuidance", dry_run, write_enabled=not dry_run
     )
     steps: list[dict[str, Any]] = []
+
+    print("\n" + "=" * 60)
+    print("  STAGE 4: PROJECT GUIDANCE")
+    print("=" * 60)
 
     # 4a. Project profile status
     from ._shared import load_project_profile
@@ -351,14 +360,23 @@ def stage4_project_guidance(root: Path, dry_run: bool = False) -> dict[str, Any]
     profile = load_project_profile(root)
     profile_path = root / ".codex" / "project-profile.json"
 
+    stack_values: dict[str, str] = {}
+
     if profile:
         stack = profile.get("stack", {})
-        if isinstance(stack, dict) and any(
-            v.get("applies") is True for v in stack.values() if isinstance(v, dict)
-        ):
-            frontend = stack.get("frontend", {}).get("value", "not set")
-            backend = stack.get("backend", {}).get("value", "not set")
-            database = stack.get("database", {}).get("value", "not set")
+        if isinstance(stack, dict):
+            for domain in ("frontend", "backend", "database"):
+                entry = stack.get(domain, {})
+                if isinstance(entry, dict) and entry.get("applies") is True:
+                    val = str(entry.get("value", "")).lower().strip()
+                    if val:
+                        stack_values[domain] = val
+
+        if stack_values:
+            frontend = stack_values.get("frontend", "?")
+            backend = stack_values.get("backend", "?")
+            database = stack_values.get("database", "?")
+            print(f"  [OK] Stack configured: {frontend} / {backend} / {database}")
             steps.append({
                 "command": "stage4-profile",
                 "title": "Project profile",
@@ -366,72 +384,82 @@ def stage4_project_guidance(root: Path, dry_run: bool = False) -> dict[str, Any]
                 "message": f"Stack configured: frontend={frontend}, backend={backend}, database={database}.",
             })
         else:
+            print("  [WARN] Stack not fully configured.")
+            print("     Run: python -m tools.sdd_cli configure set-project-stack ...")
             steps.append({
                 "command": "stage4-profile",
                 "title": "Project profile",
                 "valid": True,
-                "message": (
-                    "Project profile exists but stack is not fully configured. "
-                    "Run `configure set-project-stack` to set frontend/backend/database."
-                ),
+                "message": "Project profile exists but stack is not fully configured.",
             })
     else:
         if profile_path.exists():
-            steps.append({
-                "command": "stage4-profile",
-                "title": "Project profile",
-                "valid": True,
-                "message": "Project profile found but could not be parsed.",
-            })
+            print("  [WARN] Project profile found but could not be parsed.")
         else:
-            steps.append({
-                "command": "stage4-profile",
-                "title": "Project profile",
-                "valid": True,
-                "message": (
-                    "No project profile found. Run `configure set-project-stack` "
-                    "to configure your project stack (frontend, backend, database)."
-                ),
-            })
+            print("  [WARN] No project profile found.")
+            print("     Run: python -m tools.sdd_cli configure set-project-stack ...")
+        steps.append({
+            "command": "stage4-profile",
+            "title": "Project profile",
+            "valid": True,
+            "message": "No project profile configured. Run `configure set-project-stack` first.",
+        })
 
-    # 4b. Discover relevant guidance from manifest
-    from .guidance import discover_project_guidance
-
-    try:
-        guidance_result = discover_project_guidance(root, dry_run)
-        if guidance_result.get("valid", False):
-            skill_count = guidance_result.get("skillCount", 0)
-            stack_tags = guidance_result.get("stackTags", [])
-            steps.append({
-                "command": "stage4-guidance",
-                "title": "Skill discovery",
-                "valid": True,
-                "message": (
-                    f"Found {skill_count} relevant skill(s) for stack [{', '.join(stack_tags) or 'none set'}]."
-                    if skill_count > 0
-                    else "No stack-specific skills found. Run `configure set-project-stack` to enable stack-matched guidance."
-                ),
-            })
-            for action in guidance_result.get("actions", []):
-                result["actions"].append(action)
+    if dry_run or not stack_values:
+        if not stack_values:
+            print("\n  [WARN] Cannot search for skills: no stack configured.")
         else:
-            steps.append({
-                "command": "stage4-guidance",
-                "title": "Skill discovery",
-                "valid": True,
-                "message": "Skill manifest not available. Stack-matched guidance will be shown after setup.",
-            })
-    except Exception as ex:
+            print(f"\n  (dry-run) Would search internet for stack-relevant skills.")
         steps.append({
             "command": "stage4-guidance",
-            "title": "Skill discovery",
+            "title": "Internet skill search",
             "valid": True,
-            "message": f"Skill discovery skipped: {ex}",
+            "message": "No stack configured or dry-run: skill search skipped.",
+        })
+        result["steps"] = steps
+        result["valid"] = True
+        return result
+
+    # 4b. Search internet for stack-relevant skills
+    from .guidance import setup_project_guidance
+
+    print("\n  -- Internet Skill Search --")
+
+    try:
+        guidance_result = setup_project_guidance(
+            root, stack_values, dry_run=False, interactive=True
+        )
+
+        found = guidance_result.get("foundSkills", [])
+        installs = guidance_result.get("installResults", [])
+        installed_count = sum(1 for r in installs if r.get("valid"))
+
+        # Forward actions and findings
+        for action in guidance_result.get("actions", []):
+            result["actions"].append(action)
+        for finding in guidance_result.get("findings", []):
+            result["findings"].append(finding)
+
+        steps.append({
+            "command": "stage4-guidance",
+            "title": "Internet skill search",
+            "valid": True,
+            "message": f"Found {len(found)} skill(s) online, installed {installed_count}.",
+        })
+
+        print(f"\n  [OK] Stage 4 complete. Found {len(found)} skill(s), installed {installed_count}.")
+
+    except Exception as ex:
+        print(f"\n  [WARN] Internet skill search error: {ex}")
+        steps.append({
+            "command": "stage4-guidance",
+            "title": "Internet skill search",
+            "valid": True,
+            "message": f"Internet skill search skipped: {ex}",
         })
 
     result["steps"] = steps
     result["valid"] = True  # Advisory only — never fails
-
     return result
 
 

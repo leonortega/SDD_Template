@@ -19,11 +19,15 @@ Before posting review output, follow `.codex/skills/_shared/skill-startup.md`, w
 
 ## Workflow Telemetry
 
-When this skill runs as part of a ticket workflow and a ticket key is resolved, capture UTC start time before PR review reads. Prefer OpenProject time-entry telemetry and create or update the `dev-flow-pr-review-agent` entry via the `time-telemetry-upsert` operation (see `.codex/providers/ticket.openproject.md` → Operations → `time-telemetry-upsert` for the exact API payload with `spentOn`, `hours`, `comment`, and `_links`). Use marker `IA generated workflow telemetry: {ticketKey}:dev-flow-pr-review-agent`. Resolve the activity href by running `python -m tools.sdd_cli dev-flow resolve-openproject-activity --workflow-stage dev-flow-pr-review-agent --input-json '{"timeTelemetry":{...}}'` and reverse-lookup the activity ID from the resolved name.
+See `.codex/skills/_shared/pipeline-workflow-telemetry.md` for the common workflow telemetry pattern. Use:
 
-Use `python -m tools.sdd_cli dev-flow append-telemetry -TicketKey {ticketKey}` only as the JSONL fallback when direct time telemetry is unavailable. On resume or idempotent reuse, append or update another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-flow-pr-review-agent`, `agentRole=prReview`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If the review is explicitly standalone and no ticket key can be safely resolved, report that workflow telemetry was skipped.
+- `{workflowStage}` = `dev-flow-pr-review-agent`
+- `{agentRole}` = `prReview`
 
-For shared API helpers including time-entry POST payload format and activity reverse-lookup, see `.codex/skills/_shared/api-helpers.md` → OpenProject → Workflow time telemetry.
+**Unique additions for this skill:**
+
+- **JSONL fallback:** Use `python -m tools.sdd_cli dev-flow append-telemetry -TicketKey {ticketKey}` only as the JSONL fallback when direct time telemetry is unavailable.
+- **Standalone skip:** If the review is explicitly standalone and no ticket key can be safely resolved, report that workflow telemetry was skipped.
 
 ## Configuration
 

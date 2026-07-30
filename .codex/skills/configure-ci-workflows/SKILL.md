@@ -1,5 +1,6 @@
 ---
 name: configure-ci-workflows
+license: MIT
 description: Generate or update Gitea Actions CI/CD workflow files based on the project profile stack and app topology. Run after configure-dev-environment selects the project stack, or when apps.json, project-profile, or client-tools configuration changes.
 ---
 
@@ -40,9 +41,26 @@ The skill derives configuration from these sources:
 
 ## Workflow Generation Rules
 
-### 1. Detect Stack Technologies
+### 1. Ask User For Stack Technologies
 
-Read `project-profile.local.json → stack` and determine build commands per domain:
+**Do NOT auto-detect or infer the tech stack.** The stack must come from the user. Ask them explicitly:
+
+- What frontend framework (e.g., React, Vue, Angular, none)?
+- What backend framework (e.g., FastAPI, Django, Flask, ASP.NET Core, none)?
+- What database (e.g., PostgreSQL, SQLite, none)?
+- What languages and build tools are used?
+
+Once the user confirms the stack, set it via:
+
+```bash
+python -m tools.sdd_cli environment-lab set-project-stack --values-json '{
+  "frontend": "react",
+  "backend": "fastapi",
+  "database": "postgresql"
+}'
+```
+
+Then read the confirmed values from `project-profile.local.json → stack` and determine build commands per domain using the mapping table:
 
 | Stack value               | Build command                     | Output directory            | Artifact pattern | Deploy command              |
 | ------------------------- | --------------------------------- | --------------------------- | ---------------- | --------------------------- |
@@ -379,58 +397,7 @@ jobs:
         run: gitleaks detect --source . --redact --no-git
 ```
 
-### 6. Generate `agent-eval.yml`
-
-This workflow is also mostly static:
-
-```yaml
-name: Agent evaluation
-
-on:
-  pull_request:
-    branches:
-      - dev
-    paths:
-      - ".codex/agent-evals/**"
-      - ".codex/delivery-policy.json"
-      - ".codex/skills/_shared/delivery-contract*.md"
-      - "tools/sdd_cli/agent_eval.py"
-
-jobs:
-  eval:
-    runs-on: ubuntu-latest
-    container:
-      image: sdd-e2e-ci:local
-    steps:
-      - name: Checkout
-        env:
-          GITEA_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          set -eo pipefail
-          export GIT_TERMINAL_PROMPT=0
-          TOKEN="${GITEA_TOKEN:-}"
-          repo_url="http://git:${TOKEN}@host.docker.internal:3000/${GITHUB_REPOSITORY}.git"
-          git init .
-          git remote add origin "$repo_url"
-          git fetch --depth 1 origin "$GITHUB_SHA"
-          git checkout --force FETCH_HEAD
-
-      - name: Install promptfoo
-        shell: bash
-        run: |
-          set -euo pipefail
-          npm install -g promptfoo
-          promptfoo --version
-
-      - name: Run agent routing evaluation
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 -m tools.sdd_cli agent-eval ci
-```
-
-### 7. Dry-Run Mode
+### 6. Dry-Run Mode
 
 Before writing any files, offer a dry-run preview:
 
@@ -442,18 +409,16 @@ Would update .gitea/workflows/package-deploy.yml:
   + Upload to Nexus: http://host.docker.internal:8088/sdd-artifacts
   + Deploy to dev/qa: node server.mjs on port 4173/4174
 Would keep .gitea/workflows/pr-validation.yml (unchanged)
-Would keep .gitea/workflows/agent-eval.yml (unchanged)
 ```
 
 Show the diff or full content of each generated file. Ask the user to confirm before writing.
 
-### 8. Write Files
+### 7. Write Files
 
 Write the generated YAML to:
 
 - `.gitea/workflows/package-deploy.yml`
 - `.gitea/workflows/pr-validation.yml`
-- `.gitea/workflows/agent-eval.yml`
 
 Preserve the existing `set -eo pipefail` pattern (not `-u` to avoid unbound variable errors). Keep the checkout step's `GIT_TERMINAL_PROMPT=0` and token-based URL pattern with `host.docker.internal:3000`.
 

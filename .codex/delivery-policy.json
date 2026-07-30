@@ -33,7 +33,8 @@
             ".codex/skills/_shared/delivery-contract.md",
             ".codex/skills/_shared/delivery-contract-core.md",
             ".codex/skills/_shared/skill-startup.md",
-            ".codex/skills/_shared/provider-adapter-contract.md",
+            ".codex/skills/_shared/delivery-contract-format.md",
+            ".codex/skills/_shared/test-requirements.md",
             ".codex/project-profile.json"
           ],
           "cacheStrategy": "session",
@@ -63,15 +64,6 @@
           "breakpointAfter": false
         }
       ]
-    },
-    "workflowEvals": {
-      "provider": "promptfoo",
-      "configPath": ".codex/agent-evals/promptfooconfig.yaml",
-      "providerPath": ".codex/agent-evals/routing_provider.py",
-      "resultsPath": ".codex/agent-evals/results.local.json",
-      "blockOnEvalFailure": false,
-      "ciWorkflow": ".gitea/workflows/agent-eval.yml",
-      "testCount": 22
     }
   }
 }
