@@ -22,12 +22,19 @@ def run_eval(root: Path | None = None) -> dict[str, Any]:
     """Run Promptfoo evaluation and return structured results.
 
     Returns a dict with pass/fail count, duration, and per-test details.
+    Raises CliError when promptfoo produces no usable results file, so a
+    failed run is loud instead of a false "0 tests passed" success.
     """
     base = root or REPO_ROOT
     config_path = base / ".codex" / "agent-evals" / "promptfooconfig.yaml"
+    results_path = base / ".codex" / "agent-evals" / "results.tmp.json"
 
     if not config_path.exists():
         raise CliError(f"Eval config not found: {config_path}")
+
+    # Drop any stale results file up front: a previous run's output must
+    # never be mistaken for this run's results if promptfoo fails to write.
+    results_path.unlink(missing_ok=True)
 
     # Install promptfoo if not available
     try:
@@ -53,7 +60,7 @@ def run_eval(root: Path | None = None) -> dict[str, Any]:
                 str(config_path),
                 "--no-cache",
                 "--output",
-                str(base / ".codex" / "agent-evals" / "results.tmp.json"),
+                str(results_path),
             ],
             capture_output=True,
             text=True,
@@ -67,7 +74,6 @@ def run_eval(root: Path | None = None) -> dict[str, Any]:
     returncode = result.returncode
 
     # Parse results output
-    results_path = base / ".codex" / "agent-evals" / "results.tmp.json"
     results: dict[str, Any] = {
         "returncode": returncode,
         "passed": 0,
@@ -78,24 +84,56 @@ def run_eval(root: Path | None = None) -> dict[str, Any]:
         "stderr_summary": stderr.strip()[:2000] if stderr else "",
     }
 
-    if results_path.exists():
-        try:
-            raw = json.loads(results_path.read_text(encoding="utf-8"))
-            if isinstance(raw, list):
-                results["tests"] = raw
-                results["total"] = len(raw)
-                for test in raw:
-                    if test.get("pass"):
-                        results["passed"] += 1
-                    else:
-                        results["failed"] += 1
-            elif isinstance(raw, dict):
-                results["results_json"] = raw
-        except (json.JSONDecodeError, KeyError):
-            pass
-        results_path.unlink(missing_ok=True)
+    if not results_path.exists():
+        raise CliError(
+            "promptfoo produced no results file - the eval did not run.\n"
+            f"promptfoo exited with code {returncode}.\n"
+            f"stdout: {stdout.strip()[:500] or '(empty)'}\n"
+            f"stderr: {stderr.strip()[:500] or '(empty)'}\n"
+            "If this is the Windows npm cache EBUSY/EPERM issue, see the "
+            "workaround in .codex/agent-evals/README.md."
+        )
 
-    results["valid"] = results["failed"] == 0
+    try:
+        raw = json.loads(results_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as err:
+        raise CliError(
+            f"promptfoo results file could not be parsed: {results_path}\n{err}"
+        ) from err
+
+    if isinstance(raw, list):
+        results["tests"] = raw
+        results["total"] = len(raw)
+        for test in raw:
+            if test.get("pass"):
+                results["passed"] += 1
+            else:
+                results["failed"] += 1
+    elif isinstance(raw, dict):
+        results["results_json"] = raw
+        nested = raw.get("results")
+        if isinstance(nested, list):
+            results["tests"] = nested
+            results["total"] = len(nested)
+            for test in nested:
+                if test.get("pass"):
+                    results["passed"] += 1
+                else:
+                    results["failed"] += 1
+    else:
+        raise CliError(
+            f"promptfoo results file has an unexpected format: {results_path}"
+        )
+
+    if results["total"] == 0:
+        raise CliError(
+            "promptfoo produced 0 test results - refusing to report "
+            "'0 tests passed'. Check the eval config and the promptfoo "
+            "output above."
+        )
+    results_path.unlink(missing_ok=True)
+
+    results["valid"] = returncode == 0 and results["failed"] == 0
     return results
 
 

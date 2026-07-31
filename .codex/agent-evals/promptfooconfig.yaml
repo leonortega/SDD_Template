@@ -9,7 +9,7 @@
 
 prompts:
   # Single prompt template - the provider receives the scenario as vars
-  - "Evaluate the correct workflow route for this delivery scenario:\n\nScenario: {{scenario}}\nTicket state: {{ticketState}}\nBranch exists: {{branchExists}}\nPR exists: {{prExists}}\nPR merged: {{prMerged}}\nQA evidence: {{qaEvidence}}\nProduct stack: {{productStack}}"
+  - "Evaluate the correct workflow route for this delivery scenario:\n\nScenario: {{scenario}}\nTicket state: {{ticketState}}\nBranch exists: {{branchExists}}\nPR exists: {{prExists}}\nPR merged: {{prMerged}}\nQA evidence: {{qaEvidence}}\nProduct stack: {{productStack}}\nExplicit request: {{requestType}}\nResume requested: {{resumeRequested}}"
 
 providers:
   # Path relative to promptfooconfig.yaml's directory (same directory)
@@ -383,6 +383,179 @@ tests:
       - type: is-json
       - type: javascript
         value: JSON.parse(output).route === 'blocked-infra-validation'
+
+  # ═══════════════════════════════════════════════════════════════
+  # EXPLICIT WORKFLOW-STAGE REQUESTS (routing matrix beyond state)
+  # ═══════════════════════════════════════════════════════════════
+
+  - description: "Explicit continue-implementation request routes to dev-flow-continue-implementation"
+    vars:
+      scenario: User asks to automatically continue the ticket workflow
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      requestType: continue-implementation
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-continue-implementation'
+
+  - description: "Explicit explore-change request routes to dev-flow-explore-change"
+    vars:
+      scenario: User asks to explore an idea or change before proposing it
+      ticketState: Todo
+      branchExists: false
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      requestType: explore-change
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-explore-change'
+
+  - description: "Explicit scaffold-project request routes to dev-flow-scaffold-project"
+    vars:
+      scenario: User asks to scaffold the project for the selected stack
+      ticketState: Todo
+      branchExists: false
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      requestType: scaffold-project
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-scaffold-project'
+
+  - description: "Explicit verify-change request routes to dev-flow-verify-change"
+    vars:
+      scenario: User asks to verify implementation matches the OpenSpec change
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      requestType: verify-change
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-verify-change'
+
+  - description: "Explicit archive-change request routes to dev-flow-archive-change"
+    vars:
+      scenario: User asks to archive the completed OpenSpec change
+      ticketState: Done
+      branchExists: false
+      prExists: false
+      prMerged: true
+      qaEvidence: passed
+      productStack: selected
+      requestType: archive-change
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-archive-change'
+
+  - description: "Explicit dashboard update request routes to grafana-board-update"
+    vars:
+      scenario: CI deploy completed and user asks to refresh the Grafana dashboard
+      ticketState: QA
+      branchExists: false
+      prExists: true
+      prMerged: true
+      qaEvidence: deployed
+      productStack: selected
+      requestType: dashboard-update
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'grafana-board-update'
+
+  - description: "Explicit retrospective-audit request routes to dev-flow-retrospective-audit"
+    vars:
+      scenario: User asks to audit recent delivery workflow and Promptfoo eval results
+      ticketState: Done
+      branchExists: false
+      prExists: false
+      prMerged: true
+      qaEvidence: passed
+      productStack: selected
+      requestType: retrospective-audit
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-retrospective-audit'
+
+  - description: "Explicit propose-change request routes to dev-flow-propose-change"
+    vars:
+      scenario: User asks to propose an OpenSpec change for the ticket
+      ticketState: In Progress
+      branchExists: true
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      requestType: propose-change
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-propose-change'
+
+  - description: "Explicit PR review request routes to dev-flow-pr-review-agent"
+    vars:
+      scenario: User asks to review the open pull request
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      requestType: pr-review
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-pr-review-agent'
+
+  - description: "Explicit PR review feedback request routes to dev-flow-pr-review-feedback-loop"
+    vars:
+      scenario: User asks to address PR review feedback on the open pull request
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      requestType: pr-review-feedback
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-pr-review-feedback-loop'
+
+  # ═══════════════════════════════════════════════════════════════
+  # STATE-DRIVEN RESUME (no requestType — in-progress + branch + resume)
+  # ═══════════════════════════════════════════════════════════════
+
+  - description: "In-progress ticket with branch and resume request routes to continue-implementation orchestrator"
+    vars:
+      scenario: User asks to automatically continue the ticket without naming the step
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      resumeRequested: true
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-continue-implementation'
 
   # ═══════════════════════════════════════════════════════════════
   # REGRESSION: original test case

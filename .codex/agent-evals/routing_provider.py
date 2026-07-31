@@ -14,6 +14,22 @@ Usage:
 import json
 from typing import Any
 
+# Explicit workflow-stage request types that map directly to a route,
+# mirroring the Workflow Stage Routing matrix in AGENTS.md. An explicit
+# user request for a stage wins over state-based ticket routing.
+EXPLICIT_REQUEST_ROUTES = {
+    "continue-implementation": "dev-flow-continue-implementation",
+    "propose-change": "dev-flow-propose-change",
+    "pr-review": "dev-flow-pr-review-agent",
+    "pr-review-feedback": "dev-flow-pr-review-feedback-loop",
+    "explore-change": "dev-flow-explore-change",
+    "scaffold-project": "dev-flow-scaffold-project",
+    "verify-change": "dev-flow-verify-change",
+    "archive-change": "dev-flow-archive-change",
+    "dashboard-update": "grafana-board-update",
+    "retrospective-audit": "dev-flow-retrospective-audit",
+}
+
 
 def call_api(
     prompt: str,
@@ -69,6 +85,13 @@ def call_api(
     infra_validation_failed = (
         str(vars_data.get("infraValidationFailed", "false")).strip().lower() == "true"
     )
+    # --- EXPLICIT WORKFLOW-STAGE REQUEST VARS ---
+    request_type = str(vars_data.get("requestType", "")).strip().lower()
+    # State-driven resume: user asks to automatically continue the ticket workflow
+    # without knowing the current step (dev-flow-continue-implementation orchestrator).
+    resume_requested = (
+        str(vars_data.get("resumeRequested", "false")).strip().lower() == "true"
+    )
 
     # Evaluate routing logic
     route = _evaluate_route(
@@ -88,6 +111,8 @@ def call_api(
         release_tag_conflict=release_tag_conflict,
         worktree_exists=worktree_exists,
         infra_validation_failed=infra_validation_failed,
+        request_type=request_type,
+        resume_requested=resume_requested,
     )
 
     inputs = {
@@ -107,6 +132,8 @@ def call_api(
         "releaseTagConflict": release_tag_conflict,
         "worktreeExists": worktree_exists,
         "infraValidationFailed": infra_validation_failed,
+        "requestType": request_type,
+        "resumeRequested": resume_requested,
     }
 
     reasoning = _build_reasoning(inputs, route)
@@ -141,6 +168,8 @@ def _evaluate_route(
     release_tag_conflict: bool = False,
     worktree_exists: bool = False,
     infra_validation_failed: bool = False,
+    request_type: str = "",
+    resume_requested: bool = False,
 ) -> str:
     """Determine the correct workflow route based on the delivery contract.
 
@@ -161,7 +190,15 @@ def _evaluate_route(
     if hotfix:
         return "dev-ops-hotfix-prod"
 
-    # Priority 2: No product stack selected
+    # Priority 2.5: Explicit workflow-stage request maps directly to its skill.
+    # The latest explicit user request is the highest authority in the routing
+    # hierarchy, so it wins over ambient ticket state and missing-stack fallback.
+    if request_type:
+        explicit_route = EXPLICIT_REQUEST_ROUTES.get(request_type)
+        if explicit_route:
+            return explicit_route
+
+    # Priority 3: No product stack selected
     if product_stack == "none":
         return "dev-flow-pipeline-status"
 
@@ -188,6 +225,10 @@ def _evaluate_route(
     if ticket_state in ("in progress", "in_progress"):
         if not branch_exists:
             return "dev-flow-pipeline-status"
+        # State-driven resume: an in-progress ticket with an existing branch that
+        # the user asks to automatically continue routes to the orchestrator.
+        if resume_requested:
+            return "dev-flow-continue-implementation"
         if pr_merged:
             if release_tag_conflict:
                 return "blocked-tag-conflict"
@@ -229,6 +270,11 @@ def _build_reasoning(inputs: dict, route: str) -> list[str]:
         steps.append("PROD incident: rollback.")
     if inputs.get("hotfix"):
         steps.append("PROD hotfix: hotfix workflow.")
+    request_type = inputs.get("requestType", "")
+    if request_type:
+        steps.append(f"Explicit request: {request_type}.")
+    if inputs.get("resumeRequested"):
+        steps.append("Resume requested: continue-implementation orchestrator.")
     if inputs.get("productStack") == "none":
         steps.append("No product stack: pipeline status.")
 
