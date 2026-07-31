@@ -1,29 +1,64 @@
 <!-- TIER 3: STAGE-SPECIFIC - Ticket stage (start, implement, propose, explore) -->
+
 # Delivery Contract — Ticket (start, implement, propose, explore)
 
 Stage-specific rules for ticket creation, implementation planning, and commit workflow. Read in addition to `delivery-contract-core.md`.
 
 ---
 
+## Status Mapping
+
+External-facing status labels and their corresponding OpenProject statuses. Use this mapping when referring to ticket states across different tools and the delivery workflow:
+
+| External Label | OpenProject Status | ID | Description |
+|---|---|---|---|
+| **New** | New | 1 | Bug starting point — filed from E2E QA failure |
+| **TO DO** | Specified | 3 | Feature starting point — acceptance criteria defined |
+| **In progress** | In progress | 7 | Implementation active on the branch |
+| **IN REVIEW** | **Developed** | 8 | Code complete, PR exists for review |
+| **IN QA** | **In testing** | 9 | Artifact deployed to QA, awaiting E2E validation |
+| **Tested** | Tested | 10 | E2E QA passed with acceptance criteria proven |
+| **Closed** | Closed | 12 | Ticket is done |
+
+**Key corrections from previous workflow:**
+- `IN REVIEW` → **Developed** (ID 8), not `In Review` (which does not exist in OpenProject)
+- `IN QA` → **In testing** (ID 9), not `QA` (which does not exist in OpenProject)
+
 ## States And Flow
 
-Default OpenProject statuses (set by provision-lab-users):
-- New (default): work is not started.
-- To Do: ready to work.
-- In Process: actively being worked on.
-- QA: pending QA validation.
-- Done: completed and verified.
-- In Progress: branch and implementation are active.
-- In Review: PR exists and awaits review/merge.
-- QA: artifact is deployed to QA and awaits E2E validation.
-- Done: E2E QA passed with acceptance criteria proven by executable assertions against the deployed QA artifact, and the ticket is closed as QA accepted and eligible for a later explicit PROD release.
+Real OpenProject statuses from the provisioned instance (verified via `GET /api/v3/statuses`):
+
+- **New** (ID 1, default): bug starting point — filed from E2E QA failure. Not used for feature tickets.
+- **In specification** (ID 2): ticket is being refined with acceptance criteria.
+- **Specified** (ID 3): feature starting point — acceptance criteria, fix plan, and effort forecast are defined.
+  **Fallback:** If the provider API rejects `Specified` as unknown, use `In specification` or `Needs refinement` as configured in `project-profile.json → workflow.bugSpecifiedFallback`.
+- **Confirmed** (ID 4): bug is reproduced and confirmed as valid.
+- **To be scheduled** (ID 5): ticket is queued for a future sprint.
+- **Scheduled** (ID 6): ticket is assigned to a sprint.
+- **In progress** (ID 7): implementation is active on the branch.
+- **Developed** (ID 8): code is complete and PR exists for review.
+- **In testing** (ID 9): artifact is deployed to QA and awaits E2E validation.
+- **Tested** (ID 10): E2E QA passed with acceptance criteria proven by executable assertions.
+- **Test failed** (ID 11): E2E QA failed — routes to bug fix lifecycle (see `dev-flow-file-qa-bug`).
+- **Closed** (ID 12, isClosed): ticket is done. Not eligible for further work.
+- **On hold** (ID 13): work is paused temporarily.
+- **Rejected** (ID 14, isClosed): ticket is declined.
+
+**Standard flow:** `TO DO (Specified) → In progress → IN REVIEW (Developed) → IN QA (In testing) → Tested → Closed`
+
+**Feature flow:** `Specified → In progress → Developed → In testing → Tested → Closed`
+
+**Bug fix flow:** `New → Specified → In progress → Developed → In testing → Tested → Closed`
+
+**Bug revert flow:** `Test failed → (file child bug) → New → Specified → In progress → Developed → In testing → Tested → Closed`
 
 Delivery flow:
-```
-OpenProject Todo → branch/OpenSpec → implementation → PR review → dev → DEV/QA → E2E QA → main → PROD → rollback/hotfix when needed
+
+```text
+OpenProject → branch/OpenSpec → implementation → PR → merge to dev → DEV deploy → QA deploy → E2E QA → PROD → rollback/hotfix when needed
 ```
 
-Before starting the first ticket, and before any Todo ticket is moved into implementation when stack context is missing, verify that the project tool set and tech stack are defined in the merged project profile, that every selected adapter path exists, and that docs/OpenSpec context points to the profile instead of duplicating canonical provider facts. The ticket-start path must run or inspect the configured guidance audit and stop before repository, ticket, or OpenSpec mutation when the audit reports `stack-context.*` drift or missing profile/adapter files. Route the operator to `configure-dev-environment` to define the project profile and recommendation catalog first.
+Before starting the first ticket, and before any ticket is moved into implementation when stack context is missing, verify that the project tool set and tech stack are defined in the merged project profile, that every selected adapter path exists, and that docs/OpenSpec context points to the profile instead of duplicating canonical provider facts. The ticket-start path must run or inspect the configured guidance audit and stop before repository, ticket, or OpenSpec mutation when the audit reports `stack-context.*` drift or missing profile/adapter files. Route the operator to `configure-dev-environment` to define the project profile and recommendation catalog first.
 
 Push-triggered environment deployment is allowed only for ticket-named work that changes configured application or test paths. The commit message must start with the configured ticket key format, or be a repository-adapter merge commit whose PR title starts with that ticket key format. Non-code changes outside configured deploy-trigger paths do not run automatic CI/deployment work.
 
@@ -34,6 +69,7 @@ PROD promotion is explicit and release-centric. Do not promote to PROD only beca
 ## Ticket Refinement Gate
 
 Before `dev-flow-start-ticket` mutates Git, OpenProject status, the delivery lock, or OpenSpec, classify the ticket as:
+
 - `ready`: includes a user-visible goal, concrete acceptance criteria, and validation expectations.
 - `refinable`: intent is clear enough to proceed after adding Scrum-ready planning details to the managed OpenProject block.
 - `blocked`: product or technical intent is too vague to safely generate acceptance criteria.
@@ -43,8 +79,10 @@ For `refinable`, update only the generated OpenProject block and continue. For `
 ## Review Workload Forecast
 
 OpenSpec `tasks.md` for ticketed implementation must include a compact `Review Workload Forecast` near the top:
-```
+
+```text
 Estimated changed lines: <rough range or number>
+Estimated total hours: <hours as number>
 400-line budget risk: Low|Medium|High
 Chained PRs recommended: Yes|No
 Decision needed before apply: Yes|No
@@ -67,6 +105,7 @@ For each commit checkpoint: finish changes, review `git status` and diff, run th
 Project guidance remains the broad catalog for skills, tools, references, practices, standards, MCPs, and plugins. The installed-skill runtime index is only a derived cache of actual `.codex/skills/*/SKILL.md` files and exact paths for delegation.
 
 Rules:
+
 - The index must be ignored local state and secret-free.
 - Cache by schema version plus skill path, mtime, and size so unchanged skills are cheap to reuse.
 - `SKILL.md` remains the source of truth; the index does not summarize, rewrite, acquire, accept, dismiss, or replace project guidance.
@@ -77,6 +116,7 @@ Rules:
 Normal automatic delivery must stay locked to one OpenProject work package. Use ignored `.codex/delivery-context.local.json` as the local active delivery context lock. Never commit it. Do not delete the lock merely because E2E QA moved a ticket to `Done`; the lock can still carry QA-approved artifact, RC, and release context needed for explicit PROD promotion.
 
 Baseline shape:
+
 ```json
 {
   "ticketKey": "E2EPROJECT-123",
@@ -90,8 +130,9 @@ Baseline shape:
 ```
 
 Rules:
+
 - `dev-flow-continue-implementation` resolves or creates the lock before delegating.
-- `dev-flow-start-ticket` creates or updates the lock after the selected ticket, branch, and OpenSpec decision are known. If an existing lock names a different ticket that is `Done`, replace the lock. If the locked ticket is active, missing, ambiguous, or cannot be verified, stop and report the lock blocker.
+- `dev-flow-start-ticket` creates or updates the lock after the selected ticket, branch, and OpenSpec decision are known. If an existing lock names a different ticket that is `Closed`, replace the lock. If the locked ticket is active, missing, ambiguous, or cannot be verified, stop and report the lock blocker.
 - Child skills must verify their resolved ticket, branch, PR, artifact `release.json.ticketKey`, QA evidence path, RC tag, and PROD release lineage match the locked `ticketKey` before mutating or promoting.
 - If the lock exists and a child skill resolves a different ticket key, stop and report the mismatch.
 - `dev-flow-pipeline-status` may read and report the lock plus mismatches. `dev-ops-rollback-prod` may operate by incident/release target, but must report when it differs from the active lock.

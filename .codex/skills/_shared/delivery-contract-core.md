@@ -4,7 +4,7 @@
 
 Use this reference before reading stage-specific contracts. Skill-local instructions may add stricter checks, but must not weaken these rules.
 
-Generic delivery skills must remain provider-neutral. Read `.codex/project-profile.json` plus ignored `.codex/project-profile.local.json` when present for the merged selected providers, stack, ticket key pattern, branch policy, environments, quality gates, and adapter paths. Then read `.codex/skills/_shared/provider-adapter-contract.md` and only the selected adapter files needed for the current stage. Concrete provider details belong in `.codex/providers/`, `.codex/client-tools.local.json`, executable workflow files, infrastructure files, or stack-specific skills.
+Generic delivery skills must remain provider-neutral. Read `.codex/project-profile.json` plus ignored `.codex/project-profile.local.json` when present for the merged selected providers, stack, ticket key pattern, branch policy, environments, quality gates, and adapter paths. Then read only the selected adapter reference files needed for the current stage. Concrete provider details belong in the selected skill reference files, `.codex/client-tools.local.json`, executable workflow files, infrastructure files, or stack-specific skills.
 
 For common delivery-skill startup, memory read behavior, and memory update classification, read `.codex/skills/_shared/skill-startup.md` which defines the tiered read order with cache breakpoints.
 
@@ -36,7 +36,7 @@ When changing any non-OpenSpec delivery skill or any `configure-*` skill, check 
 Source-of-truth order:
 
 1. `_shared/delivery-contract-core.md` + stage-specific contracts
-2. `.codex/project-profile.json`, optional `.codex/project-profile.local.json`, and selected `.codex/providers/*.md` adapter files
+2. `.codex/project-profile.json`, optional `.codex/project-profile.local.json`, and selected provider adapter reference files
 3. `docs/context-management.md`, `docs/architecture.md`, `docs/development.md`, `docs/deployment.md`
 4. Non-OpenSpec delivery-flow skills
 5. Configure skills and generated templates

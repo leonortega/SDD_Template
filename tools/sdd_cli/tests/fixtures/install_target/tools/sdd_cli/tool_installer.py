@@ -1,4 +1,4 @@
-"""Tool installer: lefthook, codegraph, codebase-memory, claw-compactor, quality tools."""
+"""Tool installer: lefthook, MCP servers, quality tools."""
 
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ from ._shared import (
     get_sdd_tool_preserve_files,
     git_text,
     parse_pairs,
+    read_env_file,
     read_json,
     remove_empty_parents,
     run_native,
@@ -307,242 +308,6 @@ def _install_lefthook_user_local(root: Path, result: dict[str, Any]) -> str | No
         return None
 
 
-# ── Codegraph MCP ────────────────────────────────────────────────────────
-
-
-def install_codegraph(root: Path, dry_run: bool = False) -> dict[str, Any]:
-    """Verify codegraph via npx and ensure .codex/config.toml has MCP config."""
-    result = configure_result("InstallCodegraph", dry_run, write_enabled=not dry_run)
-    npx_check = run_native(["npx", "--version"], root, timeout=10)
-    if npx_check["returncode"] != 0:
-        add_bucket_item(
-            result["findings"],
-            "npx",
-            "missing",
-            f"npx is not available: {npx_check['stderr']}",
-            "error",
-            "pre-start",
-        )
-        result["valid"] = False
-        return result
-    verify_command = ["npx", "--yes", "@colbymchenry/codegraph@1.1.1", "--version"]
-    if dry_run:
-        result["actions"].append(
-            {
-                "path": "npx",
-                "key": "verify-codegraph",
-                "severity": "info",
-                "message": f"Would verify codegraph: {' '.join(verify_command)}",
-                "phase": "apply",
-            }
-        )
-        result["valid"] = True
-        return result
-    verify = run_native(verify_command, root, timeout=60)
-    if verify["returncode"] != 0:
-        add_bucket_item(
-            result["findings"],
-            "codegraph",
-            "verify",
-            f"Could not verify codegraph: {verify['stderr']}",
-            "error",
-            "apply",
-        )
-        result["valid"] = False
-        return result
-    result["actions"].append(
-        {
-            "path": "npx",
-            "key": "verify-codegraph",
-            "severity": "info",
-            "message": f"Codegraph verified: {verify['stdout']}",
-            "phase": "apply",
-        }
-    )
-    config_path = root / ".codex" / "config.toml"
-    config_dir = config_path.parent
-    if not config_dir.exists():
-        if not dry_run:
-            config_dir.mkdir(parents=True, exist_ok=True)
-        result["actions"].append(
-            {
-                "path": ".codex/config.toml",
-                "key": "directory",
-                "severity": "info",
-                "message": "Created .codex directory.",
-                "phase": "apply",
-            }
-        )
-    codegraph_config_present = False
-    if config_path.exists():
-        existing_content = config_path.read_text(encoding="utf-8")
-        if "[mcp_servers.codegraph]" in existing_content:
-            codegraph_config_present = True
-    if not codegraph_config_present:
-        if dry_run:
-            result["actions"].append(
-                {
-                    "path": ".codex/config.toml",
-                    "key": "codegraph-config",
-                    "severity": "info",
-                    "message": "Would add codegraph MCP config to .codex/config.toml.",
-                    "phase": "apply",
-                }
-            )
-        else:
-            codegraph_section = """[mcp_servers.codegraph]
-command = "npx"
-args = ["--yes", "@colbymchenry/codegraph@1.1.1", "serve", "--mcp"]
-
-[mcp_servers.codegraph.env]
-CODEGRAPH_TELEMETRY = "0"
-DO_NOT_TRACK = "1"
-
-"""
-            if config_path.exists():
-                existing_content = config_path.read_text(encoding="utf-8")
-                config_path.write_text(
-                    existing_content + "\n" + codegraph_section, encoding="utf-8"
-                )
-            else:
-                config_path.write_text(codegraph_section, encoding="utf-8")
-            result["actions"].append(
-                {
-                    "path": ".codex/config.toml",
-                    "key": "codegraph-config",
-                    "severity": "info",
-                    "message": "Added codegraph MCP server configuration to .codex/config.toml.",
-                    "phase": "apply",
-                }
-            )
-    else:
-        result["actions"].append(
-            {
-                "path": ".codex/config.toml",
-                "key": "codegraph-config",
-                "severity": "info",
-                "message": "Codegraph MCP server configuration already present.",
-                "phase": "apply",
-            }
-        )
-    result["valid"] = True
-    return result
-
-
-# ── Codebase-memory MCP ──────────────────────────────────────────────────
-
-
-def install_codebase_memory(root: Path, dry_run: bool = False) -> dict[str, Any]:
-    """Register codebase-memory-mcp in .vscode/mcp.json."""
-    result = configure_result(
-        "InstallCodebaseMemory", dry_run, write_enabled=not dry_run
-    )
-    mcp_path = root / ".vscode" / "mcp.json"
-    shim_path = root / "tools" / "codebase_memory_mcp" / "mcp_cap_shim.py"
-    if not shim_path.exists():
-        add_bucket_item(
-            result["findings"],
-            "tools/codebase_memory_mcp/mcp_cap_shim.py",
-            "missing.shim",
-            "codebase-memory-mcp shim script not found. Run tools/codebase_memory_mcp/install.ps1 first.",
-            "error",
-            "pre-start",
-        )
-        result["valid"] = False
-        return result
-    server_name = "codebase-memory-mcp"
-    expected_entry = {
-        "type": "stdio",
-        "command": sys.executable,
-        "args": [str(shim_path)],
-    }
-    return _register_mcp_entry(root, mcp_path, server_name, expected_entry, result, dry_run)
-
-
-# ── Claw-compactor ───────────────────────────────────────────────────────
-
-
-def install_claw_compactor(
-    root: Path, version: str | None = None, dry_run: bool = False
-) -> dict[str, Any]:
-    """Install claw-compactor into the shared MCP venv."""
-    user_home = Path.home()
-    mcp_python = user_home / ".mcp_shared_venv" / "Scripts" / "python.exe"
-    if not mcp_python.exists():
-        return {
-            "command": "install-claw",
-            "valid": False,
-            "error": f"MCP shared venv not found at {mcp_python}. Run the MCP server setup first.",
-        }
-    pip_args = [str(mcp_python), "-m", "pip", "install"]
-    if version:
-        pip_args += [f"claw-compactor=={version}"]
-    else:
-        pip_args += ["claw-compactor"]
-    result = configure_result(
-        "InstallClawCompactor", dry_run, write_enabled=not dry_run
-    )
-    if dry_run:
-        result["actions"].append(
-            {
-                "path": str(mcp_python),
-                "key": "pip-install",
-                "severity": "info",
-                "message": f"Would install claw-compactor{'==' + version if version else ''}.",
-                "phase": "apply",
-            }
-        )
-        result["valid"] = True
-        return result
-    install_result = subprocess.run(pip_args, capture_output=True, text=True)  # nosec
-    if install_result.returncode != 0:
-        add_bucket_item(
-            result["findings"],
-            "claw-compactor",
-            "pip-install",
-            f"Could not install claw-compactor: {install_result.stderr.strip()}",
-            "error",
-            "apply",
-        )
-        result["valid"] = False
-        return result
-    result["actions"].append(
-        {
-            "path": str(mcp_python),
-            "key": "pip-install",
-            "severity": "info",
-            "message": install_result.stdout.strip(),
-            "phase": "apply",
-        }
-    )
-    check = subprocess.run(  # nosec
-        [str(mcp_python), "-m", "claw_compactor.cli", "--help"],
-        capture_output=True,
-        text=True,
-    )
-    if check.returncode == 0:
-        result["actions"].append(
-            {
-                "path": str(mcp_python),
-                "key": "verify",
-                "severity": "info",
-                "message": "claw-compactor installed and verified.",
-                "phase": "apply",
-            }
-        )
-    else:
-        add_bucket_item(
-            result["findings"],
-            "claw-compactor",
-            "verify",
-            "claw-compactor installed but CLI verification failed.",
-            "warning",
-            "apply",
-        )
-    result["valid"] = True
-    return result
-
-
 # ── SDD Tool install/update ──────────────────────────────────────────────
 
 
@@ -705,221 +470,165 @@ def _register_mcp_entry(
     result: dict[str, Any],
     dry_run: bool = False,
 ) -> dict[str, Any]:
-    """Register a single MCP entry under the mcpServers key in .vscode/mcp.json.
+    """Register a single MCP entry under the mcpServers key.
+
+    Writes to both .vscode/mcp.json and Cline's global MCP settings
+    (at %APPDATA%/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json
+    on Windows, or ~/.config/... on Linux/macOS).
 
     Shared helper used by all install_*_mcp functions.
     """
-    if not mcp_path.exists():
-        if dry_run:
-            result["actions"].append(
-                {
-                    "path": ".vscode/mcp.json",
-                    "key": "create",
-                    "severity": "info",
-                    "message": f"Would create .vscode/mcp.json with {server_name}.",
-                    "phase": "apply",
-                }
-            )
-            result["valid"] = True
-            return result
-        config: dict[str, Any] = {"mcpServers": {}}
-    else:
-        try:
-            config = read_json(mcp_path, optional=False)
-        except Exception:
+    # ── Helper: build mcp entry dict ──────────────────────────────────
+    def _build_entry() -> dict[str, Any]:
+        entry: dict[str, Any] = {
+            "command": expected_entry["command"],
+            "args": expected_entry["args"],
+        }
+        if "env" in expected_entry:
+            entry["env"] = expected_entry["env"]
+        if "type" in expected_entry:
+            entry["type"] = expected_entry["type"]
+        return entry
+
+    # ── Write to .vscode/mcp.json ─────────────────────────────────────
+    def _write_vscode() -> bool:
+        nonlocal mcp_path
+        if not mcp_path.exists():
+            cfg: dict[str, Any] = {"mcpServers": {}}
+        else:
+            try:
+                cfg = read_json(mcp_path, optional=False)
+            except Exception:
+                add_bucket_item(
+                    result["findings"],
+                    ".vscode/mcp.json",
+                    "parse.error",
+                    "Could not parse existing .vscode/mcp.json.",
+                    "error",
+                    "pre-start",
+                )
+                return False
+        servers = cfg.get("mcpServers", {})
+        if not isinstance(servers, dict):
             add_bucket_item(
                 result["findings"],
                 ".vscode/mcp.json",
-                "parse.error",
-                "Could not parse existing .vscode/mcp.json.",
+                "invalid.mcpServers",
+                "mcpServers key must be a JSON object.",
                 "error",
                 "pre-start",
             )
-            result["valid"] = False
-            return result
-    servers = config.get("mcpServers", {})
-    if not isinstance(servers, dict):
-        add_bucket_item(
-            result["findings"],
-            ".vscode/mcp.json",
-            "invalid.mcpServers",
-            "mcpServers key must be a JSON object.",
-            "error",
-            "pre-start",
-        )
-        result["valid"] = False
-        return result
-    existing = servers.get(server_name)
-    if existing == expected_entry:
-        result["actions"].append(
-            {
-                "path": ".vscode/mcp.json",
-                "key": server_name,
-                "severity": "info",
-                "message": f"{server_name} is already configured in .vscode/mcp.json.",
-                "phase": "apply",
-            }
-        )
-        result["valid"] = True
-        return result
-    if existing is not None:
-        changed_keys = [
-            k for k in expected_entry if existing.get(k) != expected_entry[k]
-        ]
-        result["actions"].append(
-            {
-                "path": ".vscode/mcp.json",
-                "key": server_name,
-                "severity": "info",
-                "message": f"Updating {server_name} config (changed: {', '.join(changed_keys)}).",
-                "phase": "apply",
-            }
-        )
-    else:
-        result["actions"].append(
-            {
-                "path": ".vscode/mcp.json",
-                "key": server_name,
-                "severity": "info",
-                "message": f"Adding {server_name} server to .vscode/mcp.json.",
-                "phase": "apply",
-            }
-        )
-    if not dry_run:
-        servers[server_name] = expected_entry
-        config["mcpServers"] = servers
+            return False
+        existing = servers.get(server_name)
+        entry = _build_entry()
+        servers[server_name] = entry
+        cfg["mcpServers"] = servers
         mcp_path.parent.mkdir(parents=True, exist_ok=True)
-        write_json(mcp_path, config)
-    result["valid"] = True
-    return result
+        write_json(mcp_path, cfg)
+        if existing and existing != entry:
+            changed_keys = [k for k in entry if existing.get(k) != entry[k]]
+            result["actions"].append({
+                "path": ".vscode/mcp.json",
+                "key": server_name,
+                "severity": "info",
+                "message": f"Updated {server_name} in .vscode/mcp.json (changed: {', '.join(changed_keys)}).",
+                "phase": "apply",
+            })
+        else:
+            result["actions"].append({
+                "path": ".vscode/mcp.json",
+                "key": server_name,
+                "severity": "info",
+                "message": f"Added {server_name} to .vscode/mcp.json.",
+                "phase": "apply",
+            })
+        return True
 
+    # ── Write to Cline global settings ────────────────────────────────
+    def _write_cline() -> bool:
+        """Write the MCP entry to Cline's global mcp_settings.json."""
+        if sys.platform.startswith("win"):
+            appdata = os.environ.get("APPDATA")
+            if not appdata:
+                add_bucket_item(
+                    result["findings"],
+                    "cline_mcp_settings.json",
+                    "env.appdata",
+                    "APPDATA env var not found — cannot write Cline MCP settings.",
+                    "warning",
+                )
+                return True  # Non-fatal: .vscode/mcp.json is the primary target
+            cline_path = (
+                Path(appdata)
+                / "Code"
+                / "User"
+                / "globalStorage"
+                / "saoudrizwan.claude-dev"
+                / "settings"
+                / "cline_mcp_settings.json"
+            )
+        elif sys.platform == "darwin":
+            cline_path = (
+                Path.home()
+                / "Library"
+                / "Application Support"
+                / "Code"
+                / "User"
+                / "globalStorage"
+                / "saoudrizwan.claude-dev"
+                / "settings"
+                / "cline_mcp_settings.json"
+            )
+        else:
+            cline_path = (
+                Path.home()
+                / ".config"
+                / "Code"
+                / "User"
+                / "globalStorage"
+                / "saoudrizwan.claude-dev"
+                / "settings"
+                / "cline_mcp_settings.json"
+            )
 
-# ── monorepo-docs-search MCP ─────────────────────────────────────────────
-
-
-def install_monorepo_docs_search(root: Path, dry_run: bool = False) -> dict[str, Any]:
-    """Set up the monorepo-docs-search MCP server (shared venv + registration).
-
-    Creates a shared venv at ~/.mcp_shared_venv, installs mcp + bm25s + flashrank,
-    then registers the server in .vscode/mcp.json.
-    """
-    result = configure_result(
-        "InstallMonorepoDocsSearch", dry_run, write_enabled=not dry_run
-    )
-    user_profile = os.environ.get("USERPROFILE") or os.path.expandvars("%USERPROFILE%")
-    if not user_profile:
-        add_bucket_item(
-            result["findings"],
-            "monorepo-docs-search",
-            "env.userprofile",
-            "USERPROFILE env var not found.",
-            "error",
-            "pre-start",
-        )
-        result["valid"] = False
-        return result
-
-    venv_dir = os.path.join(user_profile, ".mcp_shared_venv")
-    python_exe = os.path.join(venv_dir, "Scripts", "python.exe")
-    pip_exe = os.path.join(venv_dir, "Scripts", "pip.exe")
-    script_path = str(root / "tools" / "bm25s_flashrank" / "mcp_doc_research.py")
-
-    if not os.path.exists(script_path):
-        add_bucket_item(
-            result["findings"],
-            "tools/bm25s_flashrank/mcp_doc_research.py",
-            "missing.script",
-            "mcp_doc_research.py not found. Is the SDD tool installed?",
-            "error",
-            "pre-start",
-        )
-        result["valid"] = False
-        return result
+        cline_path.parent.mkdir(parents=True, exist_ok=True)
+        if not cline_path.exists():
+            cline_data: dict[str, Any] = {"mcpServers": {}}
+        else:
+            try:
+                cline_data = read_json(cline_path, optional=True)
+            except Exception:
+                cline_data = {"mcpServers": {}}
+        cline_servers = cline_data.setdefault("mcpServers", {})
+        entry = _build_entry()
+        cline_servers[server_name] = entry
+        cline_data["mcpServers"] = cline_servers
+        write_json(cline_path, cline_data)
+        result["actions"].append({
+            "path": str(cline_path),
+            "key": server_name,
+            "severity": "info",
+            "message": f"Synced {server_name} to Cline global MCP settings.",
+            "phase": "apply",
+        })
+        return True
 
     if dry_run:
-        result["actions"].append(
-            {
-                "path": ".mcp_shared_venv",
-                "key": "create",
-                "severity": "info",
-                "message": "Would create shared venv and install mcp, bm25s, flashrank.",
-                "phase": "apply",
-            }
-        )
-        result["actions"].append(
-            {
-                "path": ".vscode/mcp.json",
-                "key": "monorepo-docs-search",
-                "severity": "info",
-                "message": "Would register monorepo-docs-search MCP server.",
-                "phase": "apply",
-            }
-        )
+        result["actions"].append({
+            "path": ".vscode/mcp.json",
+            "key": server_name,
+            "severity": "info",
+            "message": f"Would register {server_name} in .vscode/mcp.json and Cline settings.",
+            "phase": "apply",
+        })
         result["valid"] = True
         return result
 
-    # Create venv if needed
-    if not os.path.exists(venv_dir):
-        import venv
-        venv.create(venv_dir, with_pip=True)
-        result["actions"].append(
-            {
-                "path": ".mcp_shared_venv",
-                "key": "venv",
-                "severity": "info",
-                "message": "Created shared virtual environment.",
-                "phase": "apply",
-            }
-        )
-    else:
-        result["actions"].append(
-            {
-                "path": ".mcp_shared_venv",
-                "key": "venv",
-                "severity": "info",
-                "message": "Shared virtual environment already exists.",
-                "phase": "audit",
-            }
-        )
+    vscode_ok = _write_vscode()
+    cline_ok = _write_cline()
 
-    # Upgrade pip
-    subprocess.run(
-        [pip_exe, "install", "--upgrade", "pip", "--quiet"],
-        check=False,
-    )
-    # Install deps
-    deps_result = subprocess.run(
-        [pip_exe, "install", "mcp", "bm25s", "flashrank", "--quiet"],
-        capture_output=True, text=True, check=False,
-    )
-    if deps_result.returncode != 0:
-        add_bucket_item(
-            result["findings"],
-            ".mcp_shared_venv",
-            "pip.install",
-            f"Failed to install packages: {deps_result.stderr.strip()}",
-            "error",
-            "apply",
-        )
-        result["valid"] = False
-        return result
-    result["actions"].append(
-        {
-            "path": ".mcp_shared_venv",
-            "key": "pip.install",
-            "severity": "info",
-            "message": "Installed mcp, bm25s, flashrank.",
-            "phase": "apply",
-        }
-    )
-
-    # Register in .vscode/mcp.json
-    mcp_path = root / ".vscode" / "mcp.json"
-    expected_entry = {
-        "command": python_exe,
-        "args": [script_path],
-    }
-    return _register_mcp_entry(root, mcp_path, "monorepo-docs-search", expected_entry, result, dry_run)
+    result["valid"] = vscode_ok
+    return result
 
 
 # ── Playwright MCP ───────────────────────────────────────────────────────
@@ -1199,18 +908,22 @@ def install_openproject_mcp(root: Path, dry_run: bool = False) -> dict[str, Any]
 
 
 def ensure_mcp_servers(root: Path, dry_run: bool = False) -> dict[str, Any]:
-    """Install all non-optional MCP servers: monorepo-docs-search, codebase-memory-mcp, playwright.
+    """Register all MCP servers in .vscode/mcp.json.
 
-    OpenProject and Grafana MCPs are not installed automatically by this function
-    because they require service credentials. Use the individual install_*_mcp
-    functions when the services are provisioned.
+    Checks every install_*_mcp target: playwright, grafana, kubernetes, gitea,
+    and openproject. Service MCPs (grafana/gitea/openproject) read credentials
+    from their config files and register the server entry even when credentials
+    are missing — the installer reports a warning action so the gap is visible
+    without failing the aggregate result.
     """
     result = configure_result("EnsureMCPServers", dry_run, write_enabled=not dry_run)
 
     results = [
-        install_codebase_memory(root, dry_run),
-        install_monorepo_docs_search(root, dry_run),
         install_playwright_mcp(root, dry_run),
+        install_grafana_mcp(root, dry_run),
+        install_k8s_mcp(root, dry_run),
+        install_gitea_mcp(root, dry_run),
+        install_openproject_mcp(root, dry_run),
     ]
     for r in results:
         for action in r.get("actions", []):
@@ -1221,84 +934,6 @@ def ensure_mcp_servers(root: Path, dry_run: bool = False) -> dict[str, Any]:
     result["valid"] = not any(
         item.get("severity") == "error" for item in result["findings"]
     )
-    return result
-
-
-# ── Ensure codebase memory ───────────────────────────────────────────────
-
-
-def ensure_codebase_memory(root: Path, dry_run: bool = False) -> dict[str, Any]:
-    """Ensure .codex/memory/ files exist and codebase-memory-mcp is configured."""
-    result = configure_result(
-        "EnsureCodebaseMemory", dry_run, write_enabled=not dry_run
-    )
-    memory_dir = root / ".codex" / "memory"
-    if not memory_dir.exists():
-        if dry_run:
-            result["actions"].append(
-                {
-                    "path": ".codex/memory/",
-                    "key": "directory",
-                    "severity": "info",
-                    "message": "Would create .codex/memory/ directory.",
-                    "phase": "apply",
-                }
-            )
-        else:
-            memory_dir.mkdir(parents=True, exist_ok=True)
-            result["actions"].append(
-                {
-                    "path": ".codex/memory/",
-                    "key": "directory",
-                    "severity": "info",
-                    "message": "Created .codex/memory/ directory.",
-                    "phase": "apply",
-                }
-            )
-    seed_files = {
-        ".codex/memory/memory_summary.md": "# Memory Summary\n\nNo consumer project memories recorded yet.\n",
-        ".codex/memory/MEMORY.md": "# Repository Memory Index\n\n- `memory_summary.md`: compact startup context.\n"
-        "- `retrieval-policy.md`: memory read/write rules.\n",
-        ".codex/memory/retrieval-policy.md": "# Memory Retrieval And Write Policy\n\nUse memory as guidance only. "
-        "Verify against current files and live tools before acting.\n",
-    }
-    for relative, content in seed_files.items():
-        path = root / relative
-        if path.exists():
-            result["actions"].append(
-                {
-                    "path": relative,
-                    "key": "exists",
-                    "severity": "info",
-                    "message": "Memory seed file already exists.",
-                    "phase": "audit",
-                }
-            )
-            continue
-        if not dry_run:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(content, encoding="utf-8")
-        result["actions"].append(
-            {
-                "path": relative,
-                "key": "created",
-                "severity": "info",
-                "message": "Created memory seed file.",
-                "phase": "apply",
-            }
-        )
-    # Also ensure codebase-memory-mcp is configured in .vscode/mcp.json
-    mcp_result = install_codebase_memory(root, dry_run)
-    for action in mcp_result.get("actions", []):
-        result["actions"].append(action)
-    for finding in mcp_result.get("findings", []):
-        result["findings"].append(finding)
-    if not mcp_result.get("valid", True):
-        result["valid"] = False
-    else:
-        result["valid"] = not any(
-            item.get("severity") == "error" for item in result["findings"]
-        )
     return result
 
 
@@ -1404,6 +1039,48 @@ def validate_manifest(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
 
 # ── Ensure quality tools ─────────────────────────────────────────────────
+
+# Test framework → coverage-tool probe command. Normalized keys come from
+# stack_tests._normalize_framework (pytest for Python, vitest/jest for JS/TS,
+# dotnet for .NET — xunit/nunit/mstest normalize to dotnet).
+_FRAMEWORK_COVERAGE_PROBES: dict[str, tuple[list[str], str]] = {
+    "pytest": (["pytest", "--version"], "pytest"),
+    "vitest": (["npx", "vitest", "--version"], "vitest"),
+    "jest": (["npx", "jest", "--version"], "jest"),
+    "dotnet": (["dotnet", "--version"], "dotnet"),
+}
+
+
+# Classic fallback when no stack is configured (template state) or every
+# declared framework is unmapped (e.g. a custom runner) — the audit still
+# probes the common coverage tools.
+_FALLBACK_COVERAGE_PROBES: list[tuple[list[str], str]] = [
+    (["dotnet", "--version"], "dotnet"),
+    (["pytest", "--version"], "pytest"),
+    (["npx", "jest", "--version"], "jest"),
+]
+
+
+def _coverage_probe_commands(root: Path) -> list[tuple[list[str], str]]:
+    """Coverage-tool probe commands driven by stack.testFrameworks.
+
+    Reads the configured test frameworks from the project profile and returns
+    the matching probe commands (normalized via stack_tests so .NET variants
+    collapse to dotnet). When no stack is configured (template state) or no
+    framework has a mapped probe, falls back to the classic dotnet/pytest/jest
+    tri-list so the audit still checks something.
+    """
+    from ._shared import load_project_profile
+    from .stack_tests import _normalize_framework
+
+    profile = load_project_profile(root)
+    frameworks = (profile.get("stack") or {}).get("testFrameworks") or []
+    probes: list[tuple[list[str], str]] = []
+    for fw in frameworks:
+        entry = _FRAMEWORK_COVERAGE_PROBES.get(_normalize_framework(fw))
+        if entry and entry not in probes:
+            probes.append(entry)
+    return probes or _FALLBACK_COVERAGE_PROBES
 
 
 def ensure_quality_tools(root: Path, dry_run: bool = False) -> dict[str, Any]:
@@ -1523,13 +1200,11 @@ def ensure_quality_tools(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 "phase": "audit",
             }
         )
-    # Coverage tool (dotnet or pytest or jest depending on project; skip in dry-run)
+    # Coverage tool — stack-driven: probe only the frameworks declared in
+    # stack.testFrameworks (pytest/vitest/jest/dotnet). Falls back to the
+    # classic tri-list when no stack is configured. Skip in dry-run.
     if not dry_run:
-        for tool_cmd, tool_name in [
-            (["dotnet", "--version"], "dotnet"),
-            (["pytest", "--version"], "pytest"),
-            (["npx", "jest", "--version"], "jest"),
-        ]:
+        for tool_cmd, tool_name in _coverage_probe_commands(root):
             check = run_native(tool_cmd, root, timeout=10)
             if check["returncode"] == 0:
                 result["actions"].append(
@@ -1600,7 +1275,11 @@ def _load_skill_sources(root: Path) -> list[dict[str, str]]:
 def list_available_skills(
     root: Path, github_token: str = "", dry_run: bool = False
 ) -> dict[str, Any]:
-    """List available skills from all configured sources."""
+    """List available skills from all configured sources.
+
+    Reads .codex/skill-sources.json, fetches subdirectories under each source's
+    skills path from GitHub Contents API, and returns the list of discoverable skills.
+    """
     import json as _json
     import urllib.request
     import urllib.error
@@ -1712,7 +1391,11 @@ def list_available_skills(
 def _resolve_skill_source(
     root: Path, repo: str, skill_path: str, source_name: str
 ) -> tuple[str, str]:
-    """Resolve repo and skill_path from a source name, or return the provided values."""
+    """Resolve repo and skill_path from a source name, or return the provided values.
+
+    If source_name is provided, looks up the source from config.
+    Falls back to the provided repo/skill_path if source_name is empty or not found.
+    """
     if source_name:
         sources = _load_skill_sources(root)
         for src in sources:
@@ -1731,7 +1414,22 @@ def install_skill_from_github(
     source: str = "",
     dry_run: bool = False,
 ) -> dict[str, Any]:
-    """Install a skill folder from GitHub by reading raw content (no cloning)."""
+    """Install a skill folder from GitHub by reading raw content (no cloning).
+
+    Args:
+        root: Repository root (skills go under .codex/skills/<skill_name>/)
+        repo: GitHub repo in "owner/repo" format (overridden by --source if provided)
+        skill_path: Path within the repo to the skill directory (overridden by --source if provided)
+        skill_name: Local name for the skill directory under .codex/skills/
+        branch: Git branch to fetch from (default "main")
+        github_token: Optional GitHub token for authenticated requests (higher rate limit)
+        source: Name of a source from .codex/skill-sources.json to look up repo/skill_path
+        dry_run: If True, only list what would be installed (no API calls)
+
+    Returns:
+        Dict with installed files, errors, and actions.
+    """
+    # Resolve source lookup if provided
     if source:
         resolved_repo, resolved_path = _resolve_skill_source(root, repo, skill_path, source)
         repo = resolved_repo
@@ -1740,16 +1438,39 @@ def install_skill_from_github(
     import urllib.request
     import urllib.error
 
-    result = configure_result("InstallSkill", dry_run, write_enabled=not dry_run)
+    result = configure_result(
+        "InstallSkill", dry_run, write_enabled=not dry_run
+    )
 
+    # ── Validate required options ─────────────────────────────────────
     if not repo or "/" not in repo or repo.count("/") != 1:
-        return {"mode": "InstallSkill", "valid": False, "dryRun": dry_run, "errors": [f"Invalid repo format: '{repo}'. Expected 'owner/repo'."]}
-    if not skill_path:
-        return {"mode": "InstallSkill", "valid": False, "dryRun": dry_run, "errors": ["Missing --skill-path"]}
-    if not skill_name:
-        return {"mode": "InstallSkill", "valid": False, "dryRun": dry_run, "errors": ["Missing --skill-name"]}
+        return {
+            "mode": "InstallSkill",
+            "valid": False,
+            "dryRun": dry_run,
+            "errors": [f"Invalid repo format: '{repo}'. Expected 'owner/repo'."],
+        }
 
+    if not skill_path:
+        return {
+            "mode": "InstallSkill",
+            "valid": False,
+            "dryRun": dry_run,
+            "errors": ["Missing required option: --skill-path"],
+        }
+
+    if not skill_name:
+        return {
+            "mode": "InstallSkill",
+            "valid": False,
+            "dryRun": dry_run,
+            "errors": ["Missing required option: --skill-name"],
+        }
+
+    skills_target = root / ".codex" / "skills" / skill_name
     errors: list[str] = []
+
+    # ── Dry-run: report what would happen (no API calls) ──────────────
     if dry_run:
         result["actions"].append({
             "path": f".codex/skills/{skill_name}",
@@ -1758,18 +1479,192 @@ def install_skill_from_github(
             "message": f"Would fetch skill from github.com/{repo}/{skill_path} (branch: {branch}) into .codex/skills/{skill_name}/ and register in manifest.json.",
             "phase": "apply",
         })
+        result["skillName"] = skill_name
+        result["installedFileCount"] = 0
+        result["skippedFileCount"] = 0
+        result["totalFileCount"] = 0
         result["valid"] = True
         return result
 
-    # Real mode omitted for brevity - fetches raw content from GitHub
-    result["actions"].append({
-        "path": f".codex/skills/{skill_name}",
-        "key": "install",
-        "severity": "info",
-        "message": f"Installed skill from github.com/{repo}/{skill_path} into .codex/skills/{skill_name}/.",
-        "phase": "apply",
-    })
-    result["valid"] = True
+    # ── Real mode: fetch from GitHub API ──────────────────────────────
+    api_base = f"https://api.github.com/repos/{repo}/contents/{skill_path.lstrip('/')}"
+    headers: dict[str, str] = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "sdd-cli",
+    }
+    if github_token:
+        headers["Authorization"] = f"Bearer {github_token}"
+
+    def _list_github_files(api_url: str, prefix: str = "") -> list[tuple[str, str]]:
+        """Recursively list (relative_path, download_url) from GitHub Contents API."""
+        items: list[tuple[str, str]] = []
+        try:
+            url = f"{api_url}?ref={branch}"
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                body = resp.read().decode("utf-8")
+        except urllib.error.HTTPError as ex:
+            if ex.code == 404:
+                errors.append(f"Path '{skill_path}' not found in {repo} (HTTP 404).")
+            elif ex.code == 403:
+                errors.append(f"GitHub API rate limit exceeded. Use --token with a GitHub token.")
+            else:
+                errors.append(f"GitHub API returned HTTP {ex.code}: {ex.reason}")
+            return items
+        except Exception as ex:
+            errors.append(f"Could not fetch {api_url}: {ex}")
+            return items
+
+        try:
+            entries = _json.loads(body)
+        except _json.JSONDecodeError:
+            errors.append(f"Could not parse GitHub API response from {api_url}.")
+            return items
+
+        if not isinstance(entries, list):
+            if isinstance(entries, dict) and entries.get("type") == "file":
+                rel = prefix or entries.get("name", "")
+                dl_url = entries.get("download_url", "")
+                if dl_url:
+                    items.append((rel, dl_url))
+            return items
+
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            entry_name = entry.get("name", "")
+            entry_type = entry.get("type", "")
+            rel_path = f"{prefix}/{entry_name}" if prefix else entry_name
+            if entry_type == "file":
+                dl_url = entry.get("download_url", "")
+                if dl_url:
+                    items.append((rel_path, dl_url))
+            elif entry_type == "dir":
+                dir_url = entry.get("url", "")
+                if dir_url:
+                    items.extend(_list_github_files(dir_url, rel_path))
+        return items
+
+    files = _list_github_files(api_base)
+
+    if errors:
+        result["errors"] = errors
+        result["valid"] = False
+        return result
+
+    if not files:
+        return {
+            "mode": "InstallSkill",
+            "valid": False,
+            "dryRun": dry_run,
+            "errors": [f"No files found at '{skill_path}' in {repo}."],
+        }
+
+    # ── Download and write files ───────────────────────────────────────
+    installed: list[str] = []
+    skipped: list[str] = []
+
+    for rel_path, dl_url in files:
+        target_path = skills_target / rel_path
+        if target_path.exists():
+            skipped.append(rel_path)
+            continue
+
+        try:
+            req = urllib.request.Request(dl_url, headers=headers)
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                content = resp.read()
+        except Exception as ex:
+            add_bucket_item(
+                result["findings"],
+                f".codex/skills/{skill_name}/{rel_path}",
+                "download.error",
+                f"Could not download {dl_url}: {ex}",
+                "error",
+                "apply",
+            )
+            continue
+
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path.write_bytes(content)
+        installed.append(rel_path)
+
+        result["actions"].append({
+            "path": f".codex/skills/{skill_name}/{rel_path}",
+            "key": "install",
+            "severity": "info",
+            "message": f"Installed ({len(content)} bytes).",
+            "phase": "apply",
+        })
+
+    if skipped:
+        result["actions"].append({
+            "path": f".codex/skills/{skill_name}",
+            "key": "skip.existing",
+            "severity": "info",
+            "message": f"Skipped {len(skipped)} existing file(s): {', '.join(skipped[:5])}" + (
+                f" plus {len(skipped) - 5} more" if len(skipped) > 5 else ""
+            ),
+            "phase": "audit",
+        })
+
+    # ── Update manifest.json if SKILL.md was installed ─────────────────
+    skill_md_installed = any(f.endswith("SKILL.md") for f, _ in files)
+    if skill_md_installed:
+        manifest_path = root / ".codex" / "skills" / "manifest.json"
+        if manifest_path.exists():
+            manifest = read_json(manifest_path, optional=False)
+            categories = manifest.get("categories", {})
+            skill_ref = f"{skill_name}/SKILL.md"
+            already_registered = any(
+                skill_ref in cat_data.get("skills", [])
+                for cat_data in categories.values()
+                if isinstance(cat_data, dict)
+            )
+            if not already_registered:
+                community = categories.setdefault("community", {
+                    "description": "Community-installed skills from GitHub",
+                    "skills": [],
+                })
+                if isinstance(community, dict):
+                    skills_list = community.setdefault("skills", [])
+                    if isinstance(skills_list, list) and skill_ref not in skills_list:
+                        skills_list.append(skill_ref)
+                        write_json(manifest_path, manifest)
+                        result["actions"].append({
+                            "path": ".codex/skills/manifest.json",
+                            "key": "manifest.update",
+                            "severity": "info",
+                            "message": f"Registered '{skill_ref}' in 'community' category.",
+                            "phase": "apply",
+                        })
+        else:
+            manifest = {
+                "schemaVersion": "1.0",
+                "description": "Skill manifest for this repository.",
+                "categories": {
+                    "community": {
+                        "description": "Community-installed skills from GitHub",
+                        "skills": [f"{skill_name}/SKILL.md"],
+                    }
+                },
+            }
+            write_json(manifest_path, manifest)
+            result["actions"].append({
+                "path": ".codex/skills/manifest.json",
+                "key": "manifest.created",
+                "severity": "info",
+                "message": f"Created manifest.json with '{skill_name}' in 'community' category.",
+                "phase": "apply",
+            })
+
+    result["skillName"] = skill_name
+    result["installedFileCount"] = len(installed)
+    result["skippedFileCount"] = len(skipped)
+    result["totalFileCount"] = len(files)
+    result["valid"] = not any(
+        item.get("severity") == "error" for item in result.get("findings", [])
+    ) and not result.get("errors")
     return result
 
 
@@ -1786,9 +1681,17 @@ def _install_skill_with_fallback(
     source: str = "",
     dry_run: bool = False,
 ) -> dict[str, Any]:
-    """Install a skill — try npx skills add first, fall back to GitHub copy."""
-    result = configure_result("InstallSkill", dry_run, write_enabled=not dry_run)
+    """Install a skill — try npx skills add first, fall back to GitHub copy.
 
+    Primary: runs ``npx skills add <owner/repo> --skill <skill-name> --yes``
+    Fallback: calls :func:`install_skill_from_github` if npx is unavailable
+    or the skill can't be found via the npx registry.
+    """
+    result = configure_result(
+        "InstallSkill", dry_run, write_enabled=not dry_run
+    )
+
+    # Resolve source lookup if provided
     resolved_repo = repo
     resolved_path = skill_path
     if source:
@@ -1796,6 +1699,7 @@ def _install_skill_with_fallback(
         resolved_repo = res_repo
         resolved_path = res_path
 
+    # ── Dry-run: report both paths ───────────────────────────────────
     if dry_run:
         result["actions"].append({
             "path": f".codex/skills/{skill_name}",
@@ -1804,13 +1708,15 @@ def _install_skill_with_fallback(
             "message": (
                 f"Would try npx skills add first. "
                 f"Fallback: fetch from github.com/{resolved_repo}/{resolved_path} "
-                f"into .codex/skills/{skill_name}/."
+                f"into .codex/skills/{skill_name}/ and register in manifest.json."
             ),
             "phase": "apply",
         })
+        result["skillName"] = skill_name
         result["valid"] = True
         return result
 
+    # ── Try npx skills add first ─────────────────────────────────────
     npx_cmd = ["npx", "skills", "add", resolved_repo, "--skill", skill_name, "--yes"]
     try:
         npx_result = run_native(npx_cmd, root, timeout=60)
@@ -1822,6 +1728,7 @@ def _install_skill_with_fallback(
                 "message": f"Skill '{skill_name}' installed via npx skills add.",
                 "phase": "apply",
             })
+            result["skillName"] = skill_name
             result["method"] = "npx"
             result["valid"] = True
             return result
@@ -1834,11 +1741,22 @@ def _install_skill_with_fallback(
             "phase": "apply",
         })
 
-    fallback = install_skill_from_github(root, repo=resolved_repo, skill_path=resolved_path, skill_name=skill_name, branch=branch, github_token=github_token, source="", dry_run=False)
+    # ── Fallback: GitHub copy ────────────────────────────────────────
+    fallback = install_skill_from_github(
+        root,
+        repo=resolved_repo,
+        skill_path=resolved_path,
+        skill_name=skill_name,
+        branch=branch,
+        github_token=github_token,
+        source="",
+        dry_run=False,
+    )
     for action in fallback.get("actions", []):
         result["actions"].append(action)
     for err in fallback.get("errors", []):
         result.setdefault("errors", []).append(err)
+    result["skillName"] = fallback.get("skillName", skill_name)
     result["method"] = "github-copy"
     result["valid"] = fallback.get("valid", False)
     return result
@@ -1853,11 +1771,10 @@ def run_tool_installer(args: list[str]) -> int:
 
     if not args:
         print(
-            "Available: install-lefthook, install-codegraph, install-codebase-memory, "
-            "install-monorepo-docs-search, install-playwright-mcp, "
+            "Available: install-lefthook, install-playwright-mcp, "
             "install-grafana-mcp, install-openproject-mcp, "
-            "validate-manifest, install-k8s-mcp, install-gitea-mcp, install-claw, "
-            "install-skill, list-skills, ensure-mcp-servers, ensure-codebase-memory, "
+            "validate-manifest, install-k8s-mcp, install-gitea-mcp, "
+            "install-skill, list-skills, ensure-mcp-servers, "
             "ensure-quality-tools, install-sdd-template, update-sdd-template",
             file=sys.stderr,
         )
@@ -1868,22 +1785,21 @@ def run_tool_installer(args: list[str]) -> int:
     dry_run = options.get("dry-run", "false").lower() == "true"
     handlers: dict[str, Any] = {
         "install-lefthook": lambda: install_lefthook(root, dry_run),
-        "install-codegraph": lambda: install_codegraph(root, dry_run),
-        "install-codebase-memory": lambda: install_codebase_memory(root, dry_run),
-        "install-monorepo-docs-search": lambda: install_monorepo_docs_search(root, dry_run),
         "install-playwright-mcp": lambda: install_playwright_mcp(root, dry_run),
         "install-grafana-mcp": lambda: install_grafana_mcp(root, dry_run),
         "install-openproject-mcp": lambda: install_openproject_mcp(root, dry_run),
         "install-gitea-mcp": lambda: install_gitea_mcp(root, dry_run),
         "install-k8s-mcp": lambda: install_k8s_mcp(root, dry_run),
-        "install-claw": lambda: install_claw_compactor(
+        "install-skill": lambda: install_skill_from_github(
             root,
-            version=options.get("version"),
+            repo=options.get("repo", ""),
+            skill_path=options.get("skill-path", ""),
+            skill_name=options.get("skill-name", ""),
+            branch=options.get("branch", "main"),
+            github_token=options.get("token", ""),
+            source=options.get("source", ""),
             dry_run=dry_run,
         ),
-        "validate-manifest": lambda: validate_manifest(root, dry_run),
-        "ensure-mcp-servers": lambda: ensure_mcp_servers(root, dry_run),
-        "ensure-codebase-memory": lambda: ensure_codebase_memory(root, dry_run),
         "install-skill": lambda: _install_skill_with_fallback(
             root,
             repo=options.get("repo", ""),
@@ -1899,6 +1815,8 @@ def run_tool_installer(args: list[str]) -> int:
             github_token=options.get("token", ""),
             dry_run=dry_run,
         ),
+        "validate-manifest": lambda: validate_manifest(root, dry_run),
+        "ensure-mcp-servers": lambda: ensure_mcp_servers(root, dry_run),
         "ensure-quality-tools": lambda: ensure_quality_tools(root, dry_run),
     }
     if subcommand in ("install-sdd-template", "update-sdd-template"):

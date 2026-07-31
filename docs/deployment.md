@@ -7,7 +7,7 @@ Kubernetes is the **only** deployment target for this project. The cluster runs 
 | Layer              | Status                 | Detail                                                                   |
 | ------------------ | ---------------------- | ------------------------------------------------------------------------ |
 | Deployment target  | kind cluster           | Single-node K8s cluster (`sdd-cluster`) via kind (installed by `setup-lab`) |
-| Container registry | Nexus (:8083)          | Docker hosted repository for CI-built images                             |
+| Container registry  | Nexus (:5001)          | Docker hosted repository for CI-built images                             |
 | Artifact storage   | Nexus (:8088)          | Raw hosted repository for build artifacts and manifests                  |
 | Environments       | dev, qa, prod          | Three K8s namespaces (sdd-dev, sdd-qa, sdd-prod) with Kustomize overlays |
 | CI/CD              | Gitea Actions          | PR validation + package-deploy workflows                                 |
@@ -36,7 +36,7 @@ text
 │                                                          │
 │  ┌─ Docker Compose ───────────────────────────────────┐  │
 │  │  Gitea :3000 │ Nexus :8088 │ Grafana :3001         │  │
-│  │  Nexus Docker Registry :8083                        │  │
+│  │  Nexus Docker Registry :5001                        │  │
 │  └────────────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────────────┘
 ```
@@ -47,7 +47,7 @@ text
 | ---------------------------- | ---------------------- | ------ | ------------------------------------------ |
 | K8s Cluster (kind)            | `localhost` / `host.docker.internal` | 64366 | Runs app Deployments + Services (kind cluster `sdd-cluster`) |
 | Nexus Artifacts              | `host.docker.internal` | `8088` | Stores build artifacts + env URL manifests |
-| Nexus Docker Registry        | `host.docker.internal` | `8083` | Stores container images (CI pushes here)   |
+| Nexus Docker Registry        | `host.docker.internal` | `5001` | Stores container images (CI pushes here)   |
 | Gitea                        | `host.docker.internal` | `3000` | Source control + CI runner                 |
 | Grafana                      | `localhost`            | `3001` | Health monitoring dashboards               |
 
@@ -127,9 +127,10 @@ Uses `infra/k8s/kind-config.yaml` which defines fixed port mappings:
 
 | Host Port | Service   | NodePort |
 |-----------|-----------|----------|
-| `8081`    | frontend  | `30080`  |
-| `5001`    | backend   | `30500`  |
-| `8083`    | openproject | `30780` |
+| `8081`    | frontend (DEV) | `30080`  |
+| `5002`    | backend (DEV)  | `30500`  |
+| `8082`    | frontend (QA)  | `30081`  |
+| `5003`    | backend (QA)   | `30501`  |
 
 This replaces the old Docker Desktop K8s requirement. Steps:
 
@@ -182,7 +183,7 @@ Checkout → Determine Env → Build Docker Images → Deploy to K8s → Discove
 
 **3. Build and Push Docker Images** — For each app in `apps.json`:
 
-- Logs into Nexus Docker registry (`host.docker.internal:8083`)
+- Logs into Nexus Docker registry (`host.docker.internal:5001`)
 - Runs `docker build` using the app's `Dockerfile`
 - Pushes `{appId}:{commitSha}` and `{appId}:latest` tags
 
@@ -287,7 +288,7 @@ Before any deployment:
 1. **kind cluster** — Run `setup-lab` (step 16) or `python -m tools.sdd_cli environment-lab setup-kind-cluster` to create `sdd-cluster`
 2. **Apps defined** — `infra/deployment/apps.json` must list every deployable app
 3. **K8s manifests scaffolded** — Run `scaffold-k8s` to generate Dockerfiles + manifests
-4. **Nexus Docker registry configured** — Docker hosted repository on port `8083` (created by `setup-lab`)
+4. **Nexus Docker registry configured** — Docker hosted repository on port `5001` (created by `setup-lab`)
 5. **Gitea secrets** — `NEXUS_USERNAME`, `NEXUS_PASSWORD`, `KUBECONFIG` (provisioned automatically by `setup-lab`)
 6. **Runner mounts** — Docker socket and kubeconfig mounted into the runner container
 
@@ -296,7 +297,7 @@ Before any deployment:
 | Mode      | Build Command                               | Registry             | Image Tag             |
 | --------- | ------------------------------------------- | -------------------- | --------------------- |
 | Local dev | `docker build -t frontend:latest frontend/` | None (shared daemon) | `frontend:latest`     |
-| CI build  | `docker build` + `docker push`              | Nexus :8083          | `{appId}:{commitSha}` |
+| CI build  | `docker build` + `docker push`              | Nexus :5001          | `{appId}:{commitSha}` |
 
 ## Accessing Deployed Apps
 
@@ -307,9 +308,10 @@ port mappings from the Windows host directly into the kind node container:
 
 | Host Port | Service   | NodePort |
 |-----------|-----------|----------|
-| `8081`    | frontend  | `30080`  |
-| `5001`    | backend   | `30500`  |
-| `8083`    | openproject | `30780` |
+| `8081`    | frontend (DEV) | `30080`  |
+| `5002`    | backend (DEV)  | `30500`  |
+| `8082`    | frontend (QA)  | `30081`  |
+| `5003`    | backend (QA)   | `30501`  |
 
 After the CI pipeline deploys, you can access apps **directly at localhost**
 without any `kubectl port-forward`:
@@ -320,10 +322,7 @@ curl http://localhost:8081/health
 # Open in browser: http://localhost:8081
 
 # Backend API
-curl http://localhost:5001/health
-
-# OpenProject
-curl http://localhost:8083/health
+curl http://localhost:5002/health
 ```
 
 To discover all deployed URLs:
@@ -336,8 +335,9 @@ Output:
 
 ```
 DEV frontend accessible at: http://localhost:8081/health (kind nodePort 30080 mapped to host:8081)
-DEV backend accessible at: http://localhost:5001/health (kind nodePort 30500 mapped to host:5001)
-DEV openproject accessible at: http://localhost:8083/health (kind nodePort 30780 mapped to host:8083)
+DEV backend accessible at: http://localhost:5002/health (kind nodePort 30500 mapped to host:5002)
+QA frontend accessible at: http://localhost:8082/health (kind nodePort 30081 mapped to host:8082)
+QA backend accessible at: http://localhost:5003/health (kind nodePort 30501 mapped to host:5003)
 ```
 
 ## Grafana Monitoring
@@ -467,4 +467,4 @@ CI publishes `app/latest/env-urls-{env}.json` to Nexus after each deploy. The Gr
 - **Dynamic nodePorts**: LoadBalancer ports change on service recreation. Run `setup-k8s-access` after each deploy to discover current URLs.
 - **Runner mounts**: The Gitea Actions runner needs host Docker socket and kubeconfig mounted.
 - **Single-app manifests**: `scaffold-k8s` generates manifests for the first app in `apps.json` only. Extend manually for multi-app.
-- **`npm ci` assumption**: Generated Dockerfiles use `npm ci` which requires a lockfile.
+- **AI-driven Dockerfiles**: `scaffold-k8s` no longer generates stack-specific Dockerfiles/nginx — those are delegated to the `dev-flow-scaffold-project` skill, which resolves what to generate from the selected stack (never a fixed template list). `scaffold-k8s` only emits deterministic Kustomize manifests.

@@ -19,24 +19,23 @@ Archive a completed change in the experimental workflow.
 
 1. **If no change name provided, prompt for selection**
 
-   Run `openspec list --json` to get available changes. Use the **AskUserQuestion tool** to let the user select.
+   List active changes by checking directories in `openspec/changes/` that have a `.openspec.yaml` file. Use the **AskUserQuestion tool** to let the user select.
 
    Show only active changes (not already archived).
-   Include the schema used for each change if available.
 
    **IMPORTANT**: Do NOT guess or auto-select a change. Always let the user choose.
 
-2. **Check artifact completion status**
+2. **Follow the `/opsx:archive` pattern — check artifact completion**
 
-   Run `openspec status --change "<name>" --json` with process environment `OPENSPEC_TELEMETRY=0` to check artifact completion.
+   Check that all expected artifact files exist:
+   - `openspec/changes/<name>/proposal.md`
+   - `openspec/changes/<name>/specs/` (directory with at least one spec)
+   - `openspec/changes/<name>/design.md`
+   - `openspec/changes/<name>/tasks.md`
 
-   Parse the JSON to understand:
-   - `schemaName`: The workflow being used
-   - `artifacts`: List of artifacts with their status (`done` or other)
-
-   **If any artifacts are not `done`:**
+   **If any artifacts are missing:**
    - Stop. This is an archive blocker.
-   - List incomplete artifacts.
+   - List missing artifacts.
    - Do not ask for confirmation to continue.
    - Do not move the change directory.
 
@@ -74,6 +73,7 @@ Archive a completed change in the experimental workflow.
 5. **Perform the archive**
 
    Create the archive directory if it doesn't exist:
+
    ```bash
    mkdir -p openspec/changes/archive
    ```
@@ -88,7 +88,7 @@ Archive a completed change in the experimental workflow.
    mv openspec/changes/<name> openspec/changes/archive/YYYY-MM-DD-<name>
    ```
 
-   After moving, run `openspec list --json` with `OPENSPEC_TELEMETRY=0` and verify `<change-name>` is absent from active changes. If it is still active, report `OpenSpec archive blocker: change still active after archive`.
+   After moving, verify the change directory no longer exists at `openspec/changes/<name>/`. If it is still present, report `OpenSpec archive blocker: change still active after archive`.
 
 6. **Display summary**
 
@@ -113,14 +113,15 @@ All artifacts complete. All tasks complete.
 ```
 
 **Guardrails**
+
 - Always prompt for change selection if not provided
-- Use artifact graph (openspec status --json) for completion checking
+- Check artifact file existence for completion validation (proposal.md, specs/, design.md, tasks.md)
 - Incomplete artifacts, incomplete tasks, missing tasks.md, failed spec sync, or failed archive movement are blockers. Never archive by confirmation when work is incomplete.
 - Preserve .openspec.yaml when moving to archive (it moves with the directory)
 - Show clear summary of what happened
 - If sync is requested, use openspec-sync-specs approach (agent-driven)
 - If delta specs exist, always run the sync assessment and show the combined summary before prompting
-- Never report archive success unless the active change is gone from `openspec list --json`.
+- Never report archive success unless the change directory has been moved to archive.
 
 ## Overview
 

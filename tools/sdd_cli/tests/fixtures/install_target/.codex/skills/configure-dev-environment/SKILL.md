@@ -1,5 +1,6 @@
 ---
 name: configure-dev-environment
+license: MIT
 description: Configure this repo's local development and delivery environment. The lab stack is fixed: Docker Compose with Gitea, OpenProject, Nexus, and Monitoring.
 ---
 
@@ -22,7 +23,7 @@ Before running quick setup, ensure the following CLI tools are available on the 
 | Docker Desktop | [docker.com](https://www.docker.com/products/docker-desktop/)       | Compose services, container builds                                                       |
 | Node.js (v20+) | [nodejs.org](https://nodejs.org/) or `winget install OpenJS.NodeJS` | OpenSpec CLI, frontend builds                                                            |
 | OpenSpec CLI   | `npm install -g @fission-ai/openspec@latest`                        | OpenSpec proposal workflow (`/opsx:propose`, `openspec status`, `openspec instructions`) |
-| Lefthook       | `python -m tools.sdd_cli tool-installer install-lefthook`           | Pre-commit hooks (gitleaks scan, commit-msg validation)                                  |
+| Lefthook       | `python -m tools.sdd_cli tool-installer install-lefthook`           | Pre-commit hooks (gitleaks scan, commit-msg validation) + pre-push `stack-tests` with coverage gate (`python -m tools.sdd_cli stack-tests` — unit/integration/architecture tests + `coverage.minimumPercent`, default 80) |
 
 Verify tools are installed:
 
@@ -49,6 +50,7 @@ python -m tools.sdd_cli environment-lab setup-lab
 This runs 17 steps in order. **All steps are fatal** — if any step fails, the setup stops immediately. Each step is validated before proceeding to the next.
 
 ```
+text
  1. InitLocalFiles            (config templates → local files)
  2. InstallLefthook           (lefthook binary + git hooks)
  3. InitProjectProfile        (project schema, profile, adapters)
@@ -72,21 +74,20 @@ This runs 17 steps in order. **All steps are fatal** — if any step fails, the 
 
 If you need to run steps individually:
 
-| Step                        | Command                                                                           |
-| --------------------------- | --------------------------------------------------------------------------------- |
-| Start services              | `python -m tools.sdd_cli environment-lab compose-up`                              |
-| Stop services               | `python -m tools.sdd_cli environment-lab compose-down`                            |
-| Init local files            | `python -m tools.sdd_cli environment-lab init-local-files`                        |
-| Init project profile        | `python -m tools.sdd_cli environment-lab init-project-profile`                    |
-| Set client tools            | `python -m tools.sdd_cli environment-lab set-client-tools --values-json '{...}'`  |
-| Set project stack           | `python -m tools.sdd_cli environment-lab set-project-stack --values-json '{...}'` |
+| Step                                | Command                                                                           |
+| ----------------------------------- | --------------------------------------------------------------------------------- |
+| Start services                      | `python -m tools.sdd_cli environment-lab compose-up`                              |
+| Stop services                       | `python -m tools.sdd_cli environment-lab compose-down`                            |
+| Init local files                    | `python -m tools.sdd_cli environment-lab init-local-files`                        |
+| Init project profile                | `python -m tools.sdd_cli environment-lab init-project-profile`                    |
+| Set client tools                    | `python -m tools.sdd_cli environment-lab set-client-tools --values-json '{...}'`  |
+| Set project stack                   | `python -m tools.sdd_cli environment-lab set-project-stack --values-json '{...}'` |
 | Build Gitea images (checksum-aware) | `python -m tools.sdd_cli environment-lab build-gitea-images`                      |
 | Validate app config                 | `python -m tools.sdd_cli environment-lab validate-app-config`                     |
 | Validate Docker Desktop             | `python -m tools.sdd_cli environment-lab validate-docker-desktop`                 |
 | Validate observability              | `python -m tools.sdd_cli environment-lab validate-observability`                  |
 | Validate Gitea runner               | `python -m tools.sdd_cli environment-lab validate-gitea-runner`                   |
 | Provision Gitea secrets             | `python -m tools.sdd_cli environment-lab provision-gitea-secrets`                 |
-| Setup MCP server                    | `python tools/bm25s_flashrank/setup_mcp.py`                                       |
 | Install lefthook                    | `python -m tools.sdd_cli tool-installer install-lefthook`                         |
 
 ## Safety Rules
@@ -102,9 +103,35 @@ If you need to run steps individually:
 | ----------- | ----------------------- |
 | Gitea       | `http://localhost:3000` |
 | OpenProject | `http://localhost:8080` |
-| Nexus       | `http://localhost:8081` |
+| Nexus       | `http://localhost:8088` |
 | Seq         | `http://localhost:5341` |
 | Grafana     | `http://localhost:3001` |
+| Dozzle      | `http://localhost:8888` |
+
+### After Docker Desktop Restart
+
+Docker Desktop containers do not survive a Docker Desktop restart. After restarting Docker Desktop, restart all lab services with:
+
+```bash
+python -m tools.sdd_cli environment-lab compose-up
+```
+
+This re-runs `docker compose up -d --remove-orphans` with the correct env files and project directory. All state is preserved in Docker volumes.
+
+To verify all services are healthy:
+
+```bash
+python -m tools.sdd_cli environment-lab health-check
+```
+
+## Constraint: Never Assume Tech Stack
+
+The product tech stack (frontend, backend, database) is a **user decision**. Never:
+- Auto-detect or infer the stack from source code, file extensions, or package files
+- Assume a default stack
+- Generate stack-dependent workflows or configuration without explicit user confirmation
+
+Always ask the user what tech stack they want before running `set-project-stack` or any other stack-dependent operation.
 
 ## Configure Modes
 
@@ -124,7 +151,6 @@ Useful `environment-lab` modes:
 - `validate-app-config`: validate `infra/deployment/apps.json` against `apps.schema.json` and check every app's Dockerfile exists.
 - `validate-docker-desktop`: check Docker Desktop configuration — `insecure-registries` includes `host.docker.internal:5001`, Docker socket present, Docker Compose available.
 - `validate-gitea-runner`: check Docker, Gitea runner images, runner tools, Docker socket mount, and `tools/docker_push.py` existence.
-- `setup-mcp-server`: run the monorepo-docs-search MCP setup script via `python tools/bm25s_flashrank/setup_mcp.py` (standalone script, not an `environment-lab` subcommand).
 
 ## CI Workflow Configuration
 
@@ -145,7 +171,6 @@ Use the `configure-ci-workflows` skill:
 4. Generates or updates these workflow files:
    - `.gitea/workflows/package-deploy.yml` — Build, package, upload to Nexus, deploy
    - `.gitea/workflows/pr-validation.yml` — Checkout, JSON validation, secret scan
-   - `.gitea/workflows/agent-eval.yml` — Checkout, promptfoo evaluation
 
 ### Stack-to-Build Mapping
 
@@ -384,16 +409,15 @@ Configure code quality thresholds, scanning tools, and local hooks.
 
 ### Trunk.io (Local Formatting)
 
-Trunk is a universal code formatter and linter manager installed locally (not in CI).
+Trunk is a universal code formatter and linter manager installed locally (not in CI). The lefthook hooks `trunk-fmt` and `trunk-check` run `npx trunk fmt` and `npx trunk check` on every commit, so trunk must be initialized before the first commit.
 
-1. **Install the launcher:** `npm install -D @trunkio/launcher` (installed as a dev dependency)
-2. **Initialize trunk in the repo:** `npx trunk init`
-   - This creates `.trunk/trunk.yaml` with default linter/formatter configuration
-   - The `.trunk/` directory is gitignored — it contains generated caches and tool downloads
-3. **Verify it works:** `npx trunk check --all --ci --no-fix`
-4. **Add to pre-commit hook:** Lefthook already includes `npx trunk fmt` in the pre-commit hook to auto-format staged files
+1. **Initialize trunk in the repo:** `npx trunk init`
+   - `npx` auto-downloads the launcher — no manual install needed
+   - Creates `.trunk/trunk.yaml` with default linter/formatter configuration
+   - The `.trunk/` directory is gitignored (generated caches and tool downloads)
+2. **Verify it works:** `npx trunk check --all --ci --no-fix` — also works as an on-demand formatting check anytime
 
-Run trunk manually to check formatting: `npx trunk check --all --ci --no-fix`
+**Auto-initialization:** During the ticket start workflow (`dev-flow-start-ticket`), trunk is auto-initialized after the tech stack is confirmed if `.trunk/trunk.yaml` doesn't exist yet.
 
 **Values needed:** Coverage minimum percent, enabled gate IDs.
 **Safety:** Keep local hooks lightweight. Do not write scanner secrets into tracked files.
@@ -408,26 +432,6 @@ Configure Seq log search and Grafana health dashboards.
 
 **Values needed:** SEQ_URL (default `http://localhost:5341`), error alert window/threshold.
 **Safety:** Keep Seq data in Docker volume; do not export logs to tracked files.
-
-### Documentation Search MCP (monorepo-docs-search)
-
-Configure the `monorepo-docs-search` MCP server for fast BM25 + FlashRank documentation search across Markdown (`.md`, `.mdx`) files. This MCP is used by agents to route documentation lookups per `.codex/mcp-instructions.md`.
-
-1. Run the automated setup script:
-   ```bash
-   python tools/bm25s_flashrank/setup_mcp.py
-   ```
-   This script:
-   - Checks Python >= 3.10.
-   - Creates a shared virtual environment at `%USERPROFILE%\.mcp_shared_venv` (Windows) or `~/.mcp_shared_venv` (macOS/Linux).
-   - Installs dependencies: `mcp`, `bm25s`, `flashrank`.
-   - Writes the MCP server configuration to `.vscode/mcp.json` and `.cline/mcp_settings.json`.
-   - Auto-starts the MCP server and writes a PID file to `.vscode/.mcp_monorepo_docs_search.pid`.
-2. Validate the configuration is present in `.vscode/mcp.json` under `servers.monorepo-docs-search`.
-3. Validate the server registers correctly by checking agent documentation search routing via `.codex/mcp-instructions.md`.
-
-**Prerequisites:** Python 3.10 or newer, internet access for pip package download.
-**Safety:** The setup script only writes to local config files (`.vscode/mcp.json`, `.cline/mcp_settings.json`). It does not send data externally or require API tokens.
 
 ## Output
 

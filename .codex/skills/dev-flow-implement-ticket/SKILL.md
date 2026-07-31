@@ -184,6 +184,13 @@ Treat repository workflow PR validation as the authoritative quality gate. Treat
 
 **❌ HARD GATE (authority level 5): Coverage must be verified locally before PR creation.** The coverage threshold from `.codex/quality.local.json` (`coverage.minimumPercent`, default `80`) is a hard gate — implementation cannot proceed to PR handoff unless coverage meets or exceeds the threshold.
 
+**❌ HARD GATE (authority level 5): Lefthook pre-push stack tests must pass before pushing.** The `lefthook.yml` `pre-push` hook runs `python -m tools.sdd_cli stack-tests`, which runs the product test suite — unit, integration, and architecture levels per `.codex/skills/_shared/test-requirements.md` — driven by `stack.testFrameworks` from `.codex/project-profile.local.json`. This gate runs on the dev machine (stack runtimes live locally; the CI image stays lean) and applies on every `git push`:
+
+- **Stack configured:** the hook installs dependencies, runs the test command for each mapped framework (pytest for Python, vitest/jest for JS/TS, `dotnet test` for .NET — pytest is Python-only and never used for .NET), then runs the **coverage gate** with the configurable threshold `coverage.minimumPercent` from `.codex/quality.local.json` (fallback `.codex/quality.example.json`, default `80`). A failing test or coverage-below-threshold step fails the push. A framework with tests but no mapped coverage command reports a gap step (non-blocking) — CI remains the authoritative coverage gate for that framework.
+  - **.NET stacks:** the coverage gate runs `dotnet test /p:CollectCoverage=true /p:Threshold={n}` and therefore requires `coverlet.msbuild` referenced in the test project. Without it, `dotnet test` silently ignores those properties and exits 0 — a false pass. `dev-flow-scaffold-project` must add `coverlet.msbuild` to .NET test projects; verify it is present before relying on the .NET coverage gate.
+- **No stack configured (template state):** the hook skips cleanly and exits 0 — no tests to run.
+- **Never bypass with `--no-verify`** unless the user explicitly requests it in the current chat. If a push is blocked by failing stack tests, fix the tests before pushing (same treatment as the coverage gate). The CI image intentionally does not contain stack runtimes, so this local hook is the only product-test gate — CI covers repo tooling tests and scans only.
+
 Discover a local coverage command:
 
 1. Prefer the command used by configured PR validation workflow files.
@@ -211,11 +218,7 @@ See `.codex/skills/_shared/pipeline-tdd-cycle.md` for the common TDD test-first 
 - **AC source:** the **IA curated block** in the ticket description (from enrich steps 10-12 in `dev-flow-start-ticket`). This contains the acceptance criteria, scope, out of scope, dependencies, and risks. The **IA curated block is the source of truth** for what to build.
 - **Task source:** `openspec/changes/<change>/tasks.md`
 - **Before coding, activate skills from step 5a-f scan.** The declared skills in the `Skills used:` block are NOT decorative — they must be actively applied during every TDD cycle.
-- **Before any code search or research, check MCP routing** per `.codex/mcp-instructions.md`:
-  - Documentation/skill lookups → `monorepo-docs-search` MCP (`search_documentation`)
-  - Source code navigation → `codebase-memory-mcp` (`search_graph`, `get_code_snippet`, etc.)
-  - Service interaction → service MCPs (gitea, openproject, grafana, kubernetes)
-  - Do NOT use raw grep as the first approach — route through the correct MCP channel.
+- **Before any service interaction, check MCP routing** per `.codex/mcp-instructions.md`: service MCPs (gitea, openproject, grafana, kubernetes). Repository content search uses built-in file/search tools.
 - **Create `src/` and `test/` folder structure** before writing any product code. Always **ask the user** to confirm the scaffold structure before creating files.
 - **Declare skills at start of every response** body via a `Skills used:` block (see Section 1 for format).
 - **Mark task complete** only after its tests pass and acceptance-to-test map entries are verified.
@@ -230,7 +233,7 @@ Implementation is not complete until:
 
 - all OpenSpec tasks are complete,
 - OpenSpec verification has no critical issues,
-- configured local hooks or quality tools pass when they run,
+- configured local hooks or quality tools pass when they run — including the `lefthook.yml` `pre-push` stack-tests hook (`python -m tools.sdd_cli stack-tests`, unit/integration/architecture levels) when a stack is configured,
 - repository PR validation passes,
 - **coverage meets `coverage.minimumPercent`** — verified locally when a command is available, or via CI as the authoritative gate.
 
@@ -483,6 +486,7 @@ Report the ticket, branch, OpenSpec change, PR URL, commits pushed, validation a
 - Dirty worktree with unrelated changes: stop before implementation.
 - Missing or placeholder API token: stop before ticket provider or repository/review provider mutations.
 - Invalid coverage config: use `80`, report the issue, and do not lower the gate.
+- Lefthook pre-push stack tests fail or an unmapped framework is configured: stop before pushing — fix the tests or framework mapping and re-run `python -m tools.sdd_cli stack-tests` until it passes. Do not bypass the hook with `--no-verify` unless the user explicitly requests it. When no stack is configured the hook skips cleanly (expected template state).
 - **Coverage below threshold: HARD STOP (authority level 5).** Do not create the PR, do not move the ticket to review, do not hand off until coverage meets `coverage.minimumPercent`. Add or update OpenSpec tasks for missing tests, write them, re-run coverage, and confirm the threshold is met before proceeding. If no local coverage command exists and CI is the only gate, report the gap and proceed — but if CI fails on coverage, stop and fix before re-triggering CI.
 - Missing local coverage command: report the gap; do not invent a command when CI is the only configured coverage source.
 - Missing acceptance-to-test map or committed automated coverage for any acceptance criterion: stop before product-code handoff or PR review handoff and add the missing tests.

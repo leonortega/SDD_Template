@@ -7,8 +7,8 @@
       "database": {
         "host": "localhost",
         "port": 5432,
-        "name": "openproject",
-        "username": "openproject",
+        "name": "appdb",
+        "username": "appuser",
         "password": "your-db-password"
       },
       "email": {

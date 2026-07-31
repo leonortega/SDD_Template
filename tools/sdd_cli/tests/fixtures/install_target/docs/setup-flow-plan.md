@@ -45,11 +45,8 @@ full-setup
 │   └── Semgrep config
 │
 ├── Stage 3: Tool Installation (remaining)
-│   ├── install-codegraph
-│   ├── install-codebase-memory
-│   ├── install-claw-compactor
-│   ├── install-monorepo-docs-search
-│   ├── install-playwright-mcp
+│   ├── ensure-mcp-servers (playwright, grafana, k8s, gitea, openproject)
+│   ├── ensure-quality-tools
 │   └── validate-manifest
 │
 └── Stage 4: Project Guidance

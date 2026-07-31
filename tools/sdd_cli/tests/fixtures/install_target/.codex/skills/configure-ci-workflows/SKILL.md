@@ -1,5 +1,6 @@
 ---
 name: configure-ci-workflows
+license: MIT
 description: Generate or update Gitea Actions CI/CD workflow files based on the project profile stack and app topology. Run after configure-dev-environment selects the project stack, or when apps.json, project-profile, or client-tools configuration changes.
 ---
 
@@ -31,26 +32,43 @@ Also follow `.codex/skills/_shared/skill-startup.md` for the standard startup se
 
 The skill derives configuration from these sources:
 
-| Source | What it provides |
-|--------|-----------------|
+| Source                                                                         | What it provides                                                                                        |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
 | Merged project profile (`project-profile.json` + `project-profile.local.json`) | Stack: frontend/backend/database technologies. Providers: artifact (Nexus), deployment (docker-desktop) |
-| `infra/deployment/apps.json` | App topology: what to build, package, and deploy |
-| `client-tools.local.json → gitea` | Gitea URL for checkout step |
-| `client-tools.local.json → nexus` | Nexus URL, repository for upload step |
+| `infra/deployment/apps.json`                                                   | App topology: what to build, package, and deploy                                                        |
+| `client-tools.local.json → gitea`                                              | Gitea URL for checkout step                                                                             |
+| `client-tools.local.json → nexus`                                              | Nexus URL, repository for upload step                                                                   |
 
 ## Workflow Generation Rules
 
-### 1. Detect Stack Technologies
+### 1. Ask User For Stack Technologies
 
-Read `project-profile.local.json → stack` and determine build commands per domain:
+**Do NOT auto-detect or infer the tech stack.** The stack must come from the user. Ask them explicitly:
 
-| Stack value | Build command | Output directory | Artifact pattern | Deploy command |
-|---|---|---|---|---|
-| `react`, `vue`, `angular` | `npm ci && npm run build` | `dist/` | `{appId}-*.zip` | `node server.mjs` |
-| `fastapi` | `pip install -r requirements.txt` | — | `backend-*.zip` | `uvicorn main:app` |
-| `django` | `pip install -r requirements.txt` | — | `backend-*.zip` | `gunicorn wsgi:application` |
-| `flask` | `pip install -r requirements.txt` | — | `backend-*.zip` | `flask run` |
-| `dotnet`, `aspnetcore` | `dotnet publish -c Release` | `bin/Release/net*/publish/` | `backend-*.zip` | `dotnet {assembly}.dll` |
+- What frontend framework (e.g., React, Vue, Angular, none)?
+- What backend framework (e.g., FastAPI, Django, Flask, ASP.NET Core, none)?
+- What database (e.g., PostgreSQL, SQLite, none)?
+- What languages and build tools are used?
+
+Once the user confirms the stack, set it via:
+
+```bash
+python -m tools.sdd_cli environment-lab set-project-stack --values-json '{
+  "frontend": "react",
+  "backend": "fastapi",
+  "database": "postgresql"
+}'
+```
+
+Then read the confirmed values from `project-profile.local.json → stack` and determine build commands per domain using the mapping table:
+
+| Stack value               | Build command                     | Output directory            | Artifact pattern | Deploy command              |
+| ------------------------- | --------------------------------- | --------------------------- | ---------------- | --------------------------- |
+| `react`, `vue`, `angular` | `npm ci && npm run build`         | `dist/`                     | `{appId}-*.zip`  | `node server.mjs`           |
+| `fastapi`                 | `pip install -r requirements.txt` | —                           | `backend-*.zip`  | `uvicorn main:app`          |
+| `django`                  | `pip install -r requirements.txt` | —                           | `backend-*.zip`  | `gunicorn wsgi:application` |
+| `flask`                   | `pip install -r requirements.txt` | —                           | `backend-*.zip`  | `flask run`                 |
+| `dotnet`, `aspnetcore`    | `dotnet publish -c Release`       | `bin/Release/net*/publish/` | `backend-*.zip`  | `dotnet {assembly}.dll`     |
 
 If a domain's `applies` is `false`, skip its build step.
 
@@ -258,201 +276,142 @@ jobs:
 ### 3. Nexus Upload Step (when `providers.artifact.id == "nexus"`)
 
 ```yaml
-      - name: Upload to Nexus
-        env:
-          NEXUS_URL: ${{ secrets.NEXUS_URL }}
-          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
-          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
-          NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          COMMIT_SHA=$(git rev-parse HEAD)
-          ARTIFACT_DIR="app/${COMMIT_SHA}"
-          NEXUS_URL="${NEXUS_URL:-http://host.docker.internal:8088}"
-          REPO="${NEXUS_REPOSITORY:-sdd-artifacts}"
-          if [ -z "${NEXUS_USERNAME:-}" ] || [ -z "${NEXUS_PASSWORD:-}" ]; then
-            echo "Nexus credentials not set — skipping upload"
-            exit 0
-          fi
-          for file in $(find "${ARTIFACT_DIR}" -type f); do
-            remote_path="${file}"
-            echo "Uploading ${file} to ${NEXUS_URL}/repository/${REPO}/${remote_path}"
-            curl -s -u "${NEXUS_USERNAME}:${NEXUS_PASSWORD}" \
-              --upload-file "${file}" \
-              "${NEXUS_URL}/repository/${REPO}/${remote_path}" \
-              -w "HTTP:%{http_code}\n"
-          done
-          echo "Nexus upload complete"
+- name: Upload to Nexus
+  env:
+    NEXUS_URL: ${{ secrets.NEXUS_URL }}
+    NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+    NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+    NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
+  shell: bash
+  run: |
+    set -euo pipefail
+    COMMIT_SHA=$(git rev-parse HEAD)
+    ARTIFACT_DIR="app/${COMMIT_SHA}"
+    NEXUS_URL="${NEXUS_URL:-http://host.docker.internal:8088}"
+    REPO="${NEXUS_REPOSITORY:-sdd-artifacts}"
+    if [ -z "${NEXUS_USERNAME:-}" ] || [ -z "${NEXUS_PASSWORD:-}" ]; then
+      echo "Nexus credentials not set — skipping upload"
+      exit 0
+    fi
+    for file in $(find "${ARTIFACT_DIR}" -type f); do
+      remote_path="${file}"
+      echo "Uploading ${file} to ${NEXUS_URL}/repository/${REPO}/${remote_path}"
+      curl -s -u "${NEXUS_USERNAME}:${NEXUS_PASSWORD}" \
+        --upload-file "${file}" \
+        "${NEXUS_URL}/repository/${REPO}/${remote_path}" \
+        -w "HTTP:%{http_code}\n"
+    done
+    echo "Nexus upload complete"
 ```
 
 ### 4. Docker Desktop Deploy Step (when `providers.deployment.id == "docker-desktop"`)
 
 ```yaml
-      - name: Deploy to environment
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ "${{ github.event_name }}" = "push" ]; then
-            ENV="dev"
-          else
-            ENV="${{ github.event.inputs.environment }}"
-          fi
-          echo "Deploying to $ENV environment"
+- name: Deploy to environment
+  shell: bash
+  run: |
+    set -euo pipefail
+    if [ "${{ github.event_name }}" = "push" ]; then
+      ENV="dev"
+    else
+      ENV="${{ github.event.inputs.environment }}"
+    fi
+    echo "Deploying to $ENV environment"
 
-          # Deploy apps in deployOrder
-          python3 -c "
-          import json, os, subprocess, time
-          with open('infra/deployment/apps.json') as f:
-              config = json.load(f)
-          sorted_apps = sorted(config.get('apps', []), key=lambda a: a.get('deployOrder', 0))
-          for app in sorted_apps:
-              aid = app['appId']
-              health = app.get('healthPath', '/health')
-              role = app.get('role', 'web')
-              port_map = {'dev': 4173, 'qa': 4174}
-              port = port_map.get(os.environ.get('ENV', 'dev'), 4173)
-              
-              if role == 'web' and os.path.isfile(os.path.join(app.get('projectPath', aid), 'server.mjs')):
-                  print(f'Starting {aid} on port {port}')
-                  os.chdir(app.get('projectPath', aid))
-                  proc = subprocess.Popen(['node', 'server.mjs'], env={**os.environ, 'PORT': str(port)})
-                  time.sleep(3)
-                  health_check = subprocess.run(
-                      ['curl', '-s', f'http://localhost:{port}{health}'],
-                      capture_output=True, text=True
-                  )
-                  if 'status\":\"ok\"' in health_check.stdout:
-                      print(f'{aid} health PASSED')
-                  else:
-                      print(f'{aid} health FAILED')
-                      exit(1)
-                  proc.terminate()
-              else:
-                  print(f'{aid}: no deployable server — infra-only')
-          "
+    # Deploy apps in deployOrder
+    python3 -c "
+    import json, os, subprocess, time
+    with open('infra/deployment/apps.json') as f:
+        config = json.load(f)
+    sorted_apps = sorted(config.get('apps', []), key=lambda a: a.get('deployOrder', 0))
+    for app in sorted_apps:
+        aid = app['appId']
+        health = app.get('healthPath', '/health')
+        role = app.get('role', 'web')
+        port_map = {'dev': 4173, 'qa': 4174}
+        port = port_map.get(os.environ.get('ENV', 'dev'), 4173)
+        
+        if role == 'web' and os.path.isfile(os.path.join(app.get('projectPath', aid), 'server.mjs')):
+            print(f'Starting {aid} on port {port}')
+            os.chdir(app.get('projectPath', aid))
+            proc = subprocess.Popen(['node', 'server.mjs'], env={**os.environ, 'PORT': str(port)})
+            time.sleep(3)
+            health_check = subprocess.run(
+                ['curl', '-s', f'http://localhost:{port}{health}'],
+                capture_output=True, text=True
+            )
+            if 'status\":\"ok\"' in health_check.stdout:
+                print(f'{aid} health PASSED')
+            else:
+                print(f'{aid} health FAILED')
+                exit(1)
+            proc.terminate()
+        else:
+            print(f'{aid}: no deployable server — infra-only')
+    "
 ```
 
 ### 5. Generate `pr-validation.yml`
 
-This workflow is mostly static. Generate it with the standard checkout, JSON validation, and secret scan steps:
+This workflow is mostly static. Generate it with the standard checkout, JSON validation, secret scan, SAST/SCA/IaC scans, and the dev-flow review gate steps. It also includes the **repo tooling tests** step (see `.codex/skills/_shared/test-requirements.md`):
 
-```yaml
-name: PR validation
+1. **Repo tooling tests** — always run the shell's own Python test suite (deterministic, stack-independent):
 
-on:
-  pull_request:
-    branches:
-      - main
-      - dev
+   ```bash
+   python3 -m pytest tools/sdd_cli/tests/ -q
+   ```
 
-jobs:
-  validate:
-    runs-on: ubuntu-latest
-    container:
-      image: sdd-e2e-ci:local
-    steps:
-      - name: Checkout
-        env:
-          GITEA_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          set -eo pipefail
-          export GIT_TERMINAL_PROMPT=0
-          TOKEN="${GITEA_TOKEN:-}"
-          repo_url="http://git:${TOKEN}@host.docker.internal:3000/${GITHUB_REPOSITORY}.git"
-          git init .
-          git remote add origin "$repo_url"
-          git fetch --depth 1 origin "$GITHUB_SHA"
-          git checkout --force FETCH_HEAD
+2. **Product tests (unit, integration, architecture) run via the lefthook `pre-push` hook** — NOT in the CI image. This keeps `sdd-e2e-ci:local` lean: stack runtimes (.NET SDK, Go, ...) live on the developer machine, and the tests run locally BEFORE push. The hook executes `python -m tools.sdd_cli stack-tests`, which reads `project-profile.local.json → stack.testFrameworks` and runs the mapped (install, test) pairs for the three test levels. When no stack is configured (template state), it reports and exits 0 — never assume a tech stack.
 
-      - name: Validate JSON files
-        shell: bash
-        run: |
-          set -euo pipefail
-          find . -path './.git' -prune -o -name '*.json' -print | while IFS= read -r file; do
-            python3 -m json.tool "$file" >/dev/null
-          done
+   **⚠️ Enforcement note:** because product tests run via the local hook, CI does NOT gate product tests. The `pre-push` hook is the only enforcement point and can be bypassed with `git push --no-verify`. This matches the lean-image decision, but document it in PRs and never rely on CI to catch product test failures.
 
-      - name: Secret scan
-        shell: bash
-        run: gitleaks detect --source . --redact --no-git
+### 5a. Product Test Frameworks → Local Commands (`stack-tests`)
+
+The `python -m tools.sdd_cli stack-tests` driver (`tools/sdd_cli/stack_tests.py`) maps each configured framework to an (install, test) command pair covering the three levels:
+
+| Framework | Install command (first) | Test command (unit + integration + architecture) |
+|-----------|-------------------------|--------------------------------------------------|
+| `pytest`  | `python3 -m pip install -r requirements.txt` | `python3 -m pytest test/unit test/integration test/architecture -q` |
+| `vitest`  | `npm ci` | `npx vitest run test/unit test/integration test/architecture` |
+| `jest`    | `npm ci` | `npx jest test/unit test/integration test/architecture` |
+| `dotnet`, `xunit`, `nunit`, `mstest` | `dotnet restore` | `dotnet test` |
+
+**⚠️ pytest is Python-only.** It CANNOT run .NET tests. All .NET test
+frameworks (xUnit, NUnit, MSTest) run through `dotnet test`, which requires the
+**.NET SDK installed on the developer machine** — never map a .NET framework to
+pytest. Run the hook with:
+
+```bash
+python -m tools.sdd_cli stack-tests            # real run
+python -m tools.sdd_cli stack-tests --dry-run true  # preview only
 ```
 
-### 6. Generate `agent-eval.yml`
+If a test framework has no runtime on the dev machine, the hook fails with
+`dotnet`/`go` not found — that failure is a signal to install the runtime
+locally, not to switch the framework to pytest.
 
-This workflow is also mostly static:
-
-```yaml
-name: Agent evaluation
-
-on:
-  pull_request:
-    branches:
-      - dev
-    paths:
-      - '.codex/agent-evals/**'
-      - '.codex/delivery-policy.json'
-      - '.codex/skills/_shared/delivery-contract*.md'
-      - 'tools/sdd_cli/agent_eval.py'
-
-jobs:
-  eval:
-    runs-on: ubuntu-latest
-    container:
-      image: sdd-e2e-ci:local
-    steps:
-      - name: Checkout
-        env:
-          GITEA_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          set -eo pipefail
-          export GIT_TERMINAL_PROMPT=0
-          TOKEN="${GITEA_TOKEN:-}"
-          repo_url="http://git:${TOKEN}@host.docker.internal:3000/${GITHUB_REPOSITORY}.git"
-          git init .
-          git remote add origin "$repo_url"
-          git fetch --depth 1 origin "$GITHUB_SHA"
-          git checkout --force FETCH_HEAD
-
-      - name: Install promptfoo
-        shell: bash
-        run: |
-          set -euo pipefail
-          npm install -g promptfoo
-          promptfoo --version
-
-      - name: Run agent routing evaluation
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 -m tools.sdd_cli agent-eval ci
-```
-
-### 7. Dry-Run Mode
+### 6. Dry-Run Mode
 
 Before writing any files, offer a dry-run preview:
 
 ```
+text
 Would update .gitea/workflows/package-deploy.yml:
   + Build frontend (React): npm ci → dist/
-  + Package artifacts: frontend-landing-page.zip, openproject-17.5.1.zip
+  + Package artifacts: frontend-landing-page.zip, backend-api.zip
   + Upload to Nexus: http://host.docker.internal:8088/sdd-artifacts
   + Deploy to dev/qa: node server.mjs on port 4173/4174
 Would keep .gitea/workflows/pr-validation.yml (unchanged)
-Would keep .gitea/workflows/agent-eval.yml (unchanged)
 ```
 
 Show the diff or full content of each generated file. Ask the user to confirm before writing.
 
-### 8. Write Files
+### 7. Write Files
 
 Write the generated YAML to:
 
 - `.gitea/workflows/package-deploy.yml`
 - `.gitea/workflows/pr-validation.yml`
-- `.gitea/workflows/agent-eval.yml`
 
 Preserve the existing `set -eo pipefail` pattern (not `-u` to avoid unbound variable errors). Keep the checkout step's `GIT_TERMINAL_PROMPT=0` and token-based URL pattern with `host.docker.internal:3000`.
 

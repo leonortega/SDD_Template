@@ -52,7 +52,7 @@ Never print, commit, paste into tickets, or write real API tokens into tracked f
    - **RED**: `tdd` + stack test framework + `clean-code` test structure
    - **GREEN**: `ponytail full` + stack conventions + `clean-code` + `security-best-practices` + `solid`
    - **REFACTOR**: `clean-architecture` + `clean-code` + `solid` + stack arch patterns
-6. **Check MCP routing before code searches.** Per `.codex/mcp-instructions.md`: source code → `codebase-memory-mcp`, documentation → `monorepo-docs-search`, services → service MCPs.
+6. **Check MCP routing for service interactions.** Per `.codex/mcp-instructions.md`: services → service MCPs; repository content search uses built-in file/search tools.
 7. **⚠️ MANDATORY: Write tests based on tasks before product code.** See `.codex/skills/_shared/pipeline-tdd-cycle.md` for the common TDD test-first pattern. Use:
    - **AC source:** the OpenSpec change specs and tasks
    - **Task source:** `openspec/changes/<name>/tasks.md`

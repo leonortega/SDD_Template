@@ -23,7 +23,7 @@ Before running quick setup, ensure the following CLI tools are available on the 
 | Docker Desktop | [docker.com](https://www.docker.com/products/docker-desktop/)       | Compose services, container builds                                                       |
 | Node.js (v20+) | [nodejs.org](https://nodejs.org/) or `winget install OpenJS.NodeJS` | OpenSpec CLI, frontend builds                                                            |
 | OpenSpec CLI   | `npm install -g @fission-ai/openspec@latest`                        | OpenSpec proposal workflow (`/opsx:propose`, `openspec status`, `openspec instructions`) |
-| Lefthook       | `python -m tools.sdd_cli tool-installer install-lefthook`           | Pre-commit hooks (gitleaks scan, commit-msg validation)                                  |
+| Lefthook       | `python -m tools.sdd_cli tool-installer install-lefthook`           | Pre-commit hooks (gitleaks scan, commit-msg validation) + pre-push `stack-tests` with coverage gate (`python -m tools.sdd_cli stack-tests` — unit/integration/architecture tests + `coverage.minimumPercent`, default 80) |
 
 Verify tools are installed:
 
@@ -88,7 +88,6 @@ If you need to run steps individually:
 | Validate observability              | `python -m tools.sdd_cli environment-lab validate-observability`                  |
 | Validate Gitea runner               | `python -m tools.sdd_cli environment-lab validate-gitea-runner`                   |
 | Provision Gitea secrets             | `python -m tools.sdd_cli environment-lab provision-gitea-secrets`                 |
-| Setup MCP server                    | `python tools/bm25s_flashrank/setup_mcp.py`                                       |
 | Install lefthook                    | `python -m tools.sdd_cli tool-installer install-lefthook`                         |
 
 ## Safety Rules
@@ -152,7 +151,6 @@ Useful `environment-lab` modes:
 - `validate-app-config`: validate `infra/deployment/apps.json` against `apps.schema.json` and check every app's Dockerfile exists.
 - `validate-docker-desktop`: check Docker Desktop configuration — `insecure-registries` includes `host.docker.internal:5001`, Docker socket present, Docker Compose available.
 - `validate-gitea-runner`: check Docker, Gitea runner images, runner tools, Docker socket mount, and `tools/docker_push.py` existence.
-- `setup-mcp-server`: run the monorepo-docs-search MCP setup script via `python tools/bm25s_flashrank/setup_mcp.py` (standalone script, not an `environment-lab` subcommand).
 
 ## CI Workflow Configuration
 
@@ -434,26 +432,6 @@ Configure Seq log search and Grafana health dashboards.
 
 **Values needed:** SEQ_URL (default `http://localhost:5341`), error alert window/threshold.
 **Safety:** Keep Seq data in Docker volume; do not export logs to tracked files.
-
-### Documentation Search MCP (monorepo-docs-search)
-
-Configure the `monorepo-docs-search` MCP server for fast BM25 + FlashRank documentation search across Markdown (`.md`, `.mdx`) files. This MCP is used by agents to route documentation lookups per `.codex/mcp-instructions.md`.
-
-1. Run the automated setup script:
-   ```bash
-   python tools/bm25s_flashrank/setup_mcp.py
-   ```
-   This script:
-   - Checks Python >= 3.10.
-   - Creates a shared virtual environment at `%USERPROFILE%\.mcp_shared_venv` (Windows) or `~/.mcp_shared_venv` (macOS/Linux).
-   - Installs dependencies: `mcp`, `bm25s`, `flashrank`.
-   - Writes the MCP server configuration to `.vscode/mcp.json` and `.cline/mcp_settings.json`.
-   - Auto-starts the MCP server and writes a PID file to `.vscode/.mcp_monorepo_docs_search.pid`.
-2. Validate the configuration is present in `.vscode/mcp.json` under `servers.monorepo-docs-search`.
-3. Validate the server registers correctly by checking agent documentation search routing via `.codex/mcp-instructions.md`.
-
-**Prerequisites:** Python 3.10 or newer, internet access for pip package download.
-**Safety:** The setup script only writes to local config files (`.vscode/mcp.json`, `.cline/mcp_settings.json`). It does not send data externally or require API tokens.
 
 ## Output
 

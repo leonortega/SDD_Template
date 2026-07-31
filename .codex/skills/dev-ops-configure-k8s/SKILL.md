@@ -129,7 +129,7 @@ The skill reads configuration from:
 
 ## Shared Context
 
-Before running, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc.
+Before running, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc.
 
 ## Workflow
 
@@ -145,7 +145,9 @@ Read the merged project profile and `infra/deployment/apps.json` to determine:
 
 For each app in `apps.json`, generate a `Dockerfile` at the app's project root (e.g., `frontend/Dockerfile`).
 
-**For web apps (React/Vue/Angular):**
+**AI-driven (no fixed template list):** Dockerfile/nginx.conf/.dockerignore generation is delegated to the `dev-flow-scaffold-project` skill, which reads `project-profile.local.json → stack.frontend` and resolves the correct Dockerfile for the actual stack. Use the JS/TS multi-stage node→nginx template below when the frontend is JS/TS (React/Vue/Angular/Svelte), a .NET `dotnet publish` Dockerfile for ASP.NET/Blazor, and the equivalent template for any other runtime — never assume a stack.
+
+**For JS/TS web apps (React/Vue/Angular):**
 
 ```dockerfile
 # Stage 1: Build
@@ -212,7 +214,7 @@ server {
 
 **For API apps (Node/FastAPI/Django/.NET):**
 
-Generate appropriate multi-stage Dockerfile based on the backend stack.
+Generate an appropriate multi-stage Dockerfile based on the backend stack — read the confirmed backend value from `project-profile.local.json → stack.backend` and pick the matching runtime template (`dotnet publish` for .NET, `pip install + uvicorn` for FastAPI/Django, `npm ci + node` for Node/Express, `go build` for Go). This is the responsibility of the `dev-flow-scaffold-project` skill (AI-driven, no fixed template list). `scaffold-k8s` sets the `PORT` env var for `role == "api"` apps; the Dockerfile decides how to consume it (e.g., `ASPNETCORE_URLS` for .NET). Never assume a stack: if the backend is unknown, ask the user rather than guessing.
 
 ### 3. Generate Kustomize Manifests
 
@@ -767,7 +769,7 @@ patches:
 resources:
   - ../../base
 images:
-  - name: host.docker.internal:8083/openproject
+  - name: host.docker.internal:5001/frontend
     newTag: latest
 ```
 
@@ -775,7 +777,7 @@ images:
 
 - Patches must reference **actual** `metadata.name` values that exist in the base resources
 - Placeholder variables like `${VARIABLE}` are NOT kustomize variables — they're treated as literal strings
-- If an overlay needs to set environment variables, use a proper patch targeting the real deployment name (e.g., `name: openproject`)
+- If an overlay needs to set environment variables, use a proper patch targeting the real deployment name (e.g., `name: frontend`)
 - Unused placeholder patches that don't match any resource cause `no resource matches strategic merge patch` error in kustomize v5+
 - Remove orphaned patch files when they're no longer referenced
 

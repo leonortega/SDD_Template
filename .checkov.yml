@@ -8,7 +8,10 @@
 # CKV_K8S_35: secrets as env vars vs files - opinionated, not a security boundary
 # CKV_K8S_69+: Cluster-level checks (kube-apiserver, etcd, kubelet configs)
 #   not applicable to deployment manifests
+# CKV_SECRET_6: placeholder values in infra/deployment/configuration.json
+#   (your-db-password, your-email-password) are intentional templates
 skip-check:
+  - CKV_SECRET_6
   - CKV_K8S_8
   - CKV_K8S_9
   - CKV_K8S_10

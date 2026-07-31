@@ -18,7 +18,7 @@ The loop has two timed phases:
 
 ## Shared Context
 
-Before reading or mutating review feedback, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/development.md` as the stage-specific doc. Load selected ticket, repository, and review adapters.
+Before reading or mutating review feedback, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/development.md` as the stage-specific doc. Load selected ticket, repository, and review adapters.
 
 Read `.codex/delivery-context.local.json` when present and verify the resolved ticket, branch, PR, and current head SHA match the locked ticket context before mutation.
 

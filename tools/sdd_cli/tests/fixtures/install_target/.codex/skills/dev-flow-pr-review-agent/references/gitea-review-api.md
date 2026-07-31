@@ -111,3 +111,29 @@ Default colors:
 - `codex-reviewed`: `#5319e7`
 - `needs-tests`: `#fbca04`
 - `needs-changes`: `#d73a4a`
+
+## Reviewers
+
+After PR creation, always verify that requested human reviewers are present in the PR response. If eligible reviewers were resolved but are missing, request them explicitly:
+
+```text
+POST {gitea.baseUrl}/api/v1/repos/{owner}/{repo}/pulls/{index}/requested_reviewers
+```
+
+Payload:
+
+```json
+{
+  "reviewers": ["username1", "username2"]
+}
+```
+
+Then re-fetch the PR and verify `requested_reviewers` is populated. If Gitea rejects the reviewer request, document the gap in the PR body and final summary.
+
+When `pr.reviewers` is `"all"`, list repository collaborators:
+
+```text
+GET {gitea.baseUrl}/api/v1/repos/{owner}/{repo}/collaborators
+```
+
+Normalize the response: Gitea may return either a JSON array or a single object. Use each collaborator's `login` first, then `username`. Exclude the PR author, the authenticated automation user, and empty/disabled/duplicate names.

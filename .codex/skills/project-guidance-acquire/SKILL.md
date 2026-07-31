@@ -82,6 +82,6 @@ Create `.codex/skill-sources.json` with your own repos:
 
 ## See also
 
-- `python -m tools.sdd_cli guidance discover` — list relevant skills from manifest.json by tech stack
+- `python -m tools.sdd_cli guidance discover` — search the internet (npx skills registry) for stack-relevant skills, never local
 - `python -m tools.sdd_cli tool-installer validate-manifest` — verify all manifest skills exist on disk
 - `docs/context-management.md` — Mandatory Skill Catalog Review process

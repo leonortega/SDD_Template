@@ -59,7 +59,7 @@ Final releases look like `v1.0.25`. Pre-release tags look like `v0.1.7-rc.2`.
 
 **Managed files** (from `sdd-tool-data.json` → `SDD_TOOL_INCLUDE_DIRS`):
 
-- `.agents/`, `.cline/`, `.codex/providers/`, `.codex/skills/`
+- `.agents/`, `.cline/`, `.codex/skills/`
 - `.gitea/workflows/`, `docs/`, `infra/`, `tools/`, `.vscode/`
 
 **Preserved files** (not overwritten):

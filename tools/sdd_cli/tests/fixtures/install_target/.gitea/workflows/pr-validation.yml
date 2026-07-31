@@ -6,6 +6,11 @@ on:
       - main
       - dev
 
+# Dev flow gate: requires the `codex-reviewed` label to be set on the PR.
+# This is applied by the AI review-agent (dev-flow-pr-review-agent skill)
+# after reviewing the diff. Without it, CI fails — ensuring every PR
+# receives automated review before merge.
+
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -59,6 +64,22 @@ jobs:
       - name: IaC scan (Checkov)
         shell: bash
         run: checkov -d . --compact --soft-fail --config-file .checkov.yml 2>&1
+
+      # ── Tests ──
+      # Repo tooling tests: always run the shell's own Python test suite
+      # (deterministic, stack-independent). Product tests (unit, integration,
+      # architecture) run via the lefthook pre-push hook (`stack-tests`) so the
+      # CI image stays lean — stack runtimes live on dev machines, not in
+      # sdd-e2e-ci:local. Never assume a tech stack.
+      - name: Repo tooling tests (SDD shell)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -d tools/sdd_cli/tests ]; then
+            python3 -m pytest tools/sdd_cli/tests/ -q
+          else
+            echo "No tools/sdd_cli/tests — repo tooling tests skipped."
+          fi
 
       - name: Dev flow gate (codex-reviewed label)
         env:

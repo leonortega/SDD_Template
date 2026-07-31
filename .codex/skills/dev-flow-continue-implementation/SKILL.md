@@ -16,7 +16,7 @@ PROD promotion remains explicit. Do not invoke `dev-ops-deploy-prod` only becaus
 
 ## Shared Context
 
-Before routing, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/architecture.md` as the stage-specific doc. Load only selected adapters needed to inspect the current route.
+Before routing, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/architecture.md` as the stage-specific doc. Load only selected adapters needed to inspect the current route.
 
 ## Configuration
 
@@ -81,7 +81,7 @@ Before delegating, inspect as much context as is safely available:
 - For high-risk routes, preserve full acceptance/spec context and tell the child skill whether adversarial review, deployment topology checks, or workload forecast resolution is required.
 - When a current installed-skill index exists, use it only to pass exact `SKILL.md` paths to child agents. If it is missing or stale, report that it should be regenerated; do not treat it as a replacement for `project-guidance-*`.
 
-Each child delivery skill owns its own workflow telemetry row. Do not append telemetry for a delegated child stage from this router, or the timing comment will double count the stage. This router may record one non-secret `dev-flow-continue-implementation` row through OpenProject time-entry telemetry via the `time-telemetry-upsert` operation (see `.codex/providers/ticket.openproject.md` → Operations → `time-telemetry-upsert` for the exact API payload with `spentOn`, `hours`, `comment`, and `_links`), or through `python -m tools.sdd_cli dev-flow append-telemetry -TicketKey {ticketKey}` as fallback, only when it performs meaningful routing work before or after delegation. Use marker `IA generated workflow telemetry: {ticketKey}:dev-flow-continue-implementation`. Resolve the activity href by running `python -m tools.sdd_cli dev-flow resolve-openproject-activity --workflow-stage dev-flow-continue-implementation --input-json '{"timeTelemetry":{...}}'` and reverse-lookup the activity ID from the resolved name.
+Each child delivery skill owns its own workflow telemetry row. Do not append telemetry for a delegated child stage from this router, or the timing comment will double count the stage. This router may record one non-secret `dev-flow-continue-implementation` row through OpenProject time-entry telemetry via the `time-telemetry-upsert` operation (see `.codex/skills/openproject-sprint-backlog/references/openproject-api.md` → Operations → `time-telemetry-upsert` for the exact API payload with `spentOn`, `hours`, `comment`, and `_links`), or through `python -m tools.sdd_cli dev-flow append-telemetry -TicketKey {ticketKey}` as fallback, only when it performs meaningful routing work before or after delegation. Use marker `IA generated workflow telemetry: {ticketKey}:dev-flow-continue-implementation`. Resolve the activity href by running `python -m tools.sdd_cli dev-flow resolve-openproject-activity --workflow-stage dev-flow-continue-implementation --input-json '{"timeTelemetry":{...}}'` and reverse-lookup the activity ID from the resolved name.
 
 Include `workflowStage`, `agentRole`, `startedUtc`, `finishedUtc`, `elapsedMilliseconds`, `retryCount`, and `outcome`; include blocker category when available, but do not put token counts, prompts, raw logs, or secrets in OpenProject time entries. On resume, create `.codex/agent-telemetry.local.jsonl` only when direct OpenProject time telemetry is unavailable, and do not clear existing rows for the same active ticket.
 
@@ -112,7 +112,6 @@ If the state is ambiguous, invoke `dev-flow-pipeline-status` or produce a read-o
 
   Before routing, preserve the `dev-flow-start-ticket` Stack Context Preflight:
   - The first ticket must not create a branch, ticket-provider generated block, ticket lock, or OpenSpec proposal until `docs/architecture.md`, `docs/development.md`, `docs/deployment.md`, and `openspec/config.yaml` define the current tool set and tech stack without `stack-context.*` drift from `AuditRecommendedTools`.
-  - Treat `.codex/tool-recommendations.common.json` as the tracked shape/template only.
   - When project guidance coverage has not been reviewed, route to `project-guidance-discover` so extra useful skills, MCPs, plugins, tools, references, practices, standards, and Codex-applicable IDE helpers are researched before suggestions are shown, and only confirmed items are passed to `project-guidance-acquire`.
 
 - Ticket in In Progress with active branch/OpenSpec but no PR: invoke `dev-flow-implement-ticket`.

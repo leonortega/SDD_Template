@@ -24,7 +24,7 @@ E2E QA fails → File bug → Move to Specified → Update parent OpenSpec → C
 
 ## Shared Context
 
-Before filing or linking tickets, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/development.md` and `docs/deployment.md` as stage-specific docs. Load selected ticket, repository, artifact, deployment, and E2E adapters as needed.
+Before filing or linking tickets, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/development.md` and `docs/deployment.md` as stage-specific docs. Load selected ticket, repository, artifact, deployment, and E2E adapters as needed.
 
 ## Configuration
 
@@ -133,6 +133,10 @@ See `.codex/skills/_shared/pipeline-tdd-cycle.md` for the common TDD test-first 
 - **AC source:** the bug ticket description (the IA generated block set in Phase 2 step 7). These are the contract for the fix.
 - **Task source:** the parent's `tasks.md` for any additional bug-fix tasks (appended in Phase 3).
 - **Test levels:** unit tests (per component), integration tests (per endpoint/feature), architecture tests (update existing project-wide file if structure changes).
+- **Quality gates:** the same hard gates as the feature flow apply to the bug fix:
+  - **Lefthook pre-push stack tests + coverage (`python -m tools.sdd_cli stack-tests`)** must pass before pushing. The hook runs unit, integration, and architecture tests per `.codex/skills/_shared/test-requirements.md`, driven by `stack.testFrameworks` from `.codex/project-profile.local.json`, then the **coverage gate** with the configurable threshold `coverage.minimumPercent` (default `80`) — stack-configured: install + test + coverage each mapped framework; no stack: clean skip. Do not bypass the hook with `--no-verify` unless the user explicitly requests it.
+  - **Coverage gate:** coverage must meet `coverage.minimumPercent` (default `80`) from `.codex/quality.local.json` before PR creation. Below threshold: HARD STOP (authority level 5) — add/update tests and re-run until met.
+  - **Full local CI loop:** run the checks in `.gitea/workflows/pr-validation.yml` (via `sdd-e2e-ci:local` when Docker is available) and fix all errors before creating the PR.
 
 Commit on the fix branch:
 ```bash
@@ -302,6 +306,8 @@ For non-code defects, report the parent ticket, evidence path, and required non-
 - Parent ticket has no active OpenSpec change: report this as an anomaly but continue (create branch without OpenSpec update).
 - openspec CLI unavailable: report the blocker but continue with branch creation (skip OpenSpec update).
 - AI review fails to run (network error, missing token, skill unavailable): report the blocker but continue — AI review is advisory for the implementer, not a hard gate. If it ran and found `BLOCKER` findings, document them in the handoff output.
+- Lefthook pre-push stack tests fail or an unmapped framework is configured: stop before pushing — fix the tests or framework mapping and re-run `python -m tools.sdd_cli stack-tests` until it passes. Do not bypass the hook with `--no-verify` unless the user explicitly requests it. When no stack is configured the hook skips cleanly (expected template state).
+- Coverage below `coverage.minimumPercent` (default `80`): HARD STOP (authority level 5) before PR creation — add or update tests and re-run coverage until the threshold is met.
 - PR not merged before Phase 6: stop and report the PR URL — do not deploy unmerged changes.
 - QA deployment fails (Phase 6 step 28): stop and report deployment failure — do not close the bug or return the parent to QA.
 - Parent ticket is not in `Test failed` when moving back to `In testing`: report the current state but continue — the parent may already be in a valid retest state.

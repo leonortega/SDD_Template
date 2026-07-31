@@ -17,14 +17,10 @@ import pytest
 
 @pytest.fixture
 def tool_installer_mocks() -> list[patch]:
-    """Patch all 7 tool_installer functions used by Stage 3 with defaults."""
+    """Patch all 3 tool_installer functions used by Stage 3 with defaults."""
     dummy_ok = {"valid": True, "actions": [], "findings": []}
     return [
-        patch("tools.sdd_cli.tool_installer.install_codegraph", return_value=dummy_ok),
-        patch("tools.sdd_cli.tool_installer.ensure_codebase_memory", return_value=dummy_ok),
-        patch("tools.sdd_cli.tool_installer.install_claw_compactor", return_value=dummy_ok),
-        patch("tools.sdd_cli.tool_installer.install_monorepo_docs_search", return_value=dummy_ok),
-        patch("tools.sdd_cli.tool_installer.install_playwright_mcp", return_value=dummy_ok),
+        patch("tools.sdd_cli.tool_installer.ensure_mcp_servers", return_value=dummy_ok),
         patch("tools.sdd_cli.tool_installer.ensure_quality_tools", return_value=dummy_ok),
         patch("tools.sdd_cli.tool_installer.validate_manifest", return_value=dummy_ok),
     ]
@@ -54,15 +50,12 @@ def test_stage3_tool_installation_dry_run(tmp_path: Path) -> None:
     from tools.sdd_cli.full_setup import stage3_tool_installation
 
     dummy_ok = {"valid": True, "actions": [], "findings": []}
-    with patch("tools.sdd_cli.tool_installer.install_codegraph", return_value=dummy_ok):
-        with patch("tools.sdd_cli.tool_installer.ensure_codebase_memory", return_value=dummy_ok):
-            with patch("tools.sdd_cli.tool_installer.install_claw_compactor", return_value=dummy_ok):
-                with patch("tools.sdd_cli.tool_installer.install_monorepo_docs_search", return_value=dummy_ok):
-                    with patch("tools.sdd_cli.tool_installer.install_playwright_mcp", return_value=dummy_ok):
-                        with patch("tools.sdd_cli.tool_installer.validate_manifest", return_value=dummy_ok):
-                            result = stage3_tool_installation(tmp_path, dry_run=True)
+    with patch("tools.sdd_cli.tool_installer.ensure_mcp_servers", return_value=dummy_ok):
+        with patch("tools.sdd_cli.tool_installer.ensure_quality_tools", return_value=dummy_ok):
+            with patch("tools.sdd_cli.tool_installer.validate_manifest", return_value=dummy_ok):
+                result = stage3_tool_installation(tmp_path, dry_run=True)
     assert result["valid"] is True
-    assert len(result["steps"]) == 7
+    assert len(result["steps"]) == 3
     for step in result["steps"]:
         assert step.get("valid") is True
         assert "OK" in step.get("message", "")
@@ -73,16 +66,13 @@ def test_stage3_tool_installation_success(tmp_path: Path) -> None:
     from tools.sdd_cli.full_setup import stage3_tool_installation
 
     dummy_ok = {"valid": True, "actions": [], "findings": []}
-    with patch("tools.sdd_cli.tool_installer.install_codegraph", return_value=dummy_ok):
-        with patch("tools.sdd_cli.tool_installer.ensure_codebase_memory", return_value=dummy_ok):
-            with patch("tools.sdd_cli.tool_installer.install_claw_compactor", return_value=dummy_ok):
-                with patch("tools.sdd_cli.tool_installer.install_monorepo_docs_search", return_value=dummy_ok):
-                    with patch("tools.sdd_cli.tool_installer.install_playwright_mcp", return_value=dummy_ok):
-                        with patch("tools.sdd_cli.tool_installer.validate_manifest", return_value=dummy_ok):
-                            result = stage3_tool_installation(tmp_path, dry_run=False)
+    with patch("tools.sdd_cli.tool_installer.ensure_mcp_servers", return_value=dummy_ok):
+        with patch("tools.sdd_cli.tool_installer.ensure_quality_tools", return_value=dummy_ok):
+            with patch("tools.sdd_cli.tool_installer.validate_manifest", return_value=dummy_ok):
+                result = stage3_tool_installation(tmp_path, dry_run=False)
 
     assert result["valid"] is True
-    assert len(result["steps"]) == 7
+    assert len(result["steps"]) == 3
     assert all(s.get("valid") for s in result["steps"])
 
 
@@ -92,25 +82,18 @@ def test_stage3_tool_installation_partial_failure(tmp_path: Path) -> None:
 
     dummy_ok = {"valid": True, "actions": [], "findings": []}
     dummy_fail = {"valid": False, "actions": [], "findings": [
-        {"path": "tools/codegraph", "key": "verify", "message": "npx not available", "severity": "error"}
+        {"path": "tools/mcp", "key": "verify", "message": "MCP registration failed", "severity": "error"}
     ]}
-    with patch("tools.sdd_cli.tool_installer.install_codegraph", return_value=dummy_fail):
-        with patch("tools.sdd_cli.tool_installer.ensure_codebase_memory", return_value=dummy_ok):
-            with patch("tools.sdd_cli.tool_installer.install_claw_compactor", return_value=dummy_ok):
-                with patch("tools.sdd_cli.tool_installer.install_monorepo_docs_search", return_value=dummy_fail):
-                    with patch("tools.sdd_cli.tool_installer.install_playwright_mcp", return_value=dummy_ok):
-                        with patch("tools.sdd_cli.tool_installer.validate_manifest", return_value=dummy_ok):
-                            result = stage3_tool_installation(tmp_path, dry_run=False)
+    with patch("tools.sdd_cli.tool_installer.ensure_mcp_servers", return_value=dummy_fail):
+        with patch("tools.sdd_cli.tool_installer.ensure_quality_tools", return_value=dummy_ok):
+            with patch("tools.sdd_cli.tool_installer.validate_manifest", return_value=dummy_ok):
+                result = stage3_tool_installation(tmp_path, dry_run=False)
 
     assert result["valid"] is False
-    assert len(result["steps"]) == 7
+    assert len(result["steps"]) == 3
     assert result["steps"][0]["valid"] is False
-    assert result["steps"][1]["valid"] is False
+    assert result["steps"][1]["valid"] is True
     assert result["steps"][2]["valid"] is True
-    assert result["steps"][3]["valid"] is True
-    assert result["steps"][4]["valid"] is True
-    assert result["steps"][5]["valid"] is True
-    assert result["steps"][6]["valid"] is True
 
 
 def test_stage3_tool_installation_exception(tmp_path: Path) -> None:
@@ -118,14 +101,11 @@ def test_stage3_tool_installation_exception(tmp_path: Path) -> None:
     from tools.sdd_cli.full_setup import stage3_tool_installation
 
     dummy_ok = {"valid": True, "actions": [], "findings": []}
-    with patch("tools.sdd_cli.tool_installer.install_codegraph",
+    with patch("tools.sdd_cli.tool_installer.ensure_mcp_servers",
                side_effect=RuntimeError("Network error")):
-        with patch("tools.sdd_cli.tool_installer.ensure_codebase_memory", return_value=dummy_ok):
-            with patch("tools.sdd_cli.tool_installer.install_claw_compactor", return_value=dummy_ok):
-                with patch("tools.sdd_cli.tool_installer.install_monorepo_docs_search", return_value=dummy_ok):
-                    with patch("tools.sdd_cli.tool_installer.install_playwright_mcp", return_value=dummy_ok):
-                        with patch("tools.sdd_cli.tool_installer.validate_manifest", return_value=dummy_ok):
-                            result = stage3_tool_installation(tmp_path, dry_run=False)
+        with patch("tools.sdd_cli.tool_installer.ensure_quality_tools", return_value=dummy_ok):
+            with patch("tools.sdd_cli.tool_installer.validate_manifest", return_value=dummy_ok):
+                result = stage3_tool_installation(tmp_path, dry_run=False)
 
     assert result["valid"] is False
     assert result["steps"][0]["valid"] is False

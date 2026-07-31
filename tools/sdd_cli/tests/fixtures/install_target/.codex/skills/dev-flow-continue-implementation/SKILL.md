@@ -1,5 +1,6 @@
 ---
 name: dev-flow-continue-implementation
+license: MIT
 description: Orchestrate the full configured ticket delivery lifecycle by inspecting current ticket, repository, review, artifact, OpenSpec, QA, tag, and production state through the selected project-profile adapters, then delegating to the correct focused skill. Use when Codex is asked to automatically continue, resume, implement, deploy, QA, or hand off a ticket without the user knowing the current workflow step.
 ---
 
@@ -15,7 +16,7 @@ PROD promotion remains explicit. Do not invoke `dev-ops-deploy-prod` only becaus
 
 ## Shared Context
 
-Before routing, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/architecture.md` as the stage-specific doc. Load only selected adapters needed to inspect the current route.
+Before routing, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/architecture.md` as the stage-specific doc. Load only selected adapters needed to inspect the current route.
 
 ## Configuration
 
@@ -25,16 +26,66 @@ Use ignored `.codex/delivery-context.local.json` as the ticket context lock acco
 
 ## Workflow
 
-Run state inspection, routing, rerun handling, and output reporting as one read-first workflow. Use validation evidence from child skills and durable checkpoints before routing to the next handoff stage.
+Run pre-flight, state inspection, routing, rerun handling, and output reporting as one read-first workflow. Use validation evidence from child skills and durable checkpoints before routing to the next handoff stage.
 
-Before delegating child work, apply the shared delivery contract's risk-adaptive depth and installed-skill runtime index rules:
+### Pre-Flight: Branch Auto-Checkout
+
+Before any state inspection or routing, ensure the working tree is on the correct branch:
+
+1. Read `.codex/delivery-context.local.json` if it exists. Extract the `branch` field using `python3 -c "import json; print(json.load(open('.codex/delivery-context.local.json')).get('branch', ''))"` or equivalent. If the file is malformed JSON (parse fails), skip auto-checkout and report the corrupted file in the output — do not block on it.
+2. If `branch` is not set or empty, skip auto-checkout (this is a normal start-ticket flow with no handoff context).
+3. Check for dirty working tree before switching:
+   ```bash
+   if [ -n "$(git status --porcelain)" ]; then
+     echo "Working tree is dirty — stashing before branch switch"
+     git stash push -m "auto-checkout-pre-switch-$(date +%s)"
+   fi
+   ```
+   This prevents checkout failures from uncommitted changes. The stash is left for the agent to pop during implementation, or cleaned up when no longer needed.
+4. If `branch` is set, run:
+   ```bash
+   TARGET_BRANCH="{branch}"
+   CURRENT_BRANCH=$(git branch --show-current)
+   if [ "$CURRENT_BRANCH" != "$TARGET_BRANCH" ]; then
+     echo "Auto-checkout: switching from $CURRENT_BRANCH to $TARGET_BRANCH"
+     if git checkout "$TARGET_BRANCH" 2>/dev/null; then
+       echo "Switched to $TARGET_BRANCH"
+     else
+       echo "Branch $TARGET_BRANCH not local — fetching from origin first"
+       git fetch origin "$TARGET_BRANCH" 2>/dev/null && git checkout "$TARGET_BRANCH" 2>/dev/null
+     fi
+   fi
+   ```
+5. Verify the checkout succeeded. If both local checkout and fetch+checkout fail:
+   - Run `git branch -a` to list all branches
+   - If the branch exists under a different name (e.g., hyphens vs slashes), suggest the correction
+   - If the branch truly doesn't exist anywhere, stop and report: `"Branch '{branch}' from delivery-context.local.json does not exist locally or on origin. The handoff context is stale — route to dev-flow-pipeline-status."`
+
+6. After checkout succeeds, pull the latest:
+   ```bash
+   if git rev-parse --abbrev-ref --symbolic-full-name @{upstream} >/dev/null 2>&1; then
+     git pull --ff-only
+   else
+     echo "No upstream configured — skipping pull"
+   fi
+   ```
+   This checks for an upstream before pulling. If upstream exists but the network is down, `git pull --ff-only` will fail loudly (preventing the agent from proceeding on a stale branch). Local-only branches (e.g., freshly created in the bug flow) have no upstream and skip the pull cleanly.
+7. Report the checkout action (switched / already correct / branch not found / corrupted file) in the output summary.
+
+### State Inspection
+
+Before delegating, inspect as much context as is safely available:
 
 - Resolve delivery risk from ticket, OpenSpec, PR/diff, artifact, and deployment evidence when enough information exists.
 - Use compact summaries for low-risk routing, but never skip ticket, branch, PR, validation, QA, artifact, PROD, rollback, or secret-safety gates.
 - For high-risk routes, preserve full acceptance/spec context and tell the child skill whether adversarial review, deployment topology checks, or workload forecast resolution is required.
 - When a current installed-skill index exists, use it only to pass exact `SKILL.md` paths to child agents. If it is missing or stale, report that it should be regenerated; do not treat it as a replacement for `project-guidance-*`.
 
-Each child delivery skill owns its own workflow telemetry row. Do not append telemetry for a delegated child stage from this router, or the timing comment will double count the stage. This router may record one non-secret `dev-flow-continue-implementation` row through OpenProject time-entry telemetry, or through `python -m tools.sdd_cli dev-flow append-telemetry -TicketKey {ticketKey}` as fallback, only when it performs meaningful routing work before or after delegation. Include `workflowStage`, `agentRole`, `startedUtc`, `finishedUtc`, `elapsedMilliseconds`, `retryCount`, and `outcome`; include blocker category when available, but do not put token counts, prompts, raw logs, or secrets in OpenProject time entries. On resume, create `.codex/agent-telemetry.local.jsonl` only when direct OpenProject time telemetry is unavailable, and do not clear existing rows for the same active ticket.
+Each child delivery skill owns its own workflow telemetry row. Do not append telemetry for a delegated child stage from this router, or the timing comment will double count the stage. This router may record one non-secret `dev-flow-continue-implementation` row through OpenProject time-entry telemetry via the `time-telemetry-upsert` operation (see `.codex/skills/openproject-sprint-backlog/references/openproject-api.md` → Operations → `time-telemetry-upsert` for the exact API payload with `spentOn`, `hours`, `comment`, and `_links`), or through `python -m tools.sdd_cli dev-flow append-telemetry -TicketKey {ticketKey}` as fallback, only when it performs meaningful routing work before or after delegation. Use marker `IA generated workflow telemetry: {ticketKey}:dev-flow-continue-implementation`. Resolve the activity href by running `python -m tools.sdd_cli dev-flow resolve-openproject-activity --workflow-stage dev-flow-continue-implementation --input-json '{"timeTelemetry":{...}}'` and reverse-lookup the activity ID from the resolved name.
+
+Include `workflowStage`, `agentRole`, `startedUtc`, `finishedUtc`, `elapsedMilliseconds`, `retryCount`, and `outcome`; include blocker category when available, but do not put token counts, prompts, raw logs, or secrets in OpenProject time entries. On resume, create `.codex/agent-telemetry.local.jsonl` only when direct OpenProject time telemetry is unavailable, and do not clear existing rows for the same active ticket.
+
+For shared API helpers including time-entry POST payload format and activity reverse-lookup, see `.codex/skills/_shared/api-helpers.md` → OpenProject → Workflow time telemetry.
 
 Workflow timing comments use stable marker `IA generated workflow timing: {ticketKey}` and are finalized by `configured QA gate` after the E2E QA ticket comment is verified. During routing, read existing ticket comments when the API allows it and report whether the workflow timing marker is present, missing, or blocked; do not derive timing from ticket-provider generated marker timestamps.
 When the ticket adapter is OpenProject, do not derive timing from OpenProject generated marker timestamps.
@@ -61,8 +112,8 @@ If the state is ambiguous, invoke `dev-flow-pipeline-status` or produce a read-o
 
   Before routing, preserve the `dev-flow-start-ticket` Stack Context Preflight:
   - The first ticket must not create a branch, ticket-provider generated block, ticket lock, or OpenSpec proposal until `docs/architecture.md`, `docs/development.md`, `docs/deployment.md`, and `openspec/config.yaml` define the current tool set and tech stack without `stack-context.*` drift from `AuditRecommendedTools`.
-  - Treat `.codex/tool-recommendations.common.json` as the tracked shape/template only.
   - When project guidance coverage has not been reviewed, route to `project-guidance-discover` so extra useful skills, MCPs, plugins, tools, references, practices, standards, and Codex-applicable IDE helpers are researched before suggestions are shown, and only confirmed items are passed to `project-guidance-acquire`.
+
 - Ticket in In Progress with active branch/OpenSpec but no PR: invoke `dev-flow-implement-ticket`.
 - Open PR exists: route to `dev-flow-implement-ticket`; it delegates immediate AI review feedback fixes and late human PR feedback fixes to the repo-owned `dev-flow-pr-review-feedback-loop` skill.
 - PR merged to `dev` and artifact is not yet promoted to QA: invoke `dev-ops-post-merge-deploy`.

@@ -265,21 +265,15 @@ def stage3_tool_installation(root: Path, dry_run: bool = False) -> dict[str, Any
 
     The lab already installs: lefthook, grafana-mcp, openproject-mcp, gitea-mcp, k8s-mcp.
     Stage 3 installs the remaining tools:
-        1. codegraph (npx verify + MCP config)
-        2. monorepo-docs-search (shared venv + MCP registration)
-        3. claw-compactor (pip install into shared venv)
-        4. codebase-memory (seed files + MCP registration)
-        5. playwright MCP (register in .vscode/mcp.json)
-        6. quality tools (gitleaks, trivy, trunk, coverage check)
-        7. validate-manifest (check skill manifest integrity)
+        1. ensure-mcp-servers (re-ensures ALL MCP registrations in .vscode/mcp.json —
+           playwright, grafana, k8s, gitea, openproject; idempotent, the lab already
+           installed the service MCPs in stage 2)
+        2. quality tools (gitleaks, trivy, trunk, coverage check)
+        3. validate-manifest (check skill manifest integrity)
     """
     from .tool_installer import (  # type: ignore[import-not-found]
-        ensure_codebase_memory,
+        ensure_mcp_servers,
         ensure_quality_tools,
-        install_claw_compactor,
-        install_codegraph,
-        install_monorepo_docs_search,
-        install_playwright_mcp,
         validate_manifest,
     )
 
@@ -287,16 +281,10 @@ def stage3_tool_installation(root: Path, dry_run: bool = False) -> dict[str, Any
     sub_steps: list[dict[str, Any]] = []
 
     # Order matters:
-    #   - install-monorepo-docs-search creates the shared MCP venv (~/.mcp_shared_venv)
-    #   - install-claw-compactor depends on that venv existing
-    #   - ensure-codebase-memory, install-playwright-mcp only register in .vscode/mcp.json
+    #   - ensure-mcp-servers registers every MCP in .vscode/mcp.json
     #   - ensure-quality-tools checks gitleaks, trivy, trunk, coverage (non-MCP)
     installers: list[tuple[str, Any]] = [
-        ("install-codegraph", install_codegraph),
-        ("install-monorepo-docs-search", install_monorepo_docs_search),
-        ("install-claw-compactor", install_claw_compactor),
-        ("ensure-codebase-memory", ensure_codebase_memory),
-        ("install-playwright-mcp", install_playwright_mcp),
+        ("ensure-mcp-servers", ensure_mcp_servers),
         ("ensure-quality-tools", ensure_quality_tools),
         ("validate-manifest", validate_manifest),
     ]
@@ -335,15 +323,19 @@ def stage3_tool_installation(root: Path, dry_run: bool = False) -> dict[str, Any
     return result
 
 
-# ── Stage 4: Project Guidance ────────────────────────────────────────────def stage4_project_guidance(root: Path, dry_run: bool = False) -> dict[str, Any]:
+# ── Stage 4: Project Guidance ────────────────────────────────────────────
+
+
+def stage4_project_guidance(root: Path, dry_run: bool = False) -> dict[str, Any]:
     """Stage 4: Interactive project guidance.
 
     1. Inspect project profile status
-    2. Search internet for stack-relevant skills
-    3. Show found skills and ask user which to install
-    4. Install selected skills via npx skills add
+    2. Search internet for stack-relevant skills (never local)
+    3. Show found skills and ask user which to install (interactive gate)
+    4. Install ONLY the user-selected skills via npx skills add
 
-    Non-interactive (CI): just logs what would be done.
+    Non-interactive (CI): reports found skills but NEVER installs — no
+    TTY confirmation available means nothing is installed.
     """
     result = configure_result(
         "Stage4-ProjectGuidance", dry_run, write_enabled=not dry_run

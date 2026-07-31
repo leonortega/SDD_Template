@@ -64,11 +64,12 @@
       "description": "Environment setup and configuration",
       "skills": [
         "configure-dev-environment/SKILL.md",
-        "configure-ci-workflows/SKILL.md"
+        "configure-ci-workflows/SKILL.md",
+        "dev-flow-scaffold-project/SKILL.md"
       ]
     },
     "guidance": {
-      "description": "Project stack detection and skill discovery from manifest",
+      "description": "Project stack detection and internet skill discovery (npx skills registry, never local)",
       "skills": ["project-guidance-discover/SKILL.md"]
     },
     "plan": {

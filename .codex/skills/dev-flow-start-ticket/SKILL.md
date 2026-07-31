@@ -30,7 +30,7 @@ For setup details and branch pattern options, read `references/configuration.md`
 
 ## Shared Context
 
-Before mutating ticket or repository state, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/architecture.md` as the stage-specific doc. Load selected ticket and repository adapters before any mutation.
+Before mutating ticket or repository state, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/architecture.md` as the stage-specific doc. Load selected ticket and repository adapters before any mutation.
 
 This skill owns initial creation of ignored `.codex/delivery-context.local.json` for automatic delivery. OpenProject time entries are the only telemetry store. Never commit local workflow files.
 
@@ -41,7 +41,7 @@ This skill owns initial creation of ignored `.codex/delivery-context.local.json`
 OpenProject time entries are the PRIMARY telemetry store. You MUST:
 
 1. **Capture UTC start time** before the first ticket-specific mutation.
-2. **Create the time entry** via `time-telemetry-upsert` (POST `/api/v3/time_entries`). See `.codex/providers/ticket.openproject.md` → Operations → `time-telemetry-upsert` for the exact API payload with `spentOn`, `hours`, `comment`, `_links.user`, `_links.entity`, `_links.project`, and `_links.activity`.
+2. **Create the time entry** via `time-telemetry-upsert` (POST `/api/v3/time_entries`). See `.codex/skills/openproject-sprint-backlog/references/openproject-api.md` → Operations → `time-telemetry-upsert` for the exact API payload with `spentOn`, `hours`, `comment`, `_links.user`, `_links.entity`, `_links.project`, and `_links.activity`.
 3. **Use marker** `IA generated workflow telemetry: {ticketKey}:dev-flow-start-ticket`.
 4. **Resolve activity** by running:
    ```bash
@@ -71,7 +71,6 @@ Required stack context:
 
 - `docs/architecture.md`, `docs/development.md`, and `docs/deployment.md` contain `Technology Stack And Tool Set`.
 - `openspec/config.yaml` contains `context:` and `rules:` with the current stack and artifact guidance.
-- `.codex/tool-recommendations.common.json` exists as the tracked placeholder-safe shape/template.
 - Ignored `.codex/tool-recommendations.local.json` is used only after project guidance discovery confirms local recommendations and `usedInSteps`.
 
 Run the read-only recommendation audit before Git, ticket provider, or OpenSpec mutation when any of these files are missing, appear unconfigured, or this is the first ticket start in a fresh repository:
@@ -218,7 +217,7 @@ Before creating the OpenSpec proposal (step 16), verify that the `openspec` CLI 
        ```
        Extract `estimatedTotalHours` from the result.
 
-    b. **Set estimatedTime on the work package** via the ticket adapter's `set-estimated-time` operation (see `.codex/providers/ticket.openproject.md` → Operations → `set-estimated-time`). Convert hours to ISO-8601 duration (e.g. `5` → `PT5H`, `2.5` → `PT2H30M`). Fetch current `lockVersion` first.
+    b. **Set estimatedTime on the work package** via the ticket adapter's `set-estimated-time` operation (see `.codex/skills/openproject-sprint-backlog/references/openproject-api.md` → Operations → `set-estimated-time`). Convert hours to ISO-8601 duration (e.g. `5` → `PT5H`, `2.5` → `PT2H30M`). Fetch current `lockVersion` first.
 
     c. **Log a time entry for the start-ticket stage** via `time-telemetry-upsert` if not already logged (see Workflow Telemetry section above).
 
@@ -384,7 +383,7 @@ Use the selected ticket adapter only. Never use MCPs, Docker containers, or dire
 
 Load credentials from `.codex/client-tools.local.json` or optional environment overrides only. Avoid echoing request headers, tokens, or full credential-bearing URLs.
 
-Use provider-neutral operations from `.codex/skills/_shared/provider-adapter-contract.md`: `list`, `read`, `enrich`, `move-state`, `comment`, and `verify-marker`. The selected ticket adapter translates those operations to concrete endpoints, payload fields, lock/version mechanics, and state names.
+Use provider-neutral operations (`list`, `read`, `enrich`, `move-state`, `comment`, and `verify-marker`). The selected ticket adapter translates those operations to concrete endpoints, payload fields, lock/version mechanics, and state names.
 Fetch the current `lockVersion` before OpenProject description or status updates.
 
 To move a ticket to the in-progress status, resolve the configured target state through the selected ticket adapter. Do not guess a state id or provider-specific lock/version value.

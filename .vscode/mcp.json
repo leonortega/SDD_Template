@@ -1,17 +1,5 @@
 {
   "mcpServers": {
-    "monorepo-docs-search": {
-      "command": "${env:USERPROFILE}\\.mcp_shared_venv\\Scripts\\python.exe",
-      "args": [
-        "${workspaceFolder}\\tools\\bm25s_flashrank\\mcp_doc_research.py"
-      ],
-      "description": "BM25 + FlashRank search over .md/.mdx files"
-    },
-    "codebase-memory-mcp": {
-      "command": "${env:USERPROFILE}\\AppData\\Local\\Programs\\codebase-memory-mcp\\codebase-memory-mcp.exe",
-      "args": [],
-      "description": "Graph-based code search with BM25 and Neo4j"
-    },
     "gitea": {
       "command": "docker",
       "args": [

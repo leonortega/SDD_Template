@@ -1,4 +1,5 @@
 <!-- TIER 1: STABLE PREFIX - Context management fundamentals, authority order, cache hygiene -->
+
 # Context Management Fundamentals
 
 This repository treats context as an SDLC asset. Durable project knowledge belongs in tracked documentation and workflow contracts, not only in chat history, temporary notes, PR comments, or OpenProject comments.
@@ -31,7 +32,7 @@ Load only the context needed for the workflow stage.
 - Ticket start: project profile, selected ticket/repository adapters, ticket, current ticket state, base branch, branch policy, OpenSpec decision rules, and existing generated markers.
 - Implementation: project profile, selected stack/repository/review adapters, ticket lock, ticket, OpenSpec apply context files, relevant code, relevant tests, quality gates, and local docs for architecture/development/deployment constraints.
 - PR review: PR diff, ticket, OpenSpec artifacts, relevant tests, CI status, review labels, and current head SHA.
-- QA and deploy: ticket lock, merged PR, artifact commit, Nexus paths, `release.json`, workflow run, DEV/QA URLs, health checks, and QA evidence rules.
+- QA and deploy: ticket lock, merged PR, artifact commit, Nexus paths, `release-{env}.json`, workflow run, DEV/QA URLs, health checks, and QA evidence rules.
 - PROD: QA-approved artifact, source RC tag, final version, `main` target commit, release manifest, PROD health checks, and monitoring status.
 - Rollback or hotfix: incident/ticket context, current PROD release, known-good artifact, rollback lineage, active ticket lock mismatch, and follow-up ownership.
 
@@ -42,7 +43,7 @@ Before mutating OpenProject, Git, Gitea, Nexus, tags, or release manifests, refr
 - OpenProject status, ticket description, and generated comments.
 - Current Git branch, dirty state, remote branch, and tags.
 - Gitea PR status, labels, reviews, head SHA, merge commit, and CI status.
-- Nexus artifact files under `app/{commitSha}/`, including `release.json`.
+- Nexus artifact files under `app/{commitSha}/`, including `release-{env}.json`.
 - DEV, QA, and PROD health evidence when deployment state matters.
 - QA evidence, RC tags, final tags, and rollback lineage before promotion or rollback.
 
@@ -126,12 +127,14 @@ Content that changes every agent turn. Keep it as compact as possible:
 1. **Always order** as: `[Tier 1] → [BREAKPOINT] → [Tier 2] → [BREAKPOINT] → [Tier 3] → [BREAKPOINT] → [Tier 4]`
 2. **Never** intersperse dynamic Tier 4 data into cached Tier 1-3 blocks — doing so invalidates the entire cache.
 3. **Never** insert timestamps, random IDs, raw tool dumps, or refreshed status summaries into stable context blocks.
-4. **Keep dynamic blocks short** — only include what the current turn actually needs. Use `Claw Compactor` for pre-prompt compression of code/JSON/log content in Tier 4.
+4. **Keep dynamic blocks short** — only include what the current turn actually needs. Compress code/JSON/log content in Tier 4 before including it.
 5. **Do not reorder** Tier 1-2 files between turns — cache hits depend on identical prefixes.
 
 ### Telemetry
 
-If a run records model telemetry, use OpenProject time entries for the active ticket via the `time-telemetry-upsert` operation (POST `/api/v3/time_entries`). There is no fallback — if the API fails, stop and report the failure. Delivery stages maintain a concise generated OpenProject timing comment for the active ticket from OpenProject time entries with per-stage outcome, duration, and UTC start/finish values; raw logs, token counts, prompts, and sensitive values stay out of OpenProject. E2E QA posts or patches the final timing comment after the E2E QA comment is verified because PROD promotion is a separate explicit release step.
+Telemetry is posted directly to OpenProject time entries for the active ticket via the `time-telemetry-upsert` operation (POST `/api/v3/time_entries`) on a per-stage basis. There is no local telemetry file — each stage immediately POSTs its telemetry record to OpenProject when completed. There is no fallback — if the API fails, stop and report the failure.
+
+Delivery stages maintain a concise generated OpenProject timing comment for the active ticket from OpenProject time entries with per-stage outcome, duration, and UTC start/finish values; raw logs, token counts, prompts, and sensitive values stay out of OpenProject. E2E QA posts or patches the final timing comment after the E2E QA comment is verified because PROD promotion is a separate explicit release step.
 
 ## Risk-Adaptive Context Loading
 
@@ -141,7 +144,7 @@ Strict gates do not require every run to load every long instruction body. Agent
 - `standard` risk: use the normal stage context bundle.
 - `high` risk: load full acceptance/spec context, affected deployment/security/release guidance, and adversarial review evidence.
 
-Project guidance remains the broad catalog for skills, tools, references, practices, standards, MCPs, and plugins. The installed-skill runtime index is only an ignored cache of exact installed `SKILL.md` paths used to avoid repeated scans and pass precise skill paths during delegation.
+Skills, tools, and MCPs are fixed for the lab stack. Product-specific skills are added from `.codex/skills/manifest.json` when the tech stack is selected. The manifest is the single source of truth for available skills.
 
 Avoid duplicate context systems. Ticket refinement belongs in the managed OpenProject block; implementation planning belongs in OpenSpec; recurring workflow learning belongs in `dev-flow-retrospective-audit`, docs, the shared contract, or `.codex/memory/` according to the existing authority order.
 

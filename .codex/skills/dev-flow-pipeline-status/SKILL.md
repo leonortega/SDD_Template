@@ -14,7 +14,7 @@ Use this skill for read-only delivery visibility. It must not mutate ticket, rep
 
 ## Shared Context
 
-Before reporting, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/architecture.md` as the stage-specific doc. Load only adapters needed for read-only status. This remains a read-only skill; do not update memory unless the user explicitly asks for a workflow-memory correction.
+Before reporting, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/architecture.md` as the stage-specific doc. Load only adapters needed for read-only status. This remains a read-only skill; do not update memory unless the user explicitly asks for a workflow-memory correction.
 
 ## Configuration
 

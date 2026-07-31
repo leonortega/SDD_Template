@@ -1,0 +1,27 @@
+# Kind cluster config for sdd-cluster
+# extraPortMappings enable direct host access to NodePort services
+# without needing kubectl port-forward.
+#
+# Host port → NodePort → Service
+#  8081    →  30080   → frontend DEV (web)
+#  5002    →  30500   → backend DEV (api)
+#  8082    →  30081   → frontend QA (web)
+#  5003    →  30501   → backend QA (api)
+# Note: 5001 is reserved by Nexus Docker registry (infra/nexus/compose.yml)
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 8081
+        protocol: TCP
+      - containerPort: 30500
+        hostPort: 5002
+        protocol: TCP
+      - containerPort: 30081
+        hostPort: 8082
+        protocol: TCP
+      - containerPort: 30501
+        hostPort: 5003
+        protocol: TCP

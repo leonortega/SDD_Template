@@ -15,11 +15,19 @@ For exact repository/review provider API endpoint guidance, read `the selected r
 
 ## Shared Context
 
-Before posting review output, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/development.md` as the stage-specific doc. Load the selected review adapter for API endpoints, comment fields, status checks, and labels.
+Before posting review output, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/development.md` as the stage-specific doc. Load the selected review adapter for API endpoints, comment fields, status checks, and labels.
 
 ## Workflow Telemetry
 
-When this skill runs as part of a ticket workflow and a ticket key is resolved, capture UTC start time before PR review reads. Prefer OpenProject time-entry telemetry and create or update the `dev-flow-pr-review-agent` entry with marker `IA generated workflow telemetry: {ticketKey}:dev-flow-pr-review-agent`. Use `python -m tools.sdd_cli dev-flow append-telemetry -TicketKey {ticketKey}` only as the JSONL fallback when direct time telemetry is unavailable. On resume or idempotent reuse, append or update another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-flow-pr-review-agent`, `agentRole=prReview`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If the review is explicitly standalone and no ticket key can be safely resolved, report that workflow telemetry was skipped.
+See `.codex/skills/_shared/pipeline-workflow-telemetry.md` for the common workflow telemetry pattern. Use:
+
+- `{workflowStage}` = `dev-flow-pr-review-agent`
+- `{agentRole}` = `prReview`
+
+**Unique additions for this skill:**
+
+- **JSONL fallback:** Use `python -m tools.sdd_cli dev-flow append-telemetry -TicketKey {ticketKey}` only as the JSONL fallback when direct time telemetry is unavailable.
+- **Standalone skip:** If the review is explicitly standalone and no ticket key can be safely resolved, report that workflow telemetry was skipped.
 
 ## Configuration
 

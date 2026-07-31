@@ -20,9 +20,8 @@ Load context in this order to maximize prompt caching. The tier markers indicate
 2. `.codex/memory/MEMORY.md`
 3. `.codex/project-profile.json`
 4. `.codex/project-profile.local.json` when present
-5. `.codex/skills/_shared/provider-adapter-contract.md`
-6. `.codex/skills/_shared/delivery-contract-core.md` — always-read core rules
-7. `.codex/skills/_shared/preflight-skills-mcp.md` — mandatory Skills & MCP pre-flight gate
+5. `.codex/skills/_shared/delivery-contract-core.md` — always-read core rules
+6. `.codex/skills/_shared/preflight-skills-mcp.md` — mandatory Skills & MCP pre-flight gate
 
 > `<!-- CACHE BREAKPOINT: Tier 2 / Tier 3 boundary -->`
 
@@ -56,7 +55,7 @@ Use memory only for recall and discovery. Verify task-critical facts against the
 - Treat `.codex/project-profile.json` as the tracked non-secret declaration of common providers, workflow gates, environments, and adapter paths. Treat ignored `.codex/project-profile.local.json` as a local overlay for stack choices and project-specific adapter experiments.
 - Load only the provider adapters selected by the merged project profile for the current stage. Keep provider-specific API calls, CLI commands, field names, versions, and images out of generic skill reasoning unless the selected adapter requires them.
 - Use `python -m tools.sdd_cli memory-search search --query <symptom>` for symptom-driven memory lookup when a task mentions or reveals an error, blocker, failed command, deploy issue, PR feedback, QA failure, configuration mismatch, or local tooling problem.
-- Follow the mandatory MCP routing contract in `.codex/mcp-instructions.md`. Docs/markdown → `monorepo-docs-search`, source code → `codebase-memory-mcp`. Do not use raw grep as the first approach.
+- Follow the mandatory MCP routing contract in `.codex/mcp-instructions.md`. Service interactions route through the service MCPs (gitea, openproject, grafana, kubernetes); repository content search uses built-in file/search tools.
 - Apply stable markers, ticket context locks, rerun behavior, artifact lineage, release manifests, versioning, PR labels, and failure rules from `.codex/skills/_shared/delivery-contract.md`.
 - Apply the merged project profile for ticket key format and `.codex/delivery-policy.json` for `agentOptimization` defaults such as retry limits, prompt-cache ordering, telemetry output, and Promptfoo eval paths when the platform exposes the needed data.
 - Use `python -m tools.sdd_cli dev-flow <subcommand>` for deterministic mechanics when the skill names helper functions.

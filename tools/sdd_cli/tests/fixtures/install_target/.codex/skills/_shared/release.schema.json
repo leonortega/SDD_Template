@@ -113,13 +113,7 @@
     "containerImage": {
       "type": "object",
       "additionalProperties": true,
-      "required": [
-        "appId",
-        "image",
-        "tag",
-        "digest",
-        "reference"
-      ],
+      "required": ["appId", "image", "tag", "digest", "reference"],
       "properties": {
         "appId": {
           "type": "string",

@@ -8,7 +8,6 @@
     "docs",
     "infra",
     "tools",
-    "tools/bm25s_flashrank",
     ".vscode"
   ],
   "SDD_TOOL_INCLUDE_EMPTY_DIRS": [".clinerules"],
