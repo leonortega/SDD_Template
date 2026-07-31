@@ -10,9 +10,10 @@ description: Inspect delivery runs and Promptfoo eval results, convert repeated 
 
 ## Overview
 
-This skill is the **single hub for Promptfoo-driven improvements**. The old eval system (`workflow-cases.json`) is gone — Promptfoo is the only eval mechanism. This skill:
+This skill is the **single hub for Promptfoo-driven improvements**. The old eval system (`workflow-cases.json`) is gone
+— Promptfoo is the only eval mechanism. This skill:
 
-- **Runs** `npx promptfoo eval` as part of its workflow
+- **Runs** the eval via the repo CLI runner (`python -m tools.sdd_cli agent-eval run`) as part of its workflow
 - **Reads** eval results from `.codex/agent-evals/results.local.json`
 - **Classifies** failures into findings (eval-regression, eval-coverage)
 - **Recommends** improvements: fix routing logic, update test expectations, add new test cases
@@ -22,7 +23,9 @@ It does not deliver tickets, deploy releases, or promote environments. It audits
 
 ## Shared Context
 
-Follow `.codex/skills/_shared/skill-startup.md` with `docs/architecture.md`, `docs/development.md`, and `docs/deployment.md` as stage-specific docs. Treat the delivery contract as the policy baseline and apply its Skill Synchronization Rule before changing any delivery or configure skill.
+Follow `.codex/skills/_shared/skill-startup.md` with `docs/architecture.md`, `docs/development.md`, and
+`docs/deployment.md` as stage-specific docs. Treat the delivery contract as the policy
+baseline and apply its Skill Synchronization Rule before changing any delivery or configure skill.
 
 ## Operating Modes
 
@@ -30,9 +33,22 @@ Default to read-only mode unless the user explicitly asks to apply changes.
 
 - **`Read-only audit`**: inspect evidence and report proposed improvements.
 - **`Proposal mode`**: draft exact skill/config/test changes without editing files.
-- **`Apply mode`**: edit skills, scripts, templates, or tests after evidence is clear and the user requested implementation.
-- **`post-prod-ticket-release`**: audit mode invoked after successful `dev-ops-deploy-prod` for the just-promoted release; persist sanitized learning evidence. Receives eval results from the Post-PROD Eval step as evidence — include the eval summary (total, passed, failed) in the findings. After persisting findings, **auto-escalates** into `eval-driven-improvement apply` when findings include `eval-coverage` or `deployment` gaps that can be converted to new Promptfoo test cases (see Step 5e). If eval failures exist, `dev-ops-deploy-prod` automatically escalates into the full `eval-driven-improvement` cycle (probe → diagnose → propose → apply).
-- **`eval-driven-improvement`**: **Run Promptfoo eval directly** as the first step. Read results, classify failures as `eval-regression` or `eval-coverage` findings, and recommend concrete improvements. Supports read-only, proposal, and apply sub-modes. When triggered automatically from `dev-ops-deploy-prod`, the sub-modes run sequentially (probe → diagnose → propose → apply) without manual intervention, limited to eval infrastructure files.
+- **`Apply mode`**: edit skills, scripts, templates, or tests after evidence is clear and the user requested
+  implementation.
+- **`post-prod-ticket-release`**: audit mode invoked after successful `dev-ops-deploy-prod` for the just-promoted
+  release; persist sanitized learning
+  evidence. Receives eval results from the Post-PROD Eval step as evidence — include the eval summary (total, passed,
+  failed) in the findings. After persisting findings, **auto-escalates** into `eval-driven-improvement apply` when
+  findings include `eval-coverage` or `deployment`
+  gaps that can be converted to new Promptfoo test cases (see Step 5e). If eval failures exist, `dev-ops-deploy-prod`
+  automatically
+  escalates into the full `eval-driven-improvement` cycle (probe → diagnose → propose → apply).
+- **`eval-driven-improvement`**: **Run Promptfoo eval directly** as the first step. Read results, classify failures as
+  `eval-regression` or `eval-coverage` findings, and recommend
+  concrete improvements. Supports read-only, proposal, and apply sub-modes. When triggered automatically from
+  `dev-ops-deploy-prod`,
+  the sub-modes run sequentially (probe → diagnose → propose → apply) without manual intervention, limited to eval
+  infrastructure files.
 
 ### Eval-Driven Improvement Modes
 
@@ -51,7 +67,9 @@ Within `eval-driven-improvement`. Choose the sub-mode based on what you want to 
 2. Failures detected → escalate to `diagnose`
 3. Root cause understood → escalate to `propose` (or directly to `apply` if user already confirmed)
 
-Never silently rewrite workflow rules from one isolated failure. Apply the Agent Self-Improvement Gate in `.codex/skills/_shared/delivery-contract.md` before changing skills, workflow policy, configure templates, or quality gates from retrospective evidence.
+Never silently rewrite workflow rules from one isolated failure. Apply the Agent Self-Improvement Gate in
+`.codex/skills/_shared/delivery-contract.md`
+before changing skills, workflow policy, configure templates, or quality gates from retrospective evidence.
 
 This skill is safe to run as a manual quality lane through prompts such as:
 
@@ -64,7 +82,11 @@ This skill is safe to run as a manual quality lane through prompts such as:
 
 Run this audit after or between delivery work when one of these conditions occurs:
 
-- `dev-ops-deploy-prod` records a successful PROD deployment and invokes `post-prod-ticket-release` for the promoted release, then **auto-escalates** into `eval-driven-improvement` (probe → diagnose → propose → apply) when eval failures are detected, or into `eval-driven-improvement apply` (directly to Step 5d) when findings are `eval-coverage` or `deployment` gaps,
+- `dev-ops-deploy-prod` records a successful PROD deployment and invokes `post-prod-ticket-release` for the promoted
+  release, then **auto-escalates** into
+  `eval-driven-improvement` (probe → diagnose → propose → apply) when eval failures are detected, or into
+  `eval-driven-improvement apply` (directly to Step 5d)
+  when findings are `eval-coverage` or `deployment` gaps,
 - a QA bug is filed or E2E QA fails,
 - `dev-flow-pr-review-agent` misses a meaningful issue,
 - repository workflow, local quality gates, or runner tooling fail in a way that blocks handoff,
@@ -97,26 +119,29 @@ Inspect the smallest useful set first, then expand as needed:
 - `.codex/skills/dev-flow-pr-review-agent/SKILL.md`
 - `.codex/skills/dev-flow-verify-change/SKILL.md`
 - `.codex/skills/configure-dev-environment/SKILL.md`
-- `.codex/skills/configure-*` docs, references, scripts, templates, and tests when setup or generated behavior is implicated
+- `.codex/skills/configure-*` docs, references, scripts, templates, and tests when setup or generated behavior is
+  implicated
 - `.codex/delivery-context.local.json` when present, without printing secrets
 - ignored `.codex/agent-telemetry.local.jsonl` when present, without printing prompts or sensitive payloads
-- prior ticket comments with marker `IA generated post-PROD retrospective: {finalVersion}` when auditing PROD release learning evidence
-- recent Git commits, branches, tags, PR labels, PR review comments, CI results, OpenSpec verification output, ticket comments, QA bug tickets, Nexus release manifests, and deployment evidence when available
+- prior ticket comments with marker `IA generated post-PROD retrospective: {finalVersion}` when auditing PROD release
+  learning evidence
+- recent Git commits, branches, tags, PR labels, PR review comments, CI results, OpenSpec verification output, ticket
+  comments, QA bug tickets, Nexus release manifests, and deployment evidence when available
 
 ## Workflow
 
 ### 0. Run Promptfoo Eval (eval-driven-improvement mode only)
 
-When operating in `eval-driven-improvement` mode, run the eval as the first workflow step:
-
-```bash
-npx promptfoo eval --config .codex/agent-evals/promptfooconfig.yaml --no-cache
-```
-
-Or use the CLI runner:
+When operating in `eval-driven-improvement` mode, run the eval as the first workflow step via the repo CLI runner:
 
 ```bash
 python -m tools.sdd_cli agent-eval run
+```
+
+Direct promptfoo fallback when the CLI runner is unavailable:
+
+```bash
+npx promptfoo eval --config .codex/agent-evals/promptfooconfig.yaml --no-cache
 ```
 
 Read the output and persist key results to `.codex/agent-evals/results.local.json`:
@@ -149,7 +174,7 @@ Read the output and persist key results to `.codex/agent-evals/results.local.jso
 - If a previous run exists with a **different** scope or timestamp → append as a new entry (keep history)
 - If a previous run exists with the **same** scope → overwrite it (replace with latest results)
 
-If the eval cannot run (missing `npx`, missing Python deps), report the blocker and stop.
+If the eval cannot run (CLI runner or promptfoo unavailable, missing Python deps), report the blocker and stop.
 
 ### 1. Define The Audit Scope
 
@@ -162,11 +187,15 @@ Resolve what the user wants audited:
 - **eval regression**: Promptfoo test cases that recently failed,
 - **eval coverage gap**: a routing scenario with no corresponding test case,
 - the skill workflow itself,
-- a post-PROD ticket release, using the primary ticket key, included ticket list, artifact commit, final release version, PROD URL, and release manifest supplied by `dev-ops-deploy-prod`.
+- a post-PROD ticket release, using the primary ticket key, included ticket list, artifact commit, final release
+  version, PROD URL, and release manifest supplied by `dev-ops-deploy-prod`.
 
-If the scope is ambiguous and local evidence clearly identifies a current locked ticket or PR, use that as the scope and say so. If several scopes are plausible, run a read-only summary instead of guessing.
+If the scope is ambiguous and local evidence clearly identifies a current locked ticket or PR, use that as the scope and
+say so. If several scopes are plausible, run a read-only summary instead of guessing.
 
-For `eval-driven-improvement`, the scope defaults to "all Promptfoo eval results" unless the user names specific test cases or failure patterns.
+For `eval-driven-improvement`, the scope defaults to "all Promptfoo eval results" unless the user names specific test
+cases or failure
+patterns.
 
 ### 2. Reconstruct The Delivery Timeline (general audits only)
 
@@ -187,18 +216,29 @@ Use existing stable markers from the delivery contract for idempotency.
 
 Group findings by the workflow layer that should improve:
 
-- **`eval-regression`**: a Promptfoo test case that **was passing and is now failing**. Indicates a routing logic change or delivery contract drift. Route to: diagnose routing provider, update test expectations, or flag unintentional contract drift.
-- **`eval-coverage`**: a repeated delivery miss lacks a Promptfoo eval test case that would catch route selection, tool selection, argument precision, mutation gates, stop conditions, or handoff gaps. Route to: add a new test case to `promptfooconfig.yaml`.
+- **`eval-regression`**: a Promptfoo test case that **was passing and is now failing**. Indicates a routing logic
+  change or delivery contract drift. Route to:
+  diagnose routing provider, update test expectations, or flag unintentional contract drift.
+- **`eval-coverage`**: a repeated delivery miss lacks a Promptfoo eval test case that would catch route selection,
+  tool selection,
+  argument precision, mutation gates, stop conditions, or handoff gaps. Route to: add a new test case to
+  `promptfooconfig.yaml`.
 - `implementation`: code, tests, OpenSpec tasks, or local validation missed something.
 - `review`: `dev-flow-pr-review-agent` criteria, scope, labels, or marker behavior missed something.
 - `quality-gate`: CI, coverage, secret scanning, dependency audit, or workflow checks missed something.
-- `configuration`: generated templates, local config guidance, runner setup, or setup audit drifted from delivery requirements.
+- `configuration`: generated templates, local config guidance, runner setup, or setup audit drifted from delivery
+  requirements.
 - `deployment`: artifact, release manifest, health contract, promotion, tag, or rollback rules missed something.
 - `skill-drift`: delivery skills and configure skills disagree with `_shared/delivery-contract.md`.
 - `observability`: evidence, logs, comments, or status reporting were insufficient to diagnose a run.
-- `agency-risk`: an agent had too much write authority, used the wrong tool boundary, attempted unsafe mutation, or acted without sufficient confirmation.
-- `model-optimization`: model choice, reasoning effort, prompt-cache hygiene, tool-call count, retries, latency, or token use produced avoidable cost or delay.
-- `risk-depth`: delivery risk classification, compact path selection, workload forecast, adversarial review trigger, or installed-skill index behavior was missing, stale, too heavy for low-risk work, or too light for high-risk work.
+- `agency-risk`: an agent had too much write authority, used the wrong tool boundary, attempted unsafe mutation, or
+  acted
+  without sufficient confirmation.
+- `model-optimization`: model choice, reasoning effort, prompt-cache hygiene, tool-call count, retries, latency, or
+  token use
+  produced avoidable cost or delay.
+- `risk-depth`: delivery risk classification, compact path selection, workload forecast, adversarial review trigger, or
+  installed-skill index behavior was missing, stale, too heavy for low-risk work, or too light for high-risk work.
 
 For each finding, include the evidence, why it matters, and the durable improvement that would prevent recurrence.
 
@@ -230,11 +270,14 @@ For `eval-regression` findings, diagnose the root cause before choosing an outco
 2. Check if `routing_provider.py` was modified (git diff)
 3. Check if `promptfooconfig.yaml` tests are stale (expectations don't match current routing)
 
-**Heuristic: routing bug vs intentional change**
+#### Heuristic: Routing Bug vs Intentional Change
 
-- If `routing_provider.py` was recently modified AND the change contradicts the delivery contract → **bug in routing provider** → outcome: `Fix routing provider`
-- If `routing_provider.py` was recently modified AND the change matches the delivery contract → **test expectations are stale** → outcome: `Update test expectation`
-- If `promptfooconfig.yaml` was not modified and `routing_provider.py` was not modified → **delivery contract drift** → outcome: `Shared contract update` or `Fix routing provider`
+- If `routing_provider.py` was recently modified AND the change contradicts the delivery contract →
+  **bug in routing provider** → outcome: `Fix routing provider`
+- If `routing_provider.py` was recently modified AND the change matches the delivery contract →
+  **test expectations are stale** → outcome: `Update test expectation`
+- If `promptfooconfig.yaml` was not modified and `routing_provider.py` was not modified → **delivery contract drift**
+  → outcome: `Shared contract update` or `Fix routing provider`
 
 For `eval-coverage` findings, add the smallest test case that covers the repeated miss.
 
@@ -242,7 +285,10 @@ For `risk-depth` findings, prefer deterministic helpers or Promptfoo eval test c
 
 Prefer tests or deterministic validation for enforceable rules. Prefer skill text only for judgment-heavy process rules.
 
-For automatic `post-prod-ticket-release`, recommendation outcomes are advisory only. Repeated or high-severity findings may recommend docs, delivery contract, skill, configure, test, memory, or Promptfoo eval test case updates, but they must not be applied during the automatic audit.
+For automatic `post-prod-ticket-release`, recommendation outcomes are advisory only. Repeated or high-severity findings
+may recommend
+docs, delivery contract, skill, configure, test, memory, or Promptfoo eval test case updates, but they must not be
+applied during the automatic audit.
 
 For `eval-driven-improvement` in `apply` sub-mode, outcomes may be applied **only after**:
 
@@ -250,21 +296,25 @@ For `eval-driven-improvement` in `apply` sub-mode, outcomes may be applied **onl
 2. User confirms the proposed change
 3. A new eval run confirms the fix passes all test cases
 
-**Exception:** When triggered automatically from `dev-ops-deploy-prod`'s auto-escalation flow, requirement 2 (user confirmation) is bypassed because:
+**Exception:** When triggered automatically from `dev-ops-deploy-prod`'s auto-escalation flow, requirement 2 (user
+confirmation) is
+bypassed because:
 
 - A PROD eval regression is inherently high-severity (satisfies the Agent Self-Improvement Gate)
 - Only eval infrastructure files (`routing_provider.py`, `promptfooconfig.yaml`) are modified
 - Each fix is verified by re-running the eval before proceeding
 - Any fix that causes other test failures is reverted — no unsafe change is committed
 
-Before choosing any outcome other than `No change`, confirm the Agent Self-Improvement Gate in `.codex/skills/_shared/delivery-contract.md` is satisfied.
+Before choosing any outcome other than `No change`, confirm the Agent Self-Improvement Gate in
+`.codex/skills/_shared/delivery-contract.md` is satisfied.
 
 ### 5. Apply Promptfoo Improvements
 
 This step is **only executed in `eval-driven-improvement apply` sub-mode**, after:
 
 1. The Agent Self-Improvement Gate is satisfied (repeated pattern, high-severity, or contract conflict)
-2. User confirmed the proposed change from Step 4 (or triggered automatically from `dev-ops-deploy-prod`'s auto-escalation flow)
+2. User confirmed the proposed change from Step 4 (or triggered automatically from `dev-ops-deploy-prod`'s
+   auto-escalation flow)
 
 For each failing test case or coverage gap, apply the specific fix based on the outcome chosen in Step 4:
 
@@ -276,10 +326,12 @@ When the routing logic in `routing_provider.py` has a bug:
 2. Trace through `_evaluate_route()` in `routing_provider.py` with the test's input variables.
 3. Identify the incorrect condition or return path.
 4. Fix the logic: correct the condition, add a missing check, or fix the return value.
-5. Run the full eval suite: `npx promptfoo eval --config .codex/agent-evals/promptfooconfig.yaml --no-cache`.
+5. Run the full eval suite: `python -m tools.sdd_cli agent-eval run`.
 6. If all tests pass, commit the fix. If not, iterate until all pass.
 
-**Example:** If test 13 expects `blocked-lane-conflict` but returns `dev-ops-post-merge-deploy`, trace the `lane_owner` check in `_evaluate_route()` to find why the lane conflict isn't being detected.
+**Example:** If test 13 expects `blocked-lane-conflict` but returns `dev-ops-post-merge-deploy`, trace the `lane_owner`
+check in `_evaluate_route()` to find why the lane
+conflict isn't being detected.
 
 #### 5b. Update Test Expectation (`eval-regression` — intentional routing change)
 
@@ -287,11 +339,14 @@ When the routing logic intentionally changed and the test needs updating:
 
 1. Read the failing test case from `promptfooconfig.yaml` — note the expected route in the `javascript` assertion.
 2. Determine the correct expected route from the current delivery contract and routing provider logic.
-3. Update the expected route string inside the `javascript` assertion in `promptfooconfig.yaml`. For example, change `'dev-ops-post-merge-deploy'` to `'dev-ops-deploy-canary'`.
+3. Update the expected route string inside the `javascript` assertion in `promptfooconfig.yaml`. For example, change
+   `'dev-ops-post-merge-deploy'` to `'dev-ops-deploy-canary'`.
 4. Run the full eval suite to confirm all tests pass with the updated expectation.
 5. Commit the change.
 
-**Example:** If a new route `dev-ops-deploy-canary` replaced `dev-ops-post-merge-deploy` for canary deployments, update the assertion from `'dev-ops-post-merge-deploy'` to `'dev-ops-deploy-canary'`.
+**Example:** If a new route `dev-ops-deploy-canary` replaced `dev-ops-post-merge-deploy` for canary deployments, update
+the assertion from `'dev-ops-post-merge-deploy'` to
+`'dev-ops-deploy-canary'`.
 
 #### 5c. Add New Test Case (`eval-coverage` — missing scenario)
 
@@ -304,20 +359,27 @@ When a routing scenario has no corresponding test:
    - `productStack`: `"selected"` or `"none"`
    - Any extra vars needed (`parallelEnabled`, `laneOwner`, `incident`, `hotfix`, etc.)
 3. Add the expected route assertion:
+
    ```yaml
    - type: javascript
      value: "JSON.parse(output).route === 'dev-flow-expected-route'"
    ```
+
 4. Run the full eval suite to confirm the new test passes AND all existing tests still pass.
 5. Commit the change.
 
 #### 5d. Convert Retrospective Findings to Eval Test Cases
 
-**Triggered by:** auto-escalation from `post-prod-ticket-release` when findings include `eval-coverage` or `deployment` gaps that can be converted to Promptfoo tests.
+**Triggered by:** auto-escalation from `post-prod-ticket-release` when findings include `eval-coverage` or `deployment`
+gaps that can be converted to
+Promptfoo tests.
 
-When auto-escalated from `post-prod-ticket-release` mode with `eval-coverage` or `deployment` findings, convert each actionable finding into a new Promptfoo eval test case:
+When auto-escalated from `post-prod-ticket-release` mode with `eval-coverage` or `deployment` findings, convert each
+actionable finding into a new
+Promptfoo eval test case:
 
-1. **Read findings** from `.codex/agent-evals/results.local.json` — identify findings where `recommendation` contains `Promptfoo eval` or outcome would be `Promptfoo eval (add test)`.
+1. **Read findings** from `.codex/agent-evals/results.local.json` — identify findings where `recommendation` contains
+   `Promptfoo eval` or outcome would be `Promptfoo eval (add test)`.
 
 2. **For each finding, determine the test case variables:**
    - `scenario`: human-readable description from the finding's evidence
@@ -327,6 +389,7 @@ When auto-escalated from `post-prod-ticket-release` mode with `eval-coverage` or
    - The expected route (e.g., `'blocked-infra-validation'`)
 
 3. **Add the test case** to `promptfooconfig.yaml` under the appropriate section:
+
    ```yaml
    - description: "{scenario description}"
      vars:
@@ -344,7 +407,9 @@ When auto-escalated from `post-prod-ticket-release` mode with `eval-coverage` or
          value: "JSON.parse(output).route === '{expected-route}'"
    ```
 
-4. **Add any new routing parameters** to `routing_provider.py` **only if** the finding requires a new variable (e.g., `infraValidationFailed`). If the scenario can be covered by existing variables, skip `routing_provider.py` changes:
+4. **Add any new routing parameters** to `routing_provider.py` **only if** the finding requires a new variable (e.g.,
+   `infraValidationFailed`). If the scenario can be covered by
+   existing variables, skip `routing_provider.py` changes:
    - Extract the new variable in `call_api()` from `vars_data`
    - Add it to the `_evaluate_route()` function signature
    - Add the priority routing logic (e.g., `if infra_validation_failed: return "blocked-infra-validation"`)
@@ -352,8 +417,9 @@ When auto-escalated from `post-prod-ticket-release` mode with `eval-coverage` or
    - Add it to the `_build_reasoning()` if relevant
 
 5. **Run the full eval suite** to confirm the new test passes AND all existing tests still pass:
+
    ```bash
-   npx promptfoo eval --config .codex/agent-evals/promptfooconfig.yaml --no-cache
+   python -m tools.sdd_cli agent-eval run
    ```
 
 6. **Update `.codex/agent-evals/results.local.json`** to record the applied changes:
@@ -362,6 +428,7 @@ When auto-escalated from `post-prod-ticket-release` mode with `eval-coverage` or
    - Update `ticketCommentStatus` to `completed`
 
 7. **Commit and push** the changes:
+
    ```bash
    git add .codex/agent-evals/promptfooconfig.yaml .codex/agent-evals/routing_provider.py .codex/agent-evals/results.local.json
    git commit -m "eval: add test case for {finding description}"
@@ -382,7 +449,7 @@ Regardless of the fix type, apply these safety rules:
 1. Keep edits scoped to the improvement — fix one test case at a time.
 2. Update `_shared/delivery-contract.md` first if the rule change is cross-cutting.
 3. Update the matching durable docs if the finding is reusable project knowledge.
-4. Run `npx promptfoo eval --no-cache` after EVERY change to confirm no regressions.
+4. Run `python -m tools.sdd_cli agent-eval run` after EVERY change to confirm no regressions.
 5. Do not change OpenSpec-specific skills unless the improvement explicitly affects OpenSpec behavior.
 6. Commit and push after all eval tests pass.
 
@@ -399,10 +466,17 @@ For `eval-driven-improvement`, persist the eval results and findings:
    - finding summaries and recommendation outcomes,
    - `appliedChanges: false` or `appliedChanges: true` with file list.
 
-2. For `post-prod-ticket-release`, write only compact, sanitized evidence. **After writing evidence, if findings include `eval-coverage` or `deployment` gaps**, auto-escalate to Step 5d to convert them into eval test cases. Update `appliedChanges: true` with the list of files modified (`promptfooconfig.yaml`, `routing_provider.py`).:
-   - Include schema version, timestamp, mode, ticket key, artifact commit, final release version, PROD URL host or safe URL, release manifest path or URL, inspected evidence categories, finding summaries, recommendation outcomes, eval coverage gaps, residual evidence gaps, and `appliedChanges: false`.
+2. For `post-prod-ticket-release`, write only compact, sanitized evidence.
+   **After writing evidence, if findings include `eval-coverage` or `deployment` gaps**, auto-escalate to Step 5d to
+   convert them into eval
+   test cases. Update `appliedChanges: true` with the list of files modified (`promptfooconfig.yaml`,
+   `routing_provider.py`).:
+   - Include schema version, timestamp, mode, ticket key, artifact commit, final release version, PROD URL host or safe
+     URL, release manifest path or URL, inspected evidence categories, finding summaries, recommendation outcomes, eval
+     coverage gaps, residual evidence gaps, and `appliedChanges: false`.
 
-3. Do not store secrets, tokens, cookies, credential-bearing URLs, raw prompts, raw tool payloads, large logs, private request/response bodies, or unredacted local config values.
+3. Do not store secrets, tokens, cookies, credential-bearing URLs, raw prompts, raw tool payloads, large logs, private
+   request/response bodies, or unredacted local config values.
 
 4. For ticket-scoped findings, add or reuse a compact ticket comment with marker:
 
@@ -416,7 +490,8 @@ For `eval-driven-improvement`, persist the eval results and findings:
    IA generated eval improvement: {scopeIdentifier}
    ```
 
-   Keep the marker as the first line by itself. Summarize audit scope, eval results, findings, recommendations, file changes (if any), and residual gaps.
+   Keep the marker as the first line by itself. Summarize audit scope, eval results, findings, recommendations, file
+   changes (if any), and residual gaps.
 
 ## Output
 
@@ -440,13 +515,18 @@ For applied improvements (including `eval-driven-improvement apply`), report:
 - validation commands and results,
 - remaining gaps or follow-up tickets.
 
-Keep recommendations concrete. Avoid vague statements like "improve tests" unless paired with the exact missing test or gate.
+Keep recommendations concrete. Avoid vague statements like "improve tests" unless paired with the exact missing test or
+gate.
 
 ## Failure Rules
 
-- If `npx promptfoo eval` cannot run (missing tool, missing deps), report the blocker and stop for `eval-driven-improvement` mode. For other modes, eval is optional.
+- If the eval runner (`python -m tools.sdd_cli agent-eval run`, or the `npx promptfoo
+  eval` fallback) cannot run (missing tool, missing deps), report the blocker and stop
+  for `eval-driven-improvement` mode. For other modes, eval is optional.
 - If secrets or credential-bearing URLs are encountered, redact them and continue only with non-secret evidence.
 - If delivery state is ambiguous, produce a read-only status/audit summary and do not mutate files.
-- If evidence conflicts with the delivery contract, treat the contract as authoritative unless the user explicitly asks to revise the contract.
-- If a proposed improvement would change deployment, QA, PROD, rollback, artifact, or ticket-state behavior, update configure docs/templates/audits/tests in the same change or report why synchronization is blocked.
+- If evidence conflicts with the delivery contract, treat the contract as authoritative unless the user explicitly asks
+  to revise the contract.
+- If a proposed improvement would change deployment, QA, PROD, rollback, artifact, or ticket-state behavior, update
+  configure docs/templates/audits/tests in the same change or report why synchronization is blocked.
 - If validation cannot be run, state the reason and residual risk.

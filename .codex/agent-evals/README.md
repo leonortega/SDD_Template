@@ -5,12 +5,35 @@ This directory contains the **Promptfoo**-based agent evaluation system for test
 ## Quick Start
 
 ```bash
-# Run all evals
-npx promptfoo eval --no-cache
+# Run all evals via the repo CLI (fails loudly, exits non-zero on failure)
+python -m tools.sdd_cli agent-eval run
 
 # View results in browser
-npx promptfoo view
+python -m tools.sdd_cli agent-eval view
+
+# Direct promptfoo (alternative to the CLI runner)
+npx promptfoo eval --no-cache
 ```
+
+## Windows: npm cache EBUSY/EPERM workaround
+
+On some Windows hosts, `npx promptfoo` fails to start because npm's cache
+cleanup trips over a locked `onnxruntime-node` binary (EBUSY/EPERM). The
+command exits 1 with no output. `python -m tools.sdd_cli agent-eval run`
+detects this and **fails loudly** with a clear error instead of reporting a
+misleading "0 tests passed".
+
+Workarounds, in order of preference:
+
+1. **Install promptfoo globally** so npx uses the cached binary, then retry:
+   `npm install -g promptfoo`
+2. **Clear the npm cache** and retry: `npm cache clean --force` (or delete
+   `%LocalAppData%\npm-cache\_npx`).
+3. **Use WSL / a Unix machine** where onnxruntime-node installs cleanly.
+
+The eval is fully deterministic (no LLM), so you can also verify every case
+without promptfoo by running the Python provider directly against the YAML
+assertions (see `routing_provider.py` + `promptfooconfig.yaml`).
 
 ## Structure
 
@@ -22,7 +45,8 @@ npx promptfoo view
 
 ## Test Cases
 
-**22 test cases** covering the full delivery routing matrix including parallel delivery and deployment lanes:
+**35 test cases** covering the full delivery routing matrix including parallel delivery,
+deployment lanes, explicit workflow-stage requests, and state-driven resume:
 
 ### Ticket Lifecycle (7 tests)
 
@@ -65,15 +89,54 @@ npx promptfoo view
 | 20  | Release tag conflict                            | `blocked-tag-conflict`      |
 | 21  | PR merged, lane acquired (serialized lane free) | `dev-ops-post-merge-deploy` |
 
+### Infrastructure Validation (2 tests)
+
+| #   | Scenario                                            | Expected Route             |
+| --- | --------------------------------------------------- | -------------------------- |
+| 22  | PROD deploy blocked by NodePort collision           | `blocked-infra-validation` |
+| 23  | DEV deploy blocked by infrastructure collision      | `blocked-infra-validation` |
+
+### Explicit Workflow-Stage Requests (10 tests)
+
+| #   | Scenario                                            | Expected Route                     |
+| --- | --------------------------------------------------- | ---------------------------------- |
+| 24  | Explicit continue-implementation request            | `dev-flow-continue-implementation` |
+| 25  | Explicit propose-change request                     | `dev-flow-propose-change`          |
+| 26  | Explicit PR review request                          | `dev-flow-pr-review-agent`         |
+| 27  | Explicit PR review feedback request                 | `dev-flow-pr-review-feedback-loop` |
+| 28  | Explicit explore-change request                     | `dev-flow-explore-change`          |
+| 29  | Explicit scaffold-project request                   | `dev-flow-scaffold-project`        |
+| 30  | Explicit verify-change request                      | `dev-flow-verify-change`           |
+| 31  | Explicit archive-change request                     | `dev-flow-archive-change`          |
+| 32  | Explicit dashboard update request                   | `grafana-board-update`             |
+| 33  | Explicit retrospective-audit request                | `dev-flow-retrospective-audit`     |
+
+### State-Driven Resume (1 test)
+
+| #   | Scenario                                                  | Expected Route                     |
+| --- | --------------------------------------------------------- | ---------------------------------- |
+| 34  | In-progress + branch, auto-continue without named step    | `dev-flow-continue-implementation` |
+
 ### Regression (1 test)
 
 | #   | Scenario                                 | Expected Route             |
 | --- | ---------------------------------------- | -------------------------- |
-| 22  | Product-free shell (original regression) | `dev-flow-pipeline-status` |
+| 35  | Product-free shell (original regression) | `dev-flow-pipeline-status` |
 
 ## Adding Test Cases
 
 1. Add a new entry under `tests:` in `promptfooconfig.yaml`
 2. Add the matching routing logic in `routing_provider.py` → `_evaluate_route()`
 3. Add the expected route assertion using `javascript` type assertion
-4. Run `npx promptfoo eval --no-cache` to verify
+4. Run `python -m tools.sdd_cli agent-eval run` to verify
+
+**Explicit workflow-stage requests:** to cover a routing-matrix route that is driven by
+user intent rather than ticket state (e.g. `dev-flow-continue-implementation`,
+`dev-flow-explore-change`, `grafana-board-update`), set `requestType: <kebab-case>` in
+the test vars and add the matching entry to `EXPLICIT_REQUEST_ROUTES` in
+`routing_provider.py`. Explicit requests are evaluated after incident/hotfix but before
+the missing-stack fallback and ticket-state routing.
+
+**State-driven resume:** for the auto-continue orchestrator without a `requestType`,
+set `resumeRequested: true` with an in-progress ticket that has an existing branch. The
+provider routes it to `dev-flow-continue-implementation` before merged-PR handling.
