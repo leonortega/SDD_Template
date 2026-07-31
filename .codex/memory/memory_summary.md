@@ -16,9 +16,8 @@ Memory is guidance only. It must never override the latest user request, active 
 - Agent skills: `.codex/skills/`.
 - Shared delivery contract: `.codex/skills/_shared/delivery-contract.md`.
 - Project profile: `.codex/project-profile.json` plus optional `.codex/project-profile.local.json`.
-- Provider adapters: `.codex/providers/`.
 - OpenSpec config: `openspec/config.yaml`.
-- MCP routing contract: `.codex/mcp-instructions.md` — mandatory routing for all content search (docs → `monorepo-docs-search`, code → `codebase-memory-mcp`).
+- MCP routing contract: `.codex/mcp-instructions.md` — mandatory routing for service MCPs (gitea, openproject, grafana, kubernetes); repository content search uses built-in file/search tools.
 
 ## Core Workflow
 

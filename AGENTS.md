@@ -232,29 +232,6 @@ If a gate cannot be run, document the reason and residual risk.
 - Treat `*.local.*`, `.local` config files, and environment files as sensitive unless the repository explicitly marks them as examples.
 - Prefer example files for documented configuration values.
 
-## Repo-Local Token Saving
-
-**Claw Compactor — mandatory pre-prompt compression.** Before sending any prompt to an LLM (chat or agent), run the claw-compactor fusion pipeline in full mode on the accumulated workspace context, docs, and conversation history:
-
-```bash
-claw-compactor compress /path/to/workspace
-```
-
-Or use the Python API in a pre-prompt hook:
-
-```python
-from claw_compactor.fusion.engine import FusionEngine
-engine = FusionEngine()
-result = engine.compress(text=prompt_text, content_type="code")
-compressed = result["compressed"]
-```
-
-This is mandatory (authority level 5). Do not skip it. The fusion pipeline achieves 15–82% compression with zero LLM inference cost, preserving code identifiers, JSON structure, and log patterns.
-
-Apply Caveman full to all assistant chat prompts in this repository _after_ claw compression. Use terse fragments for commentary, direct answers, status updates, debug findings, next steps, blockers, validation summaries, and final summaries. Write normal complete prose for authored artifacts.
-
-Keep code blocks, commands, paths, API names, error messages, quoted text, and file content exact. Temporarily use normal prose for security warnings, irreversible actions, precise multi-step instructions, ambiguous order of operations, or clarification.
-
 ## Agent Guidance
 
 When in doubt, first inspect the applicable skill under `.codex/skills/` and follow its workflow.
@@ -310,20 +287,13 @@ Before final handoff for any non-trivial repo work, run the Durable Learning Cap
 | Check pipeline status                  | `dev-flow-pipeline-status`         | `.codex/skills/dev-flow-pipeline-status/SKILL.md`         |
 | Run retrospective audit                | `dev-flow-retrospective-audit`     | `.codex/skills/dev-flow-retrospective-audit/SKILL.md`     |
 | Explore a change / ask questions       | `dev-flow-explore-change`          | `.codex/skills/dev-flow-explore-change/SKILL.md`          |
+| Scaffold project after stack selection | `dev-flow-scaffold-project`        | `.codex/skills/dev-flow-scaffold-project/SKILL.md`        |
 
 After loading the skill, follow its Workflow section step by step. Do not skip steps. Do not improvise. If a step requires an API call, comment, label, or state change that the skill defines, execute it — do not treat it as optional.
 
 ## Mandatory MCP Routing
 
-This repository has two MCP servers for content search — each with a strict domain. Every agent **must** follow `.codex/mcp-instructions.md` (the definitive MCP routing contract) when searching repository content:
-
-| Content Type                                    | MCP Server             | Tool                                                                                | Reason                                                       |
-| ----------------------------------------------- | ---------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| Documentation (`.md`, `.mdx`, skills, adapters) | `monorepo-docs-search` | `search_documentation`                                                              | BM25 + FlashRank cross-encoder — token-efficient snippets    |
-| Source code (all other files)                   | `codebase-memory-mcp`  | `search_graph`, `get_architecture`, `trace_path`, `get_code_snippet`, `query_graph` | BM25 ranking + structural boosting — definitions rank first  |
-| Source code (all other files)                   | `codebase-memory-mcp`  | `search_code`                                                                       | Grep + graph-enriched dedup — for raw regex/pattern matching |
-
-This routing is mandatory (authority level 5 per `docs/context-management.md` — alongside `.codex/skills/_shared/delivery-contract.md`). Do not skip it. Do not use raw grep as the first approach. Do not cross-search domains between MCPs.
+This repository relies on the **service MCP servers** (gitea, openproject, grafana, kubernetes) for lab-service interactions. Every agent **must** follow `.codex/mcp-instructions.md` (the definitive MCP routing contract) when interacting with lab services. Repository content search uses the agent's built-in file/search tools — there are no dedicated content-search MCP servers.
 
 ## Skill Activation Configuration
 

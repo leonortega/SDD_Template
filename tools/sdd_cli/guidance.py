@@ -1,4 +1,10 @@
-"""Project guidance: list relevant skills from manifest based on project stack."""
+"""Project guidance: search the internet for stack-relevant skills.
+
+Guidance NEVER consults local skills to answer what is relevant — the answer
+always comes from the public skills.sh registry via ``npx skills find``, and
+the user decides what to install. Local skills are only used to skip reinstall
+of already-installed skills (idempotency), never to answer guidance.
+"""
 
 from __future__ import annotations
 
@@ -18,124 +24,6 @@ from ._shared import (
 )
 
 
-def _read_stack_tags(profile: dict[str, Any]) -> list[str]:
-    """Extract simple stack tags from the project profile.
-
-    Returns lowercase tags for the three stack domains (frontend, backend, database)
-    when they have ``applies: true`` and a non-empty value.
-    """
-    tags: list[str] = []
-    stack = profile.get("stack", {})
-    if not isinstance(stack, dict):
-        return tags
-    for domain in ("frontend", "backend", "database"):
-        domain_info = stack.get(domain, {})
-        if isinstance(domain_info, dict):
-            if domain_info.get("applies") is True:
-                raw = str(domain_info.get("value", "")).lower().strip()
-                if raw:
-                    tags.append(raw)
-        elif isinstance(domain_info, str):
-            raw = domain_info.lower().strip()
-            if raw and raw not in ("none", "n/a", "na"):
-                tags.append(raw)
-    return tags
-
-
-def discover_project_guidance(
-    root: Path, dry_run: bool = False, **values: Any
-) -> dict[str, Any]:
-    """List relevant skills from .codex/skills/manifest.json for the project stack.
-
-    Reads the project stack from profile, finds matching skills from the manifest
-    categories, and returns them. Categories with ``stackTags`` are only included
-    when the stack value overlaps with that field. Categories without ``stackTags``
-    are always included (stack-agnostic methodology/process skills).
-    """
-    result = configure_result(
-        "DiscoverProjectGuidance", dry_run, write_enabled=not dry_run
-    )
-    manifest_path = root / ".codex" / "skills" / "manifest.json"
-    if not manifest_path.exists():
-        return {
-            "mode": "DiscoverProjectGuidance",
-            "valid": False,
-            "errors": ["Manifest not found at .codex/skills/manifest.json"],
-        }
-
-    manifest = read_json(manifest_path, optional=True)
-    if not manifest:
-        return {
-            "mode": "DiscoverProjectGuidance",
-            "valid": False,
-            "errors": ["Could not parse .codex/skills/manifest.json"],
-        }
-
-    categories = manifest.get("categories", {})
-    profile = load_project_profile(root)
-    stack_tags = _read_stack_tags(profile)
-    stack_tags_lower = [t.lower() for t in stack_tags]
-
-    # Collect skills from non-core categories, filtering by stackTags when present
-    relevant_skills: list[dict[str, Any]] = []
-    filtered_categories: list[dict[str, Any]] = []
-    for cat_name, cat_data in categories.items():
-        if not isinstance(cat_data, dict):
-            continue
-        if cat_data.get("alwaysActive"):
-            continue
-
-        # Check stackTag filter if present
-        cat_stack_tags = cat_data.get("stackTags")
-        if isinstance(cat_stack_tags, list) and cat_stack_tags:
-            if stack_tags and not any(
-                _tag_matches_stack(tag, stack_tags_lower) for tag in cat_stack_tags
-            ):
-                # Stack set but no match — skip
-                filtered_categories.append({
-                    "category": cat_name,
-                    "reason": f"No stack tag matches {cat_stack_tags}",
-                })
-                continue
-
-        cat_skills = cat_data.get("skills", [])
-        if not isinstance(cat_skills, list):
-            continue
-        for skill_path in cat_skills:
-            skill_dir = root / ".codex" / "skills" / skill_path
-            exists = skill_dir.exists()
-            relevant_skills.append({
-                "category": cat_name,
-                "path": skill_path,
-                "exists": exists,
-            })
-
-    if stack_tags:
-        result["actions"].append({
-            "path": "stack",
-            "key": "detected",
-            "severity": "info",
-            "message": f"Stack values from profile: {', '.join(stack_tags)}",
-            "phase": "audit",
-        })
-
-    result["stackTags"] = stack_tags
-    result["relevantSkills"] = relevant_skills
-    result["skillCount"] = len(relevant_skills)
-    result["filteredCategories"] = filtered_categories
-    result["valid"] = True
-    return result
-
-
-def _tag_matches_stack(tag: str, stack_lower: list[str]) -> bool:
-    """Check if a manifest tag matches any of the stack values.
-
-    Uses substring matching (e.g. 'react' matches 'react + typescript').
-    """
-    tag_lower = tag.lower()
-    return any(tag_lower in s for s in stack_lower)
-
-
 # ── Internet skill search ──────────────────────────────────────────────
 
 _MAX_SKILLS_PER_QUERY = 3  # Take top N results from each internet search
@@ -146,6 +34,38 @@ def _normalize_stack_value(v: Any) -> str:
     if isinstance(v, dict):
         return str(v.get("value", "")).lower().strip()
     return str(v).lower().strip() if v else ""
+
+
+def _read_stack_values(root: Path, values: dict[str, Any]) -> dict[str, str]:
+    """Extract stack values from provided values or the project profile.
+
+    Accepts raw strings or ``{applies, value}`` dicts for the three domains
+    (frontend, backend, database). Returns lowercase non-empty values.
+    """
+    stack_values: dict[str, str] = {}
+    for domain in ("frontend", "backend", "database"):
+        if domain in values and values[domain]:
+            raw = _normalize_stack_value(values[domain])
+            if raw:
+                stack_values[domain] = raw
+    if stack_values:
+        return stack_values
+
+    profile = load_project_profile(root)
+    profile_stack = profile.get("stack", {})
+    if isinstance(profile_stack, dict):
+        for domain in ("frontend", "backend", "database"):
+            entry = profile_stack.get(domain, {})
+            if isinstance(entry, dict):
+                if entry.get("applies") is True:
+                    raw = str(entry.get("value", "")).lower().strip()
+                    if raw:
+                        stack_values[domain] = raw
+            elif isinstance(entry, str):
+                raw = entry.lower().strip()
+                if raw and raw not in ("none", "n/a", "na"):
+                    stack_values[domain] = raw
+    return stack_values
 
 
 def _search_skills_internet(root: Path, query: str, dry_run: bool) -> list[dict[str, Any]]:
@@ -204,6 +124,55 @@ def _search_skills_internet(root: Path, query: str, dry_run: bool) -> list[dict[
     # Sort by popularity descending, take top N
     skills.sort(key=lambda s: s.get("installs", 0), reverse=True)
     return skills[:_MAX_SKILLS_PER_QUERY]
+
+
+def _search_stack_tokens(
+    root: Path, stack_values: dict[str, str], dry_run: bool
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Search the internet registry for each stack token.
+
+    Splits compound values like "React + TypeScript" into tokens and runs
+    ``npx skills find`` per token, deduplicating by ``package_skill``.
+
+    Returns ``(skills, actions)``. NEVER consults local skills/manifest to
+    answer guidance.
+    """
+    all_internet_skills: list[dict[str, Any]] = []
+    seen_package_skill: set[str] = set()
+    actions: list[dict[str, Any]] = []
+
+    for domain, raw_value in sorted(stack_values.items()):
+        tokens = raw_value.replace("+", " ").replace(",", " ").replace("/", " ").split()
+        for token in tokens:
+            token_clean = token.strip().lower()
+            if not token_clean:
+                continue
+
+            actions.append({
+                "path": f"internet-search/{domain}",
+                "key": "search.query",
+                "severity": "info",
+                "message": f"Searching internet for skills matching '{token_clean}'.",
+                "phase": "audit",
+            })
+
+            found = _search_skills_internet(root, token_clean, dry_run)
+            for skill in found:
+                ps = skill.get("package_skill", "")
+                if ps and ps not in seen_package_skill:
+                    seen_package_skill.add(ps)
+                    all_internet_skills.append(skill)
+                    actions.append({
+                        "path": f"internet/{skill['package']}/{skill['skill']}",
+                        "key": "internet.found",
+                        "severity": "info",
+                        "message": (
+                            f"Found '{skill['skill']}' from {skill['package']} "
+                            f"({skill['installs']:,} installs)."
+                        ),
+                        "phase": "audit",
+                    })
+    return all_internet_skills, actions
 
 
 def _skill_exists_locally(root: Path, skill_name: str) -> bool:
@@ -322,8 +291,9 @@ def _update_manifest_with_skills(
     """Update .codex/skills/manifest.json to include newly installed internet skills.
 
     Creates or updates a ``"stack"`` category with ``stackTags`` matching the
-    installed skill names, so :func:`discover_project_guidance` can find them
-    and agents can discover what skills are available for their task.
+    installed skill names, so agents can discover what skills are available for
+    their task. This is bookkeeping after installation — it never answers
+    guidance (guidance always comes from the internet).
     """
     result = configure_result(
         "UpdateManifest", dry_run, write_enabled=not dry_run
@@ -361,7 +331,7 @@ def _update_manifest_with_skills(
         result["valid"] = True
         return result
 
-    # Upsert the "stack" category with stackTags so discover_project_guidance() can find them
+    # Upsert the "stack" category with stackTags so agents can find the skills
     if "stack" not in categories:
         categories["stack"] = {
             "description": "Stack-relevant skills (installed from internet based on project profile)",
@@ -410,6 +380,45 @@ def _update_manifest_with_skills(
     return result
 
 
+def discover_project_guidance(
+    root: Path, dry_run: bool = False, **values: Any
+) -> dict[str, Any]:
+    """Search the internet for stack-relevant skills — never local.
+
+    Reads the project stack from the profile (or provided values) and searches
+    the public skills.sh registry via ``npx skills find`` for each stack token.
+    Local skills/manifest are NEVER consulted to answer guidance — the answer
+    always comes from the internet, and the user decides what to install.
+    """
+    result = configure_result(
+        "DiscoverProjectGuidance", dry_run, write_enabled=not dry_run
+    )
+
+    stack_values = _read_stack_values(root, values)
+    result["stackInput"] = stack_values
+    result["stackTags"] = list(stack_values.values())
+
+    if not stack_values:
+        result["actions"].append({
+            "path": "stack",
+            "key": "guidance.skip",
+            "severity": "info",
+            "message": "No stack values provided or configured. Skipping internet skill discovery.",
+            "phase": "audit",
+        })
+        result["foundSkills"] = []
+        result["skillCount"] = 0
+        result["valid"] = True
+        return result
+
+    all_internet_skills, search_actions = _search_stack_tokens(root, stack_values, dry_run)
+    result["actions"].extend(search_actions)
+    result["foundSkills"] = [s["package_skill"] for s in all_internet_skills]
+    result["skillCount"] = len(all_internet_skills)
+    result["valid"] = True
+    return result
+
+
 def setup_project_guidance(
     root: Path, values: dict[str, Any], dry_run: bool = False,
     interactive: bool = False,
@@ -423,10 +432,13 @@ def setup_project_guidance(
     2. For each stack value, searches the public skills.sh registry via
        ``npx skills find <query>`` and picks the top results by popularity
     3. If interactive=True in a TTY: shows discovered skills and asks user which to install
-    4. Installs each selected skill via ``npx skills add`` (falls back to GitHub copy)
+    4. Installs ONLY the user-selected skills via ``npx skills add`` (falls back to GitHub copy)
     5. Updates ``.codex/skills/manifest.json`` with the new skills and their
-       stack category tags, so :func:`discover_project_guidance` and agents
-       can discover what skills are available for each task
+       stack category tags (bookkeeping only — guidance is never answered from local skills)
+
+    Without an interactive TTY confirmation (CI or non-interactive callers),
+    discovered skills are NEVER auto-installed — the function reports the
+    candidates and stops so the user can choose.
 
     Args:
         root: Repository root.
@@ -442,29 +454,7 @@ def setup_project_guidance(
     )
 
     # 1. Read stack values — accept raw strings or read from profile
-    stack_values: dict[str, str] = {}
-    for domain in ("frontend", "backend", "database"):
-        if domain in values and values[domain]:
-            raw = _normalize_stack_value(values[domain])
-            if raw:
-                stack_values[domain] = raw
-
-    if not stack_values:
-        profile = load_project_profile(root)
-        profile_stack = profile.get("stack", {})
-        if isinstance(profile_stack, dict):
-            for domain in ("frontend", "backend", "database"):
-                entry = profile_stack.get(domain, {})
-                if isinstance(entry, dict):
-                    if entry.get("applies") is True:
-                        raw = str(entry.get("value", "")).lower().strip()
-                        if raw:
-                            stack_values[domain] = raw
-                elif isinstance(entry, str):
-                    raw = entry.lower().strip()
-                    if raw and raw not in ("none", "n/a", "na"):
-                        stack_values[domain] = raw
-
+    stack_values = _read_stack_values(root, values)
     result["stackInput"] = stack_values
 
     if not stack_values:
@@ -478,42 +468,9 @@ def setup_project_guidance(
         result["valid"] = True
         return result
 
-    # 2. Search internet for each stack value
-    #    Split compound values like "React + TypeScript" into tokens
-    all_internet_skills: list[dict[str, Any]] = []
-    seen_package_skill: set[str] = set()
-
-    for domain, raw_value in sorted(stack_values.items()):
-        tokens = raw_value.replace("+", " ").replace(",", " ").replace("/", " ").split()
-        for token in tokens:
-            token_clean = token.strip().lower()
-            if not token_clean:
-                continue
-
-            result["actions"].append({
-                "path": f"internet-search/{domain}",
-                "key": "search.query",
-                "severity": "info",
-                "message": f"Searching internet for skills matching '{token_clean}'.",
-                "phase": "audit",
-            })
-
-            found = _search_skills_internet(root, token_clean, dry_run)
-            for skill in found:
-                ps = skill.get("package_skill", "")
-                if ps and ps not in seen_package_skill:
-                    seen_package_skill.add(ps)
-                    all_internet_skills.append(skill)
-                    result["actions"].append({
-                        "path": f"internet/{skill['package']}/{skill['skill']}",
-                        "key": "internet.found",
-                        "severity": "info",
-                        "message": (
-                            f"Found '{skill['skill']}' from {skill['package']} "
-                            f"({skill['installs']:,} installs)."
-                        ),
-                        "phase": "audit",
-                    })
+    # 2. Search internet for each stack value (never local skills/manifest)
+    all_internet_skills, search_actions = _search_stack_tokens(root, stack_values, dry_run)
+    result["actions"].extend(search_actions)
 
     result["foundSkills"] = [s["package_skill"] for s in all_internet_skills]
 
@@ -529,6 +486,10 @@ def setup_project_guidance(
         return result
 
     # 2.5 Interactive: let user select which skills to install
+    #
+    # Rule (authority level 5): skills are ONLY installed after the user
+    # explicitly chooses them. Without an interactive TTY confirmation we
+    # NEVER auto-install — we report the internet candidates and stop.
     if interactive and sys.stdin.isatty():
         print(f"\n  Found {len(all_internet_skills)} stack-relevant skill(s) online:")
         for i, skill in enumerate(all_internet_skills, 1):
@@ -565,8 +526,28 @@ def setup_project_guidance(
             result["valid"] = True
             return result
         all_internet_skills = selected
+    else:
+        # No interactive confirmation available (non-TTY or non-interactive
+        # caller). Never auto-install: report candidates and require the user
+        # to run the interactive flow to choose what gets installed.
+        result["actions"].append({
+            "path": "stack",
+            "key": "interactive.required",
+            "severity": "info",
+            "message": (
+                "Found stack-relevant skill(s) online but no interactive "
+                "confirmation is available — nothing was installed. Run the "
+                "interactive flow (TTY) so the user can choose which skills "
+                "to install."
+            ),
+            "phase": "audit",
+        })
+        result["installResults"] = []
+        result["valid"] = True
+        return result
 
     # 3. Check each discovered skill locally — skip if already installed
+    #    (idempotency only; local skills are never used to answer guidance)
     install_results: list[dict[str, Any]] = []
     for skill in all_internet_skills:
         package = skill.get("package", "")

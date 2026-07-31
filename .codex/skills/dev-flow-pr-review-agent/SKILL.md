@@ -15,7 +15,7 @@ For exact repository/review provider API endpoint guidance, read `the selected r
 
 ## Shared Context
 
-Before posting review output, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/development.md` as the stage-specific doc. Load the selected review adapter for API endpoints, comment fields, status checks, and labels.
+Before posting review output, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/development.md` as the stage-specific doc. Load the selected review adapter for API endpoints, comment fields, status checks, and labels.
 
 ## Workflow Telemetry
 

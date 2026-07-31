@@ -8,7 +8,7 @@
    - Check `.codex/skills/` first to see if a skill already covers this area
    - Check `.codex/skills/_shared/delivery-contract.md` for the authoritative policy
    - Check referenced documents in the skill (`docs/`, `.codex/quality.local.json`, etc.)
-   
+
 2. **Source-of-truth hierarchy** (from delivery-contract.md):
    - `.codex/skills/_shared/delivery-contract.md`
    - `docs/context-management.md`, `docs/architecture.md`, `docs/development.md`, `docs/deployment.md`
@@ -39,7 +39,9 @@ This is an agentic SDD/SDLC delivery lab. Work is driven from OpenProject work p
 ## Reference Architecture
 
 ### High-Level Workflow
+
 ```
+text
 OpenProject Ticket (Todo)
   → Branch + OpenSpec Proposal
   → Implementation + Tests + Gitea PR
@@ -54,12 +56,11 @@ OpenProject Ticket (Todo)
 ```
 
 ### Key Repository Locations
-- **Solution**: `SDDTemplate.slnx`
-- **App**: `src/SDDTemplate.Site` (Blazor + ASP.NET Core)
-- **API**: `src/SDDTemplate.Api` (ASP.NET Core)
-- **Tests**: `tests/SDDTemplate.Site.Tests`, `tests/SDDTemplate.E2ETests`
-- **Infrastructure**: `infra/` (Docker Compose + Azure)
-- **Documentation**: `docs/` (architecture, development, deployment, context-management)
+
+- **Skills**: `.codex/skills/` — delivery workflow skills for every SDLC stage
+- **Infrastructure**: `infra/` — Docker Compose services, K8s manifests, deployment configs
+- **Documentation**: `docs/` — architecture, development, deployment, context-management
+- **Delivery CLI**: `tools/sdd_cli/` — Python CLI helpers for environment lab, dev flow, tooling
 
 ## Critical `.codex/` Resources
 
@@ -68,11 +69,13 @@ OpenProject Ticket (Todo)
 Domain-specific workflows for each delivery stage. Load these based on task type:
 
 #### Ticket Implementation
+
 - [`dev-flow-continue-implementation`](.codex/skills/dev-flow-continue-implementation/) – Main entry point; inspects state, routes to next workflow
 - [`dev-flow-implement-ticket`](.codex/skills/dev-flow-implement-ticket/) – Core ticket implementation workflow
 - [`dev-flow-start-ticket`](.codex/skills/dev-flow-start-ticket/) – Initialize new ticket from OpenProject
 
 #### OpenSpec Planning & Changes
+
 - [`dev-flow-explore-change`](.codex/skills/dev-flow-explore-change/) – Explore change requirements
 - [`dev-flow-propose-change`](.codex/skills/dev-flow-propose-change/) – Create OpenSpec change proposal
 - [`dev-flow-implement-change`](.codex/skills/dev-flow-implement-change/) – Implement proposed change
@@ -80,12 +83,14 @@ Domain-specific workflows for each delivery stage. Load these based on task type
 - [`dev-flow-archive-change`](.codex/skills/dev-flow-archive-change/) – Archive completed change
 
 #### Deployment & Release
+
 - [`dev-ops-deploy-prod`](.codex/skills/dev-ops-deploy-prod/) – Promote to production
 - [`dev-ops-post-merge-deploy`](.codex/skills/dev-ops-post-merge-deploy/) – Deploy after merge
 - [`dev-ops-hotfix-prod`](.codex/skills/dev-ops-hotfix-prod/) – Emergency hotfix workflow
 - [`dev-ops-rollback-prod`](.codex/skills/dev-ops-rollback-prod/) – Rollback production
 
 #### Infrastructure & Configuration
+
 - [`configure-dev-environment`](.codex/skills/configure-dev-environment/) – Setup local environment
 - [`configure-cloud-environments`](.codex/skills/configure-cloud-environments/) – Configure DEV/QA/PROD
 - [`configure-ticket-workflow`](.codex/skills/configure-ticket-workflow/) – Setup OpenProject
@@ -94,6 +99,7 @@ Domain-specific workflows for each delivery stage. Load these based on task type
 - [`configure-observability`](.codex/skills/configure-observability/) – Monitoring & logging
 
 #### Quality & Review
+
 - [`dev-flow-file-qa-bug`](.codex/skills/dev-flow-file-qa-bug/) – Log QA failures
 - [`dev-flow-pr-review-agent`](.codex/skills/dev-flow-pr-review-agent/) – Automated PR review
 - [`dev-flow-pr-review-feedback-loop`](.codex/skills/dev-flow-pr-review-feedback-loop/) – Handle PR feedback
@@ -101,12 +107,14 @@ Domain-specific workflows for each delivery stage. Load these based on task type
 - [`test-analysis-extensions`](.codex/skills/test-analysis-extensions/) – Analyze test results
 
 #### Development Guidance
+
 - [`project-guidance-acquire`](.codex/skills/project-guidance-acquire/) – Get project insights
 - [`project-guidance-discover`](.codex/skills/project-guidance-discover/) – Explore patterns
 - [`project-guidance-mapper`](.codex/skills/project-guidance-mapper/) – Map architecture
 - [`security-best-practices`](.codex/skills/security-best-practices/) – Security patterns
 
 #### Shared Resources
+
 - [`_shared/delivery-contract.md`](.codex/skills/_shared/delivery-contract.md) – Core delivery contract
 
 **How to use**: When starting work, check if a matching skill exists. If yes, load it directly. Skill files are live—Copilot reads them without duplication.
@@ -115,34 +123,35 @@ Domain-specific workflows for each delivery stage. Load these based on task type
 
 Persistent learning and context. Consulted automatically at session start.
 
-| File | Purpose |
-|------|---------|
-| [`memory_summary.md`](.codex/memory/memory_summary.md) | Quick reference: workflow, commands, context |
-| [`MEMORY.md`](.codex/memory/MEMORY.md) | Index into all memory files |
-| [`module-map.md`](.codex/memory/module-map.md) | ASP.NET Core module layout |
-| [`project-map.md`](.codex/memory/project-map.md) | High-level project structure |
-| [`workflow-memory.md`](.codex/memory/workflow-memory.md) | Workflow checkpoints & learnings |
-| [`failure-patterns.md`](.codex/memory/failure-patterns.md) | Known issues & solutions |
-| [`decisions.md`](.codex/memory/decisions.md) | Architecture decisions |
-| [`qa-findings.md`](.codex/memory/qa-findings.md) | QA test results & patterns |
-| [`release-lessons.md`](.codex/memory/release-lessons.md) | Deployment & release learnings |
-| [`retrieval-policy.md`](.codex/memory/retrieval-policy.md) | How to update memory |
+| File                                                       | Purpose                                      |
+| ---------------------------------------------------------- | -------------------------------------------- |
+| [`memory_summary.md`](.codex/memory/memory_summary.md)     | Quick reference: workflow, commands, context |
+| [`MEMORY.md`](.codex/memory/MEMORY.md)                     | Index into all memory files                  |
+| [`module-map.md`](.codex/memory/module-map.md)             | ASP.NET Core module layout                   |
+| [`project-map.md`](.codex/memory/project-map.md)           | High-level project structure                 |
+| [`workflow-memory.md`](.codex/memory/workflow-memory.md)   | Workflow checkpoints & learnings             |
+| [`failure-patterns.md`](.codex/memory/failure-patterns.md) | Known issues & solutions                     |
+| [`decisions.md`](.codex/memory/decisions.md)               | Architecture decisions                       |
+| [`qa-findings.md`](.codex/memory/qa-findings.md)           | QA test results & patterns                   |
+| [`release-lessons.md`](.codex/memory/release-lessons.md)   | Deployment & release learnings               |
+| [`retrieval-policy.md`](.codex/memory/retrieval-policy.md) | How to update memory                         |
 
 **How to use**: Start each session by reading `.codex/memory/memory_summary.md`. For detailed context, check the relevant memory file. Update memory following `.codex/memory/retrieval-policy.md` after significant events (blockers, fixes, deployment issues, QA findings).
 
 ### 3. **Policy & Configuration** (`.codex/`)
 
-| File | Purpose |
-|------|---------|
-| [`delivery-policy.json`](.codex/delivery-policy.json) | Ticket key pattern, agent constraints, telemetry |
-| [`quality.local.json`](.codex/quality.local.json) | Build, test, coverage, lint gates (do not edit) |
-| [`client-tools.local.json`](.codex/client-tools.local.json) | Local tooling config (do not edit) |
+| File                                                        | Purpose                                          |
+| ----------------------------------------------------------- | ------------------------------------------------ |
+| [`delivery-policy.json`](.codex/delivery-policy.json)       | Ticket key pattern, agent constraints, telemetry |
+| [`quality.local.json`](.codex/quality.local.json)           | Build, test, coverage, lint gates (do not edit)  |
+| [`client-tools.local.json`](.codex/client-tools.local.json) | Local tooling config (do not edit)               |
 
 **How to use**: Read at session start to understand constraints. Do not edit `.local.json` files—these are local only.
 
 ## Workflow Entry Points
 
 ### Continuing a Ticket
+
 ```
 "automatically continue this ticket"
 → .codex/skills/dev-flow-continue-implementation
@@ -151,7 +160,9 @@ Persistent learning and context. Consulted automatically at session start.
 ```
 
 ### Starting Fresh
+
 Choose based on task:
+
 - **New Ticket**: `"create ticket E2EPROJECT-123 for [feature]"` → `dev-flow-start-ticket`
 - **OpenSpec Planning**: `"propose change for [feature]"` → `dev-flow-propose-change`
 - **Implementation**: `"implement ticket E2EPROJECT-123"` → `dev-flow-implement-ticket`
@@ -163,23 +174,29 @@ Choose based on task:
 ## How Copilot Discovers & Uses Resources
 
 ### Pattern 1: Reference by File Path
+
 In chat, you can directly reference files:
+
 ```
 @.codex/skills/dev-flow-implement-ticket/SKILL.md
 @.codex/memory/memory_summary.md
 @.codex/delivery-policy.json
 ```
+
 Copilot loads the file into context without copying.
 
 ### Pattern 2: Mention Ticket or Feature
+
 ```
 "continue E2EPROJECT-42"
 "implement user authentication"
 "fix failing E2E test"
 ```
+
 Copilot automatically discovers the matching skill based on task context.
 
 ### Pattern 3: Explicit Workflow Request
+
 ```
 "follow the OpenSpec workflow for this change"
 "run the deployment checklist"
@@ -187,19 +204,23 @@ Copilot automatically discovers the matching skill based on task context.
 ```
 
 ### Pattern 4: Skill Mode Activation
+
 When a conversation requires multiple steps, Copilot may activate a skill-driven mode that:
+
 1. Loads the skill from `.codex/skills/`
 2. Checks memory for relevant context
 3. Follows the workflow sequentially
 4. Updates memory after significant steps
 
 ### Copilot Chat Model Configuration
+
 Copilot chat sessions can use the repository's OpenRouter runtime configuration from `.codex/client-tools.local.json`:
+
 - `openRouter.baseUrl`
 - `openRouter.apiKey`
 - `openRouter.defaultChatModel`
 - `openRouter.modelMapping.chat`
-When present, `defaultChatModel` is the fallback for chat interactions and `modelMapping.chat` can override chat behavior for Copilot-driven repo workflows.
+  When present, `defaultChatModel` is the fallback for chat interactions and `modelMapping.chat` can override chat behavior for Copilot-driven repo workflows.
 
 ## Key Constraints & Policies
 
@@ -213,30 +234,33 @@ When present, `defaultChatModel` is the fallback for chat interactions and `mode
 ## Common Commands
 
 ```powershell
-# Build & Test
-dotnet build .\SDDTemplate.slnx
-dotnet test .\SDDTemplate.slnx
-dotnet format --verify-no-changes
+# Environment Lab
+python -m tools.sdd_cli environment-lab health-check     # Check all lab services
+python -m tools.sdd_cli environment-lab compose-up        # Start Docker Compose services
+python -m tools.sdd_cli environment-lab setup-lab         # Full idempotent lab setup
 
-# Infrastructure
-.\infra\up.ps1              # Start local Docker Compose
-.\infra\down.ps1            # Stop local Docker Compose
+# Delivery CLI
+python -m tools.sdd_cli dev-flow validate-commit-message "E2EPROJECT-123: message"
+python -m tools.sdd_cli dev-flow create-release-manifest --version v1.0.30
 
-# Memory Search (when needed)
-.\.codex\memory\search_memory.ps1 -Query "deployment issue"
+# Tests
+python -m pytest tools/sdd_cli/tests/ -q                   # Run CLI tests
+
+# New stack: add product-specific build/test commands here
 ```
 
-## Quality Gates Checklist
+## Quality Gates Checklist (Shell Level)
 
-Before handoff for any code change:
-1. ✅ **Build**: `dotnet build` passes
-2. ✅ **Tests**: `dotnet test` passes with ≥80% coverage
-3. ✅ **Format**: `dotnet format --verify-no-changes` passes
-4. ✅ **Lint**: No warnings (checked via build)
-5. ✅ **Security**: No secrets or credentials in code
-6. ✅ **Artifacts**: Pushed to Nexus (if deployment)
+Before handoff for any repo change:
 
-See `.codex/quality.local.json` for the authoritative gate configuration.
+1. ✅ **Tests**: `python -m pytest tools/sdd_cli/tests/ -q` passes
+2. ✅ **JSON validity**: All `.json` files are valid JSON
+3. ✅ **Security**: No secrets or credentials in code
+4. ✅ **Consistency**: Changes follow the delivery contract and skills
+
+**Product gates** (add when a stack is selected): build, unit tests, coverage, formatting, linting, package verification.
+
+See `.codex/quality.local.json` for the authoritative gate configuration when populated.
 
 ## Session Protocol
 
@@ -249,16 +273,16 @@ See `.codex/quality.local.json` for the authoritative gate configuration.
 
 ## When to Consult `.codex/` Resources
 
-| Situation | Consult |
-|-----------|---------|
-| Starting new task | `memory_summary.md` + matching skill |
-| Unclear next step | `dev-flow-continue-implementation` or `workflow-memory.md` |
-| Build/test failure | `failure-patterns.md` + `quality.local.json` |
-| Deployment issue | `deploy-*.md` skills + `release-lessons.md` |
-| Architecture question | `project-map.md` + `docs/architecture.md` |
-| Setup needed | `configure-*.md` skills |
-| QA failure | `qa-findings.md` + `dev-flow-file-qa-bug` skill |
-| Production problem | `dev-ops-rollback-prod` or `dev-ops-hotfix-prod` skills |
+| Situation             | Consult                                                    |
+| --------------------- | ---------------------------------------------------------- |
+| Starting new task     | `memory_summary.md` + matching skill                       |
+| Unclear next step     | `dev-flow-continue-implementation` or `workflow-memory.md` |
+| Build/test failure    | `failure-patterns.md` + `quality.local.json`               |
+| Deployment issue      | `deploy-*.md` skills + `release-lessons.md`                |
+| Architecture question | `project-map.md` + `docs/architecture.md`                  |
+| Setup needed          | `configure-*.md` skills                                    |
+| QA failure            | `qa-findings.md` + `dev-flow-file-qa-bug` skill            |
+| Production problem    | `dev-ops-rollback-prod` or `dev-ops-hotfix-prod` skills    |
 
 ## Summary
 

@@ -1,5 +1,6 @@
 ---
 name: dev-flow-pipeline-status
+license: MIT
 description: Produce a read-only operator dashboard for configured tickets, pull requests, selected-provider artifacts, QA evidence, tags, environments, release state, and blockers through selected project-profile adapters. Use when the user asks where a ticket or release stands, what is deployed, what is blocked, or which workflow step should run next.
 ---
 
@@ -13,7 +14,7 @@ Use this skill for read-only delivery visibility. It must not mutate ticket, rep
 
 ## Shared Context
 
-Before reporting, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/architecture.md` as the stage-specific doc. Load only adapters needed for read-only status. This remains a read-only skill; do not update memory unless the user explicitly asks for a workflow-memory correction.
+Before reporting, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/architecture.md` as the stage-specific doc. Load only adapters needed for read-only status. This remains a read-only skill; do not update memory unless the user explicitly asks for a workflow-memory correction.
 
 ## Configuration
 
@@ -27,7 +28,7 @@ Collect read-only status sources, compare them against the ticket context lock, 
 
 Collect what is relevant to the request:
 
-- tickets by configured states: Todo, In Progress, In Review, QA, Done.
+- tickets by configured states: TO DO, In Progress, Developed, In testing (IN QA), Tested, Closed.
 - Current ticket generated markers: branch, PR, QA deployment, E2E QA, PROD deployment, rollback, QA bug.
 - Active `.codex/delivery-context.local.json` lock, including ticket key, branch, PR, artifact commit, RC/final versions, and any mismatch with discovered state.
 - repository/review provider open PRs, merged PRs, target branches, labels, latest review markers, and CI status when available.

@@ -353,49 +353,42 @@ jobs:
 
 ### 5. Generate `pr-validation.yml`
 
-This workflow is mostly static. Generate it with the standard checkout, JSON validation, and secret scan steps:
+This workflow is mostly static. Generate it with the standard checkout, JSON validation, secret scan, SAST/SCA/IaC scans, and the dev-flow review gate steps. It also includes the **repo tooling tests** step (see `.codex/skills/_shared/test-requirements.md`):
 
-```yaml
-name: PR validation
+1. **Repo tooling tests** — always run the shell's own Python test suite (deterministic, stack-independent):
 
-on:
-  pull_request:
-    branches:
-      - main
-      - dev
+   ```bash
+   python3 -m pytest tools/sdd_cli/tests/ -q
+   ```
 
-jobs:
-  validate:
-    runs-on: ubuntu-latest
-    container:
-      image: sdd-e2e-ci:local
-    steps:
-      - name: Checkout
-        env:
-          GITEA_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: |
-          set -eo pipefail
-          export GIT_TERMINAL_PROMPT=0
-          TOKEN="${GITEA_TOKEN:-}"
-          repo_url="http://git:${TOKEN}@host.docker.internal:3000/${GITHUB_REPOSITORY}.git"
-          git init .
-          git remote add origin "$repo_url"
-          git fetch --depth 1 origin "$GITHUB_SHA"
-          git checkout --force FETCH_HEAD
+2. **Product tests (unit, integration, architecture) run via the lefthook `pre-push` hook** — NOT in the CI image. This keeps `sdd-e2e-ci:local` lean: stack runtimes (.NET SDK, Go, ...) live on the developer machine, and the tests run locally BEFORE push. The hook executes `python -m tools.sdd_cli stack-tests`, which reads `project-profile.local.json → stack.testFrameworks` and runs the mapped (install, test) pairs for the three test levels. When no stack is configured (template state), it reports and exits 0 — never assume a tech stack.
 
-      - name: Validate JSON files
-        shell: bash
-        run: |
-          set -euo pipefail
-          find . -path './.git' -prune -o -name '*.json' -print | while IFS= read -r file; do
-            python3 -m json.tool "$file" >/dev/null
-          done
+   **⚠️ Enforcement note:** because product tests run via the local hook, CI does NOT gate product tests. The `pre-push` hook is the only enforcement point and can be bypassed with `git push --no-verify`. This matches the lean-image decision, but document it in PRs and never rely on CI to catch product test failures.
 
-      - name: Secret scan
-        shell: bash
-        run: gitleaks detect --source . --redact --no-git
+### 5a. Product Test Frameworks → Local Commands (`stack-tests`)
+
+The `python -m tools.sdd_cli stack-tests` driver (`tools/sdd_cli/stack_tests.py`) maps each configured framework to an (install, test) command pair covering the three levels:
+
+| Framework | Install command (first) | Test command (unit + integration + architecture) |
+|-----------|-------------------------|--------------------------------------------------|
+| `pytest`  | `python3 -m pip install -r requirements.txt` | `python3 -m pytest test/unit test/integration test/architecture -q` |
+| `vitest`  | `npm ci` | `npx vitest run test/unit test/integration test/architecture` |
+| `jest`    | `npm ci` | `npx jest test/unit test/integration test/architecture` |
+| `dotnet`, `xunit`, `nunit`, `mstest` | `dotnet restore` | `dotnet test` |
+
+**⚠️ pytest is Python-only.** It CANNOT run .NET tests. All .NET test
+frameworks (xUnit, NUnit, MSTest) run through `dotnet test`, which requires the
+**.NET SDK installed on the developer machine** — never map a .NET framework to
+pytest. Run the hook with:
+
+```bash
+python -m tools.sdd_cli stack-tests            # real run
+python -m tools.sdd_cli stack-tests --dry-run true  # preview only
 ```
+
+If a test framework has no runtime on the dev machine, the hook fails with
+`dotnet`/`go` not found — that failure is a signal to install the runtime
+locally, not to switch the framework to pytest.
 
 ### 6. Dry-Run Mode
 
@@ -405,7 +398,7 @@ Before writing any files, offer a dry-run preview:
 text
 Would update .gitea/workflows/package-deploy.yml:
   + Build frontend (React): npm ci → dist/
-  + Package artifacts: frontend-landing-page.zip, openproject-17.5.1.zip
+  + Package artifacts: frontend-landing-page.zip, backend-api.zip
   + Upload to Nexus: http://host.docker.internal:8088/sdd-artifacts
   + Deploy to dev/qa: node server.mjs on port 4173/4174
 Would keep .gitea/workflows/pr-validation.yml (unchanged)

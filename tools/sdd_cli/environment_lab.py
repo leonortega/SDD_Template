@@ -1723,16 +1723,21 @@ def set_project_stack(
     current["stack"] = stack
     if not dry_run:
         write_json(path, current)
-        # Auto-generate Semgrep config after stack change
+        # Auto-generate Semgrep config + implementation scaffold after stack change
         set_semgrep_config(root, dry_run)
+        scaffold_project_files(root, dry_run)
 
-    # After stack is set, automatically trigger project guidance setup
+    # After stack is set, automatically trigger project guidance setup.
+    # interactive=True so the user is asked which skills to install (never
+    # auto-installed when no TTY confirmation is available).
     guidance_result: dict[str, Any] = {}
     if not dry_run:
         try:
             from .guidance import setup_project_guidance
 
-            guidance_result = setup_project_guidance(root, dict(values), dry_run)
+            guidance_result = setup_project_guidance(
+                root, dict(values), dry_run, interactive=True
+            )
         except Exception:
             guidance_result = {
                 "mode": "SetupProjectGuidance",
@@ -1758,6 +1763,8 @@ def set_project_stack(
         ],
         "guidanceResult": guidance_result.get("valid", True),
         "guidanceDetails": guidance_result,
+        "scaffoldRequired": True,
+        "nextStage": "dev-flow-scaffold-project",
     }
 
 
@@ -2016,6 +2023,69 @@ def set_semgrep_config(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
     result["valid"] = True
     result["semgrepRules"] = all_rules
+    return result
+
+
+# ── Scaffold project implementation files ──────────────────────────────
+
+
+def scaffold_project_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Create the deterministic implementation skeleton after the stack is set.
+
+    The template repo is intentionally stack-agnostic. After the tech stack is
+    defined (set-project-stack), this step creates only the stack-independent
+    skeleton: ``src/`` and ``tests/`` folders. Every stack-specific artifact
+    (package.json, test framework config, Dockerfiles, CI workflows, k8s
+    manifests) is delegated to the AI-driven ``dev-flow-scaffold-project``
+    skill, which reads the stack from project-profile.local.json and resolves
+    what to scaffold — never a fixed template list.
+    """
+    result = configure_result(
+        "ScaffoldProjectFiles", dry_run, write_enabled=not dry_run
+    )
+
+    # Always create src/ and tests/ folders (stack-independent)
+    for folder in ("src", "tests"):
+        folder_path = root / folder
+        if not folder_path.exists():
+            if not dry_run:
+                folder_path.mkdir(parents=True, exist_ok=True)
+            result["actions"].append(
+                {
+                    "path": f"{folder}/",
+                    "key": "folder.created",
+                    "severity": "info",
+                    "message": f"Created {folder}/ implementation scaffold folder.",
+                    "phase": "apply",
+                }
+            )
+        else:
+            result["actions"].append(
+                {
+                    "path": f"{folder}/",
+                    "key": "folder.exists",
+                    "severity": "info",
+                    "message": f"{folder}/ already exists — left unchanged.",
+                    "phase": "audit",
+                }
+            )
+
+    # Delegate every stack-specific artifact to the AI scaffold skill.
+    result["actions"].append(
+        {
+            "path": ".codex/skills/dev-flow-scaffold-project/SKILL.md",
+            "key": "stack.delegated",
+            "severity": "info",
+            "message": (
+                "Implementation scaffold (build manifests, test config, "
+                "Dockerfiles, CI, k8s) delegated to the dev-flow-scaffold-project "
+                "skill — the AI resolves what to generate from the selected stack."
+            ),
+            "phase": "apply",
+        }
+    )
+
+    result["valid"] = True
     return result
 
 
@@ -4366,15 +4436,17 @@ def push_to_gitea(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
 
 def scaffold_k8s(root, dry_run=False):
-    """Scaffold K8s deployment files: Dockerfile, Kustomize base, and environment overlays.
+    """Scaffold K8s deployment files: Kustomize base and environment overlays.
 
-    Reads infra/deployment/apps.json and generates for each app:
-    - Dockerfile (nginx for web, generic for api)
-    - nginx.conf (for web apps, with /health endpoint)
+    Reads infra/deployment/apps.json and generates deterministic, stack-independent
+    manifests for each app:
     - infra/k8s/base/{app}-deployment.yaml
     - infra/k8s/base/{app}-service.yaml
-    - infra/k8s/base/kustomization.yaml (references all apps)
-    - infra/k8s/overlays/{dev,qa,prod}/kustomization.yaml (image entries per app)
+    - infra/k8s/base/kustomization.yaml (all apps)
+    - infra/k8s/overlays/{dev,qa,prod}/kustomization.yaml (env-specific image tags)
+
+    Stack-specific artifacts (Dockerfile, nginx.conf, .dockerignore) are delegated
+    to the AI-driven dev-flow-scaffold-project skill — never generated here.
 
     ⚠️ Health probe lesson: Always use /health as the default health check path
     for all app roles. Web apps get /health via nginx.conf. API apps must
@@ -4391,13 +4463,23 @@ def scaffold_k8s(root, dry_run=False):
                 "severity": "info",
                 "message": (
                     "Would scaffold K8s deployment files:"
-                    "\n  - Dockerfile per app (nginx for web)"
-                    "\n  - .dockerignore per app"
-                    "\n  - nginx.conf for web apps (with /health)"
                     "\n  - infra/k8s/base/{app}-deployment.yaml per app"
                     "\n  - infra/k8s/base/{app}-service.yaml per app"
                     "\n  - infra/k8s/base/kustomization.yaml (all apps)"
                     "\n  - infra/k8s/overlays/{dev,qa,prod}/kustomization.yaml"
+                ),
+                "phase": "apply",
+            }
+        )
+        result["actions"].append(
+            {
+                "path": "infra/k8s",
+                "key": "stack.delegated",
+                "severity": "info",
+                "message": (
+                    "Dockerfile/nginx.conf/.dockerignore generation delegated to the "
+                    "dev-flow-scaffold-project skill — the AI resolves what to scaffold "
+                    "from the selected stack (no fixed template list)."
                 ),
                 "phase": "apply",
             }
@@ -4480,99 +4562,24 @@ def scaffold_k8s(root, dry_run=False):
             port += 1
         _used_node_ports.add(port)
         return port
-    # ── Generate Dockerfile, nginx.conf, .dockerignore for each app ──
-    for app in apps:
-        app_id = app["appId"]
-        proj = app.get("projectPath", app_id)
-        role = app.get("role", "web")
-        app_dir = root / proj
-
-        if role == "web":
-            # .dockerignore
-            di = app_dir / ".dockerignore"
-            if not di.exists():
-                di.write_text("node_modules/\n.git/\n.env\n*.md\n", encoding="utf-8")
-                result["actions"].append(
-                    {
-                        "path": f"{proj}/.dockerignore",
-                        "key": "file.created",
-                        "severity": "info",
-                        "message": f"Created .dockerignore for {app_id}.",
-                        "phase": "apply",
-                    }
-                )
-
-            # nginx.conf — /health endpoint required for K8s health probes
-            nc = app_dir / "nginx.conf"
-            if not nc.exists():
-                nc.write_text(
-                    "server {\n"
-                    "    listen 80;\n"
-                    "    server_name _;\n"
-                    "    root /usr/share/nginx/html;\n"
-                    "    index index.html;\n"
-                    "    location / {\n"
-                    "        try_files $uri $uri/ /index.html;\n"
-                    "    }\n"
-                    "    location /health {\n"
-                    '        return 200 \'{"status":"ok"}\';\n'
-                    "        add_header Content-Type application/json;\n"
-                    "    }\n"
-                    "}\n",
-                    encoding="utf-8",
-                )
-                result["actions"].append(
-                    {
-                        "path": f"{proj}/nginx.conf",
-                        "key": "file.created",
-                        "severity": "info",
-                        "message": f"Created nginx.conf for {app_id} with /health endpoint.",
-                        "phase": "apply",
-                    }
-                )
-
-            # Dockerfile (multi-stage node build -> nginx serve)
-            df = app_dir / "Dockerfile"
-            if not df.exists():
-                dlines = [
-                    "# Stage 1: Build\n",
-                    "FROM node:20-alpine AS builder\n",
-                    "WORKDIR /app\n",
-                    "COPY package*.json ./\n",
-                    "RUN npm ci\n",
-                    "COPY . .\n",
-                    "RUN npm run build\n",
-                    "\n",
-                    "# Stage 2: Serve with nginx\n",
-                    "FROM nginx:alpine\n",
-                    "COPY --from=builder /app/dist /usr/share/nginx/html\n",
-                    "COPY nginx.conf /etc/nginx/conf.d/default.conf\n",
-                    "EXPOSE 80\n",
-                    "HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-",
-                    "  CMD wget -qO- http://localhost/health || exit 1\n",
-                    'CMD ["nginx", "-g", "daemon off;"]\n',
-                ]
-                df.write_text("".join(dlines), encoding="utf-8")
-                result["actions"].append(
-                    {
-                        "path": f"{proj}/Dockerfile",
-                        "key": "file.created",
-                        "severity": "info",
-                        "message": f"Created Dockerfile for {app_id}.",
-                        "phase": "apply",
-                    }
-                )
-            else:
-                result["actions"].append(
-                    {
-                        "path": f"{proj}/Dockerfile",
-                        "key": "file.exists",
-                        "severity": "info",
-                        "message": f"Dockerfile already exists for {app_id}.",
-                        "phase": "audit",
-                    }
-                )
+    # ── Stack-specific artifacts are delegated to the AI scaffold skill ──
+    # Dockerfiles, nginx.conf, and .dockerignore depend on the concrete stack.
+    # The dev-flow-scaffold-project skill (AI-driven) resolves what to generate
+    # from project-profile.local.json — the script never assumes a stack and
+    # only emits deterministic, stack-independent Kustomize manifests below.
+    result["actions"].append(
+        {
+            "path": "infra/k8s",
+            "key": "stack.delegated",
+            "severity": "info",
+            "message": (
+                "Dockerfile/nginx.conf/.dockerignore generation delegated to the "
+                "dev-flow-scaffold-project skill — the AI resolves what to scaffold "
+                "from the selected stack (no fixed template list)."
+            ),
+            "phase": "apply",
+        }
+    )
 
     # ── Generate Kustomize base manifests (one Deployment + Service per app) ──
     base_dir = k8s_dir / "base"
@@ -4611,14 +4618,14 @@ def scaffold_k8s(root, dry_run=False):
                 "          ports:\n"
                 f"            - containerPort: {port}\n"
             )
-            # Add ASPNETCORE_URLS for .NET backends
+            # Stack-independent PORT env for api-role apps — the AI scaffold
+            # skill generates the Dockerfile that consumes it (ASPNETCORE_URLS,
+            # uvicorn port, etc.). The script never assumes a runtime.
             if role == "api":
                 dep_yaml += (
                     "          env:\n"
-                    '            - name: ASPNETCORE_ENVIRONMENT\n'
-                    '              value: "Production"\n'
-                    '            - name: ASPNETCORE_URLS\n'
-                    f'              value: "http://+:{port}"\n'
+                    '            - name: PORT\n'
+                    f'              value: "{port}"\n'
                 )
             dep_yaml += (
                 "          livenessProbe:\n"
@@ -4800,7 +4807,6 @@ def setup_kind_cluster(root: Path, dry_run: bool = False) -> dict[str, Any]:
     Uses infra/k8s/kind-config.yaml which defines fixed nodePort → host port mappings:
       host:8081 → nodePort:30080 → frontend:80
       host:5002 → nodePort:30500 → backend:5000
-      host:8083 → nodePort:30780 → openproject:80
 
     This replaces Docker Desktop K8s — kind runs as a Docker container, avoids
     Docker Engine restart, and requires no Docker Desktop Kubernetes toggle.
@@ -5778,7 +5784,6 @@ def setup_k8s_access(root, dry_run=False):
     The kind cluster is configured with extraPortMappings in infra/k8s/kind-config.yaml:
       host:8081 → kind-node:30080 → frontend:80
       host:5002 → kind-node:30500 → backend:5000
-      host:8083 → kind-node:30780 → openproject:80
 
     These mappings make services directly accessible at localhost without port-forward.
     """
@@ -5871,7 +5876,7 @@ def setup_k8s_access(root, dry_run=False):
             host_port = _HOST_PORT_MAP.get(app_id)
             if host_port is None:
                 # Fallback: suggest port-forward if no extraPortMapping is configured
-                host_port = {"dev": 8081, "qa": 8082, "prod": 8083}[env]
+                host_port = {"dev": 8081, "qa": 8082, "prod": 8084}[env]
 
             # Check if namespace exists
             ns_check = run_native(

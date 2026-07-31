@@ -1,5 +1,5 @@
 # Promptfoo Configuration for SDD Agent Routing Evaluation
-# 
+#
 # This config evaluates agent workflow routing decisions based on ticket,
 # branch, PR, and deployment state. The Python custom provider simulates
 # the routing logic that the Codex agent would follow.
@@ -13,7 +13,7 @@ prompts:
 
 providers:
   # Path relative to promptfooconfig.yaml's directory (same directory)
-  - id: 'file://./routing_provider.py'
+  - id: "file://./routing_provider.py"
     config:
       # No additional config needed
 
@@ -29,7 +29,7 @@ tests:
       branchExists: false
       prExists: false
       prMerged: false
-      qaEvidence: 
+      qaEvidence:
       productStack: selected
     assert:
       - type: is-json
@@ -43,7 +43,7 @@ tests:
       branchExists: true
       prExists: false
       prMerged: false
-      qaEvidence: 
+      qaEvidence:
       productStack: selected
     assert:
       - type: is-json
@@ -57,7 +57,7 @@ tests:
       branchExists: true
       prExists: true
       prMerged: false
-      qaEvidence: 
+      qaEvidence:
       productStack: selected
     assert:
       - type: is-json
@@ -71,7 +71,7 @@ tests:
       branchExists: true
       prExists: true
       prMerged: true
-      qaEvidence: 
+      qaEvidence:
       productStack: selected
     assert:
       - type: is-json
@@ -131,7 +131,7 @@ tests:
       branchExists: false
       prExists: false
       prMerged: false
-      qaEvidence: 
+      qaEvidence:
       productStack: none
     assert:
       - type: is-json
@@ -145,7 +145,7 @@ tests:
       branchExists: false
       prExists: false
       prMerged: false
-      qaEvidence: 
+      qaEvidence:
       productStack: selected
     assert:
       - type: is-json
@@ -159,7 +159,7 @@ tests:
       branchExists: false
       prExists: false
       prMerged: false
-      qaEvidence: 
+      qaEvidence:
       productStack: selected
       incident: true
     assert:
@@ -174,7 +174,7 @@ tests:
       branchExists: false
       prExists: false
       prMerged: false
-      qaEvidence: 
+      qaEvidence:
       productStack: selected
       hotfix: true
     assert:
@@ -193,7 +193,7 @@ tests:
       branchExists: false
       prExists: false
       prMerged: false
-      qaEvidence: 
+      qaEvidence:
       productStack: selected
       parallelEnabled: true
       maxActiveReached: false
@@ -210,7 +210,7 @@ tests:
       branchExists: true
       prExists: true
       prMerged: true
-      qaEvidence: 
+      qaEvidence:
       productStack: selected
       parallelEnabled: true
       laneOwner: OTHER-456
@@ -242,7 +242,7 @@ tests:
       branchExists: false
       prExists: false
       prMerged: false
-      qaEvidence: 
+      qaEvidence:
       productStack: selected
       parallelEnabled: true
       maxActiveReached: true
@@ -258,7 +258,7 @@ tests:
       branchExists: true
       prExists: false
       prMerged: false
-      qaEvidence: 
+      qaEvidence:
       productStack: selected
       parallelEnabled: true
       worktreeExists: true
@@ -310,7 +310,7 @@ tests:
       branchExists: true
       prExists: true
       prMerged: true
-      qaEvidence: 
+      qaEvidence:
       productStack: selected
       nexusArtifactExists: false
     assert:
@@ -325,7 +325,7 @@ tests:
       branchExists: true
       prExists: true
       prMerged: true
-      qaEvidence: 
+      qaEvidence:
       productStack: selected
       releaseTagConflict: true
     assert:
@@ -340,7 +340,7 @@ tests:
       branchExists: true
       prExists: true
       prMerged: true
-      qaEvidence: 
+      qaEvidence:
       productStack: selected
       parallelEnabled: true
       laneOwner: current-ticket
@@ -348,6 +348,41 @@ tests:
       - type: is-json
       - type: javascript
         value: JSON.parse(output).route === 'dev-ops-post-merge-deploy'
+
+  # ═══════════════════════════════════════════════════════════════
+  # INFRASTRUCTURE VALIDATION SCENARIOS
+  # ═══════════════════════════════════════════════════════════════
+
+  - description: "PROD deploy blocked by NodePort collision across environments"
+    vars:
+      scenario: PROD deployment failed because NodePorts 30080/30500 were already allocated by DEV
+      ticketState: Done
+      branchExists: false
+      prExists: false
+      prMerged: true
+      qaEvidence: passed
+      productStack: selected
+      prodRequested: true
+      infraValidationFailed: true
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'blocked-infra-validation'
+
+  - description: "DEV deploy blocked by infrastructure collision, routes to diagnostic"
+    vars:
+      scenario: DEV deployment blocked by NodePort collision with another environment
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: true
+      qaEvidence:
+      productStack: selected
+      infraValidationFailed: true
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'blocked-infra-validation'
 
   # ═══════════════════════════════════════════════════════════════
   # REGRESSION: original test case
@@ -360,7 +395,7 @@ tests:
       branchExists: false
       prExists: false
       prMerged: false
-      qaEvidence: 
+      qaEvidence:
       productStack: none
     assert:
       - type: is-json

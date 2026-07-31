@@ -1,4 +1,5 @@
 <!-- TIER 2: SEMI-STABLE - Repository memory summary, loaded at startup of every stage -->
+
 # Memory Summary
 
 This repository is a product-free SDD/SDLC delivery shell. The previous sample application and old stack guidance were removed. `.codex/project-profile.json` is the tracked common provider/workflow declaration; ignored `.codex/project-profile.local.json` is the local stack overlay and currently has no product stack selected.
@@ -7,7 +8,7 @@ Memory is guidance only. It must never override the latest user request, active 
 
 ## High-Signal Operating Context
 
-- Repository root: `C:\Endava\EndevLocal\Personal\SDD_template`.
+- Repository root: (varies by machine — local clone of `SDD_Template`).
 - Product source: not present.
 - Product tests: not present.
 - Delivery helpers: `tools/sdd_cli`.
@@ -15,9 +16,8 @@ Memory is guidance only. It must never override the latest user request, active 
 - Agent skills: `.codex/skills/`.
 - Shared delivery contract: `.codex/skills/_shared/delivery-contract.md`.
 - Project profile: `.codex/project-profile.json` plus optional `.codex/project-profile.local.json`.
-- Provider adapters: `.codex/providers/`.
 - OpenSpec config: `openspec/config.yaml`.
-- MCP routing contract: `.codex/mcp-instructions.md` — mandatory routing for all content search (docs → `monorepo-docs-search`, code → `codebase-memory-mcp`).
+- MCP routing contract: `.codex/mcp-instructions.md` — mandatory routing for service MCPs (gitea, openproject, grafana, kubernetes); repository content search uses built-in file/search tools.
 
 ## Core Workflow
 

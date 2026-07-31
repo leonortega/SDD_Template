@@ -1,6 +1,7 @@
 ---
 name: dev-ops-deploy-prod
-description: Promote a QA-approved release artifact to production after configured ticket E2E QA approval. Use when Codex needs to verify one or more Done tickets included in a release, confirm the QA-approved artifact and checksum, ensure release/RC tag consistency, update the release branch, trigger production deployment, validate production page and health checks, verify configured observability when available, and comment the production result on every included ticket.
+license: MIT
+description: Promote a QA-approved release artifact to production after configured ticket E2E QA approval. Use when Codex needs to verify one or more QA-approved tickets (Tested state in OpenProject) included in a release, confirm the QA-approved artifact and checksum, ensure release/RC tag consistency, update the release branch, trigger production deployment, validate production page and health checks, verify configured observability when available, and comment the production result on every included ticket.
 ---
 
 <!-- TIER 3: STAGE-SPECIFIC - PROD deployment skill -->
@@ -9,7 +10,7 @@ description: Promote a QA-approved release artifact to production after configur
 
 ## Overview
 
-Use this skill after the configured QA gate has passed and moved each included ticket to `configured Done state`. `Done` means QA accepted and PROD eligible; PROD remains an explicit release event that may include one or more Done tickets. The release rule is:
+Use this skill after the configured QA gate has passed and moved each included ticket to the configured QA-approved state (e.g., `Tested` in OpenProject — status ID 10, E2E QA passed). QA-approved means QA accepted and PROD eligible; PROD remains an explicit release event that may include one or more QA-approved tickets. The release rule is:
 
 ```text
 feature branch -> dev -> DEV -> QA -> E2E QA OK -> main -> PROD
@@ -19,7 +20,7 @@ PROD must reuse the QA-approved Nexus artifact. Never rebuild, republish, or ren
 
 ## Shared Context
 
-Before production promotion, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Load selected ticket, repository/review, artifact, deployment, and observability adapters. Use `python -m tools.sdd_cli dev-flow` helpers: `ValidateTicketLock` for `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, `ArtifactPaths`, `ValidateReleaseManifest`, `UpdateReleaseManifest`, and `RenderTicketComment -Type ProdDeployment`.
+Before production promotion, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Load selected ticket, repository/review, artifact, deployment, and observability adapters. Use `python -m tools.sdd_cli dev-flow` helpers: `ValidateTicketLock` for `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, `ArtifactPaths`, `ValidateReleaseManifest`, `UpdateReleaseManifest`, and `RenderTicketComment -Type ProdDeployment`.
 
 For push-triggered production deployment from the release branch, the commit or merged PR title must start with the ticket key format configured in `.codex/project-profile.json` at `workflow.ticketKeyPattern`, and the change must touch configured application or test paths. Non-code changes outside those paths and non-ticket PRs must not deploy production.
 
@@ -49,20 +50,25 @@ Run preflight, main/tag promotion, PROD deployment, PROD verification, ticket-pr
 4. Fetch every included ticket with expanded state/project data and verify each one is in `configured Done state`.
 5. Read ticket comments for every included ticket and find `IA generated E2E QA: {ticketKey}` for the same commit/artifact or for a commit reachable from the promoted artifact commit.
 6. Verify every included ticket's E2E QA comment includes pass result, PR URL, QA URL, Nexus artifact URL, QA evidence URL, and source RC version.
+
+   **⚠️ E2E QA gate:** If any included ticket is missing a passing E2E QA comment (`IA generated E2E QA: {ticketKey}` with PASS result), stop before PROD promotion. The E2E QA gate must pass for every ticket in the release. Run the E2E QA evidence contract in `.codex/skills/_shared/delivery-contract-qa.md` first if E2E QA has not been performed.
+
 7. Verify Nexus contains the selected provider artifact set. selected deployment provider requires:
    - `app/{commitSha}/deployable-apps.json`
    - `app/{commitSha}/deployment-config.json`
    - one `app/{commitSha}/{artifactName}` per topology app
    - one `app/{commitSha}/{artifactName}.sha256` per topology app
    - `app/{commitSha}/commit.sha`
-   - `app/{commitSha}/release.json`
-   selected deployment provider requires:
+   - `app/{commitSha}/release-dev.json`
+   - `app/{commitSha}/release-qa.json` (QA-passed artifact)
+     selected deployment provider requires:
    - `app/{commitSha}/container-images.json`
    - `app/{commitSha}/commit.sha`
-   - `app/{commitSha}/release.json`
+   - `app/{commitSha}/release-dev.json`
+   - `app/{commitSha}/release-qa.json`
    - `app/{commitSha}/qa-observability.json` when observability is enabled
 8. Download checksum metadata only as needed and verify `commit.sha` exactly matches the QA-approved commit.
-9. Read `release.json` and verify it references the same commit SHA, checksum, primary ticket, QA evidence URL, and source RC version as the ticket provider E2E QA evidence. If `includedTickets` exists, every included ticket must have Done state, E2E QA PASS evidence, source RC lineage, and release membership proof. Treat a different `ticketKey` as blocking only when no `includedTickets` release membership proves the batch release.
+9. Read `release-qa.json` and verify it references the same commit SHA, checksum, primary ticket, QA evidence URL, and source RC version as the ticket provider E2E QA evidence. If `includedTickets` exists, every included ticket must have Done state, E2E QA PASS evidence, source RC lineage, and release membership proof. Treat a different `ticketKey` as blocking only when no `includedTickets` release membership proves the batch release.
 10. Verify the source RC tag exists and points to the QA-approved commit.
 11. Verify the final release tag does not already exist.
 12. If `app/qa-approved/latest.json` is used to resolve the commit, verify its `artifactCommitSha`, `version`, `canonicalPath`, `releaseManifestPath`, `ticketKey`, and `includedTickets` match the selected release context before any `main` or tag mutation.
@@ -126,10 +132,23 @@ After the workflow succeeds, run direct verification before commenting success:
 3. Verify the PROD workflow applied and verified the configuration, artifact metadata, and monitoring evidence required by the selected deployment adapter. Missing proof is blocking.
 4. If Seq log validation is unavailable, classify monitoring as unavailable. Direct HTTP, deployment configuration, and `/health` checks remain authoritative for app success.
 5. If direct page, deployment configuration, or `/health` checks fail, classify PROD verification as failed and do not claim success.
-6. When PROD verification passes, use `UpdateReleaseManifest` to update `app/{commitSha}/release.json` with final release version, final tag, included tickets, PROD URL, PROD page status, PROD deployment configuration status, PROD `/health` status, workflow run URL, monitoring status, and PROD deployment timestamp. Validate and upload the updated manifest to Nexus.
+6. When PROD verification passes, use `UpdateReleaseManifest` to create or update `app/{commitSha}/release-prod.json` with final release version, final tag, included tickets, PROD URL, PROD page status, PROD deployment configuration status, PROD `/health` status, workflow run URL, monitoring status, and PROD deployment timestamp. Validate and upload the updated manifest to Nexus.
 7. Use `CreateArtifactPointer` to create the final release alias pointer, then upload `app/releases/{finalReleaseVersion}/artifact-pointer.json` and `app/releases/{finalReleaseVersion}/release.json`. The release alias must point back to canonical `app/{commitSha}/`; do not duplicate ZIP files into the version folder.
 
 PROD success must never be based on screenshots alone.
+
+## Grafana Dashboard Update
+
+After PROD verification passes, **automatically run the `grafana-board-update` skill** to update the Grafana SDD Service Status dashboard with the latest PROD URLs.
+
+1. Fetch `app/latest/env-urls-{env}.json` for every deployed environment (DEV, QA, PROD) from Nexus
+2. Follow the workflow in `.codex/skills/grafana-board-update/SKILL.md` to intelligently merge changes into `infra/monitoring/grafana/dashboards/health-board.json`
+3. Add the new PROD rows to the Service Health and Service Quick Access panels
+4. Update the Environment Matrix panel to mark PROD as Active
+5. Commit and push the updated dashboard JSON
+6. Optionally push to Grafana API at `http://localhost:3001` for immediate effect
+
+   **⚠️ Note:** If the dashboard is **provisioned from disk** (via `infra/monitoring/grafana/provisioning/dashboards/dashboards.yml`), Grafana rejects API writes with `"Cannot save provisioned dashboard"`. The file-based change is sufficient — provisioning picks it up on next restart (version bump ensures it overwrites the DB entry).
 
 ## Ticket Provider Result
 
@@ -203,6 +222,7 @@ If the Post-PROD Retrospective found any `eval-regression` failures, **automatic
 ### Scope
 
 Auto-escalation is limited to **eval infrastructure files only**:
+
 - `.codex/agent-evals/routing_provider.py` — fix routing logic bugs
 - `.codex/agent-evals/promptfooconfig.yaml` — update test expectations or add coverage
 
@@ -232,6 +252,7 @@ For each failing test case, determine the root cause:
 4. Trace the failing test's input variables through `_evaluate_route()` in `routing_provider.py`
 
 **Heuristic for classification:**
+
 - If `routing_provider.py` has a condition that contradicts the delivery contract → **`Fix routing provider`** (bug in logic)
 - If `routing_provider.py` matches the delivery contract but the test expects an old route → **`Update test expectation`** (stale assertion)
 - If the failing scenario has no test coverage → **`Add new test case`** (eval-coverage gap)
@@ -260,6 +281,7 @@ Apply each proposed change in order. Apply the simplest fixes first (`update-exp
 3. For `fix-routing`: Edit `routing_provider.py` to correct the condition, return value, or missing check.
 
 After EACH change, run the full eval suite:
+
 ```bash
 npx promptfoo eval --config .codex/agent-evals/promptfooconfig.yaml --no-cache
 ```
@@ -313,7 +335,7 @@ Include in the final release output:
 
 ## Output
 
-Report the final release version, included tickets, PROD URL, final tag, deployed artifact commit, validation results, ticket-provider PROD comment status for every included ticket, post-PROD retrospective result path and ticket provider marker status, and any handoff, audit, or monitoring gaps.
+Report the final release version, included tickets, PROD URL, final tag, deployed artifact commit, validation results, ticket-provider PROD comment status for every included ticket, Grafana dashboard update status, post-PROD retrospective result path and ticket provider marker status, and any handoff, audit, or monitoring gaps.
 
 ## Failure Rules
 

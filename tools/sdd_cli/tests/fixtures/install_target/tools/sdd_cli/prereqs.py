@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from typing import Any
 
-from ._shared import REPO_ROOT, PYTHON_REQUIRES, CliError, run_native
+from ._shared import PYTHON_REQUIRES, REPO_ROOT, CliError, run_native
 
 
 def check_python() -> dict[str, Any]:
@@ -58,16 +58,26 @@ def install_node() -> dict[str, Any]:
 def enable_powershell_execution_policy() -> dict[str, Any]:
     """Enable PowerShell script execution (RemoteSigned)."""
     if sys.platform != "win32":
-        return {"command": "enable-powershell", "valid": True, "message": "Not Windows; skipped."}
+        return {
+            "command": "enable-powershell",
+            "valid": True,
+            "message": "Not Windows; skipped.",
+        }
     result = run_native(
-        ["powershell", "-Command", "Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force"],
-        REPO_ROOT, timeout=30,
+        [
+            "powershell",
+            "-Command",
+            "Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force",
+        ],
+        REPO_ROOT,
+        timeout=30,
     )
     return {
         "command": "enable-powershell",
         "valid": result["returncode"] == 0,
         "message": (
-            "PowerShell execution policy set to RemoteSigned." if result["returncode"] == 0
+            "PowerShell execution policy set to RemoteSigned."
+            if result["returncode"] == 0
             else result["stderr"]
         ),
     }
@@ -82,6 +92,7 @@ def run_prereqs(args: list[str]) -> int:
             "powershell": enable_powershell_execution_policy(),
         }
         import json
+
         print(json.dumps(results, indent=2))
         all_valid = all(r["valid"] for r in results.values())
         return 0 if all_valid else 1
@@ -94,10 +105,14 @@ def run_prereqs(args: list[str]) -> int:
     handler = subcommands.get(args[0])
     if handler is None:
         print(f"Unknown prereqs subcommand: {args[0]}", file=sys.stderr)
-        print("Available: check, install-python, install-node, enable-powershell", file=sys.stderr)
+        print(
+            "Available: check, install-python, install-node, enable-powershell",
+            file=sys.stderr,
+        )
         return 1
 
     import json
+
     result = handler()
     print(json.dumps(result, indent=2))
     return 0 if result.get("valid", False) else 1

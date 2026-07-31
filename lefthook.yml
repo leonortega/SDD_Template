@@ -5,6 +5,16 @@ pre-commit:
     trunk-fmt:
       run: npx trunk fmt
 
+# Product tests (unit, integration, architecture) + the coverage gate run
+# locally BEFORE push so the CI image stays lean (stack runtimes live on the
+# dev machine, not in sdd-e2e-ci:local). Driven by stack.testFrameworks;
+# coverage threshold from quality.local.json -> coverage.minimumPercent
+# (default 80). Skipped cleanly when no stack is configured.
+pre-push:
+  commands:
+    stack-tests:
+      run: python -m tools.sdd_cli stack-tests
+
 commit-msg:
   commands:
     require-ticket:

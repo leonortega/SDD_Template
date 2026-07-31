@@ -5,7 +5,6 @@
 ## Shell Modules
 
 - `.codex/skills/`: repo-local delivery and configuration skills.
-- `.codex/providers/`: provider adapter guidance.
 - `.codex/project-profile.json`: tracked common provider, workflow, quality, and adapter defaults.
 - `.codex/project-profile.local.json`: ignored local overlay for stack choices and project-specific adapter experiments.
 - `docs/`: durable human-readable shell context.

@@ -1,4 +1,5 @@
 <!-- TIER 2: SEMI-STABLE - Repository decisions, loaded at startup -->
+
 # Decisions
 
 - Product app and old stack guidance were removed.

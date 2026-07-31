@@ -95,7 +95,7 @@ PATCH {openProject.baseUrl}/api/v3/time_entries/{timeEntryId}
 GET {openProject.baseUrl}/api/v3/time_entries/activities/{activityId}     # note: plural "activities"
 ```
 
-For the full API contract including required fields, activity ID mappings, and reverse-lookup from name to ID, see the `time-telemetry-upsert` operation in `.codex/providers/ticket.openproject.md`.
+For the full API contract including required fields, activity ID mappings, and reverse-lookup from name to ID, see the `time-telemetry-upsert` operation in `.codex/skills/openproject-sprint-backlog/references/openproject-api.md`.
 
 List existing generated telemetry with filters for `entity_type=WorkPackage` and `entity_id={workPackageId}`. Create a time entry via `POST /api/v3/time_entries` with payload:
 

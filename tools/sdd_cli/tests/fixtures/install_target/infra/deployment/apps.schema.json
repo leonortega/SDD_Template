@@ -2,10 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Deployment app topology",
   "type": "object",
-  "required": [
-    "version",
-    "apps"
-  ],
+  "required": ["version", "apps"],
   "properties": {
     "$schema": {
       "type": "string"

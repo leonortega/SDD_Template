@@ -10,8 +10,8 @@ Use `.codex/client-tools.local.json` as the primary local configuration file. Ke
     "baseUrl": "http://localhost:8080",
     "apiToken": "replace-with-openproject-api-token",
     "projectIdentifier": "e2eproject",
-    "todoStatus": "Todo",
-    "inProgressStatus": "In Progress"
+    "featureStatus": "Specified",
+    "inProgressStatus": "In progress"
   },
   "git": {
     "baseBranch": "dev",
@@ -27,7 +27,7 @@ Use `.codex/client-tools.local.json` as the primary local configuration file. Ke
 - `OPENPROJECT_BASE_URL`
 - `OPENPROJECT_API_TOKEN`
 - `OPENPROJECT_PROJECT_IDENTIFIER`
-- `OPENPROJECT_TODO_STATUS`
+- `OPENPROJECT_FEATURE_STATUS`
 - `OPENPROJECT_IN_PROGRESS_STATUS`
 - `GIT_BASE_BRANCH`
 - `GIT_BRANCH_PREFIX`
@@ -46,7 +46,7 @@ If the delivery workflow uses OpenRouter models such as `openrouter/free` or `op
     "apiKey": "replace-with-openrouter-api-key",
     "defaultChatModel": "openrouter/auto",
     "modelMapping": {
-      "chat": {"model": "openrouter/auto", "reasoningEffort": "medium"}
+      "chat": { "model": "openrouter/auto", "reasoningEffort": "medium" }
     }
   }
 }
@@ -82,7 +82,7 @@ Copy-Item .\.codex\client-tools.common.json .\.codex\client-tools.local.json
 
 Set `openProject.apiToken` in `.codex/client-tools.local.json`. The token is sent as the `Authorization: Bearer` header. Never commit real OpenProject tokens or private client URLs. Use OpenProject API only; do not use OpenProject MCP, Docker containers, or direct database access for this workflow.
 
-Resolve the configured in-progress status by name before updating a work package status. The default is `In Progress`.
+Resolve the configured in-progress status by name before updating a work package status. The default is `In progress` (matching OpenProject status ID 7).
 
 After the ticket is commented with the branch, create an OpenSpec proposal through `dev-flow-propose-change` (`/opsx:propose`). Use the branch name as the source name; if it contains `/`, replace `/` with `-` for the OpenSpec change id.
 

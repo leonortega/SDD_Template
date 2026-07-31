@@ -29,6 +29,7 @@ ALL_CONFIGURE_MODES: list[str] = [
     "SetProjectStackMetadata",
     "SetQualityConfig",
     "SetSemgrepConfig",
+    "ScaffoldProjectFiles",
     "SetupProjectGuidance",
     "SplitInfraEnv",
     "SyncWorktreeLocalConfig",
@@ -255,6 +256,7 @@ def run_configure_mode(
         set_project_stack_metadata,
         set_quality_config,
         set_semgrep_config,
+        scaffold_project_files,
         split_infra_env,
         validate_gitea_runner,
         validate_observability,
@@ -283,6 +285,7 @@ def run_configure_mode(
         "SetGiteaBranchProtection": set_gitea_branch_protection,
         "SplitInfraEnv": split_infra_env,
         "SetSemgrepConfig": set_semgrep_config,
+        "ScaffoldProjectFiles": scaffold_project_files,
     }
     if mode in direct_no_values:
         return direct_no_values[mode](root, dry_run)
@@ -296,7 +299,9 @@ def run_configure_mode(
     if mode == "SetupProjectGuidance":
         from .guidance import setup_project_guidance
 
-        return setup_project_guidance(root, values, dry_run)
+        # interactive=True: skills are only installed after the user explicitly
+        # chooses them (never auto-installed without TTY confirmation).
+        return setup_project_guidance(root, values, dry_run, interactive=True)
 
     # Modes implemented in dev_flow module
     if mode in ("SyncWorktreeLocalConfig", "EnsureDeliveryContext"):
@@ -515,6 +520,13 @@ def _parse_cli(argv: list[str] | None):
     guide.add_argument("guide_args", nargs=argparse.REMAINDER)
     guide.set_defaults(func=_dispatch_guidance)
 
+    # stack-tests (local product tests: unit/integration/architecture)
+    # --dry-run accepts an optional value so both `--dry-run` and `--dry-run true`
+    # work (no dead REMAINDER swallowing positional args).
+    stack_tests = sub.add_parser("stack-tests")
+    stack_tests.add_argument("--dry-run", nargs="?", const="true", default="false")
+    stack_tests.set_defaults(func=_dispatch_stack_tests)
+
     # dev-flow
     flow = sub.add_parser("dev-flow")
     flow.add_argument("flow_args", nargs=argparse.REMAINDER)
@@ -552,7 +564,8 @@ def _parse_cli(argv: list[str] | None):
 def _fallback(args: Any) -> int:
     print(
         "Top-level commands: prereqs, environment-lab, tool-installer, "
-        "template-installer, guidance, dev-flow, full-setup, memory-search, configure",
+        "template-installer, guidance, stack-tests, dev-flow, full-setup, "
+        "memory-search, configure",
         file=sys.stderr,
     )
     return 1
@@ -596,6 +609,17 @@ def _dispatch_guidance(args: Any) -> int:
     from .guidance import run_guidance
 
     return run_guidance(getattr(args, "guide_args", []))
+
+
+def _dispatch_stack_tests(args: Any) -> int:
+    from .stack_tests import print_result, run_stack_tests
+
+    root = Path(getattr(args, "root", REPO_ROOT))
+    # Accepts `--dry-run`, `--dry-run true`, or `--dry-run false`.
+    dry_run = str(getattr(args, "dry_run", "false")).lower() in ("true", "1", "yes")
+    result = run_stack_tests(root, dry_run)
+    print_result(result, dry_run)
+    return 0 if result.get("valid") else 1
 
 
 def _dispatch_dev_flow(args: Any) -> int:

@@ -7,15 +7,15 @@
       "database": {
         "host": "localhost",
         "port": 5432,
-        "name": "openproject",
-        "username": "openproject",
-        "password": "your-db-password" // checkov:skip=CKV_SECRET_6: placeholder value
+        "name": "appdb",
+        "username": "appuser",
+        "password": "your-db-password"
       },
       "email": {
         "server": "smtp.example.com",
         "port": 587,
         "username": "noreply@example.com",
-        "password": "your-email-password" // checkov:skip=CKV_SECRET_6: placeholder value
+        "password": "your-email-password"
       },
       "cache": {
         "host": "localhost",

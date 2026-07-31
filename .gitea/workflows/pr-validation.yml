@@ -65,6 +65,22 @@ jobs:
         shell: bash
         run: checkov -d . --compact --soft-fail --config-file .checkov.yml 2>&1
 
+      # ── Tests ──
+      # Repo tooling tests: always run the shell's own Python test suite
+      # (deterministic, stack-independent). Product tests (unit, integration,
+      # architecture) run via the lefthook pre-push hook (`stack-tests`) so the
+      # CI image stays lean — stack runtimes live on dev machines, not in
+      # sdd-e2e-ci:local. Never assume a tech stack.
+      - name: Repo tooling tests (SDD shell)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -d tools/sdd_cli/tests ]; then
+            python3 -m pytest tools/sdd_cli/tests/ -q
+          else
+            echo "No tools/sdd_cli/tests — repo tooling tests skipped."
+          fi
+
       - name: Dev flow gate (codex-reviewed label)
         env:
           GITEA_TOKEN: ${{ secrets.GITHUB_TOKEN }}

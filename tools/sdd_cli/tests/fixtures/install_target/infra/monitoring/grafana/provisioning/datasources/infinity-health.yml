@@ -12,7 +12,11 @@ datasources:
     editable: true
     jsonData:
       allowedHosts:
-        - http://host.docker.internal:*
-        - http://localhost:*
         - http://host.docker.internal:8088
         - http://host.docker.internal:3000
+        - http://host.docker.internal:5001
+        - http://host.docker.internal:8081
+        - http://sdd-cluster-control-plane:30080
+        - http://sdd-cluster-control-plane:30500
+        - http://localhost:30080
+        - http://localhost:30500

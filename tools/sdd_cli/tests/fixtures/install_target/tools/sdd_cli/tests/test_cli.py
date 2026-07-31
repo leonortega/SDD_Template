@@ -209,6 +209,38 @@ class SddCliTests(unittest.TestCase):
                     "Mode is not implemented in native Python", json.dumps(result), mode
                 )
 
+    def test_discover_project_guidance_returns_stack_tags_and_skills(
+        self,
+    ) -> None:
+        """DiscoverProjectGuidance returns stackTags and internet-found skills."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            codex = root / ".codex"
+            codex.mkdir()
+            (codex / "project-profile.local.json").write_text(
+                json.dumps({
+                    "stack": {
+                        "frontend": {"applies": True, "value": "react"},
+                        "backend": {"applies": False, "value": ""},
+                        "database": {"applies": False, "value": ""},
+                    }
+                }),
+                encoding="utf-8",
+            )
+
+            with patch("tools.sdd_cli.guidance._search_stack_tokens") as mock_search:
+                mock_search.return_value = (
+                    [{"package_skill": "github/awesome-copilot@react"}],
+                    [],
+                )
+                result = cli.run_configure_mode(
+                    "DiscoverProjectGuidance", root, {}, False
+                )
+            self.assertTrue(result["valid"])
+            self.assertIn("stackTags", result)
+            self.assertIn("react", result["stackTags"])
+            self.assertIn("github/awesome-copilot@react", result["foundSkills"])
+
     def test_project_profile_local_overlay_merges_with_common_profile(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -299,16 +331,124 @@ class SddCliTests(unittest.TestCase):
                     cli.normalize_stack_domain(empty_value),
                 )
 
-    def test_project_stack_discovery_returns_skills_from_manifest(
+    def test_scaffold_project_files_creates_only_stack_independent_skeleton(
         self,
     ) -> None:
-        """DiscoverProjectGuidance returns skills matching the project stack."""
+        """ScaffoldProjectFiles creates only src/ and tests/ + delegation marker."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             codex = root / ".codex"
             codex.mkdir()
+            (codex / "project-profile.local.json").write_text(
+                json.dumps(
+                    {
+                        "stack": {
+                            "frontend": {"applies": True, "value": "react"},
+                            "backend": {"applies": False, "value": ""},
+                            "database": {"applies": False, "value": ""},
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = cli.run_configure_mode("ScaffoldProjectFiles", root, {}, False)
+
+            self.assertTrue(result["valid"])
+            self.assertTrue((root / "src").is_dir())
+            self.assertTrue((root / "tests").is_dir())
+            # Stack-specific artifacts are delegated to the AI scaffold skill —
+            # the script never generates package.json/playwright for any stack.
+            self.assertFalse((root / "e2e").exists())
+            self.assertFalse((root / "package.json").exists())
+            self.assertFalse((root / "playwright.config.ts").exists())
+            keys = {item["key"] for item in result["actions"]}
+            self.assertIn("stack.delegated", keys)
+
+    def test_scaffold_project_files_delegates_for_any_stack(self) -> None:
+        """Non-JS stacks get the same skeleton + delegation (no stack heuristics)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            codex = root / ".codex"
+            codex.mkdir()
+            (codex / "project-profile.local.json").write_text(
+                json.dumps(
+                    {
+                        "stack": {
+                            "frontend": {"applies": True, "value": "asp.net"},
+                            "backend": {"applies": True, "value": ".net"},
+                            "database": {"applies": False, "value": ""},
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = cli.run_configure_mode("ScaffoldProjectFiles", root, {}, False)
+
+            self.assertTrue(result["valid"])
+            self.assertTrue((root / "src").is_dir())
+            self.assertTrue((root / "tests").is_dir())
+            self.assertFalse((root / "package.json").exists())
+            self.assertFalse((root / "playwright.config.ts").exists())
+            keys = {item["key"] for item in result["actions"]}
+            self.assertIn("stack.delegated", keys)
+
+    def test_scaffold_k8s_delegates_dockerfiles_and_keeps_deterministic_manifests(
+        self,
+    ) -> None:
+        """scaffold_k8s records stack.delegated without needing a classified stack."""
+        from tools.sdd_cli.environment_lab import scaffold_k8s
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            codex = root / ".codex"
+            codex.mkdir()
+            (codex / "project-profile.local.json").write_text(
+                json.dumps(
+                    {
+                        "stack": {
+                            "frontend": {"applies": True, "value": "laravel"},
+                            "backend": {"applies": True, "value": "spring"},
+                            "database": {"applies": True, "value": "postgres"},
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (root / "infra" / "deployment").mkdir(parents=True)
+            (root / "infra" / "deployment" / "apps.json").write_text(
+                json.dumps(
+                    {
+                        "apps": [
+                            {"appId": "front", "role": "web"},
+                            {"appId": "back", "role": "api"},
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = scaffold_k8s(root, dry_run=True)
+
+            self.assertTrue(result["valid"])
+            keys = {item["key"] for item in result["actions"]}
+            self.assertIn("stack.delegated", keys)
+
+    def test_project_stack_discovery_returns_skills_from_internet(
+        self,
+    ) -> None:
+        """DiscoverProjectGuidance searches the internet — never local skills."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            codex = root / ".codex"
+            codex.mkdir()
+            (codex / "project-profile.json").write_text(
+                json.dumps({"schemaVersion": 1}), encoding="utf-8"
+            )
             skills_dir = codex / "skills"
             skills_dir.mkdir()
+            # A rich local manifest must NOT influence discover results.
             (skills_dir / "manifest.json").write_text(
                 json.dumps(
                     {
@@ -317,26 +457,45 @@ class SddCliTests(unittest.TestCase):
                                 "description": "Test skills",
                                 "skills": ["playwright/SKILL.md"],
                             },
+                            "core": {
+                                "description": "Core skills",
+                                "alwaysActive": True,
+                                "skills": [],
+                            },
                         }
                     }
                 ),
                 encoding="utf-8",
             )
-            (codex / "project-profile.local.json").write_text(
-                json.dumps({
-                    "stack": {
-                        "frontend": {"applies": True, "value": "react"},
-                        "backend": {"applies": False, "value": ""},
-                        "database": {"applies": False, "value": ""},
-                    }
-                }),
-                encoding="utf-8",
-            )
+            # Patch the internet search during SetProjectStack too (it triggers
+            # guidance setup) so the test never fires a real npx skills call.
+            with patch("tools.sdd_cli.guidance._search_stack_tokens") as mock_setup_search:
+                mock_setup_search.return_value = ([], [])
+                cli.run_configure_mode(
+                    "SetProjectStack",
+                    root,
+                    {
+                        "frontend": "reactjs",
+                        "backend": ".net-core-10",
+                        "database": "sqlite",
+                    },
+                    False,
+                )
 
-            result = cli.run_configure_mode("DiscoverProjectGuidance", root, {}, False)
+            with patch("tools.sdd_cli.guidance._search_stack_tokens") as mock_search:
+                mock_search.return_value = (
+                    [{"package_skill": "internet/repo@stack-skill"}],
+                    [],
+                )
+                result = cli.run_configure_mode(
+                    "DiscoverProjectGuidance", root, {}, False
+                )
             self.assertTrue(result["valid"])
             self.assertIn("stackTags", result)
-            self.assertIn("react", result["stackTags"])
+            self.assertIn("reactjs", result["stackTags"])
+            # Answer comes from the internet, not from the local manifest.
+            self.assertIn("internet/repo@stack-skill", result["foundSkills"])
+            self.assertNotIn("playwright", result["foundSkills"])
 
     def test_configure_values_json_file_stdin_inline_and_invalid_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -533,25 +692,6 @@ class SddCliTests(unittest.TestCase):
                 )
             )
             self.assertIn("tools/sdd_cli/cli.py", manifest["managedFiles"])
-
-    def test_tool_install_includes_bm25s_flashrank_assets(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            source = root / "tool"
-            target = root / "consumer"
-            write(source / "tools" / "bm25s_flashrank" / "setup_mcp.py", "setup")
-            write(
-                source / "tools" / "bm25s_flashrank" / "mcp_doc_research.py", "research"
-            )
-
-            cli.install_sdd_tool(source, target, "v0.1.0", "install")
-
-            self.assertTrue(
-                (target / "tools" / "bm25s_flashrank" / "setup_mcp.py").exists()
-            )
-            self.assertTrue(
-                (target / "tools" / "bm25s_flashrank" / "mcp_doc_research.py").exists()
-            )
 
     def test_init_local_files_repairs_memory_and_env_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

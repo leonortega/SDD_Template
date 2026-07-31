@@ -1,9 +1,10 @@
 <!-- TIER 2: SEMI-STABLE - Core delivery rules, loaded every stage, changes rarely -->
+
 # Delivery Contract — Core (always-read)
 
 Use this reference before reading stage-specific contracts. Skill-local instructions may add stricter checks, but must not weaken these rules.
 
-Generic delivery skills must remain provider-neutral. Read `.codex/project-profile.json` plus ignored `.codex/project-profile.local.json` when present for the merged selected providers, stack, ticket key pattern, branch policy, environments, quality gates, and adapter paths. Then read `.codex/skills/_shared/provider-adapter-contract.md` and only the selected adapter files needed for the current stage. Concrete provider details belong in `.codex/providers/`, `.codex/client-tools.local.json`, executable workflow files, infrastructure files, or stack-specific skills.
+Generic delivery skills must remain provider-neutral. Read `.codex/project-profile.json` plus ignored `.codex/project-profile.local.json` when present for the merged selected providers, stack, ticket key pattern, branch policy, environments, quality gates, and adapter paths. Then read only the selected adapter reference files needed for the current stage. Concrete provider details belong in the selected skill reference files, `.codex/client-tools.local.json`, executable workflow files, infrastructure files, or stack-specific skills.
 
 For common delivery-skill startup, memory read behavior, and memory update classification, read `.codex/skills/_shared/skill-startup.md` which defines the tiered read order with cache breakpoints.
 
@@ -18,6 +19,7 @@ When an agent cannot apply a required repository skill, command, memory rule, de
 IDE-owned and global skill roots are read-only for this repository. Do not edit, patch, or install into those roots for repo-specific behavior. Restore-only cleanup is allowed when an earlier run changed an IDE-owned skill; after restoration, put all repo-specific skill acquisition behavior in `.codex/skills/project-guidance-acquire` and repo-owned configure scripts.
 
 The blocker response must include:
+
 - failed required item
 - why it is required
 - current-flow fix
@@ -32,8 +34,9 @@ The agent may continue unrelated read-only investigation, but must not mutate re
 When changing any non-OpenSpec delivery skill or any `configure-*` skill, check for policy drift across related skills before finishing.
 
 Source-of-truth order:
+
 1. `_shared/delivery-contract-core.md` + stage-specific contracts
-2. `.codex/project-profile.json`, optional `.codex/project-profile.local.json`, and selected `.codex/providers/*.md` adapter files
+2. `.codex/project-profile.json`, optional `.codex/project-profile.local.json`, and selected provider adapter reference files
 3. `docs/context-management.md`, `docs/architecture.md`, `docs/development.md`, `docs/deployment.md`
 4. Non-OpenSpec delivery-flow skills
 5. Configure skills and generated templates
@@ -51,6 +54,7 @@ Implementation PR bodies and OpenProject handoff comments must include `Context 
 Before final handoff for any non-trivial repository work, classify whether the run discovered reusable knowledge using `.codex/memory/retrieval-policy.md#update-process`. This applies to implementation, review feedback, DEV/QA deployment, E2E QA, PROD deployment, rollback, hotfix, retrospective workflow maintenance, local tooling fixes, configuration repairs, debugging, and any prompt where an error, issue, blocker, or fix was diagnosed.
 
 This gate is mandatory even when no memory update is needed. The final handoff must include one of:
+
 - `Memory updated: <files>` when reusable non-authoritative knowledge was added or updated.
 - `Memory updated: none` when the run produced no reusable memory candidates.
 
@@ -61,6 +65,7 @@ Do not treat OpenProject comments, PR comments, QA evidence, logs, or chat summa
 Agent self-improvement is a controlled quality lane, not an automatic permission to rewrite workflow behavior. Use `dev-flow-retrospective-audit` for prompts such as `Audit recent delivery workflow`, `Audit failed QA/review/CI run`, or `Run agent self-improvement audit`. The audit is read-only by default.
 
 Before changing any skill, workflow policy, configure template, or quality gate from retrospective evidence, at least one gate must be met:
+
 - repeated pattern across multiple delivery runs,
 - high-severity failure that could recur or affect QA, PROD, artifacts, secrets, or user-visible behavior,
 - direct conflict with this delivery contract,
@@ -73,6 +78,7 @@ When a retrospective changes delivery behavior, update this contract first when 
 Strict delivery gates remain mandatory. Risk-adaptive depth changes how much planning, review, and context loading is required, not whether gates can be skipped.
 
 Classify delivery risk as:
+
 - `low`: localized docs, text, or clearly bounded low-impact changes with no deployable, API, data, auth, secret, workflow, or release-surface impact.
 - `standard`: normal feature, bug, test, or workflow work that crosses implementation and validation but does not touch high-risk surfaces.
 - `high`: work touching auth, authorization, persistence, migrations, deployment workflows, secrets, public APIs, `/health`, release manifests, rollback/hotfix, or large diffs.
@@ -91,6 +97,7 @@ Use grill-style questioning as a planning stance inside the existing delivery wo
 - `grill-me` is the lightweight style for temporary alignment only.
 
 Map resolved durable knowledge into the existing context surfaces:
+
 - product or ticket clarity → the managed OpenProject generated block,
 - planned behavior or design → OpenSpec artifacts,
 - durable repository or process knowledge → `docs/`,
@@ -98,50 +105,50 @@ Map resolved durable knowledge into the existing context surfaces:
 
 Do not create a standalone `CONTEXT.md`, ADR convention, global grill skill install, or upstream-default grill artifact path unless a separate explicit change adopts that model.
 
-## Stable Markers
+## Pre-Flight: Skills & MCP Gate (All Stages)
 
-Use these exact markers for idempotency:
-- Branch start: `IA generated branch: {branchName}`
-- QA deployment: `IA generated QA deployment: {commitSha}`
-- E2E QA: `IA generated E2E QA: {ticketKey}`
-- QA bug: `IA generated QA bug: {parentTicketKey}`
-- PROD deployment: `IA generated PROD deployment: {finalVersion}`
-- Post-PROD retrospective: `IA generated post-PROD retrospective: {finalVersion}`
-- PROD rollback: `IA generated PROD rollback: {rollbackVersionOrCommit}`
-- PROD rollback incident: `IA generated PROD rollback incident: {rollbackVersionOrCommit}`
-- PROD hotfix: `IA generated PROD hotfix: {incidentOrTicketKey}`
-- Workflow timing: `IA generated workflow timing: {ticketKey}`
-- PR review agent: `<!-- codex-review-agent:{headSha} -->`
-- PR review feedback detected: `IA generated PR feedback detected: {headSha}:{feedbackBatchId}`
-- PR review feedback fixes: `IA generated PR feedback fixes: {headSha}:{feedbackBatchId}`
-- OpenProject generated description block: `<!-- ia-generated:start -->` through `<!-- ia-generated:end -->`
+Before any mutation in any delivery stage — before editing files, making API calls, committing, pushing, or changing ticket state — every agent **must** run the Skills & MCP pre-flight gate defined in `.codex/skills/_shared/preflight-skills-mcp.md`.
 
-Before adding generated comments or moving states, read existing comments when the API allows it and treat matching markers as already completed.
+This gate:
 
-## OpenProject Comment Format
+1. Checks `.codex/skills/manifest.json` for skills relevant to the current task category
+2. Checks `.codex/mcp-instructions.md` for MCPs relevant to the current domain
+3. Loads and activates every applicable skill and MCP before the first mutation
+4. Declares active/skipped skills and used MCPs in every response body's `Skills used:` block
 
-Generated OpenProject comments must keep the stable marker as the first line by itself, followed by a blank line and a human-readable Markdown summary. Use this structure:
+This is authority level 5 — the same as the mandatory MCP routing contract. Do not skip it.
 
-1. `**Status:** PASS|FAIL|BLOCKED - one-sentence outcome`
-2. `**Context:**` compact bullets for ticket, state, version, commit, PR, artifact, and workflow run.
-3. `**Validation:**` grouped bullets or a small Markdown table for environment checks, test totals, and monitoring checks.
-4. `**Evidence:**` durable links to Nexus manifests, evidence ZIPs, screenshots, logs, or local fallback paths.
-5. `**Notes:**` only when defects, blockers, assumptions, or tooling issues matter.
+## Stable Markers & Comment Format
 
-Prefer Markdown links for long URLs, short commit display text such as ``8acc4d4`` with the full SHA recorded in a field when needed, and grouped sections over long flat lists. Keep automation-critical values present and searchable; do not hide the stable marker, commit SHA, ticket key, release version, artifact URL, or evidence URL inside prose only.
+See `.codex/skills/_shared/delivery-contract-format.md` for the full list of stable markers and the OpenProject comment format specification. That file is the single source of truth for format strings; this contract governs only behavior rules.
 
 ## Reusable Delivery Tools
 
 Use `python -m tools.sdd_cli dev-flow <subcommand>` for deterministic delivery mechanics instead of duplicating script logic in skills:
+
 - `artifact-paths`, `check-git-ignored`, `next-rc-version`, `extract-ticket-key`, `validate-release-manifest`, `create-artifact-pointer`, `validate-ticket-lock`, `validate-deployment-lane`, `validate-parallel-dry-run`, `ticket-readiness`, `delivery-risk`, `parse-workload-forecast`, `detect-adversarial-trigger`, `resolve-openproject-activity`, `render-openproject-comment`, `read-openproject-telemetry`, `init-telemetry`, `append-telemetry`, `read-telemetry`, `render-ticket-comment`, `update-release-manifest`, `ReadProjectProfile`, `ReadDeliveryPolicy`, `ReadCoverageThreshold`, `ReadCoberturaLineRate`
 
 See the full contract in `delivery-contract-deploy.md` for Nexus/release-specific helpers. Skills remain responsible for API calls, user-facing decisions, blocker classification, and whether a mutation is allowed.
+
+## Deterministic Flow: Inform, Don't Ask
+
+The delivery workflow is deterministic. Every stage has a known next step defined by the Workflow Stage Routing table in `AGENTS.md` and the stage-specific skills. Agents must:
+
+1. **Inform the user of the next step** — state clearly what comes next without asking for direction.
+2. **Pause for confirmation only when mutation is required** — before branching, pushing, committing, deploying, modifying a ticket, or any irreversible change. Read-only investigation never needs a pause.
+3. **Never ask "What's next?" or "How should I continue?"** — the flow is defined in the skills. Load the next applicable skill and follow its Workflow section.
+4. **If the next step has prerequisites** (missing config, env vars, tool installs), state the blocker and what the user needs to provide — don't offer open-ended alternatives.
+
+This applies in all contexts: after PR review, after QA failure, after deployment, after ticket handoff. Do not default to asking the user for direction on the next workflow step.
+
+Exception: if the routing table has no match for the current context, then — and only then — ask the user to clarify which workflow stage applies.
 
 ## Rerun And Failure Policy
 
 Reruns must continue from the latest completed marker, branch, PR, artifact, tag, or manifest checkpoint.
 
 Stop instead of guessing when:
+
 - the ticket, PR, commit, artifact, or target state is ambiguous,
 - Nexus is unavailable for promotion,
 - PR labels still indicate blocking review/test work,

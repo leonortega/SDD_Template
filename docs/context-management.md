@@ -127,7 +127,7 @@ Content that changes every agent turn. Keep it as compact as possible:
 1. **Always order** as: `[Tier 1] → [BREAKPOINT] → [Tier 2] → [BREAKPOINT] → [Tier 3] → [BREAKPOINT] → [Tier 4]`
 2. **Never** intersperse dynamic Tier 4 data into cached Tier 1-3 blocks — doing so invalidates the entire cache.
 3. **Never** insert timestamps, random IDs, raw tool dumps, or refreshed status summaries into stable context blocks.
-4. **Keep dynamic blocks short** — only include what the current turn actually needs. Use `Claw Compactor` for pre-prompt compression of code/JSON/log content in Tier 4.
+4. **Keep dynamic blocks short** — only include what the current turn actually needs. Compress code/JSON/log content in Tier 4 before including it.
 5. **Do not reorder** Tier 1-2 files between turns — cache hits depend on identical prefixes.
 
 ### Telemetry

@@ -48,8 +48,9 @@ RUN curl -fsSL -o /usr/local/bin/kind https://kind.sigs.k8s.io/dl/v0.32.0/kind-l
     && chmod +x /usr/local/bin/kind \
     && kind version
 
-# Install Semgrep (SAST) and Checkov (IaC) via pip (--break-system-packages for PEP 668)
-RUN pip3 install --break-system-packages --no-cache-dir semgrep==1.104.0 checkov==3.2.20
+# Install Semgrep (SAST), Checkov (IaC), and pytest (test runner for repo
+# tooling tests + Python product tests) via pip (--break-system-packages for PEP 668)
+RUN pip3 install --break-system-packages --no-cache-dir semgrep==1.104.0 checkov==3.2.20 pytest
 
 # Pre-cache Semgrep rules for all project languages (CI has no internet)
 RUN mkdir -p /tmp/semgrep-dummy \

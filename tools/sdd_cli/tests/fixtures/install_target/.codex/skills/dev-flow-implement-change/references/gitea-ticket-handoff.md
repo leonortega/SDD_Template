@@ -133,7 +133,7 @@ Default label meanings:
 - `needs-tests`: review found missing or failing tests.
 - `needs-changes`: review found actionable defects or blocking concerns.
 
-## OpenProject Review State
+## OpenProject Developed State (Post-PR)
 
 Resolve the configured project:
 
@@ -147,7 +147,7 @@ Fetch the work package and current `lockVersion`:
 GET {openProject.baseUrl}/api/v3/work_packages/{workPackageId}
 ```
 
-Resolve the status whose name equals `openProject.reviewStatus`, default `In Review`, then move the work package:
+Move the work package to `Developed` (OpenProject status ID 8) — this is the state after PR creation:
 
 ```text
 PATCH {openProject.baseUrl}/api/v3/work_packages/{workPackageId}

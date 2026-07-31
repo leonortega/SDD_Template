@@ -14,13 +14,17 @@ Cross-cutting security guidance that applies to any language or framework. For f
 ## 1) Operating Modes
 
 ### 1.1 Generation mode (default)
+
 Use security best practices while writing new code. Apply framework-specific rules from `_framework-specific/` when the product stack is known.
 
 ### 1.2 Passive review mode (always on while editing)
+
 Passively detect major vulnerabilities in code being read or modified. Flag only critical/high-severity issues inline. Focus on: injection flaws, broken auth, sensitive data exposure, broken access control, XSS, SSRF, insecure deserialization, known-vulnerable dependencies.
 
 ### 1.3 Active audit mode (explicit scan request)
+
 When the user requests a security review or vulnerability report:
+
 1. Determine all languages and frameworks in the project scope (both frontend and backend).
 2. Load `general-principles.md` (this file).
 3. If a product stack is selected, load matching framework-specific files from `_framework-specific/`.
@@ -30,13 +34,17 @@ When the user requests a security review or vulnerability report:
 ## 2) Definitions And Review Guidance
 
 ### 2.1 Untrusted input
+
 Treat as attacker-controlled unless proven otherwise: URL params, query strings, request bodies, HTTP headers, uploaded files, cookies, environment variables consumed from user-facing config, third-party API responses, database values written through user-facing paths.
 
 ### 2.2 State-changing requests
+
 POST, PUT, PATCH, DELETE — require authentication, authorization, CSRF protection, input validation, and idempotency where applicable.
 
 ### 2.3 Audit finding format
+
 Each finding must include:
+
 - **Finding ID**: `LANG-CATEGORY-NNN`
 - **Severity**: CRITICAL | HIGH | MEDIUM | LOW | INFO
 - **File**: path and line number
@@ -48,12 +56,14 @@ Each finding must include:
 ## 3) Secure Baseline (All Frameworks)
 
 ### 3.1 Toolchain and dependencies
+
 - Keep languages, frameworks, and runtime up to date with latest patch versions.
 - Pin dependencies to specific versions or lockfiles. Enable automated vulnerability scanning (Dependabot, Snyk, Trivy).
 - Remove unused dependencies. Do not install dev-only packages in production images.
 - Verify package signatures or checksums where the package manager supports it.
 
 ### 3.2 HTTP server configuration
+
 - Set reasonable timeouts: read timeout, write timeout, idle timeout, header timeout.
 - Limit request body size to a sane maximum (e.g., 1-10 MB depending on your use case).
 - Set HTTP header limits to prevent header injection attacks.
@@ -61,12 +71,14 @@ Each finding must include:
 - Use secure TLS configuration: TLS 1.2 minimum, strong cipher suites, HSTS only after thorough testing.
 
 ### 3.3 Secrets and configuration
+
 - Never hardcode secrets. Use environment variables, secret managers, or encrypted config providers.
 - Validate that all required configuration keys exist before the application starts.
 - Use different secrets per environment (dev, QA, staging, prod).
 - Rotate secrets regularly. Revoke compromised secrets immediately.
 
 ### 3.4 Authentication and authorization
+
 - Use standard, well-reviewed auth libraries. Do not roll your own crypto or session management.
 - Enforce strong password policies (minimum length, complexity) or prefer passwordless/SSO.
 - Implement rate limiting on login endpoints to mitigate brute-force attacks.
@@ -74,6 +86,7 @@ Each finding must include:
 - For session management: use secure, HTTP-only cookies over TLS; regenerate session IDs after login.
 
 ### 3.5 Input validation and output encoding
+
 - Validate all input on the server side: type, length, format, range, and allowed characters.
 - Use parameterized queries or ORMs to prevent SQL/NoSQL injection. Never concatenate user input into queries.
 - Encode output appropriately for the context: HTML entity encoding for HTML, JS encoding for script contexts, URL encoding for URLs.
@@ -81,22 +94,26 @@ Each finding must include:
 - Validate and sanitize file uploads: check MIME type, limit size, scan for malware, store outside web root.
 
 ### 3.6 CSRF and CORS
+
 - Use anti-CSRF tokens for all state-changing requests in session-based auth.
 - Configure CORS restrictively: allow only known origins, do not use `Access-Control-Allow-Origin: *` with credentials.
 - Validate `Origin` and `Referer` headers for sensitive operations.
 
 ### 3.7 Error handling and logging
+
 - Return generic error messages to users. Log detailed errors server-side only.
 - Never expose stack traces, database errors, or internal paths in production responses.
 - Log security-relevant events: failed logins, authorization failures, input validation failures, rate limit triggers.
 - Ensure logs do not contain secrets, PII, or session tokens.
 
 ### 3.8 Rate limiting and DoS protection
+
 - Implement rate limiting on authentication endpoints, API endpoints, and resource-intensive operations.
 - Use reverse proxy or middleware for global rate limiting.
 - Set connection and memory limits to prevent resource exhaustion.
 
 ### 3.9 Dependency and supply chain
+
 - Regularly audit dependencies for known vulnerabilities.
 - Prefer official, maintained packages with active security response processes.
 - Pin base Docker images to specific digests, not floating tags.

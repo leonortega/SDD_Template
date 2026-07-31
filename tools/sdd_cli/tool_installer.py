@@ -1,4 +1,4 @@
-"""Tool installer: lefthook, codegraph, codebase-memory, claw-compactor, quality tools."""
+"""Tool installer: lefthook, MCP servers, quality tools."""
 
 from __future__ import annotations
 
@@ -306,242 +306,6 @@ def _install_lefthook_user_local(root: Path, result: dict[str, Any]) -> str | No
             "apply",
         )
         return None
-
-
-# ── Codegraph MCP ────────────────────────────────────────────────────────
-
-
-def install_codegraph(root: Path, dry_run: bool = False) -> dict[str, Any]:
-    """Verify codegraph via npx and ensure .codex/config.toml has MCP config."""
-    result = configure_result("InstallCodegraph", dry_run, write_enabled=not dry_run)
-    npx_check = run_native(["npx", "--version"], root, timeout=10)
-    if npx_check["returncode"] != 0:
-        add_bucket_item(
-            result["findings"],
-            "npx",
-            "missing",
-            f"npx is not available: {npx_check['stderr']}",
-            "error",
-            "pre-start",
-        )
-        result["valid"] = False
-        return result
-    verify_command = ["npx", "--yes", "@colbymchenry/codegraph@1.1.1", "--version"]
-    if dry_run:
-        result["actions"].append(
-            {
-                "path": "npx",
-                "key": "verify-codegraph",
-                "severity": "info",
-                "message": f"Would verify codegraph: {' '.join(verify_command)}",
-                "phase": "apply",
-            }
-        )
-        result["valid"] = True
-        return result
-    verify = run_native(verify_command, root, timeout=60)
-    if verify["returncode"] != 0:
-        add_bucket_item(
-            result["findings"],
-            "codegraph",
-            "verify",
-            f"Could not verify codegraph: {verify['stderr']}",
-            "error",
-            "apply",
-        )
-        result["valid"] = False
-        return result
-    result["actions"].append(
-        {
-            "path": "npx",
-            "key": "verify-codegraph",
-            "severity": "info",
-            "message": f"Codegraph verified: {verify['stdout']}",
-            "phase": "apply",
-        }
-    )
-    config_path = root / ".codex" / "config.toml"
-    config_dir = config_path.parent
-    if not config_dir.exists():
-        if not dry_run:
-            config_dir.mkdir(parents=True, exist_ok=True)
-        result["actions"].append(
-            {
-                "path": ".codex/config.toml",
-                "key": "directory",
-                "severity": "info",
-                "message": "Created .codex directory.",
-                "phase": "apply",
-            }
-        )
-    codegraph_config_present = False
-    if config_path.exists():
-        existing_content = config_path.read_text(encoding="utf-8")
-        if "[mcp_servers.codegraph]" in existing_content:
-            codegraph_config_present = True
-    if not codegraph_config_present:
-        if dry_run:
-            result["actions"].append(
-                {
-                    "path": ".codex/config.toml",
-                    "key": "codegraph-config",
-                    "severity": "info",
-                    "message": "Would add codegraph MCP config to .codex/config.toml.",
-                    "phase": "apply",
-                }
-            )
-        else:
-            codegraph_section = """[mcp_servers.codegraph]
-command = "npx"
-args = ["--yes", "@colbymchenry/codegraph@1.1.1", "serve", "--mcp"]
-
-[mcp_servers.codegraph.env]
-CODEGRAPH_TELEMETRY = "0"
-DO_NOT_TRACK = "1"
-
-"""
-            if config_path.exists():
-                existing_content = config_path.read_text(encoding="utf-8")
-                config_path.write_text(
-                    existing_content + "\n" + codegraph_section, encoding="utf-8"
-                )
-            else:
-                config_path.write_text(codegraph_section, encoding="utf-8")
-            result["actions"].append(
-                {
-                    "path": ".codex/config.toml",
-                    "key": "codegraph-config",
-                    "severity": "info",
-                    "message": "Added codegraph MCP server configuration to .codex/config.toml.",
-                    "phase": "apply",
-                }
-            )
-    else:
-        result["actions"].append(
-            {
-                "path": ".codex/config.toml",
-                "key": "codegraph-config",
-                "severity": "info",
-                "message": "Codegraph MCP server configuration already present.",
-                "phase": "apply",
-            }
-        )
-    result["valid"] = True
-    return result
-
-
-# ── Codebase-memory MCP ──────────────────────────────────────────────────
-
-
-def install_codebase_memory(root: Path, dry_run: bool = False) -> dict[str, Any]:
-    """Register codebase-memory-mcp in .vscode/mcp.json."""
-    result = configure_result(
-        "InstallCodebaseMemory", dry_run, write_enabled=not dry_run
-    )
-    mcp_path = root / ".vscode" / "mcp.json"
-    shim_path = root / "tools" / "codebase_memory_mcp" / "mcp_cap_shim.py"
-    if not shim_path.exists():
-        add_bucket_item(
-            result["findings"],
-            "tools/codebase_memory_mcp/mcp_cap_shim.py",
-            "missing.shim",
-            "codebase-memory-mcp shim script not found. Run tools/codebase_memory_mcp/install.ps1 first.",
-            "error",
-            "pre-start",
-        )
-        result["valid"] = False
-        return result
-    server_name = "codebase-memory-mcp"
-    expected_entry = {
-        "type": "stdio",
-        "command": sys.executable,
-        "args": [str(shim_path)],
-    }
-    return _register_mcp_entry(root, mcp_path, server_name, expected_entry, result, dry_run)
-
-
-# ── Claw-compactor ───────────────────────────────────────────────────────
-
-
-def install_claw_compactor(
-    root: Path, version: str | None = None, dry_run: bool = False
-) -> dict[str, Any]:
-    """Install claw-compactor into the shared MCP venv."""
-    user_home = Path.home()
-    mcp_python = user_home / ".mcp_shared_venv" / "Scripts" / "python.exe"
-    if not mcp_python.exists():
-        return {
-            "command": "install-claw",
-            "valid": False,
-            "error": f"MCP shared venv not found at {mcp_python}. Run the MCP server setup first.",
-        }
-    pip_args = [str(mcp_python), "-m", "pip", "install"]
-    if version:
-        pip_args += [f"claw-compactor=={version}"]
-    else:
-        pip_args += ["claw-compactor"]
-    result = configure_result(
-        "InstallClawCompactor", dry_run, write_enabled=not dry_run
-    )
-    if dry_run:
-        result["actions"].append(
-            {
-                "path": str(mcp_python),
-                "key": "pip-install",
-                "severity": "info",
-                "message": f"Would install claw-compactor{'==' + version if version else ''}.",
-                "phase": "apply",
-            }
-        )
-        result["valid"] = True
-        return result
-    install_result = subprocess.run(pip_args, capture_output=True, text=True)  # nosec
-    if install_result.returncode != 0:
-        add_bucket_item(
-            result["findings"],
-            "claw-compactor",
-            "pip-install",
-            f"Could not install claw-compactor: {install_result.stderr.strip()}",
-            "error",
-            "apply",
-        )
-        result["valid"] = False
-        return result
-    result["actions"].append(
-        {
-            "path": str(mcp_python),
-            "key": "pip-install",
-            "severity": "info",
-            "message": install_result.stdout.strip(),
-            "phase": "apply",
-        }
-    )
-    check = subprocess.run(  # nosec
-        [str(mcp_python), "-m", "claw_compactor.cli", "--help"],
-        capture_output=True,
-        text=True,
-    )
-    if check.returncode == 0:
-        result["actions"].append(
-            {
-                "path": str(mcp_python),
-                "key": "verify",
-                "severity": "info",
-                "message": "claw-compactor installed and verified.",
-                "phase": "apply",
-            }
-        )
-    else:
-        add_bucket_item(
-            result["findings"],
-            "claw-compactor",
-            "verify",
-            "claw-compactor installed but CLI verification failed.",
-            "warning",
-            "apply",
-        )
-    result["valid"] = True
-    return result
 
 
 # ── SDD Tool install/update ──────────────────────────────────────────────
@@ -867,134 +631,6 @@ def _register_mcp_entry(
     return result
 
 
-# ── monorepo-docs-search MCP ─────────────────────────────────────────────
-
-
-def install_monorepo_docs_search(root: Path, dry_run: bool = False) -> dict[str, Any]:
-    """Set up the monorepo-docs-search MCP server (shared venv + registration).
-
-    Creates a shared venv at ~/.mcp_shared_venv, installs mcp + bm25s + flashrank,
-    then registers the server in .vscode/mcp.json.
-    """
-    result = configure_result(
-        "InstallMonorepoDocsSearch", dry_run, write_enabled=not dry_run
-    )
-    user_profile = os.environ.get("USERPROFILE") or os.path.expandvars("%USERPROFILE%")
-    if not user_profile:
-        add_bucket_item(
-            result["findings"],
-            "monorepo-docs-search",
-            "env.userprofile",
-            "USERPROFILE env var not found.",
-            "error",
-            "pre-start",
-        )
-        result["valid"] = False
-        return result
-
-    venv_dir = os.path.join(user_profile, ".mcp_shared_venv")
-    python_exe = os.path.join(venv_dir, "Scripts", "python.exe")
-    pip_exe = os.path.join(venv_dir, "Scripts", "pip.exe")
-    script_path = str(root / "tools" / "bm25s_flashrank" / "mcp_doc_research.py")
-
-    if not os.path.exists(script_path):
-        add_bucket_item(
-            result["findings"],
-            "tools/bm25s_flashrank/mcp_doc_research.py",
-            "missing.script",
-            "mcp_doc_research.py not found. Is the SDD tool installed?",
-            "error",
-            "pre-start",
-        )
-        result["valid"] = False
-        return result
-
-    if dry_run:
-        result["actions"].append(
-            {
-                "path": ".mcp_shared_venv",
-                "key": "create",
-                "severity": "info",
-                "message": "Would create shared venv and install mcp, bm25s, flashrank.",
-                "phase": "apply",
-            }
-        )
-        result["actions"].append(
-            {
-                "path": ".vscode/mcp.json",
-                "key": "monorepo-docs-search",
-                "severity": "info",
-                "message": "Would register monorepo-docs-search MCP server.",
-                "phase": "apply",
-            }
-        )
-        result["valid"] = True
-        return result
-
-    # Create venv if needed
-    if not os.path.exists(venv_dir):
-        import venv
-        venv.create(venv_dir, with_pip=True)
-        result["actions"].append(
-            {
-                "path": ".mcp_shared_venv",
-                "key": "venv",
-                "severity": "info",
-                "message": "Created shared virtual environment.",
-                "phase": "apply",
-            }
-        )
-    else:
-        result["actions"].append(
-            {
-                "path": ".mcp_shared_venv",
-                "key": "venv",
-                "severity": "info",
-                "message": "Shared virtual environment already exists.",
-                "phase": "audit",
-            }
-        )
-
-    # Upgrade pip
-    subprocess.run(
-        [pip_exe, "install", "--upgrade", "pip", "--quiet"],
-        check=False,
-    )
-    # Install deps
-    deps_result = subprocess.run(
-        [pip_exe, "install", "mcp", "bm25s", "flashrank", "--quiet"],
-        capture_output=True, text=True, check=False,
-    )
-    if deps_result.returncode != 0:
-        add_bucket_item(
-            result["findings"],
-            ".mcp_shared_venv",
-            "pip.install",
-            f"Failed to install packages: {deps_result.stderr.strip()}",
-            "error",
-            "apply",
-        )
-        result["valid"] = False
-        return result
-    result["actions"].append(
-        {
-            "path": ".mcp_shared_venv",
-            "key": "pip.install",
-            "severity": "info",
-            "message": "Installed mcp, bm25s, flashrank.",
-            "phase": "apply",
-        }
-    )
-
-    # Register in .vscode/mcp.json
-    mcp_path = root / ".vscode" / "mcp.json"
-    expected_entry = {
-        "command": python_exe,
-        "args": [script_path],
-    }
-    return _register_mcp_entry(root, mcp_path, "monorepo-docs-search", expected_entry, result, dry_run)
-
-
 # ── Playwright MCP ───────────────────────────────────────────────────────
 
 
@@ -1272,18 +908,22 @@ def install_openproject_mcp(root: Path, dry_run: bool = False) -> dict[str, Any]
 
 
 def ensure_mcp_servers(root: Path, dry_run: bool = False) -> dict[str, Any]:
-    """Install all non-optional MCP servers: monorepo-docs-search, codebase-memory-mcp, playwright.
+    """Register all MCP servers in .vscode/mcp.json.
 
-    OpenProject and Grafana MCPs are not installed automatically by this function
-    because they require service credentials. Use the individual install_*_mcp
-    functions when the services are provisioned.
+    Checks every install_*_mcp target: playwright, grafana, kubernetes, gitea,
+    and openproject. Service MCPs (grafana/gitea/openproject) read credentials
+    from their config files and register the server entry even when credentials
+    are missing — the installer reports a warning action so the gap is visible
+    without failing the aggregate result.
     """
     result = configure_result("EnsureMCPServers", dry_run, write_enabled=not dry_run)
 
     results = [
-        install_codebase_memory(root, dry_run),
-        install_monorepo_docs_search(root, dry_run),
         install_playwright_mcp(root, dry_run),
+        install_grafana_mcp(root, dry_run),
+        install_k8s_mcp(root, dry_run),
+        install_gitea_mcp(root, dry_run),
+        install_openproject_mcp(root, dry_run),
     ]
     for r in results:
         for action in r.get("actions", []):
@@ -1294,84 +934,6 @@ def ensure_mcp_servers(root: Path, dry_run: bool = False) -> dict[str, Any]:
     result["valid"] = not any(
         item.get("severity") == "error" for item in result["findings"]
     )
-    return result
-
-
-# ── Ensure codebase memory ───────────────────────────────────────────────
-
-
-def ensure_codebase_memory(root: Path, dry_run: bool = False) -> dict[str, Any]:
-    """Ensure .codex/memory/ files exist and codebase-memory-mcp is configured."""
-    result = configure_result(
-        "EnsureCodebaseMemory", dry_run, write_enabled=not dry_run
-    )
-    memory_dir = root / ".codex" / "memory"
-    if not memory_dir.exists():
-        if dry_run:
-            result["actions"].append(
-                {
-                    "path": ".codex/memory/",
-                    "key": "directory",
-                    "severity": "info",
-                    "message": "Would create .codex/memory/ directory.",
-                    "phase": "apply",
-                }
-            )
-        else:
-            memory_dir.mkdir(parents=True, exist_ok=True)
-            result["actions"].append(
-                {
-                    "path": ".codex/memory/",
-                    "key": "directory",
-                    "severity": "info",
-                    "message": "Created .codex/memory/ directory.",
-                    "phase": "apply",
-                }
-            )
-    seed_files = {
-        ".codex/memory/memory_summary.md": "# Memory Summary\n\nNo consumer project memories recorded yet.\n",
-        ".codex/memory/MEMORY.md": "# Repository Memory Index\n\n- `memory_summary.md`: compact startup context.\n"
-        "- `retrieval-policy.md`: memory read/write rules.\n",
-        ".codex/memory/retrieval-policy.md": "# Memory Retrieval And Write Policy\n\nUse memory as guidance only. "
-        "Verify against current files and live tools before acting.\n",
-    }
-    for relative, content in seed_files.items():
-        path = root / relative
-        if path.exists():
-            result["actions"].append(
-                {
-                    "path": relative,
-                    "key": "exists",
-                    "severity": "info",
-                    "message": "Memory seed file already exists.",
-                    "phase": "audit",
-                }
-            )
-            continue
-        if not dry_run:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(content, encoding="utf-8")
-        result["actions"].append(
-            {
-                "path": relative,
-                "key": "created",
-                "severity": "info",
-                "message": "Created memory seed file.",
-                "phase": "apply",
-            }
-        )
-    # Also ensure codebase-memory-mcp is configured in .vscode/mcp.json
-    mcp_result = install_codebase_memory(root, dry_run)
-    for action in mcp_result.get("actions", []):
-        result["actions"].append(action)
-    for finding in mcp_result.get("findings", []):
-        result["findings"].append(finding)
-    if not mcp_result.get("valid", True):
-        result["valid"] = False
-    else:
-        result["valid"] = not any(
-            item.get("severity") == "error" for item in result["findings"]
-        )
     return result
 
 
@@ -1477,6 +1039,48 @@ def validate_manifest(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
 
 # ── Ensure quality tools ─────────────────────────────────────────────────
+
+# Test framework → coverage-tool probe command. Normalized keys come from
+# stack_tests._normalize_framework (pytest for Python, vitest/jest for JS/TS,
+# dotnet for .NET — xunit/nunit/mstest normalize to dotnet).
+_FRAMEWORK_COVERAGE_PROBES: dict[str, tuple[list[str], str]] = {
+    "pytest": (["pytest", "--version"], "pytest"),
+    "vitest": (["npx", "vitest", "--version"], "vitest"),
+    "jest": (["npx", "jest", "--version"], "jest"),
+    "dotnet": (["dotnet", "--version"], "dotnet"),
+}
+
+
+# Classic fallback when no stack is configured (template state) or every
+# declared framework is unmapped (e.g. a custom runner) — the audit still
+# probes the common coverage tools.
+_FALLBACK_COVERAGE_PROBES: list[tuple[list[str], str]] = [
+    (["dotnet", "--version"], "dotnet"),
+    (["pytest", "--version"], "pytest"),
+    (["npx", "jest", "--version"], "jest"),
+]
+
+
+def _coverage_probe_commands(root: Path) -> list[tuple[list[str], str]]:
+    """Coverage-tool probe commands driven by stack.testFrameworks.
+
+    Reads the configured test frameworks from the project profile and returns
+    the matching probe commands (normalized via stack_tests so .NET variants
+    collapse to dotnet). When no stack is configured (template state) or no
+    framework has a mapped probe, falls back to the classic dotnet/pytest/jest
+    tri-list so the audit still checks something.
+    """
+    from ._shared import load_project_profile
+    from .stack_tests import _normalize_framework
+
+    profile = load_project_profile(root)
+    frameworks = (profile.get("stack") or {}).get("testFrameworks") or []
+    probes: list[tuple[list[str], str]] = []
+    for fw in frameworks:
+        entry = _FRAMEWORK_COVERAGE_PROBES.get(_normalize_framework(fw))
+        if entry and entry not in probes:
+            probes.append(entry)
+    return probes or _FALLBACK_COVERAGE_PROBES
 
 
 def ensure_quality_tools(root: Path, dry_run: bool = False) -> dict[str, Any]:
@@ -1596,13 +1200,11 @@ def ensure_quality_tools(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 "phase": "audit",
             }
         )
-    # Coverage tool (dotnet or pytest or jest depending on project; skip in dry-run)
+    # Coverage tool — stack-driven: probe only the frameworks declared in
+    # stack.testFrameworks (pytest/vitest/jest/dotnet). Falls back to the
+    # classic tri-list when no stack is configured. Skip in dry-run.
     if not dry_run:
-        for tool_cmd, tool_name in [
-            (["dotnet", "--version"], "dotnet"),
-            (["pytest", "--version"], "pytest"),
-            (["npx", "jest", "--version"], "jest"),
-        ]:
+        for tool_cmd, tool_name in _coverage_probe_commands(root):
             check = run_native(tool_cmd, root, timeout=10)
             if check["returncode"] == 0:
                 result["actions"].append(
@@ -2169,11 +1771,10 @@ def run_tool_installer(args: list[str]) -> int:
 
     if not args:
         print(
-            "Available: install-lefthook, install-codegraph, install-codebase-memory, "
-            "install-monorepo-docs-search, install-playwright-mcp, "
+            "Available: install-lefthook, install-playwright-mcp, "
             "install-grafana-mcp, install-openproject-mcp, "
-            "validate-manifest, install-k8s-mcp, install-gitea-mcp, install-claw, "
-            "install-skill, list-skills, ensure-mcp-servers, ensure-codebase-memory, "
+            "validate-manifest, install-k8s-mcp, install-gitea-mcp, "
+            "install-skill, list-skills, ensure-mcp-servers, "
             "ensure-quality-tools, install-sdd-template, update-sdd-template",
             file=sys.stderr,
         )
@@ -2184,19 +1785,11 @@ def run_tool_installer(args: list[str]) -> int:
     dry_run = options.get("dry-run", "false").lower() == "true"
     handlers: dict[str, Any] = {
         "install-lefthook": lambda: install_lefthook(root, dry_run),
-        "install-codegraph": lambda: install_codegraph(root, dry_run),
-        "install-codebase-memory": lambda: install_codebase_memory(root, dry_run),
-        "install-monorepo-docs-search": lambda: install_monorepo_docs_search(root, dry_run),
         "install-playwright-mcp": lambda: install_playwright_mcp(root, dry_run),
         "install-grafana-mcp": lambda: install_grafana_mcp(root, dry_run),
         "install-openproject-mcp": lambda: install_openproject_mcp(root, dry_run),
         "install-gitea-mcp": lambda: install_gitea_mcp(root, dry_run),
         "install-k8s-mcp": lambda: install_k8s_mcp(root, dry_run),
-        "install-claw": lambda: install_claw_compactor(
-            root,
-            version=options.get("version"),
-            dry_run=dry_run,
-        ),
         "install-skill": lambda: install_skill_from_github(
             root,
             repo=options.get("repo", ""),
@@ -2224,7 +1817,6 @@ def run_tool_installer(args: list[str]) -> int:
         ),
         "validate-manifest": lambda: validate_manifest(root, dry_run),
         "ensure-mcp-servers": lambda: ensure_mcp_servers(root, dry_run),
-        "ensure-codebase-memory": lambda: ensure_codebase_memory(root, dry_run),
         "ensure-quality-tools": lambda: ensure_quality_tools(root, dry_run),
     }
     if subcommand in ("install-sdd-template", "update-sdd-template"):

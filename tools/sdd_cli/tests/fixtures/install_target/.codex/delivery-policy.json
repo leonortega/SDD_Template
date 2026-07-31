@@ -34,6 +34,7 @@
             ".codex/skills/_shared/delivery-contract-core.md",
             ".codex/skills/_shared/skill-startup.md",
             ".codex/skills/_shared/delivery-contract-format.md",
+            ".codex/skills/_shared/test-requirements.md",
             ".codex/project-profile.json"
           ],
           "cacheStrategy": "session",

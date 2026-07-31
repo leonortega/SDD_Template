@@ -1,6 +1,7 @@
 ---
 name: dev-flow-start-ticket
-description: Start configured work items from chat by listing Todo tickets, preparing safe repository branches, pushing new branches, generating OpenSpec-style planning notes, updating the ticket description, and commenting with the branch through selected project-profile adapters. Use when the user asks to start the next ticket, start a specific ticket key, list Todo tickets, prepare a ticket branch, or connect ticket work to the local repository/OpenSpec workflow.
+license: MIT
+description: Start configured work items from chat by listing Specified tickets (feature starting point), preparing safe repository branches, pushing new branches, generating OpenSpec-style planning notes, updating the ticket description, and commenting with the branch through selected project-profile adapters. Bug tickets (status: New) are automatically re-routed to the dedicated bug fix lifecycle (dev-flow-file-qa-bug). Use when the user asks to start the next feature ticket, start a specific ticket key, list Specified tickets, prepare a ticket branch, or connect ticket work to the local repository/OpenSpec workflow.
 ---
 
 <!-- TIER 3: STAGE-SPECIFIC - Ticket start workflow skill -->
@@ -11,37 +12,65 @@ description: Start configured work items from chat by listing Todo tickets, prep
 
 Use this skill for a chat-driven ticket workflow. The user should not need to run a command; Codex should call the selected ticket adapter and local Git commands from the conversation.
 
+### Bug Routing
+
+When the user asks to start a ticket or a ticket is fetched that is a **bug** (status is `New`, ID 1), this skill **does not** continue with the normal feature flow. Instead, it routes to `dev-flow-file-qa-bug` which handles the full bug fix lifecycle:
+
+```text
+E2E QA fails → File bug → Move to Specified → Update parent OpenSpec → Commit → Move to In progress → Branch → PR → Merge & deploy to QA → Close bug → Return to parent QA
+```
+
+**How routing works:**
+1. The ticket is fetched and its status is checked
+2. If status is `New` (ID 1) → route to `dev-flow-file-qa-bug`
+3. After the bug flow completes, the parent ticket continues its normal QA flow
+4. If status is `Specified` or any other state → continue with the normal feature flow below
+
 For setup details and branch pattern options, read `references/configuration.md` when configuration is missing or the user asks how to configure the tools. Before making ticket-provider calls, read `.codex/project-profile.json` and the selected ticket adapter path; read provider-specific references only when that adapter requires them.
 
 ## Shared Context
 
-Before mutating ticket or repository state, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/provider-adapter-contract.md`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/architecture.md` as the stage-specific doc. Load selected ticket and repository adapters before any mutation.
+Before mutating ticket or repository state, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/architecture.md` as the stage-specific doc. Load selected ticket and repository adapters before any mutation.
 
-This skill owns initial creation of ignored `.codex/delivery-context.local.json` for automatic delivery. OpenProject time entries are the primary telemetry store; ignored `.codex/agent-telemetry.local.jsonl` is fallback only. Never commit local workflow files.
+This skill owns initial creation of ignored `.codex/delivery-context.local.json` for automatic delivery. OpenProject time entries are the only telemetry store. Never commit local workflow files.
 
 ## Workflow Telemetry
 
-Capture UTC start time before the first ticket-specific mutation. When OpenProject time-entry telemetry is available, create or update the `dev-flow-start-ticket` time entry with marker `IA generated workflow telemetry: {ticketKey}:dev-flow-start-ticket`. If direct time telemetry is unavailable, initialize fallback `.codex/agent-telemetry.local.jsonl` and append a row with `python -m tools.sdd_cli dev-flow append-telemetry --ticket-key {ticketKey} --input-json '{"workflowStage":"dev-flow-start-ticket","agentRole":"ticketStarter","outcome":"success"}'`. On resume or idempotent reuse, append or update another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-flow-start-ticket`, `agentRole=ticketStarter`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. If a blocker happens before a ticket key is selected, report that no telemetry row was possible.
+### ⚠️ HARD GATE: Time entries are mandatory
+
+OpenProject time entries are the PRIMARY telemetry store. You MUST:
+
+1. **Capture UTC start time** before the first ticket-specific mutation.
+2. **Create the time entry** via `time-telemetry-upsert` (POST `/api/v3/time_entries`). See `.codex/skills/openproject-sprint-backlog/references/openproject-api.md` → Operations → `time-telemetry-upsert` for the exact API payload with `spentOn`, `hours`, `comment`, `_links.user`, `_links.entity`, `_links.project`, and `_links.activity`.
+3. **Use marker** `IA generated workflow telemetry: {ticketKey}:dev-flow-start-ticket`.
+4. **Resolve activity** by running:
+   ```bash
+   python -m tools.sdd_cli dev-flow resolve-openproject-activity --workflow-stage dev-flow-start-ticket --input-json '{"timeTelemetry":{...}}'
+   ```
+   Then reverse-lookup the activity ID from the resolved name against the mapping in the adapter doc.
+
+**Do NOT skip this step.** If `time-telemetry-upsert` fails (returns a 4xx or 5xx error), stop and report the failure. Do not use any fallback mechanism.
+
+For shared API helpers including time-entry POST payload format and activity reverse-lookup, see `.codex/skills/_shared/api-helpers.md` → OpenProject → Workflow time telemetry.
 
 ## Configuration
 
 Read `.codex/project-profile.json` first for the selected ticket provider, ticket key pattern, branch policy, and adapter path. Read `.codex/client-tools.local.json` only for selected adapter runtime values. Fall back to `.codex/client-tools.example.json` only for defaults and setup guidance, then apply provider-supported environment variable overrides only when present. Defaults are:
 
-- Todo state: `Todo`
-- In-progress state: `In Progress`
+- Feature starting state: `Specified` (feature tickets start here — see `delivery-contract-ticket.md`)
+- In-progress state: `In progress` (lowercase p — matches OpenProject status ID 7)
 - Base branch, branch prefix, branch pattern, ticket key pattern, and maximum branch length from `.codex/project-profile.json` or the selected repository adapter.
 
 Before any mutating step, validate that the selected ticket adapter has the runtime values it requires, that the configured base branch exists, and that the branch pattern includes `{ticketKeySlug}`.
 
 ## Stack Context Preflight
 
-Before starting the first ticket, and before mutating any Todo ticket when stack context has not been verified, confirm the project tool set and tech stack are configured. This prevents the first OpenSpec proposal and generated ticket block from being created with generic or stale assumptions.
+Before starting the first ticket, and before mutating any feature ticket when stack context has not been verified, confirm the project tool set and tech stack are configured. This prevents the first OpenSpec proposal and generated ticket block from being created with generic or stale assumptions.
 
 Required stack context:
 
 - `docs/architecture.md`, `docs/development.md`, and `docs/deployment.md` contain `Technology Stack And Tool Set`.
 - `openspec/config.yaml` contains `context:` and `rules:` with the current stack and artifact guidance.
-- `.codex/tool-recommendations.common.json` exists as the tracked placeholder-safe shape/template.
 - Ignored `.codex/tool-recommendations.local.json` is used only after project guidance discovery confirms local recommendations and `usedInSteps`.
 
 Run the read-only recommendation audit before Git, ticket provider, or OpenSpec mutation when any of these files are missing, appear unconfigured, or this is the first ticket start in a fresh repository:
@@ -58,57 +87,147 @@ After the user confirms or dismisses suggestions, persist the state with:
 python -m tools.sdd_cli guidance set-recommended-tools --accepted '["id1","id2"]' --dismissed '["id3"]'
 ```
 
-Before creating the OpenSpec proposal (step 15), verify that the `openspec` CLI is available and the project is initialized:
+Before creating the OpenSpec proposal (step 16), verify that the `openspec` CLI is available and initialize the project:    ```bash
+    which openspec || where openspec || echo "openspec CLI not found — install via: npm install -g @fission-ai/openspec@latest"
+    openspec init --tools codex
+    openspec update
+    ```
 
-```bash
-which openspec || where openspec || echo "openspec CLI not found — install via: npm install -g @fission-ai/openspec@latest"
-openspec init  # idempotent, preserves existing config
-openspec update  # sync AI agent instructions
-```
-
-If the CLI is missing, attempt auto-installation: `npm install -g @fission-ai/openspec@latest`, then run `openspec init && openspec update`.
+    If the CLI is missing, attempt auto-installation: `npm install -g @fission-ai/openspec@latest`, then run `openspec init --tools codex && openspec update`.
 
 ## Workflow
 
 ### No Ticket Specified
 
-1. List tickets in the configured Todo state using the selected ticket adapter with credentials from local JSON config or optional environment overrides.
+1. List tickets in the feature starting state (`Specified`) using the selected ticket adapter with credentials from local JSON config or optional environment overrides.
 2. Show ticket key, title, and state.
-3. Ask the user to choose a ticket, even if there is exactly one Todo ticket.
+3. Ask the user to choose a ticket, even if there is exactly one ticket.
 4. Do not mutate Git or ticket provider while only listing tickets.
 
 ### Ticket Specified
 
 1. Fetch the ticket by key or id.
-2. Run the Ticket Refinement Gate from the shared delivery contract before mutating Git, ticket status, the ticket lock, or OpenSpec:
+
+2. **Check if the ticket is a bug.** If the ticket's status is `New` (ID 1, the bug starting state — see `delivery-contract-ticket.md`), route to the dedicated bug fix lifecycle:
+   - Load `dev-flow-file-qa-bug` and follow its full Workflow section
+   - This skill does NOT create a branch, OpenSpec proposal, or feature-scoped planning for bugs
+   - After the bug flow completes (Phase 7: Close Bug & Return To Parent QA), the parent ticket `{parentTicketKey}` resumes its QA flow
+   - **Do not continue** with the normal feature steps below — the bug flow handles everything
+
+3. Run the Ticket Refinement Gate from the shared delivery contract before mutating Git, ticket status, the ticket lock, or OpenSpec:
    - Prefer repo-local readiness helpers when available.
    - `ready`: continue.
    - `refinable`: use grill-style refinement before writing the managed ticket provider block. Prefer `grill-with-docs` style when answers create durable product, domain, acceptance, or rationale knowledge; use `grill-me` style only for temporary alignment. Generate Scrum-ready planning details with a problem or opportunity, user story, concrete acceptance criteria, scope or affected areas, dependencies or assumptions, validation expectations, risks, and definition of done in the managed ticket provider block, then continue.
    - `blocked`: stop before branch creation, ticket status updates, comments, ticket-lock writes, or OpenSpec proposal creation. Report the missing product or technical intent.
-3. Run the Stack Context Preflight. If stack/tooling docs, OpenSpec config, local project guidance catalog, or project guidance discovery review are missing or drifted, stop and route to `configure-dev-environment` and `project-guidance-discover` before mutating Git, ticket provider, or OpenSpec.
-4. Check `git status --porcelain`. If any output exists, stop and report changed files.
-5. Prepare workflow telemetry for the selected ticket. Prefer OpenProject time entries with the configured `openProject.timeTelemetry` activity. Initialize and clear `.codex/agent-telemetry.local.jsonl` with `python -m tools.sdd_cli dev-flow init-telemetry --ticket-key {ticketKey}` only when the OpenProject time-entry path is unavailable. Do not initialize telemetry when only listing Todo tickets.
-6. Switch to the configured base branch and run `git pull --ff-only`.
-7. Create or reuse the configured branch name.
-8. Derive the repository remote name from `git remote` output (e.g., `origin` or `gitea`). Pre-scan branch conflicts before creating or switching branches:
+
+4. Run the Stack Context Preflight. If stack/tooling docs, OpenSpec config, local project guidance catalog, or project guidance discovery review are missing or drifted, stop and route to `configure-dev-environment` and `project-guidance-discover` before mutating Git, ticket provider, or OpenSpec.
+
+4.5. **Initialize trunk.io after tech stack is confirmed.** The lefthook pre-commit hook runs `npx trunk fmt` and `npx trunk check --all --ci --no-fix` on every commit. If trunk hasn't been initialized, these hooks fail and block the first commit. After the tech stack is confirmed, initialize trunk:
+
+    ```bash
+    # Initialize trunk if not already done
+    if [ ! -f .trunk/trunk.yaml ]; then
+      echo "Initializing trunk.io..."
+      npx trunk init 2>&1 || echo "trunk init skipped — will auto-init on first trunk fmt run"
+    fi
+    ```
+
+    Verify trunk is initialized by checking `.trunk/trunk.yaml` exists after the command. If trunk is not available (`npx trunk` not found), report it as a non-blocking warning: "Trunk.io not initialized — first commit may fail if trunk-fmt or trunk-check hooks run." The user can fix it later with `npx trunk init`.
+
+5. Check `git status --porcelain`. If any output exists, stop and report changed files.
+
+6. Log a time entry for the selected ticket via `time-telemetry-upsert` (POST `/api/v3/time_entries`). See Workflow Telemetry section above for the exact payload format. Do not initialize telemetry when only listing tickets.
+
+7. Switch to the configured base branch and run `git pull --ff-only`.
+
+8. Create or reuse the configured branch name.
+
+9. Derive the repository remote name from `git remote` output (e.g., `origin` or `gitea`). Pre-scan branch conflicts before creating or switching branches:
    - `git show-ref --verify refs/heads/{branchName}` for a local branch.
    - `git ls-remote --heads {remoteName} {branchName}` for a remote branch.
-   If both exist and point to different commits, stop and report the conflict. If the remote branch exists and the local branch is missing, create the local branch from the remote only when it descends from the configured base branch.
-9. Push the branch to repository/review provider with upstream tracking using `git push -u {remoteName} {branchName}` (where `{remoteName}` is the detected remote from step 8). If the upstream branch already exists and points to the same commit, treat it as complete; if the push is rejected or would require a non-fast-forward update, stop and report the branch issue.
-10. Analyze the ticket description in an OpenSpec explore style unless OpenSpec is explicitly skipped by policy below.
-11. Update only the managed generated block in the ticket description.
-12. Add a ticket comment with the branch name, base branch, pushed repository branch, and OpenSpec decision, unless a generated comment for the same branch already exists.
-13. Create or update `.codex/delivery-context.local.json` with `ticketKey`, `branch`, `openspecChange` when applicable, and any known PR/artifact/version fields. If an existing lock names a different ticket, fetch the locked ticket through the OpenProject API when OpenProject is selected, otherwise through the selected ticket adapter, and compare its status with the configured `openProject.doneStatus` or default `Done`. If the locked ticket is `Done`, call `EnsureDeliveryContext` with `replaceExisting=true` for the new selected ticket. If the locked ticket is active, missing, ambiguous, or cannot be verified, stop and report the stale-lock blocker. Do not delete the lock merely because the old ticket is QA Done or ready for PROD; replacement is lazy on the next ticket start.
-14. Move the ticket to the configured in-progress status, unless it is already there.
-15. Create an OpenSpec proposal using the `dev-flow-propose-change` skill (`/opsx:propose`) with a change name matching the branch name as closely as OpenSpec allows, unless OpenSpec is explicitly skipped.
+     If both exist and point to different commits, stop and report the conflict. If the remote branch exists and the local branch is missing, create the local branch from the remote only when it descends from the configured base branch.
 
-For step 15, if the branch name contains `/`, convert it to a filesystem-safe kebab-case OpenSpec change id by replacing `/` with `-`. Example: branch `feat/e2eproject-1-create-files-and-folders-for-a-site` becomes OpenSpec change `feat-e2eproject-1-create-files-and-folders-for-a-site`. Use the ticket title and generated planning block as proposal input.
+10. Push the branch to repository/review provider with upstream tracking using `git push -u {remoteName} {branchName}` (where `{remoteName}` is the detected remote from step 9). If the upstream branch already exists and points to the same commit, treat it as complete; if the push is rejected or would require a non-fast-forward update, stop and report the branch issue.
 
-Only move the ticket to the in-progress status after branch creation, repository/review provider push, generated description update, and branch comment all succeed or are confirmed idempotently already complete. Only create the OpenSpec proposal after the ticket is in the in-progress status.
+11. **Feed human ticket text to openspec-explore skill.** Load `.codex/skills/openspec-explore/SKILL.md`. Feed it the human-authored ticket description (fetched in step 1). It produces an exploratory analysis with structure, gaps, risks, and insights.
+
+12. **Run iterative grill-with-docs cycles on the human ticket text (up to 4 cycles).**
+
+    a. **Cycle 1:** grill-with-docs interviews the user on unclear aspects, generating questions about gaps, ambiguities, and missing context.
+    b. **IA answers each question** with the best possible answer based on available context.
+    c. **Cycle 2-4:** Repeat — each cycle, grill-with-docs generates new questions based on the previous answers. The IA answers again.
+    d. **Stop when** either 4 cycles are reached or grill-with-docs has no more questions.
+    e. **Combine all grilled answers** from every cycle into one consolidated grill-with-docs output (refined/clarified requirements with domain knowledge).
+
+    Uses `/grilling` + `/domain-modeling` under the hood. Output: a single comprehensive refined-requirements document built from all cycles.
+
+13. **Curate both outputs into one agile-format IA block.** Take output from step 11 (openspec-explore analysis) + output from step 12 (grill-with-docs refined requirements). The IA curates, merges, and improves both into a single cohesive agile-format block with all sections below. **Critically, extract every "will not implement" decision from grill-with-docs cycles and consolidate them into the "Out of scope" section** — do not leave these decisions scattered in different comments or omitted entirely.
+
+    Full agile-format sections:
+    - Problem / opportunity
+    - User story (As a... I want... So that...)
+    - Concrete acceptance criteria
+    - Scope / affected areas
+    - **Out of scope** — every decision from grill cycles that will NOT be implemented in this ticket (e.g. "Registration: out of scope for MVP", "Analytics: not included", "Rate limiting: deferred to future ticket"). This prevents scattered comments and makes scope boundaries explicit.
+    - Dependencies / assumptions
+    - Validation expectations
+    - Risks
+    - Definition of done
+
+    Then **PATCH** the ticket description with the enrich pattern:
+    - **Fetch** current description + `lockVersion` via the ticket adapter.
+    - **Append** the curated IA block (separator `---` + `IA generated` header + markers) AFTER the original human-authored description.
+    - Preserve all text outside `<!-- ia-generated:start -->` and `<!-- ia-generated:end -->` markers exactly.
+    - On subsequent runs, replace only the content between the markers.
+    - Include current `lockVersion` in the PATCH payload.
+
+14. Add a ticket comment with the branch name, base branch, pushed repository branch, and OpenSpec decision, unless a generated comment for the same branch already exists.
+
+14. Create or update `.codex/delivery-context.local.json` with `ticketKey`, `branch`, `openspecChange` when applicable, and any known PR/artifact/version fields. If an existing lock names a different ticket, fetch the locked ticket through the OpenProject API when OpenProject is selected, otherwise through the selected ticket adapter, and compare its status with the configured `openProject.doneStatus` or default `Done`. If the locked ticket is `Done`, call `EnsureDeliveryContext` with `replaceExisting=true` for the new selected ticket. If the locked ticket is active, missing, ambiguous, or cannot be verified, stop and report the stale-lock blocker. Do not delete the lock merely because the old ticket is QA Done or ready for PROD; replacement is lazy on the next ticket start.
+
+15. Move the ticket to the configured in-progress status, unless it is already there.
+
+16. **Run the OpenSpec propose flow.** Load the `dev-flow-propose-change` skill and follow its Workflow section to propose the change and generate all planning artifacts in one flow:
+
+    a. **Scaffold the change** if not already created:
+       ```bash
+       openspec new change "<change-name>"
+       ```
+       Use the branch name converted to kebab-case: replace `/` with `-`. Example: branch `feat/e2eproject-1-files` becomes `feat-e2eproject-1-files`.
+
+    b. **Generate all planning artifacts in one propose flow.** Use the ticket context, project context from `openspec/config.yaml`, and the `spec-driven` schema rules to create ALL artifacts:
+       - `proposal.md` — what & why
+       - `specs/**/*.md` — behavior specs
+       - `design.md` — how
+       - `tasks.md` — implementation steps with Review Workload Forecast
+
+       Apply the OpenSpec `/opsx:propose` pattern: the AI reads the schema context and rules from `openspec/config.yaml`, reads the ticket description and generated planning block as input, and creates all artifacts in dependency order in a single coherent pass. Do NOT iterate manually with `openspec instructions` — the AI generates each artifact based on the schema template and project context.
+
+    c. **Verify all artifacts were created:**
+       ```bash
+       openspec status --change "<change-name>"
+       ```
+       Confirm that `proposal.md`, `design.md`, `specs/`, and `tasks.md` all show as complete (`[x]`).
+
+17. **Parse workload forecast and set estimated time on the work package:**
+
+    a. **Parse the forecast:**
+       ```bash
+       python -m tools.sdd_cli dev-flow parse-workload-forecast --tasks-path openspec/changes/<change-name>/tasks.md --openspec-change <change-name>
+       ```
+       Extract `estimatedTotalHours` from the result.
+
+    b. **Set estimatedTime on the work package** via the ticket adapter's `set-estimated-time` operation (see `.codex/skills/openproject-sprint-backlog/references/openproject-api.md` → Operations → `set-estimated-time`). Convert hours to ISO-8601 duration (e.g. `5` → `PT5H`, `2.5` → `PT2H30M`). Fetch current `lockVersion` first.
+
+    c. **Log a time entry for the start-ticket stage** via `time-telemetry-upsert` if not already logged (see Workflow Telemetry section above).
+
+Only move the ticket to the in-progress status after branch creation, repository/review provider push, generated description update (steps 11-13), and branch comment (step 14) all succeed or are confirmed idempotently already complete. Only create the OpenSpec proposal (step 16) after the ticket is in the in-progress status.
 
 ## OpenSpec Decision
 
-Default to creating an OpenSpec proposal for feature, bug, and hotfix tickets. Skip OpenSpec only when one of these is true:
+Default to creating an OpenSpec proposal for feature and hotfix tickets. Bug OpenSpec handling is delegated to `dev-flow-file-qa-bug` (Phase 3: Update Parent OpenSpec With Bug Tasks) — bugs append tasks to the **parent's** existing OpenSpec change and do NOT create a new one.
+
+Skip OpenSpec only when one of these is true:
 
 - the ticket contains an explicit `no-openspec` marker,
 - the ticket is clearly labeled or titled as `chore` or `ops-only`,
@@ -143,9 +262,21 @@ feat/e2eproject-1-create-files-and-folders-for-a-site
 
 The managed generated block is the durable destination for grill-style product and ticket clarity. Do not add a separate `CONTEXT.md`, ADR, or upstream-default grill skill artifact while starting a ticket.
 
-Use this exact generated section in the ticket description:
+### ⚠️ CRITICAL: Append — Never Replace
+
+The IA generated block MUST be APPENDED after the original human-written description, never replacing it. The PATCH payload sent to the ticket provider MUST contain the FULL description (original human text + separator + IA generated block).
+
+### On First Creation (no markers exist yet)
+
+When this is the first time writing to the ticket description:
+
+1. **Fetch** the current description from the ticket provider (this is the human-authored original).
+2. **Append** the separator, `IA generated` header, markers, and generated content AFTER the original text.
+3. **PATCH** with the full reconstructed description:
 
 ```text
+[Human-authored original description — preserved exactly as-is]
+
 ---
 
 IA generated
@@ -181,9 +312,61 @@ Definition of done:
 <!-- ia-generated:end -->
 ```
 
-On rerun, replace only the content between `<!-- ia-generated:start -->` and `<!-- ia-generated:end -->`. Preserve all human-written text outside the markers exactly. If only one marker exists, stop and ask for manual cleanup.
+### On Subsequent Updates (markers exist)
 
-Acceptance criteria must be concrete and testable. Reject and regenerate criteria containing generic wording such as `works correctly`, `as expected`, or `properly implemented`.
+On rerun:
+
+1. **Fetch** the current description from the ticket provider.
+2. **Keep everything before** `<!-- ia-generated:start -->` unchanged (this includes the original human text).
+3. **Replace only** the content between `<!-- ia-generated:start -->` and `<!-- ia-generated:end -->`.
+4. **PATCH** with the full description, preserving the human-authored portion outside the markers.
+
+If only one marker exists (`<!-- ia-generated:start -->` without a matching `<!-- ia-generated:end -->`, or vice versa), stop and ask for manual cleanup.
+
+### Generated Block Format Reference
+
+This is the block that gets appended after the original human text (shown here in isolation):
+
+```text
+
+---
+
+IA generated
+
+<!-- ia-generated:start -->
+
+Problem / opportunity:
+...
+
+User story:
+- As a ...
+- I want ...
+- So that ...
+
+Acceptance criteria:
+- ...
+
+Scope / affected areas:
+- ...
+
+Dependencies / assumptions:
+- ...
+
+Validation expectations:
+- ...
+
+Risks:
+- ...
+
+Definition of done:
+- ...
+
+<!-- ia-generated:end -->
+```
+
+### Acceptance Criteria Quality
+
+Acceptance criteria must be concrete and testable. Reject and regenerate criteria containing generic wording such as `works correctly`, `as expected`, or `properly implemented`. Every acceptance criterion will drive a vertical TDD cycle during implementation: one behavior-focused test through a public interface, RED confirmation, minimal code, GREEN confirmation. Criteria must be verifiable through committed automated test coverage — not manual checks deferred to QA.
 
 Concrete examples:
 
@@ -200,7 +383,7 @@ Use the selected ticket adapter only. Never use MCPs, Docker containers, or dire
 
 Load credentials from `.codex/client-tools.local.json` or optional environment overrides only. Avoid echoing request headers, tokens, or full credential-bearing URLs.
 
-Use provider-neutral operations from `.codex/skills/_shared/provider-adapter-contract.md`: `list`, `read`, `enrich`, `move-state`, `comment`, and `verify-marker`. The selected ticket adapter translates those operations to concrete endpoints, payload fields, lock/version mechanics, and state names.
+Use provider-neutral operations (`list`, `read`, `enrich`, `move-state`, `comment`, and `verify-marker`). The selected ticket adapter translates those operations to concrete endpoints, payload fields, lock/version mechanics, and state names.
 Fetch the current `lockVersion` before OpenProject description or status updates.
 
 To move a ticket to the in-progress status, resolve the configured target state through the selected ticket adapter. Do not guess a state id or provider-specific lock/version value.
@@ -211,8 +394,11 @@ Use `IA generated branch: {branchName}` as the stable branch comment marker. If 
 
 Report the selected ticket, branch, OpenSpec change or explicit no-OpenSpec rationale, ticket lock path, telemetry initialization, validation performed, ticket comment marker, and handoff to `dev-flow-implement-ticket`.
 
+If the ticket was a bug (status: New) and was re-routed to `dev-flow-file-qa-bug`, report the bug ticket, parent ticket, and the full bug flow output (see `dev-flow-file-qa-bug` → Output section).
+
 ## Failure Rules
 
+- Bug routing failure: if the ticket is a bug (status: New) but `dev-flow-file-qa-bug` cannot be loaded or followed, stop and report the routing failure — do not apply the feature flow to a bug.
 - Dirty working tree: stop before branch creation or ticket-provider mutation.
 - Missing selected ticket adapter config: explain the missing setup and reference `references/configuration.md`.
 - Invalid or empty title slug: fall back to a ticket-key-only branch segment.

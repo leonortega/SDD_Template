@@ -136,12 +136,9 @@ Skills loaded in the Skill Pre-Analysis above are NOT decorative. In EVERY TDD c
 - **GREEN phase**: Apply `ponytail full` (minimal code) + stack-specific framework conventions + `clean-code` (naming, functions) + `security-best-practices` (input validation) + `solid` (focused interfaces)
 - **REFACTOR phase**: Apply `clean-architecture` (Dependency Rule) + `clean-code` (smell removal) + `solid` (SRP, OCP) + stack-specific architecture patterns
 
-**Check MCP routing before code searches**
+**Check MCP routing for service interactions**
 
-Before searching code or documentation, route through the correct MCP channel per `.codex/mcp-instructions.md`:
-- Source code → `codebase-memory-mcp` (`search_graph`, `get_code_snippet`, etc.)
-- Documentation/skills → `monorepo-docs-search` (`search_documentation`)
-- Service interaction → service MCPs (gitea, openproject, grafana)
+Per `.codex/mcp-instructions.md`, route service interactions through the service MCPs (gitea, openproject, grafana). Repository content search uses built-in file/search tools.
 
 Declare which skills were actively applied at the start of each response body with a `Skills used:` block including per-skill rationale.
 
