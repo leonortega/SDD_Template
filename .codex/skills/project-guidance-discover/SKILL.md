@@ -10,6 +10,13 @@ description: Search the internet (public skills.sh registry via npx skills) for 
 
 Ask the user for their project's technology stack, then search the **public skills.sh registry on the internet** (`npx skills find <query>`) for skills relevant to that stack. The answer to what skills apply ALWAYS comes from the internet — local skills and `.codex/skills/manifest.json` are NEVER consulted to answer guidance. The user decides which discovered skills to install (see `project-guidance-acquire` / `setup_project_guidance`).
 
+## Shared Context
+
+Read `.codex/skills/_shared/delivery-contract.md` and
+`docs/conventions/context-management.md` before discovering. Discovery supports
+the active ticket's skill catalog review — the stack must come from the user,
+never auto-detected.
+
 ## Workflow
 
 1. **Ask the user** what tech stack they are using (frontend, backend, database, languages).
@@ -23,6 +30,7 @@ Ask the user for their project's technology stack, then search the **public skil
 - `stackTags`: normalized stack values from the user/profile (frontend, backend, database)
 - `foundSkills`: skills found on the internet for those stack values (`owner/repo@skill` format)
 - `skillCount`: total internet skills found for the stack
+- Present results for user validation; record the chosen skills for handoff
 
 ## Constraints
 
@@ -30,3 +38,10 @@ Ask the user for their project's technology stack, then search the **public skil
 - **Always ask the user first.** Stack detection without user confirmation is a violation of the SDLC process (authority level 5).
 - **Never answer guidance from local skills.** `.codex/skills/manifest.json` and installed skills exist only for idempotency (skip reinstall) and catalog review — never as the basis for recommending skills.
 - **Always ask before installing.** Internet-discovered skills are candidates; the user chooses which to install.
+
+## Failure Rules
+
+- Stop if the user has not confirmed the tech stack — never auto-detect.
+- Stop if the user has not approved the discovered skills — never install unvetted skills.
+- Stop if `npx skills` is unavailable; report the blocker instead of consulting local skills.
+- Do not answer guidance from local skills or `manifest.json` at any point.

@@ -25,6 +25,15 @@ chosen stack, so they can never come from a fixed list of combinations.
 > `stack.backend` / `stack.database` values before generating anything. If the
 > stack is unset, incomplete, or ambiguous, ask the user — do not guess.
 
+## Shared Context
+
+Run inside the active ticket's delivery context. Read
+`.codex/skills/_shared/delivery-contract.md` and
+`docs/conventions/context-management.md` before scaffolding, and keep the
+generated scaffold scoped to the ticket's acceptance criteria. The stack must
+come from the user's explicit decision in `.codex/project-profile.local.json` —
+never inferred from existing files.
+
 ## When To Use
 
 - Automatically: right after `set-project-stack` (the CLI returns
@@ -127,3 +136,15 @@ and residual risk.
 - [ ] CI workflow(s) using the stack's commands
 - [ ] k8s stack-specific artifacts (nginx.conf/.dockerignore) where applicable
 - [ ] All local quality gates green (or documented residual risk)
+
+## Output
+
+Report the generated file list, the validation results of each local quality
+gate (build, tests, Dockerfiles, k8s manifests), any residual risk for gates
+that could not run, and the handoff point to the next delivery stage.
+
+## Failure Rules
+
+- Stop if the stack is unset, incomplete, or ambiguous — ask the user, do not guess.
+- Stop if a local quality gate fails; fix before reporting done.
+- Stop if the generated scaffold contradicts the selected stack or ticket scope.

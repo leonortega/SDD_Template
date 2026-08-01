@@ -379,7 +379,7 @@ def render_ticket_comment(comment_type: str, input_json: str) -> str:
 
 
 def audit_skill_contracts(
-    root: Path, include_configure: bool = False
+    root: Path, include_configure: bool = True
 ) -> dict[str, Any]:
     """Audit SKILL.md files for required sections and terms."""
     profile_findings = profile_audit_findings(root)
@@ -978,7 +978,7 @@ def run_dev_flow(args: list[str]) -> int:
             options.get("fallback", ""),
         ),
         "audit-skill-contracts": lambda: audit_skill_contracts(
-            root, options.get("include-configure", "false").lower() == "true"
+            root, options.get("include-configure", "true").lower() == "true"
         ),
         "parse-workload-forecast": lambda: parse_workload_forecast(
             require(options, "tasks-path"),

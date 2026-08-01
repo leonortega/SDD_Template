@@ -584,6 +584,78 @@ Local vs CI split: local validation is fast feedback on touched behavior; Gitea 
 validation is the authoritative full gate. The CI image intentionally has no stack
 runtimes — the lefthook pre-push hook runs product tests on the dev machine.
 
+### 6.1 Local PR Validation Loop (reproduce CI in `sdd-e2e-ci:local`)
+
+**Purpose.** PR Validation (`pr-validation.yml`) often fails in CI for reasons that are
+cheap to catch locally. This process runs the **exact same gates, in the exact same
+order, inside the same `sdd-e2e-ci:local` image** the CI job uses, so errors are fixed
+before push and the PR passes on the first CI run.
+
+**Prerequisites.**
+
+1. Docker is running (`docker version` answers).
+2. The CI image exists — build it if missing:
+
+   ```bash
+   python -m tools.sdd_cli environment-lab build-gitea-images
+   docker images sdd-e2e-ci:local
+   ```
+
+**Run the loop.** Mount the repository read-write into the container and execute each
+gate with the identical command from `pr-validation.yml`. The `.semgrep-rules.json`
+content equals the workflow's fallback rule set, so the hardcoded `--config` list below
+is the faithful equivalent:
+
+```bash
+REPO="$(pwd)"
+run_gate() { # usage: run_gate "<shell command>"
+  echo "=== RUN: $*"
+  # set -euo pipefail mirrors the CI step shells (abort on first failure,
+  # e.g. an invalid *.json mid-pipeline must not be masked by a later valid file)
+  docker run --rm -v "$REPO":/workspace -w /workspace sdd-e2e-ci:local bash -lc "set -euo pipefail; $*"
+  rc=$?
+  echo "=== EXIT: $rc"
+  [ $rc -ne 0 ] && { echo "GATE FAILED: $*"; exit $rc; }
+}
+
+# 1. JSON validation (every *.json must parse)
+#   single-quoted so $file is expanded inside the container, not by the outer shell
+run_gate 'find . -path "./.git" -prune -o -name "*.json" -print | while IFS= read -r file; do python3 -m json.tool "$file" >/dev/null; done'
+# 2. Secret scan (Gitleaks)
+run_gate "gitleaks detect --source . --redact --no-git"
+# 3. SAST scan (Semgrep) — rules equal to .semgrep-rules.json
+run_gate "semgrep scan --config p/typescript --config p/javascript --config p/python --config p/csharp --error --verbose ."
+# 4. SCA scan (Trivy) — uses the DB pre-cached in the image
+run_gate "trivy fs --format table --exit-code 1 --no-progress --skip-db-update ."
+# 5. IaC scan (Checkov) — blocking, config-file skip list applies
+run_gate "checkov -d . --compact --config-file .checkov.yml"
+# 6. Repo tooling tests
+run_gate "python3 -m pytest tools/sdd_cli/tests/ -q"
+
+echo "ALL GATES PASSED"
+```
+
+**Gate-by-gate pass criteria (mirrors `pr-validation.yml`).**
+
+| # | Gate | Passes when | Common local failures to fix before push |
+|---| ---- | ----------- | ----------------------------------------- |
+| 1 | JSON validation | every `*.json` parses via `python3 -m json.tool` | inline `//` comments, trailing commas, encoding issues |
+| 2 | Gitleaks | exit 0 — no leaked secrets in the working tree | real tokens in tracked files, test fixtures with fake secrets (add to `.gitleaksignore` only for intentional templates) |
+| 3 | Semgrep | exit 0 with `--error` — no findings at the selected rule level | code matching `p/typescript` / `p/javascript` / `p/python` / `p/csharp` rules |
+| 4 | Trivy | exit 0 — no vulnerabilities at default severity | vulnerable lockfiles/dependency manifests; DB must be pre-cached in the image (`--skip-db-update`) |
+| 5 | Checkov | exit 0 — IaC checks pass (**blocking** since `--soft-fail` was removed) | unskipped `CKV_K8S_*` / `CKV_SECRET_*` findings; extend `.checkov.yml` `skip-check` only for intentional template values |
+| 6 | Repo tooling tests | `pytest tools/sdd_cli/tests/` all green | broken tests, fixture drift, import errors |
+
+**Definition of done.** All six gates exit 0 inside `sdd-e2e-ci:local` **before** opening
+or updating the PR. If any gate fails, fix the code/config, re-run the loop from the
+start (gates are order-independent but are run in CI order), and only push when the loop
+prints `ALL GATES PASSED`.
+
+**What is NOT covered locally (CI-only):** the `codex-reviewed` label gate (requires the
+PR + Gitea API) and checkout networking. Everything else is byte-for-byte the same
+command as the CI job, so a green local loop is strong evidence the PR Validation run
+will pass.
+
 ---
 
 ## 7. Stable Markers (Idempotency Contract)

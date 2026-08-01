@@ -17,9 +17,13 @@ After a CI deploy to any environment (DEV, QA, or PROD), the Grafana SDD Service
 ## Shared Context
 
 Read these docs for background:
+- `.codex/skills/_shared/delivery-contract.md` → deploy stage contract, handoff markers
+- `docs/conventions/context-management.md` → durable context rules
 - `docs/architecture/deployment.md` → Grafana provisioning, dashboard architecture
 - `.codex/skills/grafana-observability/SKILL.md` → Grafana patterns
 - `knowledge/README.md` → past issues / gotchas
+
+Run this skill after a deploy completes for the active ticket; scope dashboard edits to the deployed ticket's apps and environments.
 
 ## Sources Of Truth
 
@@ -413,3 +417,16 @@ Static markdown table with all infrastructure services. Update the environment n
 | Grafana returns 404 for dashboard | Dashboard never created | Create from scratch using the template |
 | New app not showing | Not in `apps.json` yet | Add to `apps.json` first, then run this skill |
 | Nexus URL fetch fails | Nexus credentials missing or service not running | Try `admin:admin123`, check Docker Compose |
+
+## Output
+
+Report the dashboard JSON changes (version bump, panels added/removed/updated),
+the JSON validation results, the Grafana API push outcome (or the
+provisioned-file fallback), and the handoff status for the deploy ticket.
+
+## Failure Rules
+
+- Stop if `apps.json` cannot be read — the dashboard must match app topology.
+- Stop if the edited JSON fails validation or violates the Infinity rules.
+- Stop if the dashboard `uid` would change or `version` would decrease.
+- Never push via API to provisioned dashboards and claim success; fall back to the file change.

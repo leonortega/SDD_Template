@@ -2,6 +2,19 @@
 
 Manage OpenProject work packages through sprint and backlog grooming workflows.
 
+## Overview
+
+Use this skill for ticketed sprint planning, backlog refinement, work package
+hierarchy management, and status reporting on OpenProject, per the shared
+delivery contract.
+
+## Shared Context
+
+Read `.codex/skills/_shared/delivery-contract.md` and
+`docs/conventions/context-management.md` before grooming. Verify the active
+ticket and sprint state against live OpenProject data before moving or
+estimating work packages.
+
 ## Scope
 
 This skill covers sprint planning, backlog refinement, work package hierarchy management, and status reporting within OpenProject.
@@ -54,3 +67,21 @@ python -m tools.sdd_cli dev-flow render-openproject-comment \
 - OpenProject API adapter: `.codex/skills/openproject-sprint-backlog/references/openproject-api.md`
 - OpenProject MCP: `openproject` server in `.vscode/mcp.json`
 - OpenProject built-in MCP: `{baseUrl}/mcp` (Enterprise 17.2+)
+
+## Workflow
+
+Follow the Sprint Workflow steps above (planning, execution, review, QA, done)
+and use the `render-openproject-comment` CLI for status comments. Keep every
+move and estimate within the active ticket's acceptance criteria.
+
+## Output
+
+Report the work packages created/updated, estimation applied, sprint board
+state, validation of the grooming rules, and the handoff to the next delivery
+stage.
+
+## Failure Rules
+
+- Stop and confirm before changing work packages outside the active ticket scope.
+- Stop if OpenProject is unreachable or the configured statuses/activities are missing.
+- Do not estimate or move work packages without matching configured workflow statuses.
