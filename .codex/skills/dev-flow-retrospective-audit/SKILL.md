@@ -23,8 +23,8 @@ It does not deliver tickets, deploy releases, or promote environments. It audits
 
 ## Shared Context
 
-Follow `.codex/skills/_shared/skill-startup.md` with `docs/architecture.md`, `docs/development.md`, and
-`docs/deployment.md` as stage-specific docs. Treat the delivery contract as the policy
+Follow `.codex/skills/_shared/skill-startup.md` with `docs/architecture/system.md`, `docs/conventions/development.md`, and
+`docs/architecture/deployment.md` as stage-specific docs. Treat the delivery contract as the policy
 baseline and apply its Skill Synchronization Rule before changing any delivery or configure skill.
 
 ## Operating Modes
@@ -109,11 +109,11 @@ Inspect the smallest useful set first, then expand as needed:
 ### General Evidence (read for all audit types)
 
 - `.codex/skills/_shared/delivery-contract.md`
-- `.codex/memory/MEMORY.md` and relevant `.codex/memory/*.md` files
-- `docs/context-management.md`
-- `docs/architecture.md`
-- `docs/development.md`
-- `docs/deployment.md`
+- `knowledge/README.md` and relevant `knowledge/*.md` files
+- `docs/conventions/context-management.md`
+- `docs/architecture/system.md`
+- `docs/conventions/development.md`
+- `docs/architecture/deployment.md`
 - `.codex/skills/dev-flow-continue-implementation/SKILL.md`
 - `.codex/skills/dev-flow-implement-ticket/SKILL.md`
 - `.codex/skills/dev-flow-pr-review-agent/SKILL.md`
@@ -261,7 +261,7 @@ Apply one of these outcomes:
 | `Regression test`              | A script/template/check should enforce the rule                             | Add test                                    |
 | `Quality gate update`          | CI or local validation should catch the issue                               | Update CI workflow                          |
 | `Docs update`                  | Durable knowledge → promote to `docs/`                                      | Edit relevant `docs/*.md`                   |
-| `Memory update`                | Reusable non-authoritative → store in `.codex/memory/`                      | Edit memory file                            |
+| `Knowledge update`                | Reusable non-authoritative → store in `knowledge/`                      | Edit knowledge file                          |
 | `Follow-up ticket`             | Change is product work, infra work, or too large                            | Create ticket                               |
 
 For `eval-regression` findings, diagnose the root cause before choosing an outcome:
@@ -287,7 +287,7 @@ Prefer tests or deterministic validation for enforceable rules. Prefer skill tex
 
 For automatic `post-prod-ticket-release`, recommendation outcomes are advisory only. Repeated or high-severity findings
 may recommend
-docs, delivery contract, skill, configure, test, memory, or Promptfoo eval test case updates, but they must not be
+docs, delivery contract, skill, configure, test, knowledge, or Promptfoo eval test case updates, but they must not be
 applied during the automatic audit.
 
 For `eval-driven-improvement` in `apply` sub-mode, outcomes may be applied **only after**:

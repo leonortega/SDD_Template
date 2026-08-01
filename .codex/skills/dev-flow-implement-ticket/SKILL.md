@@ -14,7 +14,7 @@ Use this skill after `dev-flow-start-ticket` has created or reused the implement
 
 ## Shared Context
 
-Before implementation, handoff, or review work, follow `.codex/skills/_shared/skill-startup.md` with `docs/development.md` as the stage-specific doc. Read `.codex/project-profile.json`, then load the selected ticket, repository/review, stack, and E2E adapters only when the current step needs them.
+Before implementation, handoff, or review work, follow `.codex/skills/_shared/skill-startup.md` with `docs/conventions/development.md` as the stage-specific doc. Read `.codex/project-profile.json`, then load the selected ticket, repository/review, stack, and E2E adapters only when the current step needs them.
 
 ## Workflow Telemetry
 
@@ -211,6 +211,17 @@ the selected runner validation helper from `configure-dev-environment`
 
 Use the selected runner validation helper whenever repository workflow fails before repository validation commands run, or logs show image pull failures, missing runtime tools, checkout networking failures, missing scanners, missing shell tools, or job-container tool incompatibility.
 
+### 2.5 Knowledge Consult
+
+Before starting the TDD cycle, consult the knowledge base for known errors, patterns, anti-patterns, and lessons relevant to the change's area:
+
+```bash
+python -m tools.sdd_cli knowledge-search search --query <feature or module terms>
+python -m tools.sdd_cli knowledge-search search --list-topics
+```
+
+Fold relevant entries into the implementation approach and risk analysis. Record `Knowledge consulted: <files>` or `Knowledge consulted: none` in the PR body and ticket handoff comment. If the consult surfaces a reusable lesson the change depends on, capture it via `knowledge/README.md` and the `docs-knowledge-maintenance` skill during the Context Findings Review.
+
 ### 3. Implement — Tests First, Then Code
 
 See `.codex/skills/_shared/pipeline-tdd-cycle.md` for the common TDD test-first pattern. The following are feature-flow-specific additions:
@@ -237,7 +248,7 @@ Implementation is not complete until:
 - repository PR validation passes,
 - **coverage meets `coverage.minimumPercent`** — verified locally when a command is available, or via CI as the authoritative gate.
 
-Before PR and ticket provider review handoff, re-read the active OpenSpec `tasks.md` and stop if any `- [ ]` task remains, including final quality, Context Findings, PR review feedback, validation, or handoff tasks. Mark a task complete only when the matching evidence is present in the PR body, ticket handoff comment, validation output, docs/context review result, or memory status.
+Before PR and ticket provider review handoff, re-read the active OpenSpec `tasks.md` and stop if any `- [ ]` task remains, including final quality, Context Findings, PR review feedback, validation, or handoff tasks. Mark a task complete only when the matching evidence is present in the PR body, ticket handoff comment, validation output, docs/context review result, or knowledge status.
 
 For web/API application work, preserve the delivery health contract required by deployment promotion:
 
@@ -275,20 +286,20 @@ At each workflow-step checkpoint with tracked changes:
 1. Finish the step changes.
 2. Review `git status` and the relevant diff.
 3. Run the smallest relevant validation for that step, or document why validation is deferred to CI.
-4. Run Context Findings Review before staging docs, memory, or workflow-policy changes.
+4. Run Context Findings Review before staging docs, knowledge, or workflow-policy changes.
 5. Stage only files related to that completed step.
 6. Commit with a message that satisfies the configured commit hook and starts with the ticket or OpenSpec id.
 7. Let hooks run naturally. Do not bypass hooks unless the user explicitly requests that in the current chat.
 
-Create checkpoint commits for OpenSpec refinement, implementation, tests or reusable QA coverage, docs/context/memory updates, review-feedback fixes, and ticket-scoped tooling/config fixes when those steps change tracked files. Skip empty commits. Do not intentionally leave broken intermediate commits; if two steps must stay together to keep the repository valid, combine them and report that reason in the handoff. Push the branch after the planned commit set is ready, and push again after each later feedback-fix commit.
+Create checkpoint commits for OpenSpec refinement, implementation, tests or reusable QA coverage, docs/context/knowledge updates, review-feedback fixes, and ticket-scoped tooling/config fixes when those steps change tracked files. Skip empty commits. Do not intentionally leave broken intermediate commits; if two steps must stay together to keep the repository valid, combine them and report that reason in the handoff. Push the branch after the planned commit set is ready, and push again after each later feedback-fix commit.
 
 Do not automatically stash normal ticket progress. Use stash only for unrelated local or user changes that block the current step, and document the stash in the handoff when it affects delivery flow.
 
 ### Context Findings Review
 
-Before committing, apply the Context Findings classification from `docs/context-management.md` and the memory update process from `.codex/memory/retrieval-policy.md`. If the finding changes enforceable automation behavior, update `.codex/skills/_shared/delivery-contract.md` plus related skills and tests.
+Before committing, apply the Context Findings classification from `docs/conventions/context-management.md` and the knowledge update process from `knowledge/README.md`. If the finding changes enforceable automation behavior, update `.codex/skills/_shared/delivery-contract.md` plus related skills and tests.
 
-If implementation discovers durable authoritative knowledge, update the matching doc in the same PR. If it discovers reusable non-authoritative knowledge, update `.codex/memory/`. If no durable knowledge was discovered, record `Docs: no durable context changes` in the PR body and ticket handoff comment.
+If implementation discovers durable authoritative knowledge, update the matching doc in the same PR. If it discovers reusable non-authoritative knowledge, update `knowledge/`. If no durable knowledge was discovered, record `Docs: no durable context changes` in the PR body and ticket handoff comment.
 
 ### 8. Coverage Verification Before PR
 
@@ -400,7 +411,7 @@ The PR body must include:
 - infra validation fixes applied
 - Context findings: added/updated/none
 - Docs updated: <files> or Docs: no durable context changes
-- `Memory updated: <files>` or `Memory updated: none`
+- `Knowledge updated: <files>` or `Knowledge updated: none`
 - Delivery risk: low/standard/high
 - Review workload forecast: low/medium/high and split/exception decision when applicable
 - Reviewers (pending — will be assigned after AI review in Section 11.5): <usernames>
@@ -459,7 +470,7 @@ The ticket was already moved to `Developed` (OpenProject ID 8) in Section 10 (im
    - E2E expectations for QA when browser acceptance is relevant, or `E2E expectations for QA: none`
    - Context findings: added/updated/none
    - Docs updated: <files> or Docs: no durable context changes
-   - `Memory updated: <files>` or `Memory updated: none`
+   - `Knowledge updated: <files>` or `Knowledge updated: none`
    - Delivery risk: low/standard/high
    - Review workload forecast: low/medium/high and split/exception decision when applicable
    - Assumptions recorded: <short list or none>

@@ -18,7 +18,7 @@ Use this report skeleton for read-only audits and proposals. The canonical findi
 - QA evidence, QA bug, rollback, or hotfix evidence:
 - Agent telemetry, cached-token data, retries, and elapsed time:
 - Agent workflow eval cases or results:
-- Relevant docs, delivery contract, skill, configure, or memory files:
+- Relevant docs, delivery contract, skill, configure, or knowledge files:
 
 ## Findings
 

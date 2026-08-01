@@ -14,7 +14,6 @@
         "dev-flow-propose-change/SKILL.md",
         "dev-flow-explore-change/SKILL.md",
         "dev-flow-implement-ticket/SKILL.md",
-        "dev-flow-implement-change/SKILL.md",
         "dev-flow-apply-change/SKILL.md",
         "dev-flow-verify-change/SKILL.md",
         "dev-flow-archive-change/SKILL.md"
@@ -22,7 +21,10 @@
     },
     "implement": {
       "description": "Implementation flow: continue delivery, change implementation, TDD",
-      "skills": ["dev-flow-continue-implementation/SKILL.md", "tdd/SKILL.md"]
+      "skills": [
+        "dev-flow-continue-implementation/SKILL.md",
+        "tdd/SKILL.md"
+      ]
     },
     "review": {
       "description": "PR review: agent review, feedback loop, complexity review",
@@ -33,7 +35,7 @@
       ]
     },
     "qa": {
-      "description": "QA deployment, bug lifecycle (file → fix → PR → handoff), and E2E QA",
+      "description": "QA deployment, bug lifecycle (file \u2192 fix \u2192 PR \u2192 handoff), and E2E QA",
       "skills": [
         "dev-ops-deploy-qa/SKILL.md",
         "dev-ops-post-merge-deploy/SKILL.md",
@@ -53,12 +55,15 @@
       "description": "Pipeline status and retrospective audits",
       "skills": [
         "dev-flow-pipeline-status/SKILL.md",
-        "dev-flow-retrospective-audit/SKILL.md"
+        "dev-flow-retrospective-audit/SKILL.md",
+        "docs-knowledge-maintenance/SKILL.md"
       ]
     },
     "parallel": {
       "description": "Multi-ticket parallel coordination",
-      "skills": ["dev-flow-parallel-ticket-coordinator/SKILL.md"]
+      "skills": [
+        "dev-flow-parallel-ticket-coordinator/SKILL.md"
+      ]
     },
     "config": {
       "description": "Environment setup and configuration",
@@ -69,8 +74,11 @@
       ]
     },
     "guidance": {
-      "description": "Project stack detection and internet skill discovery (npx skills registry, never local)",
-      "skills": ["project-guidance-discover/SKILL.md"]
+      "description": "Project stack detection, internet skill discovery (npx skills registry, never local), and skill acquisition",
+      "skills": [
+        "project-guidance-discover/SKILL.md",
+        "project-guidance-acquire/SKILL.md"
+      ]
     },
     "plan": {
       "description": "Planning and design: domain modeling, architecture, grill-style questioning",
@@ -112,7 +120,6 @@
         "playwright/SKILL.md",
         "playwright-interactive/SKILL.md",
         "e2e-testing-patterns/SKILL.md",
-        "test-driven-development/SKILL.md",
         "webapp-testing/SKILL.md"
       ]
     },
@@ -137,16 +144,21 @@
     },
     "openproject": {
       "description": "OpenProject sprint planning, backlog grooming, status reporting",
-      "skills": ["openproject-sprint-backlog/SKILL.md"]
+      "skills": [
+        "openproject-sprint-backlog/SKILL.md"
+      ]
     },
     "nexus": {
       "description": "Nexus repository management, artifact promotion, REST API scripting",
-      "skills": ["nexus-repository-management/SKILL.md"]
+      "skills": [
+        "nexus-repository-management/SKILL.md"
+      ]
     },
     "observability": {
-      "description": "Grafana, Seq, Dozzle — dashboards, queries, alerting, log correlation, logging patterns",
+      "description": "Grafana, Seq, Dozzle \u2014 dashboards, queries, alerting, log correlation, logging patterns",
       "skills": [
         "grafana-observability/SKILL.md",
+        "grafana-dashboards/SKILL.md",
         "grafana-board-update/SKILL.md",
         "dashboarding/SKILL.md",
         "grafana-oss/SKILL.md",
@@ -159,6 +171,7 @@
       "description": "K8s manifest authoring, Docker Compose conversion, cluster maintenance, K8s patterns, Docker builds",
       "skills": [
         "kubernetes-manifest-authoring/SKILL.md",
+        "dev-ops-configure-k8s/SKILL.md",
         "docker-maintenance/SKILL.md",
         "kubernetes-specialist/SKILL.md",
         "kubernetes-patterns/SKILL.md",

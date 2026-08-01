@@ -88,7 +88,7 @@ While TLS is important for production deployments, most development work will be
 
 Source: https://github.com/openai/skills/tree/main/skills/.curated/security-best-practices
 
-Before using this repo-local copy for ticketed delivery, read `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md`. Apply the active ticket scope, repository validation gates, secret-handling rules, and handoff expectations before changing code, tests, local config, QA evidence, deployment behavior, or security documentation.
+Before using this repo-local copy for ticketed delivery, read `.codex/skills/_shared/delivery-contract.md` and `docs/conventions/context-management.md`. Apply the active ticket scope, repository validation gates, secret-handling rules, and handoff expectations before changing code, tests, local config, QA evidence, deployment behavior, or security documentation.
 
 Pair this skill with the selected future stack guidance when a product stack exists.
 

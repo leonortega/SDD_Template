@@ -392,24 +392,11 @@ def init_local_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
     )
     ensure_seed_file(
         root,
-        ".codex/memory/memory_summary.md",
-        "# Memory Summary\n\nNo consumer project memories recorded yet.\n",
-        result,
-        dry_run,
-    )
-    ensure_seed_file(
-        root,
-        ".codex/memory/MEMORY.md",
-        "# Repository Memory Index\n\n- `memory_summary.md`: compact startup context.\n"
-        "- `retrieval-policy.md`: memory read/write rules.\n",
-        result,
-        dry_run,
-    )
-    ensure_seed_file(
-        root,
-        ".codex/memory/retrieval-policy.md",
-        "# Memory Retrieval And Write Policy\n\nUse memory as guidance only. "
-        "Verify against current files and live tools before acting.\n",
+        "knowledge/README.md",
+        "# Knowledge Base\n\nOperational knowledge that agents consult while "
+        "implementing, debugging, reviewing, and fixing code. No consumer project "
+        "knowledge recorded yet. Read the category folders under `knowledge/` and "
+        "use the `docs-knowledge-maintenance` skill when adding entries.\n",
         result,
         dry_run,
     )

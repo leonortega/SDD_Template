@@ -2,16 +2,16 @@
   "SDD_TOOL_MANIFEST": ".codex/sdd-tool-version.json",
   "SDD_TOOL_INCLUDE_DIRS": [
     ".agents",
-    ".cline",
     ".codex/skills",
     ".gitea/workflows",
     "docs",
     "infra",
+    "knowledge",
     "tools",
     ".vscode"
   ],
-  "SDD_TOOL_INCLUDE_EMPTY_DIRS": [".clinerules"],
-  "SDD_TOOL_TOOL_FILES": [".cline/create_skill_links.py"],
+  "SDD_TOOL_INCLUDE_EMPTY_DIRS": [],
+  "SDD_TOOL_TOOL_FILES": [],
   "SDD_TOOL_EXCLUDE_PARTS": [
     "__pycache__",
     ".git/",
@@ -21,16 +21,21 @@
     "node_modules",
     ".trunk"
   ],
-  "SDD_TOOL_EXCLUDE_SEGMENTS": ["data", "logs", "pgdata"],
-  "SDD_TOOL_EXCLUDE_SUFFIXES": [".pyc", ".pyo"],
+  "SDD_TOOL_EXCLUDE_SEGMENTS": [
+    "data",
+    "logs",
+    "pgdata"
+  ],
+  "SDD_TOOL_EXCLUDE_SUFFIXES": [
+    ".pyc",
+    ".pyo"
+  ],
   "SDD_TOOL_PRESERVE_FILES": [
     ".codex/client-tools.local.json",
     ".codex/environment-urls.local.json",
     ".codex/project-profile.local.json",
     ".codex/quality.local.json",
-    ".codex/memory/MEMORY.md",
-    ".codex/memory/memory_summary.md",
-    ".codex/memory/retrieval-policy.md"
+    "knowledge/README.md"
   ],
   "SDD_TOOL_PRESERVE_EXAMPLE_FILES": []
 }

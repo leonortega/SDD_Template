@@ -169,7 +169,7 @@ Use this skill to apply an OpenSpec change inside the repository delivery workfl
 
 ## Shared Context
 
-Before ticketed implementation, read `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md`. Keep changes scoped to the active ticket or explicit change, run the needed validation, and preserve handoff details for the caller.
+Before ticketed implementation, read `.codex/skills/_shared/delivery-contract.md` and `docs/conventions/context-management.md`. Keep changes scoped to the active ticket or explicit change, run the needed validation, and preserve handoff details for the caller.
 
 ## Skill Pre-Analysis
 

@@ -9,13 +9,13 @@ description: Review a specific pull request through the selected review adapter 
 
 ## Overview
 
-Use this skill to review one explicit repository pull request. It is invoked by `dev-flow-implement-change` after PR creation or directly by a user; it is not a recurring polling workflow.
+Use this skill to review one explicit repository pull request. It is invoked by `dev-flow-implement-ticket` after PR creation or directly by a user; it is not a recurring polling workflow.
 
 For exact repository/review provider API endpoint guidance, read `the selected repository/review adapter` before making API calls.
 
 ## Shared Context
 
-Before posting review output, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/development.md` as the stage-specific doc. Load the selected review adapter for API endpoints, comment fields, status checks, and labels.
+Before posting review output, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/delivery-contract.md`, and `docs/conventions/context-management.md`, with `docs/conventions/development.md` as the stage-specific doc. Load the selected review adapter for API endpoints, comment fields, status checks, and labels.
 
 ## Workflow Telemetry
 
@@ -76,6 +76,15 @@ Prioritize findings in this order:
 3. Security, credential, and data-loss risks.
 4. API, schema, migration, or compatibility risks.
 5. Maintainability suggestions that are clearly worth acting on.
+
+Consult the knowledge base before finalizing findings. Search for known errors, anti-patterns, patterns, and troubleshooting guides relevant to the changed areas:
+
+```bash
+python -m tools.sdd_cli knowledge-search search --query <changed area or symptom terms>
+python -m tools.sdd_cli knowledge-search search --list-topics
+```
+
+If an existing entry matches a finding or risk, cite it in the review comment instead of duplicating it.
 
 Use internet research when useful. Prefer official docs first; use trusted posts, issue discussions, or release notes only when official docs are insufficient. Cite sources in the PR comment when external research materially affects a finding.
 

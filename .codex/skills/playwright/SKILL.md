@@ -153,7 +153,7 @@ This repo-local copy preserves the upstream Playwright CLI guidance and adds the
 
 Source: https://github.com/openai/skills/tree/main/skills/.curated/playwright
 
-Before using this skill for ticketed delivery, read `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md`. Apply the active ticket scope, QA evidence rules, browser validation expectations, and handoff requirements before changing tests, collecting artifacts, or reporting UI findings.
+Before using this skill for ticketed delivery, read `.codex/skills/_shared/delivery-contract.md` and `docs/conventions/context-management.md`. Apply the active ticket scope, QA evidence rules, browser validation expectations, and handoff requirements before changing tests, collecting artifacts, or reporting UI findings.
 
 ## Workflow
 

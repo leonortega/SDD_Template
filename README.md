@@ -45,7 +45,8 @@ The tool is intentionally conservative:
 ```text
 .codex/             AI workflow skills, policies, and profile files
 .gitea/             Gitea Actions workflow templates
-docs/               Architecture, development, deployment, and context guidance
+docs/               Documentation for humans: architecture, ADRs, modules, APIs, workflows, conventions
+knowledge/          Agent-consulted operational knowledge: errors, fixes, patterns, lessons learned
 infra/              Local platform templates and deployment topology
 openspec/           OpenSpec configuration and future change specs
 tools/              Helper CLI used by the workflow
@@ -93,7 +94,7 @@ The install writes:
 
 That manifest records the installed version, source repo, source commit, checksum, managed files, preserved local files, and local Git bootstrap status. If the target is not already a Git repository, install initializes it locally on `dev` without adding a remote. Gitea remote mapping is configured later during Gitea setup.
 
-The installer also seeds the required `.codex/memory/MEMORY.md`, `.codex/memory/memory_summary.md`, and `.codex/memory/retrieval-policy.md` files so startup guidance works before any product memory exists. Future updates replace only managed tool files. Test-project files such as `.codex/project-profile.local.json`, local memory files, secrets, product source, tests, and product OpenSpec changes are preserved.
+The installer also seeds the required `knowledge/README.md` file so startup guidance works before any product knowledge exists. Future updates replace only managed tool files. Test-project files such as `.codex/project-profile.local.json`, local knowledge files, secrets, product source, tests, and product OpenSpec changes are preserved.
 
 ## Tools Used
 
@@ -185,11 +186,12 @@ python -m unittest tools.sdd_cli.tests.test_cli
 
 ## Documentation
 
-- [Architecture](docs/architecture.md): repository topology, sources of truth, and install boundary.
-- [Development](docs/development.md): how to add a sample project stack and use a test fixture repository.
-- [Deployment](docs/deployment.md): deployment shell and app target wiring.
-- [Context Management](docs/context-management.md): authority order, freshness checks, and handoff rules.
-- [Parallel Delivery](docs/parallel-delivery.md): optional multi-ticket coordination.
+- [Architecture](docs/architecture/system.md): repository topology, sources of truth, and install boundary.
+- [Development](docs/conventions/development.md): how to add a sample project stack and use a test fixture repository.
+- [Deployment](docs/architecture/deployment.md): deployment shell and app target wiring.
+- [Context Management](docs/conventions/context-management.md): authority order, freshness checks, and handoff rules.
+- [Knowledge Base](knowledge/README.md): agent-consulted operational knowledge — errors, fixes, patterns, and lessons learned.
+- [Parallel Delivery](docs/workflows/parallel-delivery.md): optional multi-ticket coordination.
 - [Delivery Contract](.codex/skills/_shared/delivery-contract.md): agent-enforced delivery policy.
 
 ## Current Status

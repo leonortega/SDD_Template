@@ -308,13 +308,13 @@ Use this skill to explore requirements, risks, and implementation options before
 
 ## Shared Context
 
-For ticketed work, read `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md` before relying on delivery state. Exploration may inspect files and validation context, but implementation and handoff mutation belong to the owning dev-flow skill.
+For ticketed work, read `.codex/skills/_shared/delivery-contract.md` and `docs/conventions/context-management.md` before relying on delivery state. Exploration may inspect files and validation context, but implementation and handoff mutation belong to the owning dev-flow skill.
 
 ## Workflow
 
 Explore the problem, inspect relevant context, surface tradeoffs, and offer to capture stable decisions in OpenSpec artifacts when useful.
 
-When grill-style questioning reveals durable knowledge, route it to the existing repo surfaces instead of creating new context systems: product or ticket clarity belongs in the managed OpenProject block, planned behavior and design belong in OpenSpec, durable repository or process knowledge belongs in `docs/`, and reusable non-authoritative lessons belong in `.codex/memory/`.
+When grill-style questioning reveals durable knowledge, route it to the existing repo surfaces instead of creating new context systems: product or ticket clarity belongs in the managed OpenProject block, planned behavior and design belong in OpenSpec, durable repository or process knowledge belongs in `docs/`, and reusable non-authoritative lessons belong in `knowledge/`.
 
 ## Output
 

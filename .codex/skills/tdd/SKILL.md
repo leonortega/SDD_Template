@@ -11,7 +11,7 @@ Use this skill for ticketed implementation when product code, tests, or workflow
 
 ## Shared Context
 
-Before applying TDD inside this repository, follow `.codex/skills/_shared/skill-startup.md`, read `docs/context-management.md`, and verify the active ticket, OpenSpec artifacts, acceptance criteria, validation expectations, and handoff rules against current files or live provider output. Keep memory subordinate to the current ticket and delivery contract.
+Before applying TDD inside this repository, follow `.codex/skills/_shared/skill-startup.md`, read `docs/conventions/context-management.md`, and verify the active ticket, OpenSpec artifacts, acceptance criteria, validation expectations, and handoff rules against current files or live provider output. Keep memory subordinate to the current ticket and delivery contract.
 
 ## Philosophy
 

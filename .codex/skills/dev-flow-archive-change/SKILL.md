@@ -66,7 +66,7 @@ Archive a completed change in the experimental workflow.
    - If changes needed: "Sync now"
    - If already synced: "Archive now", "Sync anyway", "Cancel"
 
-   If changes are needed, sync is mandatory before archive. Use Task tool (subagent_type: "general-purpose", prompt: "Use Skill tool to invoke openspec-sync-specs for change '<name>'. Delta spec analysis: <include the analyzed delta spec summary>"). Proceed to archive only after sync succeeds.
+   If changes are needed, sync is mandatory before archive. Apply the analyzed delta specs to the main specs at `openspec/specs/<capability>/spec.md` (agent-driven sync; see `openspec/config.yaml` rules). Proceed to archive only after sync succeeds.
 
    If sync fails validation, cannot write the main specs, or leaves the delta specs unapplied, stop and report `OpenSpec archive blocker: spec sync failed`. Do not move the change directory.
 
@@ -119,7 +119,7 @@ All artifacts complete. All tasks complete.
 - Incomplete artifacts, incomplete tasks, missing tasks.md, failed spec sync, or failed archive movement are blockers. Never archive by confirmation when work is incomplete.
 - Preserve .openspec.yaml when moving to archive (it moves with the directory)
 - Show clear summary of what happened
-- If sync is requested, use openspec-sync-specs approach (agent-driven)
+- If sync is requested, apply the delta specs to the main specs (agent-driven)
 - If delta specs exist, always run the sync assessment and show the combined summary before prompting
 - Never report archive success unless the change directory has been moved to archive.
 
@@ -129,7 +129,7 @@ Use this skill to archive a completed OpenSpec change after implementation and v
 
 ## Shared Context
 
-Before ticketed archival, read `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md`. Verify the active ticket or explicit change is complete and preserve handoff context.
+Before ticketed archival, read `.codex/skills/_shared/delivery-contract.md` and `docs/conventions/context-management.md`. Verify the active ticket or explicit change is complete and preserve handoff context.
 
 ## Workflow
 

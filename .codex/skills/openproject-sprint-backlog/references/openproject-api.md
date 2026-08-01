@@ -133,7 +133,7 @@ Only the content between `<!-- ia-generated:start -->` and `<!-- ia-generated:en
 3. **Run `grill-with-docs` to sharpen understanding before writing.** Invoke the `grill-with-docs` skill to:
    - Interview the user on unclear aspects of the ticket (acceptance criteria, edge cases, dependencies).
    - Capture domain knowledge surfaced during the interview.
-   - Write durable context to `docs/` or `.codex/memory/` as appropriate.
+   - Write durable context to `docs/` or `knowledge/` as appropriate.
    - Use the clarified requirements to produce a richer, more accurate improved description.
 
    This step is especially important when the ticket has gaps, ambiguous language, or missing acceptance criteria. Skip the interactive grill step only when the description is already complete and unambiguous.
