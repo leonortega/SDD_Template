@@ -51,7 +51,7 @@ Generic TDD and Playwright skills remain available for future implementation and
 
 This repository is the canonical SDLC tool source. Product repositories consume pinned releases through `python -m tools.sdd_cli template-installer install --version vMAJOR.MINOR.PATCH --target <repo>` and later `tool update` with a newer version. When `--version` is omitted, install resolves the latest final Git tag matching `vMAJOR.MINOR.PATCH` and ignores release-candidate tags.
 
-Installed repos get only runtime workflow assets: Codex skills, docs, OpenSpec config, infrastructure templates, workflow templates, common non-secret config, and `tools/sdd_cli`. Tool-source-only files such as CLI tests, repo knowledge, OpenSpec changes, eval output, telemetry, and local config are not installed.
+Installed repos get runtime workflow assets: Codex skills, docs, OpenSpec config, infrastructure templates, workflow templates, common non-secret config, and `tools/sdd_cli`. File selection is blacklist-based: every file under the source tree is included except the rule exclusions in `tools/sdd_cli/sdd-tool-data.json` (root `README.md`, `tools/sdd_cli/tests`, `openspec/changes`, `.trunk`, caches) and gitignored-and-untracked local files (secrets, runtime DB data, eval output). Tracked files — including tracked-but-ignored ones like `.vscode/mcp.json` — and untracked-but-not-ignored files are kept, so the installer is a blacklist walk, not a git whitelist.
 
 The consumer manifest `.codex/sdd-tool-version.json` records the installed version, source repo, source commit, checksum, managed file list, and preserved local file list. Updates replace only managed files and leave consumer project code, secrets, local overlays, and product OpenSpec changes untouched.
 

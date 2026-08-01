@@ -1077,9 +1077,116 @@ class SddCliTests(unittest.TestCase):
                 manifest["checksumSha256"], sdd_tool_checksum(real_root, files)
             )
 
+            # Blacklist semantics: every managed file is a tracked template file.
+            # Untracked local files (secrets, runtime DB data, generated output)
+            # are gitignored in the source tree and must never ship.
+            tracked = set(cli.git_text(real_root, ["ls-files"]).splitlines())
+            self.assertLessEqual(set(manifest["managedFiles"]), tracked)
+            self.assertNotIn(
+                "infra/monitoring/variables.env", manifest["managedFiles"]
+            )
+            self.assertNotIn(
+                ".codex/client-tools.local.json", manifest["managedFiles"]
+            )
+            self.assertNotIn(".trunk/configs/.markdownlint.yaml", manifest["managedFiles"])
+
             # Git bootstrapped locally on the dev branch (lefthook-ready).
             self.assertTrue((target / ".git").exists())
             self.assertEqual("dev", cli.git_text(target, ["branch", "--show-current"]))
+
+    def test_tool_update_preserves_legacy_managed_env_files(self) -> None:
+        """Update never deletes consumer env files older manifests managed.
+
+        Before the gitignore blacklist, the walk shipped untracked local files
+        such as infra/monitoring/variables.env and recorded them in
+        managedFiles. An update from a git source must not unlink those
+        consumer-configured files just because they are no longer managed.
+        """
+        import subprocess as sp
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "tool"
+            target = root / "consumer"
+            source.mkdir(parents=True, exist_ok=True)
+            (source / ".gitignore").write_text("*.env\n", encoding="utf-8")
+            write(source / "AGENTS.md", "agents")
+            write(
+                source / "infra" / "monitoring" / "variables.env",
+                "SECRET=src\n",
+            )
+            sp.run(["git", "init", "-q", str(source)], check=True)
+            sp.run(["git", "add", "-A"], cwd=str(source), check=True)
+
+            # Simulate an OLD install whose manifest managed the env file.
+            write(
+                target / ".codex" / "sdd-tool-version.json",
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "tool": "sdd-tool",
+                        "version": "v0.1.0",
+                        "managedFiles": [
+                            "AGENTS.md",
+                            "infra/monitoring/variables.env",
+                        ],
+                        "preservedFiles": [],
+                    }
+                ),
+            )
+            write(target / "AGENTS.md", "old agents")
+            write(
+                target / "infra" / "monitoring" / "variables.env",
+                "SECRET=consumer\n",
+            )
+
+            result = cli.install_sdd_tool(source, target, "v0.2.0", "update")
+
+            self.assertEqual("v0.2.0", result["version"])
+            self.assertEqual(0, result["removedFileCount"])
+            self.assertEqual(
+                "SECRET=consumer\n",
+                (target / "infra" / "monitoring" / "variables.env").read_text(
+                    encoding="utf-8"
+                ),
+            )
+
+    def test_walk_excludes_gitignored_untracked_but_keeps_rest(self) -> None:
+        """walk_sdd_source_files treats .gitignore as an extra blacklist.
+
+        Tracked files and untracked-but-not-ignored files are kept; only
+        gitignored-and-untracked local files are excluded.
+        """
+        import subprocess as sp
+
+        from tools.sdd_cli._shared import walk_sdd_source_files
+
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "tool"
+            source.mkdir(parents=True, exist_ok=True)
+            (source / "tracked.txt").write_text("t", encoding="utf-8")
+            # Tracked-but-ignored file must still be kept (blacklist walk,
+            # not a git whitelist) — mirrors .vscode/mcp.json in the real repo.
+            (source / "ignored-but-tracked.txt").write_text("x", encoding="utf-8")
+            (source / ".gitignore").write_text("*.env\nignored-but-tracked.txt\n", encoding="utf-8")
+            (source / "secret.env").write_text("s", encoding="utf-8")
+            (source / "kept-untracked.txt").write_text("k", encoding="utf-8")
+            sp.run(["git", "init", "-q", str(source)], check=True)
+            sp.run(["git", "add", "tracked.txt", ".gitignore"], cwd=str(source), check=True)
+            # Force-add the ignored file — mirrors .vscode/mcp.json, which is
+            # tracked in the real repo even though .gitignore lists it.
+            sp.run(
+                ["git", "add", "-f", "ignored-but-tracked.txt"],
+                cwd=str(source),
+                check=True,
+            )
+
+            files = walk_sdd_source_files(source)
+            self.assertIn("tracked.txt", files)
+            self.assertIn(".gitignore", files)
+            self.assertIn("ignored-but-tracked.txt", files)
+            self.assertIn("kept-untracked.txt", files)
+            self.assertNotIn("secret.env", files)
 
 
 def arg(root: Path, message: Path):
