@@ -11,14 +11,14 @@ Before any tool call or file edit, every agent **must**:
 1. Call `skill('caveman')` and apply its full mode (terse fragments for commentary, status, blockers, summaries; normal prose only for authored artifacts).
 2. Read the **Start Here** section below and the files it lists.
 
-Failure to load Caveman first violates repo convention (authority level 5 per `docs/context-management.md`). If the skill tool reports "no skills available", report this as a setup gap and apply these rules manually: use terse fragments for commentary, status updates, blockers, summaries, and final handoff. Use normal prose only for authored artifacts (code blocks, documentation, config files).
+Failure to load Caveman first violates repo convention (authority level 5 per `docs/conventions/context-management.md`). If the skill tool reports "no skills available", report this as a setup gap and apply these rules manually: use terse fragments for commentary, status updates, blockers, summaries, and final handoff. Use normal prose only for authored artifacts (code blocks, documentation, config files).
 
 ## Start Here
 
 After the mandatory first step, inspect the relevant local context for the current workflow stage. **Assemble context in tier order** (see `.codex/delivery-policy.json` → `agentOptimization.contextTiers`):
 
 1. **TIER 1 — Stable prefix** (cache once per session): `AGENTS.md`, `.codex/skills/_shared/repo-startup.md`, `.codex/delivery-policy.json`, `.codex/mcp-instructions.md`
-2. **TIER 2 — Semi-stable** (cache once per session): `.codex/skills/_shared/delivery-contract.md`, `.codex/skills/_shared/delivery-contract-core.md`, `.codex/skills/_shared/skill-startup.md`
+2. **TIER 2 — Semi-stable** (cache once per session): `.codex/skills/_shared/delivery-contract.md`, `.codex/skills/_shared/delivery-contract-core.md`, `.codex/skills/_shared/skill-startup.md`, `knowledge/README.md`
 3. **TIER 3 — Stage-specific** (cache per stage): relevant `delivery-contract-{stage}.md`, `api-helpers.md`
 4. **TIER 4 — Dynamic** (never cached): user message, conversation history, tool outputs, live state
 
@@ -26,8 +26,7 @@ Always read in order:
 
 - `README.md`
 - `.codex/skills/_shared/skill-startup.md`
-- `.codex/memory/memory_summary.md`
-- `.codex/memory/MEMORY.md`
+- `knowledge/README.md`
 - `.codex/delivery-policy.json`
 
 Then read only the stage-specific docs, OpenSpec artifacts, skills, and workflow files needed for the task. Read local config only when the workflow needs those values, and never print secrets or credential-bearing values.
@@ -236,9 +235,9 @@ If a gate cannot be run, document the reason and residual risk.
 
 When in doubt, first inspect the applicable skill under `.codex/skills/` and follow its workflow.
 
-Apply Tool And Skill Blocker Consent from `.codex/skills/_shared/delivery-contract-core.md` when a required repo skill, command, memory rule, or configured tool/install path cannot be applied.
+Apply Tool And Skill Blocker Consent from `.codex/skills/_shared/delivery-contract-core.md` when a required repo skill, command, knowledge rule, or configured tool/install path cannot be applied.
 
-Use `.codex/memory/` as a reviewable repository memory layer. Memory is guidance only and must be verified against the current user request, OpenProject, OpenSpec, shared delivery contract, canonical docs, current files, and live tool output before acting.
+Use `knowledge/` as the reviewable repository knowledge layer. Knowledge is guidance only and must be verified against the current user request, OpenProject, OpenSpec, shared delivery contract, canonical docs, current files, and live tool output before acting.
 
 Before final handoff for any non-trivial repo work, run the Durable Learning Capture Gate from `delivery-contract-core.md`.
 
@@ -288,6 +287,7 @@ Before final handoff for any non-trivial repo work, run the Durable Learning Cap
 | Run retrospective audit                | `dev-flow-retrospective-audit`     | `.codex/skills/dev-flow-retrospective-audit/SKILL.md`     |
 | Explore a change / ask questions       | `dev-flow-explore-change`          | `.codex/skills/dev-flow-explore-change/SKILL.md`          |
 | Scaffold project after stack selection | `dev-flow-scaffold-project`        | `.codex/skills/dev-flow-scaffold-project/SKILL.md`        |
+| Update AI-updatable docs / knowledge   | `docs-knowledge-maintenance`        | `.codex/skills/docs-knowledge-maintenance/SKILL.md`      |
 
 After loading the skill, follow its Workflow section step by step. Do not skip steps. Do not improvise. If a step requires an API call, comment, label, or state change that the skill defines, execute it — do not treat it as optional.
 

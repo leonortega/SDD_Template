@@ -16,7 +16,7 @@ PROD promotion remains explicit. Do not invoke `dev-ops-deploy-prod` only becaus
 
 ## Shared Context
 
-Before routing, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/architecture.md` as the stage-specific doc. Load only selected adapters needed to inspect the current route.
+Before routing, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/delivery-contract.md`, and `docs/conventions/context-management.md`, with `docs/architecture/system.md` as the stage-specific doc. Load only selected adapters needed to inspect the current route.
 
 ## Configuration
 
@@ -111,7 +111,7 @@ If the state is ambiguous, invoke `dev-flow-pipeline-status` or produce a read-o
 - Ticket in Todo with no branch: invoke `dev-flow-start-ticket`.
 
   Before routing, preserve the `dev-flow-start-ticket` Stack Context Preflight:
-  - The first ticket must not create a branch, ticket-provider generated block, ticket lock, or OpenSpec proposal until `docs/architecture.md`, `docs/development.md`, `docs/deployment.md`, and `openspec/config.yaml` define the current tool set and tech stack without `stack-context.*` drift from `AuditRecommendedTools`.
+  - The first ticket must not create a branch, ticket-provider generated block, ticket lock, or OpenSpec proposal until `docs/architecture/system.md`, `docs/conventions/development.md`, `docs/architecture/deployment.md`, and `openspec/config.yaml` define the current tool set and tech stack without `stack-context.*` drift from `AuditRecommendedTools`.
   - When project guidance coverage has not been reviewed, route to `project-guidance-discover` so extra useful skills, MCPs, plugins, tools, references, practices, standards, and Codex-applicable IDE helpers are researched before suggestions are shown, and only confirmed items are passed to `project-guidance-acquire`.
 
 - Ticket in In Progress with active branch/OpenSpec but no PR: invoke `dev-flow-implement-ticket`.
@@ -152,5 +152,5 @@ Summarize:
 - child skill invoked or blocker found,
 - checkpoint evidence used,
 - workflow timing comment added, updated, reused, or skipped with reason,
-- memory updates made or skipped,
+- knowledge updates made or skipped,
 - next required user or system action when blocked.

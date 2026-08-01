@@ -180,12 +180,23 @@ def run_delivery_mode(mode: str, options: dict[str, Any]) -> Any:
     return handler()
 
 
-def search_memory(
-    root: Path, terms: list[str], json_output: bool = False
+def search_knowledge(
+    root: Path, terms: list[str], list_topics: bool = False
 ) -> list[dict[str, Any]]:
-    from .memory_search import search_memory as _search
+    from .knowledge_search import search_knowledge as _search
 
-    return _search(root, terms, json_output)
+    return _search(root, terms, list_topics)
+
+
+def classify_knowledge(
+    task: str,
+    changed_files: list[str],
+    test_results: str,
+    root: Path | None = None,
+) -> dict[str, Any]:
+    from .knowledge_search import classify_knowledge as _classify
+
+    return _classify(task, changed_files, test_results, root)
 
 
 def install_sdd_tool(
@@ -532,10 +543,10 @@ def _parse_cli(argv: list[str] | None):
     flow.add_argument("flow_args", nargs=argparse.REMAINDER)
     flow.set_defaults(func=_dispatch_dev_flow)
 
-    # memory-search
-    mem = sub.add_parser("memory-search")
+    # knowledge-search
+    mem = sub.add_parser("knowledge-search")
     mem.add_argument("mem_args", nargs=argparse.REMAINDER)
-    mem.set_defaults(func=_dispatch_memory_search)
+    mem.set_defaults(func=_dispatch_knowledge_search)
 
     # agent-eval
     ae = sub.add_parser("agent-eval")
@@ -565,7 +576,7 @@ def _fallback(args: Any) -> int:
     print(
         "Top-level commands: prereqs, environment-lab, tool-installer, "
         "template-installer, guidance, stack-tests, dev-flow, full-setup, "
-        "memory-search, configure",
+        "knowledge-search, configure",
         file=sys.stderr,
     )
     return 1
@@ -628,10 +639,10 @@ def _dispatch_dev_flow(args: Any) -> int:
     return run_dev_flow(getattr(args, "flow_args", []))
 
 
-def _dispatch_memory_search(args: Any) -> int:
-    from .memory_search import run_memory_search
+def _dispatch_knowledge_search(args: Any) -> int:
+    from .knowledge_search import run_knowledge_search
 
-    return run_memory_search(getattr(args, "mem_args", []))
+    return run_knowledge_search(getattr(args, "mem_args", []))
 
 
 def _dispatch_agent_eval(args: Any) -> int:

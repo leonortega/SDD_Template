@@ -54,8 +54,8 @@ relevant to the selected stack. Typical activations:
 
 - Architecture: `clean-architecture`, `clean-code`, `domain-modeling`,
   `architecture-patterns` — structure of `src/` per stack
-- Testing: `tdd` / `test-driven-development`, `e2e-testing-patterns`,
-  `webapp-testing` — unit/integration/architecture test setup
+- Testing: `tdd`, `e2e-testing-patterns`, `webapp-testing` —
+  unit/integration/architecture test setup
 - CI: `configure-ci-workflows` — build/test/package workflows for the stack
 - Deployment: `dev-ops-configure-k8s`, `kubernetes-manifest-authoring` —
   Dockerfiles + k8s artifacts for the stack's runtimes
@@ -112,7 +112,7 @@ and residual risk.
 ### 6. Record and continue
 
 - Confirm the generated files list to the user.
-- Optionally record a durable memory note in `.codex/memory/` when a
+- Optionally record a durable knowledge note in `knowledge/` when a
   non-obvious stack decision was made.
 - The next flow stage continues normally (no manual next-step question — the
   process is deterministic).

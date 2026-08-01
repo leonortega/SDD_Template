@@ -21,7 +21,7 @@ feature branch -> dev -> DEV + QA (auto) -> E2E QA OK -> main -> PROD
 
 ## Shared Context
 
-Before promotion, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Load selected artifact, deployment, repository/review, and ticket adapters. Use `python -m tools.sdd_cli dev-flow` helpers: `ArtifactPaths`, `ValidateTicketLock` for `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, `UpdateReleaseManifest`, `ValidateReleaseManifest`, and `RenderTicketComment -Type QADeployment`.
+Before promotion, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/delivery-contract.md`, and `docs/conventions/context-management.md`, with `docs/architecture/deployment.md` as the stage-specific doc. Load selected artifact, deployment, repository/review, and ticket adapters. Use `python -m tools.sdd_cli dev-flow` helpers: `ArtifactPaths`, `ValidateTicketLock` for `.codex/delivery-context.local.json`, `ValidateDeploymentLane`, `UpdateReleaseManifest`, `ValidateReleaseManifest`, and `RenderTicketComment -Type QADeployment`.
 
 For push-triggered pre-production deployment, the commit or merged PR title must start with the ticket key format configured in `.codex/project-profile.json` at `workflow.ticketKeyPattern`, and the change must touch configured application or test paths. Non-code changes outside those paths and non-ticket PRs must not deploy.
 
@@ -54,7 +54,17 @@ In idempotent verification mode, do not redeploy or duplicate ticket comments. R
 
 ## Preflight
 
+**Knowledge consult before promoting.** Before any QA promotion mutation, consult the knowledge base for deployment, artifact, and rollback lessons relevant to the release:
+
+```bash
+python -m tools.sdd_cli knowledge-search search --query <release or deployment terms>
+python -m tools.sdd_cli knowledge-search search --list-topics
+```
+
+If an existing `knowledge/lessons-learned/` or `knowledge/troubleshooting/` entry matches the deployment shape, apply it and cite it in the QA handoff. Record `Knowledge consulted: <files>` or `Knowledge consulted: none`.
+
 1. Verify the PR is merged and its target branch is `dev`. If the PR merged elsewhere, stop and report the branch mismatch.
+
 2. Resolve the merged commit SHA from repository PR metadata. Use the merge commit SHA as the artifact identity.
 3. Verify the PR does not currently carry `pr.labels.needsChanges` or `pr.labels.needsTests`. If either label remains, stop before promotion.
 4. Resolve the ticket key from the branch name, PR title, PR body, commit messages, or existing ticket comments.

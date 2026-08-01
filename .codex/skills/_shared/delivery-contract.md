@@ -4,13 +4,13 @@
 
 This file is the entry point for delivery contract rules. For all rules, read the appropriate stage-specific file below.
 
-The delivery contract is the agent-enforced operational layer. The docs (`docs/context-management.md` etc.) are the human-readable context layer. If docs and contract conflict, the contract wins for automation behavior until docs are corrected.
+The delivery contract is the agent-enforced operational layer. The docs (`docs/conventions/context-management.md` etc.) are the human-readable context layer. If docs and contract conflict, the contract wins for automation behavior until docs are corrected.
 
 ## Always-Read (every delivery stage)
 
 → `delivery-contract-core.md` — Blocker consent, skill sync rule, context findings, learning capture gate, self-improvement gate, risk-adaptive depth, stable markers, comment format, reusable tools, failure policy, anti-duplication, grill modes
 
-For tiered context assembly rules (prompt ordering, cache breakpoints, tier definitions), see **`docs/context-management.md` → §Prompt Cache Hygiene & Tiered Context Assembly** — the single authoritative source. The tier configuration is defined in `.codex/delivery-policy.json` → `agentOptimization.contextTiers`.
+For tiered context assembly rules (prompt ordering, cache breakpoints, tier definitions), see **`docs/conventions/context-management.md` → §Prompt Cache Hygiene & Tiered Context Assembly** — the single authoritative source. The tier configuration is defined in `.codex/delivery-policy.json` → `agentOptimization.contextTiers`.
 
 ## Stage-Specific Contracts (read the one matching your stage)
 
@@ -26,6 +26,6 @@ For tiered context assembly rules (prompt ordering, cache breakpoints, tier defi
 
 - Generic delivery skills: provider-neutral, read project profile for provider selection
 - Startup sequence: `.codex/skills/_shared/skill-startup.md`
-- Pre-flight Skills & MCP gate: `.codex/skills/_shared/preflight-skills-mcp.md`
-- Durable context policy: `docs/context-management.md`
+- Pre-flight Skills, Knowledge & MCP gate: `.codex/skills/_shared/preflight-skills-mcp.md`
+- Durable context policy: `docs/conventions/context-management.md`
 - API helper patterns: `.codex/skills/_shared/api-helpers.md`

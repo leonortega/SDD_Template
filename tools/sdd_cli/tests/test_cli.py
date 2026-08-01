@@ -31,18 +31,58 @@ class SddCliTests(unittest.TestCase):
             msg.write_text("plain message", encoding="utf-8")
             self.assertEqual(1, cli.validate_commit_message(arg(root, msg)))
 
-    def test_memory_search_filters_terms_and_json_shape(self) -> None:
+    def test_knowledge_search_filters_terms_and_json_shape(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            memory = root / ".codex" / "memory"
-            memory.mkdir(parents=True)
-            (memory / "failure-patterns.md").write_text(
-                "## Docker Backend Timeout\n\n- Type: Pattern\n- Status: Active\n- Source: test\n- Last verified: 2026-06-25\n\nDocker failed.\n",
+            knowledge = root / "knowledge" / "errors"
+            knowledge.mkdir(parents=True)
+            (knowledge / "failure-patterns.md").write_text(
+                "# Docker Backend Timeout\n\n- Type: Pattern\n- Status: Active\n- Source: test\n- Last verified: 2026-06-25\n\nDocker failed.\n",
                 encoding="utf-8",
             )
-            rows = cli.search_memory(root, ["docker"], False)
+            rows = cli.search_knowledge(root, ["docker"], False)
             self.assertEqual(1, len(rows))
             self.assertEqual("Docker Backend Timeout", rows[0]["title"])
+
+    def test_classify_knowledge_maps_signals_to_candidate_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            result = cli.classify_knowledge(
+                "Fixed Playwright login timeout",
+                ["tests/e2e/login.spec.ts", "src/auth/client.ts"],
+                "1 failed, 2 passed",
+                root,
+            )
+            self.assertFalse(result["noChanges"])
+            files = [c["file"] for c in result["candidates"]]
+            self.assertTrue(any(f.startswith("knowledge/errors/") for f in files))
+            self.assertTrue(any(f.startswith("knowledge/fixes/") for f in files))
+            self.assertTrue(any(f.startswith("knowledge/implementation/") for f in files))
+            self.assertEqual(files, sorted(files))
+
+    def test_classify_knowledge_no_signals_returns_no_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            result = cli.classify_knowledge(
+                "Bump dependency versions",
+                ["package.json", "requirements.txt"],
+                "all 12 passed",
+                root,
+            )
+            self.assertTrue(result["noChanges"])
+            self.assertEqual([], result["candidates"])
+
+    def test_classify_knowledge_docs_paths_map_to_docs_targets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            result = cli.classify_knowledge(
+                "Document auth API",
+                ["docs/api/auth-service.md"],
+                "",
+                root,
+            )
+            self.assertFalse(result["noChanges"])
+            self.assertIn("docs/api/auth-service.md", result["markers"]["docs"])
 
     def test_delivery_modes_cover_common_helpers(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -166,7 +206,7 @@ class SddCliTests(unittest.TestCase):
                 "README.md",
                 ".codex/delivery-policy.json",
                 ".codex/skills/_shared/delivery-contract.md",
-                "docs/context-management.md",
+                "docs/conventions/context-management.md",
                 "infra/compose.yml",
                 "lefthook.yml",
                 "tools/sdd_cli/cli.py",
@@ -631,9 +671,7 @@ class SddCliTests(unittest.TestCase):
             write(source / "openspec" / "changes" / "internal" / "tasks.md", "no")
             write(source / "tools" / "sdd_cli" / "cli.py", "tool")
             write(source / "tools" / "sdd_cli" / "tests" / "test_cli.py", "no")
-            write(source / ".codex" / "memory" / "MEMORY.md", "memory")
-            write(source / ".codex" / "memory" / "memory_summary.md", "summary")
-            write(source / ".codex" / "memory" / "retrieval-policy.md", "policy")
+            write(source / "knowledge" / "README.md", "knowledge")
             write(source / "infra" / "openproject" / "data" / "runtime.db", "no")
             write(
                 source
@@ -657,13 +695,7 @@ class SddCliTests(unittest.TestCase):
             self.assertFalse(
                 (target / "tools" / "sdd_cli" / "tests" / "test_cli.py").exists()
             )
-            self.assertTrue((target / ".codex" / "memory" / "MEMORY.md").exists())
-            self.assertTrue(
-                (target / ".codex" / "memory" / "memory_summary.md").exists()
-            )
-            self.assertTrue(
-                (target / ".codex" / "memory" / "retrieval-policy.md").exists()
-            )
+            self.assertTrue((target / "knowledge" / "README.md").exists())
             # Template install should initialize a git repo for lefthook hooks
             self.assertTrue((target / ".git").exists())
             self.assertEqual("dev", cli.git_text(target, ["branch", "--show-current"]))
@@ -693,7 +725,7 @@ class SddCliTests(unittest.TestCase):
             )
             self.assertIn("tools/sdd_cli/cli.py", manifest["managedFiles"])
 
-    def test_init_local_files_repairs_memory_and_env_files(self) -> None:
+    def test_init_local_files_repairs_knowledge_and_env_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             write(root / ".codex" / "client-tools.example.json", "{}")
@@ -714,11 +746,7 @@ class SddCliTests(unittest.TestCase):
             result = cli.run_configure_mode("InitLocalFiles", root, {}, False)
 
             self.assertTrue(result["valid"])
-            self.assertTrue((root / ".codex" / "memory" / "MEMORY.md").exists())
-            self.assertTrue((root / ".codex" / "memory" / "memory_summary.md").exists())
-            self.assertTrue(
-                (root / ".codex" / "memory" / "retrieval-policy.md").exists()
-            )
+            self.assertTrue((root / "knowledge" / "README.md").exists())
             self.assertTrue((root / "infra" / "openproject" / "variables.env").exists())
 
     def test_env_update_modes_validate_example_keys_and_preserve_values(self) -> None:
@@ -988,6 +1016,70 @@ class SddCliTests(unittest.TestCase):
                 )
             )
             self.assertEqual("v0.1.7", manifest["version"])
+
+    def test_tool_install_end_to_end_from_real_source_tree(self) -> None:
+        """E2E: install the real repo source tree into a fresh consumer target.
+
+        Replaces the deleted install_target fixture as the baseline: the target
+        must reproduce the source tree exactly — managed files byte-identical,
+        exclusions honored, manifest written with a source-matching checksum,
+        and git bootstrapped on dev.
+        """
+        from tools.sdd_cli._shared import REPO_ROOT as real_root
+        from tools.sdd_cli._shared import sdd_tool_checksum, sdd_tool_files
+
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            files = sdd_tool_files(real_root)
+            result = cli.install_sdd_tool(real_root, target, "v0.0.0-e2e", "install")
+
+            self.assertEqual("install", result["action"])
+            self.assertEqual(len(files), result["managedFileCount"])
+            self.assertGreater(len(files), 100)  # real tree is large
+
+            # Key files exist and are byte-identical to the source tree.
+            for relative in (
+                "AGENTS.md",
+                "lefthook.yml",
+                ".codex/skills/manifest.json",
+                ".codex/skills/docs-knowledge-maintenance/SKILL.md",
+                "tools/sdd_cli/cli.py",
+                "tools/sdd_cli/knowledge_search.py",
+                "knowledge/README.md",
+            ):
+                self.assertTrue((target / relative).exists(), relative)
+                self.assertEqual(
+                    (real_root / relative).read_bytes(),
+                    (target / relative).read_bytes(),
+                    f"byte drift on {relative}",
+                )
+
+            # Exclusions honored: tool tests, pyc artifacts, and openspec changes are absent.
+            self.assertFalse((target / "tools" / "sdd_cli" / "tests").exists())
+            self.assertFalse((target / "openspec" / "changes").exists())
+            self.assertFalse(any(p.suffix == ".pyc" for p in target.rglob("*")))
+
+            # Manifest written with the real managed file list. The checksum is
+            # compared against the SOURCE tree (every managed file exists there,
+            # so a silently-missed copy or byte drift both fail this assertion).
+            manifest = json.loads(
+                (target / ".codex" / "sdd-tool-version.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual("v0.0.0-e2e", manifest["version"])
+            self.assertEqual(len(files), len(manifest["managedFiles"]))
+            self.assertIn("tools/sdd_cli/cli.py", manifest["managedFiles"])
+            self.assertNotIn(
+                "tools/sdd_cli/tests/test_cli.py", manifest["managedFiles"]
+            )
+            self.assertEqual(
+                manifest["checksumSha256"], sdd_tool_checksum(real_root, files)
+            )
+
+            # Git bootstrapped locally on the dev branch (lefthook-ready).
+            self.assertTrue((target / ".git").exists())
+            self.assertEqual("dev", cli.git_text(target, ["branch", "--show-current"]))
 
 
 def arg(root: Path, message: Path):

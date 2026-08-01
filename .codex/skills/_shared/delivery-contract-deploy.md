@@ -42,7 +42,7 @@ Every deployable app configuration key must be discovered, mapped, applied, and 
 
 Rules:
 
-- `configure-cloud-environments` owns `infra/deployment/configuration.json`, the tracked placeholder-safe mapping from flattened `appsettings*.json` keys to deploy-time settings.
+- `configure-dev-environment` owns `infra/deployment/configuration.json`, the tracked placeholder-safe mapping from flattened `appsettings*.json` keys to deploy-time settings.
 - The package workflow must build `deployment-config.json` and publish it next to `deployable-apps.json` in Nexus.
 - Deployment jobs must apply and verify `deployment-config.json` for every target environment before claiming success.
 - Non-interactive CI and deploy automation must fail closed when a required key is unmapped, marked `manualRequired`, missing from live settings, or mismatched.

@@ -24,7 +24,7 @@ E2E QA fails → File bug → Move to Specified → Update parent OpenSpec → C
 
 ## Shared Context
 
-Before filing or linking tickets, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/development.md` and `docs/deployment.md` as stage-specific docs. Load selected ticket, repository, artifact, deployment, and E2E adapters as needed.
+Before filing or linking tickets, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/delivery-contract.md`, and `docs/conventions/context-management.md`, with `docs/conventions/development.md` and `docs/architecture/deployment.md` as stage-specific docs. Load selected ticket, repository, artifact, deployment, and E2E adapters as needed.
 
 ## Configuration
 
@@ -127,6 +127,16 @@ Run these steps in order. Do not skip any step.
    - Severity: `advisory` (log and continue on failure)
 
 ### Phase 4.5 — ⚠️ MANDATORY: Implement Fix With Tests
+
+**Knowledge consult before fixing.** Before writing the fix, consult the knowledge base for known errors and fixes relevant to the bug symptom:
+
+```bash
+python -m tools.sdd_cli knowledge-search search --query <bug symptom terms>
+python -m tools.sdd_cli knowledge-search search --list-topics
+```
+
+If an existing `knowledge/errors/<error>.md` or `knowledge/fixes/<fix>.md` entry matches the symptom, apply it and cite it in the bug comment and PR. If the bug fix is a validated reusable fix, record it via `knowledge/README.md` and the `docs-knowledge-maintenance` skill at handoff. Record `Knowledge consulted: <files>` or `Knowledge consulted: none` in the bug comment and PR handoff.
+
 
 See `.codex/skills/_shared/pipeline-tdd-cycle.md` for the common TDD test-first pattern. Bug-flow-specific details:
 

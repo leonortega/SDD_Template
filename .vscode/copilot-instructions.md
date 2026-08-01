@@ -11,22 +11,22 @@
 
 2. **Source-of-truth hierarchy** (from delivery-contract.md):
    - `.codex/skills/_shared/delivery-contract.md`
-   - `docs/context-management.md`, `docs/architecture.md`, `docs/development.md`, `docs/deployment.md`
+   - `docs/conventions/context-management.md`, `docs/architecture/system.md`, `docs/conventions/development.md`, `docs/architecture/deployment.md`
    - Non-OpenSpec delivery-flow skills
    - Configure skills and generated templates
 
-3. **For memory decisions**, use `.codex/memory/retrieval-policy.md#update-process`:
-   - Authoritative rules → update `docs/` or skills, not memory
-   - Repeated failures → `failure-patterns.md` only if not already in skills
-   - Reusable non-authoritative context → memory files
-   - If instructions exist, do not duplicate in memory
+3. **For knowledge decisions**, use `knowledge/README.md#update-process`:
+   - Authoritative rules → update `docs/` or skills, not knowledge
+   - Repeated failures → `knowledge/errors/<error>.md` only if not already in skills
+   - Reusable non-authoritative context → knowledge files
+   - If instructions exist, do not duplicate in knowledge
 
 4. **Example workflow**:
    - User asks: "Add formatting validation to pre-commit"
    - Action: Check `configure-dev-environment` skill → read `quality-gates.md` → see lefthook rules already documented → add to lefthook.yml per skill guidance, not independently
-   - Result: Follow skill, don't add custom instruction to memory
+   - Result: Follow skill, don't add custom instruction to knowledge
 
-5. **When skills have gaps**: Document the gap in the final handoff (e.g., "Skill quality-gates.md does not cover X; added memory entry with ...") so the skill can be updated later.
+5. **When skills have gaps**: Document the gap in the final handoff (e.g., "Skill quality-gates.md does not cover X; added knowledge entry with ...") so the skill can be updated later.
 
 This ensures consistency, prevents duplicate documentation, and keeps you aligned with the repository's established patterns.
 
@@ -59,7 +59,8 @@ OpenProject Ticket (Todo)
 
 - **Skills**: `.codex/skills/` — delivery workflow skills for every SDLC stage
 - **Infrastructure**: `infra/` — Docker Compose services, K8s manifests, deployment configs
-- **Documentation**: `docs/` — architecture, development, deployment, context-management
+- **Documentation**: `docs/` — architecture (system, deployment), conventions (development, context-management), ADRs, modules, workflows
+- **Knowledge**: `knowledge/` — errors, fixes, patterns, troubleshooting, lessons-learned, prompts (AI-updatable)
 - **Delivery CLI**: `tools/sdd_cli/` — Python CLI helpers for environment lab, dev flow, tooling
 
 ## Critical `.codex/` Resources
@@ -78,7 +79,7 @@ Domain-specific workflows for each delivery stage. Load these based on task type
 
 - [`dev-flow-explore-change`](.codex/skills/dev-flow-explore-change/) – Explore change requirements
 - [`dev-flow-propose-change`](.codex/skills/dev-flow-propose-change/) – Create OpenSpec change proposal
-- [`dev-flow-implement-change`](.codex/skills/dev-flow-implement-change/) – Implement proposed change
+- [`dev-flow-implement-ticket`](.codex/skills/dev-flow-implement-ticket/) – Implement proposed change
 - [`dev-flow-verify-change`](.codex/skills/dev-flow-verify-change/) – Verify implementation matches spec
 - [`dev-flow-archive-change`](.codex/skills/dev-flow-archive-change/) – Archive completed change
 
@@ -92,25 +93,19 @@ Domain-specific workflows for each delivery stage. Load these based on task type
 #### Infrastructure & Configuration
 
 - [`configure-dev-environment`](.codex/skills/configure-dev-environment/) – Setup local environment
-- [`configure-cloud-environments`](.codex/skills/configure-cloud-environments/) – Configure DEV/QA/PROD
-- [`configure-ticket-workflow`](.codex/skills/configure-ticket-workflow/) – Setup OpenProject
-- [`configure-source-control`](.codex/skills/configure-source-control/) – Setup Git
-- [`configure-infra-tools`](.codex/skills/configure-infra-tools/) – Docker Compose, Nexus, etc.
-- [`configure-observability`](.codex/skills/configure-observability/) – Monitoring & logging
+- [`configure-ci-workflows`](.codex/skills/configure-ci-workflows/) – CI workflow configuration
 
 #### Quality & Review
 
 - [`dev-flow-file-qa-bug`](.codex/skills/dev-flow-file-qa-bug/) – Log QA failures
 - [`dev-flow-pr-review-agent`](.codex/skills/dev-flow-pr-review-agent/) – Automated PR review
 - [`dev-flow-pr-review-feedback-loop`](.codex/skills/dev-flow-pr-review-feedback-loop/) – Handle PR feedback
-- [`quality-test-e2e`](.codex/skills/quality-test-e2e/) – Run E2E tests
-- [`test-analysis-extensions`](.codex/skills/test-analysis-extensions/) – Analyze test results
+- [`e2e-testing-patterns`](.codex/skills/e2e-testing-patterns/) – Run E2E tests
 
 #### Development Guidance
 
 - [`project-guidance-acquire`](.codex/skills/project-guidance-acquire/) – Get project insights
 - [`project-guidance-discover`](.codex/skills/project-guidance-discover/) – Explore patterns
-- [`project-guidance-mapper`](.codex/skills/project-guidance-mapper/) – Map architecture
 - [`security-best-practices`](.codex/skills/security-best-practices/) – Security patterns
 
 #### Shared Resources
@@ -119,24 +114,22 @@ Domain-specific workflows for each delivery stage. Load these based on task type
 
 **How to use**: When starting work, check if a matching skill exists. If yes, load it directly. Skill files are live—Copilot reads them without duplication.
 
-### 2. **Memory** (`.codex/memory/`)
+### 2. **Knowledge** (`knowledge/`)
 
-Persistent learning and context. Consulted automatically at session start.
+Operational knowledge that agents consult while implementing, debugging, reviewing, and fixing code. Consulted automatically at session start.
 
-| File                                                       | Purpose                                      |
-| ---------------------------------------------------------- | -------------------------------------------- |
-| [`memory_summary.md`](.codex/memory/memory_summary.md)     | Quick reference: workflow, commands, context |
-| [`MEMORY.md`](.codex/memory/MEMORY.md)                     | Index into all memory files                  |
-| [`module-map.md`](.codex/memory/module-map.md)             | ASP.NET Core module layout                   |
-| [`project-map.md`](.codex/memory/project-map.md)           | High-level project structure                 |
-| [`workflow-memory.md`](.codex/memory/workflow-memory.md)   | Workflow checkpoints & learnings             |
-| [`failure-patterns.md`](.codex/memory/failure-patterns.md) | Known issues & solutions                     |
-| [`decisions.md`](.codex/memory/decisions.md)               | Architecture decisions                       |
-| [`qa-findings.md`](.codex/memory/qa-findings.md)           | QA test results & patterns                   |
-| [`release-lessons.md`](.codex/memory/release-lessons.md)   | Deployment & release learnings               |
-| [`retrieval-policy.md`](.codex/memory/retrieval-policy.md) | How to update memory                         |
+| Path                                     | Purpose                                      |
+| ---------------------------------------- | -------------------------------------------- |
+| [`knowledge/README.md`](knowledge/README.md) | Index, read/write policy, standard template |
+| [`knowledge/errors/`](knowledge/errors/) | Known errors: symptoms, root causes, fixes   |
+| [`knowledge/fixes/`](knowledge/fixes/)   | Reusable validated fixes                     |
+| [`knowledge/patterns/`](knowledge/patterns/) | Recommended implementation patterns       |
+| [`knowledge/anti-patterns/`](knowledge/anti-patterns/) | Practices to avoid            |
+| [`knowledge/troubleshooting/`](knowledge/troubleshooting/) | Diagnostic guides          |
+| [`knowledge/lessons-learned/`](knowledge/lessons-learned/) | QA, release, workflow lessons |
+| [`knowledge/references/`](knowledge/references/) | Project maps, module maps                |
 
-**How to use**: Start each session by reading `.codex/memory/memory_summary.md`. For detailed context, check the relevant memory file. Update memory following `.codex/memory/retrieval-policy.md` after significant events (blockers, fixes, deployment issues, QA findings).
+**How to use**: Start each session by reading `knowledge/README.md`. For detailed context, check the relevant category folder. Update knowledge following `knowledge/README.md#update-process` after significant events (blockers, fixes, deployment issues, QA findings).
 
 ### 3. **Policy & Configuration** (`.codex/`)
 
@@ -168,7 +161,7 @@ Choose based on task:
 - **Implementation**: `"implement ticket E2EPROJECT-123"` → `dev-flow-implement-ticket`
 - **PR Review**: `"review PR #42"` → `dev-flow-pr-review-agent`
 - **Deployment**: `"deploy to QA"` → `dev-ops-post-merge-deploy` or `"promote to PROD"` → `dev-ops-deploy-prod`
-- **QA**: `"run E2E tests"` → `quality-test-e2e`
+- **QA**: `"run E2E tests"` → `e2e-testing-patterns`
 - **Hotfix**: `"create hotfix for issue [X]"` → `dev-ops-hotfix-prod`
 
 ## How Copilot Discovers & Uses Resources
@@ -179,7 +172,7 @@ In chat, you can directly reference files:
 
 ```
 @.codex/skills/dev-flow-implement-ticket/SKILL.md
-@.codex/memory/memory_summary.md
+@knowledge/README.md
 @.codex/delivery-policy.json
 ```
 
@@ -208,9 +201,9 @@ Copilot automatically discovers the matching skill based on task context.
 When a conversation requires multiple steps, Copilot may activate a skill-driven mode that:
 
 1. Loads the skill from `.codex/skills/`
-2. Checks memory for relevant context
+2. Checks knowledge for relevant context
 3. Follows the workflow sequentially
-4. Updates memory after significant steps
+4. Updates knowledge after significant steps
 
 ### Copilot Chat Model Configuration
 
@@ -225,9 +218,9 @@ Copilot chat sessions can use the repository's OpenRouter runtime configuration 
 ## Key Constraints & Policies
 
 - **Ticket Key Pattern**: `E2EPROJECT-[0-9]+` (from `delivery-policy.json`)
-- **Coverage Threshold**: 80% (from memory)
+- **Coverage Threshold**: 80% (from knowledge base)
 - **No Duplication**: All `.codex/` files are live references, not copies
-- **Memory is Guidance**: Never override active OpenProject work package, OpenSpec, user request, or live tool output
+- **Knowledge is Guidance**: Never override active OpenProject work package, OpenSpec, user request, or live tool output
 - **Quality Gates**: Run all gates before handoff (build, test, coverage, lint)
 - **Checkpoint-Based**: Reruns continue from existing state (branches, PRs, artifacts, QA evidence)
 
@@ -264,34 +257,34 @@ See `.codex/quality.local.json` for the authoritative gate configuration when po
 
 ## Session Protocol
 
-1. **Start**: Load `.codex/memory/memory_summary.md`
+1. **Start**: Load `knowledge/README.md`
 2. **Discover**: Identify matching skill from `.codex/skills/`
-3. **Execute**: Follow skill workflow, referencing docs & memory
+3. **Execute**: Follow skill workflow, referencing docs & knowledge
 4. **Validate**: Run quality gates
-5. **Update**: Capture learnings in memory following `.codex/memory/retrieval-policy.md`
+5. **Update**: Capture learnings in knowledge following `knowledge/README.md#update-process`
 6. **Handoff**: Confirm state change in OpenProject, Gitea, or deployment system
 
 ## When to Consult `.codex/` Resources
 
 | Situation             | Consult                                                    |
 | --------------------- | ---------------------------------------------------------- |
-| Starting new task     | `memory_summary.md` + matching skill                       |
-| Unclear next step     | `dev-flow-continue-implementation` or `workflow-memory.md` |
-| Build/test failure    | `failure-patterns.md` + `quality.local.json`               |
-| Deployment issue      | `deploy-*.md` skills + `release-lessons.md`                |
-| Architecture question | `project-map.md` + `docs/architecture.md`                  |
+| Starting new task     | `knowledge/README.md` + matching skill                     |
+| Unclear next step     | `dev-flow-continue-implementation` or `knowledge/lessons-learned/` |
+| Build/test failure    | `knowledge/errors/` + `quality.local.json`                 |
+| Deployment issue      | `deploy-*.md` skills + `knowledge/lessons-learned/`        |
+| Architecture question | `knowledge/references/` + `docs/architecture/system.md`    |
 | Setup needed          | `configure-*.md` skills                                    |
-| QA failure            | `qa-findings.md` + `dev-flow-file-qa-bug` skill            |
+| QA failure            | `knowledge/lessons-learned/` + `dev-flow-file-qa-bug` skill |
 | Production problem    | `dev-ops-rollback-prod` or `dev-ops-hotfix-prod` skills    |
 
 ## Summary
 
 - ✅ All domain knowledge is in `.codex/skills/` — skills are **live references**
-- ✅ Learnings are in `.codex/memory/` — memory is **automatically consulted**
+- ✅ Learnings are in `knowledge/` — knowledge is **automatically consulted**
 - ✅ Policy & gates are in `.codex/` JSON files — no duplication needed
-- ✅ Start with `.codex/memory/memory_summary.md` each session
-- ✅ Use `@.codex/` references to load files on demand
-- ✅ Never copy or recreate `.codex/` content — reference it directly
-- ✅ Update memory after significant work (use `retrieval-policy.md` as guide)
+- ✅ Start with `knowledge/README.md` each session
+- ✅ Use `@knowledge/` and `@.codex/` references to load files on demand
+- ✅ Never copy or recreate `.codex/` or `knowledge/` content — reference it directly
+- ✅ Update knowledge after significant work (use `knowledge/README.md` as guide)
 
 For detailed delivery workflow, start with [`.codex/skills/_shared/delivery-contract.md`](.codex/skills/_shared/delivery-contract.md).

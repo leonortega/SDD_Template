@@ -25,7 +25,7 @@ included ticket.
 ## Shared Context
 
 Before production promotion, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`,
-`.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/deployment.md` as the
+`.codex/skills/_shared/delivery-contract.md`, and `docs/conventions/context-management.md`, with `docs/architecture/deployment.md` as the
 stage-specific doc. Load selected ticket, repository/review, artifact, deployment, and observability adapters. Use
 `python -m tools.sdd_cli dev-flow` helpers: `ValidateTicketLock` for `.codex/delivery-context.local.json`,
 `ValidateDeploymentLane`, `ArtifactPaths`, `ValidateReleaseManifest`, `UpdateReleaseManifest`, and
@@ -58,7 +58,17 @@ evidence is present.
 
 ## Preflight
 
+**Knowledge consult before promoting to PROD.** Before any PROD mutation, consult the knowledge base for release, rollback, and deployment lessons relevant to the release:
+
+```bash
+python -m tools.sdd_cli knowledge-search search --query <release or deployment terms>
+python -m tools.sdd_cli knowledge-search search --list-topics
+```
+
+If an existing entry matches a known release or rollback issue, apply it and cite it in the PROD handoff. Record `Knowledge consulted: <files>` or `Knowledge consulted: none`.
+
 1. Resolve the primary ticket, included Done ticket list, PRs, QA-approved commit SHA, source RC version, and final
+
    release version from user input, ticket comments, repository PR metadata, tags, `app/qa-approved/latest.json`, or
    Nexus artifact paths. If
    `release.json.includedTickets` exists, treat it as the authoritative release membership list; otherwise default to
@@ -314,7 +324,7 @@ The retrospective must persist compact, sanitized learning evidence:
   applicable.
 
 The retrospective must not mutate OpenProject status, deploy, promote, tag, rewrite branches, update release manifests,
-create tickets, schedule automations, or apply docs, contract, skill, or memory changes. Eval infrastructure changes
+create tickets, schedule automations, or apply docs, contract, skill, or knowledge changes. Eval infrastructure changes
 (routing_provider.py and promptfooconfig.yaml only) are handled by the auto-escalation flow below. Do not include
 secrets, raw tool payloads, full prompts, tokens, cookies, or credential-bearing URLs in the local result or ticket
 comment.
@@ -333,7 +343,7 @@ Auto-escalation is limited to **eval infrastructure files only**:
 - `.codex/agent-evals/promptfooconfig.yaml` — update test expectations or add coverage
 
 It must **never** auto-apply changes to delivery skills, shared contracts, configure skills, CI workflows, product code,
-docs, memory files, or any file outside the eval infrastructure.
+docs, knowledge files, or any file outside the eval infrastructure.
 
 ### Auto-Flow Steps
 
@@ -497,7 +507,6 @@ result path and ticket provider marker status, and any handoff, audit, or monito
   `$configure-dev-environment`, fix the workflow through PR, then
   rerun PROD dispatch only after the fix reaches `main`.
 - Missing selected deployment-provider production configuration or repository workflow secrets: route to
-  `$configure-cloud-environments` or
   `$configure-dev-environment`, configure the secrets from selected deployment provider deployment outputs without
   exposing secret values,
   then rerun PROD dispatch.

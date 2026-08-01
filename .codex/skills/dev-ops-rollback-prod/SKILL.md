@@ -14,7 +14,7 @@ Use this skill when PROD must be restored to a previous known-good artifact. Rol
 
 ## Shared Context
 
-Before rollback, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/deployment.md` as the stage-specific doc. Load selected artifact, deployment, observability, repository, and ticket adapters. Use `python -m tools.sdd_cli dev-flow` helpers: `ArtifactPaths`, `ValidateReleaseManifest`, `ValidateTicketLock`, and `UpdateReleaseManifest`. Rollback may target an incident/release rather than the active ticket lock, but a mismatch must be explicit.
+Before rollback, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/delivery-contract.md`, and `docs/conventions/context-management.md`, with `docs/architecture/deployment.md` as the stage-specific doc. Load selected artifact, deployment, observability, repository, and ticket adapters. Use `python -m tools.sdd_cli dev-flow` helpers: `ArtifactPaths`, `ValidateReleaseManifest`, `ValidateTicketLock`, and `UpdateReleaseManifest`. Rollback may target an incident/release rather than the active ticket lock, but a mismatch must be explicit.
 
 ## Configuration
 
@@ -30,7 +30,17 @@ Run preflight, rollback deployment, verification, ticket-provider result, and fo
 
 ## Preflight
 
+**Knowledge consult before rolling back.** Before any rollback mutation, consult the knowledge base for rollback and release lessons relevant to the incident:
+
+```bash
+python -m tools.sdd_cli knowledge-search search --query <incident or release terms>
+python -m tools.sdd_cli knowledge-search search --list-topics
+```
+
+If an existing `knowledge/errors/` or `knowledge/lessons-learned/` entry matches the failure mode, apply it and cite it in the rollback handoff. Record `Knowledge consulted: <files>` or `Knowledge consulted: none`.
+
 1. Resolve the current PROD release from the latest ticket-provider PROD deployment comment or release manifest.
+
 2. Run `ValidateTicketLock` when `.codex/delivery-context.local.json` is present and report the active ticket lock. If the rollback target differs from the lock, require explicit user confirmation before mutation.
 3. If the user did not supply a rollback target, list known-good candidates from ticket-provider PROD comments, Git tags, and Nexus `release.json` metadata. Order newest-first, mark the current PROD release, and ask the user to choose a target before mutating anything.
 4. Resolve the rollback target from user input, ticket-provider PROD comments, Git tags, or Nexus `release.json` metadata.

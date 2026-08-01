@@ -385,17 +385,63 @@ def audit_skill_contracts(
     profile_findings = profile_audit_findings(root)
     skill_root = root / ".codex" / "skills"
     results: list[dict[str, Any]] = []
+    # Skills exempt from the repo contract audit. Repo-owned support/flow skills
+    # (caveman, ponytail, grill-*, domain-modeling) stay exempt because they are
+    # always-active helpers. Vendored 3rd-party skill packs (installed from
+    # external registries) are exempt because they follow their upstream template,
+    # not the repo contract — the audit checks only repo-owned workflow skills.
+    # Add newly installed 3rd-party packs to this set; never add repo-owned
+    # dev-flow-*, dev-ops-*, configure-*, or project-guidance-* skills here.
     support_skill_names = {
+        # Always-active core helpers
         "caveman",
-        "domain-modeling",
-        "grill-me",
-        "grill-with-docs",
-        "grilling",
         "ponytail",
         "ponytail-audit",
         "ponytail-debt",
         "ponytail-help",
         "ponytail-review",
+        # Repo-owned planning/grill support
+        "domain-modeling",
+        "grill-me",
+        "grill-with-docs",
+        "grilling",
+        # Vendored 3rd-party skill packs (external templates, not repo-owned)
+        "architecture-decision-records",
+        "architecture-patterns",
+        "clean-architecture",
+        "clean-code",
+        "cqrs-implementation",
+        "dashboarding",
+        "design-pattern-review",
+        "docker-maintenance",
+        "domain-driven-design",
+        "dozzle-logs",
+        "e2e-testing-patterns",
+        "event-store-design",
+        "gitea",
+        "gitea-actions-workflow",
+        "gitea-tea",
+        "grafana-dashboards",
+        "grafana-observability",
+        "grafana-oss",
+        "improve-codebase-architecture",
+        "kubernetes-manifest-authoring",
+        "kubernetes-patterns",
+        "kubernetes-specialist",
+        "logging-best-practices",
+        "microservices-architect",
+        "multi-stage-dockerfile",
+        "nexus-repository-management",
+        "owasp-security",
+        "projection-patterns",
+        "promql",
+        "refactoring-patterns",
+        "release-it",
+        "saga-orchestration",
+        "security-audit",
+        "solid",
+        "threat-modeling",
+        "webapp-testing",
     }
     if not skill_root.exists():
         return {
@@ -415,7 +461,7 @@ def audit_skill_contracts(
     ]
     required_terms = [
         ".codex/skills/_shared/delivery-contract.md",
-        "docs/context-management.md",
+        "docs/conventions/context-management.md",
         "ticket",
         "validation",
         "handoff",

@@ -30,7 +30,7 @@ For setup details and branch pattern options, read `references/configuration.md`
 
 ## Shared Context
 
-Before mutating ticket or repository state, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/architecture.md` as the stage-specific doc. Load selected ticket and repository adapters before any mutation.
+Before mutating ticket or repository state, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/delivery-contract.md`, and `docs/conventions/context-management.md`, with `docs/architecture/system.md` as the stage-specific doc. Load selected ticket and repository adapters before any mutation.
 
 This skill owns initial creation of ignored `.codex/delivery-context.local.json` for automatic delivery. OpenProject time entries are the only telemetry store. Never commit local workflow files.
 
@@ -69,7 +69,7 @@ Before starting the first ticket, and before mutating any feature ticket when st
 
 Required stack context:
 
-- `docs/architecture.md`, `docs/development.md`, and `docs/deployment.md` contain `Technology Stack And Tool Set`.
+- `docs/architecture/system.md`, `docs/conventions/development.md`, and `docs/architecture/deployment.md` contain `Technology Stack And Tool Set`.
 - `openspec/config.yaml` contains `context:` and `rules:` with the current stack and artifact guidance.
 - Ignored `.codex/tool-recommendations.local.json` is used only after project guidance discovery confirms local recommendations and `usedInSteps`.
 
@@ -94,6 +94,17 @@ Before creating the OpenSpec proposal (step 16), verify that the `openspec` CLI 
     ```
 
     If the CLI is missing, attempt auto-installation: `npm install -g @fission-ai/openspec@latest`, then run `openspec init --tools codex && openspec update`.
+
+### Knowledge Consult
+
+Before creating the OpenSpec proposal (step 16) and before mutating ticket or repository state, consult the knowledge base for known errors, patterns, and lessons related to the ticket topic:
+
+```bash
+python -m tools.sdd_cli knowledge-search search --query <ticket topic terms>
+python -m tools.sdd_cli knowledge-search search --list-topics
+```
+
+Fold relevant entries into the proposal context and risk analysis. Record `Knowledge consulted: <files>` in the handoff.
 
 ## Workflow
 
@@ -149,7 +160,7 @@ Before creating the OpenSpec proposal (step 16), verify that the `openspec` CLI 
 
 10. Push the branch to repository/review provider with upstream tracking using `git push -u {remoteName} {branchName}` (where `{remoteName}` is the detected remote from step 9). If the upstream branch already exists and points to the same commit, treat it as complete; if the push is rejected or would require a non-fast-forward update, stop and report the branch issue.
 
-11. **Feed human ticket text to openspec-explore skill.** Load `.codex/skills/openspec-explore/SKILL.md`. Feed it the human-authored ticket description (fetched in step 1). It produces an exploratory analysis with structure, gaps, risks, and insights.
+11. **Feed human ticket text to dev-flow-explore-change skill.** Load `.codex/skills/dev-flow-explore-change/SKILL.md`. Feed it the human-authored ticket description (fetched in step 1). It produces an exploratory analysis with structure, gaps, risks, and insights.
 
 12. **Run iterative grill-with-docs cycles on the human ticket text (up to 4 cycles).**
 
@@ -161,7 +172,7 @@ Before creating the OpenSpec proposal (step 16), verify that the `openspec` CLI 
 
     Uses `/grilling` + `/domain-modeling` under the hood. Output: a single comprehensive refined-requirements document built from all cycles.
 
-13. **Curate both outputs into one agile-format IA block.** Take output from step 11 (openspec-explore analysis) + output from step 12 (grill-with-docs refined requirements). The IA curates, merges, and improves both into a single cohesive agile-format block with all sections below. **Critically, extract every "will not implement" decision from grill-with-docs cycles and consolidate them into the "Out of scope" section** — do not leave these decisions scattered in different comments or omitted entirely.
+13. **Curate both outputs into one agile-format IA block.** Take output from step 11 (dev-flow-explore-change analysis) + output from step 12 (grill-with-docs refined requirements). The IA curates, merges, and improves both into a single cohesive agile-format block with all sections below. **Critically, extract every "will not implement" decision from grill-with-docs cycles and consolidate them into the "Out of scope" section** — do not leave these decisions scattered in different comments or omitted entirely.
 
     Full agile-format sections:
     - Problem / opportunity

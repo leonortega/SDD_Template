@@ -110,11 +110,23 @@ Use this skill to create an OpenSpec change proposal and the artifacts needed be
 
 ## Shared Context
 
-For ticketed changes, read `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md` before creating artifacts. Keep proposal scope aligned with the active ticket or explicit user request, and preserve validation and handoff expectations for implementation.
+For ticketed changes, read `.codex/skills/_shared/delivery-contract.md` and `docs/conventions/context-management.md` before creating artifacts. Keep proposal scope aligned with the active ticket or explicit user request, and preserve validation and handoff expectations for implementation.
 
 ## Workflow
 
+### Knowledge Consult
+
+Before creating proposal artifacts, consult the knowledge base for known errors, patterns, and lessons relevant to the change's area:
+
+```bash
+python -m tools.sdd_cli knowledge-search search --query <change or feature area terms>
+python -m tools.sdd_cli knowledge-search search --list-topics
+```
+
+Fold relevant entries into the proposal context, design notes, and risk analysis. Record `Knowledge consulted: <files>` or `Knowledge consulted: none` in the proposal handoff.
+
 Follow the proposal artifact creation steps above, capture resolved `grill-with-docs` planning knowledge in OpenSpec instead of a separate context file, then route implementation through the appropriate dev-flow skill.
+
 
 ## Output
 

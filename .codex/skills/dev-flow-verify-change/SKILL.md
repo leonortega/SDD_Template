@@ -170,7 +170,7 @@ Use this skill to verify an implementation against OpenSpec artifacts before arc
 
 ## Shared Context
 
-Before ticketed verification, read `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md`. Verify against the active ticket or explicit change, include relevant validation evidence, and preserve handoff findings for the caller.
+Before ticketed verification, read `.codex/skills/_shared/delivery-contract.md` and `docs/conventions/context-management.md`. Verify against the active ticket or explicit change, include relevant validation evidence, and preserve handoff findings for the caller.
 
 ## Workflow
 

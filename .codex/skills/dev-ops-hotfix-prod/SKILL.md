@@ -16,7 +16,7 @@ Prefer `dev-ops-rollback-prod` when restoring a known-good artifact is enough.
 
 ## Shared Context
 
-Before starting, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/delivery-contract.md`, and `docs/context-management.md`, with `docs/development.md` and `docs/deployment.md` as stage-specific docs. Load selected ticket, repository/review, artifact, deployment, observability, stack, and E2E adapters for the current step.
+Before starting, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/delivery-contract.md`, and `docs/conventions/context-management.md`, with `docs/conventions/development.md` and `docs/architecture/deployment.md` as stage-specific docs. Load selected ticket, repository/review, artifact, deployment, observability, stack, and E2E adapters for the current step.
 
 ## Configuration
 
@@ -24,7 +24,17 @@ Read `.codex/project-profile.json` first. Read `.codex/client-tools.local.json` 
 
 ## Workflow
 
+**Knowledge consult before acting.** Before confirming the incident path or mutating ticket or repository state, consult the knowledge base for known errors and fixes relevant to the incident symptom:
+
+```bash
+python -m tools.sdd_cli knowledge-search search --query <incident symptom terms>
+python -m tools.sdd_cli knowledge-search search --list-topics
+```
+
+If an existing `knowledge/errors/<error>.md` or `knowledge/fixes/<fix>.md` entry matches the symptom, apply it and cite it in the incident ticket and handoff. Record `Knowledge consulted: <files>` or `Knowledge consulted: none`.
+
 1. Confirm the incident or regression, affected PROD version, user impact, and why rollback is not sufficient.
+
 2. Read `.codex/delivery-context.local.json` when present. If it points to an unrelated active feature ticket, stop and ask the user to confirm replacing the lock with the incident/hotfix ticket before mutation.
 3. Create or reuse a ticket provider incident/hotfix ticket with marker `IA generated PROD hotfix: {incidentOrTicketKey}`.
 4. Branch from `main` unless the user explicitly supplies a release branch policy.

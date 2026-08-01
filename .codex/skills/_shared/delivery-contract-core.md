@@ -6,15 +6,15 @@ Use this reference before reading stage-specific contracts. Skill-local instruct
 
 Generic delivery skills must remain provider-neutral. Read `.codex/project-profile.json` plus ignored `.codex/project-profile.local.json` when present for the merged selected providers, stack, ticket key pattern, branch policy, environments, quality gates, and adapter paths. Then read only the selected adapter reference files needed for the current stage. Concrete provider details belong in the selected skill reference files, `.codex/client-tools.local.json`, executable workflow files, infrastructure files, or stack-specific skills.
 
-For common delivery-skill startup, memory read behavior, and memory update classification, read `.codex/skills/_shared/skill-startup.md` which defines the tiered read order with cache breakpoints.
+For common delivery-skill startup, knowledge read behavior, and knowledge update classification, read `.codex/skills/_shared/skill-startup.md` which defines the tiered read order with cache breakpoints.
 
-For durable context policy, read `docs/context-management.md`. The docs are the human-readable context layer; this delivery contract is the agent-enforced operational layer. If the docs and this contract conflict, the delivery contract wins for automation behavior until the docs are corrected.
+For durable context policy, read `docs/conventions/context-management.md`. The docs are the human-readable context layer; this delivery contract is the agent-enforced operational layer. If the docs and this contract conflict, the delivery contract wins for automation behavior until the docs are corrected.
 
 ---
 
 ## Tool And Skill Blocker Consent
 
-When an agent cannot apply a required repository skill, command, memory rule, definition, or configured tool/install path, it must stop the affected workflow step instead of silently falling back to an alternative. This applies to repo-local skills, selected provider adapters, shared helper scripts, configured quality gates, memory update rules, project-guidance acquisition, and platform-supported installers.
+When an agent cannot apply a required repository skill, command, knowledge rule, definition, or configured tool/install path, it must stop the affected workflow step instead of silently falling back to an alternative. This applies to repo-local skills, selected provider adapters, shared helper scripts, configured quality gates, knowledge update rules, project-guidance acquisition, and platform-supported installers.
 
 IDE-owned and global skill roots are read-only for this repository. Do not edit, patch, or install into those roots for repo-specific behavior. Restore-only cleanup is allowed when an earlier run changed an IDE-owned skill; after restoration, put all repo-specific skill acquisition behavior in `.codex/skills/project-guidance-acquire` and repo-owned configure scripts.
 
@@ -37,7 +37,7 @@ Source-of-truth order:
 
 1. `_shared/delivery-contract-core.md` + stage-specific contracts
 2. `.codex/project-profile.json`, optional `.codex/project-profile.local.json`, and selected provider adapter reference files
-3. `docs/context-management.md`, `docs/architecture.md`, `docs/development.md`, `docs/deployment.md`
+3. `docs/conventions/context-management.md`, `docs/architecture/system.md`, `docs/conventions/development.md`, `docs/architecture/deployment.md`
 4. Non-OpenSpec delivery-flow skills
 5. Configure skills and generated templates
 
@@ -45,20 +45,28 @@ If configure skills differ from delivery-flow skills, update configure docs, tem
 
 ## Context Findings
 
-Implementation and retrospective work must preserve durable context discovered during delivery. Apply the Context Findings classification from `docs/context-management.md`.
+Implementation and retrospective work must preserve durable context discovered during delivery. Apply the Context Findings classification from `docs/conventions/context-management.md`.
 
-Implementation PR bodies and OpenProject handoff comments must include `Context findings: added/updated/none`, `Docs updated: <files>` or `Docs: no durable context changes`, `Memory updated: <files>` or `Memory updated: none`, and `Assumptions recorded: <short list or none>`.
+Implementation PR bodies and OpenProject handoff comments must include `Context findings: added/updated/none`, `Docs updated: <files>` or `Docs: no durable context changes`, `Knowledge updated: <files>` or `Knowledge updated: none`, and `Assumptions recorded: <short list or none>`. When a stage ran a knowledge-base consult before acting (see `knowledge/README.md` and the pre-flight gate), include `Knowledge consulted: <files>` or `Knowledge consulted: none` alongside those markers.
 
 ## Durable Learning Capture Gate
 
-Before final handoff for any non-trivial repository work, classify whether the run discovered reusable knowledge using `.codex/memory/retrieval-policy.md#update-process`. This applies to implementation, review feedback, DEV/QA deployment, E2E QA, PROD deployment, rollback, hotfix, retrospective workflow maintenance, local tooling fixes, configuration repairs, debugging, and any prompt where an error, issue, blocker, or fix was diagnosed.
+Before final handoff for any non-trivial repository work, classify whether the run discovered reusable knowledge using `knowledge/README.md#update-process`. This applies to implementation, review feedback, DEV/QA deployment, E2E QA, PROD deployment, rollback, hotfix, retrospective workflow maintenance, local tooling fixes, configuration repairs, debugging, and any prompt where an error, issue, blocker, or fix was diagnosed.
 
-This gate is mandatory even when no memory update is needed. The final handoff must include one of:
+This gate is mandatory even when no knowledge update is needed. The final handoff must include one of:
 
-- `Memory updated: <files>` when reusable non-authoritative knowledge was added or updated.
-- `Memory updated: none` when the run produced no reusable memory candidates.
+- `Knowledge updated: <files>` when reusable non-authoritative knowledge was added or updated.
+- `Knowledge updated: none` when the run produced no reusable knowledge candidates.
 
-Do not treat OpenProject comments, PR comments, QA evidence, logs, or chat summaries as a substitute for this gate. When the agent itself hits a failed command, hook rejection, configuration mismatch, missing local tool, wrong tool boundary, or other repeatable workflow mistake while doing the task, treat it as a durable learning candidate by default. Search memory with the concrete symptom, apply the immediate fix, and update memory, docs, skills, or tests unless the issue is already covered or clearly one-off.
+Use the deterministic classifier to select the candidate files before updating them:
+
+```bash
+python -m tools.sdd_cli knowledge-search classify --task "<task summary>" --changed-files "<comma-separated changed paths>" --test-results "<test outcome>"
+```
+
+It maps the task summary, changed files, and test results to the exact candidate `knowledge/` or `docs/` file paths (or `NO_CHANGES`). The classifier decides **which** files may need updating; the agent (using the `docs-knowledge-maintenance` skill) decides **what content** to write. When the classifier returns `NO_CHANGES`, record `Knowledge updated: none` (or `Docs: no durable context changes`).
+
+Do not treat OpenProject comments, PR comments, QA evidence, logs, or chat summaries as a substitute for this gate. When the agent itself hits a failed command, hook rejection, configuration mismatch, missing local tool, wrong tool boundary, or other repeatable workflow mistake while doing the task, treat it as a durable learning candidate by default. Search knowledge with the concrete symptom, apply the immediate fix, and update knowledge, docs, skills, or tests unless the issue is already covered or clearly one-off.
 
 ## Agent Self-Improvement Gate
 
@@ -101,13 +109,13 @@ Map resolved durable knowledge into the existing context surfaces:
 - product or ticket clarity → the managed OpenProject generated block,
 - planned behavior or design → OpenSpec artifacts,
 - durable repository or process knowledge → `docs/`,
-- reusable non-authoritative lessons → `.codex/memory/`.
+- reusable non-authoritative lessons → `knowledge/`.
 
 Do not create a standalone `CONTEXT.md`, ADR convention, global grill skill install, or upstream-default grill artifact path unless a separate explicit change adopts that model.
 
-## Pre-Flight: Skills & MCP Gate (All Stages)
+## Pre-Flight: Skills, Knowledge & MCP Gate (All Stages)
 
-Before any mutation in any delivery stage — before editing files, making API calls, committing, pushing, or changing ticket state — every agent **must** run the Skills & MCP pre-flight gate defined in `.codex/skills/_shared/preflight-skills-mcp.md`.
+Before any mutation in any delivery stage — before editing files, making API calls, committing, pushing, or changing ticket state — every agent **must** run the Skills, Knowledge & MCP pre-flight gate defined in `.codex/skills/_shared/preflight-skills-mcp.md`.
 
 This gate:
 

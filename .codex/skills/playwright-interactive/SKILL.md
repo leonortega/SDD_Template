@@ -13,7 +13,7 @@ Use this skill for fast iterative browser or Electron debugging, visual QA, view
 
 ## Shared Context
 
-When this skill is used for ticket delivery, follow `.codex/skills/_shared/delivery-contract.md` and `docs/context-management.md` through the calling workflow. Keep reusable tests in the normal implementation flow and one-off evidence under ignored QA evidence paths.
+When this skill is used for ticket delivery, follow `.codex/skills/_shared/delivery-contract.md` and `docs/conventions/context-management.md` through the calling workflow. Keep reusable tests in the normal implementation flow and one-off evidence under ignored QA evidence paths.
 
 ## Repository Fit
 

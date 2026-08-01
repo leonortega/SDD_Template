@@ -39,4 +39,4 @@ Repository content search (documentation, source code, skills) uses the agent's 
 
 ## Authority
 
-This routing contract sits at authority level 5 in `docs/context-management.md` — alongside `.codex/skills/_shared/delivery-contract.md` — and overrides ad hoc service-interaction decisions.
+This routing contract sits at authority level 5 in `docs/conventions/context-management.md` — alongside `.codex/skills/_shared/delivery-contract.md` — and overrides ad hoc service-interaction decisions.

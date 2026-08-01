@@ -27,7 +27,7 @@ class TopLevelDispatchTests(unittest.TestCase):
         self.assertIn("environment-lab", stderr.getvalue())
         self.assertIn("dev-flow", stderr.getvalue())
         self.assertIn("guidance", stderr.getvalue())
-        self.assertIn("memory-search", stderr.getvalue())
+        self.assertIn("knowledge-search", stderr.getvalue())
         self.assertIn("tool-installer", stderr.getvalue())
         self.assertIn("template-installer", stderr.getvalue())
         self.assertIn("prereqs", stderr.getvalue())
@@ -76,13 +76,43 @@ class TopLevelDispatchTests(unittest.TestCase):
         self.assertIn("detect-adversarial-trigger", output)
         self.assertIn("audit-skill-contracts", output)
 
-    def test_memory_search_no_args(self) -> None:
-        """memory-search with no args shows usage."""
+    def test_knowledge_search_no_args(self) -> None:
+        """knowledge-search with no args shows usage."""
         stderr = io.StringIO()
         with redirect_stderr(stderr):
-            rc = cli.main(["memory-search"])
+            rc = cli.main(["knowledge-search"])
         self.assertEqual(1, rc)
         self.assertIn("Usage", stderr.getvalue())
+
+    def test_knowledge_search_classify_dispatches(self) -> None:
+        """knowledge-search classify returns candidate file paths."""
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            rc = cli.main(
+                [
+                    "knowledge-search",
+                    "classify",
+                    "--task",
+                    "Fixed Docker build timeout",
+                    "--changed-files",
+                    "docker/Dockerfile,ci/build.sh",
+                    "--test-results",
+                    "1 failed: timeout",
+                ]
+            )
+        self.assertEqual(0, rc)
+        result = json.loads(stdout.getvalue())
+        self.assertFalse(result["noChanges"])
+        self.assertTrue(result["candidates"])
+        self.assertIn("knowledge/errors", result["markers"]["knowledge"][0])
+
+    def test_knowledge_search_classify_requires_input(self) -> None:
+        """knowledge-search classify without task/files shows usage."""
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            rc = cli.main(["knowledge-search", "classify"])
+        self.assertEqual(1, rc)
+        self.assertIn("Usage: knowledge-search classify", stderr.getvalue())
 
     def test_tool_installer_no_args(self) -> None:
         """tool-installer with no args shows available subcommands."""
@@ -315,7 +345,7 @@ class EnvironmentLabDispatchTests(unittest.TestCase):
         # Should NOT have delegated to full-setup
         mock_full.assert_not_called()
 
-    def test_init_local_files_creates_memory_seeds(self) -> None:
+    def test_init_local_files_creates_knowledge_seed(self) -> None:
         """environment-lab init-local-files works."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -350,7 +380,7 @@ class EnvironmentLabDispatchTests(unittest.TestCase):
             self.assertEqual(0, rc)
             result = json.loads(stdout.getvalue())
             self.assertTrue(result["valid"])
-            self.assertTrue((root / ".codex" / "memory" / "MEMORY.md").exists())
+            self.assertTrue((root / "knowledge" / "README.md").exists())
 
     def test_init_project_profile(self) -> None:
         """environment-lab init-project-profile works."""
@@ -762,23 +792,23 @@ class ToolInstallerDispatchTests(unittest.TestCase):
 
 
 class MemorySearchDispatchTests(unittest.TestCase):
-    """Test memory-search subcommand dispatch."""
+    """Test knowledge-search subcommand dispatch."""
 
-    def test_memory_search_list_topics(self) -> None:
-        """memory-search search --list-topics works."""
+    def test_knowledge_search_list_topics(self) -> None:
+        """knowledge-search search --list-topics works."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            memory = root / ".codex" / "memory"
-            memory.mkdir(parents=True)
-            (memory / "failure-patterns.md").write_text(
-                "## Docker Backend Timeout\n\n- Type: Pattern\n- Status: Active\n- Source: test\n- Last verified: 2026-07-13\n\nDocker failed.\n",
+            knowledge = root / "knowledge" / "errors"
+            knowledge.mkdir(parents=True)
+            (knowledge / "failure-patterns.md").write_text(
+                "# Docker Backend Timeout\n\n- Type: Pattern\n- Status: Active\n- Source: test\n- Last verified: 2026-07-13\n\nDocker failed.\n",
                 encoding="utf-8",
             )
             stdout = io.StringIO()
             with redirect_stdout(stdout):
                 rc = cli.main(
                     [
-                        "memory-search",
+                        "knowledge-search",
                         "search",
                         "--root",
                         str(root),

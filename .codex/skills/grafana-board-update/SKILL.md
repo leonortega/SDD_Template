@@ -17,9 +17,9 @@ After a CI deploy to any environment (DEV, QA, or PROD), the Grafana SDD Service
 ## Shared Context
 
 Read these docs for background:
-- `docs/deployment.md` → Grafana provisioning, dashboard architecture
+- `docs/architecture/deployment.md` → Grafana provisioning, dashboard architecture
 - `.codex/skills/grafana-observability/SKILL.md` → Grafana patterns
-- `.codex/memory/memory_summary.md` → past issues / gotchas
+- `knowledge/README.md` → past issues / gotchas
 
 ## Sources Of Truth
 
