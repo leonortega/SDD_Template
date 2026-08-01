@@ -26,7 +26,7 @@ Before generating workflows, read:
 2. `infra/deployment/apps.json` — for app topology (appId, projectPath, role, artifactName, healthPath, deployOrder)
 3. `.codex/client-tools.local.json` — for Gitea base URL, Nexus base URL and repository
 
-Also follow `.codex/skills/_shared/skill-startup.md` for the standard startup sequence.
+Also follow `.codex/skills/_shared/skill-startup.md` for the standard startup sequence, then read `.codex/skills/_shared/delivery-contract.md` and `docs/conventions/context-management.md` so the generated workflows respect the shared delivery contract and stay scoped to the active ticket.
 
 ## Configuration
 
@@ -38,6 +38,10 @@ The skill derives configuration from these sources:
 | `infra/deployment/apps.json`                                                   | App topology: what to build, package, and deploy                                                        |
 | `client-tools.local.json → gitea`                                              | Gitea URL for checkout step                                                                             |
 | `client-tools.local.json → nexus`                                              | Nexus URL, repository for upload step                                                                   |
+
+## Workflow
+
+Run this skill inside the active ticket's delivery context after the user confirms the stack and infrastructure is running. Generate the workflow files, show a dry-run diff, and write only after confirmation — see the Workflow Generation Rules below.
 
 ## Workflow Generation Rules
 
@@ -425,6 +429,7 @@ Report:
 - Which artifact provider and deployment provider were configured
 - Any apps with no build output detected (included in package step but skipped at runtime)
 - Dry-run confirmation before writing
+- handoff point: workflows ready for review on the active ticket
 
 ## Failure Rules
 

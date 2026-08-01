@@ -14,6 +14,14 @@ The lab stack is **always** Docker Compose with Gitea + OpenProject + Nexus + Mo
 
 This skill replaces the old separate skills: `configure-ticket-workflow`, `configure-source-control`, `configure-ci-runner`, `configure-artifact-repository`, `configure-quality-gates`, and `configure-observability`. All domain setup flows are now inline below.
 
+## Shared Context
+
+Read `.codex/skills/_shared/delivery-contract.md` and `docs/conventions/context-management.md` before changing local configuration. This skill prepares the local delivery environment; the product stack remains a user decision and setup stays scoped to the active ticket.
+
+## Workflow
+
+Run `setup-lab` (all-in-one) or the individual steps below in order. Each step validates before proceeding; stop on the first failure and report it. Confirm the stack with the user before any stack-dependent step, then hand off to the next delivery stage.
+
 ## Prerequisites
 
 Before running quick setup, ensure the following CLI tools are available on the host:
@@ -435,7 +443,7 @@ Configure Seq log search and Grafana health dashboards.
 
 ## Output
 
-Report: files created/updated, values still missing, observability health, missing tools with install commands, and next steps.
+Report: files created/updated, values still missing, observability health, missing tools with install commands, next steps, and the handoff point to the next delivery stage.
 
 ## Failure Rules
 

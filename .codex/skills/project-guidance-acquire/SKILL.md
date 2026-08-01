@@ -10,6 +10,18 @@ Installs skills using a hybrid approach:
 1. **Primary**: tries `npx skills add` (skills.sh registry)
 2. **Fallback**: fetches raw content from GitHub repos via the GitHub API
 
+## Overview
+
+Use this skill to install skills into `.codex/skills/` from configured GitHub
+sources, keeping the catalog in sync with `manifest.json`.
+
+## Shared Context
+
+Read `.codex/skills/_shared/delivery-contract.md` and
+`docs/conventions/context-management.md` before installing. Only install skills
+approved for the active ticket or explicit user request; never install
+unvetted community skills without confirmation.
+
 ## Prerequisites
 
 - Node.js / npx available on PATH (for primary method)
@@ -85,3 +97,20 @@ Create `.codex/skill-sources.json` with your own repos:
 - `python -m tools.sdd_cli guidance discover` — search the internet (npx skills registry) for stack-relevant skills, never local
 - `python -m tools.sdd_cli tool-installer validate-manifest` — verify all manifest skills exist on disk
 - `docs/conventions/context-management.md` — Mandatory Skill Catalog Review process
+
+## Workflow
+
+Follow the Usage commands above: list sources, install by source or directly,
+preview with `--dry-run`, and configure custom sources as needed. After
+installing, run `validate-manifest` to confirm the catalog is consistent.
+
+## Output
+
+Report the installed skill directories, the manifest registration outcome, the
+`validate-manifest` validation result, and the handoff status for the ticket.
+
+## Failure Rules
+
+- Stop if a skill would overwrite an existing skill directory (existing files are skipped — surface that).
+- Stop if `manifest.json` registration fails or `validate-manifest` reports drift.
+- Stop if the user has not confirmed the skill install.

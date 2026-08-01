@@ -59,11 +59,11 @@ jobs:
 
       - name: SCA scan (Trivy)
         shell: bash
-        run: trivy fs --format table --exit-code 1 --no-progress . 2>&1
+        run: trivy fs --format table --exit-code 1 --no-progress --skip-db-update . 2>&1
 
       - name: IaC scan (Checkov)
         shell: bash
-        run: checkov -d . --compact --soft-fail --config-file .checkov.yml 2>&1
+        run: checkov -d . --compact --config-file .checkov.yml 2>&1
 
       # ── Tests ──
       # Repo tooling tests: always run the shell's own Python test suite

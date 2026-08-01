@@ -129,7 +129,7 @@ The skill reads configuration from:
 
 ## Shared Context
 
-Before running, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/delivery-contract.md`, and `docs/conventions/context-management.md`, with `docs/architecture/deployment.md` as the stage-specific doc.
+Before running, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/delivery-contract.md`, and `docs/conventions/context-management.md`, with `docs/architecture/deployment.md` as the stage-specific doc. Confirm the active ticket and the deployment lane before changing manifests.
 
 ## Workflow
 
@@ -512,6 +512,8 @@ Report:
 - CI workflow changes applied (diff summary)
 - Gitea secrets required and current status
 - Environment URLs discovered (via `setup-k8s-access`)
+- validation results of each deployment check (docker build, kustomize dry-run, rollout)
+- handoff point: trigger the first CI build for the active ticket
 - Next steps for user: trigger first build
 
 ## Failure Rules
