@@ -108,9 +108,48 @@ Runner = Callable[[list[str], Path | None, dict[str, str] | None], int]
 # ── SDD tool helpers ─────────────────────────────────────────────────────
 
 
+_GIT_IGNORED_CACHE: dict[str, set[str]] = {}
+
+
+def _git_ignored_untracked(source: Path) -> set[str]:
+    """Return gitignored-and-untracked relative paths (posix) under source.
+
+    The template's `.gitignore` is treated as an extra blacklist: local-only
+    files (secrets, runtime DB state, generated artifacts) are never installed.
+    Tracked files — even ones matching an ignore rule — and untracked files
+    that are not ignored are deliberately kept, so the walk stays
+    exclusion-based (blacklist), not a git whitelist.
+
+    The blacklist only activates when ``source`` is the root of a git
+    worktree (path alignment requires repo-root-relative paths); otherwise
+    an empty set is returned and the rule exclusions still apply.
+    """
+    key = str(source.resolve())
+    if key in _GIT_IGNORED_CACHE:
+        return _GIT_IGNORED_CACHE[key]
+    result: set[str] = set()
+    top = run_native(["git", "rev-parse", "--show-toplevel"], source, timeout=30)
+    if top["returncode"] == 0 and top["stdout"]:
+        toplevel = Path(top["stdout"].strip()).resolve()
+        if toplevel == source.resolve():
+            listed = run_native(
+                ["git", "ls-files", "--others", "--exclude-standard", "--ignored"],
+                toplevel,
+                timeout=60,
+            )
+            if listed["returncode"] == 0:
+                result = {line for line in listed["stdout"].splitlines() if line}
+    _GIT_IGNORED_CACHE[key] = result
+    return result
+
+
 def walk_sdd_source_files(source: Path) -> list[str]:
     """Walk source directory using os.scandir, skipping excluded directories
     entirely during traversal instead of walking them and filtering after.
+
+    Exclusion stays blacklist-based: rule exclusions (parts, segments,
+    suffixes) plus gitignored-and-untracked local files are skipped, while
+    every tracked file and untracked-but-not-ignored file is included.
 
     Returns sorted list of relative posix paths for all non-excluded files.
     """
@@ -118,6 +157,7 @@ def walk_sdd_source_files(source: Path) -> list[str]:
     exclude_parts = get_sdd_tool_exclude_parts()
     exclude_segments = get_sdd_tool_exclude_segments()
     exclude_suffixes = get_sdd_tool_exclude_suffixes()
+    ignored_untracked = _git_ignored_untracked(source)
 
     stack: list[tuple[Path, str]] = [(source, "")]
     while stack:
@@ -156,6 +196,9 @@ def walk_sdd_source_files(source: Path) -> list[str]:
                         if any(
                             entry_rel.endswith(suffix) for suffix in exclude_suffixes
                         ):
+                            continue
+                        # Exclude gitignored-and-untracked local files
+                        if entry_rel in ignored_untracked:
                             continue
                         files.append(entry_rel)
         except PermissionError:

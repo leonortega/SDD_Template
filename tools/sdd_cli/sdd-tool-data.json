@@ -35,7 +35,10 @@
     ".codex/environment-urls.local.json",
     ".codex/project-profile.local.json",
     ".codex/quality.local.json",
-    "knowledge/README.md"
+    "knowledge/README.md",
+    "infra/monitoring/variables.env",
+    "infra/openproject/variables.env",
+    "infra/runner.env"
   ],
   "SDD_TOOL_PRESERVE_EXAMPLE_FILES": []
 }
