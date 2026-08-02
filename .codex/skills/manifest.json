@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0",
-  "description": "Maps task types to skill paths. Load only the category matching your current task. Core skills (caveman, ponytail) are always active per AGENTS.md.",
+  "description": "Maps task types to skill paths. Load only the category matching your current task. Core skills (caveman, ponytail) are always active per AGENTS.md. The community category holds skills installed from GitHub by the tool-installer (origin label, not a task type) — assess them for relevance like any other skill.",
   "categories": {
     "core": {
       "description": "Always-active skills (caveman, ponytail). Already auto-activated per repo-startup.md.",
@@ -176,6 +176,12 @@
         "kubernetes-specialist/SKILL.md",
         "kubernetes-patterns/SKILL.md",
         "multi-stage-dockerfile/SKILL.md"
+      ]
+    },
+    "community": {
+      "description": "Community-installed skills from GitHub",
+      "skills": [
+        "impeccable/SKILL.md"
       ]
     }
   }

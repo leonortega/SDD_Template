@@ -727,6 +727,94 @@ class ToolInstallerDispatchTests(unittest.TestCase):
             self.assertEqual("my-skill", result["skillName"])
 
 
+    def test_install_skill_nested_dirs_do_not_duplicate_ref_param(self) -> None:
+        """install-skill recurses into nested dirs whose entry URLs already carry ?ref=.
+
+        GitHub echoes the ?ref= query inside directory entry URLs. The installer
+        must append the ref without producing a malformed "?ref=...?ref=..."
+        query (which 404s) when a skill has nested subdirectories.
+        """
+        from unittest.mock import patch
+
+        from tools.sdd_cli.tool_installer import install_skill_from_github
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            requested: list[str] = []
+
+            top_url = (
+                "https://api.github.com/repos/owner/repo/contents/skills/demo?ref=main"
+            )
+            # GitHub echoes ?ref=main inside the dir entry URL.
+            sub_url = (
+                "https://api.github.com/repos/owner/repo/contents/skills/demo/sub?ref=main"
+            )
+            dl_top = (
+                "https://raw.githubusercontent.com/owner/repo/main/skills/demo/SKILL.md"
+            )
+            dl_sub = (
+                "https://raw.githubusercontent.com/owner/repo/main/skills/demo/sub/extra.md"
+            )
+            payloads = {
+                top_url: json.dumps(
+                    [
+                        {
+                            "type": "file",
+                            "name": "SKILL.md",
+                            "download_url": dl_top,
+                        },
+                        {"type": "dir", "name": "sub", "url": sub_url},
+                    ]
+                ),
+                sub_url: json.dumps(
+                    [
+                        {
+                            "type": "file",
+                            "name": "extra.md",
+                            "download_url": dl_sub,
+                        }
+                    ]
+                ),
+            }
+
+            class FakeResp:
+                def __init__(self, data: bytes) -> None:
+                    self._data = data
+
+                def read(self) -> bytes:
+                    return self._data
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *exc):
+                    return False
+
+            def fake_urlopen(req, timeout: int = 30):
+                url = req.full_url if hasattr(req, "full_url") else req
+                requested.append(url)
+                key = url.split("&ref=")[0] if url.startswith("https://api.github.com") else url
+                if key in payloads:
+                    return FakeResp(payloads[key].encode("utf-8"))
+                return FakeResp(b"file-content")
+
+            with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+                result = install_skill_from_github(
+                    root, "owner/repo", "skills/demo", "demo", branch="main"
+                )
+
+            self.assertTrue(result["valid"])
+            # The original bug produced a doubled ?ref=...?ref= query on the
+            # nested dir listing; no requested URL may contain it.
+            self.assertFalse(any("?ref=main?ref" in u for u in requested))
+            # Both the top-level and nested files were installed.
+            self.assertTrue(
+                (root / ".codex" / "skills" / "demo" / "SKILL.md").exists()
+            )
+            self.assertTrue(
+                (root / ".codex" / "skills" / "demo" / "sub" / "extra.md").exists()
+            )
+
     def test_ensure_mcp_servers_dry_run(self) -> None:
         """tool-installer ensure-mcp-servers --dry-run true works without side effects."""
         with tempfile.TemporaryDirectory() as tmp:

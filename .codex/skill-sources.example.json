@@ -15,6 +15,13 @@
       "path": "skills",
       "branch": "main",
       "description": "Anthropic's skills collection"
+    },
+    {
+      "name": "impeccable",
+      "repo": "pbakaus/impeccable",
+      "path": ".agents/skills/impeccable",
+      "branch": "main",
+      "description": "Impeccable - frontend design guidance for AI coding agents (23 commands, 59 deterministic detector rules)"
     }
   ]
 }
