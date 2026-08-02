@@ -91,6 +91,7 @@ matching skill and follows its Workflow section step by step.
 | Run retrospective audit | `dev-flow-retrospective-audit` | `.codex/skills/dev-flow-retrospective-audit/SKILL.md` |
 | Explore a change / ask questions | `dev-flow-explore-change` | `.codex/skills/dev-flow-explore-change/SKILL.md` |
 | Scaffold project after stack selection | `dev-flow-scaffold-project` | `.codex/skills/dev-flow-scaffold-project/SKILL.md` |
+| Update AI-updatable docs / knowledge | `docs-knowledge-maintenance` | `.codex/skills/docs-knowledge-maintenance/SKILL.md` |
 
 Routing decisions use the following state inputs (the same variables the Promptfoo eval
 passes to `routing_provider.py`):
@@ -208,7 +209,7 @@ Workflow:
      `test/architecture/`).
    - Build the acceptance-to-test map from the IA curated ticket block + `tasks.md`.
    - GREEN with minimal code (`ponytail full`), REFACTOR while GREEN.
-4. **Quality gates** (details in Section 6):
+4. **Quality gates** (details in Section 7):
    - Coverage ≥ `coverage.minimumPercent` (default **80**) — HARD GATE before PR.
    - Lefthook pre-push `python -m tools.sdd_cli stack-tests` (unit + integration +
      architecture + coverage) — HARD GATE on every push.
@@ -542,7 +543,28 @@ Expedited in scope only — quality gates are identical to the feature flow:
 
 ---
 
-## 5. Ticket States (OpenProject Status Mapping)
+## 5. Supporting And Operational Workflows
+
+Stages 1–14 above are the **linear ticket → PROD flow**. The routing table also routes
+to supporting workflows that run around, alongside, or instead of that line:
+
+| Workflow | Skill | When it runs | Documented in |
+| -------- | ----- | ------------ | ------------- |
+| Continue implementation | `dev-flow-continue-implementation` | Resume an in-progress ticket | [`supporting-workflows.md`](supporting-workflows.md) |
+| Explore / ask questions | `dev-flow-explore-change` | Planning, discovery, architecture discussions | [`supporting-workflows.md`](supporting-workflows.md) |
+| Check pipeline status | `dev-flow-pipeline-status` | Read-only delivery visibility | [`supporting-workflows.md`](supporting-workflows.md) |
+| Scaffold project | `dev-flow-scaffold-project` | After `set-project-stack` | [`supporting-workflows.md`](supporting-workflows.md) |
+| Retrospective audit | `dev-flow-retrospective-audit` | Post-PROD, eval improvement, periodic | [`supporting-workflows.md`](supporting-workflows.md) |
+| Update docs / knowledge | `docs-knowledge-maintenance` | Any durable learning | [`supporting-workflows.md`](supporting-workflows.md) |
+| Grafana board update | `grafana-board-update` | After each CI deploy | [`supporting-workflows.md`](supporting-workflows.md) |
+
+Helper skills used **inside** the linear flow (not standalone stages): `dev-flow-apply-change`
+(OpenSpec `/opsx:apply` task execution), `dev-flow-parallel-ticket-coordinator` (parallel
+worktree delivery, Section 10 below), and `tdd` (RED/GREEN discipline inside implementation).
+
+---
+
+## 6. Ticket States (OpenProject Status Mapping)
 
 | External label | OpenProject status | ID | Meaning |
 | -------------- | ------------------ | -- | ------- |
@@ -567,7 +589,7 @@ Bug revert: `Test failed → (child bug) → New → … → Closed → parent b
 
 ---
 
-## 6. Quality Gates
+## 7. Quality Gates
 
 | Gate | Where | Rule |
 | ---- | ----- | ---- |
@@ -584,7 +606,7 @@ Local vs CI split: local validation is fast feedback on touched behavior; Gitea 
 validation is the authoritative full gate. The CI image intentionally has no stack
 runtimes — the lefthook pre-push hook runs product tests on the dev machine.
 
-### 6.1 Local PR Validation Loop (reproduce CI in `sdd-e2e-ci:local`)
+### 7.1 Local PR Validation Loop (reproduce CI in `sdd-e2e-ci:local`)
 
 **Purpose.** PR Validation (`pr-validation.yml`) often fails in CI for reasons that are
 cheap to catch locally. This process runs the **exact same gates, in the exact same
@@ -658,7 +680,7 @@ will pass.
 
 ---
 
-## 7. Stable Markers (Idempotency Contract)
+## 8. Stable Markers (Idempotency Contract)
 
 Markers are exact strings; matching markers mean the step is already complete.
 
@@ -693,7 +715,7 @@ Markdown body with `**Status:**`, `**Context:**`, `**Validation:**`, `**Evidence
 
 ---
 
-## 8. Environment Model And Artifacts
+## 9. Environment Model And Artifacts
 
 Three K8s environments (kind cluster `sdd-cluster` unless Docker Desktop K8s is used):
 
@@ -732,7 +754,7 @@ Nexus`.
 
 ---
 
-## 9. Parallel Delivery (Optional Mode)
+## 10. Parallel Delivery (Optional Mode)
 
 When `parallelDelivery.enabled=true` (default false), multiple tickets progress through
 planning, implementation, and review in isolated Git worktrees; DEV/QA/E2E/PROD/rollback/
@@ -749,7 +771,7 @@ hotfix promotion is **serialized** through a deployment lane.
 
 ---
 
-## 10. Mapping To The Promptfoo Agent Eval
+## 11. Mapping To The Promptfoo Agent Eval
 
 The Promptfoo eval (run via `python -m tools.sdd_cli agent-eval run`; direct fallback
 `npx promptfoo eval --config .codex/agent-evals/promptfooconfig.yaml --no-cache`)
@@ -757,7 +779,7 @@ verifies that the routing logic in `routing_provider.py` matches the delivery co
 This document is the human-readable spec of that contract; the eval encodes it as test
 cases.
 
-**Test case anatomy** (35 cases today): each case provides `scenario`, `ticketState`,
+**Test case anatomy** (36 cases today): each case provides `scenario`, `ticketState`,
 `branchExists`, `prExists`, `prMerged`, `qaEvidence`, `productStack` plus optional
 `incident`, `hotfix`, `parallelEnabled`, `maxActiveReached`, `laneOwner`,
 `prodRequested`, `nexusArtifactExists`, `releaseTagConflict`, `worktreeExists`,
@@ -765,7 +787,7 @@ cases.
 `JSON.parse(output).route === '<expected>'`.
 
 **Coverage groups today:** ticket lifecycle (7), edge cases (4), parallel delivery (5),
-deployment lane (5), infrastructure validation (2), explicit workflow-stage requests (10),
+deployment lane (5), infrastructure validation (2), explicit workflow-stage requests (11),
 state-driven resume (1), regression (1).
 
 **How to use this document for the next improvement step:**
@@ -776,9 +798,10 @@ state-driven resume (1), regression (1).
    `dev-flow-pr-review-agent`, `dev-flow-pr-review-feedback-loop`,
    `dev-flow-continue-implementation`, `dev-flow-explore-change`,
    `dev-flow-scaffold-project`, `dev-flow-verify-change`, `dev-flow-archive-change`,
-   `grafana-board-update`, and `dev-flow-retrospective-audit`; `resumeRequested` covers
+   `grafana-board-update`, `dev-flow-retrospective-audit`, and
+   `docs-knowledge-maintenance`; `resumeRequested` covers
    the state-driven auto-continue variant. Future additions should also consider
-   marker-driven idempotency decisions (Section 7) and state-driven variants of other
+   marker-driven idempotency decisions (Section 8) and state-driven variants of other
    stages.
 2. **Check the decision priority** (Section 2) against `_evaluate_route()` — the eval
    should catch ordering regressions (e.g. incident/hotfix overriding ticket state).
@@ -789,7 +812,7 @@ state-driven resume (1), regression (1).
 4. **Stage transitions** (Sections 3-4) define the state inputs — when a stage adds a
    new state-dependent decision (e.g. a new gate between QA and Done), add the matching
    vars + test case.
-5. **Stable markers** (Section 7) are not directly tested today; eval cases could be
+5. **Stable markers** (Section 8) are not directly tested today; eval cases could be
    extended to assert marker-driven idempotency decisions (e.g. existing QA deployment
    marker ⇒ verification mode, not redeploy).
 

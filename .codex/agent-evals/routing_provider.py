@@ -28,6 +28,7 @@ EXPLICIT_REQUEST_ROUTES = {
     "archive-change": "dev-flow-archive-change",
     "dashboard-update": "grafana-board-update",
     "retrospective-audit": "dev-flow-retrospective-audit",
+    "docs-knowledge-maintenance": "docs-knowledge-maintenance",
 }
 
 

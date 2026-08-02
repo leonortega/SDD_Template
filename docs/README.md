@@ -11,7 +11,7 @@ This folder is documentation for humans and maintainers: how the project is buil
 | [ADR](adr/README.md)                       | One architectural decision per file                          | Human (AI can draft) | Draft only  |
 | [Modules](modules/README.md)               | Responsibilities, public APIs, dependencies of each module  | AI             | Yes          |
 | [API](api/README.md)                       | API contracts and examples                                   | AI             | Yes          |
-| [Workflows](workflows/README.md)           | End-to-end business or technical workflows                   | AI             | Yes          |
+| [Workflows](workflows/README.md)           | End-to-end business or technical workflows (linear ticket→PROD flow, supporting workflows, parallel delivery, setup flow) | AI  | Yes          |
 | [Conventions](conventions/README.md)       | Coding, testing, git, and agent conventions                  | Human          | Propose only |
 
 ## AI Updatable Docs

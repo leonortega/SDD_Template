@@ -45,7 +45,7 @@ assertions (see `routing_provider.py` + `promptfooconfig.yaml`).
 
 ## Test Cases
 
-**35 test cases** covering the full delivery routing matrix including parallel delivery,
+**36 test cases** covering the full delivery routing matrix including parallel delivery,
 deployment lanes, explicit workflow-stage requests, and state-driven resume:
 
 ### Ticket Lifecycle (7 tests)
@@ -96,7 +96,7 @@ deployment lanes, explicit workflow-stage requests, and state-driven resume:
 | 22  | PROD deploy blocked by NodePort collision           | `blocked-infra-validation` |
 | 23  | DEV deploy blocked by infrastructure collision      | `blocked-infra-validation` |
 
-### Explicit Workflow-Stage Requests (10 tests)
+### Explicit Workflow-Stage Requests (11 tests)
 
 | #   | Scenario                                            | Expected Route                     |
 | --- | --------------------------------------------------- | ---------------------------------- |
@@ -110,18 +110,19 @@ deployment lanes, explicit workflow-stage requests, and state-driven resume:
 | 31  | Explicit archive-change request                     | `dev-flow-archive-change`          |
 | 32  | Explicit dashboard update request                   | `grafana-board-update`             |
 | 33  | Explicit retrospective-audit request                | `dev-flow-retrospective-audit`     |
+| 34  | Explicit docs-knowledge-maintenance request         | `docs-knowledge-maintenance`       |
 
 ### State-Driven Resume (1 test)
 
 | #   | Scenario                                                  | Expected Route                     |
 | --- | --------------------------------------------------------- | ---------------------------------- |
-| 34  | In-progress + branch, auto-continue without named step    | `dev-flow-continue-implementation` |
+| 35  | In-progress + branch, auto-continue without named step    | `dev-flow-continue-implementation` |
 
 ### Regression (1 test)
 
 | #   | Scenario                                 | Expected Route             |
 | --- | ---------------------------------------- | -------------------------- |
-| 35  | Product-free shell (original regression) | `dev-flow-pipeline-status` |
+| 36  | Product-free shell (original regression) | `dev-flow-pipeline-status` |
 
 ## Adding Test Cases
 
