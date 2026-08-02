@@ -592,3 +592,49 @@ tests:
         # "Recognize that no product stack is selected"
         # "Do not invoke product-specific build or QA gates"
         # "Report that app targets are unconfigured"
+
+  # ═══════════════════════════════════════════════════════════════
+  # FRONTEND DESIGN ACTIVATION (stack-mapped skills during implementation)
+  # ═══════════════════════════════════════════════════════════════
+
+  - description: "Frontend stack implementation activates impeccable design skill"
+    vars:
+      scenario: Implementing a React + TypeScript frontend ticket that needs UI design work
+      ticketState: In Progress
+      branchExists: true
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: react + typescript
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-implement-ticket' && JSON.parse(output).activatedSkills.includes('impeccable')
+
+  - description: "Non-frontend stack implementation does not activate impeccable"
+    vars:
+      scenario: Implementing a backend-only FastAPI ticket with no frontend work
+      ticketState: In Progress
+      branchExists: true
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: fastapi
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-implement-ticket' && !JSON.parse(output).activatedSkills.includes('impeccable')
+
+  - description: "Frontend stack without implementation stage does not activate impeccable"
+    vars:
+      scenario: Todo ticket on a frontend stack, no branch yet
+      ticketState: Todo
+      branchExists: false
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: react + typescript
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-start-ticket' && !JSON.parse(output).activatedSkills.includes('impeccable')

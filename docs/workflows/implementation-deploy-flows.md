@@ -779,7 +779,7 @@ verifies that the routing logic in `routing_provider.py` matches the delivery co
 This document is the human-readable spec of that contract; the eval encodes it as test
 cases.
 
-**Test case anatomy** (36 cases today): each case provides `scenario`, `ticketState`,
+**Test case anatomy** (39 cases today): each case provides `scenario`, `ticketState`,
 `branchExists`, `prExists`, `prMerged`, `qaEvidence`, `productStack` plus optional
 `incident`, `hotfix`, `parallelEnabled`, `maxActiveReached`, `laneOwner`,
 `prodRequested`, `nexusArtifactExists`, `releaseTagConflict`, `worktreeExists`,

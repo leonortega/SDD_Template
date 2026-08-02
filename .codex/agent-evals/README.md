@@ -45,8 +45,9 @@ assertions (see `routing_provider.py` + `promptfooconfig.yaml`).
 
 ## Test Cases
 
-**36 test cases** covering the full delivery routing matrix including parallel delivery,
-deployment lanes, explicit workflow-stage requests, and state-driven resume:
+**39 test cases** covering the full delivery routing matrix including parallel delivery,
+deployment lanes, explicit workflow-stage requests, state-driven resume, and frontend
+stack skill activation:
 
 ### Ticket Lifecycle (7 tests)
 
@@ -124,6 +125,19 @@ deployment lanes, explicit workflow-stage requests, and state-driven resume:
 | --- | ---------------------------------------- | -------------------------- |
 | 36  | Product-free shell (original regression) | `dev-flow-pipeline-status` |
 
+### Frontend Design Activation (3 tests)
+
+Verifies stack-mapped skill activation during implementation: an implementation-stage
+route on a frontend stack reports `activatedSkills` including `impeccable` (plus
+`playwright`, `playwright-interactive`), mirroring the stack-mapping table in
+`dev-flow-implement-ticket/SKILL.md`.
+
+| #   | Scenario                                                              | Expected Route             | Activation                 |
+| --- | --------------------------------------------------------------------- | -------------------------- | -------------------------- |
+| 37  | Frontend (React + TS) implementation, needs UI design work            | `dev-flow-implement-ticket` | includes `impeccable`      |
+| 38  | Backend-only (FastAPI) implementation, no frontend                    | `dev-flow-implement-ticket` | excludes `impeccable`      |
+| 39  | Frontend stack, Todo ticket, no branch (not in implementation stage)  | `dev-flow-start-ticket`     | excludes `impeccable`      |
+
 ## Adding Test Cases
 
 1. Add a new entry under `tests:` in `promptfooconfig.yaml`
@@ -141,3 +155,10 @@ the missing-stack fallback and ticket-state routing.
 **State-driven resume:** for the auto-continue orchestrator without a `requestType`,
 set `resumeRequested: true` with an in-progress ticket that has an existing branch. The
 provider routes it to `dev-flow-continue-implementation` before merged-PR handling.
+
+**Frontend stack activation:** the provider reports `activatedSkills` in its JSON output
+for implementation-stage routes, mirroring the stack-mapping table in
+`dev-flow-implement-ticket/SKILL.md`. A frontend stack (react, vue, svelte, angular,
+next, nuxt, astro, frontend, typescript, javascript, web) activates `playwright`,
+`playwright-interactive`, and `impeccable`; non-frontend stacks and non-implementation
+routes activate none. Assert both `route` and `activatedSkills` in the test case.

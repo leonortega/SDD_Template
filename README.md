@@ -35,7 +35,7 @@ learning.
 - **Skills** — 77 Codex skills (in `.codex/skills/`) that encode the workflow stages:
   ticket start, OpenSpec change, implementation, review, QA, deploy, rollback,
   retrospective, and more.
-- **Agent eval** — a deterministic Promptfoo suite (36 routing cases) that verifies the
+- **Agent eval** — a deterministic Promptfoo suite (39 routing cases) that verifies the
   harness routes user requests to the correct skill. See the
   [Agent Eval](#52-agent-eval-verify-the-router) section.
 - **QA as evidence** — a release to PROD requires executable proof: acceptance
@@ -64,7 +64,7 @@ so you can exercise every concept below in one repeatable environment:
 | **Rollback & hotfix** | Redeploy known-good artifacts, expedited hotfix lane from `main` |
 | **Observability** | Grafana health dashboard, Seq log search, Dozzle container logs |
 | **Quality gates** | Gitleaks (secrets), Semgrep (SAST), Trivy (SCA), Checkov (IaC), JSON validation — local and in CI |
-| **Agent evaluation** | Promptfoo eval (36 routing cases) verifies the agent routes requests correctly |
+| **Agent evaluation** | Promptfoo eval (39 routing cases) verifies the agent routes requests correctly |
 | **Operational learning** | A `knowledge/` base that captures errors, fixes, patterns, and lessons learned for future agents |
 | **Parallel delivery** | Optional multi-ticket coordination in isolated Git worktrees with a serialized deployment lane |
 
@@ -300,9 +300,9 @@ python -m tools.sdd_cli agent-eval run      # fails loudly, exits non-zero on fa
 python -m tools.sdd_cli agent-eval view     # open the report in the browser
 ```
 
-- **36 routing cases** cover ticket lifecycle, edge cases, parallel delivery,
+- **39 routing cases** cover ticket lifecycle, edge cases, parallel delivery,
   deployment lanes, infrastructure validation, explicit workflow-stage requests,
-  state-driven resume, and regression.
+  state-driven resume, frontend design skill activation, and regression.
 - To verify cases without promptfoo, run the Python provider directly against the
   YAML assertions (see `.codex/agent-evals/`).
 - After a PROD release, the eval runs as a post-PROD check and any routing regression
