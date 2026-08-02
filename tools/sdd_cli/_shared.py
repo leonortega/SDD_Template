@@ -18,7 +18,10 @@ from urllib.parse import urlparse
 # ── Core constants ───────────────────────────────────────────────────────
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-PYTHON_REQUIRES = (3, 14)
+# Single Python floor: the CLI gate (cli.py), prereqs, and full_setup all
+# require 3.11+ — keep one constant in sync (was (3, 14), which wrongly
+# rejected 3.11-3.13 runtimes and contradicted the CLI message).
+PYTHON_REQUIRES = (3, 11)
 
 STANDARD_STAGES = [
     "dev-flow-start-ticket",
@@ -407,6 +410,81 @@ def http_status(url: str, timeout: int = 5) -> tuple[int | None, str]:
         return None, str(ex)
 
 
+def http_json(
+    method: str,
+    url: str,
+    body: dict[str, Any] | None = None,
+    basic: tuple[str, str] | None = None,
+    bearer: str = "",
+    timeout: int = 10,
+) -> tuple[int, str]:
+    """Perform an HTTP request with optional JSON body and auth.
+
+    Returns ``(status_code, response_body)``; failures (connection, timeout,
+    TLS, invalid URL) return ``(0, str(exc))`` so callers can treat 0 as an
+    unreachable/unavailable result without raising.
+
+    ``basic`` is a ``(username, password)`` pair for Basic auth; ``bearer`` is
+    a raw token for Bearer auth. When both are provided, ``bearer`` wins.
+    """
+    try:
+        parsed = urlparse(url)
+        connection_cls = (
+            http.client.HTTPSConnection
+            if parsed.scheme == "https"
+            else http.client.HTTPConnection
+        )
+        connection = connection_cls(
+            parsed.hostname or "localhost", parsed.port, timeout=timeout
+        )
+        headers = {"Content-Type": "application/json"}
+        if bearer:
+            headers["Authorization"] = f"Bearer {bearer}"
+        elif basic:
+            import base64
+
+            encoded = base64.b64encode(f"{basic[0]}:{basic[1]}".encode()).decode()
+            headers["Authorization"] = f"Basic {encoded}"
+        payload = json.dumps(body) if body is not None else None
+        request_path = (parsed.path or "/") + (
+            ("?" + parsed.query) if parsed.query else ""
+        )
+        connection.request(method, request_path, body=payload, headers=headers)
+        response = connection.getresponse()
+        data = response.read().decode("utf-8")
+        connection.close()
+        return response.status, data
+    except Exception as ex:
+        return 0, str(ex)
+
+
+# ── Quality config helpers ───────────────────────────────────────────────
+
+
+def quality_coverage_minimum(root: Path, fallback: int = 80) -> int:
+    """Read the coverage minimum percent from the quality config chain.
+
+    Checks ``.codex/quality.local.json`` then ``.codex/quality.example.json``
+    for ``coverage.minimumPercent``; returns ``fallback`` when unset or
+    unparseable. Single source of truth for the coverage gate (stack-tests,
+    CI, and audit modes all read the same chain).
+    """
+    for name in ("quality.local.json", "quality.example.json"):
+        path = root / ".codex" / name
+        if not path.exists():
+            continue
+        try:
+            value = nested(read_json(path), "coverage", "minimumPercent")
+        except (ValueError, OSError):
+            continue
+        if value is not None:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                break
+    return fallback
+
+
 # ── Project profile helpers ──────────────────────────────────────────────
 
 
@@ -560,9 +638,7 @@ def copy_seed_file(
     )
 
 
-def new_configure_result(
-    mode: str, dry_run: bool, write_enabled: bool
-) -> dict[str, Any]:
+def configure_result(mode: str, dry_run: bool, write_enabled: bool) -> dict[str, Any]:
     """Create a fresh empty configure result dict."""
     return {
         "mode": mode,
@@ -574,11 +650,6 @@ def new_configure_result(
         "warnings": [],
         "valid": True,
     }
-
-
-def configure_result(mode: str, dry_run: bool, write_enabled: bool) -> dict[str, Any]:
-    """Alias for new_configure_result for backward compatibility."""
-    return new_configure_result(mode, dry_run, write_enabled)
 
 
 def add_bucket_item(

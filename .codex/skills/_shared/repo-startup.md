@@ -36,18 +36,4 @@ caveman > ponytail > others
 
 ## Skill Manifest
 
-`.codex/skills/manifest.json` maps task types to skill file paths:
-
-- `ticket`: start, propose, explore, implement, verify, archive
-- `implement`: continue-implementation, TDD
-- `review`: PR review, feedback loop, complexity review
-- `qa`: QA deploy, post-merge deploy, QA bug filing
-- `deploy`: PROD deploy, rollback, hotfix
-- `monitor`: pipeline status, retrospective
-- `parallel`: parallel ticket coordination
-- `config`: environment setup
-- `guidance`: project guidance discovery/acquisition/mapping
-- `plan`: domain modeling, grill
-- `security`: security best practices
-- `test`: Playwright browser testing
-- `quality`: ponytail audit, debt, help
+`.codex/skills/manifest.json` is the **single source of truth** mapping task types to skill file paths (categories: ticket, implement, review, qa, deploy, monitor, parallel, config, guidance, plan, architecture, security, test, quality, gitea, openproject, nexus, observability, kubernetes). Read the manifest directly instead of maintaining a category list here — this section intentionally stays short so it cannot drift from the manifest.

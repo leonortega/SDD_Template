@@ -20,18 +20,19 @@ from ._shared import (
     add_bucket_item,
     classify_delivery_risk,
     classify_ticket_readiness,
+    configure_result,
     fail,
     format_duration,
     get_high_risk_patterns,
     max_text,
     min_text,
     nested,
-    new_configure_result,
     parse_pairs,
     parse_time,
     profile_audit_findings,
     read_json,
     read_ticket_pattern,
+    require,
     selected_deployment_provider,
     split_list,
     write_json,
@@ -94,7 +95,7 @@ def sync_worktree_local_config(
     """Copy allowlisted local config files to worktrees."""
     from ._shared import get_allowlisted_local_config
 
-    result = new_configure_result(
+    result = configure_result(
         "SyncWorktreeLocalConfig", dry_run, write_enabled=not dry_run
     )
     worktrees = [Path(path) for path in values.get("worktreePaths", [])]
@@ -658,14 +659,6 @@ def next_rc_version_output(
 # ── Coverage / Cobertura ─────────────────────────────────────────────────
 
 
-def read_coverage_threshold(path: Path, fallback: int = 80) -> str:
-    """Read coverage minimum percent from quality JSON."""
-    if not path.exists():
-        return str(fallback)
-    data = read_json(path)
-    return str(nested(data, "coverage", "minimumPercent") or fallback)
-
-
 def read_cobertura_line_rate(path: Path) -> str:
     """Parse line-rate from Cobertura XML."""
     root_el = safe_xml_parse(path).getroot()
@@ -1014,10 +1007,3 @@ def _parse_values(options: dict[str, str]) -> dict[str, Any]:
         return _json.loads(raw) if raw else {}
     except _json.JSONDecodeError:
         return {}
-
-
-def require(options: dict[str, str], key: str) -> str:
-    value = options.get(key)
-    if not value:
-        raise CliError(f"Missing required option: --{key}")
-    return value

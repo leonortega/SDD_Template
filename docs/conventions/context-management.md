@@ -75,52 +75,29 @@ Every implementation, review, QA, deployment, PROD, rollback, or hotfix handoff 
 
 ## Prompt Cache Hygiene & Tiered Context Assembly
 
-Long-running agent workflows must assemble prompts in tier order to maximize provider-side prompt caching. The four tiers are defined in `.codex/delivery-policy.json` → `agentOptimization.contextTiers`.
+Long-running agent workflows must assemble prompts in tier order to maximize provider-side prompt caching. The machine-readable tier definitions (exact file lists, cache strategy, breakpoints) live in `.codex/delivery-policy.json` → `agentOptimization.contextTiers` — that file is the single source of truth for which files load in which tier.
 
 ### Tier 1 — Stable Prefix (cache once per session)
 
-Content that is identical across all agent turns for the entire session:
-
-- `AGENTS.md` — repository identity, mandatory first-step rules
-- `.codex/skills/_shared/repo-startup.md` — always-active skills (caveman, ponytail)
-- `.codex/delivery-policy.json` — optimization configuration
-- `.codex/mcp-instructions.md` — mandatory MCP routing contract
-- This file (`docs/conventions/context-management.md`)
+Content identical across all agent turns for the entire session (repo identity and mandatory rules). See the Tier 1 file list in `delivery-policy.json`.
 
 Place all Tier 1 content first, then mark a **cache breakpoint**. The provider caches the KV tensors for this prefix and reuses them on every turn.
 
 ### Tier 2 — Semi-Stable (cache once per session)
 
-Content that changes rarely, loaded every stage:
-
-- `.codex/skills/_shared/delivery-contract.md` — contract index
-- `.codex/skills/_shared/delivery-contract-core.md` — core delivery rules
-- `.codex/skills/_shared/skill-startup.md` — startup sequence
-- `.codex/project-profile.json` — selected providers and workflow defaults (stack lives **only** in `.codex/project-profile.local.json`)
+Content that changes rarely and is loaded every stage (delivery contract core, startup sequence, project profile). See the Tier 2 file list in `delivery-policy.json`.
 
 Mark a **cache breakpoint** after Tier 2.
 
 ### Tier 3 — Stage-Specific (cache per stage)
 
-Content that changes per workflow stage but stays stable within a stage:
-
-- `.codex/skills/_shared/delivery-contract-{ticket,review,qa,deploy,parallel}.md`
-- `.codex/skills/_shared/api-helpers.md`
-- Stage-specific skill files (`dev-flow-*`, `dev-ops-*`)
-- `docs/architecture/system.md`, `docs/conventions/development.md`, `docs/architecture/deployment.md`
+Content that changes per workflow stage but stays stable within a stage (stage contracts, stage skills, stage docs). See the Tier 3 file list in `delivery-policy.json`.
 
 Mark a **cache breakpoint** after Tier 3 — beyond this point, content changes every turn.
 
 ### Tier 4 — Dynamic (never cached)
 
-Content that changes every agent turn. Keep it as compact as possible:
-
-- Current user request / conversation turn
-- Active ticket state and generated comments
-- Git branch, dirty state, commit SHA, PR state, labels, CI status
-- Nexus manifests, QA evidence, monitoring output
-- Tool results, errors, retries, latest file contents
-- Live state fetched from OpenProject, Gitea, Nexus
+Content that changes every agent turn. Keep it as compact as possible: current user request, active ticket state and generated comments, Git branch/dirty state/commit SHA, PR state/labels/CI status, Nexus manifests, QA evidence, monitoring output, tool results, errors, retries, latest file contents, and live state fetched from OpenProject/Gitea/Nexus.
 
 ### Rules
 

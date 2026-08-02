@@ -6,42 +6,12 @@ Use this startup sequence for non-OpenSpec, non-configure delivery skills before
 
 ## Read Order With Tier Markers
 
-Load context in this order to maximize prompt caching. The tier markers indicate cache breakpoints.
+Load context in tier order to maximize prompt caching. The canonical four-tier definition (file lists, cache strategy, breakpoints) lives in **two** sources only — do not maintain a third copy here:
 
-### Tier 1 — Stable Prefix (cache once per session)
+1. Machine config: `.codex/delivery-policy.json` → `agentOptimization.contextTiers`
+2. Human intent: `docs/conventions/context-management.md` → §Prompt Cache Hygiene & Tiered Context Assembly
 
-`.codex/skills/_shared/repo-startup.md` — always-active skill policy (caveman, ponytail)
-
-> `<!-- CACHE BREAKPOINT: Tier 1 / Tier 2 boundary -->`
-
-### Tier 2 — Semi-Stable (cache once per session)
-
-1. `knowledge/README.md` — knowledge base index and policy
-2. `.codex/project-profile.json`
-3. `.codex/project-profile.local.json` when present
-4. `.codex/skills/_shared/delivery-contract-core.md` — always-read core rules
-5. `.codex/skills/_shared/preflight-skills-mcp.md` — mandatory Skills, Knowledge & MCP pre-flight gate
-
-> `<!-- CACHE BREAKPOINT: Tier 2 / Tier 3 boundary -->`
-
-### Tier 3 — Stage-Specific (cache per stage)
-
-6. `.codex/skills/_shared/delivery-contract-{ticket,review,qa,deploy,parallel}.md` — stage-specific contract
-7. `.codex/delivery-policy.json` — optimization config, loaded here so Tier 1-2 stay fully stable
-8. `docs/conventions/context-management.md` — context management fundamentals
-9. Stage-specific docs named by the skill, such as `docs/architecture/system.md`, `docs/conventions/development.md`, or `docs/architecture/deployment.md`
-10. `.codex/skills/_shared/api-helpers.md` when API calls are needed
-
-> `<!-- CACHE BREAKPOINT: End cached context. Dynamic data below. -->`
-
-### Tier 4 — Dynamic (never cached)
-
-- Current user request / conversation
-- Active ticket state and generated comments
-- Git branch, dirty state, commit SHA
-- PR state, labels, head SHA, CI status
-- Nexus manifests, QA evidence, monitoring output
-- Tool results, errors, retries, file contents
+Follow those definitions, then load the stage-specific files the active skill names (stage contract, stage docs, `.codex/skills/_shared/api-helpers.md` when API calls are needed). Keep Tier 1-2 blocks byte-stable across turns — cache hits depend on identical prefixes.
 
 ---
 

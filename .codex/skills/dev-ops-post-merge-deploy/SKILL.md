@@ -20,11 +20,12 @@ Before running, follow `.codex/skills/_shared/skill-startup.md`, which reads `.c
 
 ## Workflow Telemetry
 
-Capture UTC start time after resolving the ticket key and before post-merge validation or artifact waiting. Prefer OpenProject time-entry telemetry and create or update the `dev-ops-post-merge-deploy` entry via the `time-telemetry-upsert` operation (see `.codex/skills/openproject-sprint-backlog/references/openproject-api.md` → Operations → `time-telemetry-upsert` for the exact API payload with `spentOn`, `hours`, `comment`, and `_links`). Use marker `IA generated workflow telemetry: {ticketKey}:dev-ops-post-merge-deploy`. Resolve the activity href by running `python -m tools.sdd_cli dev-flow resolve-openproject-activity --workflow-stage dev-ops-post-merge-deploy --input-json '{"timeTelemetry":{...}}'` and reverse-lookup the activity ID from the resolved name.
+Apply the shared workflow telemetry pattern (`.codex/skills/_shared/pipeline-workflow-telemetry.md`) with:
 
-Use `python -m tools.sdd_cli dev-flow append-telemetry -TicketKey {ticketKey}` only as the JSONL fallback when direct time telemetry is unavailable. On resume or idempotent reuse, append or update another row for the same stage; workflow timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage=dev-ops-post-merge-deploy`, `agentRole=deployment`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. Do not duplicate the `dev-ops-deploy-qa` row; `dev-ops-deploy-qa` records its own stage when invoked.
+- `{workflowStage}` = `dev-ops-post-merge-deploy`
+- `{agentRole}` = `deployment`
 
-For shared API helpers including time-entry POST payload format and activity reverse-lookup, see `.codex/skills/_shared/api-helpers.md` → OpenProject → Workflow time telemetry.
+Capture UTC start time after resolving the ticket key and before post-merge validation or artifact waiting. Create or update the `dev-ops-post-merge-deploy` entry via `time-telemetry-upsert` (payload in `.codex/skills/openproject-sprint-backlog/references/openproject-api.md` → Operations → `time-telemetry-upsert`; shared helpers in `.codex/skills/_shared/api-helpers.md` → OpenProject → Workflow time telemetry). Use marker `IA generated workflow telemetry: {ticketKey}:dev-ops-post-merge-deploy`. Resolve the activity via `python -m tools.sdd_cli dev-flow resolve-openproject-activity --workflow-stage dev-ops-post-merge-deploy --input-json '{"timeTelemetry":{...}}'` and reverse-lookup the activity ID. Use `python -m tools.sdd_cli dev-flow append-telemetry -TicketKey {ticketKey}` only as the JSONL fallback when direct time telemetry is unavailable. On resume, append or update another row for the same stage; timing rendering collapses repeated stage rows into earliest start and latest finish. Include `workflowStage`, `agentRole`, `startedUtc`, `finishedUtc`, `retryCount`, and `outcome`. Do not duplicate the `dev-ops-deploy-qa` row; `dev-ops-deploy-qa` records its own stage when invoked.
 
 ## Configuration
 

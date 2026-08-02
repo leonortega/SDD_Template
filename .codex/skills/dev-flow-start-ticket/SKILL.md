@@ -38,20 +38,14 @@ This skill owns initial creation of ignored `.codex/delivery-context.local.json`
 
 ### ⚠️ HARD GATE: Time entries are mandatory
 
-OpenProject time entries are the PRIMARY telemetry store. You MUST:
+OpenProject time entries are the PRIMARY telemetry store. Apply the shared workflow telemetry pattern (`.codex/skills/_shared/pipeline-workflow-telemetry.md`) with:
 
-1. **Capture UTC start time** before the first ticket-specific mutation.
-2. **Create the time entry** via `time-telemetry-upsert` (POST `/api/v3/time_entries`). See `.codex/skills/openproject-sprint-backlog/references/openproject-api.md` → Operations → `time-telemetry-upsert` for the exact API payload with `spentOn`, `hours`, `comment`, `_links.user`, `_links.entity`, `_links.project`, and `_links.activity`.
-3. **Use marker** `IA generated workflow telemetry: {ticketKey}:dev-flow-start-ticket`.
-4. **Resolve activity** by running:
-   ```bash
-   python -m tools.sdd_cli dev-flow resolve-openproject-activity --workflow-stage dev-flow-start-ticket --input-json '{"timeTelemetry":{...}}'
-   ```
-   Then reverse-lookup the activity ID from the resolved name against the mapping in the adapter doc.
+- `{workflowStage}` = `dev-flow-start-ticket`
+- `{agentRole}` = `startTicket`
+
+Capture UTC start time before the first ticket-specific mutation and create the time entry via `time-telemetry-upsert` (POST `/api/v3/time_entries`; exact payload in `.codex/skills/openproject-sprint-backlog/references/openproject-api.md` → Operations → `time-telemetry-upsert`, and `.codex/skills/_shared/api-helpers.md` → OpenProject → Workflow time telemetry). Use marker `IA generated workflow telemetry: {ticketKey}:dev-flow-start-ticket`. Resolve the activity by running `python -m tools.sdd_cli dev-flow resolve-openproject-activity --workflow-stage dev-flow-start-ticket --input-json '{"timeTelemetry":{...}}'`, then reverse-lookup the activity ID from the resolved name.
 
 **Do NOT skip this step.** If `time-telemetry-upsert` fails (returns a 4xx or 5xx error), stop and report the failure. Do not use any fallback mechanism.
-
-For shared API helpers including time-entry POST payload format and activity reverse-lookup, see `.codex/skills/_shared/api-helpers.md` → OpenProject → Workflow time telemetry.
 
 ## Configuration
 
