@@ -319,7 +319,7 @@ The full architectural plan is in [`setup-flow-plan.md`](setup-flow-plan.md).
 ## 9. Eval Alignment (Promptfoo Coverage)
 
 Every workflow in this document is exercised by the agent eval
-(`.codex/agent-evals/promptfooconfig.yaml`, 36 cases). Coverage per workflow:
+(`.codex/agent-evals/promptfooconfig.yaml`, 39 cases). Coverage per workflow:
 
 | Workflow | Eval coverage mechanism | Covered? |
 | -------- | ----------------------- | -------- |
@@ -331,13 +331,16 @@ Every workflow in this document is exercised by the agent eval
 | `grafana-board-update` | explicit `requestType: dashboard-update` | ✅ |
 | `dev-flow-parallel-ticket-coordinator` | parallel-delivery coverage group (5 cases, `blocked-*` + lane routes) | ✅ |
 | `dev-flow-apply-change`, `tdd` | helper skills — exercised indirectly via implementation cases | ✅ |
-| `docs-knowledge-maintenance` | explicit `requestType: docs-knowledge-maintenance` (36th case) | ✅ |
+| `docs-knowledge-maintenance` | explicit `requestType: docs-knowledge-maintenance` | ✅ |
+| Frontend design (impeccable) | `activatedSkills` stack-mapping group (3 cases: frontend impl, backend-only, pre-impl) | ✅ |
 
-**Resolved gap.** `docs-knowledge-maintenance` previously had no entry in
+**Resolved gaps.** `docs-knowledge-maintenance` previously had no entry in
 `EXPLICIT_REQUEST_ROUTES` (`.codex/agent-evals/routing_provider.py`) and no state
 route, so an explicit "update the docs" request fell through to
 `dev-flow-pipeline-status`. It now has an explicit `requestType` mapping and a matching
-Promptfoo test case; all 36 eval cases pass against the provider.
+Promptfoo test case. Frontend design skills are verified via `activatedSkills` on
+implementation-stage routes (impeccable activated only for frontend stacks); all 39
+eval cases pass against the provider.
 
 ---
 

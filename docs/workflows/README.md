@@ -58,6 +58,6 @@ Every row in the `AGENTS.md` routing table is documented in exactly one place:
 ## Eval Alignment
 
 All 20 routing rows now have eval coverage: the Promptfoo eval
-(`.codex/agent-evals/promptfooconfig.yaml`, 36 cases) exercises every explicit
+(`.codex/agent-evals/promptfooconfig.yaml`, 39 cases) exercises every explicit
 `requestType` route plus the state-driven variants. See the Eval Alignment section
 (§9) in `supporting-workflows.md` for the per-workflow coverage table.

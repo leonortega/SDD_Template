@@ -32,6 +32,35 @@ EXPLICIT_REQUEST_ROUTES = {
 }
 
 
+# Frontend stack markers that activate frontend-design skills during
+# implementation (mirrors the stack-mapping table in
+# .codex/skills/dev-flow-implement-ticket/SKILL.md). Any web frontend gets
+# playwright, playwright-interactive, and impeccable.
+FRONTEND_STACK_MARKERS = (
+    "react", "vue", "svelte", "angular", "next", "nuxt",
+    "astro", "frontend", "typescript", "javascript", "web",
+)
+
+
+def _activated_skills_for_stack(route: str, product_stack: str) -> list[str]:
+    """Return domain skills the implementation stage would activate for the stack.
+
+    Mirrors the stack-mapping table in dev-flow-implement-ticket/SKILL.md:
+    implementation-stage routes on a frontend stack activate the frontend
+    design skill (impeccable) plus browser-testing skills. Non-frontend
+    stacks and non-implementation routes activate nothing extra.
+    """
+    if route not in ("dev-flow-implement-ticket", "dev-flow-continue-implementation"):
+        return []
+    stack = product_stack.strip().lower()
+    if not stack or stack == "none":
+        return []
+    is_frontend = any(marker in stack for marker in FRONTEND_STACK_MARKERS)
+    if not is_frontend:
+        return []
+    return ["playwright", "playwright-interactive", "impeccable"]
+
+
 def call_api(
     prompt: str,
     options: dict[str, Any] | None = None,
@@ -141,6 +170,7 @@ def call_api(
 
     result = {
         "route": route,
+        "activatedSkills": _activated_skills_for_stack(route, product_stack),
         "reasoning": reasoning,
         "inputs": inputs,
     }
