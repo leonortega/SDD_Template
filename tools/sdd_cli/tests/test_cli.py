@@ -645,17 +645,6 @@ class SddCliTests(unittest.TestCase):
             self.assertIn("Invalid JSON in --values-json", stderr.getvalue())
             self.assertNotIn("Traceback", stderr.getvalue())
 
-    def test_infra_up_builds_docker_compose_command(self) -> None:
-        calls = []
-
-        def runner(command, cwd, env):
-            calls.append(command)
-            return 0
-
-        self.assertEqual(0, cli.infra_compose("up", runner))
-        self.assertIn("compose", calls[0])
-        self.assertEqual(["up", "-d", "--remove-orphans"], calls[0][-3:])
-
     def test_tool_install_copies_runtime_assets_and_excludes_tool_only_files(
         self,
     ) -> None:
@@ -1006,7 +995,7 @@ class SddCliTests(unittest.TestCase):
                     return "v0.1.0\nv0.1.7-rc.2\nv0.1.6\nv0.1.7\n"
                 return ""
 
-            with patch.object(cli, "git_text", fake_git_text):
+            with patch("tools.sdd_cli.tool_installer.git_text", fake_git_text):
                 result = cli.install_sdd_tool(source, target, None, "install")
 
             self.assertEqual("v0.1.7", result["version"])

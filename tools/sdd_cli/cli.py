@@ -78,18 +78,6 @@ def normalize_stack_domain(value: Any) -> dict[str, Any]:
     return _impl(value)
 
 
-def infra_compose(action: str, runner: Any = None) -> int:
-    if action == "up":
-        return (
-            0
-            if runner is None
-            else runner(
-                ["docker", "compose", "up", "-d", "--remove-orphans"], None, None
-            )
-        )
-    return 0
-
-
 def read_ticket_pattern(root: Path) -> str:
     from ._shared import read_ticket_pattern as _impl
 
@@ -206,17 +194,9 @@ def install_sdd_tool(
     action: str,
     dry_run: bool = False,
 ) -> dict[str, Any]:
-    import tools.sdd_cli.tool_installer as _ti_mod
-
     from .tool_installer import install_or_update_sdd_tool
 
-    # Temporarily replace git_text with cli.git_text so tests can patch it
-    _orig_git_text = _ti_mod.git_text
-    _ti_mod.git_text = git_text
-    try:
-        return install_or_update_sdd_tool(source, target, version, action, dry_run)
-    finally:
-        _ti_mod.git_text = _orig_git_text
+    return install_or_update_sdd_tool(source, target, version, action, dry_run)
 
 
 def configure_mode(args: Any) -> int:
@@ -577,6 +557,11 @@ def _fallback(args: Any) -> int:
         "Top-level commands: prereqs, environment-lab, tool-installer, "
         "template-installer, guidance, stack-tests, dev-flow, full-setup, "
         "knowledge-search, configure",
+        file=sys.stderr,
+    )
+    print(
+        "Note: `environment-lab setup-lab` and `full-setup` are aliases "
+        "(both run the 4-stage setup); use `full-setup --dry-run true` to preview.",
         file=sys.stderr,
     )
     return 1

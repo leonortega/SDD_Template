@@ -25,7 +25,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from ._shared import REPO_ROOT, load_project_profile, nested, parse_pairs, read_json
+from ._shared import REPO_ROOT, load_project_profile, parse_pairs, quality_coverage_minimum
 
 # Per-framework (install_cmd, test_cmd) pairs covering the three test levels.
 # IMPORTANT: pytest is Python-only. .NET test frameworks (xunit, nunit,
@@ -90,19 +90,8 @@ def _normalize_framework(fw: Any) -> str:
 
 
 def _read_coverage_threshold(root: Path) -> int:
-    """Coverage minimum percent: quality.local.json → quality.example.json → 80."""
-    for name in ("quality.local.json", "quality.example.json"):
-        path = root / ".codex" / name
-        if not path.exists():
-            continue
-        data = read_json(path)
-        value = nested(data, "coverage", "minimumPercent")
-        if value is not None:
-            try:
-                return int(value)
-            except (TypeError, ValueError):
-                break
-    return _DEFAULT_THRESHOLD
+    """Coverage minimum percent via the shared quality config chain."""
+    return quality_coverage_minimum(root, _DEFAULT_THRESHOLD)
 
 
 def run_stack_tests(root: Path, dry_run: bool = False) -> dict[str, Any]:

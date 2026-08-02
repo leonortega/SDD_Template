@@ -1,4 +1,16 @@
 {
+  "quality": {
+    "gates": [
+      {"id": "json-validation", "required": true},
+      {"id": "gitleaks", "required": true},
+      {"id": "semgrep", "required": true},
+      {"id": "trivy", "required": true},
+      {"id": "checkov", "required": true},
+      {"id": "repo-tooling-tests", "required": true},
+      {"id": "stack-tests", "required": false},
+      {"id": "dev-flow-review-label", "required": true}
+    ]
+  },
   "agentOptimization": {
     "maxAutonomousIterations": 20,
     "maxToolRetries": 2,

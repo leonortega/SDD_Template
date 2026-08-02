@@ -10,6 +10,12 @@ on:
 # This is applied by the AI review-agent (dev-flow-pr-review-agent skill)
 # after reviewing the diff. Without it, CI fails — ensuring every PR
 # receives automated review before merge.
+#
+# Scan layering: local lefthook hooks (pre-commit gitleaks protect / trunk
+# fmt, commit-msg contract) are the fast first line; this workflow is the
+# authoritative full gate (gitleaks detect, semgrep, trivy, checkov, JSON
+# validation, repo tooling tests, dev-flow label). Product tests run via the
+# pre-push stack-tests hook on dev machines — never assume a tech stack.
 
 jobs:
   validate:
@@ -48,12 +54,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Read stack-specific semgrep rules from committed config, fallback to broad rules
-          if [ -f .semgrep-rules.json ]; then
-            RULES=$(python3 -c "import json, sys; rules=json.load(open('.semgrep-rules.json')).get('rules',[]); [print(f'--config {r}') for r in rules]" 2>/dev/null)
+          # Single source of truth: .semgrep-rules.json (committed). Fail
+          # loudly instead of silently scanning with a hardcoded fallback.
+          if [ ! -f .semgrep-rules.json ]; then
+            echo "FAIL: .semgrep-rules.json missing - run 'configure set-semgrep-config'." >&2
+            exit 1
           fi
+          RULES=$(python3 -c "import json, sys; rules=json.load(open('.semgrep-rules.json')).get('rules',[]); [print(f'--config {r}') for r in rules]")
           if [ -z "${RULES:-}" ]; then
-            RULES="--config p/typescript --config p/javascript --config p/python --config p/csharp"
+            echo "FAIL: .semgrep-rules.json contains no rules - run 'configure set-semgrep-config'." >&2
+            exit 1
           fi
           semgrep scan $RULES --error --verbose . 2>&1
 

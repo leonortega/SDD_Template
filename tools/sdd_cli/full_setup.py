@@ -459,62 +459,54 @@ def stage4_project_guidance(root: Path, dry_run: bool = False) -> dict[str, Any]
 
 
 def _check_python() -> dict[str, Any]:
-    """Check Python version meets minimum requirement (3.11+)."""
-    from ._shared import PYTHON_REQUIRES
+    """Check Python version meets minimum requirement (3.11+).
 
-    version = sys.version_info[:2]
-    ok = version >= PYTHON_REQUIRES
+    Delegates to ``prereqs.check_python`` — single source of truth for the
+    prerequisite checks (prereqs.py, full_setup stage 1, environment-lab).
+    """
+    from .prereqs import check_python
+
+    result = check_python()
     return {
         "command": "prereq-python",
         "title": "Python 3.11+",
-        "valid": ok,
-        "current": f"{version[0]}.{version[1]}",
-        "required": f"{PYTHON_REQUIRES[0]}.{PYTHON_REQUIRES[1]}",
+        "valid": result["valid"],
+        "current": result["current"],
+        "required": result["required"],
     }
 
 
 def _check_node() -> dict[str, Any]:
-    """Check if Node.js and npm are available."""
-    node = run_native(["node", "--version"], REPO_ROOT, timeout=10)
-    npm = run_native(["npm", "--version"], REPO_ROOT, timeout=10)
-    ok = node["returncode"] == 0 and npm["returncode"] == 0
+    """Check if Node.js and npm are available.
+
+    Delegates to ``prereqs.check_node`` — single source of truth.
+    """
+    from .prereqs import check_node
+
+    result = check_node()
     return {
         "command": "prereq-node",
         "title": "Node.js + npm",
-        "valid": ok,
-        "nodeVersion": node["stdout"] if node["returncode"] == 0 else "",
-        "npmVersion": npm["stdout"] if npm["returncode"] == 0 else "",
+        "valid": result["valid"],
+        "nodeVersion": result.get("nodeVersion", ""),
+        "npmVersion": result.get("npmVersion", ""),
     }
 
 
 def _enable_powershell() -> dict[str, Any]:
-    """Enable PowerShell script execution (RemoteSigned) on Windows."""
-    if sys.platform != "win32":
-        return {
-            "command": "prereq-powershell",
-            "title": "PowerShell (Windows)",
-            "valid": True,
-            "message": "Not Windows; skipped.",
-        }
-    ps_result = run_native(
-        [
-            "powershell",
-            "-Command",
-            "Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force",
-        ],
-        REPO_ROOT,
-        timeout=30,
-    )
-    ok = ps_result["returncode"] == 0
+    """Enable PowerShell script execution (RemoteSigned) on Windows.
+
+    Delegates to ``prereqs.enable_powershell_execution_policy`` — single
+    source of truth.
+    """
+    from .prereqs import enable_powershell_execution_policy
+
+    result = enable_powershell_execution_policy()
     return {
         "command": "prereq-powershell",
-        "title": "PowerShell execution policy",
-        "valid": ok,
-        "message": (
-            "PowerShell execution policy set to RemoteSigned."
-            if ok
-            else ps_result["stderr"]
-        ),
+        "title": "PowerShell (Windows)",
+        "valid": result["valid"],
+        "message": result.get("message", ""),
     }
 
 

@@ -124,16 +124,20 @@ def test_run_full_setup_help(capsys: Any, tool_installer_mocks: Any, guidance_mo
 
     with patch.object(sys, "version_info", (3, 15)):
         with patch(
-            "tools.sdd_cli.full_setup.run_native",
+            "tools.sdd_cli.prereqs.run_native",
             return_value={"returncode": 0, "stdout": "v20.0.0", "stderr": ""},
         ):
-            with patch("tools.sdd_cli.environment_lab.setup_lab",
-                       return_value=mock_lab_ok):
-                with contextlib.ExitStack() as stack:
-                    for m in tool_installer_mocks + guidance_mocks:
-                        stack.enter_context(m)
-                    with patch("sys.platform", "linux"):
-                        rc = run_full_setup([])
+            with patch(
+                "tools.sdd_cli.full_setup.run_native",
+                return_value={"returncode": 0, "stdout": "v20.0.0", "stderr": ""},
+            ):
+                with patch("tools.sdd_cli.environment_lab.setup_lab",
+                           return_value=mock_lab_ok):
+                    with contextlib.ExitStack() as stack:
+                        for m in tool_installer_mocks + guidance_mocks:
+                            stack.enter_context(m)
+                        with patch("sys.platform", "linux"):
+                            rc = run_full_setup([])
     captured = capsys.readouterr()
     output = captured.out
     assert "Stage1-Prerequisites" in output or "FULL SETUP" in output
@@ -146,14 +150,18 @@ def test_run_full_setup_dry_run(capsys: Any, tool_installer_mocks: Any, guidance
 
     with patch.object(sys, "version_info", (3, 15)):
         with patch(
-            "tools.sdd_cli.full_setup.run_native",
+            "tools.sdd_cli.prereqs.run_native",
             return_value={"returncode": 0, "stdout": "v20.0.0", "stderr": ""},
         ):
-            with contextlib.ExitStack() as stack:
-                for m in tool_installer_mocks + guidance_mocks:
-                    stack.enter_context(m)
-                with patch("sys.platform", "linux"):
-                    rc = run_full_setup(["--dry-run", "true"])
+            with patch(
+                "tools.sdd_cli.full_setup.run_native",
+                return_value={"returncode": 0, "stdout": "v20.0.0", "stderr": ""},
+            ):
+                with contextlib.ExitStack() as stack:
+                    for m in tool_installer_mocks + guidance_mocks:
+                        stack.enter_context(m)
+                    with patch("sys.platform", "linux"):
+                        rc = run_full_setup(["--dry-run", "true"])
     captured = capsys.readouterr()
     assert rc == 0
 
@@ -166,16 +174,20 @@ def test_run_full_setup_python_fails(capsys: Any, tool_installer_mocks: Any, gui
 
     with patch.object(sys, "version_info", (3, 9)):  # Too old
         with patch(
-            "tools.sdd_cli.full_setup.run_native",
+            "tools.sdd_cli.prereqs.run_native",
             return_value={"returncode": 0, "stdout": "v20.0.0", "stderr": ""},
         ):
-            with patch("tools.sdd_cli.environment_lab.setup_lab",
-                       return_value=mock_lab_ok):
-                with contextlib.ExitStack() as stack:
-                    for m in tool_installer_mocks + guidance_mocks:
-                        stack.enter_context(m)
-                    with patch("sys.platform", "linux"):
-                        rc = run_full_setup([])
+            with patch(
+                "tools.sdd_cli.full_setup.run_native",
+                return_value={"returncode": 0, "stdout": "v20.0.0", "stderr": ""},
+            ):
+                with patch("tools.sdd_cli.environment_lab.setup_lab",
+                           return_value=mock_lab_ok):
+                    with contextlib.ExitStack() as stack:
+                        for m in tool_installer_mocks + guidance_mocks:
+                            stack.enter_context(m)
+                        with patch("sys.platform", "linux"):
+                            rc = run_full_setup([])
     assert rc == 1
 
 
@@ -187,20 +199,23 @@ def test_run_full_setup_node_fails(capsys: Any, tool_installer_mocks: Any, guida
 
     with patch.object(sys, "version_info", (3, 15)):
         with patch(
-            "tools.sdd_cli.full_setup.run_native",
+            "tools.sdd_cli.prereqs.run_native",
             side_effect=[
                 {"returncode": 127, "stdout": "", "stderr": "node not found"},
                 {"returncode": 127, "stdout": "", "stderr": "npm not found"},
-                {"returncode": 0, "stdout": "v20.0.0", "stderr": ""},
             ],
         ):
-            with patch("tools.sdd_cli.environment_lab.setup_lab",
-                       return_value=mock_lab_ok):
-                with contextlib.ExitStack() as stack:
-                    for m in tool_installer_mocks + guidance_mocks:
-                        stack.enter_context(m)
-                    with patch("sys.platform", "linux"):
-                        rc = run_full_setup([])
+            with patch(
+                "tools.sdd_cli.full_setup.run_native",
+                return_value={"returncode": 0, "stdout": "v20.0.0", "stderr": ""},
+            ):
+                with patch("tools.sdd_cli.environment_lab.setup_lab",
+                           return_value=mock_lab_ok):
+                    with contextlib.ExitStack() as stack:
+                        for m in tool_installer_mocks + guidance_mocks:
+                            stack.enter_context(m)
+                        with patch("sys.platform", "linux"):
+                            rc = run_full_setup([])
     assert rc == 1
 
 
@@ -212,20 +227,23 @@ def test_run_full_setup_docker_fails(capsys: Any, tool_installer_mocks: Any, gui
 
     with patch.object(sys, "version_info", (3, 15)):
         with patch(
-            "tools.sdd_cli.full_setup.run_native",
+            "tools.sdd_cli.prereqs.run_native",
             side_effect=[
                 {"returncode": 0, "stdout": "v20.0.0", "stderr": ""},
                 {"returncode": 0, "stdout": "10.0.0", "stderr": ""},
-                {"returncode": 1, "stdout": "", "stderr": "docker not found"},
             ],
         ):
-            with patch("tools.sdd_cli.environment_lab.setup_lab",
-                       return_value=mock_lab_ok):
-                with contextlib.ExitStack() as stack:
-                    for m in tool_installer_mocks + guidance_mocks:
-                        stack.enter_context(m)
-                    with patch("sys.platform", "linux"):
-                        rc = run_full_setup([])
+            with patch(
+                "tools.sdd_cli.full_setup.run_native",
+                return_value={"returncode": 1, "stdout": "", "stderr": "docker not found"},
+            ):
+                with patch("tools.sdd_cli.environment_lab.setup_lab",
+                           return_value=mock_lab_ok):
+                    with contextlib.ExitStack() as stack:
+                        for m in tool_installer_mocks + guidance_mocks:
+                            stack.enter_context(m)
+                        with patch("sys.platform", "linux"):
+                            rc = run_full_setup([])
     assert rc == 1
 
 
@@ -312,11 +330,15 @@ def test_stage1_prerequisites_all_pass() -> None:
 
     with patch.object(sys, "version_info", (3, 15)):
         with patch(
-            "tools.sdd_cli.full_setup.run_native",
+            "tools.sdd_cli.prereqs.run_native",
             return_value={"returncode": 0, "stdout": "v20.0.0", "stderr": ""},
         ):
-            with patch("sys.platform", "linux"):
-                result = stage1_prerequisites(Path("."))
+            with patch(
+                "tools.sdd_cli.full_setup.run_native",
+                return_value={"returncode": 0, "stdout": "v20.0.0", "stderr": ""},
+            ):
+                with patch("sys.platform", "linux"):
+                    result = stage1_prerequisites(Path("."))
     assert result["valid"] is True
     assert len(result["steps"]) == 4
 
@@ -327,11 +349,15 @@ def test_stage1_prerequisites_python_fails() -> None:
 
     with patch.object(sys, "version_info", (3, 9)):
         with patch(
-            "tools.sdd_cli.full_setup.run_native",
+            "tools.sdd_cli.prereqs.run_native",
             return_value={"returncode": 0, "stdout": "v20.0.0", "stderr": ""},
         ):
-            with patch("sys.platform", "linux"):
-                result = stage1_prerequisites(Path("."))
+            with patch(
+                "tools.sdd_cli.full_setup.run_native",
+                return_value={"returncode": 0, "stdout": "v20.0.0", "stderr": ""},
+            ):
+                with patch("sys.platform", "linux"):
+                    result = stage1_prerequisites(Path("."))
     assert result["valid"] is False
     assert any("error" in f.get("severity", "") for f in result["findings"])
 
@@ -342,11 +368,15 @@ def test_stage1_prerequisites_findings_structure() -> None:
 
     with patch.object(sys, "version_info", (3, 9)):
         with patch(
-            "tools.sdd_cli.full_setup.run_native",
+            "tools.sdd_cli.prereqs.run_native",
             return_value={"returncode": 0, "stdout": "v20.0.0", "stderr": ""},
         ):
-            with patch("sys.platform", "linux"):
-                result = stage1_prerequisites(Path("."))
+            with patch(
+                "tools.sdd_cli.full_setup.run_native",
+                return_value={"returncode": 0, "stdout": "v20.0.0", "stderr": ""},
+            ):
+                with patch("sys.platform", "linux"):
+                    result = stage1_prerequisites(Path("."))
     assert "findings" in result
     for f in result["findings"]:
         assert "path" in f
@@ -382,7 +412,7 @@ def test_check_node_ok() -> None:
     from tools.sdd_cli.full_setup import _check_node
 
     with patch(
-        "tools.sdd_cli.full_setup.run_native",
+        "tools.sdd_cli.prereqs.run_native",
         return_value={"returncode": 0, "stdout": "v20.0.0", "stderr": ""},
     ):
         result = _check_node()
@@ -395,7 +425,7 @@ def test_check_node_missing() -> None:
     from tools.sdd_cli.full_setup import _check_node
 
     with patch(
-        "tools.sdd_cli.full_setup.run_native",
+        "tools.sdd_cli.prereqs.run_native",
         return_value={"returncode": 127, "stdout": "", "stderr": "not found"},
     ):
         result = _check_node()

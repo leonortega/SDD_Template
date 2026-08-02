@@ -631,6 +631,45 @@ def _register_mcp_entry(
     return result
 
 
+def _install_mcp(
+    root: Path,
+    mode: str,
+    server_name: str,
+    expected_entry: dict[str, Any],
+    dry_run: bool,
+    warnings: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    """Shared plumbing for every install_*_mcp function.
+
+    Builds the configure result, appends dry-run or warning actions, and
+    delegates to :func:`_register_mcp_entry`. Installers only supply the mode
+    name, server key, and the expected entry (plus optional warning actions).
+    """
+    result = configure_result(mode, dry_run, write_enabled=not dry_run)
+    mcp_path = root / ".vscode" / "mcp.json"
+    for warning in warnings or []:
+        result["actions"].append(
+            {
+                **warning,
+                "severity": "warning",
+                "phase": "audit",
+            }
+        )
+    if dry_run:
+        result["actions"].append(
+            {
+                "path": ".vscode/mcp.json",
+                "key": server_name,
+                "severity": "info",
+                "message": f"Would register {server_name} MCP server.",
+                "phase": "apply",
+            }
+        )
+        result["valid"] = True
+        return result
+    return _register_mcp_entry(root, mcp_path, server_name, expected_entry, result, dry_run)
+
+
 # ── Playwright MCP ───────────────────────────────────────────────────────
 
 
@@ -639,27 +678,13 @@ def install_playwright_mcp(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
     Requires Playwright browsers to be installed (npx playwright install chromium).
     """
-    result = configure_result(
-        "InstallPlaywrightMCP", dry_run, write_enabled=not dry_run
+    return _install_mcp(
+        root,
+        "InstallPlaywrightMCP",
+        "playwright",
+        {"command": "npx", "args": ["-y", "@playwright/mcp@latest"]},
+        dry_run,
     )
-    mcp_path = root / ".vscode" / "mcp.json"
-    expected_entry = {
-        "command": "npx",
-        "args": ["-y", "@playwright/mcp@latest"],
-    }
-    if dry_run:
-        result["actions"].append(
-            {
-                "path": ".vscode/mcp.json",
-                "key": "playwright",
-                "severity": "info",
-                "message": "Would register playwright MCP server.",
-                "phase": "apply",
-            }
-        )
-        result["valid"] = True
-        return result
-    return _register_mcp_entry(root, mcp_path, "playwright", expected_entry, result, dry_run)
 
 
 # ── Grafana MCP ──────────────────────────────────────────────────────────
@@ -671,11 +696,6 @@ def install_grafana_mcp(root: Path, dry_run: bool = False) -> dict[str, Any]:
     Reads GRAFANA_SERVICE_ACCOUNT_TOKEN from infra/monitoring/variables.env.
     Requires a running Grafana instance at localhost:3000 or configured URL.
     """
-    result = configure_result(
-        "InstallGrafanaMCP", dry_run, write_enabled=not dry_run
-    )
-    mcp_path = root / ".vscode" / "mcp.json"
-
     # Read grafana env vars
     monitoring_env = root / "infra" / "monitoring" / "variables.env"
     grafana_token = ""
@@ -685,41 +705,24 @@ def install_grafana_mcp(root: Path, dry_run: bool = False) -> dict[str, Any]:
         grafana_token = env_vars.get("GRAFANA_SERVICE_ACCOUNT_TOKEN", "")
         grafana_url = env_vars.get("GRAFANA_URL", "http://localhost:3000")
 
+    warnings: list[dict[str, str]] = []
     if not grafana_token or "replace-with" in grafana_token:
-        result["actions"].append(
+        warnings.append(
             {
                 "path": "infra/monitoring/variables.env",
                 "key": "grafana.token",
-                "severity": "warning",
                 "message": "GRAFANA_SERVICE_ACCOUNT_TOKEN not configured. Registering server config without token placeholder.",
-                "phase": "audit",
             }
         )
 
     expected_entry: dict[str, Any] = {
         "command": "uvx",
         "args": ["mcp-grafana"],
-    }
-    env_dict: dict[str, str] = {
-        "GRAFANA_URL": grafana_url,
+        "env": {"GRAFANA_URL": grafana_url},
     }
     if grafana_token and "replace-with" not in grafana_token:
-        env_dict["GRAFANA_SERVICE_ACCOUNT_TOKEN"] = grafana_token
-    expected_entry["env"] = env_dict
-
-    if dry_run:
-        result["actions"].append(
-            {
-                "path": ".vscode/mcp.json",
-                "key": "grafana",
-                "severity": "info",
-                "message": "Would register grafana MCP server.",
-                "phase": "apply",
-            }
-        )
-        result["valid"] = True
-        return result
-    return _register_mcp_entry(root, mcp_path, "grafana", expected_entry, result, dry_run)
+        expected_entry["env"]["GRAFANA_SERVICE_ACCOUNT_TOKEN"] = grafana_token
+    return _install_mcp(root, "InstallGrafanaMCP", "grafana", expected_entry, dry_run, warnings)
 
 
 # ── Kubernetes MCP ───────────────────────────────────────────────────────
@@ -731,11 +734,6 @@ def install_k8s_mcp(root: Path, dry_run: bool = False) -> dict[str, Any]:
     Reads KUBECONFIG env var or defaults to ~/.kube/config.
     Requires a running Kubernetes cluster (e.g. Docker Desktop K8s).
     """
-    result = configure_result(
-        "InstallK8sMCP", dry_run, write_enabled=not dry_run
-    )
-    mcp_path = root / ".vscode" / "mcp.json"
-
     # Determine kubeconfig path
     kubeconfig = os.environ.get("KUBECONFIG", "")
     if not kubeconfig:
@@ -747,33 +745,18 @@ def install_k8s_mcp(root: Path, dry_run: bool = False) -> dict[str, Any]:
         "command": "npx",
         "args": ["-y", "kubernetes-mcp-server@latest"],
     }
+    warnings: list[dict[str, str]] = []
     if kubeconfig:
         expected_entry["env"] = {"KUBECONFIG": kubeconfig}
-
-    if not kubeconfig:
-        result["actions"].append(
+    else:
+        warnings.append(
             {
                 "path": "kubeconfig",
                 "key": "k8s.kubeconfig",
-                "severity": "warning",
                 "message": "No kubeconfig found. K8s MCP will use default kubectl context (might fail if no cluster is configured).",
-                "phase": "audit",
             }
         )
-
-    if dry_run:
-        result["actions"].append(
-            {
-                "path": ".vscode/mcp.json",
-                "key": "kubernetes",
-                "severity": "info",
-                "message": "Would register kubernetes MCP server.",
-                "phase": "apply",
-            }
-        )
-        result["valid"] = True
-        return result
-    return _register_mcp_entry(root, mcp_path, "kubernetes", expected_entry, result, dry_run)
+    return _install_mcp(root, "InstallK8sMCP", "kubernetes", expected_entry, dry_run, warnings)
 
 
 # ── Gitea MCP ────────────────────────────────────────────────────────────
@@ -786,11 +769,6 @@ def install_gitea_mcp(root: Path, dry_run: bool = False) -> dict[str, Any]:
     Requires a running Gitea instance and a valid API token (generated by
     generate_gitea_api_token or provision_lab_users).
     """
-    result = configure_result(
-        "InstallGiteaMCP", dry_run, write_enabled=not dry_run
-    )
-    mcp_path = root / ".vscode" / "mcp.json"
-
     # Read gitea credentials from client-tools.local.json
     client_path = root / ".codex" / "client-tools.local.json"
     gitea_url = "http://localhost:3000"
@@ -802,14 +780,13 @@ def install_gitea_mcp(root: Path, dry_run: bool = False) -> dict[str, Any]:
             gitea_url = str(gitea_section.get("baseUrl", "http://localhost:3000")).rstrip("/")
             gitea_token = gitea_section.get("apiToken", "")
 
+    warnings: list[dict[str, str]] = []
     if not gitea_token or "replace-with" in gitea_token:
-        result["actions"].append(
+        warnings.append(
             {
                 "path": ".codex/client-tools.local.json",
                 "key": "gitea.token",
-                "severity": "warning",
                 "message": "Gitea API token not configured. Run provision_lab_users or generate_gitea_api_token first.",
-                "phase": "audit",
             }
         )
 
@@ -826,20 +803,7 @@ def install_gitea_mcp(root: Path, dry_run: bool = False) -> dict[str, Any]:
     }
     if gitea_token and "replace-with" not in gitea_token:
         expected_entry["env"] = {"GITEA_ACCESS_TOKEN": gitea_token}
-
-    if dry_run:
-        result["actions"].append(
-            {
-                "path": ".vscode/mcp.json",
-                "key": "gitea",
-                "severity": "info",
-                "message": "Would register gitea MCP server.",
-                "phase": "apply",
-            }
-        )
-        result["valid"] = True
-        return result
-    return _register_mcp_entry(root, mcp_path, "gitea", expected_entry, result, dry_run)
+    return _install_mcp(root, "InstallGiteaMCP", "gitea", expected_entry, dry_run, warnings)
 
 
 # ── OpenProject MCP ──────────────────────────────────────────────────────
@@ -851,11 +815,6 @@ def install_openproject_mcp(root: Path, dry_run: bool = False) -> dict[str, Any]
     Reads OPENPROJECT_URL and OPENPROJECT_API_KEY from infra/openproject/variables.env.
     Requires a running OpenProject instance at the configured URL.
     """
-    result = configure_result(
-        "InstallOpenProjectMCP", dry_run, write_enabled=not dry_run
-    )
-    mcp_path = root / ".vscode" / "mcp.json"
-
     # Read openproject env vars
     op_env_path = root / "infra" / "openproject" / "variables.env"
     op_url = "http://localhost:8080"
@@ -865,43 +824,25 @@ def install_openproject_mcp(root: Path, dry_run: bool = False) -> dict[str, Any]
         op_url = env_vars.get("OPENPROJECT_URL", "http://localhost:8080")
         op_api_key = env_vars.get("OPENPROJECT_API_KEY", "")
 
+    warnings: list[dict[str, str]] = []
     if not op_api_key or "replace-with" in op_api_key:
-        result["actions"].append(
+        warnings.append(
             {
                 "path": "infra/openproject/variables.env",
                 "key": "openproject.apikey",
-                "severity": "warning",
                 "message": "OPENPROJECT_API_KEY not configured. Registering server without API key.",
-                "phase": "audit",
             }
         )
-
-    env_dict: dict[str, str] = {
-        "OPENPROJECT_URL": op_url,
-    }
-    if op_api_key and "replace-with" not in op_api_key:
-        env_dict["OPENPROJECT_API_KEY"] = op_api_key
 
     expected_entry: dict[str, Any] = {
         "command": "npx",
         "args": ["-y", "openproject-mcp"],
     }
-    if env_dict:
-        expected_entry["env"] = env_dict
-
-    if dry_run:
-        result["actions"].append(
-            {
-                "path": ".vscode/mcp.json",
-                "key": "openproject",
-                "severity": "info",
-                "message": "Would register openproject MCP server.",
-                "phase": "apply",
-            }
-        )
-        result["valid"] = True
-        return result
-    return _register_mcp_entry(root, mcp_path, "openproject", expected_entry, result, dry_run)
+    env_dict: dict[str, str] = {"OPENPROJECT_URL": op_url}
+    if op_api_key and "replace-with" not in op_api_key:
+        env_dict["OPENPROJECT_API_KEY"] = op_api_key
+    expected_entry["env"] = env_dict
+    return _install_mcp(root, "InstallOpenProjectMCP", "openproject", expected_entry, dry_run, warnings)
 
 
 # ── Ensure MCP servers ───────────────────────────────────────────────────
