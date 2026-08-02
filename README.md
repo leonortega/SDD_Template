@@ -32,7 +32,7 @@ learning.
   maps code, docs, SQL schemas, and configs into a graph with every edge tagged
   `EXTRACTED`/`INFERRED` — a vector-free alternative to grep-based code reading. Not
   installed by the lab; see [§7](#7-considered-but-not-adopted-future-improvements).
-- **Skills** — 76 Codex skills (in `.codex/skills/`) that encode the workflow stages:
+- **Skills** — 77 Codex skills (in `.codex/skills/`) that encode the workflow stages:
   ticket start, OpenSpec change, implementation, review, QA, deploy, rollback,
   retrospective, and more.
 - **Agent eval** — a deterministic Promptfoo suite (36 routing cases) that verifies the
@@ -53,7 +53,7 @@ so you can exercise every concept below in one repeatable environment:
 | ------- | -------------- |
 | **Ticketed SDLC** | Work packages in OpenProject (Specified → In progress → Developed → In testing → Tested → Closed) with generated markers and time telemetry |
 | **Change specification** | OpenSpec proposals (`proposal.md`, `specs/`, `design.md`, `tasks.md`) and delta-spec sync |
-| **AI skill-driven implementation** | 76 Codex skills (see `manifest.json`) that drive planning, TDD, review, QA, deployment, rollback, and retrospective work |
+| **AI skill-driven implementation** | 77 Codex skills (see `manifest.json`) that drive planning, TDD, review, QA, deployment, rollback, and retrospective work |
 | **Test-driven development** | RED/GREEN vertical cycles, three test levels (unit, integration, architecture), coverage gate (≥ 80%) |
 | **PR review loop** | AI review agent with stable finding IDs, labels (`codex-reviewed`, `needs-tests`, `needs-changes`), feedback tasks, adversarial review, human review handoff |
 | **CI/CD** | Gitea Actions pipelines that build immutable artifacts and deploy them |
@@ -329,7 +329,7 @@ Details: [`.codex/agent-evals/README.md`](.codex/agent-evals/README.md).
 
 ### Skills Catalog
 
-The full skill manifest (76 skills across ticket, implement, review, QA, deploy,
+The full skill manifest (77 skills across ticket, implement, review, QA, deploy,
 monitor, security, test, quality, observability, kubernetes, and more) lives in
 [`.codex/skills/manifest.json`](.codex/skills/manifest.json). Skills are the executable
 instructions the agent loads per routing stage.
@@ -355,8 +355,8 @@ instructions the agent loads per routing stage.
 ### External Skills Used (attribution)
 
 - [Caveman](https://github.com/JuliusBrussee/caveman/tree/main/plugins/caveman/skills/caveman) — terse, token-saving communication
+- [Grill Me](https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me) — lightweight, temporary alignment on planning decisions (no durable repo context expected)
 - [Domain Modeling](https://github.com/mattpocock/skills/tree/main/skills/engineering/domain-modeling),
-  [Grill Me](https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me),
   [Grill With Docs](https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs),
   [Grilling](https://github.com/mattpocock/skills/tree/main/skills/productivity/grilling),
   [TDD](https://github.com/mattpocock/skills/tree/main/skills/engineering/tdd) — planning and implementation
@@ -364,6 +364,7 @@ instructions the agent loads per routing stage.
 - [OpenAI Playwright](https://github.com/openai/skills/tree/main/skills/.curated/playwright) and
   [Playwright Interactive](https://github.com/openai/skills/tree/main/skills/.curated/playwright-interactive) — browser automation
 - [OpenAI Security Best Practices](https://github.com/openai/skills/tree/main/skills/.curated/security-best-practices) — secure-by-default review
+- [Impeccable](https://github.com/pbakaus/impeccable) — frontend design guidance for AI coding agents (23 commands, 59 deterministic detector rules); wired into frontend implementation via `dev-flow-implement-ticket`
 
 ---
 

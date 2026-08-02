@@ -1440,7 +1440,10 @@ def install_skill_from_github(
         """Recursively list (relative_path, download_url) from GitHub Contents API."""
         items: list[tuple[str, str]] = []
         try:
-            url = f"{api_url}?ref={branch}"
+            # GitHub echoes the ?ref= query in directory entry URLs; append ref
+            # only when it is not already present to avoid "?ref=...?ref=...".
+            sep = "&" if "?" in api_url else "?"
+            url = f"{api_url}{sep}ref={branch}"
             req = urllib.request.Request(url, headers=headers)
             with urllib.request.urlopen(req, timeout=30) as resp:
                 body = resp.read().decode("utf-8")

@@ -93,12 +93,12 @@ print(len(d.get('_embedded', {}).get('elements', [])))
 
    | Detected / Declared Technology        | Skills to Activate                                                                                                                                 |
    | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-   | **React** + TypeScript                | React component patterns, TypeScript typing, `@testing-library/react` for component tests, Vite for build                                          |
+   | **React** + TypeScript                | React component patterns, TypeScript typing, `@testing-library/react` for component tests, Vite for build, `impeccable` (design system, tokens, UI craft) |
    | **TypeScript** (any)                  | TypeScript `tsconfig.json` configuration, type-safe patterns                                                                                       |
    | **C# / ASP.NET Core**                 | Controller-service-repository layers, Entity Framework guidance                                                                                    |
    | **Python / FastAPI / Flask / Django** | FastAPI/Flask/Django patterns, pytest for testing                                                                                                  |
    | **SQLite / PostgreSQL / MongoDB**     | ORM/schema guidance, migration patterns                                                                                                            |
-   | **Any web frontend**                  | `playwright` (E2E browser tests), `playwright-interactive` (debugging)                                                                             |
+   | **Any web frontend**                  | `playwright` (E2E browser tests), `playwright-interactive` (debugging), `impeccable` (frontend design: UI polish, audit, critique, a11y, responsive)  |
    | **Any implementation**                | `tdd` (test-first cycles), `ponytail` (minimal code, standard library), `security-best-practices`, `clean-architecture` (Dependency Rule, layer separation), `clean-code` (naming, function size, error handling), `solid` (SOLID principles)                                                  |
    | **Gitea** (repo/review provider)      | `dev-flow-pr-review-agent` (PR review automation)                                                                                                  |
    | **Any task (generic)**                | **Scan all `.codex/skills/` directories.** Every installed skill must be assessed for relevance, not just stack-mapped ones. See sub-step f below. |
