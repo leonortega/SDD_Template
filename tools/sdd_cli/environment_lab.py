@@ -239,6 +239,10 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
     # 17. Install Kubernetes MCP (after K8s is enabled)
     _add_step(install_k8s_mcp(root, dry_run), fatal=False)
 
+    # 17b. Ensure Headlamp K8s web UI is installed (Windows desktop app reads
+    #      ~/.kube/config and shows the kind-sdd-cluster context). Non-fatal.
+    _add_step(ensure_headlamp(root, dry_run), fatal=False)
+
     # 18. Scaffold K8s deployment files (creates Kustomize manifests)
     _add_step(scaffold_k8s(root, dry_run), fatal=False)
 
@@ -4510,6 +4514,7 @@ def push_to_gitea(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
 from .k8s_lab import (  # noqa: E402,F401  re-exported for backward compatibility
     enable_docker_desktop_k8s,
+    ensure_headlamp,
     scaffold_k8s,
     setup_k8s_access,
     setup_kind_cluster,
@@ -4535,7 +4540,8 @@ def run_environment_lab(args: list[str]) -> int:
             "validate-gitea-runner, set-client-tools, set-project-stack, "
             "set-project-stack-metadata, set-semgrep-config, set-quality-config, "
             "validate-docker-desktop-k8s, setup-kind-cluster, setup-k8s-access, scaffold-k8s, "
-            "provision-lab-users, push-to-gitea, verify-gitea-token, generate-gitea-token, renovate-gitea-token",
+            "ensure-headlamp, provision-lab-users, push-to-gitea, verify-gitea-token, "
+            "generate-gitea-token, renovate-gitea-token",
             file=sys.stderr,
         )
         return 1
@@ -4576,6 +4582,7 @@ def run_environment_lab(args: list[str]) -> int:
         "setup-kind-cluster": lambda: setup_kind_cluster(root, dry_run),
         "setup-k8s-access": lambda: setup_k8s_access(root, dry_run),
         "scaffold-k8s": lambda: scaffold_k8s(root, dry_run),
+        "ensure-headlamp": lambda: ensure_headlamp(root, dry_run),
 
         "set-semgrep-config": lambda: set_semgrep_config(root, dry_run),
         "verify-gitea-token": lambda: verify_gitea_api_token(root, dry_run),
