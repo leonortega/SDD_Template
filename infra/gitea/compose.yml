@@ -38,11 +38,41 @@ services:
       - gitea
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/v1/user || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/v1/version || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 30s
+
+  gitea-mcp:
+    # ONE shared Gitea MCP HTTP server for every MCP client (VS Code, Cline,
+    # CLI tools). Clients connect to http://localhost:8123/mcp with a Bearer
+    # header instead of each spawning their own `docker run` stdio container,
+    # so at most one gitea-mcp container exists (idempotent by design).
+    # GITEA_ACCESS_TOKEN is read from ./mcp.env (env_file), which the
+    # install-gitea-mcp step keeps in sync with client-tools.local.json.
+    image: docker.gitea.com/gitea-mcp-server
+    container_name: agentic-gitea-mcp
+    depends_on:
+      gitea:
+        condition: service_healthy
+    env_file:
+      - ./mcp.env
+    command:
+      - /app/gitea-mcp
+      - -t
+      - http
+      - -p
+      - "8080"
+      - -H
+      - http://gitea:3000
+    # Host port 8123 must stay in sync with GITEA_MCP_PORT / GITEA_MCP_URL in
+    # tools/sdd_cli/tool_installer.py (the client entries point there).
+    ports:
+      - "8123:8080"
+    networks:
+      - gitea
+    restart: unless-stopped
 
   runner:
     image: gitea/runner:1.0.0

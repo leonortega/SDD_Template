@@ -12,6 +12,7 @@ datasources:
     editable: true
     jsonData:
       allowedHosts:
+        - http://health-probe:8090
         - http://host.docker.internal:8088
         - http://host.docker.internal:3000
         - http://host.docker.internal:5001

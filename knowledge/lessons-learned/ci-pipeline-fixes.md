@@ -378,6 +378,12 @@ def _accept_nexus_eula() -> bool:
     return status in (200, 204)
 ```
 
+> **Implemented in the lab CLI:** `tools/sdd_cli/environment_lab.py::_accept_nexus_eula()`
+> now performs this two-step flow (with the legacy one-shot fallback for pre-3.92
+> installs), wired into both `provision_nexus_repositories()` (setup-lab step 12)
+> and the Nexus admin password bootstrap in `provision_lab_users()`. A failure is
+> now surfaced as a warning finding instead of being swallowed as success.
+
 #### When Do These Issues Occur?
 
 - **New Nexus installation** (first `setup-lab` run on a fresh environment)

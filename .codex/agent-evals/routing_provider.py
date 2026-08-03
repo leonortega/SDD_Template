@@ -61,6 +61,46 @@ def _activated_skills_for_stack(route: str, product_stack: str) -> list[str]:
     return ["playwright", "playwright-interactive", "impeccable"]
 
 
+def _review_outcome(
+    pr_exists: bool,
+    pr_merged: bool,
+    pr_validation_status: str,
+) -> dict[str, Any] | None:
+    """Model the review gate for an open PR per dev-flow-pr-review-agent.
+
+    Mirrors the CI-in-loop rule enforced in the skills: a red, pending, or
+    unreadable PR Validation run on the current head is a BLOCKER finding
+    (stable id CI-001) and keeps the `codex-reviewed` clean marker off, so
+    the PR stays blocked on the CI gate until the run is green. Only an
+    open    PR (exists, not merged) has a review gate; merged or absent PRs
+    return None (gate not applicable). Unset status defaults to "unknown"
+    (fail-closed), matching the skill rule that an undetermined status keeps
+    `codex-reviewed` off; legacy tests that predate the gate assert only the
+    route, so they are unaffected.
+    """
+    if not pr_exists or pr_merged:
+        return None
+    if pr_validation_status == "green":
+        return {"codexReviewed": True, "findings": []}
+    if pr_validation_status == "red":
+        reason = "PR Validation run failed: at least one step is red"
+    elif pr_validation_status == "pending":
+        reason = "PR Validation run still running/pending"
+    else:
+        reason = "PR Validation run status could not be determined"
+    return {
+        "codexReviewed": False,
+        "findings": [
+            {
+                "id": "CI-001",
+                "severity": "BLOCKER",
+                "source": "pr-validation",
+                "summary": reason,
+            }
+        ],
+    }
+
+
 def call_api(
     prompt: str,
     options: dict[str, Any] | None = None,
@@ -90,6 +130,14 @@ def call_api(
     product_stack = str(vars_data.get("productStack", "")).strip().lower()
     incident = str(vars_data.get("incident", "false")).strip().lower() == "true"
     hotfix = str(vars_data.get("hotfix", "false")).strip().lower() == "true"
+    # PR Validation (Gitea Actions) run status for the current head.
+    # green | red | pending | unknown — defaults to "unknown" (fail-closed):
+    # an unspecified run keeps `codex-reviewed` off, mirroring the skill rule
+    # that an undetermined status blocks the clean marker. Legacy tests that
+    # predate the gate assert only `route`, so they are unaffected.
+    pr_validation_status = str(
+        vars_data.get("prValidationStatus", "unknown")
+    ).strip().lower()
 
     # --- PARALLEL DELIVERY & DEPLOYMENT LANE VARS ---
     parallel_enabled = (
@@ -121,6 +169,16 @@ def call_api(
     # without knowing the current step (dev-flow-continue-implementation orchestrator).
     resume_requested = (
         str(vars_data.get("resumeRequested", "false")).strip().lower() == "true"
+    )
+
+    # Review gate: models dev-flow-pr-review-agent's CI-in-loop rule. A red,
+    # pending, or unreadable PR Validation run is a BLOCKER finding and keeps
+    # `codex-reviewed` off, so the PR stays blocked on the CI gate until the
+    # run is green. Route is unaffected — the review/fix loop still runs.
+    review = _review_outcome(
+        pr_exists=pr_exists,
+        pr_merged=pr_merged,
+        pr_validation_status=pr_validation_status,
     )
 
     # Evaluate routing logic
@@ -164,13 +222,19 @@ def call_api(
         "infraValidationFailed": infra_validation_failed,
         "requestType": request_type,
         "resumeRequested": resume_requested,
+        "prValidationStatus": pr_validation_status,
     }
 
     reasoning = _build_reasoning(inputs, route)
+    if review and not review["codexReviewed"]:
+        reasoning.append(
+            "PR Validation run not green: review is blocked, codex-reviewed stays off."
+        )
 
     result = {
         "route": route,
         "activatedSkills": _activated_skills_for_stack(route, product_stack),
+        "review": review,
         "reasoning": reasoning,
         "inputs": inputs,
     }

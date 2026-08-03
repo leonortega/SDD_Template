@@ -158,7 +158,7 @@ print(len(d.get('_embedded', {}).get('elements', [])))
    - human-authored top-level PR comments and inline code review comments,
    - latest ticket provider `IA generated PR feedback detected: {headSha}:{feedbackBatchId}` markers,
    - latest ticket provider `IA generated PR feedback fixes: {headSha}:{feedbackBatchId}` markers,
-   - current `needs-tests` and `needs-changes` labels,
+   - current `codex-reviewed`, `needs-tests`, and `needs-changes` labels,
    - latest repository workflow status.
      Continue from the latest completed checkpoint instead of restarting earlier steps.
 7. Confirm the OpenSpec change is active by checking that `openspec/changes/<change>/tasks.md` exists.
@@ -513,6 +513,6 @@ Report the ticket, branch, OpenSpec change, PR URL, commits pushed, validation a
 - Actionable AI or human PR feedback: invoke `dev-flow-pr-review-feedback-loop` to create OpenSpec `## PR Review Feedback` tasks, post ticket provider feedback batch comments, apply fixes, validate, commit, push, and rerun AI review before handoff.
 - Ambiguous or conflicting human PR feedback: stop before changing code, request clarification in the PR when possible, and record the blocker in ticket provider.
 - Late human PR feedback after ticket is in `Developed` (OpenProject ID 8): process it on manual resume and keep the ticket in `Developed` while fixes are applied.
-- Stale PR labels: remove `needs-tests` after required tests are added and passing; remove `needs-changes` after requested fixes are in place, OpenSpec PR review feedback tasks are complete, and the current-head review has no blocking findings.
+- Stale PR labels: `codex-reviewed` is the clean marker — present only when the current-head AI review has ZERO findings of any severity AND the current-head PR Validation run is green; remove it whenever actionable findings exist or the run is red/pending, and rely on the re-review to reapply it when clean. Remove `needs-tests` after required tests are added and passing; remove `needs-changes` after requested fixes are in place, OpenSpec PR review feedback tasks are complete, and the current-head review has no findings of any severity.
 - Review loop exceeds 3 cycles with remaining blockers: stop and escalate with a concise conflict/stale-feedback summary.
 - Missing ticket provider `Developed` state (ID 8): stop after PR/review work and report the missing state. The correct OpenProject statuses are defined in `delivery-contract-ticket.md`.

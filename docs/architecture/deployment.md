@@ -49,6 +49,7 @@ text
 | Nexus Artifacts              | `host.docker.internal` | `8088` | Stores build artifacts + env URL manifests |
 | Nexus Docker Registry        | `host.docker.internal` | `5001` | Stores container images (CI pushes here)   |
 | Gitea                        | `host.docker.internal` | `3000` | Source control + CI runner                 |
+| Gitea MCP (shared HTTP)      | `localhost`            | `8123` | Single gitea-mcp server for all MCP clients (`/mcp`) |
 | Grafana                      | `localhost`            | `3001` | Health monitoring dashboards               |
 
 ## Environment Model

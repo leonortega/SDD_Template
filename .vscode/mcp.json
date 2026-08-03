@@ -1,19 +1,10 @@
 {
   "servers": {
     "gitea": {
-      "type": "stdio",
-      "command": "docker",
-      "args": [
-        "run",
-        "--rm",
-        "-i",
-        "docker.gitea.com/gitea-mcp-server",
-        "/app/gitea-mcp",
-        "-H",
-        "http://localhost:3000"
-      ],
-      "env": {
-        "GITEA_ACCESS_TOKEN": "${GITEA_ACCESS_TOKEN}"
+      "type": "http",
+      "url": "http://localhost:8123/mcp",
+      "headers": {
+        "Authorization": "Bearer ${GITEA_ACCESS_TOKEN}"
       }
     },
     "grafana": {
