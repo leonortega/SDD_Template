@@ -18,6 +18,169 @@ from ._shared import (
     run_native,
 )
 
+# ── Headlamp (K8s web UI) ────────────────────────────────────────────────
+
+
+# Headlamp is the lab's Kubernetes web dashboard. On Windows it is a native
+# desktop app (winget id Headlamp.Headlamp) that reads ~/.kube/config and
+# shows the current kubeconfig context (kind-sdd-cluster after
+# setup-kind-cluster). This step is a convenience — it is non-fatal: the
+# lab works fine with kubectl + the k8s MCP alone.
+
+
+def ensure_headlamp(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Ensure the Headlamp K8s web UI is installed (per-platform).
+
+    Installs the Headlamp desktop app when missing:
+    - Windows: winget install Headlamp.Headlamp
+    - macOS:   brew install --cask headlamp
+    - Linux:   snap install headlamp (fallback: direct AppImage download)
+
+    After install it reports the kubeconfig context Headlamp will show, so
+    the user can launch it and browse the running kind cluster. Non-fatal:
+    a missing Headlamp never fails the lab.
+    """
+    result = configure_result("EnsureHeadlamp", dry_run, write_enabled=not dry_run)
+    if dry_run:
+        result["actions"].append(
+            {
+                "path": "headlamp",
+                "key": "install.plan",
+                "severity": "info",
+                "message": "Would check Headlamp (K8s web UI) and install it if missing.",
+                "phase": "apply",
+            }
+        )
+        result["valid"] = True
+        return result
+
+    import platform
+
+    pf = platform.system().lower()
+
+    # ── 1. Detect existing install ──
+    # Windows desktop app path is resolved at call time (env may differ).
+    win_exe = Path(
+        os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local"))
+    ) / "Programs" / "Headlamp" / "Headlamp.exe"
+    headlamp_cli = shutil.which("headlamp")
+    installed = headlamp_cli is not None or win_exe.exists() or Path(
+        "/Applications/Headlamp.app"
+    ).exists()
+
+    if installed:
+        version = ""
+        if headlamp_cli:
+            vcheck = run_native(["headlamp", "--version"], root, timeout=10)
+            if vcheck["returncode"] == 0:
+                version = vcheck["stdout"].strip()
+        ctx = "unknown"
+        cctx = run_native(["kubectl", "config", "current-context"], root, timeout=10)
+        if cctx["returncode"] == 0:
+            ctx = cctx["stdout"].strip()
+        result["actions"].append(
+            {
+                "path": "headlamp",
+                "key": "installed",
+                "severity": "info",
+                "message": (
+                    f"Headlamp is already installed{f' (v{version})' if version else ''}. "
+                    f"Launch it and select kubeconfig context '{ctx}' to browse the cluster."
+                ),
+                "phase": "audit",
+            }
+        )
+        result["valid"] = True
+        return result
+
+    # ── 2. Install per platform ──
+    result["actions"].append(
+        {
+            "path": "headlamp",
+            "key": "binary.install",
+            "severity": "info",
+            "message": "Headlamp not found — installing...",
+            "phase": "apply",
+        }
+    )
+    if pf == "windows":
+        install = run_native(
+            [
+                "winget",
+                "install",
+                "Headlamp.Headlamp",
+                "--accept-package-agreements",
+                "--accept-source-agreements",
+                "--silent",
+            ],
+            root,
+            timeout=300,
+        )
+    elif pf == "darwin":
+        install = run_native(["brew", "install", "--cask", "headlamp"], root, timeout=300)
+    else:
+        # Linux: snap first, then AppImage fallback
+        install = run_native(["snap", "install", "headlamp"], root, timeout=300)
+        if install["returncode"] != 0:
+            # Headlamp AppImage (latest release) — amd64 only.
+            install = run_native(
+                [
+                    "curl",
+                    "-fsSL",
+                    "-o",
+                    "/tmp/headlamp.AppImage",
+                    "https://github.com/headlamp-k8s/headlamp/releases/latest/download/headlamp-linux-amd64.AppImage",
+                    "&&",
+                    "chmod",
+                    "+x",
+                    "/tmp/headlamp.AppImage",
+                    "&&",
+                    "mv",
+                    "/tmp/headlamp.AppImage",
+                    "/usr/local/bin/headlamp",
+                ],
+                root,
+                timeout=300,
+            )
+
+    if install["returncode"] != 0:
+        add_bucket_item(
+            result["findings"],
+            "headlamp",
+            "install.failed",
+            (
+                "Could not install Headlamp automatically. "
+                "Install manually: winget install Headlamp.Headlamp (Windows), "
+                "brew install --cask headlamp (macOS), or https://headlamp.dev "
+                "(Linux). Non-fatal — the lab works without it."
+            ),
+            "warning",
+            "pre-start",
+        )
+        result["valid"] = True
+        return result
+
+    # ── 3. Report success + context ──
+    ctx = "unknown"
+    cctx = run_native(["kubectl", "config", "current-context"], root, timeout=10)
+    if cctx["returncode"] == 0:
+        ctx = cctx["stdout"].strip()
+    result["actions"].append(
+        {
+            "path": "headlamp",
+            "key": "binary.installed",
+            "severity": "info",
+            "message": (
+                f"Headlamp installed. Launch it and select kubeconfig context "
+                f"'{ctx}' to browse the cluster."
+            ),
+            "phase": "apply",
+        }
+    )
+    result["valid"] = True
+    return result
+
+
 # ── K8s scaffolding ───────────────────────────────────────────────────────
 
 
