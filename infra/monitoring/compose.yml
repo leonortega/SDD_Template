@@ -47,6 +47,17 @@ services:
       retries: 5
       start_period: 30s
 
+  health-probe:
+    image: python:3.13-alpine
+    container_name: agentic-health-probe
+    command: ["python", "/app/health_probe.py"]
+    ports:
+      - "8090:8090"
+    volumes:
+      - ./health_probe.py:/app/health_probe.py:ro
+    networks:
+      - monitoring
+    restart: unless-stopped
   seq:
     image: datalust/seq:2025.2.16202
     container_name: agentic-seq

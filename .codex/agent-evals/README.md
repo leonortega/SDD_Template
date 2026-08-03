@@ -45,9 +45,9 @@ assertions (see `routing_provider.py` + `promptfooconfig.yaml`).
 
 ## Test Cases
 
-**39 test cases** covering the full delivery routing matrix including parallel delivery,
-deployment lanes, explicit workflow-stage requests, state-driven resume, and frontend
-stack skill activation:
+**46 test cases** covering the full delivery routing matrix including parallel delivery,
+deployment lanes, explicit workflow-stage requests, state-driven resume, frontend
+stack skill activation, and the PR Validation gate (CI-in-loop review blocking):
 
 ### Ticket Lifecycle (7 tests)
 
@@ -138,6 +138,26 @@ route on a frontend stack reports `activatedSkills` including `impeccable` (plus
 | 38  | Backend-only (FastAPI) implementation, no frontend                    | `dev-flow-implement-ticket` | excludes `impeccable`      |
 | 39  | Frontend stack, Todo ticket, no branch (not in implementation stage)  | `dev-flow-start-ticket`     | excludes `impeccable`      |
 
+### PR Validation Gate (7 tests)
+
+Verifies the CI-in-loop rule enforced in `dev-flow-pr-review-agent` /
+`dev-flow-pr-review-feedback-loop`: a **red, pending, or unreadable PR Validation run
+on the current head is a `BLOCKER` finding** (stable id `CI-001`) and **keeps the
+`codex-reviewed` clean marker off** — the PR stays blocked on the CI gate until the
+run is green. The route is unchanged (the review/fix loop still runs to fix the failing
+steps); the blocking is asserted via the provider's `review` gate object:
+`review.codexReviewed === false` with a `BLOCKER` finding in `review.findings`.
+
+| #   | Scenario                                                              | Expected Route                     | Review gate                          |
+| --- | --------------------------------------------------------------------- | ---------------------------------- | ------------------------------------ |
+| 40  | Red run on open PR (state-driven loop)                                | `dev-flow-implement-ticket`        | `codexReviewed=false`, `BLOCKER`     |
+| 41  | Green run on open PR                                                  | `dev-flow-implement-ticket`        | `codexReviewed=true`, no findings    |
+| 42  | Pending run on open PR                                                | `dev-flow-implement-ticket`        | `codexReviewed=false`, `BLOCKER`     |
+| 43  | Unknown/unreadable run on open PR                                     | `dev-flow-implement-ticket`        | `codexReviewed=false`, `BLOCKER`     |
+| 44  | Explicit PR review request + red run                                  | `dev-flow-pr-review-agent`         | `codexReviewed=false`, `BLOCKER`     |
+| 45  | Explicit PR review feedback request + red run                         | `dev-flow-pr-review-feedback-loop` | `codexReviewed=false`                |
+| 46  | Merged PR with red run (gate not applicable)                          | `dev-ops-post-merge-deploy`        | `review === null`                    |
+
 ## Adding Test Cases
 
 1. Add a new entry under `tests:` in `promptfooconfig.yaml`
@@ -162,3 +182,19 @@ for implementation-stage routes, mirroring the stack-mapping table in
 next, nuxt, astro, frontend, typescript, javascript, web) activates `playwright`,
 `playwright-interactive`, and `impeccable`; non-frontend stacks and non-implementation
 routes activate none. Assert both `route` and `activatedSkills` in the test case.
+
+**PR Validation gate:** to assert the CI-in-loop rule, set `prValidationStatus` in the
+test vars (`green`, `red`, `pending`, or `unknown`; unset defaults to `unknown` —
+fail-closed, matching the skill rule that an undetermined status keeps `codex-reviewed`
+off; legacy tests that predate the gate assert only `route` and are unaffected) and
+assert on the provider's `review` gate object, which is non-null only for an open PR
+(exists, not merged):
+
+- `review.codexReviewed === true` with empty `review.findings` only when the run is green.
+- `review.codexReviewed === false` with a `BLOCKER` finding (`id: CI-001`, `source:
+  pr-validation`) whenever the run is red, pending, or unknown.
+- `review === null` once the PR is merged (the gate no longer applies).
+
+Route is intentionally unaffected: the review/fix loop still runs to fix failing CI
+steps, so the blocking is expressed through the review gate, not a dead-end blocked
+route.

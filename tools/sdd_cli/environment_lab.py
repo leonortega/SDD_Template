@@ -136,6 +136,11 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
     if early:
         return early
 
+    # 1b. Ensure OpenProject env - generate OPENPROJECT_SECRET_KEY_BASE if it
+    #     is missing or still a placeholder. Required before compose up:
+    #     infra/openproject/compose.yml interpolates it with :? (hard fail).
+    _add_step(ensure_openproject_env(root, dry_run), fatal=True)
+
     # 2. Install lefthook git hooks (non-fatal — binary may not be in PATH)
     _add_step(install_lefthook(root, dry_run), fatal=False)
 
@@ -386,6 +391,7 @@ def init_local_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
         "infra/openproject/variables.env",
         "infra/monitoring/variables.env",
         "infra/gitea/runner.env",
+        "infra/gitea/mcp.env",
     ):
         copy_seed_file(root, relative + ".example", relative, result, dry_run)
     # Also copy runner.env to infra/ for compose env_file resolution (project dir = infra/)
@@ -393,6 +399,15 @@ def init_local_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
         root,
         "infra/gitea/runner.env.example",
         "infra/runner.env",
+        result,
+        dry_run,
+    )
+    # And mcp.env — infra/gitea/compose.yml reads env_file ./mcp.env with the
+    # compose project dir set to infra/, so the token file must live there too.
+    copy_seed_file(
+        root,
+        "infra/gitea/mcp.env.example",
+        "infra/mcp.env",
         result,
         dry_run,
     )
@@ -409,6 +424,96 @@ def init_local_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
     result["valid"] = not any(
         item.get("severity") == "error" for item in result["findings"]
     )
+    return result
+
+
+def ensure_openproject_env(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Ensure OPENPROJECT_SECRET_KEY_BASE is set before compose up.
+
+    infra/openproject/compose.yml requires SECRET_KEY_BASE via the
+    ${OPENPROJECT_SECRET_KEY_BASE:?...} interpolation, so `docker compose up`
+    fails while variables.env still carries the example placeholder. This step
+    generates a random 64-byte value when the key is missing or still a
+    placeholder; it is idempotent and keeps an existing generated value.
+    """
+    result = configure_result(
+        "EnsureOpenProjectEnv", dry_run, write_enabled=not dry_run
+    )
+    env_path = root / "infra" / "openproject" / "variables.env"
+    if not env_path.exists():
+        if dry_run:
+            # In dry-run, InitLocalFiles (step 1) skipped writing the file;
+            # in a real run it always exists before this step executes.
+            result["actions"].append(
+                {
+                    "path": "infra/openproject/variables.env",
+                    "key": "secret.ensure",
+                    "severity": "info",
+                    "message": "Would ensure OPENPROJECT_SECRET_KEY_BASE once InitLocalFiles creates variables.env.",
+                    "phase": "apply",
+                }
+            )
+            result["valid"] = True
+            return result
+        add_bucket_item(
+            result["findings"],
+            "infra/openproject/variables.env",
+            "missing.env",
+            "infra/openproject/variables.env is missing. Run InitLocalFiles first.",
+            "error",
+            "pre-start",
+        )
+        result["valid"] = False
+        return result
+    current = read_env_file(env_path).get("OPENPROJECT_SECRET_KEY_BASE", "")
+    if current and not current.startswith("replace-with"):
+        result["actions"].append(
+            {
+                "path": "infra/openproject/variables.env",
+                "key": "secret.keep",
+                "severity": "info",
+                "message": "OPENPROJECT_SECRET_KEY_BASE already set - keeping existing value.",
+                "phase": "audit",
+            }
+        )
+        result["valid"] = True
+        return result
+    if dry_run:
+        result["actions"].append(
+            {
+                "path": "infra/openproject/variables.env",
+                "key": "secret.generate",
+                "severity": "info",
+                "message": "Would generate OPENPROJECT_SECRET_KEY_BASE (secrets.token_hex(64)).",
+                "phase": "apply",
+            }
+        )
+        result["valid"] = True
+        return result
+    import re as _re
+    import secrets
+
+    text = env_path.read_text(encoding="utf-8")
+    generated = secrets.token_hex(64)
+    if _re.search(r"(?m)^OPENPROJECT_SECRET_KEY_BASE=.*$", text):
+        text = _re.sub(
+            r"(?m)^OPENPROJECT_SECRET_KEY_BASE=.*$",
+            "OPENPROJECT_SECRET_KEY_BASE=" + generated,
+            text,
+        )
+    else:
+        text = text.rstrip("\n") + "\nOPENPROJECT_SECRET_KEY_BASE=" + generated + "\n"
+    env_path.write_text(text, encoding="utf-8")
+    result["actions"].append(
+        {
+            "path": "infra/openproject/variables.env",
+            "key": "secret.generated",
+            "severity": "info",
+            "message": "Generated OPENPROJECT_SECRET_KEY_BASE (required before compose up).",
+            "phase": "apply",
+        }
+    )
+    result["valid"] = True
     return result
 
 
@@ -2226,6 +2331,58 @@ def validate_app_config(root: Path, dry_run: bool = False) -> dict[str, Any]:
     return result
 
 
+def _accept_nexus_eula(
+    nexus_base: str, user: str, password: str
+) -> tuple[bool, str]:
+    """Accept the Nexus EULA via the two-step /system/eula API (Nexus 3.92+).
+
+    Nexus 3.92+ removed the old one-shot ``/editions/eula/accept`` endpoint,
+    so a fresh install must: GET ``/service/rest/v1/system/eula``, then POST
+    the exact same JSON back with ``accepted: true``. The disclaimer text
+    contains smart quotes — it must be echoed unchanged or Nexus rejects it
+    with ``Invalid EULA disclaimer``. Idempotent: an already-accepted EULA
+    counts as success. For pre-3.92 installs (no ``/system/eula`` endpoint)
+    it falls back to the legacy one-shot endpoint.
+
+    Returns ``(ok, detail)``; ``ok`` is True when the EULA is accepted.
+    """
+
+    def _api(method: str, path: str, body: dict | None = None) -> tuple[int, str]:
+        return http_json(
+            method, f"{nexus_base}{path}", body=body, basic=(user, password)
+        )
+
+    # Step 1: GET the current EULA status (includes the disclaimer text).
+    status, data = _api("GET", "/service/rest/v1/system/eula")
+    if status == 200:
+        try:
+            eula = json.loads(data)
+        except json.JSONDecodeError:
+            return False, f"Could not parse EULA response: {data[:200]}"
+        if not isinstance(eula, dict):
+            return False, f"Unexpected EULA response shape: {data[:200]}"
+        if eula.get("accepted"):
+            return True, "already accepted"
+        # Step 2: POST it back with accepted=true, preserving the disclaimer
+        # exactly (json.dumps keeps the smart quotes as-is).
+        eula["accepted"] = True
+        post_status, post_data = _api("POST", "/service/rest/v1/system/eula", body=eula)
+        if post_status in {200, 204}:
+            return True, f"accepted via /system/eula (HTTP {post_status})"
+        return False, f"POST /system/eula returned {post_status}: {post_data[:200]}"
+    if status == 404:
+        # Pre-3.92 Nexus: fall back to the legacy one-shot endpoint.
+        legacy_status, legacy_data = _api(
+            "POST", "/service/rest/v1/editions/eula/accept", body={"eulaAccepted": True}
+        )
+        if legacy_status in {200, 204}:
+            return True, "accepted via legacy endpoint"
+        if legacy_status in {400, 404}:
+            return True, "already accepted (legacy endpoint)"
+        return False, f"legacy EULA endpoint returned {legacy_status}: {legacy_data[:200]}"
+    return False, f"GET /system/eula returned {status}: {data[:200]}"
+
+
 def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str, Any]:
     """Create required Nexus raw hosted repositories for CI artifacts.
 
@@ -2292,17 +2449,17 @@ def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str,
         )
 
     # ── 1. Accept Nexus EULA (required before any API calls work on fresh install) ──
-    eula_status, eula_data = _nexus_api(
-        "POST", "/service/rest/v1/editions/eula/accept", body={"eulaAccepted": True}
-    )
-    # Nexus EULA endpoint returns 204 on success, 400 if already accepted, 404 if not applicable (3.92+)
-    if eula_status in {204, 200, 400, 404}:
+    # Nexus 3.92+ removed the one-shot /editions/eula/accept endpoint, so use
+    # the two-step flow: GET /system/eula, then POST it back with accepted:true
+    # (the disclaimer, incl. smart quotes, must be echoed unchanged).
+    _eula_ok, _eula_detail = _accept_nexus_eula(nexus_base, nexus_user, nexus_pass)
+    if _eula_ok:
         result["actions"].append(
             {
                 "path": "nexus/eula",
                 "key": "eula.accepted",
                 "severity": "info",
-                "message": "Nexus EULA accepted.",
+                "message": f"Nexus EULA accepted ({_eula_detail}).",
                 "phase": "apply",
             }
         )
@@ -2311,7 +2468,7 @@ def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str,
             result["findings"],
             "nexus/eula",
             "eula.accept",
-            f"Nexus EULA acceptance returned {eula_status}: {eula_data[:200]}",
+            f"Nexus EULA acceptance failed: {_eula_detail}",
             "warning",
             "apply",
         )
@@ -3012,85 +3169,6 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
     ) -> tuple[int, str]:
         return http_json(method, f"{nexus_base}{path}", body=body, basic=auth)
 
-    # ── 0. Gitea: generate runner registration token and write to runner.env ──
-    # This is required for the act_runner to connect to Gitea
-    # Resolve owner/repo from client-tools config or use safe default
-    _client_cfg = read_json(root / ".codex" / "client-tools.local.json", optional=True)
-    _gitea_cfg = _client_cfg.get("gitea", {}) if _client_cfg else {}
-    _owner = _gitea_cfg.get("owner", "sdd-admin")
-    _repo = _gitea_cfg.get("repo", "sdd-test")
-    runner_token_path = root / "infra" / "gitea" / "runner.env"
-    if runner_token_path.exists():
-        runner_env = read_env_file(runner_token_path)
-        existing_token = runner_env.get("GITEA_RUNNER_REGISTRATION_TOKEN", "")
-        if not existing_token or existing_token.startswith("replace-with"):
-            reg_status, reg_data = _gitea_api(
-                "POST",
-                f"/api/v1/repos/{_owner}/{_repo}/actions/runners/registration-token",
-            )
-            if reg_status == 200 or reg_status == 201:
-                try:
-                    reg_json = json.loads(reg_data)
-                    token = reg_json.get("token", "")
-                    if token:
-                        runner_env["GITEA_RUNNER_REGISTRATION_TOKEN"] = token
-                        write_env_file(runner_token_path, runner_env)
-                        result["actions"].append(
-                            {
-                                "path": "infra/gitea/runner.env",
-                                "key": "registration.token",
-                                "severity": "info",
-                                "message": "Gitea runner registration token written to runner.env.",
-                                "phase": "apply",
-                            }
-                        )
-                        # Restart runner container to pick up new token
-                        _restart = run_native(
-                            ["docker", "restart", "agentic-gitea-runner"],
-                            root,
-                            timeout=30,
-                        )
-                        if _restart["returncode"] == 0:
-                            result["actions"].append(
-                                {
-                                    "path": "docker/container/agentic-gitea-runner",
-                                    "key": "runner.restart",
-                                    "severity": "info",
-                                    "message": "Restarted Gitea runner container to pick up new registration token.",
-                                    "phase": "apply",
-                                }
-                            )
-                        else:
-                            add_bucket_item(
-                                result["findings"],
-                                "docker/container/agentic-gitea-runner",
-                                "runner.restart",
-                                f"Could not restart Gitea runner: {_restart['stderr']}",
-                                "warning",
-                                "apply",
-                            )
-                except Exception:
-                    pass
-            else:
-                add_bucket_item(
-                    result["findings"],
-                    "infra/gitea/runner.env",
-                    "registration.token",
-                    f"Could not generate runner registration token: Gitea returned {reg_status}.",
-                    "warning",
-                    "apply",
-                )
-        else:
-            result["actions"].append(
-                {
-                    "path": "infra/gitea/runner.env",
-                    "key": "registration.token",
-                    "severity": "info",
-                    "message": "Runner registration token already exists.",
-                    "phase": "audit",
-                }
-            )
-
     # ── 1. Gitea: create users FirstUser, SecondUser ──────────────────
     gitea_users = [
         {
@@ -3174,7 +3252,118 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
                        "repo.create", f"Repo creation returned {_repo_status}: {_repo_data[:200]}",
                        "warning", "apply")
 
-    # ── 1c. Gitea: generate API token with write scopes ──────────────
+    # ── 1c. Gitea: generate runner registration token and write to runner.env ──
+    # This is required for the act_runner to connect to Gitea. Runs AFTER the
+    # repo exists (step 1b) so the registration-token endpoint returns 201 and
+    # client-tools.local.json carries the real owner/repo.
+    # The token is written to BOTH runner env files:
+    #   infra/gitea/runner.env - canonical copy (used by tooling)
+    #   infra/runner.env       - the file the compose runner actually reads
+    #                            (env_file: ./runner.env, project dir = infra/)
+    _client_cfg = read_json(root / ".codex" / "client-tools.local.json", optional=True)
+    _gitea_cfg = _client_cfg.get("gitea", {}) if _client_cfg else {}
+    _owner = _gitea_cfg.get("owner", "sdd-admin")
+    _repo = _gitea_cfg.get("repo", "sdd-test")
+    runner_token_paths = [
+        root / "infra" / "gitea" / "runner.env",
+        root / "infra" / "runner.env",
+    ]
+    _primary_token_path = runner_token_paths[0]
+    if _primary_token_path.exists():
+        runner_env = read_env_file(_primary_token_path)
+        existing_token = runner_env.get("GITEA_RUNNER_REGISTRATION_TOKEN", "")
+        if not existing_token or existing_token.startswith("replace-with"):
+            reg_status, reg_data = _gitea_api(
+                "POST",
+                f"/api/v1/repos/{_owner}/{_repo}/actions/runners/registration-token",
+            )
+            if reg_status == 200 or reg_status == 201:
+                try:
+                    reg_json = json.loads(reg_data)
+                    token = reg_json.get("token", "")
+                    if token:
+                        for _path in runner_token_paths:
+                            _env = read_env_file(_path)
+                            _env["GITEA_RUNNER_REGISTRATION_TOKEN"] = token
+                            write_env_file(_path, _env)
+                        result["actions"].append(
+                            {
+                                "path": "infra/runner.env",
+                                "key": "registration.token",
+                                "severity": "info",
+                                "message": "Gitea runner registration token written to infra/runner.env and infra/gitea/runner.env.",
+                                "phase": "apply",
+                            }
+                        )
+                        # Recreate the runner container so compose re-reads the
+                        # env_file (a plain `docker restart` keeps the old env).
+                        _restart = run_native(
+                            [
+                                "docker", "compose",
+                                "--env-file", str(root / "infra" / "openproject" / "variables.env"),
+                                "--env-file", str(root / "infra" / "monitoring" / "variables.env"),
+                                "-f", str(root / "infra" / "compose.yml"),
+                                "--project-directory", str(root / "infra"),
+                                "up", "-d", "--no-deps", "runner",
+                            ],
+                            root,
+                            timeout=120,
+                        )
+                        if _restart["returncode"] == 0:
+                            result["actions"].append(
+                                {
+                                    "path": "docker/container/agentic-gitea-runner",
+                                    "key": "runner.restart",
+                                    "severity": "info",
+                                    "message": "Recreated Gitea runner container to pick up the new registration token.",
+                                    "phase": "apply",
+                                }
+                            )
+                        else:
+                            add_bucket_item(
+                                result["findings"],
+                                "docker/container/agentic-gitea-runner",
+                                "runner.restart",
+                                f"Could not recreate Gitea runner: {_restart['stderr']}",
+                                "warning",
+                                "apply",
+                            )
+                except Exception:
+                    pass
+            else:
+                add_bucket_item(
+                    result["findings"],
+                    "infra/gitea/runner.env",
+                    "registration.token",
+                    f"Could not generate runner registration token: Gitea returned {reg_status}.",
+                    "warning",
+                    "apply",
+                )
+        else:
+            # Token already exists in the canonical file. Keep it, but make
+            # sure the secondary copy (infra/runner.env) stays in sync so a
+            # later recreate never reads a stale/different token.
+            _synced = False
+            for _path in runner_token_paths[1:]:
+                _env = read_env_file(_path)
+                if _env.get("GITEA_RUNNER_REGISTRATION_TOKEN", "") != existing_token:
+                    _env["GITEA_RUNNER_REGISTRATION_TOKEN"] = existing_token
+                    write_env_file(_path, _env)
+                    _synced = True
+            result["actions"].append(
+                {
+                    "path": "infra/gitea/runner.env",
+                    "key": "registration.token",
+                    "severity": "info",
+                    "message": (
+                        "Runner registration token already exists"
+                        + (", synced to infra/runner.env." if _synced else ".")
+                    ),
+                    "phase": "audit",
+                }
+            )
+
+    # ── 1d. Gitea: generate API token with write scopes ──────────────
     #     This token is used by agents to create PRs, add labels, request reviewers.
     _api_token_result = generate_gitea_api_token(root, dry_run)
     for action in _api_token_result.get("actions", []):
@@ -3851,10 +4040,20 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
             return 0, str(_ex)
 
     # Accept the Nexus EULA first — required for API access on a truly fresh
-    # install (idempotent: 400 = already accepted, 404 = not applicable).
-    _nexus_api(
-        "POST", "/service/rest/v1/editions/eula/accept", body={"eulaAccepted": True}
+    # install. Nexus 3.92+ requires the two-step /system/eula flow (GET then
+    # POST back with accepted:true); the legacy one-shot endpoint is removed.
+    _eula_ok, _eula_detail = _accept_nexus_eula(
+        nexus_base, "admin", _nexus_initial_pass or "admin123"
     )
+    if not _eula_ok:
+        add_bucket_item(
+            result["findings"],
+            "nexus/eula",
+            "eula.accept",
+            f"Nexus EULA acceptance failed: {_eula_detail}",
+            "warning",
+            "apply",
+        )
 
     # Step 1: try to authenticate with the discovered (or default) password
     # and change it to admin123.

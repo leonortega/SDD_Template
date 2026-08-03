@@ -638,3 +638,122 @@ tests:
       - type: is-json
       - type: javascript
         value: JSON.parse(output).route === 'dev-flow-start-ticket' && !JSON.parse(output).activatedSkills.includes('impeccable')
+
+  # ═══════════════════════════════════════════════════════════════
+  # PR VALIDATION GATE (CI-in-loop review blocking)
+  # ═══════════════════════════════════════════════════════════════
+  # Models dev-flow-pr-review-agent's CI-in-loop rule: a red, pending, or
+  # unreadable PR Validation run on the current head is a BLOCKER finding
+  # (id CI-001) and keeps the `codex-reviewed` clean marker off. The route
+  # is unchanged — the review/fix loop still runs to fix the failing steps.
+
+  - description: "Red PR Validation run blocks the review: BLOCKER finding, no codex-reviewed"
+    vars:
+      scenario: PR Validation (Gitea Actions) run is red on the current head
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      prValidationStatus: red
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-implement-ticket' &&
+          JSON.parse(output).review.codexReviewed === false &&
+          JSON.parse(output).review.findings.some(f => f.severity === 'BLOCKER' && f.source === 'pr-validation')
+
+  - description: "Green PR Validation run with open PR keeps codex-reviewed clean"
+    vars:
+      scenario: PR Validation run is green on the current head with no findings
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      prValidationStatus: green
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-implement-ticket' && JSON.parse(output).review.codexReviewed === true && JSON.parse(output).review.findings.length === 0
+
+  - description: "Pending PR Validation run keeps codex-reviewed off (still blocking)"
+    vars:
+      scenario: PR Validation run is still running on the current head
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      prValidationStatus: pending
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-implement-ticket' && JSON.parse(output).review.codexReviewed === false && JSON.parse(output).review.findings.some(f => f.severity === 'BLOCKER')
+
+  - description: "Unreadable PR Validation run keeps codex-reviewed off (blocks clean marker)"
+    vars:
+      scenario: PR Validation run status cannot be determined for the current head
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      prValidationStatus: unknown
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-implement-ticket' && JSON.parse(output).review.codexReviewed === false && JSON.parse(output).review.findings.some(f => f.severity === 'BLOCKER')
+
+  - description: "Explicit PR review with red PR Validation run routes to review agent with BLOCKER finding"
+    vars:
+      scenario: User asks to review the PR while PR Validation is red
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      requestType: pr-review
+      prValidationStatus: red
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-pr-review-agent' &&
+          JSON.parse(output).review.codexReviewed === false &&
+          JSON.parse(output).review.findings.some(f => f.severity === 'BLOCKER')
+
+  - description: "Explicit feedback request with red PR Validation run routes to the fix loop"
+    vars:
+      scenario: User asks to address PR review feedback while PR Validation is red
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      requestType: pr-review-feedback
+      prValidationStatus: red
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-pr-review-feedback-loop' && JSON.parse(output).review.codexReviewed === false
+
+  - description: "Merged PR with red run has no review gate (CI no longer blocks merge)"
+    vars:
+      scenario: PR already merged to dev; PR Validation run was red before merge
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: true
+      qaEvidence:
+      productStack: selected
+      prValidationStatus: red
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-ops-post-merge-deploy' && JSON.parse(output).review === null

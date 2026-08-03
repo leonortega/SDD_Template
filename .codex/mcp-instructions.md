@@ -23,7 +23,7 @@ The lab infrastructure provides dedicated MCP servers for each service. Route to
 - **Kubernetes MCP** — any task involving cluster management: pods, deployments, services, Helm charts, logs, events
 
 **Note on availability:**
-- Gitea MCP uses the official Docker image `docker.gitea.com/gitea-mcp-server`
+- Gitea MCP runs as ONE shared HTTP server in Docker (`agentic-gitea-mcp`, image `docker.gitea.com/gitea-mcp-server`) at `http://localhost:8123/mcp` — every client (VS Code, Cline, CLI) connects to the same instance with a `Bearer` header, so at most one gitea-mcp container runs (idempotent; the token is synced to `infra/gitea/mcp.env` by the install-gitea-mcp step)
 - OpenProject MCP uses the community `openproject-mcp` package (read/write)
   - Cross-ref API adapter at `.codex/skills/openproject-sprint-backlog/references/openproject-api.md` for direct REST API calls
 - Grafana MCP uses the official `grafana/mcp-grafana` via `uvx`

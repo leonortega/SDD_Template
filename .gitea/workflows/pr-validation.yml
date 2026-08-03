@@ -7,9 +7,15 @@ on:
       - dev
 
 # Dev flow gate: requires the `codex-reviewed` label to be set on the PR.
-# This is applied by the AI review-agent (dev-flow-pr-review-agent skill)
-# after reviewing the diff. Without it, CI fails — ensuring every PR
-# receives automated review before merge.
+# The AI review-agent (dev-flow-pr-review-agent skill) applies it ONLY when
+# the current-head review found ZERO findings of any severity (no
+# BLOCKER/WARNING/SUGGESTION, no test gaps) AND this workflow's run for the
+# head is green (success), and removes it whenever findings exist or the run
+# is red/pending. The review-agent must read this run on every head and feed
+# each failing step back as a BLOCKER finding. Without the label, CI fails —
+# so the PR must iterate through the review-and-fix loop until clean before
+# merge: at most one `codex-reviewed` label live means the PR has no
+# remaining issues and its PR Validation run is green.
 #
 # Scan layering: local lefthook hooks (pre-commit gitleaks protect / trunk
 # fmt, commit-msg contract) are the fast first line; this workflow is the

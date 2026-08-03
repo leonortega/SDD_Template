@@ -55,7 +55,7 @@ so you can exercise every concept below in one repeatable environment:
 | **Change specification** | OpenSpec proposals (`proposal.md`, `specs/`, `design.md`, `tasks.md`) and delta-spec sync |
 | **AI skill-driven implementation** | 77 Codex skills (see `manifest.json`) that drive planning, TDD, review, QA, deployment, rollback, and retrospective work |
 | **Test-driven development** | RED/GREEN vertical cycles, three test levels (unit, integration, architecture), coverage gate (≥ 80%) |
-| **PR review loop** | AI review agent with stable finding IDs, labels (`codex-reviewed`, `needs-tests`, `needs-changes`), feedback tasks, adversarial review, human review handoff |
+| **PR review loop** | AI review agent with stable finding IDs, labels (`codex-reviewed` = clean, only when zero findings remain and the PR Validation run is green; `needs-tests`; `needs-changes`), PR Validation failures fed back as BLOCKER findings, feedback tasks, adversarial review, human review handoff |
 | **CI/CD** | Gitea Actions pipelines that build immutable artifacts and deploy them |
 | **Immutable artifacts** | Sonatype Nexus stores artifacts by commit SHA; the same artifact is promoted across environments — never rebuilt |
 | **Multi-environment deployment** | DEV → QA → PROD on a local kind cluster (or Docker Desktop K8s), Kustomize overlays |
@@ -170,6 +170,7 @@ The lab services, once running:
 | Service | URL | Container |
 | ------- | --- | --------- |
 | Gitea (Git + PRs + CI) | http://localhost:3000 | `agentic-gitea` |
+| Gitea MCP (shared HTTP) | http://localhost:8123/mcp | `agentic-gitea-mcp` |
 | OpenProject (tickets) | http://localhost:8080 | (openproject) |
 | Nexus (artifacts) | http://localhost:8088 | `agentic-nexus` |
 | Grafana (dashboards) | http://localhost:3001 | `agentic-grafana` |

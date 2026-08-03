@@ -1,7 +1,7 @@
 {
   "title": "🚀 SDD Service Status",
   "uid": "agentic-e2e-health-board",
-  "version": 28,
+  "version": 32,
   "schemaVersion": 39,
   "timezone": "browser",
   "editable": true,
@@ -23,47 +23,93 @@
         "mode": "markdown"
       }
     },
-    {
+                {
       "title": "🟢 Service Health",
       "id": 1,
-      "type": "text",
-      "description": "Real-time health status for all deployed services — green indicates the service is reachable and responding",
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 2 },
-      "options": {
-        "content": "| Environment | Service | Status | Direct URL | Health Endpoint | K8s NodePort |\n|---|---|---|---|---|---|\n| **🔷 DEV** | **🖥️ Frontend** (React) | 🟢 **UP** | http://localhost:8081 | http://localhost:8081/health | `30080` |\n| **🔷 DEV** | **🔄 Backend** (.NET API) | 🟢 **UP** | http://localhost:5002 | http://localhost:5002/health | `30500` |\n| **🟢 QA** | **🖥️ Frontend** (React) | 🟢 **UP** | http://localhost:8082 | http://localhost:8082/health | `30081` |\n| **🟢 QA** | **🔄 Backend** (.NET API) | 🟢 **UP** | http://localhost:5003 | http://localhost:5003/health | `30501` |",
-        "mode": "markdown"
-      }
-    },
-    {
-      "title": "🔗 Service Quick Access",
-      "id": 4,
       "type": "table",
-      "description": "One-click access to all deployed services — click any Direct URL to open the service in a new tab",
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 10 },
-      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "infinity-health" },
+      "description": "Live health status - probes each environment /health endpoint on every refresh (30s). Green = deployed and responding; 'Not deployed' = endpoint unreachable. Direct URLs use the host-remapped ports.",
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "infinity-health"
+      },
       "options": {
-        "footer": { "show": false },
-        "sortBy": [
-          {
-            "desc": false,
-            "displayName": "Service"
-          }
-        ]
+        "footer": {
+          "show": false
+        }
       },
       "fieldConfig": {
         "defaults": {
-          "custom": { "align": "left", "displayMode": "auto" }
+          "custom": {
+            "align": "left",
+            "displayMode": "auto"
+          }
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Direct URL (click to open)" },
+            "matcher": {
+              "id": "byName",
+              "options": "Status"
+            },
             "properties": [
-              { "id": "custom.width", "value": 350 },
+              {
+                "id": "custom.width",
+                "value": 130
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "UP": {
+                        "text": "UP",
+                        "color": "green"
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "Not deployed": {
+                        "text": "Not deployed",
+                        "color": "orange"
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "DOWN": {
+                        "text": "DOWN",
+                        "color": "red"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Direct URL"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 220
+              },
               {
                 "id": "links",
                 "value": [
                   {
-                    "title": "Open 🔗",
+                    "title": "Open",
                     "url": "${__value.text}",
                     "targetBlank": true
                   }
@@ -72,85 +118,90 @@
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "Service" },
-            "properties": [ { "id": "custom.width", "value": 200 } ]
-          },
-          {
-            "matcher": { "id": "byName", "options": "K8s NodePort" },
-            "properties": [ { "id": "custom.width", "value": 130 } ]
-          },
-          {
-            "matcher": { "id": "byName", "options": "Host Port" },
-            "properties": [ { "id": "custom.width", "value": 110 } ]
+            "matcher": {
+              "id": "byName",
+              "options": "HTTP"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 70
+              }
+            ]
           }
         ]
       },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "infinity-health" },
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "infinity-health"
+          },
           "queryType": "json",
-          "source": "inline",
-          "data": "{\"data\":[{\"service\":\"🔷 DEV 🖥️ Frontend (React)\",\"directUrl\":\"http://localhost:8081\",\"k8sPort\":\"30080\",\"hostPort\":\"8081\"},{\"service\":\"🔷 DEV 🔄 Backend API (.NET)\",\"directUrl\":\"http://localhost:5002\",\"k8sPort\":\"30500\",\"hostPort\":\"5002\"},{\"service\":\"🟢 QA 🖥️ Frontend (React)\",\"directUrl\":\"http://localhost:8082\",\"k8sPort\":\"30081\",\"hostPort\":\"8082\"},{\"service\":\"🟢 QA 🔄 Backend API (.NET)\",\"directUrl\":\"http://localhost:5003\",\"k8sPort\":\"30501\",\"hostPort\":\"5003\"},{\"service\":\"📊 Grafana\",\"directUrl\":\"http://localhost:3001\",\"k8sPort\":\"-\",\"hostPort\":\"3001\"},{\"service\":\"🔧 Gitea\",\"directUrl\":\"http://localhost:3000\",\"k8sPort\":\"-\",\"hostPort\":\"3000\"}]}",
+          "source": "url",
+          "url": "http://health-probe:8090/health",
+          "url_options": {
+            "method": "GET",
+            "data": ""
+          },
+          "method": "GET",
+          "filters": [],
           "format": "table",
           "parser": "backend",
-          "root_selector": "data",
+          "root_selector": "services",
           "columns": [
-            { "selector": "service", "text": "Service", "type": "string" },
-            { "selector": "directUrl", "text": "Direct URL (click to open)", "type": "string" },
-            { "selector": "k8sPort", "text": "K8s NodePort", "type": "string" },
-            { "selector": "hostPort", "text": "Host Port", "type": "string" }
+            {
+              "selector": "env",
+              "text": "Environment",
+              "type": "string"
+            },
+            {
+              "selector": "service",
+              "text": "Service",
+              "type": "string"
+            },
+            {
+              "selector": "status",
+              "text": "Status",
+              "type": "string"
+            },
+            {
+              "selector": "http",
+              "text": "HTTP",
+              "type": "string"
+            },
+            {
+              "selector": "directUrl",
+              "text": "Direct URL",
+              "type": "string"
+            },
+            {
+              "selector": "healthPath",
+              "text": "Health Endpoint",
+              "type": "string"
+            },
+            {
+              "selector": "nodePort",
+              "text": "K8s NodePort",
+              "type": "string"
+            }
           ],
           "type": "json"
         }
       ]
     },
-    {
-      "title": "🏗️ Environment Matrix",
-      "id": 7,
-      "type": "table",
-      "description": "Deployment status across all environments — DEV, QA, and PROD with URLs and deploy triggers",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 20 },
-      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "infinity-health" },
-      "options": {
-        "footer": { "show": false },
-        "sortBy": [
-          { "desc": false, "displayName": "Environment" }
-        ]
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": { "align": "left", "displayMode": "auto" }
-        }
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "infinity-health" },
-          "queryType": "json",
-          "source": "inline",
-          "data": "{\"rows\":[{\"env\":\"DEV\",\"namespace\":\"sdd-dev\",\"trigger\":\"Push to dev branch\",\"feUrl\":\"localhost:8081\",\"beUrl\":\"localhost:5002\",\"status\":\"Active\"},{\"env\":\"QA\",\"namespace\":\"sdd-qa\",\"trigger\":\"Workflow dispatch\",\"feUrl\":\"localhost:8082\",\"beUrl\":\"localhost:5003\",\"status\":\"Active\"},{\"env\":\"PROD\",\"namespace\":\"sdd-prod\",\"trigger\":\"Workflow dispatch\",\"feUrl\":\"TBD\",\"beUrl\":\"TBD\",\"status\":\"Not deployed\"}]}",
-          "format": "table",
-          "parser": "backend",
-          "root_selector": "rows",
-          "columns": [
-            { "selector": "env", "text": "Environment", "type": "string" },
-            { "selector": "namespace", "text": "K8s Namespace", "type": "string" },
-            { "selector": "trigger", "text": "Deploy Trigger", "type": "string" },
-            { "selector": "feUrl", "text": "Frontend URL", "type": "string" },
-            { "selector": "beUrl", "text": "Backend URL", "type": "string" },
-            { "selector": "status", "text": "Status", "type": "string" }
-          ],
-          "type": "json"
-        }
-      ]
-    },
+
+
+
+    
+    
     {
       "title": "🔧 Infrastructure Access",
       "id": 6,
       "type": "text",
       "description": "Quick access to all infrastructure services with URLs and default credentials",
-      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 28 },
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 14 },
       "options": {
         "content": "| Service | URL | Default Credentials |\n|---|---|---|\n| **📊 Grafana** | http://localhost:3001 | `admin` / `admin` |\n| **🔧 Gitea** (Git) | http://localhost:3000 | `admin` / `admin123` |\n| **📦 Nexus** (Artifacts) | http://localhost:8088 | `admin` / `admin123` |\n| **📋 Dozzle** (Logs) | http://localhost:8888 | — |\n\n```bash\n# Kubernetes\nkubectl -n sdd-dev get po -o wide\nkubectl -n sdd-dev get svc\nkubectl -n sdd-qa get po -o wide\nkubectl -n sdd-qa get svc\n```\n\n> 🔄 Services are deployed via **Gitea Actions CI** → **kind K8s cluster**\n",
         "mode": "markdown"
