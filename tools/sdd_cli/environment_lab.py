@@ -174,24 +174,25 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
     #     If a service doesn't start, later provisioning steps will fail
     #     and the user will be told what went wrong.
     if not dry_run:
+        # Generous timeouts: first boots (esp. OpenProject) can take minutes.
         _add_step(
-            wait_for_service("http://localhost:3000/api/v1/user", timeout=120),
+            wait_for_service("http://localhost:3000/api/v1/user", timeout=180),
             fatal=False,
         )
         _add_step(
-            wait_for_service("http://localhost:8080", timeout=180),
+            wait_for_service("http://localhost:8080", timeout=360),
             fatal=False,
         )
         _add_step(
-            wait_for_service("http://localhost:8088/service/rest/v1/status", timeout=120),
+            wait_for_service("http://localhost:8088/service/rest/v1/status", timeout=180),
             fatal=False,
         )
         _add_step(
-            wait_for_service("http://localhost:3001/api/health", timeout=120),
+            wait_for_service("http://localhost:3001/api/health", timeout=180),
             fatal=False,
         )
         _add_step(
-            wait_for_service("http://localhost:5341/api", timeout=120),
+            wait_for_service("http://localhost:5341/api", timeout=180),
             fatal=False,
         )
 
@@ -1073,7 +1074,7 @@ def verify_gitea_api_token(
 
 
 def generate_gitea_api_token(
-    root: Path, dry_run: bool = False
+    root: Path, dry_run: bool = False, _depth: int = 0
 ) -> dict[str, Any]:
     """Generate a new Gitea API token with write scopes using admin Basic auth.
 
@@ -1168,8 +1169,9 @@ def generate_gitea_api_token(
                     "Gitea returned 201 but no token in response.",
                     "error",
                 )
-        elif resp.status == 409:
+        elif resp.status in {400, 409}:
             # Token with same name already exists — delete and retry
+            # (Gitea returns 409 in older versions, 400 in newer ones)
             # First list existing tokens
             list_conn = http.client.HTTPConnection(
                 parsed.hostname or "localhost", parsed.port or 3000, timeout=10
@@ -1214,8 +1216,10 @@ def generate_gitea_api_token(
                                 "phase": "apply",
                             }
                         )
-                        # Retry: call ourselves recursively (only once)
-                        return generate_gitea_api_token(root, dry_run)
+                        # Retry: call ourselves recursively (bounded — a
+                        # fresh token name should not conflict again).
+                        if _depth < 2:
+                            return generate_gitea_api_token(root, dry_run, _depth + 1)
 
             add_bucket_item(
                 result["findings"],
@@ -2232,16 +2236,24 @@ def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str,
     nexus_user = "admin"
     # On first boot, Nexus generates a random admin password stored in /nexus-data/admin.password.
     # Try to read it from the running container; fall back to admin123 (manually set or old install).
+    # Password resolution chain: 1) persisted value in client-tools.local.json
+    # (written by provision_lab_users after changing it), 2) the generated
+    # password file on a fresh install, 3) the default admin123.
     nexus_pass = "admin123"
-    try:
-        r = subprocess.run(
-            ["docker", "exec", "agentic-nexus", "cat", "/nexus-data/admin.password"],
-            capture_output=True, text=True, timeout=10,
-        )
-        if r.returncode == 0 and r.stdout.strip():
-            nexus_pass = r.stdout.strip()
-    except Exception:
-        pass
+    _cfg = read_json(root / ".codex" / "client-tools.local.json", optional=True) or {}
+    _cfg_pass = (_cfg.get("nexus") or {}).get("password", "")
+    if _cfg_pass and "replace-with" not in _cfg_pass:
+        nexus_pass = _cfg_pass
+    else:
+        try:
+            r = subprocess.run(
+                ["docker", "exec", "agentic-nexus", "cat", "/nexus-data/admin.password"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if r.returncode == 0 and r.stdout.strip():
+                nexus_pass = r.stdout.strip()
+        except Exception:
+            pass
 
     # Also save Nexus password to client-tools.local.json for persistence
     if not dry_run and nexus_pass:
@@ -2756,14 +2768,36 @@ def validate_gitea_runner(root: Path, dry_run: bool = False) -> dict[str, Any]:
                     }
                 )
             else:
-                add_bucket_item(
-                    result["findings"],
-                    "gitea",
-                    "network.unreachable",
-                    f"Gitea instance {instance_url} is not reachable.",
-                    "warning",
-                    "post-start",
-                )
+                # The instance URL is often the internal Docker hostname
+                # (http://gitea:3000), which only resolves inside the compose
+                # network. From the host, fall back to the published port.
+                try:
+                    _port = urlparse(instance_url).port or 3000
+                except Exception:
+                    _port = 3000
+                host_url = f"http://localhost:{_port}"
+                host_status, _ = http_status(host_url + "/api/healthz", timeout=5)
+                if host_status is not None and host_status < 500:
+                    result["actions"].append(
+                        {
+                            "path": "gitea",
+                            "key": "network",
+                            "severity": "info",
+                            "message": f"Gitea internal URL {instance_url} not reachable from host; "
+                                       f"published port reachable at {host_url}.",
+                            "phase": "audit",
+                        }
+                    )
+                else:
+                    add_bucket_item(
+                        result["findings"],
+                        "gitea",
+                        "network.unreachable",
+                        f"Gitea instance {instance_url} is not reachable (host fallback {host_url} "
+                        f"also failed: HTTP {host_status}).",
+                        "warning",
+                        "post-start",
+                    )
         elif instance_url:
             result["actions"].append(
                 {
@@ -3070,7 +3104,9 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
     ]
     for u in gitea_users:
         status, data = _gitea_api("POST", "/api/v1/admin/users", body=u)
-        if status in {201, 409}:
+        # 422 with "already exists" means the user was created by an earlier
+        # run — treat it as ready so re-runs stay warning-free.
+        if status in {201, 409} or (status == 422 and "already exists" in data):
             result["actions"].append(
                 {
                     "path": f"gitea/users/{u['username']}",
@@ -3771,6 +3807,8 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
     # On first boot, Nexus generates a random admin password stored in
     # /nexus-data/admin.password. Read it from the container first, then
     # use it to authenticate and change to a known value (admin123).
+    # NOTE: the change-password endpoint consumes text/plain (the raw new
+    # password string) — sending JSON yields HTTP 415 Unsupported Media Type.
     _nexus_initial_pass = "admin123"
     try:
         _r = subprocess.run(
@@ -3782,16 +3820,43 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
     except Exception:
         pass
 
+    def _nexus_change_password(user: str, password: str) -> tuple[int, str]:
+        """PUT change-password with a text/plain body (the raw new password)."""
+        try:
+            import base64
+
+            _parsed = urlparse(nexus_base)
+            _conn = http.client.HTTPConnection(
+                _parsed.hostname or "localhost", _parsed.port or 8088, timeout=15
+            )
+            _token = base64.b64encode(f"{user}:{password}".encode()).decode()
+            _conn.request(
+                "PUT",
+                "/service/rest/v1/security/users/admin/change-password",
+                body="admin123",
+                headers={
+                    "Content-Type": "text/plain",
+                    "Authorization": f"Basic {_token}",
+                },
+            )
+            _resp = _conn.getresponse()
+            _data = _resp.read().decode("utf-8", "replace")
+            _conn.close()
+            return _resp.status, _data
+        except Exception as _ex:
+            return 0, str(_ex)
+
+    # Accept the Nexus EULA first — required for API access on a truly fresh
+    # install (idempotent: 400 = already accepted, 404 = not applicable).
+    _nexus_api(
+        "POST", "/service/rest/v1/editions/eula/accept", body={"eulaAccepted": True}
+    )
+
     # Step 1: try to authenticate with the discovered (or default) password
     # and change it to admin123.
     _change_ok = False
     for _attempt_pass in [_nexus_initial_pass, "admin123"]:
-        _status, _data = _nexus_api(
-            "PUT",
-            "/service/rest/v1/security/users/admin/change-password",
-            body={"password": "admin123"},
-            auth=("admin", _attempt_pass),
-        )
+        _status, _data = _nexus_change_password("admin", _attempt_pass)
         if _status in {200, 204}:
             _change_ok = True
             break
@@ -3829,6 +3894,42 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
             "warning",
             "apply",
         )
+
+    # Step 3: complete remaining Nexus onboarding items so the UI does not
+    # force first-login prompts ("Set the admin password", "Configure
+    # anonymous access"). The ConfigureAnonymousAccess item is completed via
+    # the public anonymous-access API (safe lab default: anonymous disabled).
+    if _verify_status == 200:
+        _anon_status, _ = _nexus_api(
+            "PUT",
+            "/service/rest/v1/security/anonymous",
+            body={
+                "enabled": False,
+                "userId": "anonymous",
+                "realmName": "NexusAuthorizingRealm",
+            },
+            auth=("admin", "admin123"),
+        )
+        if _anon_status == 200:
+            result["actions"].append(
+                {
+                    "path": "nexus/onboarding",
+                    "key": "onboarding.completed",
+                    "severity": "info",
+                    "message": "Nexus onboarding completed (anonymous access disabled).",
+                    "phase": "apply",
+                }
+            )
+        # Persist the working admin password so later steps (e.g.
+        # provision_nexus_repositories) authenticate with admin123.
+        try:
+            _cfg_path = root / ".codex" / "client-tools.local.json"
+            _cfg = read_json(_cfg_path, optional=True) or {}
+            _cfg.setdefault("nexus", {})["password"] = "admin123"
+            _cfg["nexus"].setdefault("baseUrl", nexus_base)
+            write_json(_cfg_path, _cfg)
+        except Exception:
+            pass
 
     # ── 4. Save provisioning config to client-tools.local.json ────────
     if not dry_run:
@@ -3963,13 +4064,13 @@ def provision_gitea_secrets(root: Path, dry_run: bool = False) -> dict[str, Any]
     kubeconfig_data = None
     try:
         import subprocess
-        result = subprocess.run(
+        kube_result = subprocess.run(
             ["kind", "get", "kubeconfig", "--name", "sdd-cluster"],
             capture_output=True, text=True, timeout=15,
         )
-        if result.returncode == 0 and result.stdout.strip():
+        if kube_result.returncode == 0 and kube_result.stdout.strip():
             import yaml
-            data = yaml.safe_load(result.stdout)
+            data = yaml.safe_load(kube_result.stdout)
             for cluster in data.get("clusters", []):
                 cluster["cluster"].pop("certificate-authority-data", None)
                 cluster["cluster"]["insecure-skip-tls-verify"] = True
@@ -4111,6 +4212,49 @@ def push_to_gitea(root: Path, dry_run: bool = False) -> dict[str, Any]:
             result["valid"] = False
             return result
 
+    # ── 1b. Clear branch protection so the initial force push is allowed ──
+    # The remote repo is auto-initialized with an unrelated commit, so the
+    # v0 baseline push needs --force — which a protected branch rejects.
+    # Protection is re-applied right after this step by
+    # set_gitea_branch_protection(), so clearing here is safe and idempotent.
+    try:
+        _conn = http.client.HTTPConnection(
+            urlparse(base_url).hostname or "localhost",
+            urlparse(base_url).port or 3000,
+            timeout=10,
+        )
+        _unexpected: list[str] = []
+        for _branch in ("dev", "main"):
+            _conn.request(
+                "DELETE",
+                f"/api/v1/repos/{owner}/{repo}/branch_protections/{_branch}",
+                headers={"Authorization": f"token {token}"},
+            )
+            _resp = _conn.getresponse()
+            _resp.read()
+            if _resp.status not in {204, 404}:
+                _unexpected.append(f"{_branch}: HTTP {_resp.status}")
+        _conn.close()
+        if _unexpected:
+            add_bucket_item(
+                result["findings"],
+                "gitea/branch_protections",
+                "protection.clear",
+                "Unexpected DELETE responses while clearing branch protection: "
+                + ", ".join(_unexpected),
+                "warning",
+                "apply",
+            )
+    except Exception as ex:
+        add_bucket_item(
+            result["findings"],
+            "gitea/branch_protections",
+            "protection.clear",
+            f"Could not clear branch protection before push: {ex}",
+            "warning",
+            "apply",
+        )
+
     # ── 2. Ensure main branch exists in Gitea via API ─────────────────
     parsed = urlparse(base_url)
     try:
@@ -4191,8 +4335,11 @@ def push_to_gitea(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
     if has_changes:
         run_native(["git", "add", "-A"], root, timeout=30)
+        # --no-verify: lefthook pre-commit hooks (gitleaks-staged, trunk-fmt)
+        # must not block the template's own initial v0 commit — the template
+        # intentionally ships test fixtures with sample secrets.
         commit = run_native(
-            ["git", "commit", "-m", "v0: initial SDD template setup [skip ci]"], root, timeout=30
+            ["git", "commit", "--no-verify", "-m", "v0: initial SDD template setup [skip ci]"], root, timeout=30
         )
         if commit["returncode"] == 0:
             result["actions"].append(
@@ -4224,8 +4371,24 @@ def push_to_gitea(root: Path, dry_run: bool = False) -> dict[str, Any]:
             }
         )
 
+    # ── 3b. Push auth via API token ───────────────────────────────────
+    # Use the API token through an http.extraHeader so pushes never depend
+    # on the machine's credential manager (an interactive GCM prompt would
+    # hang in non-interactive runs and break one-shot setup on fresh hosts).
+    _push_auth: list[str] = []
+    if token and "replace-with" not in token:
+        try:
+            import base64 as _b64
+
+            _basic = _b64.b64encode(f"admin:{token}".encode()).decode()
+            _push_auth = ["-c", f"http.extraHeader=Authorization: Basic {_basic}"]
+        except Exception:
+            _push_auth = []
+
     # ── 4. Push dev branch to Gitea ───────────────────────────────────
-    push_dev = run_native(["git", "push", "-u", "gitea", "dev"], root, timeout=120)
+    # --force: the Gitea repo is auto-initialized (unrelated empty commit),
+    # so the first push must overwrite it to establish the v0 baseline.
+    push_dev = run_native(["git", *_push_auth, "push", "-u", "gitea", "dev", "--force"], root, timeout=300)
     if push_dev["returncode"] == 0:
         result["actions"].append(
             {
@@ -4247,7 +4410,10 @@ def push_to_gitea(root: Path, dry_run: bool = False) -> dict[str, Any]:
         )
 
     # ── 5. Push main branch to Gitea ──────────────────────────────────
-    push_main = run_native(["git", "push", "-u", "gitea", "main"], root, timeout=120)
+    # Ensure a local main ref exists (the repo is initialized with -b dev);
+    # `git branch main` fails harmlessly if it already exists on re-runs.
+    run_native(["git", "branch", "main"], root, timeout=10)
+    push_main = run_native(["git", *_push_auth, "push", "-u", "gitea", "main", "--force"], root, timeout=300)
     if push_main["returncode"] == 0:
         result["actions"].append(
             {
