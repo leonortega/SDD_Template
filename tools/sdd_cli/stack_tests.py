@@ -25,7 +25,13 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from ._shared import REPO_ROOT, load_project_profile, parse_pairs, quality_coverage_minimum
+from ._shared import (
+    REPO_ROOT,
+    load_project_profile,
+    native_command,
+    parse_pairs,
+    quality_coverage_minimum,
+)
 
 # Per-framework (install_cmd, test_cmd) pairs covering the three test levels.
 # IMPORTANT: pytest is Python-only. .NET test frameworks (xunit, nunit,
@@ -37,12 +43,12 @@ _COMMANDS: dict[str, tuple[list[str], list[str]]] = {
         ["python3", "-m", "pytest", "test/unit", "test/integration", "test/architecture", "-q"],
     ),
     "vitest": (
-        ["npm", "ci"],
-        ["npx", "vitest", "run", "test/unit", "test/integration", "test/architecture"],
+        native_command("npm") + ["ci"],
+        native_command("npx") + ["vitest", "run", "test/unit", "test/integration", "test/architecture"],
     ),
     "jest": (
-        ["npm", "ci"],
-        ["npx", "jest", "test/unit", "test/integration", "test/architecture"],
+        native_command("npm") + ["ci"],
+        native_command("npx") + ["jest", "test/unit", "test/integration", "test/architecture"],
     ),
     # .NET test frameworks all run through the dotnet CLI.
     "dotnet": (["dotnet", "restore"], ["dotnet", "test"]),

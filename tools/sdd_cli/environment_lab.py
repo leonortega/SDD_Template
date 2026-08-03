@@ -24,6 +24,7 @@ from ._shared import (
     http_json,
     http_status,
     local_path,
+    native_command,
     nested,
     normalize_stack_domain,
     read_env_file,
@@ -2656,7 +2657,7 @@ def validate_gitea_runner(root: Path, dry_run: bool = False) -> dict[str, Any]:
     required_tools = [
         ("git", ["git", "--version"]),
         ("node", ["node", "--version"]),
-        ("npm", ["npm", "--version"]),
+        ("npm", native_command("npm") + ["--version"]),
         ("sh", ["sh", "-c", "echo ok"]),
     ]
     for tool_name, tool_cmd in required_tools:

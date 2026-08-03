@@ -464,6 +464,16 @@ def _run_audit_quality_gates(root: Path, dry_run: bool) -> dict[str, Any]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Windows consoles default to a legacy code page (cp1252) that cannot encode
+    # the ✓/✗/— glyphs used in CLI output, so a plain print() raises
+    # UnicodeEncodeError and crashes the whole command. Force UTF-8 output
+    # (best effort) so every CLI command stays robust on Windows.
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, OSError):
+            pass
+
     if sys.version_info < (3, 11):
         print("Python 3.11+ is required.", file=sys.stderr)
         return 2

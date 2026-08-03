@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -358,6 +359,17 @@ def find_meta(body: str, label: str) -> str:
     """Extract a metadata value by label from markdown-style - Key: Value lines."""
     match = re.search(rf"(?m)^-\s+{re.escape(label)}:\s*(.+)$", body)
     return (match.group(1) or "").strip() if match else ""
+
+
+def native_command(name: str) -> list[str]:
+    """Return the invocation Python subprocess can start on this platform.
+
+    With ``shell=False`` on Windows, CreateProcess does not resolve
+    ``.cmd``/``.bat`` files via PATHEXT: a bare ``npm`` or ``npx`` raises
+    FileNotFoundError even when the tool is on PATH. Always use the explicit
+    ``.cmd`` name there; non-Windows shells resolve the bare name fine.
+    """
+    return [f"{name}.cmd"] if sys.platform == "win32" else [name]
 
 
 def run_native(command: list[str], root: Path, timeout: int = 30) -> dict[str, Any]:

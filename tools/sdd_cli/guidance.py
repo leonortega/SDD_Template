@@ -17,6 +17,7 @@ from ._shared import (
     REPO_ROOT,
     configure_result,
     load_project_profile,
+    native_command,
     parse_pairs,
     read_json,
     run_native,
@@ -83,7 +84,7 @@ def _search_skills_internet(root: Path, query: str, dry_run: bool) -> list[dict[
     if dry_run:
         return []
 
-    result = run_native(["npx", "skills", "find", query], root, timeout=30)
+    result = run_native(native_command("npx") + ["skills", "find", query], root, timeout=30)
     if result["returncode"] != 0 or not result["stdout"].strip():
         return []
 
@@ -227,7 +228,7 @@ def _install_skill_via_npx(
         result["valid"] = True
         return result
 
-    cmd = ["npx", "skills", "add", package, "--skill", skill_name, "--yes", "--copy"]
+    cmd = native_command("npx") + ["skills", "add", package, "--skill", skill_name, "--yes", "--copy"]
     try:
         install_result = run_native(cmd, root, timeout=60)
         if install_result["returncode"] == 0:
