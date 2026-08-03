@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from ._shared import REPO_ROOT, CliError
+from ._shared import REPO_ROOT, CliError, native_command
 
 
 def run_eval(root: Path | None = None) -> dict[str, Any]:
@@ -36,24 +36,28 @@ def run_eval(root: Path | None = None) -> dict[str, Any]:
     # never be mistaken for this run's results if promptfoo fails to write.
     results_path.unlink(missing_ok=True)
 
-    # Install promptfoo if not available
+    # Make sure the npx toolchain exists (Windows needs the explicit npx.cmd
+    # name — a bare "npx" raises FileNotFoundError with shell=False).
     try:
         subprocess.run(  # nosec
-            ["npx", "promptfoo", "--version"],
+            native_command("npx") + ["--version"],
             capture_output=True,
             check=False,
             timeout=30,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired) as err:
         raise CliError(
-            "promptfoo is not available. Install with: npm install -g promptfoo"
+            "npx (Node.js package runner) is not available. Install Node.js "
+            "LTS (includes npm/npx) from https://nodejs.org/ and re-run. "
+            "Without npx you can still verify every eval case with the "
+            "deterministic Python provider — see .codex/agent-evals/README.md."
         ) from err
 
     # Run eval without cache
     try:
         result = subprocess.run(  # nosec
-            [
-                "npx",
+            native_command("npx")
+            + [
                 "promptfoo",
                 "eval",
                 "--config",
@@ -165,10 +169,15 @@ def show_view(root: Path | None = None) -> int:
     """Open Promptfoo web UI for viewing results."""
     base = root or REPO_ROOT
     try:
-        subprocess.run(["npx", "promptfoo", "view"], cwd=base, check=False)  # nosec
+        subprocess.run(  # nosec
+            native_command("npx") + ["promptfoo", "view"], cwd=base, check=False
+        )
         return 0
     except FileNotFoundError:
-        print("promptfoo not found. Install with: npm install -g promptfoo")
+        print(
+            "promptfoo not found. Install with: npm install -g promptfoo. "
+            "Deterministic fallback documented in .codex/agent-evals/README.md."
+        )
         return 1
 
 

@@ -134,6 +134,123 @@ class TopLevelDispatchTests(unittest.TestCase):
         self.assertIn("Usage", stderr.getvalue())
 
 
+class PrereqsUnitTests(unittest.TestCase):
+    """Unit tests for npm/npx resolution and the npm PATH-repair flow."""
+
+    def test_native_command_resolves_cmd_on_windows(self) -> None:
+        """native_command uses the explicit .cmd name on Windows, bare name elsewhere."""
+        from unittest.mock import patch
+
+        from tools.sdd_cli import prereqs
+
+        with patch.object(prereqs.sys, "platform", "win32"):
+            self.assertEqual(["npm.cmd"], prereqs.native_command("npm"))
+            self.assertEqual(["npx.cmd"], prereqs.native_command("npx"))
+        with patch.object(prereqs.sys, "platform", "linux"):
+            self.assertEqual(["npm"], prereqs.native_command("npm"))
+
+    def test_install_node_repairs_npm_path_when_node_present(self) -> None:
+        """install_node adds the npm.cmd folder to PATH when node exists but npm is missing."""
+        from unittest.mock import patch
+
+        from tools.sdd_cli import prereqs
+
+        found_node = {
+            "command": "check-node",
+            "valid": False,
+            "nodeVersion": "v26.4.0\n",
+            "npmVersion": "",
+        }
+        ok_node = {
+            "command": "check-node",
+            "valid": True,
+            "nodeVersion": "v26.4.0\n",
+            "npmVersion": "10.8.1\n",
+        }
+        with patch.object(prereqs, "check_node", side_effect=[found_node, ok_node]), \
+             patch.object(
+                 prereqs,
+                 "_npm_candidates",
+                 return_value=[Path("C:/Program Files/nodejs/npm.cmd")],
+             ) as mock_cands, \
+             patch.object(prereqs, "_add_dir_to_user_path", return_value=True) as mock_add:
+            result = prereqs.install_node()
+
+        self.assertTrue(result["valid"])
+        mock_cands.assert_called_once()
+        # Mirror the exact expression install_node computes so the assertion is
+        # platform-agnostic (Windows: backslashes, Linux CI: forward slashes).
+        mock_add.assert_called_once_with(
+            str(Path("C:/Program Files/nodejs/npm.cmd").parent)
+        )
+        self.assertIn("added to the user PATH", result["message"])
+
+    def test_install_node_returns_early_when_all_valid(self) -> None:
+        """install_node returns the check result unchanged when node and npm are both fine."""
+        from unittest.mock import patch
+
+        from tools.sdd_cli import prereqs
+
+        ok_node = {
+            "command": "check-node",
+            "valid": True,
+            "nodeVersion": "v26.4.0\n",
+            "npmVersion": "10.8.1\n",
+        }
+        with patch.object(prereqs, "check_node", return_value=ok_node):
+            result = prereqs.install_node()
+
+        self.assertTrue(result["valid"])
+        self.assertEqual(ok_node, result)
+
+    def test_install_node_raises_precise_error_when_repair_fails(self) -> None:
+        """install_node reports node-found-but-npm-missing precisely when no repair works."""
+        from unittest.mock import patch
+
+        from tools.sdd_cli import prereqs
+
+        found_node = {
+            "command": "check-node",
+            "valid": False,
+            "nodeVersion": "v26.4.0\n",
+            "npmVersion": "",
+        }
+        with patch.object(prereqs, "check_node", return_value=found_node), \
+             patch.object(prereqs, "_npm_candidates", return_value=[]):
+            with self.assertRaises(prereqs.CliError) as ctx:
+                prereqs.install_node()
+
+        message = str(ctx.exception)
+        self.assertIn("v26.4.0", message)
+        self.assertIn("npm was not found on PATH", message)
+
+    def test_install_node_raises_precise_error_when_path_add_fails(self) -> None:
+        """install_node falls through candidates and raises when the PATH add fails."""
+        from unittest.mock import patch
+
+        from tools.sdd_cli import prereqs
+
+        found_node = {
+            "command": "check-node",
+            "valid": False,
+            "nodeVersion": "v26.4.0\n",
+            "npmVersion": "",
+        }
+        with patch.object(prereqs, "check_node", return_value=found_node), \
+             patch.object(
+                 prereqs,
+                 "_npm_candidates",
+                 return_value=[Path("C:/Program Files/nodejs/npm.cmd")],
+             ), \
+             patch.object(prereqs, "_add_dir_to_user_path", return_value=False):
+            with self.assertRaises(prereqs.CliError) as ctx:
+                prereqs.install_node()
+
+        message = str(ctx.exception)
+        self.assertIn("v26.4.0", message)
+        self.assertIn("npm was not found on PATH", message)
+
+
 class DevFlowDispatchTests(unittest.TestCase):
     """Test specific dev-flow subcommand dispatch."""
 

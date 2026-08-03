@@ -19,6 +19,7 @@ from ._shared import (
     configure_result,
     get_sdd_tool_preserve_files,
     git_text,
+    native_command,
     parse_pairs,
     read_env_file,
     read_json,
@@ -986,8 +987,8 @@ def validate_manifest(root: Path, dry_run: bool = False) -> dict[str, Any]:
 # dotnet for .NET — xunit/nunit/mstest normalize to dotnet).
 _FRAMEWORK_COVERAGE_PROBES: dict[str, tuple[list[str], str]] = {
     "pytest": (["pytest", "--version"], "pytest"),
-    "vitest": (["npx", "vitest", "--version"], "vitest"),
-    "jest": (["npx", "jest", "--version"], "jest"),
+    "vitest": (native_command("npx") + ["vitest", "--version"], "vitest"),
+    "jest": (native_command("npx") + ["jest", "--version"], "jest"),
     "dotnet": (["dotnet", "--version"], "dotnet"),
 }
 
@@ -998,7 +999,7 @@ _FRAMEWORK_COVERAGE_PROBES: dict[str, tuple[list[str], str]] = {
 _FALLBACK_COVERAGE_PROBES: list[tuple[list[str], str]] = [
     (["dotnet", "--version"], "dotnet"),
     (["pytest", "--version"], "pytest"),
-    (["npx", "jest", "--version"], "jest"),
+    (native_command("npx") + ["jest", "--version"], "jest"),
 ]
 
 
@@ -1110,7 +1111,7 @@ def ensure_quality_tools(root: Path, dry_run: bool = False) -> dict[str, Any]:
     # Trunk (formatting) (skip in dry-run; resolves via npx from node_modules/.bin)
     if not dry_run:
         trunk_check = run_native(
-            ["npx", "--yes", "trunk", "--version"], root, timeout=30
+            native_command("npx") + ["--yes", "trunk", "--version"], root, timeout=30
         )
         if trunk_check["returncode"] == 0:
             result["actions"].append(

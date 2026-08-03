@@ -10,7 +10,13 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from ._shared import REPO_ROOT, add_bucket_item, configure_result, run_native
+from ._shared import (
+    REPO_ROOT,
+    add_bucket_item,
+    configure_result,
+    native_command,
+    run_native,
+)
 
 
 # ── Main entry point ─────────────────────────────────────────────────────
@@ -134,12 +140,26 @@ def stage1_prerequisites(root: Path, dry_run: bool = False) -> dict[str, Any]:
     node_check = _check_node()
     steps.append(node_check)
     if not node_check.get("valid", True):
+        # Be precise: a common Windows case is node present but npm missing
+        # from PATH. The generic message would send the user to reinstall
+        # Node for nothing.
+        if node_check.get("nodeVersion") and not node_check.get("npmVersion"):
+            node_msg = (
+                f"Node.js found ({node_check['nodeVersion'].strip()}) but npm "
+                "was not found on PATH. Install Node.js LTS (includes npm) "
+                "from https://nodejs.org/ or add npm to PATH. Fix with: "
+                "python -m tools.sdd_cli prereqs install-node"
+            )
+        else:
+            node_msg = (
+                "Node.js and npm are required. "
+                "Download from https://nodejs.org/"
+            )
         add_bucket_item(
             result["findings"],
             "system/node",
             "node.missing",
-            "Node.js and npm are required. "
-            "Download from https://nodejs.org/",
+            node_msg,
             "error",
         )
 
