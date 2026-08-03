@@ -1,32 +1,34 @@
 {
-  "mcpServers": {
+  "servers": {
     "gitea": {
+      "type": "stdio",
       "command": "docker",
       "args": [
         "run",
         "--rm",
         "-i",
         "docker.gitea.com/gitea-mcp-server",
-        "--host",
+        "/app/gitea-mcp",
+        "-H",
         "http://localhost:3000"
       ],
       "env": {
         "GITEA_ACCESS_TOKEN": "${GITEA_ACCESS_TOKEN}"
-      },
-      "description": "Official Gitea MCP — repos, issues, PRs, Actions"
+      }
     },
     "grafana": {
+      "type": "stdio",
       "command": "uvx",
       "args": [
         "mcp-grafana"
       ],
       "env": {
-        "GRAFANA_URL": "http://localhost:3000",
+        "GRAFANA_URL": "http://localhost:3001",
         "GRAFANA_SERVICE_ACCOUNT_TOKEN": "${GRAFANA_SERVICE_ACCOUNT_TOKEN}"
-      },
-      "description": "Official Grafana MCP — dashboards, queries, alerts, incidents"
+      }
     },
     "kubernetes": {
+      "type": "stdio",
       "command": "npx",
       "args": [
         "-y",
@@ -34,10 +36,10 @@
       ],
       "env": {
         "KUBECONFIG": "${env:USERPROFILE}\\.kube\\config"
-      },
-      "description": "Native Go K8s MCP — pods, deployments, logs, helm"
+      }
     },
     "openproject": {
+      "type": "stdio",
       "command": "npx",
       "args": [
         "-y",
@@ -46,16 +48,15 @@
       "env": {
         "OPENPROJECT_URL": "http://localhost:8080",
         "OPENPROJECT_API_KEY": "${OPENPROJECT_API_KEY}"
-      },
-      "description": "Community OpenProject MCP — work packages, projects, time entries"
+      }
     },
     "playwright": {
+      "type": "stdio",
       "command": "npx",
       "args": [
         "-y",
         "@playwright/mcp@latest"
-      ],
-      "description": "Official Playwright MCP (Microsoft) — browser automation, navigation, snapshots, element interaction"
+      ]
     }
   }
 }

@@ -493,9 +493,17 @@ def _register_mcp_entry(
 
     # ── Write to .vscode/mcp.json ─────────────────────────────────────
     def _write_vscode() -> bool:
+        """Write the MCP entry to VS Code's native .vscode/mcp.json.
+
+        VS Code 1.100+ reads the top-level "servers" key (schema uses
+        additionalProperties: false, so "mcpServers" would be rejected).
+        Any legacy "mcpServers" key (Cline/Claude Desktop format) is
+        migrated to "servers" automatically. Entries are written with an
+        explicit "type": "stdio".
+        """
         nonlocal mcp_path
         if not mcp_path.exists():
-            cfg: dict[str, Any] = {"mcpServers": {}}
+            cfg: dict[str, Any] = {"servers": {}}
         else:
             try:
                 cfg = read_json(mcp_path, optional=False)
@@ -509,21 +517,45 @@ def _register_mcp_entry(
                     "pre-start",
                 )
                 return False
-        servers = cfg.get("mcpServers", {})
+        if not isinstance(cfg, dict):
+            cfg = {}
+        # Migrate legacy Cline/Claude-Desktop "mcpServers" key to the native
+        # VS Code "servers" key so servers show up in the MCP panel. Always
+        # remove the legacy key — VS Code's schema uses additionalProperties:
+        # false, so a leftover "mcpServers" would be flagged as invalid.
+        legacy = cfg.pop("mcpServers", None)
+        if isinstance(legacy, dict):
+            servers_existing = cfg.setdefault("servers", {})
+            if isinstance(servers_existing, dict):
+                # Merge legacy entries in, dropping keys VS Code's schema does
+                # not allow inside a server entry (e.g. "description").
+                _allowed_entry_keys = {"type", "command", "args", "cwd", "env", "envFile", "dev", "sandboxEnabled"}
+                for _name, _entry in legacy.items():
+                    if isinstance(_entry, dict):
+                        servers_existing[_name] = {
+                            k: v for k, v in _entry.items() if k in _allowed_entry_keys
+                        }
+                    else:
+                        servers_existing[_name] = _entry
+            else:
+                cfg["servers"] = legacy
+        servers = cfg.setdefault("servers", {})
         if not isinstance(servers, dict):
             add_bucket_item(
                 result["findings"],
                 ".vscode/mcp.json",
-                "invalid.mcpServers",
-                "mcpServers key must be a JSON object.",
+                "invalid.servers",
+                "servers key must be a JSON object.",
                 "error",
                 "pre-start",
             )
             return False
         existing = servers.get(server_name)
         entry = _build_entry()
+        # VS Code expects an explicit transport type for stdio servers.
+        entry = {"type": "stdio", **entry}
         servers[server_name] = entry
-        cfg["mcpServers"] = servers
+        cfg["servers"] = servers
         mcp_path.parent.mkdir(parents=True, exist_ok=True)
         write_json(mcp_path, cfg)
         if existing and existing != entry:
@@ -547,29 +579,37 @@ def _register_mcp_entry(
 
     # ── Write to Cline global settings ────────────────────────────────
     def _write_cline() -> bool:
-        """Write the MCP entry to Cline's global mcp_settings.json."""
+        """Write the MCP entry to Cline's global mcp_settings.json.
+
+        Cline versions store this file in different places:
+        - newer standalone Cline -> ~/.cline/data/settings/cline_mcp_settings.json
+        - older VS Code extension -> %APPDATA%/Code/User/globalStorage/
+          saoudrizwan.claude-dev/settings/cline_mcp_settings.json
+
+        We write to every existing candidate (new location always, plus any
+        legacy locations that exist), preserving existing entries and their
+        format (flat vs. the newer {"transport": {"type": "stdio", ...}}
+        wrapper) so both standalone Cline and the VS Code extension stay in
+        sync.
+        """
+        new_cline = (
+            Path.home() / ".cline" / "data" / "settings" / "cline_mcp_settings.json"
+        )
+        candidates: list[Path] = [new_cline]
         if sys.platform.startswith("win"):
             appdata = os.environ.get("APPDATA")
-            if not appdata:
-                add_bucket_item(
-                    result["findings"],
-                    "cline_mcp_settings.json",
-                    "env.appdata",
-                    "APPDATA env var not found — cannot write Cline MCP settings.",
-                    "warning",
+            if appdata:
+                candidates.append(
+                    Path(appdata)
+                    / "Code"
+                    / "User"
+                    / "globalStorage"
+                    / "saoudrizwan.claude-dev"
+                    / "settings"
+                    / "cline_mcp_settings.json"
                 )
-                return True  # Non-fatal: .vscode/mcp.json is the primary target
-            cline_path = (
-                Path(appdata)
-                / "Code"
-                / "User"
-                / "globalStorage"
-                / "saoudrizwan.claude-dev"
-                / "settings"
-                / "cline_mcp_settings.json"
-            )
         elif sys.platform == "darwin":
-            cline_path = (
+            candidates.append(
                 Path.home()
                 / "Library"
                 / "Application Support"
@@ -581,7 +621,7 @@ def _register_mcp_entry(
                 / "cline_mcp_settings.json"
             )
         else:
-            cline_path = (
+            candidates.append(
                 Path.home()
                 / ".config"
                 / "Code"
@@ -592,26 +632,38 @@ def _register_mcp_entry(
                 / "cline_mcp_settings.json"
             )
 
-        cline_path.parent.mkdir(parents=True, exist_ok=True)
-        if not cline_path.exists():
-            cline_data: dict[str, Any] = {"mcpServers": {}}
-        else:
-            try:
-                cline_data = read_json(cline_path, optional=True)
-            except Exception:
-                cline_data = {"mcpServers": {}}
-        cline_servers = cline_data.setdefault("mcpServers", {})
+        targets = [new_cline] + [p for p in candidates[1:] if p.exists()]
         entry = _build_entry()
-        cline_servers[server_name] = entry
-        cline_data["mcpServers"] = cline_servers
-        write_json(cline_path, cline_data)
-        result["actions"].append({
-            "path": str(cline_path),
-            "key": server_name,
-            "severity": "info",
-            "message": f"Synced {server_name} to Cline global MCP settings.",
-            "phase": "apply",
-        })
+        for cline_path in targets:
+            cline_path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                cline_data = read_json(cline_path, optional=True) or {}
+            except Exception:
+                cline_data = {}
+            if not isinstance(cline_data, dict):
+                cline_data = {}
+            cline_servers = cline_data.setdefault("mcpServers", {})
+            if not isinstance(cline_servers, dict):
+                cline_servers = {}
+                cline_data["mcpServers"] = cline_servers
+            # Preserve the format already used in this file: newer Cline wraps
+            # entries in {"transport": {"type": "stdio", ...}}.
+            use_transport = any(
+                isinstance(v, dict) and "transport" in v
+                for v in cline_servers.values()
+            )
+            if use_transport:
+                cline_servers[server_name] = {"transport": {"type": "stdio", **entry}}
+            else:
+                cline_servers[server_name] = entry
+            write_json(cline_path, cline_data)
+            result["actions"].append({
+                "path": str(cline_path),
+                "key": server_name,
+                "severity": "info",
+                "message": f"Synced {server_name} to Cline global MCP settings ({cline_path.name}).",
+                "phase": "apply",
+            })
         return True
 
     if dry_run:
@@ -700,11 +752,13 @@ def install_grafana_mcp(root: Path, dry_run: bool = False) -> dict[str, Any]:
     # Read grafana env vars
     monitoring_env = root / "infra" / "monitoring" / "variables.env"
     grafana_token = ""
-    grafana_url = "http://localhost:3000"
+    # The lab publishes Grafana on host port 3001 (container port 3000),
+    # so the default must be 3001 — not 3000, which is Gitea's port.
+    grafana_url = "http://localhost:3001"
     if monitoring_env.exists():
         env_vars = read_env_file(monitoring_env)
         grafana_token = env_vars.get("GRAFANA_SERVICE_ACCOUNT_TOKEN", "")
-        grafana_url = env_vars.get("GRAFANA_URL", "http://localhost:3000")
+        grafana_url = env_vars.get("GRAFANA_URL", "http://localhost:3001")
 
     warnings: list[dict[str, str]] = []
     if not grafana_token or "replace-with" in grafana_token:
@@ -798,7 +852,12 @@ def install_gitea_mcp(root: Path, dry_run: bool = False) -> dict[str, Any]:
             "--rm",
             "-i",
             "docker.gitea.com/gitea-mcp-server",
-            "--host",
+            # The image has no ENTRYPOINT and CMD=["/app/gitea-mcp"] — passing
+            # args to `docker run` REPLACES CMD, so the binary must be named
+            # explicitly or the first arg (e.g. --host) is exec'd as the
+            # executable. -H/-host sets the Gitea base URL.
+            "/app/gitea-mcp",
+            "-H",
             gitea_url,
         ],
     }
@@ -1735,16 +1794,6 @@ def run_tool_installer(args: list[str]) -> int:
         "install-openproject-mcp": lambda: install_openproject_mcp(root, dry_run),
         "install-gitea-mcp": lambda: install_gitea_mcp(root, dry_run),
         "install-k8s-mcp": lambda: install_k8s_mcp(root, dry_run),
-        "install-skill": lambda: install_skill_from_github(
-            root,
-            repo=options.get("repo", ""),
-            skill_path=options.get("skill-path", ""),
-            skill_name=options.get("skill-name", ""),
-            branch=options.get("branch", "main"),
-            github_token=options.get("token", ""),
-            source=options.get("source", ""),
-            dry_run=dry_run,
-        ),
         "install-skill": lambda: _install_skill_with_fallback(
             root,
             repo=options.get("repo", ""),
