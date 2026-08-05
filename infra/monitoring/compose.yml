@@ -3,6 +3,11 @@
 
 networks:
   monitoring:
+  # The kind cluster runs on its own Docker network ("kind"). The health probe
+  # reaches services via the kind node DNS (sdd-cluster-control-plane:<nodePort>),
+  # so it must join that network — otherwise every service reports "Not deployed".
+  kind:
+    external: true
 
 volumes:
   grafana-data:
@@ -55,8 +60,12 @@ services:
       - "8090:8090"
     volumes:
       - ./health_probe.py:/app/health_probe.py:ro
+      # Canonical port source (infra/deployment/ports.json) — the probe reads
+      # nodePorts/hostPorts from it instead of hardcoding them.
+      - ../deployment/ports.json:/app/ports.json:ro
     networks:
       - monitoring
+      - kind
     restart: unless-stopped
   seq:
     image: datalust/seq:2025.2.16202

@@ -2187,10 +2187,7 @@ def scaffold_project_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
     )
 
     result["valid"] = True
-    return result
-
-
-# ── Provision Nexus repositories (sdd-artifacts raw hosted) ─────────────
+    return result    # ── Provision Nexus repositories (sdd-artifacts, app-releases, docker-hosted) ──
 
 
 # ── Validate app deployment config ─────────────────────────────────────
@@ -2433,7 +2430,7 @@ def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str,
                 "path": "nexus/repositories",
                 "key": "plan",
                 "severity": "info",
-                "message": "Would create Nexus raw hosted repositories: sdd-artifacts, app-releases.",
+                "message": "Would create Nexus repositories: sdd-artifacts, app-releases, docker-hosted (port 5001).",
                 "phase": "apply",
             }
         )
@@ -2498,7 +2495,7 @@ def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str,
                 "phase": "apply",
             }
         )
-    elif status == 400 and "already exists" in data:
+    elif status == 400 and ("already exists" in data or "already used" in data):
         result["actions"].append(
             {
                 "path": f"nexus/repositories/{repo_name}",
@@ -2543,7 +2540,7 @@ def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str,
                 "phase": "apply",
             }
         )
-    elif status_rel == 400 and "already exists" in data_rel:
+    elif status_rel == 400 and ("already exists" in data_rel or "already used" in data_rel):
         result["actions"].append(
             {
                 "path": f"nexus/repositories/{repo_name_rel}",
@@ -2559,6 +2556,111 @@ def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str,
             f"nexus/repositories/{repo_name_rel}",
             "repository.create",
             f"Nexus repository creation returned {status_rel}: {data_rel[:200]}",
+            "warning",
+            "apply",
+        )
+
+    # ── 4. Create docker-hosted Docker registry repository (port 5001) ──
+    # The CI pipeline pushes container images to host.docker.internal:5001.
+    # forceBasicAuth=true makes Nexus challenge with BASIC auth — the default
+    # Bearer-token flow (with its full-URL service value) is rejected by the
+    # Docker daemon, so docker login/push would 401. httpPort 5001 matches the
+    # port mapping in infra/nexus/compose.yml (5001:5001).
+    repo_name_docker = "docker-hosted"
+    repo_payload_docker = {
+        "name": repo_name_docker,
+        "online": True,
+        "storage": {
+            "blobStoreName": "default",
+            "strictContentTypeValidation": True,
+            "writePolicy": "ALLOW",
+        },
+        "docker": {
+            "httpPort": 5001,
+            "httpsPort": None,
+            "forceBasicAuth": True,
+            "v1Enabled": False,
+            "subdomain": None,
+        },
+    }
+
+    status_docker, data_docker = _nexus_api(
+        "POST",
+        "/service/rest/v1/repositories/docker/hosted",
+        body=repo_payload_docker,
+    )
+    if status_docker == 201:
+        result["actions"].append(
+            {
+                "path": f"nexus/repositories/{repo_name_docker}",
+                "key": "repository.created",
+                "severity": "info",
+                "message": f"Nexus docker hosted repository '{repo_name_docker}' created (port 5001).",
+                "phase": "apply",
+            }
+        )
+    elif status_docker == 400 and (
+        "already exists" in data_docker or "already used" in data_docker
+    ):
+        # Idempotent: reconcile the existing repo's config so the CI registry
+        # works (a repo without the 5001 connector or Basic auth is dead on
+        # 5001). Nexus GETs don't expose the docker connector config reliably,
+        # so any unverifiable state is re-applied via PUT; only a config that
+        # verifiably matches is left untouched.
+        get_status, get_data = _nexus_api(
+            "GET", f"/service/rest/v1/repositories/{repo_name_docker}"
+        )
+        needs_update = True
+        if get_status == 200:
+            try:
+                _existing = json.loads(get_data)
+                _docker_cfg = _existing.get("docker") or {}
+                needs_update = _docker_cfg.get("httpPort") != 5001 or not _docker_cfg.get(
+                    "forceBasicAuth"
+                )
+            except json.JSONDecodeError:
+                needs_update = True
+        if needs_update:
+            put_status, put_data = _nexus_api(
+                "PUT",
+                f"/service/rest/v1/repositories/docker/hosted/{repo_name_docker}",
+                body=repo_payload_docker,
+            )
+            if put_status in {200, 204}:
+                result["actions"].append(
+                    {
+                        "path": f"nexus/repositories/{repo_name_docker}",
+                        "key": "repository.updated",
+                        "severity": "info",
+                        "message": f"Nexus docker hosted repository '{repo_name_docker}' updated (port 5001 + Basic auth).",
+                        "phase": "apply",
+                    }
+                )
+            else:
+                add_bucket_item(
+                    result["findings"],
+                    f"nexus/repositories/{repo_name_docker}",
+                    "repository.update",
+                    f"Nexus repository update returned {put_status}: {put_data[:200]}",
+                    "warning",
+                    "apply",
+                )
+        else:
+            result["actions"].append(
+                {
+                    "path": f"nexus/repositories/{repo_name_docker}",
+                    "key": "repository.exists",
+                    "severity": "info",
+                    "message": f"Nexus docker hosted repository '{repo_name_docker}' already exists (port 5001).",
+                    "phase": "apply",
+                }
+            )
+    else:
+        add_bucket_item(
+            result["findings"],
+            f"nexus/repositories/{repo_name_docker}",
+            "repository.create",
+            f"Nexus repository creation returned {status_docker}: {data_docker[:200]}",
             "warning",
             "apply",
         )

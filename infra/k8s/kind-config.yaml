@@ -2,11 +2,15 @@
 # extraPortMappings enable direct host access to NodePort services
 # without needing kubectl port-forward.
 #
-# Host port → NodePort → Service
-#  8081    →  30080   → frontend DEV (web)
-#  5002    →  30500   → backend DEV (api)
-#  8082    →  30081   → frontend QA (web)
-#  5003    →  30501   → backend QA (api)
+# Host port -> NodePort -> Service
+#  8081    ->  30080   -> frontend DEV (web)
+#  5002    ->  30500   -> backend DEV (api)
+#  8082    ->  31080   -> frontend QA (web)
+#  5003    ->  31500   -> backend QA (api)
+#  8083    ->  32080   -> frontend PROD (web)
+#  5004    ->  32500   -> backend PROD (api)
+# NodePorts are per-environment and cluster-scoped (per-env fix, PR #6).
+# Generated from infra/deployment/ports.json (tools/sdd_cli/k8s_ports.py).
 # Note: 5001 is reserved by Nexus Docker registry (infra/nexus/compose.yml)
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
@@ -19,9 +23,15 @@ nodes:
       - containerPort: 30500
         hostPort: 5002
         protocol: TCP
-      - containerPort: 30081
+      - containerPort: 31080
         hostPort: 8082
         protocol: TCP
-      - containerPort: 30501
+      - containerPort: 31500
         hostPort: 5003
+        protocol: TCP
+      - containerPort: 32080
+        hostPort: 8083
+        protocol: TCP
+      - containerPort: 32500
+        hostPort: 5004
         protocol: TCP

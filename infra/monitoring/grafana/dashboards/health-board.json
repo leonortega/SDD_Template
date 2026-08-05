@@ -1,30 +1,43 @@
 {
-  "title": "🚀 SDD Service Status",
+  "title": "\ud83d\ude80 SDD Service Status",
   "uid": "agentic-e2e-health-board",
-  "version": 32,
+  "version": 1785965018,
   "schemaVersion": 39,
   "timezone": "browser",
   "editable": true,
   "refresh": "30s",
   "graphTooltip": 1,
-  "tags": ["agentic-e2e", "health", "urls", "infrastructure"],
+  "tags": [
+    "agentic-e2e",
+    "health",
+    "urls",
+    "infrastructure"
+  ],
   "timepicker": {
-    "refresh_intervals": ["10s", "30s", "1m", "5m", "15m", "30m", "1h"],
-    "time_options": ["5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d"]
+    "refresh_intervals": [
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m",
+      "30m",
+      "1h"
+    ],
+    "time_options": [
+      "5m",
+      "15m",
+      "1h",
+      "6h",
+      "12h",
+      "24h",
+      "2d",
+      "7d",
+      "30d"
+    ]
   },
   "panels": [
     {
-      "title": "",
-      "id": 10,
-      "type": "text",
-      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
-      "options": {
-        "content": "# 🚀 SDD Service Status Dashboard\n\n**Cluster:** `sdd-cluster` &nbsp;·&nbsp; **Refresh:** `30s` &nbsp;·&nbsp; **Grafana:** http://localhost:3001 &nbsp;·&nbsp; _Click a **Direct URL** to open the service._",
-        "mode": "markdown"
-      }
-    },
-                {
-      "title": "🟢 Service Health",
+      "title": "\ud83d\udfe2 Service Health",
       "id": 1,
       "type": "table",
       "description": "Live health status - probes each environment /health endpoint on every refresh (30s). Green = deployed and responding; 'Not deployed' = endpoint unreachable. Direct URLs use the host-remapped ports.",
@@ -191,19 +204,169 @@
         }
       ]
     },
-
-
-
-    
-    
     {
-      "title": "🔧 Infrastructure Access",
+      "title": "\ud83d\udd27 Infrastructure Access",
       "id": 6,
       "type": "text",
       "description": "Quick access to all infrastructure services with URLs and default credentials",
-      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 14 },
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
       "options": {
-        "content": "| Service | URL | Default Credentials |\n|---|---|---|\n| **📊 Grafana** | http://localhost:3001 | `admin` / `admin` |\n| **🔧 Gitea** (Git) | http://localhost:3000 | `admin` / `admin123` |\n| **📦 Nexus** (Artifacts) | http://localhost:8088 | `admin` / `admin123` |\n| **📋 Dozzle** (Logs) | http://localhost:8888 | — |\n\n```bash\n# Kubernetes\nkubectl -n sdd-dev get po -o wide\nkubectl -n sdd-dev get svc\nkubectl -n sdd-qa get po -o wide\nkubectl -n sdd-qa get svc\n```\n\n> 🔄 Services are deployed via **Gitea Actions CI** → **kind K8s cluster**\n",
+        "content": "| Service | URL | Default Credentials |\n|---|---|---|\n| **\ud83d\udcca Grafana** | http://localhost:3001 | `admin` / `admin` |\n| **\ud83d\udd27 Gitea** (Git) | http://localhost:3000 | `admin` / `admin123` |\n| **\ud83d\udce6 Nexus** (Artifacts) | http://localhost:8088 | `admin` / `admin123` |\n| **\ud83d\udccb Dozzle** (Logs) | http://localhost:8888 | \u2014 |\n\n```bash\n# Kubernetes\nkubectl -n sdd-dev get po -o wide\nkubectl -n sdd-dev get svc\nkubectl -n sdd-qa get po -o wide\nkubectl -n sdd-qa get svc\n```\n\n> \ud83d\udd04 Services are deployed via **Gitea Actions CI** \u2192 **kind K8s cluster**\n",
+        "mode": "markdown"
+      }
+    },
+    {
+      "title": "\ud83c\udfd7\ufe0f Environment Matrix",
+      "id": 7,
+      "type": "table",
+      "description": "Deployment status across DEV / QA / PROD (inline). PROD activated with release v0.1.0 (run #32).",
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 20
+      },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "infinity-health"
+      },
+      "options": {
+        "footer": {
+          "show": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "displayMode": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Status"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Web URL"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 210
+              },
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open",
+                    "url": "${__value.text}",
+                    "targetBlank": true
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "API URL"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 210
+              },
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open",
+                    "url": "${__value.text}",
+                    "targetBlank": true
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "yesoreyeram-infinity-datasource",
+            "uid": "infinity-health"
+          },
+          "queryType": "json",
+          "source": "inline",
+          "data": "{\"data\": [{\"env\": \"DEV\", \"namespace\": \"sdd-dev\", \"trigger\": \"Gitea Actions push to dev\", \"status\": \"\\u2705 Active\", \"webUrl\": \"http://localhost:8081\", \"apiUrl\": \"http://localhost:5002\"}, {\"env\": \"QA\", \"namespace\": \"sdd-qa\", \"trigger\": \"push to dev (auto-promote)\", \"status\": \"\\u2705 Active\", \"webUrl\": \"http://localhost:31080\", \"apiUrl\": \"http://localhost:31500\"}, {\"env\": \"PROD\", \"namespace\": \"sdd-prod\", \"trigger\": \"workflow_dispatch environment=prod\", \"status\": \"\\u2705 Active\", \"webUrl\": \"http://localhost:32080\", \"apiUrl\": \"http://localhost:32500\"}]}",
+          "format": "table",
+          "parser": "backend",
+          "root_selector": "data",
+          "columns": [
+            {
+              "selector": "env",
+              "text": "Environment",
+              "type": "string"
+            },
+            {
+              "selector": "namespace",
+              "text": "K8s Namespace",
+              "type": "string"
+            },
+            {
+              "selector": "trigger",
+              "text": "Deploy Trigger",
+              "type": "string"
+            },
+            {
+              "selector": "status",
+              "text": "Status",
+              "type": "string"
+            },
+            {
+              "selector": "webUrl",
+              "text": "Web URL",
+              "type": "string"
+            },
+            {
+              "selector": "apiUrl",
+              "text": "API URL",
+              "type": "string"
+            }
+          ],
+          "type": "json"
+        }
+      ]
+    },
+    {
+      "title": "",
+      "id": 10,
+      "type": "text",
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "content": "# \ud83d\ude80 SDD Service Status Dashboard\n\n**Cluster:** `sdd-cluster` &nbsp;\u00b7&nbsp; **Refresh:** `30s` &nbsp;\u00b7&nbsp; **Grafana:** http://localhost:3001 &nbsp;\u00b7&nbsp; _Click a **Direct URL** to open the service._",
         "mode": "markdown"
       }
     }
@@ -228,5 +391,8 @@
       "targetBlank": true
     }
   ],
-  "time": { "from": "now-1h", "to": "now" }
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  }
 }

@@ -1,0 +1,23 @@
+{
+  "$schema": "./ports.schema.json",
+  "version": 1,
+  "registry": "host.docker.internal:5001",
+  "appPorts": {
+    "frontend": 80,
+    "backend": 5000
+  },
+  "environments": {
+    "dev": {
+      "frontend": { "hostPort": 8081, "nodePort": 30080 },
+      "backend": { "hostPort": 5002, "nodePort": 30500 }
+    },
+    "qa": {
+      "frontend": { "hostPort": 8082, "nodePort": 31080 },
+      "backend": { "hostPort": 5003, "nodePort": 31500 }
+    },
+    "prod": {
+      "frontend": { "hostPort": 8083, "nodePort": 32080 },
+      "backend": { "hostPort": 5004, "nodePort": 32500 }
+    }
+  }
+}

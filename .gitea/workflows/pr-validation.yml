@@ -75,7 +75,13 @@ jobs:
 
       - name: SCA scan (Trivy)
         shell: bash
-        run: trivy fs --format table --exit-code 1 --no-progress --skip-db-update . 2>&1
+        run: |
+          set -euo pipefail
+          # The CI runner container has outbound internet, and the Trivy
+          # vulnerability DB is not pre-cached in sdd-e2e-ci:local, so
+          # --skip-db-update would fail with "cannot be specified on the
+          # first run". Let Trivy download the DB on first run instead.
+          trivy fs --format table --exit-code 1 --no-progress . 2>&1
 
       - name: IaC scan (Checkov)
         shell: bash
