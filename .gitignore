@@ -88,6 +88,11 @@ infra/openproject/plane/
 **/data/
 **/logs/
 
+# Exception: backend EF Core Data layer is source code (the generic **/data/
+# rule above matches it case-insensitively on Windows, which would break CI builds)
+!src/backend/Data/
+!src/backend/Data/**
+
 # Local secrets and machine-specific environment files
 *.env
 !*.env.example

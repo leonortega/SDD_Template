@@ -3,6 +3,8 @@ kind: Kustomization
 namespace: sdd-dev
 resources:
   - ../../base
+patches:
+  - path: service-patch.yaml
 images:
   - name: host.docker.internal:5001/frontend
     newTag: latest

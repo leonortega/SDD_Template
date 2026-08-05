@@ -17,6 +17,7 @@ from ._shared import (
     read_json,
     run_native,
 )
+from .k8s_ports import load_ports
 
 # ── Headlamp (K8s web UI) ────────────────────────────────────────────────
 
@@ -294,18 +295,33 @@ def scaffold_k8s(root, dry_run=False):
     k8s_dir = root / "infra" / "k8s"
     k8s_dir.mkdir(parents=True, exist_ok=True)
 
-    # ── Port mapping by role ──
-    _port_map = {"web": 80, "api": 5000}
-    # Fixed nodePorts for kind extraPortMappings (defined in infra/k8s/kind-config.yaml)
-    # Host → nodePort: 8081→30080 (web), 5002→30500 (api)
-    _node_port_base = {"web": 30080, "api": 30500}
+    # ── Port mapping by app ──
+    # Canonical source of truth: infra/deployment/ports.json
+    # (tools/sdd_cli/k8s_ports.py). appPorts holds the container port per app;
+    # per-env nodePorts are derived for kind extraPortMappings + overlay service
+    # patches. The dev environment values seed the base manifests (overlays
+    # override per env).
+    _port_map = {"web": 80, "api": 5000}  # role -> container port fallback
+    _dev_node_ports: dict[str, int] = {}  # appId -> dev nodePort (canonical)
+    try:
+        _ports = load_ports(root)
+        _dev_cfg = _ports.get("environments", {}).get("dev", {})
+        _app_port_map = _ports.get("appPorts", {})
+        for _app_id, _cfg in _dev_cfg.items():
+            _dev_node_ports[_app_id] = _cfg["nodePort"]
+            _port_map[_app_id] = _app_port_map.get(_app_id, _port_map.get(_app_id, 80))
+    except (FileNotFoundError, ValueError):
+        # Fall back to defaults only when ports.json is missing or invalid
+        # (never in the shipped repo) — keeps the scaffold usable in a bare
+        # checkout and degrades gracefully instead of crashing.
+        pass
     _used_node_ports: set[int] = set()
 
     def _port_for_role(role: str) -> int:
         return _port_map.get(role, 80)
 
-    def _node_port_for_role(role: str) -> int:
-        base = _node_port_base.get(role, 30080)
+    def _node_port_for_app(app_id: str) -> int:
+        base = _dev_node_ports.get(app_id, 30080)
         port = base
         while port in _used_node_ports:
             port += 1
@@ -422,7 +438,7 @@ def scaffold_k8s(root, dry_run=False):
         svc_file = f"{app_id}-service.yaml"
         svc_path = base_dir / svc_file
         if not svc_path.exists():
-            node_port = _node_port_for_role(role)
+            node_port = _node_port_for_app(app_id)
             svc_yaml = (
                 "apiVersion: v1\n"
                 "kind: Service\n"
@@ -540,6 +556,41 @@ def scaffold_k8s(root, dry_run=False):
                     "key": "file.exists",
                     "severity": "info",
                     "message": f"{env_name} overlay already exists.",
+                    "phase": "audit",
+                }
+            )
+
+    # ── Port-derived artifacts (kind-config extraPortMappings + per-env
+    # service patches) are regenerated from infra/deployment/ports.json so the
+    # committed files never drift from the canonical source.
+    if not dry_run:
+        from .k8s_ports import write_artifacts as _write_ports
+
+        try:
+            _targets = _write_ports(root)
+            result["actions"].append(
+                {
+                    "path": "infra/deployment/ports.json",
+                    "key": "ports.generated",
+                    "severity": "info",
+                    "message": (
+                        "Regenerated port-derived artifacts from ports.json: "
+                        + ", ".join(sorted(str(p.name) for p in _targets.values()))
+                        + "."
+                    ),
+                    "phase": "apply",
+                }
+            )
+        except (FileNotFoundError, ValueError) as e:
+            result["actions"].append(
+                {
+                    "path": "infra/deployment/ports.json",
+                    "key": "ports.missing",
+                    "severity": "warning",
+                    "message": (
+                        "ports.json unavailable or invalid (%s) - skipping port "
+                        "artifact regeneration." % e
+                    ),
                     "phase": "audit",
                 }
             )

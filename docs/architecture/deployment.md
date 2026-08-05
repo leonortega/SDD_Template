@@ -184,15 +184,18 @@ Checkout → Determine Env → Build Docker Images → Deploy to K8s → Discove
 
 **3. Build and Push Docker Images** — For each app in `apps.json`:
 
-- Logs into Nexus Docker registry (`host.docker.internal:5001`)
+- Probes `http://host.docker.internal:5001/v2/` — if the registry is unreachable, the push is **skipped**
+- Logs into Nexus Docker registry (`host.docker.internal:5001`) — plain-HTTP push requires `host.docker.internal:5001` in Docker Desktop **insecure registries**
 - Runs `docker build` using the app's `Dockerfile`
-- Pushes `{appId}:{commitSha}` and `{appId}:latest` tags
+- Pushes `{appId}:{commitSha}` and `{appId}:latest` tags (only when login succeeded)
+- **Loads images into the kind cluster** via `kind load docker-image` — this is the actual path used to get images to the cluster (kind's containerd is separate from host Docker; without this the pods hit `ImagePullBackOff`)
+- Prunes old local/kind images (keeps newest commit tags per app) so the runner's image store does not grow unbounded
 
 **4. Deploy to K8s** — For the target environment:
 
 - Reads `apps.json` to get app list
 - Runs `kustomize edit set image` to set the commit SHA tag
-- Runs `kustomize build . | kubectl apply -f -`
+- Runs `kustomize build . | kubectl apply -f -` (per-env overlays patch unique cluster-scoped nodePorts)
 - Waits for rollout of each deployment
 
 **5. Discover Environment URLs** — Single Python script:
@@ -289,7 +292,7 @@ Before any deployment:
 1. **kind cluster** — Run `setup-lab` (step 16) or `python -m tools.sdd_cli environment-lab setup-kind-cluster` to create `sdd-cluster`
 2. **Apps defined** — `infra/deployment/apps.json` must list every deployable app
 3. **K8s manifests scaffolded** — Run `scaffold-k8s` to generate Dockerfiles + manifests
-4. **Nexus Docker registry configured** — Docker hosted repository on port `5001` (created by `setup-lab`)
+4. **Nexus Docker registry configured** — Docker hosted repository (`docker-hosted`) on port `5001`. **Note:** `setup-lab` does **not** create this repository — it must be provisioned via the Nexus REST API (`POST /service/rest/v1/repositories/docker/hosted` with `docker.httpPort: 5001`). Anonymous access is disabled, so registry calls require the `admin` credentials (`NEXUS_USERNAME`/`NEXUS_PASSWORD`)
 5. **Gitea secrets** — `NEXUS_USERNAME`, `NEXUS_PASSWORD`, `KUBECONFIG` (provisioned automatically by `setup-lab`)
 6. **Runner mounts** — Docker socket and kubeconfig mounted into the runner container
 

@@ -106,19 +106,51 @@ not selected (`applies: false`).
   deterministic Deployment/Service/Kustomize from `apps.json`; the AI supplies
   the stack-specific Dockerfiles/nginx.conf/.dockerignore).
 
-### 5. Validate before handoff
+### 5. Scaffold quality requirements (proven by E2EPROJECT-37)
+
+Apply these hard-won requirements to **every** generated scaffold. They are
+non-negotiable — each one prevented a real failure in a consumer delivery:
+
+1. **Runtime write-access (non-root container):** if the app writes to its
+   workdir on boot (SQLite `Data Source=todos.db`, file caches, uploads), the
+   Dockerfile must `RUN chown -R <uid>:<gid> /app` **before** the `USER <non-root>`
+   line — otherwise the container CrashLoopBackOffs with
+   `unable to open database file`. Verify with `docker run` + curl a DB-backed
+   endpoint **before** merging (catches the crash loop in seconds without a
+   cluster round-trip).
+2. **Source-tree hygiene vs. `.gitignore`:** never let a generic `**/data/`
+   rule swallow a source `Data/` layer. On Windows (`core.ignorecase`) the rule
+   matches `Data/` case-insensitively and silently drops the file from CI
+   checkouts → `CS0234: 'Data' does not exist`. Add negations
+   (`!src/<app>/Data/`, `!src/<app>/Data/**`) and verify with
+   `git check-ignore <file>` + `git ls-files`. A green local build is **not**
+   proof the CI build will work.
+3. **Dependency versions must be current enough for SCA:** default frontend
+   scaffolds to **React ≥ 19.2.7 + react-router 8** (`react-router-dom` was
+   merged into `react-router` in v8; the v6/7 line still ships MEDIUM/HIGH
+   advisories like GHSA-qwww-vcr4-c8h2). If the generated lockfile triggers
+   Trivy findings, upgrade rather than suppress.
+4. **Python-in-CI column-0 rule:** any `python3 -c "..."` or heredoc body
+   embedded in a workflow `run: |` block must start at **column 0** of the
+   generated script (YAML keeps its indentation offset; Python and `<< EOF`
+   terminators reject it). Validate extracted scripts with `bash -n` and
+   `python -m py_compile`.
+
+### 6. Validate before handoff
 
 Run the stack's local quality gates on the scaffold:
 
 1. Build succeeds (`npm run build` / `dotnet build` / `mvn compile` / `go build` / ...).
 2. Tests pass (unit + integration + at least one architecture test).
-3. Dockerfiles build (`docker build`) when Docker is available.
+3. Dockerfiles build (`docker build`) when Docker is available, then `docker run`
+   and curl the health/DB endpoints (requirement 1 above).
 4. Manifests are valid (`kubectl apply --dry-run=client` / `kustomize build`).
+5. SCA is clean (`trivy fs` / `npm audit`) or upgrades are documented.
 
 Fix failures before reporting done. If a gate cannot run, document the reason
 and residual risk.
 
-### 6. Record and continue
+### 7. Record and continue
 
 - Confirm the generated files list to the user.
 - Optionally record a durable knowledge note in `knowledge/` when a

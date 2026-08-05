@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/sdd/ports.schema.json",
+  "title": "SDD lab port mapping",
+  "description": "Canonical kind/K8s port assignments. Generated artifacts (infra/k8s/kind-config.yaml extraPortMappings and infra/k8s/overlays/*/service-patch.yaml nodePorts) are derived from this file by tools/sdd_cli/k8s_ports.py.",
+  "type": "object",
+  "required": ["version", "registry", "appPorts", "environments"],
+  "properties": {
+    "version": { "type": "integer", "const": 1 },
+    "registry": { "type": "string", "description": "Image registry prefix used for all app images" },
+    "appPorts": {
+      "type": "object",
+      "additionalProperties": { "type": "integer" },
+      "description": "Container port per appId (must match the app's Dockerfile EXPOSE)"
+    },
+    "environments": {
+      "type": "object",
+      "propertyNames": { "enum": ["dev", "qa", "prod"] },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "required": ["hostPort", "nodePort"],
+          "properties": {
+            "hostPort": {
+              "type": "integer",
+              "minimum": 1024,
+              "maximum": 65535,
+              "description": "Host port for kind extraPortMappings (direct localhost access)"
+            },
+            "nodePort": {
+              "type": "integer",
+              "minimum": 30000,
+              "maximum": 32767,
+              "description": "Cluster-scoped K8s NodePort (must be unique across environments)"
+            }
+          }
+        }
+      }
+    }
+  }
+}

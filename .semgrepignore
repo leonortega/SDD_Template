@@ -1,0 +1,8 @@
+# Semgrep ignore for the SDD lab repo (CI SAST step in pr-validation.yml).
+#
+# Third-party installed community skills and generated eval artifacts are
+# vendor content, not repo-authored code. They are already excluded from the
+# trunk lint gate via .trunk/trunk.yaml lint.ignore; exclude them here too so
+# the CI Semgrep step stays green on repo-owned code.
+.codex/skills/
+.codex/agent-evals/
