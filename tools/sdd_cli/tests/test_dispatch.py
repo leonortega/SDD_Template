@@ -167,7 +167,11 @@ class PrereqsUnitTests(unittest.TestCase):
             "nodeVersion": "v26.4.0\n",
             "npmVersion": "10.8.1\n",
         }
-        with patch.object(prereqs, "check_node", side_effect=[found_node, ok_node]), \
+        # The candidate path only exists on Windows; CI (Linux container) must
+        # not fail on the existence probe. Patching Path.exists keeps the
+        # repair flow deterministic on every platform.
+        with patch.object(Path, "exists", return_value=True), \
+             patch.object(prereqs, "check_node", side_effect=[found_node, ok_node]), \
              patch.object(
                  prereqs,
                  "_npm_candidates",

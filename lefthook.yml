@@ -26,8 +26,8 @@ pre-push:
 commit-msg:
   commands:
     require-ticket:
-      run: python -m tools.sdd_cli dev-flow validate-commit-message --message "$(cat {1})"
+      run: python -m tools.sdd_cli dev-flow validate-commit-message --message-file {1}
     gitleaks-msg:
-      run: gitleaks detect --source . --no-git --redact --verbose
+      run: gitleaks detect --source . --no-git --redact --verbose --config .gitleaks.toml
     trunk-check:
       run: npx trunk check --all --ci --no-fix
