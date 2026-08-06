@@ -82,11 +82,11 @@ infra/k8s/
 
 **Note:** The base `namespace.yaml` and overlay `config-patch.yaml` files were removed to fix a Kustomize build failure (unresolved `${COMPONENT_NAME}` placeholders blocked `kustomize build`). Namespaces are created by the CI workflow via `kubectl create namespace`, and image tags are set by `kustomize edit set image`. If you need per-overlay environment variables, add patches targeting actual deployment names (not placeholder variables).
 
-### Service Type: NodePort
+### Service Type: LoadBalancer
 
-Services use `type: NodePort` with **fixed per-environment nodePorts** defined in `infra/k8s/kind-config.yaml` (canonical source: `infra/deployment/ports.json`). The nodePort itself is only reachable **inside the cluster network** (e.g. from the health-probe on `agentic-e2e_monitoring`) — from the Windows host it is NOT accessible at `localhost:{nodePort}`. Kind's `extraPortMappings` expose the services at the **host ports** listed in the tables below (`localhost:{hostPort}`).
+Services use `type: LoadBalancer`. On Docker Desktop K8s, this assigns a **nodePort** in the `30000-32767` range that is immediately accessible at `localhost:{nodePort}`.
 
-**No Ingress controller is needed** — each service is reachable directly via its host-mapped port.
+**No Ingress controller is needed** — the LoadBalancer exposes each service directly on localhost.
 
 ## CLI Commands
 
@@ -126,14 +126,12 @@ python -m tools.sdd_cli environment-lab setup-kind-cluster
 
 Uses `infra/k8s/kind-config.yaml` which defines fixed port mappings:
 
-| Host Port | Service         | NodePort |
-| --------- | --------------- | -------- |
-| `8081`    | frontend (DEV)  | `30080`  |
-| `5002`    | backend (DEV)   | `30500`  |
-| `8082`    | frontend (QA)   | `31080`  |
-| `5003`    | backend (QA)    | `31500`  |
-| `8083`    | frontend (PROD) | `32080`  |
-| `5004`    | backend (PROD)  | `32500`  |
+| Host Port | Service   | NodePort |
+|-----------|-----------|----------|
+| `8081`    | frontend (DEV) | `30080`  |
+| `5002`    | backend (DEV)  | `30500`  |
+| `8082`    | frontend (QA)  | `30081`  |
+| `5003`    | backend (QA)   | `30501`  |
 
 This replaces the old Docker Desktop K8s requirement. Steps:
 
@@ -294,7 +292,7 @@ Before any deployment:
 1. **kind cluster** — Run `setup-lab` (step 16) or `python -m tools.sdd_cli environment-lab setup-kind-cluster` to create `sdd-cluster`
 2. **Apps defined** — `infra/deployment/apps.json` must list every deployable app
 3. **K8s manifests scaffolded** — Run `scaffold-k8s` to generate Dockerfiles + manifests
-4. **Nexus Docker registry configured** — Docker hosted repository (`docker-hosted`) on port `5001`. `setup-lab` provisions it idempotently via the Nexus REST API (with `docker.httpPort: 5001` and `forceBasicAuth: true`; an existing repo's connector port + Basic auth are reconciled). Anonymous access is disabled, so registry calls require the `admin` credentials (`NEXUS_USERNAME`/`NEXUS_PASSWORD`)
+4. **Nexus Docker registry configured** — Docker hosted repository (`docker-hosted`) on port `5001`. **Note:** `setup-lab` does **not** create this repository — it must be provisioned via the Nexus REST API (`POST /service/rest/v1/repositories/docker/hosted` with `docker.httpPort: 5001`). Anonymous access is disabled, so registry calls require the `admin` credentials (`NEXUS_USERNAME`/`NEXUS_PASSWORD`)
 5. **Gitea secrets** — `NEXUS_USERNAME`, `NEXUS_PASSWORD`, `KUBECONFIG` (provisioned automatically by `setup-lab`)
 6. **Runner mounts** — Docker socket and kubeconfig mounted into the runner container
 
@@ -312,14 +310,12 @@ Before any deployment:
 The kind cluster is created with `infra/k8s/kind-config.yaml` which defines fixed
 port mappings from the Windows host directly into the kind node container:
 
-| Host Port | Service         | NodePort |
-| --------- | --------------- | -------- |
-| `8081`    | frontend (DEV)  | `30080`  |
-| `5002`    | backend (DEV)   | `30500`  |
-| `8082`    | frontend (QA)   | `31080`  |
-| `5003`    | backend (QA)    | `31500`  |
-| `8083`    | frontend (PROD) | `32080`  |
-| `5004`    | backend (PROD)  | `32500`  |
+| Host Port | Service   | NodePort |
+|-----------|-----------|----------|
+| `8081`    | frontend (DEV) | `30080`  |
+| `5002`    | backend (DEV)  | `30500`  |
+| `8082`    | frontend (QA)  | `30081`  |
+| `5003`    | backend (QA)   | `30501`  |
 
 After the CI pipeline deploys, you can access apps **directly at localhost**
 without any `kubectl port-forward`:
@@ -344,63 +340,13 @@ Output:
 ```
 DEV frontend accessible at: http://localhost:8081/health (kind nodePort 30080 mapped to host:8081)
 DEV backend accessible at: http://localhost:5002/health (kind nodePort 30500 mapped to host:5002)
-QA frontend accessible at: http://localhost:8082/health (kind nodePort 31080 mapped to host:8082)
-QA backend accessible at: http://localhost:5003/health (kind nodePort 31500 mapped to host:5003)
-PROD frontend accessible at: http://localhost:8083/health (kind nodePort 32080 mapped to host:8083)
-PROD backend accessible at: http://localhost:5004/health (kind nodePort 32500 mapped to host:5004)
+QA frontend accessible at: http://localhost:8082/health (kind nodePort 30081 mapped to host:8082)
+QA backend accessible at: http://localhost:5003/health (kind nodePort 30501 mapped to host:5003)
 ```
 
 ## Grafana Monitoring
 
 Grafana runs at `http://localhost:3001` (provisioned via Docker Compose).
-
-### Managing the Monitoring Stack (Project `agentic-e2e`)
-
-The monitoring stack (Grafana, health-probe, Seq, Dozzle) is defined in
-`infra/monitoring/compose.yml` and included by the root compose file
-`infra/compose.yml`, whose project name is **`agentic-e2e`**. **Always manage
-the stack through the root file — never run `docker compose up` standalone
-from `infra/monitoring/`.**
-
-```bash
-
-# Correct — canonical stack (project agentic-e2e, network agentic-e2e_monitoring)
-docker compose --env-file infra/openproject/variables.env \
-  --env-file infra/monitoring/variables.env \
-  -f infra/compose.yml --project-directory infra up -d health-probe
-
-# Wrong — spawns a stray `monitoring` project on a separate `monitoring_monitoring` network
-cd infra/monitoring && docker compose up -d health-probe
-
-```
-
-**Why it matters (incident-driven):** running the compose file standalone
-creates a second compose project (`monitoring`) with its own network. The
-`health-probe` container then lands on `monitoring_monitoring` instead of
-the canonical `agentic-e2e_monitoring`, so Grafana can no longer resolve
-`health-probe:8090` (the Service Health panel shows "No data"/400) and the
-probe can no longer reach the kind control-plane node
-(`sdd-cluster-control-plane`).
-
-Two things make this durable (see the comments in `infra/monitoring/compose.yml`):
-
-1. The `monitoring` network is pinned to `agentic-e2e_monitoring`, so the
-   probe joins the canonical network even when the file is read standalone —
-   but the compose **project** must still be `agentic-e2e` so all containers
-   are lifecycle-managed by the one canonical stack. `docker compose ls`
-   should show a single `agentic-e2e` project; a second `monitoring`
-   project indicates a stray standalone run.
-1. The `health-probe` service has `restart: unless-stopped` plus a
-   healthcheck (`GET /health` via stdlib urllib, no curl in the alpine
-   image). A silent process exit is auto-restarted; a hung-but-alive probe
-   shows `unhealthy` in `docker ps`/`docker inspect` instead of dying
-   silently. (Docker has no native restart-on-unhealthy, and the `kill -9 1`
-   self-terminate trick is ineffective on Docker Desktop/WSL2 — the
-   healthcheck is observability, the restart policy covers exits.)
-
-The health-probe is the data source for the Service Health panel: it polls
-each environment's NodePort from inside the cluster network and serves the
-JSON Grafana consumes.
 
 ### Dashboard Provisioning
 
