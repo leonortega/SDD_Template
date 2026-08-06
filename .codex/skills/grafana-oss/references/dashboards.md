@@ -2,7 +2,9 @@
 
 ## What is a Dashboard?
 
-A Grafana dashboard is a set of one or more panels organized into rows, providing an at-a-glance view of related information. Dashboards connect to data sources, display data through panels, and support interactive filtering via variables.
+A Grafana dashboard is a set of one or more panels organized into rows, providing an at-a-glance view of related
+information. Dashboards connect to data sources, display data through panels, and support interactive filtering via
+variables.
 
 ## Core Components
 
@@ -17,6 +19,7 @@ A Grafana dashboard is a set of one or more panels organized into rows, providin
 ## Creating Dashboards
 
 ### From scratch
+
 1. Click **Dashboards** in the left sidebar
 2. Click **New > New dashboard**
 3. Click **Add visualization** to add your first panel
@@ -25,6 +28,7 @@ A Grafana dashboard is a set of one or more panels organized into rows, providin
 6. Click the save icon (or Ctrl+S) to save the dashboard
 
 ### From a template / Import
+
 - Click **Dashboards > New > Import**
 - Paste a dashboard JSON, enter a Grafana.com dashboard ID, or upload a JSON file
 - Grafana.com hosts thousands of community dashboards (grafana.com/grafana/dashboards)
@@ -54,7 +58,8 @@ Access via the gear icon at the top-right of any dashboard.
 - **Zoom**: Click-drag on any time series to zoom in
 
 ### Common relative time shortcuts
-```
+
+```text
 now-5m    last 5 minutes
 now-1h    last 1 hour
 now-24h   last 24 hours
@@ -70,10 +75,12 @@ now-1d/d  yesterday
 Annotations are event markers overlaid on time series panels.
 
 ### Types
+
 - **Native annotations**: Manually add a note to a specific time directly in the dashboard
 - **Query annotations**: Pull events from a data source and display as markers
 
 ### Adding a manual annotation
+
 - Hold Ctrl (or Cmd on Mac) and click a time series panel
 - Type a description; optionally set a time range
 
@@ -113,6 +120,7 @@ Library panels are reusable panel definitions shared across multiple dashboards.
 Every dashboard is stored as a JSON document.
 
 Key top-level JSON fields:
+
 ```json
 {
   "title": "My Dashboard",
@@ -131,25 +139,30 @@ Key top-level JSON fields:
 ## Sharing Dashboards
 
 ### Share link
+
 - Click **Share** icon > **Link** tab
 - Toggle "Lock time range" to embed the current time window
 - Toggle "Include template variable values"
 
 ### Snapshot
+
 - **Share > Snapshot**: Creates a read-only, public snapshot
 - Contains rendered data at share time - no live data source access needed
 - Can expire (1 hour, 1 day, 7 days, or never)
 
 ### Export / Import JSON
+
 - **Share > Export**: Download the dashboard JSON
 - Import at **Dashboards > New > Import**
 - Useful for version control, migration, sharing with the community
 
 ### Embed
+
 - **Share > Embed**: Generates an iframe HTML snippet
 - Requires anonymous access in Grafana config (OSS/Enterprise only)
 
 ### Public dashboards (Grafana 10+)
+
 - Make a dashboard publicly accessible with no login
 - Enable per-dashboard in Share > Public dashboard
 
@@ -212,4 +225,5 @@ providers:
       foldersFromFilesStructure: true
 ```
 
-Place dashboard JSON files in `/var/lib/grafana/dashboards/`. Subdirectories become folders when `foldersFromFilesStructure: true`.
+Place dashboard JSON files in `/var/lib/grafana/dashboards/`. Subdirectories become folders when
+`foldersFromFilesStructure: true`.

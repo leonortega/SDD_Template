@@ -1,13 +1,19 @@
 # Chaos Engineering
 
-Chaos engineering is the discipline of experimenting on a system in order to build confidence in its ability to withstand turbulent conditions in production. It is not about breaking things for fun -- it is a rigorous, scientific approach to discovering weaknesses before they cause outages.
+Chaos engineering is the discipline of experimenting on a system in order to build confidence in its ability to
+withstand turbulent conditions in production. It is not about breaking things for fun -- it is a rigorous, scientific
+approach to discovering weaknesses before they cause outages.
 
-> **Safety note:** This reference describes chaos engineering *concepts and planning patterns*. All failure injection experiments must be performed by authorized engineers using dedicated chaos tooling (e.g., Gremlin, Litmus, AWS Fault Injection Simulator) with proper approvals, blast radius controls, monitoring, and rollback plans. Commands shown are for reference only -- never run them without authorization and safeguards.
+> **Safety note:** This reference describes chaos engineering *concepts and planning patterns*. All failure injection
+  experiments must be performed by authorized engineers using dedicated chaos tooling (e.g., Gremlin, Litmus, AWS Fault
+  Injection Simulator) with proper approvals, blast radius controls, monitoring, and rollback plans. Commands shown are
+  for reference only -- never run them without authorization and safeguards.
 
-The fundamental insight is simple: you cannot know how your system handles failure until it actually fails. Waiting for production incidents to discover weaknesses is reactive and expensive. Chaos engineering is proactive and controlled.
-
+The fundamental insight is simple: you cannot know how your system handles failure until it actually fails. Waiting for
+production incidents to discover weaknesses is reactive and expensive. Chaos engineering is proactive and controlled.
 
 ## Table of Contents
+
 1. [Principles of Chaos Engineering](#principles-of-chaos-engineering)
 2. [Chaos Experiment Design](#chaos-experiment-design)
 3. [Failure Injection Techniques](#failure-injection-techniques)
@@ -21,7 +27,8 @@ The fundamental insight is simple: you cannot know how your system handles failu
 
 ### 1. Define Steady State
 
-Before you can detect abnormal behavior, you must define what normal looks like. Steady state is expressed as measurable business or system metrics that indicate the system is functioning correctly.
+Before you can detect abnormal behavior, you must define what normal looks like. Steady state is expressed as measurable
+business or system metrics that indicate the system is functioning correctly.
 
 **Good steady state definitions:**
 
@@ -34,6 +41,7 @@ Before you can detect abnormal behavior, you must define what normal looks like.
 | **Availability** | All critical paths responding | Health checks green on all services |
 
 **Bad steady state definitions:**
+
 - "The system is working" (not measurable)
 - "No alerts firing" (absence of evidence is not evidence of absence)
 - "CPU below 80%" (cause-based, not symptom-based)
@@ -43,7 +51,8 @@ Before you can detect abnormal behavior, you must define what normal looks like.
 Every chaos experiment starts with a hypothesis: a prediction about what will happen when you inject a specific failure.
 
 **Hypothesis format:**
-```
+
+```text
 "We believe that when [failure condition], the system will [expected behavior],
 as measured by [steady state metric] remaining within [acceptable bounds]."
 ```
@@ -73,9 +82,11 @@ Chaos experiments should simulate failures that actually happen in production, n
 
 ### 4. Run in Production
 
-Staging environments do not reproduce the complexity of production. They lack real user traffic, real data volumes, real concurrency patterns, and real interactions between services. Chaos experiments in staging build false confidence.
+Staging environments do not reproduce the complexity of production. They lack real user traffic, real data volumes, real
+concurrency patterns, and real interactions between services. Chaos experiments in staging build false confidence.
 
 **But safely:**
+
 - Start with non-production, then graduate to production
 - Use the smallest blast radius possible
 - Have an emergency stop mechanism to halt the experiment immediately
@@ -85,7 +96,8 @@ Staging environments do not reproduce the complexity of production. They lack re
 
 ### 5. Automate and Run Continuously
 
-A chaos experiment that runs once proves resilience at one point in time. Automated, recurring experiments prove resilience continuously.
+A chaos experiment that runs once proves resilience at one point in time. Automated, recurring experiments prove
+resilience continuously.
 
 **Automation maturity levels:**
 
@@ -102,7 +114,7 @@ A chaos experiment that runs once proves resilience at one point in time. Automa
 
 ### Experiment Template
 
-```
+```text
 Experiment: [Name]
 Date: [When]
 Team: [Who is running it]
@@ -137,7 +149,8 @@ Results:
 
 ### Blast Radius Management
 
-Blast radius is the scope of impact if the experiment causes unexpected damage. Always minimize blast radius and expand gradually.
+Blast radius is the scope of impact if the experiment causes unexpected damage. Always minimize blast radius and expand
+gradually.
 
 **Blast radius levels:**
 
@@ -150,6 +163,7 @@ Blast radius is the scope of impact if the experiment causes unexpected damage. 
 | **Full production** | All production traffic | Well-understood experiments that have been run many times |
 
 **Blast radius controls:**
+
 - **Targeting:** Limit experiment to specific instances, user segments, or traffic percentage
 - **Duration:** Set maximum experiment duration; auto-revert after timeout
 - **Emergency stop:** One-button (or automatic) experiment termination
@@ -203,7 +217,8 @@ Blast radius is the scope of impact if the experiment causes unexpected damage. 
 
 ## Chaos Monkey and Netflix's Approach
 
-Netflix pioneered chaos engineering with Chaos Monkey, which randomly terminates production instances during business hours using automated, authorized tooling with built-in safeguards.
+Netflix pioneered chaos engineering with Chaos Monkey, which randomly terminates production instances during business
+hours using automated, authorized tooling with built-in safeguards.
 
 ### The Netflix Chaos Engineering Stack
 
@@ -217,17 +232,21 @@ Netflix pioneered chaos engineering with Chaos Monkey, which randomly terminates
 
 ### Key Lessons from Netflix
 
-1. **Start small:** Chaos Monkey terminates one instance at a time. Only after years of practice did Netflix graduate to region-level chaos (Chaos Kong).
+1. **Start small:** Chaos Monkey terminates one instance at a time. Only after years of practice did Netflix graduate to
+region-level chaos (Chaos Kong).
 2. **Business hours only:** Run experiments when the team is available to respond. Late-night chaos is just an outage.
 3. **Opt-out, not opt-in:** By default, all services are enrolled. Teams must explicitly justify opting out.
-4. **No blame:** Finding a weakness is a success, not a failure. Teams that discover and fix problems through chaos engineering are celebrated.
-5. **Invest in tooling:** Manual chaos is not sustainable. Invest in platforms that automate experiment execution, evaluation, and reporting.
+4. **No blame:** Finding a weakness is a success, not a failure. Teams that discover and fix problems through chaos
+engineering are celebrated.
+5. **Invest in tooling:** Manual chaos is not sustainable. Invest in platforms that automate experiment execution,
+evaluation, and reporting.
 
 ---
 
 ## GameDay Exercises
 
-A GameDay is a scheduled exercise where a team practices responding to a realistic failure scenario. It combines chaos engineering (inject failure) with incident response practice (detect, diagnose, mitigate, resolve).
+A GameDay is a scheduled exercise where a team practices responding to a realistic failure scenario. It combines chaos
+engineering (inject failure) with incident response practice (detect, diagnose, mitigate, resolve).
 
 ### GameDay Structure
 
@@ -263,9 +282,12 @@ A GameDay is a scheduled exercise where a team practices responding to a realist
 ### GameDay Facilitation Tips
 
 - **The facilitator does not fix things.** Their job is to inject failures, observe the response, and take notes.
-- **Start with known weaknesses.** The first GameDay should test a scenario the team suspects might fail -- the learning is in confirming the suspicion and practicing the response.
-- **Increase difficulty over time.** First GameDay: terminate one instance. Tenth GameDay: simultaneous database failover + network partition + on-call engineer is unavailable.
-- **Celebrate findings.** Every weakness discovered in a GameDay is a weakness that will not cause a real outage. This is a win.
+- **Start with known weaknesses.** The first GameDay should test a scenario the team suspects might fail -- the learning
+is in confirming the suspicion and practicing the response.
+- **Increase difficulty over time.** First GameDay: terminate one instance. Tenth GameDay: simultaneous database
+failover + network partition + on-call engineer is unavailable.
+- **Celebrate findings.** Every weakness discovered in a GameDay is a weakness that will not cause a real outage. This
+is a win.
 
 ---
 
@@ -273,7 +295,7 @@ A GameDay is a scheduled exercise where a team practices responding to a realist
 
 ### The Confidence Curve
 
-```
+```text
 Confidence
     ▲
     │                              ╭───────────
@@ -287,7 +309,8 @@ Confidence
       0    10    20    30    40    50    60
 ```
 
-Each successful chaos experiment increases confidence that the system will survive that failure in production. Each failed experiment (where the hypothesis was disproven) reveals a weakness that, once fixed, increases actual resilience.
+Each successful chaos experiment increases confidence that the system will survive that failure in production. Each
+failed experiment (where the hypothesis was disproven) reveals a weakness that, once fixed, increases actual resilience.
 
 ### Maturity Model
 
@@ -324,13 +347,17 @@ If you have never done chaos engineering, start here:
 
 ### Anti-Fragility
 
-The ultimate goal of chaos engineering is not just resilience (surviving failure) but anti-fragility (getting stronger from failure). A system is anti-fragile when each failure makes it more resistant to future failures.
+The ultimate goal of chaos engineering is not just resilience (surviving failure) but anti-fragility (getting stronger
+from failure). A system is anti-fragile when each failure makes it more resistant to future failures.
 
 **How chaos engineering builds anti-fragility:**
+
 - Each experiment reveals a weakness
 - Each fix removes that weakness permanently
 - Each automated experiment continuously verifies the fix
 - Over time, the system has been tested against every common failure mode
 - New failure modes are discovered faster because the team has built the muscles and tooling to find them
 
-This is the Release It! philosophy in action: production-ready software is not software that never fails. It is software that has been designed, tested, and operated to handle failure gracefully -- because failure is not a possibility, it is a certainty.
+This is the Release It! philosophy in action: production-ready software is not software that never fails. It is software
+that has been designed, tested, and operated to handle failure gracefully -- because failure is not a possibility, it is
+a certainty.

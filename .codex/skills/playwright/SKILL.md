@@ -1,12 +1,16 @@
 ---
 name: "playwright"
-description: "Use when the task requires automating a real browser from the terminal (navigation, form filling, snapshots, screenshots, data extraction, UI-flow debugging) via `playwright-cli` or the bundled wrapper script."
+description: >-
+  >- "Use when the task requires automating a real browser from the terminal (navigation, form filling, snapshots,
+  screenshots, data extraction, UI-flow debugging) via `playwright-cli` or the bundled wrapper script."
 ---
 
 # Playwright CLI Skill
 
-Drive a real browser from the terminal using `playwright-cli`. Prefer the bundled wrapper script so the CLI works even when it is not globally installed.
-Treat this skill as CLI-first automation. Do not pivot to `@playwright/test` unless the user explicitly asks for test files.
+Drive a real browser from the terminal using `playwright-cli`. Prefer the bundled wrapper script so the CLI works even
+when it is not globally installed.
+Treat this skill as CLI-first automation. Do not pivot to `@playwright/test` unless the user explicitly asks for test
+files.
 
 ## Prerequisite check (required)
 
@@ -16,7 +20,8 @@ Before proposing commands, check whether `npx` is available (the wrapper depends
 command -v npx >/dev/null 2>&1
 ```
 
-If it is not available, pause and ask the user to install Node.js/npm (which provides `npx`). Provide these steps verbatim:
+If it is not available, pause and ask the user to install Node.js/npm (which provides `npx`). Provide these steps
+verbatim:
 
 ```bash
 # Verify Node/npm are installed
@@ -147,22 +152,30 @@ Open only what you need:
 
 ## Overview
 
-This repo-local copy preserves the upstream Playwright CLI guidance and adds the delivery context required by this repository.
+This repo-local copy preserves the upstream Playwright CLI guidance and adds the delivery context required by this
+repository.
 
 ## Shared Context
 
-Source: https://github.com/openai/skills/tree/main/skills/.curated/playwright
+Source: <https://github.com/openai/skills/tree/main/skills/.curated/playwright>
 
-Before using this skill for ticketed delivery, read `.codex/skills/_shared/delivery-contract.md` and `docs/conventions/context-management.md`. Apply the active ticket scope, QA evidence rules, browser validation expectations, and handoff requirements before changing tests, collecting artifacts, or reporting UI findings.
+Before using this skill for ticketed delivery, read `.codex/skills/_shared/delivery-contract.md` and
+`docs/conventions/context-management.md`. Apply the active ticket scope, QA evidence rules, browser
+validation expectations, and handoff requirements before changing tests, collecting artifacts, or reporting UI findings.
 
 ## Workflow
 
-Follow the upstream Playwright workflow above. In this repository, prefer existing Browser/plugin capabilities when they are already configured for local QA, and use the copied Playwright CLI wrapper only when the task specifically needs terminal-driven browser automation.
+Follow the upstream Playwright workflow above. In this repository, prefer existing Browser/plugin capabilities when they
+are already configured for local QA, and use the copied Playwright CLI wrapper
+only when the task specifically needs terminal-driven browser automation.
 
 ## Output
 
-Report target URL, browser actions performed, screenshots or traces captured, validation result, and ticket or handoff notes needed for QA or review.
+Report target URL, browser actions performed, screenshots or traces captured, validation result, and ticket or handoff
+notes needed for QA or review.
 
 ## Failure Rules
 
-Stop and report a blocker when Node/npm or the Playwright CLI wrapper is unavailable, the target environment is not reachable, artifact output would land outside an ignored evidence folder, or the requested automation would exceed the active ticket scope.
+Stop and report a blocker when Node/npm or the Playwright CLI wrapper is unavailable, the target environment is not
+reachable, artifact output would land outside an ignored evidence folder, or the
+requested automation would exceed the active ticket scope.

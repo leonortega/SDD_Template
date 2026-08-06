@@ -74,7 +74,8 @@ Body fields (any subset): `name`, `color`, `description`, `is_archived`.
 
 ### Create · `POST /orgs/{org}/labels` · write
 
-Same body as repo labels plus `exclusive` (boolean, org-only — only one label of an exclusive group may be applied at once).
+Same body as repo labels plus `exclusive` (boolean, org-only — only one label of an exclusive group may be applied at
+once).
 
 ### Edit · `PATCH /orgs/{org}/labels/{id}` · write
 

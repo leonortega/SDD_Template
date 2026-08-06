@@ -49,7 +49,9 @@ const wideEvent = {
 
 ### Pitfall 2: Not Designing for Unknown Unknowns
 
-Traditional logging captures "known unknowns" - issues you anticipated. But production bugs are often "unknown unknowns" - issues you never predicted. Wide events with rich context enable investigating issues you didn't anticipate.
+Traditional logging captures "known unknowns" - issues you anticipated. But production bugs are often "unknown unknowns"
+
+- issues you never predicted. Wide events with rich context enable investigating issues you didn't anticipate.
 
 **Incorrect:**
 

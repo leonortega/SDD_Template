@@ -35,6 +35,21 @@ The eval is fully deterministic (no LLM), so you can also verify every case
 without promptfoo by running the Python provider directly against the YAML
 assertions (see `routing_provider.py` + `promptfooconfig.yaml`).
 
+**Deterministic fallback recipe** (proven 46/46 on a Windows host):
+
+1. `import routing_provider` from this directory.
+2. Load `promptfooconfig.yaml` (pyyaml is available).
+3. For each test case, call `routing_provider.call_api("", {}, {"vars": test["vars"]})`
+   and read `{"output": "<json>"}`.
+4. Evaluate the `is-json` + `javascript` assertions exactly with node:
+   `new Function('output', 'return (' + assertion + ');')(output)`.
+5. Persist to `.codex/agent-evals/results.local.json` (mode `post-prod-eval`, scope = release version).
+
+Cleanup after a broken global promptfoo: `npm uninstall -g promptfoo` so a
+broken install does not shadow real runs. Console gotcha on Windows cp1252
+terminals: printing emoji from eval JSON crashes `print()` — prefix with
+`PYTHONIOENCODING=utf-8`.
+
 ## Structure
 
 | File                   | Purpose                                           |

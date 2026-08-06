@@ -59,9 +59,11 @@ A source is any browser-accessible value that an attacker can control.
 
 ### Source-to-Sink Tracing Methodology
 
-1. **Identify sources**: Search for all reads of `location.*`, `document.referrer`, `window.name`, and `postMessage` event handlers.
+1. **Identify sources**: Search for all reads of `location.*`, `document.referrer`, `window.name`, and `postMessage`
+event handlers.
 2. **Trace data flow**: Follow each source value through assignments, function parameters, and return values.
-3. **Check sanitization**: At each step, verify whether the value is sanitized before reaching a sink. Encoding must match the context (HTML entity encoding for HTML sinks, JavaScript escaping for JS sinks).
+3. **Check sanitization**: At each step, verify whether the value is sanitized before reaching a sink. Encoding must
+match the context (HTML entity encoding for HTML sinks, JavaScript escaping for JS sinks).
 4. **Identify sinks**: Flag any point where the traced value reaches a sink listed above.
 5. **Verify exploitability**: Craft a proof-of-concept URL or message to confirm the vulnerability.
 
@@ -146,7 +148,8 @@ document.getElementById('output').innerHTML = clean;
 
 ### Detection Patterns
 
-Run as `grep -rnP` (PCRE) so the `\s` and character-class escapes behave as expected; for POSIX-ERE grep use `[[:space:]]` in place of `\s`.
+Run as `grep -rnP` (PCRE) so the `\s` and character-class escapes behave as expected; for POSIX-ERE grep use
+`[[:space:]]` in place of `\s`.
 
 ```bash
 # DOM-based XSS sinks (PCRE)
@@ -234,7 +237,7 @@ silently or with a CORS error.
 
 ### Detection Patterns
 
-```
+```text
 # Find external scripts/stylesheets missing integrity attribute
 <script[^>]+src=["']https?://[^"']+["'][^>]*>  (without 'integrity' in the tag)
 <link[^>]+href=["']https?://[^"']+["'][^>]*>   (without 'integrity' in the tag)
@@ -333,7 +336,7 @@ childFrame.postMessage(
 
 ### Detection Patterns
 
-```
+```text
 # Missing origin validation in message handlers
 addEventListener\s*\(\s*['"]message['"]   (then check for event.origin validation)
 
@@ -422,7 +425,7 @@ fetch('/api/cart', {
 
 ### Detection Patterns
 
-```
+```text
 # Sensitive data in storage operations
 localStorage\.setItem\s*\(\s*['"][^'"]*(?:token|secret|password|key|session|jwt|auth|ssn|credit)[^'"]*['"]
 sessionStorage\.setItem\s*\(\s*['"][^'"]*(?:token|secret|password|key|session|jwt|auth|ssn|credit)[^'"]*['"]
@@ -449,7 +452,7 @@ Reflecting the request's `Origin` header verbatim in `Access-Control-Allow-Origi
 is equivalent to allowing every origin. Combined with credentials, this is the
 most common exploitable CORS misconfiguration.
 
-```
+```text
 # Attacker sends:
 Origin: https://evil.com
 
@@ -573,7 +576,7 @@ location /api/ {
 
 ### Detection Patterns
 
-```
+```text
 # Origin reflection without validation
 Access-Control-Allow-Origin.*\$.*origin
 Access-Control-Allow-Origin.*\$_SERVER\['HTTP_ORIGIN'\]
@@ -643,6 +646,7 @@ yarn install --immutable         # yarn v2+
 ```
 
 **Key practices:**
+
 - Always commit lock files to version control.
 - Review lock file diffs in pull requests for unexpected changes.
 - Use `npm ci` (not `npm install`) in CI/CD pipelines.
@@ -681,7 +685,7 @@ dependency_audit:
 
 ### Detection Patterns
 
-```
+```text
 # Missing lock file
 # Verify presence of package-lock.json, yarn.lock, or pnpm-lock.yaml
 
@@ -796,7 +800,7 @@ setInterval(() => {
 
 ### Detection Patterns
 
-```
+```text
 # Dynamic code execution
 eval\s*\(
 new\s+Function\s*\(
@@ -921,7 +925,7 @@ function safeRelativeRedirect(userPath) {
 
 ### Detection Patterns
 
-```
+```text
 # Open redirect sinks with user input from URL parameters
 location\.href\s*=\s*.*(?:URLSearchParams|location\.search|location\.hash|getParameter)
 location\.assign\s*\(.*(?:URLSearchParams|location\.search|location\.hash)
@@ -934,6 +938,7 @@ window\.open\s*\(.*(?:URLSearchParams|location\.search|location\.hash)
 ## Prevention Checklist
 
 ### DOM-Based XSS
+
 - [ ] Use `textContent` and `setAttribute` instead of `innerHTML` and `outerHTML`
 - [ ] Never pass strings to `eval()`, `setTimeout()`, `setInterval()`, or `new Function()`
 - [ ] Sanitize with DOMPurify before any unavoidable HTML rendering
@@ -941,23 +946,27 @@ window\.open\s*\(.*(?:URLSearchParams|location\.search|location\.hash)
 - [ ] Audit all uses of jQuery `.html()`, `.append()`, `.prepend()`, and `.after()`
 
 ### Subresource Integrity
+
 - [ ] Add `integrity` and `crossorigin` attributes to all third-party `<script>` and `<link>` tags
 - [ ] Automate SRI hash generation in the build pipeline
 - [ ] Monitor for SRI hash mismatches in CSP violation reports
 
 ### postMessage
+
 - [ ] Validate `event.origin` against an explicit allowlist in every `message` handler
 - [ ] Validate `event.data` type and shape before processing
 - [ ] Never use `'*'` as the `targetOrigin` when sending sensitive data
 - [ ] Use `MessageChannel` for trusted bidirectional communication
 
 ### Client-Side Storage
+
 - [ ] Never store authentication tokens, secrets, or PII in `localStorage` or `sessionStorage`
 - [ ] Use `httpOnly`, `Secure`, `SameSite=Strict` cookies for authentication
 - [ ] Audit all `setItem` calls for sensitive data patterns
 - [ ] Clear storage on logout (`localStorage.clear()`, `sessionStorage.clear()`)
 
 ### CORS Configuration
+
 - [ ] Validate request `Origin` against an explicit allowlist (never reflect blindly)
 - [ ] Never allow `null` as a trusted origin
 - [ ] Always set the `Vary: Origin` response header when CORS headers are dynamic
@@ -965,6 +974,7 @@ window\.open\s*\(.*(?:URLSearchParams|location\.search|location\.hash)
 - [ ] Set `Access-Control-Max-Age` to reduce preflight request volume
 
 ### Dependency Security
+
 - [ ] Run `npm audit` / `yarn audit` in CI and fail the build on high/critical findings
 - [ ] Use `npm ci` (not `npm install`) in CI/CD pipelines
 - [ ] Commit and review lock file changes
@@ -972,11 +982,13 @@ window\.open\s*\(.*(?:URLSearchParams|location\.search|location\.hash)
 - [ ] Use Socket.dev or Snyk for supply chain attack detection
 
 ### Dynamic Code Execution
+
 - [ ] Ban `eval()` and `new Function()` via ESLint rules (`no-eval`, `no-new-func`, `no-implied-eval`)
 - [ ] Enforce CSP `script-src` without `'unsafe-eval'`
 - [ ] Use safe alternatives (math parsers, operation allowlists, function references)
 
 ### Open Redirects
+
 - [ ] Parse all redirect targets with `new URL()` and validate the origin
 - [ ] Block `javascript:` and `data:` URL schemes
 - [ ] Maintain an explicit allowlist of permitted redirect origins

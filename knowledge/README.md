@@ -5,11 +5,15 @@
 This repository keeps two context layers:
 
 - `docs/` — documentation for humans and maintainers (architecture, ADRs, modules, APIs, workflows, conventions).
-- `knowledge/` — operational knowledge that agents actively consult while implementing, debugging, reviewing, and fixing code.
+- `knowledge/` — operational knowledge that agents actively consult while implementing, debugging, reviewing, and fixing
+code.
 
-This file is the index, the read/write policy, and the standard template for the knowledge base. Use it at the start of planning, implementation, review, QA, deployment, rollback, hotfix, and retrospective work.
+This file is the index, the read/write policy, and the standard template for the knowledge base. Use it at the start of
+planning, implementation, review, QA, deployment, rollback, hotfix, and retrospective work.
 
-Knowledge is guidance only. It must never override the latest user request, the active ticket, the active OpenSpec change, the merged project profile, the shared delivery contract, canonical docs, current files, durable evidence, or live tool output.
+Knowledge is guidance only. It must never override the latest user request, the active ticket, the active OpenSpec
+change, the merged project profile, the shared delivery contract, canonical docs, current files, durable evidence, or
+live tool output.
 
 ## Categories
 
@@ -45,11 +49,13 @@ Use progressive disclosure:
 
 1. Read this file (`knowledge/README.md`).
 2. Open only the category folders relevant to the task.
-3. Verify all task-critical facts against current repo files, OpenProject, OpenSpec, Gitea, Nexus, Git, or live command output.
+3. Verify all task-critical facts against current repo files, OpenProject, OpenSpec, Gitea, Nexus, Git, or live command
+output.
 
 ## Search
 
-Use the deterministic search helper with concrete symptom terms (error text, config keys, tool names, workflow stages, marker names):
+Use the deterministic search helper with concrete symptom terms (error text, config keys, tool names, workflow stages,
+marker names):
 
 ```bash
 python -m tools.sdd_cli knowledge-search search --list-topics
@@ -87,7 +93,8 @@ Every knowledge document must use the same template so agents can retrieve and r
 ## Tags
 ```
 
-Use one file per topic (e.g. `knowledge/errors/playwright-timeout.md`). Keep entries small, source-backed, and reviewable.
+Use one file per topic (e.g. `knowledge/errors/playwright-timeout.md`). Keep entries small, source-backed, and
+reviewable.
 
 ## Write Policy
 
@@ -96,7 +103,8 @@ Agents may propose or write knowledge updates only when the information is reusa
 Good candidates:
 
 - repeated CI, QA, deploy, or review failures
-- agent-caused workflow mistakes that are likely to recur (hook rejections, wrong commit prefixes, wrong tool boundaries, skipped preflight steps)
+- agent-caused workflow mistakes that are likely to recur (hook rejections, wrong commit prefixes, wrong tool
+boundaries, skipped preflight steps)
 - durable command or setup corrections
 - module ownership or behavior discovered during implementation
 - release, rollback, artifact, or QA lessons
@@ -121,13 +129,17 @@ Run the deterministic classifier first to pick the candidate file paths:
 python -m tools.sdd_cli knowledge-search classify --task "<task summary>" --changed-files "<comma-separated changed paths>" --test-results "<test outcome>"
 ```
 
-It maps the task summary, changed files, and test results to the exact candidate `knowledge/` or `docs/` file paths (or `NO_CHANGES`). Then update only those candidate files.
+It maps the task summary, changed files, and test results to the exact candidate `knowledge/` or `docs/` file paths (or
+`NO_CHANGES`). Then update only those candidate files.
 
 1. Classify the finding.
-   - Authoritative architecture, setup, development, deployment, or context policy belongs in `docs/` (use the `docs-knowledge-maintenance` skill for AI-updatable docs).
-   - Enforceable automation behavior belongs in `.codex/skills/_shared/delivery-contract.md` plus affected skills and tests.
+   - Authoritative architecture, setup, development, deployment, or context policy belongs in `docs/` (use the
+   `docs-knowledge-maintenance` skill for AI-updatable docs).
+   - Enforceable automation behavior belongs in `.codex/skills/_shared/delivery-contract.md` plus affected skills and
+   tests.
    - Reusable but non-authoritative workflow knowledge belongs in `knowledge/`.
-2. Verify the source against current files, command output, OpenProject, Gitea, Nexus, health checks, QA evidence, or explicit user instruction. Do not store assumptions as facts.
+2. Verify the source against current files, command output, OpenProject, Gitea, Nexus, health checks, QA evidence, or
+explicit user instruction. Do not store assumptions as facts.
 3. Choose the target file:
    - Known error with root cause -> `knowledge/errors/<error>.md`
    - Validated reusable fix -> `knowledge/fixes/<fix>.md`
@@ -137,7 +149,9 @@ It maps the task summary, changed files, and test results to the exact candidate
    - QA result, release lesson, or workflow lesson -> `knowledge/lessons-learned/<topic>.md`
    - Reusable prompt -> `knowledge/prompts/<task>.md`
    - Reference material -> `knowledge/references/<topic>.md`
-4. Use the standard template above. Include metadata where useful: `- Type: Fact | Decision | Pattern | Preference | Deprecated | Risk`, `- Status: Active | Superseded | Needs Verification`, `- Source: <file, ticket, PR, commit, command, or date>`, `- Last verified: YYYY-MM-DD`.
+4. Use the standard template above. Include metadata where useful: `- Type: Fact | Decision | Pattern | Preference |
+Deprecated | Risk`, `- Status: Active | Superseded | Needs Verification`, `- Source: <file, ticket, PR, commit, command,
+or date>`, `- Last verified: YYYY-MM-DD`.
 5. If an older entry is contradicted, mark it `Superseded` and link the replacement entry.
 6. Keep entries small and reviewable. Do not use the knowledge base as a scratchpad.
 

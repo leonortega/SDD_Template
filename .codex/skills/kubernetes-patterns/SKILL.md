@@ -1,6 +1,8 @@
 ---
 name: kubernetes-patterns
-description: Kubernetes workload patterns, resource management, RBAC, probes, autoscaling, ConfigMap/Secret handling, and kubectl debugging for production-grade deployments.
+description: >-
+  Kubernetes workload patterns, resource management, RBAC, probes, autoscaling, ConfigMap/Secret handling, and kubectl
+  debugging for production-grade deployments.
 metadata:
   origin: ECC
 ---
@@ -21,14 +23,19 @@ Production-grade Kubernetes patterns for deploying, managing, and debugging work
 
 ## When to Use
 
-> Same as **When to Activate** above. This alias satisfies repo skill-format conventions. Use this skill any time you are writing, reviewing, or debugging Kubernetes YAML and workloads.
+> Same as **When to Activate** above. This alias satisfies repo skill-format conventions. Use this skill any time you
+  are writing, reviewing, or debugging Kubernetes YAML and workloads.
 
 ## How It Works
 
-This skill provides **copy-pasteable, production-grade YAML patterns** and **kubectl debugging commands** organized by task:
+This skill provides **copy-pasteable, production-grade YAML patterns** and **kubectl debugging commands** organized by
+task:
 
-1. **Deployment template** — A fully configured production `Deployment` with security context, rolling update strategy, all three probe types, resource limits, and environment injection from ConfigMap/Secret.
-2. **Probes** — Decision table for startup vs liveness vs readiness, with correct `failureThreshold × periodSeconds` math.
+1. **Deployment template** — A fully configured production `Deployment` with security context, rolling update strategy,
+all three probe types, resource limits, and environment injection from
+ConfigMap/Secret.
+2. **Probes** — Decision table for startup vs liveness vs readiness, with correct `failureThreshold × periodSeconds`
+math.
 3. **Services & Ingress** — ClusterIP, LoadBalancer, and TLS Ingress patterns with cert-manager annotations.
 4. **ConfigMaps & Secrets** — `envFrom`, file-mount, and external secrets guidance.
 5. **Resource management** — Requests vs limits rules of thumb by workload type (web API, JVM, worker, sidecar).
@@ -328,7 +335,10 @@ data:
   db-password: czNjcjN0  # base64 of 's3cr3t'
 ```
 
-> **Important:** Raw Kubernetes Secrets are only base64-encoded, not encrypted at rest unless your cluster has encryption configured. Use [Sealed Secrets](https://github.com/bitnami-labs/sealed-secrets) or [External Secrets Operator](https://external-secrets.io) for production.
+> **Important:** Raw Kubernetes Secrets are only base64-encoded, not encrypted at rest unless your cluster has
+  encryption configured. Use [Sealed
+  Secrets](https://github.com/bitnami-labs/sealed-secrets) or [External Secrets Operator](https://external-secrets.io)
+  for production.
 
 ---
 
@@ -724,6 +734,7 @@ spec:
 ## Best Practices Checklist
 
 ### Security
+
 - [ ] Container runs as non-root (`runAsNonRoot: true`, `runAsUser` set)
 - [ ] `readOnlyRootFilesystem: true` with `emptyDir` for writable paths
 - [ ] `allowPrivilegeEscalation: false`
@@ -734,6 +745,7 @@ spec:
 - [ ] Secrets managed via Sealed Secrets or External Secrets Operator
 
 ### Reliability
+
 - [ ] All 3 probe types configured (startup + liveness + readiness)
 - [ ] Resource requests AND limits set on every container
 - [ ] `minReplicas: 2+` for any production workload
@@ -742,6 +754,7 @@ spec:
 - [ ] HPA configured for variable-load services
 
 ### Observability
+
 - [ ] App exposes `/health` (liveness) and `/ready` (readiness) endpoints
 - [ ] Structured JSON logging (no PII in logs)
 - [ ] Resource labels: `app`, `version`, `environment`

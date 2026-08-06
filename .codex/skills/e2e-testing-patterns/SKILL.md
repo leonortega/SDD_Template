@@ -1,11 +1,15 @@
 ---
 name: e2e-testing-patterns
-description: Master end-to-end testing with Playwright and Cypress to build reliable test suites that catch bugs, improve confidence, and enable fast deployment. Use when implementing E2E tests, debugging flaky tests, or establishing testing standards.
+description: >-
+  >- Master end-to-end testing with Playwright and Cypress to build reliable test suites that catch bugs, improve
+  confidence, and enable fast deployment. Use when implementing E2E tests, debugging flaky tests, or establishing
+  testing standards.
 ---
 
 # E2E Testing Patterns
 
-Build reliable, fast, and maintainable end-to-end test suites that provide confidence to ship code quickly and catch regressions before users do.
+Build reliable, fast, and maintainable end-to-end test suites that provide confidence to ship code quickly and catch
+regressions before users do.
 
 ## When to Use This Skill
 
@@ -41,7 +45,7 @@ Build reliable, fast, and maintainable end-to-end test suites that provide confi
 
 **The Testing Pyramid:**
 
-```
+```text
         /\
        /E2E\         ← Few, focused on critical paths
       /─────\
@@ -61,7 +65,8 @@ Build reliable, fast, and maintainable end-to-end test suites that provide confi
 
 ## Detailed patterns and worked examples
 
-Detailed pattern documentation lives in `references/details.md`. Read that file when the navigation tier above is insufficient.
+Detailed pattern documentation lives in `references/details.md`. Read that file when the navigation tier above is
+insufficient.
 
 ## Best Practices
 

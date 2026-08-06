@@ -4,7 +4,8 @@
 
 ## Usage
 
-Use this pattern whenever a flow skill needs to add a comment to an OpenProject work package and verify it was created. Replace the placeholders:
+Use this pattern whenever a flow skill needs to add a comment to an OpenProject work package and verify it was created.
+Replace the placeholders:
 
 - `{workPackageId}` — the work package ID (numeric)
 - `{marker}` — the stable marker (e.g. `IA generated PR: {prUrl}`)
@@ -57,4 +58,5 @@ Content-Type: application/json
 
 ### Reading existing comments before writing
 
-Before creating a new comment with a known marker, read existing activities. If any activity already starts with the same marker, skip the POST — the comment was already created in a previous run.
+Before creating a new comment with a known marker, read existing activities. If any activity already starts with the
+same marker, skip the POST — the comment was already created in a previous run.

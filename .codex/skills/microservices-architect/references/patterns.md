@@ -9,7 +9,8 @@ Essential patterns for building fault-tolerant distributed systems.
 **Purpose:** Prevent cascading failures by failing fast when a dependency is unhealthy.
 
 **How It Works:**
-```
+
+```text
 States:
 1. CLOSED (normal operation)
    - Requests pass through
@@ -33,6 +34,7 @@ Configuration:
 ```
 
 **Implementation Example:**
+
 ```python
 # Using resilience4j-like pattern
 @CircuitBreaker(
@@ -62,7 +64,8 @@ async def paymentFallback(order_id: str, amount: float, exception):
 ```
 
 **When to Use:**
-```
+
+```text
 Apply circuit breakers to:
 ✓ External service calls
 ✓ Database queries
@@ -82,7 +85,8 @@ Configuration Guidelines:
 **Strategies:**
 
 **1. Exponential Backoff:**
-```
+
+```text
 Retry delays: 100ms, 200ms, 400ms, 800ms, 1600ms
 
 Benefits:
@@ -107,7 +111,8 @@ while attempts < max_attempts:
 ```
 
 **2. Retry with Jitter:**
-```
+
+```text
 Why: Prevents synchronized retries (thundering herd)
 
 Full Jitter:
@@ -120,7 +125,8 @@ Recommended: Decorrelated jitter for production systems
 ```
 
 **3. Idempotency Keys:**
-```
+
+```text
 Problem: Retries can cause duplicate operations
 
 Solution: Idempotency keys
@@ -138,7 +144,8 @@ Ensures safe retries even for non-idempotent operations
 ```
 
 **Retry Best Practices:**
-```
+
+```text
 DO:
 ✓ Only retry transient errors (timeout, 503, 429)
 ✓ Use exponential backoff with jitter
@@ -159,7 +166,8 @@ DON'T:
 **Purpose:** Isolate resources to prevent total system failure.
 
 **Thread Pool Isolation:**
-```
+
+```text
 Concept: Separate thread pools for different operations
 
 Example:
@@ -174,7 +182,8 @@ If payment service becomes slow:
 ```
 
 **Connection Pool Isolation:**
-```
+
+```text
 Database Connection Pools:
 - Read-only queries: 50 connections
 - Write queries: 20 connections
@@ -184,7 +193,8 @@ Heavy reporting query won't starve transactional operations
 ```
 
 **Rate Limiting per Tenant:**
-```
+
+```text
 Multi-tenant SaaS application:
 
 tenant-a: 1000 requests/minute
@@ -197,6 +207,7 @@ If tenant-a floods the system:
 ```
 
 **Implementation:**
+
 ```python
 # Using semaphores for concurrency limits
 class BulkheadExecutor:
@@ -221,7 +232,8 @@ class BulkheadExecutor:
 **Timeout Types:**
 
 **1. Connection Timeout:**
-```
+
+```text
 Time allowed to establish connection
 
 Recommended: 2-5 seconds
@@ -231,7 +243,8 @@ httpx.AsyncClient(timeout=httpx.Timeout(connect=3.0))
 ```
 
 **2. Read Timeout:**
-```
+
+```text
 Time allowed to receive response after connection
 
 Varies by service:
@@ -243,7 +256,8 @@ httpx.AsyncClient(timeout=httpx.Timeout(read=10.0))
 ```
 
 **3. Total Timeout:**
-```
+
+```text
 Overall time budget for entire operation
 
 Example: User checkout flow
@@ -258,7 +272,8 @@ async with asyncio.timeout(30):
 ```
 
 **Timeout Best Practices:**
-```
+
+```text
 Timeouts Hierarchy:
 Parent timeout > sum of child timeouts
 
@@ -282,7 +297,8 @@ Set timeouts everywhere:
 **Purpose:** Manage distributed transactions across services.
 
 **Choreography-Based Saga:**
-```
+
+```text
 Example: Order Creation Saga
 
 Events:
@@ -308,7 +324,8 @@ Cons:
 ```
 
 **Orchestration-Based Saga:**
-```
+
+```text
 Example: Order Saga Orchestrator
 
 Saga Steps:
@@ -347,7 +364,8 @@ Cons:
 ```
 
 **Saga State Management:**
-```
+
+```text
 Persist saga state to handle failures:
 
 CREATE TABLE saga_instances (
@@ -371,7 +389,8 @@ On orchestrator restart:
 **Purpose:** Store all state changes as events, derive current state by replaying.
 
 **Implementation:**
-```
+
+```text
 Traditional Approach:
 UPDATE orders SET status = 'shipped' WHERE id = 123;
 (Lost: when shipped, by whom, from where)
@@ -386,7 +405,8 @@ Current state = replay all events
 ```
 
 **Event Store:**
-```
+
+```text
 CREATE TABLE events (
     event_id UUID PRIMARY KEY,
     aggregate_id UUID,
@@ -407,7 +427,8 @@ Guarantees:
 ```
 
 **Benefits:**
-```
+
+```text
 ✓ Full audit trail
 ✓ Time travel (replay to any point)
 ✓ Event replay for debugging
@@ -426,7 +447,8 @@ Challenges:
 **Purpose:** Separate read and write models for different optimization strategies.
 
 **Architecture:**
-```
+
+```text
 Write Side (Command):
 - Receives commands (CreateOrder, UpdateInventory)
 - Validates business rules
@@ -453,7 +475,8 @@ Query Side:
 ```
 
 **Read Models:**
-```
+
+```text
 Multiple specialized views from same events:
 
 1. Order Detail View (for customer):
@@ -475,7 +498,8 @@ Each optimized for specific query patterns
 **Types:**
 
 **1. Liveness Probe:**
-```
+
+```text
 Purpose: Is the service alive?
 
 Endpoint: GET /health/live
@@ -489,7 +513,8 @@ Kubernetes Action:
 ```
 
 **2. Readiness Probe:**
-```
+
+```text
 Purpose: Is the service ready to receive traffic?
 
 Endpoint: GET /health/ready
@@ -505,7 +530,8 @@ Kubernetes Action:
 ```
 
 **3. Startup Probe:**
-```
+
+```text
 Purpose: Has the service finished initialization?
 
 Endpoint: GET /health/startup
@@ -516,6 +542,7 @@ For slow-starting applications:
 ```
 
 **Implementation:**
+
 ```python
 @app.get("/health/live")
 async def liveness():
@@ -545,7 +572,8 @@ async def readiness():
 **Strategies:**
 
 **1. Cached Responses:**
-```
+
+```text
 async def get_product_recommendations(user_id):
     try:
         async with circuit_breaker:
@@ -556,7 +584,8 @@ async def get_product_recommendations(user_id):
 ```
 
 **2. Default Values:**
-```
+
+```text
 async def get_user_preferences(user_id):
     try:
         return await preferences_service.get(user_id)
@@ -570,7 +599,8 @@ async def get_user_preferences(user_id):
 ```
 
 **3. Feature Toggles:**
-```
+
+```text
 if feature_flags.is_enabled("personalized_recommendations"):
     recommendations = await ml_service.get_recommendations()
 else:
@@ -583,6 +613,7 @@ else:
 Resilience patterns are mandatory in distributed systems. Layer multiple patterns for defense in depth:
 
 **Essential Stack:**
+
 1. Timeouts (prevent hanging)
 2. Retries with backoff (handle transient errors)
 3. Circuit breakers (prevent cascading failures)
@@ -591,11 +622,13 @@ Resilience patterns are mandatory in distributed systems. Layer multiple pattern
 6. Graceful degradation (maintain partial functionality)
 
 **Choose Saga Pattern When:**
+
 - Distributed transaction needed
 - Strong consistency not required
 - Compensating transactions possible
 
 **Choose Event Sourcing When:**
+
 - Full audit trail required
 - Temporal queries needed
 - Multiple read models beneficial

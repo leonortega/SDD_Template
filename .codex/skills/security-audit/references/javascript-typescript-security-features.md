@@ -1,12 +1,15 @@
 # JavaScript/TypeScript Security Features and Vulnerability Patterns
 
-Modern JavaScript (ES5 through ES2024) and TypeScript introduce features that directly improve security when used correctly, but also present unique attack surfaces. This reference documents security-relevant patterns, organized by ES version where applicable, covering prototype pollution, injection vectors, type-safety pitfalls, and more.
+Modern JavaScript (ES5 through ES2024) and TypeScript introduce features that directly improve security when used
+correctly, but also present unique attack surfaces. This reference documents security-relevant patterns, organized by ES
+version where applicable, covering prototype pollution, injection vectors, type-safety pitfalls, and more.
 
 ## Core JavaScript Security (ES5-ES2020+)
 
 ### 1. Prototype Pollution (`__proto__`, `Object.assign` deep merge)
 
-Prototype pollution occurs when an attacker injects properties into `Object.prototype`, affecting all objects in the application. This is especially dangerous in deep-merge utilities and query-string parsers.
+Prototype pollution occurs when an attacker injects properties into `Object.prototype`, affecting all objects in the
+application. This is especially dangerous in deep-merge utilities and query-string parsers.
 
 ```javascript
 // VULNERABLE: Recursive merge without prototype check
@@ -51,11 +54,14 @@ const safeMap = Object.create(null);
 // safeMap has no prototype chain, immune to pollution
 ```
 
-**Security implication:** Prototype pollution can lead to privilege escalation, authentication bypass, and remote code execution (CWE-1321). Any code path that merges user-controlled objects into application state is at risk. Libraries like `lodash.merge` (pre-4.17.12) and `qs` were historically vulnerable.
+**Security implication:** Prototype pollution can lead to privilege escalation, authentication bypass, and remote code
+execution (CWE-1321). Any code path that merges user-controlled objects into application state is at risk. Libraries
+like `lodash.merge` (pre-4.17.12) and `qs` were historically vulnerable.
 
 ### 2. Unsafe `eval()` / `Function()` Constructor / `setTimeout(string)`
 
-These APIs compile and execute arbitrary strings as code. If user input reaches them, it is equivalent to remote code execution.
+These APIs compile and execute arbitrary strings as code. If user input reaches them, it is equivalent to remote code
+execution.
 
 ```javascript
 // VULNERABLE: eval with user-controlled input
@@ -88,11 +94,14 @@ import { evaluate } from 'mathjs';
 const result = evaluate(userExpr); // Only evaluates math, not arbitrary code
 ```
 
-**Security implication:** `eval()` and equivalents enable arbitrary code execution (CWE-94, CWE-95). In server-side JavaScript (Node.js), this leads to full system compromise. In the browser, it enables XSS. The `Function` constructor and string-form `setTimeout`/`setInterval` are often overlooked eval equivalents.
+**Security implication:** `eval()` and equivalents enable arbitrary code execution (CWE-94, CWE-95). In server-side
+JavaScript (Node.js), this leads to full system compromise. In the browser, it enables XSS. The `Function` constructor
+and string-form `setTimeout`/`setInterval` are often overlooked eval equivalents.
 
 ### 3. DOM XSS Sources/Sinks (`innerHTML`, `outerHTML`, `document.write`, `location.href`)
 
-DOM-based XSS occurs when user-controlled data flows from a source (URL, `postMessage`, storage) to a sink that interprets HTML or JavaScript.
+DOM-based XSS occurs when user-controlled data flows from a source (URL, `postMessage`, storage) to a sink that
+interprets HTML or JavaScript.
 
 ```javascript
 // VULNERABLE: innerHTML with user input
@@ -132,7 +141,9 @@ import DOMPurify from 'dompurify';
 element.innerHTML = DOMPurify.sanitize(userHtml);
 ```
 
-**Security implication:** DOM XSS (CWE-79) bypasses server-side sanitization because the payload never reaches the server. The `innerHTML`, `outerHTML`, and `document.write` sinks interpret HTML markup, while `location.href` can execute `javascript:` URIs. Always use `textContent` for text output.
+**Security implication:** DOM XSS (CWE-79) bypasses server-side sanitization because the payload never reaches the
+server. The `innerHTML`, `outerHTML`, and `document.write` sinks interpret HTML markup, while `location.href` can
+execute `javascript:` URIs. Always use `textContent` for text output.
 
 ### 3a. Embedding Untrusted JSON into an Inline `<script>` (build-time / SSR data island)
 
@@ -187,7 +198,8 @@ replacement.
 
 ### 4. `postMessage` Origin Validation
 
-The `postMessage` API enables cross-origin communication. Without origin validation, any page can send messages to your application.
+The `postMessage` API enables cross-origin communication. Without origin validation, any page can send messages to your
+application.
 
 ```javascript
 // VULNERABLE: No origin check on message handler
@@ -214,11 +226,14 @@ window.addEventListener('message', (event) => {
 parentWindow.postMessage(sensitiveData, 'https://parent-app.example.com');
 ```
 
-**Security implication:** Missing `postMessage` origin validation (CWE-346) allows attackers to inject data or exfiltrate information via cross-origin frames. Always validate `event.origin` on the receiver and specify a target origin on the sender.
+**Security implication:** Missing `postMessage` origin validation (CWE-346) allows attackers to inject data or
+exfiltrate information via cross-origin frames. Always validate `event.origin` on the receiver and specify a target
+origin on the sender.
 
 ### 5. Regular Expression Denial of Service (ReDoS)
 
-Certain regex patterns exhibit catastrophic backtracking when matched against crafted input, causing the JavaScript event loop to freeze.
+Certain regex patterns exhibit catastrophic backtracking when matched against crafted input, causing the JavaScript
+event loop to freeze.
 
 ```javascript
 // VULNERABLE: Catastrophic backtracking pattern
@@ -245,7 +260,9 @@ function validateEmail(input) {
 }
 ```
 
-**Security implication:** ReDoS (CWE-1333) can cause complete denial of service in single-threaded Node.js applications. Nested quantifiers like `(a+)+`, `(a|a)*`, and `(a+)*` are the primary culprits. Limit input length and avoid nested repetition.
+**Security implication:** ReDoS (CWE-1333) can cause complete denial of service in single-threaded Node.js applications.
+Nested quantifiers like `(a+)+`, `(a|a)*`, and `(a+)*` are the primary culprits. Limit input length and avoid nested
+repetition.
 
 ### 6. Insecure Deserialization (`JSON.parse` with Reviver Pitfalls, `serialize-javascript`)
 
@@ -289,11 +306,14 @@ import superjson from 'superjson';
 const parsed = superjson.parse(trustedData); // Type-safe deserialization
 ```
 
-**Security implication:** The `serialize-javascript` library outputs executable JavaScript, not JSON (CWE-502). If its output is ever evaluated, it enables code injection. Reviver functions in `JSON.parse` can be exploited if they reconstruct executable objects like `RegExp` or call constructors with attacker-controlled arguments.
+**Security implication:** The `serialize-javascript` library outputs executable JavaScript, not JSON (CWE-502). If its
+output is ever evaluated, it enables code injection. Reviver functions in `JSON.parse` can be exploited if they
+reconstruct executable objects like `RegExp` or call constructors with attacker-controlled arguments.
 
 ### 7. Dynamic `import()` and Module Injection
 
-Dynamic `import()` loads modules at runtime. If the module specifier comes from user input, attackers can load arbitrary code.
+Dynamic `import()` loads modules at runtime. If the module specifier comes from user input, attackers can load arbitrary
+code.
 
 ```javascript
 // VULNERABLE: Dynamic import with user-controlled path
@@ -323,11 +343,14 @@ if (!loader) throw new Error('Unknown plugin');
 const plugin = await loader();
 ```
 
-**Security implication:** Uncontrolled dynamic `import()` (CWE-94) enables loading attacker-specified modules, potentially executing arbitrary code. In Node.js, this can load any file on the filesystem. Always use an allowlist for dynamic module resolution.
+**Security implication:** Uncontrolled dynamic `import()` (CWE-94) enables loading attacker-specified modules,
+potentially executing arbitrary code. In Node.js, this can load any file on the filesystem. Always use an allowlist for
+dynamic module resolution.
 
 ### 8. Template Literal Injection in Tagged Templates
 
-Tagged template functions receive raw string parts and interpolated values. If the tag function processes strings unsafely, injection is possible.
+Tagged template functions receive raw string parts and interpolated values. If the tag function processes strings
+unsafely, injection is possible.
 
 ```javascript
 // VULNERABLE: Tagged template that builds HTML
@@ -365,11 +388,14 @@ function safeHtml(strings, ...values) {
 const result = await db.query('SELECT * FROM users WHERE name = $1', [userName]);
 ```
 
-**Security implication:** Tagged templates that concatenate interpolated values without escaping are injection vectors (CWE-79, CWE-89). The tag function must sanitize all interpolated values appropriate to the output context (HTML, SQL, shell, etc.).
+**Security implication:** Tagged templates that concatenate interpolated values without escaping are injection vectors
+(CWE-79, CWE-89). The tag function must sanitize all interpolated values appropriate to the output context (HTML, SQL,
+shell, etc.).
 
 ### 9. Weak Randomness (`Math.random()` for Security)
 
-`Math.random()` uses a PRNG that is not cryptographically secure. Its output is predictable and must never be used for tokens, keys, or security-sensitive identifiers.
+`Math.random()` uses a PRNG that is not cryptographically secure. Its output is predictable and must never be used for
+tokens, keys, or security-sensitive identifiers.
 
 ```javascript
 // VULNERABLE: Math.random for session tokens
@@ -394,11 +420,14 @@ import { randomBytes } from 'node:crypto';
 const token3 = randomBytes(32).toString('hex');
 ```
 
-**Security implication:** `Math.random()` (CWE-338) produces predictable values. Attackers can recover the internal state and predict future outputs. Use `crypto.getRandomValues()` (browser), `crypto.randomUUID()`, or `crypto.randomBytes()` (Node.js) for all security-sensitive random values.
+**Security implication:** `Math.random()` (CWE-338) produces predictable values. Attackers can recover the internal
+state and predict future outputs. Use `crypto.getRandomValues()` (browser), `crypto.randomUUID()`, or
+`crypto.randomBytes()` (Node.js) for all security-sensitive random values.
 
 ### 10. `debugger` Statements in Production
 
-The `debugger` statement halts execution when developer tools are open. In production, it can be used to analyze application logic and bypass client-side security controls.
+The `debugger` statement halts execution when developer tools are open. In production, it can be used to analyze
+application logic and bypass client-side security controls.
 
 ```javascript
 // VULNERABLE: debugger left in production code
@@ -429,13 +458,16 @@ function processPayment(card) {
 }
 ```
 
-**Security implication:** `debugger` statements in production code (CWE-489) enable attackers to inspect runtime state, including sensitive variables, authentication tokens, and business logic. They should be removed by linting rules and build processes.
+**Security implication:** `debugger` statements in production code (CWE-489) enable attackers to inspect runtime state,
+including sensitive variables, authentication tokens, and business logic. They should be removed by linting rules and
+build processes.
 
 ## ES2020+ Security Features
 
 ### 11. Optional Chaining (`?.`) Preventing Null-Dereference Crashes
 
-Optional chaining short-circuits to `undefined` when a property access encounters `null` or `undefined`, preventing crashes that could expose error details.
+Optional chaining short-circuits to `undefined` when a property access encounters `null` or `undefined`, preventing
+crashes that could expose error details.
 
 ```javascript
 // VULNERABLE: Unguarded property access crashes the application
@@ -466,11 +498,14 @@ const isAdmin = request.auth?.user?.hasRole?.('admin') ?? false;
 const setting = config?.features?.[featureName]?.enabled ?? false;
 ```
 
-**Security implication:** Unguarded property access causes `TypeError` exceptions that may expose stack traces, internal paths, and variable names in error responses (CWE-209). Optional chaining eliminates null-dereference crashes and simplifies defensive coding.
+**Security implication:** Unguarded property access causes `TypeError` exceptions that may expose stack traces, internal
+paths, and variable names in error responses (CWE-209). Optional chaining eliminates null-dereference crashes and
+simplifies defensive coding.
 
 ### 12. Nullish Coalescing (`??`) Preventing Falsy-Value Logic Bugs
 
-The `??` operator returns the right operand only when the left is `null` or `undefined`, unlike `||` which triggers on any falsy value (0, '', false).
+The `??` operator returns the right operand only when the left is `null` or `undefined`, unlike `||` which triggers on
+any falsy value (0, '', false).
 
 ```javascript
 // VULNERABLE: || treats 0, '', and false as "missing"
@@ -506,11 +541,14 @@ function isFeatureEnabled(flags) {
 }
 ```
 
-**Security implication:** Using `||` for defaults creates logic bugs when legitimate falsy values (0, '', false) are valid inputs (CWE-480). In security contexts, this can disable timeouts (`timeout = 0` treated as missing), misconfigure ports, or bypass feature flags. Use `??` for null-checking defaults.
+**Security implication:** Using `||` for defaults creates logic bugs when legitimate falsy values (0, '', false) are
+valid inputs (CWE-480). In security contexts, this can disable timeouts (`timeout = 0` treated as missing), misconfigure
+ports, or bypass feature flags. Use `??` for null-checking defaults.
 
 ### 13. `globalThis` vs `window`/`global` Misuse
 
-`globalThis` (ES2020) provides a universal reference to the global object across environments. Misuse of environment-specific globals leads to security-relevant bugs.
+`globalThis` (ES2020) provides a universal reference to the global object across environments. Misuse of
+environment-specific globals leads to security-relevant bugs.
 
 ```javascript
 // VULNERABLE: Assuming window exists (fails in Node.js/Workers)
@@ -539,13 +577,16 @@ const authModule = (() => {
 })();
 ```
 
-**Security implication:** Environment detection failures can cause security features to silently not activate (CWE-684). Storing sensitive data on global objects exposes it to cross-site scripting attacks. Use module-scoped variables and `globalThis` for environment-agnostic code.
+**Security implication:** Environment detection failures can cause security features to silently not activate (CWE-684).
+Storing sensitive data on global objects exposes it to cross-site scripting attacks. Use module-scoped variables and
+`globalThis` for environment-agnostic code.
 
 ## TypeScript-Specific Security
 
 ### 14. `any` vs `unknown` -- Type Safety for Untrusted Input
 
-The `any` type disables all type checking, while `unknown` requires explicit narrowing before use. For untrusted input, `unknown` enforces validation at the type level.
+The `any` type disables all type checking, while `unknown` requires explicit narrowing before use. For untrusted input,
+`unknown` enforces validation at the type level.
 
 ```typescript
 // VULNERABLE: 'any' silently bypasses all type checks
@@ -586,11 +627,14 @@ function processUser(data: unknown) {
 }
 ```
 
-**Security implication:** The `any` type (CWE-20) effectively removes TypeScript's safety net. Untrusted data typed as `any` flows through the application without validation, enabling injection attacks and runtime crashes. Always type external input as `unknown` and validate with runtime checks or schema libraries.
+**Security implication:** The `any` type (CWE-20) effectively removes TypeScript's safety net. Untrusted data typed as
+`any` flows through the application without validation, enabling injection attacks and runtime crashes. Always type
+external input as `unknown` and validate with runtime checks or schema libraries.
 
 ### 15. Type Assertion Abuse (`as` Casting Bypassing Checks)
 
-Type assertions (`as`) tell the compiler to trust the developer. They do not perform runtime checks and can mask type errors that lead to vulnerabilities.
+Type assertions (`as`) tell the compiler to trust the developer. They do not perform runtime checks and can mask type
+errors that lead to vulnerabilities.
 
 ```typescript
 // VULNERABLE: Type assertion bypasses validation
@@ -633,11 +677,14 @@ const AdminUserSchema = z.object({
 const validated = AdminUserSchema.parse(JSON.parse(requestBody));
 ```
 
-**Security implication:** Type assertions are compile-time only and perform zero runtime validation (CWE-704). Using `as` on untrusted data creates a false sense of security. Attackers can craft payloads that satisfy the asserted type shape while carrying malicious content. Always pair assertions with runtime validation.
+**Security implication:** Type assertions are compile-time only and perform zero runtime validation (CWE-704). Using
+`as` on untrusted data creates a false sense of security. Attackers can craft payloads that satisfy the asserted type
+shape while carrying malicious content. Always pair assertions with runtime validation.
 
 ### 16. Branded/Nominal Types for Input Validation
 
-TypeScript's structural type system allows any object with matching properties to be used interchangeably. Branded types create nominal distinctions that enforce validation boundaries.
+TypeScript's structural type system allows any object with matching properties to be used interchangeably. Branded types
+create nominal distinctions that enforce validation boundaries.
 
 ```typescript
 // VULNERABLE: Structural typing allows unvalidated strings
@@ -676,11 +723,14 @@ function sendEmail(email: ValidatedEmail) { /* ... */ }
 queryDatabase(sanitizeSQL(userInput)); // Must go through sanitizer
 ```
 
-**Security implication:** Branded types create compile-time barriers that force all data to pass through validation functions before entering sensitive operations (CWE-20). This moves input validation from a convention to a compiler-enforced requirement.
+**Security implication:** Branded types create compile-time barriers that force all data to pass through validation
+functions before entering sensitive operations (CWE-20). This moves input validation from a convention to a
+compiler-enforced requirement.
 
 ### 17. `satisfies` Operator for Configuration Validation (TypeScript 4.9+)
 
-The `satisfies` operator validates that a value conforms to a type while preserving its literal type. This catches configuration mistakes at compile time.
+The `satisfies` operator validates that a value conforms to a type while preserving its literal type. This catches
+configuration mistakes at compile time.
 
 ```typescript
 // VULNERABLE: Type annotation widens literal types
@@ -723,11 +773,14 @@ const corsConfig = {
 // Typos in HTTP methods are caught at compile time
 ```
 
-**Security implication:** The `satisfies` operator catches security misconfigurations (CWE-16) at compile time, including typos in auth modes, overly permissive CORS settings, and invalid HTTP methods, while preserving the exact literal types for downstream inference.
+**Security implication:** The `satisfies` operator catches security misconfigurations (CWE-16) at compile time,
+including typos in auth modes, overly permissive CORS settings, and invalid HTTP methods, while preserving the exact
+literal types for downstream inference.
 
 ### 18. `NoInfer` Utility Type (TypeScript 5.4+)
 
-`NoInfer` prevents TypeScript from inferring a type parameter from a specific argument, forcing the developer to be explicit. This prevents type-widening bugs in security-critical APIs.
+`NoInfer` prevents TypeScript from inferring a type parameter from a specific argument, forcing the developer to be
+explicit. This prevents type-widening bugs in security-critical APIs.
 
 ```typescript
 // VULNERABLE: Type inference widens 'allowed' to include attacker values
@@ -745,11 +798,14 @@ grantPermission('admin', ['admin']); // OK
 // grantPermission('admin', ['admin', 'anything']); // Error: 'anything' not in 'admin'
 ```
 
-**Security implication:** Without `NoInfer`, TypeScript may widen type parameters to accommodate all arguments, silently accepting values that should be rejected. In authorization and permission systems, this can lead to privilege escalation through type-level bypass.
+**Security implication:** Without `NoInfer`, TypeScript may widen type parameters to accommodate all arguments, silently
+accepting values that should be rejected. In authorization and permission systems, this can lead to privilege escalation
+through type-level bypass.
 
 ### 19. Strict Mode (`strict: true`) Security Implications
 
-TypeScript's `strict` flag enables a suite of checks that catch entire categories of security-relevant bugs at compile time.
+TypeScript's `strict` flag enables a suite of checks that catch entire categories of security-relevant bugs at compile
+time.
 
 ```typescript
 // WITHOUT strict: true — these dangerous patterns compile silently
@@ -786,7 +842,9 @@ class AuthService {
 // }
 ```
 
-**Security implication:** Running without `strict: true` disables critical safety checks including null safety, implicit any detection, and property initialization checks (CWE-476, CWE-908). Production TypeScript projects should always enable `strict: true` in `tsconfig.json`.
+**Security implication:** Running without `strict: true` disables critical safety checks including null safety, implicit
+any detection, and property initialization checks (CWE-476, CWE-908). Production TypeScript projects should always
+enable `strict: true` in `tsconfig.json`.
 
 ## Detection Patterns for Auditing JavaScript/TypeScript
 
@@ -809,7 +867,7 @@ class AuthService {
 | setInterval with string | `setInterval\(\s*['"\`]` | error | SA-JS-15 |
 | location.href assignment | `location\.href\s*=` | warning | SA-JS-16 |
 | Wildcard postMessage target | `postMessage\([^,]+,\s*['"]\*['"]` | error | SA-JS-17 |
-| Nested regex quantifiers | `(\+\)\+|\*\)\*|\+\)\*)` | warning | SA-JS-18 |
+| Nested regex quantifiers | `(\+\)\+\|\*\)\*\|\+\)\*)` | warning | SA-JS-18 |
 | strict mode disabled | `"strict"\s*:\s*false` | warning | SA-JS-19 |
 | Unvalidated JSON.parse reviver | `JSON\.parse\([^)]+,\s*\(` | warning | SA-JS-20 |
 | Naive `</script>` escaping of a JSON data island | `replace(All)?\(\s*['"\x60]</script` | warning | SA-JS-21 |

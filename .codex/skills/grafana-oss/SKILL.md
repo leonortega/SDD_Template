@@ -1,32 +1,46 @@
 ---
 name: grafana-oss
 license: Apache-2.0
-description: Configure Grafana OSS — provisions dashboards from YAML, sets up data sources (Prometheus / Loki / Tempo / Pyroscope), writes dashboard JSON with template variables, builds panel queries, assigns built-in roles (Viewer / Editor / Admin / GrafanaAdmin), mints service-account tokens, edits grafana.ini server config, creates annotations, installs plugins via provisioning, and validates each step with a health-check curl. Use when building dashboards, configuring data sources, setting up provisioning YAML, picking a panel type, writing template variables, managing users and roles, configuring SMTP/OAuth in grafana.ini, creating annotations via API, troubleshooting why a provisioned dashboard isn't showing up, or running Grafana OSS locally — even when the user says "set up a Prometheus data source", "provision dashboards from git", "make a service account", or "configure SSO in OSS" without saying "Grafana OSS".
+description: >-
+  >- Configure Grafana OSS — provisions dashboards from YAML, sets up data sources (Prometheus / Loki / Tempo /
+  Pyroscope), writes dashboard JSON with template variables, builds panel queries, assigns built-in roles (Viewer /
+  Editor / Admin / GrafanaAdmin), mints service-account tokens, edits grafana.ini server config, creates annotations,
+  installs plugins via provisioning, and validates each step with a health-check curl. Use when building dashboards,
+  configuring data sources, setting up provisioning YAML, picking a panel type, writing template variables, managing
+  users and roles, configuring SMTP/OAuth in grafana.ini, creating annotations via API, troubleshooting why a
+  provisioned dashboard isn't showing up, or running Grafana OSS locally — even when the user says "set up a Prometheus
+  data source", "provision dashboards from git", "make a service account", or "configure SSO in OSS" without saying
+  "Grafana OSS".
 ---
 
 # Grafana OSS
 
-> **Docs**: https://grafana.com/docs/grafana/latest.md
+> **Docs**: <https://grafana.com/docs/grafana/latest.md>
 
 ## Common Workflows
 
 ### Provisioning dashboards from disk
 
 1. Drop dashboard JSON file(s) under `/var/lib/grafana/dashboards/`
-2. Add a provider in `provisioning/dashboards/default.yaml` (see [§ Dashboard provisioning](#dashboard-provisioning) below)
+2. Add a provider in `provisioning/dashboards/default.yaml` (see [§ Dashboard provisioning](#dashboard-provisioning)
+below)
 3. Restart Grafana so the provider config is loaded
 4. **Verify the dashboard landed**:
+
    ```bash
    curl https://grafana.example.com/api/dashboards/uid/<uid> \
      -H "Authorization: Bearer <token>" | jq '.dashboard.title'
    ```
-   Returns the title → success. 404 → provisioning didn't pick it up; check Grafana server logs (`journalctl -u grafana-server | grep -i provisioning`) for parse errors.
+
+   Returns the title → success. 404 → provisioning didn't pick it up; check Grafana server logs (`journalctl -u
+   grafana-server | grep -i provisioning`) for parse errors.
 
 ### Provisioning data sources
 
 1. Write `provisioning/datasources/datasources.yaml` (see [§ Data source provisioning](#data-source-provisioning) below)
 2. Restart Grafana
 3. **Health-check the data source via API**:
+
    ```bash
    curl https://grafana.example.com/api/datasources/uid/<uid>/health \
      -H "Authorization: Bearer <token>"
@@ -36,9 +50,11 @@ description: Configure Grafana OSS — provisions dashboards from YAML, sets up 
 
 ### Creating a service account + token
 
-1. Provision via YAML or `POST /api/serviceaccounts` (full API in [references/api.md § Users + service accounts](references/api.md#users--service-accounts))
+1. Provision via YAML or `POST /api/serviceaccounts` (full API in [references/api.md § Users + service
+accounts](references/api.md#users--service-accounts))
 2. Mint a token via `POST /api/serviceaccounts/{id}/tokens`
 3. **Verify the token works**:
+
    ```bash
    curl https://grafana.example.com/api/org \
      -H "Authorization: Bearer <new-token>"
@@ -62,7 +78,8 @@ providers:
       foldersFromFilesStructure: true
 ```
 
-For the dashboard JSON shape itself (panels, queries, template variables), see [references/dashboard-json.md](references/dashboard-json.md).
+For the dashboard JSON shape itself (panels, queries, template variables), see
+[references/dashboard-json.md](references/dashboard-json.md).
 
 ## Data source provisioning
 
@@ -125,7 +142,8 @@ serviceAccounts:
         # expires: optional ISO 8601 timestamp; omit for no-expiry tokens
 ```
 
-(Custom RBAC roles with fine-grained permissions are Enterprise / Cloud only — see the `grafana-cloud/admin` skill if you need those.)
+(Custom RBAC roles with fine-grained permissions are Enterprise / Cloud only — see the `grafana-cloud/admin` skill if
+you need those.)
 
 ## Plugin provisioning
 
@@ -143,11 +161,18 @@ After restart, verify via `GET /api/plugins/<plugin-id>/health`.
 
 ## References
 
-- [`references/dashboard-json.md`](references/dashboard-json.md) — full dashboard JSON model + template variables + common problems (uid uniqueness, gridPos arithmetic, datasource uid matching)
-- [`references/dashboards.md`](references/dashboards.md) — dashboard workflows, settings, variables, annotations, sharing, versions, playlists, and provisioning-as-code
-- [`references/datasources.md`](references/datasources.md) — data source setup and query examples for Prometheus, Loki, Tempo, SQL, CloudWatch, and plugins
+- [`references/dashboard-json.md`](references/dashboard-json.md) — full dashboard JSON model + template variables +
+common problems (uid uniqueness, gridPos arithmetic, datasource uid matching)
+- [`references/dashboards.md`](references/dashboards.md) — dashboard workflows, settings, variables, annotations,
+sharing, versions, playlists, and provisioning-as-code
+- [`references/datasources.md`](references/datasources.md) — data source setup and query examples for Prometheus, Loki,
+Tempo, SQL, CloudWatch, and plugins
 - [`references/panel-types.md`](references/panel-types.md) — panel-type table + decision guide for picking the right one
-- [`references/panels.md`](references/panels.md) — panel editor, visualization options, field config, transformations, query options, inspection, and performance tips
-- [`references/alerting.md`](references/alerting.md) — alerting concepts, contact points, notification policies, templates, silences, and common rule examples
-- [`references/api.md`](references/api.md) — full Grafana OSS API reference (dashboards, data sources, users, service accounts, annotations) with verification curls and common failure modes
-- [`references/config.md`](references/config.md) — `grafana.ini` server / database / SMTP / auth / security / feature-toggle config + restart-required issues
+- [`references/panels.md`](references/panels.md) — panel editor, visualization options, field config, transformations,
+query options, inspection, and performance tips
+- [`references/alerting.md`](references/alerting.md) — alerting concepts, contact points, notification policies,
+templates, silences, and common rule examples
+- [`references/api.md`](references/api.md) — full Grafana OSS API reference (dashboards, data sources, users, service
+accounts, annotations) with verification curls and common failure modes
+- [`references/config.md`](references/config.md) — `grafana.ini` server / database / SMTP / auth / security /
+feature-toggle config + restart-required issues

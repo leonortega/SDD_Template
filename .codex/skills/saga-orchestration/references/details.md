@@ -4,7 +4,8 @@
 
 ### Template 1: Order Fulfillment Saga (Orchestration)
 
-Concrete subclass of the base orchestrator. Defines four steps spanning inventory, payment, shipping, and notification. See `references/advanced-patterns.md` for the full abstract `SagaOrchestrator` base class.
+Concrete subclass of the base orchestrator. Defines four steps spanning inventory, payment, shipping, and notification.
+See `references/advanced-patterns.md` for the full abstract `SagaOrchestrator` base class.
 
 ```python
 from saga_orchestrator import SagaOrchestrator, SagaStep
@@ -88,7 +89,8 @@ class InventoryService:
 
 ### Template 2: Choreography-Based Saga
 
-Each service listens for the previous service's event and reacts. No central coordinator. Compensation is triggered by failure events propagating backward.
+Each service listens for the previous service's event and reacts. No central coordinator. Compensation is triggered by
+failure events propagating backward.
 
 ```python
 from dataclasses import dataclass
@@ -176,7 +178,8 @@ class OrderChoreographySaga:
 
 ### Template 3: Idempotent Step Guards
 
-Every participant must guard against duplicate command delivery. Store an idempotency key before executing and return the cached result on replay.
+Every participant must guard against duplicate command delivery. Store an idempotency key before executing and return
+the cached result on replay.
 
 ```python
 async def handle_reserve_items(self, command: Dict):
@@ -206,7 +209,6 @@ async def handle_reserve_items(self, command: Dict):
 ```
 
 ---
-
 
 ---
 

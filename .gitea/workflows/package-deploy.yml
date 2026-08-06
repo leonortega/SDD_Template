@@ -375,6 +375,11 @@ jobs:
           # Safety guard: only prune when the CURRENT build's image is present in
           # kind. If HEAD moved past the deployed images (e.g. re-run without a
           # new deploy), pruned tags would leave running pods without their image.
+          # NOTE trade-off: this keeps ONLY the current build's tags, so a
+          # workflow_dispatch deploy to one env (while another env still runs an
+          # older SHA, e.g. prod) prunes that env's older images from kind. Running
+          # pods are unaffected until they restart; re-deploying that env restores
+          # the restart image.
           CURRENT_LOADED=$(docker exec "${KIND_NODE}" ctr -n k8s.io images list 2>/dev/null \
             | grep -c "${REGISTRY}/.*:${CURRENT}" || true)
           if [ "${CURRENT_LOADED}" -eq 0 ]; then

@@ -6,7 +6,8 @@ Use this adapter only when `.codex/project-profile.json` selects `providers.arti
 
 - Read non-secret artifact policy from `.codex/project-profile.json`.
 - Read local endpoint, repository, username, and password/token from `.codex/client-tools.local.json`.
-- Keep artifact identity and manifest schema in `.codex/skills/_shared/delivery-contract.md` and `.codex/skills/_shared/release.schema.json`.
+- Keep artifact identity and manifest schema in `.codex/skills/_shared/delivery-contract.md` and
+`.codex/skills/_shared/release.schema.json`.
 
 ## Operations
 

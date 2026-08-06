@@ -290,7 +290,7 @@ final class CvssCalculator
 
 ## Risk Matrix Template
 
-```
+```text
                     IMPACT
               Low   Medium   High
          +--------+--------+--------+
@@ -313,6 +313,7 @@ D     Low: Address within 1 month
 CVSS v4.0 was released November 2023 and is the current standard.
 
 ### Key Changes from v3.1
+
 - New metric group: Supplemental Metrics (Automatable, Recovery, Value Density, Provider Urgency)
 - Attack Requirements (AT) replaces some Attack Complexity nuances
 - User Interaction split into None/Passive/Active
@@ -333,11 +334,13 @@ CVSS v4.0 was released November 2023 and is the current standard.
 | Subsequent System CIA | High, Low, None |
 
 ### v4.0 Vector String Format
-```
+
+```text
 CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N
 ```
 
 ### Example: SQLi (v3.1 vs v4.0)
+
 ```yaml
 # v3.1
 CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H = 9.8 CRITICAL
@@ -347,6 +350,7 @@ CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N = 9.3 CRITICAL
 ```
 
 ### Example: Stored XSS (v3.1 vs v4.0)
+
 ```yaml
 # v3.1
 CVSS:3.1/AV:N/AC:L/PR:L/UI:R/S:C/C:L/I:L/A:N = 5.4 MEDIUM
@@ -356,6 +360,7 @@ CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:A/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N = 5.1 MEDIUM
 ```
 
 ### Severity Ratings (v4.0 - same scale)
+
 | Score Range | Severity |
 |-------------|----------|
 | 0.0 | None |
@@ -365,9 +370,10 @@ CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:A/VC:N/VI:N/VA:N/SC:L/SI:L/SA:N = 5.1 MEDIUM
 | 9.0 - 10.0 | Critical |
 
 ### Migration Notes
+
 - Use v4.0 for new assessments
 - Existing v3.1 scores remain valid for historical reference
-- FIRST.org CVSS v4.0 calculator: https://www.first.org/cvss/calculator/4.0
+- FIRST.org CVSS v4.0 calculator: <https://www.first.org/cvss/calculator/4.0>
 
 ## Reporting Template
 

@@ -1,6 +1,8 @@
 ---
 name: dev-flow-archive-change
-description: Archive a completed change in the experimental workflow. Use when the user wants to finalize and archive a change after implementation is complete.
+description: >-
+  Archive a completed change in the experimental workflow. Use when the user wants to finalize and archive a change
+  after implementation is complete.
 license: MIT
 compatibility: Requires openspec CLI.
 metadata:
@@ -13,13 +15,15 @@ metadata:
 
 Archive a completed change in the experimental workflow.
 
-**Input**: Optionally specify a change name. If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
+**Input**: Optionally specify a change name. If omitted, check if it can be inferred from conversation context. If vague
+or ambiguous you MUST prompt for available changes.
 
 **Steps**
 
 1. **If no change name provided, prompt for selection**
 
-   List active changes by checking directories in `openspec/changes/` that have a `.openspec.yaml` file. Use the **AskUserQuestion tool** to let the user select.
+   List active changes by checking directories in `openspec/changes/` that have a `.openspec.yaml` file. Use the
+   **AskUserQuestion tool** to let the user select.
 
    Show only active changes (not already archived).
 
@@ -66,9 +70,12 @@ Archive a completed change in the experimental workflow.
    - If changes needed: "Sync now"
    - If already synced: "Archive now", "Sync anyway", "Cancel"
 
-   If changes are needed, sync is mandatory before archive. Apply the analyzed delta specs to the main specs at `openspec/specs/<capability>/spec.md` (agent-driven sync; see `openspec/config.yaml` rules). Proceed to archive only after sync succeeds.
+   If changes are needed, sync is mandatory before archive. Apply the analyzed delta specs to the main specs at
+   `openspec/specs/<capability>/spec.md` (agent-driven sync; see `openspec/config.yaml`
+   rules). Proceed to archive only after sync succeeds.
 
-   If sync fails validation, cannot write the main specs, or leaves the delta specs unapplied, stop and report `OpenSpec archive blocker: spec sync failed`. Do not move the change directory.
+   If sync fails validation, cannot write the main specs, or leaves the delta specs unapplied, stop and report `OpenSpec
+   archive blocker: spec sync failed`. Do not move the change directory.
 
 5. **Perform the archive**
 
@@ -88,7 +95,8 @@ Archive a completed change in the experimental workflow.
    mv openspec/changes/<name> openspec/changes/archive/YYYY-MM-DD-<name>
    ```
 
-   After moving, verify the change directory no longer exists at `openspec/changes/<name>/`. If it is still present, report `OpenSpec archive blocker: change still active after archive`.
+   After moving, verify the change directory no longer exists at `openspec/changes/<name>/`. If it is still present,
+   report `OpenSpec archive blocker: change still active after archive`.
 
 6. **Display summary**
 
@@ -101,7 +109,7 @@ Archive a completed change in the experimental workflow.
 
 **Output On Success**
 
-```
+```text
 ## Archive Complete
 
 **Change:** <change-name>
@@ -116,7 +124,8 @@ All artifacts complete. All tasks complete.
 
 - Always prompt for change selection if not provided
 - Check artifact file existence for completion validation (proposal.md, specs/, design.md, tasks.md)
-- Incomplete artifacts, incomplete tasks, missing tasks.md, failed spec sync, or failed archive movement are blockers. Never archive by confirmation when work is incomplete.
+- Incomplete artifacts, incomplete tasks, missing tasks.md, failed spec sync, or failed archive movement are blockers.
+Never archive by confirmation when work is incomplete.
 - Preserve .openspec.yaml when moving to archive (it moves with the directory)
 - Show clear summary of what happened
 - If sync is requested, apply the delta specs to the main specs (agent-driven)
@@ -129,7 +138,9 @@ Use this skill to archive a completed OpenSpec change after implementation and v
 
 ## Shared Context
 
-Before ticketed archival, read `.codex/skills/_shared/delivery-contract.md` and `docs/conventions/context-management.md`. Verify the active ticket or explicit change is complete and preserve handoff context.
+Before ticketed archival, read `.codex/skills/_shared/delivery-contract.md` and
+`docs/conventions/context-management.md`. Verify the active ticket or explicit change is complete and preserve handoff
+context.
 
 ## Workflow
 
@@ -141,4 +152,5 @@ Report the archived change, archive path, sync status, validation result, and ha
 
 ## Failure Rules
 
-Stop when the change is ambiguous, artifacts or tasks are incomplete, spec sync fails, archive verification fails, or ticket context conflicts with the requested archival.
+Stop when the change is ambiguous, artifacts or tasks are incomplete, spec sync fails, archive verification fails, or
+ticket context conflicts with the requested archival.

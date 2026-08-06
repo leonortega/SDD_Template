@@ -1,6 +1,9 @@
 ﻿---
 name: dev-flow-pr-review-feedback-loop
-description: Process AI review findings and later human PR comments for an active ticket pull request through selected ticket and review adapters by creating OpenSpec feedback tasks, recording feedback batches, applying fixes, validating, pushing, and rerunning AI review before handoff.
+description: >-
+  Process AI review findings and later human PR comments for an active ticket pull request through selected ticket and
+  review adapters by creating OpenSpec feedback tasks, recording feedback batches, applying fixes, validating, pushing,
+  and rerunning AI review before handoff.
 ---
 
 <!-- TIER 3: STAGE-SPECIFIC - Review feedback loop skill -->
@@ -9,18 +12,24 @@ description: Process AI review findings and later human PR comments for an activ
 
 ## Overview
 
-Use this repo-owned delivery skill after a pull request exists for an active ticket. It owns the reconnectable PR feedback loop for local delivery.
+Use this repo-owned delivery skill after a pull request exists for an active ticket. It owns the reconnectable PR
+feedback loop for local delivery.
 
 The loop has two timed phases:
 
 1. AI review runs immediately after PR creation and after every pushed feedback fix.
-2. Human review feedback is processed only on a later manual resume, such as `automatically continue this ticket` or `continue E2EPROJECT-123`.
+2. Human review feedback is processed only on a later manual resume, such as `automatically continue this ticket` or
+`continue E2EPROJECT-123`.
 
 ## Shared Context
 
-Before reading or mutating review feedback, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/delivery-contract.md`, and `docs/conventions/context-management.md`, with `docs/conventions/development.md` as the stage-specific doc. Load selected ticket, repository, and review adapters.
+Before reading or mutating review feedback, follow `.codex/skills/_shared/skill-startup.md`, which reads
+`.codex/project-profile.json`, `.codex/skills/_shared/delivery-contract.md`, and
+`docs/conventions/context-management.md`, with `docs/conventions/development.md` as the stage-specific doc. Load
+selected ticket, repository, and review adapters.
 
-Read `.codex/delivery-context.local.json` when present and verify the resolved ticket, branch, PR, and current head SHA match the locked ticket context before mutation.
+Read `.codex/delivery-context.local.json` when present and verify the resolved ticket, branch, PR, and current head SHA
+match the locked ticket context before mutation.
 
 ## Workflow Telemetry
 
@@ -31,12 +40,15 @@ See `.codex/skills/_shared/pipeline-workflow-telemetry.md` for the common workfl
 
 **Unique additions for this skill:**
 
-- **JSONL fallback:** Use `python -m tools.sdd_cli dev-flow append-telemetry -TicketKey {ticketKey}` only as the JSONL fallback when direct time telemetry is unavailable.
-- **SKIP outcome:** If no active feedback exists and the loop reuses an existing current-head review, record `outcome=SKIP`.
+- **JSONL fallback:** Use `python -m tools.sdd_cli dev-flow append-telemetry -TicketKey {ticketKey}` only as the JSONL
+fallback when direct time telemetry is unavailable.
+- **SKIP outcome:** If no active feedback exists and the loop reuses an existing current-head review, record
+`outcome=SKIP`.
 
 ## Configuration
 
-Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.common.json` only for defaults and setup guidance.
+Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.common.json` only for defaults and setup
+guidance.
 
 Required/defaulted values:
 
@@ -47,22 +59,38 @@ Required/defaulted values:
 
 ## Workflow
 
-1. Resolve the ticket, active branch, OpenSpec change, PR number, current head SHA, latest repository workflow status, and current PR labels.
-2. Invoke or reuse `dev-flow-pr-review-agent` for the current head SHA. The AI review comment must use `<!-- codex-review-agent:{headSha} -->` and stable finding ids for every finding.
+1. Resolve the ticket, active branch, OpenSpec change, PR number, current head SHA, latest repository workflow status,
+and current PR labels.
+2. Invoke or reuse `dev-flow-pr-review-agent` for the current head SHA. The AI review comment must use `<!--
+codex-review-agent:{headSha} -->` and stable finding ids for every finding.
 3. Read current PR feedback sources:
-   - AI review findings from the latest current-head review-agent comment, including adversarial review findings, `ponytail-review` simplification findings, and verdict when present,
+   - AI review findings from the latest current-head review-agent comment, including adversarial review findings,
+   `ponytail-review` simplification findings, and verdict when present,
    - human top-level PR comments from the issue comments endpoint,
-   - human inline code review comments and review-thread replies from repository/review provider pull review/comment endpoints,
+   - human inline code review comments and review-thread replies from repository/review provider pull review/comment
+   endpoints,
    - existing OpenSpec `## PR Review Feedback` tasks,
-   - ticket provider `IA generated PR feedback detected: {headSha}:{feedbackBatchId}` and `IA generated PR feedback fixes: {headSha}:{feedbackBatchId}` markers,
-   - the latest PR Validation (Gitea Actions) workflow run for the current head — every failing step is a first-class feedback source; record the step name and exact error, plus run status (success/failure/running/pending).
+   - ticket provider `IA generated PR feedback detected: {headSha}:{feedbackBatchId}` and `IA generated PR feedback
+   fixes: {headSha}:{feedbackBatchId}` markers,
+   - the latest PR Validation (Gitea Actions) workflow run for the current head — every failing step is a first-class
+   feedback source; record the step name and exact error, plus run status
+   (success/failure/running/pending).
 4. Classify each feedback item:
-   - `actionable`: clear AI finding, human-requested code, test, documentation, or workflow change scoped to the ticket, or a failing PR Validation step. CI run failures are always `actionable` — convert each failing step into a fix task even if the AI review did not already capture it.
-   - `non-actionable`: praise, FYI, already-answered questions, generated output, or source ids already covered by a completed feedback batch.
+   - `actionable`: clear AI finding, human-requested code, test, documentation, or workflow change scoped to the ticket,
+   or a failing PR Validation step. CI run failures are always `actionable` —
+   convert each failing step into a fix task even if the AI review did not already capture it.
+   - `non-actionable`: praise, FYI, already-answered questions, generated output, or source ids already covered by a
+   completed feedback batch.
    - `stale`: outdated diff-line feedback or older-head feedback already satisfied by current code.
-   - `ambiguous/conflicting`: unclear request, ticket/OpenSpec/security conflict, or conflict with another human comment.
-5. For every actionable AI finding and actionable human comment, including AI `BLOCKER`, `WARNING`, and `SUGGESTION` severities and `ponytail-review` simplification findings, compute `feedbackBatchId` as a deterministic short id from sorted source ids such as AI finding ids, repository/review provider top-level comment ids, and inline review comment ids.
-6. Add or update a `## PR Review Feedback` section in the active OpenSpec `tasks.md`. Add one task per feedback item, recording source type, source id or link, head SHA, severity, review mode, `ponytail-review` source when applicable, adversarial verdict when present, and requested change.
+   - `ambiguous/conflicting`: unclear request, ticket/OpenSpec/security conflict, or conflict with another human
+   comment.
+5. For every actionable AI finding and actionable human comment, including AI `BLOCKER`, `WARNING`, and `SUGGESTION`
+severities and `ponytail-review` simplification findings, compute `feedbackBatchId`
+as a deterministic short id from sorted source ids such as AI finding ids, repository/review provider top-level comment
+ids, and inline review comment ids.
+6. Add or update a `## PR Review Feedback` section in the active OpenSpec `tasks.md`. Add one task per feedback item,
+recording source type, source id or link, head SHA, severity, review mode,
+`ponytail-review` source when applicable, adversarial verdict when present, and requested change.
 7. Before applying fixes, add a ticket comment with marker:
 
    ```text
@@ -70,18 +98,30 @@ Required/defaulted values:
    ```
 
    Include PR link, source ids or links, classifications, and OpenSpec feedback task ids.
-   Use the ticket activities API with a `comment.raw` payload. Read activities back and verify the activity comment starts with the marker.
+   Use the ticket activities API with a `comment.raw` payload. Read activities back and verify the activity comment
+   starts with the marker.
 
-8. First ensure the `codex-reviewed` label is REMOVED when any actionable feedback exists on the current head or the current-head PR Validation run is red or pending (the CI `codex-reviewed` gate must stay red until the loop is clean). Then apply the requested code, test, documentation, or workflow change in the existing PR branch. Update OpenSpec specs or design artifacts when behavior changes.
-9. Run the relevant validation checks for changed files. Use the same quality-gate discovery and failure classification as `dev-flow-implement-ticket`. If feedback fixes touch deployable project files, deployment manifests, provider-specific deployment infrastructure, or configured package/deploy workflows, run Deployment Topology Review through the selected deployment configure skill and report `Deployment topology: updated`, `Deployment topology: verified`, or `Deployment topology: no deployable app changes` in the ticket provider fix comment.
+8. First ensure the `codex-reviewed` label is REMOVED when any actionable feedback exists on the current head or the
+current-head PR Validation run is red or pending (the CI `codex-reviewed` gate must
+stay red until the loop is clean). Then apply the requested code, test, documentation, or workflow change in the
+existing PR branch. Update OpenSpec specs or design artifacts when behavior changes.
+9. Run the relevant validation checks for changed files. Use the same quality-gate discovery and failure classification
+as `dev-flow-implement-ticket`. If feedback fixes touch deployable project
+files, deployment manifests, provider-specific deployment infrastructure, or configured package/deploy workflows, run
+Deployment Topology Review through the selected deployment configure skill and
+report `Deployment topology: updated`, `Deployment topology: verified`, or `Deployment topology: no deployable app
+changes` in the ticket provider fix comment.
 10. Mark OpenSpec feedback tasks complete only after code and validation are complete.
-11. Commit with the ticket key: commit the feedback batch as its own ticket-prefixed commit when tracked changes exist. Skip empty commits. Do not automatically stash normal ticket progress; use stash only for unrelated local or user changes that block the fix. Push the fix commit, then add a ticket comment with marker:
+11. Commit with the ticket key: commit the feedback batch as its own ticket-prefixed commit when tracked changes exist.
+Skip empty commits. Do not automatically stash normal ticket progress; use stash
+only for unrelated local or user changes that block the fix. Push the fix commit, then add a ticket comment with marker:
 
 ```text
 IA generated PR feedback fixes: {headSha}:{feedbackBatchId}
 ```
 
-Keep the marker as the first line by itself, followed by a blank line and a reviewer-facing Markdown summary. The body must be human-readable, not only automation evidence, and must include:
+Keep the marker as the first line by itself, followed by a blank line and a reviewer-facing Markdown summary. The body
+must be human-readable, not only automation evidence, and must include:
 
 - `**Status:** READY FOR REVIEW | BLOCKED | PARTIAL - short outcome`
 - `**Reviewer feedback addressed:**` source ids or links plus a short human summary of each comment
@@ -89,27 +129,43 @@ Keep the marker as the first line by itself, followed by a blank line and a revi
 - `**Changed:**` commit SHA pushed, PR link, and completed OpenSpec feedback tasks
 - `**Validation:**` checks run and results
 - `**Reviewer readiness:**` what the reviewer should re-check, plus remaining blockers or `None`
-- `**Skipped comments:**` only when non-actionable, stale, duplicate, generated, ambiguous, or conflicting comments were skipped
+- `**Skipped comments:**` only when non-actionable, stale, duplicate, generated, ambiguous, or conflicting comments were
+skipped
 
 Include stash notes when relevant without exposing secrets or noisy tool output.
-Use the ticket activities API with a `comment.raw` payload. If a generated activity is missing or wrong, add a corrected marker activity and then read activities back before handoff. 12. Rerun the AI review loop on the new head before returning to human review or implementation handoff. Confirm the new head's PR Validation run completed (not running/pending) before handoff. The re-review re-reads the run and updates the labels per `dev-flow-pr-review-agent`: `codex-reviewed` is applied only when the new head has ZERO findings of any severity AND its PR Validation run is green — at most one `codex-reviewed` label live means the loop finished clean.
+Use the ticket activities API with a `comment.raw` payload. If a generated activity is missing or wrong, add a corrected
+marker activity and then read activities back before handoff. 12. Rerun the AI
+review loop on the new head before returning to human review or implementation handoff. Confirm the new head's PR
+Validation run completed (not running/pending) before handoff. The re-review re-reads
+the run and updates the labels per `dev-flow-pr-review-agent`: `codex-reviewed` is applied only when the new head has
+ZERO findings of any severity AND its PR Validation run is green — at most one
+`codex-reviewed` label live means the loop finished clean.
 
-Keep ticket provider in `Developed` (OpenProject ID 8) while late human feedback fixes are applied. Do not move the ticket backward unless another workflow rule explicitly requires it.
+Keep ticket provider in `Developed` (OpenProject ID 8) while late human feedback fixes are applied. Do not move the
+ticket backward unless another workflow rule explicitly requires it.
 
 ## Output
 
-Report the ticket, branch, PR URL, original and new head SHA, feedback batch id, OpenSpec feedback tasks created or completed, commits pushed, validation run, PR labels, ticket comments added, and handoff status.
+Report the ticket, branch, PR URL, original and new head SHA, feedback batch id, OpenSpec feedback tasks created or
+completed, commits pushed, validation run, PR labels, ticket comments added, and
+handoff status.
 
 ## Failure Rules
 
 - Missing branch, PR, ticket, or OpenSpec change: stop and route back to `dev-flow-implement-ticket`.
 - Ticket context lock mismatch: stop before Git, ticket provider, repository/review provider, or OpenSpec mutation.
 - Missing or placeholder API token: stop before ticket provider or repository/review provider mutation.
-- Ambiguous or conflicting human feedback: stop before changing code, request clarification in the PR when possible, record the blocker in ticket provider, and leave ticket provider in its current state.
+- Ambiguous or conflicting human feedback: stop before changing code, request clarification in the PR when possible,
+record the blocker in ticket provider, and leave ticket provider in its current
+state.
 - Feedback source ids already covered by a completed feedback batch: do not duplicate tasks or ticket comments.
-- Adversarial verdict `FAIL` or `PASS WITH GAPS`: keep feedback tasks open until fixes and validation are complete and a new current-head review passes clean.
+- Adversarial verdict `FAIL` or `PASS WITH GAPS`: keep feedback tasks open until fixes and validation are complete and a
+new current-head review passes clean.
 - OpenSpec `## PR Review Feedback` tasks remain incomplete: do not hand off for merge or QA promotion.
-- `codex-reviewed` must be present AND `needs-tests`/`needs-changes` absent on the current head before handoff for merge: exactly one `codex-reviewed` label live means zero findings remain and the PR Validation run is green after the loop.
-- PR Validation run red, pending, or unreadable on the current head: do not hand off for merge — keep feedback open until the run is green and a clean re-review reapplies `codex-reviewed`.
+- `codex-reviewed` must be present AND `needs-tests`/`needs-changes` absent on the current head before handoff for
+merge: exactly one `codex-reviewed` label live means zero findings remain and the PR
+Validation run is green after the loop.
+- PR Validation run red, pending, or unreadable on the current head: do not hand off for merge — keep feedback open
+until the run is green and a clean re-review reapplies `codex-reviewed`.
 - `needs-tests` or `needs-changes` remains valid after fixes: do not remove the label or hand off.
 - Validation failure after applying feedback: keep the task open, classify the failure, and report the blocker.

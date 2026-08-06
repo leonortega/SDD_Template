@@ -1,6 +1,7 @@
 # Gitea REST API — Issues & pull requests
 
-All examples use the `gitea` helper from [setup.md](setup.md#gitea-helper-function). Annotation column: `R` / `W` / `D` (= read-only / write / **DESTRUCTIVE**).
+All examples use the `gitea` helper from [setup.md](setup.md#gitea-helper-function). Annotation column: `R` / `W` / `D`
+(= read-only / write / **DESTRUCTIVE**).
 
 > Gotcha: in Gitea, PRs and issues share the same `number` namespace per repo.
 > PR conversation comments go to `/issues/{idx}/comments`. Code-review comments
@@ -57,7 +58,9 @@ All examples use the `gitea` helper from [setup.md](setup.md#gitea-helper-functi
 
 ### List repo issues · `GET /repos/{owner}/{repo}/issues` · read-only
 
-Query: `state` (`open|closed|all`, default `open`), `labels` (comma-separated names), `type` (`issues|pulls|all`), `q` (title/body search), `assigned_by`, `created_by`, `mentioned_by`, `milestones`, `since` / `before` (ISO 8601), `page`, `limit`.
+Query: `state` (`open|closed|all`, default `open`), `labels` (comma-separated names), `type` (`issues|pulls|all`), `q`
+(title/body search), `assigned_by`, `created_by`, `mentioned_by`, `milestones`, `since` / `before` (ISO 8601), `page`,
+`limit`.
 
 ### Get issue · `GET /repos/{owner}/{repo}/issues/{idx}` · read-only
 
@@ -68,11 +71,13 @@ gitea POST /repos/{owner}/{repo}/issues \
   -d '{"title":"fix login","body":"Steps...","assignees":["alice"],"labels":[3,7],"milestone":2,"due_date":"2025-12-31T00:00:00Z"}'
 ```
 
-Body: `title` (req), `body`, `assignees` (array of usernames), `labels` (array of label IDs), `milestone` (ID), `due_date` (ISO 8601), `ref` (branch).
+Body: `title` (req), `body`, `assignees` (array of usernames), `labels` (array of label IDs), `milestone` (ID),
+`due_date` (ISO 8601), `ref` (branch).
 
 ### Edit issue · `PATCH /repos/{owner}/{repo}/issues/{idx}` · write
 
-Body fields (any subset): `title`, `body`, `assignees`, `milestone`, `state` (`open|closed`), `due_date`, `unset_due_date` (boolean), `ref`.
+Body fields (any subset): `title`, `body`, `assignees`, `milestone`, `state` (`open|closed`), `due_date`,
+`unset_due_date` (boolean), `ref`.
 
 ## Issue comments
 
@@ -116,7 +121,9 @@ Body: `{"labels":[5]}`.
 
 ### List PRs · `GET /repos/{owner}/{repo}/pulls` · read-only
 
-Query: `state` (`open|closed|all`, default `open`), `sort` (`oldest|recentupdate|leastupdate|mostcomment|leastcomment|priority`), `milestone` (ID), `labels` (comma-separated names), `poster` (username), `page`, `limit`.
+Query: `state` (`open|closed|all`, default `open`), `sort`
+(`oldest|recentupdate|leastupdate|mostcomment|leastcomment|priority`), `milestone` (ID), `labels` (comma-separated
+names), `poster` (username), `page`, `limit`.
 
 ### Get PR · `GET /repos/{owner}/{repo}/pulls/{idx}` · read-only
 
@@ -137,11 +144,14 @@ gitea POST /repos/{owner}/{repo}/pulls \
   -d '{"title":"feat: add cache","body":"...","head":"feature/cache","base":"main","assignees":["alice"],"labels":[3]}'
 ```
 
-Body: `title` (req), `body`, `head` (req — source branch; for cross-fork use `owner:branch`), `base` (req — target branch), `assignee`, `assignees`, `milestone`, `labels`, `due_date`. Prefix title with `WIP: ` (or `Draft: `) to create a draft PR.
+Body: `title` (req), `body`, `head` (req — source branch; for cross-fork use `owner:branch`), `base` (req — target
+branch), `assignee`, `assignees`, `milestone`, `labels`, `due_date`. Prefix title with `WIP:` (or `Draft:`) to create a
+draft PR.
 
 ### Edit PR · `PATCH /repos/{owner}/{repo}/pulls/{idx}` · write
 
-Body fields (any subset): `title`, `body`, `assignee`, `assignees`, `milestone`, `labels`, `base` (re-target), `state` (`open|closed`), `allow_maintainer_edit`, `due_date`, `unset_due_date`.
+Body fields (any subset): `title`, `body`, `assignee`, `assignees`, `milestone`, `labels`, `base` (re-target), `state`
+(`open|closed`), `allow_maintainer_edit`, `due_date`, `unset_due_date`.
 
 ### Update PR branch from base · `POST /repos/{owner}/{repo}/pulls/{idx}/update?style=merge|rebase` · write
 
@@ -154,7 +164,9 @@ gitea POST "/repos/{owner}/{repo}/pulls/$IDX/merge" \
   -d '{"Do":"squash","MergeTitleField":"feat: add cache","MergeMessageField":"...","delete_branch_after_merge":true,"head_commit_id":"<expected-head-sha>"}'
 ```
 
-Body: `Do` (req: `merge|rebase|rebase-merge|squash|fast-forward-only`, **note the capital D**), `MergeTitleField`, `MergeMessageField`, `delete_branch_after_merge`, `force_merge` (bypass failing checks), `merge_when_checks_succeed` (queue until green), `head_commit_id` (expected head SHA — server returns 409 if it has moved).
+Body: `Do` (req: `merge|rebase|rebase-merge|squash|fast-forward-only`, **note the capital D**), `MergeTitleField`,
+`MergeMessageField`, `delete_branch_after_merge`, `force_merge` (bypass failing checks), `merge_when_checks_succeed`
+(queue until green), `head_commit_id` (expected head SHA — server returns 409 if it has moved).
 
 A 405 typically means the PR is not mergeable (conflicts, failing required checks, missing approvals).
 
@@ -179,7 +191,8 @@ gitea POST "/repos/{owner}/{repo}/pulls/$IDX/reviews" -d '{
 }'
 ```
 
-Body: `body` (overall comment), `event` (`APPROVED|REQUEST_CHANGES|COMMENT|PENDING`), `commit_id` (PR head SHA at time of review), `comments[]` (`{path, old_position, new_position, body}` — inline comments).
+Body: `body` (overall comment), `event` (`APPROVED|REQUEST_CHANGES|COMMENT|PENDING`), `commit_id` (PR head SHA at time
+of review), `comments[]` (`{path, old_position, new_position, body}` — inline comments).
 
 ### Submit a pending review · `POST /repos/{owner}/{repo}/pulls/{idx}/reviews/{review_id}` · write
 

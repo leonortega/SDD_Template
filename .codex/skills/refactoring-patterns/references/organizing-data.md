@@ -1,8 +1,11 @@
 # Organizing Data
 
-Detailed reference for refactorings that improve how data is represented. Raw primitives, magic numbers, exposed fields, and mutable collections create subtle bugs and scatter domain knowledge. These refactorings replace primitive representations with objects that encapsulate behavior and enforce invariants.
+Detailed reference for refactorings that improve how data is represented. Raw primitives, magic numbers, exposed fields,
+and mutable collections create subtle bugs and scatter domain knowledge. These refactorings replace primitive
+representations with objects that encapsulate behavior and enforce invariants.
 
 ## Table of Contents
+
 1. [Replace Data Value with Object](#replace-data-value-with-object)
 2. [Change Value to Reference](#change-value-to-reference)
 3. [Replace Array with Object](#replace-array-with-object)
@@ -16,11 +19,13 @@ Detailed reference for refactorings that improve how data is represented. Raw pr
 
 ## Replace Data Value with Object
 
-Wrap a primitive data item in a class when it has behavior or validation associated with it. This is the cure for Primitive Obsession.
+Wrap a primitive data item in a class when it has behavior or validation associated with it. This is the cure for
+Primitive Obsession.
 
 ### Motivation
 
-A data value starts life as a simple string or number. Then you add validation. Then formatting. Then comparison logic. Then the same validation appears in three places. At that point, the value deserves to be an object.
+A data value starts life as a simple string or number. Then you add validation. Then formatting. Then comparison logic.
+Then the same validation appears in three places. At that point, the value deserves to be an object.
 
 ### Mechanics
 
@@ -35,6 +40,7 @@ A data value starts life as a simple string or number. Then you add validation. 
 ### Example
 
 **Before:**
+
 ```javascript
 class Order {
   constructor(customer) {
@@ -48,6 +54,7 @@ if (otherOrder.customer === '') throw new Error('no customer');
 ```
 
 **After:**
+
 ```javascript
 class Customer {
   constructor(name) {
@@ -88,11 +95,13 @@ class Order {
 
 ## Change Value to Reference
 
-Convert a value object into a reference object when you need identity semantics -- when changes to one instance should be visible everywhere that instance is used.
+Convert a value object into a reference object when you need identity semantics -- when changes to one instance should
+be visible everywhere that instance is used.
 
 ### Motivation
 
-When you have multiple copies of the same customer, changing the phone number on one doesn't change it on the others. If business rules require a single shared instance, convert value to reference using a registry or repository.
+When you have multiple copies of the same customer, changing the phone number on one doesn't change it on the others. If
+business rules require a single shared instance, convert value to reference using a registry or repository.
 
 ### Mechanics
 
@@ -143,7 +152,8 @@ Replace an array used as a record (where each position has a different meaning) 
 
 ### Motivation
 
-`row[0]` is the name, `row[1]` is the age, `row[2]` is the department. This is fragile, unreadable, and type-unsafe. Named fields make the structure self-documenting.
+`row[0]` is the name, `row[1]` is the age, `row[2]` is the department. This is fragile, unreadable, and type-unsafe.
+Named fields make the structure self-documenting.
 
 ### Mechanics
 
@@ -156,6 +166,7 @@ Replace an array used as a record (where each position has a different meaning) 
 ### Example
 
 **Before:**
+
 ```python
 performance = ["Liverpool", 15, 2]
 name = performance[0]
@@ -164,6 +175,7 @@ losses = performance[2]
 ```
 
 **After:**
+
 ```python
 class Performance:
     def __init__(self, name, wins, losses):
@@ -185,13 +197,15 @@ Replace a literal number that has a particular meaning with a named constant.
 
 ### Motivation
 
-`9.81` means nothing in code. `GRAVITATIONAL_ACCELERATION = 9.81` communicates intent, prevents typos (the constant name is checked by the compiler), and centralizes the value for easy change.
+`9.81` means nothing in code. `GRAVITATIONAL_ACCELERATION = 9.81` communicates intent, prevents typos (the constant name
+is checked by the compiler), and centralizes the value for easy change.
 
 ### Mechanics
 
 1. Declare a constant and set it to the magic number
 2. Find all occurrences of the magic number
-3. Replace each occurrence with the constant (check that each occurrence represents the same concept -- the number `100` might mean "percentage" in one place and "max items" in another)
+3. Replace each occurrence with the constant (check that each occurrence represents the same concept -- the number `100`
+might mean "percentage" in one place and "max items" in another)
 4. Run tests
 
 ### Common Magic Number Categories
@@ -220,7 +234,8 @@ Replace direct access to a public field with getter and setter methods.
 
 ### Motivation
 
-A public field gives you no control over reads and writes. You can't add validation, logging, lazy initialization, or computed values later without changing every caller. Encapsulation creates a seam for future change.
+A public field gives you no control over reads and writes. You can't add validation, logging, lazy initialization, or
+computed values later without changing every caller. Encapsulation creates a seam for future change.
 
 ### Mechanics
 
@@ -232,6 +247,7 @@ A public field gives you no control over reads and writes. You can't add validat
 ### Example
 
 **Before:**
+
 ```python
 class Person:
     def __init__(self, name):
@@ -242,6 +258,7 @@ person.name = "   Bob   "  # no validation, no trimming
 ```
 
 **After:**
+
 ```python
 class Person:
     def __init__(self, name):
@@ -263,11 +280,13 @@ class Person:
 
 ## Encapsulate Collection
 
-Don't return a raw mutable collection from a getter. Instead, return an unmodifiable view or a copy, and provide explicit add/remove methods.
+Don't return a raw mutable collection from a getter. Instead, return an unmodifiable view or a copy, and provide
+explicit add/remove methods.
 
 ### Motivation
 
-When a getter returns a mutable list, callers can add, remove, or clear items without the owning object knowing. This breaks encapsulation -- the object can't enforce invariants, fire events, or validate changes.
+When a getter returns a mutable list, callers can add, remove, or clear items without the owning object knowing. This
+breaks encapsulation -- the object can't enforce invariants, fire events, or validate changes.
 
 ### Mechanics
 
@@ -279,6 +298,7 @@ When a getter returns a mutable list, callers can add, remove, or clear items wi
 ### Example
 
 **Before:**
+
 ```javascript
 class Course {}
 
@@ -294,6 +314,7 @@ person.courses = [];                   // replaces internal state
 ```
 
 **After:**
+
 ```javascript
 class Person {
   get courses() {
@@ -330,7 +351,8 @@ class Person {
 
 ## Replace Type Code with Class
 
-Replace a type code (integer or string constant) that does not affect behavior with a proper class. Use when the type code is used for categorization but doesn't drive conditional logic.
+Replace a type code (integer or string constant) that does not affect behavior with a proper class. Use when the type
+code is used for categorization but doesn't drive conditional logic.
 
 ### When to Use Which
 
@@ -346,6 +368,7 @@ Replace a type code (integer or string constant) that does not affect behavior w
 Used when the type code determines behavior through conditionals.
 
 **Before:**
+
 ```javascript
 class Employee {
   constructor(type) {
@@ -367,6 +390,7 @@ class Employee {
 ```
 
 **After:**
+
 ```javascript
 class Employee {
   calculatePay() { throw new Error('abstract'); }
@@ -389,9 +413,11 @@ class Salesperson extends Employee {
 
 ### Replace Type Code with Strategy/State
 
-Used when the type code can change at runtime (an employee can be promoted from engineer to manager), so subclassing the employee itself is not possible.
+Used when the type code can change at runtime (an employee can be promoted from engineer to manager), so subclassing the
+employee itself is not possible.
 
 **After (Strategy):**
+
 ```javascript
 class Employee {
   constructor(type) {

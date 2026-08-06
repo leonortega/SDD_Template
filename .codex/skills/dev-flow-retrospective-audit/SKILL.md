@@ -1,7 +1,10 @@
 ---
 name: dev-flow-retrospective-audit
 license: MIT
-description: Inspect delivery runs and Promptfoo eval results, convert repeated misses and eval regressions into durable workflow improvements. Use as the Promptfoo-driven improvement hub: run the eval, read results, classify failures, recommend or apply routing fixes, test updates, and eval-coverage additions.
+description: >-
+  >- Inspect delivery runs and Promptfoo eval results, convert repeated misses and eval regressions into durable
+  workflow improvements. Use as the Promptfoo-driven improvement hub: run the eval, read results, classify failures,
+  recommend or apply routing fixes, test updates, and eval-coverage additions.
 ---
 
 <!-- TIER 3: STAGE-SPECIFIC - Retrospective audit skill — Promptfoo-driven improvement hub -->
@@ -23,7 +26,8 @@ It does not deliver tickets, deploy releases, or promote environments. It audits
 
 ## Shared Context
 
-Follow `.codex/skills/_shared/skill-startup.md` with `docs/architecture/system.md`, `docs/conventions/development.md`, and
+Follow `.codex/skills/_shared/skill-startup.md` with `docs/architecture/system.md`, `docs/conventions/development.md`,
+and
 `docs/architecture/deployment.md` as stage-specific docs. Treat the delivery contract as the policy
 baseline and apply its Skill Synchronization Rule before changing any delivery or configure skill.
 

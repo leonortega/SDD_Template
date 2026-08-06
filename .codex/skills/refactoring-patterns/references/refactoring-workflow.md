@@ -1,8 +1,11 @@
 # Refactoring Workflow
 
-Detailed reference for when and how to refactor safely. The discipline of refactoring is as important as knowing the individual transformations. This reference covers the refactoring cycle, timing, safety techniques, and strategies for large-scale refactoring in production systems.
+Detailed reference for when and how to refactor safely. The discipline of refactoring is as important as knowing the
+individual transformations. This reference covers the refactoring cycle, timing, safety techniques, and strategies for
+large-scale refactoring in production systems.
 
 ## Table of Contents
+
 1. [The Refactoring Cycle](#the-refactoring-cycle)
 2. [When to Refactor](#when-to-refactor)
 3. [When NOT to Refactor](#when-not-to-refactor)
@@ -19,7 +22,7 @@ Detailed reference for when and how to refactor safely. The discipline of refact
 
 Every refactoring follows the same four-step loop:
 
-```
+```text
 1. Run tests → GREEN
 2. Apply one small structural change
 3. Run tests → GREEN
@@ -36,7 +39,8 @@ Every refactoring follows the same four-step loop:
 | Several refactorings between tests | Medium -- must debug to find which one broke | Minutes |
 | Big-bang rewrite | Maximum -- structural and behavioral changes mixed | Hours to days (or never) |
 
-**Rule:** If a test fails after a refactoring step, **revert immediately**. Don't debug. The step was too big or wrong. Revert, think, try a smaller step.
+**Rule:** If a test fails after a refactoring step, **revert immediately**. Don't debug. The step was too big or wrong.
+Revert, think, try a smaller step.
 
 ### The Two Hats
 
@@ -61,17 +65,23 @@ Martin Fowler describes two distinct modes of work. You wear only one "hat" at a
 
 **Trigger:** You're about to add a feature, and the code isn't structured to accommodate it easily.
 
-**Example:** You need to add a new payment method. The payment logic is in a long if/else chain. Before adding the new branch, refactor to Replace Conditional with Polymorphism. Now adding the new payment method means creating one new class.
+**Example:** You need to add a new payment method. The payment logic is in a long if/else chain. Before adding the new
+branch, refactor to Replace Conditional with Polymorphism. Now adding the new payment method means creating one new
+class.
 
 **Kent Beck's quote:** "Make the change easy (warning: this may be hard), then make the easy change."
 
-**The payoff:** The feature is faster to add, less likely to contain bugs, and the refactoring improves the code for all future changes, not just this one.
+**The payoff:** The feature is faster to add, less likely to contain bugs, and the refactoring improves the code for all
+future changes, not just this one.
 
 ### Comprehension Refactoring (Refactor to Understand)
 
-**Trigger:** You're reading code and struggling to understand it. Rename variables, extract methods, and reorganize to make the code express its intent.
+**Trigger:** You're reading code and struggling to understand it. Rename variables, extract methods, and reorganize to
+make the code express its intent.
 
-**Example:** You encounter a function called `calc` with variables named `a`, `b`, and `temp`. As you figure out what each does, rename them: `calculateMonthlyPayment`, `principal`, `interestRate`, `monthlyAmount`. The understanding you gain is encoded in the code itself.
+**Example:** You encounter a function called `calc` with variables named `a`, `b`, and `temp`. As you figure out what
+each does, rename them: `calculateMonthlyPayment`, `principal`, `interestRate`, `monthlyAmount`. The understanding you
+gain is encoded in the code itself.
 
 **Ward Cunningham's insight:** "By refactoring, I move the understanding from my head into the code itself."
 
@@ -80,34 +90,40 @@ Martin Fowler describes two distinct modes of work. You wear only one "hat" at a
 **Trigger:** You touch a file for any reason and notice a small improvement you can make. Do it.
 
 **Examples:**
+
 - Rename a misleading variable name
 - Extract a method from a long function
 - Remove dead code
 - Add a missing guard clause
 
-**The rule:** Leave the code cleaner than you found it. Each small improvement compounds over time. A codebase that is consistently cleaned by every developer who touches it stays healthy.
+**The rule:** Leave the code cleaner than you found it. Each small improvement compounds over time. A codebase that is
+consistently cleaned by every developer who touches it stays healthy.
 
 ### Rule of Three
 
 **Trigger:** The third time you see duplicated code or a repeated pattern.
 
 **The progression:**
+
 1. First time: Write it
 2. Second time: Wince at the duplication but tolerate it
 3. Third time: Refactor -- extract the common pattern
 
-**Why three, not two:** Premature abstraction is as dangerous as duplication. Two occurrences might be coincidental. Three confirms the pattern.
+**Why three, not two:** Premature abstraction is as dangerous as duplication. Two occurrences might be coincidental.
+Three confirms the pattern.
 
 ### Long-Term Refactoring
 
 **Trigger:** A large structural problem that can't be fixed in one session.
 
 **Examples:**
+
 - Replacing a library or framework
 - Splitting a monolith into modules
 - Changing a pervasive data representation
 
-**Approach:** The team agrees on a target architecture. Everyone makes small changes toward it during regular work. No one stops feature development for a "refactoring sprint."
+**Approach:** The team agrees on a target architecture. Everyone makes small changes toward it during regular work. No
+one stops feature development for a "refactoring sprint."
 
 ---
 
@@ -128,10 +144,12 @@ Not every piece of code deserves refactoring. Save your effort for code that jus
 ### The "Messy Middle" Trap
 
 Some teams swing between two extremes:
+
 - **Never refactor:** Technical debt accumulates until development grinds to a halt
 - **Always refactor:** Gold-plating code that doesn't need it, shipping features slowly
 
-The right balance: **Refactor code that you're about to change, or code that's actively hurting velocity.** Don't refactor code just because it's not beautiful.
+The right balance: **Refactor code that you're about to change, or code that's actively hurting velocity.** Don't
+refactor code just because it's not beautiful.
 
 ---
 
@@ -158,6 +176,7 @@ When you encounter code without tests that you need to refactor:
 4. Now you have a safety net -- refactor freely
 
 **Example:**
+
 ```python
 def test_weird_edge_case():
     # This behavior may be "wrong" but it's what exists.
@@ -172,7 +191,8 @@ def test_weird_edge_case():
 2. **After each refactoring step:** Run tests. All must pass.
 3. **If a test fails:** Revert immediately. Don't debug.
 4. **After completing a logical group of refactorings:** Commit.
-5. **If you discover a bug during refactoring:** Stop refactoring. Fix the bug (adding-function hat). Then resume refactoring.
+5. **If you discover a bug during refactoring:** Stop refactoring. Fix the bug (adding-function hat). Then resume
+refactoring.
 
 ---
 
@@ -191,8 +211,10 @@ def test_weird_edge_case():
 ### The Three-Step Performance Strategy
 
 1. **Write clear code first.** Don't optimize during refactoring.
-2. **Profile the running system.** Find the actual bottleneck (usually 10% of the code causes 90% of the performance issue).
-3. **Optimize only the measured hot path.** Well-refactored code makes this easy because the hot path is in a small, isolated method.
+2. **Profile the running system.** Find the actual bottleneck (usually 10% of the code causes 90% of the performance
+issue).
+3. **Optimize only the measured hot path.** Well-refactored code makes this easy because the hot path is in a small,
+isolated method.
 
 ### When Refactoring Genuinely Hurts Performance
 
@@ -203,7 +225,8 @@ def test_weird_edge_case():
 | Replace Conditional with Polymorphism | Virtual dispatch instead of branch | Negligible in most cases; profile if in doubt |
 | Introduce Parameter Object | Object allocation for each call | Often optimized away; pool if necessary |
 
-**Key insight:** Optimization and refactoring are separate concerns. Refactor first for clarity, then optimize the measured bottleneck.
+**Key insight:** Optimization and refactoring are separate concerns. Refactor first for clarity, then optimize the
+measured bottleneck.
 
 ---
 
@@ -220,7 +243,7 @@ A technique for making large-scale changes to a widely-used component without cr
 
 ### How It Works
 
-```
+```text
 Step 1: Identify the component to replace (OldComponent)
 Step 2: Create an abstraction layer (interface) that wraps OldComponent
 Step 3: Change all callers to use the abstraction (deploy incrementally)
@@ -232,6 +255,7 @@ Step 6: Remove OldComponent and the abstraction layer (clean up)
 ### Example
 
 **Step 1-2:** Introduce the abstraction
+
 ```python
 # Before: callers use OldPaymentGateway directly
 class OldPaymentGateway:
@@ -251,6 +275,7 @@ class OldPaymentGateway(PaymentGateway):
 **Step 4:** Build `NewPaymentGateway(PaymentGateway)`. Test thoroughly.
 
 **Step 5:** Switch the wiring:
+
 ```python
 # In configuration:
 # gateway = OldPaymentGateway()  # old
@@ -274,6 +299,7 @@ A technique for making breaking API changes safely by running old and new versio
 ### The Three Phases
 
 **1. Expand:** Add the new version alongside the old one.
+
 ```python
 class User:
     def get_full_name(self):     # new name
@@ -286,6 +312,7 @@ class User:
 **2. Migrate:** Update all callers to use the new version. This can happen incrementally across multiple deployments.
 
 **3. Contract:** Remove the old version once all callers have migrated.
+
 ```python
 class User:
     def get_full_name(self):     # only the new version remains
@@ -294,7 +321,7 @@ class User:
 
 ### Parallel Change for Data
 
-```
+```text
 1. Expand: Write to both old and new columns/formats
 2. Migrate: Update all readers to use the new format
 3. Contract: Stop writing the old format, remove old column
@@ -306,7 +333,8 @@ class User:
 
 ### The Strangler Fig Pattern
 
-Gradually replace a legacy system by building new functionality around it, routing more and more traffic to the new system until the old one can be decommissioned.
+Gradually replace a legacy system by building new functionality around it, routing more and more traffic to the new
+system until the old one can be decommissioned.
 
 | Phase | Action |
 |-------|--------|
@@ -338,6 +366,7 @@ else:
 ```
 
 This allows:
+
 - Incremental rollout (10% of traffic, then 50%, then 100%)
 - Instant rollback by toggling the flag
 - A/B comparison of old vs. new behavior

@@ -1,11 +1,14 @@
 # Observability
 
-You cannot operate what you cannot observe. Observability is the ability to understand the internal state of a system by examining its external outputs. It is not an afterthought or a nice-to-have -- it is a first-class design concern that must be built into every service from day one.
+You cannot operate what you cannot observe. Observability is the ability to understand the internal state of a system by
+examining its external outputs. It is not an afterthought or a nice-to-have -- it is a first-class design concern that
+must be built into every service from day one.
 
-A well-observed system lets you answer questions you did not anticipate at design time. A poorly observed system forces you to deploy new instrumentation during an outage -- exactly when you can least afford the risk.
-
+A well-observed system lets you answer questions you did not anticipate at design time. A poorly observed system forces
+you to deploy new instrumentation during an outage -- exactly when you can least afford the risk.
 
 ## Table of Contents
+
 1. [The Three Pillars of Observability](#the-three-pillars-of-observability)
 2. [Health Check Patterns](#health-check-patterns)
 3. [The RED Method](#the-red-method)
@@ -22,7 +25,8 @@ A well-observed system lets you answer questions you did not anticipate at desig
 
 Logs answer the question: "What happened?"
 
-**Structured logging** means emitting logs as key-value pairs (JSON), not free-form text. Structured logs are searchable, filterable, and aggregatable. Free-form text logs require regex parsing and break when the format changes.
+**Structured logging** means emitting logs as key-value pairs (JSON), not free-form text. Structured logs are
+searchable, filterable, and aggregatable. Free-form text logs require regex parsing and break when the format changes.
 
 **Essential log fields:**
 
@@ -40,6 +44,7 @@ Logs answer the question: "What happened?"
 | `request_id` | Unique identifier for the request | `req_abc123` |
 
 **Logging best practices:**
+
 - Log at service boundaries (incoming request, outgoing call, response)
 - Include enough context to understand the event without reading code
 - Use consistent field names across all services
@@ -52,7 +57,8 @@ Logs answer the question: "What happened?"
 
 Metrics answer the question: "How much?"
 
-Metrics are numeric measurements collected over time. They are cheap to store, fast to query, and essential for dashboards and alerts.
+Metrics are numeric measurements collected over time. They are cheap to store, fast to query, and essential for
+dashboards and alerts.
 
 **Metric types:**
 
@@ -64,6 +70,7 @@ Metrics are numeric measurements collected over time. They are cheap to store, f
 | **Summary** | Pre-calculated percentiles | `request_duration_seconds{quantile="0.99"}` |
 
 **Metric naming conventions:**
+
 - Use snake_case: `http_request_duration_seconds`
 - Include the unit in the name: `_seconds`, `_bytes`, `_total`
 - Use labels for dimensions: `http_requests_total{method="GET", status="200", endpoint="/api/users"}`
@@ -73,11 +80,12 @@ Metrics are numeric measurements collected over time. They are cheap to store, f
 
 Traces answer the question: "Where did the time go?"
 
-A distributed trace follows a single request across multiple services, showing the sequence of operations, their durations, and their relationships.
+A distributed trace follows a single request across multiple services, showing the sequence of operations, their
+durations, and their relationships.
 
 **Trace anatomy:**
 
-```
+```text
 Trace: user request to checkout
 ├── Span: API Gateway (2ms)
 │   ├── Span: Auth Service - validate token (15ms)
@@ -91,6 +99,7 @@ Total: 412ms
 ```
 
 **Trace implementation:**
+
 - Inject trace context (trace ID, span ID) into all outgoing requests (HTTP headers, message metadata)
 - Extract trace context from all incoming requests
 - Create a new span for each significant operation (service call, database query, cache lookup)
@@ -106,9 +115,10 @@ Health checks tell load balancers, orchestrators, and monitoring systems whether
 
 ### Shallow Health Check
 
-A shallow health check verifies that the process is running and can respond to HTTP requests. It does not verify dependencies.
+A shallow health check verifies that the process is running and can respond to HTTP requests. It does not verify
+dependencies.
 
-```
+```text
 GET /health
 200 OK {"status": "up"}
 ```
@@ -117,9 +127,10 @@ GET /health
 
 ### Deep Health Check
 
-A deep health check verifies that the instance can actually serve requests by checking connectivity to all critical dependencies.
+A deep health check verifies that the instance can actually serve requests by checking connectivity to all critical
+dependencies.
 
-```
+```text
 GET /health/ready
 200 OK {
   "status": "ready",
@@ -142,7 +153,8 @@ GET /health/ready
 }
 ```
 
-**Use for:** Readiness probes (can this instance serve traffic?). If this fails, the load balancer should stop routing traffic to this instance -- but should not restart it (the problem might be a downstream dependency, not this process).
+**Use for:** Readiness probes (can this instance serve traffic?). If this fails, the load balancer should stop routing
+traffic to this instance -- but should not restart it (the problem might be a downstream dependency, not this process).
 
 ### Health Check Design Rules
 
@@ -173,7 +185,7 @@ The RED method is a monitoring framework for request-driven services (APIs, web 
 
 For every service endpoint, instrument:
 
-```
+```text
 # Rate
 http_requests_total{service, method, endpoint, status}
 
@@ -189,6 +201,7 @@ http_request_duration_seconds{service, method, endpoint}
 ### RED Dashboard
 
 A RED dashboard for each service should answer three questions at a glance:
+
 1. **Is traffic arriving?** (Rate graph -- sudden drops indicate upstream problems or DNS issues)
 2. **Are requests succeeding?** (Error rate graph -- spikes indicate bugs or dependency failures)
 3. **Are requests fast?** (Duration graph -- p99 latency increasing indicates saturation)
@@ -246,11 +259,13 @@ Good SLIs measure what users actually experience:
 The error budget is the allowed amount of unreliability: `error_budget = 1 - SLO`.
 
 For a 99.9% availability SLO:
+
 - Error budget = 0.1% = 43.8 minutes/month of downtime
 - If you have consumed 30 minutes of budget, you have 13.8 minutes remaining
 - If the budget is exhausted, freeze deployments and focus on reliability
 
 **Error budget policy:**
+
 - Budget remaining > 50%: deploy freely, run experiments
 - Budget remaining 20-50%: deploy with caution, increase monitoring
 - Budget remaining < 20%: freeze non-critical deploys, prioritize reliability work
@@ -269,7 +284,8 @@ For a 99.9% availability SLO:
 | Disk > 85% | Availability < 99.9% |
 | Queue depth > 1000 | User-facing errors increasing |
 
-Cause-based alerts generate noise. CPU can be at 90% and users are fine. CPU can be at 50% and users are seeing errors because of a deadlock.
+Cause-based alerts generate noise. CPU can be at 90% and users are fine. CPU can be at 50% and users are seeing errors
+because of a deadlock.
 
 ### Alert Severity Levels
 
@@ -307,7 +323,9 @@ A dashboard should answer "Is the system healthy right now?" within 5 seconds of
 ### Dashboard Design Rules
 
 - **USE traffic lights:** Green (healthy), yellow (degraded), red (critical) at the top of every dashboard
-- **Show trends, not just current values:** A metric at 70% is fine if it has been at 70% for a week; it is alarming if it was at 30% an hour ago
+- **Show trends, not just current values:** A metric at 70% is fine if it has been at 70% for a week; it is alarming if
+it was at 30% an hour ago
 - **Mark deployments:** Overlay deployment events on metric graphs to correlate changes with behavior
 - **Time range matters:** Default to 6 hours for operational dashboards; allow quick switching to 1h, 24h, 7d
-- **Less is more:** A dashboard with 50 graphs is useless; a dashboard with 4 graphs that answer the right questions is invaluable
+- **Less is more:** A dashboard with 50 graphs is useless; a dashboard with 4 graphs that answer the right questions is
+invaluable

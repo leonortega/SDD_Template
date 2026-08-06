@@ -385,6 +385,7 @@ spec:
 ## Quick Reference
 
 ### Pod States
+
 - **Pending**: Waiting to be scheduled
 - **ContainerCreating**: Pulling image / creating container
 - **Running**: Pod is running
@@ -396,6 +397,7 @@ spec:
 - **Unknown**: Cannot get pod status
 
 ### Common Exit Codes
+
 - **0**: Success
 - **1**: General error
 - **137**: SIGKILL (OOMKilled - out of memory)

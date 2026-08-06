@@ -69,13 +69,17 @@
 ```
 
 Reference variables in queries with `$variable`:
+
 ```promql
 rate(http_requests_total{namespace="$namespace"}[$interval])
 ```
 
 ## Common problems
 
-- **`uid` must be unique across the org** — if you POST a dashboard with an existing UID and `overwrite: false`, Grafana returns 412 Precondition Failed
+- **`uid` must be unique across the org** — if you POST a dashboard with an existing UID and `overwrite: false`, Grafana
+returns 412 Precondition Failed
 - **`gridPos`** uses a 24-column grid; `w + x` must be ≤ 24
-- **`datasource.uid` in `targets`** must match an existing data source UID; misspell it and panels render as "Datasource not found"
-- **Template variable `query` field** is data-source-specific syntax (PromQL `label_values(...)`, LogQL `{label="…"}`, SQL, etc.)
+- **`datasource.uid` in `targets`** must match an existing data source UID; misspell it and panels render as "Datasource
+not found"
+- **Template variable `query` field** is data-source-specific syntax (PromQL `label_values(...)`, LogQL `{label="…"}`,
+SQL, etc.)

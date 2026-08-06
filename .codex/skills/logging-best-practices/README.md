@@ -4,7 +4,8 @@ A skill for AI coding assistants to apply logging best practices when writing or
 
 ## Overview
 
-This skill teaches the **wide events** pattern (also known as canonical log lines) - emit a single, context-rich event per request per service instead of scattered log statements.
+This skill teaches the **wide events** pattern (also known as canonical log lines) - emit a single, context-rich event
+per request per service instead of scattered log statements.
 
 ## Key Concepts
 
@@ -18,7 +19,7 @@ This skill teaches the **wide events** pattern (also known as canonical log line
 
 ## Structure
 
-```
+```text
 logging-best-practices/
 ├── SKILL.md              # Agent instructions
 ├── README.md             # This file

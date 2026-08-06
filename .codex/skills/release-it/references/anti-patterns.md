@@ -1,12 +1,17 @@
 # Stability Anti-Patterns
 
-Production systems do not fail because of bugs found in unit tests. They fail because of emergent behaviors that arise when systems interact under real-world conditions -- load spikes, network partitions, slow dependencies, and data growth that exceeds every assumption made during development.
+Production systems do not fail because of bugs found in unit tests. They fail because of emergent behaviors that arise
+when systems interact under real-world conditions -- load spikes, network partitions, slow dependencies, and data growth
+that exceeds every assumption made during development.
 
-Michael Nygard identifies a recurring set of anti-patterns that cause the vast majority of production outages. Recognizing these patterns is the first step toward building resilient systems.
+Michael Nygard identifies a recurring set of anti-patterns that cause the vast majority of production outages.
+Recognizing these patterns is the first step toward building resilient systems.
 
 ## 1. Integration Points: The Number-One Killer
 
-Every integration point -- every socket connection, HTTP call, database query, message queue interaction, or third-party API call -- is a potential failure point. Integration points are the number-one killer of production systems because they introduce failure modes that do not exist in isolated testing.
+Every integration point -- every socket connection, HTTP call, database query, message queue interaction, or third-party
+API call -- is a potential failure point. Integration points are the number-one killer of production systems because
+they introduce failure modes that do not exist in isolated testing.
 
 ### How Integration Points Fail
 
@@ -31,19 +36,26 @@ Every integration point needs a defense-in-depth strategy:
 
 ### Real-World Example
 
-A retail application calls an inventory service to check stock levels. The inventory service's database enters a long garbage collection pause. The inventory service stops responding but does not close connections. The retail application's thread pool fills with threads waiting for inventory responses. The retail application can no longer serve any requests -- including requests that do not need inventory data. The entire site goes down because one dependency slowed down.
+A retail application calls an inventory service to check stock levels. The inventory service's database enters a long
+garbage collection pause. The inventory service stops responding but does not close connections. The retail
+application's thread pool fills with threads waiting for inventory responses. The retail application can no longer serve
+any requests -- including requests that do not need inventory data. The entire site goes down because one dependency
+slowed down.
 
-**Root cause:** No read timeout on the inventory service call. No bulkhead isolating inventory calls from other request handling.
+**Root cause:** No read timeout on the inventory service call. No bulkhead isolating inventory calls from other request
+handling.
 
 ---
 
 ## 2. Cascading Failures
 
-A cascading failure occurs when a failure in one system causes failures in the systems that depend on it, which in turn cause failures in the systems that depend on them, and so on. The defining characteristic of a cascading failure is that the damage spreads far beyond the original failure.
+A cascading failure occurs when a failure in one system causes failures in the systems that depend on it, which in turn
+cause failures in the systems that depend on them, and so on. The defining characteristic of a cascading failure is that
+the damage spreads far beyond the original failure.
 
 ### Cascade Mechanics
 
-```
+```text
 Service A (database overloaded)
     → Service B (calls A, threads block waiting)
         → Service C (calls B, threads block waiting)
@@ -81,7 +93,8 @@ Service A (database overloaded)
 
 ## 3. Users as a Source of Load
 
-Users are not gentle with your system. They do not arrive in an orderly queue at predictable intervals. Real user behavior generates load patterns that are fundamentally different from what synthetic tests produce.
+Users are not gentle with your system. They do not arrive in an orderly queue at predictable intervals. Real user
+behavior generates load patterns that are fundamentally different from what synthetic tests produce.
 
 ### Unexpected User Behaviors
 
@@ -105,7 +118,8 @@ Users are not gentle with your system. They do not arrive in an orderly queue at
 
 ## 4. Blocked Threads
 
-Blocked threads are the silent killer. Unlike a crash (which is loud and obvious), blocked threads produce no errors, no exceptions, and no log entries. The system simply stops processing requests.
+Blocked threads are the silent killer. Unlike a crash (which is loud and obvious), blocked threads produce no errors, no
+exceptions, and no log entries. The system simply stops processing requests.
 
 ### Common Causes of Blocked Threads
 
@@ -120,12 +134,14 @@ Blocked threads are the silent killer. Unlike a crash (which is loud and obvious
 ### Detection and Prevention
 
 **Detection:**
+
 - Thread dump analysis (scheduled periodic dumps, not just during incidents)
 - Thread pool utilization metrics (active/idle/max)
 - Request latency distribution (sudden latency spike = possible thread starvation)
 - Health checks that verify thread pool availability
 
 **Prevention:**
+
 - Explicit timeouts on all blocking operations
 - Asynchronous I/O where possible
 - Bounded queues with rejection policies (not unbounded queues that grow forever)
@@ -135,7 +151,9 @@ Blocked threads are the silent killer. Unlike a crash (which is loud and obvious
 
 ## 5. Self-Denial Attacks
 
-A self-denial attack is when your own system, marketing, or business operations generate load that overwhelms your infrastructure. The irony is that these are "success disasters" -- everything is working as intended, but the system cannot handle its own success.
+A self-denial attack is when your own system, marketing, or business operations generate load that overwhelms your
+infrastructure. The irony is that these are "success disasters" -- everything is working as intended, but the system
+cannot handle its own success.
 
 ### Common Self-Denial Scenarios
 
@@ -159,7 +177,8 @@ A self-denial attack is when your own system, marketing, or business operations 
 
 ## 6. Scaling Effects
 
-Patterns that work at small scale break at large scale. A design that performs well with 10 servers may collapse at 100 servers. Scaling effects are the emergent behaviors that appear only when the system grows.
+Patterns that work at small scale break at large scale. A design that performs well with 10 servers may collapse at 100
+servers. Scaling effects are the emergent behaviors that appear only when the system grows.
 
 ### Examples of Scaling Effects
 
@@ -183,7 +202,8 @@ Patterns that work at small scale break at large scale. A design that performs w
 
 ## 7. Unbalanced Capacities
 
-When upstream and downstream systems have different capacity limits, the faster system can overwhelm the slower one. This is particularly dangerous when a frontend tier can generate more requests than a backend tier can handle.
+When upstream and downstream systems have different capacity limits, the faster system can overwhelm the slower one.
+This is particularly dangerous when a frontend tier can generate more requests than a backend tier can handle.
 
 ### Common Imbalances
 
@@ -203,7 +223,8 @@ When upstream and downstream systems have different capacity limits, the faster 
 
 ## 8. Dogpile / Thundering Herd
 
-A dogpile (also called thundering herd) occurs when many threads or processes simultaneously attempt the same expensive operation, typically after a cache expires or a service recovers.
+A dogpile (also called thundering herd) occurs when many threads or processes simultaneously attempt the same expensive
+operation, typically after a cache expires or a service recovers.
 
 ### Common Dogpile Scenarios
 
@@ -216,7 +237,8 @@ A dogpile (also called thundering herd) occurs when many threads or processes si
 
 ### Prevention
 
-- **Cache stampede prevention:** Use probabilistic early expiration, lock-based recomputation (only one thread refreshes), or serve stale + refresh in background
+- **Cache stampede prevention:** Use probabilistic early expiration, lock-based recomputation (only one thread
+refreshes), or serve stale + refresh in background
 - **Circuit breaker recovery:** Half-open state allows only a small number of test requests through
 - **Cron jobs:** Use distributed locks or leader election to ensure only one instance runs
 - **Gradual ramp-up:** When recovering, slowly increase traffic rather than allowing full load immediately
@@ -225,7 +247,8 @@ A dogpile (also called thundering herd) occurs when many threads or processes si
 
 ## 9. Slow Responses (Worse Than No Response)
 
-A fast failure is annoying. A slow failure is catastrophic. When a system responds slowly instead of failing fast, it creates a chain reaction of blocked resources throughout the calling stack.
+A fast failure is annoying. A slow failure is catastrophic. When a system responds slowly instead of failing fast, it
+creates a chain reaction of blocked resources throughout the calling stack.
 
 ### Why Slow Is Worse Than Down
 
@@ -255,7 +278,8 @@ A fast failure is annoying. A slow failure is catastrophic. When a system respon
 
 ## 10. Unbounded Result Sets
 
-A query that returns 10 rows in development returns 10 million rows in production. Unbounded result sets are a time bomb that detonates when data grows beyond test assumptions.
+A query that returns 10 rows in development returns 10 million rows in production. Unbounded result sets are a time bomb
+that detonates when data grows beyond test assumptions.
 
 ### Common Manifestations
 
@@ -276,4 +300,5 @@ A query that returns 10 rows in development returns 10 million rows in productio
 
 ### Rule of Thumb
 
-If your code ever does `results = query.getAll()` without a limit, it is a production incident waiting to happen. Every query, every API response, every list operation must have an upper bound.
+If your code ever does `results = query.getAll()` without a limit, it is a production incident waiting to happen. Every
+query, every API response, every list operation must have an upper bound.

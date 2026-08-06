@@ -1,7 +1,11 @@
 ---
 name: grafana-board-update
 license: MIT
-description: After a CI deploy completes, intelligently update the Grafana SDD Service Status dashboard with live URLs, new apps, and multi-environment support. Use when a deploy finishes and you need to refresh the Grafana dashboard — either from scratch or by merging changes into the existing JSON. Handles app additions, environment sections (DEV/QA/PROD), stale entry cleanup, and Grafana API push.
+description: >-
+  >- After a CI deploy completes, intelligently update the Grafana SDD Service Status dashboard with live URLs, new
+  apps, and multi-environment support. Use when a deploy finishes and you need to refresh the Grafana dashboard — either
+  from scratch or by merging changes into the existing JSON. Handles app additions, environment sections (DEV/QA/PROD),
+  stale entry cleanup, and Grafana API push.
 ---
 
 <!-- TIER 3: STAGE-SPECIFIC - Grafana dashboard update after deploy -->
@@ -10,20 +14,25 @@ description: After a CI deploy completes, intelligently update the Grafana SDD S
 
 ## Overview
 
-**Trigger:** Run this skill **manually** after a CI deploy completes. The CI pipeline discovers URLs and uploads them to Nexus — the agent handles the **intelligent** work of reading those URLs, deciding what to add/remove, modifying the Grafana dashboard JSON, and optionally pushing to Grafana via API.
+**Trigger:** Run this skill **manually** after a CI deploy completes. The CI pipeline discovers URLs and uploads them to
+Nexus — the agent handles the **intelligent** work of reading those URLs,
+deciding what to add/remove, modifying the Grafana dashboard JSON, and optionally pushing to Grafana via API.
 
-After a CI deploy to any environment (DEV, QA, or PROD), the Grafana SDD Service Status dashboard at `http://localhost:3001` should reflect the current state of all deployed services.
+After a CI deploy to any environment (DEV, QA, or PROD), the Grafana SDD Service Status dashboard at
+`http://localhost:3001` should reflect the current state of all deployed services.
 
 ## Shared Context
 
 Read these docs for background:
+
 - `.codex/skills/_shared/delivery-contract.md` → deploy stage contract, handoff markers
 - `docs/conventions/context-management.md` → durable context rules
 - `docs/architecture/deployment.md` → Grafana provisioning, dashboard architecture
 - `.codex/skills/grafana-observability/SKILL.md` → Grafana patterns
 - `knowledge/README.md` → past issues / gotchas
 
-Run this skill after a deploy completes for the active ticket; scope dashboard edits to the deployed ticket's apps and environments.
+Run this skill after a deploy completes for the active ticket; scope dashboard edits to the deployed ticket's apps and
+environments.
 
 ## Sources Of Truth
 
@@ -63,26 +72,32 @@ When updating the dashboard, use this decision order:
 
 ### 1. First time? No dashboard exists
 
-If `health-board.json` is missing (`infra/monitoring/grafana/dashboards/health-board.json`), **create it from scratch** using the template structure below. Generate all panels with whatever apps and environments are currently deployed.
+If `health-board.json` is missing (`infra/monitoring/grafana/dashboards/health-board.json`), **create it from scratch**
+using the template structure below. Generate all panels with whatever apps and
+environments are currently deployed.
 
 ### 2. New app added to apps.json
 
 If `infra/deployment/apps.json` has a new app that doesn't appear in the dashboard:
+
 - Add it to the **Service Health** markdown table (panel 1)
 - Add it to the **Service Quick Access** inline data (panel 4)
 - Assign an emoji from the role mapping below
 - Calculate proper `gridPos.y` to fit the new row
-- When the table grows significantly (>8 rows), consider splitting DEV/QA/PROD into separate sections within the same panel, or reorganize with section headers
+- When the table grows significantly (>8 rows), consider splitting DEV/QA/PROD into separate sections within the same
+panel, or reorganize with section headers
 
 ### 3. App removed from apps.json
 
 If an app exists in the dashboard but is no longer in `apps.json`:
+
 - **Remove** it from Service Health and Service Quick Access
 - **Check** if the app was decommissioned vs just not deployed this run
 
 ### 4. URL changed (re-deploy)
 
 If the same app gets new URLs after a re-deploy:
+
 - Update the **Service Health** row with the new URL
 - Update the **Service Quick Access** inline data
 - Update the **Environment Matrix** row
@@ -90,7 +105,9 @@ If the same app gets new URLs after a re-deploy:
 ### 5. Environment section needs adding
 
 When a new environment deploys for the first time (e.g., QA after DEV):
-- The **Service Health** and **Service Quick Access** panels should get new rows prefixed with the environment badge (🔷 DEV, 🟢 QA, 🔴 PROD)
+
+- The **Service Health** and **Service Quick Access** panels should get new rows prefixed with the environment badge (🔷
+DEV, 🟢 QA, 🔴 PROD)
 - The **Environment Matrix** panel should get a new row
 - Consider whether to add environment sub-sections within existing panels or create separate panels
 
@@ -118,7 +135,9 @@ When a new environment deploys for the first time (e.g., QA after DEV):
 
 ### Rule 1: Version must increase
 
-Grafana provisioning **only overwrites a dashboard when the `version` field is higher** than what's stored in the DB. When editing `health-board.json`:
+Grafana provisioning **only overwrites a dashboard when the `version` field is higher** than what's stored in the DB.
+When editing `health-board.json`:
+
 - Read the current `version` value (e.g. `27`)
 - Set it to `int(time.time())` (epoch seconds) — this guarantees a higher value
 - Never set version lower than the current value
@@ -126,9 +145,11 @@ Grafana provisioning **only overwrites a dashboard when the `version` field is h
 ### Rule 2: Infinity datasource — no `color` in mappings
 
 The Infinity datasource plugin (`yesoreyeram-infinity-datasource`) crashes with:
-```
+
+```text
 TypeError: Cannot read properties of undefined (reading 'Not deployed')
 ```
+
 when value mappings contain a `"color"` property. **Never include `"color"` inside mapping objects.** Use text-only:
 
 ```json
@@ -141,7 +162,8 @@ when value mappings contain a `"color"` property. **Never include `"color"` insi
 
 ### Rule 3: Infinity datasource — use `source: "inline"` for tables
 
-The Infinity datasource **crashes** when `source: "url"` is used with `parser: "backend"` and `format: "table"`. Always use `source: "inline"` for table panels:
+The Infinity datasource **crashes** when `source: "url"` is used with `parser: "backend"` and `format: "table"`. Always
+use `source: "inline"` for table panels:
 
 ```json
 // ✅ Correct approach for Service Quick Access and Environment Matrix panels
@@ -153,14 +175,18 @@ The Infinity datasource **crashes** when `source: "url"` is used with `parser: "
 
 ### Rule 4: Keep `uid` stable
 
-The dashboard UID is `agentic-e2e-health-board`. Never change it. The `overwrite: true` flag on API push ensures updates work.
+The dashboard UID is `agentic-e2e-health-board`. Never change it. The `overwrite: true` flag on API push ensures updates
+work.
 
 ### Rule 5: gridPos arithmetic
 
 The dashboard uses a 24-column grid (`schemaVersion: 39`):
+
 - `w: 24` — Full width
 - `h: N` — Height in grid rows (~30px per row)
-- `y` values must not overlap — calculate sequentially. **Pack tightly** — the existing dashboard has a 2-row gap between the header (`y=0, h=4`) and Panel 1 (`y=2`), which wastes space. When creating from scratch, use:
+- `y` values must not overlap — calculate sequentially. **Pack tightly** — the existing dashboard has a 2-row gap
+between the header (`y=0, h=4`) and Panel 1 (`y=2`), which wastes space. When creating
+from scratch, use:
   - Panel 0 (header): `y=0`, `h=4`
   - Panel 1 (health): `y = panel0.y + panel0.h`, `h = max(4, num_rows + 2)`
   - Panel 2 (quick access): `y = panel1.y + panel1.h`, `h = max(6, num_rows * 2 + 2)`
@@ -170,16 +196,24 @@ The dashboard uses a 24-column grid (`schemaVersion: 39`):
 ### Rule 6: Use kind-config for host port mapping
 
 The kind cluster maps nodePorts to host ports via `extraPortMappings` in `infra/k8s/kind-config.yaml`:
+
 ```yaml
 extraPortMappings:
   - containerPort: 30080  # ← this is the K8s nodePort
     hostPort: 8081        # ← this is the actual localhost URL
 ```
-When building the dashboard, resolve:
-- `nodePortUrl` = `http://localhost:<nodePort>` (e.g. `http://localhost:30080`)
-- `hostUrl` = `http://localhost:<hostPort>` (e.g. `http://localhost:8081`) — use this as the clickable URL
 
-For infrastructure services (Grafana, Gitea, Nexus) that run via Docker Compose (not K8s), use their Docker host ports directly.
+When building the dashboard, resolve:
+
+- `hostUrl` = `http://localhost:<hostPort>` (e.g. `http://localhost:8081`) — **use this as the clickable URL**. From the
+Windows host the nodePort itself is NOT reachable at `localhost:{nodePort}` —
+kind's `extraPortMappings` expose services only at the host ports.
+- `nodePort` = the K8s Service nodePort (e.g. `30080`) — display it as info, and it is the address the health-probe uses
+*inside the cluster network* (`sdd-cluster-control-plane:<nodePort>`), not a
+host URL.
+
+For infrastructure services (Grafana, Gitea, Nexus) that run via Docker Compose (not K8s), use their Docker host ports
+directly.
 
 ## Workflow
 
@@ -188,10 +222,12 @@ For infrastructure services (Grafana, Gitea, Nexus) that run via Docker Compose 
 1. Read `infra/deployment/apps.json` — collect `appId`, `role`, `healthPath` for every app
 2. Read `infra/k8s/kind-config.yaml` — build the `{nodePort: hostPort}` mapping
 3. Fetch environment URLs from Nexus for **all** environments that have been deployed. Try each:
+
    ```bash
    curl -s -u 'admin:admin123' \
      'http://host.docker.internal:8088/repository/sdd-artifacts/app/latest/env-urls-dev.json'
    ```
+
    - DEV: `env-urls-dev.json` (always try first)
    - QA: `env-urls-qa.json` (try — may not exist yet)
    - PROD: `env-urls-prod.json` (try — may not exist yet)
@@ -201,6 +237,7 @@ For infrastructure services (Grafana, Gitea, Nexus) that run via Docker Compose 
 ### Step 2: Decide what to change
 
 Based on the Decision Framework above, determine:
+
 - Does a dashboard exist? (Yes → update, No → create)
 - Are there new apps? (add them)
 - Are there removed apps? (remove them)
@@ -229,6 +266,7 @@ Edit `infra/monitoring/grafana/dashboards/health-board.json`:
 ### Step 4: Validate the JSON
 
 Before saving or pushing:
+
 1. Run `python3 -m json.tool infra/monitoring/grafana/dashboards/health-board.json` to validate JSON syntax
 2. Check that all panel `id` values are unique (10, 1, 4, 7, 6)
 3. Check that no two panels occupy overlapping `gridPos` rectangles
@@ -237,13 +275,17 @@ Before saving or pushing:
 
 ### Step 5: Push to Grafana API (optional, for immediate effect)
 
-**⚠️ Provisioned dashboard limitation:** The `health-board.json` is provisioned from disk via `infra/monitoring/grafana/provisioning/dashboards/dashboards.yml`. Grafana **rejects API writes** to provisioned dashboards with status `"Cannot save provisioned dashboard"`. 
+**⚠️ Provisioned dashboard limitation:** The `health-board.json` is provisioned from disk via
+`infra/monitoring/grafana/provisioning/dashboards/dashboards.yml`. Grafana **rejects API writes** to
+provisioned dashboards with status `"Cannot save provisioned dashboard"`.
 
 You have two options:
 
-**Option A — File only (safe, always works):** Just save the updated JSON. Grafana provisioning picks it up on next restart — the `version` bump ensures the new file overwrites the old DB entry.
+**Option A — File only (safe, always works):** Just save the updated JSON. Grafana provisioning picks it up on next
+restart — the `version` bump ensures the new file overwrites the old DB entry.
 
-**Option B — Try API (may fail for provisioned dashboards):** If Grafana is configured with `editable: true` and the dashboard is NOT provisioned, the API push will work for immediate effect:
+**Option B — Try API (may fail for provisioned dashboards):** If Grafana is configured with `editable: true` and the
+dashboard is NOT provisioned, the API push will work for immediate effect:
 
 ```bash
 DASHBOARD_JSON=$(cat infra/monitoring/grafana/dashboards/health-board.json)
@@ -259,6 +301,7 @@ curl -s -X POST 'http://admin:admin@localhost:3001/api/dashboards/db' \
 ```
 
 Expected response on success:
+
 ```json
 {
   "status": "success",
@@ -268,7 +311,8 @@ Expected response on success:
 }
 ```
 
-If the API returns `"Cannot save provisioned dashboard"`, the file-based change is sufficient. Verify the updated JSON is committed and pushed.
+If the API returns `"Cannot save provisioned dashboard"`, the file-based change is sufficient. Verify the updated JSON
+is committed and pushed.
 
 If Grafana rejects with a version error, increase the version field and retry.
 
@@ -286,6 +330,7 @@ curl -s -X POST 'http://admin:admin@localhost:3001/api/dashboards/db' \
 ```
 
 Expected response:
+
 ```json
 {
   "status": "success",
@@ -300,6 +345,7 @@ If Grafana rejects with a version error, increase the version field and retry.
 ### Step 6: Verify in browser
 
 Open `http://localhost:3001` and navigate to the SDD Service Status dashboard. Verify:
+
 - All deployed apps appear with correct URLs
 - New apps are present, removed apps are gone
 - Status icons are correct (UP/DOWN based on URL presence)
@@ -310,6 +356,7 @@ Open `http://localhost:3001` and navigate to the SDD Service Status dashboard. V
 ### Step 7: Commit changes (if JSON was modified)
 
 If you modified `health-board.json`:
+
 ```bash
 git add infra/monitoring/grafana/dashboards/health-board.json
 git commit -m "chore: update Grafana dashboard after {env} deploy"
@@ -370,17 +417,22 @@ Use this as a reference when creating from scratch. All panels must be present.
 
 ### Panel 1: Service Health (id: 1)
 
-A markdown table where each deployed app is a row. For multi-environment support, prefix each row with the environment badge and group by environment:
+A markdown table where each deployed app is a row. For multi-environment support, prefix each row with the environment
+badge and group by environment:
 
-```
+```text
 | Environment | Service | Status | Direct URL | Health Endpoint | K8s NodePort |
 |---|---|---|---|---|---|
 | **🔷 DEV** | **🖥️ Frontend** | 🟢 UP | http://localhost:8081 | http://localhost:8081/health | 30080 |
 | **🔷 DEV** | **🔄 Backend** | 🟢 UP | http://localhost:5002 | http://localhost:5002/health | 30500 |
-| **🟢 QA** | **🖥️ Frontend** | 🟢 UP | http://localhost:18081 | http://localhost:18081/health | 30081 |
+| **🟢 QA** | **🖥️ Frontend** | 🟢 UP | http://localhost:8082 | http://localhost:8082/health | 31080 |
+| **🟢 QA** | **🔄 Backend** | 🟢 UP | http://localhost:5003 | http://localhost:5003/health | 31500 |
+| **🔴 PROD** | **🖥️ Frontend** | 🟢 UP | http://localhost:8083 | http://localhost:8083/health | 32080 |
+| **🔴 PROD** | **🔄 Backend** | 🟢 UP | http://localhost:5004 | http://localhost:5004/health | 32500 |
 ```
 
 Status logic:
+
 - `🟢 UP` when the app has a discovered URL with a non-empty value
 - `🔴 DOWN` when the app URL is empty or missing
 
@@ -390,13 +442,16 @@ An Infinity table with `source: "inline"`. The inline data is a JSON array of ob
 
 Columns: `Service`, `Direct URL (click to open)`, `Health URL`, `K8s NodePort`, `Host Port`
 
-The "Direct URL" column has a link override so clicking opens the URL in a new tab. Infrastructure services (Grafana, Gitea, Nexus) are always included as static entries at the bottom.
+The "Direct URL" column has a link override so clicking opens the URL in a new tab. Infrastructure services (Grafana,
+Gitea, Nexus) are always included as static entries at the bottom.
 
 ### Panel 7: Environment Matrix (id: 7)
 
 An Infinity table with `source: "inline"`. Shows one row per environment (DEV, QA, PROD).
 
-**Columns:** Dynamically generated based on what apps exist. Don't hardcode `Frontend URL` / `Backend URL` columns — instead generate a generic `App URLs` column that lists URLs for all apps, or create one column per app role (e.g. `Web URL`, `API URL`, `Worker URL`). Use the role from `apps.json` to name columns.
+**Columns:** Dynamically generated based on what apps exist. Don't hardcode `Frontend URL` / `Backend URL` columns —
+instead generate a generic `App URLs` column that lists URLs for all apps, or
+create one column per app role (e.g. `Web URL`, `API URL`, `Worker URL`). Use the role from `apps.json` to name columns.
 
 Core columns always present: `Environment`, `K8s Namespace`, `Deploy Trigger`, `Status`
 

@@ -3,6 +3,7 @@
 ## What is Clean Code?
 
 Code that is:
+
 - **Easy to understand** - reveals intent clearly
 - **Easy to change** - modifications are localized
 - **Easy to test** - dependencies are injectable
@@ -11,6 +12,7 @@ Code that is:
 ## The Human-Centered Approach
 
 Code has THREE consumers:
+
 1. **Users** - get their needs met
 2. **Customers** - make or save money
 3. **Developers** - must maintain it
@@ -20,6 +22,7 @@ Design for all three, but remember: **developers read code 10x more than they wr
 ## Naming Principles
 
 ### 1. Consistency & Uniqueness (HIGHEST PRIORITY)
+
 Same concept = same name everywhere. One name per concept.
 
 ```typescript
@@ -35,6 +38,7 @@ getProduct(id)
 ```
 
 ### 2. Understandability
+
 Use domain language, not technical jargon.
 
 ```typescript
@@ -46,6 +50,7 @@ const activeCustomers = users.filter(user => user.isActive);
 ```
 
 ### 3. Specificity
+
 Avoid vague names: `data`, `info`, `manager`, `handler`, `processor`, `utils`
 
 ```typescript
@@ -59,6 +64,7 @@ function validatePayment(payment) { }
 ```
 
 ### 4. Brevity (but not at cost of clarity)
+
 Short names are good only if meaning is preserved.
 
 ```typescript
@@ -73,6 +79,7 @@ const activeUsers = getActiveUsers();
 ```
 
 ### 5. Searchability
+
 Names should be unique enough to grep/search.
 
 ```typescript
@@ -84,6 +91,7 @@ const orderSummary = fetchOrderSummary();
 ```
 
 ### 6. Pronounceability
+
 You should be able to say it in conversation.
 
 ```typescript
@@ -95,6 +103,7 @@ const timestamp = generateTimestamp();
 ```
 
 ### 7. Austerity
+
 Avoid unnecessary filler words.
 
 ```typescript
@@ -347,16 +356,19 @@ if (user.canAccessPremiumFeatures()) { }
 ## Formatting
 
 ### Vertical Spacing
+
 - Related code together
 - Blank lines between concepts
 - Most important/public at top
 
 ### Horizontal Spacing
+
 - Consistent indentation
 - Space around operators
 - Max line length ~80-120 characters
 
 ### Storytelling
+
 Code should read top-to-bottom like a story. High-level at top, details below.
 
 ```typescript

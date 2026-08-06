@@ -3,6 +3,7 @@
 ## The Goal of Architecture
 
 Enable the development team to:
+
 1. **Add** features with minimal friction
 2. **Change** existing features safely
 3. **Remove** features cleanly
@@ -15,7 +16,7 @@ Enable the development team to:
 
 Organize by **feature**, not by technical layer.
 
-```
+```text
 BAD: Layer-first
 src/
   controllers/
@@ -46,7 +47,7 @@ src/
 
 Separate concerns into layers with clear dependencies.
 
-```
+```text
 ┌──────────────────────────────────────┐
 │           Presentation               │  UI, Controllers, CLI
 ├──────────────────────────────────────┤
@@ -62,7 +63,7 @@ Separate concerns into layers with clear dependencies.
 
 **Dependencies point INWARD.**
 
-```
+```text
 Infrastructure → Application → Domain
       ↓               ↓            ↓
    (outer)        (middle)      (inner)
@@ -114,6 +115,7 @@ class MockGateway implements PaymentGateway { }  // For tests
 Concerns that span multiple features: logging, auth, validation, error handling.
 
 **Options:**
+
 - Middleware/interceptors
 - Decorators
 - Aspect-oriented approaches
@@ -152,7 +154,7 @@ Traditional layers: Presentation → Business → Persistence
 
 Domain at center, adapters around the edges.
 
-```
+```text
         ┌─────────────────────┐
         │     HTTP Adapter    │
         └─────────┬───────────┘
@@ -186,7 +188,7 @@ Similar to Hexagonal, with explicit layers:
 
 ## Feature-Driven Structure (Frontend)
 
-```
+```text
 src/
   features/
     auth/
@@ -216,7 +218,7 @@ src/
 
 ## Feature-Driven Structure (Backend)
 
-```
+```text
 src/
   modules/
     users/
@@ -252,6 +254,7 @@ Start with a minimal end-to-end slice:
 3. **Proves the architecture** works
 
 Example walking skeleton for e-commerce:
+
 - User can view ONE product (hardcoded)
 - User can add it to cart
 - User can "checkout" (just logs)
@@ -262,7 +265,7 @@ From there, flesh out each feature fully.
 
 ## Testing Architecture
 
-```
+```text
 ┌────────────────────────────────────────────┐
 │            E2E / Acceptance Tests          │  Few, slow, high confidence
 ├────────────────────────────────────────────┤
@@ -273,6 +276,7 @@ From there, flesh out each feature fully.
 ```
 
 **Test by layer:**
+
 - **Domain:** Unit tests (most tests here)
 - **Application:** Integration tests with mocked infra
 - **Infrastructure:** Integration tests with real dependencies

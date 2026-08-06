@@ -1,6 +1,8 @@
 # Infrastructure-as-Code Security
 
-Infrastructure-as-Code (IaC) defines cloud and container infrastructure in version-controlled configuration files. Security misconfigurations in these files are deployed automatically and at scale, making IaC a critical audit surface. This reference covers Dockerfiles, Docker Compose, Kubernetes manifests, and Terraform configurations.
+Infrastructure-as-Code (IaC) defines cloud and container infrastructure in version-controlled configuration files.
+Security misconfigurations in these files are deployed automatically and at scale, making IaC a critical audit surface.
+This reference covers Dockerfiles, Docker Compose, Kubernetes manifests, and Terraform configurations.
 
 ---
 
@@ -8,7 +10,8 @@ Infrastructure-as-Code (IaC) defines cloud and container infrastructure in versi
 
 ### Running as Root
 
-By default, Docker containers run as `root` (UID 0). If an attacker escapes the application but remains inside the container, they have full root privileges, making further exploitation and container escape significantly easier.
+By default, Docker containers run as `root` (UID 0). If an attacker escapes the application but remains inside the
+container, they have full root privileges, making further exploitation and container escape significantly easier.
 
 ```dockerfile
 # VULNERABLE: No USER directive — container runs as root
@@ -50,7 +53,8 @@ CMD ["python", "app.py"]
 
 ### Detection Patterns
 
-A pure line-based regex cannot reliably detect "no USER directive anywhere in the file" because that is a whole-file property. Prefer whole-file checks:
+A pure line-based regex cannot reliably detect "no USER directive anywhere in the file" because that is a whole-file
+property. Prefer whole-file checks:
 
 ```bash
 # Dockerfiles missing USER directive — flag any Dockerfile that never declares USER.
@@ -73,13 +77,14 @@ awk '
 
 If you use a PCRE-capable scanner (`grep -P`, ripgrep, Semgrep), an equivalent whole-file negative-lookahead is:
 
-```
+```text
 (?ms)\A(?!.*^\s*USER\b).*^\s*FROM\b.*\z
 ```
 
 ### Secrets in Image Layers
 
-Every `COPY`, `ADD`, `RUN`, and `ARG` instruction creates a layer that persists in the image history. Secrets placed into layers can be extracted even if a later layer deletes them.
+Every `COPY`, `ADD`, `RUN`, and `ARG` instruction creates a layer that persists in the image history. Secrets placed
+into layers can be extracted even if a later layer deletes them.
 
 ```dockerfile
 # VULNERABLE: Copying .env file into the image
@@ -142,7 +147,7 @@ secrets/
 
 ### Detection Patterns
 
-```
+```text
 # .env file copied into image
 COPY\s+.*\.env
 ADD\s+.*\.env
@@ -157,7 +162,9 @@ RUN\s.*(PASSWORD|SECRET|TOKEN|API_KEY)=
 
 ### Unsigned and Unversioned Base Images
 
-Using a bare image name without a tag or digest means Docker pulls `latest`, which is mutable. An attacker who compromises the registry can push a malicious `latest` tag, or a legitimate update may introduce breaking changes or new vulnerabilities.
+Using a bare image name without a tag or digest means Docker pulls `latest`, which is mutable. An attacker who
+compromises the registry can push a malicious `latest` tag, or a legitimate update may introduce breaking changes or new
+vulnerabilities.
 
 ```dockerfile
 # VULNERABLE: No tag — implicitly pulls :latest, which is mutable
@@ -180,7 +187,7 @@ FROM python:3.12-slim@sha256:1a2b3c4d5e6f7890abcdef1234567890abcdef1234567890abc
 
 ### Detection Patterns
 
-```
+```text
 # Base image without tag or digest
 ^FROM\s+[a-z][a-z0-9._-]+(/[a-z][a-z0-9._-]+)?\s*$
 
@@ -190,10 +197,12 @@ FROM python:3.12-slim@sha256:1a2b3c4d5e6f7890abcdef1234567890abcdef1234567890abc
 
 ### ADD vs COPY Security Implications
 
-`ADD` has two capabilities beyond `COPY`: it can fetch remote URLs and auto-extract compressed archives (tar, gzip, bzip2, xz). These features expand the attack surface.
+`ADD` has two capabilities beyond `COPY`: it can fetch remote URLs and auto-extract compressed archives (tar, gzip,
+bzip2, xz). These features expand the attack surface.
 
 - **Remote URL fetching**: `ADD` downloads files without checksum verification, enabling man-in-the-middle attacks.
-- **Auto-extraction**: Maliciously crafted tar archives can exploit path traversal (e.g., `../../etc/passwd`) or zip bombs.
+- **Auto-extraction**: Maliciously crafted tar archives can exploit path traversal (e.g., `../../etc/passwd`) or zip
+bombs.
 
 ```dockerfile
 # VULNERABLE: ADD fetches a remote URL with no integrity verification
@@ -219,7 +228,7 @@ RUN wget -O /tmp/app.tar.gz https://example.com/app.tar.gz && \
 
 ### Detection Patterns
 
-```
+```text
 # ADD instruction (flag for review, prefer COPY)
 ^ADD\s
 
@@ -229,7 +238,9 @@ RUN wget -O /tmp/app.tar.gz https://example.com/app.tar.gz && \
 
 ### Multi-Stage Build Best Practices
 
-Multi-stage builds allow you to use full build toolchains in earlier stages, then copy only the compiled artifacts into a minimal final image. This reduces the attack surface by excluding compilers, package managers, source code, and build-time secrets from the production image.
+Multi-stage builds allow you to use full build toolchains in earlier stages, then copy only the compiled artifacts into
+a minimal final image. This reduces the attack surface by excluding compilers, package managers, source code, and
+build-time secrets from the production image.
 
 ```dockerfile
 # VULNERABLE: Single-stage build includes build tools, source, and dev dependencies
@@ -272,7 +283,8 @@ CMD ["node", "dist/server.js"]
 
 ### Privileged Containers
 
-The `privileged: true` flag disables almost all container isolation. A privileged container has full access to the host's devices, can load kernel modules, and can trivially escape to the host.
+The `privileged: true` flag disables almost all container isolation. A privileged container has full access to the
+host's devices, can load kernel modules, and can trivially escape to the host.
 
 ```yaml
 # VULNERABLE: privileged grants near-full host access
@@ -304,7 +316,7 @@ services:
 
 ### Detection Patterns
 
-```
+```text
 # Privileged flag
 privileged:\s*true
 
@@ -316,7 +328,8 @@ cap_add:.*ALL
 
 ### Sensitive Host Mounts
 
-Mounting the Docker socket or sensitive host directories into a container allows full host compromise from within the container.
+Mounting the Docker socket or sensitive host directories into a container allows full host compromise from within the
+container.
 
 ```yaml
 # VULNERABLE: Docker socket mount — container can control the Docker daemon
@@ -360,7 +373,7 @@ volumes:
 
 ### Detection Patterns
 
-```
+```text
 # Docker socket mount
 /var/run/docker\.sock
 
@@ -376,7 +389,8 @@ volumes:.*[:-]\s*/dev[:/]
 
 ### Unnecessary Port Exposure
 
-`ports:` publishes a port on the host interface, making it reachable from the network. `expose:` only makes a port available to linked services within the Docker network.
+`ports:` publishes a port on the host interface, making it reachable from the network. `expose:` only makes a port
+available to linked services within the Docker network.
 
 ```yaml
 # VULNERABLE: Database port published to host — accessible from network
@@ -432,7 +446,7 @@ networks:
 
 ### Detection Patterns
 
-```
+```text
 # Database ports published to host
 ports:.*5432
 ports:.*3306
@@ -446,7 +460,8 @@ ports:\s*-\s*"?\d+:\d+"?
 
 ### Missing Resource Limits
 
-Without resource limits, a compromised or misbehaving container can consume all host CPU and memory, causing denial of service to other containers and the host itself.
+Without resource limits, a compromised or misbehaving container can consume all host CPU and memory, causing denial of
+service to other containers and the host itself.
 
 ```yaml
 # VULNERABLE: No resource limits
@@ -477,7 +492,8 @@ services:
 
 ### Environment Variable Secrets in Plaintext
 
-Secrets defined directly in `docker-compose.yml` or `.env` files checked into version control are visible to anyone with repository access.
+Secrets defined directly in `docker-compose.yml` or `.env` files checked into version control are visible to anyone with
+repository access.
 
 ```yaml
 # VULNERABLE: Plaintext secrets in compose file
@@ -513,7 +529,7 @@ secrets:
 
 ### Detection Patterns
 
-```
+```text
 # Plaintext secrets in environment
 environment:.*PASSWORD=
 environment:.*SECRET=
@@ -531,7 +547,9 @@ environment:\s*-\s*(PASSWORD|SECRET|API_KEY|TOKEN)\s*=\s*\S+
 
 ### Overly Permissive RBAC
 
-Kubernetes Role-Based Access Control (RBAC) restricts what users and service accounts can do. Overly broad roles, especially `cluster-admin` bindings and wildcard permissions, allow any compromised workload to take over the entire cluster.
+Kubernetes Role-Based Access Control (RBAC) restricts what users and service accounts can do. Overly broad roles,
+especially `cluster-admin` bindings and wildcard permissions, allow any compromised workload to take over the entire
+cluster.
 
 ```yaml
 # VULNERABLE: Binding a service account to cluster-admin
@@ -594,7 +612,7 @@ roleRef:
 
 ### Detection Patterns
 
-```
+```text
 # ClusterRoleBinding to cluster-admin
 kind:\s*ClusterRoleBinding[\s\S]*?name:\s*cluster-admin
 
@@ -606,7 +624,8 @@ apiGroups:\s*\[?"?\*"?\]?
 
 ### Missing NetworkPolicy
 
-By default, all pods in a Kubernetes cluster can communicate with all other pods across all namespaces. Without NetworkPolicy, a compromised pod can probe, attack, and pivot to any other workload in the cluster.
+By default, all pods in a Kubernetes cluster can communicate with all other pods across all namespaces. Without
+NetworkPolicy, a compromised pod can probe, attack, and pivot to any other workload in the cluster.
 
 ```yaml
 # VULNERABLE (by omission): No NetworkPolicy exists
@@ -663,7 +682,8 @@ spec:
 
 ### Pod Security
 
-Pods should run as non-root, with a read-only root filesystem, and with explicit security contexts. Missing security contexts leave containers with default (often overly permissive) settings.
+Pods should run as non-root, with a read-only root filesystem, and with explicit security contexts. Missing security
+contexts leave containers with default (often overly permissive) settings.
 
 ```yaml
 # VULNERABLE: Running as root with no security context
@@ -731,7 +751,7 @@ spec:
 
 ### Detection Patterns
 
-```
+```text
 # Running as root
 runAsUser:\s*0
 
@@ -747,7 +767,8 @@ allowPrivilegeEscalation:\s*true
 
 ### Host Namespace Sharing
 
-`hostNetwork`, `hostPID`, and `hostIPC` break container isolation by sharing the host's network stack, process tree, or inter-process communication namespace with the container.
+`hostNetwork`, `hostPID`, and `hostIPC` break container isolation by sharing the host's network stack, process tree, or
+inter-process communication namespace with the container.
 
 ```yaml
 # VULNERABLE: Host namespace sharing
@@ -789,7 +810,7 @@ spec:
 
 ### Detection Patterns
 
-```
+```text
 # Host namespace sharing
 hostNetwork:\s*true
 hostPID:\s*true
@@ -798,7 +819,8 @@ hostIPC:\s*true
 
 ### Missing Resource Requests and Limits
 
-Without resource requests and limits, a single pod can consume all available node resources, starving other workloads (noisy neighbor problem) or enabling denial-of-service attacks.
+Without resource requests and limits, a single pod can consume all available node resources, starving other workloads
+(noisy neighbor problem) or enabling denial-of-service attacks.
 
 ```yaml
 # VULNERABLE: No resource constraints
@@ -852,7 +874,8 @@ spec:
 
 ### Secrets in Plaintext
 
-Kubernetes Secrets are base64-encoded, not encrypted. Anyone with access to the etcd datastore or the API server can read them. Use external secret management or sealed-secrets for production.
+Kubernetes Secrets are base64-encoded, not encrypted. Anyone with access to the etcd datastore or the API server can
+read them. Use external secret management or sealed-secrets for production.
 
 ```yaml
 # VULNERABLE: Secret with base64-encoded values (trivially decodable)
@@ -919,7 +942,7 @@ spec:
 
 ### Detection Patterns
 
-```
+```text
 # Hardcoded secret values in pod specs
 env:[\s\S]*?name:\s*(PASSWORD|SECRET|API_KEY|TOKEN)[\s\S]*?value:\s*"[^"]+
 
@@ -936,7 +959,8 @@ kind:\s*Secret[\s\S]*?type:\s*Opaque
 
 ### Public S3 Buckets
 
-S3 buckets with public ACLs or policies expose data to the internet. This is one of the most common causes of large-scale data breaches in cloud environments.
+S3 buckets with public ACLs or policies expose data to the internet. This is one of the most common causes of
+large-scale data breaches in cloud environments.
 
 ```hcl
 # VULNERABLE: Public ACL on S3 bucket
@@ -1006,7 +1030,7 @@ resource "aws_s3_bucket_versioning" "data" {
 
 ### Detection Patterns
 
-```
+```text
 # Public S3 ACLs
 acl\s*=\s*"public-read"
 acl\s*=\s*"public-read-write"
@@ -1020,7 +1044,8 @@ Principal\s*=\s*"\*"
 
 ### Security Groups with Open Ingress
 
-Security groups with `0.0.0.0/0` (all IPv4) or `::/0` (all IPv6) ingress rules expose services to the entire internet. This is especially dangerous for management ports like SSH (22), RDP (3389), and databases.
+Security groups with `0.0.0.0/0` (all IPv4) or `::/0` (all IPv6) ingress rules expose services to the entire internet.
+This is especially dangerous for management ports like SSH (22), RDP (3389), and databases.
 
 ```hcl
 # VULNERABLE: SSH open to the world
@@ -1079,7 +1104,7 @@ resource "aws_security_group_rule" "ssh_bastion" {
 
 ### Detection Patterns
 
-```
+```text
 # Open ingress to all IPs
 cidr_blocks\s*=\s*\[?"0\.0\.0\.0/0"
 ipv6_cidr_blocks\s*=\s*\[?"::/0"
@@ -1093,7 +1118,8 @@ from_port\s*=\s*0[\s\S]*?to_port\s*=\s*0[\s\S]*?protocol\s*=\s*"-1"
 
 ### Unencrypted Storage and Databases
 
-Data at rest should always be encrypted. Unencrypted EBS volumes, RDS instances, and S3 buckets leave data exposed if storage media is compromised or improperly decommissioned.
+Data at rest should always be encrypted. Unencrypted EBS volumes, RDS instances, and S3 buckets leave data exposed if
+storage media is compromised or improperly decommissioned.
 
 ```hcl
 # VULNERABLE: Unencrypted RDS instance
@@ -1159,7 +1185,7 @@ resource "aws_ebs_volume" "data" {
 
 ### Detection Patterns
 
-```
+```text
 # Unencrypted RDS
 resource\s+"aws_db_instance"(?![\s\S]*?storage_encrypted\s*=\s*true)
 
@@ -1176,7 +1202,8 @@ secret\s*=\s*"[^"]*"
 
 ### Missing Logging and Monitoring
 
-Without CloudTrail, VPC Flow Logs, and other monitoring, you have no visibility into who is accessing your infrastructure, making breach detection and forensic analysis impossible.
+Without CloudTrail, VPC Flow Logs, and other monitoring, you have no visibility into who is accessing your
+infrastructure, making breach detection and forensic analysis impossible.
 
 ```hcl
 # VULNERABLE: No CloudTrail configured
@@ -1250,7 +1277,8 @@ grep -rnE 'is_multi_region_trail[[:space:]]*=[[:space:]]*false' --include='*.tf'
 
 ### Hardcoded Credentials in .tf Files
 
-Credentials hardcoded in Terraform files end up in state files, version control, and CI/CD logs. Terraform state often contains the plaintext values of all resources, including secrets.
+Credentials hardcoded in Terraform files end up in state files, version control, and CI/CD logs. Terraform state often
+contains the plaintext values of all resources, including secrets.
 
 ```hcl
 # VULNERABLE: Hardcoded AWS credentials
@@ -1318,7 +1346,7 @@ resource "aws_instance" "web" {
 
 ### Detection Patterns
 
-```
+```text
 # AWS access keys hardcoded
 access_key\s*=\s*"AKIA[A-Z0-9]{16}"
 secret_key\s*=\s*"[A-Za-z0-9/+=]{40}"

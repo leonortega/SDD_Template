@@ -4,7 +4,8 @@ Maintain Docker Desktop, WSL2, and Rancher Desktop for local development environ
 
 ## Scope
 
-This skill covers Docker Desktop troubleshooting, WSL2 disk compaction, port forwarding, Hyper-V issues, and common maintenance tasks.
+This skill covers Docker Desktop troubleshooting, WSL2 disk compaction, port forwarding, Hyper-V issues, and common
+maintenance tasks.
 
 ## Common Maintenance Tasks
 
@@ -56,6 +57,7 @@ netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport=8080
 ### Hyper-V Issues
 
 Check Hyper-V services:
+
 ```powershell
 Get-Service -Name *hyper* | Select-Object Name, Status
 

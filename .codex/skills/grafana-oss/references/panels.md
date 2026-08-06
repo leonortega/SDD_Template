@@ -3,6 +3,7 @@
 ## What is a Panel?
 
 A panel is the basic building block of a Grafana dashboard. Each panel combines:
+
 - A **query** (or multiple queries) to a data source
 - A **visualization type** to display the data
 - **Field configuration** (units, thresholds, color mappings)
@@ -23,6 +24,7 @@ Open the panel editor by clicking a panel's title > Edit, or clicking **Add visu
 **Toggle**: "Table view" - shows raw query results as a table for debugging
 
 **Right sidebar tabs**:
+
 1. **Query** - configure data sources and write queries
 2. **Transform** - apply data transformations
 3. **Alert** - create alert rules from this panel
@@ -46,7 +48,9 @@ Open the panel editor by clicking a panel's title > Edit, or clicking **Add visu
 ## Visualization Types
 
 ### Time Series (default)
+
 Best for: Metrics over time, continuous data
+
 - Renders as lines, points, or bars
 - Supports multiple series
 - Configurable line width, fill, point size
@@ -58,7 +62,9 @@ Best for: Metrics over time, continuous data
 - Default visualization - supports alerting
 
 ### Stat
+
 Best for: Single important metric (KPI display)
+
 - Shows one or more values as large text
 - Supports sparkline background
 - Color modes: value, background, none
@@ -66,25 +72,33 @@ Best for: Single important metric (KPI display)
 - Great for dashboards that need quick status overviews
 
 ### Bar Chart
+
 Best for: Comparing categorical data
+
 - Horizontal or vertical orientation
 - Grouped or stacked
 - Supports labels on bars
 
 ### Gauge
+
 Best for: Showing a value relative to min/max range
+
 - Circular gauge with arc
 - Configurable thresholds set colors
 - Shows current value prominently
 
 ### Bar Gauge
+
 Best for: Multiple metrics as horizontal/vertical bars
+
 - Useful for comparing many items
 - Supports thresholds for color coding
 - Modes: gradient, retro LCD, basic
 
 ### Table
+
 Best for: Tabular data, multi-column metrics
+
 - Supports sorting by column
 - Column width customization
 - Cell display modes: color text, color background, gradient gauge
@@ -92,24 +106,32 @@ Best for: Tabular data, multi-column metrics
 - Can embed sparklines in cells
 
 ### Heatmap
+
 Best for: Distribution over time, histogram-over-time
+
 - X axis: time; Y axis: buckets; Color: density/value
 - Supports pre-bucketed data (Prometheus histogram) and raw values
 - Tooltip shows exact bucket counts
 
 ### Histogram
+
 Best for: Value distribution analysis
+
 - Groups values into buckets
 - Can combine multiple series
 - Configurable bucket size
 
 ### Pie Chart
+
 Best for: Proportional data, parts-of-whole
+
 - Pie or donut style
 - Labels: name, value, percentage
 
 ### Logs
+
 Best for: Log data from Loki, Elasticsearch, etc.
+
 - Displays raw log lines with timestamp
 - Log level coloring (info/warn/error)
 - Search/filter within results
@@ -117,63 +139,85 @@ Best for: Log data from Loki, Elasticsearch, etc.
 - Prettify JSON option
 
 ### Traces
+
 Best for: Distributed tracing visualization (Tempo)
+
 - Renders trace spans as a waterfall/Gantt chart
 - Shows service name, operation, duration
 - Click to drill into trace details
 
 ### Flame Graph
+
 Best for: CPU profiling data (Pyroscope)
+
 - Visualizes call stacks by CPU time
 - Click to zoom into subtrees
 
 ### Node Graph
+
 Best for: Service dependency maps, network topology
+
 - Renders nodes and edges
 - Node color/size configurable by metric
 
 ### Geomap
+
 Best for: Geographic data visualization
+
 - Layers: markers, heatmap, route
 - Multiple base map options (OpenStreetMap, CARTO, etc.)
 - Supports GeoJSON data
 
 ### Canvas
+
 Best for: Custom layouts, process diagrams, status boards
+
 - Drag-and-drop element placement
 - Elements: text, metric value, rectangle, ellipse, icon, image, connections
 - Dynamic data binding per element
 
 ### State Timeline
+
 Best for: State changes over time (on/off, OK/warn/crit)
+
 - Horizontal bands showing state duration
 - Each series = one row
 - Color per state value
 
 ### Status History
+
 Best for: Periodic state checks over time
+
 - Grid: Y=services, X=time buckets
 - Color per state
 
 ### XY Chart
+
 Best for: Correlation between two metrics
+
 - Scatter plot
 - X and Y axis from different fields
 - Bubble size from a third field
 
 ### Candlestick
+
 Best for: Financial OHLC data
+
 - Open/High/Low/Close representation
 - Volume bars
 
 ### Text
+
 Best for: Documentation panels, headers
+
 - Renders Markdown or HTML
 
 ### Alert List
+
 Best for: Dashboard overview of current alert states
 
 ### Dashboard List
+
 Best for: Navigation panels linking to other dashboards
 
 ---
@@ -192,25 +236,32 @@ Available for most visualizations under the visualization options panel.
 | No value | Text to display when value is null |
 
 ### Thresholds
+
 Define color-coded boundaries:
+
 - **Absolute**: Fixed numeric values (e.g., >90 = red, >70 = yellow, else green)
 - **Percentage**: Relative to min/max
 
 Example threshold config:
-```
+
+```text
 Base (default): Green
 70: Yellow (warn)
 90: Red (crit)
 ```
 
 ### Value Mappings
+
 Transform raw values into human-readable labels or colors:
+
 - **Value to text**: e.g., `1` -> "OK", `0` -> "Down"
 - **Range to text**: e.g., `0-50` -> "Low"
 - **Regex to text**: Match patterns
 
 ### Data Links
+
 Create clickable links from panel values:
+
 - Link to other dashboards with variable values interpolated
 - Link to external systems (e.g., Kibana, PagerDuty)
 - Use `${__value.raw}` and `${__field.name}` in URLs
@@ -229,7 +280,8 @@ Apply specific field options to individual series/columns rather than all data:
    - Fields returned by query (A, B, C...)
 3. Add properties to override (unit, color, alias, thresholds, etc.)
 
-Example: In a table with columns `cpu_idle` and `cpu_used`, set `cpu_used` to show as percentage and color by threshold while leaving `cpu_idle` with default styling.
+Example: In a table with columns `cpu_idle` and `cpu_used`, set `cpu_used` to show as percentage and color by threshold
+while leaving `cpu_idle` with default styling.
 
 ---
 
@@ -268,17 +320,22 @@ Enable "Debug" toggle on any transformation to see input/output for troubleshoot
 ## Query Options
 
 ### Multiple queries
-Add multiple queries (A, B, C...) to one panel. They are overlaid in the visualization. Use this to compare metrics or show multiple services on one graph.
+
+Add multiple queries (A, B, C...) to one panel. They are overlaid in the visualization. Use this to compare metrics or
+show multiple services on one graph.
 
 ### Expressions (server-side)
+
 Server-side expressions allow math across query results:
+
 - **Math**: `$A + $B`, `$A / $B * 100`
 - **Reduce**: Collapse a series to scalar
 - **Resample**: Change time resolution of a series
 - **Classic conditions**: Threshold logic (used in alerting)
 
 Example - calculate error rate as percentage:
-```
+
+```text
 Query A: total_requests{job="api"}
 Query B: error_requests{job="api"}
 Expression C (Math): $B / $A * 100
@@ -286,6 +343,7 @@ Display C as percentage
 ```
 
 ### Important query variables
+
 These variables are available in queries:
 
 | Variable | Description |
@@ -299,6 +357,7 @@ These variables are available in queries:
 | `$__range_ms` | Duration in milliseconds |
 
 Example PromQL using interval variable:
+
 ```promql
 rate(http_requests_total[${__rate_interval}])
 ```
@@ -308,6 +367,7 @@ rate(http_requests_total[${__rate_interval}])
 ## Panel Inspect
 
 Click panel menu (3-dot) > **Inspect** to access:
+
 - **Data**: Raw table view of the data powering the panel
 - **Stats**: Query performance (time, row count)
 - **JSON**: Panel JSON model

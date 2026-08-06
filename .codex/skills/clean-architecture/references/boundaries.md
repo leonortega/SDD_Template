@@ -1,11 +1,15 @@
 # Boundaries and Boundary Anatomy
 
-Boundaries are the lines that separate software elements. In Clean Architecture, boundaries separate policies from details, stable code from volatile code, and high-level concerns from low-level mechanisms. How you draw boundaries, where you place them, and how you implement them determines whether a system remains maintainable over decades or degrades into an unmaintainable monolith.
+Boundaries are the lines that separate software elements. In Clean Architecture, boundaries separate policies from
+details, stable code from volatile code, and high-level concerns from low-level mechanisms. How you draw boundaries,
+where you place them, and how you implement them determines whether a system remains maintainable over decades or
+degrades into an unmaintainable monolith.
 
-This reference covers boundary anatomy, boundary crossing mechanisms, the Humble Object pattern, partial boundaries, layers and boundaries, services as boundaries, test boundaries, and the Main component as the ultimate plugin.
-
+This reference covers boundary anatomy, boundary crossing mechanisms, the Humble Object pattern, partial boundaries,
+layers and boundaries, services as boundaries, test boundaries, and the Main component as the ultimate plugin.
 
 ## Table of Contents
+
 1. [Boundary Anatomy](#boundary-anatomy)
 2. [Boundary Crossing](#boundary-crossing)
 3. [The Humble Object Pattern](#the-humble-object-pattern)
@@ -20,13 +24,15 @@ This reference covers boundary anatomy, boundary crossing mechanisms, the Humble
 
 ### What Is a Boundary?
 
-A boundary is a separation between two groups of code where one side should not know about the other. At its core, a boundary is an interface plus a dependency inversion: the inner side defines an abstraction, and the outer side provides a concrete implementation.
+A boundary is a separation between two groups of code where one side should not know about the other. At its core, a
+boundary is an interface plus a dependency inversion: the inner side defines an abstraction, and the outer side provides
+a concrete implementation.
 
 ### The Structure of a Full Boundary
 
 A full boundary has components on both sides, connected through polymorphism:
 
-```
+```text
 [Client Side]                    [Boundary]                    [Implementation Side]
                                      |
 Controller ----calls----> InputPort (interface)
@@ -38,7 +44,8 @@ Controller ----calls----> InputPort (interface)
                                                           Presenter (implements OutputPort)
 ```
 
-**Both interfaces are defined on the inner side.** The Controller depends on `InputPort` (inward). The Presenter implements `OutputPort` (inward). The Interactor knows about neither the Controller nor the Presenter directly.
+**Both interfaces are defined on the inner side.** The Controller depends on `InputPort` (inward). The Presenter
+implements `OutputPort` (inward). The Interactor knows about neither the Controller nor the Presenter directly.
 
 ### Boundary Components
 
@@ -57,7 +64,8 @@ Controller ----calls----> InputPort (interface)
 
 ### How Data Flows Across Boundaries
 
-Data crosses boundaries as simple data structures -- DTOs, structs, or primitives. Never as framework objects, ORM entities, or complex objects that carry dependencies.
+Data crosses boundaries as simple data structures -- DTOs, structs, or primitives. Never as framework objects, ORM
+entities, or complex objects that carry dependencies.
 
 **Inbound crossing (Controller to Use Case):**
 
@@ -108,20 +116,24 @@ This is a subtle but critical distinction:
 - **Flow of control:** Controller --> Interactor --> Presenter (left to right, outward at the end)
 - **Source code dependency:** Controller --> InputPort <-- Interactor --> OutputPort <-- Presenter
 
-The dependencies point inward on both sides of the Interactor. Control flows outward to the Presenter, but the dependency is inverted: the Presenter depends on (implements) an interface defined by the Use Case.
+The dependencies point inward on both sides of the Interactor. Control flows outward to the Presenter, but the
+dependency is inverted: the Presenter depends on (implements) an interface defined by the Use Case.
 
 ## The Humble Object Pattern
 
 ### The Problem
 
-Some code is inherently hard to test because it's close to a boundary with something difficult to control -- a GUI, a database connection, a network socket. The Humble Object pattern splits such code into two parts:
+Some code is inherently hard to test because it's close to a boundary with something difficult to control -- a GUI, a
+database connection, a network socket. The Humble Object pattern splits such code into two parts:
 
-1. **The Humble Object:** Contains the hard-to-test code, stripped of all logic. It's so simple that testing is unnecessary (or trivially easy).
-2. **The Testable Object:** Contains all the logic, extracted from the hard-to-test context so it can be tested in isolation.
+1. **The Humble Object:** Contains the hard-to-test code, stripped of all logic. It's so simple that testing is
+unnecessary (or trivially easy).
+2. **The Testable Object:** Contains all the logic, extracted from the hard-to-test context so it can be tested in
+isolation.
 
 ### Pattern Structure
 
-```
+```text
 [Testable Logic]              [Humble Object]
 PresenterLogic    -produces->  ViewModel
 (easy to test)                 (simple data)
@@ -152,7 +164,8 @@ class OrderView:
         return self._template.render(vm)  # Template rendering only
 ```
 
-The Presenter is easily testable -- give it a response, assert the ViewModel. The View is humble -- it just passes the ViewModel to a template engine. No logic, no decisions.
+The Presenter is easily testable -- give it a response, assert the ViewModel. The View is humble -- it just passes the
+ViewModel to a template engine. No logic, no decisions.
 
 **2. Database Gateway (persistence boundary):**
 
@@ -173,7 +186,8 @@ class SqlExpenseRepository:
         )
 ```
 
-The Interactor contains the decision logic (testable with a mock repo). The Repository is humble -- it just maps entity state to SQL parameters.
+The Interactor contains the decision logic (testable with a mock repo). The Repository is humble -- it just maps entity
+state to SQL parameters.
 
 **3. Service Gateway (external service boundary):**
 
@@ -211,13 +225,16 @@ class SmtpNotificationSender(NotificationSender):
 
 ### When Full Boundaries Are Too Expensive
 
-Full boundaries require interfaces on both sides (Input Port and Output Port), separate DTOs, and careful dependency management. Sometimes the anticipated need for a boundary doesn't justify the cost. In these cases, use a partial boundary.
+Full boundaries require interfaces on both sides (Input Port and Output Port), separate DTOs, and careful dependency
+management. Sometimes the anticipated need for a boundary doesn't justify the cost. In these cases, use a partial
+boundary.
 
 ### Three Forms of Partial Boundaries
 
 **1. Skip the last step (prepare for full boundary later):**
 
-Create the interfaces and separate the components, but deploy them together in the same package. You've done the intellectual work of separation but deferred the deployment separation.
+Create the interfaces and separate the components, but deploy them together in the same package. You've done the
+intellectual work of separation but deferred the deployment separation.
 
 ```python
 # Same package, but clearly separated with interfaces
@@ -265,7 +282,8 @@ class OrderFacade:
         self._notifier.notify(order)
 ```
 
-The Facade provides a simpler interface but doesn't enforce dependency direction. It's the weakest form of boundary -- better than nothing, but easily violated.
+The Facade provides a simpler interface but doesn't enforce dependency direction. It's the weakest form of boundary --
+better than nothing, but easily violated.
 
 ### Choosing Boundary Strength
 
@@ -281,11 +299,14 @@ The Facade provides a simpler interface but doesn't enforce dependency direction
 
 ### Services Are Not Inherently Architectural
 
-A common misconception is that splitting a system into microservices automatically creates clean architectural boundaries. It does not. A microservice with a fat shared database or a shared data model is just a distributed monolith -- all the coupling of a monolith plus the complexity of network communication.
+A common misconception is that splitting a system into microservices automatically creates clean architectural
+boundaries. It does not. A microservice with a fat shared database or a shared data model is just a distributed monolith
+-- all the coupling of a monolith plus the complexity of network communication.
 
 ### When Services Create Real Boundaries
 
 A service creates a genuine architectural boundary when:
+
 - It has its own data store that no other service accesses directly
 - It communicates through well-defined interfaces (API contracts)
 - Its internal structure follows the Dependency Rule independently
@@ -304,7 +325,7 @@ A service creates a genuine architectural boundary when:
 
 Each service should have its own concentric circles internally:
 
-```
+```text
 Service Boundary
 ├── Entities (domain objects for this service's bounded context)
 ├── Use Cases (application logic for this service)
@@ -312,17 +333,20 @@ Service Boundary
 └── Frameworks (HTTP server, database driver for this service)
 ```
 
-The service boundary is a deployment boundary. The Clean Architecture circles within each service are architectural boundaries. Both are needed.
+The service boundary is a deployment boundary. The Clean Architecture circles within each service are architectural
+boundaries. Both are needed.
 
 ## Test Boundaries
 
 ### Tests as the Most Isolated Component
 
-Tests are the most decoupled component in any system. They depend on the code being tested, but nothing in the production system depends on the tests. Tests always point inward -- they test entities, use cases, and adapters, but no production code imports test code.
+Tests are the most decoupled component in any system. They depend on the code being tested, but nothing in the
+production system depends on the tests. Tests always point inward -- they test entities, use cases, and adapters, but no
+production code imports test code.
 
 ### The Testing Boundary Structure
 
-```
+```text
 [Production Code]                [Test Code]
 Entity ---------<depends-on------ EntityTest
 UseCase --------<depends-on------ UseCaseTest
@@ -342,7 +366,9 @@ Adapter --------<depends-on------ AdapterTest
 
 ### The Fragile Test Problem
 
-When tests depend on implementation details (private methods, internal data structures, specific framework behavior), they break when the code is refactored even though behavior hasn't changed. The Dependency Rule helps: tests should depend on the same interfaces that the production code depends on.
+When tests depend on implementation details (private methods, internal data structures, specific framework behavior),
+they break when the code is refactored even though behavior hasn't changed. The Dependency Rule helps: tests should
+depend on the same interfaces that the production code depends on.
 
 ```python
 # FRAGILE: Test depends on internal implementation
@@ -360,9 +386,12 @@ def test_order_is_pending_after_creation():
 
 ### Main Is the Dirtiest Component
 
-The Main component (or composition root) is the one place where all concrete classes from all circles are known. It creates the concrete instances, wires them together, and starts the system. It is the most concrete, most dependent, and most volatile component.
+The Main component (or composition root) is the one place where all concrete classes from all circles are known. It
+creates the concrete instances, wires them together, and starts the system. It is the most concrete, most dependent, and
+most volatile component.
 
-**But nothing depends on Main.** It sits at the outermost edge of the system. It is a plugin to the application -- a configuration detail that determines which concrete implementations are used for each abstract port.
+**But nothing depends on Main.** It sits at the outermost edge of the system. It is a plugin to the application -- a
+configuration detail that determines which concrete implementations are used for each abstract port.
 
 ### Main's Responsibilities
 
@@ -397,7 +426,9 @@ def create_app():
     ...
 ```
 
-The business logic (entities, use cases) is identical across all three. Only the wiring in Main changes. This is the ultimate demonstration that frameworks, databases, and external services are details -- plugins that can be swapped by changing the composition root.
+The business logic (entities, use cases) is identical across all three. Only the wiring in Main changes. This is the
+ultimate demonstration that frameworks, databases, and external services are details -- plugins that can be swapped by
+changing the composition root.
 
 ### Main and Dependency Injection Frameworks
 
@@ -412,7 +443,7 @@ DI frameworks (Spring, Guice, tsyringe) can help wire dependencies in Main. But 
 
 When Main is the only place that knows about concrete implementations, the entire system becomes a plugin architecture:
 
-```
+```text
                  Main (composition root)
                 /    |     |      \
                /     |     |       \
@@ -428,4 +459,6 @@ When Main is the only place that knows about concrete implementations, the entir
                  Entities
 ```
 
-Entities and Use Cases sit at the center, defining what they need through interfaces. Main plugs in the concrete implementations. The business rules don't know or care which database, email provider, web framework, or payment processor is being used. They just work.
+Entities and Use Cases sit at the center, defining what they need through interfaces. Main plugs in the concrete
+implementations. The business rules don't know or care which database, email provider, web framework, or payment
+processor is being used. They just work.

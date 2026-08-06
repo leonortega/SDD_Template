@@ -1,6 +1,7 @@
 # Architecture
 
-Documentation about how the system is built: overall architecture, deployment topology, components, data flow, security, and dependencies.
+Documentation about how the system is built: overall architecture, deployment topology, components, data flow, security,
+and dependencies.
 
 | File          | Purpose                                 | Typical author | AI updatable |
 | ------------- | --------------------------------------- | -------------- | ------------ |

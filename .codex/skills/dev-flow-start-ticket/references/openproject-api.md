@@ -1,6 +1,7 @@
 # OpenProject API Reference for Ticket Start
 
-Use OpenProject API v3 for the chat-driven ticket workflow. Use `Authorization: Bearer <openProject.apiToken>` for every request. Never print the token.
+Use OpenProject API v3 for the chat-driven ticket workflow. Use `Authorization: Bearer <openProject.apiToken>` for every
+request. Never print the token.
 
 ## Config Values
 
@@ -43,13 +44,15 @@ GET {baseUrl}/api/v3/work_packages/{workPackageId}/activities
 
 ## Mutations
 
-Before mutating, ensure the Git branch exists, the generated description block is valid, and the latest work package `lockVersion` is known.
+Before mutating, ensure the Git branch exists, the generated description block is valid, and the latest work package
+`lockVersion` is known.
 
 ### Update Generated Ticket Description Block
 
 ### ⚠️ CRITICAL: Preserve Original Human Text
 
-The `description.raw` PATCH payload MUST include the original human-authored text followed by the IA generated block. Never set `description.raw` to ONLY the generated content.
+The `description.raw` PATCH payload MUST include the original human-authored text followed by the IA generated block.
+Never set `description.raw` to ONLY the generated content.
 
 ### First Creation (no markers yet)
 
@@ -72,7 +75,8 @@ Payload:
 
 ### Subsequent Updates (markers exist)
 
-Fetch the current description, keep everything before `<!-- ia-generated:start -->` unchanged, replace only the content between the markers:
+Fetch the current description, keep everything before `<!-- ia-generated:start -->` unchanged, replace only the content
+between the markers:
 
 ```text
 PATCH {baseUrl}/api/v3/work_packages/{workPackageId}
@@ -124,10 +128,13 @@ Payload:
 }
 ```
 
-Resolve the target status by exact configured name before updating. If the work package is already in the target status, skip the update.
+Resolve the target status by exact configured name before updating. If the work package is already in the target status,
+skip the update.
 
 ## Idempotency
 
-- Before adding a branch comment, read existing activities and skip if the same `IA generated branch: {branchName}` marker already exists.
+- Before adding a branch comment, read existing activities and skip if the same `IA generated branch: {branchName}`
+marker already exists.
 - Before moving status, compare the current status name/link to the target status.
-- Before updating description, replace only the block between `<!-- ia-generated:start -->` and `<!-- ia-generated:end -->`. Preserve all human-written text outside the markers.
+- Before updating description, replace only the block between `<!-- ia-generated:start -->` and `<!-- ia-generated:end
+-->`. Preserve all human-written text outside the markers.

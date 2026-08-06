@@ -1,8 +1,11 @@
 # Moving Features Between Objects
 
-Detailed reference for refactorings that redistribute responsibilities between classes. The fundamental question of object-oriented design is: where should this behavior live? These refactorings provide the mechanical steps to move things to the right place.
+Detailed reference for refactorings that redistribute responsibilities between classes. The fundamental question of
+object-oriented design is: where should this behavior live? These refactorings provide the mechanical steps to move
+things to the right place.
 
 ## Table of Contents
+
 1. [Move Method](#move-method)
 2. [Move Field](#move-field)
 3. [Extract Class](#extract-class)
@@ -17,18 +20,24 @@ Detailed reference for refactorings that redistribute responsibilities between c
 
 ## Move Method
 
-Move a method to the class it uses most. A method that accesses more features of another class than its own has Feature Envy and belongs somewhere else.
+Move a method to the class it uses most. A method that accesses more features of another class than its own has Feature
+Envy and belongs somewhere else.
 
 ### Motivation
 
-The most common reason for moving a method is Feature Envy -- when a method spends most of its time talking to another object. Moving the method reduces coupling: the method now lives where its data lives, so changes to that data don't ripple outward.
+The most common reason for moving a method is Feature Envy -- when a method spends most of its time talking to another
+object. Moving the method reduces coupling: the method now lives where its data lives, so changes to that data don't
+ripple outward.
 
 ### Mechanics
 
-1. Examine all features (fields and methods) used by the method. Determine which class has the most features used by the method.
-2. Check for related methods in the source class. If other methods also use the same target class, consider moving them together.
+1. Examine all features (fields and methods) used by the method. Determine which class has the most features used by the
+method.
+2. Check for related methods in the source class. If other methods also use the same target class, consider moving them
+together.
 3. Check superclasses and subclasses for overrides or related declarations.
-4. Declare the method in the target class. Copy the body and adjust references -- `this` now refers to the target; the source object may need to be passed as a parameter.
+4. Declare the method in the target class. Copy the body and adjust references -- `this` now refers to the target; the
+source object may need to be passed as a parameter.
 5. Turn the source method into a delegating method (call the target).
 6. Run tests.
 7. Consider removing the delegating method if no other callers need it.
@@ -37,6 +46,7 @@ The most common reason for moving a method is Feature Envy -- when a method spen
 ### Example
 
 **Before:**
+
 ```javascript
 class Account {
   overdraftCharge() {
@@ -56,6 +66,7 @@ class Account {
 The method depends heavily on `this.type` (an `AccountType` object). Move it there.
 
 **After:**
+
 ```javascript
 class AccountType {
   overdraftCharge(daysOverdrawn) {
@@ -81,11 +92,13 @@ class Account {
 ### Decision Criteria
 
 Move a method when:
+
 - It uses more fields/methods of another class than its own
 - The target class is likely to change in ways that affect this method
 - Related methods already live in the target class
 
 Don't move when:
+
 - The method uses features from multiple classes equally (keep it in the most stable location)
 - Polymorphism on the source class is needed
 
@@ -97,7 +110,8 @@ Move a field to the class that uses it more. Similar to Move Method but for data
 
 ### Motivation
 
-A field used more by another class signals that the data model is out of alignment with the behavior model. Moving the field keeps data and behavior together.
+A field used more by another class signals that the data model is out of alignment with the behavior model. Moving the
+field keeps data and behavior together.
 
 ### Mechanics
 
@@ -112,6 +126,7 @@ A field used more by another class signals that the data model is out of alignme
 ### Example
 
 **Before:**
+
 ```python
 class Customer:
     def __init__(self):
@@ -122,7 +137,9 @@ class Order:
         return self.base_total() - (self.base_total() * self.customer.discount_rate)
 ```
 
-`discount_rate` is only read by `Order` through `Customer`. If most logic involving `discount_rate` lives in the customer's pricing context, keep it in `Customer`. But if `Order` is the primary consumer and `discount_rate` is really about order pricing policy, consider moving it.
+`discount_rate` is only read by `Order` through `Customer`. If most logic involving `discount_rate` lives in the
+customer's pricing context, keep it in `Customer`. But if `Order` is the primary consumer and `discount_rate` is really
+about order pricing policy, consider moving it.
 
 ---
 
@@ -132,7 +149,9 @@ Split a class that does two things into two classes that each do one thing.
 
 ### Motivation
 
-A class with too many responsibilities grows too large and becomes hard to understand. If you can identify a coherent subset of fields and methods that relate to each other more than to the rest of the class, that subset deserves its own class.
+A class with too many responsibilities grows too large and becomes hard to understand. If you can identify a coherent
+subset of fields and methods that relate to each other more than to the rest of the class, that subset deserves its own
+class.
 
 ### Mechanics
 
@@ -148,6 +167,7 @@ A class with too many responsibilities grows too large and becomes hard to under
 ### Example
 
 **Before:**
+
 ```javascript
 class Person {
   constructor() {
@@ -163,6 +183,7 @@ class Person {
 ```
 
 **After:**
+
 ```javascript
 class TelephoneNumber {
   constructor() {
@@ -204,7 +225,8 @@ The inverse of Extract Class. Merge a class that no longer carries its weight ba
 
 ### Motivation
 
-A class that does too little -- perhaps after previous refactorings moved its responsibilities elsewhere -- adds complexity without value. Fold it back into the class that uses it.
+A class that does too little -- perhaps after previous refactorings moved its responsibilities elsewhere -- adds
+complexity without value. Fold it back into the class that uses it.
 
 ### Mechanics
 
@@ -224,11 +246,14 @@ A class that does too little -- perhaps after previous refactorings moved its re
 
 ## Hide Delegate
 
-Encapsulate the fact that one object delegates to another. Create a method on the server that hides the delegate from the client, enforcing the Law of Demeter.
+Encapsulate the fact that one object delegates to another. Create a method on the server that hides the delegate from
+the client, enforcing the Law of Demeter.
 
 ### Motivation
 
-When a client calls `person.getDepartment().getManager()`, the client knows about the `Department` class -- it's coupled to the navigation structure. If `Department` changes its interface, the client breaks. By adding `person.getManager()` (which internally calls `department.getManager()`), the client only knows about `Person`.
+When a client calls `person.getDepartment().getManager()`, the client knows about the `Department` class -- it's coupled
+to the navigation structure. If `Department` changes its interface, the client breaks. By adding `person.getManager()`
+(which internally calls `department.getManager()`), the client only knows about `Person`.
 
 ### Mechanics
 
@@ -240,12 +265,14 @@ When a client calls `person.getDepartment().getManager()`, the client knows abou
 ### Example
 
 **Before:**
+
 ```python
 # Client code:
 manager = person.department.manager
 ```
 
 **After:**
+
 ```python
 class Person:
     @property
@@ -271,11 +298,13 @@ Hiding every delegate leads to the Middle Man smell -- a class that does nothing
 
 ## Remove Middle Man
 
-The inverse of Hide Delegate. When a class consists primarily of methods that delegate to another class, let the client call the delegate directly.
+The inverse of Hide Delegate. When a class consists primarily of methods that delegate to another class, let the client
+call the delegate directly.
 
 ### Motivation
 
-As a system evolves, more and more delegating methods accumulate until the "server" class adds no value -- it's just a pass-through. At that point, remove the indirection.
+As a system evolves, more and more delegating methods accumulate until the "server" class adds no value -- it's just a
+pass-through. At that point, remove the indirection.
 
 ### Mechanics
 
@@ -287,6 +316,7 @@ As a system evolves, more and more delegating methods accumulate until the "serv
 ### Example
 
 **Before:**
+
 ```javascript
 class Person {
   get manager() { return this.department.manager; }
@@ -298,6 +328,7 @@ class Person {
 ```
 
 **After:**
+
 ```javascript
 class Person {
   get department() { return this._department; }
@@ -311,11 +342,13 @@ const manager = person.department.manager;
 
 ## Introduce Foreign Method
 
-When a server class needs an additional method but you can't modify it (third-party library, frozen module), create the method in the client class and pass the server object as the first argument.
+When a server class needs an additional method but you can't modify it (third-party library, frozen module), create the
+method in the client class and pass the server object as the first argument.
 
 ### Motivation
 
-A utility method that "should" be on the server class but can't be added there. The foreign method is a workaround -- mark it as such, so if the server class is ever opened for modification, the method can be moved.
+A utility method that "should" be on the server class but can't be added there. The foreign method is a workaround --
+mark it as such, so if the server class is ever opened for modification, the method can be moved.
 
 ### Example
 
@@ -333,7 +366,8 @@ def next_day(date):
 
 ## Introduce Local Extension
 
-When you need several foreign methods on a server class you can't modify, create a new class -- either a subclass or a wrapper -- that adds the missing methods.
+When you need several foreign methods on a server class you can't modify, create a new class -- either a subclass or a
+wrapper -- that adds the missing methods.
 
 ### Subclass vs. Wrapper
 
@@ -386,4 +420,6 @@ Use these questions to decide whether and where to move code:
 
 ### The Responsibility Placement Heuristic
 
-When unsure where to put a method, ask: **"If the data this method uses changes, which class should need to be updated?"** The method belongs in that class. This keeps data and behavior together, minimizing the ripple effect of change.
+When unsure where to put a method, ask: **"If the data this method uses changes, which class should need to be
+updated?"** The method belongs in that class. This keeps data and behavior together, minimizing the ripple effect of
+change.

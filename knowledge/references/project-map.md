@@ -21,4 +21,5 @@ src/
 tests/
 ```
 
-Add product source, tests, stack guidance, app targets, and quality gates in a future ticket after the new product stack is selected.
+Add product source, tests, stack guidance, app targets, and quality gates in a future ticket after the new product stack
+is selected.

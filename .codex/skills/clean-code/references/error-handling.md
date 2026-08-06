@@ -1,9 +1,10 @@
 # Error Handling
 
-Comprehensive guide to writing clean error handling that keeps business logic readable. Based on Robert C. Martin's *Clean Code*, Chapter 7.
-
+Comprehensive guide to writing clean error handling that keeps business logic readable. Based on Robert C. Martin's
+*Clean Code*, Chapter 7.
 
 ## Table of Contents
+
 1. [The Core Problem](#the-core-problem)
 2. [Use Exceptions, Not Return Codes](#use-exceptions-not-return-codes)
 3. [Write Your Try-Catch-Finally Statement First](#write-your-try-catch-finally-statement-first)
@@ -19,13 +20,16 @@ Comprehensive guide to writing clean error handling that keeps business logic re
 
 ## The Core Problem
 
-Error handling is important, but if it obscures logic, it's wrong. Code that mixes business logic with error handling is hard to read, test, and maintain. The goal is to write code where the happy path reads cleanly and error handling is a separate, well-organized concern.
+Error handling is important, but if it obscures logic, it's wrong. Code that mixes business logic with error handling is
+hard to read, test, and maintain. The goal is to write code where the happy path reads cleanly and error handling is a
+separate, well-organized concern.
 
 ---
 
 ## Use Exceptions, Not Return Codes
 
-Return codes force the caller to check immediately after the call, cluttering the calling code with error-checking logic.
+Return codes force the caller to check immediately after the call, cluttering the calling code with error-checking
+logic.
 
 ### Before: Return Codes
 
@@ -79,9 +83,11 @@ The business logic (shut down sequence) is now visible without wading through er
 
 ## Write Your Try-Catch-Finally Statement First
 
-Try-catch blocks define a scope within your program. The code in the `try` block can abort at any point and resume in the `catch`. This makes try blocks like transactions: the `catch` must leave the program in a consistent state.
+Try-catch blocks define a scope within your program. The code in the `try` block can abort at any point and resume in
+the `catch`. This makes try blocks like transactions: the `catch` must leave the program in a consistent state.
 
-**Practice:** When writing code that could throw exceptions, start with the try-catch-finally. This helps you define what the caller can expect, regardless of what goes wrong.
+**Practice:** When writing code that could throw exceptions, start with the try-catch-finally. This helps you define
+what the caller can expect, regardless of what goes wrong.
 
 ```python
 # Start with the structure
@@ -103,7 +109,9 @@ def load_configuration(path):
 
 ## Use Unchecked Exceptions
 
-Checked exceptions (Java's `throws` clause) violate the Open/Closed Principle. If you throw a checked exception from a low-level function, every function in the call chain between the throw and the catch must declare that exception. A single change at a low level forces signature changes all the way up.
+Checked exceptions (Java's `throws` clause) violate the Open/Closed Principle. If you throw a checked exception from a
+low-level function, every function in the call chain between the throw and the catch must declare that exception. A
+single change at a low level forces signature changes all the way up.
 
 | Aspect | Checked exceptions | Unchecked exceptions |
 |--------|-------------------|---------------------|
@@ -112,7 +120,8 @@ Checked exceptions (Java's `throws` clause) violate the Open/Closed Principle. I
 | **Refactoring** | Adding new exception type cascades changes | New exceptions don't affect existing callers |
 | **When appropriate** | Critical library APIs where caller MUST handle | Application code, most library code |
 
-**In practice:** Use unchecked exceptions for application code. The cost of checked exceptions in dependency management outweighs their documentary benefit.
+**In practice:** Use unchecked exceptions for application code. The cost of checked exceptions in dependency management
+outweighs their documentary benefit.
 
 ---
 
@@ -176,7 +185,8 @@ class PaymentDeclinedError(OrderError):
 
 ## Define Exception Classes in Terms of the Caller's Needs
 
-When wrapping a third-party API, define exception classes based on how the caller will handle them, not based on the types of errors the API throws.
+When wrapping a third-party API, define exception classes based on how the caller will handle them, not based on the
+types of errors the API throws.
 
 ### Before: Mirroring Third-Party Exceptions
 
@@ -226,6 +236,7 @@ try {
 ```
 
 **Benefits of wrapping:**
+
 - Minimizes dependencies on the third-party API
 - Makes it easy to swap vendors
 - Simplifies testing with mocks
@@ -235,7 +246,8 @@ try {
 
 ## Don't Return Null
 
-Returning null from a method is an invitation for NullPointerExceptions. Every null return forces every caller to add a null check, and a single missed check crashes the application.
+Returning null from a method is an invitation for NullPointerExceptions. Every null return forces every caller to add a
+null check, and a single missed check crashes the application.
 
 ### Alternatives to Returning Null
 
@@ -302,7 +314,8 @@ if user.has_permission("edit"):
 
 ## Don't Pass Null
 
-Returning null is bad. Passing null is worse. When you pass null as an argument, you are creating a requirement for the callee to check for null, and if they don't, you get a runtime error.
+Returning null is bad. Passing null is worse. When you pass null as an argument, you are creating a requirement for the
+callee to check for null, and if they don't, you get a runtime error.
 
 ```java
 // BAD: What should this do with null?
@@ -324,7 +337,8 @@ public double calculateMetric(Point p1, Point p2) {
 }
 ```
 
-**The best policy:** Forbid passing null by default. Use static analysis tools (`@NonNull`, `@Nullable` annotations) and code review to enforce this.
+**The best policy:** Forbid passing null by default. Use static analysis tools (`@NonNull`, `@Nullable` annotations) and
+code review to enforce this.
 
 ---
 

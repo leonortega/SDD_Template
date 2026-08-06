@@ -3,24 +3,32 @@
 This document is designed as a **security spec** that supports:
 
 1. **Secure-by-default code generation** for new FastAPI code.
-2. **Security review / vulnerability hunting** in existing FastAPI code (passive “notice issues while working” and active “scan the repo and report findings”).
+2. **Security review / vulnerability hunting** in existing FastAPI code (passive “notice issues while working” and
+active “scan the repo and report findings”).
 
-It is intentionally written as a set of **normative requirements** (“MUST/SHOULD/MAY”) plus **audit rules** (what bad patterns look like, how to detect them, and how to fix/mitigate them).
+It is intentionally written as a set of **normative requirements** (“MUST/SHOULD/MAY”) plus **audit rules** (what bad
+patterns look like, how to detect them, and how to fix/mitigate them).
 
-FastAPI is commonly deployed with an ASGI server (e.g., Uvicorn) and is built on Starlette + Pydantic, so this spec covers those layers where they affect security. ([PyPI][1])
+FastAPI is commonly deployed with an ASGI server (e.g., Uvicorn) and is built on Starlette + Pydantic, so this spec
+covers those layers where they affect security. ([PyPI][1])
 
 ---
 
 ## 0) Safety, boundaries, and anti-abuse constraints (MUST FOLLOW)
 
-- MUST NOT request, output, log, or commit secrets (API keys, passwords, private keys, session cookies, signing keys, database URLs with credentials).
-- MUST NOT “fix” security by disabling protections (e.g., weakening auth, making CORS permissive, skipping signature checks, disabling validation, turning off TLS verification, adding `allow_origins=["*"]` with credentials).
-- MUST provide **evidence-based findings** during audits: cite file paths, code snippets, and configuration values that justify the claim.
-- MUST treat uncertainty honestly: if a protection might exist in infrastructure (reverse proxy, WAF, CDN, service mesh), report it as “not visible in app code; verify at runtime/config”.
+- MUST NOT request, output, log, or commit secrets (API keys, passwords, private keys, session cookies, signing keys,
+database URLs with credentials).
+- MUST NOT “fix” security by disabling protections (e.g., weakening auth, making CORS permissive, skipping signature
+checks, disabling validation, turning off TLS verification, adding `allow_origins=["*"]` with credentials).
+- MUST provide **evidence-based findings** during audits: cite file paths, code snippets, and configuration values that
+justify the claim.
+- MUST treat uncertainty honestly: if a protection might exist in infrastructure (reverse proxy, WAF, CDN, service
+mesh), report it as “not visible in app code; verify at runtime/config”.
 - MUST treat browser controls correctly:
 
   - CORS is **not** an auth mechanism; it only affects browsers.
-  - CSRF defenses apply when the browser automatically attaches credentials (cookies); they are usually not relevant for purely header-token APIs. ([OWASP Cheat Sheet Series][2])
+  - CSRF defenses apply when the browser automatically attaches credentials (cookies); they are usually not relevant for
+  purely header-token APIs. ([OWASP Cheat Sheet Series][2])
 
 ---
 
@@ -33,7 +41,8 @@ When asked to write new FastAPI code or modify existing code:
 - MUST follow every **MUST** requirement in this spec.
 - SHOULD follow every **SHOULD** requirement unless the user explicitly says otherwise.
 - MUST prefer safe-by-default APIs and proven libraries over custom security code.
-- MUST avoid introducing new risky sinks (shell execution, unsafe deserialization, dynamic eval, untrusted template rendering, unsafe file serving, unsafe redirects, arbitrary outbound fetching).
+- MUST avoid introducing new risky sinks (shell execution, unsafe deserialization, dynamic eval, untrusted template
+rendering, unsafe file serving, unsafe redirects, arbitrary outbound fetching).
 
 ### 1.2 Passive review mode (always on while editing)
 
@@ -81,7 +90,8 @@ Examples include:
 
 ### 2.2 State-changing request
 
-A request is state-changing if it can create/update/delete data, change auth/session state, trigger side effects (purchase, email send, webhook send), or initiate privileged actions.
+A request is state-changing if it can create/update/delete data, change auth/session state, trigger side effects
+(purchase, email send, webhook send), or initiate privileged actions.
 
 ### 2.3 Required audit finding format
 
@@ -110,8 +120,10 @@ Baseline goals:
 - CORS disabled unless explicitly needed; if enabled, it is strict and least-privilege. ([OWASP Cheat Sheet Series][6])
 - Auth is enforced consistently via dependencies (no “oops, forgot auth on this route”). ([FastAPI][7])
 - If cookies/sessions are used, cookie flags are secure and CSRF is addressed. ([OWASP Cheat Sheet Series][8])
-- Request size limits and multipart limits exist at the edge and are validated in app as needed (to mitigate memory/CPU DoS). ([advisories.gitlab.com][9])
-- Dependencies are patched promptly, especially Starlette/python-multipart (multiple DoS and traversal advisories exist historically). ([advisories.gitlab.com][10])
+- Request size limits and multipart limits exist at the edge and are validated in app as needed (to mitigate memory/CPU
+DoS). ([advisories.gitlab.com][9])
+- Dependencies are patched promptly, especially Starlette/python-multipart (multiple DoS and traversal advisories exist
+historically). ([advisories.gitlab.com][10])
 
 ---
 
@@ -126,7 +138,8 @@ Severity: High (if production)
 Required:
 
 - MUST NOT run production using auto-reload/watch mode (e.g., Uvicorn reload).
-- MUST run with a production process model (e.g., multiple workers where appropriate) and stable server settings. ([PyPI][4])
+- MUST run with a production process model (e.g., multiple workers where appropriate) and stable server settings.
+([PyPI][4])
 
 Insecure patterns:
 
@@ -154,12 +167,14 @@ Severity: Critical
 
 Required:
 
-- MUST NOT enable debug tracebacks in production (FastAPI/Starlette debug mode can expose sensitive internals and make some exploit chains easier). ([PyPI][5])
+- MUST NOT enable debug tracebacks in production (FastAPI/Starlette debug mode can expose sensitive internals and make
+some exploit chains easier). ([PyPI][5])
 - MUST treat any configuration that returns detailed stack traces to clients as sensitive.
 
 Insecure patterns:
 
-- `app = FastAPI(debug=True)` (or Starlette `debug=True`), or equivalent environment toggles enabling debug in production. ([PyPI][5])
+- `app = FastAPI(debug=True)` (or Starlette `debug=True`), or equivalent environment toggles enabling debug in
+production. ([PyPI][5])
 - Server/log config that exposes tracebacks to end users.
 
 Detection hints:
@@ -180,7 +195,8 @@ Severity: Medium (can be High in sensitive/internal apps)
 
 Required:
 
-- SHOULD disable `/docs`, `/redoc`, and `/openapi.json` in production for public-facing services unless there is an explicit business need.
+- SHOULD disable `/docs`, `/redoc`, and `/openapi.json` in production for public-facing services unless there is an
+explicit business need.
 - If enabled, MUST protect them (e.g., auth, network allowlists, or internal-only routing).
 - MUST NOT assume “security through obscurity”; treat docs exposure as an information disclosure amplifier.
 
@@ -206,9 +222,11 @@ Severity: High
 
 Required:
 
-- MUST implement authentication as a dependency (or router-level dependency) so that protected endpoints cannot “forget” auth.
+- MUST implement authentication as a dependency (or router-level dependency) so that protected endpoints cannot “forget”
+auth.
 - MUST default to “deny” for privileged routers/endpoints; explicitly mark truly public routes.
-- SHOULD centralize auth enforcement at router boundaries (e.g., protected `APIRouter` for authenticated endpoints). ([FastAPI][7])
+- SHOULD centralize auth enforcement at router boundaries (e.g., protected `APIRouter` for authenticated endpoints).
+([FastAPI][7])
 
 Insecure patterns:
 
@@ -222,7 +240,8 @@ Detection hints:
 
 Fix:
 
-- Move authentication into a dependency and attach it to the router/endpoint consistently using `Depends()`/`Security()`. ([FastAPI][7])
+- Move authentication into a dependency and attach it to the router/endpoint consistently using
+`Depends()`/`Security()`. ([FastAPI][7])
 
 ---
 
@@ -285,7 +304,8 @@ Severity: High
 Required:
 
 - MUST validate JWT signature and enforce an algorithm allowlist.
-- MUST validate standard claims appropriate to your system (at least `exp`; typically also `iss`/`aud` if multi-service or multi-tenant).
+- MUST validate standard claims appropriate to your system (at least `exp`; typically also `iss`/`aud` if multi-service
+or multi-tenant).
 - MUST treat JWT contents as readable by the client; do not put secrets in JWT payloads. ([FastAPI][12])
 
 Insecure patterns:
@@ -312,8 +332,10 @@ Severity: High
 
 Required:
 
-- MUST perform object-level authorization whenever accessing a resource by user-controlled identifier (ID in path/query/body).
-- MUST perform property-level authorization and response shaping to prevent “excessive data exposure” (e.g., admin-only fields). ([OWASP Foundation][13])
+- MUST perform object-level authorization whenever accessing a resource by user-controlled identifier (ID in
+path/query/body).
+- MUST perform property-level authorization and response shaping to prevent “excessive data exposure” (e.g., admin-only
+fields). ([OWASP Foundation][13])
 
 Insecure patterns:
 
@@ -338,10 +360,15 @@ Severity: High (only if TLS is enabled)
 
 Required (production, HTTPS):
 
-- MUST set session cookies to be sent only over HTTPS (secure). IMPORTANT NOTE: Only set `Secure` in production environment when TLS is configured. When running in a local dev environment over HTTP, do not set `Secure` property on cookies. You should do this conditionally based on if the app is running in production mode. You should also include a property like `SESSION_COOKIE_SECURE` which can be used to disable `Secure` cookies when testing over HTTP.
+- MUST set session cookies to be sent only over HTTPS (secure). IMPORTANT NOTE: Only set `Secure` in production
+environment when TLS is configured. When running in a local dev environment over HTTP, do not set `Secure` property on
+cookies. You should do this conditionally based on if the app is running in production mode. You should also include a
+property like `SESSION_COOKIE_SECURE` which can be used to disable `Secure` cookies when testing over HTTP.
 - MUST set HttpOnly for session cookies (not accessible to JS).
-- SHOULD use `SameSite=Lax` (or `Strict` if UX allows); if you require cross-site cookies, document the CSRF implications and add compensating controls. ([OWASP Cheat Sheet Series][8])
-- If using Starlette `SessionMiddleware`, MUST set `https_only=True` in production and choose an appropriate `same_site`. ([PyPI][5])
+- SHOULD use `SameSite=Lax` (or `Strict` if UX allows); if you require cross-site cookies, document the CSRF
+implications and add compensating controls. ([OWASP Cheat Sheet Series][8])
+- If using Starlette `SessionMiddleware`, MUST set `https_only=True` in production and choose an appropriate
+`same_site`. ([PyPI][5])
 
 Insecure patterns:
 
@@ -365,8 +392,10 @@ Severity: High
 
 Required:
 
-- MUST assume cookie-based session data is readable by the client (signed ≠ encrypted); do not store secrets/PII unless encrypted server-side.
-- Store only opaque identifiers (e.g., session ID) or non-sensitive state in the cookie; store sensitive session state server-side. ([OWASP Cheat Sheet Series][8])
+- MUST assume cookie-based session data is readable by the client (signed ≠ encrypted); do not store secrets/PII unless
+encrypted server-side.
+- Store only opaque identifiers (e.g., session ID) or non-sensitive state in the cookie; store sensitive session state
+server-side. ([OWASP Cheat Sheet Series][8])
 
 Insecure patterns:
 
@@ -388,14 +417,18 @@ Fix:
 
 Severity: High
 
-Note: This only applies if using cookie based auth. If the application uses header or token based auth such as Authorization header, then CSRF is not an issue.
+Note: This only applies if using cookie based auth. If the application uses header or token based auth such as
+Authorization header, then CSRF is not an issue.
 
 Required:
 
 - MUST protect all state-changing endpoints (POST/PUT/PATCH/DELETE) that rely on cookies for authentication.
-- SHOULD use a proven CSRF approach (synchronizer token pattern, or well-reviewed middleware) rather than rolling your own. ([OWASP Cheat Sheet Series][2])
-- MAY add defense-in-depth (Origin/Referer checks, SameSite cookies, Fetch Metadata), but tokens are the primary defense for cookie-authenticated apps. ([OWASP Cheat Sheet Series][2])
-- IMPORTANT NOTE: If cookies are not used for auth (auth is via `Authorization` header), CSRF is usually not applicable. ([FastAPI][11])
+- SHOULD use a proven CSRF approach (synchronizer token pattern, or well-reviewed middleware) rather than rolling your
+own. ([OWASP Cheat Sheet Series][2])
+- MAY add defense-in-depth (Origin/Referer checks, SameSite cookies, Fetch Metadata), but tokens are the primary defense
+for cookie-authenticated apps. ([OWASP Cheat Sheet Series][2])
+- IMPORTANT NOTE: If cookies are not used for auth (auth is via `Authorization` header), CSRF is usually not applicable.
+([FastAPI][11])
 
 Insecure patterns:
 
@@ -409,7 +442,8 @@ Detection hints:
 
 Fix:
 
-- Add CSRF tokens (and validate them) on state-changing actions when cookie auth is in use. ([OWASP Cheat Sheet Series][2])
+- Add CSRF tokens (and validate them) on state-changing actions when cookie auth is in use. ([OWASP Cheat Sheet
+Series][2])
 
 ---
 
@@ -421,7 +455,8 @@ Required:
 
 - SHOULD use Pydantic models for request bodies instead of accepting arbitrary `dict`/`Any`.
 - SHOULD configure models to reject unexpected fields where appropriate (prevents “mass assignment” style bugs).
-- MUST validate and normalize identifiers (IDs, email, URLs) before using them for access control or side effects. ([OWASP Cheat Sheet Series][14])
+- MUST validate and normalize identifiers (IDs, email, URLs) before using them for access control or side effects.
+([OWASP Cheat Sheet Series][14])
 
 Insecure patterns:
 
@@ -435,7 +470,8 @@ Detection hints:
 
 Fix:
 
-- Use explicit Pydantic models with allowlisted fields; reject extras for write endpoints. ([OWASP Cheat Sheet Series][14])
+- Use explicit Pydantic models with allowlisted fields; reject extras for write endpoints. ([OWASP Cheat Sheet
+Series][14])
 
 ---
 
@@ -445,8 +481,10 @@ Severity: Medium
 
 Required:
 
-- MUST define response models that include only intended fields (especially for user objects, auth-related objects, billing objects).
-- SHOULD use separate models for “create input”, “db/internal”, and “public output” to avoid leaking sensitive fields. ([FastAPI][15])
+- MUST define response models that include only intended fields (especially for user objects, auth-related objects,
+billing objects).
+- SHOULD use separate models for “create input”, “db/internal”, and “public output” to avoid leaking sensitive fields.
+([FastAPI][15])
 
 Insecure patterns:
 
@@ -486,11 +524,13 @@ Detection hints:
 
 Fix:
 
-- Keep auto-escaping on; sanitize user HTML only if absolutely required using a trusted sanitizer; add CSP. ([OWASP Cheat Sheet Series][16])
+- Keep auto-escaping on; sanitize user HTML only if absolutely required using a trusted sanitizer; add CSP. ([OWASP
+Cheat Sheet Series][16])
 
 Note:
 
-- If the app is a pure JSON API, XSS is usually a client/app concern, but error pages/docs pages might still render HTML.
+- If the app is a pure JSON API, XSS is usually a client/app concern, but error pages/docs pages might still render
+HTML.
 
 ---
 
@@ -538,7 +578,8 @@ Required (typical API/web app):
 
 NOTE:
 
-- Headers may be set by a proxy/CDN. If not visible in app code, flag as “verify at edge”. ([OWASP Cheat Sheet Series][6])
+- Headers may be set by a proxy/CDN. If not visible in app code, flag as “verify at edge”. ([OWASP Cheat Sheet
+Series][6])
 
 Insecure patterns:
 
@@ -564,7 +605,8 @@ Required:
 - If CORS is needed:
 
   - MUST allowlist trusted origins (do not reflect arbitrary origins).
-  - MUST NOT combine credentialed requests with wildcard origins (this is unsafe and commonly rejected by compliant middleware). ([OWASP Cheat Sheet Series][6])
+  - MUST NOT combine credentialed requests with wildcard origins (this is unsafe and commonly rejected by compliant
+  middleware). ([OWASP Cheat Sheet Series][6])
   - SHOULD restrict allowed methods and headers.
 
 Insecure patterns:
@@ -580,7 +622,8 @@ Detection hints:
 
 Fix:
 
-- Use an explicit origin allowlist and minimal methods/headers; keep credentials off unless required. ([OWASP Cheat Sheet Series][6])
+- Use an explicit origin allowlist and minimal methods/headers; keep credentials off unless required. ([OWASP Cheat
+Sheet Series][6])
 
 ---
 
@@ -627,11 +670,13 @@ Insecure patterns:
 Detection hints:
 
 - Search for `--proxy-headers`, `--forwarded-allow-ips`, or equivalent config.
-- Search for security-sensitive use of `request.client.host`, `request.url.scheme`, `request.headers["x-forwarded-for"]`.
+- Search for security-sensitive use of `request.client.host`, `request.url.scheme`,
+`request.headers["x-forwarded-for"]`.
 
 Fix:
 
-- Configure Uvicorn with proxy headers only when behind a known proxy, and restrict `forwarded_allow_ips` to that proxy. ([PyPI][4])
+- Configure Uvicorn with proxy headers only when behind a known proxy, and restrict `forwarded_allow_ips` to that proxy.
+([PyPI][4])
 - Keep Host allowlisting in place even behind proxies.
 
 ---
@@ -643,7 +688,8 @@ Severity: Low
 Required:
 
 - MUST enforce request size limits at the edge (reverse proxy/load balancer) and validate in app where needed.
-- MUST apply special scrutiny to multipart/form-data handling; historical vulnerabilities include unbounded buffering and DoS vectors. ([advisories.gitlab.com][9])
+- MUST apply special scrutiny to multipart/form-data handling; historical vulnerabilities include unbounded buffering
+and DoS vectors. ([advisories.gitlab.com][9])
 - SHOULD rate limit and/or add per-IP/per-user throttles for expensive endpoints.
 
 Insecure patterns:
@@ -658,7 +704,8 @@ Detection hints:
 
 Fix:
 
-- Enforce strict body limits and multipart constraints; keep Starlette and python-multipart updated to patched versions. ([advisories.gitlab.com][9])
+- Enforce strict body limits and multipart constraints; keep Starlette and python-multipart updated to patched versions.
+([advisories.gitlab.com][9])
 
 ---
 
@@ -668,9 +715,12 @@ Severity: High
 
 Required:
 
-- MUST NOT pass user-controlled file paths to `FileResponse`/filesystem calls without strict validation and safe base directories.
-- If using `StaticFiles`, MUST keep Starlette updated and understand the security history (path traversal advisory exists for older versions). ([advisories.gitlab.com][10])
-- MUST NOT serve user uploads as executable/active content (especially HTML/JS) from a static root without safe handling.
+- MUST NOT pass user-controlled file paths to `FileResponse`/filesystem calls without strict validation and safe base
+directories.
+- If using `StaticFiles`, MUST keep Starlette updated and understand the security history (path traversal advisory
+exists for older versions). ([advisories.gitlab.com][10])
+- MUST NOT serve user uploads as executable/active content (especially HTML/JS) from a static root without safe
+handling.
 
 Insecure patterns:
 
@@ -738,7 +788,8 @@ Detection hints:
 
 Fix:
 
-- Implement allowlist validation + safe storage + safe serving; add scanning/quarantine if applicable. ([OWASP Cheat Sheet Series][20])
+- Implement allowlist validation + safe storage + safe serving; add scanning/quarantine if applicable. ([OWASP Cheat
+Sheet Series][20])
 
 ---
 
@@ -794,7 +845,8 @@ Detection hints:
 Fix:
 
 - Use library APIs instead of shell commands.
-- If unavoidable, hard-code the command and allowlist validated parameters; use `--` separator where supported. ([OWASP Cheat Sheet Series][22])
+- If unavoidable, hard-code the command and allowlist validated parameters; use `--` separator where supported. ([OWASP
+Cheat Sheet Series][22])
 
 ---
 
@@ -802,7 +854,8 @@ Fix:
 
 Severity: Medium (can be High in cloud/VPC environments)
 
-- Note: For small stand alone projects this is less important. It is most important when deploying into an LAN or with other services listening on the same server.
+- Note: For small stand alone projects this is less important. It is most important when deploying into an LAN or with
+other services listening on the same server.
 
 Required:
 
@@ -824,7 +877,8 @@ Detection hints:
 
 Fix:
 
-- Implement strict URL parsing + allowlists; add egress controls; set short timeouts; disable redirects if not required. ([OWASP Cheat Sheet Series][23])
+- Implement strict URL parsing + allowlists; add egress controls; set short timeouts; disable redirects if not required.
+([OWASP Cheat Sheet Series][23])
 
 ---
 
@@ -835,7 +889,8 @@ Severity: Low
 Required:
 
 - MUST validate redirect targets derived from untrusted input (`next`, `redirect`, `return_to`).
-- SHOULD prefer redirecting only to same-site relative paths or an allowlist of domains. ([OWASP Cheat Sheet Series][24])
+- SHOULD prefer redirecting only to same-site relative paths or an allowlist of domains. ([OWASP Cheat Sheet
+Series][24])
 
 Insecure patterns:
 
@@ -857,8 +912,10 @@ Severity: Medium to High (depends on data/privilege)
 
 Required:
 
-- MUST authenticate WebSocket connections for any non-public channel (WebSockets don’t inherently provide auth). ([OWASP Cheat Sheet Series][25])
-- SHOULD enforce origin/CSRF-like protections appropriate for browser-based WebSocket clients (Origin validation is a common control).
+- MUST authenticate WebSocket connections for any non-public channel (WebSockets don’t inherently provide auth). ([OWASP
+Cheat Sheet Series][25])
+- SHOULD enforce origin/CSRF-like protections appropriate for browser-based WebSocket clients (Origin validation is a
+common control).
 - SHOULD rate limit message frequency and connection attempts; close idle/abusive connections.
 
 Insecure patterns:
@@ -868,13 +925,15 @@ Insecure patterns:
 
 Detection hints:
 
-- Search for `@app.websocket` / `websocket_endpoint` and inspect whether auth is performed before accepting sensitive operations.
+- Search for `@app.websocket` / `websocket_endpoint` and inspect whether auth is performed before accepting sensitive
+operations.
 - Review origin checks, token parsing, and per-connection authorization.
 
 Fix:
 
 - Require authentication during handshake (e.g., a token or session) and enforce authorization for actions/messages.
-- Validate Origin for browser-based clients where appropriate; apply rate limits and timeouts. ([OWASP Cheat Sheet Series][25])
+- Validate Origin for browser-based clients where appropriate; apply rate limits and timeouts. ([OWASP Cheat Sheet
+Series][25])
 
 ---
 
@@ -884,9 +943,11 @@ Severity: Low
 
 Required:
 
-- SHOULD pin and regularly update security-critical dependencies (FastAPI, Starlette, Uvicorn, Pydantic, python-multipart, auth/JWT libs).
+- SHOULD pin and regularly update security-critical dependencies (FastAPI, Starlette, Uvicorn, Pydantic,
+python-multipart, auth/JWT libs).
 - MUST respond to known security advisories promptly.
-- MUST treat file serving and multipart parsing dependencies as security-sensitive due to historical CVEs. ([advisories.gitlab.com][10])
+- MUST treat file serving and multipart parsing dependencies as security-sensitive due to historical CVEs.
+([advisories.gitlab.com][10])
 
 Audit focus examples (historical):
 
@@ -919,7 +980,8 @@ When actively scanning, use these high-signal patterns:
 
 - Auth enforcement gaps:
 
-  - Endpoints missing `Depends()`/`Security()` where expected; routers without a consistent dependency boundary ([FastAPI][7])
+  - Endpoints missing `Depends()`/`Security()` where expected; routers without a consistent dependency boundary
+  ([FastAPI][7])
   - Tokens in query params (`token=`, `api_key=`, `key=`) ([FastAPI][11])
 
 - Session/cookies + CSRF:
@@ -929,15 +991,18 @@ When actively scanning, use these high-signal patterns:
 
 - Input validation & mass assignment:
 
-  - `await request.json()` and direct DB writes from dicts; models accepting extra fields ([OWASP Cheat Sheet Series][14])
+  - `await request.json()` and direct DB writes from dicts; models accepting extra fields ([OWASP Cheat Sheet
+  Series][14])
 
 - Excessive data exposure:
 
-  - Returning ORM objects or dicts without `response_model`; responses containing password/role/internal fields ([FastAPI][15])
+  - Returning ORM objects or dicts without `response_model`; responses containing password/role/internal fields
+  ([FastAPI][15])
 
 - CORS:
 
-  - `CORSMiddleware` with `allow_origins=["*"]`, `allow_origin_regex=".*"`, `allow_credentials=True` ([OWASP Cheat Sheet Series][6])
+  - `CORSMiddleware` with `allow_origins=["*"]`, `allow_origin_regex=".*"`, `allow_credentials=True` ([OWASP Cheat Sheet
+  Series][6])
 
 - Files:
 
@@ -945,7 +1010,8 @@ When actively scanning, use these high-signal patterns:
 
 - Uploads / multipart:
 
-  - `multipart/form-data` endpoints with no size/field constraints; outdated Starlette/python-multipart ([advisories.gitlab.com][9])
+  - `multipart/form-data` endpoints with no size/field constraints; outdated Starlette/python-multipart
+  ([advisories.gitlab.com][9])
 
 - Injection:
 
@@ -978,9 +1044,12 @@ Always try to confirm:
 Primary framework documentation:
 
 - FastAPI (PyPI metadata, versioning) — `https://pypi.org/project/fastapi/` ([PyPI][1])
-- FastAPI docs: Security “First Steps” (Authorization Bearer header conventions) — `https://fastapi.tiangolo.com/tutorial/security/first-steps/` ([FastAPI][11])
-- FastAPI reference: Dependencies (`Depends`, `Security`) — `https://fastapi.tiangolo.com/reference/dependencies/` ([FastAPI][7])
-- FastAPI reference: APIRouter (router-level dependencies) — `https://fastapi.tiangolo.com/reference/apirouter/` ([FastAPI][28])
+- FastAPI docs: Security “First Steps” (Authorization Bearer header conventions) —
+`https://fastapi.tiangolo.com/tutorial/security/first-steps/` ([FastAPI][11])
+- FastAPI reference: Dependencies (`Depends`, `Security`) — `https://fastapi.tiangolo.com/reference/dependencies/`
+([FastAPI][7])
+- FastAPI reference: APIRouter (router-level dependencies) — `https://fastapi.tiangolo.com/reference/apirouter/`
+([FastAPI][28])
 - FastAPI docs: WebSockets — `https://fastapi.tiangolo.com/advanced/websockets/` ([FastAPI][27])
 
 ASGI/server stack documentation:
@@ -992,20 +1061,42 @@ ASGI/server stack documentation:
 
 Security standards and cheat sheets:
 
-- OWASP Cheat Sheet Series: Session Management — `https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html` ([OWASP Cheat Sheet Series][8])
-- OWASP Cheat Sheet Series: CSRF Prevention — `https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html` ([OWASP Cheat Sheet Series][2])
-- OWASP Cheat Sheet Series: XSS Prevention — `https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html` ([OWASP Cheat Sheet Series][16])
-- OWASP Cheat Sheet Series: Mass Assignment — `https://cheatsheetseries.owasp.org/cheatsheets/Mass_Assignment_Cheat_Sheet.html` ([OWASP Cheat Sheet Series][14])
-- OWASP API Security Top 10 (2023) — `https://owasp.org/API-Security/editions/2023/en/0x11-t10/` ([OWASP Foundation][13])
-- OWASP Cheat Sheet Series: SQL Injection Prevention — `https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html` ([OWASP Cheat Sheet Series][21])
-- OWASP Cheat Sheet Series: OS Command Injection Defense — `https://cheatsheetseries.owasp.org/cheatsheets/OS_Command_Injection_Defense_Cheat_Sheet.html` ([OWASP Cheat Sheet Series][22])
-- OWASP Cheat Sheet Series: SSRF Prevention — `https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html` ([OWASP Cheat Sheet Series][23])
-- OWASP Cheat Sheet Series: File Upload — `https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html` ([OWASP Cheat Sheet Series][20])
-- OWASP Cheat Sheet Series: Unvalidated Redirects and Forwards — `https://cheatsheetseries.owasp.org/cheatsheets/Unvalidated_Redirects_and_Forwards_Cheat_Sheet.html` ([OWASP Cheat Sheet Series][24])
-- OWASP Cheat Sheet Series: HTTP Security Response Headers — `https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html` ([OWASP Cheat Sheet Series][6])
-- OWASP Cheat Sheet Series: WebSocket Security — `https://cheatsheetseries.owasp.org/cheatsheets/WebSocket_Security_Cheat_Sheet.html` ([OWASP Cheat Sheet Series][25])
-- OWASP WSTG: Testing for Server-Side Template Injection — `https://owasp.org/www-project-web-security-testing-guide/v41/4-Web_Application_Security_Testing/07-Input_Validation_Testing/18-Testing_for_Server_Side_Template_Injection` ([OWASP Foundation][17])
-- OWASP WSTG: Testing WebSockets — `https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/11-Client-side_Testing/10-Testing_WebSockets` ([OWASP Foundation][26])
+- OWASP Cheat Sheet Series: Session Management —
+`https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html` ([OWASP Cheat Sheet Series][8])
+- OWASP Cheat Sheet Series: CSRF Prevention —
+`https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html` ([OWASP Cheat
+Sheet Series][2])
+- OWASP Cheat Sheet Series: XSS Prevention —
+`https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html` ([OWASP Cheat Sheet
+Series][16])
+- OWASP Cheat Sheet Series: Mass Assignment —
+`https://cheatsheetseries.owasp.org/cheatsheets/Mass_Assignment_Cheat_Sheet.html` ([OWASP Cheat Sheet Series][14])
+- OWASP API Security Top 10 (2023) — `https://owasp.org/API-Security/editions/2023/en/0x11-t10/` ([OWASP
+Foundation][13])
+- OWASP Cheat Sheet Series: SQL Injection Prevention —
+`https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html` ([OWASP Cheat Sheet
+Series][21])
+- OWASP Cheat Sheet Series: OS Command Injection Defense —
+`https://cheatsheetseries.owasp.org/cheatsheets/OS_Command_Injection_Defense_Cheat_Sheet.html` ([OWASP Cheat Sheet
+Series][22])
+- OWASP Cheat Sheet Series: SSRF Prevention —
+`https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html` ([OWASP Cheat
+Sheet Series][23])
+- OWASP Cheat Sheet Series: File Upload — `https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html`
+([OWASP Cheat Sheet Series][20])
+- OWASP Cheat Sheet Series: Unvalidated Redirects and Forwards —
+`https://cheatsheetseries.owasp.org/cheatsheets/Unvalidated_Redirects_and_Forwards_Cheat_Sheet.html` ([OWASP Cheat Sheet
+Series][24])
+- OWASP Cheat Sheet Series: HTTP Security Response Headers —
+`https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html` ([OWASP Cheat Sheet Series][6])
+- OWASP Cheat Sheet Series: WebSocket Security —
+`https://cheatsheetseries.owasp.org/cheatsheets/WebSocket_Security_Cheat_Sheet.html` ([OWASP Cheat Sheet Series][25])
+- OWASP WSTG: Testing for Server-Side Template Injection —
+`https://owasp.org/www-project-web-security-testing-guide/v41/4-Web_Application_Security_Testing/07-Input_Validation_Testing/18-Testing_for_Server_Side_Template_Injection`
+([OWASP Foundation][17])
+- OWASP WSTG: Testing WebSockets —
+`https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/11-Client-side_Testing/10-Testing_WebSockets`
+([OWASP Foundation][26])
 
 Template safety references:
 
@@ -1013,36 +1104,62 @@ Template safety references:
 
 Selected supply-chain/advisory references (Starlette examples):
 
-- CVE-2023-29159 (StaticFiles path traversal; fixed 0.27.0) — `https://advisories.gitlab.com/pkg/pypi/starlette/CVE-2023-29159/` ([advisories.gitlab.com][10])
-- CVE-2024-47874 (multipart/form-data DoS; fixed 0.40.0) — `https://advisories.gitlab.com/pkg/pypi/starlette/CVE-2024-47874/` ([advisories.gitlab.com][9])
-- CVE-2025-62727 (FileResponse Range header DoS; fixed 0.49.1) — `https://advisories.gitlab.com/pkg/pypi/starlette/CVE-2025-62727/` ([advisories.gitlab.com][19])
+- CVE-2023-29159 (StaticFiles path traversal; fixed 0.27.0) —
+`https://advisories.gitlab.com/pkg/pypi/starlette/CVE-2023-29159/` ([advisories.gitlab.com][10])
+- CVE-2024-47874 (multipart/form-data DoS; fixed 0.40.0) —
+`https://advisories.gitlab.com/pkg/pypi/starlette/CVE-2024-47874/` ([advisories.gitlab.com][9])
+- CVE-2025-62727 (FileResponse Range header DoS; fixed 0.49.1) —
+`https://advisories.gitlab.com/pkg/pypi/starlette/CVE-2025-62727/` ([advisories.gitlab.com][19])
 
 [1]: https://pypi.org/project/fastapi/ "https://pypi.org/project/fastapi/"
-[2]: https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html "https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html"
+[2]: https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html
+"https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html"
 [3]: https://starlette.dev/websockets/?utm_source=chatgpt.com "Websockets"
 [4]: https://pypi.org/project/uvicorn/ "https://pypi.org/project/uvicorn/"
 [5]: https://pypi.org/project/starlette/ "https://pypi.org/project/starlette/"
-[6]: https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html?utm_source=chatgpt.com "HTTP Security Response Headers Cheat Sheet"
-[7]: https://fastapi.tiangolo.com/reference/dependencies/?utm_source=chatgpt.com "Dependencies - Depends() and Security() - FastAPI"
-[8]: https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html "https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html"
-[9]: https://advisories.gitlab.com/pkg/pypi/starlette/CVE-2024-47874/ "Starlette Denial of service (DoS) via multipart/form-data | GitLab Advisory Database"
-[10]: https://advisories.gitlab.com/pkg/pypi/starlette/CVE-2023-29159/ "Starlette has Path Traversal vulnerability in StaticFiles | GitLab Advisory Database"
-[11]: https://fastapi.tiangolo.com/tutorial/security/first-steps/?utm_source=chatgpt.com "Security - First Steps - FastAPI"
+[6]: https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html?utm_source=chatgpt.com "HTTP Security
+Response Headers Cheat Sheet"
+[7]: https://fastapi.tiangolo.com/reference/dependencies/?utm_source=chatgpt.com "Dependencies - Depends() and
+Security() - FastAPI"
+[8]: https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html
+"https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html"
+[9]: https://advisories.gitlab.com/pkg/pypi/starlette/CVE-2024-47874/ "Starlette Denial of service (DoS) via
+multipart/form-data | GitLab Advisory Database"
+[10]: https://advisories.gitlab.com/pkg/pypi/starlette/CVE-2023-29159/ "Starlette has Path Traversal vulnerability in
+StaticFiles | GitLab Advisory Database"
+[11]: https://fastapi.tiangolo.com/tutorial/security/first-steps/?utm_source=chatgpt.com "Security - First Steps -
+FastAPI"
 [12]: https://fastapi.tiangolo.com/tutorial/response-model/ "https://fastapi.tiangolo.com/tutorial/response-model/"
-[13]: https://owasp.org/API-Security/editions/2023/en/0x11-t10/ "https://owasp.org/API-Security/editions/2023/en/0x11-t10/"
-[14]: https://cheatsheetseries.owasp.org/cheatsheets/Mass_Assignment_Cheat_Sheet.html "https://cheatsheetseries.owasp.org/cheatsheets/Mass_Assignment_Cheat_Sheet.html"
+[13]: https://owasp.org/API-Security/editions/2023/en/0x11-t10/
+"https://owasp.org/API-Security/editions/2023/en/0x11-t10/"
+[14]: https://cheatsheetseries.owasp.org/cheatsheets/Mass_Assignment_Cheat_Sheet.html
+"https://cheatsheetseries.owasp.org/cheatsheets/Mass_Assignment_Cheat_Sheet.html"
 [15]: https://fastapi.tiangolo.com/tutorial/extra-models/ "https://fastapi.tiangolo.com/tutorial/extra-models/"
-[16]: https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html "https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html"
-[17]: https://owasp.org/www-project-web-security-testing-guide/v41/4-Web_Application_Security_Testing/07-Input_Validation_Testing/18-Testing_for_Server_Side_Template_Injection?utm_source=chatgpt.com "Testing for Server Side Template Injection"
-[18]: https://jinja.palletsprojects.com/en/stable/sandbox/?utm_source=chatgpt.com "Sandbox — Jinja Documentation (3.1.x)"
-[19]: https://advisories.gitlab.com/pkg/pypi/starlette/CVE-2025-62727/ "Starlette vulnerable to O(n^2) DoS via Range header merging in ``starlette.responses.FileResponse`` | GitLab Advisory Database"
-[20]: https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html "https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html"
-[21]: https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html "https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html"
-[22]: https://cheatsheetseries.owasp.org/cheatsheets/OS_Command_Injection_Defense_Cheat_Sheet.html "https://cheatsheetseries.owasp.org/cheatsheets/OS_Command_Injection_Defense_Cheat_Sheet.html"
-[23]: https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html "https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html"
-[24]: https://cheatsheetseries.owasp.org/cheatsheets/Unvalidated_Redirects_and_Forwards_Cheat_Sheet.html?utm_source=chatgpt.com "Unvalidated Redirects and Forwards Cheat Sheet"
-[25]: https://cheatsheetseries.owasp.org/cheatsheets/WebSocket_Security_Cheat_Sheet.html?utm_source=chatgpt.com "WebSocket Security - OWASP Cheat Sheet Series"
-[26]: https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/11-Client-side_Testing/10-Testing_WebSockets?utm_source=chatgpt.com "WSTG - Latest | OWASP Foundation"
+[16]: https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html
+"https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html"
+[17]:
+https://owasp.org/www-project-web-security-testing-guide/v41/4-Web_Application_Security_Testing/07-Input_Validation_Testing/18-Testing_for_Server_Side_Template_Injection?utm_source=chatgpt.com
+"Testing for Server Side Template Injection"
+[18]: https://jinja.palletsprojects.com/en/stable/sandbox/?utm_source=chatgpt.com "Sandbox — Jinja Documentation
+(3.1.x)"
+[19]: https://advisories.gitlab.com/pkg/pypi/starlette/CVE-2025-62727/ "Starlette vulnerable to O(n^2) DoS via Range
+header merging in ``starlette.responses.FileResponse`` | GitLab Advisory Database"
+[20]: https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html
+"https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html"
+[21]: https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html
+"https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html"
+[22]: https://cheatsheetseries.owasp.org/cheatsheets/OS_Command_Injection_Defense_Cheat_Sheet.html
+"https://cheatsheetseries.owasp.org/cheatsheets/OS_Command_Injection_Defense_Cheat_Sheet.html"
+[23]: https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html
+"https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html"
+[24]:
+https://cheatsheetseries.owasp.org/cheatsheets/Unvalidated_Redirects_and_Forwards_Cheat_Sheet.html?utm_source=chatgpt.com
+"Unvalidated Redirects and Forwards Cheat Sheet"
+[25]: https://cheatsheetseries.owasp.org/cheatsheets/WebSocket_Security_Cheat_Sheet.html?utm_source=chatgpt.com
+"WebSocket Security - OWASP Cheat Sheet Series"
+[26]:
+https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/11-Client-side_Testing/10-Testing_WebSockets?utm_source=chatgpt.com
+"WSTG - Latest | OWASP Foundation"
 [27]: https://fastapi.tiangolo.com/advanced/websockets/?utm_source=chatgpt.com "WebSockets - FastAPI"
 [28]: https://fastapi.tiangolo.com/reference/apirouter/?utm_source=chatgpt.com "APIRouter class - FastAPI"
 [29]: https://docs.pydantic.dev/latest/ "https://docs.pydantic.dev/latest/"

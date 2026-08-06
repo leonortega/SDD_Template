@@ -1,11 +1,15 @@
 # SOLID Principles
 
-The SOLID principles are five design principles for managing dependencies at the class and module level. They were assembled and named by Robert C. Martin in the early 2000s, drawing on decades of software engineering wisdom. In Clean Architecture, SOLID principles serve as the mid-level building blocks that make the Dependency Rule possible. Without SOLID, the concentric circles would leak and the boundaries would crumble.
+The SOLID principles are five design principles for managing dependencies at the class and module level. They were
+assembled and named by Robert C. Martin in the early 2000s, drawing on decades of software engineering wisdom. In Clean
+Architecture, SOLID principles serve as the mid-level building blocks that make the Dependency Rule possible. Without
+SOLID, the concentric circles would leak and the boundaries would crumble.
 
-This reference covers each principle with definitions, code examples, common violations, and practical application guidance.
-
+This reference covers each principle with definitions, code examples, common violations, and practical application
+guidance.
 
 ## Table of Contents
+
 1. [SRP: The Single Responsibility Principle](#srp-the-single-responsibility-principle)
 2. [OCP: The Open-Closed Principle](#ocp-the-open-closed-principle)
 3. [LSP: The Liskov Substitution Principle](#lsp-the-liskov-substitution-principle)
@@ -18,11 +22,14 @@ This reference covers each principle with definitions, code examples, common vio
 
 **"A module should have one, and only one, reason to change."**
 
-More precisely: a module should be responsible to one, and only one, actor (a group of users or stakeholders who want the system to change in the same way).
+More precisely: a module should be responsible to one, and only one, actor (a group of users or stakeholders who want
+the system to change in the same way).
 
 ### Understanding SRP
 
-SRP is commonly misunderstood as "a function should do one thing." That's a good principle for functions, but SRP operates at a higher level. SRP says that the module (class) should serve one actor -- one group of people who would request changes.
+SRP is commonly misunderstood as "a function should do one thing." That's a good principle for functions, but SRP
+operates at a higher level. SRP says that the module (class) should serve one actor -- one group of people who would
+request changes.
 
 ### Classic Violation
 
@@ -53,7 +60,8 @@ class Employee:
         return max(self.hours_worked - 40, 0)
 ```
 
-**The problem:** Three actors (CFO, COO, CTO) all have reasons to change this class. When the CFO wants to change how overtime is calculated, the shared `_get_regular_hours` method might be modified in a way that breaks the COO's reports.
+**The problem:** Three actors (CFO, COO, CTO) all have reasons to change this class. When the CFO wants to change how
+overtime is calculated, the shared `_get_regular_hours` method might be modified in a way that breaks the COO's reports.
 
 ### SRP-Compliant Design
 
@@ -79,7 +87,8 @@ class EmployeeRepository:
         self._db.execute("INSERT INTO employees ...", employee_data.to_dict())
 ```
 
-Each class now serves one actor. Changes requested by the CFO only affect `PayCalculator`. The COO's changes only affect `HoursReporter`. They can evolve independently.
+Each class now serves one actor. Changes requested by the CFO only affect `PayCalculator`. The COO's changes only affect
+`HoursReporter`. They can evolve independently.
 
 ### SRP Indicators
 
@@ -95,7 +104,8 @@ Each class now serves one actor. Changes requested by the CFO only affect `PayCa
 
 **"A software artifact should be open for extension but closed for modification."**
 
-You should be able to extend the behavior of a system without modifying existing code. New features are added by writing new code, not by changing old code.
+You should be able to extend the behavior of a system without modifying existing code. New features are added by writing
+new code, not by changing old code.
 
 ### The Strategy Pattern Approach
 
@@ -163,13 +173,16 @@ class ApplePayProcessor(PaymentProcessor):
 
 ### OCP in Clean Architecture
 
-OCP is foundational to the concentric circles model. The inner circles (entities, use cases) are closed for modification. The outer circles (adapters, frameworks) are open for extension. You extend the system by adding new adapters, new controllers, new gateways -- not by modifying business rules.
+OCP is foundational to the concentric circles model. The inner circles (entities, use cases) are closed for
+modification. The outer circles (adapters, frameworks) are open for extension. You extend the system by adding new
+adapters, new controllers, new gateways -- not by modifying business rules.
 
 ## LSP: The Liskov Substitution Principle
 
 **"Subtypes must be substitutable for their base types."**
 
-If S is a subtype of T, then objects of type T may be replaced with objects of type S without altering the correctness of the program.
+If S is a subtype of T, then objects of type T may be replaced with objects of type S without altering the correctness
+of the program.
 
 ### The Classic Violation: Square/Rectangle
 
@@ -220,17 +233,20 @@ def test_area(rect: Rectangle):
 
 ### LSP and Interfaces in Clean Architecture
 
-LSP applies to interfaces as well as inheritance hierarchies. When a Use Case depends on `OrderRepository`, every implementation (`PostgresOrderRepository`, `MongoOrderRepository`, `InMemoryOrderRepository`) must behave consistently:
+LSP applies to interfaces as well as inheritance hierarchies. When a Use Case depends on `OrderRepository`, every
+implementation (`PostgresOrderRepository`, `MongoOrderRepository`, `InMemoryOrderRepository`) must behave consistently:
 
 - `save()` must persist the entity (or fail with a defined exception)
 - `find_by_id()` must return the entity if it exists or `None` if not
-- No implementation should silently drop data, return stale data, or throw exceptions not defined in the interface contract
+- No implementation should silently drop data, return stale data, or throw exceptions not defined in the interface
+contract
 
 ## ISP: The Interface Segregation Principle
 
 **"No client should be forced to depend on methods it does not use."**
 
-Fat interfaces create unnecessary coupling. When a client depends on an interface with methods it doesn't use, it becomes vulnerable to changes in those unused methods.
+Fat interfaces create unnecessary coupling. When a client depends on an interface with methods it doesn't use, it
+becomes vulnerable to changes in those unused methods.
 
 ### Classic Violation
 
@@ -293,7 +309,8 @@ class OfficePrinter(Printer, Scanner, FaxMachine):
 
 ### ISP in Clean Architecture
 
-ISP directly supports the Dependency Rule. Use Cases define narrow, focused input and output port interfaces. Each adapter implements only the interfaces it needs:
+ISP directly supports the Dependency Rule. Use Cases define narrow, focused input and output port interfaces. Each
+adapter implements only the interfaces it needs:
 
 ```python
 # Focused interfaces (ISP-compliant)
@@ -317,29 +334,33 @@ class GetOrderDetailsInteractor:
 
 ## DIP: The Dependency Inversion Principle
 
-**"High-level modules should not depend on low-level modules. Both should depend on abstractions. Abstractions should not depend on details. Details should depend on abstractions."**
+**"High-level modules should not depend on low-level modules. Both should depend on abstractions. Abstractions should
+not depend on details. Details should depend on abstractions."**
 
-DIP is the mechanism that makes the Dependency Rule work. It inverts the natural direction of source code dependencies so that the volatile, concrete, outer-circle code depends on the stable, abstract, inner-circle code.
+DIP is the mechanism that makes the Dependency Rule work. It inverts the natural direction of source code dependencies
+so that the volatile, concrete, outer-circle code depends on the stable, abstract, inner-circle code.
 
 ### Without DIP (Natural Dependencies)
 
-```
+```text
 OrderService --> PostgresDatabase
   (high-level)     (low-level)
 ```
 
-The high-level policy (OrderService) depends on the low-level detail (PostgresDatabase). Changing the database means changing the service.
+The high-level policy (OrderService) depends on the low-level detail (PostgresDatabase). Changing the database means
+changing the service.
 
 ### With DIP (Inverted Dependencies)
 
-```
+```text
 OrderService --> OrderRepository (interface)
                        ^
                        |
               PostgresOrderRepository
 ```
 
-Both the high-level service and the low-level database adapter depend on the abstraction (OrderRepository). The abstraction is defined by the high-level module, not by the low-level module.
+Both the high-level service and the low-level database adapter depend on the abstraction (OrderRepository). The
+abstraction is defined by the high-level module, not by the low-level module.
 
 ### DIP Implementation Pattern
 
@@ -387,9 +408,12 @@ This is the critical insight: **the interface belongs to the high-level module, 
 | Interface owned by high-level module | The Use Case defines what it needs | Low-level module adapts to high-level needs |
 | Interface owned by low-level module | The database defines its capabilities | High-level module must adapt to database -- dependency NOT inverted |
 
-When the Use Case defines `OrderRepository`, it specifies methods like `save(order)` and `find_by_id(id)` -- business-oriented operations. The database adapter must conform to this business-oriented interface.
+When the Use Case defines `OrderRepository`, it specifies methods like `save(order)` and `find_by_id(id)` --
+business-oriented operations. The database adapter must conform to this business-oriented interface.
 
-When the database adapter defines the interface, it specifies methods like `execute_query(sql)` and `fetch_rows(table)` -- technology-oriented operations. The Use Case must conform to the database's way of thinking. This is the natural dependency direction, NOT inverted.
+When the database adapter defines the interface, it specifies methods like `execute_query(sql)` and `fetch_rows(table)`
+-- technology-oriented operations. The Use Case must conform to the database's way of thinking. This is the natural
+dependency direction, NOT inverted.
 
 ### Common DIP Violations
 
@@ -403,10 +427,15 @@ When the database adapter defines the interface, it specifies methods like `exec
 
 ### DIP and Clean Architecture
 
-DIP is the engine of Clean Architecture. Every boundary in the concentric circles model is maintained through dependency inversion:
+DIP is the engine of Clean Architecture. Every boundary in the concentric circles model is maintained through dependency
+inversion:
 
-- **Use Case to Database:** `OrderRepository` interface (defined by Use Case) inverts the dependency so the database adapter depends inward
-- **Use Case to Web:** `PlaceOrderOutput` interface (defined by Use Case) inverts the dependency so the presenter depends inward
-- **Use Case to External Service:** `EmailService` interface (defined by Use Case) inverts the dependency so the email adapter depends inward
+- **Use Case to Database:** `OrderRepository` interface (defined by Use Case) inverts the dependency so the database
+adapter depends inward
+- **Use Case to Web:** `PlaceOrderOutput` interface (defined by Use Case) inverts the dependency so the presenter
+depends inward
+- **Use Case to External Service:** `EmailService` interface (defined by Use Case) inverts the dependency so the email
+adapter depends inward
 
-Without DIP, inner circles would depend on outer circles, the Dependency Rule would be violated, and the architecture would collapse into a ball of mud.
+Without DIP, inner circles would depend on outer circles, the Dependency Rule would be violated, and the architecture
+would collapse into a ball of mud.

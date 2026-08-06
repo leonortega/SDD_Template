@@ -2,7 +2,7 @@
 
 ## The Testing Pyramid
 
-```
+```text
        /\
       /  \        E2E Tests (Few)
      /----\       - Full system
@@ -24,6 +24,7 @@
 Test ONE class or function in isolation.
 
 **Characteristics:**
+
 - Fast (milliseconds)
 - No external dependencies (mocked)
 - Most of your tests should be unit tests
@@ -45,6 +46,7 @@ describe('Order', () => {
 Test multiple components together.
 
 **Characteristics:**
+
 - Slower (may use real DB)
 - Test boundaries between components
 - Fewer than unit tests
@@ -74,6 +76,7 @@ describe('OrderService Integration', () => {
 Test the entire system from user perspective.
 
 **Characteristics:**
+
 - Slowest
 - Most brittle (many moving parts)
 - Test critical paths only

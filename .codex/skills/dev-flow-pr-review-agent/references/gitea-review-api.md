@@ -47,7 +47,10 @@ GET {gitea.baseUrl}/api/v1/repos/{owner}/{repo}/pulls/{index}/reviews
 GET {gitea.baseUrl}/api/v1/repos/{owner}/{repo}/pulls/{index}/reviews/{reviewId}/comments
 ```
 
-Treat human-authored top-level comments, inline code comments, and review-thread replies as implementation feedback. Exclude generated comments such as `<!-- codex-review-agent:{headSha} -->`, `IA generated PR feedback detected: {headSha}:{feedbackBatchId}`, `IA generated PR feedback fixes: {headSha}:{feedbackBatchId}`, and other OpenProject stable markers from human-feedback fix requirements.
+Treat human-authored top-level comments, inline code comments, and review-thread replies as implementation feedback.
+Exclude generated comments such as `<!-- codex-review-agent:{headSha} -->`, `IA generated PR feedback detected:
+{headSha}:{feedbackBatchId}`, `IA generated PR feedback fixes: {headSha}:{feedbackBatchId}`, and other OpenProject
+stable markers from human-feedback fix requirements.
 
 ## Review Comment
 
@@ -67,7 +70,8 @@ Payload:
 
 Skip posting if an existing comment contains the same marker for the same head SHA.
 
-Every AI finding in the review body must include a stable finding id for the inspected head SHA, such as `AI-001`, so the implementation workflow can compute a deterministic feedback batch id from sorted source ids.
+Every AI finding in the review body must include a stable finding id for the inspected head SHA, such as `AI-001`, so
+the implementation workflow can compute a deterministic feedback batch id from sorted source ids.
 
 ## Labels
 
@@ -114,7 +118,8 @@ Default colors:
 
 ## Reviewers
 
-After PR creation, always verify that requested human reviewers are present in the PR response. If eligible reviewers were resolved but are missing, request them explicitly:
+After PR creation, always verify that requested human reviewers are present in the PR response. If eligible reviewers
+were resolved but are missing, request them explicitly:
 
 ```text
 POST {gitea.baseUrl}/api/v1/repos/{owner}/{repo}/pulls/{index}/requested_reviewers
@@ -128,7 +133,8 @@ Payload:
 }
 ```
 
-Then re-fetch the PR and verify `requested_reviewers` is populated. If Gitea rejects the reviewer request, document the gap in the PR body and final summary.
+Then re-fetch the PR and verify `requested_reviewers` is populated. If Gitea rejects the reviewer request, document the
+gap in the PR body and final summary.
 
 When `pr.reviewers` is `"all"`, list repository collaborators:
 
@@ -136,4 +142,5 @@ When `pr.reviewers` is `"all"`, list repository collaborators:
 GET {gitea.baseUrl}/api/v1/repos/{owner}/{repo}/collaborators
 ```
 
-Normalize the response: Gitea may return either a JSON array or a single object. Use each collaborator's `login` first, then `username`. Exclude the PR author, the authenticated automation user, and empty/disabled/duplicate names.
+Normalize the response: Gitea may return either a JSON array or a single object. Use each collaborator's `login` first,
+then `username`. Exclude the PR author, the authenticated automation user, and empty/disabled/duplicate names.

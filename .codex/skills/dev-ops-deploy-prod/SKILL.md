@@ -1,7 +1,12 @@
 ---
 name: dev-ops-deploy-prod
 license: MIT
-description: Promote a QA-approved release artifact to production after configured ticket E2E QA approval. Use when Codex needs to verify one or more QA-approved tickets (Tested state in OpenProject) included in a release, confirm the QA-approved artifact and checksum, ensure release/RC tag consistency, update the release branch, trigger production deployment, validate production page and health checks, verify configured observability when available, and comment the production result on every included ticket.
+description: >-
+  >- Promote a QA-approved release artifact to production after configured ticket E2E QA approval. Use when Codex needs
+  to verify one or more QA-approved tickets (Tested state in OpenProject) included in a release, confirm the QA-approved
+  artifact and checksum, ensure release/RC tag consistency, update the release branch, trigger production deployment,
+  validate production page and health checks, verify configured observability when available, and comment the production
+  result on every included ticket.
 ---
 
 <!-- TIER 3: STAGE-SPECIFIC - PROD deployment skill -->
@@ -25,7 +30,8 @@ included ticket.
 ## Shared Context
 
 Before production promotion, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`,
-`.codex/skills/_shared/delivery-contract.md`, and `docs/conventions/context-management.md`, with `docs/architecture/deployment.md` as the
+`.codex/skills/_shared/delivery-contract.md`, and `docs/conventions/context-management.md`, with
+`docs/architecture/deployment.md` as the
 stage-specific doc. Load selected ticket, repository/review, artifact, deployment, and observability adapters. Use
 `python -m tools.sdd_cli dev-flow` helpers: `ValidateTicketLock` for `.codex/delivery-context.local.json`,
 `ValidateDeploymentLane`, `ArtifactPaths`, `ValidateReleaseManifest`, `UpdateReleaseManifest`, and
@@ -58,14 +64,16 @@ evidence is present.
 
 ## Preflight
 
-**Knowledge consult before promoting to PROD.** Before any PROD mutation, consult the knowledge base for release, rollback, and deployment lessons relevant to the release:
+**Knowledge consult before promoting to PROD.** Before any PROD mutation, consult the knowledge base for
+release, rollback, and deployment lessons relevant to the release:
 
 ```bash
 python -m tools.sdd_cli knowledge-search search --query <release or deployment terms>
 python -m tools.sdd_cli knowledge-search search --list-topics
 ```
 
-If an existing entry matches a known release or rollback issue, apply it and cite it in the PROD handoff. Record `Knowledge consulted: <files>` or `Knowledge consulted: none`.
+If an existing entry matches a known release or rollback issue, apply it and cite it in the PROD handoff.
+Record `Knowledge consulted: <files>` or `Knowledge consulted: none`.
 
 1. Resolve the primary ticket, included Done ticket list, PRs, QA-approved commit SHA, source RC version, and final
 
@@ -143,6 +151,26 @@ Stop if any QA gate, tag gate, artifact gate, or checksum gate fails.
    deployment until that PR is merged. The user must rerun `dev-ops-deploy-prod` after the promotion PR merges. Do not
    deploy PROD
    from a commit that is not reachable from `main`.
+
+### Branch-Protected `main` (Release-Branch PR Flow — proven)
+
+When `main` has **push disabled and requires 1 approval** (same protection as `dev`), the fast-forward path
+above cannot be used as-is. Use the release-branch PR flow, which matches the branch-protected `main`
+constraint:
+
+1. Create `release/vX.Y.Z` from the QA-approved commit (the artifact commit — **do not rebuild**).
+2. Create the **final annotated tag** (`vX.Y.Z`) on that same commit.
+3. Open a **release-blocking PR** `release/vX.Y.Z → main`, label it `codex-reviewed` (clean AI review marker),
+   get **1 approval from a user other than the PR author** (self-approval is rejected), and merge.
+4. Then dispatch `package-deploy` with `workflow_dispatch` inputs `environment=prod` on the release branch so the
+   workflow checks out exactly the QA-approved commit. The workflow's dispatch accepts only `environment`
+   (dev|qa|prod) and deploys **only** that target.
+
+Pitfalls:
+
+- `main` diverges from `dev` after a release-branch merge (the merge commit is only on `main`). This is expected and
+  does **not** block the next promotion — a fresh release branch from the new QA-approved dev commit works.
+- The final version must not already exist as a tag — the skill blocks reusing an existing final tag.
 
 ## PROD Deployment
 

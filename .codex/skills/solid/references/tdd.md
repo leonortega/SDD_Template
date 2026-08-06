@@ -2,12 +2,14 @@
 
 ## The Core Loop
 
-```
+```text
 RED → GREEN → REFACTOR → RED → ...
 ```
 
 ### RED Phase
+
 Write a failing test that describes the behavior you want. The test should:
+
 - Use domain language, not technical jargon
 - Describe WHAT, not HOW
 - Be a concrete example, not an abstract statement
@@ -21,9 +23,11 @@ it('when adding 2 + 3, returns 5', () => { ... });
 ```
 
 ### GREEN Phase
+
 Write the **simplest possible code** to make the test pass. Two strategies:
 
 1. **Fake It** - Return a hardcoded value
+
    ```typescript
    add(a: number, b: number): number {
      return 5; // Simplest thing!
@@ -31,6 +35,7 @@ Write the **simplest possible code** to make the test pass. Two strategies:
    ```
 
 2. **Obvious Implementation** - If you know the solution
+
    ```typescript
    add(a: number, b: number): number {
      return a + b;
@@ -40,7 +45,9 @@ Write the **simplest possible code** to make the test pass. Two strategies:
 **Prefer Fake It** when learning or unsure. Let more tests drive the real implementation.
 
 ### REFACTOR Phase
+
 This is where **design happens**. Look for:
+
 - Duplication (but wait for Rule of Three)
 - Long methods to extract
 - Poor names to improve
@@ -68,7 +75,8 @@ Why? Wrong abstractions are worse than duplication. Wait for the pattern to emer
 
 Each new test "sculpts" the solution toward a general, robust implementation.
 
-Think of **degrees of freedom** - like a car that needs forward/back, left/right, and rotation. Each test carves out one degree of freedom until the implementation handles all cases.
+Think of **degrees of freedom** - like a car that needs forward/back, left/right, and rotation. Each test carves out one
+degree of freedom until the implementation handles all cases.
 
 ## Transformation Priority Premise
 
@@ -108,6 +116,7 @@ it('calculates total with discount', () => {
 ## Writing Tests Backwards
 
 Sometimes it helps to write AAA in reverse:
+
 1. Write the ASSERT first - what do you want to verify?
 2. Write the ACT - what action produces that result?
 3. Write the ARRANGE - what setup is needed?
@@ -130,11 +139,13 @@ it('should recognize "mom" as a palindrome', () => { ... });
 ## Classic vs Mockist TDD
 
 **Classic (Detroit/Chicago) TDD:**
+
 - Test with real dependencies
 - Higher confidence, slower tests
 - Best for: Pure functions, integration tests
 
 **Mockist (London) TDD:**
+
 - Mock external dependencies
 - Faster tests, more isolated
 - Best for: Classes with infrastructure dependencies

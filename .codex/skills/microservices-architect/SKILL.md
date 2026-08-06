@@ -1,6 +1,10 @@
 ---
 name: microservices-architect
-description: Designs distributed system architectures, decomposes monoliths into bounded-context services, recommends communication patterns, and produces service boundary diagrams and resilience strategies. Use when designing distributed systems, decomposing monoliths, or implementing microservices patterns — including service boundaries, DDD, saga patterns, event sourcing, CQRS, service mesh, or distributed tracing.
+description: >-
+  >- Designs distributed system architectures, decomposes monoliths into bounded-context services, recommends
+  communication patterns, and produces service boundary diagrams and resilience strategies. Use when designing
+  distributed systems, decomposing monoliths, or implementing microservices patterns — including service boundaries,
+  DDD, saga patterns, event sourcing, CQRS, service mesh, or distributed tracing.
 license: MIT
 metadata:
   author: https://github.com/Jeffallan
@@ -15,22 +19,27 @@ metadata:
 
 # Microservices Architect
 
-Senior distributed systems architect specializing in cloud-native microservices architectures, resilience patterns, and operational excellence.
+Senior distributed systems architect specializing in cloud-native microservices architectures, resilience patterns, and
+operational excellence.
 
 ## Core Workflow
 
 1. **Domain Analysis** — Apply DDD to identify bounded contexts and service boundaries.
-   - *Validation checkpoint:* Each candidate service owns its data exclusively, has a clear public API contract, and can be deployed independently.
+   - *Validation checkpoint:* Each candidate service owns its data exclusively, has a clear public API contract, and can
+   be deployed independently.
 2. **Communication Design** — Choose sync/async patterns and protocols (REST, gRPC, events).
-   - *Validation checkpoint:* Long-running or cross-aggregate operations use async messaging; only query/command pairs with sub-100 ms SLA use synchronous calls.
+   - *Validation checkpoint:* Long-running or cross-aggregate operations use async messaging; only query/command pairs
+   with sub-100 ms SLA use synchronous calls.
 3. **Data Strategy** — Database per service, event sourcing, eventual consistency.
-   - *Validation checkpoint:* No shared database schema exists between services; consistency boundaries align with bounded contexts.
+   - *Validation checkpoint:* No shared database schema exists between services; consistency boundaries align with
+   bounded contexts.
 4. **Resilience** — Circuit breakers, retries, timeouts, bulkheads, fallbacks.
    - *Validation checkpoint:* Every external call has an explicit timeout, retry budget, and graceful degradation path.
 5. **Observability** — Distributed tracing, correlation IDs, centralized logging.
    - *Validation checkpoint:* A single request can be traced end-to-end using its correlation ID across all services.
 6. **Deployment** — Container orchestration, service mesh, progressive delivery.
-   - *Validation checkpoint:* Health and readiness probes are defined; canary or blue-green rollout strategy is documented.
+   - *Validation checkpoint:* Health and readiness probes are defined; canary or blue-green rollout strategy is
+   documented.
 
 ## Reference Guide
 
@@ -47,6 +56,7 @@ Load detailed guidance based on context:
 ## Implementation Examples
 
 ### Correlation ID Middleware (Node.js / Express)
+
 ```js
 const { v4: uuidv4 } = require('uuid');
 
@@ -58,9 +68,11 @@ function correlationMiddleware(req, res, next) {
   next();
 }
 ```
+
 Propagate `x-correlation-id` in every outbound HTTP call and Kafka message header.
 
 ### Circuit Breaker (Python / `pybreaker`)
+
 ```python
 import pybreaker
 
@@ -81,6 +93,7 @@ def get_inventory(order_id: str):
 ```
 
 ### Saga Orchestration Skeleton (TypeScript)
+
 ```ts
 // Each step defines execute() and compensate() so rollback is automatic.
 interface SagaStep<T> {
@@ -111,6 +124,7 @@ await runSaga(orderSaga, { orderId, customerId, items });
 ```
 
 ### Health & Readiness Probe (Kubernetes)
+
 ```yaml
 livenessProbe:
   httpGet:
@@ -125,12 +139,14 @@ readinessProbe:
   initialDelaySeconds: 5
   periodSeconds: 10
 ```
+
 `/health/live` — returns 200 if the process is running.  
 `/health/ready` — returns 200 only when the service can serve traffic (DB connected, caches warm).
 
 ## Constraints
 
 ### MUST DO
+
 - Apply domain-driven design for service boundaries
 - Use database per service pattern
 - Implement circuit breakers for external calls
@@ -141,6 +157,7 @@ readinessProbe:
 - Use API versioning strategies
 
 ### MUST NOT DO
+
 - Create distributed monoliths
 - Share databases between services
 - Use synchronous calls for long-running operations
@@ -153,6 +170,7 @@ readinessProbe:
 ## Output Templates
 
 When designing microservices architecture, provide:
+
 1. Service boundary diagram with bounded contexts
 2. Communication patterns (sync/async, protocols)
 3. Data ownership and consistency model
@@ -161,6 +179,8 @@ When designing microservices architecture, provide:
 
 ## Knowledge Reference
 
-Domain-driven design, bounded contexts, event storming, REST/gRPC, message queues (Kafka, RabbitMQ), service mesh (Istio, Linkerd), Kubernetes, circuit breakers, saga patterns, event sourcing, CQRS, distributed tracing (Jaeger, Zipkin), API gateways, eventual consistency, CAP theorem
+Domain-driven design, bounded contexts, event storming, REST/gRPC, message queues (Kafka, RabbitMQ), service mesh
+(Istio, Linkerd), Kubernetes, circuit breakers, saga patterns, event sourcing, CQRS,
+distributed tracing (Jaeger, Zipkin), API gateways, eventual consistency, CAP theorem
 
 [Documentation](https://jeffallan.github.io/claude-skills/skills/api-architecture/microservices-architect/)

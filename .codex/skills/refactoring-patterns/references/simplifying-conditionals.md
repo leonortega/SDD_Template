@@ -1,8 +1,11 @@
 # Simplifying Conditional Logic
 
-Detailed reference for refactorings that tame complex conditional structures. Conditionals are the hardest code to read and the most likely to harbor bugs. These refactorings decompose, consolidate, and replace conditionals with clearer alternatives.
+Detailed reference for refactorings that tame complex conditional structures. Conditionals are the hardest code to read
+and the most likely to harbor bugs. These refactorings decompose, consolidate, and replace conditionals with clearer
+alternatives.
 
 ## Table of Contents
+
 1. [Decompose Conditional](#decompose-conditional)
 2. [Consolidate Conditional Expression](#consolidate-conditional-expression)
 3. [Replace Nested Conditional with Guard Clauses](#replace-nested-conditional-with-guard-clauses)
@@ -19,7 +22,8 @@ Extract the condition, the then-branch, and the else-branch of a complex conditi
 
 ### Motivation
 
-A long `if` statement with a compound condition and multi-line branches forces the reader to simulate every path mentally. By naming each part, you turn the conditional into readable prose.
+A long `if` statement with a compound condition and multi-line branches forces the reader to simulate every path
+mentally. By naming each part, you turn the conditional into readable prose.
 
 ### Mechanics
 
@@ -31,6 +35,7 @@ A long `if` statement with a compound condition and multi-line branches forces t
 ### Example
 
 **Before:**
+
 ```javascript
 function calculateCharge(date, quantity, plan) {
   let charge;
@@ -44,6 +49,7 @@ function calculateCharge(date, quantity, plan) {
 ```
 
 **After:**
+
 ```javascript
 function calculateCharge(date, quantity, plan) {
   if (isSummer(date)) {
@@ -82,11 +88,13 @@ The condition name should answer a yes/no question using the domain vocabulary.
 
 ## Consolidate Conditional Expression
 
-Combine a series of conditional checks that all lead to the same result into a single conditional with a descriptive name.
+Combine a series of conditional checks that all lead to the same result into a single conditional with a descriptive
+name.
 
 ### Motivation
 
-When multiple conditions return the same value, combining them into one named check makes the logic clearer: "All of these mean the same thing -- this situation is X."
+When multiple conditions return the same value, combining them into one named check makes the logic clearer: "All of
+these mean the same thing -- this situation is X."
 
 ### Mechanics
 
@@ -98,6 +106,7 @@ When multiple conditions return the same value, combining them into one named ch
 ### Example
 
 **Before:**
+
 ```python
 def disability_amount(employee):
     if employee.seniority < 2:
@@ -111,6 +120,7 @@ def disability_amount(employee):
 ```
 
 **After:**
+
 ```python
 def disability_amount(employee):
     if is_not_eligible_for_disability(employee):
@@ -135,11 +145,13 @@ def is_not_eligible_for_disability(employee):
 
 ## Replace Nested Conditional with Guard Clauses
 
-Handle special cases and edge conditions at the top of the method and return early, leaving the main path of execution flat and unindented.
+Handle special cases and edge conditions at the top of the method and return early, leaving the main path of execution
+flat and unindented.
 
 ### Motivation
 
-Deeply nested `if/else` structures obscure the normal path. Guard clauses make it clear: "These are the edge cases. Now here's the main logic." The main path runs at the lowest indentation level.
+Deeply nested `if/else` structures obscure the normal path. Guard clauses make it clear: "These are the edge cases. Now
+here's the main logic." The main path runs at the lowest indentation level.
 
 ### Mechanics
 
@@ -151,6 +163,7 @@ Deeply nested `if/else` structures obscure the normal path. Guard clauses make i
 ### Example
 
 **Before:**
+
 ```javascript
 function payAmount(employee) {
   let result;
@@ -172,6 +185,7 @@ function payAmount(employee) {
 ```
 
 **After:**
+
 ```javascript
 function payAmount(employee) {
   if (employee.isSeparated) return { amount: 0, reasonCode: 'SEP' };
@@ -196,17 +210,22 @@ function payAmount(employee) {
 
 ### "One return" vs. Guard Clauses
 
-Some coding standards mandate a single return statement per method. This leads to deeply nested conditionals and temporary result variables. Guard clauses with early returns produce clearer, flatter code. Fowler explicitly recommends guard clauses over single-return for methods with special cases.
+Some coding standards mandate a single return statement per method. This leads to deeply nested conditionals and
+temporary result variables. Guard clauses with early returns produce clearer, flatter code. Fowler explicitly recommends
+guard clauses over single-return for methods with special cases.
 
 ---
 
 ## Replace Conditional with Polymorphism
 
-Replace a conditional that checks a type, status, or category and branches to different behavior with polymorphic classes where each type provides its own implementation.
+Replace a conditional that checks a type, status, or category and branches to different behavior with polymorphic
+classes where each type provides its own implementation.
 
 ### Motivation
 
-This is the gold standard for eliminating type-based conditionals. Instead of one function that knows about every type, each type knows about itself. Adding a new type means adding a new class -- not editing existing conditionals in multiple places (Open/Closed Principle).
+This is the gold standard for eliminating type-based conditionals. Instead of one function that knows about every type,
+each type knows about itself. Adding a new type means adding a new class -- not editing existing conditionals in
+multiple places (Open/Closed Principle).
 
 ### Mechanics
 
@@ -219,6 +238,7 @@ This is the gold standard for eliminating type-based conditionals. Instead of on
 ### Example
 
 **Before:**
+
 ```python
 class Bird:
     def __init__(self, bird_type, voltage=0, coconut_count=0):
@@ -238,6 +258,7 @@ class Bird:
 ```
 
 **After:**
+
 ```python
 class Bird:
     def speed(self):
@@ -270,17 +291,20 @@ class NorwegianBlueParrot(Bird):
 
 ## Introduce Special Case (Null Object)
 
-Instead of checking for a special case (usually null) in every caller, create a class that encapsulates the special-case behavior.
+Instead of checking for a special case (usually null) in every caller, create a class that encapsulates the special-case
+behavior.
 
 ### Motivation
 
-`if (customer == null)` checks scattered through the codebase add noise and are easy to forget. A `NullCustomer` or `UnknownCustomer` object responds to all the same methods with safe default behavior.
+`if (customer == null)` checks scattered through the codebase add noise and are easy to forget. A `NullCustomer` or
+`UnknownCustomer` object responds to all the same methods with safe default behavior.
 
 ### Mechanics
 
 1. Create a subclass or separate class for the special case
 2. Add a method to the superclass or factory that creates the special case (e.g., `Customer.unknown()`)
-3. Implement each method in the special case with the default behavior that callers currently use after their null checks
+3. Implement each method in the special case with the default behavior that callers currently use after their null
+checks
 4. Change callers to use the special case object instead of null
 5. Remove the null checks from callers
 6. Run tests
@@ -288,6 +312,7 @@ Instead of checking for a special case (usually null) in every caller, create a 
 ### Example
 
 **Before:**
+
 ```javascript
 // Scattered throughout the codebase:
 const customerName = (customer !== null) ? customer.name : 'Occupant';
@@ -296,6 +321,7 @@ const paymentHistory = (customer !== null) ? customer.paymentHistory : new NullP
 ```
 
 **After:**
+
 ```javascript
 class UnknownCustomer {
   get name() { return 'Occupant'; }
@@ -333,7 +359,8 @@ Make an assumption explicit by inserting an assertion that will fail fast if the
 
 ### Motivation
 
-Assertions document what the code expects to be true. They are executable documentation that catches bugs during development. Unlike comments, assertions are verified by the runtime.
+Assertions document what the code expects to be true. They are executable documentation that catches bugs during
+development. Unlike comments, assertions are verified by the runtime.
 
 ### Mechanics
 
@@ -345,6 +372,7 @@ Assertions document what the code expects to be true. They are executable docume
 ### Example
 
 **Before:**
+
 ```python
 def apply_discount(product, discount_rate):
     # discount should be between 0 and 1
@@ -353,6 +381,7 @@ def apply_discount(product, discount_rate):
 ```
 
 **After:**
+
 ```python
 def apply_discount(product, discount_rate):
     assert 0 <= discount_rate <= 1, f"Discount rate must be 0-1, got {discount_rate}"

@@ -3,19 +3,26 @@
 This document is designed as a **security spec** that supports:
 
 1. **Secure-by-default code generation** for new Go code.
-2. **Security review / vulnerability hunting** in existing Go code (passive “notice issues while working” and active “scan the repo and report findings”).
+2. **Security review / vulnerability hunting** in existing Go code (passive “notice issues while working” and active
+“scan the repo and report findings”).
 
-It is intentionally written as a set of **normative requirements** (“MUST/SHOULD/MAY”) plus **audit rules** (what bad patterns look like, how to detect them, and how to fix/mitigate them).
+It is intentionally written as a set of **normative requirements** (“MUST/SHOULD/MAY”) plus **audit rules** (what bad
+patterns look like, how to detect them, and how to fix/mitigate them).
 
 ---
 
 ## 0) Safety, boundaries, and anti-abuse constraints (MUST FOLLOW)
 
-- MUST NOT request, output, log, or commit secrets (API keys, passwords, private keys, session cookies, JWTs, database URLs with credentials, signing keys, client secrets).
-- MUST NOT “fix” security by disabling protections (e.g., `InsecureSkipVerify`, `GOSUMDB=off` for public modules, wildcard CORS + credentials, removing auth checks, disabling CSRF defenses on cookie-auth apps).
-- MUST provide **evidence-based findings** during audits: cite file paths, code snippets, build/deploy configs, and concrete values that justify the claim.
-- MUST treat uncertainty honestly: if a control might exist in infrastructure (reverse proxy, WAF, service mesh, platform config), report it as “not visible in app code; verify at runtime/config.”
-- MUST keep fixes minimal, correct, and production-safe; avoid introducing breaking changes without warning (especially around auth/session flows, and proxies).
+- MUST NOT request, output, log, or commit secrets (API keys, passwords, private keys, session cookies, JWTs, database
+URLs with credentials, signing keys, client secrets).
+- MUST NOT “fix” security by disabling protections (e.g., `InsecureSkipVerify`, `GOSUMDB=off` for public modules,
+wildcard CORS + credentials, removing auth checks, disabling CSRF defenses on cookie-auth apps).
+- MUST provide **evidence-based findings** during audits: cite file paths, code snippets, build/deploy configs, and
+concrete values that justify the claim.
+- MUST treat uncertainty honestly: if a control might exist in infrastructure (reverse proxy, WAF, service mesh,
+platform config), report it as “not visible in app code; verify at runtime/config.”
+- MUST keep fixes minimal, correct, and production-safe; avoid introducing breaking changes without warning (especially
+around auth/session flows, and proxies).
 
 ---
 
@@ -28,7 +35,8 @@ When asked to write new Go code or modify existing code:
 - MUST follow every **MUST** requirement in this spec.
 - SHOULD follow every **SHOULD** requirement unless the user explicitly says otherwise.
 - MUST prefer safe-by-default APIs and proven libraries over custom security code.
-- MUST avoid introducing new risky sinks (shell execution, dynamic template execution, serving user files as HTML, unsafe redirects, weak crypto, unbounded parsing, etc.).
+- MUST avoid introducing new risky sinks (shell execution, dynamic template execution, serving user files as HTML,
+unsafe redirects, weak crypto, unbounded parsing, etc.).
 
 ### 1.2 Passive review mode (always on while editing)
 
@@ -73,11 +81,13 @@ Examples include:
 - JSON/XML/YAML bodies, multipart form parts, uploaded files
 - Any data from external systems (webhooks, third-party APIs, message queues)
 - Any persisted user content (DB rows) that originated from users
-- Configuration values that might be attacker-influenced in some deployments (headers set by upstream proxies, environment variables in multi-tenant systems)
+- Configuration values that might be attacker-influenced in some deployments (headers set by upstream proxies,
+environment variables in multi-tenant systems)
 
 ### 2.2 State-changing request
 
-A request is state-changing if it can create/update/delete data, change auth/session state, trigger side effects (purchase, email send, webhook send), or initiate privileged actions.
+A request is state-changing if it can create/update/delete data, change auth/session state, trigger side effects
+(purchase, email send, webhook send), or initiate privileged actions.
 
 ### 2.3 Required audit finding format
 
@@ -101,9 +111,11 @@ This is the smallest “production baseline” that prevents common Go misconfig
 ### 3.1 Toolchain, patching, and dependency hygiene (MUST)
 
 - MUST run a supported Go major version and keep to the latest patch releases.
-- MUST treat Go standard library patch releases as security-relevant (many security fixes land in stdlib components like `net/http`, `crypto/*`, parsing packages).
+- MUST treat Go standard library patch releases as security-relevant (many security fixes land in stdlib components like
+`net/http`, `crypto/*`, parsing packages).
 - MUST use Go modules with committed `go.mod` and `go.sum`.
-- MUST NOT disable module authenticity mechanisms for public modules (checksum DB) unless you have a controlled, documented replacement.
+- MUST NOT disable module authenticity mechanisms for public modules (checksum DB) unless you have a controlled,
+documented replacement.
 - MUST run `govulncheck` (source scan and/or binary scan) in CI and address findings.
 
 ### 3.2 HTTP server baseline (MUST for network-facing services)
@@ -132,7 +144,8 @@ Each rule contains: required practice, insecure patterns, detection hints, and r
 
 Severity: Medium
 
-NOTE: Upgrading dependencies and the core Go version can break projects in unexpected ways. Focus on only security-critical dependencies and if noticed, let the user know rather than upgrading automatically.
+NOTE: Upgrading dependencies and the core Go version can break projects in unexpected ways. Focus on only
+security-critical dependencies and if noticed, let the user know rather than upgrading automatically.
 
 Required:
 
@@ -171,7 +184,8 @@ Required:
 - MUST keep module checksum verification enabled for public modules.
 - SHOULD commit `go.sum` and treat changes as security-sensitive.
 - MUST NOT use insecure module fetching settings for public modules.
-- MAY configure private module behavior using `GOPRIVATE`/`GONOSUMDB` for private repos, but must do so narrowly and intentionally.
+- MAY configure private module behavior using `GOPRIVATE`/`GONOSUMDB` for private repos, but must do so narrowly and
+intentionally.
 
 Insecure patterns:
 
@@ -194,7 +208,8 @@ Fix:
 
 Notes:
 
-- Disabling checksum verification removes an important integrity layer against targeted or compromised upstream delivery.
+- Disabling checksum verification removes an important integrity layer against targeted or compromised upstream
+delivery.
 
 ---
 
@@ -235,7 +250,8 @@ Severity: High (DoS risk)
 
 Required:
 
-- MUST set: `ReadHeaderTimeout`, and SHOULD set `ReadTimeout`, `WriteTimeout`, `IdleTimeout` as appropriate for the service.
+- MUST set: `ReadHeaderTimeout`, and SHOULD set `ReadTimeout`, `WriteTimeout`, `IdleTimeout` as appropriate for the
+service.
 - MUST set `MaxHeaderBytes` to a justified limit for your application.
 - MUST NOT rely on default zero-values for timeouts in production for internet-facing servers.
 
@@ -257,7 +273,8 @@ Fix:
 
 Notes:
 
-- Net/http documents that these timeouts exist and that zero/negative values mean “no timeout”; production services should choose explicit values.
+- Net/http documents that these timeouts exist and that zero/negative values mean “no timeout”; production services
+should choose explicit values.
 
 ---
 
@@ -292,7 +309,8 @@ Fix:
 
 Notes:
 
-- There are known vulnerability classes and advisories related to excessive resource consumption in multipart/form parsing; treat unbounded parsing as a security issue.
+- There are known vulnerability classes and advisories related to excessive resource consumption in multipart/form
+parsing; treat unbounded parsing as a security issue.
 
 ---
 
@@ -300,7 +318,8 @@ Notes:
 
 Severity: High
 
-NOTE: This only applies to production configurations. These endpoints are often used for debug or dev endpoints. If found, confirm that it would be reachable from the actual production deployment.
+NOTE: This only applies to production configurations. These endpoints are often used for debug or dev endpoints. If
+found, confirm that it would be reachable from the actual production deployment.
 
 Required:
 
@@ -368,7 +387,8 @@ Severity: Medium
 Required (typical web app serving browsers):
 
 - SHOULD set:
-  - `Content-Security-Policy` (CSP) appropriate to the app. NOTE: It is most important to set the CSP's script-src. All other directives are not as important and can generally be excluded for the ease of development.
+  - `Content-Security-Policy` (CSP) appropriate to the app. NOTE: It is most important to set the CSP's script-src. All
+  other directives are not as important and can generally be excluded for the ease of development.
   - `X-Content-Type-Options: nosniff`
   - Clickjacking protection (`X-Frame-Options` and/or CSP `frame-ancestors`)
   - `Referrer-Policy` and `Permissions-Policy` where appropriate
@@ -401,9 +421,13 @@ Severity: Medium
 
 Required (production, HTTPS):
 
-- MUST set `Secure` on cookies that carry auth/session state. IMPORTANT NOTE: Only set `Secure` in production environment when TLS is configured. When running in a local dev environment over HTTP, do not set `Secure` property on cookies. You should do this conditionally based on if the app is running in production mode. You should also include a property like `SESSION_COOKIE_SECURE` which can be used to disable `Secure` cookies when testing over HTTP.
+- MUST set `Secure` on cookies that carry auth/session state. IMPORTANT NOTE: Only set `Secure` in production
+environment when TLS is configured. When running in a local dev environment over HTTP, do not set `Secure` property on
+cookies. You should do this conditionally based on if the app is running in production mode. You should also include a
+property like `SESSION_COOKIE_SECURE` which can be used to disable `Secure` cookies when testing over HTTP.
 - MUST set `HttpOnly` on auth/session cookies.
-- SHOULD set `SameSite=Lax` by default (or `Strict` if compatible), and only use `None` when necessary (and only with `Secure`).
+- SHOULD set `SameSite=Lax` by default (or `Strict` if compatible), and only use `None` when necessary (and only with
+`Secure`).
 - SHOULD set bounded lifetimes (`Max-Age`/`Expires`) appropriate to the app.
 
 Insecure patterns:
@@ -431,16 +455,19 @@ Notes:
 
 Severity: High
 
-- IMPORTANT NOTE: If cookies are not used for auth (e.g., pure bearer token in Authorization header with no ambient cookies), CSRF is not a risk for those endpoints.
+- IMPORTANT NOTE: If cookies are not used for auth (e.g., pure bearer token in Authorization header with no ambient
+cookies), CSRF is not a risk for those endpoints.
 
 Required:
 
 - MUST protect all state-changing endpoints (POST/PUT/PATCH/DELETE) that rely on cookies for authentication.
 - SHOULD use a well-tested CSRF library/middleware rather than rolling your own.
-- MAY use additional defenses (Origin/Referer checks, Fetch Metadata, SameSite cookies), but tokens remain the primary defense for cookie-authenticated apps.
+- MAY use additional defenses (Origin/Referer checks, Fetch Metadata, SameSite cookies), but tokens remain the primary
+defense for cookie-authenticated apps.
   If tokens are impractical, or for small applications:
 
-* MUST at a minimum require a custom header to be set and set the session cookie SESSION_COOKIE_SAMESITE=lax, as this is the strongest method besides requiring a form token, and may be much easier to implement.
+- MUST at a minimum require a custom header to be set and set the session cookie SESSION_COOKIE_SAMESITE=lax, as this is
+the strongest method besides requiring a form token, and may be much easier to implement.
 
 Insecure patterns:
 
@@ -523,7 +550,8 @@ Severity: Critical
 
 Required:
 
-- MUST NOT call `template.Parse` / `template.ParseFiles` / `template.New(...).Parse(...)` on template text influenced by untrusted input.
+- MUST NOT call `template.Parse` / `template.ParseFiles` / `template.New(...).Parse(...)` on template text influenced by
+untrusted input.
 - MUST treat “user-defined templates” as a special high-risk design:
   - MUST use heavy sandboxing and strict allowlists
   - MUST isolate execution (process/container boundary) if truly required
@@ -551,7 +579,8 @@ Severity: High
 
 Required:
 
-- MUST NOT pass user-controlled paths to `os.Open`, `os.ReadFile`, `http.ServeFile`, or `http.FileServer` without strict validation and base-dir enforcement.
+- MUST NOT pass user-controlled paths to `os.Open`, `os.ReadFile`, `http.ServeFile`, or `http.FileServer` without strict
+validation and base-dir enforcement.
 - MUST treat `..`, absolute paths, and OS-specific path tricks as hostile input.
 - SHOULD store user uploads outside any static web root; serve through controlled handlers.
 - MUST avoid directory listing for sensitive file trees.
@@ -671,7 +700,8 @@ Notes:
 
 Severity: Medium (High in cloud/LAN environments)
 
-- Note: For small stand alone projects this is less important. It is most important when deploying into an LAN or with other services listening on the same server.
+- Note: For small stand alone projects this is less important. It is most important when deploying into an LAN or with
+other services listening on the same server.
 
 Required:
 
@@ -705,8 +735,10 @@ Severity: High (DoS and resource exhaustion)
 
 Required:
 
-- MUST set an overall timeout on `http.Client` usage (or equivalent per-request deadlines via context + transport timeouts).
-- MUST ensure `resp.Body.Close()` is called for all successful requests (typically `defer resp.Body.Close()` immediately after error check).
+- MUST set an overall timeout on `http.Client` usage (or equivalent per-request deadlines via context + transport
+timeouts).
+- MUST ensure `resp.Body.Close()` is called for all successful requests (typically `defer resp.Body.Close()` immediately
+after error check).
 - SHOULD limit response body reads (do not `io.ReadAll` unbounded responses).
 - SHOULD restrict redirects for security-sensitive fetches (SSRF, auth flows).
 
@@ -729,7 +761,8 @@ Fix:
 
 Notes:
 
-- The net/http package exposes `DefaultClient` as a zero-valued `http.Client`, which can easily lead to “no timeout” behavior unless configured.
+- The net/http package exposes `DefaultClient` as a zero-valued `http.Client`, which can easily lead to “no timeout”
+behavior unless configured.
 
 ---
 
@@ -800,7 +833,8 @@ Required:
 - MUST hash passwords using an adaptive password hashing function (bcrypt or argon2id).
 - MUST NOT store plaintext passwords or reversible encryption of passwords.
 - MUST compare secrets in constant time when relevant (tokens, MACs, API keys) to reduce timing leaks.
-- SHOULD ensure password policies do not exceed algorithm constraints (e.g., bcrypt has input length limits; handle long passphrases appropriately).
+- SHOULD ensure password policies do not exceed algorithm constraints (e.g., bcrypt has input length limits; handle long
+passphrases appropriately).
 
 Insecure patterns:
 
@@ -854,7 +888,8 @@ Fix:
 
 Notes:
 
-- The Go race detector only finds races that occur in executed code paths; improve test coverage and run realistic workloads with `-race` where feasible.
+- The Go race detector only finds races that occur in executed code paths; improve test coverage and run realistic
+workloads with `-race` where feasible.
 
 ---
 
@@ -866,7 +901,8 @@ Required:
 
 - SHOULD avoid importing `unsafe` in application code unless absolutely necessary.
 - If `unsafe` is used, MUST treat it as “manual memory safety” requiring careful review and test coverage.
-- If `cgo` is used, MUST treat the C/C++ boundary as memory-unsafe; apply secure coding practices on the C side and isolate where possible.
+- If `cgo` is used, MUST treat the C/C++ boundary as memory-unsafe; apply secure coding practices on the C side and
+isolate where possible.
 
 Insecure patterns:
 
@@ -961,28 +997,30 @@ Always try to confirm:
 
 Primary Go documentation:
 
-- Go Security Policy — https://go.dev/doc/security/policy
-- Go Release History (security fixes in patch releases) — https://go.dev/doc/devel/release
-- Go 1.25 Release Notes — https://go.dev/doc/go1.25
-- net/http (server timeouts, MaxHeaderBytes, DefaultClient) — https://pkg.go.dev/net/http
-- html/template (auto-escaping and trusted-template assumptions) — https://pkg.go.dev/html/template
-- crypto/tls (MinVersion defaults, InsecureSkipVerify warnings) — https://pkg.go.dev/crypto/tls
-- crypto/rand (secure randomness, token helpers) — https://pkg.go.dev/crypto/rand
-- crypto/subtle (constant-time comparisons) — https://pkg.go.dev/crypto/subtle
-- os/exec (no shell by default; command execution guidance) — https://pkg.go.dev/os/exec
-- unsafe (bypasses type safety) — https://go.dev/src/unsafe/unsafe.go
-- net/http/pprof (debug endpoints) — https://pkg.go.dev/net/http/pprof
-- cmd/go (module authentication via go.sum/checksum DB; env vars like GOINSECURE) — https://pkg.go.dev/cmd/go
-- Module Mirror and Checksum Database Launched (Go blog) — https://go.dev/blog/module-mirror-launch
-- govulncheck documentation — https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck
-- Go Race Detector documentation — https://go.dev/doc/articles/race_detector
-- bcrypt (password hashing) — https://pkg.go.dev/golang.org/x/crypto/bcrypt
-- Go vulnerability entry example (multipart resource consumption) — https://pkg.go.dev/vuln/GO-2023-1569
+- Go Security Policy — <https://go.dev/doc/security/policy>
+- Go Release History (security fixes in patch releases) — <https://go.dev/doc/devel/release>
+- Go 1.25 Release Notes — <https://go.dev/doc/go1.25>
+- net/http (server timeouts, MaxHeaderBytes, DefaultClient) — <https://pkg.go.dev/net/http>
+- html/template (auto-escaping and trusted-template assumptions) — <https://pkg.go.dev/html/template>
+- crypto/tls (MinVersion defaults, InsecureSkipVerify warnings) — <https://pkg.go.dev/crypto/tls>
+- crypto/rand (secure randomness, token helpers) — <https://pkg.go.dev/crypto/rand>
+- crypto/subtle (constant-time comparisons) — <https://pkg.go.dev/crypto/subtle>
+- os/exec (no shell by default; command execution guidance) — <https://pkg.go.dev/os/exec>
+- unsafe (bypasses type safety) — <https://go.dev/src/unsafe/unsafe.go>
+- net/http/pprof (debug endpoints) — <https://pkg.go.dev/net/http/pprof>
+- cmd/go (module authentication via go.sum/checksum DB; env vars like GOINSECURE) — <https://pkg.go.dev/cmd/go>
+- Module Mirror and Checksum Database Launched (Go blog) — <https://go.dev/blog/module-mirror-launch>
+- govulncheck documentation — <https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck>
+- Go Race Detector documentation — <https://go.dev/doc/articles/race_detector>
+- bcrypt (password hashing) — <https://pkg.go.dev/golang.org/x/crypto/bcrypt>
+- Go vulnerability entry example (multipart resource consumption) — <https://pkg.go.dev/vuln/GO-2023-1569>
 
 OWASP Cheat Sheet Series (general web security):
 
-- Session Management — https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html
-- CSRF Prevention — https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html
-- SSRF Prevention — https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html
-- XSS Prevention — https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html
-- HTTP Security Response Headers — https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html
+- Session Management — <https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html>
+- CSRF Prevention —
+<https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html>
+- SSRF Prevention —
+<https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html>
+- XSS Prevention — <https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html>
+- HTTP Security Response Headers — <https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html>

@@ -1,11 +1,14 @@
 # Stability Patterns
 
-Stability patterns are the countermeasures to the anti-patterns that cause production failures. Each pattern addresses specific failure modes and, when combined, creates a defense-in-depth strategy that allows systems to absorb shocks, degrade gracefully, and recover automatically.
+Stability patterns are the countermeasures to the anti-patterns that cause production failures. Each pattern addresses
+specific failure modes and, when combined, creates a defense-in-depth strategy that allows systems to absorb shocks,
+degrade gracefully, and recover automatically.
 
-These patterns are not theoretical -- they are battle-tested responses to the recurring failure modes described in the anti-patterns reference.
-
+These patterns are not theoretical -- they are battle-tested responses to the recurring failure modes described in the
+anti-patterns reference.
 
 ## Table of Contents
+
 1. [1. Circuit Breaker](#1-circuit-breaker)
 2. [2. Bulkheads](#2-bulkheads)
 3. [3. Timeouts](#3-timeouts)
@@ -20,11 +23,12 @@ These patterns are not theoretical -- they are battle-tested responses to the re
 
 ## 1. Circuit Breaker
 
-The Circuit Breaker is the single most important stability pattern. It prevents a failing downstream dependency from taking down the calling service by short-circuiting requests when failures exceed a threshold.
+The Circuit Breaker is the single most important stability pattern. It prevents a failing downstream dependency from
+taking down the calling service by short-circuiting requests when failures exceed a threshold.
 
 ### State Machine
 
-```
+```text
      success                  failure count
     ┌───────┐              exceeds threshold
     │       │                    │
@@ -79,15 +83,20 @@ Not every error should trip the circuit breaker. Configure what counts:
 
 ### Implementation Considerations
 
-- **Granularity:** One circuit breaker per downstream service, or per endpoint within a service? Per-endpoint gives finer control but more complexity.
-- **Fallback behavior:** When the circuit is open, what do you return? Cached data? Default value? Error response? The right answer depends on the use case.
-- **Monitoring:** Every circuit breaker state change should emit a metric and a log entry. An open circuit breaker is a critical signal.
-- **Coordination:** In a fleet of instances, each has its own circuit breaker state. Consider whether this is acceptable or if you need coordinated state (usually independent is fine).
-- **Half-open thundering herd:** When the recovery timeout expires, only let one or two trial requests through -- not the full backlog.
+- **Granularity:** One circuit breaker per downstream service, or per endpoint within a service? Per-endpoint gives
+finer control but more complexity.
+- **Fallback behavior:** When the circuit is open, what do you return? Cached data? Default value? Error response? The
+right answer depends on the use case.
+- **Monitoring:** Every circuit breaker state change should emit a metric and a log entry. An open circuit breaker is a
+critical signal.
+- **Coordination:** In a fleet of instances, each has its own circuit breaker state. Consider whether this is acceptable
+or if you need coordinated state (usually independent is fine).
+- **Half-open thundering herd:** When the recovery timeout expires, only let one or two trial requests through -- not
+the full backlog.
 
 ### Code Pattern (Pseudocode)
 
-```
+```text
 class CircuitBreaker:
     state = CLOSED
     failure_count = 0
@@ -124,7 +133,8 @@ class CircuitBreaker:
 
 ## 2. Bulkheads
 
-Named after the watertight compartments in a ship's hull, bulkheads partition system resources so that a failure in one partition does not sink the entire system.
+Named after the watertight compartments in a ship's hull, bulkheads partition system resources so that a failure in one
+partition does not sink the entire system.
 
 ### Types of Bulkheads
 
@@ -138,14 +148,17 @@ Named after the watertight compartments in a ship's hull, bulkheads partition sy
 
 ### Swim Lanes
 
-Swim lanes are the most rigorous form of bulkheading. A swim lane is a complete, isolated stack -- from load balancer to database -- dedicated to a specific function.
+Swim lanes are the most rigorous form of bulkheading. A swim lane is a complete, isolated stack -- from load balancer to
+database -- dedicated to a specific function.
 
 **When to use swim lanes:**
+
 - Revenue-critical paths (checkout, payment processing)
 - Compliance-critical paths (authentication, audit logging)
 - When a non-critical feature has historically caused outages affecting critical features
 
 **Design rules for swim lanes:**
+
 - No synchronous calls across swim lane boundaries
 - No shared databases, caches, or message queues
 - Asynchronous replication of data between lanes if needed
@@ -159,7 +172,8 @@ The key question: how many resources does each partition get?
 - **Too tight:** The partition cannot handle legitimate load spikes
 - **Right-sized:** Based on measured throughput at p99 load, plus 20-30% headroom
 
-**Approach:** Measure the actual concurrency for each dependency under peak load. Set the bulkhead size to p99 concurrency + 20% headroom. Set a queue/reject policy for requests beyond the limit.
+**Approach:** Measure the actual concurrency for each dependency under peak load. Set the bulkhead size to p99
+concurrency + 20% headroom. Set a queue/reject policy for requests beyond the limit.
 
 ---
 
@@ -179,16 +193,18 @@ Every outbound call needs a timeout. Every. Single. One. A missing timeout is a 
 
 ### Timeout Propagation
 
-When Service A calls Service B, which calls Service C, timeouts must propagate down the chain. If the user's request has a 5-second deadline, Service A should not start a 10-second operation.
+When Service A calls Service B, which calls Service C, timeouts must propagate down the chain. If the user's request has
+a 5-second deadline, Service A should not start a 10-second operation.
 
-```
+```text
 User request: 10s deadline
   → Service A: 8s deadline (2s for own processing)
     → Service B: 5s deadline (3s for A's processing)
       → Service C: 3s deadline (2s for B's processing)
 ```
 
-**Implementation:** Pass the remaining deadline in a request header (e.g., `X-Request-Deadline` or gRPC deadline propagation). Each service subtracts its own processing time and passes the remainder downstream.
+**Implementation:** Pass the remaining deadline in a request header (e.g., `X-Request-Deadline` or gRPC deadline
+propagation). Each service subtracts its own processing time and passes the remainder downstream.
 
 ### Common Timeout Mistakes
 
@@ -211,7 +227,9 @@ User request: 10s deadline
 
 ## 4. Retry with Backoff
 
-Retries are necessary because transient failures are real -- network blips, momentary overloads, and garbage collection pauses cause temporary unavailability that resolves on its own. But naive retries (immediate, unlimited) cause more harm than good.
+Retries are necessary because transient failures are real -- network blips, momentary overloads, and garbage collection
+pauses cause temporary unavailability that resolves on its own. But naive retries (immediate, unlimited) cause more harm
+than good.
 
 ### Retry Strategy Components
 
@@ -235,9 +253,11 @@ Retries are necessary because transient failures are real -- network blips, mome
 
 ### Retry Budget
 
-A retry budget limits the total percentage of retried requests across your entire fleet. Without a budget, a fleet of 100 instances each retrying 3 times can amplify load on a struggling downstream by 300x.
+A retry budget limits the total percentage of retried requests across your entire fleet. Without a budget, a fleet of
+100 instances each retrying 3 times can amplify load on a struggling downstream by 300x.
 
 **Implementation:**
+
 - Track the ratio of retries to original requests over a sliding window (e.g., 1 minute)
 - If retry ratio exceeds the budget (e.g., 20%), stop retrying and fail fast
 - This provides fleet-level protection that per-instance retry limits cannot
@@ -247,13 +267,16 @@ A retry budget limits the total percentage of retried requests across your entir
 When a downstream service recovers, all clients retry simultaneously, overwhelming it again. Jitter solves this:
 
 - **No jitter:** All 1,000 clients retry at exactly t+100ms, t+200ms, t+400ms
-- **Full jitter:** Each client retries at random(0, 100ms), random(0, 200ms), random(0, 400ms) -- spreading the load evenly
+- **Full jitter:** Each client retries at random(0, 100ms), random(0, 200ms), random(0, 400ms) -- spreading the load
+evenly
 
 ---
 
 ## 5. Steady State
 
-Production systems accumulate cruft over time. Log files grow. Sessions pile up. Temporary files linger. Database tables bloat. Without active management, this accumulation eventually exhausts a resource -- disk space, memory, database capacity -- and the system fails.
+Production systems accumulate cruft over time. Log files grow. Sessions pile up. Temporary files linger. Database tables
+bloat. Without active management, this accumulation eventually exhausts a resource -- disk space, memory, database
+capacity -- and the system fails.
 
 ### What Accumulates
 
@@ -280,7 +303,8 @@ Every resource that grows must have a corresponding mechanism to shrink:
 
 ## 6. Fail Fast
 
-If a system knows it cannot process a request successfully, it should reject the request immediately rather than consuming resources in a doomed attempt.
+If a system knows it cannot process a request successfully, it should reject the request immediately rather than
+consuming resources in a doomed attempt.
 
 ### When to Fail Fast
 
@@ -295,13 +319,16 @@ If a system knows it cannot process a request successfully, it should reject the
 
 ### Why Fail Fast Is Kind
 
-Failing fast is not hostile -- it is kind. A fast rejection lets the caller know immediately that this request will not work, freeing the caller to retry elsewhere, display an error, or degrade gracefully. A slow failure wastes the caller's time, threads, and hope.
+Failing fast is not hostile -- it is kind. A fast rejection lets the caller know immediately that this request will not
+work, freeing the caller to retry elsewhere, display an error, or degrade gracefully. A slow failure wastes the caller's
+time, threads, and hope.
 
 ---
 
 ## 7. Let It Crash
 
-Borrowed from Erlang's "let it crash" philosophy: when a process enters an unrecoverable or uncertain state, it is safer to terminate and restart from a known-good state than to attempt in-process recovery.
+Borrowed from Erlang's "let it crash" philosophy: when a process enters an unrecoverable or uncertain state, it is safer
+to terminate and restart from a known-good state than to attempt in-process recovery.
 
 ### When to Let It Crash
 
@@ -316,13 +343,15 @@ Borrowed from Erlang's "let it crash" philosophy: when a process enters an unrec
 - **Supervision:** A supervisor must detect the crash and restart the process
 - **State recovery:** Critical state must be externalized (database, distributed cache) -- not lost on crash
 - **Health checks:** Load balancer must detect the restart and route traffic away during startup
-- **Crash budget:** Monitor crash frequency; excessive crashes indicate a deeper problem, not a healthy recovery mechanism
+- **Crash budget:** Monitor crash frequency; excessive crashes indicate a deeper problem, not a healthy recovery
+mechanism
 
 ---
 
 ## 8. Handshaking
 
-Handshaking is a protocol-level mechanism where the server tells the client whether it is ready to accept work before the client sends a full request. This prevents the server from being overwhelmed when it is already overloaded.
+Handshaking is a protocol-level mechanism where the server tells the client whether it is ready to accept work before
+the client sends a full request. This prevents the server from being overwhelmed when it is already overloaded.
 
 ### Handshaking Mechanisms
 
@@ -338,7 +367,7 @@ Handshaking is a protocol-level mechanism where the server tells the client whet
 
 Implement a readiness check that reflects actual capacity:
 
-```
+```text
 GET /ready
 
 200 OK          → Server can accept work
@@ -351,7 +380,8 @@ Readiness considers:
 - No critical dependency failures
 ```
 
-This allows load balancers and service meshes to route traffic away from overloaded instances before they fail, rather than after.
+This allows load balancers and service meshes to route traffic away from overloaded instances before they fail, rather
+than after.
 
 ## Pattern Combinations
 
@@ -366,4 +396,5 @@ These patterns are most effective in combination. Common pairings:
 | **Fail Fast + Handshaking** | Server signals overload; client fails fast without sending work |
 | **Steady State + Let It Crash** | Cleanup prevents resource exhaustion; crash recovers from unknown states |
 
-The key principle: no single pattern is sufficient. Production-ready systems layer multiple patterns to create defense in depth.
+The key principle: no single pattern is sufficient. Production-ready systems layer multiple patterns to create defense
+in depth.

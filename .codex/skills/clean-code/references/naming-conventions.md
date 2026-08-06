@@ -1,16 +1,19 @@
 # Naming Conventions
 
-Comprehensive guide to choosing names that reveal intent, avoid disinformation, and make code read like well-written prose. Based on Robert C. Martin's *Clean Code*, Chapter 2.
+Comprehensive guide to choosing names that reveal intent, avoid disinformation, and make code read like well-written
+prose. Based on Robert C. Martin's *Clean Code*, Chapter 2.
 
 ## The Golden Rule
 
-**A name should tell you why it exists, what it does, and how it is used.** If a name requires a comment to explain it, the name does not reveal its intent.
+**A name should tell you why it exists, what it does, and how it is used.** If a name requires a comment to explain it,
+the name does not reveal its intent.
 
 ---
 
 ## Intention-Revealing Names
 
 The name of a variable, function, or class should answer three questions:
+
 1. Why does it exist?
 2. What does it do?
 3. How is it used?
@@ -55,8 +58,10 @@ def get_flagged_cells(game_board):
 Disinformation means using names that imply something different from the actual meaning.
 
 **Rules:**
+
 - Don't use `accountList` unless it is actually a `List` type -- use `accounts` or `accountGroup`
-- Don't use names that vary in small ways: `XYZControllerForEfficientHandlingOfStrings` vs `XYZControllerForEfficientStorageOfStrings`
+- Don't use names that vary in small ways: `XYZControllerForEfficientHandlingOfStrings` vs
+`XYZControllerForEfficientStorageOfStrings`
 - Don't use lowercase `L` or uppercase `O` as variable names (look like `1` and `0`)
 - Don't use names of other well-known entities: `hp`, `aix`, `sco` are Unix platform names
 
@@ -76,11 +81,13 @@ Disinformation means using names that imply something different from the actual 
 If names must be different, they should mean something different.
 
 **Noise words are meaningless distinctions:**
+
 - `Product` vs `ProductInfo` vs `ProductData` -- what's the difference?
 - `getAccount()` vs `getAccountInfo()` vs `getAccountData()` -- indistinguishable
 - `name` vs `nameString` -- is `name` a floating-point number?
 
-**The test:** If you cannot tell what two similarly named things do without reading their implementations, the names fail.
+**The test:** If you cannot tell what two similarly named things do without reading their implementations, the names
+fail.
 
 ### How to Make Meaningful Distinctions
 
@@ -104,7 +111,8 @@ If you cannot pronounce a name, you cannot discuss it without sounding foolish.
 | `pszqint` | `formattedQuantity` |
 | `cstmrAddr` | `customerAddress` |
 
-**Why it matters:** Programming is a social activity. You discuss code in reviews, pairing, design meetings, and stand-ups. Names you cannot say out loud create communication barriers.
+**Why it matters:** Programming is a social activity. You discuss code in reviews, pairing, design meetings, and
+stand-ups. Names you cannot say out loud create communication barriers.
 
 ---
 
@@ -154,7 +162,8 @@ Classes represent things. Their names should be nouns or noun phrases.
 | `InvoiceRepository` | `InvoiceProcessor` | Processor is vague -- what processing? |
 | `Account` | `AccountData` | Data suffix is noise |
 
-**Avoid:** `Manager`, `Processor`, `Data`, `Info` -- these are weasel words that indicate the class has no clear responsibility.
+**Avoid:** `Manager`, `Processor`, `Data`, `Info` -- these are weasel words that indicate the class has no clear
+responsibility.
 
 ### Method Names: Verbs and Verb Phrases
 
@@ -190,6 +199,7 @@ boolean canExecute()
 ## Naming Conventions by Language
 
 ### Python
+
 - `snake_case` for functions and variables: `calculate_total`, `user_count`
 - `PascalCase` for classes: `UserAccount`, `OrderProcessor`
 - `UPPER_SNAKE_CASE` for constants: `MAX_RETRIES`, `DEFAULT_TIMEOUT`
@@ -197,24 +207,28 @@ boolean canExecute()
 - `__dunder__` for magic methods: `__init__`, `__str__`
 
 ### JavaScript/TypeScript
+
 - `camelCase` for functions and variables: `calculateTotal`, `userCount`
 - `PascalCase` for classes and components: `UserAccount`, `OrderList`
 - `UPPER_SNAKE_CASE` for constants: `MAX_RETRIES`, `API_BASE_URL`
 - `#privateField` for private class fields (ES2022+)
 
 ### Java
+
 - `camelCase` for methods and variables: `calculateTotal()`, `userCount`
 - `PascalCase` for classes: `UserAccount`, `OrderService`
 - `UPPER_SNAKE_CASE` for constants: `MAX_RETRIES`
 - Packages: `com.company.project.module`
 
 ### Go
+
 - `PascalCase` for exported (public): `CalculateTotal`, `UserCount`
 - `camelCase` for unexported (private): `calculateTotal`, `userCount`
 - Short names acceptable for small scopes: `r` for reader, `w` for writer
 - Acronyms stay uppercase: `HTTPClient`, `XMLParser`, `userID`
 
 ### Rust
+
 - `snake_case` for functions and variables: `calculate_total`, `user_count`
 - `PascalCase` for types and traits: `UserAccount`, `Serialize`
 - `UPPER_SNAKE_CASE` for constants and statics: `MAX_RETRIES`
@@ -238,14 +252,17 @@ Using different words for the same abstract concept is confusing.
 ## Solution Domain vs. Problem Domain Names
 
 **Use solution domain names** when the concept is a well-known computer science term:
+
 - `Queue`, `Stack`, `HashMap`, `Factory`, `Visitor`, `Iterator`
 - Fellow programmers will recognize these instantly
 
 **Use problem domain names** when the concept belongs to the business:
+
 - `Invoice`, `Shipment`, `PolicyHolder`, `ClaimAdjuster`
 - Domain experts and future maintainers will understand these
 
-**The priority:** Problem domain names first, solution domain names second. Code that reads in business terms is easier for the whole team -- developers, testers, product managers -- to discuss and verify.
+**The priority:** Problem domain names first, solution domain names second. Code that reads in business terms is easier
+for the whole team -- developers, testers, product managers -- to discuss and verify.
 
 ---
 
@@ -277,4 +294,5 @@ When renaming a variable, function, or class, follow this checklist to ensure th
 6. **Is the length proportional to scope?** Short names for tiny scopes, long names for large scopes.
 7. **Does it use domain language?** Prefer business terminology over generic programming terms.
 
-**Remember:** Renaming is one of the most powerful refactorings. Modern IDEs make it safe and fast. Never hesitate to rename something that is unclear -- your future self and your teammates will thank you.
+**Remember:** Renaming is one of the most powerful refactorings. Modern IDEs make it safe and fast. Never hesitate to
+rename something that is unclear -- your future self and your teammates will thank you.

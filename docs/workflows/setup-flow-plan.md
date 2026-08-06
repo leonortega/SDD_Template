@@ -23,7 +23,7 @@ python -m tools.sdd_cli full-setup [--dry-run true]
 
 It runs 4 stages in order, each with a clear pass/fail summary:
 
-```
+```text
 full-setup
 ├── Stage 1: Prerequisites
 │   ├── Check Python 3.11+
@@ -131,6 +131,9 @@ The final output aggregates all 4 stages:
 
 ## Notes
 
-- Template installation was originally Stage 1 but was removed — `full-setup` itself is part of the template, so it can only run after the template is already in place.
-- `environment-lab setup-lab` now delegates to `full-setup` (the full 4-stage flow) instead of running only the lab setup.
-- The old individual commands (`prereqs check`, `environment-lab setup-lab`, `tool-installer install-*`, etc.) remain available for granular control.
+- Template installation was originally Stage 1 but was removed — `full-setup` itself is part of the template, so it can
+only run after the template is already in place.
+- `environment-lab setup-lab` now delegates to `full-setup` (the full 4-stage flow) instead of running only the lab
+setup.
+- The old individual commands (`prereqs check`, `environment-lab setup-lab`, `tool-installer install-*`, etc.) remain
+available for granular control.

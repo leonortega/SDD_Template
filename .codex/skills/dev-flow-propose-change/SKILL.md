@@ -1,6 +1,8 @@
 ---
 name: dev-flow-propose-change
-description: Propose a new change with all artifacts generated in one step. Use when the user wants to quickly describe what they want to build and get a complete proposal with design, specs, and tasks ready for implementation.
+description: >-
+  >- Propose a new change with all artifacts generated in one step. Use when the user wants to quickly describe what
+  they want to build and get a complete proposal with design, specs, and tasks ready for implementation.
 license: MIT
 compatibility: Requires openspec CLI.
 metadata:
@@ -11,7 +13,8 @@ metadata:
 
 <!-- TIER 3: STAGE-SPECIFIC - Proposal workflow skill -->
 
-Propose a new change — create the change and generate all planning artifacts in one step following the `/opsx:propose` pattern.
+Propose a new change — create the change and generate all planning artifacts in one step following the `/opsx:propose`
+pattern.
 
 I'll create a change with all planning artifacts:
 
@@ -48,22 +51,32 @@ When ready to implement, run /opsx:apply.
 
 3. **Propose — generate all planning artifacts in one flow**
 
-   Follow the `/opsx:propose` pattern. Read the project context from `openspec/config.yaml` (context + rules) and the schema definition. Generate ALL artifacts in a single coherent pass, in dependency order:
+   Follow the `/opsx:propose` pattern. Read the project context from `openspec/config.yaml` (context + rules) and the
+   schema definition. Generate ALL artifacts in a single coherent pass, in dependency
+   order:
 
-   1. **Read context**: Load `openspec/config.yaml` for `context:`, `rules:`, and schema information. Read any existing specs in `openspec/specs/` for existing behavior standards.
+   1. **Read context**: Load `openspec/config.yaml` for `context:`, `rules:`, and schema information. Read any existing
+   specs in `openspec/specs/` for existing behavior standards.
 
-   2. **Create `proposal.md`** — Problem / opportunity, user story, scope, acceptance criteria, out of scope, risks. Use the ticket description and refined planning as input.
+   2. **Create `proposal.md`** — Problem / opportunity, user story, scope, acceptance criteria, out of scope, risks. Use
+   the ticket description and refined planning as input.
 
-   3. **Create `specs/`** — Behavior specs as `specs/*.md` in the change folder. Each spec covers one capability with concrete scenarios.
+   3. **Create `specs/`** — Behavior specs as `specs/*.md` in the change folder. Each spec covers one capability with
+   concrete scenarios.
 
-   4. **Create `design.md`** — Architecture decisions, technology choices, component structure, data flow, alternatives considered.
+   4. **Create `design.md`** — Architecture decisions, technology choices, component structure, data flow, alternatives
+   considered.
 
-   5. **Create `tasks.md`** — Implementation tasks with checkboxes, grouped by concern, including a Review Workload Forecast with estimated changed lines, budget risk, and delivery strategy.
+   5. **Create `tasks.md`** — Implementation tasks with checkboxes, grouped by concern, including a Review Workload
+   Forecast with estimated changed lines, budget risk, and delivery strategy.
 
    **Apply these guidelines:**
-   - Use `openspec/config.yaml` context and rules as constraints for what you write — do NOT copy them into the artifacts.
-   - Read completed dependency artifacts before creating the next one (e.g., read `proposal.md` before writing `design.md`).
-   - Capture resolved grill-style decisions: planned behavior in specs, design choices in design, implementation steps in tasks.
+   - Use `openspec/config.yaml` context and rules as constraints for what you write — do NOT copy them into the
+   artifacts.
+   - Read completed dependency artifacts before creating the next one (e.g., read `proposal.md` before writing
+   `design.md`).
+   - Capture resolved grill-style decisions: planned behavior in specs, design choices in design, implementation steps
+   in tasks.
    - Each artifact file must be written to the correct path inside `openspec/changes/<name>/`.
 
 4. **Verify all artifacts**
@@ -88,13 +101,15 @@ After completing all artifacts, summarize:
 - Use `openspec/config.yaml` context and rules as constraints for what you write — do NOT copy them into artifacts.
 - The schema (`spec-driven`) defines what each artifact should contain. Follow the expected structure for each type.
 - Read dependency artifacts before creating the next one (e.g., read `proposal.md` before writing `design.md`).
-- Capture resolved grill-style decisions in the normal OpenSpec artifacts: planned behavior in specs, design choices and rationale in design, and implementation steps in tasks.
+- Capture resolved grill-style decisions in the normal OpenSpec artifacts: planned behavior in specs, design choices and
+rationale in design, and implementation steps in tasks.
 - Write each artifact to its correct path inside `openspec/changes/<name>/`:
   - `proposal.md`
   - `specs/<area>.md` (one or more spec files by capability area)
   - `design.md`
   - `tasks.md`
-- **IMPORTANT**: `context` and `rules` from config.yaml guide what you write but must NEVER appear in the artifact files.
+- **IMPORTANT**: `context` and `rules` from config.yaml guide what you write but must NEVER appear in the artifact
+files.
 
 **Guardrails**
 
@@ -110,23 +125,28 @@ Use this skill to create an OpenSpec change proposal and the artifacts needed be
 
 ## Shared Context
 
-For ticketed changes, read `.codex/skills/_shared/delivery-contract.md` and `docs/conventions/context-management.md` before creating artifacts. Keep proposal scope aligned with the active ticket or explicit user request, and preserve validation and handoff expectations for implementation.
+For ticketed changes, read `.codex/skills/_shared/delivery-contract.md` and `docs/conventions/context-management.md`
+before creating artifacts. Keep proposal scope aligned with the active ticket or
+explicit user request, and preserve validation and handoff expectations for implementation.
 
 ## Workflow
 
 ### Knowledge Consult
 
-Before creating proposal artifacts, consult the knowledge base for known errors, patterns, and lessons relevant to the change's area:
+Before creating proposal artifacts, consult the knowledge base for known errors, patterns, and lessons relevant to the
+change's area:
 
 ```bash
 python -m tools.sdd_cli knowledge-search search --query <change or feature area terms>
 python -m tools.sdd_cli knowledge-search search --list-topics
 ```
 
-Fold relevant entries into the proposal context, design notes, and risk analysis. Record `Knowledge consulted: <files>` or `Knowledge consulted: none` in the proposal handoff.
+Fold relevant entries into the proposal context, design notes, and risk analysis. Record `Knowledge consulted: <files>`
+or `Knowledge consulted: none` in the proposal handoff.
 
-Follow the proposal artifact creation steps above, capture resolved `grill-with-docs` planning knowledge in OpenSpec instead of a separate context file, then route implementation through the appropriate dev-flow skill.
-
+Follow the proposal artifact creation steps above, capture resolved `grill-with-docs` planning knowledge in OpenSpec
+instead of a separate context file, then route implementation through the
+appropriate dev-flow skill.
 
 ## Output
 
@@ -134,4 +154,5 @@ Report the change name, artifacts created, validation performed, ready-to-implem
 
 ## Failure Rules
 
-Stop when the requested change is ambiguous, conflicts with the active ticket, cannot create required artifacts, or requires implementation decisions that should be resolved before proposal handoff.
+Stop when the requested change is ambiguous, conflicts with the active ticket, cannot create required artifacts, or
+requires implementation decisions that should be resolved before proposal handoff.

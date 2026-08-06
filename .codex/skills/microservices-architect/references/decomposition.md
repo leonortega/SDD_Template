@@ -7,12 +7,14 @@ Guide for identifying service boundaries using domain-driven design principles.
 ### Bounded Context Identification
 
 **Strategic Patterns:**
+
 - **Ubiquitous Language** - Each bounded context has its own domain language
 - **Context Mapping** - Define relationships between bounded contexts
 - **Subdomain Classification** - Core, supporting, generic domains
 
 **Bounded Context Indicators:**
-```
+
+```text
 Strong Indicators:
 - Different teams own different parts
 - Different release cadences needed
@@ -30,7 +32,8 @@ Warning Signs:
 ### Service Boundary Patterns
 
 **Database-Driven Decomposition:**
-```
+
+```text
 1. Identify aggregates (entities with invariants)
 2. Each aggregate becomes a service candidate
 3. Group related aggregates by transaction boundaries
@@ -38,7 +41,8 @@ Warning Signs:
 ```
 
 **Business Capability Decomposition:**
-```
+
+```text
 Services organized by:
 - User Management (authentication, profiles, permissions)
 - Order Management (cart, checkout, fulfillment)
@@ -48,7 +52,8 @@ Services organized by:
 ```
 
 **Strangler Fig Pattern:**
-```
+
+```text
 Monolith Decomposition Strategy:
 1. Identify seams in existing codebase
 2. Extract one service at a time
@@ -68,7 +73,8 @@ Order of Extraction:
 ### Microservice Characteristics
 
 **Right-Sized Service:**
-```
+
+```text
 Team Metrics:
 - 2-pizza team can own it (5-9 people)
 - Single team has full ownership
@@ -84,7 +90,8 @@ Technical Metrics:
 ```
 
 **Too Small (Nano-service):**
-```
+
+```text
 Warning Signs:
 - Services with 1-2 endpoints
 - Excessive network overhead
@@ -94,7 +101,8 @@ Warning Signs:
 ```
 
 **Too Large (Distributed Monolith):**
-```
+
+```text
 Warning Signs:
 - Multiple teams working on same service
 - Conflicting scalability requirements
@@ -108,7 +116,8 @@ Warning Signs:
 ### Team Structure and Service Design
 
 **Team Topologies:**
-```
+
+```text
 Stream-Aligned Teams:
 - Own end-to-end service lifecycle
 - Aligned to business capabilities
@@ -135,7 +144,8 @@ Complicated Subsystem Teams:
 ### Pre-Decomposition Analysis
 
 **Business Justification:**
-```
+
+```text
 Check:
 - Independent scalability needed?
 - Different teams responsible?
@@ -147,7 +157,8 @@ If mostly "no" → Consider modular monolith first
 ```
 
 **Technical Readiness:**
-```
+
+```text
 Prerequisites:
 ✓ CI/CD pipelines automated
 ✓ Monitoring and alerting in place
@@ -160,7 +171,8 @@ Prerequisites:
 ### Decomposition Steps
 
 **1. Identify Bounded Contexts:**
-```
+
+```text
 Activities:
 - Event storming workshop
 - Identify aggregates and entities
@@ -170,7 +182,8 @@ Activities:
 ```
 
 **2. Define Service Contracts:**
-```
+
+```text
 For each service:
 - REST/gRPC API specification
 - Event schema definitions
@@ -180,7 +193,8 @@ For each service:
 ```
 
 **3. Plan Data Migration:**
-```
+
+```text
 Data Strategy:
 - Identify shared data
 - Choose consistency model (eventual vs strong)
@@ -190,7 +204,8 @@ Data Strategy:
 ```
 
 **4. Extract Service:**
-```
+
+```text
 Implementation Order:
 1. Create new service skeleton
 2. Implement business logic
@@ -208,7 +223,8 @@ Implementation Order:
 ### Common Mistakes
 
 **Distributed Monolith:**
-```
+
+```text
 Symptoms:
 - Services must deploy together
 - Shared database between services
@@ -224,7 +240,8 @@ Solution:
 ```
 
 **Entity Services:**
-```
+
+```text
 Anti-Pattern:
 UserService (CRUD on User entity)
 OrderService (CRUD on Order entity)
@@ -239,7 +256,8 @@ ProductCatalog (search, recommendations, inventory)
 ```
 
 **Shared Libraries with Business Logic:**
-```
+
+```text
 Anti-Pattern:
 common-lib (shared across all services with domain logic)
 
@@ -259,7 +277,8 @@ Better:
 ### Design Review Checklist
 
 **Service Independence:**
-```
+
+```text
 Questions:
 - Can this service be deployed independently?
 - Does it own its data completely?
@@ -269,7 +288,8 @@ Questions:
 ```
 
 **Data Ownership:**
-```
+
+```text
 Verify:
 - No shared database tables
 - Clear data ownership boundaries
@@ -279,7 +299,8 @@ Verify:
 ```
 
 **Operational Readiness:**
-```
+
+```text
 Check:
 - Health check endpoint implemented
 - Readiness probe configured
@@ -295,7 +316,8 @@ Check:
 ### Monolith to Microservices
 
 **Gradual Extraction:**
-```
+
+```text
 Phase 1: Prepare
 - Add seams to monolith
 - Implement API layer
@@ -321,7 +343,8 @@ Phase 5: Decompose Remaining Monolith
 ```
 
 **Parallel Run Pattern:**
-```
+
+```text
 Strategy:
 1. Build new microservice
 2. Run both systems simultaneously
@@ -334,9 +357,12 @@ Use for: High-risk migrations, critical paths
 
 ## Summary
 
-Service decomposition is both art and science. Start with domain-driven design to identify natural boundaries, align with team structure, and extract incrementally. Avoid the temptation to over-decompose. A modular monolith is better than a poorly designed distributed system.
+Service decomposition is both art and science. Start with domain-driven design to identify natural boundaries, align
+with team structure, and extract incrementally. Avoid the temptation to over-decompose. A modular monolith is better
+than a poorly designed distributed system.
 
 **Key Takeaways:**
+
 - Bounded contexts define service boundaries
 - Database per service is non-negotiable
 - Team autonomy drives service design

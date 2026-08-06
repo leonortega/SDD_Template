@@ -4,11 +4,14 @@
 
 ### Overview
 
-SSRF vulnerabilities allow attackers to induce the server-side application to make HTTP requests to an arbitrary domain of the attacker's choosing. In cloud environments, SSRF is particularly dangerous because it can access instance metadata services, internal APIs, and private network resources.
+SSRF vulnerabilities allow attackers to induce the server-side application to make HTTP requests to an arbitrary domain
+of the attacker's choosing. In cloud environments, SSRF is particularly dangerous because it can access instance
+metadata services, internal APIs, and private network resources.
 
 ### Cloud Metadata Attacks
 
-Cloud providers expose instance metadata at well-known IP addresses. An SSRF vulnerability can leak IAM credentials, API tokens, and configuration data.
+Cloud providers expose instance metadata at well-known IP addresses. An SSRF vulnerability can leak IAM credentials, API
+tokens, and configuration data.
 
 ```php
 <?php
@@ -28,7 +31,8 @@ function fetchUrl(string $url): string
 // Digital Ocean: http://169.254.169.254/metadata/v1/
 ```
 
-**AWS IMDSv2 bypass**: IMDSv2 requires a PUT request to obtain a session token. If the SSRF allows control over HTTP method and headers, an attacker can still reach IMDSv2:
+**AWS IMDSv2 bypass**: IMDSv2 requires a PUT request to obtain a session token. If the SSRF allows control over HTTP
+method and headers, an attacker can still reach IMDSv2:
 
 ```php
 <?php
@@ -53,7 +57,8 @@ function fetchWithOptions(string $url, string $method = 'GET', array $headers = 
 
 ### DNS Rebinding Attacks
 
-DNS rebinding bypasses IP-based SSRF protections by resolving a domain to a safe IP during validation, then to an internal IP during the actual request.
+DNS rebinding bypasses IP-based SSRF protections by resolving a domain to a safe IP during validation, then to an
+internal IP during the actual request.
 
 ```php
 <?php
@@ -350,7 +355,8 @@ $ssrfPatterns = [
 
 ### Overview
 
-Mass assignment occurs when an application binds user-supplied input directly to object properties or database fields without filtering. An attacker can set fields they should not have access to, such as `is_admin`, `role`, or `price`.
+Mass assignment occurs when an application binds user-supplied input directly to object properties or database fields
+without filtering. An attacker can set fields they should not have access to, such as `is_admin`, `role`, or `price`.
 
 ### PHP Array Merge / Hydration Dangers
 
@@ -563,7 +569,9 @@ $massAssignmentPatterns = [
 
 ### Overview
 
-Race conditions occur when the behavior of a system depends on the sequence or timing of uncontrollable events. In web applications, race conditions can lead to duplicate transactions, inventory overselling, privilege escalation, and file system corruption.
+Race conditions occur when the behavior of a system depends on the sequence or timing of uncontrollable events. In web
+applications, race conditions can lead to duplicate transactions, inventory overselling, privilege escalation, and file
+system corruption.
 
 ### TOCTOU (Time of Check to Time of Use)
 
@@ -970,7 +978,9 @@ $raceConditionPatterns = [
 
 ### Overview
 
-While prototype pollution is primarily a JavaScript vulnerability, PHP APIs that accept JSON payloads can be vectors. If the PHP API passes JSON data to a JavaScript frontend or Node.js backend without sanitizing special keys like `__proto__`, `constructor`, or `prototype`, it enables prototype pollution in the downstream consumer.
+While prototype pollution is primarily a JavaScript vulnerability, PHP APIs that accept JSON payloads can be vectors. If
+the PHP API passes JSON data to a JavaScript frontend or Node.js backend without sanitizing special keys like
+`__proto__`, `constructor`, or `prototype`, it enables prototype pollution in the downstream consumer.
 
 ### JSON Key Injection in API Payloads
 
@@ -1212,11 +1222,14 @@ $prototypePollutionPatterns = [
 
 ### Overview
 
-CodeQL's `js/xss-through-dom` query tracks taint from DOM sources (e.g., `element.getAttribute()`, `document.querySelector().dataset`) to DOM sinks (e.g., `script.src`, `element.innerHTML`). This is a common finding in frontend code that reads configuration from `data-*` attributes and uses the values to load scripts or set HTML content.
+CodeQL's `js/xss-through-dom` query tracks taint from DOM sources (e.g., `element.getAttribute()`,
+`document.querySelector().dataset`) to DOM sinks (e.g., `script.src`, `element.innerHTML`). This is a common finding in
+frontend code that reads configuration from `data-*` attributes and uses the values to load scripts or set HTML content.
 
 ### Why Boolean Validation Does Not Work
 
-CodeQL performs taint tracking through the entire data flow. A boolean validation function (returning `true`/`false`) does **not** break the taint chain because the original tainted value is still used at the sink:
+CodeQL performs taint tracking through the entire data flow. A boolean validation function (returning `true`/`false`)
+does **not** break the taint chain because the original tainted value is still used at the sink:
 
 ```javascript
 // BAD: Boolean check -- CodeQL still tracks taint through cfgPath
@@ -1234,7 +1247,8 @@ if (!isSafeUrl(cfgPath)) return;
 script.src = cfgPath;  // CodeQL alert: js/xss-through-dom
 ```
 
-The variable `cfgPath` remains tainted regardless of the boolean check. CodeQL (correctly) identifies that an attacker who controls the DOM attribute value can still reach the sink.
+The variable `cfgPath` remains tainted regardless of the boolean check. CodeQL (correctly) identifies that an attacker
+who controls the DOM attribute value can still reach the sink.
 
 ### Correct Pattern: Return a Sanitized Value
 
@@ -1259,7 +1273,8 @@ if (!safeUrl) return;
 script.src = safeUrl;  // No alert -- safeUrl is a new value
 ```
 
-The key insight: `parsed.href` is a **new string** produced by the `URL` constructor, not the original tainted input. CodeQL recognizes that the `URL` constructor normalizes and reconstructs the value, breaking the taint chain.
+The key insight: `parsed.href` is a **new string** produced by the `URL` constructor, not the original tainted input.
+CodeQL recognizes that the `URL` constructor normalizes and reconstructs the value, breaking the taint chain.
 
 ### Common Scenarios
 
@@ -1272,7 +1287,7 @@ The key insight: `parsed.href` is a **new string** produced by the `URL` constru
 
 ### Detection Patterns
 
-```
+```text
 # Grep patterns for potential js/xss-through-dom vectors:
 getAttribute\(.*\).*\.src\s*=
 getAttribute\(.*\).*\.href\s*=

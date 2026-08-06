@@ -1,6 +1,8 @@
 ---
 name: event-store-design
-description: Design and implement event stores for event-sourced systems. Use when building event sourcing infrastructure, choosing event store technologies, or implementing event persistence patterns.
+description: >-
+  >- Design and implement event stores for event-sourced systems. Use when building event sourcing infrastructure,
+  choosing event store technologies, or implementing event persistence patterns.
 ---
 
 # Event Store Design
@@ -20,7 +22,7 @@ Comprehensive guide to designing event stores for event-sourced applications.
 
 ### 1. Event Store Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────┐
 │                    Event Store                       │
 ├─────────────────────────────────────────────────────┤
@@ -60,7 +62,8 @@ Comprehensive guide to designing event stores for event-sourced applications.
 
 ## Templates and detailed worked examples
 
-Full template library and detailed worked examples live in `references/details.md`. Read that file when you need the concrete templates.
+Full template library and detailed worked examples live in `references/details.md`. Read that file when you need the
+concrete templates.
 
 ## Best Practices
 

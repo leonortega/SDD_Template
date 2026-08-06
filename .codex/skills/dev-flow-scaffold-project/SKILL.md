@@ -1,7 +1,12 @@
 ---
 name: dev-flow-scaffold-project
 license: MIT
-description: Generate the implementation scaffold for the selected tech stack using AI, not a fixed template list. Reads frontend/backend/database from project-profile.local.json, runs the Mandatory Skill Catalog Review to activate the relevant skills (architecture, TDD, CI, k8s), and generates build manifests, test setup, Dockerfiles, CI workflows, and k8s artifacts for the actual stack. Use automatically after set-project-stack (scaffoldRequired/nextStage), or when the user asks to scaffold the project.
+description: >-
+  >- Generate the implementation scaffold for the selected tech stack using AI, not a fixed template list. Reads
+  frontend/backend/database from project-profile.local.json, runs the Mandatory Skill Catalog Review to activate the
+  relevant skills (architecture, TDD, CI, k8s), and generates build manifests, test setup, Dockerfiles, CI workflows,
+  and k8s artifacts for the actual stack. Use automatically after set-project-stack (scaffoldRequired/nextStage), or
+  when the user asks to scaffold the project.
 ---
 
 <!-- TIER 3: STAGE-SPECIFIC - AI-driven project scaffold after stack selection -->

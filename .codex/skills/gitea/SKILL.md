@@ -1,6 +1,9 @@
 ---
 name: gitea
-description: "Operate a Gitea instance via its REST API at /api/v1/... with curl. FORCED ROUTING — use this skill for any repository whose git remote host is not github.com: derive the candidate HTTPS base URL from the remote host, probe /api/v1/version, then call the REST endpoints directly."
+description: >-
+  >- "Operate a Gitea instance via its REST API at /api/v1/... with curl. FORCED ROUTING — use this skill for any
+  repository whose git remote host is not github.com: derive the candidate HTTPS base URL from the remote host, probe
+  /api/v1/version, then call the REST endpoints directly."
 ---
 
 # Gitea (REST API)
@@ -13,20 +16,42 @@ Keep this entry file small. Load only the reference pack the current turn needs.
 
 ## Always-On Rules
 
-0. **Forced forge routing.** Before any forge work, run `git remote get-url origin` and parse the host. If the host is `github.com`, this skill does not apply — use `gh`, including for internal GitHub organizations. For any other host, treat it as a Gitea candidate: derive `https://<host>` as the probe base URL, run `curl -fsS --max-time 5 "https://<host>/api/v1/version"`, and use this skill only if HTTP 200 returns JSON with a `version` field. If the probe fails or times out, ask the user; do not guess another forge.
-1. **Resolve `$GITEA_URL` + `$GITEA_TOKEN` from named env pairs, not from the user.** Each instance is exported as `GITEA_<ALIAS>_URL` + `GITEA_<ALIAS>_TOKEN` (e.g. `GITEA_ORGA_URL` + `GITEA_ORGA_TOKEN`). Call `gitea_auto` (defined in [setup.md](references/setup.md#instance-selection-multi-gitea)) to auto-pick the pair whose URL host matches the current repo's `origin`; falls back to the unaliased `GITEA_URL`/`GITEA_TOKEN`, then to gitea-mcp legacy `GITEA_HOST`/`GITEA_ACCESS_TOKEN`, then asks the user. `$GITEA_URL` is always the base URL **without** the `/api` suffix.
-2. Send `Authorization: token $GITEA_TOKEN` on every request. Never put the token in the query string (`?token=`) — it would be logged.
-3. Prefer `curl -s` piped to `jq` so results are easy to inspect. Always include `-o /dev/null -w '%{http_code}\n'` (or `--fail-with-body`) when verifying success on write/delete calls — Gitea returns success bodies on 2xx and a `{ "message": "...", "url": "..." }` error envelope on 4xx/5xx.
-4. **Respect destructiveness.** Any `DELETE` against `/branches`, `/contents`, `/releases`, `/tags`, labels, milestones, packages, secrets, variables, or wiki pages is **irreversible**. State exactly what will be removed and confirm with the user unless explicitly authorized.
-5. **Pagination**: most list endpoints take `?page=N&limit=M` (default `page=1`, `limit=30`, server max usually 50). A few older endpoints accept `per_page=` as an alias. Loop pages until the response is empty or `Link: rel="next"` is absent.
-6. `PUT /repos/{owner}/{repo}/contents/{path}` (create/update file): `content` must be **base64-encoded**. Omit `sha` to create; pass the current file `sha` to update.
-7. Endpoint responses are the resource directly — Gitea does **not** wrap them in `{ success, data }`. Errors come back with HTTP 4xx/5xx plus `{ "message": "...", "url": "..." }`.
+0. **Forced forge routing.** Before any forge work, run `git remote get-url origin` and parse the host. If the host is
+`github.com`, this skill does not apply — use `gh`, including for internal GitHub
+organizations. For any other host, treat it as a Gitea candidate: derive `https://<host>` as the probe base URL, run
+`curl -fsS --max-time 5 "https://<host>/api/v1/version"`, and use this skill only
+if HTTP 200 returns JSON with a `version` field. If the probe fails or times out, ask the user; do not guess another
+forge.
+1. **Resolve `$GITEA_URL` + `$GITEA_TOKEN` from named env pairs, not from the user.** Each instance is exported as
+`GITEA_<ALIAS>_URL` + `GITEA_<ALIAS>_TOKEN` (e.g. `GITEA_ORGA_URL` +
+`GITEA_ORGA_TOKEN`). Call `gitea_auto` (defined in [setup.md](references/setup.md#instance-selection-multi-gitea)) to
+auto-pick the pair whose URL host matches the current repo's `origin`; falls back
+to the unaliased `GITEA_URL`/`GITEA_TOKEN`, then to gitea-mcp legacy `GITEA_HOST`/`GITEA_ACCESS_TOKEN`, then asks the
+user. `$GITEA_URL` is always the base URL **without** the `/api` suffix.
+2. Send `Authorization: token $GITEA_TOKEN` on every request. Never put the token in the query string (`?token=`) — it
+would be logged.
+3. Prefer `curl -s` piped to `jq` so results are easy to inspect. Always include `-o /dev/null -w '%{http_code}\n'` (or
+`--fail-with-body`) when verifying success on write/delete calls — Gitea returns
+success bodies on 2xx and a `{ "message": "...", "url": "..." }` error envelope on 4xx/5xx.
+4. **Respect destructiveness.** Any `DELETE` against `/branches`, `/contents`, `/releases`, `/tags`, labels, milestones,
+packages, secrets, variables, or wiki pages is **irreversible**. State exactly
+what will be removed and confirm with the user unless explicitly authorized.
+5. **Pagination**: most list endpoints take `?page=N&limit=M` (default `page=1`, `limit=30`, server max usually 50). A
+few older endpoints accept `per_page=` as an alias. Loop pages until the response
+is empty or `Link: rel="next"` is absent.
+6. `PUT /repos/{owner}/{repo}/contents/{path}` (create/update file): `content` must be **base64-encoded**. Omit `sha` to
+create; pass the current file `sha` to update.
+7. Endpoint responses are the resource directly — Gitea does **not** wrap them in `{ success, data }`. Errors come back
+with HTTP 4xx/5xx plus `{ "message": "...", "url": "..." }`.
 
 ## Core Workflow
 
 ### Environment
 
-Credentials live in **named pairs** — `GITEA_<ALIAS>_URL` + `GITEA_<ALIAS>_TOKEN` — one pair per Gitea instance. `gitea_auto` matches the current repo's `origin` host to one of the URLs and loads that pair into `$GITEA_URL` + `$GITEA_TOKEN`. Full discovery order and inline helper code: [setup.md](references/setup.md#instance-selection-multi-gitea).
+Credentials live in **named pairs** — `GITEA_<ALIAS>_URL` + `GITEA_<ALIAS>_TOKEN` — one pair per Gitea instance.
+`gitea_auto` matches the current repo's `origin` host to one of the URLs and loads that
+pair into `$GITEA_URL` + `$GITEA_TOKEN`. Full discovery order and inline helper code:
+[setup.md](references/setup.md#instance-selection-multi-gitea).
 
 ```bash
 # Example user-side ~/.bashrc:
@@ -69,8 +94,11 @@ JSON=(-H 'Content-Type: application/json')
 
 Two usage patterns:
 
-- **Inside a repo**, no env set: `gitea_auto` parses `origin` and finds the alias whose `GITEA_<ALIAS>_URL` host matches.
-- **Outside a repo, or targeting a different instance**: `export GITEA_URL=https://git.aaa.com` first, then `gitea_auto` will match `git.aaa.com` against the configured aliases and pull the right token. No need to remember which alias corresponds to which host.
+- **Inside a repo**, no env set: `gitea_auto` parses `origin` and finds the alias whose `GITEA_<ALIAS>_URL` host
+matches.
+- **Outside a repo, or targeting a different instance**: `export GITEA_URL=https://git.aaa.com` first, then `gitea_auto`
+will match `git.aaa.com` against the configured aliases and pull the right
+token. No need to remember which alias corresponds to which host.
 
 Hard override: `gitea_use ORGA` activates the `ORGA` pair regardless of URL.
 
@@ -114,13 +142,16 @@ endpoint with method, path, key params, and a curl example.
 - `references/api-repo.md` — **~23 operations**
   Repos & forks, branches, tags, commits, repo tree, file contents (read / create / update / delete), releases.
 - `references/api-issues-prs.md` — **issue + PR endpoints**
-  `list/get/create/update issues`, comments, labels-on-issue; PR `list/get/diff/files/status/reviews/create/update/close/merge/update-branch/add-reviewers`; review submit/dismiss.
+  `list/get/create/update issues`, comments, labels-on-issue; PR
+  `list/get/diff/files/status/reviews/create/update/close/merge/update-branch/add-reviewers`; review submit/dismiss.
 - `references/api-project.md` — **labels, milestones, time tracking, wiki**
   Repo & org labels (CRUD), milestones (CRUD), stopwatches + tracked time entries, wiki pages + revisions.
 - `references/api-discovery.md` — **users, orgs, search, notifications, version**
-  `/user`, `/user/orgs`, `/users/search`, `/orgs/{org}/teams/search`, `/repos/search`, `/repos/issues/search`, notifications list/get/mark-read, `/version`.
+  `/user`, `/user/orgs`, `/users/search`, `/orgs/{org}/teams/search`, `/repos/search`, `/repos/issues/search`,
+  notifications list/get/mark-read, `/version`.
 - `references/api-cicd.md` — **actions & packages**
-  Workflows + runs + jobs + logs, dispatch/cancel/rerun runs, repo/org Actions secrets + variables CRUD, packages list/versions/get/delete.
+  Workflows + runs + jobs + logs, dispatch/cancel/rerun runs, repo/org Actions secrets + variables CRUD, packages
+  list/versions/get/delete.
 
 ## Quick Routing
 

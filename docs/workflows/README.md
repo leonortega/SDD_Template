@@ -53,7 +53,8 @@ Every row in the `AGENTS.md` routing table is documented in exactly one place:
 3. For **everything around the line** (resume, status, scaffold, audits, docs,
    dashboards), read `supporting-workflows.md`.
 4. For **multi-ticket delivery**, read `parallel-delivery.md`.
-5. For the **setup flow** (`full-setup`), read `supporting-workflows.md` §8, with the full architectural plan in `setup-flow-plan.md`.
+5. For the **setup flow** (`full-setup`), read `supporting-workflows.md` §8, with the full architectural plan in
+`setup-flow-plan.md`.
 
 ## Eval Alignment
 

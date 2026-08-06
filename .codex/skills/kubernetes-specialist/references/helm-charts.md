@@ -2,7 +2,7 @@
 
 ## Chart Structure
 
-```
+```text
 mychart/
 ├── Chart.yaml              # Chart metadata
 ├── values.yaml             # Default values

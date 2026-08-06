@@ -55,6 +55,7 @@ tea whoami
 ## Issues
 
 ### List Issues
+
 ```bash
 # Open issues in current repo
 tea issues list
@@ -73,6 +74,7 @@ tea issues list --repo owner/repo --login gitea.com
 ```
 
 ### View Issue
+
 ```bash
 # View issue with comments
 tea issue 42
@@ -85,6 +87,7 @@ tea open 42
 ```
 
 ### Create Issue
+
 ```bash
 # Interactive
 tea issues create
@@ -104,6 +107,7 @@ tea issues create \
 ```
 
 ### Modify Issues
+
 ```bash
 # Close issue
 tea issues close 42
@@ -121,6 +125,7 @@ tea issues edit 42 \
 ## Pull Requests
 
 ### List PRs
+
 ```bash
 # Open PRs
 tea pulls
@@ -133,6 +138,7 @@ tea pulls --reviewer username --label "needs-review"
 ```
 
 ### View PR
+
 ```bash
 # View PR details
 tea pr 15
@@ -145,6 +151,7 @@ tea open 15
 ```
 
 ### Create PR
+
 ```bash
 # Interactive
 tea pulls create
@@ -165,6 +172,7 @@ tea pulls create \
 ```
 
 ### Checkout PR
+
 ```bash
 # Checkout PR locally
 tea pulls checkout 20
@@ -177,6 +185,7 @@ tea pulls clean
 ```
 
 ### Review & Merge
+
 ```bash
 # Approve PR
 tea pulls approve 20 --comment "LGTM!"
@@ -205,6 +214,7 @@ tea pulls reopen 20
 ## Releases
 
 ### List Releases
+
 ```bash
 tea releases list
 tea releases list --limit 10
@@ -212,6 +222,7 @@ tea releases list --repo owner/project
 ```
 
 ### Create Release
+
 ```bash
 # Basic release
 tea releases create v1.0.0 \
@@ -244,6 +255,7 @@ tea releases create v1.3.0 \
 ```
 
 ### Edit/Delete Release
+
 ```bash
 # Update release
 tea releases edit v1.0.0 \
@@ -484,12 +496,14 @@ tea login default <login-name>
 ## Guidelines
 
 ### Do
+
 - Use `--output simple` or `--output json` for non-interactive mode
 - Provide all required arguments upfront to avoid prompts
 - Run `tea whoami` to verify authentication before operations
 - Use `tea open <number>` to quickly view in browser
 
 ### Don't
+
 - Use interactive commands in AI agent context (no TTY)
 - Forget `--repo owner/repo` when outside git repository
 - Skip `--yes` flag for destructive operations in scripts
@@ -498,6 +512,7 @@ tea login default <login-name>
 ## Examples
 
 ### Example: Feature Branch → PR
+
 ```bash
 git checkout -b feature/new-feature
 # ... make changes ...
@@ -507,6 +522,7 @@ tea pulls create --title "Add new feature" --base main --head feature/new-featur
 ```
 
 ### Example: Review & Merge PR
+
 ```bash
 tea pulls checkout 20
 # ... review code ...
@@ -515,6 +531,7 @@ tea pulls merge 20 --style squash
 ```
 
 ### Example: Create Release with Assets
+
 ```bash
 git tag v1.0.0
 git push origin v1.0.0

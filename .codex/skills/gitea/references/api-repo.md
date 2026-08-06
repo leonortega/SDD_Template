@@ -1,6 +1,8 @@
 # Gitea REST API — Repositories, files, branches, tags, commits, releases
 
-All examples use the `gitea` helper from [setup.md](setup.md#gitea-helper-function) (auto-injects URL + auth + JSON header + jq + 4xx handling). Annotation column: `R` = read-only, `W` = write, `D` = **DESTRUCTIVE** (confirm with the user first).
+All examples use the `gitea` helper from [setup.md](setup.md#gitea-helper-function) (auto-injects URL + auth + JSON
+header + jq + 4xx handling). Annotation column: `R` = read-only, `W` = write, `D` = **DESTRUCTIVE** (confirm with the
+user first).
 
 ## Endpoint reference
 
@@ -55,7 +57,9 @@ All examples use the `gitea` helper from [setup.md](setup.md#gitea-helper-functi
 gitea POST /user/repos -d '{"name":"my-repo","description":"...","private":false,"auto_init":true,"default_branch":"main"}'
 ```
 
-Body fields: `name` (req), `description`, `private`, `auto_init`, `template`, `gitignores`, `license`, `readme`, `default_branch`, `issue_labels`, `trust_model` (`default|collaborator|committer|collaboratorcommitter`), `object_format_name` (`sha1|sha256`).
+Body fields: `name` (req), `description`, `private`, `auto_init`, `template`, `gitignores`, `license`, `readme`,
+`default_branch`, `issue_labels`, `trust_model` (`default|collaborator|committer|collaboratorcommitter`),
+`object_format_name` (`sha1|sha256`).
 
 ### Create org repo · `POST /orgs/{org}/repos` · write
 
@@ -89,7 +93,9 @@ gitea GET '/user/repos?limit=50'
 gitea PATCH /repos/{owner}/{repo} -d '{"description":"new","default_branch":"main"}'
 ```
 
-Body fields (any subset): `name`, `description`, `website`, `private`, `default_branch`, `has_issues`, `has_pull_requests`, `has_wiki`, `archived`, `allow_merge_commits`, `allow_rebase`, `allow_squash_merge`, `internal_tracker`, etc.
+Body fields (any subset): `name`, `description`, `website`, `private`, `default_branch`, `has_issues`,
+`has_pull_requests`, `has_wiki`, `archived`, `allow_merge_commits`, `allow_rebase`, `allow_squash_merge`,
+`internal_tracker`, etc.
 
 ### Delete repo · `DELETE /repos/{owner}/{repo}` · **DESTRUCTIVE**
 
@@ -176,9 +182,12 @@ gitea PUT /repos/{owner}/{repo}/contents/README.md -d "$(jq -n \
   '{message:"docs: update readme", branch:"main", content:$c, sha:"<current-sha-or-omit>"}')"
 ```
 
-Body: `message` (req, commit message), `content` (req, **base64-encoded**), `branch` (target branch — required if not repo default), `new_branch` (create branch for this change), `sha` (current file SHA — **omit to create**, **set to update**), `author` / `committer` (`{name,email}` objects, opt).
+Body: `message` (req, commit message), `content` (req, **base64-encoded**), `branch` (target branch — required if not
+repo default), `new_branch` (create branch for this change), `sha` (current file SHA — **omit to create**, **set to
+update**), `author` / `committer` (`{name,email}` objects, opt).
 
-Conflict (wrong `sha`) returns 409. Wrong base64 returns 422. Use `jq -n --arg` to safely embed multi-line / special-char content.
+Conflict (wrong `sha`) returns 409. Wrong base64 returns 422. Use `jq -n --arg` to safely embed multi-line /
+special-char content.
 
 ### Delete file · `DELETE /repos/{owner}/{repo}/contents/{path}` · **DESTRUCTIVE**
 
@@ -204,7 +213,8 @@ gitea POST /repos/{owner}/{repo}/releases \
   -d '{"tag_name":"v1.0.0","target_commitish":"main","name":"v1.0.0","body":"Notes...","draft":false,"prerelease":false}'
 ```
 
-Body: `tag_name` (req), `target_commitish` (branch or commit, req when tag does not exist), `name` (display title), `body`, `draft`, `prerelease`.
+Body: `tag_name` (req), `target_commitish` (branch or commit, req when tag does not exist), `name` (display title),
+`body`, `draft`, `prerelease`.
 
 ### Edit release · `PATCH /repos/{owner}/{repo}/releases/{id}` · write
 
@@ -216,9 +226,11 @@ Body fields: `tag_name`, `target_commitish`, `name`, `body`, `draft`, `prereleas
 
 - **List**: `gitea GET /repos/{owner}/{repo}/releases/{id}/assets`
 - **Upload** (multipart — use raw `curl` so it can set the multipart boundary):
+
   ```bash
   curl -sS "${AUTH[@]}" \
     "$GITEA_URL/api/v1/repos/{owner}/{repo}/releases/{id}/assets?name=app.tar.gz" \
     -F 'attachment=@./app.tar.gz'
   ```
+
 - **Delete**: `gitea DELETE /repos/{owner}/{repo}/releases/{id}/assets/{aid}` · **DESTRUCTIVE**

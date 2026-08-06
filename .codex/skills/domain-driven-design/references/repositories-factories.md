@@ -1,9 +1,12 @@
 # Repositories and Factories
 
-Repositories and Factories are infrastructure-facing patterns in Domain-Driven Design that separate domain logic from persistence and object creation concerns. The Repository provides the illusion of an in-memory collection of aggregates. The Factory encapsulates complex creation logic. Together, they keep the domain model clean and focused on business rules.
-
+Repositories and Factories are infrastructure-facing patterns in Domain-Driven Design that separate domain logic from
+persistence and object creation concerns. The Repository provides the illusion of an in-memory collection of aggregates.
+The Factory encapsulates complex creation logic. Together, they keep the domain model clean and focused on business
+rules.
 
 ## Table of Contents
+
 1. [The Repository Pattern](#the-repository-pattern)
 2. [The Factory Pattern](#the-factory-pattern)
 3. [The Specification Pattern](#the-specification-pattern)
@@ -13,13 +16,14 @@ Repositories and Factories are infrastructure-facing patterns in Domain-Driven D
 
 ## The Repository Pattern
 
-A Repository mediates between the domain and data mapping layers, acting like an in-memory collection of domain objects. Domain code uses the repository to obtain aggregates without knowing how they are stored, queried, or reconstructed.
+A Repository mediates between the domain and data mapping layers, acting like an in-memory collection of domain objects.
+Domain code uses the repository to obtain aggregates without knowing how they are stored, queried, or reconstructed.
 
 ### Why Repositories Exist
 
 Without repositories, domain logic becomes tangled with data access:
 
-```
+```text
 // Without repository -- domain logic polluted with SQL
 def approve_claim(claim_id):
     row = db.execute("SELECT * FROM claims WHERE id = ?", claim_id)
@@ -28,7 +32,7 @@ def approve_claim(claim_id):
     db.execute("UPDATE claims SET status = ? WHERE id = ?", claim.status, claim.id)
 ```
 
-```
+```text
 // With repository -- domain logic is clean
 def approve_claim(claim_id):
     claim = claim_repository.find_by_id(claim_id)
@@ -43,12 +47,14 @@ The second version is readable by a domain expert. The first is not.
 The repository interface belongs in the domain layer. It speaks the ubiquitous language:
 
 **Good repository methods:**
+
 - `find_by_id(order_id)` -- straightforward identity lookup
 - `find_pending_orders()` -- uses domain language ("pending")
 - `find_by_customer(customer_id)` -- domain-meaningful query
 - `find_overdue_invoices(as_of_date)` -- business concept in the method name
 
 **Bad repository methods:**
+
 - `get_by_status_code(3)` -- magic number; what is status 3?
 - `query(sql_string)` -- leaks persistence technology into the domain
 - `find_all_with_joins()` -- technical concern, not domain language
@@ -60,9 +66,10 @@ Eric Evans described two flavors of repository, each modeling a different metaph
 
 #### Collection-Oriented Repository
 
-Models the repository as an in-memory collection. You add objects to it and remove objects from it. Changes to retrieved objects are automatically tracked and persisted (like JPA/Hibernate managed entities).
+Models the repository as an in-memory collection. You add objects to it and remove objects from it. Changes to retrieved
+objects are automatically tracked and persisted (like JPA/Hibernate managed entities).
 
-```
+```text
 interface OrderRepository:
     add(order)           # Like collection.add()
     remove(order)        # Like collection.remove()
@@ -78,9 +85,10 @@ interface OrderRepository:
 
 #### Persistence-Oriented Repository
 
-Models the repository as a storage mechanism. You explicitly save objects and the repository does not track changes automatically.
+Models the repository as a storage mechanism. You explicitly save objects and the repository does not track changes
+automatically.
 
-```
+```text
 interface OrderRepository:
     save(order)          # Explicit persist/update
     delete(order_id)     # Explicit remove
@@ -94,13 +102,16 @@ interface OrderRepository:
 
 **Disadvantages:** Must remember to call save(); risk of losing changes if save is forgotten.
 
-**Which to choose:** If your persistence technology offers change tracking and your team is comfortable with it, use collection-oriented. Otherwise, use persistence-oriented. The persistence-oriented style is more common in modern applications because it is more explicit.
+**Which to choose:** If your persistence technology offers change tracking and your team is comfortable with it, use
+collection-oriented. Otherwise, use persistence-oriented. The persistence-oriented style is more common in modern
+applications because it is more explicit.
 
 ### Repository Implementation
 
-The repository interface lives in the domain layer. The implementation lives in the infrastructure layer. This is the Dependency Inversion Principle in action:
+The repository interface lives in the domain layer. The implementation lives in the infrastructure layer. This is the
+Dependency Inversion Principle in action:
 
-```
+```text
 domain/
     model/
         Order.py              # Aggregate root
@@ -114,15 +125,19 @@ infrastructure/
         InMemoryOrderRepository.py    # Implementation for tests
 ```
 
-The domain layer defines what it needs (the interface). The infrastructure layer provides it (the implementation). The domain never imports from infrastructure.
+The domain layer defines what it needs (the interface). The infrastructure layer provides it (the implementation). The
+domain never imports from infrastructure.
 
 ### What a Repository Returns
 
-A repository always returns fully constituted aggregates -- not partial objects, not DTOs, not database rows. The aggregate returned from a repository must be in a valid state with all its invariants satisfied.
+A repository always returns fully constituted aggregates -- not partial objects, not DTOs, not database rows. The
+aggregate returned from a repository must be in a valid state with all its invariants satisfied.
 
-**Correct:** `order_repository.find_by_id(id)` returns an `Order` with all its `OrderLineItems` loaded, ready to have business operations performed on it.
+**Correct:** `order_repository.find_by_id(id)` returns an `Order` with all its `OrderLineItems` loaded, ready to have
+business operations performed on it.
 
-**Incorrect:** `order_repository.find_by_id(id)` returns an `OrderDTO` with some fields populated and others lazily loaded. The caller must check which fields are available.
+**Incorrect:** `order_repository.find_by_id(id)` returns an `OrderDTO` with some fields populated and others lazily
+loaded. The caller must check which fields are available.
 
 ### Repository Anti-Patterns
 
@@ -136,7 +151,8 @@ A repository always returns fully constituted aggregates -- not partial objects,
 
 ## The Factory Pattern
 
-A Factory encapsulates the logic of creating a domain object, ensuring that the object is fully formed and valid from the moment it exists. In DDD, factories are used when object creation is complex enough to warrant its own abstraction.
+A Factory encapsulates the logic of creating a domain object, ensuring that the object is fully formed and valid from
+the moment it exists. In DDD, factories are used when object creation is complex enough to warrant its own abstraction.
 
 ### When to Use a Factory
 
@@ -154,7 +170,7 @@ A Factory encapsulates the logic of creating a domain object, ensuring that the 
 
 The most common pattern: a static or class method on the aggregate itself:
 
-```
+```text
 class Order:
     @staticmethod
     def create_from_cart(cart, customer_id):
@@ -179,7 +195,7 @@ class Order:
 
 When one aggregate creates another:
 
-```
+```text
 class Quote:
     def convert_to_order(self):
         # Quote knows how to create an Order from itself
@@ -197,7 +213,7 @@ class Quote:
 
 When creation logic does not naturally belong to any existing aggregate:
 
-```
+```text
 class LoanApplicationFactory:
     def create_from_submission(self, submission, credit_report):
         # Complex assembly involving multiple inputs
@@ -214,9 +230,10 @@ class LoanApplicationFactory:
 
 ### Factory Invariants
 
-The most critical rule of factories: **a factory must never produce an invalid object.** If the inputs are insufficient or violate business rules, the factory must fail (throw an exception), not produce a partially valid object.
+The most critical rule of factories: **a factory must never produce an invalid object.** If the inputs are insufficient
+or violate business rules, the factory must fail (throw an exception), not produce a partially valid object.
 
-```
+```text
 # Good -- factory enforces invariants
 class Order:
     @staticmethod
@@ -249,7 +266,7 @@ There is an important distinction between creating a new aggregate and reconstit
 
 Reconstitution typically happens inside the repository implementation:
 
-```
+```text
 class PostgresOrderRepository:
     def find_by_id(self, order_id):
         row = self.db.query("SELECT * FROM orders WHERE id = ?", order_id)
@@ -265,13 +282,14 @@ class PostgresOrderRepository:
 
 ## The Specification Pattern
 
-The Specification pattern encapsulates query criteria as first-class domain objects. Instead of building queries in service code, you express criteria as composable specification objects.
+The Specification pattern encapsulates query criteria as first-class domain objects. Instead of building queries in
+service code, you express criteria as composable specification objects.
 
 ### Why Specifications
 
 Without specifications, query logic scatters across the codebase:
 
-```
+```text
 # Query logic in a service -- not reusable, not composable
 def find_risky_orders(self):
     return db.query("SELECT * FROM orders WHERE total > 10000 AND customer_risk > 7")
@@ -283,7 +301,7 @@ def find_very_risky_orders(self):
 
 With specifications:
 
-```
+```text
 high_value = OrderValueExceeds(10000)
 high_risk = CustomerRiskAbove(7)
 risky_orders = order_repository.find_matching(high_value.and_(high_risk))
@@ -304,9 +322,10 @@ Specifications compose using logical operators:
 
 ### Specifications in the Domain Layer
 
-The specification interface lives in the domain layer. Implementations can be in the domain (for in-memory filtering) or infrastructure (for database queries):
+The specification interface lives in the domain layer. Implementations can be in the domain (for in-memory filtering) or
+infrastructure (for database queries):
 
-```
+```text
 # Domain layer -- specification interface
 class Specification:
     def is_satisfied_by(self, candidate) -> bool:
@@ -324,7 +343,7 @@ class OverdueInvoice(Specification):
 
 Repositories and Factories fit naturally into the Ports and Adapters (Hexagonal) architecture:
 
-```
+```text
                     Domain Layer
                    ┌─────────────────────────┐
                    │  Aggregates             │
@@ -344,9 +363,11 @@ Repositories and Factories fit naturally into the Ports and Adapters (Hexagonal)
                    └─────────────────────────┘
 ```
 
-**The key principle:** The domain defines what it needs (ports). Infrastructure provides it (adapters). Dependencies point inward -- infrastructure depends on domain, never the reverse.
+**The key principle:** The domain defines what it needs (ports). Infrastructure provides it (adapters). Dependencies
+point inward -- infrastructure depends on domain, never the reverse.
 
 This means:
+
 - The domain layer has zero imports from infrastructure packages
 - Repository interfaces use domain types (`Order`, `OrderId`), not infrastructure types (`Row`, `Document`)
 - The application can swap persistence technologies by providing a new adapter without touching domain code

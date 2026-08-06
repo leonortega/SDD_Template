@@ -4,9 +4,10 @@ A comprehensive reference for integrating security scanning tools into CI/CD pip
 
 ## Overview
 
-A defense-in-depth CI pipeline catches different vulnerability classes at different stages. No single tool covers everything.
+A defense-in-depth CI pipeline catches different vulnerability classes at different stages. No single tool covers
+everything.
 
-```
+```text
 Source Code ──> Dependencies ──> Static Analysis ──> Secrets ──> Container ──> SBOM
    │                │                  │                │           │            │
    ▼                ▼                  ▼                ▼           ▼            ▼
@@ -60,6 +61,7 @@ jobs:
 ```
 
 **Key options:**
+
 - `composer audit` - Check for known vulnerabilities
 - `composer audit --format=json` - Machine-readable output
 - `composer audit --locked` - Check against lock file (faster, no install needed)
@@ -100,7 +102,8 @@ update` time, not looked up live at audit time. Two consequences:
 
 ### Trivy (Multi-Purpose Scanner)
 
-Trivy scans dependencies, containers, IaC files, and checks licenses. It is a strong starting point because a single tool covers multiple categories.
+Trivy scans dependencies, containers, IaC files, and checks licenses. It is a strong starting point because a single
+tool covers multiple categories.
 
 ```yaml
   trivy-scan:
@@ -126,6 +129,7 @@ Trivy scans dependencies, containers, IaC files, and checks licenses. It is a st
 ```
 
 **Trivy scan types:**
+
 - `fs` - Filesystem (composer.lock, package-lock.json, Dockerfile, Terraform, etc.)
 - `image` - Container images
 - `repo` - Remote git repository
@@ -158,7 +162,8 @@ If your PHP project includes frontend assets managed by npm.
 
 ### Semgrep with PHP Rules
 
-Semgrep is a fast, pattern-matching SAST tool with community-maintained PHP rulesets. It finds injection flaws, insecure configurations, and framework-specific issues.
+Semgrep is a fast, pattern-matching SAST tool with community-maintained PHP rulesets. It finds injection flaws, insecure
+configurations, and framework-specific issues.
 
 ```yaml
   semgrep:
@@ -228,7 +233,8 @@ rules:
 
 ### CodeQL for PHP
 
-GitHub's CodeQL provides deep semantic analysis. It understands data flow and can trace taint from sources (user input) to sinks (dangerous functions).
+GitHub's CodeQL provides deep semantic analysis. It understands data flow and can trace taint from sources (user input)
+to sinks (dangerous functions).
 
 ```yaml
   codeql:
@@ -250,11 +256,13 @@ GitHub's CodeQL provides deep semantic analysis. It understands data flow and ca
         uses: github/codeql-action/analyze@v3
 ```
 
-**Note:** CodeQL's PHP support is less mature than its support for JavaScript, Python, and Java. For PHP projects, Semgrep and Psalm taint analysis typically provide better coverage.
+**Note:** CodeQL's PHP support is less mature than its support for JavaScript, Python, and Java. For PHP projects,
+Semgrep and Psalm taint analysis typically provide better coverage.
 
 ### PHPStan (Security-Focused Rules)
 
-PHPStan at higher rule levels catches type-safety issues that have security implications. Combine with security-focused extensions.
+PHPStan at higher rule levels catches type-safety issues that have security implications. Combine with security-focused
+extensions.
 
 ```yaml
   phpstan:
@@ -302,7 +310,8 @@ includes:
 
 ### Psalm (Taint Analysis)
 
-Psalm's taint analysis tracks data flow from user-controlled sources to security-sensitive sinks. This is one of the most powerful PHP-specific security analysis capabilities.
+Psalm's taint analysis tracks data flow from user-controlled sources to security-sensitive sinks. This is one of the
+most powerful PHP-specific security analysis capabilities.
 
 ```yaml
   psalm-taint:
@@ -381,6 +390,7 @@ All tools that output SARIF (Static Analysis Results Interchange Format) can upl
 ```
 
 **Requirements:**
+
 - Repository must have GitHub Advanced Security enabled (free for public repos)
 - Workflow needs `security-events: write` permission
 - SARIF file must be valid (max 10 MB, max 5000 results)
@@ -389,9 +399,11 @@ All tools that output SARIF (Static Analysis Results Interchange Format) can upl
 
 ### GitHub Native Secret Scanning + Push Protection
 
-GitHub's built-in secret scanning detects leaked credentials in commits. Push protection blocks pushes containing detected secrets before they reach the repository.
+GitHub's built-in secret scanning detects leaked credentials in commits. Push protection blocks pushes containing
+detected secrets before they reach the repository.
 
 **Setup (via repository settings):**
+
 1. Settings > Code security and analysis
 2. Enable "Secret scanning"
 3. Enable "Push protection"
@@ -399,7 +411,8 @@ GitHub's built-in secret scanning detects leaked credentials in commits. Push pr
 No workflow configuration needed -- this runs automatically on all pushes.
 
 **Custom patterns (organization-level):**
-```
+
+```text
 # Settings > Code security > Secret scanning > Custom patterns
 Pattern name: Internal API Key
 Pattern: INTERNAL_[A-Z]+_KEY_[a-zA-Z0-9]{32,}
@@ -548,6 +561,7 @@ Hadolint checks Dockerfiles for best practices and security issues.
 ```
 
 **Security-relevant Hadolint rules:**
+
 - `DL3002` - Do not switch to root USER (last user should not be root)
 - `DL3003` - Use WORKDIR instead of `cd`
 - `DL3006` - Always tag the image version (no `FROM php:latest`)
@@ -608,7 +622,8 @@ USER appuser
 
 ## Recommended Minimal Pipeline
 
-For projects just starting with CI security, this three-tool combination provides strong baseline coverage with minimal setup.
+For projects just starting with CI security, this three-tool combination provides strong baseline coverage with minimal
+setup.
 
 ```yaml
 # .github/workflows/security.yml
@@ -707,7 +722,7 @@ Add these tools as your security posture matures:
 
 ## Detection Patterns for CI Configuration Audit
 
-```
+```text
 # Find workflows missing security scanning
 # Check: .github/workflows/*.yml should contain at least one security job
 

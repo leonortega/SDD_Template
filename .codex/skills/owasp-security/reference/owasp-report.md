@@ -16,7 +16,8 @@ A comprehensive guide to the latest OWASP security standards for developers buil
 
 ## OWASP Top 10:2025
 
-Released at OWASP Global AppSec EU Barcelona 2025, based on analysis of 175,000+ CVEs and 2.8 million applications tested.
+Released at OWASP Global AppSec EU Barcelona 2025, based on analysis of 175,000+ CVEs and 2.8 million applications
+tested.
 
 ### Summary Table
 
@@ -37,9 +38,11 @@ Released at OWASP Global AppSec EU Barcelona 2025, based on analysis of 175,000+
 
 ### A01:2025 – Broken Access Control
 
-**Description:** Access control enforces policies that prevent users from acting outside their intended permissions. Failures lead to unauthorized data disclosure, modification, or destruction.
+**Description:** Access control enforces policies that prevent users from acting outside their intended permissions.
+Failures lead to unauthorized data disclosure, modification, or destruction.
 
 **Common Vulnerabilities:**
+
 - Bypassing access control by modifying URLs, application state, or HTML pages
 - Allowing primary key changes to access others' records (IDOR)
 - Privilege escalation (acting as admin while logged in as user)
@@ -47,6 +50,7 @@ Released at OWASP Global AppSec EU Barcelona 2025, based on analysis of 175,000+
 - CORS misconfiguration allowing unauthorized API access
 
 **Prevention:**
+
 ```python
 # BAD: No authorization check
 @app.route('/api/user/<user_id>')
@@ -63,6 +67,7 @@ def get_user(user_id):
 ```
 
 **Mitigation Strategies:**
+
 1. Deny access by default (allowlist approach)
 2. Implement access control once, reuse throughout application
 3. Enforce record ownership instead of accepting user-supplied IDs
@@ -74,9 +79,11 @@ def get_user(user_id):
 
 ### A02:2025 – Security Misconfiguration
 
-**Description:** Applications are vulnerable when security hardening is missing, cloud permissions are improperly configured, unnecessary features are enabled, or default accounts remain active.
+**Description:** Applications are vulnerable when security hardening is missing, cloud permissions are improperly
+configured, unnecessary features are enabled, or default accounts remain active.
 
 **Common Vulnerabilities:**
+
 - Missing security hardening across the application stack
 - Unnecessary features enabled (ports, services, pages, accounts)
 - Default credentials unchanged
@@ -85,6 +92,7 @@ def get_user(user_id):
 - Insecure cloud storage permissions (S3 buckets public)
 
 **Prevention:**
+
 ```yaml
 # BAD: Debug mode in production
 DEBUG=True
@@ -100,6 +108,7 @@ CSRF_COOKIE_SECURE=True
 ```
 
 **Mitigation Strategies:**
+
 1. Automated, repeatable hardening process across environments
 2. Minimal platform without unnecessary features or frameworks
 3. Regularly review and update configurations (cloud permissions, patches)
@@ -111,9 +120,11 @@ CSRF_COOKIE_SECURE=True
 
 ### A03:2025 – Software Supply Chain Failures
 
-**Description:** NEW category highlighting risks from third-party dependencies, compromised build pipelines, and insecure package management. Expanded from 2021's component vulnerabilities focus.
+**Description:** NEW category highlighting risks from third-party dependencies, compromised build pipelines, and
+insecure package management. Expanded from 2021's component vulnerabilities focus.
 
 **Common Vulnerabilities:**
+
 - Using components with known vulnerabilities
 - Dependency confusion attacks
 - Typosquatting in package registries
@@ -122,6 +133,7 @@ CSRF_COOKIE_SECURE=True
 - Lack of software bill of materials (SBOM)
 
 **Prevention:**
+
 ```bash
 # BAD: Installing without verification
 npm install some-package
@@ -145,6 +157,7 @@ npm audit signatures
 ```
 
 **Mitigation Strategies:**
+
 1. Maintain inventory of all components (SBOM)
 2. Remove unused dependencies and features
 3. Continuously monitor for vulnerabilities (Dependabot, Snyk)
@@ -157,9 +170,11 @@ npm audit signatures
 
 ### A04:2025 – Cryptographic Failures
 
-**Description:** Failures related to cryptography that lead to exposure of sensitive data. Includes weak algorithms, improper key management, and missing encryption.
+**Description:** Failures related to cryptography that lead to exposure of sensitive data. Includes weak algorithms,
+improper key management, and missing encryption.
 
 **Common Vulnerabilities:**
+
 - Transmitting data in clear text (HTTP, SMTP, FTP)
 - Using deprecated algorithms (MD5, SHA1, DES)
 - Weak or default cryptographic keys
@@ -168,6 +183,7 @@ npm audit signatures
 - Insufficient entropy for random number generation
 
 **Prevention:**
+
 ```python
 # BAD: Weak hashing
 import hashlib
@@ -188,6 +204,7 @@ cipher = Fernet(key)
 ```
 
 **Mitigation Strategies:**
+
 1. Classify data by sensitivity; apply controls accordingly
 2. Don't store sensitive data unnecessarily
 3. Encrypt all data in transit (TLS 1.2+) and at rest
@@ -200,15 +217,18 @@ cipher = Fernet(key)
 
 ### A05:2025 – Injection
 
-**Description:** Injection occurs when untrusted data is sent to an interpreter as part of a command or query. Includes SQL, NoSQL, OS, LDAP, and expression language injection.
+**Description:** Injection occurs when untrusted data is sent to an interpreter as part of a command or query. Includes
+SQL, NoSQL, OS, LDAP, and expression language injection.
 
 **Common Vulnerabilities:**
+
 - User input not validated, filtered, or sanitized
 - Dynamic queries without parameterization
 - Hostile data used in ORM search parameters
 - Direct concatenation of user input in commands
 
 **Prevention:**
+
 ```python
 # BAD: SQL Injection vulnerable
 query = f"SELECT * FROM users WHERE id = {user_id}"
@@ -234,6 +254,7 @@ db.users.find({ username: req.body.username })
 ```
 
 **Mitigation Strategies:**
+
 1. Use safe APIs with parameterized interfaces
 2. Validate all input using allowlists
 3. Escape special characters for specific interpreters
@@ -244,9 +265,11 @@ db.users.find({ username: req.body.username })
 
 ### A06:2025 – Insecure Design
 
-**Description:** Flaws in design and architecture that cannot be fixed by perfect implementation. Represents missing or ineffective security controls at the design phase.
+**Description:** Flaws in design and architecture that cannot be fixed by perfect implementation. Represents missing or
+ineffective security controls at the design phase.
 
 **Common Vulnerabilities:**
+
 - Missing rate limiting on sensitive operations
 - No account lockout for failed authentication
 - Lack of tenant isolation in multi-tenant systems
@@ -254,6 +277,7 @@ db.users.find({ username: req.body.username })
 - Insufficient trust boundaries
 
 **Prevention:**
+
 ```python
 # BAD: No rate limiting on password reset
 @app.route('/password-reset', methods=['POST'])
@@ -277,6 +301,7 @@ def password_reset():
 ```
 
 **Mitigation Strategies:**
+
 1. Establish secure development lifecycle with security experts
 2. Create and use secure design patterns library
 3. Threat modeling for authentication, access control, business logic
@@ -288,9 +313,11 @@ def password_reset():
 
 ### A07:2025 – Identification and Authentication Failures
 
-**Description:** Confirmation of user identity, authentication, and session management is critical. Weaknesses allow attackers to compromise passwords, keys, or session tokens.
+**Description:** Confirmation of user identity, authentication, and session management is critical. Weaknesses allow
+attackers to compromise passwords, keys, or session tokens.
 
 **Common Vulnerabilities:**
+
 - Permitting weak or well-known passwords
 - Using weak credential recovery (knowledge-based answers)
 - Plain text or weakly hashed passwords
@@ -299,6 +326,7 @@ def password_reset():
 - Not properly invalidating sessions on logout
 
 **Prevention:**
+
 ```python
 # Password strength requirements
 import re
@@ -320,6 +348,7 @@ def logout():
 ```
 
 **Mitigation Strategies:**
+
 1. Implement MFA to prevent automated attacks
 2. Avoid shipping with default credentials
 3. Check passwords against known breached password lists
@@ -332,9 +361,11 @@ def logout():
 
 ### A08:2025 – Software and Data Integrity Failures
 
-**Description:** Code and infrastructure that doesn't protect against integrity violations. Includes insecure deserialization, trusting unsigned updates, and CI/CD without verification.
+**Description:** Code and infrastructure that doesn't protect against integrity violations. Includes insecure
+deserialization, trusting unsigned updates, and CI/CD without verification.
 
 **Common Vulnerabilities:**
+
 - Applications relying on untrusted CDNs or repositories
 - Auto-update without integrity verification
 - Insecure deserialization of untrusted data
@@ -342,6 +373,7 @@ def logout():
 - Unsigned or unverified code deployments
 
 **Prevention:**
+
 ```html
 <!-- BAD: CDN without integrity -->
 <script src="https://cdn.example.com/lib.js"></script>
@@ -364,6 +396,7 @@ validate_schema(data)
 ```
 
 **Mitigation Strategies:**
+
 1. Use digital signatures to verify software/data from expected source
 2. Ensure dependencies are from trusted repositories
 3. Use software supply chain security tools (OWASP Dependency-Check)
@@ -375,9 +408,11 @@ validate_schema(data)
 
 ### A09:2025 – Security Logging and Monitoring Failures
 
-**Description:** Without logging and monitoring, breaches cannot be detected. Insufficient logging, detection, monitoring, and response allows attackers to persist.
+**Description:** Without logging and monitoring, breaches cannot be detected. Insufficient logging, detection,
+monitoring, and response allows attackers to persist.
 
 **Common Vulnerabilities:**
+
 - Auditable events not logged (logins, failed logins, transactions)
 - Warnings and errors generate unclear log messages
 - Logs only stored locally
@@ -386,6 +421,7 @@ validate_schema(data)
 - Application can't detect active attacks in real-time
 
 **Prevention:**
+
 ```python
 import logging
 from datetime import datetime
@@ -409,6 +445,7 @@ def login():
 ```
 
 **Mitigation Strategies:**
+
 1. Log all login, access control, and server-side validation failures
 2. Generate logs in format consumable by log management solutions
 3. Encode log data correctly to prevent injection attacks
@@ -420,9 +457,11 @@ def login():
 
 ### A10:2025 – Mishandling of Exceptional Conditions
 
-**Description:** NEW category addressing failures in handling errors, edge cases, and unexpected states. Poor exception handling can leak information or cause security failures.
+**Description:** NEW category addressing failures in handling errors, edge cases, and unexpected states. Poor exception
+handling can leak information or cause security failures.
 
 **Common Vulnerabilities:**
+
 - Exposing stack traces to users
 - Inconsistent error handling between components
 - Fail-open behavior (allowing access on error)
@@ -431,6 +470,7 @@ def login():
 - Incomplete transaction rollbacks
 
 **Prevention:**
+
 ```python
 # BAD: Leaking information
 @app.errorhandler(Exception)
@@ -463,6 +503,7 @@ def check_permission(user, resource):
 ```
 
 **Mitigation Strategies:**
+
 1. Design for failure: expect and handle all error conditions
 2. Implement fail-closed (deny by default) on errors
 3. Use structured exception handling with appropriate granularity
@@ -475,7 +516,9 @@ def check_permission(user, resource):
 
 ## OWASP ASVS 5.0.0
 
-The Application Security Verification Standard (ASVS) 5.0.0 was released May 30, 2025. It provides approximately 350 security requirements across 17 categories (the exact total varies by verification level) with three verification levels.
+The Application Security Verification Standard (ASVS) 5.0.0 was released May 30, 2025. It provides approximately 350
+security requirements across 17 categories (the exact total varies by verification level) with three verification
+levels.
 
 ### Verification Levels
 
@@ -508,22 +551,26 @@ The Application Security Verification Standard (ASVS) 5.0.0 was released May 30,
 ### Key Requirements Examples
 
 **Authentication (V2):**
+
 - V2.1.1: User passwords SHALL be at least 12 characters
 - V2.1.6: Passwords SHALL be checked against breached password lists
 - V2.2.1: Anti-automation controls SHALL prevent credential stuffing
 - V2.5.2: Password recovery SHALL NOT reveal if account exists
 
 **Session Management (V3):**
+
 - V3.2.1: Session tokens SHALL have at least 128 bits of entropy
 - V3.3.1: Sessions SHALL be invalidated on logout
 - V3.4.1: Cookie-based tokens SHALL have Secure attribute set
 
 **Access Control (V4):**
+
 - V4.1.1: Access control SHALL be enforced server-side
 - V4.2.1: Sensitive data SHALL only be accessible to authorized users
 - V4.3.1: Directory browsing SHALL be disabled
 
 **Cryptography (V6):**
+
 - V6.2.1: All cryptographic modules SHALL fail securely
 - V6.4.1: Keys SHALL be generated using approved random generators
 - V6.4.2: Keys SHALL be stored securely (HSM, vault)
@@ -532,7 +579,8 @@ The Application Security Verification Standard (ASVS) 5.0.0 was released May 30,
 
 ## OWASP Top 10 for Agentic Applications 2026
 
-Released December 2025, this framework addresses security risks specific to AI agents, multi-agent systems, and autonomous applications.
+Released December 2025, this framework addresses security risks specific to AI agents, multi-agent systems, and
+autonomous applications.
 
 ### Summary Table
 
@@ -553,15 +601,18 @@ Released December 2025, this framework addresses security risks specific to AI a
 
 ### ASI01: Agent Goal Hijacking
 
-**Description:** Attackers use prompt injection to alter an agent's intended goals, making it serve malicious purposes while appearing to function normally.
+**Description:** Attackers use prompt injection to alter an agent's intended goals, making it serve malicious purposes
+while appearing to function normally.
 
 **Attack Vectors:**
+
 - Direct prompt injection in user inputs
 - Indirect injection via compromised data sources
 - Hidden instructions in documents, websites, or emails
 - Multi-turn conversation manipulation
 
 **Prevention:**
+
 - Implement strict input sanitization and filtering
 - Use structured output formats to limit agent responses
 - Establish clear goal boundaries with system prompts
@@ -572,15 +623,18 @@ Released December 2025, this framework addresses security risks specific to AI a
 
 ### ASI02: Tool Misuse
 
-**Description:** Agents with access to tools (APIs, databases, file systems) may use them in unintended ways due to malicious instructions or flawed reasoning.
+**Description:** Agents with access to tools (APIs, databases, file systems) may use them in unintended ways due to
+malicious instructions or flawed reasoning.
 
 **Attack Vectors:**
+
 - Tricking agents into executing harmful commands
 - Using tools with elevated privileges
 - Chaining tool calls to achieve unauthorized outcomes
 - Exploiting ambiguous tool descriptions
 
 **Prevention:**
+
 - Apply principle of least privilege to all tool access
 - Implement fine-grained permissions per tool
 - Validate all tool inputs and outputs
@@ -591,15 +645,18 @@ Released December 2025, this framework addresses security risks specific to AI a
 
 ### ASI03: Identity & Privilege Abuse
 
-**Description:** Agents may inherit, accumulate, or escalate privileges beyond what's appropriate, especially in multi-agent or long-running contexts.
+**Description:** Agents may inherit, accumulate, or escalate privileges beyond what's appropriate, especially in
+multi-agent or long-running contexts.
 
 **Attack Vectors:**
+
 - Credential theft through prompt injection
 - Session token exposure
 - Privilege escalation through tool chaining
 - Identity confusion in multi-agent systems
 
 **Prevention:**
+
 - Use short-lived, scoped credentials
 - Implement identity verification between agents
 - Don't pass raw credentials through agent context
@@ -610,15 +667,18 @@ Released December 2025, this framework addresses security risks specific to AI a
 
 ### ASI04: Agentic Supply Chain Vulnerabilities
 
-**Description:** Compromised plugins, MCP servers, or third-party integrations introduce vulnerabilities into agent systems.
+**Description:** Compromised plugins, MCP servers, or third-party integrations introduce vulnerabilities into agent
+systems.
 
 **Attack Vectors:**
+
 - Malicious MCP server implementations
 - Typosquatting in plugin registries
 - Compromised update mechanisms
 - Backdoored agent frameworks
 
 **Prevention:**
+
 - Verify plugin/server authenticity and signatures
 - Maintain inventory of all integrations
 - Sandbox third-party components
@@ -632,12 +692,14 @@ Released December 2025, this framework addresses security risks specific to AI a
 **Description:** Agents that generate or execute code may be tricked into running malicious code.
 
 **Attack Vectors:**
+
 - Code injection through prompts
 - Malicious code in retrieved context
 - Unsafe code execution environments
 - Bypassing code review through obfuscation
 
 **Prevention:**
+
 - Execute generated code in sandboxed environments
 - Implement static analysis before execution
 - Limit code execution capabilities
@@ -651,12 +713,14 @@ Released December 2025, this framework addresses security risks specific to AI a
 **Description:** Attackers corrupt agent memory, RAG databases, or context to influence future behavior.
 
 **Attack Vectors:**
+
 - Injecting malicious content into vector databases
 - Manipulating conversation history
 - Poisoning knowledge bases
 - Exploiting context window limitations
 
 **Prevention:**
+
 - Validate and sanitize all stored content
 - Implement content integrity verification
 - Segment memory by trust level
@@ -670,12 +734,14 @@ Released December 2025, this framework addresses security risks specific to AI a
 **Description:** Communication between agents may be vulnerable to interception, spoofing, or tampering.
 
 **Attack Vectors:**
+
 - Man-in-the-middle attacks on agent communication
 - Agent identity spoofing
 - Message tampering
 - Replay attacks
 
 **Prevention:**
+
 - Authenticate all agent communications
 - Encrypt inter-agent messages
 - Implement message integrity verification
@@ -689,12 +755,14 @@ Released December 2025, this framework addresses security risks specific to AI a
 **Description:** Errors in one agent or component propagate through interconnected systems, causing widespread failures.
 
 **Attack Vectors:**
+
 - Triggering errors that cascade through agent chains
 - Resource exhaustion in one agent affecting others
 - Error handling that exposes sensitive information
 - Retry storms from failed operations
 
 **Prevention:**
+
 - Implement circuit breakers between agents
 - Design for graceful degradation
 - Isolate agent failures
@@ -708,12 +776,14 @@ Released December 2025, this framework addresses security risks specific to AI a
 **Description:** Attackers leverage the trust humans place in AI agents to conduct social engineering attacks.
 
 **Attack Vectors:**
+
 - AI-generated phishing content
 - Impersonation through agent responses
 - Trust exploitation via helpful-seeming agents
 - Deceptive multi-turn conversations
 
 **Prevention:**
+
 - Clear labeling of AI-generated content
 - User education on AI limitations
 - Verification steps for sensitive actions
@@ -724,15 +794,18 @@ Released December 2025, this framework addresses security risks specific to AI a
 
 ### ASI10: Rogue Agents
 
-**Description:** Agents that have been compromised or are acting maliciously, either through external attack or flawed design.
+**Description:** Agents that have been compromised or are acting maliciously, either through external attack or flawed
+design.
 
 **Attack Vectors:**
+
 - Agent compromise through injection attacks
 - Malicious agent deployment
 - Agent behavior modification
 - Insider threats via agent systems
 
 **Prevention:**
+
 - Monitor agent behavior for anomalies
 - Implement agent authentication and authorization
 - Regular security audits of agent systems
@@ -744,27 +817,35 @@ Released December 2025, this framework addresses security risks specific to AI a
 ## Key Security Principles
 
 ### Defense in Depth
+
 Layer multiple security controls so that if one fails, others provide protection.
 
 ### Least Privilege
+
 Grant minimum permissions necessary for functionality. Regularly review and revoke unnecessary access.
 
 ### Fail Secure
+
 When errors occur, default to a secure state. Deny access rather than allow it when uncertain.
 
 ### Zero Trust
+
 Never trust, always verify. Authenticate and authorize every request regardless of source.
 
 ### Secure by Default
+
 Ship products with secure defaults. Require explicit action to reduce security.
 
 ### Input Validation
+
 Validate all input on the server side. Use allowlists over denylists.
 
 ### Output Encoding
+
 Encode output based on context (HTML, JavaScript, SQL, etc.) to prevent injection.
 
 ### Keep Security Simple
+
 Complex security is often bypassed. Prefer simple, understandable controls.
 
 ---
@@ -772,17 +853,20 @@ Complex security is often bypassed. Prefer simple, understandable controls.
 ## Sources and References
 
 ### Official OWASP Resources
+
 - [OWASP Top 10:2025](https://owasp.org/Top10/)
 - [OWASP ASVS 5.0](https://github.com/OWASP/ASVS)
 - [OWASP Top 10 for Agentic Applications 2026](https://genai.owasp.org/)
 - [OWASP Cheat Sheet Series](https://cheatsheetseries.owasp.org/)
 
 ### Industry Analysis
+
 - [GitLab: OWASP Top 10 2025 - What's Changed and Why It Matters](https://about.gitlab.com/blog/)
 - [Aikido: OWASP Top 10 for Agentic Applications Guide](https://www.aikido.dev/blog/)
 - [Security Boulevard: OWASP 2025 Analysis](https://securityboulevard.com/)
 
 ### Standards and Guidelines
+
 - [NIST SP 800-63b: Digital Identity Guidelines](https://pages.nist.gov/800-63-3/)
 - [NIST SP 800-61r2: Incident Handling Guide](https://csrc.nist.gov/publications/detail/sp/800-61/rev-2/final)
 - [CWE/SANS Top 25 Software Errors](https://cwe.mitre.org/top25/)

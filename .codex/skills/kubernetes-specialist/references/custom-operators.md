@@ -98,7 +98,7 @@ spec:
 
 ## Operator SDK Project Structure
 
-```
+```text
 my-operator/
 ├── Dockerfile
 ├── Makefile
@@ -133,46 +133,46 @@ my-operator/
 package v1
 
 import (
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+ metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // DatabaseSpec defines the desired state of Database
 type DatabaseSpec struct {
-	// Engine is the database engine type
-	// +kubebuilder:validation:Enum=postgres;mysql;mongodb
-	Engine string `json:"engine"`
+ // Engine is the database engine type
+ // +kubebuilder:validation:Enum=postgres;mysql;mongodb
+ Engine string `json:"engine"`
 
-	// Version is the database version
-	Version string `json:"version"`
+ // Version is the database version
+ Version string `json:"version"`
 
-	// Storage is the size of persistent storage
-	// +kubebuilder:validation:Pattern=`^[0-9]+Gi$`
-	Storage string `json:"storage"`
+ // Storage is the size of persistent storage
+ // +kubebuilder:validation:Pattern=`^[0-9]+Gi$`
+ Storage string `json:"storage"`
 
-	// Replicas is the number of database instances
-	// +kubebuilder:validation:Minimum=1
-	// +kubebuilder:validation:Maximum=5
-	// +kubebuilder:default=1
-	// +optional
-	Replicas int32 `json:"replicas,omitempty"`
+ // Replicas is the number of database instances
+ // +kubebuilder:validation:Minimum=1
+ // +kubebuilder:validation:Maximum=5
+ // +kubebuilder:default=1
+ // +optional
+ Replicas int32 `json:"replicas,omitempty"`
 }
 
 // DatabaseStatus defines the observed state of Database
 type DatabaseStatus struct {
-	// Phase represents the current lifecycle phase
-	Phase string `json:"phase,omitempty"`
+ // Phase represents the current lifecycle phase
+ Phase string `json:"phase,omitempty"`
 
-	// Ready indicates if the database is ready to accept connections
-	Ready bool `json:"ready,omitempty"`
+ // Ready indicates if the database is ready to accept connections
+ Ready bool `json:"ready,omitempty"`
 
-	// Message provides additional status information
-	Message string `json:"message,omitempty"`
+ // Message provides additional status information
+ Message string `json:"message,omitempty"`
 
-	// Endpoint is the connection endpoint
-	Endpoint string `json:"endpoint,omitempty"`
+ // Endpoint is the connection endpoint
+ Endpoint string `json:"endpoint,omitempty"`
 
-	// Replicas is the current number of running replicas
-	Replicas int32 `json:"replicas,omitempty"`
+ // Replicas is the current number of running replicas
+ Replicas int32 `json:"replicas,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -185,24 +185,24 @@ type DatabaseStatus struct {
 
 // Database is the Schema for the databases API
 type Database struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+ metav1.TypeMeta   `json:",inline"`
+ metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   DatabaseSpec   `json:"spec,omitempty"`
-	Status DatabaseStatus `json:"status,omitempty"`
+ Spec   DatabaseSpec   `json:"spec,omitempty"`
+ Status DatabaseStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 
 // DatabaseList contains a list of Database
 type DatabaseList struct {
-	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []Database `json:"items"`
+ metav1.TypeMeta `json:",inline"`
+ metav1.ListMeta `json:"metadata,omitempty"`
+ Items           []Database `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&Database{}, &DatabaseList{})
+ SchemeBuilder.Register(&Database{}, &DatabaseList{})
 }
 ```
 
@@ -213,30 +213,30 @@ func init() {
 package controllers
 
 import (
-	"context"
-	"fmt"
-	"time"
+ "context"
+ "fmt"
+ "time"
 
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/log"
+ appsv1 "k8s.io/api/apps/v1"
+ corev1 "k8s.io/api/core/v1"
+ "k8s.io/apimachinery/pkg/api/errors"
+ "k8s.io/apimachinery/pkg/api/resource"
+ metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+ "k8s.io/apimachinery/pkg/runtime"
+ "k8s.io/apimachinery/pkg/types"
+ ctrl "sigs.k8s.io/controller-runtime"
+ "sigs.k8s.io/controller-runtime/pkg/client"
+ "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+ "sigs.k8s.io/controller-runtime/pkg/log"
 
-	mycompanyv1 "github.com/mycompany/database-operator/api/v1"
+ mycompanyv1 "github.com/mycompany/database-operator/api/v1"
 )
 
 const databaseFinalizer = "databases.mycompany.io/finalizer"
 
 type DatabaseReconciler struct {
-	client.Client
-	Scheme *runtime.Scheme
+ client.Client
+ Scheme *runtime.Scheme
 }
 
 // +kubebuilder:rbac:groups=mycompany.io,resources=databases,verbs=get;list;watch;create;update;patch;delete
@@ -247,170 +247,170 @@ type DatabaseReconciler struct {
 // +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch
 
 func (r *DatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
+ logger := log.FromContext(ctx)
 
-	// Fetch the Database instance
-	database := &mycompanyv1.Database{}
-	if err := r.Get(ctx, req.NamespacedName, database); err != nil {
-		if errors.IsNotFound(err) {
-			return ctrl.Result{}, nil
-		}
-		return ctrl.Result{}, err
-	}
+ // Fetch the Database instance
+ database := &mycompanyv1.Database{}
+ if err := r.Get(ctx, req.NamespacedName, database); err != nil {
+  if errors.IsNotFound(err) {
+   return ctrl.Result{}, nil
+  }
+  return ctrl.Result{}, err
+ }
 
-	// Handle deletion with finalizer
-	if !database.DeletionTimestamp.IsZero() {
-		if controllerutil.ContainsFinalizer(database, databaseFinalizer) {
-			if err := r.cleanupResources(ctx, database); err != nil {
-				return ctrl.Result{}, err
-			}
-			controllerutil.RemoveFinalizer(database, databaseFinalizer)
-			if err := r.Update(ctx, database); err != nil {
-				return ctrl.Result{}, err
-			}
-		}
-		return ctrl.Result{}, nil
-	}
+ // Handle deletion with finalizer
+ if !database.DeletionTimestamp.IsZero() {
+  if controllerutil.ContainsFinalizer(database, databaseFinalizer) {
+   if err := r.cleanupResources(ctx, database); err != nil {
+    return ctrl.Result{}, err
+   }
+   controllerutil.RemoveFinalizer(database, databaseFinalizer)
+   if err := r.Update(ctx, database); err != nil {
+    return ctrl.Result{}, err
+   }
+  }
+  return ctrl.Result{}, nil
+ }
 
-	// Add finalizer if not present
-	if !controllerutil.ContainsFinalizer(database, databaseFinalizer) {
-		controllerutil.AddFinalizer(database, databaseFinalizer)
-		if err := r.Update(ctx, database); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
+ // Add finalizer if not present
+ if !controllerutil.ContainsFinalizer(database, databaseFinalizer) {
+  controllerutil.AddFinalizer(database, databaseFinalizer)
+  if err := r.Update(ctx, database); err != nil {
+   return ctrl.Result{}, err
+  }
+ }
 
-	// Reconcile StatefulSet
-	statefulSet := r.buildStatefulSet(database)
-	if err := controllerutil.SetControllerReference(database, statefulSet, r.Scheme); err != nil {
-		return ctrl.Result{}, err
-	}
+ // Reconcile StatefulSet
+ statefulSet := r.buildStatefulSet(database)
+ if err := controllerutil.SetControllerReference(database, statefulSet, r.Scheme); err != nil {
+  return ctrl.Result{}, err
+ }
 
-	found := &appsv1.StatefulSet{}
-	err := r.Get(ctx, types.NamespacedName{Name: statefulSet.Name, Namespace: statefulSet.Namespace}, found)
-	if err != nil && errors.IsNotFound(err) {
-		logger.Info("Creating StatefulSet", "name", statefulSet.Name)
-		if err := r.Create(ctx, statefulSet); err != nil {
-			return ctrl.Result{}, err
-		}
-		return r.updateStatus(ctx, database, "Creating", false, "StatefulSet created")
-	} else if err != nil {
-		return ctrl.Result{}, err
-	}
+ found := &appsv1.StatefulSet{}
+ err := r.Get(ctx, types.NamespacedName{Name: statefulSet.Name, Namespace: statefulSet.Namespace}, found)
+ if err != nil && errors.IsNotFound(err) {
+  logger.Info("Creating StatefulSet", "name", statefulSet.Name)
+  if err := r.Create(ctx, statefulSet); err != nil {
+   return ctrl.Result{}, err
+  }
+  return r.updateStatus(ctx, database, "Creating", false, "StatefulSet created")
+ } else if err != nil {
+  return ctrl.Result{}, err
+ }
 
-	// Reconcile Service
-	service := r.buildService(database)
-	if err := controllerutil.SetControllerReference(database, service, r.Scheme); err != nil {
-		return ctrl.Result{}, err
-	}
+ // Reconcile Service
+ service := r.buildService(database)
+ if err := controllerutil.SetControllerReference(database, service, r.Scheme); err != nil {
+  return ctrl.Result{}, err
+ }
 
-	foundSvc := &corev1.Service{}
-	err = r.Get(ctx, types.NamespacedName{Name: service.Name, Namespace: service.Namespace}, foundSvc)
-	if err != nil && errors.IsNotFound(err) {
-		if err := r.Create(ctx, service); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
+ foundSvc := &corev1.Service{}
+ err = r.Get(ctx, types.NamespacedName{Name: service.Name, Namespace: service.Namespace}, foundSvc)
+ if err != nil && errors.IsNotFound(err) {
+  if err := r.Create(ctx, service); err != nil {
+   return ctrl.Result{}, err
+  }
+ }
 
-	// Update status based on StatefulSet state
-	if found.Status.ReadyReplicas == *found.Spec.Replicas {
-		return r.updateStatus(ctx, database, "Running", true,
-			fmt.Sprintf("%d/%d replicas ready", found.Status.ReadyReplicas, *found.Spec.Replicas))
-	}
+ // Update status based on StatefulSet state
+ if found.Status.ReadyReplicas == *found.Spec.Replicas {
+  return r.updateStatus(ctx, database, "Running", true,
+   fmt.Sprintf("%d/%d replicas ready", found.Status.ReadyReplicas, *found.Spec.Replicas))
+ }
 
-	// Requeue to check status
-	return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+ // Requeue to check status
+ return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 }
 
 func (r *DatabaseReconciler) buildStatefulSet(db *mycompanyv1.Database) *appsv1.StatefulSet {
-	replicas := db.Spec.Replicas
-	labels := map[string]string{
-		"app":        db.Name,
-		"controller": db.Name,
-	}
+ replicas := db.Spec.Replicas
+ labels := map[string]string{
+  "app":        db.Name,
+  "controller": db.Name,
+ }
 
-	return &appsv1.StatefulSet{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      db.Name,
-			Namespace: db.Namespace,
-		},
-		Spec: appsv1.StatefulSetSpec{
-			Replicas: &replicas,
-			Selector: &metav1.LabelSelector{
-				MatchLabels: labels,
-			},
-			ServiceName: db.Name,
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: labels,
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{{
-						Name:  "database",
-						Image: fmt.Sprintf("%s:%s", db.Spec.Engine, db.Spec.Version),
-						Ports: []corev1.ContainerPort{{
-							ContainerPort: 5432,
-							Name:          "db",
-						}},
-					}},
-				},
-			},
-			VolumeClaimTemplates: []corev1.PersistentVolumeClaim{{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "data",
-				},
-				Spec: corev1.PersistentVolumeClaimSpec{
-					AccessModes: []corev1.PersistentVolumeAccessMode{
-						corev1.ReadWriteOnce,
-					},
-					Resources: corev1.VolumeResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceStorage: resource.MustParse(db.Spec.Storage),
-						},
-					},
-				},
-			}},
-		},
-	}
+ return &appsv1.StatefulSet{
+  ObjectMeta: metav1.ObjectMeta{
+   Name:      db.Name,
+   Namespace: db.Namespace,
+  },
+  Spec: appsv1.StatefulSetSpec{
+   Replicas: &replicas,
+   Selector: &metav1.LabelSelector{
+    MatchLabels: labels,
+   },
+   ServiceName: db.Name,
+   Template: corev1.PodTemplateSpec{
+    ObjectMeta: metav1.ObjectMeta{
+     Labels: labels,
+    },
+    Spec: corev1.PodSpec{
+     Containers: []corev1.Container{{
+      Name:  "database",
+      Image: fmt.Sprintf("%s:%s", db.Spec.Engine, db.Spec.Version),
+      Ports: []corev1.ContainerPort{{
+       ContainerPort: 5432,
+       Name:          "db",
+      }},
+     }},
+    },
+   },
+   VolumeClaimTemplates: []corev1.PersistentVolumeClaim{{
+    ObjectMeta: metav1.ObjectMeta{
+     Name: "data",
+    },
+    Spec: corev1.PersistentVolumeClaimSpec{
+     AccessModes: []corev1.PersistentVolumeAccessMode{
+      corev1.ReadWriteOnce,
+     },
+     Resources: corev1.VolumeResourceRequirements{
+      Requests: corev1.ResourceList{
+       corev1.ResourceStorage: resource.MustParse(db.Spec.Storage),
+      },
+     },
+    },
+   }},
+  },
+ }
 }
 
 func (r *DatabaseReconciler) buildService(db *mycompanyv1.Database) *corev1.Service {
-	return &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      db.Name,
-			Namespace: db.Namespace,
-		},
-		Spec: corev1.ServiceSpec{
-			Selector: map[string]string{"app": db.Name},
-			Ports: []corev1.ServicePort{{
-				Port: 5432,
-				Name: "db",
-			}},
-			ClusterIP: "None", // Headless service for StatefulSet
-		},
-	}
+ return &corev1.Service{
+  ObjectMeta: metav1.ObjectMeta{
+   Name:      db.Name,
+   Namespace: db.Namespace,
+  },
+  Spec: corev1.ServiceSpec{
+   Selector: map[string]string{"app": db.Name},
+   Ports: []corev1.ServicePort{{
+    Port: 5432,
+    Name: "db",
+   }},
+   ClusterIP: "None", // Headless service for StatefulSet
+  },
+ }
 }
 
 func (r *DatabaseReconciler) updateStatus(ctx context.Context, db *mycompanyv1.Database,
-	phase string, ready bool, message string) (ctrl.Result, error) {
-	db.Status.Phase = phase
-	db.Status.Ready = ready
-	db.Status.Message = message
-	db.Status.Endpoint = fmt.Sprintf("%s.%s.svc.cluster.local:5432", db.Name, db.Namespace)
-	return ctrl.Result{}, r.Status().Update(ctx, db)
+ phase string, ready bool, message string) (ctrl.Result, error) {
+ db.Status.Phase = phase
+ db.Status.Ready = ready
+ db.Status.Message = message
+ db.Status.Endpoint = fmt.Sprintf("%s.%s.svc.cluster.local:5432", db.Name, db.Namespace)
+ return ctrl.Result{}, r.Status().Update(ctx, db)
 }
 
 func (r *DatabaseReconciler) cleanupResources(ctx context.Context, db *mycompanyv1.Database) error {
-	// Custom cleanup logic (e.g., backup before deletion)
-	return nil
+ // Custom cleanup logic (e.g., backup before deletion)
+ return nil
 }
 
 func (r *DatabaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&mycompanyv1.Database{}).
-		Owns(&appsv1.StatefulSet{}).
-		Owns(&corev1.Service{}).
-		Complete(r)
+ return ctrl.NewControllerManagedBy(mgr).
+  For(&mycompanyv1.Database{}).
+  Owns(&appsv1.StatefulSet{}).
+  Owns(&corev1.Service{}).
+  Complete(r)
 }
 ```
 

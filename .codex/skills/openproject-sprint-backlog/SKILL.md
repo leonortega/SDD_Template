@@ -17,11 +17,12 @@ estimating work packages.
 
 ## Scope
 
-This skill covers sprint planning, backlog refinement, work package hierarchy management, and status reporting within OpenProject.
+This skill covers sprint planning, backlog refinement, work package hierarchy management, and status reporting within
+OpenProject.
 
 ## Work Package Hierarchy
 
-```
+```text
 Epic (parent)
  └─ Feature (story)
      └─ Task (child work package)

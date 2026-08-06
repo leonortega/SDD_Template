@@ -1,9 +1,10 @@
 # Testing Principles
 
-Comprehensive guide to writing clean, maintainable tests that serve as executable documentation. Based on Robert C. Martin's *Clean Code*, Chapter 9.
-
+Comprehensive guide to writing clean, maintainable tests that serve as executable documentation. Based on Robert C.
+Martin's *Clean Code*, Chapter 9.
 
 ## Table of Contents
+
 1. [Why Tests Matter](#why-tests-matter)
 2. [The Three Laws of TDD](#the-three-laws-of-tdd)
 3. [Clean Tests](#clean-tests)
@@ -17,9 +18,13 @@ Comprehensive guide to writing clean, maintainable tests that serve as executabl
 
 ## Why Tests Matter
 
-Test code is just as important as production code. It is not a second-class citizen. It requires thought, design, and care. Dirty tests are equivalent to, if not worse than, having no tests. Tests that are hard to read, fragile, or slow become a liability that developers avoid and eventually delete.
+Test code is just as important as production code. It is not a second-class citizen. It requires thought, design, and
+care. Dirty tests are equivalent to, if not worse than, having no tests. Tests that are hard to read, fragile, or slow
+become a liability that developers avoid and eventually delete.
 
-**The fundamental equation:** Clean tests = confidence to refactor = clean production code. Without tests, every change is a potential bug. With dirty tests, every change requires fighting through incomprehensible test code. With clean tests, refactoring is fearless.
+**The fundamental equation:** Clean tests = confidence to refactor = clean production code. Without tests, every change
+is a potential bug. With dirty tests, every change requires fighting through incomprehensible test code. With clean
+tests, refactoring is fearless.
 
 ---
 
@@ -57,7 +62,9 @@ This cycle runs in seconds to minutes, not hours. Each cycle produces one small,
 
 ### What Makes a Test Clean?
 
-**Readability.** The same thing that makes production code clean makes test code clean: readability. What makes tests readable? The same thing that makes all code readable: clarity, simplicity, and density of expression. In a test, you want to say a lot with as few expressions as possible.
+**Readability.** The same thing that makes production code clean makes test code clean: readability. What makes tests
+readable? The same thing that makes all code readable: clarity, simplicity, and density of expression. In a test, you
+want to say a lot with as few expressions as possible.
 
 ### The Build-Operate-Check Pattern
 
@@ -110,13 +117,15 @@ def test_expired_subscription():
     assert_that(user).has_expired_subscription()
 ```
 
-The test reads like a specification: "Given a user with a pro subscription expiring on Jan 15, when we check the subscription on Feb 1, then the subscription should be expired."
+The test reads like a specification: "Given a user with a pro subscription expiring on Jan 15, when we check the
+subscription on Feb 1, then the subscription should be expired."
 
 ---
 
 ## One Concept Per Test
 
-Each test function should test one concept. This does not necessarily mean one assert per test -- it means one logical assertion, one behavioral expectation.
+Each test function should test one concept. This does not necessarily mean one assert per test -- it means one logical
+assertion, one behavioral expectation.
 
 ### One Concept, Multiple Asserts (Acceptable)
 
@@ -166,7 +175,8 @@ Clean tests follow five principles that form the acronym F.I.R.S.T.:
 
 ### Fast
 
-Tests should be fast. When tests run slowly, you won't run them frequently. When you don't run them frequently, you won't find problems early. When you don't find problems early, you won't fix them easily.
+Tests should be fast. When tests run slowly, you won't run them frequently. When you don't run them frequently, you
+won't find problems early. When you don't find problems early, you won't fix them easily.
 
 | Guideline | Target | How |
 |-----------|--------|-----|
@@ -176,7 +186,8 @@ Tests should be fast. When tests run slowly, you won't run them frequently. When
 
 ### Independent
 
-Tests should not depend on each other. One test should not set up conditions for the next. You should be able to run each test independently and in any order.
+Tests should not depend on each other. One test should not set up conditions for the next. You should be able to run
+each test independently and in any order.
 
 ```python
 # BAD: Test B depends on Test A's side effects
@@ -200,7 +211,8 @@ def test_update_user():
 
 ### Repeatable
 
-Tests should produce the same result every time, in any environment -- development machine, CI server, production-like staging. Tests that depend on network availability, current time, or random data are flaky.
+Tests should produce the same result every time, in any environment -- development machine, CI server, production-like
+staging. Tests that depend on network availability, current time, or random data are flaky.
 
 | Flaky dependency | Fix |
 |-----------------|-----|
@@ -231,7 +243,9 @@ def test_report_generation():
 
 ### Timely
 
-Tests should be written just before the production code that makes them pass (TDD). Tests written after the fact are harder to write because the production code may not be designed for testability. You may decide that some production code is "too hard to test" -- which really means it's too coupled.
+Tests should be written just before the production code that makes them pass (TDD). Tests written after the fact are
+harder to write because the production code may not be designed for testability. You may decide that some production
+code is "too hard to test" -- which really means it's too coupled.
 
 ---
 
@@ -340,7 +354,8 @@ Test the edges, not just the middle.
 
 ## Tests as Documentation
 
-Clean tests serve as the most reliable documentation of how the system behaves. Unlike comments or wiki pages, tests are always up to date -- if they weren't, they'd be failing.
+Clean tests serve as the most reliable documentation of how the system behaves. Unlike comments or wiki pages, tests are
+always up to date -- if they weren't, they'd be failing.
 
 | Documentation type | Tests provide |
 |-------------------|---------------|
@@ -350,4 +365,5 @@ Clean tests serve as the most reliable documentation of how the system behaves. 
 | **Error behavior** | Error path tests document failure modes |
 | **Business rules** | Test names describe domain rules |
 
-When a new developer asks "how does this work?", point them to the tests. Clean tests answer the question better than any comment or README.
+When a new developer asks "how does this work?", point them to the tests. Clean tests answer the question better than
+any comment or README.

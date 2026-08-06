@@ -1,6 +1,9 @@
 # TYPO3 TypoScript and TSconfig Security
 
-TypoScript is the configuration language that drives TYPO3's frontend rendering and most backend behaviour. It has its own injection surface — distinct from PHP or Fluid — because several constructs evaluate external input at runtime and at least one (`userFunc`) is a direct arbitrary-code-execution primitive. TSconfig is TypoScript used for backend configuration (page, user, site) with a smaller but similar surface.
+TypoScript is the configuration language that drives TYPO3's frontend rendering and most backend behaviour. It has its
+own injection surface — distinct from PHP or Fluid — because several constructs evaluate external input at runtime and
+at least one (`userFunc`) is a direct arbitrary-code-execution primitive. TSconfig is TypoScript used for backend
+configuration (page, user, site) with a smaller but similar surface.
 
 For PHP-level TYPO3 patterns see `typo3-security.md`; for Fluid templating see `typo3-fluid-security.md`.
 
@@ -8,7 +11,9 @@ For PHP-level TYPO3 patterns see `typo3-security.md`; for Fluid templating see `
 
 ### 1. `userFunc` / `preUserFunc` — arbitrary PHP execution
 
-`userFunc` is a TypoScript property that calls a PHP function or method. Any attacker who can write TypoScript (typically: a developer with low-priv code-review rights, or an integrator uploading a sitepackage, or a compromised Git pipeline that merges TypoScript files) can execute arbitrary PHP with the frontend's privileges.
+`userFunc` is a TypoScript property that calls a PHP function or method. Any attacker who can write TypoScript
+(typically: a developer with low-priv code-review rights, or an integrator uploading a sitepackage, or a compromised Git
+pipeline that merges TypoScript files) can execute arbitrary PHP with the frontend's privileges.
 
 ```typoscript
 # VULNERABLE: userFunc wired directly to a generic callable
@@ -37,9 +42,12 @@ lib.productPrice {
 }
 ```
 
-`userFunc` is a legitimate feature; it is not itself a vulnerability. The audit question is: **does the function name come from a trusted, versioned part of the TypoScript, or could it be influenced by sitepackage uploads, form data, or pipeline inputs?**
+`userFunc` is a legitimate feature; it is not itself a vulnerability. The audit question is: **does the function name
+come from a trusted, versioned part of the TypoScript, or could it be influenced by sitepackage uploads, form data, or
+pipeline inputs?**
 
 **Detection:**
+
 ```bash
 # All userFunc / preUserFunc / postUserFunc usages — every one needs manual review.
 # POSIX ERE (grep -E) does not portably support \s or \b; use character classes.
@@ -55,7 +63,9 @@ grep -rnE "'userFunc'[[:space:]]*=>|\"userFunc\"[[:space:]]*=>" \
 
 ### 2. `stdWrap.insertData` — lazy marker evaluation
 
-`insertData` re-parses the rendered string and expands `{…:…}` markers against runtime context. If the wrapped value came from GET/POST (`GP:field`) or from an untrusted database row, an attacker can inject a marker that then reads something else — a cross-reference XSS / information-disclosure primitive.
+`insertData` re-parses the rendered string and expands `{…:…}` markers against runtime context. If the wrapped value
+came from GET/POST (`GP:field`) or from an untrusted database row, an attacker can inject a marker that then reads
+something else — a cross-reference XSS / information-disclosure primitive.
 
 ```typoscript
 # VULNERABLE: insertData over an untrusted value
@@ -74,9 +84,12 @@ lib.bannerText {
 }
 ```
 
-The allowed marker prefixes inside `insertData` (`GP:`, `TSFE:`, `page:`, `field:`, `register:`, `getIndpEnv:`, `LLL:`, `path:`) cover quite a bit of surface — enough to read environment context, session IDs, registered variables, and arbitrary file paths the frontend has access to.
+The allowed marker prefixes inside `insertData` (`GP:`, `TSFE:`, `page:`, `field:`, `register:`, `getIndpEnv:`, `LLL:`,
+`path:`) cover quite a bit of surface — enough to read environment context, session IDs, registered variables, and
+arbitrary file paths the frontend has access to.
 
 **Detection:**
+
 ```bash
 # insertData = 1 combined with GP: / cObj.data = *user* earlier in the same object
 grep -rnE 'stdWrap\.insertData[[:space:]]*=[[:space:]]*1' --include='*.typoscript' .
@@ -104,9 +117,12 @@ lib.search {
 }
 ```
 
-`data = GP:…` (TYPO3's merged GET+POST accessor) and `data = TSFE:fe_user|…` bring raw request or session content directly into the output pipeline; `register:` and `field:` can carry tainted content that was written earlier in the pipeline. Any TEXT or COA_INT using these patterns without `htmlSpecialChars = 1` is an XSS sink.
+`data = GP:…` (TYPO3's merged GET+POST accessor) and `data = TSFE:fe_user|…` bring raw request or session content
+directly into the output pipeline; `register:` and `field:` can carry tainted content that was written earlier in the
+pipeline. Any TEXT or COA_INT using these patterns without `htmlSpecialChars = 1` is an XSS sink.
 
 **Detection:**
+
 ```bash
 # Untrusted-input accessors feeding a cObject TEXT without a nearby
 # htmlSpecialChars. This is a "relative order of instructions" check —
@@ -180,7 +196,12 @@ lib.jump {
 }
 ```
 
-Any `parameter.data` that reads from `GP:` should be validated against an allowlist before it reaches `typolink`. Link-building is routed through `LinkService` and then through per-type handlers (`PageLinkHandler`, `ExternalLinkHandler`, `TelephoneLinkHandler`, etc.). `ExternalLinkHandler` handles external URLs and does not validate them against a host allowlist — validation must happen in the calling controller or a TypoScript `if.isTrue` check, before the value reaches `typolink.parameter`. TYPO3's HMAC / `cHash` machinery covers internal parameter integrity + caching, not external-URL trust.
+Any `parameter.data` that reads from `GP:` should be validated against an allowlist before it reaches `typolink`.
+Link-building is routed through `LinkService` and then through per-type handlers (`PageLinkHandler`,
+`ExternalLinkHandler`, `TelephoneLinkHandler`, etc.). `ExternalLinkHandler` handles external URLs and does not validate
+them against a host allowlist — validation must happen in the calling controller or a TypoScript `if.isTrue` check,
+before the value reaches `typolink.parameter`. TYPO3's HMAC / `cHash` machinery covers internal parameter integrity +
+caching, not external-URL trust.
 
 ### 6. `HMENU` with `if.isTrue.cObject` evaluation order
 
@@ -200,7 +221,9 @@ lib.adminMenu {
 }
 ```
 
-`userFunc` inside `if.isTrue.cObject` is a common pattern for role-based menu gating. Two things to audit: (a) the `userFunc` itself must not have side effects (logging, session writes) that leak info; (b) the fallback when the check fails should not include the menu item's title or URL in a `wrap` that rendered earlier.
+`userFunc` inside `if.isTrue.cObject` is a common pattern for role-based menu gating. Two things to audit: (a) the
+`userFunc` itself must not have side effects (logging, session writes) that leak info; (b) the fallback when the check
+fails should not include the menu item's title or URL in a `wrap` that rendered earlier.
 
 ## `config.no_cache` and `config.debug`
 
@@ -210,9 +233,12 @@ config.no_cache = 1
 config.debug = 1
 ```
 
-`config.no_cache = 1` and `config.debug = 1` at site-level turn off caching and enable debug output; both should never be committed. Check page-TSconfig and site-config overrides too — `no_cache` on specific page types (e.g., forms) is legitimate but should be narrow.
+`config.no_cache = 1` and `config.debug = 1` at site-level turn off caching and enable debug output; both should never
+be committed. Check page-TSconfig and site-config overrides too — `no_cache` on specific page types (e.g., forms) is
+legitimate but should be narrow.
 
 **Detection:**
+
 ```bash
 # Site-wide no-cache or debug.
 grep -rnE 'config\.(no_cache|debug)[[:space:]]*=[[:space:]]*1' \
@@ -234,7 +260,9 @@ TCEMAIN.clearCacheCmd = all
 
 ### 8. RTE preset TSconfig — CKEditor 5 config path
 
-Since TYPO3 12 the RTE is CKEditor 5 with YAML presets. Each preset can load an `editor.config.extraPlugins` list pointing at arbitrary JS modules in `Resources/Public/JavaScript/…`. An attacker who can commit a sitepackage can sneak in a plugin whose payload reaches every editor session.
+Since TYPO3 12 the RTE is CKEditor 5 with YAML presets. Each preset can load an `editor.config.extraPlugins` list
+pointing at arbitrary JS modules in `Resources/Public/JavaScript/…`. An attacker who can commit a sitepackage can sneak
+in a plugin whose payload reaches every editor session.
 
 ```yaml
 # VULNERABLE (YAML preset loaded via Page TSconfig)
@@ -244,7 +272,9 @@ editor:
       - Vendor/UnknownPlugin/unpinned@latest   # any JS file; runs in editor context
 ```
 
-For CKEditor 5 plugin authoring / preset best-practices, the sibling `netresearch/typo3-ckeditor5-skill` repo is the canonical reference; this section focuses on auditing unknown or `@latest`-pinned plugins that already landed in a site package.
+For CKEditor 5 plugin authoring / preset best-practices, the sibling `netresearch/typo3-ckeditor5-skill` repo is the
+canonical reference; this section focuses on auditing unknown or `@latest`-pinned plugins that already landed in a site
+package.
 
 ### 9. `permissions.file` / `permissions.file.default`
 
@@ -263,19 +293,24 @@ Audit every site's Page TSconfig for `permissions.*` blocks that widen what the 
 mod.web_layout.disableAdvanced = 1
 ```
 
-Not a direct vulnerability, but flag during audit: does disabling advanced UI hide security-relevant state from site editors?
+Not a direct vulnerability, but flag during audit: does disabling advanced UI hide security-relevant state from site
+editors?
 
 ## Prevention checklist
 
-- [ ] All `userFunc` / `preUserFunc` / `postUserFunc` point at hardcoded, version-controlled callables — not at values influenced by sitepackage upload, forms, or pipeline inputs
-- [ ] `stdWrap.insertData = 1` is never applied to values that came from `GP:` (the merged GET+POST accessor) or untrusted database rows
-- [ ] Every `data = GP:…` (merged GET+POST) and `data = TSFE:fe_user|…` is followed by `htmlSpecialChars = 1` (or is wrapped in a cObject that escapes)
+- [ ] All `userFunc` / `preUserFunc` / `postUserFunc` point at hardcoded, version-controlled callables — not at values
+influenced by sitepackage upload, forms, or pipeline inputs
+- [ ] `stdWrap.insertData = 1` is never applied to values that came from `GP:` (the merged GET+POST accessor) or
+untrusted database rows
+- [ ] Every `data = GP:…` (merged GET+POST) and `data = TSFE:fe_user|…` is followed by `htmlSpecialChars = 1` (or is
+wrapped in a cObject that escapes)
 - [ ] `typolink.parameter.data = GP:…` is validated against an allowlist in a controller before reaching TypoScript
 - [ ] `typolink.ATagParams.data` is not sourced from request data
 - [ ] `config.no_cache = 1` and `config.debug = 1` do not appear in committed site configuration
 - [ ] Page TSconfig overrides of `TCEMAIN`, `permissions.file`, and RTE presets are reviewed for privilege escalation
 - [ ] RTE CKEditor 5 preset `extraPlugins` entries are pinned to a known version and sourced from a trusted path
-- [ ] `HMENU` access checks via `if.isTrue.cObject.userFunc` are side-effect-free and the fallback rendering does not leak the hidden item's metadata
+- [ ] `HMENU` access checks via `if.isTrue.cObject.userFunc` are side-effect-free and the fallback rendering does not
+leak the hidden item's metadata
 
 ## Related references
 

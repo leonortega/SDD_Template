@@ -1,7 +1,9 @@
 ---
 name: grafana-dashboards
 license: MIT
-description: Create and manage production Grafana dashboards for real-time visualization of system and application metrics. Use when building monitoring dashboards, visualizing metrics, or creating operational observability interfaces.
+description: >-
+  >- Create and manage production Grafana dashboards for real-time visualization of system and application metrics. Use
+  when building monitoring dashboards, visualizing metrics, or creating operational observability interfaces.
 ---
 
 # Grafana Dashboards
@@ -24,7 +26,7 @@ Design effective Grafana dashboards for monitoring applications, infrastructure,
 
 ### 1. Hierarchy of Information
 
-```
+```text
 ┌─────────────────────────────────────┐
 │  Critical Metrics (Big Numbers)     │
 ├─────────────────────────────────────┤
@@ -243,7 +245,7 @@ Design effective Grafana dashboards for monitoring applications, infrastructure,
 
 ### Use Variables in Queries
 
-```
+```text
 sum(rate(http_requests_total{namespace="$namespace", service=~"$service"}[5m]))
 ```
 
@@ -375,7 +377,6 @@ resource "grafana_folder" "monitoring" {
     - "dashboards/*.json"
   notify: restart grafana
 ```
-
 
 ## Related Skills
 

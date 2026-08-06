@@ -6,7 +6,8 @@ PHP's `filter_var()` functions are useful but have surprising behaviors that cre
 
 ### FILTER_VALIDATE_URL Allows javascript: URLs
 
-`FILTER_VALIDATE_URL` checks structural validity but does not restrict schemes. This means `javascript:` URLs pass validation, enabling XSS when the URL is rendered in HTML.
+`FILTER_VALIDATE_URL` checks structural validity but does not restrict schemes. This means `javascript:` URLs pass
+validation, enabling XSS when the URL is rendered in HTML.
 
 ```php
 // VULNERABLE: javascript: URLs pass validation
@@ -36,7 +37,8 @@ function validateUrl(string $url): ?string
 
 ### FILTER_VALIDATE_EMAIL Accepts Unusual Addresses
 
-The filter follows RFC 5321/5322, accepting technically valid but uncommon formats that may not be appropriate for user-facing applications.
+The filter follows RFC 5321/5322, accepting technically valid but uncommon formats that may not be appropriate for
+user-facing applications.
 
 ```php
 // These all pass FILTER_VALIDATE_EMAIL:
@@ -74,7 +76,9 @@ function validateUserEmail(string $email): ?string
 
 ### FILTER_SANITIZE_STRING Removed in PHP 8.1
 
-`FILTER_SANITIZE_STRING` (and its alias `FILTER_SANITIZE_STRIPPED`) was removed in PHP 8.1 because its behavior was confusing and often misused. It stripped HTML tags and optionally encoded quotes, but developers frequently assumed it provided complete XSS protection.
+`FILTER_SANITIZE_STRING` (and its alias `FILTER_SANITIZE_STRIPPED`) was removed in PHP 8.1 because its behavior was
+confusing and often misused. It stripped HTML tags and optionally encoded quotes, but developers frequently assumed it
+provided complete XSS protection.
 
 ```php
 // REMOVED in PHP 8.1 - triggers deprecation in 8.0, error in 8.1+
@@ -92,7 +96,7 @@ $clean = strip_tags($input);
 
 ### Detection Patterns
 
-```
+```text
 # Find vulnerable filter_var usage
 filter_var\(.*FILTER_VALIDATE_URL\)
 filter_var\(.*FILTER_SANITIZE_STRING\)
@@ -208,7 +212,7 @@ final class CspMiddleware
 
 ### Detection Patterns
 
-```
+```text
 # Find missing CSP headers
 Content-Security-Policy  (should exist in response headers)
 
@@ -325,7 +329,7 @@ if ($this->isAllowedOrigin($origin)) {
 
 ### Detection Patterns
 
-```
+```text
 # Find wildcard CORS
 Access-Control-Allow-Origin.*\*
 header\(.*Access-Control-Allow-Origin.*\*
@@ -417,7 +421,7 @@ final class SafeJsonEncoder
 
 ### Detection Patterns
 
-```
+```text
 # Find json_encode without safety flags in HTML context
 echo.*json_encode\((?!.*JSON_HEX_TAG)
 print.*json_encode\((?!.*JSON_HEX_TAG)
@@ -450,11 +454,13 @@ function e(string $value): string
 }
 ```
 
-**Important:** Starting in PHP 8.1, `ENT_QUOTES` is the default flag. However, explicitly specifying flags ensures consistent behavior across PHP versions and communicates intent clearly.
+**Important:** Starting in PHP 8.1, `ENT_QUOTES` is the default flag. However, explicitly specifying flags ensures
+consistent behavior across PHP versions and communicates intent clearly.
 
 ### HTML Purifier for Rich Text
 
-When you must accept HTML input (WYSIWYG editors, markdown rendering), use HTML Purifier to strip dangerous elements while preserving safe formatting.
+When you must accept HTML input (WYSIWYG editors, markdown rendering), use HTML Purifier to strip dangerous elements
+while preserving safe formatting.
 
 ```php
 use HTMLPurifier;
@@ -497,7 +503,8 @@ $cleanHtml = $sanitizer->sanitize('<p>Hello <script>alert(1)</script> world</p>'
 
 ### Context-Specific Encoding
 
-Different output contexts require different encoding strategies. Using the wrong encoding for a context provides no protection.
+Different output contexts require different encoding strategies. Using the wrong encoding for a context provides no
+protection.
 
 ```php
 final class OutputEncoder
@@ -557,7 +564,7 @@ final class OutputEncoder
 
 ### Detection Patterns
 
-```
+```text
 # Find missing output encoding
 echo \$_GET\[
 echo \$_POST\[
@@ -577,7 +584,8 @@ htmlspecialchars\([^,]+\)$  # Single argument, missing flags
 
 ### ServerRequestInterface
 
-TYPO3 follows PSR-7 for request handling. Controllers receive `ServerRequestInterface` objects rather than accessing superglobals directly.
+TYPO3 follows PSR-7 for request handling. Controllers receive `ServerRequestInterface` objects rather than accessing
+superglobals directly.
 
 ```php
 <?php

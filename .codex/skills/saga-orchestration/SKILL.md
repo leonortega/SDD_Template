@@ -1,6 +1,11 @@
 ---
 name: saga-orchestration
-description: Implement saga patterns for distributed transactions and cross-aggregate workflows. Use this skill when implementing distributed transactions across microservices where 2PC is unavailable, designing compensating actions for failed order workflows that span inventory, payment, and shipping services, building event-driven saga coordinators for travel booking systems that must roll back hotel, flight, and car rental reservations atomically, or debugging stuck saga states in production where compensation steps never complete.
+description: >-
+  >- Implement saga patterns for distributed transactions and cross-aggregate workflows. Use this skill when
+  implementing distributed transactions across microservices where 2PC is unavailable, designing compensating actions
+  for failed order workflows that span inventory, payment, and shipping services, building event-driven saga
+  coordinators for travel booking systems that must roll back hotel, flight, and car rental reservations atomically, or
+  debugging stuck saga states in production where compensation steps never complete.
 ---
 
 # Saga Orchestration
@@ -10,6 +15,7 @@ Patterns for managing distributed transactions and long-running business process
 ## Inputs and Outputs
 
 **What you provide:**
+
 - Service boundaries and ownership (which service owns which step)
 - Transaction requirements (which steps must be atomic, which can be eventual)
 - Failure modes for each step (transient vs. permanent, retry policy)
@@ -17,6 +23,7 @@ Patterns for managing distributed transactions and long-running business process
 - Existing event/messaging infrastructure (Kafka, RabbitMQ, SQS, etc.)
 
 **What this skill produces:**
+
 - Saga definition with ordered steps, action commands, and compensation commands
 - Orchestrator or choreography implementation for your chosen pattern
 - Compensation logic for each participant service (idempotent, always-succeeds)
@@ -69,7 +76,10 @@ Moved to `references/details.md`.
 
 ### Saga stuck in COMPENSATING state
 
-A saga enters compensation but never reaches FAILED. This means a compensation handler is throwing an unhandled exception and never publishing `SagaCompensationCompleted`. Add dead-letter queue (DLQ) handling to compensation consumers and ensure every compensation action publishes a result event even when the underlying operation was already rolled back.
+A saga enters compensation but never reaches FAILED. This means a compensation handler is throwing an unhandled
+exception and never publishing `SagaCompensationCompleted`. Add dead-letter queue (DLQ)
+handling to compensation consumers and ensure every compensation action publishes a result event even when the
+underlying operation was already rolled back.
 
 ```python
 async def handle_release_reservation(self, command: Dict):
@@ -86,19 +96,27 @@ async def handle_release_reservation(self, command: Dict):
 
 ### Duplicate saga executions on restart
 
-If your orchestrator service restarts mid-saga, it may replay events and re-execute already-completed steps. Guard every step action with an idempotency key — see **Template 3** above.
+If your orchestrator service restarts mid-saga, it may replay events and re-execute already-completed steps. Guard every
+step action with an idempotency key — see **Template 3** above.
 
 ### Choreography saga losing events
 
-In a choreography-based saga, a downstream service may miss an event if it was offline when published. Use a durable message broker (Kafka with replication, RabbitMQ with persistence) and store the current saga state in a dedicated `saga_log` table so you can replay from the last known good step.
+In a choreography-based saga, a downstream service may miss an event if it was offline when published. Use a durable
+message broker (Kafka with replication, RabbitMQ with persistence) and store the
+current saga state in a dedicated `saga_log` table so you can replay from the last known good step.
 
 ### Timeout firing before a slow-but-valid step completes
 
-A step like `create_shipment` might take up to 15 minutes during peak load but your global timeout is 5 minutes, causing spurious compensation. Make step timeouts configurable per step type — see `references/advanced-patterns.md` for the `TimeoutSagaOrchestrator` implementation and the `STEP_TIMEOUTS` dict pattern.
+A step like `create_shipment` might take up to 15 minutes during peak load but your global timeout is 5 minutes, causing
+spurious compensation. Make step timeouts configurable per step type — see
+`references/advanced-patterns.md` for the `TimeoutSagaOrchestrator` implementation and the `STEP_TIMEOUTS` dict pattern.
 
 ### Compensation order not matching execution order
 
-When two steps both complete before a failure is detected, compensation must run in strict reverse order or you leave data in an inconsistent state. Verify that `_compensate()` iterates from `current_step - 1` down to `0`, and add an integration test that deliberately fails at each step index to confirm correct rollback order.
+When two steps both complete before a failure is detected, compensation must run in strict reverse order or you leave
+data in an inconsistent state. Verify that `_compensate()` iterates from
+`current_step - 1` down to `0`, and add an integration test that deliberately fails at each step index to confirm
+correct rollback order.
 
 ---
 
@@ -106,7 +124,9 @@ When two steps both complete before a failure is detected, compensation must run
 
 The `references/` directory contains production-grade implementations not needed for most sagas:
 
-- **`references/advanced-patterns.md`** — Full `SagaOrchestrator` abstract base class, `TimeoutSagaOrchestrator` with per-step deadlines, detailed bank transfer compensating transaction chain, Prometheus instrumentation, stuck saga PromQL alerts, and DLQ recovery worker.
+- **`references/advanced-patterns.md`** — Full `SagaOrchestrator` abstract base class, `TimeoutSagaOrchestrator` with
+per-step deadlines, detailed bank transfer compensating transaction chain,
+Prometheus instrumentation, stuck saga PromQL alerts, and DLQ recovery worker.
 
 ---
 

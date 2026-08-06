@@ -8,15 +8,19 @@ tags: logging, context, cardinality, dimensionality
 
 **Impact: CRITICAL**
 
-Wide events must be context-rich with high cardinality and high dimensionality. This enables you to answer questions you haven't anticipated yet - the "unknown unknowns" that traditional logging misses.
+Wide events must be context-rich with high cardinality and high dimensionality. This enables you to answer questions you
+haven't anticipated yet - the "unknown unknowns" that traditional logging misses.
 
 ### High Cardinality
 
-High cardinality means a field can have millions or billions of unique values. User IDs, request IDs, and transaction IDs are high cardinality fields. Your logging must support querying against any specific value of these fields. Without high cardinality support, you cannot debug issues for specific users.
+High cardinality means a field can have millions or billions of unique values. User IDs, request IDs, and transaction
+IDs are high cardinality fields. Your logging must support querying against any specific value of these fields. Without
+high cardinality support, you cannot debug issues for specific users.
 
 ### High Dimensionality
 
-High dimensionality means your events have many fields (20-100+). More dimensions mean more questions you can answer without redeploying code.
+High dimensionality means your events have many fields (20-100+). More dimensions mean more questions you can answer
+without redeploying code.
 
 ```typescript
 const wideEvent = {
@@ -71,7 +75,8 @@ const wideEvent = {
 
 ### Always Include Business Context
 
-Include business-specific context, not just technical details. User subscription tier, cart value, feature flags, account age - this context helps prioritize issues and understand business impact.
+Include business-specific context, not just technical details. User subscription tier, cart value, feature flags,
+account age - this context helps prioritize issues and understand business impact.
 
 ```typescript
 const wideEvent = {
@@ -110,7 +115,8 @@ Business context transforms debugging from "something broke" to "this $48,500 cu
 
 ### Always Include Environment Characteristics
 
-Include environment and deployment information in every wide event. This context is essential for correlating issues with deployments, identifying region-specific problems, and understanding the runtime environment.
+Include environment and deployment information in every wide event. This context is essential for correlating issues
+with deployments, identifying region-specific problems, and understanding the runtime environment.
 
 **Environment fields to include:**
 
@@ -154,4 +160,5 @@ const wideEvent = {
 - **version**: Track issues across service versions
 - **environment**: Distinguish production from staging issues
 
-This environment context should be added once at service startup and automatically included in every wide event via middleware.
+This environment context should be added once at service startup and automatically included in every wide event via
+middleware.

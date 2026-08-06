@@ -9,7 +9,8 @@ Comprehensive guide for managing data across distributed services.
 **Core Principle:** Each microservice owns its data exclusively.
 
 **Rules:**
-```
+
+```text
 ✓ DO:
 - Each service has its own database/schema
 - Service owns all CRUD operations on its data
@@ -26,7 +27,8 @@ Comprehensive guide for managing data across distributed services.
 **Implementation Options:**
 
 **1. Separate Database Instances:**
-```
+
+```text
 UserService → PostgreSQL instance 1
 OrderService → PostgreSQL instance 2
 InventoryService → PostgreSQL instance 3
@@ -42,7 +44,8 @@ Cons:
 ```
 
 **2. Separate Schemas:**
-```
+
+```text
 Same PostgreSQL instance:
 - Schema: user_service
 - Schema: order_service
@@ -61,7 +64,8 @@ Recommendation: Use separate schemas for dev/test, separate instances for produc
 ```
 
 **3. Polyglot Persistence:**
-```
+
+```text
 Each service chooses optimal database:
 
 UserService → PostgreSQL
@@ -88,7 +92,8 @@ Challenges: Multiple technologies to manage
 ### Strong Consistency vs Eventual Consistency
 
 **Strong Consistency:**
-```
+
+```text
 Definition: Read after write returns latest value
 
 Requires:
@@ -109,7 +114,8 @@ When to Use:
 ```
 
 **Eventual Consistency:**
-```
+
+```text
 Definition: System converges to consistent state over time
 
 Characteristics:
@@ -137,7 +143,8 @@ When to Use:
 **Problem:** Order service needs customer data owned by User service.
 
 **Anti-Pattern Solutions:**
-```
+
+```text
 ✗ Direct database access
 ✗ Shared database
 ✗ Database replication between services
@@ -146,7 +153,8 @@ When to Use:
 **Proper Solutions:**
 
 **1. API Composition:**
-```
+
+```text
 Client Query: Get order with customer details
 
 API Gateway:
@@ -169,7 +177,8 @@ Cons:
 ```
 
 **2. Data Replication via Events:**
-```
+
+```text
 OrderService maintains denormalized customer data:
 
 CREATE TABLE orders (
@@ -205,7 +214,8 @@ Cons:
 ```
 
 **3. CQRS with Shared Read Model:**
-```
+
+```text
 Write Models (Command Side):
 - UserService writes to user_db
 - OrderService writes to order_db
@@ -242,7 +252,8 @@ Cons:
 ### Two-Phase Commit (2PC)
 
 **How It Works:**
-```
+
+```text
 Phase 1: Prepare
 Coordinator asks all participants: "Can you commit?"
 - Service A: YES
@@ -268,7 +279,8 @@ Commit:
 ```
 
 **Problems with 2PC:**
-```
+
+```text
 ✗ Blocking protocol (participants wait for coordinator)
 ✗ Single point of failure (coordinator down = all blocked)
 ✗ Reduced availability
@@ -281,7 +293,8 @@ Recommendation: Avoid 2PC in microservices, use Saga pattern instead
 ### Saga Pattern (Recommended)
 
 **Orchestration-Based Saga:**
-```
+
+```text
 Transfer Money Saga:
 
 Steps:
@@ -317,7 +330,8 @@ return success_saga()
 ```
 
 **Saga State Persistence:**
-```
+
+```text
 CREATE TABLE saga_state (
     saga_id UUID PRIMARY KEY,
     saga_type VARCHAR(50),
@@ -342,7 +356,8 @@ On failure, load saga state and execute compensations
 ```
 
 **Idempotency for Saga Steps:**
-```
+
+```text
 Each saga step must be idempotent:
 
 Debit Operation:
@@ -382,7 +397,8 @@ async def compensate_debit(account_id, amount, saga_id):
 ### Core Concepts
 
 **Event Store:**
-```
+
+```text
 All state changes stored as immutable events
 
 Example: Bank Account
@@ -399,6 +415,7 @@ Replay all events to reconstruct current state
 ```
 
 **Event Schema:**
+
 ```json
 {
   "eventId": "evt-789",
@@ -427,7 +444,7 @@ Replay all events to reconstruct current state
 
 **Solution:** Periodic snapshots.
 
-```
+```text
 Event Stream:
 1. AccountOpened (version 1)
 2. MoneyDeposited (version 2)
@@ -451,6 +468,7 @@ Snapshot Strategy:
 ```
 
 **Snapshot Table:**
+
 ```sql
 CREATE TABLE snapshots (
     aggregate_id UUID,
@@ -471,7 +489,8 @@ CREATE INDEX idx_latest_snapshot ON snapshots(aggregate_id, version DESC);
 **Strategies:**
 
 **1. Event Versioning:**
-```
+
+```text
 Version 1:
 {
   "eventType": "OrderPlaced",
@@ -504,7 +523,8 @@ def handle_order_placed(event):
 ```
 
 **2. Event Upcasting:**
-```
+
+```text
 Transform old events to new format during replay:
 
 def upcast_event(event):
@@ -522,7 +542,8 @@ def upcast_event(event):
 ```
 
 **3. Event Transformation:**
-```
+
+```text
 Create new event types, keep old ones for historical accuracy:
 
 Old: OrderPlaced
@@ -540,7 +561,8 @@ Projections handle both:
 **Purpose:** Capture database changes and publish as events.
 
 **How It Works:**
-```
+
+```text
 Database transaction log → CDC Tool → Event Stream
 
 Example with Debezium:
@@ -567,7 +589,8 @@ Other services subscribe and update their read models
 ```
 
 **Benefits:**
-```
+
+```text
 ✓ No application code changes
 ✓ Guaranteed delivery (based on database transaction log)
 ✓ Captures all changes (even from direct DB access)
@@ -586,7 +609,8 @@ Use Cases:
 **Purpose:** Pre-computed denormalized views for fast queries.
 
 **Pattern:**
-```
+
+```text
 Event-Driven Materialized View:
 
 1. Services publish domain events
@@ -632,7 +656,8 @@ async def on_order_shipped(event):
 ### Horizontal Partitioning (Sharding)
 
 **When to Use:**
-```
+
+```text
 - Single database can't handle load
 - Data size exceeds single server capacity
 - Want to distribute geographically
@@ -641,7 +666,8 @@ async def on_order_shipped(event):
 **Sharding Strategies:**
 
 **1. Hash-Based Sharding:**
-```
+
+```text
 Shard = hash(customer_id) % num_shards
 
 customer_id: cust-123 → hash → 7234 → mod 4 → Shard 2
@@ -657,7 +683,8 @@ Cons:
 ```
 
 **2. Range-Based Sharding:**
-```
+
+```text
 Shard 0: customer_id 0-999
 Shard 1: customer_id 1000-1999
 Shard 2: customer_id 2000-2999
@@ -672,7 +699,8 @@ Cons:
 ```
 
 **3. Geography-Based Sharding:**
-```
+
+```text
 Shard US: customers in USA
 Shard EU: customers in Europe
 Shard APAC: customers in Asia-Pacific
@@ -687,7 +715,8 @@ Cons:
 ```
 
 **Shard Management:**
-```
+
+```text
 Shard Map Service:
 
 GET /shard-location?customer_id=cust-123
@@ -705,6 +734,7 @@ result = await db_connection.query("SELECT * FROM customers WHERE id = $1", cust
 Data management in microservices requires careful design:
 
 **Key Principles:**
+
 - Database per service (non-negotiable)
 - Embrace eventual consistency where possible
 - Use Saga pattern for distributed transactions
@@ -713,6 +743,7 @@ Data management in microservices requires careful design:
 - CDC for data synchronization
 
 **Decision Framework:**
+
 - Strong consistency → Saga with careful compensation logic
 - Audit trail → Event sourcing
 - Complex queries → CQRS with read models

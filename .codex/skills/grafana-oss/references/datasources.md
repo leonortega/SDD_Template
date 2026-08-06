@@ -2,7 +2,8 @@
 
 ## Overview
 
-Data sources are connections between Grafana and the systems storing your data. Grafana ships with built-in support for many popular data sources and supports additional sources via plugins.
+Data sources are connections between Grafana and the systems storing your data. Grafana ships with built-in support for
+many popular data sources and supports additional sources via plugins.
 
 - Only **Organization Admins** can add or remove data sources
 - Each data source has its own query editor
@@ -13,6 +14,7 @@ Data sources are connections between Grafana and the systems storing your data. 
 ## Managing Data Sources
 
 ### Add a data source
+
 1. Go to **Connections > Data sources** (or **Configuration > Data sources** in older versions)
 2. Click **Add new data source**
 3. Search for and select the data source type
@@ -20,6 +22,7 @@ Data sources are connections between Grafana and the systems storing your data. 
 5. Click **Save & Test** to verify the connection
 
 ### Data source settings (common to all types)
+
 | Setting | Description |
 |---------|-------------|
 | Name | Display name used in dashboards |
@@ -34,12 +37,14 @@ Data sources are connections between Grafana and the systems storing your data. 
 Native support - no plugin required.
 
 ### Configuration
+
 ```ini
 URL: http://prometheus:9090
 HTTP method: POST (recommended, supports longer queries)
 ```
 
 ### Key options
+
 | Option | Description |
 |--------|-------------|
 | Scrape interval | Default: 15s - should match your Prometheus scrape interval |
@@ -48,12 +53,14 @@ HTTP method: POST (recommended, supports longer queries)
 | Ruler URL | For Prometheus-managed alert rules |
 
 ### Query editor
+
 - **Metrics browser**: Browse available metrics with autocomplete
 - **Query type**: Range query (time series) or Instant query (single value)
 - **Legend**: Customize series labels using `{{label_name}}` syntax
 
 ### Template variables with Prometheus
-```
+
+```text
 # Variable type: Query
 # Query examples:
 label_values(metric_name, label_name)    # All values of a label for a metric
@@ -63,29 +70,35 @@ query_result(promql_expression)           # PromQL result as variable values
 ```
 
 ### Exemplars
-When enabled, Prometheus exemplars link high-cardinality trace IDs to metric data points. Requires a Tempo data source for trace drill-through.
+
+When enabled, Prometheus exemplars link high-cardinality trace IDs to metric data points. Requires a Tempo data source
+for trace drill-through.
 
 ---
 
 ## Loki (Log Aggregation)
 
 ### Configuration
+
 ```ini
 URL: http://loki:3100
 Maximum lines: 1000
 ```
 
 ### Derived fields
+
 Extract values from log lines and link to other systems.
 
 Example - extract trace ID and link to Tempo:
-```
+
+```text
 Name: TraceID
 Regex: traceID=(\w+)
 URL: (internal link to Tempo data source)
 ```
 
 ### Query editor (LogQL)
+
 ```logql
 # Basic log stream selector
 {job="nginx", namespace="production"}
@@ -107,7 +120,8 @@ sum(rate({job="nginx"}[5m])) by (status_code)
 ```
 
 ### Template variables with Loki
-```
+
+```text
 label_names()                          # All label names
 label_values(label_name)               # All values for a label
 label_values({job="nginx"}, pod)       # Label values filtered by stream selector
@@ -118,11 +132,13 @@ label_values({job="nginx"}, pod)       # Label values filtered by stream selecto
 ## Tempo (Distributed Tracing)
 
 ### Configuration
+
 ```ini
 URL: http://tempo:3200
 ```
 
 ### Key options
+
 | Option | Description |
 |--------|-------------|
 | Trace to logs | Link traces to Loki logs via trace ID |
@@ -131,6 +147,7 @@ URL: http://tempo:3200
 | Node graph | Show trace as node graph |
 
 ### TraceQL (query language)
+
 ```traceql
 # Find traces with error spans
 {status=error}
@@ -158,6 +175,7 @@ URL: http://alertmanager:9093
 ## Elasticsearch / OpenSearch
 
 ### Configuration
+
 ```ini
 URL: http://elasticsearch:9200
 Index name: logs-*
@@ -169,9 +187,11 @@ Elasticsearch version: 8.x
 
 ## MySQL
 
-Built-in support for MySQL 5.7+ and compatible databases (MariaDB, Percona, Amazon Aurora MySQL, Azure Database for MySQL, Google Cloud SQL MySQL).
+Built-in support for MySQL 5.7+ and compatible databases (MariaDB, Percona, Amazon Aurora MySQL, Azure Database for
+MySQL, Google Cloud SQL MySQL).
 
 ### Configuration
+
 ```ini
 Host: mysql:3306
 Database: mydb
@@ -183,6 +203,7 @@ Connection max lifetime: 14400
 ```
 
 ### Time series queries
+
 ```sql
 SELECT
   UNIX_TIMESTAMP(time_col) as time_sec,
@@ -194,6 +215,7 @@ ORDER BY time_col ASC
 ```
 
 ### Macros
+
 | Macro | Description |
 |-------|-------------|
 | `$__time(column)` | Converts column to Unix timestamp |
@@ -206,6 +228,7 @@ ORDER BY time_col ASC
 | `$__interval` | Auto-calculated interval for current time range |
 
 ### Example time series query
+
 ```sql
 SELECT
   $__timeGroup(created_at, $__interval) AS time,
@@ -218,6 +241,7 @@ ORDER BY 1
 ```
 
 ### Annotations
+
 ```sql
 SELECT
   UNIX_TIMESTAMP(time) AS time,
@@ -232,6 +256,7 @@ WHERE $__timeFilter(time)
 ## PostgreSQL
 
 ### Configuration
+
 ```ini
 Host: postgres:5432
 Database: mydb
@@ -241,6 +266,7 @@ SSL mode: disable / require / verify-ca / verify-full
 ```
 
 ### PostgreSQL time series
+
 ```sql
 SELECT
   time_bucket('$__interval', time) AS time,
@@ -256,6 +282,7 @@ ORDER BY 1
 ## Microsoft SQL Server
 
 ### Configuration
+
 ```ini
 Host: sqlserver:1433
 Database: mydb
@@ -271,12 +298,14 @@ Encrypt: false / true / disable
 Supports InfluxDB 1.x (InfluxQL) and InfluxDB 2.x / 3.x (Flux).
 
 ### InfluxDB 1.x (InfluxQL)
+
 ```ini
 URL: http://influxdb:8086
 Database: telegraf
 ```
 
 Query example:
+
 ```sql
 SELECT mean("value") FROM "measurement"
 WHERE $timeFilter
@@ -284,6 +313,7 @@ GROUP BY time($interval), "host"
 ```
 
 ### InfluxDB 2.x (Flux)
+
 ```ini
 URL: http://influxdb:8086
 Organization: myorg
@@ -292,6 +322,7 @@ Default bucket: mydata
 ```
 
 Flux query example:
+
 ```flux
 from(bucket: "mydata")
   |> range(start: v.timeRangeStart, stop: v.timeRangeStop)
@@ -305,6 +336,7 @@ from(bucket: "mydata")
 ## AWS CloudWatch
 
 ### Configuration
+
 ```ini
 # Auth options:
 # - AWS SDK Default (instance role, ~/.aws/credentials, env vars)
@@ -315,12 +347,14 @@ Default region: us-east-1
 ```
 
 Required IAM permissions:
+
 - `cloudwatch:GetMetricData`
 - `cloudwatch:ListMetrics`
 - `logs:*` (for CloudWatch Logs)
 
 ### CloudWatch Logs Insights
-```
+
+```text
 fields @timestamp, @message
 | filter level = "ERROR"
 | sort @timestamp desc
@@ -332,6 +366,7 @@ fields @timestamp, @message
 ## Azure Monitor
 
 Requires Azure App Registration with:
+
 - Tenant ID, Client ID, Client Secret
 - `Monitoring Reader` role on target subscriptions/resource groups
 
@@ -359,7 +394,8 @@ URL: http://graphite:8080
 ```
 
 Query examples:
-```
+
+```text
 target(servers.*.cpu)
 averageSeries(servers.*.cpu)
 groupByNode(servers.*.cpu, 1, 'averageSeries')
@@ -394,6 +430,7 @@ URL: http://pyroscope:4040
 ## Data Source Permissions (Enterprise)
 
 By default, all org users can query any data source. With RBAC:
+
 - Assign specific users/teams to specific data sources
 - Configure at **Data source settings > Permissions**
 
@@ -450,11 +487,13 @@ Place YAML files in the provisioning directory; Grafana loads on startup and wat
 ## Plugin Data Sources
 
 Install additional data sources via:
+
 - **Connections > Add new connection** (search the plugin catalog)
 - `grafana-cli plugins install <plugin-id>`
 - Docker: set `GF_INSTALL_PLUGINS` environment variable
 
 Popular plugin data sources:
+
 - `grafana-opensearch-datasource` - OpenSearch
 - `grafana-bigquery-datasource` - Google BigQuery
 - `grafana-mongodb-datasource` - MongoDB (Enterprise)

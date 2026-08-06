@@ -169,13 +169,13 @@ The lab services, once running:
 
 | Service | URL | Container |
 | ------- | --- | --------- |
-| Gitea (Git + PRs + CI) | http://localhost:3000 | `agentic-gitea` |
-| Gitea MCP (shared HTTP) | http://localhost:8123/mcp | `agentic-gitea-mcp` |
-| OpenProject (tickets) | http://localhost:8080 | (openproject) |
-| Nexus (artifacts) | http://localhost:8088 | `agentic-nexus` |
-| Grafana (dashboards) | http://localhost:3001 | `agentic-grafana` |
-| Seq (log search) | http://localhost:5341 | `agentic-seq` |
-| Dozzle (container logs) | http://localhost:8888 | `agentic-dozzle` |
+| Gitea (Git + PRs + CI) | <http://localhost:3000> | `agentic-gitea` |
+| Gitea MCP (shared HTTP) | <http://localhost:8123/mcp> | `agentic-gitea-mcp` |
+| OpenProject (tickets) | <http://localhost:8080> | (openproject) |
+| Nexus (artifacts) | <http://localhost:8088> | `agentic-nexus` |
+| Grafana (dashboards) | <http://localhost:3001> | `agentic-grafana` |
+| Seq (log search) | <http://localhost:5341> | `agentic-seq` |
+| Dozzle (container logs) | <http://localhost:8888> | `agentic-dozzle` |
 
 To stop the lab when done, ask the agent: `Stop the lab environment.`
 
@@ -215,7 +215,8 @@ OpenProject ticket → OpenSpec change → feature branch → TDD implementation
 6. **Handoff** — the ticket sits in `Developed` until reviewers approve; the PR is
    merged to `dev` and the deployment flow takes over.
 
-**Full details:** [`docs/workflows/implementation-deploy-flows.md`](docs/workflows/implementation-deploy-flows.md) (Stages 1–6).
+**Full details:**
+[`docs/workflows/implementation-deploy-flows.md`](docs/workflows/implementation-deploy-flows.md) (Stages 1–6).
 
 ---
 
@@ -254,7 +255,8 @@ merge to dev → post-merge deploy (waits for Nexus artifacts)
 6. **Rollback / hotfix** — rollback redeploys a known-good artifact (never a rebuild);
    hotfix branches from `main` with full quality gates.
 
-**Full details:** [`docs/workflows/implementation-deploy-flows.md`](docs/workflows/implementation-deploy-flows.md) (Stages 7–14) and
+**Full details:**
+[`docs/workflows/implementation-deploy-flows.md`](docs/workflows/implementation-deploy-flows.md) (Stages 7–14) and
 [`docs/architecture/deployment.md`](docs/architecture/deployment.md).
 
 ---
@@ -355,17 +357,24 @@ instructions the agent loads per routing stage.
 
 ### External Skills Used (attribution)
 
-- [Caveman](https://github.com/JuliusBrussee/caveman/tree/main/plugins/caveman/skills/caveman) — terse, token-saving communication
-- [Grill Me](https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me) — lightweight, temporary alignment on planning decisions (no durable repo context expected)
+- [Caveman](https://github.com/JuliusBrussee/caveman/tree/main/plugins/caveman/skills/caveman) — terse, token-saving
+communication
+- [Grill Me](https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me) — lightweight, temporary
+  alignment on planning decisions (no durable repo context expected)
 - [Domain Modeling](https://github.com/mattpocock/skills/tree/main/skills/engineering/domain-modeling),
   [Grill With Docs](https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs),
   [Grilling](https://github.com/mattpocock/skills/tree/main/skills/productivity/grilling),
   [TDD](https://github.com/mattpocock/skills/tree/main/skills/engineering/tdd) — planning and implementation
-- [Ponytail](https://github.com/DietrichGebert/ponytail/tree/main/skills) — minimal-solution implementation and complexity review
+- [Ponytail](https://github.com/DietrichGebert/ponytail/tree/main/skills) — minimal-solution implementation
+  and complexity review
 - [OpenAI Playwright](https://github.com/openai/skills/tree/main/skills/.curated/playwright) and
-  [Playwright Interactive](https://github.com/openai/skills/tree/main/skills/.curated/playwright-interactive) — browser automation
-- [OpenAI Security Best Practices](https://github.com/openai/skills/tree/main/skills/.curated/security-best-practices) — secure-by-default review
-- [Impeccable](https://github.com/pbakaus/impeccable) — frontend design guidance for AI coding agents (23 commands, 59 deterministic detector rules); wired into frontend implementation via `dev-flow-implement-ticket`
+  [Playwright Interactive](https://github.com/openai/skills/tree/main/skills/.curated/playwright-interactive)
+  — browser automation
+- [OpenAI Security Best Practices](https://github.com/openai/skills/tree/main/skills/.curated/security-best-practices)
+  — secure-by-default review
+- [Impeccable](https://github.com/pbakaus/impeccable) — frontend design guidance for AI coding agents
+  (23 commands, 59 deterministic detector rules); wired into frontend implementation via
+  `dev-flow-implement-ticket`
 
 ---
 

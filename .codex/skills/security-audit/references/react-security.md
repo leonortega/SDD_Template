@@ -1,6 +1,8 @@
 # React Security Patterns
 
-Security patterns, common misconfigurations, and detection regexes for React applications. React provides some built-in XSS protection through JSX auto-escaping, but developers can bypass these protections or introduce new vulnerability classes through unsafe APIs, unvetted dependencies, and improper state management.
+Security patterns, common misconfigurations, and detection regexes for React applications. React provides some built-in
+XSS protection through JSX auto-escaping, but developers can bypass these protections or introduce new vulnerability
+classes through unsafe APIs, unvetted dependencies, and improper state management.
 
 ---
 
@@ -8,7 +10,8 @@ Security patterns, common misconfigurations, and detection regexes for React app
 
 ### SA-REACT-01: dangerouslySetInnerHTML Misuse
 
-The `dangerouslySetInnerHTML` API bypasses React's built-in XSS protection by injecting raw HTML into the DOM. When used with unsanitized user input, it creates a direct XSS vector.
+The `dangerouslySetInnerHTML` API bypasses React's built-in XSS protection by injecting raw HTML into the DOM. When used
+with unsanitized user input, it creates a direct XSS vector.
 
 ```jsx
 // VULNERABLE: User input rendered as raw HTML
@@ -63,7 +66,8 @@ function Comment({ userComment }) {
 
 ### SA-REACT-02: JSX Expression Injection via User-Controlled Props
 
-When user-controlled data flows into JSX props that accept React elements or render functions, attackers can inject arbitrary components or scripts. This is especially dangerous with spread operators and dynamic component rendering.
+When user-controlled data flows into JSX props that accept React elements or render functions, attackers can inject
+arbitrary components or scripts. This is especially dangerous with spread operators and dynamic component rendering.
 
 ```jsx
 // VULNERABLE: Spreading user-controlled object as props
@@ -116,7 +120,8 @@ function Input({ inputRef }) {
 
 ### SA-REACT-03: javascript: Protocol in href
 
-React does not block `javascript:` URIs in `href` attributes. When user-controlled data is used as an `href`, attackers can inject `javascript:` URLs to execute arbitrary code when the link is clicked.
+React does not block `javascript:` URIs in `href` attributes. When user-controlled data is used as an `href`, attackers
+can inject `javascript:` URLs to execute arbitrary code when the link is clicked.
 
 ```jsx
 // VULNERABLE: User-controlled href without validation
@@ -172,7 +177,9 @@ function ExternalLink({ link }) {
 
 ### SA-REACT-04: Server Component vs Client Component Data Exposure
 
-In React Server Components (RSC), props passed from server to client components are serialized and visible in the client bundle. Passing sensitive data (database records, auth tokens, internal IDs) as props to client components exposes them in the browser.
+In React Server Components (RSC), props passed from server to client components are serialized and visible in the client
+bundle. Passing sensitive data (database records, auth tokens, internal IDs) as props to client components exposes them
+in the browser.
 
 ```jsx
 // VULNERABLE: Passing full database record to client component
@@ -241,7 +248,8 @@ async function ServerPage() {
 
 ### SA-REACT-05: eval() and Function Constructor in Event Handlers
 
-Using `eval()`, `new Function()`, or `setTimeout`/`setInterval` with string arguments in React components introduces code injection risks, especially when user input reaches these APIs.
+Using `eval()`, `new Function()`, or `setTimeout`/`setInterval` with string arguments in React components introduces
+code injection risks, especially when user input reaches these APIs.
 
 ```jsx
 // VULNERABLE: eval in event handler
@@ -314,7 +322,8 @@ function DelayedAction({ onAction }) {
 
 ### SA-REACT-06: Sensitive Data in React State / Context
 
-Storing sensitive data (tokens, passwords, PII) in React state or context makes it accessible through React DevTools and persisted in component tree snapshots. Any browser extension can read this data.
+Storing sensitive data (tokens, passwords, PII) in React state or context makes it accessible through React DevTools and
+persisted in component tree snapshots. Any browser extension can read this data.
 
 ```jsx
 // VULNERABLE: Auth token stored in React state
@@ -402,7 +411,8 @@ function UserProvider({ children }) {
 
 ### SA-REACT-07: Insecure useEffect Data Fetching
 
-Fetching data in `useEffect` without proper auth headers, CSRF tokens, or error handling for auth failures can expose APIs to unauthorized access or leak error details to the client.
+Fetching data in `useEffect` without proper auth headers, CSRF tokens, or error handling for auth failures can expose
+APIs to unauthorized access or leak error details to the client.
 
 ```jsx
 // VULNERABLE: No auth header on protected API call
@@ -495,7 +505,8 @@ function Profile({ userId }) {
 
 ### SA-REACT-08: Third-Party Component Risks (Unvetted npm Packages)
 
-Using unvetted or unmaintained npm packages in React applications can introduce supply-chain vulnerabilities. Packages with postinstall scripts, excessive permissions, or known CVEs pose significant risks.
+Using unvetted or unmaintained npm packages in React applications can introduce supply-chain vulnerabilities. Packages
+with postinstall scripts, excessive permissions, or known CVEs pose significant risks.
 
 ```jsx
 // VULNERABLE: Using an unvetted rich text editor that injects scripts
@@ -557,7 +568,8 @@ function UserList({ users }) {
 
 ### SA-REACT-09: Missing key Prop Leading to State Leaks Between Items
 
-When React list items share keys or use array indices as keys, component state can leak between logically different items. This can cause one user's data to appear in another user's component instance after reordering.
+When React list items share keys or use array indices as keys, component state can leak between logically different
+items. This can cause one user's data to appear in another user's component instance after reordering.
 
 ```jsx
 // VULNERABLE: Using array index as key with stateful components
