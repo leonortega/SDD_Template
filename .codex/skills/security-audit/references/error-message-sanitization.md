@@ -9,6 +9,7 @@ consistent exception hierarchies in provider abstractions, and preventing raw
 error details from reaching frontend responses.
 
 Related CWEs:
+
 - CWE-209: Generation of Error Message Containing Sensitive Information
 - CWE-210: Self-generated Error Message Containing Sensitive Information
 - CWE-497: Exposure of Sensitive System Information to an Unauthorized Control Sphere
@@ -153,7 +154,7 @@ if ($statusCode === 401) {
 
 ### Detection Patterns
 
-```
+```text
 # Find generic exceptions in provider implementations
 throw\s+new\s+\\?(RuntimeException|BadMethodCallException|LogicException|InvalidArgumentException|\\Exception)\s*\(
 # In files matching: *Provider*.php, *Client*.php, *Connector*.php, *Adapter*.php

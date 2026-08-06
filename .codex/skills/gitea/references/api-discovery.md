@@ -106,7 +106,10 @@ gitea GET '/users/search?q=alice&limit=30' | jq '.data[].login'
 
 ### Search repos · `GET /repos/search?q={query}&...` · read-only
 
-Query: `q`, `topic` (`true` = `q` matches topics only), `includeDesc` (search descriptions too), `uid` (limit to a user/org ID), `priority_owner_id`, `team_id`, `starredBy`, `private`, `is_private`, `template`, `archived`, `mode` (`fork|source|mirror|collaborative`), `exclusive`, `sort` (`alpha|created|updated|size|id`), `order` (`asc|desc`), `page`, `limit`.
+Query: `q`, `topic` (`true` = `q` matches topics only), `includeDesc` (search descriptions too), `uid` (limit to a
+user/org ID), `priority_owner_id`, `team_id`, `starredBy`, `private`, `is_private`, `template`, `archived`, `mode`
+(`fork|source|mirror|collaborative`), `exclusive`, `sort` (`alpha|created|updated|size|id`), `order` (`asc|desc`),
+`page`, `limit`.
 
 ```bash
 gitea GET '/repos/search?q=auth&limit=10' | jq '.data[].full_name'
@@ -116,7 +119,9 @@ gitea GET '/repos/search?q=auth&limit=10' | jq '.data[].full_name'
 
 ### Search issues + PRs across repos · `GET /repos/issues/search` · read-only
 
-Query: `q` (text), `state` (`open|closed|all`), `type` (`issues|pulls`), `labels` (comma-separated names), `milestones`, `owner`, `team`, `since` / `before` (ISO 8601), `created_by`, `assigned_by`, `mentioned_by`, `priority_repo_id`, `page`, `limit`.
+Query: `q` (text), `state` (`open|closed|all`), `type` (`issues|pulls`), `labels` (comma-separated names), `milestones`,
+`owner`, `team`, `since` / `before` (ISO 8601), `created_by`, `assigned_by`, `mentioned_by`, `priority_repo_id`, `page`,
+`limit`.
 
 ```bash
 gitea GET '/repos/issues/search?q=memory+leak&type=issues&state=open&limit=30' | jq '.[].title'
@@ -126,7 +131,8 @@ gitea GET '/repos/issues/search?q=memory+leak&type=issues&state=open&limit=30' |
 
 ### List notifications · `GET /notifications` · read-only
 
-Query: `all` (`true` = include read), `status-types` (comma list: `unread|read|pinned`), `subject-type` (comma list: `Issue|Pull|Commit|Repository`), `since`, `before`, `page`, `limit`.
+Query: `all` (`true` = include read), `status-types` (comma list: `unread|read|pinned`), `subject-type` (comma list:
+`Issue|Pull|Commit|Repository`), `since`, `before`, `page`, `limit`.
 
 ### List repo-scoped notifications · `GET /repos/{owner}/{repo}/notifications` · read-only
 

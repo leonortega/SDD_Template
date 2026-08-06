@@ -807,27 +807,24 @@ def setup_kind_cluster(root: Path, dry_run: bool = False) -> dict[str, Any]:
         if kc_get["returncode"] == 0 and kc_get["stdout"]:
             kc_data = kc_get["stdout"]
 
-            # Replace 127.0.0.1:<port> with host.docker.internal:<port> for CI container access
-            # Use YAML-safe approach: replace server address and strip CA data
-            kc_lines = kc_data.splitlines()
-            kc_ci_lines = []
-            skip_ca = False
-            for line in kc_lines:
-                stripped = line.strip()
-                if "127.0.0.1" in line and "server:" in line:
-                    kc_ci_lines.append("    server: https://host.docker.internal:6443")
-                elif "certificate-authority-data:" in stripped:
-                    kc_ci_lines.append("    insecure-skip-tls-verify: true")
-                    skip_ca = True
-                elif skip_ca and (stripped.startswith("-") or "client-" in stripped or "user:" in stripped or stripped == "" or not stripped):
-                    skip_ca = False
-                    kc_ci_lines.append(line)
-                elif skip_ca and stripped and not stripped.startswith("#"):
-                    # Skip CA data lines (PEM content)
-                    continue
-                else:
-                    kc_ci_lines.append(line)
-            kc_ci = "\n".join(kc_ci_lines)
+            # Replace 127.0.0.1:<port> with host.docker.internal:<port> for CI
+            # container access, PRESERVING the actual API port (kind picks a
+            # random host port per cluster — hardcoding 6443 broke deploys
+            # after cluster recreation). Parsed as YAML so the document stays
+            # structurally valid: a line-based rewrite once dropped the
+            # cluster `name:`/`contexts:` keys, which broke kubectl with
+            # "context was not found".
+            import yaml as _yaml
+
+            _kc = _yaml.safe_load(kc_data)
+            for _cluster in _kc.get("clusters", []):
+                _cfg = _cluster.get("cluster", {})
+                _cfg["server"] = _cfg.get("server", "").replace(
+                    "127.0.0.1", "host.docker.internal"
+                )
+                _cfg.pop("certificate-authority-data", None)
+                _cfg["insecure-skip-tls-verify"] = True
+            kc_ci = _yaml.safe_dump(_kc, default_flow_style=False, sort_keys=False)
 
             # Write CI kubeconfig
             kc_path = root / "infra" / "k8s" / "kind-kubeconfig-ci.yaml"
@@ -1414,12 +1411,17 @@ def setup_k8s_access(root, dry_run=False):
         result["valid"] = True
         return result
 
-    # Map app roles to their kind extraPortMapping host ports (defined in kind-config.yaml)
-    # Role-based defaults: web→8081, api→5002
-    _HOST_PORT_MAP: dict[str, int] = {
-        "frontend": 8081,
-        "backend": 5002,
-    }
+    # Canonical host ports come from infra/deployment/ports.json (single
+    # source of truth; never hardcode — the PROD host ports differ from the
+    # old role-default guesses). Keyed by (env, appId) → hostPort.
+    _HOST_PORT_MAP: dict[tuple[str, str], int] = {}
+    try:
+        _ports = load_ports(root)
+        for _env, _apps in _ports.get("environments", {}).items():
+            for _app, _cfg in _apps.items():
+                _HOST_PORT_MAP[(_env, _app)] = _cfg["hostPort"]
+    except (FileNotFoundError, ValueError):
+        pass  # no ports.json yet — fall through to role-default guesses below
 
     if dry_run:
         for app in apps:
@@ -1457,11 +1459,15 @@ def setup_k8s_access(root, dry_run=False):
         for env in ("dev", "qa", "prod"):
             ns = f"sdd-{env}"
 
-            # Determine host port from app-specific map or role default
-            host_port = _HOST_PORT_MAP.get(app_id)
+            # Determine host port from ports.json (env+app specific)
+            host_port = _HOST_PORT_MAP.get((env, app_id))
             if host_port is None:
-                # Fallback: suggest port-forward if no extraPortMapping is configured
-                host_port = {"dev": 8081, "qa": 8082, "prod": 8084}[env]
+                # Fallback guess (only when ports.json is missing): web→808x, api→500x
+                host_port = {
+                    "dev": 8081 if role == "web" else 5002,
+                    "qa": 8082 if role == "web" else 5003,
+                    "prod": 8083 if role == "web" else 5004,
+                }[env]
 
             # Check if namespace exists
             ns_check = run_native(
@@ -1515,7 +1521,7 @@ def setup_k8s_access(root, dry_run=False):
                 )
             else:
                 # Service not deployed — show expected URL if extraPortMapping exists
-                if app_id in _HOST_PORT_MAP:
+                if (env, app_id) in _HOST_PORT_MAP:
                     url = f"http://localhost:{host_port}"
                     result["actions"].append(
                         {

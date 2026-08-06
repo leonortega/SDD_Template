@@ -2,9 +2,11 @@
 
 ## Overview
 
-Grafana Alerting is a unified alerting system for monitoring metrics and logs across multiple data sources. It fires notifications when conditions are breached.
+Grafana Alerting is a unified alerting system for monitoring metrics and logs across multiple data sources. It fires
+notifications when conditions are breached.
 
 Key capabilities:
+
 - Query multiple data sources in a single alert rule
 - Multi-dimensional alerts (one rule creates many alert instances)
 - Flexible notification routing via policies
@@ -16,10 +18,14 @@ Key capabilities:
 ## Core Concepts
 
 ### Alert Rule
-Defines what to monitor and when to fire. Contains: queries, a condition (threshold), an evaluation interval, and a pending period.
+
+Defines what to monitor and when to fire. Contains: queries, a condition (threshold), an evaluation interval, and a
+pending period.
 
 ### Alert Instance
-When a rule produces multi-dimensional data, it creates one alert instance per unique label combination. Example: an alert on `cpu_usage{host=~".*"}` creates one instance per host.
+
+When a rule produces multi-dimensional data, it creates one alert instance per unique label combination. Example: an
+alert on `cpu_usage{host=~".*"}` creates one instance per host.
 
 ### Alert States
 
@@ -33,14 +39,19 @@ When a rule produces multi-dimensional data, it creates one alert instance per u
 | **Error** | Query failed with an error (configurable behavior) |
 
 ### Evaluation Group
-Alert rules are organized into evaluation groups. All rules in a group share the same evaluation interval and are evaluated sequentially.
+
+Alert rules are organized into evaluation groups. All rules in a group share the same evaluation interval and are
+evaluated sequentially.
 
 ### Pending Period
+
 How long the condition must be continuously met before firing.
+
 - `0s` = fire immediately
 - `5m` = must be in breach for 5 continuous minutes
 
 ### Keep Firing For
+
 How long an alert continues firing after the condition resolves (prevents brief recovery from clearing the alert).
 
 ---
@@ -48,12 +59,14 @@ How long an alert continues firing after the condition resolves (prevents brief 
 ## Alert Rule Types
 
 ### Grafana-Managed Rules (Recommended)
+
 - Stored in Grafana's database
 - Can query any data source
 - Support multi-dimensional alerting
 - Support expressions (math, reduce, threshold)
 
 ### Data Source-Managed Rules (Prometheus/Mimir/Loki)
+
 - Rules stored in the external system
 - Evaluated by the external system
 - Grafana provides UI to manage them
@@ -70,12 +83,14 @@ Navigate to: **Alerting > Alert rules > New alert rule**
 Write one or more queries (labeled A, B, C...).
 
 Example with Prometheus:
+
 ```promql
 # Query A: CPU usage per host
 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)
 ```
 
 Expression types you can add after queries:
+
 - **Math**: `$A > 80` or `($A + $B) / 2`
 - **Reduce**: Collapse time series to single value (Last, Mean, Sum, Max, Min)
 - **Resample**: Change time resolution
@@ -95,7 +110,8 @@ Expression types you can add after queries:
 ### Step 3: Configure labels and notifications
 
 **Labels** - Key-value pairs attached to alert instances. Used for routing and grouping:
-```
+
+```text
 severity=critical
 team=infrastructure
 service=database
@@ -103,13 +119,15 @@ environment=production
 ```
 
 **Annotations** - Context included in notification messages:
-```
+
+```text
 Summary: CPU usage above 80% on {{ $labels.instance }}
 Description: CPU usage is {{ $values.A.Value | humanize }}% on {{ $labels.instance }}
 Runbook URL: https://runbooks.company.com/cpu-high
 ```
 
 **Notification settings**:
+
 - Set a **Contact point** to send directly, bypassing the routing policy tree
 - Or leave empty to use the notification policy routing tree
 
@@ -146,6 +164,7 @@ Navigate to: **Alerting > Contact points**
 | LINE | LINE Notify token |
 
 ### Email configuration in grafana.ini
+
 ```ini
 [smtp]
 enabled = true
@@ -157,7 +176,9 @@ from_name = Grafana Alerts
 ```
 
 ### Webhook payload format
+
 Grafana POSTs a JSON payload to webhook endpoints:
+
 ```json
 {
   "receiver": "webhook-receiver",
@@ -185,11 +206,14 @@ Notification policies route alerts to contact points based on label matchers.
 Navigate to: **Alerting > Notification policies**
 
 ### Default policy
+
 The root policy - all alerts reach here if no specific policy matches.
 
 ### Child policies
+
 Add policies that match specific labels:
-```
+
+```text
 Match labels:
   severity = critical    -> contact: pagerduty
   team = infrastructure  -> contact: slack-infra
@@ -208,9 +232,12 @@ Match labels:
 | Repeat interval | Wait before re-sending for still-firing alerts (default: 4h) |
 
 ### Grouping
-When multiple alerts have the same "group by" labels, they are batched into a single notification. This prevents notification storms.
+
+When multiple alerts have the same "group by" labels, they are batched into a single notification. This prevents
+notification storms.
 
 Example:
+
 - 50 hosts alert on HighCPU simultaneously
 - Group by: `[alertname, datacenter]`
 - Result: 1 notification per datacenter containing all affected hosts
@@ -224,7 +251,8 @@ Customize notification message format using Go templating.
 Navigate to: **Alerting > Contact points > Notification templates**
 
 ### Built-in variables
-```
+
+```text
 {{ $labels }}          # Alert labels as map
 {{ $values }}          # Query values map
 {{ $labels.instance }} # Specific label value
@@ -234,7 +262,8 @@ Navigate to: **Alerting > Contact points > Notification templates**
 ```
 
 ### Example Slack template
-```
+
+```text
 {{ define "slack_message" }}
 {{ if eq .Status "firing" }}:red_circle:{{ else }}:large_green_circle:{{ end }} *{{ .Labels.alertname }}*
 
@@ -250,7 +279,8 @@ Navigate to: **Alerting > Contact points > Notification templates**
 ```
 
 ### Humanize functions
-```
+
+```text
 {{ $value | humanize }}           # "12.3k"
 {{ $value | humanize1024 }}       # "12.3Ki"
 {{ $value | humanizeBytes }}      # "12.3 kB"
@@ -267,18 +297,22 @@ Silences temporarily suppress alert notifications without stopping alert evaluat
 Navigate to: **Alerting > Silences**
 
 ### Create a silence
+
 1. Click **Add silence**
 2. Set start time and end time (or duration)
 3. Add label matchers:
-   ```
+
+```text
    alertname = HighCPU
    instance =~ ".*staging.*"   # Regex match
    severity != critical         # Negative match
    ```
-4. Add a comment explaining why
-5. Save
+
+1. Add a comment explaining why
+2. Save
 
 ### Use cases
+
 - Planned maintenance windows
 - Known issues being investigated
 - Silencing noisy alerts during deploys
@@ -294,7 +328,8 @@ Recurring schedules when notifications are suppressed (unlike silences which are
 Navigate to: **Alerting > Mute timings**
 
 ### Example mute timings
-```
+
+```text
 Name: no-alerts-weekends
   Weekdays: Saturday, Sunday
 
@@ -349,6 +384,7 @@ host = smtp.example.com:587
 ## Common Alert Rule Examples
 
 ### CPU usage above threshold
+
 ```promql
 # Query A
 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)
@@ -358,6 +394,7 @@ host = smtp.example.com:587
 ```
 
 ### Memory usage
+
 ```promql
 # Query A
 (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100
@@ -365,6 +402,7 @@ host = smtp.example.com:587
 ```
 
 ### HTTP error rate
+
 ```promql
 # Query A: error requests
 sum(rate(http_requests_total{status=~"5.."}[5m]))
@@ -375,6 +413,7 @@ sum(rate(http_requests_total[5m]))
 ```
 
 ### Disk space
+
 ```promql
 # Query A
 (1 - (node_filesystem_free_bytes{fstype!="tmpfs"} / node_filesystem_size_bytes{fstype!="tmpfs"})) * 100
@@ -382,6 +421,7 @@ sum(rate(http_requests_total[5m]))
 ```
 
 ### Service down (no data = firing)
+
 ```promql
 # Query A
 up{job="my-service"}
@@ -390,6 +430,7 @@ up{job="my-service"}
 ```
 
 ### Loki log error rate
+
 ```logql
 # Query A
 sum(rate({job="api"} |= "ERROR" [5m]))
@@ -401,13 +442,16 @@ sum(rate({job="api"} |= "ERROR" [5m]))
 ## Connecting Alerts to Dashboards
 
 ### Create alert from panel
+
 1. Open panel editor
 2. Click **Alert** tab
 3. Click **Create alert rule from this panel**
 4. Pre-populates query from the panel
 
 ### Link alert to dashboard panel
-In the alert rule definition, set **Dashboard** and **Panel** to link to a specific visualization. The alert state badge appears on the panel and clicking it goes to the alert rule.
+
+In the alert rule definition, set **Dashboard** and **Panel** to link to a specific visualization. The alert state badge
+appears on the panel and clicking it goes to the alert rule.
 
 ---
 

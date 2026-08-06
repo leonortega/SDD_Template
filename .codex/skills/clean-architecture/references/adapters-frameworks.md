@@ -1,11 +1,15 @@
 # Interface Adapters and Frameworks
 
-Interface Adapters and Frameworks & Drivers form the two outermost circles of Clean Architecture. Interface Adapters translate data between the forms convenient for Use Cases and Entities and the forms convenient for external agencies. Frameworks and Drivers are the glue code that connects the system to the outside world. Together, these layers contain all the volatile, technology-specific decisions -- the parts most likely to change over the life of a system.
+Interface Adapters and Frameworks & Drivers form the two outermost circles of Clean Architecture. Interface Adapters
+translate data between the forms convenient for Use Cases and Entities and the forms convenient for external agencies.
+Frameworks and Drivers are the glue code that connects the system to the outside world. Together, these layers contain
+all the volatile, technology-specific decisions -- the parts most likely to change over the life of a system.
 
-This reference covers controllers, presenters, gateways, the nature of frameworks as details, database and web as details, keeping frameworks at arm's length, and the plugin architecture.
-
+This reference covers controllers, presenters, gateways, the nature of frameworks as details, database and web as
+details, keeping frameworks at arm's length, and the plugin architecture.
 
 ## Table of Contents
+
 1. [Interface Adapters](#interface-adapters)
 2. [Frameworks as Details](#frameworks-as-details)
 3. [The Database Is a Detail](#the-database-is-a-detail)
@@ -19,15 +23,18 @@ This reference covers controllers, presenters, gateways, the nature of framework
 
 ### Controllers
 
-A Controller is an adapter that translates input from the delivery mechanism (HTTP, CLI, message queue, gRPC) into a form that the Use Case can understand. It constructs a Request Model and calls the Use Case's Input Port.
+A Controller is an adapter that translates input from the delivery mechanism (HTTP, CLI, message queue, gRPC) into a
+form that the Use Case can understand. It constructs a Request Model and calls the Use Case's Input Port.
 
 **Responsibilities of a Controller:**
+
 - Parse and extract data from the delivery mechanism's native format
 - Construct the Use Case's Request Model
 - Call the Use Case's Input Port
 - Handle delivery-mechanism-specific concerns (authentication, rate limiting) BEFORE calling the Use Case
 
 **What a Controller must NOT do:**
+
 - Contain business logic
 - Directly access the database
 - Format output for the response (that's the Presenter's job)
@@ -61,13 +68,16 @@ class OrderController:
         self._place_order.execute(request)
 ```
 
-The Controller knows about HTTP data format and knows about `PlaceOrderRequest`. It translates between the two. The Use Case never sees HTTP.
+The Controller knows about HTTP data format and knows about `PlaceOrderRequest`. It translates between the two. The Use
+Case never sees HTTP.
 
 ### Presenters
 
-A Presenter translates Use Case output into a form suitable for the delivery mechanism. It implements the Use Case's Output Port and produces a View Model.
+A Presenter translates Use Case output into a form suitable for the delivery mechanism. It implements the Use Case's
+Output Port and produces a View Model.
 
 **The Presenter pattern separates two concerns:**
+
 1. The Use Case decides WHAT data to present
 2. The Presenter decides HOW to format it for display
 
@@ -104,11 +114,13 @@ class JsonOrderPresenter(PlaceOrderOutput):
         self.view_model = {"error": {"message": message}}
 ```
 
-The Presenter knows about JSON structure, status codes, and string formatting. The Use Case knows nothing about any of this.
+The Presenter knows about JSON structure, status codes, and string formatting. The Use Case knows nothing about any of
+this.
 
 ### Gateways
 
-A Gateway implements a repository or service interface defined by the Use Case circle using a specific technology. It is the adapter between the abstract port and the concrete implementation.
+A Gateway implements a repository or service interface defined by the Use Case circle using a specific technology. It is
+the adapter between the abstract port and the concrete implementation.
 
 ```python
 # Interface defined in Use Case circle
@@ -152,7 +164,8 @@ class PostgresOrderRepository(OrderRepository):
         return Order(order_id=row["id"], items=items, customer_id=row["customer_id"])
 ```
 
-Notice the `_to_domain` method: it maps between the persistence format (database rows) and the domain format (entity objects). This mapping is the gateway's core responsibility.
+Notice the `_to_domain` method: it maps between the persistence format (database rows) and the domain format (entity
+objects). This mapping is the gateway's core responsibility.
 
 ### Adapter Types Summary
 
@@ -167,9 +180,11 @@ Notice the `_to_domain` method: it maps between the persistence format (database
 
 ### The Framework Trap
 
-Frameworks are powerful tools. They provide routing, dependency injection, ORM, template rendering, and dozens of other features. The temptation is to build your system on top of the framework -- to let the framework be the architecture.
+Frameworks are powerful tools. They provide routing, dependency injection, ORM, template rendering, and dozens of other
+features. The temptation is to build your system on top of the framework -- to let the framework be the architecture.
 
 This is a trap. When the framework IS the architecture:
+
 - You cannot test business logic without the framework running
 - You cannot change the framework without rewriting the application
 - Framework bugs become your bugs, in your most critical code
@@ -178,7 +193,8 @@ This is a trap. When the framework IS the architecture:
 
 ### Frameworks Want Marriage, You Want a Fling
 
-Frameworks are authored by people who have a use case for them. They provide massive power and convenience -- but they ask for commitment. They want you to:
+Frameworks are authored by people who have a use case for them. They provide massive power and convenience -- but they
+ask for commitment. They want you to:
 
 - Inherit from their base classes
 - Put their annotations on your code
@@ -188,6 +204,7 @@ Frameworks are authored by people who have a use case for them. They provide mas
 Each of these is a coupling point. The more you comply, the harder it is to separate.
 
 **The Clean Architecture approach:**
+
 - Don't derive business objects from framework base classes
 - Don't put framework annotations on domain entities
 - Don't let the framework dictate your project structure
@@ -206,11 +223,13 @@ Each of these is a coupling point. The more you comply, the harder it is to sepa
 
 ## The Database Is a Detail
 
-The database is a detail. It is a mechanism for storing and retrieving data. From the perspective of the business rules, it doesn't matter whether data lives in PostgreSQL, MongoDB, flat files, or an in-memory data structure.
+The database is a detail. It is a mechanism for storing and retrieving data. From the perspective of the business rules,
+it doesn't matter whether data lives in PostgreSQL, MongoDB, flat files, or an in-memory data structure.
 
 ### Why It Matters
 
 When business rules know about the database:
+
 - Testing requires a database (slow, fragile tests)
 - Database schema changes ripple into business logic
 - Migrating to a different database means rewriting business rules
@@ -220,7 +239,8 @@ When business rules know about the database:
 
 The repository pattern is the primary mechanism for keeping the database at arm's length:
 
-1. **Define the interface in the Use Case circle** -- it describes WHAT operations the business needs, not HOW data is stored
+1. **Define the interface in the Use Case circle** -- it describes WHAT operations the business needs, not HOW data is
+stored
 2. **Implement the interface in the Adapter circle** -- this is where SQL, ORM calls, and database-specific code live
 3. **Inject the implementation at startup** -- Main wires the concrete repository into the use case
 
@@ -229,25 +249,31 @@ The repository pattern is the primary mechanism for keeping the database at arm'
 ORMs are useful tools, but they must be contained in the outer circles:
 
 **The two-model approach:**
-- **Domain model**: Pure business entities with business methods and rules. No ORM annotations. Lives in the Entity circle.
-- **Persistence model**: ORM-annotated classes that map to database tables. Lives in the Adapter circle. The gateway maps between the two.
 
-This duplication is intentional and valuable. The domain model evolves with business rules; the persistence model evolves with the database schema. They change for different reasons at different times.
+- **Domain model**: Pure business entities with business methods and rules. No ORM annotations. Lives in the Entity
+circle.
+- **Persistence model**: ORM-annotated classes that map to database tables. Lives in the Adapter circle. The gateway
+maps between the two.
+
+This duplication is intentional and valuable. The domain model evolves with business rules; the persistence model
+evolves with the database schema. They change for different reasons at different times.
 
 ## The Web Is a Detail
 
-The web is a delivery mechanism -- a way to transport data between the user and the application. The business rules should not know whether they are being accessed through a web browser, a mobile app, a CLI, or a message queue.
+The web is a delivery mechanism -- a way to transport data between the user and the application. The business rules
+should not know whether they are being accessed through a web browser, a mobile app, a CLI, or a message queue.
 
 ### Delivery Mechanism Independence
 
 When use cases are independent of the delivery mechanism, you can:
+
 - Serve the same business logic through REST, GraphQL, gRPC, CLI, and WebSocket simultaneously
 - Test business logic without HTTP
 - Migrate from one web framework to another by rewriting only the outer circle
 
 ### Multiple Delivery Mechanisms
 
-```
+```text
 REST Controller ----\
                      \
 GraphQL Resolver ------> Use Case Interactor ---> Entity
@@ -256,11 +282,13 @@ CLI Command --------/
 Message Handler ---/
 ```
 
-Each delivery mechanism is an adapter in the outer circle. They all call the same Use Case Input Port. The business logic is written once and exposed through as many delivery mechanisms as needed.
+Each delivery mechanism is an adapter in the outer circle. They all call the same Use Case Input Port. The business
+logic is written once and exposed through as many delivery mechanisms as needed.
 
 ## Plugin Architecture
 
-The ultimate expression of Clean Architecture is the plugin architecture: the business rules are the core application, and everything else (database, web framework, external services, UI) is a plugin that connects to the core.
+The ultimate expression of Clean Architecture is the plugin architecture: the business rules are the core application,
+and everything else (database, web framework, external services, UI) is a plugin that connects to the core.
 
 ### How Plugins Work
 
@@ -271,7 +299,8 @@ The ultimate expression of Clean Architecture is the plugin architecture: the bu
 
 ### The Main Component
 
-Main is the dirtiest, most concrete component in the system. It knows about everything because it must instantiate and wire all the pieces together. But nothing depends on Main.
+Main is the dirtiest, most concrete component in the system. It knows about everything because it must instantiate and
+wire all the pieces together. But nothing depends on Main.
 
 ```python
 # main.py -- the composition root
@@ -302,7 +331,8 @@ def create_app():
     return app
 ```
 
-Main is the only place where the concrete classes from all circles come together. If you want to swap PostgreSQL for DynamoDB, you change Main and add a `DynamoOrderRepository`. No other file changes.
+Main is the only place where the concrete classes from all circles come together. If you want to swap PostgreSQL for
+DynamoDB, you change Main and add a `DynamoOrderRepository`. No other file changes.
 
 ### Plugin Swappability in Practice
 
@@ -315,7 +345,8 @@ Main is the only place where the concrete classes from all circles come together
 | **Cache** | `CacheStore` | `RedisCacheStore` | `MemcachedCacheStore` |
 | **File storage** | `FileStore` | `S3FileStore` | `LocalFileStore` |
 
-Each swap is a single line change in Main plus a new implementation class. No business logic changes. No use case changes. No entity changes. This is the power of treating frameworks and infrastructure as plugins.
+Each swap is a single line change in Main plus a new implementation class. No business logic changes. No use case
+changes. No entity changes. This is the power of treating frameworks and infrastructure as plugins.
 
 ## Keeping Frameworks at Arm's Length
 
@@ -344,7 +375,8 @@ class FakeClock(Clock):
         return self._time
 ```
 
-Now your business logic depends on `Clock` (an interface you control), not on `datetime.utcnow()` (a library call you don't control). You can test time-dependent logic deterministically.
+Now your business logic depends on `Clock` (an interface you control), not on `datetime.utcnow()` (a library call you
+don't control). You can test time-dependent logic deterministically.
 
 ### When NOT to Wrap
 

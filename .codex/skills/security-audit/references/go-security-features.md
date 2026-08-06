@@ -1,12 +1,14 @@
 # Go Security Features by Version
 
-Modern Go versions introduce language features that directly improve security when used correctly. This reference documents security-relevant features and vulnerability patterns from Go 1.18 through Go 1.22.
+Modern Go versions introduce language features that directly improve security when used correctly. This reference
+documents security-relevant features and vulnerability patterns from Go 1.18 through Go 1.22.
 
 ## Core Go Security Patterns
 
 ### 1. Goroutine Race Conditions (CWE-362)
 
-Shared mutable state accessed by multiple goroutines without synchronization leads to data races that can corrupt security-critical data such as authentication state, permission checks, or financial calculations.
+Shared mutable state accessed by multiple goroutines without synchronization leads to data races that can corrupt
+security-critical data such as authentication state, permission checks, or financial calculations.
 
 ```go
 // VULNERABLE: Shared state without synchronization
@@ -44,9 +46,11 @@ func handleLoginSafe(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-**Security implication:** Data races on security-critical variables can cause authentication bypass, privilege escalation, or inconsistent authorization decisions. Always run tests with `-race` flag: `go test -race ./...`
+**Security implication:** Data races on security-critical variables can cause authentication bypass, privilege
+escalation, or inconsistent authorization decisions. Always run tests with `-race` flag: `go test -race ./...`
 
-**Detection:** static regexes catch obvious `go func(){ ... }()` sites but can't reason about shared state. The Go toolchain's built-in data-race detector is the right answer — it instruments the binary and reports races at runtime:
+**Detection:** static regexes catch obvious `go func(){ ... }()` sites but can't reason about shared state. The Go
+toolchain's built-in data-race detector is the right answer — it instruments the binary and reports races at runtime:
 
 ```bash
 go test -race ./...            # run tests with the race detector
@@ -54,11 +58,13 @@ go run -race ./cmd/server      # instrument a running binary
 go build -race -o ./bin/server ./cmd/server   # produce an instrumented build
 ```
 
-`go vet` does not have a `-race` mode; the `-race` flag belongs to `go test` / `go run` / `go build` (it instruments the binary — you still have to exercise it).
+`go vet` does not have a `-race` mode; the `-race` flag belongs to `go test` / `go run` / `go build` (it instruments the
+binary — you still have to exercise it).
 
 ### 2. Unsafe Pointer Usage (CWE-119, CWE-787)
 
-The `unsafe` package bypasses Go's type safety and memory safety guarantees. It enables arbitrary memory access, buffer overflows, and use-after-free vulnerabilities.
+The `unsafe` package bypasses Go's type safety and memory safety guarantees. It enables arbitrary memory access, buffer
+overflows, and use-after-free vulnerabilities.
 
 ```go
 // VULNERABLE: unsafe pointer arithmetic
@@ -87,13 +93,15 @@ func safeConvert(data []byte) (uint32, error) {
 }
 ```
 
-**Security implication:** `unsafe` operations can cause buffer overflows, information disclosure, and arbitrary code execution. Any use of `unsafe` in security-critical code requires manual audit.
+**Security implication:** `unsafe` operations can cause buffer overflows, information disclosure, and arbitrary code
+execution. Any use of `unsafe` in security-critical code requires manual audit.
 
 **Detection regex:** `unsafe\.Pointer|unsafe\.Sizeof|unsafe\.Offsetof|unsafe\.Alignof|unsafe\.Slice|unsafe\.String`
 
 ### 3. Template Injection: text/template vs html/template (CWE-79)
 
-Go's `text/template` package performs no output escaping. Using it for HTML output enables XSS attacks. The `html/template` package automatically escapes output for the HTML context.
+Go's `text/template` package performs no output escaping. Using it for HTML output enables XSS attacks. The
+`html/template` package automatically escapes output for the HTML context.
 
 ```go
 // VULNERABLE: text/template does NOT escape HTML
@@ -122,13 +130,16 @@ func renderPageSafe(w http.ResponseWriter, username string) {
 }
 ```
 
-**Security implication:** Using `text/template` for HTML output allows stored/reflected XSS. Always use `html/template` for web responses. Note: `html/template` only escapes for HTML — for JavaScript or URL contexts, additional care is needed.
+**Security implication:** Using `text/template` for HTML output allows stored/reflected XSS. Always use `html/template`
+for web responses. Note: `html/template` only escapes for HTML — for JavaScript or URL contexts, additional care is
+needed.
 
 **Detection regex:** `"text/template"`
 
 ### 4. SQL Injection in database/sql (CWE-89)
 
-String concatenation in SQL queries creates injection vulnerabilities. Go's `database/sql` package supports parameterized queries that prevent injection.
+String concatenation in SQL queries creates injection vulnerabilities. Go's `database/sql` package supports
+parameterized queries that prevent injection.
 
 ```go
 // VULNERABLE: String concatenation in SQL query
@@ -171,13 +182,16 @@ func getUserPrepared(db *sql.DB, username string) (*User, error) {
 }
 ```
 
-**Security implication:** SQL injection can lead to full database compromise. Always use parameterized queries. Be cautious with ORMs — raw query methods (e.g., `gorm.Raw()`) can still be vulnerable.
+**Security implication:** SQL injection can lead to full database compromise. Always use parameterized queries. Be
+cautious with ORMs — raw query methods (e.g., `gorm.Raw()`) can still be vulnerable.
 
-**Detection regex:** `(Sprintf|"|')\s*\+.*SELECT|Sprintf.*SELECT|Sprintf.*INSERT|Sprintf.*UPDATE|Sprintf.*DELETE|\.Query\(.*\+|\.Exec\(.*\+`
+**Detection regex:**
+`(Sprintf|"|')\s*\+.*SELECT|Sprintf.*SELECT|Sprintf.*INSERT|Sprintf.*UPDATE|Sprintf.*DELETE|\.Query\(.*\+|\.Exec\(.*\+`
 
 ### 5. Command Injection via os/exec (CWE-78)
 
-Using `exec.Command` with shell invocation (`sh -c`) combined with user input enables command injection. Direct execution without a shell is safer.
+Using `exec.Command` with shell invocation (`sh -c`) combined with user input enables command injection. Direct
+execution without a shell is safer.
 
 ```go
 // VULNERABLE: Shell invocation with user input
@@ -213,7 +227,8 @@ func processFileValidated(filename string) ([]byte, error) {
 }
 ```
 
-**Security implication:** Shell injection via `sh -c` or `bash -c` allows arbitrary command execution. Pass arguments directly to `exec.Command` and validate inputs.
+**Security implication:** Shell injection via `sh -c` or `bash -c` allows arbitrary command execution. Pass arguments
+directly to `exec.Command` and validate inputs.
 
 **Detection regex:** `exec\.Command\s*\(\s*"(sh|bash|cmd|powershell)"`
 
@@ -246,7 +261,8 @@ func serveFileSafe(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-**Security implication:** Path traversal can expose sensitive files (`/etc/passwd`, application configuration, secrets). Always validate that resolved paths remain within the intended directory.
+**Security implication:** Path traversal can expose sensitive files (`/etc/passwd`, application configuration, secrets).
+Always validate that resolved paths remain within the intended directory.
 
 **Detection regex:** `filepath\.Join\s*\(.*\b(r\.|req\.|request\.|params|query|URL)`
 
@@ -277,7 +293,8 @@ func redirectSafe(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-**Security implication:** HTTP header injection can enable response splitting, cache poisoning, and session fixation. Validate all user input before placing in headers.
+**Security implication:** HTTP header injection can enable response splitting, cache poisoning, and session fixation.
+Validate all user input before placing in headers.
 
 **Detection regex:** `Header\(\)\.Set\s*\(.*\b(r\.|req\.|request\.|params|query)`
 
@@ -329,7 +346,8 @@ func fetchProxySafe(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-**Security implication:** SSRF can expose internal services, cloud metadata endpoints (169.254.169.254), and enable network scanning from the server.
+**Security implication:** SSRF can expose internal services, cloud metadata endpoints (169.254.169.254), and enable
+network scanning from the server.
 
 **Detection regex:** `http\.(Get|Post|Head)\s*\(.*\b(r\.|req\.|request\.|params|query|URL)`
 
@@ -377,13 +395,15 @@ client := &http.Client{
 }
 ```
 
-**Security implication:** Disabling certificate verification allows attackers to intercept encrypted traffic. This is commonly left in code after debugging.
+**Security implication:** Disabling certificate verification allows attackers to intercept encrypted traffic. This is
+commonly left in code after debugging.
 
 **Detection regex:** `InsecureSkipVerify\s*:\s*true`
 
 ### 10. Insecure Randomness: crypto/rand vs math/rand (CWE-330)
 
-`math/rand` uses a deterministic PRNG unsuitable for security-sensitive operations. Use `crypto/rand` for tokens, keys, and nonces.
+`math/rand` uses a deterministic PRNG unsuitable for security-sensitive operations. Use `crypto/rand` for tokens, keys,
+and nonces.
 
 ```go
 // VULNERABLE: math/rand for security-sensitive values
@@ -416,13 +436,15 @@ func generateTokenSecure() (string, error) {
 }
 ```
 
-**Security implication:** Predictable tokens allow session hijacking, CSRF bypass, and password reset token forgery. Always use `crypto/rand` for security-critical randomness.
+**Security implication:** Predictable tokens allow session hijacking, CSRF bypass, and password reset token forgery.
+Always use `crypto/rand` for security-critical randomness.
 
 **Detection regex:** `"math/rand"`
 
 ### 11. Integer Overflow in Calculations (CWE-190)
 
-Go does not panic on integer overflow — values silently wrap around. This can cause incorrect security decisions, buffer size miscalculations, or financial errors.
+Go does not panic on integer overflow — values silently wrap around. This can cause incorrect security decisions, buffer
+size miscalculations, or financial errors.
 
 ```go
 // VULNERABLE: Integer overflow in allocation size
@@ -449,15 +471,18 @@ func allocateBufferSafe(count, size int) ([]byte, error) {
 }
 ```
 
-**Security implication:** Integer overflows can bypass bounds checks, cause undersized allocations leading to buffer overflows, or produce incorrect financial calculations.
+**Security implication:** Integer overflows can bypass bounds checks, cause undersized allocations leading to buffer
+overflows, or produce incorrect financial calculations.
 
-**Detection regex:** Best detected via static analysis (`go vet`, `staticcheck`). Regex detection is unreliable for this pattern.
+**Detection regex:** Best detected via static analysis (`go vet`, `staticcheck`). Regex detection is unreliable for this
+pattern.
 
 ## Go 1.18+ Security Features
 
 ### Generics for Type-Safe Validation
 
-Go 1.18 introduced generics, enabling reusable, type-safe validation functions that reduce copy-paste errors in security-critical code.
+Go 1.18 introduced generics, enabling reusable, type-safe validation functions that reduce copy-paste errors in
+security-critical code.
 
 ```go
 // BEFORE Go 1.18: Repeated validation logic prone to copy-paste errors
@@ -521,13 +546,15 @@ func FuzzValidateInput(f *testing.F) {
 }
 ```
 
-**Security implication:** Fuzzing discovers crashes, panics, and logic bugs in parsers and validators that manual testing misses.
+**Security implication:** Fuzzing discovers crashes, panics, and logic bugs in parsers and validators that manual
+testing misses.
 
 ## Go 1.21+ Security Features
 
 ### log/slog for Structured Security Logging
 
-Go 1.21 introduced `log/slog`, the standard library structured logger. Structured logging prevents log injection and enables security event correlation.
+Go 1.21 introduced `log/slog`, the standard library structured logger. Structured logging prevents log injection and
+enables security event correlation.
 
 ```go
 // VULNERABLE: Unstructured logging with user input (log injection)
@@ -561,7 +588,8 @@ func logSecurityEvent(event string, attrs ...slog.Attr) {
 }
 ```
 
-**Security implication:** Structured logging prevents log injection attacks and produces machine-parseable security audit trails.
+**Security implication:** Structured logging prevents log injection attacks and produces machine-parseable security
+audit trails.
 
 **Detection regex:** `log\.(Print|Fatal|Panic)(f|ln)?\s*\(` (warning: suggests migration to `slog`)
 
@@ -600,13 +628,15 @@ func cloneRoleAssignments(original map[string][]string) map[string][]string {
 }
 ```
 
-**Security implication:** Standard library functions for common operations reduce the chance of logic errors in security-critical code paths.
+**Security implication:** Standard library functions for common operations reduce the chance of logic errors in
+security-critical code paths.
 
 ## Go 1.22+ Security Features
 
 ### Loop Variable Semantics Fix
 
-Go 1.22 changed loop variable semantics so that each iteration creates a new variable, fixing a longstanding class of bugs where closures captured the loop variable by reference.
+Go 1.22 changed loop variable semantics so that each iteration creates a new variable, fixing a longstanding class of
+bugs where closures captured the loop variable by reference.
 
 ```go
 // BEFORE Go 1.22: Loop variable captured by reference (bug)
@@ -631,11 +661,13 @@ func startHandlers(ports []int) {
 }
 ```
 
-**Security implication:** The old behavior could cause services to bind to wrong ports, security checks to use wrong values, and goroutines to process wrong data. Go 1.22 eliminates this class of bugs.
+**Security implication:** The old behavior could cause services to bind to wrong ports, security checks to use wrong
+values, and goroutines to process wrong data. Go 1.22 eliminates this class of bugs.
 
 ### Enhanced Routing Patterns in net/http
 
-Go 1.22 added method-based routing and path parameters to the standard `net/http` mux, reducing reliance on third-party routers.
+Go 1.22 added method-based routing and path parameters to the standard `net/http` mux, reducing reliance on third-party
+routers.
 
 ```go
 // Go 1.22+: Method-specific routes prevent method confusion
@@ -654,7 +686,8 @@ func getUser(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-**Security implication:** Method-specific routing prevents unauthorized operations via HTTP method confusion (e.g., GET reaching a DELETE handler).
+**Security implication:** Method-specific routing prevents unauthorized operations via HTTP method confusion (e.g., GET
+reaching a DELETE handler).
 
 ## Detection Patterns for Auditing Go Security Features
 

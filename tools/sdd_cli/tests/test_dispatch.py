@@ -567,6 +567,202 @@ class EnvironmentLabDispatchTests(unittest.TestCase):
                 )
             self.assertEqual(0, rc)  # Dry-run skips HTTP checks
 
+    def test_environment_lab_help_lists_new_modes(self) -> None:
+        """environment-lab help advertises the 4 newly registered modes."""
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            rc = cli.main(["environment-lab"])
+        self.assertEqual(1, rc)
+        output = stderr.getvalue()
+        self.assertIn("validate-app-config", output)
+        self.assertIn("validate-docker-desktop", output)
+        self.assertIn("provision-nexus-repositories", output)
+        self.assertIn("provision-gitea-secrets", output)
+
+    def test_validate_app_config_dry_run(self) -> None:
+        """environment-lab validate-app-config --dry-run true works without infra files."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli.main(
+                    [
+                        "environment-lab",
+                        "validate-app-config",
+                        "--root",
+                        str(root),
+                        "--dry-run",
+                        "true",
+                    ]
+                )
+            self.assertEqual(0, rc)
+            result = json.loads(stdout.getvalue())
+            self.assertTrue(result["valid"])
+            self.assertTrue(result["dryRun"])
+            self.assertEqual("ValidateAppConfig", result["mode"])
+
+    def test_validate_app_config_valid_apps(self) -> None:
+        """validate-app-config validates apps.json and checks every Dockerfile."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            deployment = root / "infra" / "deployment"
+            deployment.mkdir(parents=True)
+            (deployment / "apps.schema.json").write_text(
+                json.dumps(
+                    {
+                        "type": "object",
+                        "required": ["version", "apps"],
+                        "properties": {
+                            "version": {"type": "integer"},
+                            "apps": {"type": "array"},
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (deployment / "apps.json").write_text(
+                json.dumps(
+                    {
+                        "version": 1,
+                        "apps": [
+                            {
+                                "appId": "frontend",
+                                "projectPath": "frontend",
+                                "role": "web",
+                                "healthPath": "/health",
+                                "deployOrder": 1,
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (root / "frontend").mkdir(parents=True)
+            (root / "frontend" / "Dockerfile").write_text(
+                "FROM nginx\n", encoding="utf-8"
+            )
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli.main(
+                    ["environment-lab", "validate-app-config", "--root", str(root)]
+                )
+            self.assertEqual(0, rc)
+            result = json.loads(stdout.getvalue())
+            self.assertTrue(result["valid"])
+
+    def test_validate_app_config_missing_dockerfile(self) -> None:
+        """validate-app-config fails when an app's Dockerfile is missing."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            deployment = root / "infra" / "deployment"
+            deployment.mkdir(parents=True)
+            (deployment / "apps.json").write_text(
+                json.dumps(
+                    {
+                        "version": 1,
+                        "apps": [
+                            {
+                                "appId": "backend",
+                                "projectPath": "backend",
+                                "role": "api",
+                                "healthPath": "/health",
+                                "deployOrder": 1,
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli.main(
+                    ["environment-lab", "validate-app-config", "--root", str(root)]
+                )
+            self.assertEqual(1, rc)
+            result = json.loads(stdout.getvalue())
+            self.assertFalse(result["valid"])
+            self.assertTrue(any("Dockerfile not found" in str(item) for item in result["findings"]))
+
+    def test_validate_docker_desktop_dry_run(self) -> None:
+        """environment-lab validate-docker-desktop --dry-run true works."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli.main(
+                    [
+                        "environment-lab",
+                        "validate-docker-desktop",
+                        "--root",
+                        str(root),
+                        "--dry-run",
+                        "true",
+                    ]
+                )
+            self.assertEqual(0, rc)
+            result = json.loads(stdout.getvalue())
+            self.assertTrue(result["valid"])
+            self.assertTrue(result["dryRun"])
+            self.assertEqual("ValidateDockerDesktop", result["mode"])
+
+    def test_provision_nexus_repositories_dry_run(self) -> None:
+        """environment-lab provision-nexus-repositories --dry-run true works."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli.main(
+                    [
+                        "environment-lab",
+                        "provision-nexus-repositories",
+                        "--root",
+                        str(root),
+                        "--dry-run",
+                        "true",
+                    ]
+                )
+            self.assertEqual(0, rc)
+            result = json.loads(stdout.getvalue())
+            self.assertTrue(result["valid"])
+            self.assertTrue(result["dryRun"])
+            self.assertEqual("ProvisionNexusRepositories", result["mode"])
+            self.assertTrue(
+                any("docker-hosted" in str(item) for item in result["actions"])
+            )
+
+    def test_provision_gitea_secrets_dry_run(self) -> None:
+        """environment-lab provision-gitea-secrets --dry-run true works."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli.main(
+                    [
+                        "environment-lab",
+                        "provision-gitea-secrets",
+                        "--root",
+                        str(root),
+                        "--dry-run",
+                        "true",
+                    ]
+                )
+            self.assertEqual(0, rc)
+            result = json.loads(stdout.getvalue())
+            self.assertTrue(result["valid"])
+            self.assertTrue(result["dryRun"])
+            self.assertEqual("ProvisionGiteaSecrets", result["mode"])
+            self.assertTrue(
+                any("KUBECONFIG" in str(item) for item in result["actions"])
+            )
+
+    def test_new_modes_reject_unknown_subcommand_fallback(self) -> None:
+        """Unknown environment-lab subcommand still errors (no new-mode regression)."""
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            rc = cli.main(["environment-lab", "bogus-mode-xyz"])
+        self.assertEqual(1, rc)
+        self.assertIn("Unknown environment-lab subcommand: bogus-mode-xyz", stderr.getvalue())
+
 
 class ToolInstallerDispatchTests(unittest.TestCase):
     """Test tool-installer subcommand dispatch."""

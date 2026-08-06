@@ -17,7 +17,7 @@ and detection methods.
 Forces browsers to use HTTPS for all future requests to the domain, preventing
 protocol downgrade attacks and cookie hijacking.
 
-```
+```text
 Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
 ```
 
@@ -28,9 +28,10 @@ Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
 | `preload` | Eligible for browser preload list (hardcoded HTTPS in browsers) |
 
 **Deployment notes:**
+
 - Start with a short `max-age` (e.g., 300) during testing, then increase to 31536000.
 - `includeSubDomains` requires ALL subdomains to support HTTPS. Audit before enabling.
-- Preload submission: https://hstspreload.org -- once submitted, removal takes months.
+- Preload submission: <https://hstspreload.org> -- once submitted, removal takes months.
 - Only send HSTS over HTTPS responses. Sending it over HTTP is ignored by browsers.
 
 ```php
@@ -64,7 +65,7 @@ Controls which resources the browser is allowed to load, providing strong mitiga
 against XSS, data injection, and clickjacking attacks. CSP is the single most
 effective header for preventing XSS.
 
-```
+```text
 Content-Security-Policy: default-src 'self'; script-src 'self' 'nonce-{random}'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; report-uri /csp-report
 ```
 
@@ -165,7 +166,7 @@ Prevents the browser from MIME-sniffing a response away from the declared
 `Content-Type`. Without this header, a browser may interpret a text file as
 JavaScript if it contains script-like content.
 
-```
+```text
 X-Content-Type-Options: nosniff
 ```
 
@@ -187,7 +188,7 @@ header('X-Content-Type-Options: nosniff');
 Controls whether the page can be embedded in `<iframe>`, `<frame>`, `<embed>`, or
 `<object>` elements. Prevents clickjacking attacks.
 
-```
+```text
 X-Frame-Options: DENY
 ```
 
@@ -214,13 +215,14 @@ header("Content-Security-Policy: frame-ancestors 'none'");
 
 ### X-XSS-Protection -- DEPRECATED
 
-```
+```text
 X-XSS-Protection: 0
 ```
 
 **This header is DEPRECATED and should be set to `0` (disabled).**
 
 **Why it is dangerous to enable:**
+
 - The `X-XSS-Protection: 1; mode=block` setting was removed from all modern
   browsers (Chrome 78+, Edge 78+, Firefox never supported it).
 - In some edge cases, the XSS auditor itself could be exploited to *introduce*
@@ -257,7 +259,7 @@ header('X-XSS-Protection: 0');
 Controls how much referrer information is included with requests. Prevents leaking
 sensitive URL paths (session tokens, query parameters) to third-party sites.
 
-```
+```text
 Referrer-Policy: strict-origin-when-cross-origin
 ```
 
@@ -291,7 +293,7 @@ header('Referrer-Policy: strict-origin-when-cross-origin');
 Controls which browser features and APIs the page can use. Restricts access to
 sensitive device capabilities.
 
-```
+```text
 Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()
 ```
 
@@ -329,7 +331,7 @@ These headers provide isolation between origins and are required for
 
 Controls the browsing context group. Isolates the window from cross-origin popups.
 
-```
+```text
 Cross-Origin-Opener-Policy: same-origin
 ```
 
@@ -343,7 +345,7 @@ Cross-Origin-Opener-Policy: same-origin
 
 Requires all cross-origin resources to explicitly grant permission via CORS or CORP.
 
-```
+```text
 Cross-Origin-Embedder-Policy: require-corp
 ```
 
@@ -357,7 +359,7 @@ Cross-Origin-Embedder-Policy: require-corp
 
 Tells the browser who is allowed to load this resource (set on the resource response).
 
-```
+```text
 Cross-Origin-Resource-Policy: same-origin
 ```
 
@@ -860,8 +862,8 @@ $misconfigurations = [
 ## Related References
 
 - `owasp-top10.md` -- A05:2021 Security Misconfiguration
-- OWASP Secure Headers Project: https://owasp.org/www-project-secure-headers/
-- Mozilla Observatory: https://observatory.mozilla.org
-- SecurityHeaders.com: https://securityheaders.com
-- MDN CSP Reference: https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP
-- HSTS Preload List: https://hstspreload.org
+- OWASP Secure Headers Project: <https://owasp.org/www-project-secure-headers/>
+- Mozilla Observatory: <https://observatory.mozilla.org>
+- SecurityHeaders.com: <https://securityheaders.com>
+- MDN CSP Reference: <https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP>
+- HSTS Preload List: <https://hstspreload.org>

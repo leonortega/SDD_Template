@@ -1023,7 +1023,7 @@ final class SyslogSecurityWriter
 
 ### Log Retention
 
-```
+```text
 Security logs must be retained according to compliance requirements:
 
 | Regulation | Minimum Retention |
@@ -1285,6 +1285,6 @@ final class LogInjectionPreventionTest extends TestCase
 
 - `owasp-top10.md` -- A09:2021 Security Logging and Monitoring Failures
 - `authentication-patterns.md` -- Authentication events to log
-- OWASP Logging Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html
-- PSR-3 Logger Interface: https://www.php-fig.org/psr/psr-3/
-- OWASP AppSensor (attack detection): https://owasp.org/www-project-appsensor/
+- OWASP Logging Cheat Sheet: <https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html>
+- PSR-3 Logger Interface: <https://www.php-fig.org/psr/psr-3/>
+- OWASP AppSensor (attack detection): <https://owasp.org/www-project-appsensor/>

@@ -16,11 +16,13 @@ It has two purposes:
 
 Source of truth for every rule below:
 
-- `.codex/skills/_shared/delivery-contract.md` (index) and `delivery-contract-{core,ticket,review,qa,deploy,parallel,format}.md`
+- `.codex/skills/_shared/delivery-contract.md` (index) and
+`delivery-contract-{core,ticket,review,qa,deploy,parallel,format}.md`
 - `.codex/skills/dev-flow-*` and `.codex/skills/dev-ops-*` workflow skills
 - `AGENTS.md` → Workflow Stage Routing table
 - `.codex/agent-evals/promptfooconfig.yaml`, `.codex/agent-evals/routing_provider.py`
-- `docs/architecture/system.md`, `docs/conventions/development.md`, `docs/architecture/deployment.md`, `docs/conventions/context-management.md`, `docs/workflows/parallel-delivery.md`
+- `docs/architecture/system.md`, `docs/conventions/development.md`, `docs/architecture/deployment.md`,
+`docs/conventions/context-management.md`, `docs/workflows/parallel-delivery.md`
 
 ---
 

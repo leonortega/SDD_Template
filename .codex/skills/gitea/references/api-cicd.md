@@ -77,7 +77,8 @@ Body: `ref` (req — branch or tag), `inputs` (opt — object matching `workflow
 
 ### List runs · `GET /repos/{owner}/{repo}/actions/runs` · read-only
 
-Query: `actor`, `branch`, `event`, `status` (`queued|in_progress|completed|failure|success|cancelled|skipped`), `workflow_id`, `head_sha`, `page`, `limit`.
+Query: `actor`, `branch`, `event`, `status` (`queued|in_progress|completed|failure|success|cancelled|skipped`),
+`workflow_id`, `head_sha`, `page`, `limit`.
 
 ### Get run · `GET /repos/{owner}/{repo}/actions/runs/{run_id}` · read-only
 
@@ -170,7 +171,8 @@ Body: `{"data":"...","visibility":"all|private|selected","selected_repository_id
 
 ## Packages
 
-`{type}` is one of `container | npm | maven | pypi | cargo | generic | composer | conan | conda | helm | nuget | rubygems | debian | rpm | alpine | swift | vagrant | chef`.
+`{type}` is one of `container | npm | maven | pypi | cargo | generic | composer | conan | conda | helm | nuget |
+rubygems | debian | rpm | alpine | swift | vagrant | chef`.
 
 ### List packages (owner-wide) · `GET /packages/{owner}?page=1&limit=30&type=&q=` · read-only
 

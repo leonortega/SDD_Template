@@ -1,8 +1,12 @@
 # Test Requirements
 
-Centralized definition of test levels required by all implementation skills. This is the single source of truth for what types of tests must be written, what they validate, and their scope.
+Centralized definition of test levels required by all implementation skills. This is the single source of truth for what
+types of tests must be written, what they validate, and their scope.
 
-**Relationship to coverage configuration:** The test levels defined here are complementary to the coverage threshold in `.codex/quality.local.json` (`coverage.minimumPercent`, default `80`). Unit and integration tests drive coverage percentage; architecture tests enforce structural rules independently of coverage metrics.
+**Relationship to coverage configuration:** The test levels defined here are complementary to the coverage threshold in
+`.codex/quality.local.json` (`coverage.minimumPercent`, default `80`). Unit and
+integration tests drive coverage percentage; architecture tests enforce structural rules independently of coverage
+metrics.
 
 ---
 
@@ -18,20 +22,28 @@ Every implementation must cover **three levels** of automated tests, written in 
 
 ### Key Rules
 
-1. **Scope:** The three levels apply **per component/module**, not per AC × task. One unit test file covers multiple ACs and tasks for the same component. One integration test file covers an entire endpoint or feature boundary. Architecture tests are a single project-wide file that validates the entire change.
-2. **Order:** Tests MUST be written BEFORE product code (TDD RED phase). No product code is allowed until all three levels are written and confirmed RED.
-3. **Folders:** Tests go in a separate `test/` directory (mirroring `src/` structure unless the stack convention dictates otherwise):
+1. **Scope:** The three levels apply **per component/module**, not per AC × task. One unit test file covers multiple ACs
+and tasks for the same component. One integration test file covers an entire
+endpoint or feature boundary. Architecture tests are a single project-wide file that validates the entire change.
+2. **Order:** Tests MUST be written BEFORE product code (TDD RED phase). No product code is allowed until all three
+levels are written and confirmed RED.
+3. **Folders:** Tests go in a separate `test/` directory (mirroring `src/` structure unless the stack convention
+dictates otherwise):
    - `test/unit/` — unit tests
    - `test/integration/` — integration tests
    - `test/architecture/` — architecture tests (single file per change)
-4. **Framework:** Use the stack's test framework as declared in `project-profile.json → stack.testFrameworks` or detected from the project's build configuration (Vitest, pytest, xUnit, Jest, etc.).
-5. **Coverage:** Unit and integration tests collectively must meet the `coverage.minimumPercent` threshold from `.codex/quality.local.json` (default `80`). Architecture tests do not contribute to coverage percentage but are mandatory for structural validation.
+4. **Framework:** Use the stack's test framework as declared in `project-profile.json → stack.testFrameworks` or
+detected from the project's build configuration (Vitest, pytest, xUnit, Jest, etc.).
+5. **Coverage:** Unit and integration tests collectively must meet the `coverage.minimumPercent` threshold from
+`.codex/quality.local.json` (default `80`). Architecture tests do not contribute to
+coverage percentage but are mandatory for structural validation.
 
 ---
 
 ## Acceptance-to-Test Map
 
-Before writing any code, build an acceptance-to-test map that traces each acceptance criterion (AC) and OpenSpec task to its corresponding test level. The map documents coverage and prevents gaps.
+Before writing any code, build an acceptance-to-test map that traces each acceptance criterion (AC) and OpenSpec task to
+its corresponding test level. The map documents coverage and prevents gaps.
 
 **Example map:**
 

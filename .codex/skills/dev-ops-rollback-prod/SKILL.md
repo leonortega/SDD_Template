@@ -1,7 +1,11 @@
 ---
 name: dev-ops-rollback-prod
 license: MIT
-description: Roll back production to previously verified immutable artifacts through selected project-profile artifact, deployment, observability, and ticket adapters. Use when Codex needs to choose a known-good release from release metadata, redeploy existing artifacts without rebuilding, verify production page and health checks, check configured observability when available, and comment rollback evidence on the ticket system.
+description: >-
+  >- Roll back production to previously verified immutable artifacts through selected project-profile artifact,
+  deployment, observability, and ticket adapters. Use when Codex needs to choose a known-good release from release
+  metadata, redeploy existing artifacts without rebuilding, verify production page and health checks, check configured
+  observability when available, and comment rollback evidence on the ticket system.
 ---
 
 <!-- TIER 3: STAGE-SPECIFIC - PROD rollback skill -->
@@ -10,11 +14,19 @@ description: Roll back production to previously verified immutable artifacts thr
 
 ## Overview
 
-Use this skill when PROD must be restored to a previous known-good artifact. Rollback is a deployment operation, not a rebuild. It must redeploy an existing Nexus artifact and preserve release traceability.
+Use this skill when PROD must be restored to a previous known-good artifact. Rollback is a deployment operation, not a
+rebuild. It must redeploy an existing Nexus artifact and preserve release
+traceability.
 
 ## Shared Context
 
-Before rollback, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/delivery-contract.md`, and `docs/conventions/context-management.md`, with `docs/architecture/deployment.md` as the stage-specific doc. Load selected artifact, deployment, observability, repository, and ticket adapters. Use `python -m tools.sdd_cli dev-flow` helpers: `ArtifactPaths`, `ValidateReleaseManifest`, `ValidateTicketLock`, and `UpdateReleaseManifest`. Rollback may target an incident/release rather than the active ticket lock, but a mismatch must be explicit.
+Before rollback, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`,
+`.codex/skills/_shared/delivery-contract.md`, and `docs/conventions/context-management.md`,
+with `docs/architecture/deployment.md` as the stage-specific doc. Load selected artifact, deployment, observability,
+repository, and ticket adapters. Use `python -m tools.sdd_cli dev-flow` helpers:
+`ArtifactPaths`, `ValidateReleaseManifest`, `ValidateTicketLock`, and `UpdateReleaseManifest`. Rollback may target an
+incident/release rather than the active ticket lock, but a mismatch must be
+explicit.
 
 ## Configuration
 
@@ -26,24 +38,33 @@ Read `.codex/client-tools.local.json` first. Required values:
 
 ## Workflow
 
-Run preflight, rollback deployment, verification, ticket-provider result, and follow-up handoff steps in order. Do not mutate PROD until artifact and release-manifest validation pass.
+Run preflight, rollback deployment, verification, ticket-provider result, and follow-up handoff steps in order. Do not
+mutate PROD until artifact and release-manifest validation pass.
 
 ## Preflight
 
-**Knowledge consult before rolling back.** Before any rollback mutation, consult the knowledge base for rollback and release lessons relevant to the incident:
+**Knowledge consult before rolling back.** Before any rollback mutation, consult the knowledge base for rollback and
+release lessons relevant to the incident:
 
 ```bash
 python -m tools.sdd_cli knowledge-search search --query <incident or release terms>
 python -m tools.sdd_cli knowledge-search search --list-topics
 ```
 
-If an existing `knowledge/errors/` or `knowledge/lessons-learned/` entry matches the failure mode, apply it and cite it in the rollback handoff. Record `Knowledge consulted: <files>` or `Knowledge consulted: none`.
+If an existing `knowledge/errors/` or `knowledge/lessons-learned/` entry matches the failure mode, apply it and cite it
+in the rollback handoff. Record `Knowledge consulted: <files>` or `Knowledge
+consulted: none`.
 
 1. Resolve the current PROD release from the latest ticket-provider PROD deployment comment or release manifest.
 
-2. Run `ValidateTicketLock` when `.codex/delivery-context.local.json` is present and report the active ticket lock. If the rollback target differs from the lock, require explicit user confirmation before mutation.
-3. If the user did not supply a rollback target, list known-good candidates from ticket-provider PROD comments, Git tags, and Nexus `release.json` metadata. Order newest-first, mark the current PROD release, and ask the user to choose a target before mutating anything.
-4. Resolve the rollback target from user input, ticket-provider PROD comments, Git tags, or Nexus `release.json` metadata.
+2. Run `ValidateTicketLock` when `.codex/delivery-context.local.json` is present and report the active ticket lock. If
+the rollback target differs from the lock, require explicit user confirmation
+before mutation.
+3. If the user did not supply a rollback target, list known-good candidates from ticket-provider PROD comments, Git
+tags, and Nexus `release.json` metadata. Order newest-first, mark the current PROD
+release, and ask the user to choose a target before mutating anything.
+4. Resolve the rollback target from user input, ticket-provider PROD comments, Git tags, or Nexus `release.json`
+metadata.
 5. Verify the selected provider target artifact exists. selected deployment provider requires:
    - `app/{commitSha}/deployable-apps.json`
    - one `app/{commitSha}/{artifactName}` per topology app
@@ -55,12 +76,15 @@ If an existing `knowledge/errors/` or `knowledge/lessons-learned/` entry matches
    - `app/{commitSha}/commit.sha`
    - `app/{commitSha}/release.json`
 6. Verify the immutable checksum, digest, and `commit.sha` metadata required by the selected deployment adapter.
-7. Verify `release.json` marks the target as previously QA-approved and either previously PROD-deployed or explicitly user-approved as the rollback target.
-8. Stop if the target commit equals the current PROD commit unless the user explicitly asks to redeploy the same artifact.
+7. Verify `release.json` marks the target as previously QA-approved and either previously PROD-deployed or explicitly
+user-approved as the rollback target.
+8. Stop if the target commit equals the current PROD commit unless the user explicitly asks to redeploy the same
+artifact.
 
 ## Rollback Deployment
 
-Trigger the selected provider workflow without rebuilding. The selected deployment adapter declares the rollback workflow inputs:
+Trigger the selected provider workflow without rebuilding. The selected deployment adapter declares the rollback
+workflow inputs:
 
 ```text
 environment=prod
@@ -69,13 +93,17 @@ release_version={rollbackVersionOrTag}
 source_rc_version={sourceRcVersion}
 ```
 
-The selected deployment adapter may use the same dispatch inputs. The workflow must download `app/{artifact_commit_sha}/container-images.json`, verify every image reference is digest-pinned, deploy the existing digest set to `sdd-prod`, publish `monitoring-summary-prod.json`, and run page plus all app `/health` checks. Do not rebuild.
+The selected deployment adapter may use the same dispatch inputs. The workflow must download
+`app/{artifact_commit_sha}/container-images.json`, verify every image reference is digest-pinned, deploy
+the existing digest set to `sdd-prod`, publish `monitoring-summary-prod.json`, and run page plus all app `/health`
+checks. Do not rebuild.
 
 ## Verification
 
 1. Verify PROD page returns HTTP 200 and expected title/content.
 2. Verify `{prodWebUrl}/health` returns HTTP 200 and JSON `status=ok`.
-3. If Seq log validation is unavailable, rollback may still pass but the ticket comment must record monitoring unavailable.
+3. If Seq log validation is unavailable, rollback may still pass but the ticket comment must record monitoring
+unavailable.
 4. If page or `/health` fails, comment rollback failure and stop.
 
 ## Ticket Provider Result
@@ -86,9 +114,13 @@ Add a ticket comment with marker:
 IA generated PROD rollback: {rollbackVersionOrCommit}
 ```
 
-Include current PROD version/commit, rollback target version/commit, Nexus artifact URL, checksum, release manifest URL, workflow run URL, PROD URL, page status, `/health` status, Seq monitoring status, and failure or success result.
+Include current PROD version/commit, rollback target version/commit, Nexus artifact URL, checksum, release manifest URL,
+workflow run URL, PROD URL, page status, `/health` status, Seq monitoring
+status, and failure or success result.
 
-Use `UpdateReleaseManifest` to update `app/{commitSha}/release.json` with rollback deployment timestamp, workflow run URL, PROD URL, and rollback source/current version relationship when rollback passes.
+Use `UpdateReleaseManifest` to update `app/{commitSha}/release.json` with rollback deployment timestamp, workflow run
+URL, PROD URL, and rollback source/current version relationship when rollback
+passes.
 
 Create or update a ticket provider incident ticket with marker:
 
@@ -96,13 +128,18 @@ Create or update a ticket provider incident ticket with marker:
 IA generated PROD rollback incident: {rollbackVersionOrCommit}
 ```
 
-Record who or what requested the rollback when known, why it was needed, current PROD before rollback, rollback target, timeline, verification evidence, and follow-up decision.
+Record who or what requested the rollback when known, why it was needed, current PROD before rollback, rollback target,
+timeline, verification evidence, and follow-up decision.
 
-After rollback, explicitly document Git state. `main` is not automatically reverted. Require one follow-up: open a hotfix PR, open a revert PR, or record an accepted temporary divergence note with owner and expected resolution.
+After rollback, explicitly document Git state. `main` is not automatically reverted. Require one follow-up: open a
+hotfix PR, open a revert PR, or record an accepted temporary divergence note with
+owner and expected resolution.
 
 ## Output
 
-Report the rollback target, current and restored PROD versions, artifact commit, validation results, ticket provider rollback comment, incident/follow-up handoff, and any remaining Git-line divergence.
+Report the rollback target, current and restored PROD versions, artifact commit, validation results, ticket provider
+rollback comment, incident/follow-up handoff, and any remaining Git-line
+divergence.
 
 ## Failure Rules
 

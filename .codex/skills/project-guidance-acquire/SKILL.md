@@ -1,12 +1,15 @@
 ---
 name: project-guidance-acquire
 license: MIT
-description: Install skills from configured GitHub sources using the SDD CLI tool installer. Uses GitHub raw content API (no cloning required).
+description: >-
+  Install skills from configured GitHub sources using the SDD CLI tool installer. Uses GitHub raw content API (no
+  cloning required).
 ---
 
 # Project Guidance Acquire
 
 Installs skills using a hybrid approach:
+
 1. **Primary**: tries `npx skills add` (skills.sh registry)
 2. **Fallback**: fetches raw content from GitHub repos via the GitHub API
 
@@ -36,7 +39,9 @@ unvetted community skills without confirmation.
 python -m tools.sdd_cli tool-installer list-skills
 ```
 
-This reads `.codex/skill-sources.json` (falling back to `.codex/skill-sources.example.json`, then hardcoded defaults), fetches the GitHub Contents API for each source, and returns all discoverable skill directories.
+This reads `.codex/skill-sources.json` (falling back to `.codex/skill-sources.example.json`, then hardcoded defaults),
+fetches the GitHub Contents API for each source, and returns all discoverable
+skill directories.
 
 ### Install a skill by source name
 
@@ -89,12 +94,14 @@ Create `.codex/skill-sources.json` with your own repos:
 
 - **npx method**: skill is installed to `.codex/skills/<skill-name>/` via the skills.sh registry
 - **GitHub fallback**: the entire skill directory is copied to `.codex/skills/<skill-name>/`
-- If a `SKILL.md` exists in the installed files, the skill is auto-registered in `manifest.json` under the `community` category
+- If a `SKILL.md` exists in the installed files, the skill is auto-registered in `manifest.json` under the `community`
+category
 - Existing files are skipped (no overwrites)
 
 ## See also
 
-- `python -m tools.sdd_cli guidance discover` — search the internet (npx skills registry) for stack-relevant skills, never local
+- `python -m tools.sdd_cli guidance discover` — search the internet (npx skills registry) for stack-relevant skills,
+never local
 - `python -m tools.sdd_cli tool-installer validate-manifest` — verify all manifest skills exist on disk
 - `docs/conventions/context-management.md` — Mandatory Skill Catalog Review process
 

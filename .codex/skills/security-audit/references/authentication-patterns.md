@@ -1213,6 +1213,7 @@ final class RateLimitingTest extends TestCase
 - `owasp-top10.md` -- A07:2021 Identification and Authentication Failures
 - `api-key-encryption.md` -- Secure key storage patterns
 - `security-logging.md` -- Logging authentication events
-- PHP password hashing: https://www.php.net/manual/en/function.password-hash.php
-- OWASP Authentication Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html
-- OWASP Session Management Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html
+- PHP password hashing: <https://www.php.net/manual/en/function.password-hash.php>
+- OWASP Authentication Cheat Sheet: <https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html>
+- OWASP Session Management Cheat Sheet:
+<https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html>

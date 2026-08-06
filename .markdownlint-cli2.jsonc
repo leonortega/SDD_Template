@@ -1,0 +1,4 @@
+{
+  "config": ".markdownlint.json",
+  "ignores": ["**/.trunk/**"]
+}

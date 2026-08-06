@@ -1,9 +1,10 @@
 # Comments and Formatting
 
-Comprehensive guide to comment discipline and code formatting. Based on Robert C. Martin's *Clean Code*, Chapters 4 and 5.
-
+Comprehensive guide to comment discipline and code formatting. Based on Robert C. Martin's *Clean Code*, Chapters 4 and
+5.
 
 ## Table of Contents
+
 1. [The Truth About Comments](#the-truth-about-comments)
 2. [Good Comments](#good-comments)
 3. [Bad Comments](#bad-comments)
@@ -14,9 +15,12 @@ Comprehensive guide to comment discipline and code formatting. Based on Robert C
 
 ## The Truth About Comments
 
-**Don't comment bad code -- rewrite it.** Comments are, at best, a necessary evil. The proper use of comments is to compensate for our failure to express ourselves in code. Every time you write a comment, you should grimace and feel the failure of your ability of expression.
+**Don't comment bad code -- rewrite it.** Comments are, at best, a necessary evil. The proper use of comments is to
+compensate for our failure to express ourselves in code. Every time you write a comment, you should grimace and feel the
+failure of your ability of expression.
 
-Comments lie. Not always, and not intentionally, but too often. Code changes and evolves; comments don't always follow. The older a comment is and the farther it is from the code it describes, the more likely it is to be wrong.
+Comments lie. Not always, and not intentionally, but too often. Code changes and evolves; comments don't always follow.
+The older a comment is and the farther it is from the code it describes, the more likely it is to be wrong.
 
 ---
 
@@ -81,6 +85,7 @@ def get_user_preferences(user_id):
 ```
 
 **Rules for TODOs:**
+
 - Include a ticket number or issue reference
 - Scan and resolve them regularly (they are not permanent)
 - Never use TODO as an excuse to leave broken code
@@ -144,7 +149,8 @@ public boolean isActive() {
 }
 ```
 
-The comment says "active" means logged in before. The code checks three conditions. When the code changes and the comment doesn't, a future developer will be misled.
+The comment says "active" means logged in before. The code checks three conditions. When the code changes and the
+comment doesn't, a future developer will be misled.
 
 ### Mandated Comments
 
@@ -160,7 +166,8 @@ public void setName(String name) {
 }
 ```
 
-This adds no information. It's clutter that developers learn to ignore, which means they'll also ignore the few comments that actually matter.
+This adds no information. It's clutter that developers learn to ignore, which means they'll also ignore the few comments
+that actually matter.
 
 ### Journal Comments
 
@@ -187,7 +194,8 @@ def get_user(user_id):
     return db.get_user(user_id)
 ```
 
-Other developers are afraid to delete commented-out code because they think it must be there for a reason. It accumulates like barnacles. **Delete it.** Version control has perfect memory.
+Other developers are afraid to delete commented-out code because they think it must be there for a reason. It
+accumulates like barnacles. **Delete it.** Version control has perfect memory.
 
 ### Noise Comments
 
@@ -205,7 +213,8 @@ private int dayOfMonth;
 public int getDayOfMonth() { return dayOfMonth; }
 ```
 
-Every one of these is noise. They provide no information, train developers to ignore comments, and create a false sense of documentation thoroughness.
+Every one of these is noise. They provide no information, train developers to ignore comments, and create a false sense
+of documentation thoroughness.
 
 ### Position Markers and Banners
 
@@ -215,7 +224,8 @@ Every one of these is noise. They provide no information, train developers to ig
 // /////// Constructor ///////
 ```
 
-If your file is so large that you need position markers, the file is too large. Extract classes instead of adding banners.
+If your file is so large that you need position markers, the file is too large. Extract classes instead of adding
+banners.
 
 ### Closing Brace Comments
 
@@ -245,13 +255,15 @@ Version control tracks authorship more reliably. Use `git blame`.
 
 ### Why Formatting Matters
 
-Code formatting is about communication, and communication is the professional developer's first order of business. The formatting of your code communicates important information long after the original developer has moved on.
+Code formatting is about communication, and communication is the professional developer's first order of business. The
+formatting of your code communicates important information long after the original developer has moved on.
 
 ### Vertical Formatting
 
 #### The Newspaper Metaphor
 
 Source files should be organized like a newspaper article:
+
 - **Name** should be simple but explanatory (the headline)
 - **Top** should provide high-level concepts and algorithms (the synopsis)
 - **Bottom** should contain the lowest-level functions and details (the body)
@@ -297,7 +309,8 @@ class UserRegistration:
 
 #### Vertical Density
 
-Lines that are tightly related should appear close together vertically. Don't insert blank lines between closely related lines.
+Lines that are tightly related should appear close together vertically. Don't insert blank lines between closely related
+lines.
 
 ```java
 // BAD: Useless comments break vertical density
@@ -326,6 +339,7 @@ public class ReporterConfig {
 Closely related concepts should be kept vertically close to each other. Don't force the reader to hop around the file.
 
 **Rules:**
+
 - **Local variables:** Declare at the top of the function or as close to first usage as practical
 - **Instance variables:** Declare at the top of the class (everyone needs to know about them)
 - **Dependent functions:** The caller should be above the callee, and they should be close
@@ -333,13 +347,15 @@ Closely related concepts should be kept vertically close to each other. Don't fo
 
 #### Vertical Ordering
 
-Function call dependencies should point downward: a function that is called should be below the function that calls it. This creates a nice flow from high-level to low-level, like reading a newspaper.
+Function call dependencies should point downward: a function that is called should be below the function that calls it.
+This creates a nice flow from high-level to low-level, like reading a newspaper.
 
 ### Horizontal Formatting
 
 #### Line Length
 
-**Keep lines short.** The old 80-character limit is a reasonable guideline. Modern screens can show more, but readability drops beyond 100-120 characters. Scrolling horizontally breaks the reader's flow.
+**Keep lines short.** The old 80-character limit is a reasonable guideline. Modern screens can show more, but
+readability drops beyond 100-120 characters. Scrolling horizontally breaks the reader's flow.
 
 #### Horizontal Openness and Density
 
@@ -359,7 +375,8 @@ return (-b + determinant) / (2*a);
 
 #### Indentation
 
-Indentation makes the scope hierarchy visible. Each level of nesting gets one indentation level. **Never break this rule, even for short `if` statements or tiny loops.**
+Indentation makes the scope hierarchy visible. Each level of nesting gets one indentation level. **Never break this
+rule, even for short `if` statements or tiny loops.**
 
 ```java
 // BAD: Collapsed scopes hide structure
@@ -373,7 +390,8 @@ if (condition) {
 
 ### Team Rules
 
-**A team should agree on a single formatting style and everyone should use it.** Individual style preferences must yield to the team standard.
+**A team should agree on a single formatting style and everyone should use it.** Individual style preferences must yield
+to the team standard.
 
 The best way to enforce team rules:
 
@@ -385,7 +403,8 @@ The best way to enforce team rules:
 | **CI enforcement** | Format check in pipeline | Catches anything hooks miss |
 | **EditorConfig** | `.editorconfig` file | Consistent settings across editors |
 
-**The best formatting rule:** Use an automated formatter and never think about formatting again. Time spent debating tabs versus spaces is time not spent writing clean code.
+**The best formatting rule:** Use an automated formatter and never think about formatting again. Time spent debating
+tabs versus spaces is time not spent writing clean code.
 
 ---
 
@@ -402,4 +421,5 @@ Despite the general advice to minimize comments, certain situations genuinely re
 | **Domain formula** | Mathematical formula from spec | "Amortization formula from IRS Publication 936" |
 | **Public API contract** | Users cannot read implementation | Javadoc for library interfaces |
 
-The key: comments should explain *why*, never *what*. If you find yourself explaining *what* the code does, the code needs to be clearer, not the comment.
+The key: comments should explain *why*, never *what*. If you find yourself explaining *what* the code does, the code
+needs to be clearer, not the comment.

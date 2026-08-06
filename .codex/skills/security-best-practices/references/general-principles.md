@@ -1,25 +1,32 @@
 # Security Best Practices — General Principles
 
-Cross-cutting security guidance that applies to any language or framework. For framework-specific rules (Express, FastAPI, Django, Go, etc.), see the `_framework-specific/` subdirectory when a product stack is selected.
+Cross-cutting security guidance that applies to any language or framework. For framework-specific rules (Express,
+FastAPI, Django, Go, etc.), see the `_framework-specific/` subdirectory when a product stack is selected.
 
 ---
 
 ## 0) Safety, Boundaries, And Anti-Abuse Constraints (Must Follow)
 
-- Never ask for or store actual secrets, tokens, cookies, passwords, connection strings, API keys, or credential-bearing URLs in chat, tickets, comments, logs, or committed files.
+- Never ask for or store actual secrets, tokens, cookies, passwords, connection strings, API keys, or credential-bearing
+URLs in chat, tickets, comments, logs, or committed files.
 - Always report findings with specific file paths, line numbers, and evidence. Do not make vague security claims.
-- Never change user-visible behavior, weaken existing security controls, or introduce regressions without explicit user approval.
-- When in doubt, prefer the safer default: validate input, escape output, use parameterized queries, set secure cookie flags only over TLS.
+- Never change user-visible behavior, weaken existing security controls, or introduce regressions without explicit user
+approval.
+- When in doubt, prefer the safer default: validate input, escape output, use parameterized queries, set secure cookie
+flags only over TLS.
 
 ## 1) Operating Modes
 
 ### 1.1 Generation mode (default)
 
-Use security best practices while writing new code. Apply framework-specific rules from `_framework-specific/` when the product stack is known.
+Use security best practices while writing new code. Apply framework-specific rules from `_framework-specific/` when the
+product stack is known.
 
 ### 1.2 Passive review mode (always on while editing)
 
-Passively detect major vulnerabilities in code being read or modified. Flag only critical/high-severity issues inline. Focus on: injection flaws, broken auth, sensitive data exposure, broken access control, XSS, SSRF, insecure deserialization, known-vulnerable dependencies.
+Passively detect major vulnerabilities in code being read or modified. Flag only critical/high-severity issues inline.
+Focus on: injection flaws, broken auth, sensitive data exposure, broken access control, XSS, SSRF, insecure
+deserialization, known-vulnerable dependencies.
 
 ### 1.3 Active audit mode (explicit scan request)
 
@@ -35,11 +42,14 @@ When the user requests a security review or vulnerability report:
 
 ### 2.1 Untrusted input
 
-Treat as attacker-controlled unless proven otherwise: URL params, query strings, request bodies, HTTP headers, uploaded files, cookies, environment variables consumed from user-facing config, third-party API responses, database values written through user-facing paths.
+Treat as attacker-controlled unless proven otherwise: URL params, query strings, request bodies, HTTP headers, uploaded
+files, cookies, environment variables consumed from user-facing config, third-party API responses, database values
+written through user-facing paths.
 
 ### 2.2 State-changing requests
 
-POST, PUT, PATCH, DELETE — require authentication, authorization, CSRF protection, input validation, and idempotency where applicable.
+POST, PUT, PATCH, DELETE — require authentication, authorization, CSRF protection, input validation, and idempotency
+where applicable.
 
 ### 2.3 Audit finding format
 
@@ -89,7 +99,8 @@ Each finding must include:
 
 - Validate all input on the server side: type, length, format, range, and allowed characters.
 - Use parameterized queries or ORMs to prevent SQL/NoSQL injection. Never concatenate user input into queries.
-- Encode output appropriately for the context: HTML entity encoding for HTML, JS encoding for script contexts, URL encoding for URLs.
+- Encode output appropriately for the context: HTML entity encoding for HTML, JS encoding for script contexts, URL
+encoding for URLs.
 - Use CSP headers to mitigate XSS. Set strict `Content-Security-Policy` headers.
 - Validate and sanitize file uploads: check MIME type, limit size, scan for malware, store outside web root.
 
@@ -120,7 +131,8 @@ Each finding must include:
 
 ## 4) Framework-Specific Rules
 
-When a product stack is selected (React, FastAPI, Express, Django, Go, etc.), load the matching file from `_framework-specific/` for precise rules:
+When a product stack is selected (React, FastAPI, Express, Django, Go, etc.), load the matching file from
+`_framework-specific/` for precise rules:
 
 - `_framework-specific/javascript-express-web-server-security.md`
 - `_framework-specific/javascript-typescript-nextjs-web-server-security.md`
@@ -135,10 +147,12 @@ When a product stack is selected (React, FastAPI, Express, Django, Go, etc.), lo
 
 ## 5) General Heuristics For Security Review
 
-- Look for injection points: raw SQL queries, OS command execution, eval(), template rendering with user data, file path traversal.
+- Look for injection points: raw SQL queries, OS command execution, eval(), template rendering with user data, file path
+traversal.
 - Check authentication: hardcoded credentials, missing auth on sensitive endpoints, weak password policies, missing MFA.
 - Check authorization: IDOR vulnerabilities, missing role checks, insecure direct object references.
-- Check data exposure: secrets in configs/committed files, excessive logging, missing encryption at rest/in transit, verbose error messages.
+- Check data exposure: secrets in configs/committed files, excessive logging, missing encryption at rest/in transit,
+verbose error messages.
 - Check session management: predictable session tokens, missing rotation, missing secure/httpOnly flags, missing expiry.
 - Check file handling: unrestricted uploads, path traversal, missing MIME validation, uploads inside web root.
 - Check dependencies: outdated libraries, known CVEs, unmaintained packages, unused dependencies.
@@ -146,4 +160,5 @@ When a product stack is selected (React, FastAPI, Express, Django, Go, etc.), lo
 
 ## 6) Sources
 
-This consolidated guidance is derived from the OWASP Top 10, OWASP ASVS, CWE Top 25, and framework-specific security best practices maintained in the `_framework-specific/` subdirectory.
+This consolidated guidance is derived from the OWASP Top 10, OWASP ASVS, CWE Top 25, and framework-specific security
+best practices maintained in the `_framework-specific/` subdirectory.

@@ -6,7 +6,8 @@ Complex implementations extracted from core skill for deeper reference.
 
 ## Full Saga Orchestrator Base Class
 
-The abstract base handles all state transitions, compensation ordering, and event publishing. Subclass this for every saga type in your system.
+The abstract base handles all state transitions, compensation ordering, and event publishing. Subclass this for every
+saga type in your system.
 
 ```python
 from abc import ABC, abstractmethod
@@ -200,7 +201,9 @@ class SagaOrchestrator(ABC):
 
 ## Saga Orchestrator with Per-Step Timeouts
 
-Each step gets an independent deadline. The scheduler fires a timeout job; if the step is still `executing` at that point, compensation begins automatically. Use this when participant SLAs vary widely (e.g., payment = 30 s, shipping label = 15 min).
+Each step gets an independent deadline. The scheduler fires a timeout job; if the step is still `executing` at that
+point, compensation begins automatically. Use this when participant SLAs vary widely (e.g., payment = 30 s, shipping
+label = 15 min).
 
 ```python
 class TimeoutSagaOrchestrator(SagaOrchestrator):
@@ -264,7 +267,8 @@ class TimeoutSagaOrchestrator(SagaOrchestrator):
 
 ## Detailed Compensating Transaction Chains
 
-The pattern below shows a full compensation chain for a bank transfer saga. Each compensation is idempotent and always emits a result event — even when the underlying resource is already in the desired state.
+The pattern below shows a full compensation chain for a bank transfer saga. Each compensation is idempotent and always
+emits a result event — even when the underlying resource is already in the desired state.
 
 ```python
 class BankTransferSaga(SagaOrchestrator):
@@ -421,7 +425,8 @@ increase(saga_compensating_total[10m]) - increase(saga_failed_total[10m]) > 0
 
 ### Dead Letter Queue Recovery
 
-When a compensation handler throws an unhandled exception the message lands on a DLQ. Implement a recovery worker that replays DLQ messages with exponential backoff:
+When a compensation handler throws an unhandled exception the message lands on a DLQ. Implement a recovery worker that
+replays DLQ messages with exponential backoff:
 
 ```python
 class SagaDLQRecovery:

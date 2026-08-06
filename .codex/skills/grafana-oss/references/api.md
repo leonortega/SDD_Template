@@ -27,6 +27,7 @@ DELETE /api/dashboards/uid/{uid}
 ```
 
 After provisioning a dashboard via YAML, verify it landed:
+
 ```bash
 curl https://grafana.example.com/api/dashboards/uid/<uid> \
   -H "Authorization: Bearer <token>" | jq '.dashboard.title'

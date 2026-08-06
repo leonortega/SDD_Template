@@ -3,7 +3,8 @@ name: multi-stage-dockerfile
 description: 'Create optimized multi-stage Dockerfiles for any language or framework'
 ---
 
-Your goal is to help me create efficient multi-stage Dockerfiles that follow best practices, resulting in smaller, more secure container images.
+Your goal is to help me create efficient multi-stage Dockerfiles that follow best practices, resulting in smaller, more
+secure container images.
 
 ## Multi-Stage Structure
 
@@ -24,7 +25,8 @@ Your goal is to help me create efficient multi-stage Dockerfiles that follow bes
 ## Layer Optimization
 
 - Organize commands to maximize layer caching
-- Place commands that change frequently (like code changes) after commands that change less frequently (like dependency installation)
+- Place commands that change frequently (like code changes) after commands that change less frequently (like dependency
+installation)
 - Use `.dockerignore` to prevent unnecessary files from being included in the build context
 - Combine related RUN commands with `&&` to reduce layer count
 - Consider using COPY --chown to set permissions in one step

@@ -1,11 +1,16 @@
 ---
 name: architecture-patterns
-description: Implement proven backend architecture patterns including Clean Architecture, Hexagonal Architecture, and Domain-Driven Design. Use this skill when designing clean architecture for a new microservice, when refactoring a monolith to use bounded contexts, when implementing hexagonal or onion architecture patterns, or when debugging dependency cycles between application layers.
+description: >-
+  >- Implement proven backend architecture patterns including Clean Architecture, Hexagonal Architecture, and
+  Domain-Driven Design. Use this skill when designing clean architecture for a new microservice, when refactoring a
+  monolith to use bounded contexts, when implementing hexagonal or onion architecture patterns, or when debugging
+  dependency cycles between application layers.
 ---
 
 # Architecture Patterns
 
-Master proven backend architecture patterns including Clean Architecture, Hexagonal Architecture, and Domain-Driven Design to build maintainable, testable, and scalable systems.
+Master proven backend architecture patterns including Clean Architecture, Hexagonal Architecture, and Domain-Driven
+Design to build maintainable, testable, and scalable systems.
 
 **Given:** a service boundary or module to architect.
 **Produces:** layered structure with clear dependency rules, interface definitions, and test boundaries.
@@ -69,11 +74,13 @@ Master proven backend architecture patterns including Clean Architecture, Hexago
 
 ## Detailed patterns and worked examples
 
-Detailed pattern documentation lives in `references/details.md`. Read that file when the navigation tier above is insufficient.
+Detailed pattern documentation lives in `references/details.md`. Read that file when the navigation tier above is
+insufficient.
 
 ## Testing — In-Memory Adapters
 
-The hallmark of correctly applied Clean Architecture is that every use case can be exercised in a plain unit test with no real database, no Docker, and no network:
+The hallmark of correctly applied Clean Architecture is that every use case can be exercised in a plain unit test with
+no real database, no Docker, and no network:
 
 ```python
 # tests/unit/test_create_user.py
@@ -128,31 +135,45 @@ async def test_duplicate_email_rejected():
 
 ### Use case tests require a running database
 
-Business logic has leaked into the infrastructure layer. Move all database calls behind an `IRepository` interface and inject an in-memory implementation in tests (see Testing section above). The use case constructor must accept the abstract port, not the concrete class.
+Business logic has leaked into the infrastructure layer. Move all database calls behind an `IRepository` interface and
+inject an in-memory implementation in tests (see Testing section above). The use
+case constructor must accept the abstract port, not the concrete class.
 
 ### Circular imports between layers
 
-A common symptom is `ImportError: cannot import name X` between `use_cases` and `adapters`. This happens when a use case imports a concrete adapter class instead of the abstract port. Enforce the rule: `use_cases/` imports only from `domain/` (entities and interfaces). It must never import from `adapters/` or `infrastructure/`.
+A common symptom is `ImportError: cannot import name X` between `use_cases` and `adapters`. This happens when a use case
+imports a concrete adapter class instead of the abstract port. Enforce the
+rule: `use_cases/` imports only from `domain/` (entities and interfaces). It must never import from `adapters/` or
+`infrastructure/`.
 
 ### Framework decorators appearing in domain entities
 
-If SQLAlchemy `Column()` or Pydantic `Field()` annotations appear on domain entities, the entity is no longer pure. Create a separate ORM model in `adapters/repositories/` and map to/from the domain entity in the repository's `_to_entity()` method.
+If SQLAlchemy `Column()` or Pydantic `Field()` annotations appear on domain entities, the entity is no longer pure.
+Create a separate ORM model in `adapters/repositories/` and map to/from the domain
+entity in the repository's `_to_entity()` method.
 
 ### All logic ending up in controllers
 
-When the controller grows beyond HTTP parsing and response formatting, extract the logic into a use case class. A controller method should do three things only: parse the request, call a use case, map the response.
+When the controller grows beyond HTTP parsing and response formatting, extract the logic into a use case class. A
+controller method should do three things only: parse the request, call a use case, map
+the response.
 
 ### Value objects raising errors too late
 
-Validate invariants in `__post_init__` (Python) or the constructor so an invalid `Email` or `Money` cannot be constructed at all. This surfaces bad data at the boundary, not deep inside business logic.
+Validate invariants in `__post_init__` (Python) or the constructor so an invalid `Email` or `Money` cannot be
+constructed at all. This surfaces bad data at the boundary, not deep inside business
+logic.
 
 ### Context bleed across bounded contexts
 
-If the `Order` context is importing `User` entities from the `Identity` context, introduce an Anti-Corruption Layer. The `Order` context should hold its own lightweight `CustomerId` value object and only call the `Identity` context through an explicit interface.
+If the `Order` context is importing `User` entities from the `Identity` context, introduce an Anti-Corruption Layer. The
+`Order` context should hold its own lightweight `CustomerId` value object and
+only call the `Identity` context through an explicit interface.
 
 ## Advanced Patterns
 
-For detailed DDD bounded context mapping, full multi-service project trees, Anti-Corruption Layer implementations, and Onion Architecture comparisons, see:
+For detailed DDD bounded context mapping, full multi-service project trees, Anti-Corruption Layer implementations, and
+Onion Architecture comparisons, see:
 
 - [`references/advanced-patterns.md`](references/advanced-patterns.md)
 

@@ -17,6 +17,7 @@ increase(http_requests_total[1h])
 ```
 
 `rate` vs `irate`:
+
 - `rate()` smooths the full window — use for dashboards + alerts
 - `irate()` uses the last two samples — for spike detection only, never alerting
 

@@ -1,6 +1,6 @@
 # ── K8s Health Alerts ──────────────────────────────────────────────────
 #
-# These alerts monitor K8s LoadBalancer health endpoints on Docker Desktop.
+# These alerts monitor K8s NodePort health endpoints on the kind cluster (via the health-probe).
 # K8s services use dynamic nodePorts in the 30000-32767 range.
 # After deployment, run `setup-k8s-access` to discover current URLs.
 #

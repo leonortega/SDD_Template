@@ -2,7 +2,8 @@
 
 # Delivery Contract — Format Reference
 
-Extracted from `delivery-contract-core.md` to keep core rules focused on logic. Load this file when the task involves generating or checking markers, comments, or format strings.
+Extracted from `delivery-contract-core.md` to keep core rules focused on logic. Load this file when the task involves
+generating or checking markers, comments, or format strings.
 
 ## Stable Markers
 
@@ -43,16 +44,22 @@ Use these exact markers for idempotency. Markers are grouped by workflow stage.
 - PROD rollback incident: `IA generated PROD rollback incident: {rollbackVersionOrCommit}`
 - PROD hotfix: `IA generated PROD hotfix: {incidentOrTicketKey}`
 
-Before adding generated comments or moving states, read existing comments when the API allows it and treat matching markers as already completed.
+Before adding generated comments or moving states, read existing comments when the API allows it and treat matching
+markers as already completed.
 
 ## OpenProject Comment Format
 
-Generated OpenProject comments must keep the stable marker as the first line by itself, followed by a blank line and a human-readable Markdown summary. Use this structure:
+Generated OpenProject comments must keep the stable marker as the first line by itself, followed by a blank line and a
+human-readable Markdown summary. Use this structure:
 
 1. `**Status:** PASS|FAIL|BLOCKED - one-sentence outcome`
 2. `**Context:**` compact bullets for ticket, state, version, commit, PR, artifact, and workflow run.
-3. `**Validation:**` grouped bullets or a small Markdown table for environment checks, test totals, and monitoring checks.
+3. `**Validation:**` grouped bullets or a small Markdown table for environment checks, test totals, and monitoring
+checks.
 4. `**Evidence:**` durable links to Nexus manifests, evidence ZIPs, screenshots, logs, or local fallback paths.
 5. `**Notes:**` only when defects, blockers, assumptions, or tooling issues matter.
 
-Prefer Markdown links for long URLs, short commit display text such as `8acc4d4` with the full SHA recorded in a field when needed, and grouped sections over long flat lists. Keep automation-critical values present and searchable; do not hide the stable marker, commit SHA, ticket key, release version, artifact URL, or evidence URL inside prose only.
+Prefer Markdown links for long URLs, short commit display text such as `8acc4d4` with the full SHA recorded in a field
+when needed, and grouped sections over long flat lists. Keep automation-critical
+values present and searchable; do not hide the stable marker, commit SHA, ticket key, release version, artifact URL, or
+evidence URL inside prose only.

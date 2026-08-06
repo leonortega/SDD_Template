@@ -1,7 +1,13 @@
 ---
 name: dev-flow-start-ticket
 license: MIT
-description: Start configured work items from chat by listing Specified tickets (feature starting point), preparing safe repository branches, pushing new branches, generating OpenSpec-style planning notes, updating the ticket description, and commenting with the branch through selected project-profile adapters. Bug tickets (status: New) are automatically re-routed to the dedicated bug fix lifecycle (dev-flow-file-qa-bug). Use when the user asks to start the next feature ticket, start a specific ticket key, list Specified tickets, prepare a ticket branch, or connect ticket work to the local repository/OpenSpec workflow.
+description: >-
+  >- Start configured work items from chat by listing Specified tickets (feature starting point), preparing safe
+  repository branches, pushing new branches, generating OpenSpec-style planning notes, updating the ticket description,
+  and commenting with the branch through selected project-profile adapters. Bug tickets (status: New) are automatically
+  re-routed to the dedicated bug fix lifecycle (dev-flow-file-qa-bug). Use when the user asks to start the next feature
+  ticket, start a specific ticket key, list Specified tickets, prepare a ticket branch, or connect ticket work to the
+  local repository/OpenSpec workflow.
 ---
 
 <!-- TIER 3: STAGE-SPECIFIC - Ticket start workflow skill -->
@@ -10,70 +16,107 @@ description: Start configured work items from chat by listing Specified tickets 
 
 ## Overview
 
-Use this skill for a chat-driven ticket workflow. The user should not need to run a command; Codex should call the selected ticket adapter and local Git commands from the conversation.
+Use this skill for a chat-driven ticket workflow. The user should not need to run a command; Codex should call the
+selected ticket adapter and local Git commands from the conversation.
 
 ### Bug Routing
 
-When the user asks to start a ticket or a ticket is fetched that is a **bug** (status is `New`, ID 1), this skill **does not** continue with the normal feature flow. Instead, it routes to `dev-flow-file-qa-bug` which handles the full bug fix lifecycle:
+When the user asks to start a ticket or a ticket is fetched that is a **bug** (status is `New`, ID 1), this skill **does
+not** continue with the normal feature flow. Instead, it routes to
+`dev-flow-file-qa-bug` which handles the full bug fix lifecycle:
 
 ```text
 E2E QA fails → File bug → Move to Specified → Update parent OpenSpec → Commit → Move to In progress → Branch → PR → Merge & deploy to QA → Close bug → Return to parent QA
 ```
 
 **How routing works:**
+
 1. The ticket is fetched and its status is checked
 2. If status is `New` (ID 1) → route to `dev-flow-file-qa-bug`
 3. After the bug flow completes, the parent ticket continues its normal QA flow
 4. If status is `Specified` or any other state → continue with the normal feature flow below
 
-For setup details and branch pattern options, read `references/configuration.md` when configuration is missing or the user asks how to configure the tools. Before making ticket-provider calls, read `.codex/project-profile.json` and the selected ticket adapter path; read provider-specific references only when that adapter requires them.
+For setup details and branch pattern options, read `references/configuration.md` when configuration is missing or the
+user asks how to configure the tools. Before making ticket-provider calls, read
+`.codex/project-profile.json` and the selected ticket adapter path; read provider-specific references only when that
+adapter requires them.
 
 ## Shared Context
 
-Before mutating ticket or repository state, follow `.codex/skills/_shared/skill-startup.md`, which reads `.codex/project-profile.json`, `.codex/skills/_shared/delivery-contract.md`, and `docs/conventions/context-management.md`, with `docs/architecture/system.md` as the stage-specific doc. Load selected ticket and repository adapters before any mutation.
+Before mutating ticket or repository state, follow `.codex/skills/_shared/skill-startup.md`, which reads
+`.codex/project-profile.json`, `.codex/skills/_shared/delivery-contract.md`, and
+`docs/conventions/context-management.md`, with `docs/architecture/system.md` as the stage-specific doc. Load selected
+ticket and repository adapters before any mutation.
 
-This skill owns initial creation of ignored `.codex/delivery-context.local.json` for automatic delivery. OpenProject time entries are the only telemetry store. Never commit local workflow files.
+This skill owns initial creation of ignored `.codex/delivery-context.local.json` for automatic delivery. OpenProject
+time entries are the only telemetry store. Never commit local workflow files.
 
 ## Workflow Telemetry
 
 ### ⚠️ HARD GATE: Time entries are mandatory
 
-OpenProject time entries are the PRIMARY telemetry store. Apply the shared workflow telemetry pattern (`.codex/skills/_shared/pipeline-workflow-telemetry.md`) with:
+OpenProject time entries are the PRIMARY telemetry store. Apply the shared workflow telemetry pattern
+(`.codex/skills/_shared/pipeline-workflow-telemetry.md`) with:
 
 - `{workflowStage}` = `dev-flow-start-ticket`
 - `{agentRole}` = `startTicket`
 
-Capture UTC start time before the first ticket-specific mutation and create the time entry via `time-telemetry-upsert` (POST `/api/v3/time_entries`; exact payload in `.codex/skills/openproject-sprint-backlog/references/openproject-api.md` → Operations → `time-telemetry-upsert`, and `.codex/skills/_shared/api-helpers.md` → OpenProject → Workflow time telemetry). Use marker `IA generated workflow telemetry: {ticketKey}:dev-flow-start-ticket`. Resolve the activity by running `python -m tools.sdd_cli dev-flow resolve-openproject-activity --workflow-stage dev-flow-start-ticket --input-json '{"timeTelemetry":{...}}'`, then reverse-lookup the activity ID from the resolved name.
+Capture UTC start time before the first ticket-specific mutation and create the time entry via `time-telemetry-upsert`
+(POST `/api/v3/time_entries`; exact payload in
+`.codex/skills/openproject-sprint-backlog/references/openproject-api.md` → Operations → `time-telemetry-upsert`, and
+`.codex/skills/_shared/api-helpers.md` → OpenProject → Workflow time telemetry).
+Use marker `IA generated workflow telemetry: {ticketKey}:dev-flow-start-ticket`. Resolve the activity by running `python
+-m tools.sdd_cli dev-flow resolve-openproject-activity --workflow-stage
+dev-flow-start-ticket --input-json '{"timeTelemetry":{...}}'`, then reverse-lookup the activity ID from the resolved
+name.
 
-**Do NOT skip this step.** If `time-telemetry-upsert` fails (returns a 4xx or 5xx error), stop and report the failure. Do not use any fallback mechanism.
+**Do NOT skip this step.** If `time-telemetry-upsert` fails (returns a 4xx or 5xx error), stop and report the failure.
+Do not use any fallback mechanism.
 
 ## Configuration
 
-Read `.codex/project-profile.json` first for the selected ticket provider, ticket key pattern, branch policy, and adapter path. Read `.codex/client-tools.local.json` only for selected adapter runtime values. Fall back to `.codex/client-tools.example.json` only for defaults and setup guidance, then apply provider-supported environment variable overrides only when present. Defaults are:
+Read `.codex/project-profile.json` first for the selected ticket provider, ticket key pattern, branch policy, and
+adapter path. Read `.codex/client-tools.local.json` only for selected adapter runtime
+values. Fall back to `.codex/client-tools.example.json` only for defaults and setup guidance, then apply
+provider-supported environment variable overrides only when present. Defaults are:
 
 - Feature starting state: `Specified` (feature tickets start here — see `delivery-contract-ticket.md`)
 - In-progress state: `In progress` (lowercase p — matches OpenProject status ID 7)
-- Base branch, branch prefix, branch pattern, ticket key pattern, and maximum branch length from `.codex/project-profile.json` or the selected repository adapter.
+- Base branch, branch prefix, branch pattern, ticket key pattern, and maximum branch length from
+`.codex/project-profile.json` or the selected repository adapter.
 
-Before any mutating step, validate that the selected ticket adapter has the runtime values it requires, that the configured base branch exists, and that the branch pattern includes `{ticketKeySlug}`.
+Before any mutating step, validate that the selected ticket adapter has the runtime values it requires, that the
+configured base branch exists, and that the branch pattern includes `{ticketKeySlug}`.
 
 ## Stack Context Preflight
 
-Before starting the first ticket, and before mutating any feature ticket when stack context has not been verified, confirm the project tool set and tech stack are configured. This prevents the first OpenSpec proposal and generated ticket block from being created with generic or stale assumptions.
+Before starting the first ticket, and before mutating any feature ticket when stack context has not been verified,
+confirm the project tool set and tech stack are configured. This prevents the first
+OpenSpec proposal and generated ticket block from being created with generic or stale assumptions.
 
 Required stack context:
 
-- `docs/architecture/system.md`, `docs/conventions/development.md`, and `docs/architecture/deployment.md` contain `Technology Stack And Tool Set`.
+- `docs/architecture/system.md`, `docs/conventions/development.md`, and `docs/architecture/deployment.md` contain
+`Technology Stack And Tool Set`.
 - `openspec/config.yaml` contains `context:` and `rules:` with the current stack and artifact guidance.
-- Ignored `.codex/tool-recommendations.local.json` is used only after project guidance discovery confirms local recommendations and `usedInSteps`.
+- Ignored `.codex/tool-recommendations.local.json` is used only after project guidance discovery confirms local
+recommendations and `usedInSteps`.
 
-Run the read-only recommendation audit before Git, ticket provider, or OpenSpec mutation when any of these files are missing, appear unconfigured, or this is the first ticket start in a fresh repository:
+Run the read-only recommendation audit before Git, ticket provider, or OpenSpec mutation when any of these files are
+missing, appear unconfigured, or this is the first ticket start in a fresh
+repository:
 
 ```bash
 python -m tools.sdd_cli guidance discover
 ```
 
-If the audit reports any `stack-context.*` warning, if `DiscoverProjectGuidance` reports missing suggested skills or guidance that the operator has not reviewed, or if the required files are missing or placeholder-only, stop before branch creation, OpenProject description updates, comments, state changes, ticket-lock writes, or OpenSpec proposal creation. Route to `$configure-dev-environment` plus `project-guidance-discover` to define the stack/tooling docs, complete `openspec/config.yaml`, research extra useful guidance from detected project signals, confirm or dismiss suggestions, and update the local recommendation catalog first.
+If the audit reports any `stack-context.*` warning, if `DiscoverProjectGuidance` reports missing suggested skills or
+guidance that the operator has not reviewed, or if the required files are missing
+or placeholder-only, stop before branch creation, OpenProject description updates, comments, state changes, ticket-lock
+writes, or OpenSpec proposal creation. Route to `$configure-dev-environment`
+plus `project-guidance-discover` to define the stack/tooling docs, complete `openspec/config.yaml`, research extra
+useful guidance from detected project signals, confirm or dismiss suggestions, and
+update the local recommendation catalog first.
 
 After the user confirms or dismisses suggestions, persist the state with:
 
@@ -81,11 +124,15 @@ After the user confirms or dismisses suggestions, persist the state with:
 python -m tools.sdd_cli guidance set-recommended-tools --accepted '["id1","id2"]' --dismissed '["id3"]'
 ```
 
-Before creating the OpenSpec proposal (step 16), verify that the `openspec` CLI is available and initialize the project:    ```bash
-    which openspec || where openspec || echo "openspec CLI not found — install via: npm install -g @fission-ai/openspec@latest"
+Before creating the OpenSpec proposal (step 16), verify that the `openspec` CLI is available and initialize the project:
+
+```bash
+    which openspec || where openspec || echo "openspec CLI not found — install via: npm install -g
+    @fission-ai/openspec@latest"
     openspec init --tools codex
     openspec update
-    ```
+
+```text
 
     If the CLI is missing, attempt auto-installation: `npm install -g @fission-ai/openspec@latest`, then run `openspec init --tools codex && openspec update`.
 
@@ -96,7 +143,7 @@ Before creating the OpenSpec proposal (step 16) and before mutating ticket or re
 ```bash
 python -m tools.sdd_cli knowledge-search search --query <ticket topic terms>
 python -m tools.sdd_cli knowledge-search search --list-topics
-```
+```text
 
 Fold relevant entries into the proposal context and risk analysis. Record `Knowledge consulted: <files>` in the handoff.
 
@@ -135,28 +182,28 @@ Fold relevant entries into the proposal context and risk analysis. Record `Knowl
       echo "Initializing trunk.io..."
       npx trunk init 2>&1 || echo "trunk init skipped — will auto-init on first trunk fmt run"
     fi
-    ```
+```text
 
     Verify trunk is initialized by checking `.trunk/trunk.yaml` exists after the command. If trunk is not available (`npx trunk` not found), report it as a non-blocking warning: "Trunk.io not initialized — first commit may fail if trunk-fmt or trunk-check hooks run." The user can fix it later with `npx trunk init`.
 
 5. Check `git status --porcelain`. If any output exists, stop and report changed files.
 
-6. Log a time entry for the selected ticket via `time-telemetry-upsert` (POST `/api/v3/time_entries`). See Workflow Telemetry section above for the exact payload format. Do not initialize telemetry when only listing tickets.
+1. Log a time entry for the selected ticket via `time-telemetry-upsert` (POST `/api/v3/time_entries`). See Workflow Telemetry section above for the exact payload format. Do not initialize telemetry when only listing tickets.
 
-7. Switch to the configured base branch and run `git pull --ff-only`.
+2. Switch to the configured base branch and run `git pull --ff-only`.
 
-8. Create or reuse the configured branch name.
+3. Create or reuse the configured branch name.
 
-9. Derive the repository remote name from `git remote` output (e.g., `origin` or `gitea`). Pre-scan branch conflicts before creating or switching branches:
+4. Derive the repository remote name from `git remote` output (e.g., `origin` or `gitea`). Pre-scan branch conflicts before creating or switching branches:
    - `git show-ref --verify refs/heads/{branchName}` for a local branch.
    - `git ls-remote --heads {remoteName} {branchName}` for a remote branch.
      If both exist and point to different commits, stop and report the conflict. If the remote branch exists and the local branch is missing, create the local branch from the remote only when it descends from the configured base branch.
 
-10. Push the branch to repository/review provider with upstream tracking using `git push -u {remoteName} {branchName}` (where `{remoteName}` is the detected remote from step 9). If the upstream branch already exists and points to the same commit, treat it as complete; if the push is rejected or would require a non-fast-forward update, stop and report the branch issue.
+5. Push the branch to repository/review provider with upstream tracking using `git push -u {remoteName} {branchName}` (where `{remoteName}` is the detected remote from step 9). If the upstream branch already exists and points to the same commit, treat it as complete; if the push is rejected or would require a non-fast-forward update, stop and report the branch issue.
 
-11. **Feed human ticket text to dev-flow-explore-change skill.** Load `.codex/skills/dev-flow-explore-change/SKILL.md`. Feed it the human-authored ticket description (fetched in step 1). It produces an exploratory analysis with structure, gaps, risks, and insights.
+6. **Feed human ticket text to dev-flow-explore-change skill.** Load `.codex/skills/dev-flow-explore-change/SKILL.md`. Feed it the human-authored ticket description (fetched in step 1). It produces an exploratory analysis with structure, gaps, risks, and insights.
 
-12. **Run iterative grill-with-docs cycles on the human ticket text (up to 4 cycles).**
+7. **Run iterative grill-with-docs cycles on the human ticket text (up to 4 cycles).**
 
     a. **Cycle 1:** grill-with-docs interviews the user on unclear aspects, generating questions about gaps, ambiguities, and missing context.
     b. **IA answers each question** with the best possible answer based on available context.
@@ -166,7 +213,7 @@ Fold relevant entries into the proposal context and risk analysis. Record `Knowl
 
     Uses `/grilling` + `/domain-modeling` under the hood. Output: a single comprehensive refined-requirements document built from all cycles.
 
-13. **Curate both outputs into one agile-format IA block.** Take output from step 11 (dev-flow-explore-change analysis) + output from step 12 (grill-with-docs refined requirements). The IA curates, merges, and improves both into a single cohesive agile-format block with all sections below. **Critically, extract every "will not implement" decision from grill-with-docs cycles and consolidate them into the "Out of scope" section** — do not leave these decisions scattered in different comments or omitted entirely.
+8. **Curate both outputs into one agile-format IA block.** Take output from step 11 (dev-flow-explore-change analysis) + output from step 12 (grill-with-docs refined requirements). The IA curates, merges, and improves both into a single cohesive agile-format block with all sections below. **Critically, extract every "will not implement" decision from grill-with-docs cycles and consolidate them into the "Out of scope" section** — do not leave these decisions scattered in different comments or omitted entirely.
 
     Full agile-format sections:
     - Problem / opportunity
@@ -186,18 +233,20 @@ Fold relevant entries into the proposal context and risk analysis. Record `Knowl
     - On subsequent runs, replace only the content between the markers.
     - Include current `lockVersion` in the PATCH payload.
 
-14. Add a ticket comment with the branch name, base branch, pushed repository branch, and OpenSpec decision, unless a generated comment for the same branch already exists.
+9. Add a ticket comment with the branch name, base branch, pushed repository branch, and OpenSpec decision, unless a generated comment for the same branch already exists.
 
-14. Create or update `.codex/delivery-context.local.json` with `ticketKey`, `branch`, `openspecChange` when applicable, and any known PR/artifact/version fields. If an existing lock names a different ticket, fetch the locked ticket through the OpenProject API when OpenProject is selected, otherwise through the selected ticket adapter, and compare its status with the configured `openProject.doneStatus` or default `Done`. If the locked ticket is `Done`, call `EnsureDeliveryContext` with `replaceExisting=true` for the new selected ticket. If the locked ticket is active, missing, ambiguous, or cannot be verified, stop and report the stale-lock blocker. Do not delete the lock merely because the old ticket is QA Done or ready for PROD; replacement is lazy on the next ticket start.
+10. Create or update `.codex/delivery-context.local.json` with `ticketKey`, `branch`, `openspecChange` when applicable, and any known PR/artifact/version fields. If an existing lock names a different ticket, fetch the locked ticket through the OpenProject API when OpenProject is selected, otherwise through the selected ticket adapter, and compare its status with the configured `openProject.doneStatus` or default `Done`. If the locked ticket is `Done`, call `EnsureDeliveryContext` with `replaceExisting=true` for the new selected ticket. If the locked ticket is active, missing, ambiguous, or cannot be verified, stop and report the stale-lock blocker. Do not delete the lock merely because the old ticket is QA Done or ready for PROD; replacement is lazy on the next ticket start.
 
-15. Move the ticket to the configured in-progress status, unless it is already there.
+11. Move the ticket to the configured in-progress status, unless it is already there.
 
-16. **Run the OpenSpec propose flow.** Load the `dev-flow-propose-change` skill and follow its Workflow section to propose the change and generate all planning artifacts in one flow:
+12. **Run the OpenSpec propose flow.** Load the `dev-flow-propose-change` skill and follow its Workflow section to propose the change and generate all planning artifacts in one flow:
 
     a. **Scaffold the change** if not already created:
+
        ```bash
        openspec new change "<change-name>"
-       ```
+```text
+
        Use the branch name converted to kebab-case: replace `/` with `-`. Example: branch `feat/e2eproject-1-files` becomes `feat-e2eproject-1-files`.
 
     b. **Generate all planning artifacts in one propose flow.** Use the ticket context, project context from `openspec/config.yaml`, and the `spec-driven` schema rules to create ALL artifacts:
@@ -209,17 +258,22 @@ Fold relevant entries into the proposal context and risk analysis. Record `Knowl
        Apply the OpenSpec `/opsx:propose` pattern: the AI reads the schema context and rules from `openspec/config.yaml`, reads the ticket description and generated planning block as input, and creates all artifacts in dependency order in a single coherent pass. Do NOT iterate manually with `openspec instructions` — the AI generates each artifact based on the schema template and project context.
 
     c. **Verify all artifacts were created:**
+
        ```bash
        openspec status --change "<change-name>"
-       ```
+```text
+
        Confirm that `proposal.md`, `design.md`, `specs/`, and `tasks.md` all show as complete (`[x]`).
 
-17. **Parse workload forecast and set estimated time on the work package:**
+13. **Parse workload forecast and set estimated time on the work package:**
 
     a. **Parse the forecast:**
+
        ```bash
-       python -m tools.sdd_cli dev-flow parse-workload-forecast --tasks-path openspec/changes/<change-name>/tasks.md --openspec-change <change-name>
-       ```
+       python -m tools.sdd_cli dev-flow parse-workload-forecast --tasks-path openspec/changes/<change-name>/tasks.md
+       --openspec-change <change-name>
+```text
+
        Extract `estimatedTotalHours` from the result.
 
     b. **Set estimatedTime on the work package** via the ticket adapter's `set-estimated-time` operation (see `.codex/skills/openproject-sprint-backlog/references/openproject-api.md` → Operations → `set-estimated-time`). Convert hours to ISO-8601 duration (e.g. `5` → `PT5H`, `2.5` → `PT2H30M`). Fetch current `lockVersion` first.
@@ -261,7 +315,7 @@ Default example:
 
 ```text
 feat/e2eproject-1-create-files-and-folders-for-a-site
-```
+```text
 
 ## Generated Ticket Block
 
@@ -315,7 +369,7 @@ Definition of done:
 - ...
 
 <!-- ia-generated:end -->
-```
+```text
 
 ### On Subsequent Updates (markers exist)
 
@@ -367,7 +421,7 @@ Definition of done:
 - ...
 
 <!-- ia-generated:end -->
-```
+```text
 
 ### Acceptance Criteria Quality
 

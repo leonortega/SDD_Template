@@ -1,14 +1,19 @@
 # Python Security Features by Version
 
-Modern Python versions introduce language features and standard library changes that directly improve security when used correctly. This reference documents security-relevant patterns and features from Python 3.9 through 3.13, with detection regexes for automated auditing.
+Modern Python versions introduce language features and standard library changes that directly improve security when used
+correctly. This reference documents security-relevant patterns and features from Python 3.9 through 3.13, with detection
+regexes for automated auditing.
 
 ## Core Python Security Patterns
 
-These patterns apply across all supported Python versions (3.9+) and represent the most common vulnerability classes found in Python codebases.
+These patterns apply across all supported Python versions (3.9+) and represent the most common vulnerability classes
+found in Python codebases.
 
 ### 1. Insecure Deserialization via pickle / shelve / marshal
 
-The `pickle` module can execute arbitrary code during deserialization. Any data from an untrusted source that is unpickled can lead to remote code execution. The `shelve` module uses `pickle` internally and inherits the same risk. `marshal` is similarly unsafe.
+The `pickle` module can execute arbitrary code during deserialization. Any data from an untrusted source that is
+unpickled can lead to remote code execution. The `shelve` module uses `pickle` internally and inherits the same risk.
+`marshal` is similarly unsafe.
 
 ```python
 # VULNERABLE: Deserializing untrusted data with pickle
@@ -84,11 +89,14 @@ def safe_unpickle(data: bytes):
     return RestrictedUnpickler(io.BytesIO(data)).load()
 ```
 
-**Security implication:** Insecure deserialization (CWE-502) is consistently ranked in the OWASP Top 10. Pickle payloads can execute arbitrary system commands, exfiltrate data, or establish reverse shells. Never unpickle data from untrusted sources.
+**Security implication:** Insecure deserialization (CWE-502) is consistently ranked in the OWASP Top 10. Pickle payloads
+can execute arbitrary system commands, exfiltrate data, or establish reverse shells. Never unpickle data from untrusted
+sources.
 
 ### 2. Code Injection via eval() / exec() / compile()
 
-The `eval()` and `exec()` builtins execute arbitrary Python code. When user input reaches these functions, attackers gain full code execution.
+The `eval()` and `exec()` builtins execute arbitrary Python code. When user input reaches these functions, attackers
+gain full code execution.
 
 ```python
 # VULNERABLE: eval with user input
@@ -136,11 +144,13 @@ def safe_calculate(left: str, op: str, right: str) -> Decimal:
     return SAFE_OPS[op](Decimal(left), Decimal(right))
 ```
 
-**Security implication:** Code injection (CWE-94, CWE-95) allows full system compromise. Even `eval()` with restricted globals can be bypassed. There is no safe way to sandbox `eval()` or `exec()` in CPython.
+**Security implication:** Code injection (CWE-94, CWE-95) allows full system compromise. Even `eval()` with restricted
+globals can be bypassed. There is no safe way to sandbox `eval()` or `exec()` in CPython.
 
 ### 3. Server-Side Template Injection (SSTI) in Jinja2 and Mako
 
-When user input is passed directly as a template string rather than as a template variable, attackers can execute arbitrary code through the template engine.
+When user input is passed directly as a template string rather than as a template variable, attackers can execute
+arbitrary code through the template engine.
 
 ```python
 # VULNERABLE: User input used as Jinja2 template source
@@ -195,7 +205,8 @@ def render_sandboxed(template_str: str, variables: dict) -> str:
     return template.render(**variables)
 ```
 
-**Security implication:** SSTI (CWE-1336) in Python template engines typically leads to Remote Code Execution. Jinja2's default `Environment` does not sandbox templates. Always load templates from files and pass user data as variables.
+**Security implication:** SSTI (CWE-1336) in Python template engines typically leads to Remote Code Execution. Jinja2's
+default `Environment` does not sandbox templates. Always load templates from files and pass user data as variables.
 
 ### 4. Command Injection via subprocess / os.system / os.popen
 
@@ -255,7 +266,9 @@ def list_directory(path: str) -> list[str]:
     return [str(p) for p in target.iterdir()]
 ```
 
-**Security implication:** OS command injection (CWE-78) is a critical vulnerability. Using `shell=True` with `subprocess` or any function in the `os.system` / `os.popen` family exposes the application to shell metacharacter injection.
+**Security implication:** OS command injection (CWE-78) is a critical vulnerability. Using `shell=True` with
+`subprocess` or any function in the `os.system` / `os.popen` family exposes the application to shell metacharacter
+injection.
 
 ### 5. Unsafe YAML Loading
 
@@ -291,7 +304,8 @@ def parse_multi_doc(data: str) -> list:
     return list(yaml.safe_load_all(data))
 ```
 
-**Security implication:** Unsafe YAML deserialization (CWE-502) allows instantiation of arbitrary Python objects. The `!!python/object` tag in YAML can trigger code execution. Always use `yaml.safe_load()`.
+**Security implication:** Unsafe YAML deserialization (CWE-502) allows instantiation of arbitrary Python objects. The
+`!!python/object` tag in YAML can trigger code execution. Always use `yaml.safe_load()`.
 
 ### 6. SQL Injection via String Formatting
 
@@ -364,7 +378,9 @@ def get_user_pg(conn, username: str):
         return cur.fetchone()
 ```
 
-**Security implication:** SQL injection (CWE-89) remains one of the most exploited vulnerability classes. Python's DB-API 2.0 (PEP 249) supports parameterized queries across all database adapters. Never use string formatting to build SQL.
+**Security implication:** SQL injection (CWE-89) remains one of the most exploited vulnerability classes. Python's
+DB-API 2.0 (PEP 249) supports parameterized queries across all database adapters. Never use string formatting to build
+SQL.
 
 ### 7. XML External Entity (XXE) and Billion Laughs
 
@@ -420,7 +436,9 @@ def parse_lxml(xml_data: bytes):
     return etree.fromstring(xml_data, parser=parser)
 ```
 
-**Security implication:** XXE (CWE-611) can lead to file disclosure, SSRF, and denial of service. The billion laughs attack (CWE-776) causes exponential memory consumption. Use `defusedxml` as a drop-in replacement for all standard library XML parsers.
+**Security implication:** XXE (CWE-611) can lead to file disclosure, SSRF, and denial of service. The billion laughs
+attack (CWE-776) causes exponential memory consumption. Use `defusedxml` as a drop-in replacement for all standard
+library XML parsers.
 
 ### 8. Path Traversal via os.path.join
 
@@ -475,7 +493,9 @@ def read_document(doc_name: str) -> bytes:
         return f.read()
 ```
 
-**Security implication:** Path traversal (CWE-22) allows attackers to read or write arbitrary files. `os.path.join` is deceptive because it silently handles absolute paths and `..` segments. Always resolve paths and verify they remain within the intended directory.
+**Security implication:** Path traversal (CWE-22) allows attackers to read or write arbitrary files. `os.path.join` is
+deceptive because it silently handles absolute paths and `..` segments. Always resolve paths and verify they remain
+within the intended directory.
 
 ### 9. JWT Handling Pitfalls
 
@@ -530,11 +550,13 @@ def verify_token_rsa(token: str, public_key: str) -> dict:
     )
 ```
 
-**Security implication:** JWT algorithm confusion (CWE-327) and the "none" algorithm bypass allow token forgery. Always specify an explicit `algorithms` list with a single expected algorithm. Never mix symmetric and asymmetric algorithms.
+**Security implication:** JWT algorithm confusion (CWE-327) and the "none" algorithm bypass allow token forgery. Always
+specify an explicit `algorithms` list with a single expected algorithm. Never mix symmetric and asymmetric algorithms.
 
 ### 10. Weak Hashing Algorithms
 
-Using MD5 or SHA1 for security-sensitive operations (password hashing, integrity verification) is unsafe due to collision attacks.
+Using MD5 or SHA1 for security-sensitive operations (password hashing, integrity verification) is unsafe due to
+collision attacks.
 
 ```python
 # VULNERABLE: MD5 for password hashing
@@ -582,9 +604,11 @@ def verify_integrity(data: bytes, key: bytes, expected: str) -> bool:
     return hmac.compare_digest(computed, expected)
 ```
 
-**Security implication:** MD5 (CWE-328) and SHA1 are cryptographically broken for collision resistance. MD5 collisions can be computed in seconds. Use bcrypt, scrypt, or argon2 for passwords. Use SHA-256+ or SHA-3 for integrity verification.
+**Security implication:** MD5 (CWE-328) and SHA1 are cryptographically broken for collision resistance. MD5 collisions
+can be computed in seconds. Use bcrypt, scrypt, or argon2 for passwords. Use SHA-256+ or SHA-3 for integrity
+verification.
 
-### 11. Dynamic Import Abuse via __import__ / importlib
+### 11. Dynamic Import Abuse via **import** / importlib
 
 Dynamic imports with user-controlled module names allow loading arbitrary modules.
 
@@ -625,11 +649,14 @@ def load_plugins():
     return {ep.name: ep.load() for ep in discovered}
 ```
 
-**Security implication:** Unrestricted dynamic imports (CWE-94) allow loading arbitrary standard library modules (e.g., `os`, `subprocess`, `socket`), enabling code execution, file access, and network connections. Always validate module names against a whitelist.
+**Security implication:** Unrestricted dynamic imports (CWE-94) allow loading arbitrary standard library modules (e.g.,
+`os`, `subprocess`, `socket`), enabling code execution, file access, and network connections. Always validate module
+names against a whitelist.
 
 ### 12. tempfile Race Conditions
 
-`tempfile.mktemp()` creates a filename but not the file, introducing a TOCTOU (time-of-check to time-of-use) race condition.
+`tempfile.mktemp()` creates a filename but not the file, introducing a TOCTOU (time-of-check to time-of-use) race
+condition.
 
 ```python
 # VULNERABLE: mktemp has a race condition
@@ -666,11 +693,14 @@ def write_temp_managed(data: bytes) -> str:
         return f.name
 ```
 
-**Security implication:** TOCTOU race conditions (CWE-367) in temporary file creation can be exploited via symlink attacks to overwrite arbitrary files. `tempfile.mktemp()` is deprecated precisely for this reason. Use `mkstemp()` or `NamedTemporaryFile`.
+**Security implication:** TOCTOU race conditions (CWE-367) in temporary file creation can be exploited via symlink
+attacks to overwrite arbitrary files. `tempfile.mktemp()` is deprecated precisely for this reason. Use `mkstemp()` or
+`NamedTemporaryFile`.
 
 ### 13. Regular Expression Denial of Service (ReDoS)
 
-Poorly constructed regular expressions with nested quantifiers can cause catastrophic backtracking, freezing the application.
+Poorly constructed regular expressions with nested quantifiers can cause catastrophic backtracking, freezing the
+application.
 
 ```python
 # VULNERABLE: Catastrophic backtracking
@@ -720,13 +750,16 @@ def validate_email_safe(email: str) -> bool:
 # re2.compile(pattern)  # Guaranteed O(n) matching time
 ```
 
-**Security implication:** ReDoS (CWE-1333) can cause application-level denial of service. A single malicious input to a vulnerable regex can freeze a web server thread for minutes or hours. Audit all regex patterns that process user input for nested quantifiers.
+**Security implication:** ReDoS (CWE-1333) can cause application-level denial of service. A single malicious input to a
+vulnerable regex can freeze a web server thread for minutes or hours. Audit all regex patterns that process user input
+for nested quantifiers.
 
 ## Python 3.9
 
 ### Dictionary Union Operators for Safe Config Merging
 
-Python 3.9 introduced `|` and `|=` operators for dictionaries, providing a cleaner way to merge configuration defaults with overrides.
+Python 3.9 introduced `|` and `|=` operators for dictionaries, providing a cleaner way to merge configuration defaults
+with overrides.
 
 ```python
 # VULNERABLE: Using **kwargs merging allows override of security defaults
@@ -745,11 +778,14 @@ def get_config(user_prefs: dict) -> dict:
     return defaults | safe_prefs  # Clean merge with whitelisted keys only
 ```
 
-**Security implication:** Uncontrolled dictionary merging can override security-critical configuration keys. The `|` operator itself does not add security, but its readability encourages explicit merge patterns where input filtering is visible.
+**Security implication:** Uncontrolled dictionary merging can override security-critical configuration keys. The `|`
+operator itself does not add security, but its readability encourages explicit merge patterns where input filtering is
+visible.
 
 ### Type Hinting Generics in Built-in Collections
 
-Python 3.9 allows `list[int]`, `dict[str, Any]` in annotations without importing from `typing`, making type hints easier and encouraging their use in security-critical code.
+Python 3.9 allows `list[int]`, `dict[str, Any]` in annotations without importing from `typing`, making type hints easier
+and encouraging their use in security-critical code.
 
 ```python
 # Python 3.9+: Built-in generics for clearer security-related type hints
@@ -764,13 +800,15 @@ def validate_allowed_ips(ip_list: list[str]) -> list[str]:
     return validated
 ```
 
-**Security implication:** Easier type annotations encourage static type checking which catches type confusion bugs at development time rather than runtime.
+**Security implication:** Easier type annotations encourage static type checking which catches type confusion bugs at
+development time rather than runtime.
 
 ## Python 3.10
 
 ### Structural Pattern Matching for Input Validation
 
-The `match`/`case` statement provides exhaustive pattern matching, ideal for validating and dispatching on structured input.
+The `match`/`case` statement provides exhaustive pattern matching, ideal for validating and dispatching on structured
+input.
 
 ```python
 # VULNERABLE: Complex if/elif chains miss edge cases
@@ -798,7 +836,9 @@ def handle_request(request: dict):
             raise ValueError("Malformed request: missing 'action' field")
 ```
 
-**Security implication:** Structural pattern matching (PEP 634) enforces structure validation at the language level. The mandatory `case _` wildcard catch-all prevents silent pass-through of malformed or unauthorized requests. Guards (`if` clauses) enable inline authorization checks.
+**Security implication:** Structural pattern matching (PEP 634) enforces structure validation at the language level. The
+mandatory `case _` wildcard catch-all prevents silent pass-through of malformed or unauthorized requests. Guards (`if`
+clauses) enable inline authorization checks.
 
 ### Parenthesized Context Managers
 
@@ -820,13 +860,15 @@ def secure_file_copy(src: Path, dst: Path):
         Path(tmp.name).rename(dst)
 ```
 
-**Security implication:** Grouping multiple context managers ensures all resources are properly cleaned up even when errors occur. This prevents file descriptor leaks and partial writes that could leave systems in insecure states.
+**Security implication:** Grouping multiple context managers ensures all resources are properly cleaned up even when
+errors occur. This prevents file descriptor leaks and partial writes that could leave systems in insecure states.
 
 ## Python 3.11
 
 ### tomllib for Safe TOML Parsing
 
-Python 3.11 added `tomllib` to the standard library, providing a safe TOML parser that replaces third-party libraries which may have had code execution vulnerabilities.
+Python 3.11 added `tomllib` to the standard library, providing a safe TOML parser that replaces third-party libraries
+which may have had code execution vulnerabilities.
 
 ```python
 # VULNERABLE: Some third-party TOML parsers had code execution issues
@@ -848,11 +890,13 @@ def load_config(path: str) -> dict:
 # It reads bytes, preventing encoding-related attacks
 ```
 
-**Security implication:** Standard library inclusion means fewer third-party dependencies in the trust chain. `tomllib` is read-only and cannot execute code, making it safe for parsing untrusted TOML configuration files.
+**Security implication:** Standard library inclusion means fewer third-party dependencies in the trust chain. `tomllib`
+is read-only and cannot execute code, making it safe for parsing untrusted TOML configuration files.
 
 ### Exception Groups and except*
 
-Exception groups allow handling multiple exceptions simultaneously, which is valuable for reporting multiple security validation failures.
+Exception groups allow handling multiple exceptions simultaneously, which is valuable for reporting multiple security
+validation failures.
 
 ```python
 # SECURE: Report all validation errors at once using ExceptionGroup
@@ -881,13 +925,16 @@ except* ValidationError as eg:
         log_validation_failure(str(err))
 ```
 
-**Security implication:** Exception groups prevent early-exit validation where only the first error is reported, allowing comprehensive input validation in a single pass.
+**Security implication:** Exception groups prevent early-exit validation where only the first error is reported,
+allowing comprehensive input validation in a single pass.
 
 ### Fine-grained Error Locations
 
-Python 3.11 provides precise error locations pointing to the exact expression that caused an error, not just the line. This aids security debugging.
+Python 3.11 provides precise error locations pointing to the exact expression that caused an error, not just the line.
+This aids security debugging.
 
-**Security implication:** More precise tracebacks reduce debugging time for security issues and make it easier to identify the exact sub-expression involved in a vulnerability.
+**Security implication:** More precise tracebacks reduce debugging time for security issues and make it easier to
+identify the exact sub-expression involved in a vulnerability.
 
 ## Python 3.12
 
@@ -918,11 +965,14 @@ def validate_bounded[T: (int, float)](value: T, min_val: T, max_val: T) -> T:
     return value
 ```
 
-**Security implication:** Type aliases like `SanitizedHTML` vs `RawUserInput` create semantic boundaries that make it obvious when unsanitized data is being used where sanitized data is expected. Static type checkers can then catch these mismatches.
+**Security implication:** Type aliases like `SanitizedHTML` vs `RawUserInput` create semantic boundaries that make it
+obvious when unsanitized data is being used where sanitized data is expected. Static type checkers can then catch these
+mismatches.
 
 ### Per-Interpreter GIL (PEP 684)
 
-Python 3.12 introduces per-interpreter GIL, enabling true parallel execution with separate interpreters that have isolated state.
+Python 3.12 introduces per-interpreter GIL, enabling true parallel execution with separate interpreters that have
+isolated state.
 
 ```python
 # SECURE: Separate interpreters have isolated state
@@ -931,13 +981,15 @@ Python 3.12 introduces per-interpreter GIL, enabling true parallel execution wit
 # Useful for multi-tenant applications where isolation is critical
 ```
 
-**Security implication:** Per-interpreter GIL provides stronger isolation than threading for multi-tenant Python applications, as each interpreter has completely separate state, reducing the risk of data leakage between tenants.
+**Security implication:** Per-interpreter GIL provides stronger isolation than threading for multi-tenant Python
+applications, as each interpreter has completely separate state, reducing the risk of data leakage between tenants.
 
 ## Python 3.13
 
 ### warnings.deprecated (PEP 702)
 
-Python 3.13 introduces a `@warnings.deprecated` decorator that can mark security-deprecated functions with clear messages.
+Python 3.13 introduces a `@warnings.deprecated` decorator that can mark security-deprecated functions with clear
+messages.
 
 ```python
 # SECURE: Mark insecure functions as deprecated
@@ -962,17 +1014,20 @@ def hash_password_argon2(password: str) -> str:
 # Type checkers and linters will flag calls to hash_password_md5()
 ```
 
-**Security implication:** `warnings.deprecated` enables gradual migration away from insecure functions. Unlike comments, the decorator is machine-readable and can be enforced by type checkers and CI tools.
+**Security implication:** `warnings.deprecated` enables gradual migration away from insecure functions. Unlike comments,
+the decorator is machine-readable and can be enforced by type checkers and CI tools.
 
 ### Improved Error Messages
 
 Python 3.13 continues to improve error messages with better suggestions and more context.
 
-**Security implication:** Clearer error messages help developers identify and fix security misconfigurations faster during development, reducing the risk of deploying vulnerable code.
+**Security implication:** Clearer error messages help developers identify and fix security misconfigurations faster
+during development, reducing the risk of deploying vulnerable code.
 
 ### Free-Threaded CPython (Experimental)
 
-Python 3.13 introduces an experimental build without the GIL. Multi-threaded code requires more careful attention to thread safety.
+Python 3.13 introduces an experimental build without the GIL. Multi-threaded code requires more careful attention to
+thread safety.
 
 ```python
 # CAUTION: With free-threaded Python, shared mutable state needs explicit synchronization
@@ -999,7 +1054,9 @@ def check_rate_limit_safe(ip: str) -> bool:
         return count < 100
 ```
 
-**Security implication:** Free-threaded Python removes the GIL safety net. Race conditions in security-critical code (rate limiting, authentication checks, session management) that were previously masked by the GIL will now manifest as real bugs.
+**Security implication:** Free-threaded Python removes the GIL safety net. Race conditions in security-critical code
+(rate limiting, authentication checks, session management) that were previously masked by the GIL will now manifest as
+real bugs.
 
 ## Detection Patterns for Auditing Python Security Features
 
@@ -1016,7 +1073,7 @@ def check_rate_limit_safe(ip: str) -> bool:
 | Weak hash: MD5 for security | `hashlib\.md5\(` | warning |
 | Weak hash: SHA1 for security | `hashlib\.sha1\(` | warning |
 | Deprecated tempfile.mktemp | `tempfile\.mktemp\(` | error |
-| Dynamic import with __import__ | `__import__\(` | warning |
+| Dynamic import with **import** | `__import__\(` | warning |
 | XML parsing without defusedxml | `xml\.etree\.ElementTree` | warning |
 | Jinja2 Template with variable | `Template\s*\(.*\w+.*\)` | warning |
 | Command injection via os.popen | `os\.popen\(` | error |

@@ -4,11 +4,13 @@
 
 ### What Is Path Traversal?
 
-Path traversal (also called directory traversal) allows an attacker to access files and directories outside the intended directory by manipulating file path inputs. By injecting sequences like `../` into file parameters, attackers can read sensitive files (`/etc/passwd`, application configuration, source code) or write to arbitrary locations.
+Path traversal (also called directory traversal) allows an attacker to access files and directories outside the intended
+directory by manipulating file path inputs. By injecting sequences like `../` into file parameters, attackers can read
+sensitive files (`/etc/passwd`, application configuration, source code) or write to arbitrary locations.
 
 ### Attack Vectors
 
-```
+```text
 # Basic directory traversal
 ../../../etc/passwd
 

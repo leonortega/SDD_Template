@@ -2,7 +2,8 @@
 
 ## Technology Stack And Tool Set
 
-This repository currently has no product implementation. It is ready for a new product stack to be introduced through the normal ticket and OpenSpec workflow.
+This repository currently has no product implementation. It is ready for a new product stack to be introduced through
+the normal ticket and OpenSpec workflow.
 
 | Layer                 | Status   | Detail                                                                      |
 | --------------------- | -------- | --------------------------------------------------------------------------- |
@@ -13,7 +14,8 @@ This repository currently has no product implementation. It is ready for a new p
 | Linting/formatting    | None     | Will be configured when product code exists                                 |
 | OpenSpec CLI          | Required | `npm install -g @fission-ai/openspec@latest` — needed for proposal workflow |
 
-**Key principle:** Keep changes scoped to the active ticket or explicit user request. Do not add speculative stack guidance before the product needs it.
+**Key principle:** Keep changes scoped to the active ticket or explicit user request. Do not add speculative stack
+guidance before the product needs it.
 
 ## Current Project Shape
 
@@ -28,7 +30,8 @@ This repository currently has no product implementation. It is ready for a new p
 
 When the stack is chosen:
 
-1. Add languages, frameworks, and test frameworks to ignored `.codex/project-profile.local.json` while exploring the new project.
+1. Add languages, frameworks, and test frameworks to ignored `.codex/project-profile.local.json` while exploring the new
+project.
 2. Add product source and test folders.
 3. Add OpenSpec specs for product behavior.
 4. Add deployment app targets and configuration mappings.
@@ -44,19 +47,23 @@ python -m tools.sdd_cli template-installer install --version v0.1.0 --target C:\
 python -m tools.sdd_cli template-installer update --version v0.2.0 --target C:\path\to\consumer-repo
 ```
 
-The consumer repo should not contain this tool's internal tests, memory, eval files, or experimental OpenSpec changes. Put product-specific source, tests, local profile overlays, secrets, and product OpenSpec changes in the consumer repo; the update command preserves them because they are not managed tool files.
+The consumer repo should not contain this tool's internal tests, memory, eval files, or experimental OpenSpec changes.
+Put product-specific source, tests, local profile overlays, secrets, and product OpenSpec changes in the consumer repo;
+the update command preserves them because they are not managed tool files.
 
 ## Development Rules
 
 - Use the OpenProject/OpenSpec workflow for ticketed changes.
 - Keep changes scoped to the active ticket or explicit user request.
 - Use TDD for product behavior once a stack exists.
-- Keep docs, `.codex/project-profile.json`, and `.codex/project-profile.local.json` synchronized with stack and workflow changes. Note: stack config lives **only** in `.codex/project-profile.local.json`.
+- Keep docs, `.codex/project-profile.json`, and `.codex/project-profile.local.json` synchronized with stack and workflow
+changes. Note: stack config lives **only** in `.codex/project-profile.local.json`.
 - Do not add speculative stack guidance, dependencies, or CI jobs before the new product needs them.
 
 ## Quality Gates
 
-Current placeholder workflows only protect the shell from obvious mistakes. Product-specific quality gates must be added with the next stack.
+Current placeholder workflows only protect the shell from obvious mistakes. Product-specific quality gates must be added
+with the next stack.
 
 Expected future gate categories:
 
@@ -69,6 +76,25 @@ Expected future gate categories:
 
 The exact commands belong to the future stack, not this empty shell.
 
+### Markdown Linting (repo-wide)
+
+Markdown is linted repo-wide with `markdownlint-cli2` (120-char prose lines; tables and code blocks exempt):
+
+```bash
+npx markdownlint-cli2 '**/*.md'
+```
+
+Two config files cooperate:
+
+- `.markdownlint.json` — the single source of truth for rules (incl. `MD024`/`MD036`/`MD052`/`MD060`
+  disabled: duplicate headings and bold-callout styling are intentional in skill catalogs, and table
+  alignment / link-definition pedantry is not enforced).
+- `.markdownlint-cli2.jsonc` — references `.markdownlint.json` and adds `ignores: ["**/.trunk/**"]`,
+  because `.trunk/` holds gitignored vendor linter test fixtures whose `basic.in.md` inputs intentionally
+  contain violations for trunk's own self-tests and must not be edited. Note this ignore applies only to
+  CLI2 runs; editors using the legacy `.markdownlint.json` will still flag those vendored fixtures.
+
 ## Context Findings
 
-Every non-trivial repo change still needs a context findings review. Durable workflow findings belong in `docs/`, the shared delivery contract, affected skills, or `knowledge/` depending on authority.
+Every non-trivial repo change still needs a context findings review. Durable workflow findings belong in `docs/`, the
+shared delivery contract, affected skills, or `knowledge/` depending on authority.

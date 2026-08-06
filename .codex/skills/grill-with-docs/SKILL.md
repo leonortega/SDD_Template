@@ -6,4 +6,8 @@ disable-model-invocation: true
 
 Run a `/grilling` session, using the `/domain-modeling` skill.
 
-Repo-local adaptation: in this repository, keep the upstream questioning and domain-modeling stance, but write durable output to the existing SDD surfaces. Product or ticket clarity goes to the managed OpenProject block, planned behavior and design go to OpenSpec, durable repository or process knowledge goes to `docs/`, and reusable non-authoritative lessons go to `knowledge/`. Do not create `CONTEXT.md` or ADR files unless a separate explicit repo change adopts that model.
+Repo-local adaptation: in this repository, keep the upstream questioning and domain-modeling stance, but write durable
+output to the existing SDD surfaces. Product or ticket clarity goes to the
+managed OpenProject block, planned behavior and design go to OpenSpec, durable repository or process knowledge goes to
+`docs/`, and reusable non-authoritative lessons go to `knowledge/`. Do not create
+`CONTEXT.md` or ADR files unless a separate explicit repo change adopts that model.

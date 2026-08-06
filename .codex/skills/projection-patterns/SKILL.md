@@ -1,6 +1,8 @@
 ---
 name: projection-patterns
-description: Build read models and projections from event streams. Use when implementing CQRS read sides, building materialized views, or optimizing query performance in event-sourced systems.
+description: >-
+  Build read models and projections from event streams. Use when implementing CQRS read sides, building materialized
+  views, or optimizing query performance in event-sourced systems.
 ---
 
 # Projection Patterns
@@ -20,7 +22,7 @@ Comprehensive guide to building projections and read models for event-sourced sy
 
 ### 1. Projection Architecture
 
-```
+```text
 ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
 │ Event Store │────►│ Projector   │────►│ Read Model  │
 │             │     │             │     │ (Database)  │
@@ -42,7 +44,8 @@ Comprehensive guide to building projections and read models for event-sourced sy
 
 ## Templates and detailed worked examples
 
-Full template library and detailed worked examples live in `references/details.md`. Read that file when you need the concrete templates.
+Full template library and detailed worked examples live in `references/details.md`. Read that file when you need the
+concrete templates.
 
 ## Best Practices
 

@@ -1,8 +1,10 @@
 # Composing Methods
 
-Detailed reference for the refactorings that break down long methods into well-named, cohesive pieces. These are the most frequently used refactorings and the foundation of all code improvement.
+Detailed reference for the refactorings that break down long methods into well-named, cohesive pieces. These are the
+most frequently used refactorings and the foundation of all code improvement.
 
 ## Table of Contents
+
 1. [Extract Method](#extract-method)
 2. [Inline Method](#inline-method)
 3. [Extract Variable](#extract-variable)
@@ -17,11 +19,13 @@ Detailed reference for the refactorings that break down long methods into well-n
 
 ## Extract Method
 
-The single most important refactoring. Turn a code fragment into a method whose name explains the purpose of the fragment.
+The single most important refactoring. Turn a code fragment into a method whose name explains the purpose of the
+fragment.
 
 ### Motivation
 
-You have a code fragment that can be grouped together. The longer a method, the harder it is to understand. When you see a comment explaining what the next block does, that's a signal to extract. The comment becomes the method name.
+You have a code fragment that can be grouped together. The longer a method, the harder it is to understand. When you see
+a comment explaining what the next block does, that's a signal to extract. The comment becomes the method name.
 
 ### Mechanics
 
@@ -37,6 +41,7 @@ You have a code fragment that can be grouped together. The longer a method, the 
 ### Example
 
 **Before:**
+
 ```javascript
 function printOwing(invoice) {
   let outstanding = 0;
@@ -59,6 +64,7 @@ function printOwing(invoice) {
 ```
 
 **After:**
+
 ```javascript
 function printOwing(invoice) {
   printBanner();
@@ -97,17 +103,20 @@ function printDetails(invoice, outstanding) {
 | `helper()` | `formatCurrencyForDisplay()` | Describes the transformation |
 | `step2()` | `applyDiscountRules()` | Names the business concept |
 
-**Rule of thumb:** If you can't find a good name, the extraction boundaries may be wrong. Try extracting a different fragment.
+**Rule of thumb:** If you can't find a good name, the extraction boundaries may be wrong. Try extracting a different
+fragment.
 
 ---
 
 ## Inline Method
 
-The inverse of Extract Method. Replace a method call with the method's body when the body is as clear as the name, or when you need to regroup poorly factored code.
+The inverse of Extract Method. Replace a method call with the method's body when the body is as clear as the name, or
+when you need to regroup poorly factored code.
 
 ### Motivation
 
-Sometimes a method body is as obvious as the method name. Indirection without value is noise. Also useful as an intermediate step: inline a badly decomposed method, then re-extract along better boundaries.
+Sometimes a method body is as obvious as the method name. Indirection without value is noise. Also useful as an
+intermediate step: inline a badly decomposed method, then re-extract along better boundaries.
 
 ### Mechanics
 
@@ -120,6 +129,7 @@ Sometimes a method body is as obvious as the method name. Indirection without va
 ### Example
 
 **Before:**
+
 ```python
 def get_rating(self):
     return 2 if self.more_than_five_late_deliveries() else 1
@@ -129,6 +139,7 @@ def more_than_five_late_deliveries(self):
 ```
 
 **After:**
+
 ```python
 def get_rating(self):
     return 2 if self.late_deliveries > 5 else 1
@@ -148,7 +159,8 @@ Introduce a local variable for a complex expression to make it self-documenting.
 
 ### Motivation
 
-Expressions can become hard to read. A well-named variable for a sub-expression acts as inline documentation and makes debugging easier.
+Expressions can become hard to read. A well-named variable for a sub-expression acts as inline documentation and makes
+debugging easier.
 
 ### Mechanics
 
@@ -160,6 +172,7 @@ Expressions can become hard to read. A well-named variable for a sub-expression 
 ### Example
 
 **Before:**
+
 ```javascript
 return order.quantity * order.itemPrice -
   Math.max(0, order.quantity - 500) * order.itemPrice * 0.05 +
@@ -167,6 +180,7 @@ return order.quantity * order.itemPrice -
 ```
 
 **After:**
+
 ```javascript
 const basePrice = order.quantity * order.itemPrice;
 const quantityDiscount = Math.max(0, order.quantity - 500) * order.itemPrice * 0.05;
@@ -189,12 +203,14 @@ The inverse of Extract Variable. Remove a variable when the expression is just a
 ### Example
 
 **Before:**
+
 ```python
 base_price = order.base_price()
 return base_price > 1000
 ```
 
 **After:**
+
 ```python
 return order.base_price() > 1000
 ```
@@ -207,7 +223,8 @@ Turn a temporary variable into a method call so the computation is reusable and 
 
 ### Motivation
 
-Temporaries can only be seen within a single method. If the same computation is needed elsewhere, it gets duplicated. A query method is visible to the whole class (or can be extracted to another class).
+Temporaries can only be seen within a single method. If the same computation is needed elsewhere, it gets duplicated. A
+query method is visible to the whole class (or can be extracted to another class).
 
 ### Mechanics
 
@@ -220,6 +237,7 @@ Temporaries can only be seen within a single method. If the same computation is 
 ### Example
 
 **Before:**
+
 ```javascript
 class Order {
   getPrice() {
@@ -234,6 +252,7 @@ class Order {
 ```
 
 **After:**
+
 ```javascript
 class Order {
   getPrice() {
@@ -252,17 +271,21 @@ class Order {
 
 ### Performance Note
 
-Calling the method multiple times instead of caching in a temp may seem wasteful. In practice, the performance impact is negligible for most code. Profile before optimizing. Refactored code is easier to optimize later because the hot path is isolated.
+Calling the method multiple times instead of caching in a temp may seem wasteful. In practice, the performance impact is
+negligible for most code. Profile before optimizing. Refactored code is easier to optimize later because the hot path is
+isolated.
 
 ---
 
 ## Split Temporary Variable
 
-When a temporary variable is assigned more than once (and it's not a loop counter or collecting variable), it's doing two different jobs. Give each job its own variable.
+When a temporary variable is assigned more than once (and it's not a loop counter or collecting variable), it's doing
+two different jobs. Give each job its own variable.
 
 ### Motivation
 
-A temp assigned twice for different purposes misleads the reader into thinking the assignments are related. Each role deserves its own variable with a descriptive name.
+A temp assigned twice for different purposes misleads the reader into thinking the assignments are related. Each role
+deserves its own variable with a descriptive name.
 
 ### Mechanics
 
@@ -275,6 +298,7 @@ A temp assigned twice for different purposes misleads the reader into thinking t
 ### Example
 
 **Before:**
+
 ```javascript
 let temp = 2 * (height + width);  // perimeter
 console.log(temp);
@@ -283,6 +307,7 @@ console.log(temp);
 ```
 
 **After:**
+
 ```javascript
 const perimeter = 2 * (height + width);
 console.log(perimeter);
@@ -294,7 +319,8 @@ console.log(area);
 
 ## Remove Assignments to Parameters
 
-Never assign to a parameter inside a method body. It confuses readers about whether the change is visible to the caller (it isn't in pass-by-value languages; it is in pass-by-reference for object mutations).
+Never assign to a parameter inside a method body. It confuses readers about whether the change is visible to the caller
+(it isn't in pass-by-value languages; it is in pass-by-reference for object mutations).
 
 ### Mechanics
 
@@ -305,6 +331,7 @@ Never assign to a parameter inside a method body. It confuses readers about whet
 ### Example
 
 **Before:**
+
 ```python
 def discount(input_val, quantity):
     if quantity > 50:
@@ -315,6 +342,7 @@ def discount(input_val, quantity):
 ```
 
 **After:**
+
 ```python
 def discount(input_val, quantity):
     result = input_val
@@ -329,11 +357,14 @@ def discount(input_val, quantity):
 
 ## Replace Method with Method Object
 
-When a method is too tangled with local variables to extract from, move the entire method into its own class where the local variables become fields. Then you can freely extract sub-methods.
+When a method is too tangled with local variables to extract from, move the entire method into its own class where the
+local variables become fields. Then you can freely extract sub-methods.
 
 ### Motivation
 
-Sometimes a long method has so many interrelated local variables that Extract Method is impossible (too many parameters would be needed). By turning the method into its own class, all locals become fields, accessible to any extracted method without parameters.
+Sometimes a long method has so many interrelated local variables that Extract Method is impossible (too many parameters
+would be needed). By turning the method into its own class, all locals become fields, accessible to any extracted method
+without parameters.
 
 ### Mechanics
 
@@ -348,6 +379,7 @@ Sometimes a long method has so many interrelated local variables that Extract Me
 ### Example
 
 **Before:**
+
 ```python
 class Account:
     def gamma(self, input_val, quantity, year_to_date):
@@ -357,6 +389,7 @@ class Account:
 ```
 
 **After:**
+
 ```python
 class GammaCalculation:
     def __init__(self, account, input_val, quantity, year_to_date):

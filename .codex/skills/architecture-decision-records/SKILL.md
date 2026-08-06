@@ -1,11 +1,15 @@
 ---
 name: architecture-decision-records
-description: Write and maintain Architecture Decision Records (ADRs) following best practices for technical decision documentation. Use when documenting significant technical decisions, reviewing past architectural choices, or establishing decision processes.
+description: >-
+  >- Write and maintain Architecture Decision Records (ADRs) following best practices for technical decision
+  documentation. Use when documenting significant technical decisions, reviewing past architectural choices, or
+  establishing decision processes.
 ---
 
 # Architecture Decision Records
 
-Comprehensive patterns for creating, maintaining, and managing Architecture Decision Records (ADRs) that capture the context and rationale behind significant technical decisions.
+Comprehensive patterns for creating, maintaining, and managing Architecture Decision Records (ADRs) that capture the
+context and rationale behind significant technical decisions.
 
 ## When to Use This Skill
 
@@ -38,7 +42,7 @@ An Architecture Decision Record captures:
 
 ### 3. ADR Lifecycle
 
-```
+```text
 Proposed → Accepted → Deprecated → Superseded
               ↓
            Rejected
@@ -279,7 +283,7 @@ OrderItemRemoved { orderId, itemId, timestamp }
 PaymentReceived { orderId, amount, paymentId, timestamp }
 OrderShipped { orderId, trackingNumber, timestamp }
 
-```
+```text
 
 ### Projections
 
@@ -328,7 +332,7 @@ OrderShipped { orderId, trackingNumber, timestamp }
 
 ### Directory Structure
 
-```
+```text
 docs/
 ├── adr/
 │   ├── README.md           # Index and guidelines

@@ -1,16 +1,20 @@
 # Supply Chain Security
 
-Supply chain attacks target the tools, dependencies, and processes used to build and deliver software. This reference covers frameworks, tools, and practices for securing the software supply chain in PHP projects.
+Supply chain attacks target the tools, dependencies, and processes used to build and deliver software. This reference
+covers frameworks, tools, and practices for securing the software supply chain in PHP projects.
 
 ## SLSA Framework (Supply-chain Levels for Software Artifacts)
 
-SLSA (pronounced "salsa") is a security framework that defines increasing levels of supply chain integrity guarantees. It focuses on ensuring that software artifacts are produced by the expected source, through the expected process, and have not been tampered with.
+SLSA (pronounced "salsa") is a security framework that defines increasing levels of supply chain integrity guarantees.
+It focuses on ensuring that software artifacts are produced by the expected source, through the expected process, and
+have not been tampered with.
 
 ### Level 1: Documentation of Build Process
 
 Minimal requirements for supply chain transparency.
 
 **Requirements:**
+
 - Build process is scripted (not manual)
 - Provenance metadata is generated (what was built, from what source)
 - Provenance is available to consumers
@@ -58,6 +62,7 @@ jobs:
 ### Level 2: Hosted Build Service, Generated Provenance
 
 **Requirements:**
+
 - All Level 1 requirements
 - Build runs on a hosted service (not developer laptops)
 - Provenance is generated automatically by the build service
@@ -88,6 +93,7 @@ jobs:
 ### Level 3: Hardened Build Platform, Non-Forgeable Provenance
 
 **Requirements:**
+
 - All Level 2 requirements
 - Build platform is hardened against tampering
 - Provenance is signed and non-forgeable
@@ -122,18 +128,21 @@ echo "hashes=$HASHES" >> "$GITHUB_OUTPUT"
 ### Level 4: Two-Party Review
 
 **Requirements:**
+
 - All Level 3 requirements
 - All changes require two-person review
 - Build process is hermetic (no network access during build)
 
 This level typically requires organizational policies:
+
 - Branch protection rules requiring 2+ reviewers
 - CODEOWNERS file for security-critical paths
 - Hermetic build environments (no network access)
 
 ## Sigstore/Cosign for Artifact Signing
 
-Sigstore provides keyless signing for software artifacts. Cosign is the primary tool for signing and verifying container images and blobs.
+Sigstore provides keyless signing for software artifacts. Cosign is the primary tool for signing and verifying container
+images and blobs.
 
 ### Signing Container Images
 
@@ -220,7 +229,8 @@ cosign verify-blob \
 
 ## OpenSSF Scorecard
 
-OpenSSF Scorecard assesses open-source project security practices. It checks automated tests, dependency management, code review, and more.
+OpenSSF Scorecard assesses open-source project security practices. It checks automated tests, dependency management,
+code review, and more.
 
 ### What Scorecard Checks
 
@@ -317,7 +327,8 @@ Do NOT create public GitHub issues for security vulnerabilities.
 
 ### SHA-Pinned Actions
 
-Never reference actions by mutable tag. Always pin to a specific commit SHA to prevent supply chain attacks via tag hijacking.
+Never reference actions by mutable tag. Always pin to a specific commit SHA to prevent supply chain attacks via tag
+hijacking.
 
 ```yaml
 # VULNERABLE: Tags can be moved to point to malicious commits
@@ -339,7 +350,8 @@ gh api repos/actions/checkout/tags --jq '.[] | select(.name == "v4.2.2") | "\(.n
 gh api repos/actions/checkout/tags --jq '.[0] | "\(.name) \(.commit.sha)"'
 ```
 
-**Why this matters:** In 2025, the `tj-actions/changed-files` action was compromised via a tag hijack. Pinned SHAs would have prevented exploitation.
+**Why this matters:** In 2025, the `tj-actions/changed-files` action was compromised via a tag hijack. Pinned SHAs would
+have prevented exploitation.
 
 ### Least-Privilege Workflow Permissions
 
@@ -389,7 +401,8 @@ permissions:
 
 ### harden-runner (Step Security)
 
-`harden-runner` monitors and restricts network and process activity in workflow steps. It detects unexpected outbound connections that could indicate a compromised action.
+`harden-runner` monitors and restricts network and process activity in workflow steps. It detects unexpected outbound
+connections that could indicate a compromised action.
 
 ```yaml
 jobs:
@@ -407,6 +420,7 @@ jobs:
 ```
 
 **Modes:**
+
 - `audit` - Log all outbound connections (start here)
 - `block` - Block connections not in the allow list
 
@@ -432,6 +446,7 @@ jobs:
 Lock files ensure reproducible builds by pinning exact dependency versions and their hashes.
 
 **PHP (composer.lock):**
+
 - Applications: Always commit `composer.lock`
 - Libraries/Extensions: Do NOT commit `composer.lock` (let consumers resolve versions)
 - Verify integrity: `composer install` verifies hashes from lock file
@@ -456,7 +471,8 @@ npm audit signatures
 
 ### npm Overrides for Transitive Dependency Vulnerabilities
 
-When a transitive dependency has a known CVE but the direct parent package hasn't released a compatible fix, use npm `overrides` to force the patched version:
+When a transitive dependency has a known CVE but the direct parent package hasn't released a compatible fix, use npm
+`overrides` to force the patched version:
 
 ```json
 {
@@ -470,11 +486,13 @@ When a transitive dependency has a known CVE but the direct parent package hasn'
 ```
 
 **When to use:**
+
 - Dependabot alert shows "fix available via `npm audit fix --force`" (breaking change)
 - `npm audit` shows the vulnerability is in a transitive dependency
 - The direct dependency's version range doesn't include the fix
 
 **Verification:**
+
 ```bash
 # Verify override took effect
 npm ls <package-name> --all
@@ -486,7 +504,8 @@ npm audit
 npm run build
 ```
 
-**Caution:** Overrides force version resolution across the entire dependency tree. Always verify that the overridden version is API-compatible with consumers. Major version overrides (e.g., 6.x to 7.x) may cause runtime issues.
+**Caution:** Overrides force version resolution across the entire dependency tree. Always verify that the overridden
+version is API-compatible with consumers. Major version overrides (e.g., 6.x to 7.x) may cause runtime issues.
 
 ### Dependabot / Renovate for Automated Updates
 
@@ -567,7 +586,8 @@ updates:
 
 ### License Compliance
 
-Ensure dependencies use compatible licenses. Some licenses have requirements that may conflict with your project's licensing.
+Ensure dependencies use compatible licenses. Some licenses have requirements that may conflict with your project's
+licensing.
 
 ```yaml
   license-check:
@@ -596,7 +616,8 @@ composer licenses --format=json | jq '.dependencies | to_entries[] | select(.val
 
 ## Reproducible Builds
 
-Reproducible builds ensure that the same source code always produces the same binary output, allowing independent verification.
+Reproducible builds ensure that the same source code always produces the same binary output, allowing independent
+verification.
 
 ### PHP Application Reproducibility
 
@@ -621,6 +642,7 @@ LABEL org.opencontainers.image.created=$BUILD_DATE \
 ```
 
 **Key practices:**
+
 - Pin base image digests (not just tags)
 - Pin OS package versions
 - Use `composer.lock` for PHP dependencies
@@ -675,7 +697,7 @@ gh attestation verify myapp-v1.0.0.tar.gz \
 
 ## Detection Patterns for Supply Chain Audit
 
-```
+```text
 # Find unpinned GitHub Actions
 uses:\s+[^@]+@v\d+
 uses:\s+[^@]+@main
@@ -741,17 +763,29 @@ permissions:[\s\S]*?contents:\s+write(?!.*security-events)
 
 ## Confirm real exposure in the deployed artifact
 
-An advisory version range is a *candidate*, not a verdict. Before reporting a component as affected, confirm the vulnerable code is **actually present at a vulnerable version in the artifact that ships** — inventory the real container image, JARs, or lockfile, not just the spec:
+An advisory version range is a *candidate*, not a verdict. Before reporting a component as affected, confirm the
+vulnerable code is **actually present at a vulnerable version in the artifact that ships** — inventory the real
+container image, JARs, or lockfile, not just the spec:
 
-- **False positives:** a bundled library may already be a patched version, a transitive dependency may be absent, or the named component (e.g. Struts) may not be in the build at all. A per-component version check removes these.
-- **False negatives:** vendor advisories often list only *currently-supported* version ranges, so an older, frozen build below the listed floor can still ship the same vulnerable component (a scan-window artifact). Check the actual bundled version, not the advisory's lower bound.
-- **Reachability:** confirm the vulnerable code path is reachable in *this* deployment (entrypoint/feature enabled, pre-auth vs authenticated) before ranking severity.
+- **False positives:** a bundled library may already be a patched version, a transitive dependency may be absent, or the
+named component (e.g. Struts) may not be in the build at all. A per-component version check removes these.
+- **False negatives:** vendor advisories often list only *currently-supported* version ranges, so an older, frozen build
+below the listed floor can still ship the same vulnerable component (a scan-window artifact). Check the actual bundled
+version, not the advisory's lower bound.
+- **Reachability:** confirm the vulnerable code path is reachable in *this* deployment (entrypoint/feature enabled,
+pre-auth vs authenticated) before ranking severity.
 
-This routinely shrinks a long advisory-range list to a much smaller, accurate exposure set — and can reverse wrong conclusions.
+This routinely shrinks a long advisory-range list to a much smaller, accurate exposure set — and can reverse wrong
+conclusions.
 
 ## Remediation when you can't (or won't) upgrade
 
-"Upgrade the product" / "migrate off it" is not the only remediation, and is not always available or wanted. For an EOL/frozen product an org has *deliberately decided to keep*, the maintenance model can be **in-place dependency patching** — replace the vulnerable bundled library with a patched, binary-compatible version (verified against the shipped artifact + a boot test, pinned by checksum) plus compensating controls at the edge (rate limits, request normalisation, WAF). Do not reflexively recommend migration/upgrade as "the real fix": confirm the org's strategic stance first, and record a deliberate "stay-frozen" decision so it is not re-litigated every cycle.
+"Upgrade the product" / "migrate off it" is not the only remediation, and is not always available or wanted. For an
+EOL/frozen product an org has *deliberately decided to keep*, the maintenance model can be **in-place dependency
+patching** — replace the vulnerable bundled library with a patched, binary-compatible version (verified against the
+shipped artifact + a boot test, pinned by checksum) plus compensating controls at the edge (rate limits, request
+normalisation, WAF). Do not reflexively recommend migration/upgrade as "the real fix": confirm the org's strategic
+stance first, and record a deliberate "stay-frozen" decision so it is not re-litigated every cycle.
 
 ## Related References
 

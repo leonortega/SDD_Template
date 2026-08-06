@@ -1,12 +1,18 @@
 # TYPO3 Fluid Template Security
 
-Fluid is the templating engine used by TYPO3 (and Neos / other TYPO3-derived stacks). Its auto-escape pipeline is asymmetric — most variable output escapes by default, but a handful of ViewHelpers and syntax forms bypass that protection silently. This reference catalogues the XSS and template-injection surface specific to Fluid, plus the Fluid 4 breaking changes that shipped with TYPO3 13/14.
+Fluid is the templating engine used by TYPO3 (and Neos / other TYPO3-derived stacks). Its auto-escape pipeline is
+asymmetric — most variable output escapes by default, but a handful of ViewHelpers and syntax forms bypass that
+protection silently. This reference catalogues the XSS and template-injection surface specific to Fluid, plus the Fluid
+4 breaking changes that shipped with TYPO3 13/14.
 
 For PHP-level TYPO3 patterns see `typo3-security.md`; for TypoScript / TSconfig see `typo3-typoscript-security.md`.
 
 ## Escape pipeline
 
-Fluid applies HTML-escaping (via `htmlspecialchars`) by default to every `{variable}` output. There is **no automatic context switch** to JSON, JS, or URL encoding — if your template renders into a `<script>` block, an attribute, or a JSON payload, escaping has to be explicit (`f:format.json`, a controller-side `JsonResponse`, or a context-appropriate ViewHelper). Several Fluid shapes also opt out of the default HTML escape entirely.
+Fluid applies HTML-escaping (via `htmlspecialchars`) by default to every `{variable}` output. There is **no automatic
+context switch** to JSON, JS, or URL encoding — if your template renders into a `<script>` block, an attribute, or a
+JSON payload, escaping has to be explicit (`f:format.json`, a controller-side `JsonResponse`, or a context-appropriate
+ViewHelper). Several Fluid shapes also opt out of the default HTML escape entirely.
 
 ### 1. `f:format.raw` — explicit opt-out
 
@@ -21,9 +27,14 @@ Fluid applies HTML-escaping (via `htmlspecialchars`) by default to every `{varia
 <f:format.html parseFuncTSPath="lib.parseFunc_RTE">{article.body}</f:format.html>
 ```
 
-`f:format.raw` should only be applied to content that has already been sanitised — typically RTE output processed by `lib.parseFunc_RTE`, which runs through `htmlSanitizer` since TYPO3 10.4.29 / 11.5.13 / 12.1 (integrated in response to [TYPO3-CORE-SA-2022-007](https://typo3.org/security/advisory/typo3-core-sa-2022-007)). If you see `-> f:format.raw()` on a field that came directly from a `TextField`, a backend `input` / `text` TCA column, or from `request.arguments`, treat it as an XSS sink.
+`f:format.raw` should only be applied to content that has already been sanitised — typically RTE output processed by
+`lib.parseFunc_RTE`, which runs through `htmlSanitizer` since TYPO3 10.4.29 / 11.5.13 / 12.1 (integrated in response to
+[TYPO3-CORE-SA-2022-007](https://typo3.org/security/advisory/typo3-core-sa-2022-007)). If you see `-> f:format.raw()` on
+a field that came directly from a `TextField`, a backend `input` / `text` TCA column, or from `request.arguments`, treat
+it as an XSS sink.
 
 **Detection:**
+
 ```bash
 # POSIX ERE; portable across GNU and BSD grep. Covers the common Fluid template
 # extensions — .html (web), .xml (RSS/sitemap), .txt (plain-text email).
@@ -47,9 +58,13 @@ HTML-context auto-escape handles `<` `>` `&` `"` `'` — but not JavaScript-cont
 <a href="#" data-user-id="{user.id}" class="js-load-user">Load</a>
 ```
 
-Fluid's default escape passes through `htmlspecialchars`. That is correct for element-text context but insufficient for JavaScript string context, where `</script>` closes the `<script>` element from inside any string, raw newlines (and `\u2028` / `\u2029` pre-ES2019) terminate the string literal, and — in template-literal context — an unescaped backtick or `${` breaks out.
+Fluid's default escape passes through `htmlspecialchars`. That is correct for element-text context but insufficient for
+JavaScript string context, where `</script>` closes the `<script>` element from inside any string, raw newlines (and
+`\u2028` / `\u2029` pre-ES2019) terminate the string literal, and — in template-literal context — an unescaped backtick
+or `${` breaks out.
 
 **Detection:**
+
 ```bash
 # Same-line case: Fluid variables inside inline event handlers or a <script> tag
 # that opens and closes on the same line as the interpolation.
@@ -75,9 +90,12 @@ grep -rnE '(on[a-z]+[[:space:]]*=[[:space:]]*"[^"]*\{[a-zA-Z_]|<script[^>]*>[^<]
 {post.summary -> f:format.htmlentitiesDecode() -> f:format.raw()}
 ```
 
-`htmlentitiesDecode` is not a sanitiser — it actively *removes* HTML escaping. Chaining it with `raw` (or just using it in a context Fluid would otherwise escape) unpicks the default protection. There is almost no legitimate use case; be skeptical when you find one.
+`htmlentitiesDecode` is not a sanitiser — it actively *removes* HTML escaping. Chaining it with `raw` (or just using it
+in a context Fluid would otherwise escape) unpicks the default protection. There is almost no legitimate use case; be
+skeptical when you find one.
 
 **Detection:**
+
 ```bash
 grep -rnE '->[[:space:]]*f:format\.htmlentitiesDecode([^A-Za-z_]|$)' \
   --include='*.html' --include='*.xml' --include='*.txt' .
@@ -101,9 +119,12 @@ grep -rnE '->[[:space:]]*f:format\.htmlentitiesDecode([^A-Za-z_]|$)' \
 <!-- Controller: $this->view->assign('layout', in_array($req, ['Plain','Sidebar','Two-Col']) ? $req : 'Plain'); -->
 ```
 
-Fluid resolves partials against `partialRootPaths`, which is controlled by TypoScript. If the attacker picks the name, they can select any partial the controller has access to — including admin-only partials, partials intended only for a different plugin, or traversal into neighbouring sitePackages.
+Fluid resolves partials against `partialRootPaths`, which is controlled by TypoScript. If the attacker picks the name,
+they can select any partial the controller has access to — including admin-only partials, partials intended only for a
+different plugin, or traversal into neighbouring sitePackages.
 
 **Detection:**
+
 ```bash
 # Partial / section name interpolated from a variable.
 grep -rnE '<f:render[[:space:]][^>]*(partial|section)[[:space:]]*=[[:space:]]*"\{' \
@@ -120,7 +141,8 @@ grep -rnE '<f:render[[:space:]][^>]*(partial|section)[[:space:]]*=[[:space:]]*"\
 <f:render partial="UserCard" arguments="{user: user, showEmail: currentUser.isEditor}" />
 ```
 
-`{_all}` is a debugging convenience. In production it is a leakage surface — partials intended for admin rendering will still have `{currentUser}`, `{debug}`, `{apiToken}` in scope.
+`{_all}` is a debugging convenience. In production it is a leakage surface — partials intended for admin rendering will
+still have `{currentUser}`, `{debug}`, `{apiToken}` in scope.
 
 ### 6. `f:cObject` invoking TypoScript from a variable
 
@@ -132,7 +154,8 @@ grep -rnE '<f:render[[:space:]][^>]*(partial|section)[[:space:]]*=[[:space:]]*"\
 <f:cObject typoscriptObjectPath="lib.articleTeaser" data="{article}" />
 ```
 
-`f:cObject` is a bridge into TypoScript — anything TypoScript can do (see `typo3-typoscript-security.md`, especially `userFunc`) becomes available if the path is attacker-controlled.
+`f:cObject` is a bridge into TypoScript — anything TypoScript can do (see `typo3-typoscript-security.md`, especially
+`userFunc`) becomes available if the path is attacker-controlled.
 
 ## ViewHelpers worth auditing
 
@@ -149,7 +172,8 @@ grep -rnE '<f:render[[:space:]][^>]*(partial|section)[[:space:]]*=[[:space:]]*"\
 
 ### 8. `f:uri.image` / `f:image` — SSRF and local-file disclosure via `src`
 
-User-controlled `src` attributes on `f:image` let Fluid load arbitrary files. In TYPO3 9+ this is restricted to files within `FAL`-known storages; earlier versions could be coerced into reading `/etc/passwd` style paths.
+User-controlled `src` attributes on `f:image` let Fluid load arbitrary files. In TYPO3 9+ this is restricted to files
+within `FAL`-known storages; earlier versions could be coerced into reading `/etc/passwd` style paths.
 
 ```html
 <!-- VULNERABLE on TYPO3 < 9 and any unprotected legacy pipeline -->
@@ -201,9 +225,11 @@ final class SafeFragmentViewHelper extends AbstractViewHelper
 }
 ```
 
-A custom ViewHelper is often where Fluid's auto-escape safety is silently defeated, because the author knows the ViewHelper needs to emit HTML and flips off escaping without thinking about the call sites.
+A custom ViewHelper is often where Fluid's auto-escape safety is silently defeated, because the author knows the
+ViewHelper needs to emit HTML and flips off escaping without thinking about the call sites.
 
 **Detection:**
+
 ```bash
 # ViewHelpers that disable escape. Every hit needs justification.
 grep -rnE '\$escape(Output|Children)[[:space:]]*=[[:space:]]*false' \
@@ -223,22 +249,28 @@ Fluid 4 ships with TYPO3 13 and changes several escaping defaults. When upgradin
 A template-audit checklist for the 3 → 4 jump:
 
 - [ ] Run `typo3 extensionscanner:scan` against every site package; inspect every `templates:/Fluid` hit
-- [ ] `grep -rnE 'xmlns:[a-z]+' Resources/Private/Templates/` — non-core namespaces (vhs, f7t, in-house ViewHelper packs) need a TYPO3-13-compatible release or an in-house update; the declaration syntax itself is not removed
+- [ ] `grep -rnE 'xmlns:[a-z]+' Resources/Private/Templates/` — non-core namespaces (vhs, f7t, in-house ViewHelper
+packs) need a TYPO3-13-compatible release or an in-house update; the declaration syntax itself is not removed
 - [ ] `grep -rn '{namespace ' Resources/Private/Templates/` — same audit question for the top-of-file declaration form
-- [ ] Review every `->f:format.raw()` hit on dynamic content; Fluid 4 does not change its semantics but the upgrade is a reasonable time to tighten them
+- [ ] Review every `->f:format.raw()` hit on dynamic content; Fluid 4 does not change its semantics but the upgrade is a
+reasonable time to tighten them
 - [ ] Re-run an authenticated-crawler XSS scanner (e.g. nikto, zap) against key pages that use user-supplied content
 
 ## Prevention checklist
 
-- [ ] `-> f:format.raw()` and `<f:format.raw>` are only applied to sanitiser output (`lib.parseFunc_RTE`, `htmlSanitizer`), never to raw user input
+- [ ] `-> f:format.raw()` and `<f:format.raw>` are only applied to sanitiser output (`lib.parseFunc_RTE`,
+`htmlSanitizer`), never to raw user input
 - [ ] `f:format.htmlentitiesDecode` is not used in user-content paths
-- [ ] Fluid variables do not cross into JavaScript string context or inline event handlers without explicit JS-context escaping
+- [ ] Fluid variables do not cross into JavaScript string context or inline event handlers without explicit JS-context
+escaping
 - [ ] `f:render partial="{...}"` uses an allowlisted prefix, not a raw user value
 - [ ] `arguments="{_all}"` is replaced with explicit argument lists on any partial rendered with user-visible output
 - [ ] `f:cObject typoscriptObjectPath="{...}"` uses a hardcoded path
 - [ ] `f:link.external` / `f:uri.external` URIs are host-allowlisted in the controller
-- [ ] Custom ViewHelpers do not set `$escapeOutput = false` or `$escapeChildren = false` without explicit justification and manual context-appropriate escaping
-- [ ] Fluid 4 migration: third-party ViewHelper packs (notably `vhs`) have TYPO3-13-compatible releases pinned in `ext_emconf.php`
+- [ ] Custom ViewHelpers do not set `$escapeOutput = false` or `$escapeChildren = false` without explicit justification
+and manual context-appropriate escaping
+- [ ] Fluid 4 migration: third-party ViewHelper packs (notably `vhs`) have TYPO3-13-compatible releases pinned in
+`ext_emconf.php`
 
 ## Related references
 

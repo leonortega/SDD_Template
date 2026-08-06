@@ -19,7 +19,9 @@ packs as `METHOD /api/v1/...` with a curl example.
 
 ## Environment
 
-Two values must end up in scope before any call: `$GITEA_URL` (base URL **without** the `/api` suffix, e.g. `https://git.example.com`) and `$GITEA_TOKEN` (PAT for that URL). The skill discovers them from the environment using **named pairs**, then constructs every endpoint as `$GITEA_URL/api/v1/...`.
+Two values must end up in scope before any call: `$GITEA_URL` (base URL **without** the `/api` suffix, e.g.
+`https://git.example.com`) and `$GITEA_TOKEN` (PAT for that URL). The skill discovers them from the environment using
+**named pairs**, then constructs every endpoint as `$GITEA_URL/api/v1/...`.
 
 ```bash
 # Single instance:
@@ -39,11 +41,15 @@ JSON=(-H 'Content-Type: application/json')
 
 ## Instance selection (multi-Gitea)
 
-A single shell often needs credentials for several Gitea instances (one per org, one per environment, etc.). The skill models this as **named pairs**: each instance gets an alias `<X>`, exported as `GITEA_<X>_URL` + `GITEA_<X>_TOKEN`. At call time, the right pair is loaded into `$GITEA_URL` + `$GITEA_TOKEN`.
+A single shell often needs credentials for several Gitea instances (one per org, one per environment, etc.). The skill
+models this as **named pairs**: each instance gets an alias `<X>`, exported as `GITEA_<X>_URL` + `GITEA_<X>_TOKEN`. At
+call time, the right pair is loaded into `$GITEA_URL` + `$GITEA_TOKEN`.
 
 ### Convention
 
-The env-var template is **`GITEA_<ALIAS>_URL`** + **`GITEA_<ALIAS>_TOKEN`**. `<ALIAS>` is user-chosen (uppercase letters, digits, underscores; non-empty). The URL and TOKEN of one instance must share the exact same `<ALIAS>`. `GITEA_URL` + `GITEA_TOKEN` (no alias segment) is the single-instance fallback used when no named pair matches.
+The env-var template is **`GITEA_<ALIAS>_URL`** + **`GITEA_<ALIAS>_TOKEN`**. `<ALIAS>` is user-chosen (uppercase
+letters, digits, underscores; non-empty). The URL and TOKEN of one instance must share the exact same `<ALIAS>`.
+`GITEA_URL` + `GITEA_TOKEN` (no alias segment) is the single-instance fallback used when no named pair matches.
 
 ```bash
 export GITEA_ORGA_URL=https://git.orga.com
@@ -133,8 +139,11 @@ gitea_auto() {
 
 Two ways to use it:
 
-1. **No explicit URL — auto from repo origin.** Common case inside a checked-out repo. `gitea_auto` parses the remote URL and finds the matching alias.
-2. **Explicit URL, lookup token.** User sets `GITEA_URL=https://git.aaa.com` and calls `gitea_auto`; the matching `GITEA_<ALIAS>_URL` is found by host comparison and its `_TOKEN` is loaded. No need to remember which alias maps to which host.
+1. **No explicit URL — auto from repo origin.** Common case inside a checked-out repo. `gitea_auto` parses the remote
+URL and finds the matching alias.
+2. **Explicit URL, lookup token.** User sets `GITEA_URL=https://git.aaa.com` and calls `gitea_auto`; the matching
+`GITEA_<ALIAS>_URL` is found by host comparison and its `_TOKEN` is loaded. No need to remember which alias maps to
+which host.
 
 Manual override at any time: `gitea_use ORGA` (sets the active pair without auto-detect).
 
@@ -150,7 +159,8 @@ gitea GET /user | jq '{login, full_name}'
 
 ## `gitea` helper function
 
-The `api-*.md` reference packs use a one-line `gitea` wrapper instead of repeating the full curl invocation. Define it once per shell:
+The `api-*.md` reference packs use a one-line `gitea` wrapper instead of repeating the full curl invocation. Define it
+once per shell:
 
 ```bash
 gitea() {
@@ -184,23 +194,31 @@ gitea DELETE /repos/foo/bar/releases/42
 
 ### Properties
 
-- Method and path are positional; everything after is passed through to curl unchanged (`-d`, `-F`, `--data-binary`, extra `-H`, `--cacert`, etc.).
-- The helper always sends `Content-Type: application/json`. For multipart uploads, use raw `curl` with `-F` so curl can generate the multipart boundary.
+- Method and path are positional; everything after is passed through to curl unchanged (`-d`, `-F`, `--data-binary`,
+extra `-H`, `--cacert`, etc.).
+- The helper always sends `Content-Type: application/json`. For multipart uploads, use raw `curl` with `-F` so curl can
+generate the multipart boundary.
 - Success bodies are pretty-printed via `jq`; empty 204 bodies are silently fine.
-- HTTP 4xx/5xx: the function writes `HTTP <code> for <method> <path>` + the `{message, url}` envelope to **stderr** and returns 1. Combine with `||` for failure handling, or capture stdout for the success payload.
+- HTTP 4xx/5xx: the function writes `HTTP <code> for <method> <path>` + the `{message, url}` envelope to **stderr** and
+returns 1. Combine with `||` for failure handling, or capture stdout for the success payload.
 - Body capture for multi-step flows:
+
   ```bash
   ISSUE=$(gitea POST /repos/foo/bar/issues -d '{"title":"new"}') || return 1
   NUM=$(echo "$ISSUE" | jq -r '.number')
   ```
+
 - For **raw bodies** (downloading job logs, PR diffs, file content), use `--output -` and skip jq:
+
   ```bash
   gitea GET /repos/foo/bar/pulls/3.diff --output - 2>/dev/null > pr.diff
   # or skip the helper entirely; raw text isn't valid JSON.
   curl -sS "${AUTH[@]}" "$GITEA_URL/api/v1/repos/foo/bar/pulls/3.diff" > pr.diff
   ```
 
-When an example in the `api-*.md` packs uses `gitea ...`, it assumes this function and the resolved env are already in scope. Examples that drop to raw `curl` are doing so deliberately (multipart upload, base64-heavy payloads, HTTP-status capture, raw text response).
+When an example in the `api-*.md` packs uses `gitea ...`, it assumes this function and the resolved env are already in
+scope. Examples that drop to raw `curl` are doing so deliberately (multipart upload, base64-heavy payloads, HTTP-status
+capture, raw text response).
 
 ## Authentication
 
@@ -233,7 +251,8 @@ curl -fsS --max-time 5 "$GITEA_URL/api/v1/version" | jq
 # -> { "version": "1.23.x" } on success
 ```
 
-If the call returns non-2xx, times out, or returns JSON without a `version` field, the host is **not** a Gitea instance — stop and ask the user. Do not silently fall back to another forge.
+If the call returns non-2xx, times out, or returns JSON without a `version` field, the host is **not** a Gitea instance
+— stop and ask the user. Do not silently fall back to another forge.
 
 After a successful probe, confirm the token resolves to the expected user:
 
@@ -241,7 +260,8 @@ After a successful probe, confirm the token resolves to the expected user:
 curl -s "${AUTH[@]}" "$GITEA_URL/api/v1/user" | jq '{login, full_name, email}'
 ```
 
-If this returns `401 Unauthorized`, the token is wrong/expired. If it returns `403 Forbidden` on subsequent writes, the token lacks the required scope (see below).
+If this returns `401 Unauthorized`, the token is wrong/expired. If it returns `403 Forbidden` on subsequent writes, the
+token lacks the required scope (see below).
 
 ## Personal access token (PAT) scopes
 
@@ -261,14 +281,16 @@ Gitea PAT scopes are coarse. The most commonly needed:
 | `read:package` / `write:package` | Package registry read / delete |
 | `read:admin` / `write:admin` | Site-admin only operations |
 
-A scope/permission error from Gitea surfaces as `403` with `{"message":"...","url":"..."}`. **Report it; the fix is a wider-scoped token, not a retry.**
+A scope/permission error from Gitea surfaces as `403` with `{"message":"...","url":"..."}`. **Report it; the fix is a
+wider-scoped token, not a retry.**
 
 ## Response shapes
 
 Gitea returns the resource directly — there is **no** `{success, data}` wrapper.
 
 - **Success (2xx)**: the resource JSON (or empty body for 204 No Content).
-- **Failure (4xx/5xx)**: `{ "message": "...", "url": "..." }` plus the HTTP status. Some 422 responses also include `errors: [...]`.
+- **Failure (4xx/5xx)**: `{ "message": "...", "url": "..." }` plus the HTTP status. Some 422 responses also include
+`errors: [...]`.
 
 When verifying a write, capture the HTTP status:
 
@@ -316,19 +338,28 @@ If absent, you are on the last page.
 
 ## Common gotchas
 
-- **`/api` vs root.** `$GITEA_URL` is the bare host (`https://git.example.com`). Endpoints are `/api/v1/...`. Concatenating `https://git.example.com/api/api/v1/...` produces 404.
-- **File contents are base64.** `PUT /repos/.../contents/{path}` requires `content` base64-encoded. Read-back via `GET` also returns `content` base64-encoded; decode with `jq -r .content | base64 -d`.
-- **Create vs update file.** `PUT /repos/.../contents/{path}` creates when `sha` is omitted, updates when the current file `sha` is passed. Wrong `sha` -> 409 Conflict.
+- **`/api` vs root.** `$GITEA_URL` is the bare host (`https://git.example.com`). Endpoints are `/api/v1/...`.
+Concatenating `https://git.example.com/api/api/v1/...` produces 404.
+- **File contents are base64.** `PUT /repos/.../contents/{path}` requires `content` base64-encoded. Read-back via `GET`
+also returns `content` base64-encoded; decode with `jq -r .content | base64 -d`.
+- **Create vs update file.** `PUT /repos/.../contents/{path}` creates when `sha` is omitted, updates when the current
+file `sha` is passed. Wrong `sha` -> 409 Conflict.
 - **Branch name in URL** must be URL-encoded when it contains `/` (e.g. `feature%2Fnewui`).
-- **Soft delete.** `DELETE /repos/{owner}/{repo}` moves the repo to trash for some configurations. Confirm with the user; recovery is admin-only.
-- **Empty arrays vs missing.** Gitea returns `[]` for empty list endpoints (not 404). 404 means the resource path itself is wrong.
-- **Time formats.** Date filters (`since`, `before`, `due_on`, `deadline`) use ISO 8601 with timezone, e.g. `2025-01-15T10:30:00Z`.
-- **Issue numbers vs IDs.** Use the per-repo `number` (visible in the URL) for `/issues/{idx}` paths. Internal `id` is global and only relevant for cross-repo APIs.
-- **Pull request endpoints reuse issue paths for comments.** Comments on a PR are posted via `/issues/{idx}/comments`, not `/pulls/{idx}/comments` (which is for review comments).
+- **Soft delete.** `DELETE /repos/{owner}/{repo}` moves the repo to trash for some configurations. Confirm with the
+user; recovery is admin-only.
+- **Empty arrays vs missing.** Gitea returns `[]` for empty list endpoints (not 404). 404 means the resource path itself
+is wrong.
+- **Time formats.** Date filters (`since`, `before`, `due_on`, `deadline`) use ISO 8601 with timezone, e.g.
+`2025-01-15T10:30:00Z`.
+- **Issue numbers vs IDs.** Use the per-repo `number` (visible in the URL) for `/issues/{idx}` paths. Internal `id` is
+global and only relevant for cross-repo APIs.
+- **Pull request endpoints reuse issue paths for comments.** Comments on a PR are posted via `/issues/{idx}/comments`,
+not `/pulls/{idx}/comments` (which is for review comments).
 
 ## TLS, proxies, and self-signed certs
 
-For self-signed or internal CA hosts, the recommended approach is to install the CA into the system trust store. As a curl-local override:
+For self-signed or internal CA hosts, the recommended approach is to install the CA into the system trust store. As a
+curl-local override:
 
 ```bash
 curl --cacert /path/to/internal-ca.pem "${AUTH[@]}" "$GITEA_URL/api/v1/version"

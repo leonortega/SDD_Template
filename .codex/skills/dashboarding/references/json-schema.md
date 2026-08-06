@@ -74,7 +74,7 @@
 
 ## Useful units
 
-```
+```text
 reqps        requests/sec
 ops          ops/sec
 Bps          bytes/sec
@@ -124,7 +124,8 @@ Chained: `label_values(kube_pod_info{namespace=\"$namespace\"}, pod)`.
 ]
 ```
 
-Common IDs: `merge`, `organize`, `rename`, `calculateField`, `filterByValue`, `groupBy`, `sortBy`, `limit`, `labelsToFields`, `seriesToRows`, `partitionByValues`.
+Common IDs: `merge`, `organize`, `rename`, `calculateField`, `filterByValue`, `groupBy`, `sortBy`, `limit`,
+`labelsToFields`, `seriesToRows`, `partitionByValues`.
 
 ## Links & annotations
 

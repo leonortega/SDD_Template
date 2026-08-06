@@ -1,6 +1,8 @@
 # Vue.js Security Patterns
 
-Security patterns, common misconfigurations, and detection regexes for Vue.js applications (Vue 2 and Vue 3, including Nuxt where applicable). This reference covers XSS via directives and templates, injection risks, data exposure through state management, and security misconfigurations specific to the Vue ecosystem.
+Security patterns, common misconfigurations, and detection regexes for Vue.js applications (Vue 2 and Vue 3, including
+Nuxt where applicable). This reference covers XSS via directives and templates, injection risks, data exposure through
+state management, and security misconfigurations specific to the Vue ecosystem.
 
 ---
 
@@ -8,7 +10,8 @@ Security patterns, common misconfigurations, and detection regexes for Vue.js ap
 
 ### SA-VUE-01 — `v-html` Directive XSS
 
-The `v-html` directive renders raw HTML into the DOM. When user-controlled input is passed to `v-html`, it creates a direct XSS vulnerability equivalent to setting `innerHTML`.
+The `v-html` directive renders raw HTML into the DOM. When user-controlled input is passed to `v-html`, it creates a
+direct XSS vulnerability equivalent to setting `innerHTML`.
 
 ```vue
 <!-- VULNERABLE: User input rendered as raw HTML -->
@@ -54,13 +57,16 @@ export default {
 **Detection regex:** `v-html\s*=`
 **Severity:** warning
 
-**Why it matters:** Vue's double-curly-brace interpolation (`{{ }}`) auto-escapes HTML entities. The `v-html` directive deliberately bypasses this protection. Any user-supplied content passed through `v-html` without sanitization is a direct XSS vector.
+**Why it matters:** Vue's double-curly-brace interpolation (`{{ }}`) auto-escapes HTML entities. The `v-html` directive
+deliberately bypasses this protection. Any user-supplied content passed through `v-html` without sanitization is a
+direct XSS vector.
 
 ---
 
 ### SA-VUE-02 — Template Expression Injection via Dynamic Compilation
 
-Vue's runtime template compiler (`Vue.compile` or `new Vue({ template: ... })`) can be exploited when user input is interpolated into template strings that are then compiled.
+Vue's runtime template compiler (`Vue.compile` or `new Vue({ template: ... })`) can be exploited when user input is
+interpolated into template strings that are then compiled.
 
 ```javascript
 // VULNERABLE: User input compiled as a Vue template
@@ -97,13 +103,16 @@ export default {
 **Detection regex:** `Vue\.compile\s*\(|new\s+Vue\s*\(\s*\{[^}]*template\s*:`
 **Severity:** error
 
-**Why it matters:** The runtime template compiler evaluates expressions within `{{ }}` delimiters. If an attacker can inject into a dynamically compiled template string, they gain arbitrary JavaScript execution within the Vue instance context, accessing component data and methods.
+**Why it matters:** The runtime template compiler evaluates expressions within `{{ }}` delimiters. If an attacker can
+inject into a dynamically compiled template string, they gain arbitrary JavaScript execution within the Vue instance
+context, accessing component data and methods.
 
 ---
 
 ### SA-VUE-03 — Insecure `v-bind:href` / `v-bind:src` with User Input
 
-Using `v-bind:href` or `:href` with unsanitized user input allows `javascript:` protocol URLs, leading to XSS when the link is clicked or the resource is loaded.
+Using `v-bind:href` or `:href` with unsanitized user input allows `javascript:` protocol URLs, leading to XSS when the
+link is clicked or the resource is loaded.
 
 ```vue
 <!-- VULNERABLE: User-controlled URL in href -->
@@ -150,10 +159,14 @@ export default {
 </script>
 ```
 
-**Detection regex:** `:(href|src)\s*=\s*"(?!https?://|mailto:|/|#)[^"]*"` (PCRE — use `grep -rP`). The negative lookahead is anchored to the start of the attribute value so the protocol check runs before arbitrary characters can consume it.
+**Detection regex:** `:(href|src)\s*=\s*"(?!https?://|mailto:|/|#)[^"]*"` (PCRE — use `grep -rP`). The negative
+lookahead is anchored to the start of the attribute value so the protocol check runs before arbitrary characters can
+consume it.
 **Severity:** warning
 
-**Why it matters:** Vue does not sanitize URL protocols in `v-bind:href` or `v-bind:src`. Starting in Vue 3.x there are warnings for `javascript:` URLs, but they are not blocked by default. Explicit allowlisting of safe protocols is required.
+**Why it matters:** Vue does not sanitize URL protocols in `v-bind:href` or `v-bind:src`. Starting in Vue 3.x there are
+warnings for `javascript:` URLs, but they are not blocked by default. Explicit allowlisting of safe protocols is
+required.
 
 ---
 
@@ -161,7 +174,8 @@ export default {
 
 ### SA-VUE-04 — Client-Side Auth Bypass via Route Guards
 
-Vue Router navigation guards (`beforeEach`, `beforeEnter`) execute entirely in the browser. An attacker can bypass them using browser devtools, direct API calls, or by manipulating the Vue Router state.
+Vue Router navigation guards (`beforeEach`, `beforeEnter`) execute entirely in the browser. An attacker can bypass them
+using browser devtools, direct API calls, or by manipulating the Vue Router state.
 
 ```javascript
 // VULNERABLE: Auth check only in client-side route guard
@@ -215,13 +229,15 @@ router.beforeEach(async (to, from, next) => {
 **Detection regex:** `beforeEnter\s*:|beforeEach\s*\(`
 **Severity:** warning
 
-**Why it matters:** Client-side route guards provide no security. An attacker can call `router.push('/admin')` from the console, modify `localStorage`, or directly call backend APIs. All authorization must be enforced server-side.
+**Why it matters:** Client-side route guards provide no security. An attacker can call `router.push('/admin')` from the
+console, modify `localStorage`, or directly call backend APIs. All authorization must be enforced server-side.
 
 ---
 
 ### SA-VUE-05 — `eval` in Computed Properties or Watchers
 
-Using `eval()`, `new Function()`, or `setTimeout`/`setInterval` with string arguments inside Vue reactivity hooks allows code injection if the evaluated string includes user input.
+Using `eval()`, `new Function()`, or `setTimeout`/`setInterval` with string arguments inside Vue reactivity hooks allows
+code injection if the evaluated string includes user input.
 
 ```javascript
 // VULNERABLE: eval in a computed property using user input
@@ -258,7 +274,9 @@ export default {
 **Detection regex:** `(computed|watch|methods)\s*:\s*\{[^}]*eval\s*\(`
 **Severity:** error
 
-**Why it matters:** Vue's reactivity system means computed properties and watchers re-execute automatically when dependencies change. An `eval()` inside these hooks creates a persistent code injection vector that fires every time the reactive dependency updates.
+**Why it matters:** Vue's reactivity system means computed properties and watchers re-execute automatically when
+dependencies change. An `eval()` inside these hooks creates a persistent code injection vector that fires every time the
+reactive dependency updates.
 
 ---
 
@@ -266,7 +284,8 @@ export default {
 
 ### SA-VUE-06 — Vuex/Pinia State Exposure
 
-Storing sensitive data (tokens, secrets, PII) in Vuex or Pinia stores exposes it through Vue DevTools, browser memory, and any component that accesses the store. Pinia and Vuex stores are globally accessible and inspectable.
+Storing sensitive data (tokens, secrets, PII) in Vuex or Pinia stores exposes it through Vue DevTools, browser memory,
+and any component that accesses the store. Pinia and Vuex stores are globally accessible and inspectable.
 
 ```javascript
 // VULNERABLE: Storing secrets in Pinia store
@@ -319,16 +338,21 @@ export const useAuthStore = defineStore('auth', {
 });
 ```
 
-**Detection regex:** `(defineStore|new\s+Vuex\.Store)\s*\([^)]*\{[\s\S]*?(token|secret|password|apiKey|api_key|ssn|creditCard)`
+**Detection regex:**
+`(defineStore|new\s+Vuex\.Store)\s*\([^)]*\{[\s\S]*?(token|secret|password|apiKey|api_key|ssn|creditCard)`
 **Severity:** error
 
-**Why it matters:** Vue DevTools allows full inspection and modification of store state. Even in production, store contents are accessible via `window.__pinia` or `window.__VUEX_STORE__`. Secrets in reactive state are trivially extractable.
+**Why it matters:** Vue DevTools allows full inspection and modification of store state. Even in production, store
+contents are accessible via `window.__pinia` or `window.__VUEX_STORE__`. Secrets in reactive state are trivially
+extractable.
 
 ---
 
 ### SA-VUE-07 — SSR Hydration Mismatch Data Leak
 
-In SSR applications (Nuxt, Quasar SSR, custom Vue SSR), the server serializes component state into the HTML payload for client hydration. If server-only data (database connection strings, internal API keys, session secrets) leaks into serialized state, it becomes visible in the page source.
+In SSR applications (Nuxt, Quasar SSR, custom Vue SSR), the server serializes component state into the HTML payload for
+client hydration. If server-only data (database connection strings, internal API keys, session secrets) leaks into
+serialized state, it becomes visible in the page source.
 
 ```javascript
 // VULNERABLE: Server-only data leaking into SSR hydration state
@@ -363,10 +387,13 @@ export default defineNuxtComponent({
 });
 ```
 
-**Detection regex:** `(asyncData|serverPrefetch|fetch)\s*\([^)]*\)\s*\{[\s\S]*?(secret|internal|private|apiKey|connectionString)`
+**Detection regex:**
+`(asyncData|serverPrefetch|fetch)\s*\([^)]*\)\s*\{[\s\S]*?(secret|internal|private|apiKey|connectionString)`
 **Severity:** error
 
-**Why it matters:** SSR hydration embeds component data as a JSON blob in the HTML response (e.g., `window.__NUXT__`). Any data returned from `asyncData`, `fetch`, or `serverPrefetch` is visible in the page source code. This is a common source of credential and PII leaks in SSR Vue apps.
+**Why it matters:** SSR hydration embeds component data as a JSON blob in the HTML response (e.g., `window.__NUXT__`).
+Any data returned from `asyncData`, `fetch`, or `serverPrefetch` is visible in the page source code. This is a common
+source of credential and PII leaks in SSR Vue apps.
 
 ---
 
@@ -374,7 +401,8 @@ export default defineNuxtComponent({
 
 ### SA-VUE-08 — Third-Party Vue Plugin Risks
 
-Vue plugins have unrestricted access to the Vue instance, router, store, and global properties. A compromised or malicious plugin can exfiltrate data, inject scripts, or hijack routing.
+Vue plugins have unrestricted access to the Vue instance, router, store, and global properties. A compromised or
+malicious plugin can exfiltrate data, inject scripts, or hijack routing.
 
 ```javascript
 // VULNERABLE: Installing unvetted plugins with global access
@@ -413,13 +441,16 @@ app.use(sandboxedPlugin);
 **Detection regex:** `Vue\.use\s*\(|app\.use\s*\(`
 **Severity:** info
 
-**Why it matters:** The Vue plugin system grants full access to the application instance. Unlike scoped npm packages, Vue plugins execute in the context of the app and can modify prototypes, intercept lifecycle hooks, and access reactive state. Supply chain attacks via Vue plugins are a significant risk vector.
+**Why it matters:** The Vue plugin system grants full access to the application instance. Unlike scoped npm packages,
+Vue plugins execute in the context of the app and can modify prototypes, intercept lifecycle hooks, and access reactive
+state. Supply chain attacks via Vue plugins are a significant risk vector.
 
 ---
 
 ### SA-VUE-09 — Global Mixin/Plugin Injection Risks
 
-Global mixins apply to every component in the application. A global mixin with side effects can introduce vulnerabilities across the entire app, and malicious code in a global mixin is extremely difficult to detect.
+Global mixins apply to every component in the application. A global mixin with side effects can introduce
+vulnerabilities across the entire app, and malicious code in a global mixin is extremely difficult to detect.
 
 ```javascript
 // VULNERABLE: Global mixin with dangerous side effects
@@ -466,13 +497,16 @@ export default {
 **Detection regex:** `Vue\.mixin\s*\(|app\.mixin\s*\(`
 **Severity:** warning
 
-**Why it matters:** Global mixins merge into every component's options. This means a single compromised mixin can intercept lifecycle hooks, modify data, and access methods across the entire application. Vue 3's Composition API and composables provide a safer, explicitly scoped alternative.
+**Why it matters:** Global mixins merge into every component's options. This means a single compromised mixin can
+intercept lifecycle hooks, modify data, and access methods across the entire application. Vue 3's Composition API and
+composables provide a safer, explicitly scoped alternative.
 
 ---
 
 ### SA-VUE-10 — Missing CSP with Vue's Template Compiler
 
-Vue's runtime template compiler uses `new Function()` internally, which requires `unsafe-eval` in the Content-Security-Policy. Using the full Vue build (with template compiler) in production weakens CSP.
+Vue's runtime template compiler uses `new Function()` internally, which requires `unsafe-eval` in the
+Content-Security-Policy. Using the full Vue build (with template compiler) in production weakens CSP.
 
 ```html
 <!-- VULNERABLE: Full Vue build requires unsafe-eval in CSP -->
@@ -516,7 +550,9 @@ export default defineConfig({
 **Detection regex:** `unsafe-eval.*vue|vue.*unsafe-eval|vue\.esm\.|vue\.global\.|Vue\.compile`
 **Severity:** warning
 
-**Why it matters:** The runtime template compiler calls `new Function()`, which CSP `unsafe-eval` must allow. This weakens CSP protection against XSS because any injected script that uses `eval()` or `new Function()` will also be permitted. Pre-compiling templates at build time eliminates this requirement.
+**Why it matters:** The runtime template compiler calls `new Function()`, which CSP `unsafe-eval` must allow. This
+weakens CSP protection against XSS because any injected script that uses `eval()` or `new Function()` will also be
+permitted. Pre-compiling templates at build time eliminates this requirement.
 
 ---
 

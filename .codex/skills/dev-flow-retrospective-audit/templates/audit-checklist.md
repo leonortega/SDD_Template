@@ -1,6 +1,7 @@
 # Delivery Retrospective Audit Checklist
 
-Use this report skeleton for read-only audits and proposals. The canonical finding categories, improvement gate, and outcomes live in `../SKILL.md` and `.codex/skills/_shared/delivery-contract.md`.
+Use this report skeleton for read-only audits and proposals. The canonical finding categories, improvement gate, and
+outcomes live in `../SKILL.md` and `.codex/skills/_shared/delivery-contract.md`.
 
 ## Scope
 

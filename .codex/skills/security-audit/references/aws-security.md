@@ -1,6 +1,8 @@
 # AWS Security Patterns
 
-Security patterns, common misconfigurations, and detection regexes for Amazon Web Services infrastructure. Covers IAM, S3, Lambda, Security Groups, KMS, CloudTrail, Secrets Manager, and RDS across Terraform, CloudFormation, and raw JSON/YAML configurations.
+Security patterns, common misconfigurations, and detection regexes for Amazon Web Services infrastructure. Covers IAM,
+S3, Lambda, Security Groups, KMS, CloudTrail, Secrets Manager, and RDS across Terraform, CloudFormation, and raw
+JSON/YAML configurations.
 
 ## IAM: Overly Permissive Policies
 
@@ -213,7 +215,10 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "data" {
 }
 ```
 
-**Detection guidance:** flag `aws_s3_bucket` resources that do not have a matching `aws_s3_bucket_server_side_encryption_configuration` resource (or equivalent module). Matching `server_side_encryption` inside the bucket block produces false positives because the modern Terraform pattern uses a separate resource (as shown above).
+**Detection guidance:** flag `aws_s3_bucket` resources that do not have a matching
+`aws_s3_bucket_server_side_encryption_configuration` resource (or equivalent module). Matching `server_side_encryption`
+inside the bucket block produces false positives because the modern Terraform pattern uses a separate resource (as shown
+above).
 **Severity:** warning
 
 ### S3 Public Access Block Not Enabled
@@ -234,7 +239,8 @@ resource "aws_s3_bucket_public_access_block" "uploads" {
 }
 ```
 
-**Detection regex:** `block_public_acls\s*=\s*false|block_public_policy\s*=\s*false|ignore_public_acls\s*=\s*false|restrict_public_buckets\s*=\s*false`
+**Detection regex:**
+`block_public_acls\s*=\s*false|block_public_policy\s*=\s*false|ignore_public_acls\s*=\s*false|restrict_public_buckets\s*=\s*false`
 **Severity:** error
 
 ## Lambda: Secrets and Permissions
@@ -265,7 +271,8 @@ resource "aws_lambda_function" "api" {
 }
 ```
 
-**Detection regex:** `environment\s*\{[^}]*variables\s*=\s*\{[^}]*(PASSWORD|SECRET|API_KEY|TOKEN|PRIVATE_KEY)\s*=\s*"[^"]+"`
+**Detection regex:**
+`environment\s*\{[^}]*variables\s*=\s*\{[^}]*(PASSWORD|SECRET|API_KEY|TOKEN|PRIVATE_KEY)\s*=\s*"[^"]+"`
 **Severity:** error
 
 ### Overly Permissive Lambda Execution Role
@@ -291,7 +298,8 @@ resource "aws_iam_role_policy" "lambda_s3" {
 }
 ```
 
-**Detection regex:** `policy_arn\s*=\s*"arn:aws:iam::aws:policy/AdministratorAccess"|policy_arn\s*=\s*"arn:aws:iam::aws:policy/PowerUserAccess"`
+**Detection regex:**
+`policy_arn\s*=\s*"arn:aws:iam::aws:policy/AdministratorAccess"|policy_arn\s*=\s*"arn:aws:iam::aws:policy/PowerUserAccess"`
 **Severity:** error
 
 ### Lambda Missing VPC Configuration
@@ -373,7 +381,8 @@ resource "aws_security_group_rule" "https" {
 }
 ```
 
-**Detection regex:** `protocol\s*=\s*"-1"[^}]*cidr_blocks\s*=\s*\[\s*"0\.0\.0\.0/0"|from_port\s*=\s*0[^}]*to_port\s*=\s*65535[^}]*"0\.0\.0\.0/0"`
+**Detection regex:**
+`protocol\s*=\s*"-1"[^}]*cidr_blocks\s*=\s*\[\s*"0\.0\.0\.0/0"|from_port\s*=\s*0[^}]*to_port\s*=\s*65535[^}]*"0\.0\.0\.0/0"`
 **Severity:** error
 
 ### CloudFormation: Open Security Group Ingress

@@ -2,7 +2,8 @@
 
 ## PHP Sodium Functions Reference
 
-PHP 7.2+ includes libsodium as a core extension. Sodium provides high-level, misuse-resistant cryptographic primitives. It is the recommended cryptography library for PHP applications.
+PHP 7.2+ includes libsodium as a core extension. Sodium provides high-level, misuse-resistant cryptographic primitives.
+It is the recommended cryptography library for PHP applications.
 
 ### sodium_crypto_secretbox -- Symmetric Encryption
 
@@ -745,7 +746,7 @@ final class OpenSslEncryption
 
 ### Key Storage Hierarchy
 
-```
+```text
 Environment variable or secrets manager (HSM/KMS)
     |
     v
@@ -854,9 +855,10 @@ final class KeyRotationService
 
 ## Envelope Encryption Pattern
 
-Envelope encryption uses two layers of keys to combine the performance of symmetric encryption with the management benefits of asymmetric encryption or KMS.
+Envelope encryption uses two layers of keys to combine the performance of symmetric encryption with the management
+benefits of asymmetric encryption or KMS.
 
-```
+```text
 KMS / Master Key (stored securely, never leaves HSM/KMS)
     |
     |-- Encrypts --> Data Encryption Key (DEK)

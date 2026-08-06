@@ -9,6 +9,7 @@ This skill covers writing, testing, and debugging `.gitea/workflows/*.yml` files
 ## Workflow Patterns
 
 ### Build and Test (.NET Core)
+
 ```yaml
 name: build-test
 on: [push, pull_request]
@@ -30,6 +31,7 @@ jobs:
 ```
 
 ### Matrix Build
+
 ```yaml
 strategy:
   matrix:
@@ -38,6 +40,7 @@ strategy:
 ```
 
 ### Docker Build and Push
+
 ```yaml
 - name: Build and push Docker image
   uses: docker/build-push-action@v5
@@ -48,6 +51,7 @@ strategy:
 ```
 
 ### NuGet Package Caching
+
 ```yaml
 - name: Cache NuGet packages
   uses: actions/cache@v4
@@ -61,12 +65,15 @@ strategy:
 ## Runner Configuration (Self-Hosted)
 
 ### Registration
+
 - Navigate to Gitea: `Site Admin → Runners → Create Runner`
 - Registration token is found at `/{owner}/{repo}/settings/actions/runners`
 - Use the token when starting the runner: `./act_runner register --token {token}`
 
 ### Docker-in-Docker Runner Setup
+
 - Use Docker image for the runner itself (acts as a Docker-out-of-Docker or DinD setup):
+
   ```yaml
   version: '3'
   services:
@@ -80,10 +87,12 @@ strategy:
         - /var/run/docker.sock:/var/run/docker.sock
         - ./data:/data
   ```
+
 - Mounting `/var/run/docker.sock` gives the runner access to the host Docker daemon (Docker-out-of-Docker)
 - For full DinD isolation, use a Docker-in-Docker sidecar instead of socket mounting
 
 ### Runner Scaling
+
 - Add multiple runner instances with the **same registration token** for horizontal scaling
 - Use Docker Compose `replicas` or separate services for different label sets
 - Labels control which runner picks which job (e.g., `ubuntu-latest`, `windows-latest`)
@@ -98,5 +107,5 @@ strategy:
 
 ## References
 
-- Gitea Actions docs: https://docs.gitea.com/usage/actions
+- Gitea Actions docs: <https://docs.gitea.com/usage/actions>
 - Gitea MCP: `gitea` server in `.vscode/mcp.json`

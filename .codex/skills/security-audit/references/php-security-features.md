@@ -1,12 +1,14 @@
 # PHP Security Features by Version
 
-Modern PHP versions introduce language features that directly improve security when used correctly. This reference documents security-relevant features from PHP 8.0 through 8.4.
+Modern PHP versions introduce language features that directly improve security when used correctly. This reference
+documents security-relevant features from PHP 8.0 through 8.4.
 
 ## PHP 8.0
 
 ### match Expression (Exhaustive Handling)
 
-Unlike `switch`, `match` is an expression that throws `UnhandledMatchError` if no arm matches. This prevents logic bugs where unhandled cases silently fall through.
+Unlike `switch`, `match` is an expression that throws `UnhandledMatchError` if no arm matches. This prevents logic bugs
+where unhandled cases silently fall through.
 
 ```php
 // VULNERABLE: switch with missing break or missing case
@@ -33,7 +35,8 @@ $permissions = match ($role) {
 };
 ```
 
-**Security implication:** Prevents authorization bypass caused by unhandled roles or states. Forces developers to explicitly handle every case or provide a default.
+**Security implication:** Prevents authorization bypass caused by unhandled roles or states. Forces developers to
+explicitly handle every case or provide a default.
 
 ### Named Arguments (Prevent Parameter Order Mistakes)
 
@@ -70,7 +73,8 @@ $encrypted = openssl_encrypt(
 
 ### Nullsafe Operator (Prevent Null Reference Errors)
 
-The `?->` operator short-circuits to `null` when the left side is null, preventing null reference errors that can expose error details or crash applications.
+The `?->` operator short-circuits to `null` when the left side is null, preventing null reference errors that can expose
+error details or crash applications.
 
 ```php
 // VULNERABLE: Null reference can expose stack traces in error pages
@@ -85,7 +89,8 @@ $roleName = $session->getUser()?->getRole()?->getName();
 $isAdmin = $request->getAttribute('user')?->hasRole('admin') ?? false;
 ```
 
-**Security implication:** Prevents information disclosure via error messages and stack traces. Ensures graceful handling of missing authentication/authorization objects.
+**Security implication:** Prevents information disclosure via error messages and stack traces. Ensures graceful handling
+of missing authentication/authorization objects.
 
 ### str_contains/str_starts_with/str_ends_with (Replace Error-Prone strpos)
 
@@ -126,7 +131,8 @@ if (!str_ends_with($redirectUrl, '.example.com')) {
 
 ### Readonly Properties (Prevent Accidental Mutation)
 
-Readonly properties can only be initialized once, preventing accidental or malicious mutation of security-sensitive data after construction.
+Readonly properties can only be initialized once, preventing accidental or malicious mutation of security-sensitive data
+after construction.
 
 ```php
 // VULNERABLE: Mutable security-sensitive properties
@@ -163,7 +169,8 @@ $session = new Session(
 $session->role = 'admin';  // Fatal error: Cannot modify readonly property
 ```
 
-**Security implication:** Enforces immutability of authentication tokens, session data, and permission objects at the language level.
+**Security implication:** Enforces immutability of authentication tokens, session data, and permission objects at the
+language level.
 
 ### Enums (Type-Safe Permissions, Roles, States)
 
@@ -214,11 +221,13 @@ function authorize(Role $role, Permission $permission): void
 $role = Role::from($request->getAttribute('role'));
 ```
 
-**Security implication:** Eliminates entire classes of authorization bugs. Invalid roles/permissions are caught at compile-time (static analysis) or runtime (ValueError).
+**Security implication:** Eliminates entire classes of authorization bugs. Invalid roles/permissions are caught at
+compile-time (static analysis) or runtime (ValueError).
 
 ### Fibers (Secret Leakage via Shared State)
 
-Fibers enable cooperative multitasking but share memory space. Security-sensitive data can leak between fibers if not isolated.
+Fibers enable cooperative multitasking but share memory space. Security-sensitive data can leak between fibers if not
+isolated.
 
 ```php
 // VULNERABLE: Shared state between fibers can leak secrets
@@ -267,11 +276,13 @@ final class FiberScopedContext
 }
 ```
 
-**Security implication:** Static/global state in fiber-based applications can cause cross-request data leakage. Always scope sensitive data to the execution context.
+**Security implication:** Static/global state in fiber-based applications can cause cross-request data leakage. Always
+scope sensitive data to the execution context.
 
 ### Intersection Types (Strict Contracts)
 
-Intersection types enforce that a value satisfies multiple type constraints simultaneously, enabling stricter security interfaces.
+Intersection types enforce that a value satisfies multiple type constraints simultaneously, enabling stricter security
+interfaces.
 
 ```php
 // SECURE: Require both Authenticatable AND Authorizable
@@ -294,7 +305,8 @@ function processAdminAction(
 
 ### never Return Type (Functions That Always Throw)
 
-The `never` return type declares that a function never returns normally -- it always throws or exits. This provides static analysis guarantees that error paths terminate execution.
+The `never` return type declares that a function never returns normally -- it always throws or exits. This provides
+static analysis guarantees that error paths terminate execution.
 
 ```php
 // SECURE: Static analysis knows this never returns
@@ -315,7 +327,8 @@ function forceHttps(ServerRequestInterface $request): never
 }
 ```
 
-**Security implication:** Guarantees that security denial functions actually terminate execution. Static analyzers can verify no code runs after a `never` function call.
+**Security implication:** Guarantees that security denial functions actually terminate execution. Static analyzers can
+verify no code runs after a `never` function call.
 
 ## PHP 8.2
 
@@ -358,7 +371,8 @@ $token = new AuthToken(
 $token->scopes = ['admin'];  // Fatal error: Cannot modify readonly property
 ```
 
-**Security implication:** Guarantees immutability of security objects (tokens, credentials, policy objects) at the class level.
+**Security implication:** Guarantees immutability of security objects (tokens, credentials, policy objects) at the class
+level.
 
 ### Disjunctive Normal Form (DNF) Types
 
@@ -375,7 +389,8 @@ function performMaintenance(
 
 ### Deprecated Dynamic Properties (Prevents Mass Assignment)
 
-PHP 8.2 deprecates setting undeclared properties on objects. In PHP 9.0 this will throw an error. This mitigates mass-assignment vulnerabilities.
+PHP 8.2 deprecates setting undeclared properties on objects. In PHP 9.0 this will throw an error. This mitigates
+mass-assignment vulnerabilities.
 
 ```php
 // VULNERABLE (PHP < 8.2): Mass assignment via dynamic properties
@@ -414,11 +429,12 @@ class UserProfile
 }
 ```
 
-**Security implication:** Prevents attackers from injecting unexpected properties (like `isAdmin`, `role`, `verified`) through mass assignment.
+**Security implication:** Prevents attackers from injecting unexpected properties (like `isAdmin`, `role`, `verified`)
+through mass assignment.
 
 ### Detection Patterns
 
-```
+```text
 # Find classes vulnerable to mass assignment (no AllowDynamicProperties and no readonly)
 class\s+\w+(?!.*readonly)(?!.*#\[AllowDynamicProperties\])
 
@@ -432,7 +448,8 @@ foreach.*\$\w+->\$\w+\s*=
 
 ### json_validate() (Validate Before Decode)
 
-`json_validate()` checks JSON validity without decoding, using less memory and preventing resource exhaustion from malicious payloads.
+`json_validate()` checks JSON validity without decoding, using less memory and preventing resource exhaustion from
+malicious payloads.
 
 ```php
 // VULNERABLE: json_decode on untrusted input allocates memory for the decoded structure
@@ -460,7 +477,8 @@ if (!json_validate($rawBody, depth: 10)) {
 $data = json_decode($rawBody, true, 10, JSON_THROW_ON_ERROR);
 ```
 
-**Security implication:** Prevents resource exhaustion from malformed JSON and eliminates the `null` ambiguity bug from `json_decode()`.
+**Security implication:** Prevents resource exhaustion from malformed JSON and eliminates the `null` ambiguity bug from
+`json_decode()`.
 
 ### Typed Class Constants
 
@@ -488,11 +506,13 @@ interface RateLimiterInterface
 }
 ```
 
-**Security implication:** Prevents accidental type coercion in security-critical constants (e.g., changing an int to a string that gets loosely compared).
+**Security implication:** Prevents accidental type coercion in security-critical constants (e.g., changing an int to a
+string that gets loosely compared).
 
 ### #[\Override] Attribute (Prevent Silent Method Signature Drift)
 
-The `#[\Override]` attribute causes a compile-time error if the method does not actually override a parent method. This catches renamed or removed security methods.
+The `#[\Override]` attribute causes a compile-time error if the method does not actually override a parent method. This
+catches renamed or removed security methods.
 
 ```php
 // VULNERABLE: Parent class renames isAuthorized() to checkAuthorization()
@@ -518,13 +538,15 @@ class AdminController extends BaseController
 }
 ```
 
-**Security implication:** Prevents security bypass when parent class method signatures change. Without `#[\Override]`, a security check method could silently stop being called.
+**Security implication:** Prevents security bypass when parent class method signatures change. Without `#[\Override]`, a
+security check method could silently stop being called.
 
 ## PHP 8.4
 
 ### Property Hooks (Validation on Set)
 
-Property hooks allow defining get/set logic directly on properties, enabling automatic input validation without separate setter methods.
+Property hooks allow defining get/set logic directly on properties, enabling automatic input validation without separate
+setter methods.
 
 ```php
 // SECURE: Validate on property assignment
@@ -568,11 +590,13 @@ $profile->email = 'invalid';  // Throws InvalidArgumentException
 $profile->username = '<script>alert(1)</script>';  // Throws InvalidArgumentException
 ```
 
-**Security implication:** Ensures validation cannot be bypassed by direct property access. Every assignment path goes through the hook.
+**Security implication:** Ensures validation cannot be bypassed by direct property access. Every assignment path goes
+through the hook.
 
 ### Asymmetric Visibility (Public Read, Private Write)
 
-Asymmetric visibility allows properties to be read publicly but only written privately, providing controlled immutability without readonly's all-or-nothing approach.
+Asymmetric visibility allows properties to be read publicly but only written privately, providing controlled
+immutability without readonly's all-or-nothing approach.
 
 ```php
 // SECURE: Public read, private write for security-sensitive state
@@ -604,7 +628,8 @@ $result->isAuthenticated = true;  // Error: Cannot modify private(set) property
 $result->userId = 'admin';       // Error: Cannot modify private(set) property
 ```
 
-**Security implication:** Allows security state to be inspected by any code but modified only through controlled internal methods that enforce invariants.
+**Security implication:** Allows security state to be inspected by any code but modified only through controlled
+internal methods that enforce invariants.
 
 ### new Without Parentheses
 
@@ -620,7 +645,7 @@ $policy = new SecurityPolicy
 
 ## Detection Patterns for Auditing PHP Version Features
 
-```
+```text
 # Find code that would benefit from match (switch without default)
 switch\s*\([^)]+\)\s*\{(?!.*default\s*:)
 

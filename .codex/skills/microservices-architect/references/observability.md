@@ -11,7 +11,8 @@ Comprehensive guide for monitoring, tracing, and debugging distributed systems.
 **Categories:**
 
 **Business Metrics:**
-```
+
+```text
 Examples:
 - Orders per minute
 - Revenue per hour
@@ -45,7 +46,8 @@ order_value.observe(order.total_amount)
 ```
 
 **System Metrics:**
-```
+
+```text
 Infrastructure:
 - CPU usage
 - Memory usage
@@ -73,7 +75,8 @@ Message Queue:
 ```
 
 **The Four Golden Signals (Google SRE):**
-```
+
+```text
 1. Latency:
    - Time to serve requests
    - Track p50, p95, p99, p99.9
@@ -119,7 +122,8 @@ Message Queue:
 ```
 
 **RED Method (for services):**
-```
+
+```text
 - Rate: Requests per second
 - Errors: Failed requests per second
 - Duration: Request latency distribution
@@ -128,7 +132,8 @@ Perfect for microservices dashboards
 ```
 
 **USE Method (for resources):**
-```
+
+```text
 - Utilization: Percentage of time resource busy
 - Saturation: Queue depth or waiting threads
 - Errors: Error count
@@ -141,6 +146,7 @@ Perfect for infrastructure monitoring
 **Purpose:** Discrete event records with context.
 
 **Structured Logging:**
+
 ```json
 {
   "timestamp": "2025-12-14T15:30:45.123Z",
@@ -162,7 +168,8 @@ Perfect for infrastructure monitoring
 ```
 
 **Log Levels:**
-```
+
+```text
 ERROR:
 - Application errors
 - Failed operations
@@ -192,7 +199,8 @@ Use: Deep troubleshooting (disabled in production usually)
 ```
 
 **Correlation IDs:**
-```
+
+```text
 Request flow across services:
 
 Client Request → API Gateway
@@ -227,7 +235,8 @@ async def correlation_middleware(request, call_next):
 ```
 
 **Log Aggregation:**
-```
+
+```text
 Services → Log Shipper → Centralized Log Storage → Visualization
 
 Tools:
@@ -255,7 +264,8 @@ correlationId:"corr-123"
 **Concepts:**
 
 **Trace:**
-```
+
+```text
 Entire request journey across all services
 
 Example: User places order
@@ -272,7 +282,8 @@ Total: 200ms (some parallel execution)
 ```
 
 **Span:**
-```
+
+```text
 Single operation within a trace
 
 Span attributes:
@@ -307,6 +318,7 @@ Span attributes:
 ```
 
 **Implementation (OpenTelemetry):**
+
 ```python
 from opentelemetry import trace
 from opentelemetry.exporter.jaeger.thrift import JaegerExporter
@@ -348,7 +360,8 @@ async def create_order(order_data):
 ```
 
 **Trace Visualization:**
-```
+
+```text
 Jaeger UI shows:
 
 Timeline view:
@@ -365,7 +378,8 @@ Parallel operations visible
 ```
 
 **Sampling Strategies:**
-```
+
+```text
 Problem: Tracing every request is expensive
 
 Solutions:
@@ -418,7 +432,8 @@ class CustomSampler:
 ### Defining SLOs
 
 **SLI (Service Level Indicator):**
-```
+
+```text
 Quantitative measure of service level
 
 Examples:
@@ -428,7 +443,8 @@ Examples:
 ```
 
 **SLO (Service Level Objective):**
-```
+
+```text
 Target value for SLI
 
 Examples:
@@ -443,7 +459,8 @@ SLO Components:
 ```
 
 **SLA (Service Level Agreement):**
-```
+
+```text
 Contract with consequences if SLO not met
 
 Example:
@@ -454,7 +471,8 @@ SLA ≤ SLO (leave buffer for incidents)
 ```
 
 **Error Budget:**
-```
+
+```text
 Allowed failure to meet SLO = (100% - SLO target)
 
 Example:
@@ -480,7 +498,8 @@ Benefits:
 ### Implementing SLO Monitoring
 
 **Prometheus + Grafana:**
-```
+
+```text
 # SLI: Availability
 availability_sli = (
     sum(rate(http_requests_total{status!~"5.."}[30d]))
@@ -514,7 +533,8 @@ annotations:
 ### Alert Levels
 
 **Critical (Page immediately):**
-```
+
+```text
 Conditions:
 - Service completely down
 - Error rate > 50%
@@ -534,7 +554,8 @@ severity: critical
 ```
 
 **Warning (Investigate soon):**
-```
+
+```text
 Conditions:
 - Elevated error rate (5-10%)
 - Latency degraded (p99 > 500ms)
@@ -554,7 +575,8 @@ severity: warning
 ```
 
 **Info (Awareness):**
-```
+
+```text
 Conditions:
 - Deployment completed
 - Scaling event
@@ -570,7 +592,8 @@ Actions:
 ### Alert Best Practices
 
 **Actionable Alerts:**
-```
+
+```text
 Bad Alert:
 "High CPU usage"
 
@@ -589,7 +612,8 @@ Include:
 ```
 
 **Avoid Alert Fatigue:**
-```
+
+```text
 Problems:
 - Too many alerts
 - False positives
@@ -616,7 +640,8 @@ group_interval: 5m  # Batch notifications
 ### Recommended Tools
 
 **Metrics:**
-```
+
+```text
 Collection: Prometheus
 - Pull-based metrics
 - Time-series database
@@ -633,7 +658,8 @@ Alternative: Datadog, New Relic, CloudWatch
 ```
 
 **Logs:**
-```
+
+```text
 Aggregation: ELK Stack
 - Elasticsearch (storage & search)
 - Logstash / Fluentd (collection)
@@ -648,7 +674,8 @@ Alternative: Splunk, Datadog, CloudWatch Logs
 ```
 
 **Tracing:**
-```
+
+```text
 Backend: Jaeger or Zipkin
 - Trace storage
 - Trace visualization
@@ -665,7 +692,8 @@ Alternative: Datadog APM, New Relic, Lightstep
 ```
 
 **All-in-One:**
-```
+
+```text
 Observability platforms:
 - Datadog (metrics, logs, traces, RUM)
 - New Relic (APM, logs, infrastructure)
@@ -685,7 +713,8 @@ Cons:
 ### Implementation Checklist
 
 **For Each Service:**
-```
+
+```text
 ✓ Structured logging with correlation IDs
 ✓ Metrics exported (Prometheus format)
 ✓ Distributed tracing instrumented
@@ -699,7 +728,8 @@ Cons:
 ```
 
 **For System-Wide:**
-```
+
+```text
 ✓ Centralized log aggregation
 ✓ Distributed tracing backend
 ✓ Metrics aggregation and storage
@@ -715,7 +745,8 @@ Cons:
 ## Troubleshooting Workflow
 
 **Incident Response:**
-```
+
+```text
 1. Detect (Alert fires)
    - Check dashboard
    - Verify alert is valid
@@ -754,7 +785,8 @@ Cons:
 ```
 
 **Using Traces to Debug:**
-```
+
+```text
 Scenario: API returning 500 errors
 
 1. Find failing trace:
@@ -787,6 +819,7 @@ Scenario: API returning 500 errors
 Observability is non-negotiable in microservices:
 
 **Must-Haves:**
+
 - Structured logging with correlation IDs
 - Metrics (RED/USE methodology)
 - Distributed tracing (OpenTelemetry)
@@ -795,6 +828,7 @@ Observability is non-negotiable in microservices:
 - Actionable alerts with runbooks
 
 **Best Practices:**
+
 - Correlate metrics, logs, and traces
 - Define SLOs based on user experience
 - Alert on symptoms, not causes

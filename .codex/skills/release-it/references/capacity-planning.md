@@ -1,6 +1,8 @@
 # Capacity Planning
 
-Capacity planning is the discipline of understanding how much load your system can handle, what breaks first, and how to scale before users experience degradation. It is not a one-time exercise -- it is a continuous practice that evolves as your system, traffic patterns, and infrastructure change.
+Capacity planning is the discipline of understanding how much load your system can handle, what breaks first, and how to
+scale before users experience degradation. It is not a one-time exercise -- it is a continuous practice that evolves as
+your system, traffic patterns, and infrastructure change.
 
 ## Performance Testing Taxonomy
 
@@ -21,6 +23,7 @@ Not all performance tests are equal. Each type answers a different question.
 A good load test simulates real user behavior, not synthetic happy paths.
 
 **Essential elements:**
+
 - **Realistic user journeys:** Mix of browse, search, add to cart, checkout -- not just one endpoint
 - **Think time:** Users do not fire requests as fast as possible; include realistic pauses between actions
 - **Data variation:** Different users, different products, different search terms -- not the same request repeated
@@ -33,10 +36,12 @@ A good load test simulates real user behavior, not synthetic happy paths.
 The goal is to find the breaking point -- not to prove the system works under normal load.
 
 **Key principles:**
+
 - Increase load incrementally (e.g., 10% every 5 minutes) until you observe degradation
 - Monitor all resources: CPU, memory, disk I/O, network, thread pools, connection pools, queue depths
 - Record the exact load level when each metric crosses its threshold
-- Document the failure mode: does the system degrade gracefully (latency increases, then errors) or fail catastrophically (crash, hang, data corruption)?
+- Document the failure mode: does the system degrade gracefully (latency increases, then errors) or fail
+catastrophically (crash, hang, data corruption)?
 - Run the stress test multiple times to verify consistency
 
 ### Soak Test Design
@@ -55,6 +60,7 @@ Soak tests reveal problems that only manifest over time.
 | **Database bloat** | Temp tables, uncommitted transactions accumulate | Database performance degrades over test duration |
 
 **Soak test requirements:**
+
 - Run at 70-80% of measured capacity (not full stress -- you are testing endurance, not peak)
 - Duration: minimum 24 hours, ideally 72 hours
 - Monitor resource trends, not just snapshots -- a flat graph is healthy, a rising trend is a leak
@@ -64,23 +70,28 @@ Soak tests reveal problems that only manifest over time.
 
 ## Resource Pool Management
 
-Resource pools -- thread pools, connection pools, object pools -- are finite and shared. Mismanaging them is one of the most common causes of production failures.
+Resource pools -- thread pools, connection pools, object pools -- are finite and shared. Mismanaging them is one of the
+most common causes of production failures.
 
 ### Connection Pool Sizing
 
 The most common question: "How many connections do I need?"
 
 **Formula:**
-```
+
+```text
 pool_size = peak_concurrent_requests × avg_hold_time / avg_request_time
 ```
 
 **But in practice:**
+
 - Measure actual concurrent active connections under peak load
 - Set pool size to measured p99 concurrency + 20-30% headroom
 - Set a maximum that protects the downstream resource (databases have their own connection limits)
-- Too many connections: each consumes memory on both client and server; database performance degrades with too many connections
-- Too few connections: requests queue waiting for a connection; latency increases; pool exhaustion looks like a database outage
+- Too many connections: each consumes memory on both client and server; database performance degrades with too many
+connections
+- Too few connections: requests queue waiting for a connection; latency increases; pool exhaustion looks like a database
+outage
 
 ### Connection Pool Configuration
 
@@ -108,22 +119,26 @@ pool_size = peak_concurrent_requests × avg_hold_time / avg_request_time
 
 ## Thread Pool Management
 
-Thread pools control the concurrency of your application. Getting them right is critical for both throughput and stability.
+Thread pools control the concurrency of your application. Getting them right is critical for both throughput and
+stability.
 
 ### Thread Pool Sizing
 
 **CPU-bound workloads:**
-```
+
+```text
 threads = number_of_cores
 ```
 
 **I/O-bound workloads (most web applications):**
-```
+
+```text
 threads = number_of_cores × (1 + wait_time / service_time)
 ```
 
 Example: 8 cores, requests spend 80% of time waiting on I/O:
-```
+
+```text
 threads = 8 × (1 + 80/20) = 8 × 5 = 40 threads
 ```
 
@@ -150,15 +165,17 @@ threads = 8 × (1 + 80/20) = 8 × 5 = 40 threads
 
 ## The Universal Scalability Law
 
-The Universal Scalability Law (USL), developed by Neil Gunther, models how system throughput changes as you add resources (servers, threads, cores).
+The Universal Scalability Law (USL), developed by Neil Gunther, models how system throughput changes as you add
+resources (servers, threads, cores).
 
 ### The Model
 
-```
+```text
 C(N) = N / (1 + σ(N-1) + κN(N-1))
 ```
 
 Where:
+
 - **N** = number of processors/servers/threads
 - **σ** (sigma) = contention parameter: fraction of work that must be serialized
 - **κ** (kappa) = coherence parameter: cost of keeping shared state consistent
@@ -177,7 +194,8 @@ Where:
 1. **Measure throughput** at 1, 2, 4, 8, 16 resources
 2. **Fit the USL curve** to find σ and κ
 3. **Predict the scalability ceiling:** the point where adding more resources stops helping (or hurts)
-4. **Identify the bottleneck:** high σ means contention (locks, serialization); high κ means coherence costs (cache invalidation, distributed consensus)
+4. **Identify the bottleneck:** high σ means contention (locks, serialization); high κ means coherence costs (cache
+invalidation, distributed consensus)
 
 ---
 
@@ -200,9 +218,11 @@ For each service, document:
 
 ### Bottleneck Resource
 
-Every service has a bottleneck resource -- the resource that runs out first as load increases. The capacity of the service equals the capacity of its bottleneck.
+Every service has a bottleneck resource -- the resource that runs out first as load increases. The capacity of the
+service equals the capacity of its bottleneck.
 
 **Finding the bottleneck:**
+
 1. Run a stress test, increasing load gradually
 2. Monitor all resources simultaneously
 3. The first resource to hit its limit is the bottleneck
@@ -225,6 +245,7 @@ Every service has a bottleneck resource -- the resource that runs out first as l
 ### Myth 1: "The Cloud Is Infinitely Scalable"
 
 Reality:
+
 - Auto-scaling has lag time (1-5 minutes to provision and start new instances)
 - Cold starts add latency to the first requests on new instances
 - Cloud providers have account-level limits (instance count, API rate limits)
@@ -234,14 +255,18 @@ Reality:
 ### Myth 2: "We'll Just Add More Servers"
 
 Reality:
+
 - Adding servers only helps if the bottleneck is CPU or memory on the application tier
-- If the bottleneck is the database, adding application servers makes it worse (more connections, more load on the same database)
+- If the bottleneck is the database, adding application servers makes it worse (more connections, more load on the same
+database)
 - Network hops, serialization overhead, and coordination costs increase with more servers
-- Horizontal scaling requires stateless design -- session affinity, local caches, and local file storage break horizontal scaling
+- Horizontal scaling requires stateless design -- session affinity, local caches, and local file storage break
+horizontal scaling
 
 ### Myth 3: "Our Load Tests Pass, So We're Fine"
 
 Reality:
+
 - Load tests with synthetic data miss hot spots in production data
 - Load tests rarely simulate realistic user behavior (think times, session patterns, edge cases)
 - Load test environments rarely match production topology, network latency, or data volume
@@ -251,6 +276,7 @@ Reality:
 ### Myth 4: "We Don't Need Capacity Planning -- We Have Auto-Scaling"
 
 Reality:
+
 - Auto-scaling reacts to load after it arrives; capacity planning anticipates load before it arrives
 - Auto-scaling cannot protect against instant traffic spikes (Black Friday, viral events)
 - Auto-scaling policies themselves need testing -- misconfigured policies can scale in the wrong direction or oscillate
@@ -262,24 +288,34 @@ Reality:
 
 ### Resource Contention
 
-Multiple threads competing for the same resource (lock, connection, CPU core). Throughput plateaus or decreases as concurrency increases.
+Multiple threads competing for the same resource (lock, connection, CPU core). Throughput plateaus or decreases as
+concurrency increases.
 
-**Detection:** Throughput does not increase when adding threads/instances. CPU utilization is low despite high load. Thread dumps show threads waiting on locks.
+**Detection:** Throughput does not increase when adding threads/instances. CPU utilization is low despite high load.
+Thread dumps show threads waiting on locks.
 
-**Fix:** Reduce lock scope. Use lock-free data structures. Partition data to reduce contention. Use read-write locks instead of exclusive locks.
+**Fix:** Reduce lock scope. Use lock-free data structures. Partition data to reduce contention. Use read-write locks
+instead of exclusive locks.
 
 ### The Coordinated Omission Problem
 
-Load testing tools that wait for a response before sending the next request undercount latency at high load. When the server slows down, the tool also slows down, making the measured throughput look stable while actually masking massive latency increases.
+Load testing tools that wait for a response before sending the next request undercount latency at high load. When the
+server slows down, the tool also slows down, making the measured throughput look stable while actually masking massive
+latency increases.
 
-**Detection:** Load test shows consistent throughput even as the system degrades. Real users report much worse latency than load tests measure.
+**Detection:** Load test shows consistent throughput even as the system degrades. Real users report much worse latency
+than load tests measure.
 
-**Fix:** Use load testing tools that support coordinated omission correction (e.g., wrk2, Gatling with constant throughput mode). Measure latency independently of throughput. Use open-loop load generators that send requests at a fixed rate regardless of response time.
+**Fix:** Use load testing tools that support coordinated omission correction (e.g., wrk2, Gatling with constant
+throughput mode). Measure latency independently of throughput. Use open-loop load generators that send requests at a
+fixed rate regardless of response time.
 
 ### N+1 Query Problem
 
 Fetching a list of N items, then making one additional query for each item. Total queries = N + 1 instead of 1 or 2.
 
-**Detection:** Database query count scales linearly with result set size. Response time increases linearly with page size.
+**Detection:** Database query count scales linearly with result set size. Response time increases linearly with page
+size.
 
-**Fix:** Use eager loading / JOIN queries. Batch queries (`WHERE id IN (...)`). Implement DataLoader pattern for GraphQL.
+**Fix:** Use eager loading / JOIN queries. Batch queries (`WHERE id IN (...)`). Implement DataLoader pattern for
+GraphQL.

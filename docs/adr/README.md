@@ -1,6 +1,7 @@
 # Architecture Decision Records (ADR)
 
-One architectural decision per file. Humans own ADRs; AI can draft proposals but must not finalize them without the human owner.
+One architectural decision per file. Humans own ADRs; AI can draft proposals but must not finalize them without the
+human owner.
 
 ## Index
 

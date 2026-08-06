@@ -33,7 +33,8 @@ _If no patterns were identified: "No explicit design patterns detected."_
 
 _Priority: How urgently the change is recommended. Impact: How much it would improve the codebase._
 
-_If no new patterns are recommended: "Existing structure is well-suited for the current design. No new patterns recommended at this time."_
+_If no new patterns are recommended: "Existing structure is well-suited for the current design. No new patterns
+recommended at this time."_
 
 ---
 
@@ -45,11 +46,15 @@ _If no new patterns are recommended: "Existing structure is well-suited for the 
 
 **Problem:** [Describe the code smell, design gap, or inefficiency observed.]
 
-**Why this pattern fits:** [Explain why this specific pattern addresses the problem. Reference language considerations where relevant.]
+**Why this pattern fits:** [Explain why this specific pattern addresses the problem. Reference language considerations
+where relevant.]
 
-**How to apply:** [Brief sketch of the approach — not a full implementation, but enough to guide the developer. For example: "Extract the switch statement in `handlers/process.go` into a `Processor` interface with concrete types for each case."]
+**How to apply:** [Brief sketch of the approach — not a full implementation, but enough to guide the developer. For
+example: "Extract the switch statement in `handlers/process.go` into a `Processor` interface with concrete types for
+each case."]
 
-**Trade-offs to consider:** [Any reasons the developer might choose not to apply this pattern, or caveats about the approach.]
+**Trade-offs to consider:** [Any reasons the developer might choose not to apply this pattern, or caveats about the
+approach.]
 
 ---
 

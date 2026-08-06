@@ -3,18 +3,23 @@
 This document is designed as a **security spec** that supports:
 
 1. **Secure-by-default code generation** for new Flask code.
-2. **Security review / vulnerability hunting** in existing Flask code (passive “notice issues while working” and active “scan the repo and report findings”).
+2. **Security review / vulnerability hunting** in existing Flask code (passive “notice issues while working” and active
+“scan the repo and report findings”).
 
-It is intentionally written as a set of **normative requirements** (“MUST/SHOULD/MAY”) plus **audit rules** (what bad patterns look like, how to detect them, and how to fix/mitigate them).
+It is intentionally written as a set of **normative requirements** (“MUST/SHOULD/MAY”) plus **audit rules** (what bad
+patterns look like, how to detect them, and how to fix/mitigate them).
 
 ---
 
 ## 0) Safety, boundaries, and anti-abuse constraints (MUST FOLLOW)
 
 - MUST NOT request, output, log, or commit secrets (API keys, passwords, private keys, session cookies, SECRET_KEY).
-- MUST NOT “fix” security by disabling protections (e.g., turning off CSRF, relaxing CORS, disabling escaping, disabling auth checks).
-- MUST provide **evidence-based findings** during audits: cite file paths, code snippets, and configuration values that justify the claim.
-- MUST treat uncertainty honestly: if a protection might exist in infrastructure (reverse proxy, WAF, CDN), report it as “not visible in app code; verify at runtime/config”.
+- MUST NOT “fix” security by disabling protections (e.g., turning off CSRF, relaxing CORS, disabling escaping, disabling
+auth checks).
+- MUST provide **evidence-based findings** during audits: cite file paths, code snippets, and configuration values that
+justify the claim.
+- MUST treat uncertainty honestly: if a protection might exist in infrastructure (reverse proxy, WAF, CDN), report it as
+“not visible in app code; verify at runtime/config”.
 
 ---
 
@@ -27,7 +32,8 @@ When asked to write new Flask code or modify existing code:
 - MUST follow every **MUST** requirement in this spec.
 - SHOULD follow every **SHOULD** requirement unless the user explicitly says otherwise.
 - MUST prefer safe-by-default APIs and proven libraries over custom security code.
-- MUST avoid introducing new risky sinks (template rendering from strings, shell execution, dynamic imports, unsafe redirects, serving user files as HTML, etc.).
+- MUST avoid introducing new risky sinks (template rendering from strings, shell execution, dynamic imports, unsafe
+redirects, serving user files as HTML, etc.).
 
 ### 1.2 Passive review mode (always on while editing)
 
@@ -73,7 +79,8 @@ Examples include:
 
 ### 2.2 State-changing request
 
-A request is state-changing if it can create/update/delete data, change auth/session state, trigger side effects (purchase, email send, webhook send), or initiate privileged actions.
+A request is state-changing if it can create/update/delete data, change auth/session state, trigger side effects
+(purchase, email send, webhook send), or initiate privileged actions.
 
 ### 2.3 Required audit finding format
 
@@ -106,7 +113,10 @@ Example skeleton (illustrative; adjust to your project):
 Key baseline config targets:
 
 - `SECRET_KEY` set and not committed
-- `SESSION_COOKIE_SECURE=True` (when HTTPS) IMPORTANT NOTE: Only set `Secure` in production environment when TLS is configured. When running in a local dev environment over HTTP, do not set `Secure` property on cookies. You should do this conditionally based on if the app is running in production mode. You should also include a property like `SESSION_COOKIE_SECURE` which can be used to disable `Secure` cookies when testing over HTTP.
+- `SESSION_COOKIE_SECURE=True` (when HTTPS) IMPORTANT NOTE: Only set `Secure` in production environment when TLS is
+configured. When running in a local dev environment over HTTP, do not set `Secure` property on cookies. You should do
+this conditionally based on if the app is running in production mode. You should also include a property like
+`SESSION_COOKIE_SECURE` which can be used to disable `Secure` cookies when testing over HTTP.
 - `SESSION_COOKIE_HTTPONLY=True`
 - `SESSION_COOKIE_SAMESITE='Lax'` (or `'Strict'` if compatible)
 - `TRUSTED_HOSTS` set in production
@@ -144,7 +154,8 @@ Fix:
 
 Note:
 
-- These are often used in dev mode or local testing. This is allowed. Only flag if it is clear that it is being used as the production entrypoint
+- These are often used in dev mode or local testing. This is allowed. Only flag if it is clear that it is being used as
+the production entrypoint
 
 ---
 
@@ -175,7 +186,8 @@ Fix:
 
 Note:
 
-- These are often used in dev mode or local testing. This is allowed. Only flag if it is clear that it is being used as the production entrypoint
+- These are often used in dev mode or local testing. This is allowed. Only flag if it is clear that it is being used as
+the production entrypoint
 
 ---
 
@@ -187,7 +199,10 @@ Required:
 
 - MUST set a strong random `SECRET_KEY` in production.
 - MUST keep `SECRET_KEY` out of source control and out of logs.
-- MAY rotate keys periodically; MAY use `SECRET_KEY_FALLBACKS` to support rotation without instantly invalidating existing sessions, then remove old keys after the rotation window. This likely is not needed for smaller applications but is good practice for larger applications. As this may complicate deployment, suggest that it be implemented rather than implementing it by default.
+- MAY rotate keys periodically; MAY use `SECRET_KEY_FALLBACKS` to support rotation without instantly invalidating
+existing sessions, then remove old keys after the rotation window. This likely is not needed for smaller applications
+but is good practice for larger applications. As this may complicate deployment, suggest that it be implemented rather
+than implementing it by default.
 
 Insecure patterns:
 
@@ -221,7 +236,10 @@ Severity: Medium
 
 Required (production, HTTPS):
 
-- MUST set `SESSION_COOKIE_SECURE=True` (cookies only over HTTPS). NOTE: Only set `Secure` in production environment when TLS is configured. When running in a local dev environment over HTTP, do not set `Secure` property on cookies. You should do this conditionally based on if the app is running in production mode. You should also include a property like `SESSION_COOKIE_SECURE` which can be used to disable `Secure` cookies when testing over HTTP.
+- MUST set `SESSION_COOKIE_SECURE=True` (cookies only over HTTPS). NOTE: Only set `Secure` in production environment
+when TLS is configured. When running in a local dev environment over HTTP, do not set `Secure` property on cookies. You
+should do this conditionally based on if the app is running in production mode. You should also include a property like
+`SESSION_COOKIE_SECURE` which can be used to disable `Secure` cookies when testing over HTTP.
 - MUST ensure `SESSION_COOKIE_HTTPONLY=True` (protect from JS access).
 - SHOULD set `SESSION_COOKIE_SAMESITE='Lax'` (recommended) or `'Strict'` if compatible with UX.
 - SHOULD keep `SESSION_COOKIE_DOMAIN=None` unless you explicitly need subdomain-wide cookies.
@@ -255,7 +273,8 @@ Severity: Medium
 Required:
 
 - SHOULD set a bounded session lifetime appropriate to the app.
-- SHOULD set `session.permanent = True` only when you intend persistent sessions, and set `PERMANENT_SESSION_LIFETIME` to a justified value.
+- SHOULD set `session.permanent = True` only when you intend persistent sessions, and set `PERMANENT_SESSION_LIFETIME`
+to a justified value.
 - SHOULD clear the session on login and privilege changes to reduce session fixation risk.
 - MUST NOT store sensitive secrets in the default Flask session cookie. The default session is signed, not encrypted.
 
@@ -282,16 +301,19 @@ Fix:
 
 Severity: High
 
-- IMPORTANT NOTE: If cookies are not being used for auth (ie auth is via Authentication header or other passed token), then there is no CSRF risk.
+- IMPORTANT NOTE: If cookies are not being used for auth (ie auth is via Authentication header or other passed token),
+then there is no CSRF risk.
 
 Required:
 
 - MUST protect all state-changing endpoints (POST/PUT/PATCH/DELETE) that rely on cookies for authentication.
 - MAY use a well-tested CSRF library/integration (form framework or middleware) rather than rolling your own.
-- MAY use additional defenses (Origin/Referer checking, SameSite cookies, Fetch Metadata headers, custom headers for AJAX/API), but tokens remain the primary defense for cookie-authenticated apps.
+- MAY use additional defenses (Origin/Referer checking, SameSite cookies, Fetch Metadata headers, custom headers for
+AJAX/API), but tokens remain the primary defense for cookie-authenticated apps.
   If tokens are impractical, or for small applications:
 
-* MUST at a minimum require a custom header to be set and set the session cookie SESSION_COOKIE_SAMESITE=lax, as this is the strongest method besides requiring a form token, and may be much easier to implement.
+- MUST at a minimum require a custom header to be set and set the session cookie SESSION_COOKIE_SAMESITE=lax, as this is
+the strongest method besides requiring a form token, and may be much easier to implement.
 
 Insecure patterns:
 
@@ -307,7 +329,8 @@ Detection hints:
 Fix:
 
 - Add CSRF protection to all state-changing requests.
-- If the app is a pure API and uses Authorization headers (bearer tokens) rather than cookies, document that choice and ensure cookies aren’t used for auth. If cookies are not used for auth, there is no CSRF risk.
+- If the app is a pure API and uses Authorization headers (bearer tokens) rather than cookies, document that choice and
+ensure cookies aren’t used for auth. If cookies are not used for auth, there is no CSRF risk.
 
 Notes:
 
@@ -326,7 +349,9 @@ Required:
   - Avoid `Markup(...)` on user data.
   - Avoid Jinja `|safe` on user-controlled content.
 - MUST quote HTML attributes containing Jinja expressions (`value="{{ x }}"` not `value={{ x }}`).
-- MUST NOT serve uploaded HTML as active HTML; serve as download (`Content-Disposition: attachment`) or transform to a safe format. Note: This is only relevant if it is possible to upload document content such as html, js, css, etc. If it purely is image files, there is no concern.
+- MUST NOT serve uploaded HTML as active HTML; serve as download (`Content-Disposition: attachment`) or transform to a
+safe format. Note: This is only relevant if it is possible to upload document content such as html, js, css, etc. If it
+purely is image files, there is no concern.
 - SHOULD deploy a Content Security Policy (CSP) to mitigate XSS classes (including `javascript:` in `href`).
 
 Insecure patterns:
@@ -340,7 +365,8 @@ Detection hints:
 
 - Search for `Markup(` and investigate origin of the data.
 - Search template files for `|safe`, `|tojson` misuse, and unquoted attributes.
-- Review file-serving routes that might return user uploads without `as_attachment=True`. Note: This is only relevant if it is possible to upload document content such as html, js, css, etc. If it purely is image files, there is no concern.
+- Review file-serving routes that might return user uploads without `as_attachment=True`. Note: This is only relevant if
+it is possible to upload document content such as html, js, css, etc. If it purely is image files, there is no concern.
 
 Fix:
 
@@ -357,7 +383,8 @@ Severity: Critical
 Required:
 
 - MUST NOT render templates that contain user-controlled template syntax.
-- MUST treat `render_template_string` and `Environment.from_string(...).render(...)` as dangerous if the template string is influenced by untrusted input.
+- MUST treat `render_template_string` and `Environment.from_string(...).render(...)` as dangerous if the template string
+is influenced by untrusted input.
 - MUST NOT use use `.format()` on user controlled strings
 - If untrusted templates are absolutely required, treat it as a special high-risk design:
   - MUST use a sandboxed templating approach and restrict capabilities.
@@ -390,7 +417,8 @@ Required (typical web app):
 - SHOULD set:
   - CSP (`Content-Security-Policy`)
   - `X-Content-Type-Options: nosniff`
-  - Clickjacking protection (`X-Frame-Options: SAMEORIGIN` and/or CSP `frame-ancestors`) (there may be cases where the user wants to iframe their site elsewhere. If that is the case, work with them to safely allow it)
+  - Clickjacking protection (`X-Frame-Options: SAMEORIGIN` and/or CSP `frame-ancestors`) (there may be cases where the
+  user wants to iframe their site elsewhere. If that is the case, work with them to safely allow it)
 - SHOULD consider additional hardening headers depending on app (Referrer-Policy, Permissions-Policy).
 - MUST ensure cookies are set with secure attributes (see FLASK-SESS-001).
 
@@ -598,7 +626,8 @@ Required:
   - MUST NOT use `shell=True` with attacker-influenced strings
   - SHOULD use strict allowlists for any variable component
 - If possible, use pure python or a python library rather than using a subprocess or system command
-- Do not assume that arguments to commands will be inherently safe even in `shell=False`. Commands may incorrectly process these arguments as command line flags or other trusted values.
+- Do not assume that arguments to commands will be inherently safe even in `shell=False`. Commands may incorrectly
+process these arguments as command line flags or other trusted values.
 
 Insecure patterns:
 
@@ -614,7 +643,8 @@ Detection hints:
 Fix:
 
 - Use library APIs instead of shell commands.
-- If unavoidable, hard-code the command and allowlist validated parameters. If supported by the subcommand, try to keep user values after `--` to prevent them being processed as command line flags.
+- If unavoidable, hard-code the command and allowlist validated parameters. If supported by the subcommand, try to keep
+user values after `--` to prevent them being processed as command line flags.
 
 ---
 
@@ -622,7 +652,8 @@ Fix:
 
 Severity: Medium
 
-- Note: For small stand alone projects this is less important. It is most important when deploying into an LAN or with other services listening on the same server.
+- Note: For small stand alone projects this is less important. It is most important when deploying into an LAN or with
+other services listening on the same server.
 
 Required:
 
@@ -745,7 +776,8 @@ Required:
 
 Audit focus example:
 
-- If running on Windows and using file serving with untrusted paths, ensure Werkzeug’s `safe_join` behavior is not vulnerable to Windows device-name edge cases.
+- If running on Windows and using file serving with untrusted paths, ensure Werkzeug’s `safe_join` behavior is not
+vulnerable to Windows device-name edge cases.
 
 Detection hints:
 
@@ -798,38 +830,46 @@ Always try to confirm:
 
 Primary framework documentation:
 
-- Flask Docs: Deploying to Production — https://flask.palletsprojects.com/en/stable/deploying/
-- Flask Docs: Debugging Application Errors — https://flask.palletsprojects.com/en/stable/debugging/
-- Flask Docs: Configuration Handling — https://flask.palletsprojects.com/en/stable/config/
-- Flask Docs: Security Considerations — https://flask.palletsprojects.com/en/stable/web-security/
-- Flask Docs: Tell Flask it is Behind a Proxy — https://flask.palletsprojects.com/en/stable/deploying/proxy_fix/
-- Flask API Docs: Sessions — https://flask.palletsprojects.com/en/stable/api/#sessions
+- Flask Docs: Deploying to Production — <https://flask.palletsprojects.com/en/stable/deploying/>
+- Flask Docs: Debugging Application Errors — <https://flask.palletsprojects.com/en/stable/debugging/>
+- Flask Docs: Configuration Handling — <https://flask.palletsprojects.com/en/stable/config/>
+- Flask Docs: Security Considerations — <https://flask.palletsprojects.com/en/stable/web-security/>
+- Flask Docs: Tell Flask it is Behind a Proxy — <https://flask.palletsprojects.com/en/stable/deploying/proxy_fix/>
+- Flask API Docs: Sessions — <https://flask.palletsprojects.com/en/stable/api/#sessions>
 
 Werkzeug documentation & advisories:
 
-- Werkzeug Docs: Utilities (send_file / send_from_directory / safe_join / secure_filename / password hashing) — https://werkzeug.palletsprojects.com/en/stable/utils/
-- GitHub Advisory: CVE-2025-66221 (Werkzeug safe_join Windows device names) — https://github.com/advisories/GHSA-hgf8-39gv-g3f2
+- Werkzeug Docs: Utilities (send_file / send_from_directory / safe_join / secure_filename / password hashing) —
+<https://werkzeug.palletsprojects.com/en/stable/utils/>
+- GitHub Advisory: CVE-2025-66221 (Werkzeug safe_join Windows device names) —
+<https://github.com/advisories/GHSA-hgf8-39gv-g3f2>
 
 OWASP Cheat Sheet Series:
 
-- Session Management — https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html
-- CSRF Prevention — https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html
-- XSS Prevention — https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html
-- Input Validation — https://cheatsheetseries.owasp.org/cheatsheets/Input_Validation_Cheat_Sheet.html
-- SQL Injection Prevention — https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html
-- Injection Prevention — https://cheatsheetseries.owasp.org/cheatsheets/Injection_Prevention_Cheat_Sheet.html
-- OS Command Injection Defense — https://cheatsheetseries.owasp.org/cheatsheets/OS_Command_Injection_Defense_Cheat_Sheet.html
-- SSRF Prevention — https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html
-- File Upload — https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html
-- Unvalidated Redirects — https://cheatsheetseries.owasp.org/cheatsheets/Unvalidated_Redirects_and_Forwards_Cheat_Sheet.html
-- HTTP Headers — https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html
+- Session Management — <https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html>
+- CSRF Prevention —
+<https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html>
+- XSS Prevention — <https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html>
+- Input Validation — <https://cheatsheetseries.owasp.org/cheatsheets/Input_Validation_Cheat_Sheet.html>
+- SQL Injection Prevention — <https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html>
+- Injection Prevention — <https://cheatsheetseries.owasp.org/cheatsheets/Injection_Prevention_Cheat_Sheet.html>
+- OS Command Injection Defense —
+<https://cheatsheetseries.owasp.org/cheatsheets/OS_Command_Injection_Defense_Cheat_Sheet.html>
+- SSRF Prevention —
+<https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html>
+- File Upload — <https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html>
+- Unvalidated Redirects —
+<https://cheatsheetseries.owasp.org/cheatsheets/Unvalidated_Redirects_and_Forwards_Cheat_Sheet.html>
+- HTTP Headers — <https://cheatsheetseries.owasp.org/cheatsheets/HTTP_Headers_Cheat_Sheet.html>
 
 Template safety references:
 
-- Jinja: Sandbox (rendering untrusted templates) — https://jinja.palletsprojects.com/en/stable/sandbox/
-- OWASP WSTG: Testing for Server-Side Template Injection — https://owasp.org/www-project-web-security-testing-guide/v41/4-Web_Application_Security_Testing/07-Input_Validation_Testing/18-Testing_for_Server_Side_Template_Injection
-- PortSwigger Web Security Academy: Server-side template injection — https://portswigger.net/web-security/server-side-template-injection
+- Jinja: Sandbox (rendering untrusted templates) — <https://jinja.palletsprojects.com/en/stable/sandbox/>
+- OWASP WSTG: Testing for Server-Side Template Injection —
+<https://owasp.org/www-project-web-security-testing-guide/v41/4-Web_Application_Security_Testing/07-Input_Validation_Testing/18-Testing_for_Server_Side_Template_Injection>
+- PortSwigger Web Security Academy: Server-side template injection —
+<https://portswigger.net/web-security/server-side-template-injection>
 
 HTTP semantics:
 
-- RFC 9110: HTTP Semantics (safe methods) — https://www.rfc-editor.org/rfc/rfc9110
+- RFC 9110: HTTP Semantics (safe methods) — <https://www.rfc-editor.org/rfc/rfc9110>

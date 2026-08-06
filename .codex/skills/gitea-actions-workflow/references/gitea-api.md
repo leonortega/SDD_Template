@@ -1,6 +1,7 @@
 # Repository And Review Adapter: Gitea
 
-Use this adapter only when `.codex/project-profile.json` selects `providers.repository.id` or `providers.review.id = "gitea"`.
+Use this adapter only when `.codex/project-profile.json` selects `providers.repository.id` or `providers.review.id =
+"gitea"`.
 
 ## Runtime Configuration
 
@@ -21,7 +22,9 @@ The Gitea API token (`gitea.apiToken`) must have the following scopes for the ag
 
 ### Auto-generation
 
-During `setup-lab` → `provision-lab-users`, the token is automatically generated via `POST /api/v1/users/admin/tokens` using the built-in admin credentials (`admin`/`admin123`). The token is written to `.codex/client-tools.local.json` under `gitea.apiToken`.
+During `setup-lab` → `provision-lab-users`, the token is automatically generated via `POST /api/v1/users/admin/tokens`
+using the built-in admin credentials (`admin`/`admin123`). The token is written to `.codex/client-tools.local.json`
+under `gitea.apiToken`.
 
 ### Manual generation
 
@@ -73,9 +76,11 @@ POST {gitea.baseUrl}/api/v1/repos/{owner}/{repo}/pulls
 }
 ```
 
-**Important:** Gitea may ignore the `reviewers` property in the create payload. Always verify after creation and call the dedicated endpoint if reviewers are missing.
+**Important:** Gitea may ignore the `reviewers` property in the create payload. Always verify after creation and call
+the dedicated endpoint if reviewers are missing.
 
-After creating or reusing the PR, inspect the PR response for `requested_reviewers`. If eligible reviewers were resolved but are missing, request them explicitly:
+After creating or reusing the PR, inspect the PR response for `requested_reviewers`. If eligible reviewers were resolved
+but are missing, request them explicitly:
 
 ```text
 POST {gitea.baseUrl}/api/v1/repos/{owner}/{repo}/pulls/{prNumber}/requested_reviewers
@@ -89,7 +94,8 @@ Payload:
 }
 ```
 
-Then re-fetch the PR and verify the requested reviewers appear in `requested_reviewers`. If Gitea rejects the request (e.g. 404, 422), document the reviewer gap in the PR body, ticket handoff comment, and final summary.
+Then re-fetch the PR and verify the requested reviewers appear in `requested_reviewers`. If Gitea rejects the request
+(e.g. 404, 422), document the reviewer gap in the PR body, ticket handoff comment, and final summary.
 
 When `pr.reviewers` is `"all"`, list repository collaborators:
 
@@ -97,7 +103,8 @@ When `pr.reviewers` is `"all"`, list repository collaborators:
 GET {gitea.baseUrl}/api/v1/repos/{owner}/{repo}/collaborators
 ```
 
-Normalize the response before filtering because Gitea may return either a JSON array or a single collaborator object. Use each collaborator's `login` value first, then `username`, as the developer list. Exclude:
+Normalize the response before filtering because Gitea may return either a JSON array or a single collaborator object.
+Use each collaborator's `login` value first, then `username`, as the developer list. Exclude:
 
 - PR author
 - authenticated automation user

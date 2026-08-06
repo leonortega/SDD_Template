@@ -2,7 +2,8 @@
 
 ## Code Injection Prevention
 
-**NEVER** interpolate untrusted data directly in `run:` blocks — it allows shell injection via crafted PR titles, branch names, or inputs.
+**NEVER** interpolate untrusted data directly in `run:` blocks — it allows shell injection via crafted PR titles, branch
+names, or inputs.
 
 ```yaml
 # VULNERABLE — direct interpolation
@@ -108,4 +109,5 @@ Create an issue in your repo linking to the upstream fix timeline. Include:
 - Upstream issue/PR URL
 - Expected fix timeline (if known)
 
-**Never leave alerts unaddressed** — each must have a documented resolution strategy (upgrade, override, or dismiss with rationale).
+**Never leave alerts unaddressed** — each must have a documented resolution strategy (upgrade, override, or dismiss with
+rationale).

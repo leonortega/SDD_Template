@@ -1,7 +1,10 @@
 ---
 name: configure-ci-workflows
 license: MIT
-description: Generate or update Gitea Actions CI/CD workflow files based on the project profile stack and app topology. Run after configure-dev-environment selects the project stack, or when apps.json, project-profile, or client-tools configuration changes.
+description: >-
+  >- Generate or update Gitea Actions CI/CD workflow files based on the project profile stack and app topology. Run
+  after configure-dev-environment selects the project stack, or when apps.json, project-profile, or client-tools
+  configuration changes.
 ---
 
 <!-- TIER 3: STAGE-SPECIFIC - CI workflow configuration skill -->
@@ -10,7 +13,10 @@ description: Generate or update Gitea Actions CI/CD workflow files based on the 
 
 ## Overview
 
-Use this skill after `configure-dev-environment` has set the project stack and infrastructure is running. It reads the project profile to determine which technologies are used (frontend, backend, database), which apps exist in the deployment topology, and which providers are configured, then generates the `.gitea/workflows/*.yml` files with appropriate build, package, upload, and deploy steps.
+Use this skill after `configure-dev-environment` has set the project stack and infrastructure is running. It reads the
+project profile to determine which technologies are used (frontend, backend,
+database), which apps exist in the deployment topology, and which providers are configured, then generates the
+`.gitea/workflows/*.yml` files with appropriate build, package, upload, and deploy steps.
 
 This skill replaces manually editing workflow files when the project stack changes. Run it whenever:
 
@@ -22,11 +28,15 @@ This skill replaces manually editing workflow files when the project stack chang
 
 Before generating workflows, read:
 
-1. **Project profile** — use the merged profile (reads `project-profile.json` first, falls back to `project-profile.example.json`, merges with `project-profile.local.json`). Get stack: frontend, backend, database values and provider selections.
+1. **Project profile** — use the merged profile (reads `project-profile.json` first, falls back to
+`project-profile.example.json`, merges with `project-profile.local.json`). Get stack: frontend,
+backend, database values and provider selections.
 2. `infra/deployment/apps.json` — for app topology (appId, projectPath, role, artifactName, healthPath, deployOrder)
 3. `.codex/client-tools.local.json` — for Gitea base URL, Nexus base URL and repository
 
-Also follow `.codex/skills/_shared/skill-startup.md` for the standard startup sequence, then read `.codex/skills/_shared/delivery-contract.md` and `docs/conventions/context-management.md` so the generated workflows respect the shared delivery contract and stay scoped to the active ticket.
+Also follow `.codex/skills/_shared/skill-startup.md` for the standard startup sequence, then read
+`.codex/skills/_shared/delivery-contract.md` and `docs/conventions/context-management.md` so the
+generated workflows respect the shared delivery contract and stay scoped to the active ticket.
 
 ## Configuration
 
@@ -41,7 +51,9 @@ The skill derives configuration from these sources:
 
 ## Workflow
 
-Run this skill inside the active ticket's delivery context after the user confirms the stack and infrastructure is running. Generate the workflow files, show a dry-run diff, and write only after confirmation — see the Workflow Generation Rules below.
+Run this skill inside the active ticket's delivery context after the user confirms the stack and infrastructure is
+running. Generate the workflow files, show a dry-run diff, and write only after
+confirmation — see the Workflow Generation Rules below.
 
 ## Workflow Generation Rules
 
@@ -64,7 +76,8 @@ python -m tools.sdd_cli environment-lab set-project-stack --values-json '{
 }'
 ```
 
-Then read the confirmed values from `project-profile.local.json → stack` and determine build commands per domain using the mapping table:
+Then read the confirmed values from `project-profile.local.json → stack` and determine build commands per domain using
+the mapping table:
 
 | Stack value               | Build command                     | Output directory            | Artifact pattern | Deploy command              |
 | ------------------------- | --------------------------------- | --------------------------- | ---------------- | --------------------------- |
@@ -355,9 +368,38 @@ jobs:
     "
 ```
 
+### 4a. K8s/kind Deploy Step (when `providers.deployment.id == "kubernetes"` or the project uses kind)
+
+When the deployment target is K8s (kind + NodePort services), the deploy step must follow these
+hardened patterns — each one prevented a real CI failure:
+
+1. **NodePort uniqueness gate** — before any apply, validate every `infra/k8s/overlays/*/service-patch.yaml` `nodePort:`
+   against `infra/deployment/ports.json` (cluster-scoped: dev `30080/30500`, qa `31080/31500`, prod `32080/32500`).
+   Drift or collision must fail the build. Use `tools/sdd_cli/k8s_ports.py` as the canonical generator.
+2. **Delete Deployments before apply** — Deployment `spec.selector.matchLabels` is immutable; delete the existing
+   Deployment per app in the target namespace before `kubectl apply`, or the apply fails with `field is immutable`.
+   Do **not** delete Services — their selector IS mutable and they update in place.
+3. **Heredoc/python column-0 rule** — any `python3 << PYEOF` / `python3 -c "..."` block inside a `run: |` block
+   must start at **column 0** of the generated script (YAML keeps its indentation offset; bash heredoc terminators
+   and Python `-c` bodies reject it). Validate with `bash -n` and `python -m py_compile` on extracted scripts.
+4. **kind image pruning** — prune old commit tags from the local daemon and the kind node (`ctr -n k8s.io`),
+   guarded so the current build's image is never pruned.
+5. **CI kubeconfig** — never hardcode the API port `6443`; kind picks a random host port per cluster. Derive it
+   from `kind get kubeconfig` and transform the file as YAML, not line surgery.
+
 ### 5. Generate `pr-validation.yml`
 
-This workflow is mostly static. Generate it with the standard checkout, JSON validation, secret scan, SAST/SCA/IaC scans, and the dev-flow review gate steps. It also includes the **repo tooling tests** step (see `.codex/skills/_shared/test-requirements.md`):
+This workflow is mostly static. Generate it with the standard checkout, JSON validation, secret scan,
+SAST/SCA/IaC scans, and the dev-flow review gate steps. **Do NOT use `--skip-db-update` on a first-run
+Trivy scan** (no pre-cached vuln DB in the CI image) — the runner container has outbound internet, so let
+Trivy download its DB on the first run. It also includes the **repo tooling tests** step (see
+`.codex/skills/_shared/test-requirements.md`):
+
+**If SCA (Trivy fs) flags `react-router` in a consumer frontend:** the MEDIUM/HIGH advisories are only
+fixed by a coordinated upgrade — `npm install react@^19.2.7 react-dom@^19.2.7 react-router@^8.3.0`
+(v8 merged `react-router-dom` into `react-router` and requires React ≥ 19.2.7), remove
+`react-router-dom` from `package.json`, and migrate imports `from "react-router-dom"` →
+`from "react-router"` (same declarative API: `BrowserRouter`, `Routes`, `Route`, `Link`, `useNavigate`).
 
 1. **Repo tooling tests** — always run the shell's own Python test suite (deterministic, stack-independent):
 
@@ -365,13 +407,22 @@ This workflow is mostly static. Generate it with the standard checkout, JSON val
    python3 -m pytest tools/sdd_cli/tests/ -q
    ```
 
-2. **Product tests (unit, integration, architecture) run via the lefthook `pre-push` hook** — NOT in the CI image. This keeps `sdd-e2e-ci:local` lean: stack runtimes (.NET SDK, Go, ...) live on the developer machine, and the tests run locally BEFORE push. The hook executes `python -m tools.sdd_cli stack-tests`, which reads `project-profile.local.json → stack.testFrameworks` and runs the mapped (install, test) pairs for the three test levels. When no stack is configured (template state), it reports and exits 0 — never assume a tech stack.
+2. **Product tests (unit, integration, architecture) run via the lefthook `pre-push` hook** — NOT in the CI image. This
+keeps `sdd-e2e-ci:local` lean: stack runtimes (.NET SDK, Go, ...) live on the
+developer machine, and the tests run locally BEFORE push. The hook executes `python -m tools.sdd_cli stack-tests`, which
+reads `project-profile.local.json → stack.testFrameworks` and runs the mapped
+(install, test) pairs for the three test levels. When no stack is configured (template state), it reports and exits 0 —
+never assume a tech stack.
 
-   **⚠️ Enforcement note:** because product tests run via the local hook, CI does NOT gate product tests. The `pre-push` hook is the only enforcement point and can be bypassed with `git push --no-verify`. This matches the lean-image decision, but document it in PRs and never rely on CI to catch product test failures.
+   **⚠️ Enforcement note:** because product tests run via the local hook, CI does NOT gate product tests. The `pre-push`
+   hook is the only enforcement point and can be bypassed with `git push
+   --no-verify`. This matches the lean-image decision, but document it in PRs and never rely on CI to catch product test
+   failures.
 
 ### 5a. Product Test Frameworks → Local Commands (`stack-tests`)
 
-The `python -m tools.sdd_cli stack-tests` driver (`tools/sdd_cli/stack_tests.py`) maps each configured framework to an (install, test) command pair covering the three levels:
+The `python -m tools.sdd_cli stack-tests` driver (`tools/sdd_cli/stack_tests.py`) maps each configured framework to an
+(install, test) command pair covering the three levels:
 
 | Framework | Install command (first) | Test command (unit + integration + architecture) |
 |-----------|-------------------------|--------------------------------------------------|
@@ -398,7 +449,7 @@ locally, not to switch the framework to pytest.
 
 Before writing any files, offer a dry-run preview:
 
-```
+```text
 text
 Would update .gitea/workflows/package-deploy.yml:
   + Build frontend (React): npm ci → dist/
@@ -417,7 +468,9 @@ Write the generated YAML to:
 - `.gitea/workflows/package-deploy.yml`
 - `.gitea/workflows/pr-validation.yml`
 
-Preserve the existing `set -eo pipefail` pattern (not `-u` to avoid unbound variable errors). Keep the checkout step's `GIT_TERMINAL_PROMPT=0` and token-based URL pattern with `host.docker.internal:3000`.
+Preserve the existing `set -eo pipefail` pattern (not `-u` to avoid unbound variable errors). Keep the checkout step's
+`GIT_TERMINAL_PROMPT=0` and token-based URL pattern with
+`host.docker.internal:3000`.
 
 ## Output
 
@@ -433,9 +486,12 @@ Report:
 
 ## Failure Rules
 
-- If `project-profile.local.json` or `project-profile.example.json` does not exist, stop and ask the user to run `configure-dev-environment` first to set the project stack.
-- If `infra/deployment/apps.json` does not exist, generate minimal workflows with only checkout and a stub deploy step that reports no apps configured.
-- If no frontend, backend, or database stack is configured (all `applies: false`), generate minimal workflows without build steps.
+- If `project-profile.local.json` or `project-profile.example.json` does not exist, stop and ask the user to run
+`configure-dev-environment` first to set the project stack.
+- If `infra/deployment/apps.json` does not exist, generate minimal workflows with only checkout and a stub deploy step
+that reports no apps configured.
+- If no frontend, backend, or database stack is configured (all `applies: false`), generate minimal workflows without
+build steps.
 - Never overwrite a workflow file without first showing a dry-run diff and asking for confirmation.
 - Never remove the checkout step — it is required for all workflows.
 - Never hardcode secrets or tokens into workflow files — always use `${{ secrets.* }}` expressions.

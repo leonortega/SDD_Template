@@ -1,10 +1,15 @@
 # Security Invariants as Runtime Assertions
 
-Encode security guarantees as runtime checks in the code path, not only in tests. A test proves the guarantee held during the test run; an **always-on** inline check proves it holds in production and fails loudly when it doesn't. For security invariants specifically, prefer mechanisms that cannot be stripped at deploy time (a thrown `InvariantViolation`, not a strippable `assert()` / `assert` statement) — see the language-idioms table below.
+Encode security guarantees as runtime checks in the code path, not only in tests. A test proves the guarantee held
+during the test run; an **always-on** inline check proves it holds in production and fails loudly when it doesn't. For
+security invariants specifically, prefer mechanisms that cannot be stripped at deploy time (a thrown
+`InvariantViolation`, not a strippable `assert()` / `assert` statement) — see the language-idioms table below.
 
 ## Why
 
-A security test answers "did this case work?". A security invariant answers "is this guarantee still true right now?". The two are complementary: tests give coverage on known inputs; inline invariants catch the unknown ones (the bypass you didn't anticipate, the refactor that quietly broke the boundary, the AI-generated code path that "looks right").
+A security test answers "did this case work?". A security invariant answers "is this guarantee still true right now?".
+The two are complementary: tests give coverage on known inputs; inline invariants catch the unknown ones (the bypass you
+didn't anticipate, the refactor that quietly broke the boundary, the AI-generated code path that "looks right").
 
 Three properties make a security invariant pay off:
 
@@ -28,11 +33,15 @@ If any one is missing, you want input validation, authorization middleware, or a
 
 ## Where NOT to Use
 
-- **External input** — that is validation. Return a typed error, do not panic. A user sending a malformed payload is not an impossible state.
-- **Cross-service contracts** — assert on what *this* service controls, not what its dependencies returned. A downstream returning unexpected data is an error path, not an invariant violation.
-- **Soft business rules** — "discount must not exceed 50%" is a domain rule that may legitimately change; it belongs in domain logic with proper errors, not an assertion.
+- **External input** — that is validation. Return a typed error, do not panic. A user sending a malformed payload is not
+an impossible state.
+- **Cross-service contracts** — assert on what *this* service controls, not what its dependencies returned. A downstream
+returning unexpected data is an error path, not an invariant violation.
+- **Soft business rules** — "discount must not exceed 50%" is a domain rule that may legitimately change; it belongs in
+domain logic with proper errors, not an assertion.
 
-Heuristic: if a violation could plausibly be caused by a malicious or buggy *caller*, it is validation. If it could only be caused by *this code* being wrong, it is an invariant.
+Heuristic: if a violation could plausibly be caused by a malicious or buggy *caller*, it is validation. If it could only
+be caused by *this code* being wrong, it is an invariant.
 
 ## Patterns
 
@@ -62,7 +71,8 @@ public function deleteInvoice(int $invoiceId, User $actor): void
 }
 ```
 
-Why the second check when one is one line up: refactors split functions. The check at the mutation site keeps the guarantee local to the dangerous operation, so a later refactor that moves the authz check cannot silently weaken it.
+Why the second check when one is one line up: refactors split functions. The check at the mutation site keeps the
+guarantee local to the dangerous operation, so a later refactor that moves the authz check cannot silently weaken it.
 
 ### Tenant isolation
 
@@ -125,7 +135,8 @@ async function updateProfile(
 }
 ```
 
-The duplicated check is intentional. The first is validation (user-facing error); the second is the inline guarantee that survives refactors and signals a code-path bug if it ever fires.
+The duplicated check is intentional. The first is validation (user-facing error); the second is the inline guarantee
+that survives refactors and signals a code-path bug if it ever fires.
 
 ### Redaction postcondition
 
@@ -149,7 +160,9 @@ def serialize_for(viewer: Viewer, doc: Document) -> dict:
 
 ### Failing closed
 
-A failing security invariant must crash the request, not log-and-continue. Catching the failure to "stay available" is exactly the path that turns a detectable bypass into a silent breach. Let the request die; the supervisor restarts the worker.
+A failing security invariant must crash the request, not log-and-continue. Catching the failure to "stay available" is
+exactly the path that turns a detectable bypass into a silent breach. Let the request die; the supervisor restarts the
+worker.
 
 ### Language idioms
 
@@ -165,15 +178,19 @@ The cost of a security check is negligible compared to the cost of a missed brea
 
 ### Sensitive-data hygiene in the message
 
-Assertion messages reach logs. Do not log secrets, tokens, full PII, or session identifiers in the assertion text. Use opaque identifiers (`user_id=42`, not `email=...`) and a separate sensitive-data sink when truly needed.
+Assertion messages reach logs. Do not log secrets, tokens, full PII, or session identifiers in the assertion text. Use
+opaque identifiers (`user_id=42`, not `email=...`) and a separate sensitive-data sink when truly needed.
 
 ### Pairs well with
 
 - **Input validation** (`references/input-validation.md`) — handles the boundary; invariants protect the interior
-- **Authentication patterns** (`references/authentication-patterns.md`) — session/JWT establish identity; invariants encode what that identity is allowed to touch
+- **Authentication patterns** (`references/authentication-patterns.md`) — session/JWT establish identity; invariants
+encode what that identity is allowed to touch
 - **Security logging** (`references/security-logging.md`) — assertion failures should reach the security-event sink
-- **Error message sanitization** (`references/error-message-sanitization.md`) — invariant violations must not leak detail to the user
-- **OWASP Top 10** (`references/owasp-top10.md`) — A01 Broken Access Control, A04 Insecure Design, A09 Logging Failures are the primary fits
+- **Error message sanitization** (`references/error-message-sanitization.md`) — invariant violations must not leak
+detail to the user
+- **OWASP Top 10** (`references/owasp-top10.md`) — A01 Broken Access Control, A04 Insecure Design, A09 Logging Failures
+are the primary fits
 
 ## Anti-Patterns
 
@@ -194,4 +211,5 @@ When reviewing a sensitive code path:
 3. Ask: if that line silently misbehaved due to a future refactor, would any test catch it?
 4. If no — that is where an invariant earns its keep
 
-The audit output is a small list of "this guarantee is currently load-bearing on convention X; encode it as an assertion".
+The audit output is a small list of "this guarantee is currently load-bearing on convention X; encode it as an
+assertion".

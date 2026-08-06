@@ -16,13 +16,14 @@ This skill covers Nexus repository configuration, artifact publishing, promotion
 
 ## Artifact Promotion Pipeline
 
-```
+```text
 dev (hosted, writable)
   → staging (hosted, QA-verified)
     → release (hosted, immutable)
 ```
 
-Promotion uses Nexus REST API to copy/move components between repositories. Use the `promote-alias` operation for pointer-based promotion without moving canonical artifacts.
+Promotion uses Nexus REST API to copy/move components between repositories. Use the `promote-alias` operation for
+pointer-based promotion without moving canonical artifacts.
 
 ## Cleanup Policies
 

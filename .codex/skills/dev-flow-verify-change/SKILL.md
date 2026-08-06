@@ -1,6 +1,8 @@
 ---
 name: dev-flow-verify-change
-description: Verify implementation matches change artifacts. Use when the user wants to validate that implementation is complete, correct, and coherent before archiving.
+description: >-
+  Verify implementation matches change artifacts. Use when the user wants to validate that implementation is complete,
+  correct, and coherent before archiving.
 license: MIT
 compatibility: Requires openspec CLI.
 metadata:
@@ -13,13 +15,15 @@ metadata:
 
 Verify that an implementation matches the change artifacts (specs, tasks, design).
 
-**Input**: Optionally specify a change name. If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
+**Input**: Optionally specify a change name. If omitted, check if it can be inferred from conversation context. If vague
+or ambiguous you MUST prompt for available changes.
 
 **Steps**
 
 1. **If no change name provided, prompt for selection**
 
-   List active changes by checking directories in `openspec/changes/` that have a `.openspec.yaml` file. Use the **AskUserQuestion tool** to let the user select.
+   List active changes by checking directories in `openspec/changes/` that have a `.openspec.yaml` file. Use the
+   **AskUserQuestion tool** to let the user select.
 
    Show changes that have implementation tasks (tasks.md exists).
    Mark changes with incomplete tasks as "(In Progress)".
@@ -45,7 +49,7 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
 
    Each dimension can have CRITICAL, WARNING, or SUGGESTION issues.
 
-5. **Verify Completeness**
+4. **Verify Completeness**
 
    **Task Completion**:
    - If `contextFiles.tasks` exists, read every file path in it
@@ -65,7 +69,7 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
        - Add CRITICAL issue: "Requirement not found: <requirement name>"
        - Recommendation: "Implement requirement X: <description>"
 
-6. **Verify Correctness**
+5. **Verify Correctness**
 
    **Requirement Implementation Mapping**:
    - For each requirement from delta specs:
@@ -84,7 +88,7 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
        - Add WARNING: "Scenario not covered: <scenario name>"
        - Recommendation: "Add test or implementation for scenario: <description>"
 
-7. **Verify Coherence**
+6. **Verify Coherence**
 
    **Design Adherence**:
    - If `contextFiles.design` exists:
@@ -102,11 +106,11 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
      - Add SUGGESTION: "Code pattern deviation: <details>"
      - Recommendation: "Consider following project pattern: <example>"
 
-8. **Generate Verification Report**
+7. **Generate Verification Report**
 
    **Summary Scorecard**:
 
-   ```
+```text
    ## Verification Report: <change-name>
 
    ### Summary
@@ -135,9 +139,10 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
       - Each with specific recommendation
 
    **Final Assessment**:
-   - If CRITICAL issues: "X critical issue(s) found. Fix before archiving."
-   - If only warnings: "No critical issues. Y warning(s) to consider. Ready for archive (with noted improvements)."
-   - If all clear: "All checks passed. Ready for archive."
+
+- If CRITICAL issues: "X critical issue(s) found. Fix before archiving."
+- If only warnings: "No critical issues. Y warning(s) to consider. Ready for archive (with noted improvements)."
+- If all clear: "All checks passed. Ready for archive."
 
 **Verification Heuristics**
 
@@ -170,11 +175,14 @@ Use this skill to verify an implementation against OpenSpec artifacts before arc
 
 ## Shared Context
 
-Before ticketed verification, read `.codex/skills/_shared/delivery-contract.md` and `docs/conventions/context-management.md`. Verify against the active ticket or explicit change, include relevant validation evidence, and preserve handoff findings for the caller.
+Before ticketed verification, read `.codex/skills/_shared/delivery-contract.md` and
+`docs/conventions/context-management.md`. Verify against the active ticket or explicit change, include relevant
+validation evidence, and preserve handoff findings for the caller.
 
 ## Workflow
 
-Follow the verification workflow above, then report whether implementation, tests, and artifacts are ready for archive or need follow-up work.
+Follow the verification workflow above, then report whether implementation, tests, and artifacts are ready for archive
+or need follow-up work.
 
 ## Output
 
@@ -182,4 +190,5 @@ Report completeness, correctness, coherence, validation performed, blockers, and
 
 ## Failure Rules
 
-Stop when the change is ambiguous, required artifacts are missing, verification evidence cannot be inspected, validation cannot run, or ticket context conflicts with the implementation under review.
+Stop when the change is ambiguous, required artifacts are missing, verification evidence cannot be inspected, validation
+cannot run, or ticket context conflicts with the implementation under review.

@@ -2,11 +2,13 @@
 
 ## What Are Code Smells?
 
-Indicators that something MAY be wrong. Not bugs, but design problems that make code hard to understand, change, or test.
+Indicators that something MAY be wrong. Not bugs, but design problems that make code hard to understand, change, or
+test.
 
 ## The Five Categories
 
 ### 1. Bloaters
+
 Code that has grown too large.
 
 | Smell | Symptom | Refactoring |
@@ -18,6 +20,7 @@ Code that has grown too large.
 | **Primitive Obsession** | Primitives instead of small objects | Wrap in Value Object |
 
 ### 2. Object-Orientation Abusers
+
 Misuse of OO principles.
 
 | Smell | Symptom | Refactoring |
@@ -28,6 +31,7 @@ Misuse of OO principles.
 | **Alternative Classes** | Different interfaces, same concept | Rename, Extract Superclass |
 
 ### 3. Change Preventers
+
 Code that makes changes difficult.
 
 | Smell | Symptom | Refactoring |
@@ -37,6 +41,7 @@ Code that makes changes difficult.
 | **Parallel Inheritance** | (see above) | Merge Hierarchies |
 
 ### 4. Dispensables
+
 Code that can be removed.
 
 | Smell | Symptom | Refactoring |
@@ -48,6 +53,7 @@ Code that can be removed.
 | **Lazy Class** | Class that does almost nothing | Inline Class |
 
 ### 5. Couplers
+
 Excessive coupling between classes.
 
 | Smell | Symptom | Refactoring |

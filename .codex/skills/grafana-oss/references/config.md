@@ -28,6 +28,7 @@ password = secret
 ```
 
 After changing these, restart Grafana and verify:
+
 - `curl http://localhost:3000/api/health` returns `{"database": "ok", ...}`
 - `curl http://localhost:3000/api/admin/settings | jq '.database'` shows the new config
 
@@ -68,7 +69,8 @@ api_url = https://your-org.okta.com/oauth2/v1/userinfo
 scopes = openid profile email groups
 ```
 
-For SAML and GitHub OAuth, the OSS configs are identical to Grafana Cloud; see `docs/architecture/deployment.md` and the `owasp-security` skill for authentication hardening guidance.
+For SAML and GitHub OAuth, the OSS configs are identical to Grafana Cloud; see `docs/architecture/deployment.md` and the
+`owasp-security` skill for authentication hardening guidance.
 
 ## Security
 
@@ -79,7 +81,8 @@ admin_password = secret
 allow_embedding = true       # required for embedding dashboards in iframes
 ```
 
-`admin_password` is only consulted on first startup. To change later, use `grafana-cli admin reset-admin-password <new-password>`.
+`admin_password` is only consulted on first startup. To change later, use `grafana-cli admin reset-admin-password
+<new-password>`.
 
 ## Feature toggles
 
@@ -89,6 +92,7 @@ enable = publicDashboards
 ```
 
 Multiple toggles are space-separated:
+
 ```ini
 enable = publicDashboards correlations grafanaApiServer
 ```

@@ -470,7 +470,8 @@ spec:
 ## Repository Strategies
 
 ### Mono-repo
-```
+
+```text
 fleet-repo/
 ├── apps/
 │   ├── myapp/
@@ -487,7 +488,8 @@ fleet-repo/
 ```
 
 ### Multi-repo
-```
+
+```text
 # App repos (one per app)
 myapp-manifests/
 ├── base/

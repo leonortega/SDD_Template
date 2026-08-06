@@ -4838,7 +4838,8 @@ def run_environment_lab(args: list[str]) -> int:
             "Available: setup-lab, compose-up, compose-down, health-check, init-local-files, init-project-profile, "
             "init-quality-templates, set-openproject-env, set-monitoring-env, set-gitea-runner-env, "
             "split-infra-env, build-gitea-images, set-gitea-branch-protection, validate-observability, "
-            "validate-gitea-runner, set-client-tools, set-project-stack, "
+            "validate-gitea-runner, validate-app-config, validate-docker-desktop, "
+            "provision-nexus-repositories, provision-gitea-secrets, set-client-tools, set-project-stack, "
             "set-project-stack-metadata, set-semgrep-config, set-quality-config, "
             "validate-docker-desktop-k8s, setup-kind-cluster, setup-k8s-access, scaffold-k8s, "
             "ensure-headlamp, provision-lab-users, push-to-gitea, verify-gitea-token, "
@@ -4871,6 +4872,12 @@ def run_environment_lab(args: list[str]) -> int:
         ),
         "validate-observability": lambda: validate_observability(root, dry_run),
         "validate-gitea-runner": lambda: validate_gitea_runner(root, dry_run),
+        "validate-app-config": lambda: validate_app_config(root, dry_run),
+        "validate-docker-desktop": lambda: validate_docker_desktop(root, dry_run),
+        "provision-nexus-repositories": lambda: provision_nexus_repositories(
+            root, dry_run
+        ),
+        "provision-gitea-secrets": lambda: provision_gitea_secrets(root, dry_run),
         "set-client-tools": lambda: set_client_tools(root, values, dry_run),
         "set-project-stack": lambda: set_project_stack(root, values, dry_run),
         "set-project-stack-metadata": lambda: set_project_stack_metadata(

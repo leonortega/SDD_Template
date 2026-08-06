@@ -1,6 +1,7 @@
 # Supply Chain Incident Response
 
-Operational playbook for responding to GitHub Actions supply chain compromises, based on the aquasecurity/trivy-action tag force-push incident (2026-03-19). Covers detection, triage, remediation, and post-incident hardening.
+Operational playbook for responding to GitHub Actions supply chain compromises, based on the aquasecurity/trivy-action
+tag force-push incident (2026-03-19). Covers detection, triage, remediation, and post-incident hardening.
 
 ## Detection Patterns
 
@@ -8,7 +9,8 @@ Supply chain compromises in GitHub Actions typically surface through multiple si
 
 ### StepSecurity Harden-Runner Alerts
 
-If `step-security/harden-runner` is deployed in audit or block mode, it will flag unexpected network activity from compromised actions:
+If `step-security/harden-runner` is deployed in audit or block mode, it will flag unexpected network activity from
+compromised actions:
 
 - **Unexpected DNS lookups** to attacker-controlled domains
 - **Outbound HTTPS connections** to endpoints not in the baseline
@@ -18,9 +20,10 @@ Check the StepSecurity Insights dashboard at `https://app.stepsecurity.io` for a
 
 ### Failed SHA Verification
 
-If actions are SHA-pinned, a force-pushed tag will cause the checkout to fail because the tag now points to a different commit than the pinned SHA. This is the clearest signal that a tag was compromised.
+If actions are SHA-pinned, a force-pushed tag will cause the checkout to fail because the tag now points to a different
+commit than the pinned SHA. This is the clearest signal that a tag was compromised.
 
-```
+```text
 Error: Unable to resolve action `aquasecurity/trivy-action@0.2.1`.
 The SHA for this ref changed. Expected: abc123..., Got: def456...
 ```
@@ -38,7 +41,7 @@ Dependency update tools may generate unexpected PRs when a tag is force-pushed. 
 - GitHub Security Advisories (GHSA)
 - StepSecurity blog and Twitter/X
 - GitHub Actions changelog
-- OSS security mailing lists (oss-security@lists.openwall.com)
+- OSS security mailing lists (<oss-security@lists.openwall.com>)
 
 ## Triage Checklist
 
@@ -76,7 +79,8 @@ For each affected run, determine which secrets were accessible:
 | Organization secrets in env | Critical | Rotate immediately, notify all consuming repos |
 | OIDC tokens (`id-token: write`) | High | Check for unauthorized artifact signatures |
 
-**Job isolation matters:** Secrets are scoped to the job, not the workflow. If the compromised action ran in a job that did not reference any secrets beyond `GITHUB_TOKEN`, other jobs' secrets were not exposed.
+**Job isolation matters:** Secrets are scoped to the job, not the workflow. If the compromised action ran in a job that
+did not reference any secrets beyond `GITHUB_TOKEN`, other jobs' secrets were not exposed.
 
 ```yaml
 # This job's secrets are NOT exposed to the compromised action in the scan job
@@ -106,7 +110,7 @@ gh api "repos/OWNER/REPO/code-scanning/analyses?ref=main" \
 
 ## Secret Rotation Decision Tree
 
-```
+```text
 Was the compromised action in a job with custom secrets (not just GITHUB_TOKEN)?
 ├── YES → Rotate ALL secrets referenced in that job immediately
 │         └── Were org-level secrets used?
@@ -121,7 +125,8 @@ Was the compromised action in a job with custom secrets (not just GITHUB_TOKEN)?
 └── UNKNOWN → Treat as HIGH risk, rotate all job secrets
 ```
 
-**GITHUB_TOKEN lifetime:** Tokens expire when the workflow run completes. If the compromised run already finished, the token is no longer valid. However, during the run window, the token could have been exfiltrated for use before expiry.
+**GITHUB_TOKEN lifetime:** Tokens expire when the workflow run completes. If the compromised run already finished, the
+token is no longer valid. However, during the run window, the token could have been exfiltrated for use before expiry.
 
 ## Org-Wide Remediation Playbook
 
@@ -136,7 +141,9 @@ gh api orgs/ORG/actions/permissions -X PUT \
   --field sha_pinning_required=true
 ```
 
-**Note:** Reusable workflows (e.g., `netresearch/.github/.github/workflows/reusable.yml@main`) are exempt from SHA pinning requirements. GitHub enforces pinning only on actions (`uses: owner/action@sha`), not on workflow calls (`uses: owner/repo/.github/workflows/file.yml@ref`).
+**Note:** Reusable workflows (e.g., `netresearch/.github/.github/workflows/reusable.yml@main`) are exempt from SHA
+pinning requirements. GitHub enforces pinning only on actions (`uses: owner/action@sha`), not on workflow calls (`uses:
+owner/repo/.github/workflows/file.yml@ref`).
 
 ### Step 2: Batch SHA-Pin All Actions
 
@@ -185,7 +192,8 @@ updates:
       - "dependencies"
 ```
 
-This ensures that when SHA-pinned actions release new versions, Dependabot creates PRs to update both the SHA and the version comment.
+This ensures that when SHA-pinned actions release new versions, Dependabot creates PRs to update both the SHA and the
+version comment.
 
 ### Step 4: Audit Workflow Runs in the Compromise Window
 
@@ -206,7 +214,7 @@ echo "Total runs in window: $(jq length compromise-window-runs.json)"
 
 Use this template for team notification via Matrix/Slack:
 
-```
+```text
 🚨 Supply Chain Security Incident — [ACTION_NAME]
 
 **What happened:** The GitHub Action `[owner/action@tag]` was compromised via
@@ -252,6 +260,7 @@ After baselining legitimate network activity in audit mode, switch to block mode
 ```
 
 **Domain allowlist strategy:**
+
 - Start with `egress-policy: audit` for 1-2 weeks to capture all legitimate endpoints
 - Review the StepSecurity dashboard for each workflow
 - Create per-job allowlists (different jobs need different endpoints)
@@ -271,7 +280,7 @@ grep -rn 'contents: write' .github/workflows/*.yml
 
 Apply least-privilege at both workflow and job level. Set the org default to read-only:
 
-```
+```text
 Repository Settings > Actions > General > Workflow permissions
 → "Read repository contents and packages permissions"
 ```
@@ -280,7 +289,7 @@ Repository Settings > Actions > General > Workflow permissions
 
 Require approval for workflow runs from fork PRs to prevent malicious PRs from triggering compromised actions:
 
-```
+```text
 Repository Settings > Actions > General > Fork pull request workflows
 → "Require approval for all outside collaborators"
 ```
@@ -292,26 +301,31 @@ Repository Settings > Actions > General > Fork pull request workflows
 | `pin-github-action` | Batch SHA-pin actions in workflow files | `npm install -g pin-github-action` |
 | `gh` CLI | Audit runs, manage repos, create PRs | `brew install gh` / `apt install gh` |
 | `step-security/harden-runner` | Runtime network monitoring for Actions | Add to workflow YAML |
-| StepSecurity Insights | Dashboard for harden-runner telemetry | https://app.stepsecurity.io |
+| StepSecurity Insights | Dashboard for harden-runner telemetry | <https://app.stepsecurity.io> |
 | `cosign` | Verify artifact signatures | `brew install cosign` |
 | `slsa-verifier` | Verify SLSA provenance | `go install github.com/slsa-framework/slsa-verifier/v2/cli/slsa-verifier@latest` |
 
 ## Real-World Incident: trivy-action (2026-03-19)
 
-On March 19, 2026, `aquasecurity/trivy-action@v0.2.1` was compromised via a tag force-push attack. The attacker re-pointed the `v0.2.1` tag to a malicious commit.
+On March 19, 2026, `aquasecurity/trivy-action@v0.2.1` was compromised via a tag force-push attack. The attacker
+re-pointed the `v0.2.1` tag to a malicious commit.
 
 **Timeline:**
+
 - 2026-03-19: Compromised tag detected via StepSecurity Harden-Runner alerts showing unexpected outbound connections
 - 2026-03-19: GitHub advisory published; community alerted via social media and security mailing lists
 - 2026-03-20: Org-wide SHA pinning enforcement enabled (`sha_pinning_required=true`)
 - 2026-03-20: 59 hardening PRs created across all netresearch repos using `pin-github-action --allow "netresearch/*"`
 
-**Assessment:** Only one CI run was affected. The job used `GITHUB_TOKEN` with `contents: read` permissions only. No secret rotation was required. No malicious artifacts were uploaded.
+**Assessment:** Only one CI run was affected. The job used `GITHUB_TOKEN` with `contents: read` permissions only. No
+secret rotation was required. No malicious artifacts were uploaded.
 
 **Key lessons:**
+
 1. Tag-based action references are inherently mutable and vulnerable to force-push attacks
 2. SHA pinning would have prevented exploitation entirely
-3. Harden-Runner in audit mode detected the anomaly but did not block it — block mode with allowlists would have stopped the payload
+3. Harden-Runner in audit mode detected the anomaly but did not block it — block mode with allowlists would have stopped
+the payload
 4. Job-level permission isolation limited the blast radius to a read-only token
 5. Dependabot `github-actions` ecosystem monitoring provides early warning of tag changes
 

@@ -1,16 +1,25 @@
 ---
 name: promql
 license: Apache-2.0
-description: Write, validate, and optimize PromQL for Prometheus / Grafana Mimir / Grafana Cloud Metrics. Covers `rate` vs `irate` vs `increase`, label matchers and regex, `sum / avg / topk / by / without` aggregation, classic + native `histogram_quantile`, ratios with divide-by-zero guards, `absent` / `changes` for staleness, time offsets and `predict_linear`, recording-rule naming, SLO + burn-rate math, and a cardinality-hunting playbook. Use when writing a metric query, fixing wrong p95s, building an error-budget alert, debugging "query is slow", finding the noisy label that blew up cardinality, or migrating a dashboard query to a recording rule — even when the user says "calculate the error rate", "p99 latency", "sum by service", "why is this query slow", or "what's filling Mimir" without naming PromQL.
+description: >-
+  >- Write, validate, and optimize PromQL for Prometheus / Grafana Mimir / Grafana Cloud Metrics. Covers `rate` vs
+  `irate` vs `increase`, label matchers and regex, `sum / avg / topk / by / without` aggregation, classic + native
+  `histogram_quantile`, ratios with divide-by-zero guards, `absent` / `changes` for staleness, time offsets and
+  `predict_linear`, recording-rule naming, SLO + burn-rate math, and a cardinality-hunting playbook. Use when writing a
+  metric query, fixing wrong p95s, building an error-budget alert, debugging "query is slow", finding the noisy label
+  that blew up cardinality, or migrating a dashboard query to a recording rule — even when the user says "calculate the
+  error rate", "p99 latency", "sum by service", "why is this query slow", or "what's filling Mimir" without naming
+  PromQL.
 ---
 
 # PromQL Query Patterns
 
-> **Docs**: https://prometheus.io/docs/prometheus/latest/querying/basics/
+> **Docs**: <https://prometheus.io/docs/prometheus/latest/querying/basics/>
 
 PromQL returns either an **instant vector**, a **range vector**, or a **scalar**.
 
-**Golden rule:** `rate()` / `increase()` require a range vector ≥ 4× the scrape interval. 60s scrape → use `[5m]` minimum.
+**Golden rule:** `rate()` / `increase()` require a range vector ≥ 4× the scrape interval. 60s scrape → use `[5m]`
+minimum.
 
 ## Prerequisites
 
@@ -61,7 +70,8 @@ sum(rate(http_requests_total{status_code=~"5.."}[5m]))
   / (sum(rate(http_requests_total[5m])) > 0)
 ```
 
-Full library (recording rules, SLO burn-rate, offsets, cardinality hunt, native histograms): [`references/patterns.md`](references/patterns.md).
+Full library (recording rules, SLO burn-rate, offsets, cardinality hunt, native histograms):
+[`references/patterns.md`](references/patterns.md).
 
 ### 3. Convert a slow dashboard query into a recording rule
 
@@ -93,7 +103,8 @@ curl -sG --data-urlencode "query=job:http_request_duration_p95:rate5m" \
 - `histogram_quantile` returns NaN → forgot `by (le)` in the inner aggregation
 - "No data" → check the metric exists (`/api/v1/series`) and the window ≥ 4× scrape interval
 - Wrong rate magnitude → counter was aggregated before `rate()` (always `rate()` first)
-- Query timeout → series count too high; use `topk(...)` + a recording rule + drop high-cardinality labels (see [`references/patterns.md`](references/patterns.md))
+- Query timeout → series count too high; use `topk(...)` + a recording rule + drop high-cardinality labels (see
+[`references/patterns.md`](references/patterns.md))
 
 ## Resources
 

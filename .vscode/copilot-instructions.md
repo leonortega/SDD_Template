@@ -11,7 +11,8 @@
 
 2. **Source-of-truth hierarchy** (from delivery-contract.md):
    - `.codex/skills/_shared/delivery-contract.md`
-   - `docs/conventions/context-management.md`, `docs/architecture/system.md`, `docs/conventions/development.md`, `docs/architecture/deployment.md`
+   - `docs/conventions/context-management.md`, `docs/architecture/system.md`, `docs/conventions/development.md`,
+     `docs/architecture/deployment.md`
    - Non-OpenSpec delivery-flow skills
    - Configure skills and generated templates
 
@@ -23,16 +24,23 @@
 
 4. **Example workflow**:
    - User asks: "Add formatting validation to pre-commit"
-   - Action: Check `configure-dev-environment` skill → read `quality-gates.md` → see lefthook rules already documented → add to lefthook.yml per skill guidance, not independently
+   - Action: Check `configure-dev-environment` skill → read `quality-gates.md` → see lefthook rules already documented →
+     add to lefthook.yml per skill guidance, not independently
    - Result: Follow skill, don't add custom instruction to knowledge
 
-5. **When skills have gaps**: Document the gap in the final handoff (e.g., "Skill quality-gates.md does not cover X; added knowledge entry with ...") so the skill can be updated later.
+5. **When skills have gaps**: Document the gap in the final handoff (e.g., "Skill quality-gates.md does not cover X;
+   added knowledge entry with ...") so the skill can be updated later.
+6. **When skills have gaps**: Document the gap in the final handoff (e.g., "Skill quality-gates.md does not cover X;
+added knowledge entry with ...") so the skill can be updated later.
 
-This ensures consistency, prevents duplicate documentation, and keeps you aligned with the repository's established patterns.
+This ensures consistency, prevents duplicate documentation, and keeps you aligned with the repository's established
+patterns.
 
 ## Overview
 
-This is an agentic SDD/SDLC delivery lab. Work is driven from OpenProject work packages through OpenSpec planning, implementation, review, artifact promotion, deployment, QA, and production handoff. All delivery workflows, domain knowledge, and learnings are captured in `.codex/` without duplication.
+This is an agentic SDD/SDLC delivery lab. Work is driven from OpenProject work packages through OpenSpec planning,
+implementation, review, artifact promotion, deployment, QA, and production handoff. All delivery workflows, domain
+knowledge, and learnings are captured in `.codex/` without duplication.
 
 **Reference live `.codex/` files directly—do not copy or recreate them.**
 
@@ -40,7 +48,7 @@ This is an agentic SDD/SDLC delivery lab. Work is driven from OpenProject work p
 
 ### High-Level Workflow
 
-```
+```text
 text
 OpenProject Ticket (Todo)
   → Branch + OpenSpec Proposal
@@ -59,7 +67,8 @@ OpenProject Ticket (Todo)
 
 - **Skills**: `.codex/skills/` — delivery workflow skills for every SDLC stage
 - **Infrastructure**: `infra/` — Docker Compose services, K8s manifests, deployment configs
-- **Documentation**: `docs/` — architecture (system, deployment), conventions (development, context-management), ADRs, modules, workflows
+- **Documentation**: `docs/` — architecture (system, deployment), conventions (development, context-management), ADRs,
+  modules, workflows
 - **Knowledge**: `knowledge/` — errors, fixes, patterns, troubleshooting, lessons-learned, prompts (AI-updatable)
 - **Delivery CLI**: `tools/sdd_cli/` — Python CLI helpers for environment lab, dev flow, tooling
 
@@ -71,7 +80,8 @@ Domain-specific workflows for each delivery stage. Load these based on task type
 
 #### Ticket Implementation
 
-- [`dev-flow-continue-implementation`](.codex/skills/dev-flow-continue-implementation/) – Main entry point; inspects state, routes to next workflow
+- [`dev-flow-continue-implementation`](.codex/skills/dev-flow-continue-implementation/) – Main entry point; inspects
+  state, routes to next workflow
 - [`dev-flow-implement-ticket`](.codex/skills/dev-flow-implement-ticket/) – Core ticket implementation workflow
 - [`dev-flow-start-ticket`](.codex/skills/dev-flow-start-ticket/) – Initialize new ticket from OpenProject
 
@@ -112,11 +122,13 @@ Domain-specific workflows for each delivery stage. Load these based on task type
 
 - [`_shared/delivery-contract.md`](.codex/skills/_shared/delivery-contract.md) – Core delivery contract
 
-**How to use**: When starting work, check if a matching skill exists. If yes, load it directly. Skill files are live—Copilot reads them without duplication.
+**How to use**: When starting work, check if a matching skill exists. If yes, load it directly. Skill files are
+      live—Copilot reads them without duplication.
 
 ### 2. **Knowledge** (`knowledge/`)
 
-Operational knowledge that agents consult while implementing, debugging, reviewing, and fixing code. Consulted automatically at session start.
+Operational knowledge that agents consult while implementing, debugging, reviewing, and fixing code. Consulted
+automatically at session start.
 
 | Path                                     | Purpose                                      |
 | ---------------------------------------- | -------------------------------------------- |
@@ -129,7 +141,9 @@ Operational knowledge that agents consult while implementing, debugging, reviewi
 | [`knowledge/lessons-learned/`](knowledge/lessons-learned/) | QA, release, workflow lessons |
 | [`knowledge/references/`](knowledge/references/) | Project maps, module maps                |
 
-**How to use**: Start each session by reading `knowledge/README.md`. For detailed context, check the relevant category folder. Update knowledge following `knowledge/README.md#update-process` after significant events (blockers, fixes, deployment issues, QA findings).
+**How to use**: Start each session by reading `knowledge/README.md`. For detailed context, check the relevant category
+      folder. Update knowledge following `knowledge/README.md#update-process` after significant events (blockers, fixes,
+      deployment issues, QA findings).
 
 ### 3. **Policy & Configuration** (`.codex/`)
 
@@ -145,7 +159,7 @@ Operational knowledge that agents consult while implementing, debugging, reviewi
 
 ### Continuing a Ticket
 
-```
+```text
 "automatically continue this ticket"
 → .codex/skills/dev-flow-continue-implementation
 → Inspects OpenProject, Git, Gitea, Nexus, OpenSpec, QA state
@@ -170,7 +184,7 @@ Choose based on task:
 
 In chat, you can directly reference files:
 
-```
+```text
 @.codex/skills/dev-flow-implement-ticket/SKILL.md
 @knowledge/README.md
 @.codex/delivery-policy.json
@@ -180,7 +194,7 @@ Copilot loads the file into context without copying.
 
 ### Pattern 2: Mention Ticket or Feature
 
-```
+```text
 "continue E2EPROJECT-42"
 "implement user authentication"
 "fix failing E2E test"
@@ -190,7 +204,7 @@ Copilot automatically discovers the matching skill based on task context.
 
 ### Pattern 3: Explicit Workflow Request
 
-```
+```text
 "follow the OpenSpec workflow for this change"
 "run the deployment checklist"
 "perform QA validation"
@@ -213,7 +227,8 @@ Copilot chat sessions can use the repository's OpenRouter runtime configuration 
 - `openRouter.apiKey`
 - `openRouter.defaultChatModel`
 - `openRouter.modelMapping.chat`
-  When present, `defaultChatModel` is the fallback for chat interactions and `modelMapping.chat` can override chat behavior for Copilot-driven repo workflows.
+  When present, `defaultChatModel` is the fallback for chat interactions and `modelMapping.chat` can override chat
+  behavior for Copilot-driven repo workflows.
 
 ## Key Constraints & Policies
 
@@ -240,7 +255,7 @@ python -m tools.sdd_cli dev-flow create-release-manifest --version v1.0.30
 python -m pytest tools/sdd_cli/tests/ -q                   # Run CLI tests
 
 # New stack: add product-specific build/test commands here
-```
+```text
 
 ## Quality Gates Checklist (Shell Level)
 
@@ -287,4 +302,5 @@ See `.codex/quality.local.json` for the authoritative gate configuration when po
 - ✅ Never copy or recreate `.codex/` or `knowledge/` content — reference it directly
 - ✅ Update knowledge after significant work (use `knowledge/README.md` as guide)
 
-For detailed delivery workflow, start with [`.codex/skills/_shared/delivery-contract.md`](.codex/skills/_shared/delivery-contract.md).
+For detailed delivery workflow, start with
+[`.codex/skills/_shared/delivery-contract.md`](.codex/skills/_shared/delivery-contract.md).

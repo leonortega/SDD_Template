@@ -4,11 +4,13 @@ Author Kubernetes manifests, convert Docker Compose to K8s resources, and mainta
 
 ## Scope
 
-This skill covers K8s manifest authoring, Docker Compose to K8s conversion, troubleshooting local clusters, and WSL2/Rancher Desktop maintenance.
+This skill covers K8s manifest authoring, Docker Compose to K8s conversion, troubleshooting local clusters, and
+WSL2/Rancher Desktop maintenance.
 
 ## Common K8s Manifest Patterns
 
 ### Deployment
+
 ```yaml
 apiVersion: apps/v1
 kind: Deployment
@@ -50,6 +52,7 @@ spec:
 ```
 
 ### Service
+
 ```yaml
 apiVersion: v1
 kind: Service
@@ -65,6 +68,7 @@ spec:
 ```
 
 ### Ingress
+
 ```yaml
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -93,6 +97,7 @@ kompose convert -f infra/compose.yml -o infra/k8s/
 ```
 
 Common conversion patterns:
+
 - **Docker services** → K8s Deployments + Services
 - **Volumes** → PersistentVolumeClaims
 - **Networks** → (handled implicitly by K8s networking)
@@ -160,9 +165,11 @@ container:
 ```
 
 **Key rules:**
+
 - `labels: ["ubuntu-latest"]` must match the workflow's `runs-on: ubuntu-latest`
 - Docker socket is mounted by `valid_volumes` — do NOT also add `--volume` in `options`
-- Always run `docker compose` from the **root `infra/compose.yml`** (not from subdirectory) to use the correct network namespace
+- Always run `docker compose` from the **root `infra/compose.yml`** (not from subdirectory) to use the correct network
+namespace
 
 See `dev-ops-configure-k8s/SKILL.md` for complete runner configuration details.
 
@@ -202,6 +209,7 @@ images:
 ```
 
 Best practices:
+
 - Every patch must target a `metadata.name` that **actually exists** in the base resources
 - Kustomize does NOT support shell-style `${VARIABLE}` substitution — those are treated as literal strings
 - If a patch is unused, remove it (don't leave orphaned files)
@@ -236,6 +244,7 @@ docker network connect agentic-e2e_nexus sdd-cluster-control-plane
 ```
 
 For CI access, modify the kubeconfig:
+
 - Change server address from `127.0.0.1:<port>` to `host.docker.internal:<port>`
 - Add `insecure-skip-tls-verify: true` (TLS cert is for kind container name, not `host.docker.internal`)
 - Set the modified kubeconfig as a Gitea `KUBECONFIG` secret

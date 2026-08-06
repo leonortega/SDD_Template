@@ -2,7 +2,8 @@
 
 # MCP Routing Instructions — Mandatory
 
-This file defines the **mandatory** MCP server routing for all agent prompts. Every agent **must** follow this routing whenever the task requires interacting with lab services.
+This file defines the **mandatory** MCP server routing for all agent prompts. Every agent **must**
+follow this routing whenever the task requires interacting with lab services.
 
 ## Service MCP Servers
 
@@ -17,15 +18,24 @@ The lab infrastructure provides dedicated MCP servers for each service. Route to
 
 **When to use each:**
 
-- **Gitea MCP** — any task involving Gitea: creating repos, managing issues/PRs, reading files, triggering Actions, managing wiki
-- **OpenProject MCP** — any task involving tickets/work packages: reading, creating, updating work packages, managing projects, time tracking
-- **Grafana MCP** — any task involving dashboards, metrics queries (Prometheus), log queries (Loki), alert rules, incidents, or OnCall schedules
-- **Kubernetes MCP** — any task involving cluster management: pods, deployments, services, Helm charts, logs, events
+- **Gitea MCP** — any task involving Gitea: creating repos, managing issues/PRs, reading files,
+  triggering Actions, managing wiki
+- **OpenProject MCP** — any task involving tickets/work packages: reading, creating, updating work
+  packages, managing projects, time tracking
+- **Grafana MCP** — any task involving dashboards, metrics queries (Prometheus), log queries (Loki),
+  alert rules, incidents, or OnCall schedules
+- **Kubernetes MCP** — any task involving cluster management: pods, deployments, services, Helm
+  charts, logs, events
 
 **Note on availability:**
-- Gitea MCP runs as ONE shared HTTP server in Docker (`agentic-gitea-mcp`, image `docker.gitea.com/gitea-mcp-server`) at `http://localhost:8123/mcp` — every client (VS Code, Cline, CLI) connects to the same instance with a `Bearer` header, so at most one gitea-mcp container runs (idempotent; the token is synced to `infra/gitea/mcp.env` by the install-gitea-mcp step)
+
+- Gitea MCP runs as ONE shared HTTP server in Docker (`agentic-gitea-mcp`, image
+  `docker.gitea.com/gitea-mcp-server`) at `http://localhost:8123/mcp` — every client (VS Code, Cline, CLI)
+  connects to the same instance with a `Bearer` header, so at most one gitea-mcp container runs
+  (idempotent; the token is synced to `infra/gitea/mcp.env` by the install-gitea-mcp step)
 - OpenProject MCP uses the community `openproject-mcp` package (read/write)
-  - Cross-ref API adapter at `.codex/skills/openproject-sprint-backlog/references/openproject-api.md` for direct REST API calls
+  - Cross-ref API adapter at
+    `.codex/skills/openproject-sprint-backlog/references/openproject-api.md` for direct REST API calls
 - Grafana MCP uses the official `grafana/mcp-grafana` via `uvx`
 - Kubernetes MCP uses the official `containers/kubernetes-mcp-server` via `npx`
 - **Seq and Dozzle** have no dedicated MCP servers. Use the Repo / monitoring skills for those.
@@ -35,8 +45,11 @@ See `.vscode/mcp.json` for exact configuration.
 
 ## Repository Content Search
 
-Repository content search (documentation, source code, skills) uses the agent's **built-in file/search tools** — there are no dedicated content-search MCP servers in this repository. Use standard grep, file reads, and search tools directly.
+Repository content search (documentation, source code, skills) uses the agent's **built-in
+file/search tools** — there are no dedicated content-search MCP servers in this repository. Use standard
+grep, file reads, and search tools directly.
 
 ## Authority
 
-This routing contract sits at authority level 5 in `docs/conventions/context-management.md` — alongside `.codex/skills/_shared/delivery-contract.md` — and overrides ad hoc service-interaction decisions.
+This routing contract sits at authority level 5 in `docs/conventions/context-management.md` — alongside
+`.codex/skills/_shared/delivery-contract.md` — and overrides ad hoc service-interaction decisions.

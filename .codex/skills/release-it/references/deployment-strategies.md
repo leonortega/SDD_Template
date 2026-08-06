@@ -1,11 +1,13 @@
 # Deployment Strategies
 
-The distinction between deployment (placing code on infrastructure) and release (exposing code to users) is fundamental. Conflating the two means every deployment is a high-risk event. Separating them gives you the ability to deploy with confidence, test in production, and release when ready.
+The distinction between deployment (placing code on infrastructure) and release (exposing code to users) is fundamental.
+Conflating the two means every deployment is a high-risk event. Separating them gives you the ability to deploy with
+confidence, test in production, and release when ready.
 
 Most production outages are caused by changes. Deployment strategies exist to make changes safe.
 
-
 ## Table of Contents
+
 1. [Zero-Downtime Deployment](#zero-downtime-deployment)
 2. [Rolling Deployment](#rolling-deployment)
 3. [Blue-Green Deployment](#blue-green-deployment)
@@ -20,7 +22,8 @@ Most production outages are caused by changes. Deployment strategies exist to ma
 
 ## Zero-Downtime Deployment
 
-Zero-downtime deployment is not optional for any system with users. Users should never see an error page because you are deploying code.
+Zero-downtime deployment is not optional for any system with users. Users should never see an error page because you are
+deploying code.
 
 ### Prerequisites for Zero-Downtime Deployment
 
@@ -36,11 +39,12 @@ Zero-downtime deployment is not optional for any system with users. Users should
 
 ## Rolling Deployment
 
-The simplest zero-downtime strategy. Replace instances one at a time (or in small batches), verifying health after each replacement.
+The simplest zero-downtime strategy. Replace instances one at a time (or in small batches), verifying health after each
+replacement.
 
 ### How It Works
 
-```
+```text
 Cluster: [v1] [v1] [v1] [v1] [v1]
 
 Step 1:  [v2] [v1] [v1] [v1] [v1]   ← Deploy to instance 1, verify health
@@ -72,11 +76,12 @@ Step 5:  [v2] [v2] [v2] [v2] [v2]   ← Deploy to instance 5, verify health
 
 ## Blue-Green Deployment
 
-Maintain two identical production environments. One (blue) serves live traffic. Deploy to the other (green), verify, and switch the router.
+Maintain two identical production environments. One (blue) serves live traffic. Deploy to the other (green), verify, and
+switch the router.
 
 ### How It Works
 
-```
+```text
                     ┌──────────────┐
 Users → Router ────→│  Blue (v1)   │  ← Currently live
                     └──────────────┘
@@ -116,11 +121,12 @@ Users → Router ────→│  Green (v2)  │  ← Now live
 
 ## Canary Releases
 
-Route a small percentage of production traffic to the new version. Monitor for errors. Gradually increase the percentage if healthy.
+Route a small percentage of production traffic to the new version. Monitor for errors. Gradually increase the percentage
+if healthy.
 
 ### How It Works
 
-```
+```text
 Phase 1: 5% → canary (v2), 95% → stable (v1)
 Phase 2: 25% → canary (v2), 75% → stable (v1)
 Phase 3: 50% → canary (v2), 50% → stable (v1)
@@ -163,7 +169,8 @@ Progressive delivery tools can automate canary evaluation:
 
 ## Feature Flags
 
-Feature flags (also called feature toggles) decouple deployment from release. Code is deployed but not activated until the flag is enabled.
+Feature flags (also called feature toggles) decouple deployment from release. Code is deployed but not activated until
+the flag is enabled.
 
 ### Types of Feature Flags
 
@@ -177,6 +184,7 @@ Feature flags (also called feature toggles) decouple deployment from release. Co
 ### Feature Flag Best Practices
 
 **Do:**
+
 - Use a centralized flag management system (not config files or environment variables)
 - Set a default value for every flag (what happens if the flag service is down?)
 - Clean up release flags after full rollout (flag debt is real technical debt)
@@ -184,6 +192,7 @@ Feature flags (also called feature toggles) decouple deployment from release. Co
 - Test both flag states in your test suite
 
 **Do not:**
+
 - Use feature flags for long-lived branching (creates combinatorial testing nightmare)
 - Nest feature flags (flag A enables feature which checks flag B -- unmaintainable)
 - Deploy code that only works with the flag enabled (always support both states)
@@ -191,7 +200,7 @@ Feature flags (also called feature toggles) decouple deployment from release. Co
 
 ### Feature Flag and Deployment Pipeline
 
-```
+```text
 1. Developer merges code with feature flag (default: off)
 2. Code deploys to production (flag off -- no user impact)
 3. QA enables flag for internal users and tests
@@ -205,7 +214,8 @@ Feature flags (also called feature toggles) decouple deployment from release. Co
 
 ## Database Migrations Without Downtime
 
-Database schema changes are the most dangerous part of deployment because they are difficult to roll back and must be compatible with both old and new application code during the deployment window.
+Database schema changes are the most dangerous part of deployment because they are difficult to roll back and must be
+compatible with both old and new application code during the deployment window.
 
 ### The Expand-Contract Pattern
 
@@ -214,6 +224,7 @@ Never make a breaking schema change in a single step. Instead, expand (add), mig
 ### Example: Renaming a Column
 
 **Wrong (causes downtime):**
+
 ```sql
 ALTER TABLE users RENAME COLUMN name TO full_name;
 -- Old code looking for "name" column fails immediately
@@ -233,6 +244,7 @@ Each step is a separate deployment. Each step is individually rollback-safe.
 ### Example: Adding a NOT NULL Column
 
 **Wrong (locks table, breaks old code):**
+
 ```sql
 ALTER TABLE orders ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'pending';
 -- On large tables, this locks the table for minutes/hours
@@ -260,7 +272,8 @@ ALTER TABLE orders ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'pending';
 
 ## Immutable Infrastructure
 
-Never patch, update, or modify a running server. Instead, build a new image with the changes, deploy it, and destroy the old one.
+Never patch, update, or modify a running server. Instead, build a new image with the changes, deploy it, and destroy the
+old one.
 
 ### Why Immutable
 
@@ -274,7 +287,7 @@ Never patch, update, or modify a running server. Instead, build a new image with
 
 ### Immutable Infrastructure Pipeline
 
-```
+```text
 1. Code change committed to version control
 2. CI builds application artifact (binary, JAR, bundle)
 3. CI builds infrastructure image (Docker image, AMI, VM image)
@@ -296,7 +309,8 @@ Never patch, update, or modify a running server. Instead, build a new image with
 
 ## Infrastructure as Code
 
-All infrastructure -- servers, networks, databases, load balancers, DNS entries -- is defined in version-controlled code, not manually configured through web consoles or SSH sessions.
+All infrastructure -- servers, networks, databases, load balancers, DNS entries -- is defined in version-controlled
+code, not manually configured through web consoles or SSH sessions.
 
 ### Principles
 
@@ -323,7 +337,8 @@ All infrastructure -- servers, networks, databases, load balancers, DNS entries 
 
 ## Rollback Strategy
 
-Rollback must be faster and simpler than rolling forward. If rolling back takes 30 minutes of manual steps, teams will hesitate to deploy -- and when they do deploy, they will hesitate to roll back when things go wrong.
+Rollback must be faster and simpler than rolling forward. If rolling back takes 30 minutes of manual steps, teams will
+hesitate to deploy -- and when they do deploy, they will hesitate to roll back when things go wrong.
 
 ### Rollback Approaches
 

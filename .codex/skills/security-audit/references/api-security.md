@@ -1083,7 +1083,7 @@ API responses should include security headers even for JSON responses. See
 
 Key headers for API responses:
 
-```
+```text
 Content-Type: application/json; charset=utf-8
 X-Content-Type-Options: nosniff
 Cache-Control: no-store

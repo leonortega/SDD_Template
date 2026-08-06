@@ -1,9 +1,10 @@
 # Functions and Methods
 
-Comprehensive guide to writing small, focused functions that do one thing well. Based on Robert C. Martin's *Clean Code*, Chapters 3 and 4.
-
+Comprehensive guide to writing small, focused functions that do one thing well. Based on Robert C. Martin's *Clean
+Code*, Chapters 3 and 4.
 
 ## Table of Contents
+
 1. [The First Rule of Functions](#the-first-rule-of-functions)
 2. [Do One Thing](#do-one-thing)
 3. [Function Arguments](#function-arguments)
@@ -23,6 +24,7 @@ Comprehensive guide to writing small, focused functions that do one thing well. 
 **Functions should be small.** The second rule of functions is that they should be smaller than that.
 
 A well-written function:
+
 - Fits on one screen (ideally 4-10 lines)
 - Has a name that describes exactly what it does
 - Takes few arguments (zero is best, three is the maximum)
@@ -37,7 +39,8 @@ A well-written function:
 
 ### How to Know if a Function Does One Thing
 
-If you can extract another function from it with a name that is not merely a restatement of its implementation, the function does more than one thing.
+If you can extract another function from it with a name that is not merely a restatement of its implementation, the
+function does more than one thing.
 
 ```python
 # BAD: Does three things
@@ -68,7 +71,7 @@ def process_payment(order):
 
 Code should read like a top-down narrative. Every function should be followed by the next level of abstraction.
 
-```
+```text
 To process a payment:
     We validate the order.
     We charge the customer.
@@ -87,13 +90,16 @@ To send notifications:
     We track the analytics event.
 ```
 
-This reads like a newspaper: the headline (top-level function) tells you the story, and each successive paragraph (sub-function) provides more detail.
+This reads like a newspaper: the headline (top-level function) tells you the story, and each successive paragraph
+(sub-function) provides more detail.
 
 ---
 
 ## Function Arguments
 
-The ideal number of arguments for a function is zero (niladic). Next comes one (monadic), followed closely by two (dyadic). Three arguments (triadic) should be avoided where possible. More than three (polyadic) requires very special justification.
+The ideal number of arguments for a function is zero (niladic). Next comes one (monadic), followed closely by two
+(dyadic). Three arguments (triadic) should be avoided where possible. More than three (polyadic) requires very special
+justification.
 
 ### Argument Count Guide
 
@@ -111,7 +117,8 @@ Three common reasons to pass a single argument:
 
 1. **Asking a question:** `boolean fileExists(path)` -- returns true/false about the argument
 2. **Transforming it:** `InputStream fileOpen(path)` -- transforms the argument and returns the result
-3. **Event:** `void passwordAttemptFailedNTimes(attempts)` -- uses the argument to alter system state (make this clear from the name)
+3. **Event:** `void passwordAttemptFailedNTimes(attempts)` -- uses the argument to alter system state (make this clear
+from the name)
 
 ### Why Many Arguments Are Problematic
 
@@ -129,13 +136,15 @@ ReportConfig config = new ReportConfig.Builder()
 createReport(config);
 ```
 
-Each argument increases the difficulty of understanding, testing, and calling the function. Arguments also create ordering dependencies that the reader must memorize.
+Each argument increases the difficulty of understanding, testing, and calling the function. Arguments also create
+ordering dependencies that the reader must memorize.
 
 ---
 
 ## Flag Arguments
 
-**Flag arguments are ugly.** Passing a boolean into a function loudly declares that the function does two things -- one thing if the flag is true, another if false.
+**Flag arguments are ugly.** Passing a boolean into a function loudly declares that the function does two things -- one
+thing if the flag is true, another if false.
 
 ```python
 # BAD: Flag argument
@@ -155,7 +164,8 @@ def render_for_screen(document):
     ...
 ```
 
-If a function must behave differently based on a condition, split it into two named functions. If the behaviors share logic, extract the shared part into a private helper.
+If a function must behave differently based on a condition, split it into two named functions. If the behaviors share
+logic, extract the shared part into a private helper.
 
 ---
 
@@ -203,7 +213,8 @@ A side effect is when a function promises to do one thing but also does other hi
 
 ## Extract Till You Drop
 
-If you can extract a named function from a block of code, you should. The extracted function's name adds documentation value, even if the function is only called from one place.
+If you can extract a named function from a block of code, you should. The extracted function's name adds documentation
+value, even if the function is only called from one place.
 
 ### When to Extract
 
@@ -280,7 +291,8 @@ function finalizeOrder(order: Order, total: number) {
 
 ## Structured Programming
 
-Dijkstra's rule states that every function should have one entry and one exit: one `return` statement, no `break` or `continue` in loops, and never `goto`.
+Dijkstra's rule states that every function should have one entry and one exit: one `return` statement, no `break` or
+`continue` in loops, and never `goto`.
 
 **In practice, for small functions, multiple returns and early exits improve clarity:**
 
@@ -297,13 +309,15 @@ def calculate_discount(customer):
     return customer.total_purchases * DISCOUNT_RATE
 ```
 
-Guard clauses handle the error cases at the top of the function, leaving the happy path unindented and clear. This pattern is preferable to deeply nested `if-else` chains.
+Guard clauses handle the error cases at the top of the function, leaving the happy path unindented and clear. This
+pattern is preferable to deeply nested `if-else` chains.
 
 ---
 
 ## DRY: Don't Repeat Yourself
 
-Duplication is the root of all evil in software. Every piece of knowledge should have a single, unambiguous, authoritative representation in the system.
+Duplication is the root of all evil in software. Every piece of knowledge should have a single, unambiguous,
+authoritative representation in the system.
 
 ### Types of Duplication
 
@@ -316,7 +330,8 @@ Duplication is the root of all evil in software. Every piece of knowledge should
 
 ### The Rule of Three
 
-The first time you write something, just write it. The second time you see duplication, note it. The third time, refactor. This avoids premature abstraction while still catching genuine duplication.
+The first time you write something, just write it. The second time you see duplication, note it. The third time,
+refactor. This avoids premature abstraction while still catching genuine duplication.
 
 ---
 
@@ -334,7 +349,8 @@ The reader can stop reading at any depth once they have enough understanding.
 
 ### Vertical Distance
 
-**Dependent functions should be close.** If one function calls another, they should be vertically close in the source file, and the caller should be above the callee.
+**Dependent functions should be close.** If one function calls another, they should be vertically close in the source
+file, and the caller should be above the callee.
 
 ```java
 // GOOD: Caller above callee, close together
@@ -357,7 +373,8 @@ private void shipOrder(Order order) {
 }
 ```
 
-**Variables should be declared as close to their usage as possible.** Local variables at the top of the function. Loop variables inside the loop statement. Instance variables at the top of the class (everyone needs to know they exist).
+**Variables should be declared as close to their usage as possible.** Local variables at the top of the function. Loop
+variables inside the loop statement. Instance variables at the top of the class (everyone needs to know they exist).
 
 ---
 

@@ -5,7 +5,8 @@
 
 ## Overview
 
-API keys and secrets stored in databases must be encrypted at rest to prevent exposure in case of database breaches, backup leaks, or unauthorized access.
+API keys and secrets stored in databases must be encrypted at rest to prevent exposure in case of database breaches,
+backup leaks, or unauthorized access.
 
 ## Recommended Pattern: sodium_crypto_secretbox
 
@@ -50,6 +51,7 @@ final class ProviderEncryptionService
 ```
 
 **Key derivation requirements:**
+
 - Use application-level secret (e.g., TYPO3's `encryptionKey`)
 - Apply domain separator to prevent cross-context key reuse
 - Use SHA-256 to derive 32-byte key from variable-length input
@@ -81,6 +83,7 @@ public function encrypt(string $plaintext): string
 ```
 
 **Critical points:**
+
 - Never reuse nonces - always generate fresh random bytes
 - Clear plaintext from memory with `sodium_memzero()`
 - Prefix encrypted values for identification
@@ -129,7 +132,7 @@ public function isEncrypted(string $value): bool
 
 ## Storage Format
 
-```
+```text
 enc:{base64(nonce || ciphertext || auth_tag)}
 ```
 
@@ -150,12 +153,14 @@ api_key VARCHAR(500) NOT NULL DEFAULT ''
 ## Security Audit Checklist
 
 ### Storage
+
 - [ ] API keys encrypted before database storage
 - [ ] Encrypted values have `enc:` prefix for identification
 - [ ] Original plaintext cleared from memory after encryption
 - [ ] Encryption key derived with domain separation
 
 ### Key Management
+
 - [ ] Master encryption key not in version control
 - [ ] Master key stored in environment variable or secrets manager
 - [ ] Key rotation procedure documented
@@ -237,4 +242,4 @@ final class EncryptApiKeysUpgradeWizard implements UpgradeWizardInterface
 
 - `owasp-top10.md` - A02:2021 Cryptographic Failures
 - `xxe-prevention.md` - General secure coding patterns
-- PHP libsodium documentation: https://www.php.net/manual/en/book.sodium.php
+- PHP libsodium documentation: <https://www.php.net/manual/en/book.sodium.php>

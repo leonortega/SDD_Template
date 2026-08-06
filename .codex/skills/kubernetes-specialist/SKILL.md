@@ -1,6 +1,10 @@
 ---
 name: kubernetes-specialist
-description: Use when deploying or managing Kubernetes workloads. Invoke to create deployment manifests, configure pod security policies, set up service accounts, define network isolation rules, debug pod crashes, analyze resource limits, inspect container logs, or right-size workloads. Use for Helm charts, RBAC policies, NetworkPolicies, storage configuration, performance optimization, GitOps pipelines, and multi-cluster management.
+description: >-
+  >- Use when deploying or managing Kubernetes workloads. Invoke to create deployment manifests, configure pod security
+  policies, set up service accounts, define network isolation rules, debug pod crashes, analyze resource limits, inspect
+  container logs, or right-size workloads. Use for Helm charts, RBAC policies, NetworkPolicies, storage configuration,
+  performance optimization, GitOps pipelines, and multi-cluster management.
 license: MIT
 metadata:
   author: https://github.com/Jeffallan
@@ -31,7 +35,8 @@ metadata:
 2. **Design architecture** — Choose workload types, networking patterns, storage solutions
 3. **Implement manifests** — Create declarative YAML with proper resource limits, health checks
 4. **Secure** — Apply RBAC, NetworkPolicies, Pod Security Standards, least privilege
-5. **Validate** — Run `kubectl rollout status`, `kubectl get pods -w`, and `kubectl describe pod <name>` to confirm health; roll back with `kubectl rollout undo` if needed
+5. **Validate** — Run `kubectl rollout status`, `kubectl get pods -w`, and `kubectl describe pod <name>` to confirm
+health; roll back with `kubectl rollout undo` if needed
 
 ## Reference Guide
 
@@ -54,6 +59,7 @@ Load detailed guidance based on context:
 ## Constraints
 
 ### MUST DO
+
 - Use declarative YAML manifests (avoid imperative kubectl commands)
 - Set resource requests and limits on all containers
 - Include liveness and readiness probes
@@ -65,6 +71,7 @@ Load detailed guidance based on context:
 - Document configuration decisions in annotations
 
 ### MUST NOT DO
+
 - Deploy to production without resource limits
 - Store secrets in ConfigMaps or as plain environment variables
 - Use default ServiceAccount for application pods
@@ -235,6 +242,7 @@ kubectl rollout undo deployment/my-app -n my-namespace
 ## Output Templates
 
 When implementing Kubernetes resources, provide:
+
 1. Complete YAML manifests with proper structure
 2. RBAC configuration if needed (ServiceAccount, Role, RoleBinding)
 3. NetworkPolicy for network isolation

@@ -4,7 +4,8 @@ Create and manage Grafana dashboards, Prometheus/Loki queries, alert rules, and 
 
 ## Scope
 
-This skill covers dashboard provisioning via YAML, panel/query authoring, alert rule definitions, Seq query authoring, and incident triage workflows.
+This skill covers dashboard provisioning via YAML, panel/query authoring, alert rule definitions, Seq query authoring,
+and incident triage workflows.
 
 ## Grafana Dashboard Provisioning
 
@@ -79,6 +80,7 @@ WHERE @Level = 'Error'
 ```
 
 Common Seq queries:
+
 - **Error correlation**: `@Level = 'Error' AND Application = 'MyApp'`
 - **Request tracing**: `@Message LIKE '%{requestId}%'`
 - **Performance**: `@Duration > 10000`
@@ -87,12 +89,14 @@ Common Seq queries:
 ## Dozzle Usage Patterns
 
 Dozzle provides real-time, raw container log streaming. Use it for:
+
 - **Quick debugging**: Check if a container is actually running and producing output
 - **Raw stdout/stderr**: When you need unfiltered output (Seq only stores structured logs)
 - **Startup diagnostics**: Check container init logs that may not reach Seq yet
 - **Crash loops**: See repeated crash output without Seq query overhead
 
 When to reach for Dozzle vs Seq:
+
 | Scenario | Tool | Why |
 |---|---|---|
 | Container not starting | **Dozzle** | Seq may not receive logs from a crashing container |
@@ -112,6 +116,6 @@ When triaging incidents: Grafana for metrics → Seq for structured logs → Doz
 ## References
 
 - Grafana MCP: `grafana` server in `.vscode/mcp.json`
-- Grafana provisioning docs: https://grafana.com/docs/grafana/latest/administration/provisioning/
-- Seq query docs: https://docs.datalust.co/docs/query-language
+- Grafana provisioning docs: <https://grafana.com/docs/grafana/latest/administration/provisioning/>
+- Seq query docs: <https://docs.datalust.co/docs/query-language>
 - Infra config: `infra/monitoring/compose.yml`

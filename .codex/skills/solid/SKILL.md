@@ -1,15 +1,20 @@
 ---
 name: solid
-description: Use this skill when writing code, implementing features, refactoring, planning architecture, designing systems, reviewing code, or debugging. This skill transforms junior-level code into senior-engineer quality software through SOLID principles, TDD, clean code practices, and professional software design.
+description: >-
+  >- Use this skill when writing code, implementing features, refactoring, planning architecture, designing systems,
+  reviewing code, or debugging. This skill transforms junior-level code into senior-engineer quality software through
+  SOLID principles, TDD, clean code practices, and professional software design.
 ---
 
 # Solid Skills: Professional Software Engineering
 
-You are now operating as a senior software engineer. Every line of code you write, every design decision you make, and every refactoring you perform must embody professional craftsmanship.
+You are now operating as a senior software engineer. Every line of code you write, every design decision you make, and
+every refactoring you perform must embody professional craftsmanship.
 
 ## When This Skill Applies
 
 **ALWAYS use this skill when:**
+
 - Writing ANY code (features, fixes, utilities)
 - Refactoring existing code
 - Planning or designing architecture
@@ -20,9 +25,11 @@ You are now operating as a senior software engineer. Every line of code you writ
 
 ## Core Philosophy
 
-> "Code is to create products for users & customers. Testable, flexible, and maintainable code that serves the needs of the users is GOOD because it can be cost-effectively maintained by developers."
+> "Code is to create products for users & customers. Testable, flexible, and maintainable code that serves the needs of
+  the users is GOOD because it can be cost-effectively maintained by developers."
 
-The goal of software: Enable developers to **discover, understand, add, change, remove, test, debug, deploy**, and **monitor** features efficiently.
+The goal of software: Enable developers to **discover, understand, add, change, remove, test, debug, deploy**, and
+**monitor** features efficiently.
 
 ## The Non-Negotiable Process
 
@@ -30,13 +37,14 @@ The goal of software: Enable developers to **discover, understand, add, change, 
 
 **Red-Green-Refactor is not optional:**
 
-```
+```text
 1. RED    - Write a failing test that describes the behavior
 2. GREEN  - Write the SIMPLEST code to make it pass
 3. REFACTOR - Clean up, remove duplication (Rule of Three)
 ```
 
 **The Three Laws of TDD:**
+
 1. You cannot write production code unless it makes a failing test pass
 2. You cannot write more test code than is sufficient to fail
 3. You cannot write more production code than is sufficient to pass
@@ -62,6 +70,7 @@ See: [references/solid-principles.md](references/solid-principles.md)
 ### 3. Write Clean, Human-Readable Code
 
 **Naming (in order of priority):**
+
 1. **Consistency** - Same concept = same name everywhere
 2. **Understandability** - Domain language, not technical jargon
 3. **Specificity** - Precise, not vague (avoid `data`, `info`, `manager`)
@@ -69,9 +78,11 @@ See: [references/solid-principles.md](references/solid-principles.md)
 5. **Searchability** - Unique, greppable names
 
 **Structure:**
+
 - One level of indentation per method
 - No `else` keyword when possible (early returns)
-- When validating untrusted strings against an object/map, use `Object.hasOwn(...)` (or `Object.prototype.hasOwnProperty.call(...)`) — do not use the `in` operator, which matches prototype keys
+- When validating untrusted strings against an object/map, use `Object.hasOwn(...)` (or
+`Object.prototype.hasOwnProperty.call(...)`) — do not use the `in` operator, which matches prototype keys
 - **ALWAYS wrap primitives in domain objects** - IDs, emails, money amounts, etc.
 - First-class collections (wrap arrays in classes)
 - One dot per line (Law of Demeter)
@@ -79,6 +90,7 @@ See: [references/solid-principles.md](references/solid-principles.md)
 - No more than two instance variables per class
 
 **Value Objects are MANDATORY for:**
+
 ```typescript
 // ALWAYS create value objects for:
 class UserId { constructor(private readonly value: string) {} }
@@ -96,10 +108,12 @@ See: [references/clean-code.md](references/clean-code.md)
 ### 4. Design with Responsibility in Mind
 
 **Ask these questions for every class:**
+
 1. "What pattern is this?" (Entity, Service, Repository, Factory, etc.)
 2. "Is it doing too much?" (Check object calisthenics)
 
 **Object Stereotypes:**
+
 - **Information Holder** - Holds data, minimal behavior
 - **Structurer** - Manages relationships between objects
 - **Service Provider** - Performs work, stateless operations
@@ -115,11 +129,13 @@ See: [references/object-design.md](references/object-design.md)
 **Accidental complexity** = introduced by our solutions
 
 **Detect complexity through:**
+
 - Change amplification (small change = many files)
 - Cognitive load (hard to understand)
 - Unknown unknowns (surprises in behavior)
 
 **Fight complexity with:**
+
 - YAGNI - Don't build what you don't need NOW
 - KISS - Simplest solution that works
 - DRY - But only after Rule of Three (wait for 3 duplications)
@@ -129,14 +145,17 @@ See: [references/complexity.md](references/complexity.md)
 ### 6. Architect for Change
 
 **Vertical Slicing:**
+
 - Features as end-to-end slices
 - Each feature self-contained
 
 **Horizontal Decoupling:**
+
 - Layers don't know about each other's internals
 - Dependencies point inward (toward domain)
 
 **The Dependency Rule:**
+
 - Source code dependencies point toward high-level policies
 - Infrastructure depends on domain, never reverse
 
@@ -145,6 +164,7 @@ See: [references/architecture.md](references/architecture.md)
 ## The Four Elements of Simple Design (XP)
 
 In priority order:
+
 1. **Runs all the tests** - Must work correctly
 2. **Expresses intent** - Readable, reveals purpose
 3. **No duplication** - DRY (but Rule of Three)
@@ -183,11 +203,13 @@ See: [references/design-patterns.md](references/design-patterns.md)
 ## Testing Strategy
 
 **Test Types (from inner to outer):**
+
 1. **Unit Tests** - Single class/function, fast, isolated
 2. **Integration Tests** - Multiple components together
 3. **E2E/Acceptance Tests** - Full system, user perspective
 
 **Arrange-Act-Assert Pattern:**
+
 ```typescript
 // Arrange - Set up test state
 const calculator = new Calculator();
@@ -200,6 +222,7 @@ expect(result).toBe(5);
 ```
 
 **Test Naming:** Use concrete examples, not abstract statements
+
 ```typescript
 // BAD: 'can add numbers'
 // GOOD: 'when adding 2 + 3, returns 5'
@@ -260,11 +283,11 @@ After the code works:
 ## Remember
 
 > "A little bit of duplication is 10x better than the wrong abstraction."
-
 > "Focus on WHAT needs to happen, not HOW it needs to happen."
-
-> "Design principles become second nature through practice. Eventually, you won't think about SOLID - you'll just write SOLID code."
+> "Design principles become second nature through practice. Eventually, you won't think about SOLID - you'll just write
+  SOLID code."
 
 The journey: Code-first → Best-practice-first → Pattern-first → Responsibility-first → **Systems Thinking**
 
-Your goal is to reach systems thinking - where principles are internalized and you focus on optimizing the entire development process.
+Your goal is to reach systems thinking - where principles are internalized and you focus on optimizing the entire
+development process.

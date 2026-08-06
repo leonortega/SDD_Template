@@ -7,7 +7,8 @@ Comprehensive guide for designing communication between microservices.
 ### Synchronous Communication
 
 **REST APIs:**
-```
+
+```text
 When to Use:
 - Request/response pattern needed
 - Client needs immediate result
@@ -30,7 +31,8 @@ PATCH  /api/v1/orders/{orderId}/status
 ```
 
 **gRPC:**
-```
+
+```text
 When to Use:
 - Low-latency requirements
 - Strong typing needed
@@ -64,7 +66,8 @@ message OrderResponse {
 ```
 
 **GraphQL:**
-```
+
+```text
 When to Use:
 - Frontend-driven data requirements
 - Aggregating data from multiple services
@@ -95,7 +98,8 @@ extend type User @key(fields: "id") {
 ### Asynchronous Communication
 
 **Message Queues (Point-to-Point):**
-```
+
+```text
 When to Use:
 - Task distribution
 - Load leveling
@@ -121,7 +125,8 @@ Use Cases:
 ```
 
 **Event Streaming (Pub/Sub):**
-```
+
+```text
 When to Use:
 - Multiple consumers need same event
 - Event sourcing
@@ -148,7 +153,8 @@ Each consumer processes independently
 ```
 
 **Event-Driven Architecture:**
-```
+
+```text
 Event Types:
 
 1. Domain Events:
@@ -195,7 +201,8 @@ Event Schema Example:
 ### Request/Response
 
 **Synchronous Request/Response:**
-```
+
+```text
 Pattern:
 Client → Service A → Service B → Response
 
@@ -218,7 +225,8 @@ Use When:
 ```
 
 **Asynchronous Request/Response:**
-```
+
+```text
 Pattern:
 1. Client sends request to Service A
 2. Service A returns request ID immediately
@@ -246,7 +254,8 @@ Alternative: WebSocket notification when ready
 ### Fire and Forget
 
 **Pattern:**
-```
+
+```text
 Client → Message Queue → Consumer
 
 Characteristics:
@@ -279,7 +288,8 @@ Cons:
 ### Event Choreography
 
 **Pattern:**
-```
+
+```text
 Distributed workflow via events (no central orchestrator)
 
 Example: Order Placement
@@ -304,7 +314,8 @@ Cons:
 ### Saga Orchestration
 
 **Pattern:**
-```
+
+```text
 Central orchestrator manages distributed transaction
 
 Example: Order Saga
@@ -342,7 +353,8 @@ Cons:
 ### Decision Matrix
 
 **REST vs gRPC:**
-```
+
+```text
 Use REST when:
 - Public API (external clients)
 - Browser-based clients
@@ -359,7 +371,8 @@ Use gRPC when:
 ```
 
 **Synchronous vs Asynchronous:**
-```
+
+```text
 Use Synchronous when:
 - User waiting for response
 - Strong consistency required
@@ -376,7 +389,8 @@ Use Asynchronous when:
 ```
 
 **Message Queue vs Event Stream:**
-```
+
+```text
 Use Message Queue (RabbitMQ, SQS) when:
 - Single consumer per message
 - Task distribution
@@ -396,7 +410,8 @@ Use Event Stream (Kafka) when:
 ### RESTful API Design
 
 **URL Structure:**
-```
+
+```text
 Good:
 GET    /api/v1/customers/{customerId}/orders
 POST   /api/v1/orders
@@ -408,7 +423,8 @@ POST   /api/v1/createOrder
 ```
 
 **Versioning Strategies:**
-```
+
+```text
 1. URL Versioning:
    /api/v1/orders
    /api/v2/orders
@@ -429,7 +445,8 @@ Recommendation: URL versioning for simplicity
 ```
 
 **Pagination:**
-```
+
+```text
 Cursor-Based (Recommended):
 GET /api/v1/orders?cursor=abc123&limit=20
 Response:
@@ -447,7 +464,8 @@ Problem: Results change if data inserted
 ### gRPC Best Practices
 
 **Error Handling:**
-```
+
+```text
 Use standard gRPC status codes:
 - OK (0)
 - INVALID_ARGUMENT (3)
@@ -467,7 +485,8 @@ Error details in metadata for rich context
 ```
 
 **Streaming Patterns:**
-```
+
+```text
 1. Server Streaming:
    rpc ListOrders(ListRequest) returns (stream Order);
    Use: Large result sets
@@ -484,6 +503,7 @@ Error details in metadata for rich context
 ## Summary
 
 Choose communication patterns based on:
+
 - Consistency requirements (strong vs eventual)
 - Latency tolerance
 - Coupling tolerance
@@ -491,6 +511,7 @@ Choose communication patterns based on:
 - Team expertise
 
 **Rule of Thumb:**
+
 - Synchronous for reads and simple writes
 - Asynchronous for complex workflows
 - Events for cross-aggregate updates

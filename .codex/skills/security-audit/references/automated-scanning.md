@@ -1,6 +1,7 @@
 # Automated Scanning Tools Reference
 
-Configuration, custom rules, CI integration, and best practices for semgrep / opengrep, trivy, and gitleaks, plus false-positive handling for SonarCloud / SonarQube quality gates (SonarCloud is hosted; SonarQube is self-hosted).
+Configuration, custom rules, CI integration, and best practices for semgrep / opengrep, trivy, and gitleaks, plus
+false-positive handling for SonarCloud / SonarQube quality gates (SonarCloud is hosted; SonarQube is self-hosted).
 
 ## Tool Comparison
 
@@ -16,7 +17,10 @@ Configuration, custom rules, CI integration, and best practices for semgrep / op
 2. **trivy** -- scans dependencies and infrastructure
 3. **semgrep** / **opengrep** -- deep code analysis, takes longest
 
-> **semgrep vs opengrep:** [Opengrep](https://github.com/opengrep/opengrep) is a fully open-source (LGPL-2.1) fork of Semgrep, created after Semgrep relicensed the community rule registry to CC-BY-NC-SA. The CLI is a drop-in replacement — rule syntax, `.semgrepignore`, `nosemgrep:` comments, and config files all work identically. See the [opengrep subsection](#opengrep-fully-oss-drop-in-replacement) below for when to prefer it.
+> **semgrep vs opengrep:** [Opengrep](https://github.com/opengrep/opengrep) is a fully open-source (LGPL-2.1) fork of
+  Semgrep, created after Semgrep relicensed the community rule registry to CC-BY-NC-SA. The CLI is a drop-in replacement
+  — rule syntax, `.semgrepignore`, `nosemgrep:` comments, and config files all work identically. See the [opengrep
+  subsection](#opengrep-fully-oss-drop-in-replacement) below for when to prefer it.
 
 ---
 
@@ -70,7 +74,7 @@ some_safe_code()
 
 Or use `.semgrepignore` (follows .gitignore syntax):
 
-```
+```text
 # .semgrepignore
 tests/
 vendor/
@@ -107,11 +111,15 @@ node_modules/
 
 ### opengrep: fully-OSS drop-in replacement
 
-[Opengrep](https://github.com/opengrep/opengrep) is an LGPL-2.1 fork of Semgrep maintained by a coalition of security vendors. Reasons to prefer it:
+[Opengrep](https://github.com/opengrep/opengrep) is an LGPL-2.1 fork of Semgrep maintained by a coalition of security
+vendors. Reasons to prefer it:
 
-- **No license friction.** Semgrep's Community rule registry is CC-BY-NC-SA (non-commercial). Opengrep rules are freely usable in any setting, including commercial audits and derived rulesets.
-- **Fully open engine.** Semgrep's Pro engine (interfile / taint tracking beyond the OSS baseline) is proprietary. Opengrep keeps the complete analysis engine open.
-- **CLI-compatible.** Same rule syntax, same config files (`.semgrep.yml`, `.semgrepignore`), same `nosemgrep:` ignore comments. Existing rules and CI pipelines port over by swapping the binary.
+- **No license friction.** Semgrep's Community rule registry is CC-BY-NC-SA (non-commercial). Opengrep rules are freely
+usable in any setting, including commercial audits and derived rulesets.
+- **Fully open engine.** Semgrep's Pro engine (interfile / taint tracking beyond the OSS baseline) is proprietary.
+Opengrep keeps the complete analysis engine open.
+- **CLI-compatible.** Same rule syntax, same config files (`.semgrep.yml`, `.semgrepignore`), same `nosemgrep:` ignore
+comments. Existing rules and CI pipelines port over by swapping the binary.
 
 Install via `coding_agent_cli_toolset`:
 
@@ -127,7 +135,8 @@ opengrep scan --config p/owasp-top-ten --sarif --output out.sarif .
 opengrep scan --config .semgrep.yml .                           # custom rules (same format)
 ```
 
-CI integration (no official action yet — invoke the binary directly). Pin the version and verify the SHA256 to keep the pipeline reproducible and supply-chain safe:
+CI integration (no official action yet — invoke the binary directly). Pin the version and verify the SHA256 to keep the
+pipeline reproducible and supply-chain safe:
 
 ```yaml
 - name: Opengrep SAST
@@ -149,7 +158,9 @@ CI integration (no official action yet — invoke the binary directly). Pin the 
     sarif_file: opengrep.sarif
 ```
 
-**When to stay on semgrep:** Semgrep Pro/AppSec Platform features (interfile taint tracking, managed registry, SCM integrations). **When to switch:** rule-authoring freedom, offline/air-gapped scanning, avoiding the Semgrep account requirement for `--config auto` against the Pro registry.
+**When to stay on semgrep:** Semgrep Pro/AppSec Platform features (interfile taint tracking, managed registry, SCM
+integrations). **When to switch:** rule-authoring freedom, offline/air-gapped scanning, avoiding the Semgrep account
+requirement for `--config auto` against the Pro registry.
 
 ---
 
@@ -184,7 +195,7 @@ ignore:
 
 ### Ignore File (.trivyignore)
 
-```
+```text
 # .trivyignore
 # CVE-2024-12345: False positive - function not reachable from user input
 CVE-2024-12345

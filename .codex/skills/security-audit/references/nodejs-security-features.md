@@ -1,14 +1,18 @@
 # Node.js Security Features by Version
 
-Modern Node.js versions introduce runtime features, APIs, and permission controls that directly improve security when used correctly. This reference documents security-relevant patterns and features from Node.js 16 through 22+, focusing on server-side vulnerability classes unique to the Node.js execution model.
+Modern Node.js versions introduce runtime features, APIs, and permission controls that directly improve security when
+used correctly. This reference documents security-relevant patterns and features from Node.js 16 through 22+, focusing
+on server-side vulnerability classes unique to the Node.js execution model.
 
 ## Core Node.js Security Patterns
 
-These patterns apply across all supported Node.js versions and represent the most common vulnerability classes in server-side JavaScript.
+These patterns apply across all supported Node.js versions and represent the most common vulnerability classes in
+server-side JavaScript.
 
 ### 1. Command Injection via `child_process.exec`
 
-`child_process.exec` spawns a shell and passes the command string to it, making it vulnerable to shell metacharacter injection when user input is interpolated into the command string.
+`child_process.exec` spawns a shell and passes the command string to it, making it vulnerable to shell metacharacter
+injection when user input is interpolated into the command string.
 
 ```javascript
 // VULNERABLE: String concatenation passes user input through a shell
@@ -40,7 +44,9 @@ const { spawn } = require('child_process');
 const proc = spawn('convert', [req.body.filename, 'output.png']);
 ```
 
-**Security implication:** Shell injection (CWE-78) allows arbitrary command execution on the server. `exec` and `execSync` invoke `/bin/sh -c`, so semicolons, pipes, backticks, and `$()` are all interpreted. Always use `execFile`, `execFileSync`, or `spawn` with argument arrays, which bypass the shell entirely.
+**Security implication:** Shell injection (CWE-78) allows arbitrary command execution on the server. `exec` and
+`execSync` invoke `/bin/sh -c`, so semicolons, pipes, backticks, and `$()` are all interpreted. Always use `execFile`,
+`execFileSync`, or `spawn` with argument arrays, which bypass the shell entirely.
 
 **Detection regex:** `child_process.*exec\(`
 
@@ -48,7 +54,8 @@ const proc = spawn('convert', [req.body.filename, 'output.png']);
 
 ### 2. Path Traversal via `fs` Operations
 
-When user-supplied input is passed to `fs` methods without validation, attackers can read or write files outside the intended directory using `../` sequences. `path.join` does not prevent traversal — it resolves `..` segments normally.
+When user-supplied input is passed to `fs` methods without validation, attackers can read or write files outside the
+intended directory using `../` sequences. `path.join` does not prevent traversal — it resolves `..` segments normally.
 
 ```javascript
 // VULNERABLE: path.join resolves .. segments — does NOT prevent traversal
@@ -83,7 +90,9 @@ app.get('/file', (req, res) => {
 // Start with: node --experimental-permission --allow-fs-read=/app/uploads
 ```
 
-**Security implication:** Path traversal (CWE-22) allows reading sensitive files like `/etc/passwd`, `.env`, or application source code. Always resolve the full path with `path.resolve` and verify it starts with the intended base directory using `startsWith`.
+**Security implication:** Path traversal (CWE-22) allows reading sensitive files like `/etc/passwd`, `.env`, or
+application source code. Always resolve the full path with `path.resolve` and verify it starts with the intended base
+directory using `startsWith`.
 
 **Detection regex:** `fs\.(readFile|writeFile|readdir|unlink|access|stat|createReadStream|createWriteStream)\s*\(`
 
@@ -91,7 +100,9 @@ app.get('/file', (req, res) => {
 
 ### 3. `vm` / `vm2` Sandbox Escape
 
-The Node.js `vm` module is explicitly documented as **not a security mechanism**. Code running in a `vm.Script` or `vm.createContext` can escape the sandbox and access the host process. The third-party `vm2` library was deprecated after multiple CVEs demonstrating sandbox escapes.
+The Node.js `vm` module is explicitly documented as **not a security mechanism**. Code running in a `vm.Script` or
+`vm.createContext` can escape the sandbox and access the host process. The third-party `vm2` library was deprecated
+after multiple CVEs demonstrating sandbox escapes.
 
 ```javascript
 // VULNERABLE: vm module is NOT a security boundary
@@ -132,7 +143,9 @@ const worker = new Worker('./sandbox-worker.js', {
 });
 ```
 
-**Security implication:** Sandbox escape (CWE-265) leads to full remote code execution. The `vm` module provides execution context isolation but not security isolation. For untrusted code, use OS-level isolation (containers, separate processes with `uid`/`chroot`, or dedicated sandboxing services).
+**Security implication:** Sandbox escape (CWE-265) leads to full remote code execution. The `vm` module provides
+execution context isolation but not security isolation. For untrusted code, use OS-level isolation (containers, separate
+processes with `uid`/`chroot`, or dedicated sandboxing services).
 
 **Detection regex:** `require\s*\(\s*['"]vm2?['"]\s*\)`
 
@@ -140,7 +153,8 @@ const worker = new Worker('./sandbox-worker.js', {
 
 ### 4. `Buffer` Misuse
 
-`Buffer.allocUnsafe` returns uninitialized memory that may contain sensitive data from previous allocations. `Buffer(number)` (deprecated constructor) also returns uninitialized memory in older Node.js versions.
+`Buffer.allocUnsafe` returns uninitialized memory that may contain sensitive data from previous allocations.
+`Buffer(number)` (deprecated constructor) also returns uninitialized memory in older Node.js versions.
 
 ```javascript
 // VULNERABLE: allocUnsafe exposes uninitialized heap memory
@@ -170,7 +184,9 @@ if (isNaN(size) || size < 0 || size > MAX_SIZE) {
 const buf = Buffer.alloc(size);
 ```
 
-**Security implication:** Information disclosure (CWE-200) through uninitialized memory. `Buffer.allocUnsafe` is a performance optimization that should only be used when the buffer will be completely overwritten before being read. Never send an `allocUnsafe` buffer directly to a client.
+**Security implication:** Information disclosure (CWE-200) through uninitialized memory. `Buffer.allocUnsafe` is a
+performance optimization that should only be used when the buffer will be completely overwritten before being read.
+Never send an `allocUnsafe` buffer directly to a client.
 
 **Detection regex:** `Buffer\.(allocUnsafe|allocUnsafeSlow)\s*\(`
 
@@ -178,7 +194,8 @@ const buf = Buffer.alloc(size);
 
 ### 5. Dynamic `require()` with User Input
 
-When `require()` receives a path derived from user input, attackers can load arbitrary modules from the filesystem, potentially including files they have uploaded or symlinked.
+When `require()` receives a path derived from user input, attackers can load arbitrary modules from the filesystem,
+potentially including files they have uploaded or symlinked.
 
 ```javascript
 // VULNERABLE: Dynamic require with user-controlled path
@@ -209,7 +226,8 @@ app.get('/plugin/:name', (req, res) => {
 });
 ```
 
-**Security implication:** Arbitrary code execution (CWE-94) through module loading. Dynamic `require` can load any `.js`, `.json`, or `.node` file on the filesystem. Always use an allowlist mapping from user input to safe module paths.
+**Security implication:** Arbitrary code execution (CWE-94) through module loading. Dynamic `require` can load any
+`.js`, `.json`, or `.node` file on the filesystem. Always use an allowlist mapping from user input to safe module paths.
 
 **Detection regex:** `require\s*\(\s*[^'"]\s*[+\`]`
 
@@ -217,7 +235,8 @@ app.get('/plugin/:name', (req, res) => {
 
 ### 6. Event Loop Blocking
 
-CPU-bound synchronous operations in request handlers block the entire event loop, creating denial-of-service vulnerabilities. This includes synchronous crypto, large JSON parsing, and regular expression backtracking (ReDoS).
+CPU-bound synchronous operations in request handlers block the entire event loop, creating denial-of-service
+vulnerabilities. This includes synchronous crypto, large JSON parsing, and regular expression backtracking (ReDoS).
 
 ```javascript
 // VULNERABLE: Synchronous bcrypt blocks event loop for ALL requests
@@ -261,7 +280,9 @@ if (req.query.subject && req.query.subject.length > 10_000) {
 }
 ```
 
-**Security implication:** Denial of service (CWE-400) via event loop blocking. A single slow synchronous operation prevents the server from handling any other requests. Use async APIs, limit input sizes, and never construct regular expressions from untrusted input.
+**Security implication:** Denial of service (CWE-400) via event loop blocking. A single slow synchronous operation
+prevents the server from handling any other requests. Use async APIs, limit input sizes, and never construct regular
+expressions from untrusted input.
 
 **Detection regex:** `(hashSync|compareSync|pbkdf2Sync|scryptSync|randomFillSync)\s*\(`
 
@@ -269,7 +290,8 @@ if (req.query.subject && req.query.subject.length > 10_000) {
 
 ### 7. HTTP Header Injection (CRLF Injection)
 
-If user input is passed to `res.setHeader` or `res.writeHead` without sanitization, attackers can inject CRLF characters (`\r\n`) to add arbitrary headers or split the HTTP response.
+If user input is passed to `res.setHeader` or `res.writeHead` without sanitization, attackers can inject CRLF characters
+(`\r\n`) to add arbitrary headers or split the HTTP response.
 
 ```javascript
 // VULNERABLE: User input directly in response header
@@ -301,7 +323,9 @@ app.get('/redirect', (req, res) => {
 // Note: Node.js 18+ rejects headers containing \r or \n by default
 ```
 
-**Security implication:** HTTP response splitting (CWE-113) allows attackers to inject headers, set cookies, or split responses to perform cache poisoning and XSS. Node.js 18+ includes built-in protection, but explicit validation is required for older versions and for defense in depth.
+**Security implication:** HTTP response splitting (CWE-113) allows attackers to inject headers, set cookies, or split
+responses to perform cache poisoning and XSS. Node.js 18+ includes built-in protection, but explicit validation is
+required for older versions and for defense in depth.
 
 **Detection regex:** `res\.(setHeader|writeHead)\s*\([^)]*req\.(query|params|body|headers)`
 
@@ -309,7 +333,8 @@ app.get('/redirect', (req, res) => {
 
 ### 8. Stream Backpressure (Memory Exhaustion)
 
-When piping data from a fast source to a slow destination without respecting backpressure, the internal buffer grows unbounded, eventually exhausting server memory.
+When piping data from a fast source to a slow destination without respecting backpressure, the internal buffer grows
+unbounded, eventually exhausting server memory.
 
 ```javascript
 // VULNERABLE: No backpressure handling — memory grows unbounded
@@ -353,7 +378,9 @@ app.post('/upload', async (req, res) => {
 });
 ```
 
-**Security implication:** Memory exhaustion denial of service (CWE-400). An attacker sending data faster than the server can write it to disk can crash the process. Always use `pipe()` or `pipeline()` which automatically pause the readable stream when the writable stream's buffer is full.
+**Security implication:** Memory exhaustion denial of service (CWE-400). An attacker sending data faster than the server
+can write it to disk can crash the process. Always use `pipe()` or `pipeline()` which automatically pause the readable
+stream when the writable stream's buffer is full.
 
 **Detection regex:** `\.on\s*\(\s*['"]data['"]\s*,.*\.write\s*\(`
 
@@ -361,7 +388,8 @@ app.post('/upload', async (req, res) => {
 
 ### 9. Insecure `http.createServer` Configuration
 
-Bare `http.createServer` without timeouts, size limits, or security headers leaves the server vulnerable to slowloris attacks, large payload DoS, and various HTTP-level exploits.
+Bare `http.createServer` without timeouts, size limits, or security headers leaves the server vulnerable to slowloris
+attacks, large payload DoS, and various HTTP-level exploits.
 
 ```javascript
 // VULNERABLE: No timeouts, no size limits, no security headers
@@ -415,7 +443,9 @@ server.maxHeadersCount = 50;      // Limit header count
 server.listen(3000);
 ```
 
-**Security implication:** Denial of service (CWE-400) through resource exhaustion. Without timeouts, a slowloris attack can exhaust connection slots. Without body size limits, a single request can consume all available memory. Production servers should always set `headersTimeout`, `requestTimeout`, and body size limits.
+**Security implication:** Denial of service (CWE-400) through resource exhaustion. Without timeouts, a slowloris attack
+can exhaust connection slots. Without body size limits, a single request can consume all available memory. Production
+servers should always set `headersTimeout`, `requestTimeout`, and body size limits.
 
 **Detection regex:** `http\.createServer\s*\(`
 
@@ -423,7 +453,8 @@ server.listen(3000);
 
 ### 10. Prototype Pollution via `Object.assign` / Spread
 
-Prototype pollution occurs when an attacker can inject properties into `Object.prototype` through unvalidated object merging, affecting all objects in the application.
+Prototype pollution occurs when an attacker can inject properties into `Object.prototype` through unvalidated object
+merging, affecting all objects in the application.
 
 ```javascript
 // VULNERABLE: Deep merge of user-controlled objects
@@ -473,7 +504,9 @@ userSettings.set(key, value);
 Object.freeze(Object.prototype);
 ```
 
-**Security implication:** Prototype pollution (CWE-1321) can lead to authorization bypass, denial of service, or remote code execution depending on how the polluted properties are used. Validate all keys before merging user-controlled objects, use `Object.create(null)` for dictionaries, and consider `Object.freeze(Object.prototype)` as defense in depth.
+**Security implication:** Prototype pollution (CWE-1321) can lead to authorization bypass, denial of service, or remote
+code execution depending on how the polluted properties are used. Validate all keys before merging user-controlled
+objects, use `Object.create(null)` for dictionaries, and consider `Object.freeze(Object.prototype)` as defense in depth.
 
 **Detection regex:** `__proto__|Object\.assign\s*\([^,]+,\s*req\.(body|query|params)`
 
@@ -483,7 +516,8 @@ Object.freeze(Object.prototype);
 
 ### 11. `crypto.randomUUID()` for Secure Identifiers
 
-Node.js 16 introduced `crypto.randomUUID()` as a built-in way to generate cryptographically secure UUIDs without external dependencies.
+Node.js 16 introduced `crypto.randomUUID()` as a built-in way to generate cryptographically secure UUIDs without
+external dependencies.
 
 ```javascript
 // VULNERABLE: Math.random is not cryptographically secure
@@ -511,7 +545,10 @@ const token = crypto.randomBytes(32).toString('hex');
 const otp = crypto.randomInt(100000, 999999); // 6-digit OTP
 ```
 
-**Security implication:** Insecure randomness (CWE-330) in session tokens, CSRF tokens, or API keys allows attackers to predict and forge values. `Math.random()` is not cryptographically secure and its output can be reverse-engineered from a few observed values. Always use `crypto.randomUUID()`, `crypto.randomBytes()`, or `crypto.randomInt()` for security-sensitive values.
+**Security implication:** Insecure randomness (CWE-330) in session tokens, CSRF tokens, or API keys allows attackers to
+predict and forge values. `Math.random()` is not cryptographically secure and its output can be reverse-engineered from
+a few observed values. Always use `crypto.randomUUID()`, `crypto.randomBytes()`, or `crypto.randomInt()` for
+security-sensitive values.
 
 **Detection regex:** `Math\.random\s*\(`
 
@@ -519,7 +556,8 @@ const otp = crypto.randomInt(100000, 999999); // 6-digit OTP
 
 ### 12. AbortController for Request Cancellation
 
-Node.js 16 stabilized `AbortController`, enabling safe request cancellation with proper resource cleanup. This prevents resource leaks from abandoned or timed-out operations.
+Node.js 16 stabilized `AbortController`, enabling safe request cancellation with proper resource cleanup. This prevents
+resource leaks from abandoned or timed-out operations.
 
 ```javascript
 // VULNERABLE: No timeout on outgoing HTTP requests
@@ -562,7 +600,9 @@ const response = await fetch(url, {
 });
 ```
 
-**Security implication:** Resource exhaustion (CWE-400) from connections that never close. Without timeouts and cancellation, a slow or malicious upstream can hold server resources indefinitely, eventually exhausting connection pools and memory. Always use `AbortController` or `AbortSignal.timeout()` for outgoing requests.
+**Security implication:** Resource exhaustion (CWE-400) from connections that never close. Without timeouts and
+cancellation, a slow or malicious upstream can hold server resources indefinitely, eventually exhausting connection
+pools and memory. Always use `AbortController` or `AbortSignal.timeout()` for outgoing requests.
 
 **Detection regex:** `https?\.(get|request)\s*\([^)]*\)\s*(?!.*abort|.*timeout)`
 
@@ -572,7 +612,8 @@ const response = await fetch(url, {
 
 ### 13. Built-in Test Runner Security
 
-Node.js 18 introduced a built-in test runner (`node:test`) that eliminates the dependency on external test frameworks for security-sensitive testing.
+Node.js 18 introduced a built-in test runner (`node:test`) that eliminates the dependency on external test frameworks
+for security-sensitive testing.
 
 ```javascript
 // SECURE: Built-in test runner for security tests (no third-party deps)
@@ -601,13 +642,16 @@ describe('Input Sanitization', () => {
 });
 ```
 
-**Security implication:** Reducing test framework dependencies shrinks the supply chain attack surface. The built-in `node:test` module requires no `npm install`, avoiding potential dependency confusion or malicious package injection through test tooling.
+**Security implication:** Reducing test framework dependencies shrinks the supply chain attack surface. The built-in
+`node:test` module requires no `npm install`, avoiding potential dependency confusion or malicious package injection
+through test tooling.
 
 ---
 
 ### 14. Built-in `fetch` API (SSRF Considerations)
 
-Node.js 18 includes a built-in `fetch` implementation (based on `undici`). While this reduces the dependency on `node-fetch`, it introduces server-side request forgery (SSRF) risks if URLs come from user input.
+Node.js 18 includes a built-in `fetch` implementation (based on `undici`). While this reduces the dependency on
+`node-fetch`, it introduces server-side request forgery (SSRF) risks if URLs come from user input.
 
 ```javascript
 // VULNERABLE: Fetching user-supplied URLs without validation (SSRF)
@@ -657,7 +701,10 @@ async function safeFetch(urlString) {
 }
 ```
 
-**Security implication:** Server-side request forgery (CWE-918) allows attackers to use the server as a proxy to access internal services, cloud metadata endpoints, and other resources not directly reachable from the internet. Always validate and restrict outgoing URLs, resolve DNS before fetching, block private IP ranges, and do not follow redirects automatically.
+**Security implication:** Server-side request forgery (CWE-918) allows attackers to use the server as a proxy to access
+internal services, cloud metadata endpoints, and other resources not directly reachable from the internet. Always
+validate and restrict outgoing URLs, resolve DNS before fetching, block private IP ranges, and do not follow redirects
+automatically.
 
 **Detection regex:** `fetch\s*\(\s*req\.(query|params|body)`
 
@@ -667,7 +714,8 @@ async function safeFetch(urlString) {
 
 ### 15. Permission Model
 
-Node.js 20 introduced an experimental Permission Model that restricts access to the filesystem, child processes, and worker threads at the runtime level.
+Node.js 20 introduced an experimental Permission Model that restricts access to the filesystem, child processes, and
+worker threads at the runtime level.
 
 ```bash
 # SECURE: Restrict filesystem access to only the app directory
@@ -706,7 +754,9 @@ if (process.permission.has('child.process')) {
 //   server.js
 ```
 
-**Security implication:** The Permission Model provides defense in depth (CWE-250, principle of least privilege). Even if an attacker achieves code execution through an injection vulnerability, the Permission Model limits what operations they can perform. This significantly reduces the blast radius of vulnerabilities.
+**Security implication:** The Permission Model provides defense in depth (CWE-250, principle of least privilege). Even
+if an attacker achieves code execution through an injection vulnerability, the Permission Model limits what operations
+they can perform. This significantly reduces the blast radius of vulnerabilities.
 
 **Detection regex:** `--experimental-permission|--allow-fs-(read|write)|--allow-child-process`
 
@@ -716,7 +766,10 @@ if (process.permission.has('child.process')) {
 
 ### 16. `require(esm)` and Dynamic Import Security
 
-`require()` of ES modules is an experimental / flagged feature in Node.js 22 (`--experimental-require-module`), not a stable default — treat it as unreleased for security-critical code. Dynamic `import()` expressions, on the other hand, have been stable since Node.js 13.2. Both can be vectors for loading untrusted code when the specifier comes from user input.
+`require()` of ES modules is an experimental / flagged feature in Node.js 22 (`--experimental-require-module`), not a
+stable default — treat it as unreleased for security-critical code. Dynamic `import()` expressions, on the other hand,
+have been stable since Node.js 13.2. Both can be vectors for loading untrusted code when the specifier comes from user
+input.
 
 ```javascript
 // VULNERABLE: Dynamic import with user-controlled specifier
@@ -750,7 +803,10 @@ app.get('/widget/:name', async (req, res) => {
 const config = await import('./config.json', { with: { type: 'json' } });
 ```
 
-**Security implication:** Arbitrary code execution (CWE-94) through dynamic module loading. Both `require()` and `import()` execute code at load time. Dynamic specifiers from user input allow loading arbitrary files. Use allowlists mapping user input to static import paths. Import assertions (`with: { type: 'json' }`) ensure JSON files are not executed as code.
+**Security implication:** Arbitrary code execution (CWE-94) through dynamic module loading. Both `require()` and
+`import()` execute code at load time. Dynamic specifiers from user input allow loading arbitrary files. Use allowlists
+mapping user input to static import paths. Import assertions (`with: { type: 'json' }`) ensure JSON files are not
+executed as code.
 
 **Detection regex:** `import\s*\(\s*[^'"]\s*[+\`]`
 

@@ -1,12 +1,15 @@
 > **Additional context needed**: quality bar and shipping constraints.
 
-Polish is refinement, never concealed redesign. Preserve the incumbent visual world, content, behavior, and everything outside scope. If the concept itself is wrong, say so and recommend redesign or `bolder` instead of smuggling in a replacement.
+Polish is refinement, never concealed redesign. Preserve the incumbent visual world, content, behavior, and everything
+outside scope. If the concept itself is wrong, say so and recommend redesign or `bolder` instead of smuggling in a
+replacement.
 
 A detector result is defect evidence, not proof of quality. Inspect the rendered experience and real interaction path.
 
 ## 1. Establish the system
 
-Read DESIGN.md and representative tokens, shared components, patterns, and neighboring flows. If no formal system exists, use coherent project conventions.
+Read DESIGN.md and representative tokens, shared components, patterns, and neighboring flows. If no formal system
+exists, use coherent project conventions.
 
 Classify each drift before fixing it:
 
@@ -32,7 +35,8 @@ If a prior critique exists, use it as one input:
 node .agents/skills/impeccable/scripts/critique-storage.mjs latest "<resolved target>"
 ```
 
-Exit 0 returns the latest snapshot; incorporate relevant P0/P1 findings and name the snapshot read. Exit 2 means none exists. Perform an independent pass either way.
+Exit 0 returns the latest snapshot; incorporate relevant P0/P1 findings and name the snapshot read. Exit 2 means none
+exists. Perform an independent pass either way.
 
 ## 3. Triage
 
@@ -50,7 +54,8 @@ Do not perfect one corner while leaving the rest below the same quality bar.
 
 ### Flow and hierarchy
 
-- Match neighboring mental models, terminology, disclosure, routing, save behavior, and optimistic or pessimistic patterns.
+- Match neighboring mental models, terminology, disclosure, routing, save behavior, and optimistic or pessimistic
+patterns.
 - Make the primary task and current state obvious without flattening every element to equal weight.
 - Ensure arrival, transition, empty, and recovery paths connect instead of behaving as isolated screens.
 
@@ -92,6 +97,9 @@ Walk the complete path again with mouse, keyboard, and touch where applicable. C
 - console errors, layout shift, interaction latency, image loading, and supported browsers;
 - agreement with DESIGN.md, neighboring features, and the user's scope.
 
-Follow the quality guidance supplied by `context.mjs` and hooks, then run any other relevant QA commands. Context requests a manual scan only when no automatic detector is active; never add another detector pass. Fix real defects and document only narrow intentional exceptions. A clean scan does not replace visual judgment.
+Follow the quality guidance supplied by `context.mjs` and hooks, then run any other relevant QA commands. Context
+requests a manual scan only when no automatic detector is active; never add another detector pass. Fix real defects and
+document only narrow intentional exceptions. A clean scan does not replace visual judgment.
 
-Finish with a source diff: remove accidental churn, orphaned code, redundant values, and temporary artifacts. Ship only when the feature is functionally complete and consistently finished across the path.
+Finish with a source diff: remove accidental churn, orphaned code, redundant values, and temporary artifacts. Ship only
+when the feature is functionally complete and consistently finished across the path.
