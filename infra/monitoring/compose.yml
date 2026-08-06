@@ -1,16 +1,13 @@
-# NOTE: No top-level `name:` field - inherits parent project name (agentic-e2e)
-# when included via infra/compose.yml.
-#
-# The `monitoring` network is pinned to the canonical `agentic-e2e_monitoring`
-# network (kind control-plane node + Grafana both live there). This keeps the
-# health-probe reachable as `health-probe:8090` from Grafana and able to probe
-# the cluster regardless of whether this stack is started via infra/compose.yml
-# (project agentic-e2e) or standalone (which would otherwise create a stray
-# `monitoring_monitoring` network).
+# NOTE: No `name:` field - inherits parent project name (agentic-e2e) when
+# included via infra/compose.yml.
 
 networks:
   monitoring:
-    name: agentic-e2e_monitoring
+  # The kind cluster runs on its own Docker network ("kind"). The health probe
+  # reaches services via the kind node DNS (sdd-cluster-control-plane:<nodePort>),
+  # so it must join that network — otherwise every service reports "Not deployed".
+  kind:
+    external: true
 
 volumes:
   grafana-data:
@@ -21,7 +18,7 @@ services:
     image: amir20/dozzle:v10.6.2
     container_name: agentic-dozzle
     ports:
-      - 8888:8080
+      - "8888:8080"
     volumes:
       - //var/run/docker.sock:/var/run/docker.sock
     networks:
@@ -39,7 +36,7 @@ services:
       GF_PLUGINS_PREINSTALL_SYNC: yesoreyeram-infinity-datasource@3.8.0
       GRAFANA_HEALTH_ALERT_FOR: ${GRAFANA_HEALTH_ALERT_FOR:-2m}
     ports:
-      - 3001:3000
+      - "3001:3000"
     volumes:
       - grafana-data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
@@ -49,9 +46,7 @@ services:
       - monitoring
     restart: unless-stopped
     healthcheck:
-      test:
-        - CMD-SHELL
-        - curl -sf http://localhost:3000/api/health || exit 1
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -60,9 +55,9 @@ services:
   health-probe:
     image: python:3.13-alpine
     container_name: agentic-health-probe
-    command: [python, /app/health_probe.py]
+    command: ["python", "/app/health_probe.py"]
     ports:
-      - 8090:8090
+      - "8090:8090"
     volumes:
       - ./health_probe.py:/app/health_probe.py:ro
       # Canonical port source (infra/deployment/ports.json) — the probe reads
@@ -70,24 +65,8 @@ services:
       - ../deployment/ports.json:/app/ports.json:ro
     networks:
       - monitoring
-    # restart: unless-stopped auto-restarts the probe whenever its process
-    # exits (verified on Engine 29.6.2 - a killed main process restarts).
-    # Docker has NO native restart-on-unhealthy, and the common `kill -9 1`
-    # self-terminate trick is ineffective on this Docker Desktop/WSL2 setup
-    # (signals to PID 1 from exec/healthcheck processes are not delivered). So
-    # the healthcheck below is observability: a hung-but-alive probe shows
-    # "unhealthy" in `docker ps`/`docker inspect` instead of dying silently,
-    # while a dead process is auto-restarted by the policy above.
+      - kind
     restart: unless-stopped
-    healthcheck:
-      # urllib is stdlib in python:3.13-alpine (the image ships no curl).
-      test:
-        - CMD-SHELL
-        - python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health', timeout=5)" || exit 1
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
   seq:
     image: datalust/seq:2025.2.16202
     container_name: agentic-seq
@@ -96,16 +75,14 @@ services:
       SEQ_FIRSTRUN_NOAUTHENTICATION: True
       SEQ_API_CANONICALURI: http://localhost:5341/
     ports:
-      - 127.0.0.1:5341:80
+      - "127.0.0.1:5341:80"
     volumes:
       - seq-data:/data
     networks:
       - monitoring
     restart: unless-stopped
     healthcheck:
-      test:
-        - CMD-SHELL
-        - curl -sf http://localhost:80/api || exit 1
+      test: ["CMD-SHELL", "curl -sf http://localhost:80/api || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
