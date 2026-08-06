@@ -30,8 +30,6 @@
 
 5. **When skills have gaps**: Document the gap in the final handoff (e.g., "Skill quality-gates.md does not cover X;
    added knowledge entry with ...") so the skill can be updated later.
-6. **When skills have gaps**: Document the gap in the final handoff (e.g., "Skill quality-gates.md does not cover X;
-added knowledge entry with ...") so the skill can be updated later.
 
 This ensures consistency, prevents duplicate documentation, and keeps you aligned with the repository's established
 patterns.

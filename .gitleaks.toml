@@ -1,0 +1,23 @@
+# gitleaks configuration for the SDD lab repo.
+#
+# Allowlist rationale (all allowlisted paths are gitignored local/vendor content
+# that is never committed to the repository):
+#   .codex/skills/  .codex/agent-evals/  -> third-party installed community
+#       skills and generated eval artifacts (vendor content, see trunk.yaml).
+#   .codex/client-tools.local.json  .vscode/mcp.json  -> local-only MCP tool
+#       configuration with placeholder/local credentials.
+#   infra/*.env  -> local lab service env files with provisioning credentials
+#       for the local Docker/Gitea stack only.
+#   infra/k8s/kind-kubeconfig-ci.yaml  -> locally generated kind cluster
+#       kubeconfig with a throwaway CA certificate.
+[allowlist]
+paths = [
+  '^\.codex/skills/',
+  '^\.codex/agent-evals/',
+  '^\.codex/client-tools\.local\.json$',
+  '^\.vscode/mcp\.json$',
+  '^infra/.*\.env$',
+  '^infra/.*\.env\.example$',
+  '^infra/k8s/kind-kubeconfig-ci\.yaml$',
+  '^infra/openproject/openproject/pgdata',
+]

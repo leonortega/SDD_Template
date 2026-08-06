@@ -1,3 +1,2 @@
-infra/openproject/openproject/pgdata
-.codex/client-tools.local.json
-.codex/skills/security-audit/references
+# gitleaks 8.x ignore entries must be full fingerprints (path:rule:line).
+# Path-based suppressions live in .gitleaks.toml [allowlist] instead.

@@ -85,6 +85,7 @@ pnpm-debug.log*
 # Local container runtime state
 infra/openproject/openproject/
 infra/openproject/plane/
+infra/k8s/kind-kubeconfig-ci.yaml
 **/data/
 **/logs/
 
@@ -115,5 +116,8 @@ Desktop.ini
 $RECYCLE.BIN/
 .cline/skills/
 .clinerules/
-.trunk/
+.trunk/*
+!.trunk/trunk.yaml
+# checkov --download-external-modules artifact (must never ship)
+.external_modules/
 nul

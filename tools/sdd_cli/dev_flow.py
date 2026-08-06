@@ -694,6 +694,21 @@ def check_git_ignored(root: Path, path: str) -> dict[str, Any]:
 # ── Commit message validation ────────────────────────────────────────────
 
 
+def _read_message_file(path: str) -> str:
+    """Read a commit message from a file, falling back to empty on error.
+
+    Lets the lefthook commit-msg hook pass the message file path directly
+    instead of relying on shell command substitution, which is fragile on
+    Windows where lefthook wraps the run command in a nested shell.
+    """
+    if not path:
+        return ""
+    try:
+        return Path(path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
 def validate_commit_message(root: Path, message: str) -> dict[str, Any]:
     """Validate commit message against ticket pattern."""
     pattern = read_ticket_pattern(root)
@@ -963,7 +978,9 @@ def run_dev_flow(args: list[str]) -> int:
         ),
         "check-git-ignored": lambda: check_git_ignored(root, require(options, "path")),
         "validate-commit-message": lambda: validate_commit_message(
-            root, options.get("message", "")
+            root,
+            options.get("message", "")
+            or _read_message_file(options.get("message-file", "")),
         ),
         "extract-ticket-key": lambda: extract_ticket_key(
             require(options, "message"),
