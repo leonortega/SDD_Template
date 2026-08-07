@@ -9,7 +9,7 @@
 
 prompts:
   # Single prompt template - the provider receives the scenario as vars
-  - "Evaluate the correct workflow route for this delivery scenario:\n\nScenario: {{scenario}}\nTicket state: {{ticketState}}\nBranch exists: {{branchExists}}\nPR exists: {{prExists}}\nPR merged: {{prMerged}}\nQA evidence: {{qaEvidence}}\nProduct stack: {{productStack}}\nExplicit request: {{requestType}}\nResume requested: {{resumeRequested}}"
+  - "Evaluate the correct workflow route for this delivery scenario:\n\nScenario: {{scenario}}\nTicket state: {{ticketState}}\nBranch exists: {{branchExists}}\nPR exists: {{prExists}}\nPR merged: {{prMerged}}\nQA evidence: {{qaEvidence}}\nQA approved: {{qaApproved}}\nProduct stack: {{productStack}}\nExplicit request: {{requestType}}\nResume requested: {{resumeRequested}}"
 
 providers:
   # Path relative to promptfooconfig.yaml's directory (same directory)
@@ -91,6 +91,51 @@ tests:
       - type: is-json
       - type: javascript
         value: JSON.parse(output).route === 'configured QA gate'
+
+  - description: "QA pending user approval routes to the approval gate (never auto-approves)"
+    vars:
+      scenario: DEV is healthy and verified, but the user has not approved the QA deployment yet
+      ticketState: QA
+      branchExists: true
+      prExists: true
+      prMerged: true
+      qaEvidence:
+      qaApproved: false
+      productStack: selected
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-ops-deploy-qa-approval-gate'
+
+  - description: "QA user-approved routes to dev-ops-deploy-qa dispatch"
+    vars:
+      scenario: User approved the QA deployment after DEV verification
+      ticketState: QA
+      branchExists: true
+      prExists: true
+      prMerged: true
+      qaEvidence:
+      qaApproved: true
+      productStack: selected
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-ops-deploy-qa'
+
+  - description: "Explicit deploy-qa request routes to dev-ops-deploy-qa"
+    vars:
+      scenario: User explicitly asks to deploy to QA (approval granted via the request)
+      ticketState: Done
+      branchExists: false
+      prExists: false
+      prMerged: true
+      qaEvidence: passed
+      productStack: selected
+      requestType: deploy-qa
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-ops-deploy-qa'
 
   - description: "QA failed with product defect routes to dev-flow-file-qa-bug"
     vars:
