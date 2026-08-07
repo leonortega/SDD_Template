@@ -131,6 +131,11 @@ get the `activityName` from `client-tools.local.json` config.
 If the time-entry API, permissions, or resolved per-stage activity cannot be used, record the fallback reason and use
 ignored `.codex/agent-telemetry.local.jsonl`.
 
+The repo CLI wraps the whole flow above in one command per stage — `python -m tools.sdd_cli dev-flow telemetry-upsert
+--ticket-key ... --workflow-stage ... --agent-role ... --started-utc ... --finished-utc ... --outcome ...` (see
+`.codex/skills/_shared/pipeline-workflow-telemetry.md`). It resolves the activity, builds this payload, POSTs it, and
+falls back to the JSONL file automatically.
+
 ## Gitea
 
 Headers:

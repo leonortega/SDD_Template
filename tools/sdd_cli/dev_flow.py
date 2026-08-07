@@ -201,12 +201,16 @@ def validate_deployment_lane(path: Path, options: dict[str, str]) -> dict[str, A
 
 
 def validate_parallel_delivery_dry_run(root: Path, input_json: str) -> dict[str, Any]:
-    """Validate parallel delivery dry-run constraints."""
+    """Validate parallel delivery dry-run constraints.
+
+    There is no ``parallelDelivery.enabled`` gate: the AI determines that the
+    user asked to implement more than one ticket and applies parallel delivery.
+    The dry run validates capacity, isolation, and serialized-lane constraints
+    only.
+    """
     data = json.loads(input_json)
     errors: list[str] = []
     tickets = data.get("tickets", [])
-    if not data.get("enabled"):
-        errors.append("parallelDelivery.enabled must be true.")
     active_count = len(tickets)
     max_active = int(data.get("maxActiveTickets", 0) or 0)
     if max_active and active_count > max_active:
@@ -305,19 +309,9 @@ def resolve_openproject_time_activity(
 
 def render_openproject_time_telemetry_comment(ticket_key: str, input_json: str) -> str:
     """Render OpenProject time telemetry as markdown comment."""
-    row = json.loads(input_json)
-    stage = row.get("workflowStage", "")
-    lines = [
-        f"IA generated workflow telemetry: {ticket_key}:{stage}",
-        f"agentRole: {row.get('agentRole', '')}",
-        f"startedUtc: {row.get('startedUtc', '')}",
-        f"finishedUtc: {row.get('finishedUtc', '')}",
-        f"retryCount: {row.get('retryCount', 0)}",
-        f"outcome: {row.get('outcome', '')}",
-    ]
-    if row.get("blockerCategory"):
-        lines.append(f"blockerCategory: {row['blockerCategory']}")
-    return "\n".join(lines)
+    from .workflow_telemetry import render_telemetry_comment
+
+    return render_telemetry_comment(ticket_key, json.loads(input_json))
 
 
 # ── Ticket comment rendering ─────────────────────────────────────────────
@@ -911,7 +905,8 @@ def run_dev_flow(args: list[str]) -> int:
     if not args:
         print(
             "Available: ensure-delivery-context, sync-worktree-config, validate-ticket-lock, "
-            "validate-deployment-lane, validate-parallel-dry-run, read-openproject-telemetry, resolve-openproject-activity, "
+            "validate-deployment-lane, validate-parallel-dry-run, telemetry-upsert, append-telemetry, "
+            "read-openproject-telemetry, resolve-openproject-activity, "
             "render-openproject-comment, render-ticket-comment, validate-release-manifest, "
             "create-release-manifest, create-artifact-pointer, update-release-manifest, "
             "artifact-paths, next-rc-version, ticket-readiness, delivery-risk, check-git-ignored, "
@@ -942,6 +937,8 @@ def run_dev_flow(args: list[str]) -> int:
         "validate-parallel-dry-run": lambda: validate_parallel_delivery_dry_run(
             root, require(options, "input-json")
         ),
+        "telemetry-upsert": lambda: _run_telemetry_upsert(root, options, dry_run),
+        "append-telemetry": lambda: _run_append_telemetry(root, options),
         "read-openproject-telemetry": lambda: read_openproject_time_telemetry(
             require(options, "ticket-key"), require(options, "input-json")
         ),
@@ -1024,3 +1021,19 @@ def _parse_values(options: dict[str, str]) -> dict[str, Any]:
         return _json.loads(raw) if raw else {}
     except _json.JSONDecodeError:
         return {}
+
+
+def _run_telemetry_upsert(
+    root: Path, options: dict[str, str], dry_run: bool
+) -> dict[str, Any]:
+    """Dispatch telemetry-upsert to the standalone workflow telemetry script."""
+    from .workflow_telemetry import telemetry_upsert_cli
+
+    return telemetry_upsert_cli(root, options, dry_run)
+
+
+def _run_append_telemetry(root: Path, options: dict[str, str]) -> dict[str, Any]:
+    """Dispatch append-telemetry (JSONL fallback) to the standalone script."""
+    from .workflow_telemetry import append_telemetry_cli
+
+    return append_telemetry_cli(root, options)

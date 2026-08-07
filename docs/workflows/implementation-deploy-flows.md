@@ -778,9 +778,9 @@ Nexus`.
 
 ## 10. Parallel Delivery (Optional Mode)
 
-When `parallelDelivery.enabled=true` (default false), multiple tickets progress through
-planning, implementation, and review in isolated Git worktrees; DEV/QA/E2E/PROD/rollback/
-hotfix promotion is **serialized** through a deployment lane.
+When the AI determines the user asked to implement more than one ticket, multiple tickets progress through planning,
+implementation, and review in isolated Git worktrees; DEV/QA/E2E/PROD/rollback/hotfix promotion is **serialized**
+through a deployment lane. There is no `parallelDelivery.enabled` flag gate — ticket count is the decision.
 
 - `maxActiveTickets` (default 2) limits active worktrees.
 - Each active ticket owns exactly one worktree and one implementation branch.

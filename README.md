@@ -22,9 +22,10 @@ learning.
   the step-by-step contracts, and the CLI provides deterministic operations (install,
   setup, checks, manifests). The harness is stack-agnostic — you choose the product
   stack, and the harness drives delivery around it.
-- **Memory** — two context layers: `docs/` (tracked human documentation: architecture,
-  ADRs, workflows, conventions) and `knowledge/` (agent-consulted operational memory:
-  errors, fixes, patterns, lessons learned). Durable context lives in the repo, not in
+- **Memory** — three context layers: `docs/` (tracked human documentation: architecture,
+  ADRs, workflows, conventions), `knowledge/` (agent-consulted operational memory:
+  errors, fixes, patterns, lessons learned), and `openspec/specs/` (archived OpenSpec
+  behavior specs, created on change archive). Durable context lives in the repo, not in
   chat history. See [`docs/conventions/context-management.md`](docs/conventions/context-management.md).
 - **Knowledge graph exploration (optional)** — the codebase can also be explored as a
   queryable knowledge graph with external tools like [Graphify](https://github.com/Graphify-Labs/graphify):
@@ -222,11 +223,12 @@ OpenProject ticket → OpenSpec change → feature branch → TDD implementation
 
 ## 4. Deploy To DEV / QA / PROD
 
-CI auto-deploys on push to `dev`, and promotion to PROD is **always explicit**.
+CI auto-deploys when a PR is merged into `dev` (direct pushes to `dev` never deploy), and promotion to PROD is
+**always explicit**.
 
 | Environment | Namespace | Replicas | Trigger |
 | ----------- | --------- | -------- | ------- |
-| **dev** | `sdd-dev` | 1 | Push to `dev` branch |
+| **dev** | `sdd-dev` | 1 | PR merged into `dev` |
 | **qa** | `sdd-qa` | 2 | CI auto-promote after DEV (same pipeline run) |
 | **prod** | `sdd-prod` | 3 | Explicit PROD deployment of the QA-approved artifact |
 

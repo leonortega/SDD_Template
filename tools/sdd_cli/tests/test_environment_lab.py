@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import patch
 
 DISCLAIMER = (
@@ -103,3 +104,164 @@ def test_non_dict_json_returns_false() -> None:
     (ok, detail), _ = _call([(200, "[1, 2, 3]")])
     assert ok is False
     assert "Unexpected EULA response shape" in detail
+
+
+# ── provision_grafana_token ─────────────────────────────────────────────
+
+
+def _write_monitoring_env(tmp_path, body: str = "SEQ_URL=http://localhost:5341\n") -> Path:
+    monitoring = tmp_path / "infra" / "monitoring"
+    monitoring.mkdir(parents=True)
+    env = monitoring / "variables.env"
+    env.write_text(body, encoding="utf-8")
+    return env
+
+
+def test_provision_grafana_token_keeps_existing(tmp_path) -> None:
+    """Token already set → no API call, audit action, file untouched."""
+    from tools.sdd_cli.environment_lab import provision_grafana_token
+
+    env = _write_monitoring_env(
+        tmp_path, "GRAFANA_SERVICE_ACCOUNT_TOKEN=glsa-real-token\n"
+    )
+    with patch("tools.sdd_cli.environment_lab.http_json") as mock_api:
+        result = provision_grafana_token(tmp_path, dry_run=False)
+    assert result["valid"] is True
+    mock_api.assert_not_called()
+    assert any("keeping existing value" in a["message"] for a in result["actions"])
+    assert "glsa-real-token" in env.read_text(encoding="utf-8")
+
+
+def test_provision_grafana_token_dry_run(tmp_path) -> None:
+    """Dry-run: would-do action, no API call, no write."""
+    from tools.sdd_cli.environment_lab import provision_grafana_token
+
+    env = _write_monitoring_env(tmp_path)
+    with patch("tools.sdd_cli.environment_lab.http_json") as mock_api:
+        result = provision_grafana_token(tmp_path, dry_run=True)
+    assert result["valid"] is True
+    mock_api.assert_not_called()
+    assert any(
+        "Would create Grafana service account" in a["message"] for a in result["actions"]
+    )
+    assert "GRAFANA_SERVICE_ACCOUNT_TOKEN" not in env.read_text(encoding="utf-8")
+
+
+def test_provision_grafana_token_creates_and_writes(tmp_path) -> None:
+    """Missing token → creates SA + token via API, writes both keys to variables.env."""
+    from tools.sdd_cli.environment_lab import provision_grafana_token
+
+    env = _write_monitoring_env(tmp_path)
+    calls = [
+        (201, '{"id": 7, "name": "sdd-agent"}'),  # POST /api/serviceaccounts
+        (200, '{"id": 3, "key": "glsa_provisioned-key"}'),  # POST tokens
+    ]
+    with patch(
+        "tools.sdd_cli.environment_lab.http_json", side_effect=calls
+    ) as mock_api:
+        result = provision_grafana_token(tmp_path, dry_run=False)
+
+    assert result["valid"] is True
+    assert mock_api.call_count == 2
+    post_sa = mock_api.call_args_list[0]
+    assert post_sa.args[0] == "POST"
+    assert post_sa.args[1].endswith("/api/serviceaccounts")
+    assert post_sa.kwargs["body"]["name"] == "sdd-agent"
+    assert post_sa.kwargs["body"]["role"] == "Editor"
+    assert post_sa.kwargs["basic"] == ("admin", "admin")
+
+    content = env.read_text(encoding="utf-8")
+    assert "GRAFANA_SERVICE_ACCOUNT_TOKEN=glsa_provisioned-key" in content
+    assert "GRAFANA_URL=http://localhost:3001" in content
+    # Existing key + comments preserved.
+    assert "SEQ_URL=http://localhost:5341" in content
+
+
+def test_provision_grafana_token_sa_conflict_reuses(tmp_path) -> None:
+    """SA already exists (409) → search by name, then create token."""
+    from tools.sdd_cli.environment_lab import provision_grafana_token
+
+    env = _write_monitoring_env(tmp_path)
+    calls = [
+        (409, '{"message": "Service account already exists"}'),
+        (200, '[{"id": 7, "name": "sdd-agent"}]'),  # GET search
+        (200, '{"id": 3, "key": "glsa_provisioned-key"}'),  # POST tokens
+    ]
+    with patch(
+        "tools.sdd_cli.environment_lab.http_json", side_effect=calls
+    ) as mock_api:
+        result = provision_grafana_token(tmp_path, dry_run=False)
+
+    assert result["valid"] is True
+    assert mock_api.call_count == 3
+    assert "GRAFANA_SERVICE_ACCOUNT_TOKEN=glsa_provisioned-key" in env.read_text(
+        encoding="utf-8"
+    )
+
+
+def test_provision_grafana_token_unreachable_is_nonblocking(tmp_path) -> None:
+    """Grafana unreachable → warning finding, valid stays True, keys still synced."""
+    from tools.sdd_cli.environment_lab import provision_grafana_token
+
+    env = _write_monitoring_env(tmp_path)
+    with patch(
+        "tools.sdd_cli.environment_lab.http_json", return_value=(0, "Connection refused")
+    ):
+        result = provision_grafana_token(tmp_path, dry_run=False)
+
+    assert result["valid"] is True
+    assert any(f.get("severity") == "warning" for f in result["findings"])
+    # Template keys are still synced (empty token) so Audit drift stays clean.
+    content = env.read_text(encoding="utf-8")
+    assert "GRAFANA_SERVICE_ACCOUNT_TOKEN=" in content
+    assert "GRAFANA_URL=http://localhost:3001" in content
+
+
+def test_provision_grafana_token_missing_env(tmp_path) -> None:
+    """Missing variables.env → error (real run), would-do (dry-run)."""
+    from tools.sdd_cli.environment_lab import provision_grafana_token
+
+    result = provision_grafana_token(tmp_path, dry_run=False)
+    assert result["valid"] is False
+    assert any(f.get("severity") == "error" for f in result["findings"])
+
+    dry = provision_grafana_token(tmp_path, dry_run=True)
+    assert dry["valid"] is True
+    assert any("would provision" in a["message"].lower() for a in dry["actions"])
+
+
+# ── validate_client_tools (openProject.projectIdentifier placeholder) ────
+
+
+def _write_client_tools(tmp_path, openproject: dict) -> None:
+    codex = tmp_path / ".codex"
+    codex.mkdir(parents=True)
+    (codex / "client-tools.local.json").write_text(
+        json.dumps({"openProject": openproject}), encoding="utf-8"
+    )
+
+
+def test_validate_client_tools_warns_on_placeholder(tmp_path) -> None:
+    """Placeholder projectIdentifier → non-fatal warning finding."""
+    from tools.sdd_cli.environment_lab import validate_client_tools
+
+    _write_client_tools(tmp_path, {"projectIdentifier": "replace-with-project-identifier"})
+    result = validate_client_tools(tmp_path, dry_run=False)
+    assert result["valid"] is True
+    assert any(
+        f.get("key") == "openProject.projectIdentifier"
+        and f.get("severity") == "warning"
+        for f in result["findings"]
+    )
+
+
+def test_validate_client_tools_clean_when_identifier_set(tmp_path) -> None:
+    """Real projectIdentifier → no findings."""
+    from tools.sdd_cli.environment_lab import validate_client_tools
+
+    _write_client_tools(tmp_path, {"projectIdentifier": "e2eproject"})
+    result = validate_client_tools(tmp_path, dry_run=False)
+    assert result["valid"] is True
+    assert not any(
+        f.get("key") == "openProject.projectIdentifier" for f in result["findings"]
+    )

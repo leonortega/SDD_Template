@@ -220,3 +220,17 @@ branch until resolved.
 - Do not create an RC tag on `FAIL` or `PASS WITH GAPS`.
 - Do not skip OpenSpec archiving — report blocker if it fails.
 - Do not leave QA trigger branches behind after E2E QA completes.
+
+## Workflow Telemetry
+
+The E2E QA gate is a telemetry stage: the QA agent must upsert its row before moving the ticket (shared pattern
+`.codex/skills/_shared/pipeline-workflow-telemetry.md`):
+
+```bash
+python -m tools.sdd_cli dev-flow telemetry-upsert --ticket-key {ticketKey} \
+  --workflow-stage qa-gate --agent-role e2eQa \
+  --started-utc {startedUtc} --finished-utc {finishedUtc} --outcome {PASS|FAIL|PASS WITH GAPS}
+```
+
+Marker: `IA generated workflow telemetry: {ticketKey}:qa-gate`. If the upsert fails, report the blocker before
+moving the ticket.

@@ -1,24 +1,74 @@
 name: Package and deploy
 
 on:
-  push:
+  # Deploy ONLY when a pull request targeting `dev` is MERGED (closed event
+  # with merged=true). Direct pushes to dev never deploy: every change that
+  # reaches the dev branch must come through a PR merge.
+  pull_request:
+    types:
+      - closed
     branches:
       - dev
+  # Explicit operator override (e.g. QA/PROD promotion from a release branch).
   workflow_dispatch:
     inputs:
       environment:
         description: Target environment (dev, qa, or prod)
         required: true
         default: dev
+      artifact_commit_sha:
+        description: >-
+          QA-approved commit to deploy. For prod: PROD reuses the images pushed
+          by the DEV/QA pipeline for this commit (build is skipped). Defaults to
+          the dispatched ref's head commit.
+        required: false
+        default: ''
+      release_version:
+        description: Final release version recorded in release-prod.json (e.g. v1.2.3)
+        required: false
+        default: ''
+      source_rc_version:
+        description: Source RC tag recorded in release-prod.json (e.g. v1.2.3-rc.1)
+        required: false
+        default: ''
 
 jobs:
   build-and-deploy:
-    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/dev'
+    # Dispatch always runs. For pull_request events (already restricted to
+    # `closed` PRs targeting dev), only deploy when the PR was actually
+    # merged — a closed-without-merge PR must not deploy.
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     container:
       image: sdd-e2e-ci:local
       options: --user root --add-host host.docker.internal:host-gateway
     steps:
+      - name: Resolve deploy SHA
+        id: sha
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # PR merge event: deploy the MERGE COMMIT on the base branch (dev),
+            # not the PR head — GITHUB_SHA for pull_request events points at the
+            # head, which is not the commit that landed on dev.
+            MERGE_SHA="${{ github.event.pull_request.merge_commit_sha }}"
+            if [ -n "${MERGE_SHA}" ]; then
+              echo "SHA=${MERGE_SHA}" >> "$GITHUB_OUTPUT"
+            else
+              echo "SHA=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            # workflow_dispatch: deploy the dispatched ref's head commit —
+            # unless an explicit artifact_commit_sha is provided (PROD
+            # artifact-reuse), in which case that QA-approved commit wins.
+            DISPATCH_SHA="${{ github.event.inputs.artifact_commit_sha }}"
+            if [ -n "${DISPATCH_SHA}" ]; then
+              echo "SHA=${DISPATCH_SHA}" >> "$GITHUB_OUTPUT"
+            else
+              echo "SHA=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
       - name: Checkout
         env:
           GITEA_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -30,14 +80,17 @@ jobs:
           repo_url="http://git:${TOKEN}@host.docker.internal:3000/${GITHUB_REPOSITORY}.git"
           git init .
           git remote add origin "$repo_url"
-          git fetch --depth 1 origin "$GITHUB_SHA"
+          # Depth 2 so the deployable-changes gate can resolve the deploy
+          # commit's parent for workflow_dispatch runs (first-parent diff).
+          git fetch --depth 2 origin "${{ steps.sha.outputs.SHA }}"
           git checkout --force FETCH_HEAD
 
       - name: Determine environment
         id: env
         shell: bash
         run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # PR merge into dev: deploy to DEV.
             echo "ENV=dev" >> $GITHUB_OUTPUT
           else
             echo "ENV=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
@@ -47,15 +100,81 @@ jobs:
         id: targets
         shell: bash
         run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            # On push to dev: deploy to DEV then auto-promote to QA
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # On PR merge into dev: deploy to DEV then auto-promote to QA
             echo "TARGETS=dev qa" >> $GITHUB_OUTPUT
           else
             # On workflow_dispatch: deploy only to the specified environment
             echo "TARGETS=${{ steps.env.outputs.ENV }}" >> $GITHUB_OUTPUT
           fi
 
+      - name: Check for deployable changes (src/ or test/ folders)
+        # Deploy in ANY environment only when the change set touches a src/,
+        # test/, or tests/ folder at any depth (e.g. src/..., frontend/src/...,
+        # backend/tests/...). Docs, infra, and workflow-only changes must not
+        # deploy. Note: only folder-based matches count — co-located test files
+        # outside these folders (e.g. pkg/foo_test.go) are not matched. The gate
+        # fails open when the base commit cannot be resolved or the diff cannot
+        # be computed (no way to prove the change is doc-only, so do not block
+        # deploys).
+        id: changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEPLOY_SHA="${{ steps.sha.outputs.SHA }}"
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # PR merge: the change set is the diff between the base branch head
+            # and the merge commit that landed on dev.
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            git fetch --depth 1 origin "${BASE_SHA}" >/dev/null 2>&1 || BASE_SHA=""
+          else
+            # workflow_dispatch: use the change set this commit introduces
+            # (first-parent diff); the checkout fetch (depth 2) made the parent
+            # object available.
+            BASE_SHA=$(git rev-parse --verify "${DEPLOY_SHA}^" 2>/dev/null || echo "")
+          fi
+
+          if [ -z "${BASE_SHA}" ]; then
+            echo "No base commit available — treating change as deployable."
+            echo "DEPLOYABLE=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # git diff exits 0 (no differences), 1 (differences found), or >=128
+          # (error). A diff error must fail OPEN — the gate is advisory and must
+          # never silently block a real deploy because the diff hiccuped.
+          CHANGED=$(git diff --name-only "${BASE_SHA}" "${DEPLOY_SHA}" 2>/tmp/diff-err.log) || DIFF_STATUS=$?
+          DIFF_STATUS="${DIFF_STATUS:-0}"
+          if [ "${DIFF_STATUS}" -gt 1 ]; then
+            echo "WARNING: git diff failed (status ${DIFF_STATUS}) — treating change as deployable."
+            cat /tmp/diff-err.log >&2
+            echo "DEPLOYABLE=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -z "${CHANGED}" ]; then
+            echo "No changed files between ${BASE_SHA} and ${DEPLOY_SHA} — skipping deploy."
+            echo "DEPLOYABLE=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Changed files:"
+          echo "${CHANGED}" | sed 's/^/  - /'
+
+          COUNT=$(echo "${CHANGED}" | grep -cE '(^|/)(src|test|tests)/' || true)
+          if [ "${COUNT}" -gt 0 ]; then
+            echo "Deployable changes found (${COUNT} path(s) under src/test)."
+            echo "DEPLOYABLE=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No changes under src/ or test(s)/ — skipping deploy."
+            echo "DEPLOYABLE=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build and push Docker images
+        # PROD skips the build entirely: it reuses the QA-approved images pushed
+        # by the DEV/QA pipeline for the pinned artifact commit (never rebuild or
+        # republish during PROD promotion).
+        if: steps.changes.outputs.deployable == 'true' && steps.env.outputs.ENV != 'prod'
         env:
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
           NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
@@ -123,6 +242,7 @@ jobs:
           done
 
       - name: Validate NodePort uniqueness across target overlays
+        if: steps.changes.outputs.deployable == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -181,7 +301,86 @@ jobs:
               print(f'  {port} -> {env}/{svc}')
           PYEOF
 
+      - name: Verify PROD artifact (reuse QA-approved images)
+        # PROD must reuse the QA-approved artifact: the DEV/QA pipeline for the
+        # pinned commit must have uploaded container-images.json to Nexus, and
+        # every image tag must exist in the registry (otherwise PROD pods would
+        # ImagePullBackOff). Fails loudly instead of deploying unverified images.
+        if: steps.changes.outputs.deployable == 'true' && steps.env.outputs.ENV == 'prod'
+        env:
+          NEXUS_URL: ${{ secrets.NEXUS_URL }}
+          NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+          NEXUS_REPOSITORY: ${{ secrets.NEXUS_REPOSITORY }}
+          NEXUS_DOCKER_REGISTRY: ${{ secrets.NEXUS_DOCKER_REGISTRY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          export COMMIT_SHA=$(git rev-parse HEAD)
+          NEXUS_URL="${NEXUS_URL:-http://host.docker.internal:8088}"
+          REPO="${NEXUS_REPOSITORY:-sdd-artifacts}"
+          REGISTRY="${NEXUS_DOCKER_REGISTRY:-host.docker.internal:5001}"
+          MANIFEST_PATH="app/${COMMIT_SHA}/container-images.json"
+
+          if [ -z "${NEXUS_USERNAME:-}" ] || [ -z "${NEXUS_PASSWORD:-}" ]; then
+            echo "ERROR: PROD deployment requires NEXUS_USERNAME/NEXUS_PASSWORD to verify the QA-approved artifact."
+            exit 1
+          fi
+
+          echo "Fetching ${MANIFEST_PATH} from Nexus..."
+          curl -s -f --connect-timeout 5 --max-time 30 \
+            -u "${NEXUS_USERNAME}:${NEXUS_PASSWORD}" \
+            "${NEXUS_URL}/repository/${REPO}/${MANIFEST_PATH}" -o /tmp/container-images.json || {
+              echo "ERROR: ${MANIFEST_PATH} not found in Nexus for commit ${COMMIT_SHA}."
+              echo "PROD reuses the QA-approved artifact — run the DEV/QA pipeline for this commit first."
+              exit 1
+            }
+
+          python3 << 'PYEOF'
+          import json, os, sys
+
+          with open('/tmp/container-images.json') as f:
+              manifest = json.load(f)
+
+          commit_sha = os.environ['COMMIT_SHA']
+          if manifest.get('commitSha') != commit_sha:
+              print(f"ERROR: container-images.json commitSha {manifest.get('commitSha')!r} != {commit_sha!r}")
+              sys.exit(1)
+
+          images = manifest.get('apps', [])
+          if not images:
+              print("ERROR: container-images.json lists no apps to deploy")
+              sys.exit(1)
+
+          print(f"Verified QA-approved manifest for {commit_sha}:")
+          for app in images:
+              print(f"  {app.get('image')}")
+          with open('/tmp/prod-images.txt', 'w') as f:
+              for app in images:
+                  f.write(app.get('image', '') + '\n')
+          PYEOF
+
+          # Verify every image tag exists in the registry.
+          while IFS= read -r image; do
+            [ -z "${image}" ] && continue
+            repo_path="${image%:*}"
+            repo_path="${repo_path#*/}"
+            tag="${image##*:}"
+            url="http://${REGISTRY}/v2/${repo_path}/manifests/${tag}"
+            if curl -s -f --connect-timeout 5 --max-time 15 \
+                -u "${NEXUS_USERNAME}:${NEXUS_PASSWORD}" \
+                -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \
+                "${url}" >/dev/null 2>&1; then
+              echo "  OK: ${image} exists in registry"
+            else
+              echo "ERROR: ${image} not found in registry ${REGISTRY} (run the DEV/QA pipeline for ${COMMIT_SHA} first)"
+              exit 1
+            fi
+          done < /tmp/prod-images.txt
+          echo "PROD artifact verification passed."
+
       - name: Deploy to K8s (all targets)
+        if: steps.changes.outputs.deployable == 'true'
         env:
           KUBE_CONFIG_DATA: ${{ secrets.KUBECONFIG }}
         shell: bash
@@ -304,6 +503,9 @@ jobs:
           done
 
       - name: Prune old local images (keep newest commit tags per app)
+        # Skipped for PROD: no build happens, so there is nothing new to prune,
+        # and pruning must not remove images other environments still run.
+        if: steps.changes.outputs.deployable == 'true' && steps.env.outputs.ENV != 'prod'
         env:
           NEXUS_DOCKER_REGISTRY: ${{ secrets.NEXUS_DOCKER_REGISTRY }}
           LOCAL_IMAGE_KEEP: ${{ secrets.LOCAL_IMAGE_KEEP }}
@@ -354,6 +556,9 @@ jobs:
           docker image prune -f >/dev/null 2>&1 || true
 
       - name: Prune old images in kind cluster (keep current build per app)
+        # Skipped for PROD: same rationale as the local prune — the PROD run
+        # builds nothing, so kind must keep every image other environments run.
+        if: steps.changes.outputs.deployable == 'true' && steps.env.outputs.ENV != 'prod'
         env:
           NEXUS_DOCKER_REGISTRY: ${{ secrets.NEXUS_DOCKER_REGISTRY }}
         shell: bash
@@ -423,6 +628,7 @@ jobs:
           fi
 
       - name: Discover environment URLs (all targets)
+        if: steps.changes.outputs.deployable == 'true'
         id: urls
         env:
           KUBE_CONFIG_DATA: ${{ secrets.KUBECONFIG }}
@@ -512,7 +718,76 @@ jobs:
           PYEOF
           done
 
+      - name: Verify PROD health (page + /health smoke checks)
+        # PROD success requires direct page + /health verification in the
+        # workflow itself (contract: dev-ops-deploy-prod). Apps are exposed on
+        # the host via kind extraPortMappings (canonical host ports in
+        # infra/deployment/ports.json); host.docker.internal reaches the host
+        # from the CI container (container option --add-host host-gateway).
+        if: steps.changes.outputs.deployable == 'true' && steps.env.outputs.ENV == 'prod'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 << 'PYEOF'
+          import json, subprocess, sys
+
+          with open('infra/deployment/ports.json') as f:
+              ports = json.load(f)
+          with open('infra/deployment/apps.json') as f:
+              config = json.load(f)
+
+          apps = config.get('apps', [])
+          if not apps:
+              print('ERROR: no apps configured in infra/deployment/apps.json — nothing to verify')
+              sys.exit(1)
+          prod_ports = ports.get('environments', {}).get('prod', {})
+          failures = []
+
+          for app in apps:
+              app_id = app['appId']
+              health_path = app.get('healthPath', '/health')
+              host_port = prod_ports.get(app_id, {}).get('hostPort')
+              if not host_port:
+                  print(f'WARNING: no prod hostPort for {app_id} — skipping health check')
+                  continue
+              url = f'http://host.docker.internal:{host_port}'
+              print(f'Checking {app_id}: {url}{health_path}')
+              try:
+                  result = subprocess.run(
+                      ['curl', '-s', '--fail', '--max-time', '10', f'{url}{health_path}'],
+                      capture_output=True, text=True, timeout=20
+                  )
+                  if result.returncode != 0:
+                      failures.append(f'{app_id}: /health failed ({result.stderr.strip() or "HTTP error"})')
+                      continue
+                  ok = False
+                  try:
+                      body = json.loads(result.stdout)
+                      ok = body.get('status') == 'ok'
+                  except Exception:
+                      ok = '"ok"' in result.stdout
+                  if ok:
+                      print(f'  PASS: {app_id} /health OK')
+                  else:
+                      failures.append(f'{app_id}: /health did not return status=ok ({result.stdout[:120]!r})')
+              except Exception as exc:
+                  failures.append(f'{app_id}: health check error ({exc})')
+
+          if failures:
+              print('PROD health verification FAILED:')
+              for failure in failures:
+                  print(f'  - {failure}')
+              sys.exit(1)
+          print('PROD health verification passed.')
+          PYEOF
+
       - name: Generate Nexus metadata artifacts
+        if: steps.changes.outputs.deployable == 'true'
+        env:
+          # Optional PROD release metadata (workflow_dispatch inputs); empty for
+          # PR-merge runs — release-{env}.json falls back to version 0.1.0.
+          RELEASE_VERSION: ${{ github.event.inputs.release_version }}
+          SOURCE_RC_VERSION: ${{ github.event.inputs.source_rc_version }}
         shell: bash
         run: |
           set -euo pipefail
@@ -583,6 +858,8 @@ jobs:
           TICKET_KEY=$(git log -1 --format='%s' | grep -oE '[A-Z]+-[0-9]+' | head -1 || echo '')
 
           # Write release.json per deployed environment
+          RELEASE_VERSION="${RELEASE_VERSION:-0.1.0}"
+          SOURCE_RC_VERSION="${SOURCE_RC_VERSION:-}"
           for ENV in ${{ steps.targets.outputs.TARGETS }}; do
             echo "=== Generating release metadata for ${ENV} ==="
           python3 << PYEOF
@@ -594,12 +871,14 @@ jobs:
           ticket_key = "${TICKET_KEY}"
 
           release = {
-              'version': '0.1.0',
+              'version': "${RELEASE_VERSION}",
               'commitSha': commit_sha,
               'environment': env,
               'timestamp': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
               'versionStatus': 'unversioned'
           }
+          if "${SOURCE_RC_VERSION}" != "":
+              release['sourceRcVersion'] = "${SOURCE_RC_VERSION}"
           if ticket_key:
               release['ticketKey'] = ticket_key
 
@@ -607,11 +886,15 @@ jobs:
           with open(path, 'w') as f:
               json.dump(release, f, indent=2)
           print(f'Created {path}')
+          print(f'  version: {release["version"]}')
           print(f'  ticketKey: {ticket_key or "(not found)"}')
+          if release.get('sourceRcVersion'):
+              print(f'  sourceRcVersion: {release["sourceRcVersion"]}')
           PYEOF
           done
 
       - name: Upload artifacts to Nexus
+        if: steps.changes.outputs.deployable == 'true'
         env:
           NEXUS_URL: ${{ secrets.NEXUS_URL }}
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}

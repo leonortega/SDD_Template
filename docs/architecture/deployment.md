@@ -60,7 +60,7 @@ Three environments, each a separate K8s namespace:
 
 | Environment | Namespace  | Replicas | Trigger                           |
 | ----------- | ---------- | -------- | --------------------------------- |
-| **dev**     | `sdd-dev`  | 1        | Push to `dev` branch              |
+| **dev**     | `sdd-dev`  | 1        | PR merged into `dev` branch       |
 | **qa**      | `sdd-qa`   | 2        | `workflow_dispatch` with env=qa   |
 | **prod**    | `sdd-prod` | 3        | `workflow_dispatch` with env=prod |
 
@@ -192,19 +192,27 @@ For each app and environment, it either:
 
 ## CI Pipeline
 
-The CI workflow (`.gitea/workflows/package-deploy.yml`) runs on push to `dev` or `workflow_dispatch`:
+The CI workflow (`.gitea/workflows/package-deploy.yml`) runs when a pull request targeting `dev` is **merged** (closed+
+merged event) or on explicit `workflow_dispatch`:
 
 ```text
-Checkout → Determine Env → Build Docker Images → Deploy to K8s → Discover URLs → Upload to Nexus
+Checkout → Determine Env → Check Changed Paths (src/test) → Build Docker Images → Deploy to K8s → Discover URLs → Upload to Nexus
 ```
 
 ### Step Details
 
 **1. Checkout** — Clones the commit using Gitea API token for auth.
 
-**2. Determine Environment** — `dev` on push, or user-selected env on workflow_dispatch.
+**2. Determine Environment** — `dev` on a PR merge, or user-selected env on workflow_dispatch.
 
-**3. Build and Push Docker Images** — For each app in `apps.json`:
+**2a. Check for Deployable Changes** — deploys in **any** environment run only when the change set touches a `src/`,
+`test/`, or `tests/` folder at any depth (e.g. `src/...`, `frontend/src/...`, `backend/tests/...`). For a PR merge the
+change set is the diff between the PR base and the merge commit; for `workflow_dispatch` it is the dispatched commit's
+first-parent diff. Docs, infra, and workflow-only changes skip the entire deploy pipeline (the run stays green with the
+deploy steps skipped).
+
+**3. Build and Push Docker Images** — For each app in `apps.json` (**skipped for PROD** — PROD reuses the QA-approved
+images pushed by the DEV/QA pipeline for the pinned artifact commit):
 
 - Probes `http://host.docker.internal:5001/v2/` — if the registry is unreachable, the push is **skipped**
 - Logs into Nexus Docker registry (`host.docker.internal:5001`) — plain-HTTP push requires `host.docker.internal:5001`
@@ -231,6 +239,24 @@ the cluster (kind's containerd is separate from host Docker; without this the po
 
 - `app/{commitSha}/env-urls.json`
 - `app/latest/env-urls-{env}.json` (latest pointer, overwritten each deploy)
+
+### PROD Deployment Path
+
+`workflow_dispatch environment=prod` takes a different path than DEV/QA (single workflow, conditional steps):
+
+- **No build/republish** — the `Build and push Docker images` step is skipped; PROD reuses the QA-approved images
+  pushed by the DEV/QA pipeline for the pinned commit.
+- **Artifact pinning** — the dispatch input `artifact_commit_sha` (the QA-approved commit) selects the commit to
+  deploy; it defaults to the dispatched ref's head commit.
+- **Verification gate** — before deploying, the workflow downloads `app/{commitSha}/container-images.json` from
+  Nexus, checks its `commitSha` matches, and confirms every image tag exists in the registry.
+- **Health gate** — after deploy, every app's `/health` is checked through the PROD host ports
+  (`host.docker.internal:{hostPort}`) and must return `status=ok`, or the run fails.
+- **Release metadata** — optional `release_version` / `source_rc_version` dispatch inputs are recorded in
+  `app/{commitSha}/release-prod.json`.
+
+DEV and QA share the same pipeline (same build, per-env overlay deploy, auto-promote to QA); their `/health`
+validation is performed by the agent after the run (`dev-ops-deploy-qa`).
 
 ### Runner Requirements
 
@@ -269,6 +295,12 @@ services:
         export CONFIG_FILE=/tmp/config.yml
         exec run.sh
 ```
+
+> **Note:** In `infra/gitea/compose.yml` the kubeconfig line is emitted **only when a
+> kubeconfig source path is found** (`KUBE_SRC` non-blank). On machines without a host
+> kubeconfig, `WIN_USER`, `first_user`, and `KUBE_SRC` are blank, the volume entry is
+> omitted (a blank `${KUBE_SRC}` would render a malformed `- :/...` line), and the lab
+> still works — runner jobs simply run without K8s volume access.
 
 **Critical rules:**
 
@@ -560,7 +592,8 @@ these via the Infinity datasource (using `source: "inline"` to avoid the URL bug
 1. Add an entry to `infra/deployment/apps.json` with `appId`, `projectPath`, `role`, `healthPath`
 2. Run `scaffold-k8s` to generate the Dockerfile and K8s manifests
 3. Build locally: `docker build -f {projectPath}/Dockerfile {projectPath}`
-4. Commit and push — the CI pipeline will build and deploy automatically
+4. Open a PR to `dev` and merge it — the CI pipeline builds and deploys automatically on the PR merge (direct pushes
+to `dev` never deploy).
 
 ## Known Limitations
 

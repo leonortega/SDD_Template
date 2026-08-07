@@ -136,10 +136,11 @@ the selected deployment configure path.
 
 ## Wait For CI Pipeline (Auto-Promote To QA)
 
-Since the CI pipeline now auto-deploys to QA after DEV (on push to `dev`), this skill no longer dispatches a separate QA
-deployment. Instead:
+Since the CI pipeline now auto-deploys to QA after DEV (on PR merge into `dev`), this skill no longer dispatches a
+separate QA deployment. Instead:
 
-1. Verify the CI pipeline (`package-deploy`) was already triggered by the push to `dev` (from the PR merge).
+1. Verify the CI pipeline (`package-deploy`) was already triggered by the PR merge into `dev` (the workflow runs on a
+   `pull_request` closed+merged event, not on push — direct pushes to `dev` never deploy).
 2. Poll for the CI pipeline run completion that includes both DEV and QA deployment targets.
 3. Wait for the Nexus artifact files for both DEV and QA:
    - `app/{commitSha}/release-dev.json`

@@ -42,6 +42,20 @@ ticket key format configured in `.codex/project-profile.json` at `workflow.ticke
 configured application or test paths.
 Non-code changes outside those paths and non-ticket PRs must not deploy production.
 
+## Workflow Telemetry
+
+Workflow telemetry is **mandatory** for this stage: before handoff, upsert the stage time entry with the standalone
+script (shared pattern `.codex/skills/_shared/pipeline-workflow-telemetry.md`):
+
+```bash
+python -m tools.sdd_cli dev-flow telemetry-upsert --ticket-key {ticketKey} \
+  --workflow-stage dev-ops-deploy-prod --agent-role deployToProd \
+  --started-utc {startedUtc} --finished-utc {finishedUtc} --outcome {outcome}
+```
+
+The marker `IA generated workflow telemetry: {ticketKey}:dev-ops-deploy-prod` is written automatically.
+If the upsert fails, stop and report before handoff.
+
 ## Configuration
 
 Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.example.json` only for structure, then
@@ -162,9 +176,25 @@ constraint:
 2. Create the **final annotated tag** (`vX.Y.Z`) on that same commit.
 3. Open a **release-blocking PR** `release/vX.Y.Z → main`, label it `codex-reviewed` (clean AI review marker),
    get **1 approval from a user other than the PR author** (self-approval is rejected), and merge.
-4. Then dispatch `package-deploy` with `workflow_dispatch` inputs `environment=prod` on the release branch so the
-   workflow checks out exactly the QA-approved commit. The workflow's dispatch accepts only `environment`
-   (dev|qa|prod) and deploys **only** that target.
+4. Then dispatch `package-deploy` with `workflow_dispatch` inputs `environment=prod`,
+   `artifact_commit_sha={qaApprovedCommit}`, `release_version={finalVersion}`, and
+   `source_rc_version={sourceRcVersion}` on the release branch so the workflow checks out exactly the QA-approved
+   commit, skips the build (artifact-reuse), and seeds `app/{commitSha}/release-prod.json` with the version data.
+   It deploys **only** the `prod` target. Dispatch example via the Gitea API (values from
+   `.codex/client-tools.local.json` → `gitea.baseUrl` / `gitea.apiToken` / `gitea.owner` / `gitea.repo`):
+
+   ```bash
+   curl -s -o /dev/null -w "dispatch HTTP:%{http_code}\n" -X POST \
+     -H "Authorization: token ${GITEA_API_TOKEN}" \
+     -H "Content-Type: application/json" \
+     -d '{"ref":"release/vX.Y.Z","inputs":{
+            "environment":"prod",
+            "artifact_commit_sha":"{qaApprovedCommit}",
+            "release_version":"vX.Y.Z",
+            "source_rc_version":"vX.Y.Z-rc.1"}}' \
+     "${GITEA_BASE_URL}/api/v1/repos/${GITEA_OWNER}/${GITEA_REPO}/actions/workflows/package-deploy.yml/dispatches"
+   # HTTP 204 = dispatched (mirror the pattern in dev-ops-post-merge-deploy step 8)
+   ```
 
 Pitfalls:
 
@@ -197,6 +227,11 @@ release_version={finalVersion}
 source_rc_version={sourceRcVersion}
 ```
 
+For the `package-deploy` adapter these map to the `workflow_dispatch` `inputs` (concrete curl in the release-branch
+PR flow above). The workflow uses `artifact_commit_sha` as the deploy commit (build skipped), verifies the
+QA-approved artifact on Nexus, records `release_version` as `version` and `source_rc_version` as `sourceRcVersion` in
+`app/{commitSha}/release-prod.json`, and runs PROD page + `/health` gates before success.
+
 For selected-provider manual dispatch, trigger the deploy workflow declared by the selected deployment adapter. The
 workflow must validate `release.json`, verify the RC pointer when `source_rc_version` is supplied, download the approved
 artifact
@@ -217,6 +252,7 @@ show that the workflow:
 - used `environment=prod`,
 - consumed `artifact_commit_sha={qaApprovedCommit}` for manual dispatch or resolved the same commit from
   `app/qa-approved/latest.json` for a `main` push,
+- seeded `release_version` / `source_rc_version` into `app/{commitSha}/release-prod.json` when supplied,
 - downloaded the provider artifact set from Nexus,
 - verified every required checksum or digest reference,
 - skipped rebuild/republish behavior,
@@ -243,7 +279,9 @@ After the workflow succeeds, run direct verification before commenting success:
 6. When PROD verification passes, use `UpdateReleaseManifest` to create or update `app/{commitSha}/release-prod.json`
    with final release version, final tag,
    included tickets, PROD URL, PROD page status, PROD deployment configuration status, PROD `/health` status, workflow
-   run URL, monitoring status, and PROD deployment timestamp. Validate and upload the updated manifest to Nexus.
+   run URL, monitoring status, and PROD deployment timestamp. The workflow already seeds `version` (from
+   `release_version`) and `sourceRcVersion` (from `source_rc_version`) — keep those consistent in the updated
+   manifest. Validate and upload the updated manifest to Nexus.
 7. Use `CreateArtifactPointer` to create the final release alias pointer, then upload
    `app/releases/{finalReleaseVersion}/artifact-pointer.json` and `app/releases/{finalReleaseVersion}/release.json`. The
    release alias must

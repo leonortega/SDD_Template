@@ -10,18 +10,23 @@ from typing import Any
 from ._shared import REPO_ROOT, CliError, find_meta, parse_pairs
 
 
-def search_knowledge(root: Path, queries: list[str], list_topics: bool) -> Any:
-    """Search knowledge files under knowledge/.
+# Roots searched by search_knowledge: knowledge/ (required) plus docs/ and
+# openspec/specs/ (optional — openspec/specs/ appears once an OpenSpec change
+# is archived, syncing delta specs to openspec/specs/<capability>/spec.md).
+# All are Markdown KB sources consulted the same way.
+_SEARCH_ROOTS: tuple[str, ...] = ("knowledge", "docs", "openspec/specs")
 
-    Indexes one entry per Markdown file (excluding README index files).
+
+def _index_kb_files(root: Path, kb_root: Path) -> list[dict[str, str]]:
+    """Index one entry per Markdown file under kb_root (excluding READMEs).
+
     Uses the H1 title when present, falling back to the first H2 section
-    or the file stem.
+    or the file stem. Entries carry the source root (knowledge | docs |
+    openspec/specs) so callers can tell operational knowledge, human docs,
+    and archived behavior specs apart.
     """
-    knowledge_root = root / "knowledge"
-    if not knowledge_root.exists():
-        raise CliError(f"Knowledge root not found: {knowledge_root}")
     entries: list[dict[str, str]] = []
-    for path in sorted(knowledge_root.rglob("*.md")):
+    for path in sorted(kb_root.rglob("*.md")):
         if path.name == "README.md":
             continue
         content = path.read_text(encoding="utf-8")
@@ -41,6 +46,7 @@ def search_knowledge(root: Path, queries: list[str], list_topics: bool) -> Any:
         entries.append(
             {
                 "file": path.relative_to(root).as_posix(),
+                "root": kb_root.relative_to(root).as_posix(),
                 "title": title,
                 "type": find_meta(content, "Type"),
                 "status": find_meta(content, "Status"),
@@ -49,9 +55,30 @@ def search_knowledge(root: Path, queries: list[str], list_topics: bool) -> Any:
                 "excerpt": plain[:240] + ("..." if len(plain) > 240 else ""),
             }
         )
+    return entries
+
+
+def search_knowledge(root: Path, queries: list[str], list_topics: bool) -> Any:
+    """Search knowledge files under knowledge/, docs/, and openspec/specs/.
+
+    knowledge/ is required; docs/ and openspec/specs/ are optional (specs
+    appear once a change is archived, synced to openspec/specs/<cap>/spec.md).
+    Indexes one entry per Markdown file (excluding README index files).
+    """
+    knowledge_root = root / "knowledge"
+    if not knowledge_root.exists():
+        raise CliError(f"Knowledge root not found: {knowledge_root}")
+    entries: list[dict[str, str]] = []
+    for rel in _SEARCH_ROOTS:
+        kb_root = root / rel
+        if kb_root.is_dir():
+            entries.extend(_index_kb_files(root, kb_root))
     if list_topics:
         return [
-            {k: row[k] for k in ("file", "title", "type", "status", "lastVerified")}
+            {
+                k: row[k]
+                for k in ("file", "root", "title", "type", "status", "lastVerified")
+            }
             for row in entries
         ]
     terms = [
@@ -63,14 +90,19 @@ def search_knowledge(root: Path, queries: list[str], list_topics: bool) -> Any:
             for row in entries
             if all(term.lower() in " ".join(row.values()).lower() for term in terms)
         ]
+    specs_root = root / "openspec" / "specs"
+    docs_root = root / "docs"
+    files = [entry["file"] for entry in entries]
     return {
         "knowledgeRoot": knowledge_root.relative_to(root).as_posix(),
+        "docsRoot": (
+            docs_root.relative_to(root).as_posix() if docs_root.is_dir() else None
+        ),
+        "specsRoot": (
+            specs_root.relative_to(root).as_posix() if specs_root.is_dir() else None
+        ),
         "usage": "python -m tools.sdd_cli knowledge-search search --query term1 --query term2 or --list-topics",
-        "files": [
-            path.relative_to(root).as_posix()
-            for path in sorted(knowledge_root.rglob("*.md"))
-            if path.name != "README.md"
-        ],
+        "files": files,
     }
 
 
@@ -141,17 +173,37 @@ def classify_knowledge(
     root: Path | None = None,
 ) -> dict[str, Any]:
     """Deterministically map task summary + changed files + test results to
-    candidate knowledge/docs file paths (or NO_CHANGES).
+    candidate knowledge/docs/spec file paths (or NO_CHANGES).
 
     Pure rule-based classifier: keyword signals from the task/test results and
-    path-prefix signals from the changed files. The LLM never decides the
-    target file; this helper returns the candidate paths and the agent updates
-    only those files (or reports NO_CHANGES).
+    path-prefix signals from the changed files. Archived-spec edits
+    (openspec/specs/) map to the spec itself — the spec is the KB record — and
+    suppress spurious knowledge/ candidates. The LLM never decides the target
+    file; this helper returns the candidate paths and the agent updates only
+    those files (or reports NO_CHANGES).
     """
     root = root or REPO_ROOT
     blob = f"{task} {test_results}".lower()
-    changed_slugs = [Path(p.replace("\\", "/")).stem for p in changed_files]
+    # Normalize each changed path exactly once: keep the original (for signal
+    # text), the slash-normalized form (for spec candidate targets), and the
+    # lowercased form (for prefix matching). specs_only detection and step 3
+    # below both reuse these pairs instead of re-normalizing per path.
+    changed_paths: list[tuple[str, str, str]] = []
+    for p in changed_files:
+        slashed = p.replace("\\", "/")
+        changed_paths.append((p, slashed, slashed.lower()))
+    changed_slugs = [Path(slashed).stem for _, slashed, _ in changed_paths]
     slug = _slug(task, _slug(" ".join(changed_slugs)) or "topic")
+    # Archived-spec edits are themselves the durable behavior record (the spec
+    # file is the KB source). When the whole change set is openspec/specs/, the
+    # keyword/failure signals below would only mint spurious knowledge/ entries
+    # — the spec is already the canonical target, so suppress them.
+    spec_changes = [
+        lowered
+        for _, _, lowered in changed_paths
+        if lowered.startswith("openspec/specs/")
+    ]
+    specs_only = bool(changed_paths) and len(spec_changes) == len(changed_paths)
     candidates: list[dict[str, Any]] = []
     seen: set[str] = set()
 
@@ -168,26 +220,35 @@ def classify_knowledge(
             }
         )
 
-    # 1. Task/test-result keyword signals → knowledge categories.
-    for category, keywords in CATEGORY_KEYWORDS:
-        matched = next((kw for kw in keywords if kw in blob), None)
-        if matched:
-            add(
-                category,
-                f"knowledge/{category}/{slug}.md",
-                f"keyword '{matched}' in task/test results",
-            )
+    if not specs_only:
+        # 1. Task/test-result keyword signals → knowledge categories.
+        for category, keywords in CATEGORY_KEYWORDS:
+            matched = next((kw for kw in keywords if kw in blob), None)
+            if matched:
+                add(
+                    category,
+                    f"knowledge/{category}/{slug}.md",
+                    f"keyword '{matched}' in task/test results",
+                )
 
-    # 2. Test failures imply a known error + a validated-fix candidate.
-    if _FAILURE_RE.search(test_results.lower()):
-        add("errors", f"knowledge/errors/{slug}.md", "test results contain failures")
-        add("fixes", f"knowledge/fixes/{slug}.md", "test failures imply a validated fix candidate")
+        # 2. Test failures imply a known error + a validated-fix candidate.
+        if _FAILURE_RE.search(test_results.lower()):
+            add("errors", f"knowledge/errors/{slug}.md", "test results contain failures")
+            add("fixes", f"knowledge/fixes/{slug}.md", "test failures imply a validated fix candidate")
 
-    # 3. Changed-path signals → docs / implementation candidates.
-    for path in changed_files:
-        lowered = path.replace("\\", "/").lower()
+    # 3. Changed-path signals → docs / specs / implementation candidates.
+    for path, slashed, lowered in changed_paths:
         stem = Path(lowered).stem
-        if lowered.startswith("docs/architecture/"):
+        if lowered.startswith("openspec/specs/"):
+            # Target keeps the original-case path (slashes normalized only) so
+            # the candidate round-trips to the real file on case-sensitive
+            # filesystems; `lowered` is used solely for prefix matching.
+            add(
+                "specs",
+                slashed,
+                f"changed path: {path} (archived spec is the KB record)",
+            )
+        elif lowered.startswith("docs/architecture/"):
             target = (
                 "docs/architecture/deployment.md"
                 if "deployment" in lowered
@@ -244,6 +305,7 @@ def classify_knowledge(
         "markers": {
             "knowledge": sorted(c["file"] for c in candidates if c["file"].startswith("knowledge/")),
             "docs": sorted(c["file"] for c in candidates if c["file"].startswith("docs/")),
+            "specs": sorted(c["file"] for c in candidates if c["category"] == "specs"),
             "contract": sorted(c["file"] for c in candidates if c["category"] == "contract"),
         },
         "summary": ", ".join(c["file"] for c in candidates),

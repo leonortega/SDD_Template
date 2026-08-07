@@ -186,7 +186,7 @@ tests:
   # PARALLEL DELIVERY SCENARIOS
   # ═══════════════════════════════════════════════════════════════
 
-  - description: "Parallel enabled, Todo, lane free, routes to start-ticket"
+  - description: "Parallel context (multi-ticket), Todo, lane free, routes to start-ticket"
     vars:
       scenario: Parallel delivery coordinator routing scenario
       ticketState: Todo
@@ -203,7 +203,7 @@ tests:
       - type: javascript
         value: JSON.parse(output).route === 'dev-flow-start-ticket'
 
-  - description: "Parallel enabled, PR merged, lane owned by other, blocked"
+  - description: "Parallel context (multi-ticket), PR merged, lane owned by other, blocked"
     vars:
       scenario: Serialized deployment lane owned by another ticket
       ticketState: In Progress
@@ -219,7 +219,7 @@ tests:
       - type: javascript
         value: JSON.parse(output).route === 'blocked-lane-conflict'
 
-  - description: "Parallel enabled, QA stage, lane owned by other, blocked"
+  - description: "Parallel context (multi-ticket), QA stage, lane owned by other, blocked"
     vars:
       scenario: QA gate blocked because deployment lane is owned by another ticket
       ticketState: QA
@@ -235,7 +235,7 @@ tests:
       - type: javascript
         value: JSON.parse(output).route === 'blocked-lane-conflict'
 
-  - description: "Parallel enabled, max active tickets reached, blocked"
+  - description: "Parallel context (multi-ticket), max active tickets reached, blocked"
     vars:
       scenario: Parallel delivery at capacity, cannot start new ticket
       ticketState: Todo
@@ -251,7 +251,7 @@ tests:
       - type: javascript
         value: JSON.parse(output).route === 'blocked-max-active'
 
-  - description: "Parallel enabled, worktree exists, reuse for implementation"
+  - description: "Parallel context (multi-ticket), worktree exists, reuse for implementation"
     vars:
       scenario: Existing worktree matches ticket, reuse for continued implementation
       ticketState: In Progress
@@ -552,6 +552,24 @@ tests:
       - type: is-json
       - type: javascript
         value: JSON.parse(output).route === 'docs-knowledge-maintenance'
+
+  - description: "Explicit multi-ticket request routes to dev-flow-parallel-ticket-coordinator"
+    vars:
+      scenario: User asks to implement more than one ticket at the same time (e.g. implement tickets A and B)
+      ticketState: Todo
+      branchExists: false
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      requestType: implement-multiple-tickets
+      parallelEnabled: true
+      maxActiveReached: false
+      laneOwner: none
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-parallel-ticket-coordinator'
 
   # ═══════════════════════════════════════════════════════════════
   # STATE-DRIVEN RESUME (no requestType — in-progress + branch + resume)

@@ -43,6 +43,93 @@ class SddCliTests(unittest.TestCase):
             rows = cli.search_knowledge(root, ["docker"], False)
             self.assertEqual(1, len(rows))
             self.assertEqual("Docker Backend Timeout", rows[0]["title"])
+            self.assertEqual("knowledge", rows[0]["root"])
+
+    def test_knowledge_search_indexes_all_three_roots(self) -> None:
+        """knowledge/, docs/, and openspec/specs/ are all searchable KB roots."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            knowledge = root / "knowledge" / "errors"
+            knowledge.mkdir(parents=True)
+            (knowledge / "failure-patterns.md").write_text(
+                "# Docker Backend Timeout\n\nDocker failed.\n",
+                encoding="utf-8",
+            )
+            docs = root / "docs" / "architecture"
+            docs.mkdir(parents=True)
+            (docs / "deployment.md").write_text(
+                "# Deployment\n\n## Environments\n\nDeploy via Nexus.\n",
+                encoding="utf-8",
+            )
+            (root / "docs" / "README.md").write_text(
+                "# Docs Index\n\nIgnored index file.\n",
+                encoding="utf-8",
+            )
+            specs = root / "openspec" / "specs" / "checkout"
+            specs.mkdir(parents=True)
+            (specs / "spec.md").write_text(
+                "# Checkout\n\n## Purpose\n\nUsers can pay with a card.\n",
+                encoding="utf-8",
+            )
+
+            # Search hits the right root; each row tags its source root.
+            rows = cli.search_knowledge(root, ["checkout"], False)
+            self.assertEqual(1, len(rows))
+            self.assertEqual("Checkout", rows[0]["title"])
+            self.assertEqual("openspec/specs", rows[0]["root"])
+            self.assertEqual(
+                "openspec/specs/checkout/spec.md", rows[0]["file"]
+            )
+            docs_rows = cli.search_knowledge(root, ["nexus"], False)
+            self.assertEqual(1, len(docs_rows))
+            self.assertEqual("docs", docs_rows[0]["root"])
+            self.assertEqual("docs/architecture/deployment.md", docs_rows[0]["file"])
+
+            # Terms from any root match independently.
+            self.assertEqual(1, len(cli.search_knowledge(root, ["docker"], False)))
+            self.assertEqual(1, len(cli.search_knowledge(root, ["deploy"], False)))
+
+            # No-query dict exposes all roots and the merged file list.
+            index = cli.search_knowledge(root, [], False)
+            self.assertEqual("knowledge", index["knowledgeRoot"])
+            self.assertEqual("docs", index["docsRoot"])
+            self.assertEqual("openspec/specs", index["specsRoot"])
+            self.assertEqual(
+                [
+                    "docs/architecture/deployment.md",
+                    "knowledge/errors/failure-patterns.md",
+                    "openspec/specs/checkout/spec.md",
+                ],
+                sorted(index["files"]),
+            )
+            # README index files are excluded from the file list.
+            self.assertNotIn("docs/README.md", index["files"])
+
+            # list-topics rows carry root too.
+            topics = cli.search_knowledge(root, [], True)
+            self.assertEqual(3, len(topics))
+            self.assertEqual(
+                {"knowledge", "docs", "openspec/specs"},
+                {row["root"] for row in topics},
+            )
+
+    def test_knowledge_search_docs_and_specs_roots_are_optional(self) -> None:
+        """search_knowledge works when docs//openspec/specs/ are absent."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            knowledge = root / "knowledge" / "errors"
+            knowledge.mkdir(parents=True)
+            (knowledge / "failure-patterns.md").write_text(
+                "# Docker Backend Timeout\n\nDocker failed.\n",
+                encoding="utf-8",
+            )
+            index = cli.search_knowledge(root, [], False)
+            self.assertIsNone(index["docsRoot"])
+            self.assertIsNone(index["specsRoot"])
+            self.assertEqual(
+                ["knowledge/errors/failure-patterns.md"], index["files"]
+            )
+            self.assertEqual(1, len(cli.search_knowledge(root, ["docker"], False)))
 
     def test_classify_knowledge_maps_signals_to_candidate_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -83,6 +170,49 @@ class SddCliTests(unittest.TestCase):
             )
             self.assertFalse(result["noChanges"])
             self.assertIn("docs/api/auth-service.md", result["markers"]["docs"])
+
+    def test_classify_knowledge_spec_only_changes_map_to_the_spec(self) -> None:
+        """Archived-spec edits map to the spec itself — no spurious knowledge entries."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            result = cli.classify_knowledge(
+                "Fixed checkout error",
+                ["openspec/specs/checkout/spec.md"],
+                "1 failed: timeout",
+                root,
+            )
+            self.assertFalse(result["noChanges"])
+            # The spec file is the candidate (the KB record), not a new knowledge file.
+            self.assertEqual(
+                ["openspec/specs/checkout/spec.md"],
+                result["markers"]["specs"],
+            )
+            self.assertEqual([], result["markers"]["knowledge"])
+            self.assertEqual([], result["markers"]["docs"])
+            files = [c["file"] for c in result["candidates"]]
+            self.assertEqual(["openspec/specs/checkout/spec.md"], files)
+
+    def test_classify_knowledge_mixed_spec_and_source_keeps_signals(self) -> None:
+        """Spec changes alongside source keep keyword + implementation signals."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            result = cli.classify_knowledge(
+                "Fixed checkout error",
+                ["openspec/specs/checkout/spec.md", "src/checkout/api.ts"],
+                "1 failed: timeout",
+                root,
+            )
+            self.assertFalse(result["noChanges"])
+            self.assertIn(
+                "openspec/specs/checkout/spec.md", result["markers"]["specs"]
+            )
+            # Source + failure signals still fire for the non-spec part.
+            self.assertTrue(
+                any(f.startswith("knowledge/errors/") for f in result["markers"]["knowledge"])
+            )
+            self.assertTrue(
+                any(f.startswith("knowledge/implementation/") for f in result["markers"]["knowledge"])
+            )
 
     def test_delivery_modes_cover_common_helpers(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

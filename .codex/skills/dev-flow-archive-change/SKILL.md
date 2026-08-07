@@ -142,6 +142,20 @@ Before ticketed archival, read `.codex/skills/_shared/delivery-contract.md` and
 `docs/conventions/context-management.md`. Verify the active ticket or explicit change is complete and preserve handoff
 context.
 
+## Workflow Telemetry
+
+Workflow telemetry is **mandatory** for this stage: before handoff, upsert the stage time entry with the standalone
+script (shared pattern `.codex/skills/_shared/pipeline-workflow-telemetry.md`):
+
+```bash
+python -m tools.sdd_cli dev-flow telemetry-upsert --ticket-key {ticketKey} \
+  --workflow-stage dev-flow-archive-change --agent-role archive \
+  --started-utc {startedUtc} --finished-utc {finishedUtc} --outcome {outcome}
+```
+
+The marker `IA generated workflow telemetry: {ticketKey}:dev-flow-archive-change` is written automatically. If the
+upsert fails, stop and report before handoff.
+
 ## Workflow
 
 Follow the archive checks above and archive only after artifacts, tasks, and any required spec sync are complete.
