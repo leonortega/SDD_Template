@@ -42,7 +42,8 @@ full-setup
 │   ├── Install MCPs (Grafana, Gitea, OpenProject)
 │   ├── Push code to Gitea
 │   ├── K8s enable + MCP + scaffold
-│   └── Semgrep config
+│   ├── Semgrep config
+│   └── Prune Docker leftovers (only when every setup step passes)
 │
 ├── Stage 3: Tool Installation (remaining)
 │   ├── ensure-mcp-servers (playwright, grafana, k8s, gitea, openproject;

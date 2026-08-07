@@ -265,3 +265,61 @@ def test_validate_client_tools_clean_when_identifier_set(tmp_path) -> None:
     assert not any(
         f.get("key") == "openProject.projectIdentifier" for f in result["findings"]
     )
+
+
+# ── prune_docker_leftovers ───────────────────────────────────────────────
+
+
+def test_prune_docker_leftovers_runs_scoped_prunes(tmp_path) -> None:
+    """Issues the 3 scoped prunes; compose-labeled resources are protected."""
+    from tools.sdd_cli.environment_lab import prune_docker_leftovers
+
+    calls: list[list[str]] = []
+
+    def fake_run_native(command, root, timeout=30):
+        calls.append(command)
+        return {"returncode": 0, "stdout": "Deleted leftovers\n", "stderr": ""}
+
+    with patch(
+        "tools.sdd_cli.environment_lab.run_native", side_effect=fake_run_native
+    ):
+        result = prune_docker_leftovers(tmp_path, dry_run=False)
+
+    assert result["valid"] is True
+    assert len(calls) == 3
+    assert [c[1] for c in calls] == ["container", "image", "volume"]
+    # Container + volume prunes exclude compose-owned lab resources.
+    for c in (calls[0], calls[2]):
+        assert "--filter" in c
+        assert "label!=com.docker.compose.project" in c
+    # Image prune is dangling-only (no -a) so tagged lab images survive.
+    assert "-a" not in calls[1]
+    assert any("Pruned leftover containers" in a["message"] for a in result["actions"])
+
+
+def test_prune_docker_leftovers_dry_run_does_not_execute(tmp_path) -> None:
+    """Dry-run reports would-do actions and never calls docker."""
+    from tools.sdd_cli.environment_lab import prune_docker_leftovers
+
+    with patch("tools.sdd_cli.environment_lab.run_native") as mock_run:
+        result = prune_docker_leftovers(tmp_path, dry_run=True)
+
+    mock_run.assert_not_called()
+    assert result["valid"] is True
+    assert len(result["actions"]) == 3
+    assert all("Would prune leftover" in a["message"] for a in result["actions"])
+
+
+def test_prune_docker_leftovers_failure_is_nonblocking(tmp_path) -> None:
+    """A failing prune is a warning finding, never an error."""
+    from tools.sdd_cli.environment_lab import prune_docker_leftovers
+
+    with patch(
+        "tools.sdd_cli.environment_lab.run_native",
+        return_value={"returncode": 1, "stdout": "", "stderr": "boom"},
+    ):
+        result = prune_docker_leftovers(tmp_path, dry_run=False)
+
+    assert result["valid"] is True
+    assert len(result["findings"]) == 3
+    assert all(f.get("severity") == "warning" for f in result["findings"])
