@@ -83,8 +83,9 @@ sync, failed archive movement, or a still-active change after archive are blocke
 
 ## E2E QA Workflow
 
-This section defines the executable workflow for the E2E QA evidence gate. Run this after the QA deployment is confirmed
-successful, ticket comments are posted, and the Grafana dashboard is updated.
+This section defines the executable workflow for the E2E QA evidence gate. Run this **only after**: the QA deployment
+is confirmed OK (deploy-qa validation passed), the ticket is in `In testing` (OpenProject ID 9), ticket comments are
+posted, and the Grafana dashboard is updated. The suite runs against the **deployed QA URLs only — never DEV**.
 
 ### Prerequisites
 
@@ -180,9 +181,11 @@ Read the test results and classify the outcome per the QA outcomes taxonomy:
    - Failing test names and assertion details
    - Console errors, screenshots, or trace evidence
    - Classification: product defect, test defect, or environment issue
-2. Leave the ticket in `QA` or `In testing` state
+2. Move the ticket to `Test failed` (OpenProject ID 11) — the E2E-failed state that routes to the bug lifecycle (E2E
+   ran with the ticket in `In testing` ID 9; FAIL advances it to `Test failed`)
 3. Do not create an RC tag
-4. Recommend fix and re-run
+4. Recommend fix and re-run: invoke `dev-flow-file-qa-bug`; after the fix is deployed to QA the parent returns to
+   `In testing` (ID 9) and E2E re-runs against QA (never DEV)
 
 ### Step 4 — Archive OpenSpec Change
 
@@ -214,6 +217,8 @@ branch until resolved.
 ### Failure Rules
 
 - Do not run E2E tests against a broken or unverified QA deployment.
+- Do not run E2E tests against DEV — the suite targets the deployed QA URLs only.
+- Do not run E2E before the QA deployment is confirmed OK and the ticket is in `In testing` (ID 9).
 - Do not accept PASS if any acceptance criterion lacks committed test coverage.
 - Do not accept PASS if any test fails.
 - Do not move the ticket to Done on `PASS WITH GAPS`.

@@ -101,10 +101,13 @@ jobs:
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            # On PR merge into dev: deploy to DEV then auto-promote to QA
-            echo "TARGETS=dev qa" >> $GITHUB_OUTPUT
+            # On PR merge into dev: deploy to DEV ONLY. QA is NOT auto-promoted:
+            # the agent verifies DEV, asks the user for approval, then re-dispatches
+            # this workflow with environment=qa (workflow_dispatch).
+            echo "TARGETS=dev" >> $GITHUB_OUTPUT
           else
-            # On workflow_dispatch: deploy only to the specified environment
+            # On workflow_dispatch (user-approved QA / explicit PROD promotion):
+            # deploy only to the specified environment
             echo "TARGETS=${{ steps.env.outputs.ENV }}" >> $GITHUB_OUTPUT
           fi
 
@@ -502,6 +505,72 @@ jobs:
           "
 
             cd "${REPO_ROOT}"
+
+            # ── Health gate: DEV must be healthy before QA deploys ──────────
+            # PR-merge runs deploy TARGETS=dev; QA deploys separately after user
+            # approval. Verify every app's /health on the external host URL
+            # right after this env's rollout. If DEV fails, exit — QA never
+            # deploys, and the agent's fix loop repairs the issue before the
+            # pipeline re-runs. Same host.docker.internal:{hostPort} mechanism
+            # as the PROD health gate.
+          python3 << PYEOF
+          import json, os, subprocess, sys, time
+
+          env = "${ENV}"
+          if not os.path.exists('infra/deployment/apps.json'):
+              print(f'ERROR: infra/deployment/apps.json missing - cannot verify {env} health')
+              sys.exit(1)
+          with open('infra/deployment/ports.json') as f:
+              ports = json.load(f)
+          with open('infra/deployment/apps.json') as f:
+              apps = json.load(f).get('apps', [])
+
+          failures = []
+          for app in apps:
+              app_id = app['appId']
+              health_path = app.get('healthPath', '/health')
+              host_port = ports.get('environments', {}).get(env, {}).get(app_id, {}).get('hostPort')
+              if not host_port:
+                  print(f'WARNING: no {env} hostPort for {app_id} - skipping health check')
+                  continue
+              url = f'http://host.docker.internal:{host_port}'
+              print(f'Checking {app_id}: {url}{health_path}')
+              ok = False
+              last_err = ''
+              for _attempt in range(6):  # bounded retry; pods take a moment to become ready
+                  try:
+                      result = subprocess.run(
+                          ['curl', '-s', '--fail', '--max-time', '10', f'{url}{health_path}'],
+                          capture_output=True, text=True, timeout=20
+                      )
+                      if result.returncode == 0:
+                          try:
+                              body = json.loads(result.stdout)
+                              ok = body.get('status') == 'ok'
+                          except Exception:
+                              ok = '"ok"' in result.stdout
+                          if ok:
+                              break
+                          last_err = f'/health did not return status=ok ({result.stdout[:120]!r})'
+                      else:
+                          last_err = 'curl/HTTP request failed'
+                  except Exception as exc:
+                      last_err = f'health check error ({exc})'
+                  if _attempt < 5:
+                      time.sleep(10)
+              if ok:
+                  print(f'  PASS: {app_id} /health OK')
+              else:
+                  failures.append(f'{app_id}: {last_err or "health check failed"}')
+
+          if failures:
+              print(f'{env} health verification FAILED - not continuing to next environment:')
+              for failure in failures:
+                  print(f'  - {failure}')
+              sys.exit(1)
+          print(f'{env} health verification passed.')
+          PYEOF
+
             echo "=== ${ENV} deployment complete ==="
           done
 

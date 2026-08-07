@@ -15,8 +15,9 @@ description: >-
 ## Overview
 
 Use this skill after a PR has merged to `dev`. It is an orchestration bridge: validate the merged PR is eligible,
-trigger the CI build (which now deploys to DEV **and auto-promotes to QA** in the same
-pipeline run), wait for the immutable artifacts, then invoke `dev-ops-deploy-qa` for verification and ticket updates.
+trigger the CI build (which deploys to **DEV only** — QA is deployed separately after the user approves, via
+`dev-ops-deploy-qa`), wait for the immutable artifacts, then invoke `dev-ops-deploy-qa` for DEV verification, user
+approval, and QA dispatch.
 
 Do not perform DEV/QA validation inside this skill. `dev-ops-deploy-qa` owns environment checks and ticket updates.
 
@@ -104,8 +105,18 @@ source branch from the resolved PR metadata:
 6. Resolve the ticket key from the PR title/body, branch name, commit messages, or ticket comments.
 7. Run `ValidateTicketLock` with the resolved ticket key, PR number, branch, and merge/artifact commit when known. If
 the result is invalid, stop before triggering the build.
+
+   **❌ HARD GATE (authority level 5):** The ticket MUST be in `Developed` (OpenProject ID 8) before triggering the CI
+   build — `dev-ops-deploy-qa` enforces the same gate before any QA activity. If the
+   ticket is in an earlier state (e.g., `In progress` ID 7), transition it to `Developed` first; stop if the
+   transition fails.
+
+   **DEV health gate:** the dispatched pipeline verifies every app's `/health` on the external DEV host URLs right after
+   the DEV rollout and exits when DEV is unhealthy. Waiting for the DEV Nexus artifacts therefore
+   implies the DEV gate passed. QA is deployed later, only after the user approves (`dev-ops-deploy-qa`).
+
 8. **Trigger the CI build** by dispatching the `package-deploy` Gitea Actions workflow on the `dev` branch. The CI
-pipeline now deploys to DEV **and auto-promotes to QA** on the same pipeline run.
+pipeline deploys to **DEV only**; QA is not auto-promoted in this run.
 
    Derive the connection values from `.codex/client-tools.local.json`:
    - `GITEA_BASE_URL` from `gitea.baseUrl`
@@ -124,26 +135,22 @@ pipeline now deploys to DEV **and auto-promotes to QA** on the same pipeline run
    ```
 
    Interpret the response:
-   - HTTP `204`: Workflow dispatched successfully. Continue to step 8.
+   - HTTP `204`: Workflow dispatched successfully. Proceed to step 9 (artifact polling).
    - Any other status or connection error: stop and report the error. Do not proceed to artifact polling.
 
-9. Poll for the Nexus artifact files for the merge commit. Since the CI pipeline now deploys both DEV and QA, wait for
-artifacts from both environments:
+9. Poll for the Nexus artifact files for the merge commit. The CI pipeline deploys DEV only in this run, so wait for
+the DEV artifacts:
    - `app/{commitSha}/deployable-apps.json`
    - one `app/{commitSha}/{artifactName}` per topology app
    - one `app/{commitSha}/{artifactName}.sha256` per topology app
    - `app/{commitSha}/commit.sha`
    - `app/{commitSha}/release-dev.json` (DEV deployment metadata)
-   - `app/{commitSha}/release-qa.json` (QA auto-promote deployment metadata)
    - `app/{commitSha}/env-urls-dev.json` (DEV URLs)
-   - `app/{commitSha}/env-urls-qa.json` (QA URLs)
+   QA artifacts (`release-qa.json`, `env-urls-qa.json`) do not exist yet — they are produced by the user-approved QA
+   dispatch in `dev-ops-deploy-qa`.
      Also require any additional deployment metadata declared by the selected deployment adapter:
    - `app/{commitSha}/container-images.json`
-   - `app/{commitSha}/commit.sha`
-   - `app/{commitSha}/release-dev.json`
-   - `app/{commitSha}/release-qa.json`
-   - `app/{commitSha}/monitoring-summary-dev.json` and `app/{commitSha}/monitoring-summary-qa.json` when DEV/QA
-   deployment already completed
+   - `app/{commitSha}/monitoring-summary-dev.json` when DEV deployment already completed
 10. Use bounded waiting: check immediately, then retry with backoff for up to 10 minutes unless the user asked for a
 shorter wait.
 11. Verify `commit.sha` matches the merge commit before delegating.

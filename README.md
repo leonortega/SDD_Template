@@ -223,27 +223,28 @@ OpenProject ticket → OpenSpec change → feature branch → TDD implementation
 
 ## 4. Deploy To DEV / QA / PROD
 
-CI auto-deploys when a PR is merged into `dev` (direct pushes to `dev` never deploy), and promotion to PROD is
-**always explicit**.
+CI auto-deploys DEV when a PR is merged into `dev` (direct pushes to `dev` never deploy). QA is deployed only after
+the agent verifies DEV and the user approves; promotion to PROD is **always explicit**.
 
 | Environment | Namespace | Replicas | Trigger |
 | ----------- | --------- | -------- | ------- |
 | **dev** | `sdd-dev` | 1 | PR merged into `dev` |
-| **qa** | `sdd-qa` | 2 | CI auto-promote after DEV (same pipeline run) |
+| **qa** | `sdd-qa` | 2 | User-approved `package-deploy` dispatch after DEV verification |
 | **prod** | `sdd-prod` | 3 | Explicit PROD deployment of the QA-approved artifact |
 
 ### The deployment sequence
 
 ```text
-merge to dev → post-merge deploy (waits for Nexus artifacts)
-→ QA deploy + /health validation → Grafana dashboard update
-→ E2E QA evidence gate (Playwright against QA) → RC tag
+merge to dev → post-merge deploy → CI deploys DEV + /health gate
+→ agent verifies DEV → user approves QA → CI deploys QA + /health validation
+→ Grafana dashboard update → E2E QA evidence gate (Playwright against QA) → RC tag
 → explicit PROD promotion (main fast-forward + final tag) → PROD /health checks
 ```
 
 1. **Post-merge deploy** — verifies the merge, triggers the CI pipeline, waits for the
-   immutable Nexus artifacts (`app/{commitSha}/…`), then validates DEV and QA.
-2. **QA deploy** — validates the same artifact in QA, writes the release manifest, and
+   immutable Nexus artifacts (`app/{commitSha}/…`); the pipeline deploys **DEV only** with a `/health` gate.
+2. **QA deploy** — sets the ticket to `Developed` before any deploy (hard gate), verifies DEV is healthy, **asks the
+   user for approval**, dispatches the QA deployment on approval, validates it, writes the release manifest, and
    moves the ticket to `In testing`.
 3. **Grafana board** — the SDD Service Status dashboard
    (`http://localhost:3001`, `uid: agentic-e2e-health-board`) is updated with the live

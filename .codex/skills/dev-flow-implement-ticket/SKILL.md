@@ -690,6 +690,10 @@ transition. This is expected on normal flow.
 2. **If the ticket is still in a pre-developed state** (e.g., `In progress`, ID 7), the Section 10 move failed — retry
 now: move the ticket to `Developed` (OpenProject ID 8).
 
+   > **Deploy gate:** the `dev-ops-deploy-qa` stage enforces a hard gate that the ticket is in `Developed` (ID 8)
+   > before any QA deployment. Leaving the ticket in `Developed` here satisfies that gate — do not move the ticket to
+   > `In testing` or later states before the QA deployment runs.
+
 3. **Verify the Section 10 PR comment was created and retry if missing.** See
 `.codex/skills/_shared/pipeline-ticket-comment.md` for the common comment verification pattern. Use:
    - Marker: `IA generated PR: {prUrl}`

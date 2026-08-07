@@ -37,7 +37,7 @@ Idea or ticket
   -> pull request in Gitea
   -> AI review -> feedback fixes -> human reviewers
   -> merge to dev
-  -> CI builds immutable artifact, deploys to DEV, auto-promotes to QA
+  -> CI builds immutable artifact, deploys to DEV -> verify DEV -> user approval -> QA dispatch
   -> E2E QA evidence gate (acceptance criteria proven by executable assertions)
   -> release manifest + optional RC tag
   -> explicit PROD promotion (main fast-forward + final release tag)
@@ -320,35 +320,51 @@ artifacts, then delegates to `dev-ops-deploy-qa`.
 2. Delete the source branch (local + remote) — best-effort cleanup.
 3. Verify no `needs-changes` / `needs-tests` labels (else stop).
 4. Resolve merge commit SHA; resolve ticket key; `ValidateTicketLock` (else stop).
+
+   > **Status gate:** the ticket must be in `Developed` (ID 8) before triggering — hard gate in
+   > `dev-ops-post-merge-deploy`, re-enforced by `dev-ops-deploy-qa` before any QA activity.
+
 5. **Trigger the CI pipeline** — dispatch `package-deploy` Gitea Actions workflow on
-   `dev` (HTTP `204` = success). The pipeline deploys to **DEV and auto-promotes to QA**
-   in the same run.
+   `dev` (HTTP `204` = success). The pipeline deploys to **DEV only** (QA is NOT
+   auto-promoted), gated: it verifies every app's `/health` on the external DEV URLs
+   right after the DEV rollout and **fails when DEV is unhealthy** (the agent's fix
+   loop repairs the issue, then the pipeline re-runs on the fixed commit).
 6. **Wait for Nexus artifacts** (bounded, up to 10 minutes, backoff): per app
    `app/{commitSha}/{artifactName}` + `.sha256`, `deployable-apps.json`, `commit.sha`,
-   `release-dev.json`, `release-qa.json`, `env-urls-dev.json`, `env-urls-qa.json`,
+   `release-dev.json`, `env-urls-dev.json`,
    `container-images.json`, plus monitoring summaries when observability is enabled.
+   QA artifacts are produced later by the user-approved QA dispatch (Stage 8).
 7. Verify `commit.sha` matches the merge commit; verify `release-dev.json.ticketKey`
    matches the locked ticket.
 8. Invoke `dev-ops-deploy-qa` (verification mode when artifacts already exist).
 
 ### Stage 8 — Deploy To QA (`dev-ops-deploy-qa`)
 
-Because CI auto-promotes DEV → QA, this skill validates and updates the ticket rather
-than dispatching a separate QA deployment.
+The pipeline deploys DEV only. This skill verifies DEV, asks the user for approval, dispatches the QA deployment
+(`package-deploy` `workflow_dispatch` with `environment=qa`), validates QA, and updates the ticket.
 
 Preflight:
 
+- **Pre-deploy status gate:** the ticket MUST be in `Developed` (ID 8) before any QA deployment activity — if it is
+  in an earlier state (`In progress` ID 7 or before), transition it to `Developed` first. Hard gate in
+  `dev-ops-deploy-qa`; the ticket moves to `In testing` (ID 9) only after QA validation passes.
+- **DEV verified before asking:** DEV must be fully healthy (CI health gate passed + agent re-verification) before the
+  user is asked for QA approval.
+- **User approval gate (hard):** QA is deployed only after the user explicitly approves.
 - PR merged to `dev`; no `needs-changes`/`needs-tests`.
-- Ticket lock valid; Nexus reachable; all required artifact files present;
-  `commit.sha` matches the resolved SHA; `release-dev.json`/`release-qa.json`
-  `ticketKey` matches the locked ticket.
+- Ticket lock valid; Nexus reachable; DEV artifact files present;
+  `commit.sha` matches the resolved SHA; `release-dev.json` `ticketKey` matches the locked ticket.
 
-DEV + QA validation:
+DEV verification → user approval → QA dispatch:
 
-- DEV URL from `app/latest/env-urls-dev.json` — `curl --fail` + `/health` (HTTP 200,
-  JSON `status=ok`).
-- QA deployed the **same artifact set** (no rebuild); QA URL + `/health` validated.
-- Deployment configuration applied and verified for both environments.
+- Verify DEV: URL from `app/latest/env-urls-dev.json` — `curl --fail` + `/health` (HTTP 200,
+  JSON `status=ok`); deployment configuration applied and verified.
+- If DEV is not healthy, stop and report — do not ask the user.
+- **Ask the user for approval to deploy to QA** (hard gate — no QA deploy without it).
+- On approval, dispatch `package-deploy` with `environment=qa` + `artifact_commit_sha=<verified DEV commit>`;
+  wait for the QA artifacts.
+- Verify QA: same artifact set (no rebuild); QA URL + `/health` validated;
+  deployment configuration applied and verified.
 - On failure: add failure comment, do not move the ticket.
 
 Release manifest + ticket:
@@ -370,7 +386,9 @@ Then, automatically:
 ### Stage 9 — E2E QA Evidence Gate (`delivery-contract-qa.md`)
 
 The acceptance-evidence gate. `QA Done = acceptance criteria proven by executable
-assertions against the deployed QA artifact`.
+assertions against the deployed QA artifact`. Runs **only after** the QA deployment is
+confirmed OK and the ticket is in `In testing` (ID 9); the suite targets **QA only —
+never DEV**.
 
 1. **Resolve acceptance criteria** — fetch the ticket, expand ACs + OpenSpec change,
    enumerate every criterion from `tasks.md`, map each to committed Playwright test
@@ -417,9 +435,12 @@ Full bug fix lifecycle when E2E QA fails:
 
 ```text
 E2E QA fails -> File bug -> Move to Specified -> Update parent OpenSpec -> Commit
-  -> Move to In progress -> Branch -> PR -> Merge & deploy to QA -> Close bug
-  -> Return to parent QA
+  -> Move to In progress -> Branch -> PR -> Merge & deploy to DEV -> user approval -> deploy to QA -> Close bug
 ```
+
+The bug flow **ends with the QA deployment** (user-approved). The parent is returned to `In testing` (ID 9) and its E2E
+QA re-run continues as the parent's own flow (`dev-ops-deploy-qa` → E2E QA evidence gate) — never
+part of the bug flow.
 
 1. **File bug with evidence** — child ticket of the parent, marker
    `IA generated QA bug: {parentTicketKey}`; parent stays in its current state.
@@ -435,12 +456,14 @@ E2E QA fails -> File bug -> Move to Specified -> Update parent OpenSpec -> Commi
 6. **PR** — `{bugKey}: {short description} (parent: {parentTicketKey})`; marker
    `IA generated bug PR: {prUrl}` (blocking); AI review + reviewers.
 7. **Merge & deploy** — after merge, `dev-ops-post-merge-deploy` +
-   `dev-ops-deploy-qa`; verify `IA generated QA deployment: {mergeCommitSha}`.
+   `dev-ops-deploy-qa` (user-approved); verify `IA generated QA deployment: {mergeCommitSha}`.
+   The bug flow ends with this QA deployment.
 8. **Close bug** — mark bug tasks done in parent `tasks.md`, delete fix branch, comment
    `IA generated bug closed: {bugKey}`, move bug to `Closed` (ID 12), switch the ticket
    lock back to the parent.
-9. **Return to parent QA** — move parent from `Test failed` (ID 11) back to
-   `In testing` (ID 9) and re-run the E2E QA evidence gate.
+9. **Hand back to parent QA** — move parent from `Test failed` (ID 11) back to
+   `In testing` (ID 9). The parent's E2E QA re-run is the **parent's own flow**
+   (`dev-ops-deploy-qa` → E2E QA evidence gate) — not part of the bug flow.
 
 Non-code defects (data/environment/requirements only): no OpenSpec change, no branch;
 comment on the bug and report the non-code owner.
@@ -745,7 +768,7 @@ Three K8s environments (kind cluster `sdd-cluster` unless Docker Desktop K8s is 
 | Environment | Namespace | Replicas | Trigger |
 | ----------- | --------- | -------- | ------- |
 | dev | `sdd-dev` | 1 | Push to `dev` branch |
-| qa | `sdd-qa` | 2 | CI auto-promote after DEV in the same `package-deploy` run |
+| qa | `sdd-qa` | 2 | User-approved `package-deploy` dispatch (`environment=qa`) after DEV verification |
 | prod | `sdd-prod` | 3 | Explicit PROD deployment of the QA-approved artifact |
 
 Nexus artifact layout (identity = commit SHA; human-readable version folders are aliases
