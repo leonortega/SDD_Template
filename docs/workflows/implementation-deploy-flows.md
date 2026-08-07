@@ -149,9 +149,10 @@ Specified tickets. Bug tickets (status `New`, ID 1) are re-routed to
 7. **Branch** — pull base branch (`git pull --ff-only`), create/reuse the configured
    branch name (e.g. `feat/e2eproject-1-create-files-and-folders-for-a-site`), pre-scan
    local/remote conflicts, push with upstream.
-8. **Planning analysis** — feed the human ticket text to `dev-flow-explore-change`, then run up
-   to 4 iterative `grill-with-docs` cycles; consolidate into one refined-requirements
-   document.
+8. **Planning analysis** — feed the human ticket text to `dev-flow-explore-change`, then run
+   at least 1 and up to 4 iterative `grill-with-docs` cycles, **always asking the user for
+   extra info** (at least one clarifying question even when the ticket seems complete);
+   consolidate into one refined-requirements document.
 9. **Curated ticket block** — merge both outputs into one agile-format IA block
    (problem/opportunity, user story, concrete acceptance criteria, scope, **out of
    scope**, dependencies/assumptions, validation expectations, risks, definition of
