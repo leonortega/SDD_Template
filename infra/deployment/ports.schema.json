@@ -20,19 +20,23 @@
         "type": "object",
         "additionalProperties": {
           "type": "object",
-          "required": ["hostPort", "nodePort"],
+          "required": ["hostPort", "nodePort", "role"],
           "properties": {
             "hostPort": {
               "type": "integer",
               "minimum": 1024,
               "maximum": 65535,
-              "description": "Host port for kind extraPortMappings (direct localhost access)"
+              "description": "Host port for kind extraPortMappings (direct localhost access). Allocated per role in blocks of 10 anchored at the role base: web from 8081 (8081-8090, then 8091-8100, ...), api from 5002 (5002-5011, then 5012-5021, ...). Must be >= the role base, unique across ALL environments, and must not collide with reserved lab service ports (see RESERVED_HOST_PORTS in tools/sdd_cli/k8s_ports.py: Gitea 3000/2222/8123, Nexus 8088/5001, OpenProject 8080, Grafana 3001, probe 8090, Dozzle 8888, Seq 5341)."
             },
             "nodePort": {
               "type": "integer",
               "minimum": 30000,
               "maximum": 32767,
-              "description": "Cluster-scoped K8s NodePort (must be unique across environments)"
+              "description": "Cluster-scoped K8s NodePort (must be unique across environments). Allocated per env per role in blocks of 10 anchored at env_code*1000 + role_offset: dev web 30080+ / api 30500+, qa web 31080+ / api 31500+, prod web 32080+ / api 32500+. Must stay inside the environment range (dev < 31000, qa < 32000, prod <= 32767)."
+            },
+            "role": {
+              "type": "string",
+              "description": "App role driving the port-range scheme (web, api, ...). Must be registered in ROLE_HOST_BASES/ROLE_NODE_OFFSETS (tools/sdd_cli/k8s_ports.py) — an unknown or missing role fails load_ports validation."
             }
           }
         }
