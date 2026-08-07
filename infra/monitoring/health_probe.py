@@ -1,21 +1,27 @@
 """SDD lab health probe — serves real service health as JSON for Grafana.
 
 The Grafana "Service Health" panel (Infinity datasource) polls this endpoint on
-every refresh. Each probe runs concurrently against the target from inside the
-Docker network, reaching the kind node directly
-(sdd-cluster-control-plane:<nodePort>) — NOT host extraPortMappings, which are
-only bound at cluster creation time and go stale when kind-config changes.
+every refresh. Each probe runs concurrently against the EXTERNAL URL users
+navigate — the host-remapped port (`http://host.docker.internal:<hostPort>`),
+which from the Windows host is the same endpoint as the directUrl shown in the
+dashboard (`http://localhost:<hostPort>`). Status therefore reflects real
+user-facing reachability, not just internal cluster connectivity.
+
+`host.docker.internal` is provided by Docker Desktop (Windows/macOS) and by the
+`extra_hosts` entry in compose.yml on Linux hosts; override with the PROBE_HOST
+environment variable when the host address differs.
+
 Runs as the `health-probe` compose service on port 8090.
 
 Direct URLs use `localhost` with the host-remapped port (valid on the host when
 the service is deployed). Unreachable endpoints are reported as "Not deployed"
-so the dashboard never lies: green means the /health endpoint actually responds.
+so the dashboard never lies: green means the external /health endpoint actually
+responds.
 
-NodePorts and host ports come from the canonical infra/deployment/ports.json
-(mounted read-only by infra/monitoring/compose.yml). When that file is not
-available (e.g. running the script standalone outside the lab), the probe
-falls back to the hardcoded default port map below — keeping the service
-self-contained.
+Host ports come from the canonical infra/deployment/ports.json (mounted
+read-only by infra/monitoring/compose.yml). When that file is not available
+(e.g. running the script standalone outside the lab), the probe falls back to
+the hardcoded default port map below — keeping the service self-contained.
 
 Endpoints:
     GET /health  -> {"services": [ {...}, ... ]}
@@ -24,6 +30,7 @@ Endpoints:
 from __future__ import annotations
 
 import json
+import os
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -33,11 +40,17 @@ HOST = "0.0.0.0"
 PORT = 8090
 TIMEOUT_SECONDS = 4.0
 
+# Host the probe uses to reach the externally published ports. From inside a
+# container, `host.docker.internal` maps to the Docker host where the kind
+# extraPortMappings are bound — the same endpoints users navigate on
+# localhost:<hostPort>.
+PROBE_HOST = os.environ.get("PROBE_HOST", "host.docker.internal")
+
 # Default port map (used only when infra/deployment/ports.json is unavailable).
 # NodePorts are per-environment and cluster-scoped (per-env fix, PR #6):
 #   DEV  30080/30500 | QA  31080/31500 | PROD  32080/32500
-# The probe reaches the kind node directly (sdd-cluster-control-plane:<nodePort>)
-# instead of relying on host-port extraPortMappings.
+# Status is determined from the external host ports (hostPort) — the URLs users
+# navigate — not from the internal nodePorts.
 _DEFAULT_PORTS = {
     "dev": {"frontend": {"hostPort": 8081, "nodePort": 30080}, "backend": {"hostPort": 5002, "nodePort": 30500}},
     "qa": {"frontend": {"hostPort": 8082, "nodePort": 31080}, "backend": {"hostPort": 5003, "nodePort": 31500}},
@@ -66,8 +79,8 @@ def build_services(ports: dict | None = None) -> list[dict]:
     """Build the probe target list from the port map (canonical or fallback).
 
     Returns the same schema the Grafana dashboard consumes: env label, service
-    label, probe URL (kind node DNS), direct URL (localhost host port), health
-    path, and the K8s nodePort.
+    label, external probe URL (host.docker.internal:<hostPort>), direct URL
+    (localhost host port), health path, and the K8s nodePort (display only).
     """
     ports = ports if ports is not None else _load_ports()
     services = []
@@ -79,7 +92,7 @@ def build_services(ports: dict | None = None) -> list[dict]:
                 {
                     "env": env.upper(),
                     "service": _SERVICE_LABELS.get(app_id, app_id.title()),
-                    "probeUrl": f"http://sdd-cluster-control-plane:{node_port}",
+                    "externalUrl": f"http://{PROBE_HOST}:{host_port}",
                     "directUrl": f"http://localhost:{host_port}",
                     "healthPath": "/health",
                     "nodePort": str(node_port),
@@ -104,7 +117,7 @@ def probe(service: dict) -> dict:
         "status": "Not deployed",
         "http": "-",
     }
-    target = service["probeUrl"] + service["healthPath"]
+    target = service["externalUrl"] + service["healthPath"]
     try:
         with urlopen(Request(target, method="GET"), timeout=TIMEOUT_SECONDS) as resp:
             result["http"] = str(resp.status)

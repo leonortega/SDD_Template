@@ -297,10 +297,9 @@ Status dashboard with the latest PROD URLs.
 1. Fetch `app/latest/env-urls-{env}.json` for every deployed environment (DEV, QA, PROD) from Nexus
 2. Follow the workflow in `.codex/skills/grafana-board-update/SKILL.md` to intelligently merge changes into
    `infra/monitoring/grafana/dashboards/health-board.json`
-3. Add the new PROD rows to the Service Health and Service Quick Access panels
-4. Update the Environment Matrix panel to mark PROD as Active
-5. Commit and push the updated dashboard JSON
-6. Optionally push to Grafana API at `http://localhost:3001` for immediate effect
+3. Add the new PROD rows to the Service Health panel
+4. Commit and push the updated dashboard JSON
+5. Optionally push to Grafana API at `http://localhost:3001` for immediate effect
 
    **⚠️ Note:** If the dashboard is **provisioned from disk** (via
    `infra/monitoring/grafana/provisioning/dashboards/dashboards.yml`), Grafana rejects API writes with

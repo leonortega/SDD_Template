@@ -1,7 +1,7 @@
 {
   "title": "\ud83d\ude80 SDD Service Status",
   "uid": "agentic-e2e-health-board",
-  "version": 1785965018,
+  "version": 1786124943,
   "schemaVersion": 39,
   "timezone": "browser",
   "editable": true,
@@ -91,7 +91,7 @@
                     "options": {
                       "Not deployed": {
                         "text": "Not deployed",
-                        "color": "orange"
+                        "color": "gray"
                       }
                     }
                   },
@@ -219,141 +219,6 @@
         "content": "| Service | URL | Default Credentials |\n|---|---|---|\n| **\ud83d\udcca Grafana** | http://localhost:3001 | `admin` / `admin` |\n| **\ud83d\udd27 Gitea** (Git) | http://localhost:3000 | `admin` / `admin123` |\n| **\ud83d\udce6 Nexus** (Artifacts) | http://localhost:8088 | `admin` / `admin123` |\n| **\ud83d\udccb Dozzle** (Logs) | http://localhost:8888 | \u2014 |\n\n```bash\n# Kubernetes\nkubectl -n sdd-dev get po -o wide\nkubectl -n sdd-dev get svc\nkubectl -n sdd-qa get po -o wide\nkubectl -n sdd-qa get svc\n```\n\n> \ud83d\udd04 Services are deployed via **Gitea Actions CI** \u2192 **kind K8s cluster**\n",
         "mode": "markdown"
       }
-    },
-    {
-      "title": "\ud83c\udfd7\ufe0f Environment Matrix",
-      "id": 7,
-      "type": "table",
-      "description": "Deployment status across DEV / QA / PROD (inline). PROD activated with release v0.1.0 (run #32).",
-      "gridPos": {
-        "h": 6,
-        "w": 24,
-        "x": 0,
-        "y": 20
-      },
-      "datasource": {
-        "type": "yesoreyeram-infinity-datasource",
-        "uid": "infinity-health"
-      },
-      "options": {
-        "footer": {
-          "show": false
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "align": "left",
-            "displayMode": "auto"
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Status"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 110
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Web URL"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 210
-              },
-              {
-                "id": "links",
-                "value": [
-                  {
-                    "title": "Open",
-                    "url": "${__value.text}",
-                    "targetBlank": true
-                  }
-                ]
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "API URL"
-            },
-            "properties": [
-              {
-                "id": "custom.width",
-                "value": 210
-              },
-              {
-                "id": "links",
-                "value": [
-                  {
-                    "title": "Open",
-                    "url": "${__value.text}",
-                    "targetBlank": true
-                  }
-                ]
-              }
-            ]
-          }
-        ]
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "yesoreyeram-infinity-datasource",
-            "uid": "infinity-health"
-          },
-          "queryType": "json",
-          "source": "inline",
-          "data": "{\"data\": [{\"env\": \"DEV\", \"namespace\": \"sdd-dev\", \"trigger\": \"Gitea Actions push to dev\", \"status\": \"\\u2705 Active\", \"webUrl\": \"http://localhost:8081\", \"apiUrl\": \"http://localhost:5002\"}, {\"env\": \"QA\", \"namespace\": \"sdd-qa\", \"trigger\": \"push to dev (auto-promote)\", \"status\": \"\\u2705 Active\", \"webUrl\": \"http://localhost:31080\", \"apiUrl\": \"http://localhost:31500\"}, {\"env\": \"PROD\", \"namespace\": \"sdd-prod\", \"trigger\": \"workflow_dispatch environment=prod\", \"status\": \"\\u2705 Active\", \"webUrl\": \"http://localhost:32080\", \"apiUrl\": \"http://localhost:32500\"}]}",
-          "format": "table",
-          "parser": "backend",
-          "root_selector": "data",
-          "columns": [
-            {
-              "selector": "env",
-              "text": "Environment",
-              "type": "string"
-            },
-            {
-              "selector": "namespace",
-              "text": "K8s Namespace",
-              "type": "string"
-            },
-            {
-              "selector": "trigger",
-              "text": "Deploy Trigger",
-              "type": "string"
-            },
-            {
-              "selector": "status",
-              "text": "Status",
-              "type": "string"
-            },
-            {
-              "selector": "webUrl",
-              "text": "Web URL",
-              "type": "string"
-            },
-            {
-              "selector": "apiUrl",
-              "text": "API URL",
-              "type": "string"
-            }
-          ],
-          "type": "json"
-        }
-      ]
     },
     {
       "title": "",
