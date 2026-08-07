@@ -42,6 +42,16 @@ Default configuration:
 - `parallelDelivery.worktreeRoot=../ticket-worktrees`
 - `parallelDelivery.deploymentLanePolicy=serialized`
 
+## Multi-Ticket Refinement
+
+Each Todo ticket started in parallel runs its own refinement inside its worktree through
+`dev-flow-start-ticket`, and every ticket follows the same always-ask gate as the linear
+flow: at least 1 `grill-with-docs` cycle (at most 4), and the user is **always asked for
+extra info for that ticket** — even when the ticket seems complete — before that ticket's
+curated IA block is written. The coordinator must not let any ticketStarter agent write an
+IA block without the user having been asked for that ticket, and must not batch-answer or
+silently self-answer across tickets.
+
 ## Dry-Run Checklist
 
 Before Git, OpenProject, or Gitea mutation, answer: `Can I safely start these 2 tickets in parallel?`
@@ -75,7 +85,10 @@ ticket.
 - `qa`: validates QA and records evidence only with lane ownership.
 - `prodHotfix`: handles PROD, rollback, and hotfix only after explicit user intent and lane validation.
 
-Every child agent must return concise status, files touched, validation run, blockers, and next action.
+Every child agent must return concise status, files touched, validation run, blockers, and next action. A
+`ticketStarter` starting a Todo ticket via `dev-flow-start-ticket` must also report whether refinement asked the
+user (`refinementUserAsked: yes/no`), so the coordinator can verify the always-ask gate before routing the ticket
+forward.
 
 ## Deployment Lane Serialization
 
