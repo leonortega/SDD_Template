@@ -52,6 +52,11 @@ required local runtime files.
 - With `deploymentLanePolicy` set to `serialized`, only the recorded lane owner may run post-merge deploy, QA deploy, QA
 gate, or PROD deploy; other agents must wait or report the owner.
 - PROD promotion remains explicit. Parallel delivery must not promote to PROD only because QA passed.
+- Each ticket started in parallel runs its own refinement via `dev-flow-start-ticket` and follows the same always-ask
+gate as the linear flow: at least 1 `grill-with-docs` cycle (at most 4), always asking the user for extra info for
+that ticket — even when the ticket seems complete — before writing its curated IA block, with no batching or silent
+self-answering across tickets. The coordinator never lets a ticketStarter write an IA block without the user having
+been asked for that ticket.
 - After QA evidence is recorded and OpenProject is moved to Done, the coordinator checkout owns ticket worktree
 teardown.
 
@@ -66,6 +71,8 @@ ticket.
 - `qa`: validates QA and records evidence only with lane ownership.
 - `prodHotfix`: handles PROD, rollback, and hotfix only after explicit user intent and lane validation.
 
-Every child agent must return concise status, files touched, validation run, blockers, and next action. Never let two
+Every child agent must return concise status, files touched, validation run, blockers, and next action. A
+`ticketStarter` starting a Todo ticket via `dev-flow-start-ticket` must also report whether refinement asked the user
+(`refinementUserAsked: yes/no`) so the coordinator can verify the always-ask gate. Never let two
 agents mutate the same OpenProject work package. Never parallelize DEV, QA, E2E
 QA, PROD, rollback, or hotfix promotion.

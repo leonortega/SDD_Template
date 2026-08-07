@@ -89,7 +89,9 @@ ticket.
 - `qa`: validates QA and records evidence only with lane ownership.
 - `prodHotfix`: handles PROD, rollback, and hotfix only after explicit user intent and lane validation.
 
-Every child agent must return concise status, files touched, validation run, blockers, and next action.
+Every child agent must return concise status, files touched, validation run, blockers, and next action. A
+`ticketStarter` starting a Todo ticket via `dev-flow-start-ticket` must also report whether refinement asked the user
+(`refinementUserAsked: yes/no`), so the coordinator can verify the always-ask gate before routing the ticket forward.
 
 ## Runtime State
 
@@ -132,6 +134,12 @@ checklist question is: `Can I safely start these 2 tickets in parallel?`
 3. Enforce `parallelDelivery.maxActiveTickets`. If starting a new ticket would exceed the limit, report active tickets
 and stop.
 4. Reuse existing ticket worktrees when the ticket key, branch, and local lock agree.
+5. **Per-ticket refinement always asks the user.** Each Todo ticket's refinement runs in its own worktree via
+`dev-flow-start-ticket` and MUST follow the same always-ask gate as the linear flow: at least 1 `grill-with-docs`
+cycle (at most 4), and the user is ALWAYS asked for extra info for that ticket — even
+when the ticket seems complete — before that ticket's curated IA block is written. The coordinator must not let any
+ticketStarter agent write an IA block without the user having been asked for that ticket (no batching, no silent
+self-answering across tickets).
 
 ### 3. Prepare Worktrees
 
@@ -158,7 +166,8 @@ worktree's ticket key, branch, OpenSpec change, and PR number are known.
 
 Route each ticket by current durable checkpoint:
 
-- Todo with no branch: use `dev-flow-start-ticket` in that ticket worktree.
+- Todo with no branch: use `dev-flow-start-ticket` in that ticket worktree. The child agent MUST run the
+  refinement always-ask gate (Section 2 step 5) before writing that ticket's curated IA block.
 - In Progress with branch/OpenSpec and no PR: use `dev-flow-implement-ticket` in that ticket worktree.
 - Open PR: use `dev-flow-implement-ticket` for the review/fix loop or `dev-flow-pr-review-agent` for a focused review.
 - Merged PR awaiting artifact/QA: use `dev-ops-post-merge-deploy` only when the serialized deployment lane is free or
@@ -199,6 +208,9 @@ lane owner for blocked promotion work.
 
 - Single-ticket request routed here: when the AI determines only one ticket is to be implemented, do not start parallel
 work — route the ticket through the linear flow (`dev-flow-start-ticket` → `dev-flow-implement-ticket`).
+- Child ticketStarter wrote a curated IA block without asking the user for extra info for that ticket: stop, have the
+child re-run the refinement always-ask gate (Section 2 step 5), and do not route the ticket forward until the user
+has been asked.
 - Missing `worktreeRoot`: use `../ticket-worktrees` and report the default.
 - Failed `ValidateParallelDeliveryDryRun`: stop before Git, ticket provider, or repository/review provider mutation and
 report duplicate tickets, duplicate branches, duplicate worktrees, missing
