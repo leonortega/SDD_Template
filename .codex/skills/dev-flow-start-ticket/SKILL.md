@@ -203,12 +203,20 @@ Fold relevant entries into the proposal context and risk analysis. Record `Knowl
 
 6. **Feed human ticket text to dev-flow-explore-change skill.** Load `.codex/skills/dev-flow-explore-change/SKILL.md`. Feed it the human-authored ticket description (fetched in step 1). It produces an exploratory analysis with structure, gaps, risks, and insights.
 
-7. **Run iterative grill-with-docs cycles on the human ticket text (up to 4 cycles).**
+7. **Run iterative grill-with-docs cycles on the human ticket text (at least 1 cycle, at most 4).**
 
-    a. **Cycle 1:** grill-with-docs interviews the user on unclear aspects, generating questions about gaps, ambiguities, and missing context.
-    b. **IA answers each question** with the best possible answer based on available context.
-    c. **Cycle 2-4:** Repeat — each cycle, grill-with-docs generates new questions based on the previous answers. The IA answers again.
-    d. **Stop when** either 4 cycles are reached or grill-with-docs has no more questions.
+    a. **Cycle 1 (mandatory — always ask the user):** grill-with-docs interviews the user on
+    unclear aspects, generating questions about gaps, ambiguities, and missing context. **Even
+    when the ticket seems complete, always ask the user for extra info** — pose at least one
+    clarifying question (scope boundaries, priorities, constraints, or any unstated
+    assumption) before proceeding. Never complete the refinement without asking the user.
+    b. **The user answers the posed questions; the IA answers each remaining question** with
+    the best possible answer based on available context.
+    c. **Cycle 2-4:** Repeat — each cycle, grill-with-docs generates new questions based on
+    the previous answers. Ask the user again whenever new questions arise; the IA answers the
+    rest.
+    d. **Stop when** 4 cycles are reached or grill-with-docs has no more questions — never
+    before completing at least 1 cycle.
     e. **Combine all grilled answers** from every cycle into one consolidated grill-with-docs output (refined/clarified requirements with domain knowledge).
 
     Uses `/grilling` + `/domain-modeling` under the hood. Output: a single comprehensive refined-requirements document built from all cycles.
