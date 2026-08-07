@@ -448,7 +448,10 @@ part of the bug flow.
    approach, ACs, affected files, validation, effort); marker
    `IA generated bug specification: {bugKey}`.
 3. **Update parent OpenSpec** — **append** bug-fix tasks to the parent's `tasks.md` as a
-   new `## Bug Fix: {bugKey}` section (bugs never create a new OpenSpec change).
+   new `## Bug Fix: {bugKey}` section (bugs never create a new OpenSpec change). Use the **same format as the
+   existing tasks** (`- [ ] X.Y` checkboxes under `##` numbered headings — the OpenSpec apply phase only tracks
+   `- [ ] X.Y` checkboxes); never copy OpenProject/comment text into `tasks.md`, which breaks the format and the
+   OpenSpec task tracking.
 4. **Fix branch** — commit OpenSpec changes on `dev` first, then
    `fix/{bugKeySlug}-{short-description}`; marker `IA generated bug branch: ...`.
 5. **Implement with tests** — same TDD + quality gates as the feature flow

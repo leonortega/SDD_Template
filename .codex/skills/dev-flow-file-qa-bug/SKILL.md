@@ -139,18 +139,35 @@ fallback.
     cat openspec/changes/{parentChangeName}/tasks.md
     ```
 
-3. **Append** bug-fix tasks to the parent's `tasks.md`. Do NOT replace or remove existing tasks. Append a new numbered
-section with the bug title and tasks:
+3. **Append** bug-fix tasks to the parent's `tasks.md` **in the exact same format as the existing tasks**
+(**OpenSpec checkbox format**). Do NOT replace or remove existing tasks, and do NOT copy OpenProject/comment text
+into `tasks.md` — the apply phase parses `- [ ] X.Y` checkboxes to track progress, so anything else breaks the
+OpenSpec task tracking.
+
+    **Task format (mandatory):** group tasks under a `##` numbered heading and give every task a `- [ ] X.Y`
+    checkbox, mirroring the schema rule (`.agents/skills/openspec-propose` →
+    `openspec instructions tasks --change "{parentChangeName}" --json`):
+
+    - Every task MUST be a `- [ ] X.Y Task description` checkbox (the apply phase only tracks `- [ ] X.Y` — do
+      NOT use free-form bullets or other numbering such as `{bugKey}-N`)
+    - Continue the file's existing numbering: read the last `##` heading number in `tasks.md` and continue from
+      there (e.g. last heading is `## 3` → new tasks are `4.1`, `4.2`, `4.3`)
+    - Small, verifiable, one-session tasks ordered by dependency
+
+    Example (matches the schema's spec-driven template):
 
     ```markdown
     ## Bug Fix: {bugKey} — {short description}
-    
-    - [ ] {bugKey}-1: Implement the fix (describe what)
-    - [ ] {bugKey}-2: Update existing tests if needed
-    - [ ] {bugKey}-3: Verify fix passes E2E QA against QA deployment
+
+    - [ ] 4.1 Implement the fix (describe what and where)
+    - [ ] 4.2 Update existing tests if needed
+    - [ ] 4.3 Verify fix passes E2E QA against QA deployment
     ```
 
-4. Verify the updated `tasks.md` is well-formed (no broken markdown).
+    Adapt the numbering and heading style to the parent file (match its existing `##` headings and checkbox
+    numbering exactly — the goal is bug tasks that read like the rest of the change's tasks, not a copied comment).
+
+4. Verify the updated `tasks.md` is well-formed (no broken markdown) and that every added task is a `- [ ]` checkbox.
 
 ### Phase 4 — Start Fix Branch
 
