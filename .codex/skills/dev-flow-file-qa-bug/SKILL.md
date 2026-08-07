@@ -268,15 +268,26 @@ git push
 - Comment body: `**Branch:** fix/{bugKeySlug}-{short-description}\n**Parent ticket:** {parentTicketKey}`
 - Severity: `blocking` (stop if comment cannot be created — the PR link is required for traceability)
 
- 1. **Run AI review on the PR.** Load and follow the `dev-flow-pr-review-agent` skill to review the PR diffs, post
+ 1. **Request reviewers on the PR immediately after creation** (do NOT defer — the AI review must not block
+ reviewer assignment). Run the reviewer automation:
+
+    ```bash
+    python -m tools.sdd_cli gitea request-reviewers --pr {prNumber}
+    ```
+
+    Exit code 0 = verified; 1 = failed. If it fails because the lab config is unprovisioned (placeholder
+    `apiToken`/`owner`/`repo` in `client-tools.local.json`), treat it as a **BLOCKER (authority level 5)** — stop and
+    report, and run the environment provisioning before handoff. For any other failure (no eligible reviewers, Gitea
+    rejects the request), document the reviewer gap in the PR body and handoff comment. After the AI review completes,
+    re-run the same command to re-verify reviewers are still present (idempotent). See
+    `.codex/skills/_shared/pipeline-review-handoff.md` for the full pattern.
+
+ 2. **Run AI review on the PR.** Load and follow the `dev-flow-pr-review-agent` skill to review the PR diffs, post
  findings, and apply labels (e.g., `codex-reviewed`, `needs-changes`, `needs-tests`).
 
-    This step runs immediately after PR creation so the developer has AI review feedback before merging. If the AI
+    This step runs after reviewer assignment so the developer has AI review feedback before merging. If the AI
     review finds blocking issues (`BLOCKER` severity), the implementation phase should
     address them before merging.
-
- 2. **Add reviewers to the PR** after the AI review completes. See `.codex/skills/_shared/pipeline-review-handoff.md`
- for the common reviewer request pattern.
 
 ### Phase 6 — Merge & Deploy To QA (User-Approved)
 
