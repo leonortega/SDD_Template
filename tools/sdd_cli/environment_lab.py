@@ -5108,6 +5108,41 @@ from .k8s_lab import (  # noqa: E402,F401  re-exported for backward compatibilit
 
 
 
+# ── Assign app ports (block-of-10 ranges) ────────────────────────────────
+
+
+def assign_app_ports_step(root: Path, options: dict, dry_run: bool) -> dict:
+    """environment-lab assign-app-ports: allocate ports for a new app.
+
+    Requires --app <appId> --role <role> (roles with defined ranges: web, api).
+    Allocates host/node ports from the block-of-10 ranges (web from 8081, api
+    from 5002; nodePorts per env anchored at env_code*1000 + role offset),
+    updates ports.json, and regenerates kind-config.yaml + service patches.
+    """
+    from .k8s_ports import assign_app_ports_to_file
+
+    app_id = options.get("app") or options.get("app-id")
+    role = options.get("role")
+    if not app_id or not role:
+        return {
+            "mode": "AssignAppPorts",
+            "dryRun": dry_run,
+            "valid": False,
+            "actions": [],
+            "findings": [
+                {
+                    "key": "ports.args",
+                    "severity": "error",
+                    "message": (
+                        "assign-app-ports requires --app <appId> --role <role> "
+                        "(roles with ranges: web, api)."
+                    ),
+                }
+            ],
+        }
+    return assign_app_ports_to_file(root, app_id, role, dry_run)
+
+
 # ── CLI entry point ──────────────────────────────────────────────────────
 
 
@@ -5125,7 +5160,7 @@ def run_environment_lab(args: list[str]) -> int:
             "provision-grafana-token, validate-gitea-runner, validate-app-config, validate-docker-desktop, "
             "provision-nexus-repositories, provision-gitea-secrets, set-client-tools, set-project-stack, "
             "set-project-stack-metadata, set-semgrep-config, set-quality-config, "
-            "validate-docker-desktop-k8s, setup-kind-cluster, setup-k8s-access, scaffold-k8s, "
+            "validate-docker-desktop-k8s, setup-kind-cluster, setup-k8s-access, scaffold-k8s, assign-app-ports, "
             "ensure-headlamp, provision-lab-users, push-to-gitea, verify-gitea-token, "
             "generate-gitea-token, renovate-gitea-token",
             file=sys.stderr,
@@ -5175,6 +5210,7 @@ def run_environment_lab(args: list[str]) -> int:
         "setup-kind-cluster": lambda: setup_kind_cluster(root, dry_run),
         "setup-k8s-access": lambda: setup_k8s_access(root, dry_run),
         "scaffold-k8s": lambda: scaffold_k8s(root, dry_run),
+        "assign-app-ports": lambda: assign_app_ports_step(root, options, dry_run),
         "ensure-headlamp": lambda: ensure_headlamp(root, dry_run),
 
         "set-semgrep-config": lambda: set_semgrep_config(root, dry_run),

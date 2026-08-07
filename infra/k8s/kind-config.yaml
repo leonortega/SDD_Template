@@ -11,7 +11,10 @@
 #  5004    ->  32500   -> backend PROD (api)
 # NodePorts are per-environment and cluster-scoped (per-env fix, PR #6).
 # Generated from infra/deployment/ports.json (tools/sdd_cli/k8s_ports.py).
-# Note: 5001 is reserved by Nexus Docker registry (infra/nexus/compose.yml)
+# Reserved lab host ports (compose services), hostPorts must avoid:
+#   2222, 3000, 3001, 5001, 5341, 8080, 8088, 8090, 8123, 8888
+# Host ports: per-role blocks of 10 (web from 8081, api from 5002).
+# NodePorts: per-env per-role blocks of 10 (dev 30080/30500, qa 31080/31500, prod 32080/32500).
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:

@@ -1431,5 +1431,207 @@ class ValidateGiteaRunnerDispatchTests(unittest.TestCase):
             self.assertEqual(0, rc)
 
 
+class AssignAppPortsDispatchTests(unittest.TestCase):
+    """Test the assign-app-ports environment-lab subcommand end-to-end."""
+
+    @staticmethod
+    def _seed_ports(root: Path) -> None:
+        """Copy the canonical ports.json into a temp root (infra layout)."""
+        import shutil
+
+        from tools.sdd_cli._shared import REPO_ROOT
+
+        dst = root / "infra" / "deployment" / "ports.json"
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(REPO_ROOT / "infra" / "deployment" / "ports.json", dst)
+
+    @staticmethod
+    def _first_free(pool: range, used: set[int]) -> int:
+        """First port in the block not already taken."""
+        return next(p for p in pool if p not in used)
+
+    def test_assign_app_ports_dry_run_dispatches(self) -> None:
+        """Dry-run allocates ports without persisting anything."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._seed_ports(root)
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli.main(
+                    [
+                        "environment-lab",
+                        "assign-app-ports",
+                        "--app",
+                        "frontend-admin",
+                        "--role",
+                        "web",
+                        "--root",
+                        str(root),
+                        "--dry-run",
+                        "true",
+                    ]
+                )
+            self.assertEqual(0, rc)
+            result = json.loads(stdout.getvalue())
+            self.assertTrue(result["valid"])
+            self.assertEqual("frontend-admin", result["app"])
+            self.assertEqual("web", result["role"])
+            self.assertEqual({"dev", "qa", "prod"}, set(result["allocations"]))
+            # Nothing persisted in dry-run mode.
+            data = json.loads(
+                (root / "infra" / "deployment" / "ports.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertNotIn("frontend-admin", data["environments"]["dev"])
+            self.assertFalse((root / "infra" / "k8s" / "kind-config.yaml").exists())
+
+    def test_assign_app_ports_writes_ports_and_artifacts(self) -> None:
+        """A real run persists ports.json and regenerates kind artifacts."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._seed_ports(root)
+            ports_path = root / "infra" / "deployment" / "ports.json"
+            fixture = json.loads(ports_path.read_text(encoding="utf-8"))
+            # Expected allocation: first free web host slots (dev, qa, prod in
+            # order) and the first free dev nodePort - derived from the seeded
+            # fixture so future canonical ports.json edits don't break this test.
+            used_host = {
+                cfg["hostPort"]
+                for apps in fixture["environments"].values()
+                for cfg in apps.values()
+            }
+            free_host = iter(p for p in range(8081, 8091) if p not in used_host)
+            expected_host = {env: next(free_host) for env in ("dev", "qa", "prod")}
+            used_dev_node = {
+                cfg["nodePort"] for cfg in fixture["environments"]["dev"].values()
+            }
+            expected_dev_node = self._first_free(range(30080, 30090), used_dev_node)
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli.main(
+                    [
+                        "environment-lab",
+                        "assign-app-ports",
+                        "--app",
+                        "frontend-admin",
+                        "--role",
+                        "web",
+                        "--root",
+                        str(root),
+                    ]
+                )
+            self.assertEqual(0, rc)
+            result = json.loads(stdout.getvalue())
+            self.assertTrue(result["valid"])
+
+            data = json.loads(ports_path.read_text(encoding="utf-8"))
+            for env in ("dev", "qa", "prod"):
+                entry = data["environments"][env]["frontend-admin"]
+                self.assertEqual("web", entry["role"])
+                self.assertEqual(expected_host[env], entry["hostPort"])
+                self.assertLess(entry["hostPort"], 8091)
+            dev_entry = data["environments"]["dev"]["frontend-admin"]
+            self.assertEqual(expected_dev_node, dev_entry["nodePort"])
+
+            kind = (root / "infra" / "k8s" / "kind-config.yaml").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("frontend-admin DEV (web)", kind)
+            self.assertIn(f"hostPort: {expected_host['dev']}", kind)
+            for env in ("dev", "qa", "prod"):
+                patch = root / "infra" / "k8s" / "overlays" / env / "service-patch.yaml"
+                self.assertTrue(patch.exists())
+                self.assertIn("frontend-admin", patch.read_text(encoding="utf-8"))
+
+    def test_assign_app_ports_is_idempotent(self) -> None:
+        """Re-running for an existing app keeps the same allocation."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._seed_ports(root)
+            args = [
+                "environment-lab",
+                "assign-app-ports",
+                "--app",
+                "frontend-admin",
+                "--role",
+                "web",
+                "--root",
+                str(root),
+            ]
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc1 = cli.main(args)
+            first = json.loads(stdout.getvalue())
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc2 = cli.main(args)
+            second = json.loads(stdout.getvalue())
+            self.assertEqual(0, rc1)
+            self.assertEqual(0, rc2)
+            self.assertTrue(second["valid"])
+            # Same ports on re-run (the idempotent path re-reads the stored
+            # entry, which additionally carries the role key - compare ports).
+            def ports(allocs: dict) -> dict:
+                return {
+                    env: {k: v for k, v in cfg.items() if k != "role"}
+                    for env, cfg in allocs.items()
+                }
+
+            self.assertEqual(ports(first["allocations"]), ports(second["allocations"]))
+
+    def test_assign_app_ports_missing_args_fails(self) -> None:
+        """Missing --app/--role returns a validation error (rc 1)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._seed_ports(root)
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli.main(
+                    [
+                        "environment-lab",
+                        "assign-app-ports",
+                        "--root",
+                        str(root),
+                    ]
+                )
+            self.assertEqual(1, rc)
+            result = json.loads(stdout.getvalue())
+            self.assertFalse(result["valid"])
+            messages = " ".join(
+                finding.get("message", "") for finding in result["findings"]
+            )
+            self.assertIn("--app", messages)
+            self.assertIn("--role", messages)
+
+    def test_assign_app_ports_unknown_role_fails(self) -> None:
+        """Roles without a defined range are rejected (rc 1)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._seed_ports(root)
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli.main(
+                    [
+                        "environment-lab",
+                        "assign-app-ports",
+                        "--app",
+                        "worker",
+                        "--role",
+                        "worker",
+                        "--root",
+                        str(root),
+                    ]
+                )
+            self.assertEqual(1, rc)
+            result = json.loads(stdout.getvalue())
+            self.assertFalse(result["valid"])
+            messages = " ".join(
+                finding.get("message", "") for finding in result["findings"]
+            )
+            self.assertIn("worker", messages)
+
+
 if __name__ == "__main__":
     unittest.main()

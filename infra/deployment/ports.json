@@ -8,16 +8,40 @@
   },
   "environments": {
     "dev": {
-      "frontend": { "hostPort": 8081, "nodePort": 30080 },
-      "backend": { "hostPort": 5002, "nodePort": 30500 }
+      "frontend": {
+        "hostPort": 8081,
+        "nodePort": 30080,
+        "role": "web"
+      },
+      "backend": {
+        "hostPort": 5002,
+        "nodePort": 30500,
+        "role": "api"
+      }
     },
     "qa": {
-      "frontend": { "hostPort": 8082, "nodePort": 31080 },
-      "backend": { "hostPort": 5003, "nodePort": 31500 }
+      "frontend": {
+        "hostPort": 8082,
+        "nodePort": 31080,
+        "role": "web"
+      },
+      "backend": {
+        "hostPort": 5003,
+        "nodePort": 31500,
+        "role": "api"
+      }
     },
     "prod": {
-      "frontend": { "hostPort": 8083, "nodePort": 32080 },
-      "backend": { "hostPort": 5004, "nodePort": 32500 }
+      "frontend": {
+        "hostPort": 8083,
+        "nodePort": 32080,
+        "role": "web"
+      },
+      "backend": {
+        "hostPort": 5004,
+        "nodePort": 32500,
+        "role": "api"
+      }
     }
   }
 }

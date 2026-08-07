@@ -96,12 +96,37 @@ variables, add patches targeting actual deployment names (not placeholder variab
 ### Service Type: NodePort
 
 Services use `type: NodePort` with **fixed per-environment nodePorts** defined in `infra/k8s/kind-config.yaml`
-(canonical source: `infra/deployment/ports.json`). The nodePort itself is only reachable **inside the cluster network**
-(e.g. from the health-probe on `agentic-e2e_monitoring`) — from the Windows host it is NOT accessible at
-`localhost:{nodePort}`. Kind's `extraPortMappings` expose the services at the **host ports** listed in the tables below
-(`localhost:{hostPort}`).
+(canonical source: `infra/deployment/ports.json`). The nodePort itself is only reachable
+**inside the cluster network** — from the Windows host it is NOT accessible at
+`localhost:{nodePort}`. Kind's `extraPortMappings` expose the services at the **host ports**
+listed in the tables below (`localhost:{hostPort}`). The Grafana health probe verifies those
+external host URLs (`host.docker.internal:<hostPort>`), so the Service Health status reflects
+user-facing reachability, not internal cluster connectivity.
 
 **No Ingress controller is needed** — each service is reachable directly via its host-mapped port.
+
+### Port Ranges (Blocks Of 10)
+
+Ports are allocated in **ranges of 10** so the lab scales past the first app of a role (up to 10 ports per range;
+when a range is full, the next range of 10 is used):
+
+| Role | Host ports (blocks of 10) | NodePorts (blocks of 10 per env) |
+| ---- | ------------------------- | ------------------------------- |
+| web  | 8081-8090, 8091-8100, ...  | dev 30080-30089, 30090-... · qa 31080-... · prod 32080-... |
+| api  | 5002-5011, 5012-5021, ...  | dev 30500-30509, ... · qa 31500-... · prod 32500-...       |
+
+- **Host ports are host-scoped**: a role's block is shared across environments, so dev → qa → prod take
+  consecutive slots (8081, 8082, 8083, ...). One host block of 10 therefore covers ~3 apps of a role (each
+  environment consumes one slot); node-port blocks of 10 cover 10 apps per environment.
+- **NodePorts are cluster-scoped and per environment** (dev 30xxx, qa 31xxx, prod 32xxx), so the same slot
+  index is free in every env (a new web app gets 30081 / 31081 / 32081). Reserved lab ports (8088 Nexus,
+  8090 probe, ...) are skipped automatically.
+- **New app assignment** picks the next free ports from the ranges, writes them to `infra/deployment/ports.json`,
+  and regenerates `infra/k8s/kind-config.yaml` + the per-env `service-patch.yaml`:
+
+  ```bash
+  python -m tools.sdd_cli environment-lab assign-app-ports --app <appId> --role <role>
+  ```
 
 ## CLI Commands
 
@@ -442,9 +467,7 @@ cd infra/monitoring && docker compose up -d health-probe
 creates a second compose project (`monitoring`) with its own network. The
 `health-probe` container then lands on `monitoring_monitoring` instead of
 the canonical `agentic-e2e_monitoring`, so Grafana can no longer resolve
-`health-probe:8090` (the Service Health panel shows "No data"/400) and the
-probe can no longer reach the kind control-plane node
-(`sdd-cluster-control-plane`).
+`health-probe:8090` (the Service Health panel shows "No data"/400).
 
 Two things make this durable (see the comments in `infra/monitoring/compose.yml`):
 
@@ -462,9 +485,10 @@ Two things make this durable (see the comments in `infra/monitoring/compose.yml`
    self-terminate trick is ineffective on Docker Desktop/WSL2 — the
    healthcheck is observability, the restart policy covers exits.)
 
-The health-probe is the data source for the Service Health panel: it polls
-each environment's NodePort from inside the cluster network and serves the
-JSON Grafana consumes.
+The health-probe is the data source for the Service Health panel: it probes
+each environment's external host URL (`host.docker.internal:<hostPort>` — the
+same URLs users navigate) and serves the JSON Grafana consumes. Status is
+therefore based on external reachability, not internal nodePorts.
 
 ### Dashboard Provisioning
 
