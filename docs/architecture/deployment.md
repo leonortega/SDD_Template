@@ -280,8 +280,10 @@ the cluster (kind's containerd is separate from host Docker; without this the po
 - **Release metadata** — optional `release_version` / `source_rc_version` dispatch inputs are recorded in
   `app/{commitSha}/release-prod.json`.
 
-DEV and QA share the same pipeline (same build, per-env overlay deploy, auto-promote to QA); their `/health`
-validation is performed by the agent after the run (`dev-ops-deploy-qa`).
+DEV and QA share the same build and overlay pipeline. On PR merge the pipeline deploys **DEV only** and verifies every
+app's `/health` on the external DEV host URLs right after the rollout (fails when DEV is unhealthy). QA is **not
+auto-promoted**: the agent verifies DEV, asks the user for approval, and dispatches `package-deploy` again with
+`environment=qa` (`dev-ops-deploy-qa`).
 
 ### Runner Requirements
 

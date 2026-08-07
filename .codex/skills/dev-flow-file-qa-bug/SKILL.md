@@ -3,8 +3,9 @@ name: dev-flow-file-qa-bug
 license: MIT
 description: >-
   >- Create a linked bug ticket from failed QA evidence, move it through the full bug fix lifecycle (New → Specified →
-  In progress), modify the parent ticket's OpenSpec with bug-fix tasks, create a fix/ branch, create PR, deploy to QA,
-  close the bug, and return to the parent ticket's QA flow. Use when E2E QA fails with a product defect, a
+  In progress), modify the parent ticket's OpenSpec with bug-fix tasks, create a fix/ branch, create PR, deploy to QA
+  (after user approval) — the bug flow ends with the QA deployment — close the bug, then return the parent ticket to
+  its own QA flow. Use when E2E QA fails with a product defect, a
   committed-test defect, or any QA-identified issue requiring code changes.
 ---
 
@@ -17,8 +18,12 @@ description: >-
 Use this skill when E2E QA fails against the QA deployment. This skill handles the full bug fix lifecycle:
 
 ```text
-E2E QA fails → File bug → Move to Specified → Update parent OpenSpec → Commit → Move to In progress → Branch → PR → Merge & deploy to QA → Close bug → Return to parent QA
+E2E QA fails → File bug → Move to Specified → Update parent OpenSpec → Commit → Move to In progress → Branch → PR → Merge & deploy to DEV → user approval → deploy to QA → Close bug
 ```
+
+The **bug flow ends with the QA deployment** (Phase 6). The parent ticket is returned to `In testing` (ID 9) and its
+E2E QA re-run continues as the **parent's own flow** (via `dev-ops-deploy-qa` → E2E QA evidence
+gate) — it is never part of the bug flow.
 
 **Key differences from feature flow:**
 
@@ -91,7 +96,8 @@ comment pattern. Use:
    - Comment body: `**Bug ticket:** {bugUrl}\n**Evidence:** {evidencePath}`
    - Severity: `advisory` (log and continue on failure)
 
-    Leave the parent in its current state (e.g., `Tested` or `QA`). The parent does NOT move until the bug is fixed and
+    Leave the parent in its current state (e.g., `Test failed` ID 11 or `In testing` ID 9). The parent does NOT move
+    until the bug is fixed and
     E2E QA re-runs successfully.
 
 ### Phase 2 — Move Bug To Specified
@@ -255,7 +261,7 @@ git push
  2. **Add reviewers to the PR** after the AI review completes. See `.codex/skills/_shared/pipeline-review-handoff.md`
  for the common reviewer request pattern.
 
-### Phase 6 — Merge & Deploy To QA
+### Phase 6 — Merge & Deploy To QA (User-Approved)
 
 After the implementer completes the fix on the branch and merges the PR to `dev`, the AI automatically handles
 deployment, bug closure, and return to the parent ticket's QA flow.
@@ -286,11 +292,13 @@ deployment, bug closure, and return to the parent ticket's QA flow.
 
  4. Invoke `dev-ops-post-merge-deploy` with the resolved PR number and bug ticket key. This skill:
     - Validates the merged PR is clean (no `needs-changes` or `needs-tests` labels)
-    - Dispatches the CI pipeline on `dev`
+    - Dispatches the CI pipeline on `dev` (deploys DEV only)
     - Waits for Nexus artifacts to appear for the merge commit
-    - Delegates to `dev-ops-deploy-qa` for DEV → QA promotion
+    - Delegates to `dev-ops-deploy-qa`, which verifies DEV, asks the user for approval, then dispatches the QA
+      deployment (no auto-promote — QA deploys only after user approval)
 
- 5. Verify the QA deployment succeeded:
+ 5. Verify the QA deployment succeeded. **This is the end of the bug flow's deploy phase** — the bug does not run E2E
+    or promote to PROD itself:
     - Check for `IA generated QA deployment: {mergeCommitSha}` marker in the bug ticket comments
     - Confirm QA frontend URL returns HTTP 200
     - Confirm QA backend `/health` returns `{"status":"ok"}`
@@ -364,9 +372,12 @@ deployment, bug closure, and return to the parent ticket's QA flow.
     {"lockVersion": {n}, "_links": {"status": {"href": "/api/v3/statuses/9"}}}
     ```
 
- 1. Continue with the normal QA flow for the parent ticket:
-    - Run the E2E QA evidence gate per `delivery-contract-qa.md`
-    - If E2E QA passes, proceed to PROD promotion per `dev-ops-deploy-prod`
+ 1. Hand the parent back to its own QA flow. The **bug flow ends with the QA deployment** — the bug does not run E2E
+    or PROD itself:
+    - The parent is already back in `In testing` (ID 9) above
+    - The parent's E2E QA evidence gate runs as part of the parent's own flow (`dev-ops-deploy-qa` →
+      `delivery-contract-qa.md`), with the ticket in `In testing`, over QA only
+    - If that E2E QA passes, the parent proceeds to PROD promotion per `dev-ops-deploy-prod`
     - The bug is already closed — it does not block the parent
 
 ### Non-Code Defects
@@ -426,7 +437,7 @@ skips cleanly (expected template state).
 - Coverage below `coverage.minimumPercent` (default `80`): HARD STOP (authority level 5) before PR creation — add or
 update tests and re-run coverage until the threshold is met.
 - PR not merged before Phase 6: stop and report the PR URL — do not deploy unmerged changes.
-- QA deployment fails (Phase 6 step 28): stop and report deployment failure — do not close the bug or return the parent
+- QA deployment fails (Phase 6 step 5): stop and report deployment failure — do not close the bug or return the parent
 to QA.
 - Parent ticket is not in `Test failed` when moving back to `In testing`: report the current state but continue — the
 parent may already be in a valid retest state.

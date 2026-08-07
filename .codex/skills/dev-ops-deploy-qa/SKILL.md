@@ -13,14 +13,14 @@ description: >-
 
 ## Overview
 
-Use this skill after a feature PR has merged to `dev` and the CI pipeline has completed its auto-promote to QA. On push
-to `dev`, the `package-deploy` workflow now deploys to DEV **and automatically
-promotes to QA** in the same pipeline run. This skill validates the QA deployment and updates the ticket.
+Use this skill after a feature PR has merged to `dev` and the CI pipeline has deployed DEV. The pipeline deploys
+**DEV only**; QA is not auto-promoted. This skill verifies the DEV deployment, asks the user for approval to deploy
+to QA, dispatches the QA deployment, then validates QA and updates the ticket.
 
 For automatic post-merge coordination and artifact waiting, use `dev-ops-post-merge-deploy` first. The release rule is:
 
 ```text
-feature branch -> dev -> DEV + QA (auto) -> E2E QA OK -> main -> PROD
+feature branch -> dev -> DEV (CI) -> verify DEV -> user approval -> QA (CI dispatch) -> E2E QA OK -> main -> PROD
 ```
 
 `main` is updated only after QA passes. PROD promotion is separate and must reuse the QA-passed artifact commit.
@@ -76,15 +76,34 @@ Provider-supported environment variables may override local JSON when present. R
 
 ## Workflow
 
-Run preflight, wait for CI pipeline (auto-promote to QA), DEV/QA validation, ticket provider updates, and handoff
-reporting in order. Do not move the ticket to QA until deployment validation and
-release manifest validation pass.
+Run preflight, wait for CI pipeline (DEV only), verify DEV, request user approval, dispatch QA, validate QA, ticket
+provider updates, and handoff reporting in order. Do not move the ticket to QA until DEV is verified, the user
+approves, and QA deployment validation passes.
 
-In idempotent verification mode, do not redeploy or duplicate ticket comments. Re-verify the resolved ticket, PR,
+In idempotent verification mode, do not redeploy or duplicate ticket comments. Re-verify the resolved ticket
+(Pre-Deploy Ticket Status Gate applied — ticket in `Developed` before deploy), PR,
 artifact commit, QA deployment marker, QA state, release manifest, and available
 DEV/QA validation evidence, then append the `dev-ops-deploy-qa` telemetry row and hand off to E2E QA.
 
+### Pre-Deploy Ticket Status Gate (HARD GATE)
+
+**❌ HARD GATE (authority level 5):** Before any QA deployment activity — preflight checks, artifact promotion, or
+ticket mutation — the ticket MUST be in the `Developed` state (OpenProject ID 8).
+
+1. Resolve the current ticket state through the selected ticket adapter.
+2. If the state is already `Developed` (ID 8), keep it and proceed.
+3. If the state is earlier (e.g., `In progress` ID 7 or `Specified` ID 3), transition the ticket to `Developed` (ID 8)
+   before running preflight or any deployment mutation.
+4. If the state cannot be resolved or the transition fails, stop and report before promoting. Do not deploy to QA
+   while the ticket is not in `Developed`.
+
+The ticket moves to the configured QA state (`In testing`, ID 9) only after deployment validation passes (Dispatch QA
+step 10).
+
 ## Preflight
+
+**Status gate first:** run the Pre-Deploy Ticket Status Gate above before any preflight knowledge consult or
+promotion check.
 
 **Knowledge consult before promoting.** Before any QA promotion mutation, consult the knowledge base for deployment,
 artifact, and rollback lessons relevant to the release:
@@ -110,47 +129,51 @@ invalid, stop before reading or promoting artifacts.
 6. Verify the selected provider workflow completed for the merged commit. The selected deployment adapter declares the
 required workflow. If the expected workflow did not run, report that config-infra
 should repair the selected provider workflow.
-7. Build the Nexus artifact paths declared by the selected artifact and deployment adapters.
+7. Build the **DEV** Nexus artifact paths declared by the selected artifact and deployment adapters.
    - `app/{commitSha}/deployable-apps.json`
    - one `app/{commitSha}/{artifactName}` per topology app
    - one `app/{commitSha}/{artifactName}.sha256` per topology app
    - `app/{commitSha}/commit.sha`
    - `app/{commitSha}/release-dev.json` (DEV)
-   - `app/{commitSha}/release-qa.json` (QA, after auto-promote)
+   QA artifacts (`release-qa.json`, `qa-targets.json`, `env-urls-qa.json`) do not exist yet — they are produced and
+   verified in Dispatch QA after the user-approved deployment.
      selected deployment provider requires:
    - `app/{commitSha}/container-images.json`
-   - `app/{commitSha}/commit.sha`
-   - `app/{commitSha}/release.json`
-   - `app/{commitSha}/qa-targets.json` after QA deployment
-   - `app/{commitSha}/monitoring-summary-dev.json`, `app/{commitSha}/monitoring-summary-qa.json`, and
-   `app/{commitSha}/qa-observability.json` when observability is enabled
+   - `app/{commitSha}/monitoring-summary-dev.json` when observability is enabled
 8. Confirm the selected provider artifact metadata, runtime artifacts, and commit metadata exist in Nexus using the
 configured Nexus credentials. Treat missing Nexus local config, Nexus outage, or any
-missing required file as blocking.
+missing required DEV file as blocking.
 9. Compare `commit.sha` with the resolved commit SHA. Treat mismatch as blocking.
-10. Read `release-dev.json` or `release-qa.json` when present and verify `ticketKey` matches the locked/resolved ticket
+10. Read `release-dev.json` when present and verify `ticketKey` matches the locked/resolved ticket
 key. Treat another ticket key as blocking cross-ticket promotion.
-11. Confirm Nexus contains all deployment metadata required by the selected deployment adapter. Missing deployment
+11. Confirm Nexus contains all DEV deployment metadata required by the selected deployment adapter. Missing deployment
 configuration or immutable artifact metadata is blocking workflow drift and routes to
 the selected deployment configure path.
 
-## Wait For CI Pipeline (Auto-Promote To QA)
+## Wait For CI Pipeline (DEV Only)
 
-Since the CI pipeline now auto-deploys to QA after DEV (on PR merge into `dev`), this skill no longer dispatches a
-separate QA deployment. Instead:
+The CI pipeline deploys **DEV only** on PR merge into `dev`; QA is not auto-promoted. This skill verifies DEV, asks
+the user for approval, and dispatches the QA deployment as a separate pipeline run.
 
 1. Verify the CI pipeline (`package-deploy`) was already triggered by the PR merge into `dev` (the workflow runs on a
    `pull_request` closed+merged event, not on push — direct pushes to `dev` never deploy).
-2. Poll for the CI pipeline run completion that includes both DEV and QA deployment targets.
-3. Wait for the Nexus artifact files for both DEV and QA:
+2. Poll for the CI pipeline run completion (DEV deployment target only).
+3. Wait for the DEV Nexus artifact files:
    - `app/{commitSha}/release-dev.json`
-   - `app/{commitSha}/release-qa.json`
    - `app/{commitSha}/env-urls-dev.json`
-   - `app/{commitSha}/env-urls-qa.json`
+   QA artifacts (`release-qa.json`, `env-urls-qa.json`) do not exist yet — they are produced by the user-approved QA
+   dispatch in Dispatch QA below.
 4. Use bounded waiting: check immediately, then retry with backoff for up to 10 minutes.
-5. If the CI pipeline did not run or the QA artifacts are missing, stop and report. Do not deploy QA separately.
+5. If the CI pipeline did not run or the DEV artifacts are missing, stop and report. Do not deploy QA separately.
 
-## DEV And QA Validation
+   **DEV health gate in CI:** the pipeline verifies every app's `/health` on the external DEV host URLs immediately
+after the DEV rollout and exits when DEV is unhealthy. The DEV Nexus artifacts therefore only exist when the CI DEV
+gate passed — evidence DEV was confirmed deployed and healthy.
+
+## DEV Validation
+
+The CI pipeline deployed DEV only (see Wait For CI Pipeline). Verify DEV is fully healthy before asking the user for
+approval — never request approval on an unverified DEV.
 
 1. Confirm DEV deployment succeeded by checking `app/{commitSha}/release-dev.json` exists in Nexus. If DEV failed or
 artifacts are missing, add a ticket provider failure comment and stop.
@@ -160,30 +183,51 @@ behavior required by the selected deployment adapter.
 the same retry/backoff policy.
 4. Confirm DEV applied and verified all configuration and artifact metadata required by the selected deployment adapter.
 Missing proof is blocking.
-5. Confirm QA deployed the same selected artifact set used by DEV (same commit SHA). Do not rebuild.
-6. Validate the QA URL from `app/latest/env-urls-qa.json` using `curl --fail`. For fresh checks, use the same
+5. If any DEV check fails, stop and report — do not ask the user to deploy QA.
+
+## User Approval Gate (HARD GATE)
+
+**❌ HARD GATE (authority level 5):** QA must not be deployed without explicit user approval.
+
+1. After DEV validation passes, present the DEV verification summary to the user and ask for approval to deploy to QA.
+2. Wait for an explicit user response. Never auto-approve and never assume consent from silence or a timeout.
+3. If the user declines or requests changes, stop. Fix the issues, re-run the DEV pipeline, and re-verify before
+asking again.
+4. On approval, continue to Dispatch QA below.
+
+## Dispatch QA (After User Approval)
+
+1. Dispatch the QA deployment: `package-deploy` `workflow_dispatch` with `environment=qa` and
+   `artifact_commit_sha=<the verified DEV commit SHA>` — reuse the exact artifact commit verified in DEV,
+   never rebuild. Include `release_version` / `source_rc_version` when applicable so `release-qa.json` records real
+   version data.
+2. Wait for the QA pipeline run and the QA Nexus artifacts (`app/{commitSha}/release-qa.json`,
+   `app/{commitSha}/env-urls-qa.json`). Use bounded waiting with backoff for up to 10 minutes.
+3. Confirm QA deployed the same selected artifact set used by DEV (same commit SHA). Do not rebuild.
+4. Validate the QA URL from `app/latest/env-urls-qa.json` using `curl --fail`. For fresh checks, use the same
 retry/backoff policy.
-7. Validate QA `/health` using the URL from step 6. It must return HTTP 200 and JSON `status=ok`. For fresh checks, use
+5. Validate QA `/health` using the URL from step 4. It must return HTTP 200 and JSON `status=ok`. For fresh checks, use
 the same retry/backoff policy.
-8. Confirm QA applied and verified all configuration, artifact metadata, target URL, and observability evidence required
+6. Confirm QA applied and verified all configuration, artifact metadata, target URL, and observability evidence required
 by the selected deployment adapter. Missing proof is blocking.
-9. If DEV or QA page, `/health`, or deployment configuration validation fails, add a ticket provider failure comment and
+7. If the QA page, `/health`, or deployment configuration validation fails, add a ticket provider failure comment and
 do not move the ticket state.
-10. Use `UpdateReleaseManifest` to create or update `app/{commitSha}/release-qa.json` with commit SHA, representative
+8. Use `UpdateReleaseManifest` to create or update `app/{commitSha}/release-qa.json` with commit SHA, representative
 checksum/artifact URL, PR URL, ticket key, DEV/QA URLs, DEV/QA status, per-app
 health status, deployment configuration status, workflow run URL, and `versionStatus=unversioned QA candidate` unless an
 RC tag already exists.
-11. Validate and upload `release-qa.json` to Nexus next to the artifact.
-12. If QA passes, move the ticket to `configured QA state`, default `In testing` (OpenProject ID 9).
+9. Validate and upload `release-qa.json` to Nexus next to the artifact.
+10. If QA passes, move the ticket to `configured QA state`, default `In testing` (OpenProject ID 9).
 
 ## Ticket Provider Updates
 
 Use the selected ticket adapter only. Never use MCPs, Docker containers, or direct database access for ticket delivery
 unless the selected adapter explicitly requires it.
 
-Before mutating ticket state, resolve the target state through the selected ticket adapter. If the configured QA state
-does not exist, stop after adding the deployment comment and report the missing
-state.
+The Pre-Deploy Ticket Status Gate already moved the ticket to `Developed` (ID 8); this section handles the
+post-validation move to the configured QA state. Before mutating ticket state, resolve the target state through the
+selected ticket adapter. If the configured QA state does not exist, stop after adding the deployment comment and report
+the missing state.
 
 Add a comment with this stable marker:
 
@@ -231,9 +275,14 @@ latest DEV and QA URLs.
 
 ## E2E QA Evidence Gate
 
-After the QA deployment is confirmed successful, all ticket comments are posted, and the Grafana dashboard is updated,
+The E2E suite runs **only after** the QA deployment is confirmed OK (Dispatch QA validation passed) and the ticket is
+in `In testing` (OpenProject ID 9) — it runs **against the QA URLs only, never DEV**.
+
+After the QA deployment is confirmed successful, the ticket is in `In testing`, all ticket comments are posted, and
+the Grafana dashboard is updated,
 **apply the E2E QA evidence contract** in
-`.codex/skills/_shared/delivery-contract-qa.md` to validate the deployment against the ticket's acceptance criteria.
+`.codex/skills/_shared/delivery-contract-qa.md` to validate the deployment against the ticket's acceptance criteria
+(which targets the deployed QA URLs).
 
 **This is a required gate.** Do not skip the E2E QA evidence step — the release pipeline must not proceed to PROD
 without:
@@ -253,6 +302,7 @@ and next handoff to PROD promotion.
 
 - Do not deploy or promote without a checksum.
 - Do not rebuild between DEV and QA.
+- Do not deploy QA without explicit user approval (User Approval Gate); stop if the user declines or requests changes.
 - Do not move the ticket to QA until QA validation passes.
 - Stop on DEV failure.
 - Stop on QA failure.
@@ -262,6 +312,8 @@ and next handoff to PROD promotion.
 missing when required.
 - Stop when merged PR still has `needs-changes` or `needs-tests`.
 - Stop when the ticket context lock or `release-qa.json.ticketKey` (or `release-dev.json`) points to a different ticket.
+- Stop when the ticket is not in `Developed` (ID 8) before deployment, or the Pre-Deploy Ticket Status Gate
+transition fails.
 - Stop when Nexus is unreachable; do not use a degraded artifact source.
 - Treat placeholder config as missing.
 - Preserve unrelated local working tree changes.

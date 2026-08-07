@@ -26,7 +26,7 @@ not** continue with the normal feature flow. Instead, it routes to
 `dev-flow-file-qa-bug` which handles the full bug fix lifecycle:
 
 ```text
-E2E QA fails → File bug → Move to Specified → Update parent OpenSpec → Commit → Move to In progress → Branch → PR → Merge & deploy to QA → Close bug → Return to parent QA
+E2E QA fails → File bug → Move to Specified → Update parent OpenSpec → Commit → Move to In progress → Branch → PR → Merge & deploy to DEV → user approval → deploy to QA → Close bug (bug flow ends with the QA deploy; parent returns to In testing, its E2E re-run is the parent's own flow)
 ```
 
 **How routing works:**
