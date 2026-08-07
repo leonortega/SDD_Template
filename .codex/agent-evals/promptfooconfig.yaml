@@ -9,7 +9,7 @@
 
 prompts:
   # Single prompt template - the provider receives the scenario as vars
-  - "Evaluate the correct workflow route for this delivery scenario:\n\nScenario: {{scenario}}\nTicket state: {{ticketState}}\nBranch exists: {{branchExists}}\nPR exists: {{prExists}}\nPR merged: {{prMerged}}\nQA evidence: {{qaEvidence}}\nQA approved: {{qaApproved}}\nProduct stack: {{productStack}}\nExplicit request: {{requestType}}\nResume requested: {{resumeRequested}}"
+  - "Evaluate the correct workflow route for this delivery scenario:\n\nScenario: {{scenario}}\nTicket state: {{ticketState}}\nBranch exists: {{branchExists}}\nPR exists: {{prExists}}\nPR merged: {{prMerged}}\nQA evidence: {{qaEvidence}}\nQA approved: {{qaApproved}}\nProduct stack: {{productStack}}\nExplicit request: {{requestType}}\nResume requested: {{resumeRequested}}\nRefinement asked user: {{refinementUserAsked}}"
 
 providers:
   # Path relative to promptfooconfig.yaml's directory (same directory)
@@ -820,3 +820,62 @@ tests:
       - type: is-json
       - type: javascript
         value: JSON.parse(output).route === 'dev-ops-post-merge-deploy' && JSON.parse(output).review === null
+
+  # ═══════════════════════════════════════════════════════════════
+  # TICKET REFINEMENT GATE (always ask the user before the IA block)
+  # ═══════════════════════════════════════════════════════════════
+  # Models dev-flow-start-ticket step 7: refinement runs at least 1
+  # grill-with-docs cycle (at most 4) and ALWAYS asks the user for extra
+  # info — even when the ticket seems complete — before the curated IA
+  # block is written. The route is unchanged (still dev-flow-start-ticket);
+  # the always-ask invariant is asserted via the provider's `refinement`
+  # gate object: `userAsked` false + `blocked` true until the user has been
+  # asked, and `null` outside the start-ticket stage.
+
+  - description: "Todo refinement must ask the user for extra info before writing the IA block"
+    vars:
+      scenario: Ticket seems complete, but the refinement has not asked the user for extra info yet
+      ticketState: Todo
+      branchExists: false
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      refinementUserAsked: false
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-start-ticket' &&
+          JSON.parse(output).refinement.userAsked === false &&
+          JSON.parse(output).refinement.blocked === true
+
+  - description: "Todo refinement proceeds after the user answered the clarifying questions"
+    vars:
+      scenario: The user answered the grill-with-docs clarifying questions (extra info provided)
+      ticketState: Todo
+      branchExists: false
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      refinementUserAsked: true
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-start-ticket' &&
+          JSON.parse(output).refinement.userAsked === true &&
+          JSON.parse(output).refinement.blocked === false
+
+  - description: "Refinement gate not applicable outside the start-ticket stage"
+    vars:
+      scenario: Implementation in progress — no ticket refinement happening
+      ticketState: In Progress
+      branchExists: true
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-implement-ticket' && JSON.parse(output).refinement === null
