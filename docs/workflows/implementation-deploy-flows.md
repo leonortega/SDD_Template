@@ -34,8 +34,8 @@ Idea or ticket
   -> OpenSpec proposal, design, specs, and tasks
   -> feature branch from dev
   -> implementation with focused tests (TDD, three test levels)
-  -> pull request in Gitea
-  -> AI review -> feedback fixes -> human reviewers
+  -> pull request in Gitea -> human reviewers requested
+  -> AI review -> feedback fixes -> re-verify reviewers
   -> merge to dev
   -> CI builds immutable artifact, deploys to DEV -> verify DEV -> user approval -> QA dispatch
   -> E2E QA evidence gate (acceptance criteria proven by executable assertions)
@@ -222,13 +222,17 @@ Workflow:
 5. **Verify OpenSpec** — run `dev-flow-verify-change` (Stage 4) before PR handoff.
 6. **Commit checkpoints** — commit after each completed step with ticket-key-prefixed
    messages; keep the working tree clean between steps.
-7. **Create / reuse the PR** to the base branch, then **immediately** add ticket comment
+7. **Create / reuse the PR** to the base branch, then **immediately** request the
+   configured reviewers (`python -m tools.sdd_cli gitea request-reviewers --pr
+   {prNumber}`; unprovisioned lab config is a BLOCKER), add ticket comment
    `IA generated PR: {prUrl}` and move the ticket to `Developed` (ID 8). PR body must
    include ticket id, OpenSpec change id, implementation summary, acceptance-to-test
    map, TDD RED/GREEN evidence, coverage result, quality gates, risk classification,
-   context/docs/knowledge classification, and reviewer list (pending).
+   context/docs/knowledge classification, and `Reviewers requested: <usernames>`.
 8. **Review and fix loop** — delegate to `dev-flow-pr-review-feedback-loop` (Stage 6).
-9. **Request human reviewers** only after the AI review completes.
+9. **Re-verify reviewers** after the AI review completes — re-run the same
+   `request-reviewers` command (idempotent) so the merge gate never silently misses a
+   reviewer.
 10. **Handoff** — verify ticket state `Developed`, retry missing PR comment.
 
 ### Stage 4 — Verify OpenSpec Change (`dev-flow-verify-change`)

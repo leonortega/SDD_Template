@@ -574,16 +574,27 @@ zero errors. This is a process violation (authority level 5).
 
 Reuse an existing open PR for the branch when present. Otherwise create a PR targeting the configured base branch.
 
-Resolve configured human reviewers for the PR body and ticket comment, but **do NOT call `request-reviewers` yet**. The
-actual reviewer request is deferred to Section 11.5, after the AI review
-completes. When `pr.reviewers` is `"all"`, list current repository collaborators and exclude the PR author plus the
-authenticated automation user. Normalize the collaborator response before filtering
-(the selected repository adapter may return either an array or a single object). Use each collaborator's `login` value,
-falling back to `username`, and discard empty or duplicate names. When
-`pr.reviewers` is an array, use the configured usernames after trimming empty values.
+Resolve configured human reviewers for the PR body and ticket comment, and **request them on the PR immediately after
+creation or reuse** — do NOT defer (Section 11.5 only re-verifies after the AI review). Run the reviewer automation:
 
-Store the resolved reviewer list for Section 11.5. Include `Reviewers requested: <usernames>` in the PR body and ticket
-comment, but defer the actual API call.
+```bash
+python -m tools.sdd_cli gitea request-reviewers --pr {prNumber}
+```
+
+The command reads `.codex/client-tools.local.json` (`gitea.baseUrl/apiToken/owner/repo`), resolves the reviewer list
+(`gitea.reviewers` → `pr.reviewers`; `"all"` expands to repository collaborators and excludes the PR author plus the
+authenticated automation user, normalizing `login`/`username` and discarding empty or duplicate names; fallback to
+provisioned `gitea.provisioning.users`), POSTs `requested_reviewers`, verifies the reviewers are present, and retries
+once. Exit code 0 = verified; 1 = failed. Use `--dry-run true` first to preview the resolved list without calling the
+API (note: `pr.reviewers = "all"` cannot be previewed in dry-run — the collaborator fetch is an API call).
+
+**❌ HARD GATE (authority level 5):** An unprovisioned lab config (placeholder `apiToken`/`owner`/`repo` in
+`client-tools.local.json`) is a **BLOCKER**: stop, run the environment provisioning (`setup-lab`), and do not hand off
+until reviewers can be requested. For any other failure (no eligible reviewers, Gitea rejects the request), log the
+blocking issue, document the reviewer gap in the PR body and the Section 12 handoff comment, and report it in the
+final summary — do not hand off without at least documenting the gap.
+
+Include `Reviewers requested: <usernames>` in the PR body and ticket comment.
 
 **Immediately after PR creation or reuse, add a comment on the ticket and move it to the configured review state.** Do
 NOT defer this to Section 12 — the ticket must reflect the PR even if the review
@@ -596,7 +607,7 @@ loop pauses or encounters issues:
   
   **Branch:** {branchName}
   **OpenSpec change:** {openspecChangeName}
-  **Reviewers (pending — will be assigned after AI review):** {reviewers}
+  **Reviewers requested:** {reviewers}
   ```
 
 - **Move the ticket to** `Developed` (OpenProject ID 8) — the configured `configured developed state`. If the ticket is
@@ -631,7 +642,7 @@ The PR body must include:
 - `Knowledge updated: <files>` or `Knowledge updated: none`
 - Delivery risk: low/standard/high
 - Review workload forecast: low/medium/high and split/exception decision when applicable
-- Reviewers (pending — will be assigned after AI review in Section 11.5): <usernames>
+- Reviewers requested: <usernames>
 - Assumptions recorded: <short list or none>
 - remaining non-blocking infra notes
 - known non-blocking product risks or gaps
@@ -654,30 +665,29 @@ Keep the ticket in `Developed` (OpenProject ID 8) while late human feedback fixe
 `dev-flow-pr-review-feedback-loop` reports ambiguous or conflicting human feedback, stop and preserve
 its blocker classification.
 
-### 11.5 Request Human Reviewers (After AI Review) — HARD GATE
+### 11.5 Re-Verify Human Reviewers (After AI Review) — HARD GATE
 
-**❌ HARD GATE (authority level 5):** Human reviewers MUST be requested after the AI review completes. Do not skip
-this step. See `.codex/skills/_shared/pipeline-review-handoff.md` for the full pattern.
+**❌ HARD GATE (authority level 5):** Human reviewers were requested in Section 10 (immediately after PR creation).
+After the AI review completes, re-run the reviewer automation to verify the reviewers are still present — the command
+is idempotent (reviewers already requested are verified, missing ones are re-requested). Do not skip this step. See
+`.codex/skills/_shared/pipeline-review-handoff.md` for the full pattern.
 
-1. **Run the reviewer automation** (deterministic resolution + request + verify + retry):
+1. **Re-run the reviewer automation** (deterministic resolve + request + verify + retry):
 
    ```bash
    python -m tools.sdd_cli gitea request-reviewers --pr {prNumber}
    ```
 
-   The command reads `.codex/client-tools.local.json` (`gitea.baseUrl/apiToken/owner/repo`), resolves the reviewer
-   list (`gitea.reviewers` → `pr.reviewers`; `"all"` expands to repo collaborators; fallback to provisioned
-   `gitea.provisioning.users`), excludes the PR author, POSTs `requested_reviewers`, verifies the reviewers are
-   present, and retries once. Exit code 0 = verified; 1 = failed. Use `--dry-run true` first to preview the
-   resolved list without calling the API (note: `pr.reviewers = "all"` cannot be previewed in dry-run — the
-   collaborator fetch is an API call).
+   Exit code 0 = verified; 1 = failed. If Section 10 already requested the reviewers, this re-run verifies they are
+   present and re-requests anything missing.
 
-2. **If the command fails** (no eligible reviewers, placeholder token, Gitea rejects the request): log the blocking
-   issue, document the reviewer gap in the PR body and the Section 12 handoff comment, and report it in the final
-   summary. Do not hand off without at least documenting the gap.
+2. **If the command fails** (no eligible reviewers, or Gitea rejects the request): log the issue, document the
+   reviewer gap in the PR body and the Section 12 handoff comment, and report it in the final summary. Do not hand
+   off without at least documenting the gap. A placeholder token should not occur here if Section 10's BLOCKER gate
+   passed — if it does, treat it as a BLOCKER and run the environment provisioning (`setup-lab`).
 
-3. **Update the PR body** — replace the pending line (`Reviewers (pending — will be assigned after AI review)`)
-   with the actual requested reviewers (`Reviewers requested: <usernames>`).
+3. **PR body** already lists `Reviewers requested: <usernames>` from Section 10 — keep it accurate if the resolved
+   list changed.
 
 ### 12. Ticket Provider Handoff
 
@@ -697,8 +707,8 @@ now: move the ticket to `Developed` (OpenProject ID 8).
 3. **Verify the Section 10 PR comment was created and retry if missing.** See
 `.codex/skills/_shared/pipeline-ticket-comment.md` for the common comment verification pattern. Use:
    - Marker: `IA generated PR: {prUrl}`
-   - Comment body: `**Branch:** {branchName}\n**OpenSpec change:** {openspecChangeName}\n**Reviewers (pending — will be
-   assigned after AI review):** {reviewers}`
+   - Comment body: `**Branch:** {branchName}\n**OpenSpec change:** {openspecChangeName}\n**Reviewers requested:**
+   {reviewers}`
    - Severity: `blocking` (stop if comment cannot be created)
 
 4. **Add the comprehensive handoff comment** (this supplements the Section 10 PR comment with full detail). Follow the
