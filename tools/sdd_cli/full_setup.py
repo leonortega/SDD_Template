@@ -108,6 +108,26 @@ def run_full_setup(
         print("\n  ℹ  Fix the issues above and re-run `full-setup`.")
         print("     The command is idempotent — completed steps will be skipped.\n")
 
+    # ── Grafana board pointer (shown once the lab is up) ────────────────
+    # Gated on the lab stage (index 1 = Stage2-LabSetup), not all_valid: the
+    # board exists as soon as the lab is up, even if a later advisory stage
+    # (tools/guidance) reported non-fatal errors. Suppressed in dry-run.
+    if not effective_dry_run and stages[1].get("valid", True):
+        print("\n" + "=" * 60)
+        print("  GRAFANA BOARD")
+        print("=" * 60)
+        print("  Open:  http://localhost:3001        (login: admin / admin)")
+        print("  Board: http://localhost:3001/d/agentic-e2e-health-board")
+        print()
+        print("  The board has two sections:")
+        print("    - Service Health         live status of every service")
+        print("      (green = up, red = down, gray = not deployed)")
+        print("    - Infrastructure Access  links to every tool with its")
+        print("      user/password")
+        print()
+        print("  Need a tool URL or its credentials? Use the Infrastructure")
+        print("  Access section on the board.\n")
+
     return 0 if all_valid else 1
 
 
