@@ -61,9 +61,7 @@ The dashboard (`uid: agentic-e2e-health-board`) has these panels:
 | Panel ID | Title | Type | Purpose |
 |---|---|---|---|
 | `10` | (empty — header) | `text` (markdown) | Title banner with cluster info, env, deploy SHA |
-| `1` | 🟢 Service Health | `text` (markdown) | Per-service status table with URLs |
-| `4` | 🔗 Service Quick Access | `table` (Infinity inline) | Clickable table with links to every service |
-| `7` | 🏗️ Environment Matrix | `table` (Infinity inline) | Deployment status across DEV/QA/PROD |
+| `1` | 🟢 Service Health | `table` (Infinity datasource) | Live per-service status table fed by the health probe |
 | `6` | 🔧 Infrastructure Access | `text` (markdown) | Static table with Grafana/Gitea/Nexus/Dozzle links |
 
 ## Decision Framework
@@ -80,8 +78,7 @@ environments are currently deployed.
 
 If `infra/deployment/apps.json` has a new app that doesn't appear in the dashboard:
 
-- Add it to the **Service Health** markdown table (panel 1)
-- Add it to the **Service Quick Access** inline data (panel 4)
+- Add it to the **Service Health** table (panel 1) — the health-probe payload drives the rows
 - Assign an emoji from the role mapping below
 - Calculate proper `gridPos.y` to fit the new row
 - When the table grows significantly (>8 rows), consider splitting DEV/QA/PROD into separate sections within the same
@@ -91,7 +88,7 @@ panel, or reorganize with section headers
 
 If an app exists in the dashboard but is no longer in `apps.json`:
 
-- **Remove** it from Service Health and Service Quick Access
+- **Remove** it from Service Health
 - **Check** if the app was decommissioned vs just not deployed this run
 
 ### 4. URL changed (re-deploy)
@@ -99,16 +96,12 @@ If an app exists in the dashboard but is no longer in `apps.json`:
 If the same app gets new URLs after a re-deploy:
 
 - Update the **Service Health** row with the new URL
-- Update the **Service Quick Access** inline data
-- Update the **Environment Matrix** row
 
 ### 5. Environment section needs adding
 
 When a new environment deploys for the first time (e.g., QA after DEV):
 
-- The **Service Health** and **Service Quick Access** panels should get new rows prefixed with the environment badge (🔷
-DEV, 🟢 QA, 🔴 PROD)
-- The **Environment Matrix** panel should get a new row
+- The **Service Health** panel should get new rows prefixed with the environment badge (🔷 DEV, 🟢 QA, 🔴 PROD)
 - Consider whether to add environment sub-sections within existing panels or create separate panels
 
 ## Emoji & Role Mapping
@@ -166,7 +159,7 @@ The Infinity datasource **crashes** when `source: "url"` is used with `parser: "
 use `source: "inline"` for table panels:
 
 ```json
-// ✅ Correct approach for Service Quick Access and Environment Matrix panels
+// ✅ Correct approach for inline table panels
 "source": "inline",
 "data": "{\"data\":[...]}",
 "format": "table",
@@ -184,14 +177,10 @@ The dashboard uses a 24-column grid (`schemaVersion: 39`):
 
 - `w: 24` — Full width
 - `h: N` — Height in grid rows (~30px per row)
-- `y` values must not overlap — calculate sequentially. **Pack tightly** — the existing dashboard has a 2-row gap
-between the header (`y=0, h=4`) and Panel 1 (`y=2`), which wastes space. When creating
-from scratch, use:
+- `y` values must not overlap — calculate sequentially. **Pack tightly.** When creating from scratch, use:
   - Panel 0 (header): `y=0`, `h=4`
   - Panel 1 (health): `y = panel0.y + panel0.h`, `h = max(4, num_rows + 2)`
-  - Panel 2 (quick access): `y = panel1.y + panel1.h`, `h = max(6, num_rows * 2 + 2)`
-  - Panel 3 (env matrix): `y = panel2.y + panel2.h`, `h = max(6, num_rows * 2 + 2)`
-  - Panel 4 (infra): `y = panel3.y + panel3.h`, `h = 6`
+  - Panel 2 (infra): `y = panel1.y + panel1.h`, `h = 6`
 
 ### Rule 6: Use kind-config for host port mapping
 
@@ -208,9 +197,9 @@ When building the dashboard, resolve:
 - `hostUrl` = `http://localhost:<hostPort>` (e.g. `http://localhost:8081`) — **use this as the clickable URL**. From the
 Windows host the nodePort itself is NOT reachable at `localhost:{nodePort}` —
 kind's `extraPortMappings` expose services only at the host ports.
-- `nodePort` = the K8s Service nodePort (e.g. `30080`) — display it as info, and it is the address the health-probe uses
-*inside the cluster network* (`sdd-cluster-control-plane:<nodePort>`), not a
-host URL.
+- `nodePort` = the K8s Service nodePort (e.g. `30080`) — display it as info only; it is NOT a host URL. The
+health-probe determines status from the **external URL users navigate**
+(`host.docker.internal:<hostPort>`), not from the internal nodePort.
 
 For infrastructure services (Grafana, Gitea, Nexus) that run via Docker Compose (not K8s), use their Docker host ports
 directly.
@@ -250,25 +239,20 @@ Edit `infra/monitoring/grafana/dashboards/health-board.json`:
 
 1. **Bump version**: Set `"version": <int(time.time())>`
 2. **Update header panel** (id: 10): Add deploy SHA and environment info to the markdown content
-3. **Update Service Health panel** (id: 1): Regenerate the markdown table with all apps from all environments
-   - Format: `| {envBadge} | {emoji} {AppName} | {status} | {directUrl} | {healthUrl} | {nodePort} |`
-   - For apps not yet deployed, show `🔴 DOWN` with `n/a` URLs
-4. **Update Service Quick Access panel** (id: 4): Regenerate the inline Infinity JSON data with all apps
-   - Each row: `{service, directUrl, healthUrl, k8sPort, hostPort}`
-   - Include infrastructure services (Grafana, Gitea, Nexus) as static entries
-5. **Update Environment Matrix panel** (id: 7): Regenerate the inline Infinity JSON data
-   - Each row: `{env, namespace, trigger, feUrl, beUrl, status}`
-   - DEV: `Active`, QA: `Not deployed` or `Active` if URLs exist, PROD: same
-6. **Update Infrastructure Access panel** (id: 6): Keep mostly static, update environment name in the footer
-7. **Recalculate all `gridPos.y` values** so panels don't overlap
-8. **Update `time.from` and `time.to`**: Keep at `"now-1h"` / `"now"`
+3. **Update Service Health panel** (id: 1): The live table is fed by the health probe
+   (`http://health-probe:8090/health` via the Infinity datasource). Columns map directly from the probe JSON
+   (`env/service/status/http/directUrl/healthPath/nodePort`) — verify the probe payload reflects the deployed
+   apps/environments instead of hand-editing rows.
+4. **Update Infrastructure Access panel** (id: 6): Keep mostly static, update environment name in the footer
+5. **Recalculate all `gridPos.y` values** so panels don't overlap (header → health → infra)
+6. **Update `time.from` and `time.to`**: Keep at `"now-1h"` / `"now"`
 
 ### Step 4: Validate the JSON
 
 Before saving or pushing:
 
 1. Run `python3 -m json.tool infra/monitoring/grafana/dashboards/health-board.json` to validate JSON syntax
-2. Check that all panel `id` values are unique (10, 1, 4, 7, 6)
+2. Check that all panel `id` values are unique (10, 1, 6)
 3. Check that no two panels occupy overlapping `gridPos` rectangles
 4. Check that Infinity inline `data` strings are valid JSON (use a Python json.loads check on the inline data)
 5. Check that no Infinity mapping contains a `"color"` property
@@ -350,8 +334,6 @@ Open `http://localhost:3001` and navigate to the SDD Service Status dashboard. V
 - New apps are present, removed apps are gone
 - Status icons are correct (UP/DOWN based on URL presence)
 - Tables load without JS console errors (no Infinity datasource crashes)
-- Service Quick Access links open the correct URLs in new tabs
-- Environment Matrix shows correct deployment status
 
 ### Step 7: Commit changes (if JSON was modified)
 
@@ -384,9 +366,7 @@ Use this as a reference when creating from scratch. All panels must be present.
   },
   "panels": [
     // Panel 10: Header (markdown, full width)
-    // Panel 1: Service Health (markdown, full width)
-    // Panel 4: Service Quick Access (table, Infinity inline, full width)
-    // Panel 7: Environment Matrix (table, Infinity inline, full width)
+    // Panel 1: Service Health (table, Infinity datasource, full width)
     // Panel 6: Infrastructure Access (markdown, full width)
   ],
   "links": [
@@ -417,45 +397,18 @@ Use this as a reference when creating from scratch. All panels must be present.
 
 ### Panel 1: Service Health (id: 1)
 
-A markdown table where each deployed app is a row. For multi-environment support, prefix each row with the environment
-badge and group by environment:
+A live `table` panel backed by the Infinity datasource, fed by the health probe
+(`http://health-probe:8090/health`). Columns map directly from the probe JSON payload:
 
-```text
-| Environment | Service | Status | Direct URL | Health Endpoint | K8s NodePort |
-|---|---|---|---|---|---|
-| **🔷 DEV** | **🖥️ Frontend** | 🟢 UP | http://localhost:8081 | http://localhost:8081/health | 30080 |
-| **🔷 DEV** | **🔄 Backend** | 🟢 UP | http://localhost:5002 | http://localhost:5002/health | 30500 |
-| **🟢 QA** | **🖥️ Frontend** | 🟢 UP | http://localhost:8082 | http://localhost:8082/health | 31080 |
-| **🟢 QA** | **🔄 Backend** | 🟢 UP | http://localhost:5003 | http://localhost:5003/health | 31500 |
-| **🔴 PROD** | **🖥️ Frontend** | 🟢 UP | http://localhost:8083 | http://localhost:8083/health | 32080 |
-| **🔴 PROD** | **🔄 Backend** | 🟢 UP | http://localhost:5004 | http://localhost:5004/health | 32500 |
-```
+`Environment` · `Service` · `Status` · `HTTP` · `Direct URL` · `Health Endpoint` · `K8s NodePort`
 
-Status logic:
+Status value mappings (as shipped in `health-board.json`):
 
-- `🟢 UP` when the app has a discovered URL with a non-empty value
-- `🔴 DOWN` when the app URL is empty or missing
+- `UP` (green) — probe reports the service reachable
+- `Not deployed` (gray) — service expected but endpoint unreachable
+- `DOWN` (red) — probe cannot reach the endpoint
 
-### Panel 4: Service Quick Access (id: 4)
-
-An Infinity table with `source: "inline"`. The inline data is a JSON array of objects.
-
-Columns: `Service`, `Direct URL (click to open)`, `Health URL`, `K8s NodePort`, `Host Port`
-
-The "Direct URL" column has a link override so clicking opens the URL in a new tab. Infrastructure services (Grafana,
-Gitea, Nexus) are always included as static entries at the bottom.
-
-### Panel 7: Environment Matrix (id: 7)
-
-An Infinity table with `source: "inline"`. Shows one row per environment (DEV, QA, PROD).
-
-**Columns:** Dynamically generated based on what apps exist. Don't hardcode `Frontend URL` / `Backend URL` columns —
-instead generate a generic `App URLs` column that lists URLs for all apps, or
-create one column per app role (e.g. `Web URL`, `API URL`, `Worker URL`). Use the role from `apps.json` to name columns.
-
-Core columns always present: `Environment`, `K8s Namespace`, `Deploy Trigger`, `Status`
-
-Dynamic columns (one per app role): `Web URL`, `API URL`, `Worker URL`, `Database URL`, etc.
+The probe payload is the source of truth; do not hand-maintain rows here.
 
 ### Panel 6: Infrastructure Access (id: 6)
 

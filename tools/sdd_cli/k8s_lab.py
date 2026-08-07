@@ -602,6 +602,67 @@ def scaffold_k8s(root, dry_run=False):
 # ── kind cluster setup ────────────────────────────────────────────────
 
 
+def _kind_port_drift(root: Path) -> str | None:
+    """Return a warning when the running kind cluster's port mappings drift
+    from infra/k8s/kind-config.yaml, else None.
+
+    kind bakes extraPortMappings into the cluster at creation time — editing
+    kind-config.yaml (or regenerating it from ports.json) does NOT rewire an
+    existing cluster. Comparing the live `docker port` output against the
+    committed config surfaces that mismatch. Returns None when no kind node
+    is running, docker is unavailable, or mappings match.
+    """
+    node = "sdd-cluster-control-plane"
+    probe = run_native(["docker", "port", node], root, timeout=15)
+    if probe["returncode"] != 0:
+        return None  # no kind node / docker unavailable — nothing to compare
+
+    # Live mappings: '30080/tcp -> 0.0.0.0:8081' → {30080: 8081}
+    live: dict[int, int] = {}
+    for line in probe["stdout"].splitlines():
+        line = line.strip()
+        if "->" not in line:
+            continue
+        left, _, right = line.partition("->")
+        try:
+            container_port = int(left.strip().split("/", 1)[0])
+            host_port = int(right.strip().rsplit(":", 1)[-1])
+        except (ValueError, IndexError):
+            continue
+        live[container_port] = host_port
+    if not live:
+        return None
+
+    cfg_path = root / "infra" / "k8s" / "kind-config.yaml"
+    if not cfg_path.exists():
+        return None
+    import yaml as _yaml
+
+    try:
+        cfg = _yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    expected: dict[int, int] = {}
+    for node_cfg in (cfg or {}).get("nodes", []) or []:
+        for mapping in node_cfg.get("extraPortMappings", []) or []:
+            cp = mapping.get("containerPort")
+            hp = mapping.get("hostPort")
+            if cp and hp:
+                expected[int(cp)] = int(hp)
+    if not expected or expected == live:
+        return None
+
+    def _fmt(m: dict[int, int]) -> str:
+        return ", ".join(f"{k}:{v}" for k, v in sorted(m.items()))
+
+    return (
+        "kind cluster port mappings differ from infra/k8s/kind-config.yaml "
+        f"(config {_fmt(expected)} vs live {_fmt(live)}). extraPortMappings are "
+        "baked in at cluster creation — run `kind delete cluster --name "
+        "sdd-cluster` then re-run setup-kind-cluster to apply the new ports."
+    )
+
+
 def setup_kind_cluster(root: Path, dry_run: bool = False) -> dict[str, Any]:
     """Create a kind cluster with extraPortMappings for direct host access.
 
@@ -857,13 +918,34 @@ def setup_kind_cluster(root: Path, dry_run: bool = False) -> dict[str, Any]:
                     }
                 )
 
-    # ── 6. Connect to Docker networks for CI access and Grafana monitoring ──
-    # Grafana's Infinity datasource queries kind nodePorts directly using
-    # Docker DNS (sdd-cluster-control-plane:<nodePort>). Without this network
-    # connection, Grafana can't reach kind's kube-proxy iptables rules.
-    #
-    # The CI runner containers also need access to Gitea and Nexus via
-    # host.docker.internal or Docker DNS.
+    # ── 5b. Port-mapping drift check (any running kind cluster) ──
+    # extraPortMappings are baked into the cluster at creation time. If
+    # ports.json changed and kind-config.yaml was regenerated, the RUNNING
+    # cluster still exposes the OLD host ports — a recreate is required to
+    # apply the new ones. Detect that drift and surface it as a warning so a
+    # silent "mappings don't match the config" situation is impossible.
+    # Self-guarding: the docker lookup returns nothing when no kind node is
+    # up (e.g. Docker Desktop K8s in use), so this is a no-op there.
+    # Non-fatal: the cluster is healthy, just mapped differently.
+    # (dry-run already returned above, so this always executes for real runs.)
+    drift = _kind_port_drift(root)
+    if drift:
+        add_bucket_item(
+            result["findings"],
+            "kind/sdd-cluster",
+            "port-mapping.drift",
+            drift,
+            "warning",
+            "audit",
+        )
+
+    # ── 6. Connect to Docker networks for CI access ──
+    # The CI runner containers need access to Gitea and Nexus via
+    # host.docker.internal or Docker DNS. The kind node is also attached to the
+    # monitoring network (retained: harmless, keeps optional direct cluster
+    # monitoring possible). The Grafana health board does NOT need it — the
+    # health probe determines status from the external host URLs
+    # (host.docker.internal:<hostPort>).
     for network in ("agentic-e2e_gitea", "agentic-e2e_nexus", "agentic-e2e_monitoring"):
         connect = run_native(
             ["docker", "network", "connect", network, "sdd-cluster-control-plane"],
@@ -882,11 +964,11 @@ def setup_kind_cluster(root: Path, dry_run: bool = False) -> dict[str, Any]:
             )
         # Non-fatal if network doesn't exist yet
 
-    # ── 7. Connect Grafana to the kind network (so dashboard DNS names resolve) ──
-    # The Grafana Health Check Board uses sdd-cluster-control-plane:<nodePort> URLs.
-    # These resolve via Docker DNS when Grafana is on the same network as the kind node.
-    # The compose.yml only attaches to 'monitoring' network, so we add 'kind' network
-    # at runtime. This is idempotent — 'already connected' is a non-error.
+    # ── 7. Connect Grafana to the kind network (optional direct cluster access) ──
+    # Retained for optional direct nodePort probing (sdd-cluster-control-plane:<nodePort>)
+    # via Docker DNS. The Service Health panel no longer depends on it — status comes
+    # from the health probe checking external host URLs. Idempotent — 'already
+    # connected' is a non-error.
     grafana_connect = run_native(
         ["docker", "network", "connect", "kind", "agentic-grafana"],
         root,

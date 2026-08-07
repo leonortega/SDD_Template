@@ -2,11 +2,10 @@
 # when included via infra/compose.yml.
 #
 # The `monitoring` network is pinned to the canonical `agentic-e2e_monitoring`
-# network (kind control-plane node + Grafana both live there). This keeps the
-# health-probe reachable as `health-probe:8090` from Grafana and able to probe
-# the cluster regardless of whether this stack is started via infra/compose.yml
-# (project agentic-e2e) or standalone (which would otherwise create a stray
-# `monitoring_monitoring` network).
+# network (Grafana + health-probe live there). This keeps the health-probe
+# reachable as `health-probe:8090` from Grafana regardless of whether this
+# stack is started via infra/compose.yml (project agentic-e2e) or standalone
+# (which would otherwise create a stray `monitoring_monitoring` network).
 
 networks:
   monitoring:
@@ -63,6 +62,9 @@ services:
     command: [python, /app/health_probe.py]
     ports:
       - 8090:8090
+    extra_hosts:
+      # Lets the probe reach the host-published (external) service URLs.
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./health_probe.py:/app/health_probe.py:ro
       # Canonical port source (infra/deployment/ports.json) — the probe reads
