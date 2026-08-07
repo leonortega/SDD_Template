@@ -13,8 +13,8 @@ metadata:
 
 <!-- TIER 3: STAGE-SPECIFIC - Proposal workflow skill -->
 
-Propose a new change — create the change and generate all planning artifacts in one step following the `/opsx:propose`
-pattern.
+Propose a new change — create the change and generate all planning artifacts in one step using the **opsx propose
+flow** (`openspec-propose` skill → `openspec` CLI).
 
 I'll create a change with all planning artifacts:
 
@@ -23,7 +23,7 @@ I'll create a change with all planning artifacts:
 - design.md (how)
 - tasks.md (implementation steps with Review Workload Forecast)
 
-When ready to implement, run /opsx:apply.
+When ready to implement, run `$openspec-apply-change` (Codex).
 
 ---
 
@@ -41,51 +41,26 @@ When ready to implement, run /opsx:apply.
 
    **IMPORTANT**: Do NOT proceed without understanding what the user wants to build.
 
-2. **Create the change directory**
+2. **Run the opsx propose flow — delegate to `openspec-propose`.**
 
-   ```bash
-   openspec new change "<name>"
-   ```
+   Load the `openspec-propose` skill (`.agents/skills/openspec-propose/SKILL.md`, registered in the manifest `openspec`
+   category) and follow its Workflow exactly. It drives the `openspec` CLI (`openspec new change`, `openspec status
+   --json`, `openspec instructions <artifact> --change <name> --json`) to scaffold the change and create every planning
+   artifact in dependency order, honoring `openspec/config.yaml` context and rules.
 
-   This creates a scaffolded change at `openspec/changes/<name>/` with `.openspec.yaml`.
+   **Do NOT hand-write the artifacts from the schema** — the opsx flow generates each artifact from the CLI's
+   authoritative `instructions` output (structure, context, and rules), which is what prevents drift and skipped
+   artifacts. If the `openspec-propose` skill cannot be loaded, read its SKILL.md directly and follow it, still calling
+   the `openspec` CLI for scaffolding, status, and per-artifact instructions.
 
-3. **Propose — generate all planning artifacts in one flow**
-
-   Follow the `/opsx:propose` pattern. Read the project context from `openspec/config.yaml` (context + rules) and the
-   schema definition. Generate ALL artifacts in a single coherent pass, in dependency
-   order:
-
-   1. **Read context**: Load `openspec/config.yaml` for `context:`, `rules:`, and schema information. Read any existing
-   specs in `openspec/specs/` for existing behavior standards.
-
-   2. **Create `proposal.md`** — Problem / opportunity, user story, scope, acceptance criteria, out of scope, risks. Use
-   the ticket description and refined planning as input.
-
-   3. **Create `specs/`** — Behavior specs as `specs/*.md` in the change folder. Each spec covers one capability with
-   concrete scenarios.
-
-   4. **Create `design.md`** — Architecture decisions, technology choices, component structure, data flow, alternatives
-   considered.
-
-   5. **Create `tasks.md`** — Implementation tasks with checkboxes, grouped by concern, including a Review Workload
-   Forecast with estimated changed lines, budget risk, and delivery strategy.
-
-   **Apply these guidelines:**
-   - Use `openspec/config.yaml` context and rules as constraints for what you write — do NOT copy them into the
-   artifacts.
-   - Read completed dependency artifacts before creating the next one (e.g., read `proposal.md` before writing
-   `design.md`).
-   - Capture resolved grill-style decisions: planned behavior in specs, design choices in design, implementation steps
-   in tasks.
-   - Each artifact file must be written to the correct path inside `openspec/changes/<name>/`.
-
-4. **Verify all artifacts**
+3. **Verify all artifacts**
 
    ```bash
    openspec status --change "<name>"
    ```
 
-   Confirm all required artifacts show `[x]` (complete). If any are missing, create the file and re-verify.
+   Confirm all required artifacts show `[x]` (complete). If any are missing, continue the opsx flow to create them
+   (per-artifact `openspec instructions`), then re-verify.
 
 **Output**
 
@@ -94,27 +69,26 @@ After completing all artifacts, summarize:
 - Change name and location
 - List of artifacts created with brief descriptions
 - What's ready: "All artifacts created! Ready for implementation."
-- Prompt: "Run `/opsx:apply` or ask me to implement to start working on the tasks."
+- Prompt: "Run `$openspec-apply-change` or ask me to implement to start working on the tasks."
 
 **Artifact Creation Guidelines**
 
-- Use `openspec/config.yaml` context and rules as constraints for what you write — do NOT copy them into artifacts.
-- The schema (`spec-driven`) defines what each artifact should contain. Follow the expected structure for each type.
+- Always follow the `instruction` field from `openspec instructions <artifact> --change <name> --json` — it is the
+  authoritative guidance, even for familiar artifact names.
+- The schema (`spec-driven`) defines what each artifact should contain; the opsx flow enforces it via the CLI.
 - Read dependency artifacts before creating the next one (e.g., read `proposal.md` before writing `design.md`).
 - Capture resolved grill-style decisions in the normal OpenSpec artifacts: planned behavior in specs, design choices and
 rationale in design, and implementation steps in tasks.
-- Write each artifact to its correct path inside `openspec/changes/<name>/`:
-  - `proposal.md`
-  - `specs/<area>.md` (one or more spec files by capability area)
-  - `design.md`
-  - `tasks.md`
+- Write each artifact to the `resolvedOutputPath` returned by the CLI instructions, inside
+  `openspec/changes/<name>/`.
 - **IMPORTANT**: `context` and `rules` from config.yaml guide what you write but must NEVER appear in the artifact
 files.
 
 **Guardrails**
 
-- Create ALL artifacts needed for implementation (schema's `apply.requires`: at minimum `tasks`)
-- Always read dependency artifacts before creating a new one
+- Create ALL artifacts the apply phase transitively depends on (follow the `requires` edges from `openspec status
+  --json`), not just the ids in `apply.requires`
+- Always read dependency artifacts before creating a new one — re-read from disk, not from conversation memory
 - If context is critically unclear, ask the user - but prefer making reasonable decisions to keep momentum
 - If a change with that name already exists, ask if user wants to continue it or create a new one
 - Verify all artifacts exist with `openspec status` before declaring the propose flow complete

@@ -20,85 +20,34 @@ or ambiguous you MUST prompt for available changes.
 
 **Steps**
 
-1. **If no change name provided, prompt for selection**
+1. **If no change name provided, prompt for selection (opsx flow)**
 
-   List active changes by checking directories in `openspec/changes/` that have a `.openspec.yaml` file. Use the
-   **AskUserQuestion tool** to let the user select.
-
-   Show only active changes (not already archived).
+   Run `openspec list --json` to list active changes (not already archived) and use the **AskUserQuestion tool** to let
+   the user select.
 
    **IMPORTANT**: Do NOT guess or auto-select a change. Always let the user choose.
 
-2. **Follow the `/opsx:archive` pattern — check artifact completion**
+2. **Run the opsx archive flow — delegate to `openspec-archive-change`.**
 
-   Check that all expected artifact files exist:
-   - `openspec/changes/<name>/proposal.md`
-   - `openspec/changes/<name>/specs/` (directory with at least one spec)
-   - `openspec/changes/<name>/design.md`
-   - `openspec/changes/<name>/tasks.md`
+   Load the `openspec-archive-change` skill (`.agents/skills/openspec-archive-change/SKILL.md`, manifest `openspec`
+   category) and follow its Workflow exactly. It drives the `openspec` CLI to:
+   - check artifact completion (`openspec status --change "<name>" --json`),
+   - check task completion from the task list,
+   - assess and apply delta-spec sync (`openspec` archive/sync semantics), and
+   - perform the archive move (`openspec archive <name>`).
 
-   **If any artifacts are missing:**
-   - Stop. This is an archive blocker.
-   - List missing artifacts.
-   - Do not ask for confirmation to continue.
-   - Do not move the change directory.
+   The CLI is authoritative for artifact status, sync state, and the archive operation. Do NOT hand-implement the sync
+   diff or the archive move with raw file commands.
 
-3. **Check task completion status**
+   **Archive blockers (stop and report, never archive by confirmation):**
+   - `openspec status` reports missing planning artifacts or the change is incomplete,
+   - incomplete tasks remain (`- [ ]`),
+   - no tasks file exists (`OpenSpec archive blocker: missing tasks.md`),
+   - spec sync fails validation or cannot be applied (`OpenSpec archive blocker: spec sync failed`),
+   - the change directory is still present after the archive operation (`OpenSpec archive blocker: change still active
+   after archive`).
 
-   Read the tasks file (typically `tasks.md`) to check for incomplete tasks.
-
-   Count tasks marked with `- [ ]` (incomplete) vs `- [x]` (complete).
-
-   **If incomplete tasks found:**
-   - Stop. This is an archive blocker.
-   - List or count incomplete tasks.
-   - Do not ask for confirmation to continue.
-   - Do not move the change directory.
-
-   **If no tasks file exists:** Stop and report `OpenSpec archive blocker: missing tasks.md`.
-
-4. **Assess delta spec sync state**
-
-   Check for delta specs at `openspec/changes/<name>/specs/`. If none exist, proceed without sync prompt.
-
-   **If delta specs exist:**
-   - Compare each delta spec with its corresponding main spec at `openspec/specs/<capability>/spec.md`
-   - Determine what changes would be applied (adds, modifications, removals, renames)
-   - Show a combined summary before prompting
-
-   **Prompt options:**
-   - If changes needed: "Sync now"
-   - If already synced: "Archive now", "Sync anyway", "Cancel"
-
-   If changes are needed, sync is mandatory before archive. Apply the analyzed delta specs to the main specs at
-   `openspec/specs/<capability>/spec.md` (agent-driven sync; see `openspec/config.yaml`
-   rules). Proceed to archive only after sync succeeds.
-
-   If sync fails validation, cannot write the main specs, or leaves the delta specs unapplied, stop and report `OpenSpec
-   archive blocker: spec sync failed`. Do not move the change directory.
-
-5. **Perform the archive**
-
-   Create the archive directory if it doesn't exist:
-
-   ```bash
-   mkdir -p openspec/changes/archive
-   ```
-
-   Generate target name using current date: `YYYY-MM-DD-<change-name>`
-
-   **Check if target already exists:**
-   - If yes: Fail with error, suggest renaming existing archive or using different date
-   - If no: Move the change directory to archive
-
-   ```bash
-   mv openspec/changes/<name> openspec/changes/archive/YYYY-MM-DD-<name>
-   ```
-
-   After moving, verify the change directory no longer exists at `openspec/changes/<name>/`. If it is still present,
-   report `OpenSpec archive blocker: change still active after archive`.
-
-6. **Display summary**
+3. **Display summary**
 
    Show archive completion summary including:
    - Change name
@@ -123,12 +72,13 @@ All artifacts complete. All tasks complete.
 **Guardrails**
 
 - Always prompt for change selection if not provided
-- Check artifact file existence for completion validation (proposal.md, specs/, design.md, tasks.md)
+- Use the opsx archive flow (`openspec-archive-change` skill → `openspec` CLI) for artifact/task checks, sync
+assessment, and the archive move — do not hand-implement with raw file commands
 - Incomplete artifacts, incomplete tasks, missing tasks.md, failed spec sync, or failed archive movement are blockers.
 Never archive by confirmation when work is incomplete.
-- Preserve .openspec.yaml when moving to archive (it moves with the directory)
+- Preserve .openspec.yaml when moving to archive (the CLI archive keeps it with the directory)
 - Show clear summary of what happened
-- If sync is requested, apply the delta specs to the main specs (agent-driven)
+- If sync is requested, let the CLI apply the delta specs to the main specs
 - If delta specs exist, always run the sync assessment and show the combined summary before prompting
 - Never report archive success unless the change directory has been moved to archive.
 

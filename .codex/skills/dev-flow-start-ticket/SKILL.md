@@ -249,13 +249,16 @@ Fold relevant entries into the proposal context and risk analysis. Record `Knowl
 
        Use the branch name converted to kebab-case: replace `/` with `-`. Example: branch `feat/e2eproject-1-files` becomes `feat-e2eproject-1-files`.
 
-    b. **Generate all planning artifacts in one propose flow.** Use the ticket context, project context from `openspec/config.yaml`, and the `spec-driven` schema rules to create ALL artifacts:
-       - `proposal.md` — what & why
-       - `specs/**/*.md` — behavior specs
-       - `design.md` — how
-       - `tasks.md` — implementation steps with Review Workload Forecast
+    b. **Generate all planning artifacts via the opsx propose flow.** Run the `openspec-propose` skill
+       (`.agents/skills/openspec-propose/SKILL.md`, manifest `openspec` category) and follow it exactly: it drives the
+       `openspec` CLI to scaffold the change (`openspec new change`), query per-artifact instructions (`openspec
+       instructions <artifact> --change <name> --json`), and create every artifact (`proposal.md`, `specs/**/*.md`,
+       `design.md`, `tasks.md` with Review Workload Forecast) in dependency order from the CLI's authoritative output.
+       Feed it the ticket context and the curated planning block as input.
 
-       Apply the OpenSpec `/opsx:propose` pattern: the AI reads the schema context and rules from `openspec/config.yaml`, reads the ticket description and generated planning block as input, and creates all artifacts in dependency order in a single coherent pass. Do NOT iterate manually with `openspec instructions` — the AI generates each artifact based on the schema template and project context.
+       **Do NOT hand-write the artifacts from the schema** — the opsx flow generates each artifact from `openspec
+       instructions`, honoring `openspec/config.yaml` context and rules. Only if the skill cannot be loaded, read its
+       SKILL.md directly and still drive the `openspec` CLI for scaffolding, status, and per-artifact instructions.
 
     c. **Verify all artifacts were created:**
 

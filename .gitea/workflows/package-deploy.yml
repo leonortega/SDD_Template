@@ -242,7 +242,10 @@ jobs:
           done
 
       - name: Validate NodePort uniqueness across target overlays
-        if: steps.changes.outputs.deployable == 'true'
+        # Always runs (not gated on deployable changes): this is a static
+        # cross-check of committed files only, and ports.json edits live under
+        # infra/ — a change that touches ports but no src/test code would
+        # otherwise skip the check entirely and drift silently.
         shell: bash
         run: |
           set -euo pipefail

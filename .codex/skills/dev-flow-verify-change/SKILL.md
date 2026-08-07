@@ -30,15 +30,16 @@ or ambiguous you MUST prompt for available changes.
 
    **IMPORTANT**: Do NOT guess or auto-select a change. Always let the user choose.
 
-2. **Follow the `/opsx:verify` pattern — load artifacts**
+2. **Load artifacts via the opsx flow — `openspec` CLI status**
 
-   Read the change artifacts directly from `openspec/changes/<name>/`:
+   Run `openspec status --change "<name>" --json` to get the authoritative artifact set (per-artifact `status`,
+   `requires` edges, and `applyRequires`), then read the change artifacts from `openspec/changes/<name>/`:
    - `proposal.md` — what & why (may not exist if skipped)
    - `specs/*.md` — behavior specs (may not exist if skipped)
    - `design.md` — how (may not exist if skipped)
    - `tasks.md` — implementation steps
 
-   Note which artifacts exist and which are missing.
+   Note which artifacts exist, which are missing, and what the CLI reports as incomplete or skipped.
 
 3. **Initialize verification report structure**
 

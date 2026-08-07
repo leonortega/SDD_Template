@@ -21,7 +21,7 @@ document is the readable map, not a replacement for the skill.
 
 Helper skills used **inside** the linear flow (not standalone routing stages):
 
-- `dev-flow-apply-change` — executes OpenSpec tasks via the `/opsx:apply` pattern inside
+- `dev-flow-apply-change` — executes OpenSpec tasks via the opsx apply flow (`openspec-apply-change` skill) inside
   `dev-flow-implement-ticket`.
 - `dev-flow-parallel-ticket-coordinator` — orchestrates multi-ticket parallel delivery
   (see `parallel-delivery.md` and Section 10 of `implementation-deploy-flows.md`). Also
@@ -270,7 +270,7 @@ deployed ticket's apps and environments. Commit and push the updated dashboard J
 ### `dev-flow-apply-change` (OpenSpec task execution)
 
 Not a standalone routing stage — it implements tasks from an OpenSpec change using the
-`/opsx:apply` pattern inside `dev-flow-implement-ticket`. Selects the change (by name,
+opsx apply flow (`openspec-apply-change`) inside `dev-flow-implement-ticket`. Selects the change (by name,
 inferred from context, or via `openspec list --json` when ambiguous), then works
 `tasks.md` items in vertical slices with RED/GREEN tests. Announced with
 "Using change: `<name>`".

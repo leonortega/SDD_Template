@@ -92,8 +92,8 @@ Resolve the configured in-progress status by name before updating a work package
 (matching OpenProject status ID 7).
 
 After the ticket is commented with the branch, create an OpenSpec proposal through `dev-flow-propose-change`
-(`/opsx:propose`). Use the branch name as the source name; if it contains `/`, replace `/` with `-` for the OpenSpec
-change id.
+(`$openspec-propose` opsx flow). Use the branch name as the source name; if it contains `/`, replace `/` with `-`
+for the OpenSpec change id.
 
 Known local defaults:
 

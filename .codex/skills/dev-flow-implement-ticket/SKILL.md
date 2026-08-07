@@ -222,14 +222,16 @@ the agent must redo the scan.
    - current `codex-reviewed`, `needs-tests`, and `needs-changes` labels,
    - latest repository workflow status.
      Continue from the latest completed checkpoint instead of restarting earlier steps.
-2. Confirm the OpenSpec change is active by checking that `openspec/changes/<change>/tasks.md` exists.
+2. Confirm the OpenSpec change is active via the opsx flow: run `openspec status --change "<change>" --json` and check
+   that `tasks.md` exists (or `openspec/changes/<change>/tasks.md` on disk).
 3. Load context files for implementation by reading the change artifacts directly:
    - `openspec/changes/<change>/proposal.md` — what & why
    - `openspec/changes/<change>/specs/*.md` — behavior specs
    - `openspec/changes/<change>/design.md` — how
    - `openspec/changes/<change>/tasks.md` — implementation steps
-4. Follow the `/opsx:apply` pattern: read `tasks.md`, identify incomplete tasks, and implement them one by one using TDD
-cycles.
+4. Run the opsx apply flow — delegate to `openspec-apply-change` (`.agents/skills/openspec-apply-change/SKILL.md`):
+   `openspec status --change "<change>" --json` for the task list, then implement incomplete tasks one by one using TDD
+cycles per the apply skill's repo TDD rules.
 5. Classify delivery risk from ticket text, OpenSpec artifacts, changed/planned paths, and estimated changed lines using
 the shared delivery contract. Prefer repo-local helpers when available. Record
 `low`, `standard`, or `high` in the PR body and ticket handoff.
