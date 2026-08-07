@@ -879,3 +879,47 @@ tests:
       - type: is-json
       - type: javascript
         value: JSON.parse(output).route === 'dev-flow-implement-ticket' && JSON.parse(output).refinement === null
+
+  # Parallel-context refinement: the coordinator must verify refinementUserAsked
+  # per Todo ticket (mirrors dev-flow-parallel-ticket-coordinator Section 2 step 5
+  # and the ticketStarter return contract) before each ticket routes onward.
+
+  - description: "Parallel context (multi-ticket), Todo tickets, refinement must verify user asked before routing"
+    vars:
+      scenario: Two Todo tickets start in parallel, but refinement has not asked the user for extra info yet
+      ticketState: Todo
+      branchExists: false
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      parallelEnabled: true
+      maxActiveReached: false
+      laneOwner: none
+      refinementUserAsked: false
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-start-ticket' &&
+          JSON.parse(output).refinement.userAsked === false &&
+          JSON.parse(output).refinement.blocked === true
+
+  - description: "Parallel context (multi-ticket), Todo tickets, refinement asked user before routing"
+    vars:
+      scenario: Two Todo tickets start in parallel and the user answered each ticket's clarifying questions
+      ticketState: Todo
+      branchExists: false
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      parallelEnabled: true
+      maxActiveReached: false
+      laneOwner: none
+      refinementUserAsked: true
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-start-ticket' &&
+          JSON.parse(output).refinement.userAsked === true &&
+          JSON.parse(output).refinement.blocked === false
