@@ -142,6 +142,10 @@ def test_run_full_setup_help(capsys: Any, tool_installer_mocks: Any, guidance_mo
     output = captured.out
     assert "Stage1-Prerequisites" in output or "FULL SETUP" in output
     assert rc == 0
+    # Grafana board pointer must appear once the lab setup stage is valid.
+    assert "GRAFANA BOARD" in output
+    assert "http://localhost:3001/d/agentic-e2e-health-board" in output
+    assert "Infrastructure Access" in output
 
 
 def test_run_full_setup_dry_run(capsys: Any, tool_installer_mocks: Any, guidance_mocks: Any) -> None:
@@ -164,6 +168,8 @@ def test_run_full_setup_dry_run(capsys: Any, tool_installer_mocks: Any, guidance
                         rc = run_full_setup(["--dry-run", "true"])
     captured = capsys.readouterr()
     assert rc == 0
+    # Dry-run must not claim the Grafana board is available (lab not started).
+    assert "GRAFANA BOARD" not in captured.out
 
 
 def test_run_full_setup_python_fails(capsys: Any, tool_installer_mocks: Any, guidance_mocks: Any) -> None:
