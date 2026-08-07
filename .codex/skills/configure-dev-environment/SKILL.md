@@ -116,6 +116,7 @@ If you need to run steps individually:
 | Provision Grafana token             | `python -m tools.sdd_cli environment-lab provision-grafana-token`                |
 | Validate Gitea runner               | `python -m tools.sdd_cli environment-lab validate-gitea-runner`                   |
 | Provision Gitea secrets             | `python -m tools.sdd_cli environment-lab provision-gitea-secrets`                 |
+| Prune Docker leftovers              | `python -m tools.sdd_cli environment-lab prune-docker-leftovers`                  |
 | Install lefthook                    | `python -m tools.sdd_cli tool-installer install-lefthook`                         |
 
 ## Safety Rules

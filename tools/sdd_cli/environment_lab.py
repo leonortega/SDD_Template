@@ -113,6 +113,106 @@ def wait_for_service(url: str, timeout: int = 180, interval: int = 5) -> dict[st
     }
 
 
+# ── Prune leftover Docker resources ──────────────────────────────────────
+
+
+def prune_docker_leftovers(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Remove leftover Docker containers, images, and volumes.
+
+    Runs at the END of a fully-successful setup-lab to reclaim disk space.
+    Scope is deliberately conservative — the healthy lab is never touched:
+
+    - containers: only STOPPED containers that do NOT belong to a compose
+      project (``label!=com.docker.compose.project``) — every lab service is
+      compose-labeled, so running or stopped lab containers are kept.
+    - images: only DANGLING images (untagged ``<none>``) — tagged lab images
+      (``sdd-*:local`` runner/CI images, compose images) are never removed.
+    - volumes: only volumes WITHOUT a compose project label
+      (``label!=com.docker.compose.project``) — compose-owned lab volumes and
+      their data are kept.
+
+    Non-fatal and idempotent. Dry-run only reports what would be pruned.
+    """
+    result = configure_result(
+        "PruneDockerLeftovers", dry_run, write_enabled=not dry_run
+    )
+    prunes: list[tuple[str, list[str]]] = [
+        (
+            "containers",
+            [
+                "docker",
+                "container",
+                "prune",
+                "-f",
+                "--filter",
+                "label!=com.docker.compose.project",
+            ],
+        ),
+        ("images", ["docker", "image", "prune", "-f"]),
+        (
+            "volumes",
+            [
+                "docker",
+                "volume",
+                "prune",
+                "-f",
+                "--filter",
+                "label!=com.docker.compose.project",
+            ],
+        ),
+    ]
+    for kind, command in prunes:
+        if dry_run:
+            result["actions"].append(
+                {
+                    "path": "docker",
+                    "key": f"prune.{kind}",
+                    "severity": "info",
+                    "message": (
+                        f"Would prune leftover {kind}: "
+                        f"{' '.join(command[2:])}."
+                    ),
+                    "phase": "apply",
+                }
+            )
+            continue
+        try:
+            pruned = run_native(command, root, timeout=120)
+            if pruned["returncode"] == 0:
+                message = pruned["stdout"].strip() or "nothing to remove"
+                result["actions"].append(
+                    {
+                        "path": "docker",
+                        "key": f"prune.{kind}",
+                        "severity": "info",
+                        "message": f"Pruned leftover {kind}: {message}.",
+                        "phase": "apply",
+                    }
+                )
+            else:
+                add_bucket_item(
+                    result["findings"],
+                    "docker",
+                    f"prune.{kind}",
+                    f"docker {kind} prune failed: {pruned['stderr']}",
+                    "warning",
+                    "apply",
+                )
+        except Exception as ex:
+            add_bucket_item(
+                result["findings"],
+                "docker",
+                f"prune.{kind}",
+                f"Could not prune {kind}: {ex}",
+                "warning",
+                "apply",
+            )
+    result["valid"] = not any(
+        item.get("severity") == "error" for item in result["findings"]
+    )
+    return result
+
+
 # ── Setup Lab (all-in-one idempotent) ───────────────────────────────────
 
 
@@ -266,6 +366,17 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
     # 19. Generate Semgrep config from stack (non-fatal — stack may not be set yet)
     _add_step(set_semgrep_config(root, dry_run), fatal=False)
 
+    # 20. Prune leftover Docker resources (containers/images/volumes) — runs
+    #     ONLY when every prior step passed so the healthy lab is never
+    #     touched (scoped prunes keep compose-owned containers/volumes and
+    #     tagged images). The kind cluster container is the one lab resource
+    #     without a compose label, but this is safe: step 16 is fatal, so kind
+    #     is RUNNING here and `container prune` only removes stopped
+    #     containers — a stopped kind container is a leftover by definition.
+    #     Non-fatal: a failed prune is reported as a warning.
+    if all(s.get("valid", True) for s in steps):
+        _add_step(prune_docker_leftovers(root, dry_run), fatal=False)
+
     result["steps"] = steps
     all_valid = all(s.get("valid", True) for s in steps)
     result["valid"] = all_valid
@@ -286,6 +397,7 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
     _gitea_ok = any(s.get("command") == "wait-for-service http://localhost:3000/api/v1/user" and s.get("valid") for s in steps)
     _op_ok = any(s.get("command") == "wait-for-service http://localhost:8080" and s.get("valid") for s in steps)
     _nexus_ok = any(s.get("command") == "wait-for-service http://localhost:8088/service/rest/v1/status" and s.get("valid") for s in steps)
+    _grafana_ok = any(s.get("command") == "wait-for-service http://localhost:3001/api/health" and s.get("valid") for s in steps)
 
     # ── Summary: credentials and URLs (only show what's actually running) ─
     summary: dict[str, Any] = {}
@@ -336,6 +448,22 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
             "cd infra/k8s/overlays/prod && kustomize build . | kubectl apply -f -",
         ],
     }
+
+    summary["grafana"] = (
+        {
+            "url": "http://localhost:3001",
+            "board": "http://localhost:3001/d/agentic-e2e-health-board",
+            "users": [
+                {"username": "admin", "password": "admin", "role": "admin"},
+            ],
+            "sections": {
+                "Service Health": "Live up/down/not-deployed status of every lab and app service.",
+                "Infrastructure Access": "Links to every tool plus the user/password for each.",
+            },
+        }
+        if _grafana_ok
+        else {"url": "http://localhost:3001", "status": "NOT REACHABLE — check Docker logs and re-run setup-lab"}
+    )
 
     result["summary"] = summary
     return result
@@ -5219,6 +5347,7 @@ def run_environment_lab(args: list[str]) -> int:
         "renovate-gitea-token": lambda: renovate_gitea_api_token(root, dry_run),
         "provision-lab-users": lambda: provision_lab_users(root, dry_run),
         "health-check": lambda: health_check(root, dry_run),
+        "prune-docker-leftovers": lambda: prune_docker_leftovers(root, dry_run),
         "push-to-gitea": lambda: push_to_gitea(root, dry_run),
     }
 
