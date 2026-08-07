@@ -60,86 +60,105 @@ terminals: printing emoji from eval JSON crashes `print()` — prefix with
 
 ## Test Cases
 
-**47 test cases** covering the full delivery routing matrix including parallel delivery,
-deployment lanes, explicit workflow-stage requests, state-driven resume, frontend
-stack skill activation, and the PR Validation gate (CI-in-loop review blocking):
+**50 test cases** covering the full delivery routing matrix including parallel delivery,
+deployment lanes, explicit workflow-stage requests, state-driven resume, the QA
+user-approval gate, frontend stack skill activation, and the PR Validation gate
+(CI-in-loop review blocking):
 
-### Ticket Lifecycle (7 tests)
+### Ticket Lifecycle (9 tests)
 
-| #   | Scenario                         | Expected Route              |
-| --- | -------------------------------- | --------------------------- |
-| 1   | Todo ticket, no branch           | `dev-flow-start-ticket`     |
-| 2   | In Progress, branch, no PR       | `dev-flow-implement-ticket` |
-| 3   | Open PR exists                   | `dev-flow-implement-ticket` |
-| 4   | PR merged to dev                 | `dev-ops-post-merge-deploy` |
-| 5   | Ticket in QA                     | `configured QA gate`        |
-| 6   | QA failed                        | `dev-flow-file-qa-bug`      |
-| 7   | Done, QA passed, no PROD request | `blocked-no-prod`           |
+| #   | Scenario                         | Expected Route                  |
+| --- | -------------------------------- | ------------------------------- |
+| 1   | Todo ticket, no branch           | `dev-flow-start-ticket`         |
+| 2   | In Progress, branch, no PR       | `dev-flow-implement-ticket`     |
+| 3   | Open PR exists                   | `dev-flow-implement-ticket`     |
+| 4   | PR merged to dev                 | `dev-ops-post-merge-deploy`     |
+| 5   | Ticket in QA                     | `configured QA gate`            |
+| 6   | QA pending user approval         | `dev-ops-deploy-qa-approval-gate` |
+| 7   | QA user-approved                 | `dev-ops-deploy-qa`             |
+| 8   | QA failed                        | `dev-flow-file-qa-bug`          |
+| 9   | Done, QA passed, no PROD request | `blocked-no-prod`               |
+
+### QA User-Approval Gate (3 tests — rows 6–8, two cross-listed from Ticket Lifecycle)
+
+Verifies the human-in-the-loop gate enforced in `dev-ops-deploy-qa`: QA is **not
+auto-promoted** after DEV. The agent verifies DEV is healthy, then **asks the user
+for approval** before dispatching the QA deployment. The provider models this with
+the `qaApproved` var: pending approval routes to
+`dev-ops-deploy-qa-approval-gate` (agent stops and asks — never auto-approves); an
+explicit approval (or an explicit `deploy-qa` request, which wins via the
+workflow-stage routing matrix) routes to `dev-ops-deploy-qa` (the dispatch proceeds).
+
+| #   | Scenario                          | Expected Route                  |
+| --- | --------------------------------- | ------------------------------- |
+| 6   | QA pending, no user approval      | `dev-ops-deploy-qa-approval-gate` |
+| 7   | QA pending, user approved         | `dev-ops-deploy-qa`             |
+| 8   | Explicit `deploy-qa` request      | `dev-ops-deploy-qa`             |
 
 ### Edge Cases (4 tests)
 
 | #   | Scenario         | Expected Route             |
 | --- | ---------------- | -------------------------- |
-| 8   | No product stack | `dev-flow-pipeline-status` |
-| 9   | Ambiguous state  | `dev-flow-pipeline-status` |
-| 10  | PROD incident    | `dev-ops-rollback-prod`    |
-| 11  | PROD hotfix      | `dev-ops-hotfix-prod`      |
+| 10  | No product stack | `dev-flow-pipeline-status` |
+| 11  | Ambiguous state  | `dev-flow-pipeline-status` |
+| 12  | PROD incident    | `dev-ops-rollback-prod`    |
+| 13  | PROD hotfix      | `dev-ops-hotfix-prod`      |
 
 ### Parallel Delivery (5 tests)
 
 | #   | Scenario                                         | Expected Route              |
 | --- | ------------------------------------------------ | --------------------------- |
-| 12  | Parallel context (multi-ticket), Todo, lane free                | `dev-flow-start-ticket`     |
-| 13  | Parallel context (multi-ticket), PR merged, lane owned by other | `blocked-lane-conflict`     |
-| 14  | Parallel context (multi-ticket), QA stage, lane owned by other  | `blocked-lane-conflict`     |
-| 15  | Parallel context (multi-ticket), max active tickets reached     | `blocked-max-active`        |
-| 16  | Parallel context (multi-ticket), worktree exists, reuse         | `dev-flow-implement-ticket` |
+| 14  | Parallel context (multi-ticket), Todo, lane free                | `dev-flow-start-ticket`     |
+| 15  | Parallel context (multi-ticket), PR merged, lane owned by other | `blocked-lane-conflict`     |
+| 16  | Parallel context (multi-ticket), QA stage, lane owned by other  | `blocked-lane-conflict`     |
+| 17  | Parallel context (multi-ticket), max active tickets reached     | `blocked-max-active`        |
+| 18  | Parallel context (multi-ticket), worktree exists, reuse         | `dev-flow-implement-ticket` |
 
 ### Deployment Lane (5 tests)
 
 | #   | Scenario                                        | Expected Route              |
 | --- | ----------------------------------------------- | --------------------------- |
-| 17  | QA passed, PROD explicitly requested            | `dev-ops-deploy-prod`       |
-| 18  | PROD deploy blocked by lane ownership           | `blocked-lane-conflict`     |
-| 19  | PR merged, missing Nexus artifact               | `blocked-missing-artifact`  |
-| 20  | Release tag conflict                            | `blocked-tag-conflict`      |
-| 21  | PR merged, lane acquired (serialized lane free) | `dev-ops-post-merge-deploy` |
+| 19  | QA passed, PROD explicitly requested            | `dev-ops-deploy-prod`       |
+| 20  | PROD deploy blocked by lane ownership           | `blocked-lane-conflict`     |
+| 21  | PR merged, missing Nexus artifact               | `blocked-missing-artifact`  |
+| 22  | Release tag conflict                            | `blocked-tag-conflict`      |
+| 23  | PR merged, lane acquired (serialized lane free) | `dev-ops-post-merge-deploy` |
 
 ### Infrastructure Validation (2 tests)
 
 | #   | Scenario                                            | Expected Route             |
 | --- | --------------------------------------------------- | -------------------------- |
-| 22  | PROD deploy blocked by NodePort collision           | `blocked-infra-validation` |
-| 23  | DEV deploy blocked by infrastructure collision      | `blocked-infra-validation` |
+| 24  | PROD deploy blocked by NodePort collision           | `blocked-infra-validation` |
+| 25  | DEV deploy blocked by infrastructure collision      | `blocked-infra-validation` |
 
 ### Explicit Workflow-Stage Requests (12 tests)
 
 | #   | Scenario                                            | Expected Route                     |
 | --- | --------------------------------------------------- | ---------------------------------- |
-| 24  | Explicit continue-implementation request            | `dev-flow-continue-implementation` |
-| 25  | Explicit propose-change request                     | `dev-flow-propose-change`          |
-| 26  | Explicit PR review request                          | `dev-flow-pr-review-agent`         |
-| 27  | Explicit PR review feedback request                 | `dev-flow-pr-review-feedback-loop` |
-| 28  | Explicit explore-change request                     | `dev-flow-explore-change`          |
-| 29  | Explicit scaffold-project request                   | `dev-flow-scaffold-project`        |
-| 30  | Explicit verify-change request                      | `dev-flow-verify-change`           |
-| 31  | Explicit archive-change request                     | `dev-flow-archive-change`          |
-| 32  | Explicit dashboard update request                   | `grafana-board-update`             |
-| 33  | Explicit retrospective-audit request                | `dev-flow-retrospective-audit`     |
-| 34  | Explicit docs-knowledge-maintenance request         | `docs-knowledge-maintenance`       |
-| 35  | Explicit multi-ticket request (implement 2 tickets) | `dev-flow-parallel-ticket-coordinator` |
+| 26  | Explicit continue-implementation request            | `dev-flow-continue-implementation` |
+| 27  | Explicit propose-change request                     | `dev-flow-propose-change`          |
+| 28  | Explicit PR review request                          | `dev-flow-pr-review-agent`         |
+| 29  | Explicit PR review feedback request                 | `dev-flow-pr-review-feedback-loop` |
+| 30  | Explicit explore-change request                     | `dev-flow-explore-change`          |
+| 31  | Explicit scaffold-project request                   | `dev-flow-scaffold-project`        |
+| 32  | Explicit verify-change request                      | `dev-flow-verify-change`           |
+| 33  | Explicit archive-change request                     | `dev-flow-archive-change`          |
+| 34  | Explicit dashboard update request                   | `grafana-board-update`             |
+| 35  | Explicit retrospective-audit request                | `dev-flow-retrospective-audit`     |
+| 36  | Explicit docs-knowledge-maintenance request         | `docs-knowledge-maintenance`       |
+| 37  | Explicit multi-ticket request (implement 2 tickets) | `dev-flow-parallel-ticket-coordinator` |
 
 ### State-Driven Resume (1 test)
 
 | #   | Scenario                                                  | Expected Route                     |
 | --- | --------------------------------------------------------- | ---------------------------------- |
-| 36  | In-progress + branch, auto-continue without named step    | `dev-flow-continue-implementation` |
+| 38  | In-progress + branch, auto-continue without named step    | `dev-flow-continue-implementation` |
 
 ### Regression (1 test)
 
 | #   | Scenario                                 | Expected Route             |
 | --- | ---------------------------------------- | -------------------------- |
-| 37  | Product-free shell (original regression) | `dev-flow-pipeline-status` |
+| 39  | Product-free shell (original regression) | `dev-flow-pipeline-status` |
 
 ### Frontend Design Activation (3 tests)
 
@@ -150,9 +169,9 @@ route on a frontend stack reports `activatedSkills` including `impeccable` (plus
 
 | #   | Scenario                                                              | Expected Route             | Activation                 |
 | --- | --------------------------------------------------------------------- | -------------------------- | -------------------------- |
-| 38  | Frontend (React + TS) implementation, needs UI design work            | `dev-flow-implement-ticket` | includes `impeccable`      |
-| 39  | Backend-only (FastAPI) implementation, no frontend                    | `dev-flow-implement-ticket` | excludes `impeccable`      |
-| 40  | Frontend stack, Todo ticket, no branch (not in implementation stage)  | `dev-flow-start-ticket`     | excludes `impeccable`      |
+| 40  | Frontend (React + TS) implementation, needs UI design work            | `dev-flow-implement-ticket` | includes `impeccable`      |
+| 41  | Backend-only (FastAPI) implementation, no frontend                    | `dev-flow-implement-ticket` | excludes `impeccable`      |
+| 42  | Frontend stack, Todo ticket, no branch (not in implementation stage)  | `dev-flow-start-ticket`     | excludes `impeccable`      |
 
 ### PR Validation Gate (7 tests)
 
@@ -166,13 +185,13 @@ steps); the blocking is asserted via the provider's `review` gate object:
 
 | #   | Scenario                                                              | Expected Route                     | Review gate                          |
 | --- | --------------------------------------------------------------------- | ---------------------------------- | ------------------------------------ |
-| 41  | Red run on open PR (state-driven loop)                                | `dev-flow-implement-ticket`        | `codexReviewed=false`, `BLOCKER`     |
-| 42  | Green run on open PR                                                  | `dev-flow-implement-ticket`        | `codexReviewed=true`, no findings    |
-| 43  | Pending run on open PR                                                | `dev-flow-implement-ticket`        | `codexReviewed=false`, `BLOCKER`     |
-| 44  | Unknown/unreadable run on open PR                                     | `dev-flow-implement-ticket`        | `codexReviewed=false`, `BLOCKER`     |
-| 45  | Explicit PR review request + red run                                  | `dev-flow-pr-review-agent`         | `codexReviewed=false`, `BLOCKER`     |
-| 46  | Explicit PR review feedback request + red run                         | `dev-flow-pr-review-feedback-loop` | `codexReviewed=false`                |
-| 47  | Merged PR with red run (gate not applicable)                          | `dev-ops-post-merge-deploy`        | `review === null`                    |
+| 43  | Red run on open PR (state-driven loop)                                | `dev-flow-implement-ticket`        | `codexReviewed=false`, `BLOCKER`     |
+| 44  | Green run on open PR                                                  | `dev-flow-implement-ticket`        | `codexReviewed=true`, no findings    |
+| 45  | Pending run on open PR                                                | `dev-flow-implement-ticket`        | `codexReviewed=false`, `BLOCKER`     |
+| 46  | Unknown/unreadable run on open PR                                     | `dev-flow-implement-ticket`        | `codexReviewed=false`, `BLOCKER`     |
+| 47  | Explicit PR review request + red run                                  | `dev-flow-pr-review-agent`         | `codexReviewed=false`, `BLOCKER`     |
+| 48  | Explicit PR review feedback request + red run                         | `dev-flow-pr-review-feedback-loop` | `codexReviewed=false`                |
+| 49  | Merged PR with red run (gate not applicable)                          | `dev-ops-post-merge-deploy`        | `review === null`                    |
 
 ## Adding Test Cases
 

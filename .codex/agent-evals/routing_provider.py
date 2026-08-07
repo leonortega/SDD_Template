@@ -30,6 +30,7 @@ EXPLICIT_REQUEST_ROUTES = {
     "dashboard-update": "grafana-board-update",
     "retrospective-audit": "dev-flow-retrospective-audit",
     "docs-knowledge-maintenance": "docs-knowledge-maintenance",
+    "deploy-qa": "dev-ops-deploy-qa",
 }
 
 
@@ -175,6 +176,13 @@ def call_api(
     resume_requested = (
         str(vars_data.get("resumeRequested", "false")).strip().lower() == "true"
     )
+    # User approval for the QA deployment (dev-ops-deploy-qa User Approval Gate).
+    # False/unset = approval still pending: the agent verifies DEV and asks the
+    # user before dispatching QA — never auto-approves. True = the user approved
+    # and the QA deployment proceeds.
+    qa_approved = (
+        str(vars_data.get("qaApproved", "false")).strip().lower() == "true"
+    )
 
     # Review gate: models dev-flow-pr-review-agent's CI-in-loop rule. A red,
     # pending, or unreadable PR Validation run is a BLOCKER finding and keeps
@@ -206,6 +214,7 @@ def call_api(
         infra_validation_failed=infra_validation_failed,
         request_type=request_type,
         resume_requested=resume_requested,
+        qa_approved=qa_approved,
     )
 
     inputs = {
@@ -228,6 +237,7 @@ def call_api(
         "requestType": request_type,
         "resumeRequested": resume_requested,
         "prValidationStatus": pr_validation_status,
+        "qaApproved": qa_approved,
     }
 
     reasoning = _build_reasoning(inputs, route)
@@ -270,6 +280,7 @@ def _evaluate_route(
     infra_validation_failed: bool = False,
     request_type: str = "",
     resume_requested: bool = False,
+    qa_approved: bool = False,
 ) -> str:
     """Determine the correct workflow route based on the delivery contract.
 
@@ -350,9 +361,20 @@ def _evaluate_route(
             return "dev-ops-deploy-prod" if prod_requested else "blocked-no-prod"
         if lane_blocked:
             return "blocked-lane-conflict"
+        if qa_evidence == "deployed":
+            # QA is deployed and awaiting E2E validation.
+            return "configured QA gate"
         if not nexus_artifact_exists:
             return "blocked-missing-artifact"
-        return "configured QA gate"
+        # User Approval Gate (dev-ops-deploy-qa): QA is not deployed yet. The
+        # agent verifies DEV and asks the user for approval before dispatching
+        # the QA deployment — never auto-approves. Only an explicit approval
+        # proceeds to the actual QA deploy route.
+        return (
+            "dev-ops-deploy-qa"
+            if qa_approved
+            else "dev-ops-deploy-qa-approval-gate"
+        )
 
     if ticket_state == "done":
         if lane_blocked:
@@ -389,6 +411,10 @@ def _build_reasoning(inputs: dict, route: str) -> list[str]:
             steps.append(f"Lane blocked: owned by {lane}.")
     if inputs.get("qaEvidence"):
         steps.append(f"QA evidence: {inputs['qaEvidence']}.")
+    if route == "dev-ops-deploy-qa-approval-gate":
+        steps.append("QA not deployed: verify DEV, ask the user for approval.")
+    if route == "dev-ops-deploy-qa" and inputs.get("qaApproved"):
+        steps.append("User approved QA: dispatch the QA deployment.")
 
     steps.append(f"Route: {route}.")
     return steps
