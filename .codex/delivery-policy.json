@@ -8,7 +8,7 @@
       {"id": "checkov", "required": true},
       {"id": "repo-tooling-tests", "required": true},
       {"id": "stack-tests", "required": false},
-      {"id": "dev-flow-review-label", "required": true}
+      {"id": "codex-reviewed-label", "required": true}
     ]
   },
   "agentOptimization": {

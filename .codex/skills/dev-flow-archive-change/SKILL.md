@@ -56,6 +56,30 @@ or ambiguous you MUST prompt for available changes.
    - Whether specs were synced (if applicable)
    - Note about any warnings (incomplete artifacts/tasks)
 
+4. **Capture durable learning (mandatory after archive)**
+
+   After the archive succeeds, run the Durable Learning Capture Gate
+   (`.codex/skills/_shared/delivery-contract-core.md` → Durable Learning Capture Gate) using the
+   deterministic classifier:
+
+   ```bash
+   python -m tools.sdd_cli knowledge-search classify --task "<change name + ticket summary>" --changed-files "<comma-separated changed paths>" --test-results "<E2E QA outcome, e.g. PASS>"
+   ```
+
+   Build the changed-file list from the change's commits (e.g. `git diff --name-only` over the change branch vs its base)
+or the ticket's changed-file list; when unavailable, fall back to the change's own paths under `openspec/changes/<name>/`.
+
+   Then:
+   - If the classifier returns `UPDATE` candidates, load `.codex/skills/docs-knowledge-maintenance/SKILL.md`
+     and update **only** those candidate files (standard template, source-backed, never secrets).
+   - If it returns `NO_CHANGES`, record `Docs: no durable context changes` / `Knowledge updated: none` — do not
+     invent files to update.
+   - Commit and push the updated `docs/` or `knowledge/` files with a ticket-key-prefixed message (e.g.
+     `{ticketKey}: archive {change} - update docs/knowledge`).
+
+   The archived spec files under `openspec/specs/` are the durable behavior record — do not duplicate their
+   content into `docs/` or `knowledge/`.
+
 **Output On Success**
 
 ```text
@@ -81,6 +105,7 @@ Never archive by confirmation when work is incomplete.
 - If sync is requested, let the CLI apply the delta specs to the main specs
 - If delta specs exist, always run the sync assessment and show the combined summary before prompting
 - Never report archive success unless the change directory has been moved to archive.
+- Never skip the durable-learning capture step; `NO_CHANGES` is a valid classifier outcome, not an error.
 
 ## Overview
 
@@ -112,9 +137,13 @@ Follow the archive checks above and archive only after artifacts, tasks, and any
 
 ## Output
 
-Report the archived change, archive path, sync status, validation result, and handoff status.
+Report the archived change, archive path, sync status, validation result, docs/knowledge capture outcome
+(`Docs updated: <files>` / `Docs: no durable context changes`, `Knowledge updated: <files>` /
+`Knowledge updated: none`), and handoff status.
 
 ## Failure Rules
 
 Stop when the change is ambiguous, artifacts or tasks are incomplete, spec sync fails, archive verification fails, or
-ticket context conflicts with the requested archival.
+ticket context conflicts with the requested archival. If the classifier or `docs-knowledge-maintenance` update fails,
+stop the update step and report the blocker in the handoff — the archive itself remains valid, but the workflow is
+not complete without the capture outcome.

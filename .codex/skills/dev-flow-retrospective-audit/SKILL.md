@@ -248,6 +248,31 @@ For each finding, include the evidence, why it matters, and the durable improvem
 
 Use `templates/audit-checklist.md` as the default report skeleton when producing a read-only audit or proposal.
 
+### 3.5 Capture Durable Learning (docs/knowledge)
+
+This step applies to **general audits and `post-prod-ticket-release`** — not to `eval-driven-improvement` sub-modes,
+whose findings map to `routing_provider.py` / `promptfooconfig.yaml` and stay eval-infra-only. After findings are
+classified, run the Durable Learning Capture Gate (`.codex/skills/_shared/delivery-contract-core.md`) so audit
+findings land in the right context layer deterministically:
+
+```bash
+python -m tools.sdd_cli knowledge-search classify --task "<audit scope + finding summary>" --changed-files "<comma-separated changed paths>" --test-results "<test outcome>"
+```
+
+Build the changed-file list from the audited work's commits (e.g. `git diff --name-only` over the audited branch vs its
+base) or the ticket's changed-file list; when unavailable, fall back to the evidence paths already inspected.
+
+**Mode gate (default read-only):** the capture must never mutate files in `Read-only audit` or `Proposal mode` — in
+these modes report the classifier candidates as recommended improvements and record `Docs: no durable context
+changes` / `Knowledge updated: none`. In `post-prod-ticket-release`, candidates are **advisory only**: they must not be
+applied during the automatic audit. Only in **`Apply mode`** (user requested implementation) may the classifier-selected
+candidate files be updated via `docs-knowledge-maintenance` (standard template, source-backed, never secrets), then
+committed and pushed.
+
+Map candidates to the outcome table in Step 4: authoritative → `Docs update`; reusable non-authoritative →
+`Knowledge update`; enforceable automation → contract/skills/tests. `NO_CHANGES` is a valid classifier outcome — record
+the `none` markers and do not invent files.
+
 ### 4. Decide Whether To Improve
 
 Apply one of these outcomes:

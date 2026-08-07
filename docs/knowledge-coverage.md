@@ -3,10 +3,11 @@
 Maps every `knowledge/` file to its template home (`.codex/skills/`, `tools/sdd_cli/`,
 `.gitea/workflows/`, or `infra/`) so a lesson's enforcement point is discoverable in one place.
 
-- **Audited:** 2026-08-06 (conversation-wide audit of `knowledge/` vs the template).
+- **Audited:** 2026-08-06 (conversation-wide audit of `knowledge/` vs the template); 2026-08-07
+  added the `knowledge/errors/` scaffold stub.
 - **Last restructure:** 2026-08-06 — the 7 implemented lesson files were deleted; their rules now
   live inline in skills, scripts, and workflows (see the Removed table below).
-- **Scope:** the 13 `.md` files remaining under `knowledge/`.
+- **Scope:** the 14 `.md` files remaining under `knowledge/`.
 - **Rule:** a lesson is *covered* when the template enforces it via a skill, script, workflow, or
   tracked config — not when it exists only as prose in `knowledge/`. Informational/reference docs
   (`✅ Reference`) map to their documentation home (`AGENTS.md`, `docs/`) and are intentionally not
@@ -16,21 +17,22 @@ Maps every `knowledge/` file to its template home (`.codex/skills/`, `tools/sdd_
 
 | Metric                                   | Count |
 | ---------------------------------------- | ----- |
-| Total knowledge files                    | 13    |
+| Total knowledge files                    | 14    |
 | Files with enforceable lessons           | 0     |
 | Informational / index / placeholder      | 5     |
-| Category scaffolds (empty templates)     | 8     |
+| Category scaffolds (empty templates)     | 9     |
 | Removed 2026-08-06 (implemented inline)  | 7     |
 
 All enforceable lessons have been moved out of `knowledge/` into the template — the folder now holds
 only the index, category scaffolds, and reference/placeholder files.
 
-## Current Matrix (13 files)
+## Current Matrix (14 files)
 
 | Knowledge file | Template home (skill / script / workflow) | Coverage | Notes |
 | -------------- | ----------------------------------------- | -------- | ----- |
 | `knowledge/README.md` | `tools/sdd_cli/knowledge_search.py` (search + classify) via `tools/sdd_cli/cli.py`, tested in `tests/` | ✅ Native | Index + read/write policy. The `knowledge-search` commands it documents are implemented and tested. |
 | `knowledge/anti-patterns/README.md` | — | ⬜ Scaffold | Category template only — no lessons yet. |
+| `knowledge/errors/README.md` | — | ⬜ Scaffold | Category template only — the classifier may create `knowledge/errors/<error>.md` entries. |
 | `knowledge/architecture/README.md` | — | ⬜ Scaffold | Category template only. |
 | `knowledge/fixes/README.md` | — | ⬜ Scaffold | Category template only. |
 | `knowledge/implementation/README.md` | — | ⬜ Scaffold | Category template only. |

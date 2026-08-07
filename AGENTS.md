@@ -340,6 +340,12 @@ API fails, stop and report. There is no alternative path.
 | Scaffold project after stack selection | `dev-flow-scaffold-project`        | `.codex/skills/dev-flow-scaffold-project/SKILL.md`        |
 | Update AI-updatable docs / knowledge   | `docs-knowledge-maintenance`        | `.codex/skills/docs-knowledge-maintenance/SKILL.md`      |
 
+> **Eval-internal route (not a user-requested stage):** `dev-ops-deploy-qa-approval-gate`
+> exists only in the agent-eval routing matrix (`.codex/agent-evals/`) as the intermediate
+> outcome when QA is pending user approval — the agent stops and asks, it never auto-approves.
+> It is not a stage to load; on approval the flow continues to `dev-ops-deploy-qa`. See
+> `docs/workflows/implementation-deploy-flows.md` (Section 2) for the full routing matrix.
+
 After loading the skill, follow its Workflow section step by step. Do not skip steps. Do not improvise. If a step
 requires an API call, comment, label, or state change that the skill defines, execute it — do not treat it as optional.
 
