@@ -179,6 +179,20 @@ Before ticketed verification, read `.codex/skills/_shared/delivery-contract.md` 
 `docs/conventions/context-management.md`. Verify against the active ticket or explicit change, include relevant
 validation evidence, and preserve handoff findings for the caller.
 
+## Workflow Telemetry
+
+Workflow telemetry is **mandatory** for this stage: before handoff, upsert the stage time entry with the standalone
+script (shared pattern `.codex/skills/_shared/pipeline-workflow-telemetry.md`):
+
+```bash
+python -m tools.sdd_cli dev-flow telemetry-upsert --ticket-key {ticketKey} \
+  --workflow-stage dev-flow-verify-change --agent-role verify \
+  --started-utc {startedUtc} --finished-utc {finishedUtc} --outcome {outcome}
+```
+
+The marker `IA generated workflow telemetry: {ticketKey}:dev-flow-verify-change` is written automatically. If the
+upsert fails, stop and report before handoff.
+
 ## Workflow
 
 Follow the verification workflow above, then report whether implementation, tests, and artifacts are ready for archive

@@ -1,8 +1,9 @@
 # Parallel Delivery
 
-Parallel delivery is an optional mode for coordinating more than one OpenProject work package at the same time.
-Single-ticket delivery remains the default. Enable parallel delivery only when the tickets can make progress
-independently and the operator can supervise the coordinator's synthesis.
+Parallel delivery coordinates more than one OpenProject work package at the same time. The AI applies it automatically
+when the user asks to implement more than one ticket — there is no `parallelDelivery.enabled` flag gate; single-ticket
+requests keep the linear flow. Prefer parallel delivery only when the tickets can make progress independently and the
+operator can supervise the coordinator's synthesis.
 
 ## When To Use Parallel Agents
 
@@ -36,7 +37,7 @@ and PR number are known.
 
 Default configuration:
 
-- `parallelDelivery.enabled=false`
+- No `parallelDelivery.enabled` gate — the AI decides by ticket count (1 ticket → linear flow; >1 → parallel).
 - `parallelDelivery.maxActiveTickets=2`
 - `parallelDelivery.worktreeRoot=../ticket-worktrees`
 - `parallelDelivery.deploymentLanePolicy=serialized`
@@ -50,7 +51,6 @@ Run `ValidateParallelDeliveryDryRun` with the planned ticket/worktree state. The
 
 The dry run must pass before routing child agents. It must report:
 
-- disabled `parallelDelivery.enabled`
 - too many active tickets
 - duplicate ticket keys
 - duplicate branches

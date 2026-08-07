@@ -26,11 +26,19 @@ PYTHON_REQUIRES = (3, 11)
 
 STANDARD_STAGES = [
     "dev-flow-start-ticket",
+    "dev-flow-propose-change",
     "dev-flow-implement-ticket",
+    "dev-flow-verify-change",
     "dev-flow-pr-review-agent",
     "dev-flow-pr-review-feedback-loop",
     "dev-ops-post-merge-deploy",
     "dev-ops-deploy-qa",
+    "qa-gate",
+    "dev-flow-archive-change",
+    "dev-flow-file-qa-bug",
+    "dev-ops-deploy-prod",
+    "dev-ops-rollback-prod",
+    "dev-ops-hotfix-prod",
 ]
 # ── Generic JSON cache (lazy-loading helper) ──────────────────────────
 
@@ -750,6 +758,48 @@ def add_env_drift_findings(root: Path, result: dict[str, Any]) -> None:
             add_bucket_item(
                 result["findings"], relative, "env.stale-keys", stale_msg, "warning"
             )
+
+
+def client_tools_project_identifier_findings(root: Path) -> list[dict[str, str]]:
+    """Warn when client-tools.local.json has no usable OpenProject project identifier.
+
+    The OpenProject MCP/ticket flow calls
+    ``GET {baseUrl}/api/v3/projects/{projectIdentifier}``, so a missing or
+    placeholder value (``replace-with-project-identifier``) produces confusing
+    404s instead of an actionable error. Provisioning (``provision_lab_users``,
+    setup-lab step 11) fills both the top-level ``projectIdentifier`` and
+    ``openProject.provisioning.project.identifier`` with the real identifier
+    (e.g. ``e2eproject``). Returns findings only; never raises on unreadable
+    files.
+    """
+    findings: list[dict[str, str]] = []
+    path = root / ".codex" / "client-tools.local.json"
+    if not path.exists():
+        return findings
+    try:
+        data = read_json(path, optional=True)
+    except Exception:
+        return findings
+    openproject = data.get("openProject", {}) if isinstance(data, dict) else {}
+    if not isinstance(openproject, dict):
+        return findings
+    identifier = str(openproject.get("projectIdentifier", "") or "").strip()
+    if not identifier or identifier.startswith("replace-with"):
+        add_bucket_item(
+            findings,
+            ".codex/client-tools.local.json",
+            "openProject.projectIdentifier",
+            (
+                "openProject.projectIdentifier is missing or still a placeholder "
+                "('replace-with-project-identifier'). The OpenProject MCP/ticket "
+                "flow calls /api/v3/projects/{projectIdentifier} and will 404. "
+                "Run provision_lab_users (setup-lab step 11) to provision the "
+                "project (e.g. e2eproject)."
+            ),
+            "warning",
+            "audit",
+        )
+    return findings
 
 
 def configure_set_env_mode(

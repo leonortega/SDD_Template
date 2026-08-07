@@ -28,6 +28,20 @@ with `docs/conventions/development.md` and `docs/architecture/deployment.md` as 
 ticket, repository/review, artifact, deployment, observability, stack, and E2E
 adapters for the current step.
 
+## Workflow Telemetry
+
+Workflow telemetry is **mandatory** for this stage: before handoff, upsert the stage time entry with the standalone
+script (shared pattern `.codex/skills/_shared/pipeline-workflow-telemetry.md`):
+
+```bash
+python -m tools.sdd_cli dev-flow telemetry-upsert --ticket-key {ticketKey} \
+  --workflow-stage dev-ops-hotfix-prod --agent-role hotfixProd \
+  --started-utc {startedUtc} --finished-utc {finishedUtc} --outcome {outcome}
+```
+
+The marker `IA generated workflow telemetry: {ticketKey}:dev-ops-hotfix-prod` is written automatically.
+If the upsert fails, stop and report before handoff.
+
 ## Configuration
 
 Read `.codex/project-profile.json` first. Read `.codex/client-tools.local.json` only for selected adapter runtime values
@@ -81,7 +95,11 @@ review-agent loop, and handoff. The TDD test-first pattern is defined in
    - **Expect the PR body** (created by `dev-flow-implement-ticket`) to include the acceptance-to-test map and TDD
    RED/GREEN evidence.
 7. After merge, use `dev-ops-post-merge-deploy` and the configured QA gate for artifact promotion and QA evidence.
-8. Invoke `dev-ops-deploy-prod` only when the user explicitly asks for PROD promotion after QA passes.
+8. Invoke `dev-ops-deploy-prod` only when the user explicitly asks for PROD promotion after QA passes. Its
+   `package-deploy` dispatch carries the hotfix release context: `environment=prod`,
+   `artifact_commit_sha={hotfixCommit}`, `release_version={hotfixVersion}`, and
+   `source_rc_version={sourceRcVersion}` — the workflow skips the build (reuses the QA-approved
+   hotfix artifact) and records the version data in `app/{commitSha}/release-prod.json`.
 9. Comment the incident ticket with release lineage, evidence, and any temporary divergence from normal cadence.
 
 ## Scope Rules

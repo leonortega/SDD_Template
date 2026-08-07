@@ -348,6 +348,130 @@ class DevFlowDispatchTests(unittest.TestCase):
             data = json.loads(lock.read_text(encoding="utf-8"))
             self.assertEqual("ABC-1", data["ticketKey"])
 
+    def test_validate_parallel_dry_run_no_enabled_gate(self) -> None:
+        """validate-parallel-dry-run passes without a parallelDelivery.enabled flag.
+
+        Parallel delivery is now triggered by the AI when the user asks to
+        implement more than one ticket — there is no config flag gate.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plan = {
+                "tickets": [
+                    {"ticketKey": "ABC-1", "branch": "feat/a", "worktreePath": "wt/a"},
+                    {"ticketKey": "ABC-2", "branch": "feat/b", "worktreePath": "wt/b"},
+                ],
+                "maxActiveTickets": 2,
+                "deploymentLanePolicy": "serialized",
+            }
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli.main(
+                    [
+                        "dev-flow",
+                        "validate-parallel-dry-run",
+                        "--root",
+                        str(root),
+                        "--input-json",
+                        json.dumps(plan),
+                    ]
+                )
+            self.assertEqual(0, rc)
+            result = json.loads(stdout.getvalue())
+            self.assertTrue(result["valid"])
+            self.assertEqual(2, result["activeTicketCount"])
+
+    def test_validate_parallel_dry_run_still_rejects_capacity(self) -> None:
+        """Capacity/isolation constraints still block (only the enabled gate is gone)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plan = {
+                "tickets": [
+                    {"ticketKey": "ABC-1", "branch": "feat/a", "worktreePath": "wt/a"},
+                    {"ticketKey": "ABC-2", "branch": "feat/b", "worktreePath": "wt/b"},
+                    {"ticketKey": "ABC-3", "branch": "feat/c", "worktreePath": "wt/c"},
+                ],
+                "maxActiveTickets": 2,
+                "deploymentLanePolicy": "serialized",
+            }
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli.main(
+                    [
+                        "dev-flow",
+                        "validate-parallel-dry-run",
+                        "--root",
+                        str(root),
+                        "--input-json",
+                        json.dumps(plan),
+                    ]
+                )
+            self.assertEqual(1, rc)
+            result = json.loads(stdout.getvalue())
+            self.assertFalse(result["valid"])
+            self.assertTrue(
+                any("maxActiveTickets" in str(e) for e in result["errors"])
+            )
+
+    def test_telemetry_upsert_dry_run_dispatch(self) -> None:
+        """dev-flow telemetry-upsert --dry-run true works."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli.main(
+                    [
+                        "dev-flow",
+                        "telemetry-upsert",
+                        "--root",
+                        str(root),
+                        "--ticket-key",
+                        "ABC-1",
+                        "--workflow-stage",
+                        "dev-flow-verify-change",
+                        "--agent-role",
+                        "verify",
+                        "--started-utc",
+                        "2026-08-07T10:00:00Z",
+                        "--finished-utc",
+                        "2026-08-07T11:00:00Z",
+                        "--outcome",
+                        "PASS",
+                        "--dry-run",
+                        "true",
+                    ]
+                )
+            self.assertEqual(0, rc)
+            result = json.loads(stdout.getvalue())
+            self.assertTrue(result["valid"])
+            self.assertEqual("dry-run", result["action"])
+
+    def test_append_telemetry_dispatch(self) -> None:
+        """dev-flow append-telemetry works (JSONL fallback)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli.main(
+                    [
+                        "dev-flow",
+                        "append-telemetry",
+                        "--root",
+                        str(root),
+                        "--ticket-key",
+                        "ABC-1",
+                        "--workflow-stage",
+                        "qa-gate",
+                    ]
+                )
+            self.assertEqual(0, rc)
+            result = json.loads(stdout.getvalue())
+            self.assertTrue(result["valid"])
+            self.assertEqual("appended", result["action"])
+            self.assertTrue(
+                (root / ".codex" / "agent-telemetry.local.jsonl").exists()
+            )
+
 
 class GuidanceDispatchTests(unittest.TestCase):
     """Test guidance subcommand dispatch."""
@@ -1134,10 +1258,14 @@ class ToolInstallerDispatchTests(unittest.TestCase):
 
     def test_ensure_mcp_servers_dry_run(self) -> None:
         """tool-installer ensure-mcp-servers --dry-run true works without side effects."""
+        from unittest.mock import patch
+
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             stdout = io.StringIO()
-            with redirect_stdout(stdout):
+            with patch("pathlib.Path.home", return_value=root / "home"), patch(
+                "os.environ", {"APPDATA": str(root / "appdata")}
+            ), redirect_stdout(stdout):
                 rc = cli.main(
                     [
                         "tool-installer",
@@ -1153,6 +1281,49 @@ class ToolInstallerDispatchTests(unittest.TestCase):
             self.assertTrue(result["valid"])
             self.assertEqual("EnsureMCPServers", result["mode"])
 
+    def test_ensure_mcp_servers_prune_junk_flag(self) -> None:
+        """--prune-junk false is accepted and disables junk pruning."""
+        from unittest.mock import patch
+
+        from tools.sdd_cli.tool_installer import ensure_mcp_servers
+
+        dummy = {"valid": True, "actions": [], "findings": []}
+        pruned: list[bool] = []
+
+        def fake_prune(root, result, dry_run):
+            pruned.append(dry_run)
+
+        with patch(
+            "tools.sdd_cli.tool_installer.install_playwright_mcp", return_value=dummy
+        ), patch(
+            "tools.sdd_cli.tool_installer.install_grafana_mcp", return_value=dummy
+        ), patch(
+            "tools.sdd_cli.tool_installer.install_k8s_mcp", return_value=dummy
+        ), patch(
+            "tools.sdd_cli.tool_installer.install_gitea_mcp", return_value=dummy
+        ), patch(
+            "tools.sdd_cli.tool_installer.install_openproject_mcp", return_value=dummy
+        ), patch(
+            "tools.sdd_cli.tool_installer._prune_junk_mcp_servers", side_effect=fake_prune
+        ):
+            with tempfile.TemporaryDirectory() as tmp:
+                stdout = io.StringIO()
+                with redirect_stdout(stdout):
+                    rc = cli.main(
+                        [
+                            "tool-installer",
+                            "ensure-mcp-servers",
+                            "--root",
+                            tmp,
+                            "--dry-run",
+                            "true",
+                            "--prune-junk",
+                            "false",
+                        ]
+                    )
+                self.assertEqual(0, rc)
+        self.assertEqual([], pruned)  # pruning disabled by --prune-junk false
+
     def test_ensure_mcp_servers_checks_all_mcp_targets(self) -> None:
         """ensure_mcp_servers runs every install_*_mcp installer."""
         from unittest.mock import patch
@@ -1160,23 +1331,29 @@ class ToolInstallerDispatchTests(unittest.TestCase):
         from tools.sdd_cli.tool_installer import ensure_mcp_servers
 
         dummy = {"valid": True, "actions": [], "findings": []}
-        with patch("tools.sdd_cli.tool_installer.install_playwright_mcp", return_value=dummy) as pw, patch(
-            "tools.sdd_cli.tool_installer.install_grafana_mcp", return_value=dummy
-        ) as gf, patch(
-            "tools.sdd_cli.tool_installer.install_k8s_mcp", return_value=dummy
-        ) as k8s, patch(
-            "tools.sdd_cli.tool_installer.install_gitea_mcp", return_value=dummy
-        ) as gt, patch(
-            "tools.sdd_cli.tool_installer.install_openproject_mcp", return_value=dummy
-        ) as op:
-            result = ensure_mcp_servers(Path("."), dry_run=True)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with patch("pathlib.Path.home", return_value=root / "home"), patch(
+                "os.environ", {"APPDATA": str(root / "appdata")}
+            ), patch(
+                "tools.sdd_cli.tool_installer.install_playwright_mcp", return_value=dummy
+            ) as pw, patch(
+                "tools.sdd_cli.tool_installer.install_grafana_mcp", return_value=dummy
+            ) as gf, patch(
+                "tools.sdd_cli.tool_installer.install_k8s_mcp", return_value=dummy
+            ) as k8s, patch(
+                "tools.sdd_cli.tool_installer.install_gitea_mcp", return_value=dummy
+            ) as gt, patch(
+                "tools.sdd_cli.tool_installer.install_openproject_mcp", return_value=dummy
+            ) as op:
+                result = ensure_mcp_servers(root, dry_run=True)
 
-        self.assertTrue(result["valid"])
-        pw.assert_called_once()
-        gf.assert_called_once()
-        k8s.assert_called_once()
-        gt.assert_called_once()
-        op.assert_called_once()
+            self.assertTrue(result["valid"])
+            pw.assert_called_once()
+            gf.assert_called_once()
+            k8s.assert_called_once()
+            gt.assert_called_once()
+            op.assert_called_once()
 
     def test_stack_tests_bare_dry_run_flag(self) -> None:
         """stack-tests --dry-run (no value) works like --dry-run true."""

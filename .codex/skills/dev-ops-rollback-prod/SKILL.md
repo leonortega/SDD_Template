@@ -28,6 +28,20 @@ repository, and ticket adapters. Use `python -m tools.sdd_cli dev-flow` helpers:
 incident/release rather than the active ticket lock, but a mismatch must be
 explicit.
 
+## Workflow Telemetry
+
+Workflow telemetry is **mandatory** for this stage: before handoff, upsert the stage time entry with the standalone
+script (shared pattern `.codex/skills/_shared/pipeline-workflow-telemetry.md`):
+
+```bash
+python -m tools.sdd_cli dev-flow telemetry-upsert --ticket-key {ticketKey} \
+  --workflow-stage dev-ops-rollback-prod --agent-role rollbackProd \
+  --started-utc {startedUtc} --finished-utc {finishedUtc} --outcome {outcome}
+```
+
+The marker `IA generated workflow telemetry: {ticketKey}:dev-ops-rollback-prod` is written automatically.
+If the upsert fails, stop and report before handoff.
+
 ## Configuration
 
 Read `.codex/client-tools.local.json` first. Required values:
@@ -92,6 +106,27 @@ artifact_commit_sha={rollbackCommit}
 release_version={rollbackVersionOrTag}
 source_rc_version={sourceRcVersion}
 ```
+
+For the `package-deploy` adapter these map to the `workflow_dispatch` `inputs` — dispatch on `main` since the
+rollback target is a previously released commit. Example via the Gitea API (values from `.codex/client-tools.local.json`
+→ `gitea.baseUrl` / `gitea.apiToken` / `gitea.owner` / `gitea.repo`):
+
+```bash
+curl -s -o /dev/null -w "dispatch HTTP:%{http_code}\n" -X POST \
+  -H "Authorization: token ${GITEA_API_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"ref":"main","inputs":{
+         "environment":"prod",
+         "artifact_commit_sha":"{rollbackCommit}",
+         "release_version":"{rollbackVersionOrTag}",
+         "source_rc_version":"{sourceRcVersion}"}}' \
+  "${GITEA_BASE_URL}/api/v1/repos/${GITEA_OWNER}/${GITEA_REPO}/actions/workflows/package-deploy.yml/dispatches"
+# HTTP 204 = dispatched (mirror the pattern in dev-ops-post-merge-deploy step 8)
+```
+
+The workflow checks out the pinned `artifact_commit_sha` (build skipped), verifies the QA-approved artifact on Nexus,
+and records `release_version` as `version` / `source_rc_version` as `sourceRcVersion` in
+`app/{commitSha}/release-prod.json`.
 
 The selected deployment adapter may use the same dispatch inputs. The workflow must download
 `app/{artifact_commit_sha}/container-images.json`, verify every image reference is digest-pinned, deploy

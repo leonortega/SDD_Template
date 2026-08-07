@@ -60,7 +60,7 @@ terminals: printing emoji from eval JSON crashes `print()` — prefix with
 
 ## Test Cases
 
-**46 test cases** covering the full delivery routing matrix including parallel delivery,
+**47 test cases** covering the full delivery routing matrix including parallel delivery,
 deployment lanes, explicit workflow-stage requests, state-driven resume, frontend
 stack skill activation, and the PR Validation gate (CI-in-loop review blocking):
 
@@ -89,11 +89,11 @@ stack skill activation, and the PR Validation gate (CI-in-loop review blocking):
 
 | #   | Scenario                                         | Expected Route              |
 | --- | ------------------------------------------------ | --------------------------- |
-| 12  | Parallel enabled, Todo, lane free                | `dev-flow-start-ticket`     |
-| 13  | Parallel enabled, PR merged, lane owned by other | `blocked-lane-conflict`     |
-| 14  | Parallel enabled, QA stage, lane owned by other  | `blocked-lane-conflict`     |
-| 15  | Parallel enabled, max active tickets reached     | `blocked-max-active`        |
-| 16  | Parallel enabled, worktree exists, reuse         | `dev-flow-implement-ticket` |
+| 12  | Parallel context (multi-ticket), Todo, lane free                | `dev-flow-start-ticket`     |
+| 13  | Parallel context (multi-ticket), PR merged, lane owned by other | `blocked-lane-conflict`     |
+| 14  | Parallel context (multi-ticket), QA stage, lane owned by other  | `blocked-lane-conflict`     |
+| 15  | Parallel context (multi-ticket), max active tickets reached     | `blocked-max-active`        |
+| 16  | Parallel context (multi-ticket), worktree exists, reuse         | `dev-flow-implement-ticket` |
 
 ### Deployment Lane (5 tests)
 
@@ -112,7 +112,7 @@ stack skill activation, and the PR Validation gate (CI-in-loop review blocking):
 | 22  | PROD deploy blocked by NodePort collision           | `blocked-infra-validation` |
 | 23  | DEV deploy blocked by infrastructure collision      | `blocked-infra-validation` |
 
-### Explicit Workflow-Stage Requests (11 tests)
+### Explicit Workflow-Stage Requests (12 tests)
 
 | #   | Scenario                                            | Expected Route                     |
 | --- | --------------------------------------------------- | ---------------------------------- |
@@ -127,18 +127,19 @@ stack skill activation, and the PR Validation gate (CI-in-loop review blocking):
 | 32  | Explicit dashboard update request                   | `grafana-board-update`             |
 | 33  | Explicit retrospective-audit request                | `dev-flow-retrospective-audit`     |
 | 34  | Explicit docs-knowledge-maintenance request         | `docs-knowledge-maintenance`       |
+| 35  | Explicit multi-ticket request (implement 2 tickets) | `dev-flow-parallel-ticket-coordinator` |
 
 ### State-Driven Resume (1 test)
 
 | #   | Scenario                                                  | Expected Route                     |
 | --- | --------------------------------------------------------- | ---------------------------------- |
-| 35  | In-progress + branch, auto-continue without named step    | `dev-flow-continue-implementation` |
+| 36  | In-progress + branch, auto-continue without named step    | `dev-flow-continue-implementation` |
 
 ### Regression (1 test)
 
 | #   | Scenario                                 | Expected Route             |
 | --- | ---------------------------------------- | -------------------------- |
-| 36  | Product-free shell (original regression) | `dev-flow-pipeline-status` |
+| 37  | Product-free shell (original regression) | `dev-flow-pipeline-status` |
 
 ### Frontend Design Activation (3 tests)
 
@@ -149,9 +150,9 @@ route on a frontend stack reports `activatedSkills` including `impeccable` (plus
 
 | #   | Scenario                                                              | Expected Route             | Activation                 |
 | --- | --------------------------------------------------------------------- | -------------------------- | -------------------------- |
-| 37  | Frontend (React + TS) implementation, needs UI design work            | `dev-flow-implement-ticket` | includes `impeccable`      |
-| 38  | Backend-only (FastAPI) implementation, no frontend                    | `dev-flow-implement-ticket` | excludes `impeccable`      |
-| 39  | Frontend stack, Todo ticket, no branch (not in implementation stage)  | `dev-flow-start-ticket`     | excludes `impeccable`      |
+| 38  | Frontend (React + TS) implementation, needs UI design work            | `dev-flow-implement-ticket` | includes `impeccable`      |
+| 39  | Backend-only (FastAPI) implementation, no frontend                    | `dev-flow-implement-ticket` | excludes `impeccable`      |
+| 40  | Frontend stack, Todo ticket, no branch (not in implementation stage)  | `dev-flow-start-ticket`     | excludes `impeccable`      |
 
 ### PR Validation Gate (7 tests)
 
@@ -165,13 +166,13 @@ steps); the blocking is asserted via the provider's `review` gate object:
 
 | #   | Scenario                                                              | Expected Route                     | Review gate                          |
 | --- | --------------------------------------------------------------------- | ---------------------------------- | ------------------------------------ |
-| 40  | Red run on open PR (state-driven loop)                                | `dev-flow-implement-ticket`        | `codexReviewed=false`, `BLOCKER`     |
-| 41  | Green run on open PR                                                  | `dev-flow-implement-ticket`        | `codexReviewed=true`, no findings    |
-| 42  | Pending run on open PR                                                | `dev-flow-implement-ticket`        | `codexReviewed=false`, `BLOCKER`     |
-| 43  | Unknown/unreadable run on open PR                                     | `dev-flow-implement-ticket`        | `codexReviewed=false`, `BLOCKER`     |
-| 44  | Explicit PR review request + red run                                  | `dev-flow-pr-review-agent`         | `codexReviewed=false`, `BLOCKER`     |
-| 45  | Explicit PR review feedback request + red run                         | `dev-flow-pr-review-feedback-loop` | `codexReviewed=false`                |
-| 46  | Merged PR with red run (gate not applicable)                          | `dev-ops-post-merge-deploy`        | `review === null`                    |
+| 41  | Red run on open PR (state-driven loop)                                | `dev-flow-implement-ticket`        | `codexReviewed=false`, `BLOCKER`     |
+| 42  | Green run on open PR                                                  | `dev-flow-implement-ticket`        | `codexReviewed=true`, no findings    |
+| 43  | Pending run on open PR                                                | `dev-flow-implement-ticket`        | `codexReviewed=false`, `BLOCKER`     |
+| 44  | Unknown/unreadable run on open PR                                     | `dev-flow-implement-ticket`        | `codexReviewed=false`, `BLOCKER`     |
+| 45  | Explicit PR review request + red run                                  | `dev-flow-pr-review-agent`         | `codexReviewed=false`, `BLOCKER`     |
+| 46  | Explicit PR review feedback request + red run                         | `dev-flow-pr-review-feedback-loop` | `codexReviewed=false`                |
+| 47  | Merged PR with red run (gate not applicable)                          | `dev-ops-post-merge-deploy`        | `review === null`                    |
 
 ## Adding Test Cases
 

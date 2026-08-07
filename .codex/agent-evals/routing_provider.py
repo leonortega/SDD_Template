@@ -23,6 +23,7 @@ EXPLICIT_REQUEST_ROUTES = {
     "pr-review": "dev-flow-pr-review-agent",
     "pr-review-feedback": "dev-flow-pr-review-feedback-loop",
     "explore-change": "dev-flow-explore-change",
+    "implement-multiple-tickets": "dev-flow-parallel-ticket-coordinator",
     "scaffold-project": "dev-flow-scaffold-project",
     "verify-change": "dev-flow-verify-change",
     "archive-change": "dev-flow-archive-change",
@@ -140,6 +141,10 @@ def call_api(
     ).strip().lower()
 
     # --- PARALLEL DELIVERY & DEPLOYMENT LANE VARS ---
+    # `parallelEnabled` is an eval scenario input that models "the AI determined
+    # the user asked to implement more than one ticket". There is no real
+    # parallelDelivery.enabled config gate — the coordinator decides by ticket
+    # count. The eval uses this var to exercise lane/capacity routing.
     parallel_enabled = (
         str(vars_data.get("parallelEnabled", "false")).strip().lower() == "true"
     )

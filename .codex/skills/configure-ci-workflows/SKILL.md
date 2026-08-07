@@ -97,23 +97,63 @@ Use this template structure, filling in sections based on detected stack and app
 name: Package and deploy
 
 on:
-  push:
+  # Deploy ONLY when a pull request targeting `dev` is MERGED (closed event
+  # with merged=true). Direct pushes to dev never deploy: every change that
+  # reaches the dev branch must come through a PR merge.
+  pull_request:
+    types:
+      - closed
     branches:
       - dev
+  # Explicit operator override (e.g. QA/PROD promotion from a release branch).
   workflow_dispatch:
     inputs:
       environment:
-        description: Target environment (dev or qa)
+        description: Target environment (dev, qa, or prod)
         required: true
         default: dev
+      # PROD artifact-reuse: the QA-approved commit to deploy (build is skipped).
+      artifact_commit_sha:
+        description: QA-approved commit to deploy for prod (defaults to ref head)
+        required: false
+        default: ''
+      release_version:
+        description: Final release version recorded in release-prod.json
+        required: false
+        default: ''
+      source_rc_version:
+        description: Source RC tag recorded in release-prod.json
+        required: false
+        default: ''
 
 jobs:
   build-and-deploy:
-    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/dev'
+    # Dispatch always runs. For pull_request events (already restricted to
+    # `closed` PRs targeting dev), only deploy when the PR was actually
+    # merged — a closed-without-merge PR must not deploy.
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     container:
       image: sdd-e2e-ci:local
     steps:
+      - name: Resolve deploy SHA
+        id: sha
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # PR merge event: deploy the MERGE COMMIT on the base branch (dev),
+            # not the PR head — GITHUB_SHA for pull_request events points at the
+            # head, which is not the commit that landed on dev.
+            MERGE_SHA="${{ github.event.pull_request.merge_commit_sha }}"
+            if [ -n "${MERGE_SHA}" ]; then
+              echo "SHA=${MERGE_SHA}" >> "$GITHUB_OUTPUT"
+            else
+              echo "SHA=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "SHA=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout
         env:
           GITEA_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -125,8 +165,53 @@ jobs:
           repo_url="http://git:${TOKEN}@host.docker.internal:3000/${GITHUB_REPOSITORY}.git"
           git init .
           git remote add origin "$repo_url"
-          git fetch --depth 1 origin "$GITHUB_SHA"
+          git fetch --depth 2 origin "${{ steps.sha.outputs.SHA }}"
           git checkout --force FETCH_HEAD
+
+      # ── Deployable-changes gate (src/test folders only) ──
+      # Deploy in ANY environment only when the change set touches a src/,
+      # test/, or tests/ folder at any depth. Docs/infra/workflow-only changes
+      # must not deploy. Gate every deploy-pipeline step with:
+      #   if: steps.changes.outputs.deployable == 'true'
+      - name: Check for deployable changes (src/ or test/ folders)
+        id: changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEPLOY_SHA="${{ steps.sha.outputs.SHA }}"
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            git fetch --depth 1 origin "${BASE_SHA}" >/dev/null 2>&1 || BASE_SHA=""
+          else
+            BASE_SHA=$(git rev-parse --verify "${DEPLOY_SHA}^" 2>/dev/null || echo "")
+          fi
+
+          if [ -z "${BASE_SHA}" ]; then
+            echo "DEPLOYABLE=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # git diff exits 0 (no differences), 1 (differences found), or >=128
+          # (error). Errors fail OPEN so the advisory gate never blocks a real
+          # deploy on its own hiccup.
+          CHANGED=$(git diff --name-only "${BASE_SHA}" "${DEPLOY_SHA}" 2>/tmp/diff-err.log) || DIFF_STATUS=$?
+          DIFF_STATUS="${DIFF_STATUS:-0}"
+          if [ "${DIFF_STATUS}" -gt 1 ]; then
+            echo "DEPLOYABLE=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -z "${CHANGED}" ]; then
+            echo "DEPLOYABLE=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          COUNT=$(echo "${CHANGED}" | grep -cE '(^|/)(src|test|tests)/' || true)
+          if [ "${COUNT}" -gt 0 ]; then
+            echo "DEPLOYABLE=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "DEPLOYABLE=false" >> "$GITHUB_OUTPUT"
+          fi
 
       # ── Build steps (one per app in apps.json) ──
       # For each app in apps.json where role == "web" and its projectPath has a buildable project:
@@ -328,7 +413,7 @@ jobs:
   shell: bash
   run: |
     set -euo pipefail
-    if [ "${{ github.event_name }}" = "push" ]; then
+    if [ "${{ github.event_name }}" = "pull_request" ]; then
       ENV="dev"
     else
       ENV="${{ github.event.inputs.environment }}"
@@ -386,6 +471,15 @@ hardened patterns — each one prevented a real CI failure:
    guarded so the current build's image is never pruned.
 5. **CI kubeconfig** — never hardcode the API port `6443`; kind picks a random host port per cluster. Derive it
    from `kind get kubeconfig` and transform the file as YAML, not line surgery.
+6. **PROD artifact-reuse guard** — when the dispatch input `environment=prod` is used: skip the build and prune
+   steps (`if: steps.env.outputs.ENV != 'prod'`), deploy the pinned `artifact_commit_sha`, verify
+   `app/{commitSha}/container-images.json` on Nexus (commitSha match + registry image existence) before deploy, and
+   run a PROD `/health` smoke gate (host ports from `infra/deployment/ports.json`) after deploy. Never rebuild or
+   republish during PROD promotion.
+7. **src/test deploy gate** — deploy in ANY environment only when the change set touches a `src/`, `test/`, or
+   `tests/` folder at any depth (`(^|/)(src|test|tests)/`). For PR merges diff the PR base against the merge commit;
+   for `workflow_dispatch` use the commit's first-parent diff (checkout at depth 2). Docs, infra, and workflow-only
+   changes must not deploy — gate every deploy step with `if: steps.changes.outputs.deployable == 'true'`.
 
 ### 5. Generate `pr-validation.yml`
 

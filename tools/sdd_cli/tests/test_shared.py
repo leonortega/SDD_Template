@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import http
+import json
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from tools.sdd_cli._shared import (
+    client_tools_project_identifier_findings,
     find_meta,
     get_high_risk_patterns,
     http_json,
@@ -162,6 +164,59 @@ class ProfileAuditFindingsTests(unittest.TestCase):
             keys = {item["key"] for item in findings}
             self.assertNotIn("missing.profile", keys)
             self.assertIn("missing.schema", keys)
+
+
+class ClientToolsProjectIdentifierFindingsTests(unittest.TestCase):
+    """Tests for client_tools_project_identifier_findings."""
+
+    @staticmethod
+    def _write(root: Path, openproject: dict) -> None:
+        codex = root / ".codex"
+        codex.mkdir(parents=True, exist_ok=True)
+        (codex / "client-tools.local.json").write_text(
+            json.dumps({"openProject": openproject}), encoding="utf-8"
+        )
+
+    def test_placeholder_identifier_warns(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write(root, {"projectIdentifier": "replace-with-project-identifier"})
+            findings = client_tools_project_identifier_findings(root)
+            self.assertEqual(1, len(findings))
+            self.assertEqual("openProject.projectIdentifier", findings[0]["key"])
+            self.assertEqual("warning", findings[0]["severity"])
+
+    def test_missing_identifier_warns(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write(root, {})
+            findings = client_tools_project_identifier_findings(root)
+            self.assertEqual(1, len(findings))
+            self.assertEqual("openProject.projectIdentifier", findings[0]["key"])
+
+    def test_real_identifier_no_findings(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write(root, {"projectIdentifier": "e2eproject"})
+            findings = client_tools_project_identifier_findings(root)
+            self.assertEqual([], findings)
+
+    def test_missing_file_no_findings(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            findings = client_tools_project_identifier_findings(root)
+            self.assertEqual([], findings)
+
+    def test_non_dict_openproject_no_findings(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            codex = root / ".codex"
+            codex.mkdir(parents=True)
+            (codex / "client-tools.local.json").write_text(
+                '{"openProject": "not-a-dict"}', encoding="utf-8"
+            )
+            findings = client_tools_project_identifier_findings(root)
+            self.assertEqual([], findings)
 
 
 class HighRiskPatternsTests(unittest.TestCase):

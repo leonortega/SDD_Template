@@ -40,7 +40,7 @@ Every row in the `AGENTS.md` routing table is documented in exactly one place:
 | `dev-flow-retrospective-audit` | `supporting-workflows.md` §5 |
 | `docs-knowledge-maintenance` | `supporting-workflows.md` §6 |
 | `grafana-board-update` | `supporting-workflows.md` §7 |
-| `dev-flow-parallel-ticket-coordinator` (helper) | `parallel-delivery.md` + `supporting-workflows.md` |
+| `dev-flow-parallel-ticket-coordinator` (multi-ticket routing / helper) | `parallel-delivery.md` + `supporting-workflows.md` |
 | `dev-flow-apply-change`, `tdd` (helpers) | `supporting-workflows.md` (Helper Skills) |
 | `full-setup` / `setup-lab` (setup flow) | `supporting-workflows.md` §8 + `setup-flow-plan.md` |
 

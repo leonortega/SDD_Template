@@ -129,6 +129,20 @@ For ticketed changes, read `.codex/skills/_shared/delivery-contract.md` and `doc
 before creating artifacts. Keep proposal scope aligned with the active ticket or
 explicit user request, and preserve validation and handoff expectations for implementation.
 
+## Workflow Telemetry
+
+Workflow telemetry is **mandatory** for this stage: before handoff, upsert the stage time entry with the standalone
+script (shared pattern `.codex/skills/_shared/pipeline-workflow-telemetry.md`):
+
+```bash
+python -m tools.sdd_cli dev-flow telemetry-upsert --ticket-key {ticketKey} \
+  --workflow-stage dev-flow-propose-change --agent-role proposeChange \
+  --started-utc {startedUtc} --finished-utc {finishedUtc} --outcome {outcome}
+```
+
+The marker `IA generated workflow telemetry: {ticketKey}:dev-flow-propose-change` is written automatically. If the
+upsert fails, stop and report before handoff.
+
 ## Workflow
 
 ### Knowledge Consult

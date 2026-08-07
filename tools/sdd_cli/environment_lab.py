@@ -16,6 +16,7 @@ from urllib.parse import urlparse
 from ._shared import (
     REPO_ROOT,
     add_bucket_item,
+    client_tools_project_identifier_findings,
     configure_result,
     configure_set_env_mode,
     copy_seed_file,
@@ -204,7 +205,12 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
     # 9. Validate observability
     _add_step(validate_observability(root, dry_run), fatal=False)
 
-    # 9b. Install Grafana MCP (after Grafana is confirmed running)
+    # 9a. Provision Grafana service account token so the Grafana MCP registers
+    #     with a real token (not a placeholder). Non-fatal: when Grafana is
+    #     unreachable the MCP is still registered without a token.
+    _add_step(provision_grafana_token(root, dry_run), fatal=False)
+
+    # 9b. Install Grafana MCP (after Grafana is confirmed running + token ready)
     _add_step(install_grafana_mcp(root, dry_run), fatal=False)
 
     # 10. Validate Gitea runner (Docker, images, tools, socket, docker_push.py)
@@ -216,7 +222,13 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
     # 11b. Install OpenProject MCP (after user provisioning writes API key to env file)
     _add_step(install_openproject_mcp(root, dry_run), fatal=False)
 
-    # 11c. Install Gitea MCP (after API token is generated and stored in client-tools.local.json)
+    # 11c. Validate client-tools placeholders (openProject.projectIdentifier
+    #      must be real — the OpenProject MCP/ticket flow reads it).
+    #      Non-fatal: after provisioning the value is set; a warning here means
+    #      provisioning was skipped or failed and needs a re-run.
+    _add_step(validate_client_tools(root, dry_run), fatal=False)
+
+    # 11d. Install Gitea MCP (after API token is generated and stored in client-tools.local.json)
     _add_step(install_gitea_mcp(root, dry_run), fatal=False)
 
     # 12. Provision Nexus repositories + accept EULA
@@ -514,6 +526,25 @@ def ensure_openproject_env(root: Path, dry_run: bool = False) -> dict[str, Any]:
         }
     )
     result["valid"] = True
+    return result
+
+
+# ── Validate client tools ───────────────────────────────────────────────
+
+
+def validate_client_tools(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Preflight check: warn when client-tools.local.json holds placeholders.
+
+    Specifically flags a missing/placeholder ``openProject.projectIdentifier``
+    (the OpenProject MCP/ticket flow reads it and would 404). Non-fatal — the
+    step reports a warning finding and stays valid.
+    """
+    result = configure_result("ValidateClientTools", dry_run, write_enabled=False)
+    for finding in client_tools_project_identifier_findings(root):
+        result["findings"].append(finding)
+    result["valid"] = not any(
+        item.get("severity") == "error" for item in result["findings"]
+    )
     return result
 
 
@@ -1757,6 +1788,249 @@ def _observability_checks(
         item.get("severity") == "error" for item in result["findings"]
     )
     return result
+
+
+# ── Grafana service account token provisioning ───────────────────────────
+
+
+def provision_grafana_token(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Provision a Grafana service account token for the Grafana MCP.
+
+    Grafana ships with anonymous viewer access (compose), but the Grafana
+    MCP needs an authenticated service account to query dashboards, run
+    Prometheus queries, and manage alerts. This step creates a dedicated
+    'sdd-agent' service account (role: Editor) and a token via the Grafana
+    HTTP API (Basic admin:admin), then writes GRAFANA_URL and
+    GRAFANA_SERVICE_ACCOUNT_TOKEN into infra/monitoring/variables.env
+    (gitignored, local-only) so install_grafana_mcp registers with a real
+    token instead of a placeholder.
+
+    Idempotent: skips when a non-placeholder token is already present.
+    Non-blocking: if Grafana is unreachable or the API call fails, the step
+    reports a warning finding and stays valid — the MCP is then registered
+    without a token and install_grafana_mcp's warning remains the only
+    signal. Either way, the GRAFANA_URL/GRAFANA_SERVICE_ACCOUNT_TOKEN keys
+    are synced to the local env file (empty token on failure) so the
+    template-drift Audit stays clean.
+    """
+    import re as _re
+
+    result = configure_result(
+        "ProvisionGrafanaToken", dry_run, write_enabled=not dry_run
+    )
+    env_path = root / "infra" / "monitoring" / "variables.env"
+    if not env_path.exists():
+        if dry_run:
+            result["actions"].append(
+                {
+                    "path": "infra/monitoring/variables.env",
+                    "key": "grafana.token",
+                    "severity": "info",
+                    "message": "Would provision Grafana token once InitLocalFiles creates variables.env.",
+                    "phase": "apply",
+                }
+            )
+            result["valid"] = True
+            return result
+        add_bucket_item(
+            result["findings"],
+            "infra/monitoring/variables.env",
+            "missing.env",
+            "infra/monitoring/variables.env is missing. Run InitLocalFiles first.",
+            "error",
+            "pre-start",
+        )
+        result["valid"] = False
+        return result
+
+    current = read_env_file(env_path)
+    existing = current.get("GRAFANA_SERVICE_ACCOUNT_TOKEN", "")
+    if existing and "replace-with" not in existing:
+        result["actions"].append(
+            {
+                "path": "infra/monitoring/variables.env",
+                "key": "grafana.token.keep",
+                "severity": "info",
+                "message": "GRAFANA_SERVICE_ACCOUNT_TOKEN already set - keeping existing value.",
+                "phase": "audit",
+            }
+        )
+        result["valid"] = True
+        return result
+
+    if dry_run:
+        result["actions"].append(
+            {
+                "path": "infra/monitoring/variables.env",
+                "key": "grafana.token.generate",
+                "severity": "info",
+                "message": "Would create Grafana service account 'sdd-agent' + token via the Grafana API.",
+                "phase": "apply",
+            }
+        )
+        result["valid"] = True
+        return result
+
+    grafana_url = current.get("GRAFANA_URL", "http://localhost:3001").rstrip("/")
+    sa_name = "sdd-agent"
+    token_name = "sdd-agent"
+    auth = ("admin", "admin")
+
+    def _sync_env(token_value: str) -> None:
+        """Upsert GRAFANA_URL + token into the local env file (text-preserving
+        so comments and unrelated keys stay intact)."""
+        text = env_path.read_text(encoding="utf-8")
+        for key, value in (
+            ("GRAFANA_URL", grafana_url),
+            ("GRAFANA_SERVICE_ACCOUNT_TOKEN", token_value),
+        ):
+            if _re.search(rf"(?m)^{_re.escape(key)}=.*$", text):
+                text = _re.sub(
+                    rf"(?m)^{_re.escape(key)}=.*$", f"{key}={value}", text
+                )
+            else:
+                text = text.rstrip("\n") + f"\n{key}={value}\n"
+        env_path.write_text(text, encoding="utf-8")
+
+    try:
+        sa_id = _find_or_create_grafana_sa(grafana_url, sa_name, auth)
+        if sa_id is None:
+            _sync_env("")
+            add_bucket_item(
+                result["findings"],
+                "grafana/api/serviceaccounts",
+                "grafana.sa.create",
+                "Could not create or find Grafana service account 'sdd-agent'.",
+                "warning",
+                "apply",
+            )
+            result["valid"] = True
+            return result
+
+        token = _create_grafana_token(grafana_url, sa_id, token_name, auth)
+        if not token:
+            _sync_env("")
+            add_bucket_item(
+                result["findings"],
+                "grafana/api/serviceaccounts/tokens",
+                "grafana.token.create",
+                "Could not create Grafana service account token.",
+                "warning",
+                "apply",
+            )
+            result["valid"] = True
+            return result
+
+        _sync_env(token)
+        result["actions"].append(
+            {
+                "path": "infra/monitoring/variables.env",
+                "key": "grafana.token.generated",
+                "severity": "info",
+                "message": "Provisioned Grafana service account token for the Grafana MCP.",
+                "phase": "apply",
+            }
+        )
+    except Exception as ex:
+        _sync_env("")
+        add_bucket_item(
+            result["findings"],
+            "grafana",
+            "grafana.token",
+            f"Could not provision Grafana service account token: {ex}",
+            "warning",
+            "apply",
+        )
+    result["valid"] = True  # non-blocking by design
+    return result
+
+
+def _find_or_create_grafana_sa(
+    base_url: str, name: str, auth: tuple[str, str]
+) -> int | None:
+    """Return the Grafana service account id for ``name``, creating it if missing."""
+    status, body = http_json(
+        "POST",
+        f"{base_url}/api/serviceaccounts",
+        body={"name": name, "role": "Editor", "isDisabled": False},
+        basic=auth,
+        timeout=10,
+    )
+    if status in (200, 201):
+        try:
+            data = json.loads(body)
+            if isinstance(data, dict) and data.get("id"):
+                return int(data["id"])
+        except (ValueError, TypeError):
+            pass
+    # Already exists (409/400) → search by name.
+    status, body = http_json(
+        "GET", f"{base_url}/api/serviceaccounts?query={name}", basic=auth, timeout=10
+    )
+    if status == 200:
+        try:
+            accounts = json.loads(body)
+            if isinstance(accounts, list):
+                for acc in accounts:
+                    if acc.get("name") == name and acc.get("id"):
+                        return int(acc["id"])
+        except (ValueError, TypeError):
+            pass
+    return None
+
+
+def _create_grafana_token(
+    base_url: str, sa_id: int, name: str, auth: tuple[str, str]
+) -> str:
+    """Create a service account token, replacing an existing token of the same name."""
+    status, body = http_json(
+        "POST",
+        f"{base_url}/api/serviceaccounts/{sa_id}/tokens",
+        body={"name": name},
+        basic=auth,
+        timeout=10,
+    )
+    if status in (200, 201):
+        try:
+            data = json.loads(body)
+            key = (data or {}).get("key", "")
+            if key:
+                return key
+        except (ValueError, TypeError):
+            pass
+    # Token name already exists (409) → list, delete the stale one, retry once.
+    status, body = http_json(
+        "GET", f"{base_url}/api/serviceaccounts/{sa_id}/tokens", basic=auth, timeout=10
+    )
+    if status == 200:
+        try:
+            tokens = json.loads(body)
+            if isinstance(tokens, list):
+                for tok in tokens:
+                    if tok.get("name") == name and tok.get("id"):
+                        http_json(
+                            "DELETE",
+                            f"{base_url}/api/serviceaccounts/{sa_id}/tokens/{tok['id']}",
+                            basic=auth,
+                            timeout=10,
+                        )
+                        break
+        except (ValueError, TypeError):
+            pass
+    status, body = http_json(
+        "POST",
+        f"{base_url}/api/serviceaccounts/{sa_id}/tokens",
+        body={"name": name},
+        basic=auth,
+        timeout=10,
+    )
+    if status in (200, 201):
+        try:
+            data = json.loads(body)
+            return (data or {}).get("key", "")
+        except (ValueError, TypeError):
+            pass
+    return ""
 
 
 # ── Configure modes (set client tools, stack, quality, recommendations) ──
@@ -4255,6 +4529,16 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
         }
         config.setdefault("openProject", {})
         config["openProject"]["provisioning"] = op_provision
+        # Top-level projectIdentifier is what the OpenProject MCP/ticket flow
+        # reads (GET /api/v3/projects/{projectIdentifier}). Keep it in sync with
+        # the provisioned project so setup-lab self-heals the example placeholder
+        # — but only when unset/placeholder, preserving a user-set identifier
+        # (same "keep existing" convention as ensure_openproject_env).
+        _current_identifier = str(
+            config["openProject"].get("projectIdentifier", "") or ""
+        ).strip()
+        if not _current_identifier or _current_identifier.startswith("replace-with"):
+            config["openProject"]["projectIdentifier"] = op_provision["project"]["identifier"]
 
         # Also save Gitea provisioning info
         gitea_provision = {
@@ -4838,7 +5122,7 @@ def run_environment_lab(args: list[str]) -> int:
             "Available: setup-lab, compose-up, compose-down, health-check, init-local-files, init-project-profile, "
             "init-quality-templates, set-openproject-env, set-monitoring-env, set-gitea-runner-env, "
             "split-infra-env, build-gitea-images, set-gitea-branch-protection, validate-observability, "
-            "validate-gitea-runner, validate-app-config, validate-docker-desktop, "
+            "provision-grafana-token, validate-gitea-runner, validate-app-config, validate-docker-desktop, "
             "provision-nexus-repositories, provision-gitea-secrets, set-client-tools, set-project-stack, "
             "set-project-stack-metadata, set-semgrep-config, set-quality-config, "
             "validate-docker-desktop-k8s, setup-kind-cluster, setup-k8s-access, scaffold-k8s, "
@@ -4871,6 +5155,7 @@ def run_environment_lab(args: list[str]) -> int:
             root, dry_run
         ),
         "validate-observability": lambda: validate_observability(root, dry_run),
+        "provision-grafana-token": lambda: provision_grafana_token(root, dry_run),
         "validate-gitea-runner": lambda: validate_gitea_runner(root, dry_run),
         "validate-app-config": lambda: validate_app_config(root, dry_run),
         "validate-docker-desktop": lambda: validate_docker_desktop(root, dry_run),

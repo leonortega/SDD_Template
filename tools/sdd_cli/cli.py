@@ -339,7 +339,12 @@ def _safe_read_json(path: Path) -> dict[str, Any]:
 
 def _run_audit(root: Path, dry_run: bool) -> dict[str, Any]:
     """Run combined audit checks: env drift, quality gates, project profile."""
-    from ._shared import add_bucket_item, add_env_drift_findings, configure_result
+    from ._shared import (
+        add_bucket_item,
+        add_env_drift_findings,
+        client_tools_project_identifier_findings,
+        configure_result,
+    )
 
     result = configure_result("Audit", dry_run, write_enabled=False)
     add_env_drift_findings(root, result)
@@ -420,6 +425,10 @@ def _run_audit(root: Path, dry_run: bool) -> dict[str, Any]:
                                     "audit",
                                 )
 
+    # Warn when openProject.projectIdentifier is missing/placeholder — the
+    # OpenProject MCP/ticket flow would 404 against /api/v3/projects/{id}.
+    for finding in client_tools_project_identifier_findings(root):
+        result["findings"].append(finding)
 
     result["valid"] = not any(
         item.get("severity") == "error" for item in result["findings"]
@@ -550,6 +559,11 @@ def _parse_cli(argv: list[str] | None):
     full.add_argument("full_args", nargs=argparse.REMAINDER)
     full.set_defaults(func=_dispatch_full_setup)
 
+    # gitea (PR reviewer automation: deterministic §11.5 reviewer assignment)
+    gitea = sub.add_parser("gitea")
+    gitea.add_argument("gitea_args", nargs=argparse.REMAINDER)
+    gitea.set_defaults(func=_dispatch_gitea)
+
     # configure (for run_configure_mode testing)
     cfg = sub.add_parser("configure")
     cfg.add_argument("cfg_mode", nargs=1)
@@ -632,6 +646,12 @@ def _dispatch_dev_flow(args: Any) -> int:
     from .dev_flow import run_dev_flow
 
     return run_dev_flow(getattr(args, "flow_args", []))
+
+
+def _dispatch_gitea(args: Any) -> int:
+    from .gitea_reviewers import request_reviewers_cli
+
+    return request_reviewers_cli(getattr(args, "gitea_args", []))
 
 
 def _dispatch_knowledge_search(args: Any) -> int:

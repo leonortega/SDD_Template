@@ -80,7 +80,8 @@ text
  8. ComposeUp                 (Gitea + Nexus + Seq + Grafana + Dozzle — via root infra/compose.yml)
  8b. WaitForServices          (Gitea/OpenProject/Nexus/Grafana/Seq reachable)
  9. ValidateObservability     (Seq + Grafana health endpoints + dashboard provisioning + Infinity datasource)
- 9b. InstallGrafanaMCP        (Grafana MCP after Grafana is running)
+ 9a. ProvisionGrafanaToken    (create Grafana service account + token via API; write GRAFANA_URL/GRAFANA_SERVICE_ACCOUNT_TOKEN to infra/monitoring/variables.env)
+ 9b. InstallGrafanaMCP        (Grafana MCP after Grafana is running + token ready)
 10. ValidateGiteaRunner       (Docker, images, tools, socket, docker_push.py, network)
 11. ProvisionLabUsers         (Gitea/OpenProject/Nexus users + runner registration token)
 11b. InstallOpenProjectMCP    (after API key is provisioned)
@@ -112,6 +113,7 @@ If you need to run steps individually:
 | Validate app config                 | `python -m tools.sdd_cli environment-lab validate-app-config`                     |
 | Validate Docker Desktop             | `python -m tools.sdd_cli environment-lab validate-docker-desktop`                 |
 | Validate observability              | `python -m tools.sdd_cli environment-lab validate-observability`                  |
+| Provision Grafana token             | `python -m tools.sdd_cli environment-lab provision-grafana-token`                |
 | Validate Gitea runner               | `python -m tools.sdd_cli environment-lab validate-gitea-runner`                   |
 | Provision Gitea secrets             | `python -m tools.sdd_cli environment-lab provision-gitea-secrets`                 |
 | Install lefthook                    | `python -m tools.sdd_cli tool-installer install-lefthook`                         |
@@ -470,8 +472,8 @@ Configure code quality thresholds, scanning tools, and local hooks.
 
 ### Trunk.io (Local Formatting)
 
-Trunk is a universal code formatter and linter manager installed locally (not in CI). The lefthook hooks `trunk-fmt` and `trunk-check` run `npx trunk fmt` and `npx trunk check` on every commit, so
-trunk must be initialized before the first commit.
+Trunk is a universal code formatter and linter manager installed locally (not in CI). The lefthook hooks `trunk-fmt` and `trunk-check` run `npx --yes trunk fmt` and `npx --yes trunk check` on every commit (`--yes` prevents the npx install prompt from blocking non-TTY hooks), so
+trunk must be initialized before the first commit. `ensure-quality-tools` (run by `full-setup`) auto-installs `@trunkio/launcher` into the gitignored `node_modules/` when the probe fails, so hooks resolve trunk without prompting.
 
 1. **Initialize trunk in the repo:** `npx trunk init`
    - `npx` auto-downloads the launcher — no manual install needed

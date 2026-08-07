@@ -2,11 +2,15 @@
 
 # Knowledge Base
 
-This repository keeps two context layers:
+This repository keeps three context layers:
 
 - `docs/` — documentation for humans and maintainers (architecture, ADRs, modules, APIs, workflows, conventions).
 - `knowledge/` — operational knowledge that agents actively consult while implementing, debugging, reviewing, and fixing
 code.
+- `openspec/specs/` — archived OpenSpec behavior specs (created when a change is archived; delta specs are synced to
+`openspec/specs/<capability>/spec.md`). Agents consult these as an additional knowledge source for durable behavior
+standards, alongside `docs/` and `knowledge/`. The folder is optional — it does not exist until the first change is
+archived, and `knowledge-search` skips it silently until then.
 
 This file is the index, the read/write policy, and the standard template for the knowledge base. Use it at the start of
 planning, implementation, review, QA, deployment, rollback, hotfix, and retrospective work.
@@ -62,6 +66,10 @@ python -m tools.sdd_cli knowledge-search search --list-topics
 python -m tools.sdd_cli knowledge-search search --query Api__BaseUrl
 python -m tools.sdd_cli knowledge-search search --query Gitea,reviewer
 ```
+
+Search covers all three Markdown KB layers — `knowledge/`, `docs/`, and `openspec/specs/` (docs/ and specs/ only when
+they exist); results carry a `root` field so callers can tell operational knowledge, human docs, and archived behavior
+specs apart.
 
 Search accelerates diagnosis; it does not replace freshness checks against current files and live systems.
 
@@ -129,10 +137,12 @@ Run the deterministic classifier first to pick the candidate file paths:
 python -m tools.sdd_cli knowledge-search classify --task "<task summary>" --changed-files "<comma-separated changed paths>" --test-results "<test outcome>"
 ```
 
-It maps the task summary, changed files, and test results to the exact candidate `knowledge/` or `docs/` file paths (or
-`NO_CHANGES`). Then update only those candidate files.
+It maps the task summary, changed files, and test results to the exact candidate `knowledge/`, `docs/`, or
+`openspec/specs/` file paths (or `NO_CHANGES`). Then update only those candidate files.
 
 1. Classify the finding.
+   - Archived-spec edits (`openspec/specs/`) map to the spec file itself — the spec is the durable behavior record, so
+   no new `knowledge/` entry is minted for a spec-only change.
    - Authoritative architecture, setup, development, deployment, or context policy belongs in `docs/` (use the
    `docs-knowledge-maintenance` skill for AI-updatable docs).
    - Enforceable automation behavior belongs in `.codex/skills/_shared/delivery-contract.md` plus affected skills and

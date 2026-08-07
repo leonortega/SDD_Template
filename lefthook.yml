@@ -11,7 +11,8 @@ pre-commit:
     gitleaks-staged:
       run: gitleaks protect --staged --redact
     trunk-fmt:
-      run: npx trunk fmt
+      # --yes: npx must not prompt to install the launcher mid-hook (non-TTY).
+      run: npx --yes trunk fmt
 
 # Product tests (unit, integration, architecture) + the coverage gate run
 # locally BEFORE push so the CI image stays lean (stack runtimes live on the
@@ -30,4 +31,5 @@ commit-msg:
     gitleaks-msg:
       run: gitleaks detect --source . --no-git --redact --verbose --config .gitleaks.toml
     trunk-check:
-      run: npx trunk check --all --ci --no-fix
+      # --yes: npx must not prompt to install the launcher mid-hook (non-TTY).
+      run: npx --yes trunk check --all --ci --no-fix

@@ -463,6 +463,56 @@ def install_or_update_sdd_tool(
 # ── MCP registration helper ──────────────────────────────────────────────
 
 
+def _cline_settings_targets() -> list[Path]:
+    """Cline MCP settings files to sync, in priority order.
+
+    Returns the standalone Cline location always, plus any legacy VS Code
+    extension locations that already exist. Shared by the registration writer
+    (``_register_mcp_entry._write_cline``) and the junk-entry pruner
+    (``_prune_junk_mcp_servers``) so both operate on the same file set.
+    """
+    new_cline = (
+        Path.home() / ".cline" / "data" / "settings" / "cline_mcp_settings.json"
+    )
+    candidates: list[Path] = [new_cline]
+    if sys.platform.startswith("win"):
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            candidates.append(
+                Path(appdata)
+                / "Code"
+                / "User"
+                / "globalStorage"
+                / "saoudrizwan.claude-dev"
+                / "settings"
+                / "cline_mcp_settings.json"
+            )
+    elif sys.platform == "darwin":
+        candidates.append(
+            Path.home()
+            / "Library"
+            / "Application Support"
+            / "Code"
+            / "User"
+            / "globalStorage"
+            / "saoudrizwan.claude-dev"
+            / "settings"
+            / "cline_mcp_settings.json"
+        )
+    else:
+        candidates.append(
+            Path.home()
+            / ".config"
+            / "Code"
+            / "User"
+            / "globalStorage"
+            / "saoudrizwan.claude-dev"
+            / "settings"
+            / "cline_mcp_settings.json"
+        )
+    return [new_cline] + [p for p in candidates[1:] if p.exists()]
+
+
 def _register_mcp_entry(
     root: Path,
     mcp_path: Path,
@@ -483,7 +533,9 @@ def _register_mcp_entry(
     def _build_entry() -> dict[str, Any]:
         # Supports both stdio entries (command/args/env) and remote HTTP
         # entries (type=http, url, headers). Anything the installer declares is
-        # passed through untouched so http servers are not rewritten as stdio.
+        # passed through untouched so http servers are not rewritten as stdio;
+        # Cline settings files translate the type to Cline's streamableHttp
+        # form in _write_cline (VS Code keeps the http form in .vscode/mcp.json).
         entry: dict[str, Any] = {}
         if "command" in expected_entry:
             entry["command"] = expected_entry["command"]
@@ -601,48 +653,20 @@ def _register_mcp_entry(
         wrapper) so both standalone Cline and the VS Code extension stay in
         sync.
         """
-        new_cline = (
-            Path.home() / ".cline" / "data" / "settings" / "cline_mcp_settings.json"
-        )
-        candidates: list[Path] = [new_cline]
-        if sys.platform.startswith("win"):
-            appdata = os.environ.get("APPDATA")
-            if appdata:
-                candidates.append(
-                    Path(appdata)
-                    / "Code"
-                    / "User"
-                    / "globalStorage"
-                    / "saoudrizwan.claude-dev"
-                    / "settings"
-                    / "cline_mcp_settings.json"
-                )
-        elif sys.platform == "darwin":
-            candidates.append(
-                Path.home()
-                / "Library"
-                / "Application Support"
-                / "Code"
-                / "User"
-                / "globalStorage"
-                / "saoudrizwan.claude-dev"
-                / "settings"
-                / "cline_mcp_settings.json"
-            )
-        else:
-            candidates.append(
-                Path.home()
-                / ".config"
-                / "Code"
-                / "User"
-                / "globalStorage"
-                / "saoudrizwan.claude-dev"
-                / "settings"
-                / "cline_mcp_settings.json"
-            )
-
-        targets = [new_cline] + [p for p in candidates[1:] if p.exists()]
+        targets = _cline_settings_targets()
         entry = _build_entry()
+        # Cline's schema rejects "type": "http" for remote streamable HTTP
+        # servers — the whole settings file fails validation with "[Invalid MCP
+        # settings schema.]" (cline issue #7091). Cline documents
+        # "streamableHttp" (camelCase) as the type for remote HTTP servers,
+        # while VS Code's native .vscode/mcp.json schema uses "http". Translate
+        # the type ONLY for Cline files; the source entry keeps "http" so
+        # _write_vscode writes the VS Code-valid form.
+        cline_entry = dict(entry)
+        # Only url-based remote entries carry the VS Code-style "http" type;
+        # Cline's remote schema names it "streamableHttp".
+        if cline_entry.get("type") == "http" and "url" in cline_entry:
+            cline_entry["type"] = "streamableHttp"
         for cline_path in targets:
             cline_path.parent.mkdir(parents=True, exist_ok=True)
             try:
@@ -663,12 +687,14 @@ def _register_mcp_entry(
                 isinstance(v, dict) and "transport" in v
                 for v in cline_servers.values()
             )
-            if "url" in entry:
-                cline_servers[server_name] = entry
+            if "url" in cline_entry:
+                cline_servers[server_name] = cline_entry
             elif use_transport:
-                cline_servers[server_name] = {"transport": {"type": "stdio", **entry}}
+                cline_servers[server_name] = {
+                    "transport": {"type": "stdio", **cline_entry}
+                }
             else:
-                cline_servers[server_name] = entry
+                cline_servers[server_name] = cline_entry
             write_json(cline_path, cline_data)
             result["actions"].append({
                 "path": str(cline_path),
@@ -1054,8 +1080,73 @@ def install_openproject_mcp(root: Path, dry_run: bool = False) -> dict[str, Any]
 
 # ── Ensure MCP servers ───────────────────────────────────────────────────
 
+# MCP server names that are never managed by this installer and are almost
+# certainly leftover junk from manual experiments (observed in the field:
+# "new-server", "test-server", "newserver"). ensure_mcp_servers prunes these
+# when prune_junk is enabled (default). Exact-name match only — arbitrary
+# user-added servers (e.g. codebase-memory-mcp) are never touched.
+_MCP_JUNK_SERVER_NAMES: frozenset[str] = frozenset(
+    {"new-server", "test-server", "newserver"}
+)
 
-def ensure_mcp_servers(root: Path, dry_run: bool = False) -> dict[str, Any]:
+
+def _prune_junk_mcp_servers(
+    root: Path, result: dict[str, Any], dry_run: bool
+) -> None:
+    """Remove known-junk MCP server entries from every managed settings file.
+
+    Applies to the repo's .vscode/mcp.json and all existing Cline settings
+    files (via ``_cline_settings_targets``). Only exact matches of
+    ``_MCP_JUNK_SERVER_NAMES`` are removed; real unknown servers the user added
+    are preserved. Each removal is recorded as an action (dry-run: a "would
+    remove" action, no writes).
+    """
+    files: list[Path] = []
+    vscode = root / ".vscode" / "mcp.json"
+    if vscode.exists():
+        files.append(vscode)
+    files.extend(_cline_settings_targets())
+
+    for path in files:
+        try:
+            data = read_json(path, optional=True)
+        except Exception:
+            data = {}
+        if not isinstance(data, dict):
+            continue
+        servers_key = (
+            "mcpServers" if isinstance(data.get("mcpServers"), dict) else "servers"
+        )
+        servers = data.get(servers_key)
+        if not isinstance(servers, dict):
+            continue
+        removed = [name for name in sorted(_MCP_JUNK_SERVER_NAMES) if name in servers]
+        if not removed:
+            continue
+        for name in removed:
+            del servers[name]
+        if not dry_run:
+            write_json(path, data)
+        for name in removed:
+            result["actions"].append(
+                {
+                    "path": str(path),
+                    "key": f"prune.{name}",
+                    "severity": "info",
+                    "message": (
+                        f"Would remove junk MCP server entry '{name}' from "
+                        f"{path.name}."
+                        if dry_run
+                        else f"Removed junk MCP server entry '{name}' from {path.name}."
+                    ),
+                    "phase": "apply",
+                }
+            )
+
+
+def ensure_mcp_servers(
+    root: Path, dry_run: bool = False, prune_junk: bool = True
+) -> dict[str, Any]:
     """Register all MCP servers in .vscode/mcp.json.
 
     Checks every install_*_mcp target: playwright, grafana, kubernetes, gitea,
@@ -1063,6 +1154,13 @@ def ensure_mcp_servers(root: Path, dry_run: bool = False) -> dict[str, Any]:
     from their config files and register the server entry even when credentials
     are missing — the installer reports a warning action so the gap is visible
     without failing the aggregate result.
+
+    When ``prune_junk`` (default True) is set, known-junk MCP entries such as
+    "new-server"/"test-server"/"newserver" are removed from every managed
+    settings file so stale experimental servers are cleaned automatically.
+    Pass ``--prune-junk false`` to keep them. Note: full-setup stage 3 calls
+    this function directly and always prunes (no flag); the opt-out is
+    available on ``tool-installer ensure-mcp-servers --prune-junk false``.
     """
     result = configure_result("EnsureMCPServers", dry_run, write_enabled=not dry_run)
 
@@ -1078,6 +1176,9 @@ def ensure_mcp_servers(root: Path, dry_run: bool = False) -> dict[str, Any]:
             result["actions"].append(action)
         for finding in r.get("findings", []):
             result["findings"].append(finding)
+
+    if prune_junk:
+        _prune_junk_mcp_servers(root, result, dry_run)
 
     result["valid"] = not any(
         item.get("severity") == "error" for item in result["findings"]
@@ -1316,8 +1417,11 @@ def ensure_quality_tools(root: Path, dry_run: bool = False) -> dict[str, Any]:
         )
     # Trunk (formatting) (skip in dry-run; resolves via npx from node_modules/.bin)
     if not dry_run:
+        # First-run npx must download the launcher + trunk binary (large), so
+        # 30s times out and produces a false "not installed" warning. 120s
+        # covers cold downloads; warm runs resolve from the npx cache fast.
         trunk_check = run_native(
-            native_command("npx") + ["--yes", "trunk", "--version"], root, timeout=30
+            native_command("npx") + ["--yes", "trunk", "--version"], root, timeout=120
         )
         if trunk_check["returncode"] == 0:
             result["actions"].append(
@@ -1330,14 +1434,49 @@ def ensure_quality_tools(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 }
             )
         else:
-            add_bucket_item(
-                result["findings"],
-                "trunk",
-                "missing",
-                "Trunk is not installed. Install via: npm install -D @trunkio/launcher",
-                "warning",
-                "pre-start",
+            # Auto-install the launcher into gitignored node_modules so the
+            # lefthook fmt/check hooks resolve trunk without prompting. The
+            # template is deliberately package.json-free (tests assert no
+            # package.json is generated), so install --no-save + --no-package-lock
+            # to avoid creating either file.
+            install = run_native(
+                native_command("npm")
+                + [
+                    "install",
+                    "--no-save",
+                    "--no-package-lock",
+                    "--no-audit",
+                    "--no-fund",
+                    "@trunkio/launcher",
+                ],
+                root,
+                timeout=300,
             )
+            recheck = run_native(
+                native_command("npx") + ["--yes", "trunk", "--version"],
+                root,
+                timeout=30,
+            )
+            if install["returncode"] == 0 and recheck["returncode"] == 0:
+                result["actions"].append(
+                    {
+                        "path": "trunk",
+                        "key": "install",
+                        "severity": "info",
+                        "message": "Trunk launcher auto-installed into node_modules (gitignored) — lefthook fmt/check hooks will resolve it.",
+                        "phase": "apply",
+                    }
+                )
+            else:
+                add_bucket_item(
+                    result["findings"],
+                    "trunk",
+                    "missing",
+                    "Trunk is not installed. Install via: npm install -D @trunkio/launcher"
+                    + " (auto-install attempted but failed — check npm registry access).",
+                    "warning",
+                    "pre-start",
+                )
     else:
         result["actions"].append(
             {
@@ -1957,7 +2096,11 @@ def run_tool_installer(args: list[str]) -> int:
             dry_run=dry_run,
         ),
         "validate-manifest": lambda: validate_manifest(root, dry_run),
-        "ensure-mcp-servers": lambda: ensure_mcp_servers(root, dry_run),
+        "ensure-mcp-servers": lambda: ensure_mcp_servers(
+            root,
+            dry_run,
+            prune_junk=options.get("prune-junk", "true").lower() != "false",
+        ),
         "ensure-quality-tools": lambda: ensure_quality_tools(root, dry_run),
     }
     if subcommand in ("install-sdd-template", "update-sdd-template"):

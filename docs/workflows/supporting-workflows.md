@@ -24,7 +24,10 @@ Helper skills used **inside** the linear flow (not standalone routing stages):
 - `dev-flow-apply-change` — executes OpenSpec tasks via the `/opsx:apply` pattern inside
   `dev-flow-implement-ticket`.
 - `dev-flow-parallel-ticket-coordinator` — orchestrates multi-ticket parallel delivery
-  (see `parallel-delivery.md` and Section 10 of `implementation-deploy-flows.md`).
+  (see `parallel-delivery.md` and Section 10 of `implementation-deploy-flows.md`). Also
+  the routing target when the AI determines the user asked to implement more than one
+  ticket — there is no `parallelDelivery.enabled` gate; single-ticket requests stay on
+  the linear flow.
 - `tdd` — RED/GREEN discipline used inside implementation (see below).
 
 ---
@@ -319,7 +322,7 @@ The full architectural plan is in [`setup-flow-plan.md`](setup-flow-plan.md).
 ## 9. Eval Alignment (Promptfoo Coverage)
 
 Every workflow in this document is exercised by the agent eval
-(`.codex/agent-evals/promptfooconfig.yaml`, 39 cases). Coverage per workflow:
+(`.codex/agent-evals/promptfooconfig.yaml`, 47 cases). Coverage per workflow:
 
 | Workflow | Eval coverage mechanism | Covered? |
 | -------- | ----------------------- | -------- |
@@ -329,7 +332,7 @@ Every workflow in this document is exercised by the agent eval
 | `dev-flow-scaffold-project` | explicit `requestType: scaffold-project` | ✅ |
 | `dev-flow-retrospective-audit` | explicit `requestType: retrospective-audit` | ✅ |
 | `grafana-board-update` | explicit `requestType: dashboard-update` | ✅ |
-| `dev-flow-parallel-ticket-coordinator` | parallel-delivery coverage group (5 cases, `blocked-*` + lane routes) | ✅ |
+| `dev-flow-parallel-ticket-coordinator` | parallel-delivery coverage group (5 scenario cases + 1 explicit multi-ticket trigger, `blocked-*`, lane routes) | ✅ |
 | `dev-flow-apply-change`, `tdd` | helper skills — exercised indirectly via implementation cases | ✅ |
 | `docs-knowledge-maintenance` | explicit `requestType: docs-knowledge-maintenance` | ✅ |
 | Frontend design (impeccable) | `activatedSkills` stack-mapping group (3 cases: frontend impl, backend-only, pre-impl) | ✅ |
@@ -339,7 +342,7 @@ Every workflow in this document is exercised by the agent eval
 route, so an explicit "update the docs" request fell through to
 `dev-flow-pipeline-status`. It now has an explicit `requestType` mapping and a matching
 Promptfoo test case. Frontend design skills are verified via `activatedSkills` on
-implementation-stage routes (impeccable activated only for frontend stacks); all 39
+implementation-stage routes (impeccable activated only for frontend stacks); all 47
 eval cases pass against the provider.
 
 ---

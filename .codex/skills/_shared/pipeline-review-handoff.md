@@ -37,7 +37,20 @@ step.
      Exclude the PR author and the authenticated automation user.
    - If `pr.reviewers` is an array, use that list after trimming empty values.
 
-2. **Call `request-reviewers`** on the PR:
+2. **Run the reviewer automation** (recommended — deterministic resolve + request + verify + retry):
+
+   ```bash
+   python -m tools.sdd_cli gitea request-reviewers --pr {prNumber}
+   ```
+
+   The command reads `.codex/client-tools.local.json` (`gitea.baseUrl/apiToken/owner/repo`), resolves the reviewer
+   list (`gitea.reviewers` → `pr.reviewers`; `"all"` expands to repo collaborators; fallback to provisioned
+   `gitea.provisioning.users`), excludes the PR author, POSTs `requested_reviewers`, verifies the reviewers are
+   present, and retries once. Exit code 0 = verified; 1 = failed. Use `--dry-run true` to preview the resolved
+   list without calling the API (note: `pr.reviewers = "all"` cannot be previewed in dry-run — the collaborator
+   fetch is an API call).
+
+   Alternatively (manual), call `request-reviewers` on the PR:
 
    ```text
    POST {giteaBaseUrl}/api/v1/repos/{owner}/{repo}/pulls/{prNumber}/requested_reviewers
@@ -51,8 +64,8 @@ step.
    }
    ```
 
-3. **Verify reviewers are present** — re-fetch the PR and inspect `requested_reviewers`. If not present, retry the
-request once.
+3. **Verify reviewers are present** — the CLI verifies automatically; for manual calls, re-fetch the PR and inspect
+`requested_reviewers`. If not present, retry the request once.
 
 4. **If reviewer assignment fails** after retry, log the blocking issue. Document the reviewer gap in the PR body,
 ticket handoff comment, and final summary. Do not hand off without at least

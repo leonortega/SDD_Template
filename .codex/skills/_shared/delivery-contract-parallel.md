@@ -14,6 +14,9 @@ implementation, PR validation, and review at the same time. The default local
 runtime state file is ignored `.codex/parallel-delivery.local.json`; never commit it or print secret-derived values
 copied into a worktree.
 
+**Trigger.** The AI applies parallel delivery when the user asks to implement more than one ticket. There is no
+`parallelDelivery.enabled` flag gate — ticket count is the decision; single-ticket requests stay on the linear flow.
+
 Baseline shape:
 
 ```json

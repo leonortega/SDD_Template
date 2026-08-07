@@ -18,7 +18,7 @@ No single command or document ties them together.
 Add a new top-level CLI subcommand: `full-setup`
 
 ```bash
-python -m tools.sdd_cli full-setup [--dry-run true]
+python -m tools.sdd_cli full-setup [--dry-run]
 ```
 
 It runs 4 stages in order, each with a clear pass/fail summary:
@@ -45,7 +45,9 @@ full-setup
 │   └── Semgrep config
 │
 ├── Stage 3: Tool Installation (remaining)
-│   ├── ensure-mcp-servers (playwright, grafana, k8s, gitea, openproject)
+│   ├── ensure-mcp-servers (playwright, grafana, k8s, gitea, openproject;
+│   │   also prunes known-junk entries like new-server/test-server unless
+│   │   --prune-junk false)
 │   ├── ensure-quality-tools
 │   └── validate-manifest
 │

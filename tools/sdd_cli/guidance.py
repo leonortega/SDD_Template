@@ -499,9 +499,20 @@ def setup_project_guidance(
             print(f"    [{i:2d}] {skill['package_skill']} ({skill['installs']:,} installs){suffix}")
 
         print()
-        choice = input(
-            "  Which to install? (numbers/comma-sep, 'all', 'none'): "
-        ).strip().lower()
+        try:
+            choice = input(
+                "  Which to install? (numbers/comma-sep, 'all', 'none'): "
+            ).strip().lower()
+        except EOFError:
+            # isatty() can be True even when stdin has no input (pty wrappers,
+            # agent shells, some CI). Never install without an explicit user
+            # choice (authority level 5) — treat EOF as "none" and fall through
+            # to the interactive-skipped path below.
+            print(
+                "\n  (no interactive input available — nothing will be installed; "
+                "run the interactive flow in a terminal to choose skills)"
+            )
+            choice = "none"
 
         selected: list[dict[str, Any]] = []
         if choice in ("all", "a"):

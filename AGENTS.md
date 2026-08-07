@@ -321,6 +321,7 @@ API fails, stop and report. There is no alternative path.
 | Start a ticket (specific or next Todo) | `dev-flow-start-ticket`            | `.codex/skills/dev-flow-start-ticket/SKILL.md`            |
 | Create / propose an OpenSpec change    | `dev-flow-propose-change`          | `.codex/skills/dev-flow-propose-change/SKILL.md`          |
 | Implement a ticket / change            | `dev-flow-implement-ticket`        | `.codex/skills/dev-flow-implement-ticket/SKILL.md`        |
+| Start or implement more than one ticket / multiple tickets | `dev-flow-parallel-ticket-coordinator` | `.codex/skills/dev-flow-parallel-ticket-coordinator/SKILL.md` |
 | Continue implementation                | `dev-flow-continue-implementation` | `.codex/skills/dev-flow-continue-implementation/SKILL.md` |
 | Review a pull request                  | `dev-flow-pr-review-agent`         | `.codex/skills/dev-flow-pr-review-agent/SKILL.md`         |
 | Address PR review feedback             | `dev-flow-pr-review-feedback-loop` | `.codex/skills/dev-flow-pr-review-feedback-loop/SKILL.md` |

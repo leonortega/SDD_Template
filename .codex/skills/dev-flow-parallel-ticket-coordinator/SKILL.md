@@ -12,8 +12,12 @@ description: >-
 
 ## Overview
 
-Use this skill when the user asks to process more than one ticket at the same time, run parallel ticket delivery, create
-parallel role agents, or coordinate concurrent ticket provider work.
+Use this skill when the AI determines the user asked to implement more than one ticket — for example "implement tickets
+E2EPROJECT-11 and E2EPROJECT-12" or "process these 2 tickets". Ticket count is the decision: one ticket stays on the
+linear flow (`dev-flow-start-ticket` → `dev-flow-implement-ticket`), two or more use this coordinator. There is no
+`parallelDelivery.enabled` flag gate. Use the coordinator only when the tickets can make progress independently —
+tightly coupled tickets stay sequential at the AI's judgment. Also use this skill when the user asks to run parallel
+ticket delivery, create parallel role agents, or coordinate concurrent ticket provider work.
 
 This skill orchestrates existing role skills. It does not duplicate child workflows and does not implement
 ticket-specific code itself.
@@ -34,7 +38,8 @@ and QA adapters for lane decisions.
 Read `.codex/client-tools.local.json` first. Fall back to `.codex/client-tools.common.json` only for structure and safe
 defaults. Required/defaulted values:
 
-- `parallelDelivery.enabled`, default `false`
+- **No `parallelDelivery.enabled` gate** — parallel delivery applies when the AI determines the user asked to implement
+  more than one ticket; the keys below configure capacity and isolation only.
 - `parallelDelivery.maxActiveTickets`, default `2`
 - `parallelDelivery.worktreeRoot`, default `../ticket-worktrees`
 - `parallelDelivery.deploymentLanePolicy`, default `serialized`
@@ -192,8 +197,8 @@ lane owner for blocked promotion work.
 
 ## Failure Rules
 
-- Missing or disabled `parallelDelivery.enabled`: report that parallel delivery is not enabled and show the
-placeholder-safe config keys to set.
+- Single-ticket request routed here: when the AI determines only one ticket is to be implemented, do not start parallel
+work — route the ticket through the linear flow (`dev-flow-start-ticket` → `dev-flow-implement-ticket`).
 - Missing `worktreeRoot`: use `../ticket-worktrees` and report the default.
 - Failed `ValidateParallelDeliveryDryRun`: stop before Git, ticket provider, or repository/review provider mutation and
 report duplicate tickets, duplicate branches, duplicate worktrees, missing

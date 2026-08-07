@@ -1,7 +1,11 @@
 """Full setup orchestration: prereqs, lab setup, tools, guidance.
 
 Usage:
-    python -m tools.sdd_cli full-setup [--dry-run true]
+    python -m tools.sdd_cli full-setup [--dry-run]
+
+Note: full-setup's --dry-run is an argparse store_true flag (the ``true``
+value form only applies to parse_pairs subcommands like environment-lab or
+full_setup's internal stages, e.g. ``setup-lab --dry-run true``).
 """
 
 from __future__ import annotations

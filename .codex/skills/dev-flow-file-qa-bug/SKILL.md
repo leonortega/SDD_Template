@@ -36,6 +36,20 @@ Before filing or linking tickets, follow `.codex/skills/_shared/skill-startup.md
 as stage-specific docs. Load selected ticket, repository, artifact, deployment,
 and E2E adapters as needed.
 
+## Workflow Telemetry
+
+Workflow telemetry is **mandatory** for this stage: before handoff, upsert the stage time entry with the standalone
+script (shared pattern `.codex/skills/_shared/pipeline-workflow-telemetry.md`):
+
+```bash
+python -m tools.sdd_cli dev-flow telemetry-upsert --ticket-key {ticketKey} \
+  --workflow-stage dev-flow-file-qa-bug --agent-role fileQaBug \
+  --started-utc {startedUtc} --finished-utc {finishedUtc} --outcome {outcome}
+```
+
+The marker `IA generated workflow telemetry: {ticketKey}:dev-flow-file-qa-bug` is written automatically.
+If the upsert fails, stop and report before handoff.
+
 ## Configuration
 
 Read `.codex/project-profile.json` first. Read `.codex/client-tools.local.json` only for selected adapter runtime values
