@@ -60,10 +60,11 @@ terminals: printing emoji from eval JSON crashes `print()` — prefix with
 
 ## Test Cases
 
-**50 test cases** covering the full delivery routing matrix including parallel delivery,
+**53 test cases** covering the full delivery routing matrix including parallel delivery,
 deployment lanes, explicit workflow-stage requests, state-driven resume, the QA
-user-approval gate, frontend stack skill activation, and the PR Validation gate
-(CI-in-loop review blocking):
+user-approval gate, frontend stack skill activation, the PR Validation gate
+(CI-in-loop review blocking), and the ticket refinement gate (always ask the user
+for extra info before writing the IA block):
 
 ### Ticket Lifecycle (9 tests)
 
@@ -193,6 +194,23 @@ steps); the blocking is asserted via the provider's `review` gate object:
 | 48  | Explicit PR review feedback request + red run                         | `dev-flow-pr-review-feedback-loop` | `codexReviewed=false`                |
 | 49  | Merged PR with red run (gate not applicable)                          | `dev-ops-post-merge-deploy`        | `review === null`                    |
 
+### Ticket Refinement Gate (3 tests)
+
+Models `dev-flow-start-ticket` step 7: refinement runs **at least 1**
+`grill-with-docs` cycle (at most 4) and **ALWAYS asks the user for extra info** —
+even when the ticket seems complete — before the curated IA block is written.
+The route is unchanged (still `dev-flow-start-ticket`); the always-ask invariant
+is asserted via the provider's `refinement` gate object:
+`refinement.userAsked === false` with `refinement.blocked === true` until the
+user has been asked, `userAsked === true` with `blocked === false` once answered,
+and `refinement === null` outside the start-ticket stage.
+
+| #   | Scenario                                                             | Expected Route             | Refinement gate                      |
+| --- | -------------------------------------------------------------------- | -------------------------- | ------------------------------------ |
+| 50  | Todo refinement, user not asked yet                                  | `dev-flow-start-ticket`    | `userAsked=false`, `blocked=true`    |
+| 51  | Todo refinement, user answered the clarifying questions              | `dev-flow-start-ticket`    | `userAsked=true`, `blocked=false`    |
+| 52  | Implementation in progress (gate not applicable)                     | `dev-flow-implement-ticket` | `refinement === null`               |
+
 ## Adding Test Cases
 
 1. Add a new entry under `tests:` in `promptfooconfig.yaml`
@@ -233,3 +251,18 @@ assert on the provider's `review` gate object, which is non-null only for an ope
 Route is intentionally unaffected: the review/fix loop still runs to fix failing CI
 steps, so the blocking is expressed through the review gate, not a dead-end blocked
 route.
+
+**Ticket refinement gate:** to assert the always-ask rule from
+`dev-flow-start-ticket` step 7, set `refinementUserAsked` in the test vars
+(`true` = the user already answered the grill-with-docs clarifying questions;
+`false`/unset = not asked yet) and assert on the provider's `refinement` gate
+object, which is non-null only on the `dev-flow-start-ticket` route:
+
+- `refinement.userAsked === false` with `refinement.blocked === true` (and a
+  `blocker` message) until the user has been asked.
+- `refinement.userAsked === true` with `refinement.blocked === false` once the
+  user answered.
+- `refinement === null` on any other route (gate not applicable).
+
+Route is intentionally unaffected: refinement still runs in `dev-flow-start-ticket`;
+the gate only blocks writing the curated IA block until the user has been asked.

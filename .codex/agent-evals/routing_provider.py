@@ -103,6 +103,40 @@ def _review_outcome(
     }
 
 
+def _refinement_outcome(
+    route: str,
+    refinement_user_asked: bool,
+) -> dict[str, Any] | None:
+    """Model the ticket-refinement gate per dev-flow-start-ticket step 7.
+
+    Refinement runs at least 1 grill-with-docs cycle (at most 4) and ALWAYS
+    asks the user for extra info — even when the ticket seems complete —
+    before the curated IA block is written. The gate applies only on the
+    ``dev-flow-start-ticket`` route (a Todo ticket with no branch): until the
+    user has been asked, the IA block must not be written (``blocked``).
+    Other routes return None (gate not applicable), mirroring how the review
+    gate returns None once a PR is merged.
+    """
+    if route != "dev-flow-start-ticket":
+        return None
+    if refinement_user_asked:
+        return {
+            "userAsked": True,
+            "complete": True,
+            "blocked": False,
+            "blocker": None,
+        }
+    return {
+        "userAsked": False,
+        "complete": False,
+        "blocked": True,
+        "blocker": (
+            "Refinement must ask the user for extra info before writing the "
+            "IA block (at least 1 grill-with-docs cycle, at most 4)."
+        ),
+    }
+
+
 def call_api(
     prompt: str,
     options: dict[str, Any] | None = None,
@@ -183,6 +217,14 @@ def call_api(
     qa_approved = (
         str(vars_data.get("qaApproved", "false")).strip().lower() == "true"
     )
+    # Ticket refinement gate (dev-flow-start-ticket step 7): whether the
+    # refinement has already asked the user for extra info. False/unset = the
+    # grill-with-docs cycles have not asked the user yet, so the curated IA
+    # block must NOT be written. True = the user answered the clarifying
+    # questions and refinement may proceed.
+    refinement_user_asked = (
+        str(vars_data.get("refinementUserAsked", "false")).strip().lower() == "true"
+    )
 
     # Review gate: models dev-flow-pr-review-agent's CI-in-loop rule. A red,
     # pending, or unreadable PR Validation run is a BLOCKER finding and keeps
@@ -217,6 +259,14 @@ def call_api(
         qa_approved=qa_approved,
     )
 
+    # Ticket refinement gate: applies on the dev-flow-start-ticket route only.
+    # Mirrors dev-flow-start-ticket step 7 — refinement runs at least 1
+    # grill-with-docs cycle (at most 4) and ALWAYS asks the user for extra
+    # info (even when the ticket seems complete) before the curated IA block
+    # is written. The route is unchanged; the always-ask invariant is exposed
+    # through the `refinement` gate object so eval cases can assert it.
+    refinement = _refinement_outcome(route, refinement_user_asked)
+
     inputs = {
         "ticketState": ticket_state,
         "branchExists": branch_exists,
@@ -238,6 +288,7 @@ def call_api(
         "resumeRequested": resume_requested,
         "prValidationStatus": pr_validation_status,
         "qaApproved": qa_approved,
+        "refinementUserAsked": refinement_user_asked,
     }
 
     reasoning = _build_reasoning(inputs, route)
@@ -250,6 +301,7 @@ def call_api(
         "route": route,
         "activatedSkills": _activated_skills_for_stack(route, product_stack),
         "review": review,
+        "refinement": refinement,
         "reasoning": reasoning,
         "inputs": inputs,
     }
@@ -415,6 +467,11 @@ def _build_reasoning(inputs: dict, route: str) -> list[str]:
         steps.append("QA not deployed: verify DEV, ask the user for approval.")
     if route == "dev-ops-deploy-qa" and inputs.get("qaApproved"):
         steps.append("User approved QA: dispatch the QA deployment.")
+    if route == "dev-flow-start-ticket" and not inputs.get("refinementUserAsked"):
+        steps.append(
+            "Refinement: ask the user for extra info before writing the IA block "
+            "(at least 1 grill-with-docs cycle, at most 4)."
+        )
 
     steps.append(f"Route: {route}.")
     return steps
