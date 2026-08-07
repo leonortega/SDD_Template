@@ -60,11 +60,11 @@ terminals: printing emoji from eval JSON crashes `print()` — prefix with
 
 ## Test Cases
 
-**53 test cases** covering the full delivery routing matrix including parallel delivery,
+**55 test cases** covering the full delivery routing matrix including parallel delivery,
 deployment lanes, explicit workflow-stage requests, state-driven resume, the QA
 user-approval gate, frontend stack skill activation, the PR Validation gate
 (CI-in-loop review blocking), and the ticket refinement gate (always ask the user
-for extra info before writing the IA block):
+for extra info before writing the IA block, linear and parallel context):
 
 ### Ticket Lifecycle (9 tests)
 
@@ -194,7 +194,7 @@ steps); the blocking is asserted via the provider's `review` gate object:
 | 48  | Explicit PR review feedback request + red run                         | `dev-flow-pr-review-feedback-loop` | `codexReviewed=false`                |
 | 49  | Merged PR with red run (gate not applicable)                          | `dev-ops-post-merge-deploy`        | `review === null`                    |
 
-### Ticket Refinement Gate (3 tests)
+### Ticket Refinement Gate (5 tests)
 
 Models `dev-flow-start-ticket` step 7: refinement runs **at least 1**
 `grill-with-docs` cycle (at most 4) and **ALWAYS asks the user for extra info** —
@@ -205,11 +205,20 @@ is asserted via the provider's `refinement` gate object:
 user has been asked, `userAsked === true` with `blocked === false` once answered,
 and `refinement === null` outside the start-ticket stage.
 
+Rows 53-54 add the parallel-coordinator mirror
+(`dev-flow-parallel-ticket-coordinator` Section 2 step 5): the coordinator must
+verify `refinementUserAsked` per Todo ticket — reported by the `ticketStarter`
+child agent (`refinementUserAsked: yes/no`) — before each ticket routes onward.
+The provider applies the same `refinement` gate to a parallel Todo route
+(`parallelEnabled: true` + `dev-flow-start-ticket`).
+
 | #   | Scenario                                                             | Expected Route             | Refinement gate                      |
 | --- | -------------------------------------------------------------------- | -------------------------- | ------------------------------------ |
 | 50  | Todo refinement, user not asked yet                                  | `dev-flow-start-ticket`    | `userAsked=false`, `blocked=true`    |
 | 51  | Todo refinement, user answered the clarifying questions              | `dev-flow-start-ticket`    | `userAsked=true`, `blocked=false`    |
 | 52  | Implementation in progress (gate not applicable)                     | `dev-flow-implement-ticket` | `refinement === null`               |
+| 53  | Parallel (multi-ticket) Todo, user not asked yet                     | `dev-flow-start-ticket`    | `userAsked=false`, `blocked=true`    |
+| 54  | Parallel (multi-ticket) Todo, user answered                          | `dev-flow-start-ticket`    | `userAsked=true`, `blocked=false`    |
 
 ## Adding Test Cases
 
