@@ -186,6 +186,12 @@ E2E QA fails, PR review misses a meaningful issue, workflow/gate tooling fails, 
 deployment/rollback/hotfix, delivery-vs-configure skill disagreement, periodic manual
 review (every 3–5 tickets), or explicit eval diagnosis requests.
 
+**Durable learning capture.** After findings are classified, the audit runs the Durable
+Learning Capture Gate: `python -m tools.sdd_cli knowledge-search classify` selects the
+candidate `docs/` / `knowledge/` files, and `docs-knowledge-maintenance` updates only
+those candidates (read-only/proposal modes report them as recommendations and apply
+nothing). `NO_CHANGES` is a valid outcome.
+
 **Apply gate.** Never silently rewrite workflow rules from one isolated failure. Apply
 the Agent Self-Improvement Gate (`.codex/skills/_shared/delivery-contract.md`) before
 changing skills, policy, templates, or gates.
@@ -322,7 +328,8 @@ The full architectural plan is in [`setup-flow-plan.md`](setup-flow-plan.md).
 ## 9. Eval Alignment (Promptfoo Coverage)
 
 Every workflow in this document is exercised by the agent eval
-(`.codex/agent-evals/promptfooconfig.yaml`, 47 cases). Coverage per workflow:
+(`.codex/agent-evals/promptfooconfig.yaml`, 60 cases — see
+`.codex/agent-evals/README.md` for the authoritative count). Coverage per workflow:
 
 | Workflow | Eval coverage mechanism | Covered? |
 | -------- | ----------------------- | -------- |
@@ -342,7 +349,7 @@ Every workflow in this document is exercised by the agent eval
 route, so an explicit "update the docs" request fell through to
 `dev-flow-pipeline-status`. It now has an explicit `requestType` mapping and a matching
 Promptfoo test case. Frontend design skills are verified via `activatedSkills` on
-implementation-stage routes (impeccable activated only for frontend stacks); all 47
+implementation-stage routes (impeccable activated only for frontend stacks); all 55
 eval cases pass against the provider.
 
 ---

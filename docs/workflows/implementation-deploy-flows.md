@@ -120,6 +120,11 @@ Blocked outcomes the eval recognizes: `blocked-no-prod`, `blocked-lane-conflict`
 `blocked-max-active`, `blocked-missing-artifact`, `blocked-tag-conflict`,
 `blocked-infra-validation`.
 
+The eval also models the QA approval gate as a route: when a deployed ticket is QA-pending and the user has not yet
+approved, `_evaluate_route()` returns `dev-ops-deploy-qa-approval-gate` (the agent stops and asks — it never
+auto-approves QA). It is an eval-internal intermediate route, not a routing-table stage; the user approval gate itself
+is enforced by `dev-ops-deploy-qa` (see Stage 8).
+
 ---
 
 ## 3. Implementation Flow (Feature Tickets)
@@ -434,6 +439,12 @@ Runs automatically after E2E QA passes and the ticket is Done. Fails closed when
 On success the change moves to `openspec/changes/archive/YYYY-MM-DD-<name>/` and specs
 are synced to `openspec/specs/`.
 
+The archive step also runs the **Durable Learning Capture Gate**: after the change is archived, the agent classifies
+it with `python -m tools.sdd_cli knowledge-search classify` (change name + ticket summary, changed files, E2E QA
+outcome), updates only the candidate `docs/` / `knowledge/` files via `docs-knowledge-maintenance`, and commits/pushes
+them. `NO_CHANGES` is a valid outcome (`Docs: no durable context changes` / `Knowledge updated: none`). Archived specs
+under `openspec/specs/` are the durable behavior record and are not duplicated into docs.
+
 ### Stage 11 — File And Fix QA Bug (`dev-flow-file-qa-bug`)
 
 Full bug fix lifecycle when E2E QA fails:
@@ -591,6 +602,10 @@ Expedited in scope only — quality gates are identical to the feature flow:
 5. After merge: `dev-ops-post-merge-deploy` + QA gate, then PROD **only when the user
    explicitly asks** after QA passes.
 6. Comment the incident ticket with release lineage and any cadence divergence.
+7. **Capture durable learning** — after the incident comment, run the Durable Learning Capture Gate: classify the
+   hotfix with `python -m tools.sdd_cli knowledge-search classify`, update only the candidate `docs/` / `knowledge/`
+   files via `docs-knowledge-maintenance` (known errors/fixes land in `knowledge/errors/` or `knowledge/fixes/`),
+   commit/push, and record the capture outcome. `NO_CHANGES` is valid.
 
 ---
 
@@ -763,6 +778,11 @@ Markers are exact strings; matching markers mean the step is already complete.
 | | `IA generated PROD hotfix: {incidentOrTicketKey}` |
 | | `IA generated eval improvement: {scopeIdentifier}` |
 
+Capture markers (`Docs updated: <files>` / `Docs: no durable context changes`,
+`Knowledge updated: <files>` / `Knowledge updated: none`) are **handoff markers**, not
+idempotency markers — they appear in PR bodies and OpenProject handoff comments to record the
+Durable Learning Capture Gate outcome, and are not used to skip re-running a stage.
+
 OpenProject comment format: marker as the first line by itself, then a blank line and a
 Markdown body with `**Status:**`, `**Context:**`, `**Validation:**`, `**Evidence:**`,
 `**Notes:**` sections.
@@ -833,7 +853,8 @@ verifies that the routing logic in `routing_provider.py` matches the delivery co
 This document is the human-readable spec of that contract; the eval encodes it as test
 cases.
 
-**Test case anatomy** (46 cases today): each case provides `scenario`, `ticketState`,
+**Test case anatomy** (60 cases today — see `.codex/agent-evals/README.md` for the
+authoritative count): each case provides `scenario`, `ticketState`,
 `branchExists`, `prExists`, `prMerged`, `qaEvidence`, `productStack` plus optional
 `incident`, `hotfix`, `parallelEnabled`, `maxActiveReached`, `laneOwner`,
 `prodRequested`, `nexusArtifactExists`, `releaseTagConflict`, `worktreeExists`,
@@ -841,9 +862,11 @@ cases.
 asserts `JSON.parse(output).route === '<expected>'` (skill-activation and CI-gate cases
 also assert `activatedSkills` / the `review` gate).
 
-**Coverage groups today:** ticket lifecycle (7), edge cases (4), parallel delivery (5),
-deployment lane (5), infrastructure validation (2), explicit workflow-stage requests (11),
-state-driven resume (1), regression (1), PR validation gate (7).
+**Coverage groups today** (sums to the 60-case total): ticket lifecycle (7), edge cases (4),
+parallel delivery (5), deployment lane (5), infrastructure validation (2), explicit
+workflow-stage requests (12), state-driven resume (1), regression (1), frontend design skill
+activation (3), PR validation gate (7), QA approval gate (3), ticket refinement gate (3),
+parallel refinement gate (2), durable learning capture gate (5).
 
 **How to use this document for the next improvement step:**
 

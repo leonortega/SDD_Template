@@ -9,7 +9,7 @@
 
 prompts:
   # Single prompt template - the provider receives the scenario as vars
-  - "Evaluate the correct workflow route for this delivery scenario:\n\nScenario: {{scenario}}\nTicket state: {{ticketState}}\nBranch exists: {{branchExists}}\nPR exists: {{prExists}}\nPR merged: {{prMerged}}\nQA evidence: {{qaEvidence}}\nQA approved: {{qaApproved}}\nProduct stack: {{productStack}}\nExplicit request: {{requestType}}\nResume requested: {{resumeRequested}}\nRefinement asked user: {{refinementUserAsked}}"
+  - "Evaluate the correct workflow route for this delivery scenario:\n\nScenario: {{scenario}}\nTicket state: {{ticketState}}\nBranch exists: {{branchExists}}\nPR exists: {{prExists}}\nPR merged: {{prMerged}}\nQA evidence: {{qaEvidence}}\nQA approved: {{qaApproved}}\nProduct stack: {{productStack}}\nExplicit request: {{requestType}}\nResume requested: {{resumeRequested}}\nRefinement asked user: {{refinementUserAsked}}\nCapture mode: {{captureMode}}"
 
 providers:
   # Path relative to promptfooconfig.yaml's directory (same directory)
@@ -923,3 +923,103 @@ tests:
         value: JSON.parse(output).route === 'dev-flow-start-ticket' &&
           JSON.parse(output).refinement.userAsked === true &&
           JSON.parse(output).refinement.blocked === false
+
+  # ═══════════════════════════════════════════════════════════════
+  # DURABLE LEARNING CAPTURE GATE (archive / hotfix / retrospective)
+  # ═══════════════════════════════════════════════════════════════
+  # Models the Durable Learning Capture Gate wired into dev-flow-archive-change,
+  # dev-ops-hotfix-prod, and dev-flow-retrospective-audit: after the stage
+  # completes, run the classifier (knowledge-search classify), update ONLY the
+  # classifier-selected candidate docs/knowledge files via
+  # docs-knowledge-maintenance, and record the canonical markers. The route is
+  # unchanged; the invariant is exposed through the provider's `capture` gate
+  # object so eval cases can assert the capture step survives routing changes.
+  # The retrospective is mode-aware: apply mode updates files; read-only /
+  # proposal / automatic post-prod-ticket-release modes are advisory only
+  # (candidates reported as recommendations, nothing written).
+
+  - description: "Archive route runs the Durable Learning Capture Gate (classifier + candidate updates)"
+    vars:
+      scenario: User asks to archive the completed OpenSpec change (capture step mandatory)
+      ticketState: Done
+      branchExists: false
+      prExists: false
+      prMerged: true
+      qaEvidence: passed
+      productStack: selected
+      requestType: archive-change
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-archive-change' &&
+          JSON.parse(output).capture.applicable === true &&
+          JSON.parse(output).capture.classifierRun === true &&
+          JSON.parse(output).capture.applied === true
+
+  - description: "Hotfix route runs the Durable Learning Capture Gate (classifier + candidate updates)"
+    vars:
+      scenario: PROD hotfix completed; capture step runs with the hotfix branch changed files
+      ticketState: In Progress
+      branchExists: false
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      hotfix: true
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-ops-hotfix-prod' &&
+          JSON.parse(output).capture.applicable === true &&
+          JSON.parse(output).capture.classifierRun === true &&
+          JSON.parse(output).capture.applied === true
+
+  - description: "Retrospective in apply mode runs the Durable Learning Capture Gate (files updated)"
+    vars:
+      scenario: User asks to run the retrospective audit and apply the learning capture
+      ticketState: Done
+      branchExists: false
+      prExists: false
+      prMerged: true
+      qaEvidence: passed
+      productStack: selected
+      requestType: retrospective-audit
+      captureMode: apply
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-retrospective-audit' &&
+          JSON.parse(output).capture.applicable === true &&
+          JSON.parse(output).capture.applied === true
+
+  - description: "Retrospective in read-only mode is advisory only (no file mutation)"
+    vars:
+      scenario: Read-only retrospective audit — candidates are recommendations, nothing is written
+      ticketState: Done
+      branchExists: false
+      prExists: false
+      prMerged: true
+      qaEvidence: passed
+      productStack: selected
+      requestType: retrospective-audit
+      captureMode: read-only
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-retrospective-audit' &&
+          JSON.parse(output).capture.applied === false &&
+          JSON.parse(output).capture.scope === 'advisory-only'
+
+  - description: "Capture gate not applicable outside archive/hotfix/retrospective routes"
+    vars:
+      scenario: Implementation in progress — no durable-learning capture stage active
+      ticketState: In Progress
+      branchExists: true
+      prExists: false
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-implement-ticket' && JSON.parse(output).capture === null

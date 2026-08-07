@@ -81,6 +81,13 @@ workflow timing marker, and OpenSpec archive gate before reporting the ticket wo
 `dev-flow-archive-change` must fail closed: incomplete artifacts, incomplete tasks, missing `tasks.md`, failed spec
 sync, failed archive movement, or a still-active change after archive are blockers.
 
+The archive step also runs the **Durable Learning Capture Gate** (`.codex/skills/_shared/delivery-contract-core.md`):
+right after the change is archived, run `python -m tools.sdd_cli knowledge-search classify` with the change name + ticket
+summary, the change's changed-file list, and the E2E QA outcome, then update only the candidate `docs/` / `knowledge/`
+files via the `docs-knowledge-maintenance` skill and commit/push them. `NO_CHANGES` is a valid outcome — record
+`Docs: no durable context changes` / `Knowledge updated: none` and continue. The archived specs under `openspec/specs/`
+are the durable behavior record; do not duplicate spec content into `docs/` or `knowledge/`.
+
 ## E2E QA Workflow
 
 This section defines the executable workflow for the E2E QA evidence gate. Run this **only after**: the QA deployment
@@ -197,6 +204,10 @@ On `PASS` only, after moving the ticket to Done:
 4. Confirm the change is archived (no longer active in `openspec list`)
 
 If archiving fails, report `OpenSpec archive blocker: <reason>` and do not report workflow complete.
+
+After the archive succeeds, run the Durable Learning Capture Gate as specified in the OpenSpec Completion Archive Gate
+above (classify → update candidates via `docs-knowledge-maintenance` → commit/push → record the capture outcome in the
+QA handoff).
 
 ### Step 5 — Clean Up QA Trigger Branch
 

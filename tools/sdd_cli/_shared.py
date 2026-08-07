@@ -39,6 +39,9 @@ STANDARD_STAGES = [
     "dev-ops-deploy-prod",
     "dev-ops-rollback-prod",
     "dev-ops-hotfix-prod",
+    # dev-flow-continue-implementation is intentionally NOT listed: it is a resume
+    # router that records a telemetry row only when it performs meaningful routing
+    # work, so it is not part of the standard linear flow the timing table renders.
 ]
 # ── Generic JSON cache (lazy-loading helper) ──────────────────────────
 

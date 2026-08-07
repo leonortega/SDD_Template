@@ -137,6 +137,51 @@ def _refinement_outcome(
     }
 
 
+def _capture_outcome(
+    route: str,
+    capture_mode: str,
+) -> dict[str, Any] | None:
+    """Model the Durable Learning Capture Gate for the completion stages.
+
+    Mirrors the gate wired into dev-flow-archive-change, dev-ops-hotfix-prod, and
+    dev-flow-retrospective-audit: after the stage completes, run the classifier
+    (knowledge-search classify), update only the classifier-selected candidate
+    docs/knowledge files via docs-knowledge-maintenance, and record the canonical
+    markers. The gate applies only on those three routes; other routes return None
+    (gate not applicable), mirroring the review/refinement gates.
+
+    The retrospective is mode-aware: read-only/proposal audits and the automatic
+    post-prod-ticket-release path must NOT mutate files (advisory only — the
+    classifier candidates are reported as recommendations). Apply mode updates
+    the candidate files and records the update markers.
+    """
+    if route not in (
+        "dev-flow-archive-change",
+        "dev-ops-hotfix-prod",
+        "dev-flow-retrospective-audit",
+    ):
+        return None
+    advisory = (
+        route == "dev-flow-retrospective-audit"
+        and capture_mode != "apply"
+    )
+    if advisory:
+        return {
+            "applicable": True,
+            "classifierRun": True,
+            "applied": False,
+            "scope": "advisory-only",
+            "markers": ["Docs updated: none", "Knowledge updated: none"],
+        }
+    return {
+        "applicable": True,
+        "classifierRun": True,
+        "applied": True,
+        "scope": "classifier-selected-candidates",
+        "markers": ["Docs updated: <files>", "Knowledge updated: <files>"],
+    }
+
+
 def call_api(
     prompt: str,
     options: dict[str, Any] | None = None,
@@ -225,6 +270,13 @@ def call_api(
     refinement_user_asked = (
         str(vars_data.get("refinementUserAsked", "false")).strip().lower() == "true"
     )
+    # Durable Learning Capture Gate mode (archive / hotfix / retrospective):
+    # "apply" (default) updates the classifier-selected candidate files; the
+    # retrospective also supports read-only / proposal / post-prod-ticket-release
+    # modes, which are advisory only (candidates are recommendations, nothing is
+    # written). Mirrors the mode-awareness in
+    # dev-flow-retrospective-audit/SKILL.md section 3.5.
+    capture_mode = str(vars_data.get("captureMode", "apply")).strip().lower()
 
     # Review gate: models dev-flow-pr-review-agent's CI-in-loop rule. A red,
     # pending, or unreadable PR Validation run is a BLOCKER finding and keeps
@@ -267,6 +319,13 @@ def call_api(
     # through the `refinement` gate object so eval cases can assert it.
     refinement = _refinement_outcome(route, refinement_user_asked)
 
+    # Durable Learning Capture Gate: applies on archive / hotfix / retrospective
+    # routes only. Mirrors the gate in those skills — run the classifier, update
+    # only the classifier-selected candidate files via docs-knowledge-maintenance,
+    # and record the canonical markers. Exposed as a `capture` gate object so
+    # eval cases can assert the capture step survives routing regressions.
+    capture = _capture_outcome(route, capture_mode)
+
     inputs = {
         "ticketState": ticket_state,
         "branchExists": branch_exists,
@@ -289,6 +348,7 @@ def call_api(
         "prValidationStatus": pr_validation_status,
         "qaApproved": qa_approved,
         "refinementUserAsked": refinement_user_asked,
+        "captureMode": capture_mode,
     }
 
     reasoning = _build_reasoning(inputs, route)
@@ -302,6 +362,7 @@ def call_api(
         "activatedSkills": _activated_skills_for_stack(route, product_stack),
         "review": review,
         "refinement": refinement,
+        "capture": capture,
         "reasoning": reasoning,
         "inputs": inputs,
     }
@@ -472,6 +533,20 @@ def _build_reasoning(inputs: dict, route: str) -> list[str]:
             "Refinement: ask the user for extra info before writing the IA block "
             "(at least 1 grill-with-docs cycle, at most 4)."
         )
+    if route in (
+        "dev-flow-archive-change",
+        "dev-ops-hotfix-prod",
+        "dev-flow-retrospective-audit",
+    ):
+        mode = inputs.get("captureMode", "apply")
+        if route == "dev-flow-retrospective-audit" and mode != "apply":
+            steps.append(
+                "Capture: classifier run, candidates are advisory only (no file changes)."
+            )
+        else:
+            steps.append(
+                "Capture: run classifier, update only the selected candidate files."
+            )
 
     steps.append(f"Route: {route}.")
     return steps

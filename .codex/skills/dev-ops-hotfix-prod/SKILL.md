@@ -101,6 +101,24 @@ review-agent loop, and handoff. The TDD test-first pattern is defined in
    `source_rc_version={sourceRcVersion}` — the workflow skips the build (reuses the QA-approved
    hotfix artifact) and records the version data in `app/{commitSha}/release-prod.json`.
 9. Comment the incident ticket with release lineage, evidence, and any temporary divergence from normal cadence.
+10. **Capture durable learning (mandatory)** — a hotfix is prime durable-learning material (incident symptom, root
+    cause, validated fix, deployment divergence). After the incident ticket comment, run the Durable Learning Capture
+    Gate (`.codex/skills/_shared/delivery-contract-core.md`):
+
+    ```bash
+    python -m tools.sdd_cli knowledge-search classify --task "<incident/hotfix ticket + fix summary>" --changed-files "<comma-separated changed paths>" --test-results "<validation outcome>"
+    ```
+
+    Build the changed-file list from the hotfix branch's commits (e.g. `git diff --name-only` vs `main`) or the PR's
+    changed-file list.
+
+    - If the classifier returns `UPDATE` candidates, load `.codex/skills/docs-knowledge-maintenance/SKILL.md` and
+      update **only** those candidate files (standard template, source-backed, never secrets); commit and push with a
+      ticket-key-prefixed message.
+    - If it returns `NO_CHANGES`, record `Docs: no durable context changes` / `Knowledge updated: none` — do not invent
+      files.
+    - The known-error/fix belongs in `knowledge/errors/<symptom>.md` or `knowledge/fixes/<fix>.md` when the classifier
+      routes it there.
 
 ## Scope Rules
 
@@ -115,7 +133,8 @@ excuse to skip tests.
 
 Report the incident or hotfix ticket, branch, PR, **acceptance-to-test map** (ACs → unit/integration/architecture tests
 with RED/GREEN evidence), validation performed, artifact/QA/PROD status when
-reached, and the next handoff or blocker.
+reached, docs/knowledge capture outcome (`Docs updated: <files>` / `Docs: no durable context changes`,
+`Knowledge updated: <files>` / `Knowledge updated: none`), and the next handoff or blocker.
 
 ## Failure Rules
 
@@ -129,3 +148,5 @@ skips cleanly (expected template state).
 - Coverage below `coverage.minimumPercent` (default `80`): HARD STOP (authority level 5) before PR creation — add or
 update tests and re-run coverage until the threshold is met.
 - Branch protection or release workflow drift: route through the same repair path as `dev-ops-deploy-prod`.
+- Classifier or `docs-knowledge-maintenance` capture failure: stop the update step and report the blocker in the
+handoff — do not report the hotfix complete without the capture outcome.

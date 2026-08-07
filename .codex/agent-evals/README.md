@@ -60,13 +60,15 @@ terminals: printing emoji from eval JSON crashes `print()` — prefix with
 
 ## Test Cases
 
-**55 test cases** covering the full delivery routing matrix including parallel delivery,
+**60 test cases** covering the full delivery routing matrix including parallel delivery,
 deployment lanes, explicit workflow-stage requests, state-driven resume, the QA
 user-approval gate, frontend stack skill activation, the PR Validation gate
-(CI-in-loop review blocking), and the ticket refinement gate (always ask the user
-for extra info before writing the IA block, linear and parallel context):
+(CI-in-loop review blocking), the ticket refinement gate (always ask the user
+for extra info before writing the IA block, linear and parallel context), and the
+Durable Learning Capture Gate (archive / hotfix / retrospective must run the
+classifier and update only the classifier-selected candidates):
 
-### Ticket Lifecycle (9 tests)
+### Ticket Lifecycle (9 tests — rows 6–8 are cross-listed in the QA User-Approval Gate section below; 7 are lifecycle-unique)
 
 | #   | Scenario                         | Expected Route                  |
 | --- | -------------------------------- | ------------------------------- |
@@ -220,6 +222,32 @@ The provider applies the same `refinement` gate to a parallel Todo route
 | 53  | Parallel (multi-ticket) Todo, user not asked yet                     | `dev-flow-start-ticket`    | `userAsked=false`, `blocked=true`    |
 | 54  | Parallel (multi-ticket) Todo, user answered                          | `dev-flow-start-ticket`    | `userAsked=true`, `blocked=false`    |
 
+### Durable Learning Capture Gate (5 tests)
+
+Models the Durable Learning Capture Gate wired into `dev-flow-archive-change`,
+`dev-ops-hotfix-prod`, and `dev-flow-retrospective-audit`: after the stage
+completes, the agent runs the classifier (`knowledge-search classify`), updates
+**only** the classifier-selected candidate `docs/` / `knowledge/` files via
+`docs-knowledge-maintenance`, and records the canonical markers. A missing capture
+step is a blocker in those skills, so the `capture` gate object is asserted on the
+completion-stage routes (and is `null` elsewhere, mirroring the review/refinement
+gates). The retrospective is mode-aware: `captureMode: apply` updates the
+candidate files; read-only / proposal / automatic `post-prod-ticket-release`
+modes are **advisory only** (`capture.applied === false`, candidates reported as
+recommendations, nothing written).
+
+| #   | Scenario                                                                  | Expected Route                 | Capture gate                            |
+| --- | ------------------------------------------------------------------------- | ------------------------------ | --------------------------------------- |
+| 55  | Archive route runs the capture gate                                        | `dev-flow-archive-change`      | `applied=true`, `classifierRun=true`    |
+| 56  | Hotfix route runs the capture gate                                         | `dev-ops-hotfix-prod`          | `applied=true`, `classifierRun=true`    |
+| 57  | Retrospective in apply mode runs the capture gate                          | `dev-flow-retrospective-audit` | `applied=true`, `classifierRun=true`    |
+| 58  | Retrospective in read-only mode is advisory only                           | `dev-flow-retrospective-audit` | `applied=false`, `scope=advisory-only` |
+| 59  | Capture gate not applicable outside archive/hotfix/retrospective routes    | `dev-flow-implement-ticket`    | `capture === null`                      |
+
+> Note: table row numbers trail the YAML file order by one (a pre-existing numbering drift — the
+> table ends at row 59 while `promptfooconfig.yaml` holds 60 cases). Use the YAML `tests:` list as
+> the authoritative order; row numbers here are labels only.
+
 ## Adding Test Cases
 
 1. Add a new entry under `tests:` in `promptfooconfig.yaml`
@@ -260,6 +288,20 @@ assert on the provider's `review` gate object, which is non-null only for an ope
 Route is intentionally unaffected: the review/fix loop still runs to fix failing CI
 steps, so the blocking is expressed through the review gate, not a dead-end blocked
 route.
+
+**Durable Learning Capture Gate:** to assert the capture step from the archive /
+hotfix / retrospective skills, assert on the provider's `capture` gate object,
+which is non-null only on the `dev-flow-archive-change`, `dev-ops-hotfix-prod`, and
+`dev-flow-retrospective-audit` routes:
+
+- `capture.applicable === true`, `capture.classifierRun === true`, and
+  `capture.applied === true` (with `scope === 'classifier-selected-candidates'`)
+  on those routes — the classifier must run and only the selected candidates are
+  updated.
+- `capture.applied === false` with `scope === 'advisory-only'` when the
+  retrospective runs in read-only / proposal / automatic `post-prod-ticket-release`
+  mode (set `captureMode: read-only` in the vars; default is `apply`).
+- `capture === null` on any other route (gate not applicable).
 
 **Ticket refinement gate:** to assert the always-ask rule from
 `dev-flow-start-ticket` step 7, set `refinementUserAsked` in the test vars
