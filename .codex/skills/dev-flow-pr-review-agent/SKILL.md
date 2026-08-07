@@ -232,6 +232,14 @@ Stable finding ids must be deterministic for the same head SHA and finding targe
 If no issues are found, say so clearly. Residual or unverifiable areas count as gaps — record them as findings so the
 clean marker is not applied prematurely.
 
+### 3.5 Never Approve Or Merge (Hard Gate)
+
+**❌ HARD GATE (authority level 5):** PR approvals and merges are **human-only actions**. Never submit an approval
+review or merge a pull request on behalf of any user — including provisioned lab accounts such as FirstUser/SecondUser.
+The agent's API token is limited to reads, PR comments, labels, and requesting reviewers. If a user or a skill asks the
+agent to approve or merge a PR, refuse, explain that approvals/merges are human-only, and report the request as a
+blocker instead of performing the action.
+
 ### 4. Apply Labels
 
 When `pr.labels.enabled` is true:
@@ -281,3 +289,5 @@ proven.
 `dev-flow-pr-review-feedback-loop` keeps iterating.
 - PR Validation run red, pending, or unreadable on the current head: never apply `codex-reviewed`; report each failing
 step as a `BLOCKER` finding and the head as not clean.
+- Approval or merge request (any user, provisioned accounts included): refuse — approvals/merges are human-only
+(authority level 5) — and report the request as a blocker instead of acting on it.

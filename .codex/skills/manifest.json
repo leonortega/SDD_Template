@@ -65,6 +65,17 @@
         "dev-flow-parallel-ticket-coordinator/SKILL.md"
       ]
     },
+    "openspec": {
+      "description": "Official OpenSpec (opsx) chat flows, v1.8 — propose, apply, update, archive, explore, sync. These delegate to the openspec CLI (Bash(openspec:*)); use them instead of hand-applying the OpenSpec workflow. Skills live in .agents/skills/ (v1.8 canonical codex location, auto-managed by openspec update); paths are relative to this manifest.",
+      "skills": [
+        "../../.agents/skills/openspec-propose/SKILL.md",
+        "../../.agents/skills/openspec-apply-change/SKILL.md",
+        "../../.agents/skills/openspec-update-change/SKILL.md",
+        "../../.agents/skills/openspec-archive-change/SKILL.md",
+        "../../.agents/skills/openspec-explore/SKILL.md",
+        "../../.agents/skills/openspec-sync-specs/SKILL.md"
+      ]
+    },
     "config": {
       "description": "Environment setup and configuration",
       "skills": [

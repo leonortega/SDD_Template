@@ -203,7 +203,8 @@ Workflow:
 2. **Skill scan** — map the declared stack to applicable skills, then scan **every**
    installed `.codex/skills/*/SKILL.md`; declare each active/skipped skill with
    rationale in a `Skills used:` block. Missing a declaration is a process violation.
-3. **TDD implementation** — follow `/opsx:apply` over `tasks.md` with vertical TDD
+3. **TDD implementation** — run the opsx apply flow (`openspec-apply-change` skill → `openspec` CLI status) over
+   `tasks.md` with vertical TDD
    cycles (see `.codex/skills/_shared/pipeline-tdd-cycle.md`):
    - Write all tests first (RED) — no product code before tests.
    - Three test levels: **unit** (per component, `test/unit/`), **integration** (per
@@ -578,7 +579,7 @@ to supporting workflows that run around, alongside, or instead of that line:
 | Grafana board update | `grafana-board-update` | After each CI deploy | [`supporting-workflows.md`](supporting-workflows.md) |
 
 Helper skills used **inside** the linear flow (not standalone stages): `dev-flow-apply-change`
-(OpenSpec `/opsx:apply` task execution), `dev-flow-parallel-ticket-coordinator` (parallel
+(OpenSpec `openspec-apply-change` opsx task execution), `dev-flow-parallel-ticket-coordinator` (parallel
 worktree delivery, Section 10 below), and `tdd` (RED/GREEN discipline inside implementation).
 
 ---

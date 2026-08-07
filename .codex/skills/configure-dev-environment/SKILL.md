@@ -39,7 +39,7 @@ Before running quick setup, ensure the following CLI tools are available on the 
 | -------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | Docker Desktop | [docker.com](https://www.docker.com/products/docker-desktop/)       | Compose services, container builds                                                       |
 | Node.js (v20+) | [nodejs.org](https://nodejs.org/) or `winget install OpenJS.NodeJS` | OpenSpec CLI, frontend builds                                                            |
-| OpenSpec CLI   | `npm install -g @fission-ai/openspec@latest`                        | OpenSpec proposal workflow (`/opsx:propose`, `openspec status`, `openspec instructions`) |
+| OpenSpec CLI   | `npm install -g @fission-ai/openspec@latest`                        | OpenSpec opsx chat flow (`$openspec-propose`, `$openspec-apply-change`; CLI: `openspec status`, `openspec instructions`) |
 | Lefthook       | `python -m tools.sdd_cli tool-installer install-lefthook`           | Pre-commit hooks (gitleaks scan, commit-msg validation) + pre-push `stack-tests` with coverage gate (`python -m tools.sdd_cli stack-tests` — unit/integration/architecture tests + `coverage.minimumPercent`, default 80) |
 
 Verify tools are installed:

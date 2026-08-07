@@ -14,6 +14,14 @@ placeholders:
 
 ## Pattern
 
+### Human-Only Approvals (Hard Gate)
+
+**❌ HARD GATE (authority level 5):** PR approvals and merges are **human-only actions**. Never submit an approval
+review or merge a pull request on behalf of any user — including provisioned lab accounts such as FirstUser/SecondUser.
+The agent's Gitea API token is limited to reads, PR comments, labels, and requesting reviewers. Posting an `APPROVED`
+review, a `DISMISSED` review, or a merge (direct or via the API) as any user is a process violation: refuse, explain
+that approvals/merges are human-only, and report the request as a blocker instead.
+
 ### Step 1 — Run AI Review
 
 Invoke the `dev-flow-pr-review-agent` skill against the PR. This reviews the diffs, posts findings as PR comments, and

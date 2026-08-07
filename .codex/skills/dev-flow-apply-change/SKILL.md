@@ -20,7 +20,7 @@ or ambiguous you MUST prompt for available changes.
 
 **Steps**
 
-1. **Select the change**
+1. **Select the change (opsx flow)**
 
    If a name is provided, use it. Otherwise:
    - Infer from conversation context if the user mentioned a change
@@ -28,19 +28,19 @@ or ambiguous you MUST prompt for available changes.
    - If ambiguous, run `openspec list --json` to get available changes and use the **AskUserQuestion tool** to let the
    user select
 
-   Always announce: "Using change: <name>" and how to override (e.g., `/opsx:apply <other>`).
+   Always announce: "Using change: <name>" and how to override (e.g., `$openspec-apply-change <other>`).
 
-2. **Follow the `/opsx:apply` pattern — implement tasks**
+2. **Run the opsx apply flow — delegate to `openspec-apply-change`.**
 
-   Read `tasks.md` directly from `openspec/changes/<name>/tasks.md` to get the task list with checkboxes.
-
-   Read context files for implementation guidance:
-   - `proposal.md` — what & why
-   - `specs/*.md` — behavior specs
-   - `design.md` — how
+   Load the `openspec-apply-change` skill (`.agents/skills/openspec-apply-change/SKILL.md`, manifest `openspec`
+   category) and follow its Workflow for change state: `openspec status --change "<name>" --json` (task list,
+   `applyRequires`, per-artifact `requires` edges) and `openspec instructions <artifact> --change "<name>" --json` for
+   any incomplete planning artifact. Read the task list from the CLI output (or `tasks.md` on disk), then execute the
+   repo TDD requirements below for every implementation task.
 
    **Handle states:**
-   - If `tasks.md` is missing: show message, suggest running the propose flow first
+   - If `tasks.md` is missing or `status` shows missing planning artifacts: show message, suggest running the propose
+   flow (`$openspec-propose`) first
    - If all tasks are marked `[x]`: congratulate, suggest archive
    - Otherwise: proceed to implementation
 
@@ -74,7 +74,7 @@ or ambiguous you MUST prompt for available changes.
 
    **Pause if:**
    - Task is unclear → ask for clarification
-   - Implementation reveals a design issue → suggest updating artifacts via `/opsx:update`
+   - Implementation reveals a design issue → suggest updating artifacts via `$openspec-update-change`
    - Error or blocker encountered → report and wait for guidance
    - User interrupts
 
@@ -171,7 +171,9 @@ and first failing test for the current behavior
 - Keep code changes minimal and scoped to each task
 - Update task checkbox immediately after completing each task
 - Pause on errors, blockers, or unclear requirements - don't guess
-- Read context files directly from openspec/changes/<name>/ — don't rely on external CLI output
+- Use the opsx flow (`openspec-apply-change` skill → `openspec status --json`) for task state, and read the context
+  files themselves from openspec/changes/<name>/ — always read dependency artifacts from disk, not from conversation
+  memory
 
 **Fluid Workflow Integration**
 

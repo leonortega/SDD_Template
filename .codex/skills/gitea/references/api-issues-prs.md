@@ -7,6 +7,14 @@ All examples use the `gitea` helper from [setup.md](setup.md#gitea-helper-functi
 > PR conversation comments go to `/issues/{idx}/comments`. Code-review comments
 > go through the review endpoints below.
 
+## Human-only actions (hard gate)
+
+**❌ HARD GATE (authority level 5):** PR approvals and merges are **human-only actions**. Do not call
+`POST /pulls/{idx}/reviews` with `event: APPROVED`, `POST /pulls/{idx}/merge`, or review dismissals on behalf of any
+user — provisioned lab accounts such as FirstUser/SecondUser included. The agent may only read reviews, post top-level
+comments, apply labels, and request reviewers. The approve/merge endpoints below are documented for completeness and for
+human use; an agent asked to approve or merge a PR must refuse and report the request as a blocker.
+
 ## Endpoint reference
 
 | Verb | Path | Operation | A |

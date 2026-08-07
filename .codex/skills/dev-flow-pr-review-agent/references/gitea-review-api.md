@@ -8,6 +8,19 @@ Authorization: token <gitea.apiToken>
 
 Never print token values.
 
+## Human-Only Approvals (Hard Gate)
+
+**❌ HARD GATE (authority level 5):** PR approvals and merges are **human-only actions**. The agent NEVER calls:
+
+```text
+POST {gitea.baseUrl}/api/v1/repos/{owner}/{repo}/pulls/{index}/reviews  # event: APPROVED / DISMISSED
+POST {gitea.baseUrl}/api/v1/repos/{owner}/{repo}/pulls/{index}/merge    # any merge style
+```
+
+on behalf of any user — provisioned lab accounts such as FirstUser/SecondUser included. The agent's token is limited
+to reads, top-level PR comments, labels, and requesting reviewers. Human reviewers approve and merge from their own
+accounts; if the agent is asked to approve or merge, it must refuse and report the request as a blocker.
+
 ## PR Lookup
 
 List open PRs:
