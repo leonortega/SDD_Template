@@ -2,6 +2,11 @@
 
 # Pipeline — Review Handoff
 
+> **Part of the shared PR lifecycle.** This pattern is the detailed reviewer
+> mechanics for **Step 2 (request reviewers at creation)** and **Step 6
+> (re-verify after AI review)** of the 7-step shared PR lifecycle
+> (`.codex/skills/_shared/pipeline-pr-lifecycle.md`).
+
 ## Usage
 
 Use this pattern after a PR is created. It defines the order: **request human reviewers at PR creation, then re-verify

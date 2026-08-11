@@ -243,6 +243,12 @@ Workflow:
    include ticket id, OpenSpec change id, implementation summary, acceptance-to-test
    map, TDD RED/GREEN evidence, coverage result, quality gates, risk classification,
    context/docs/knowledge classification, and `Reviewers requested: <usernames>`.
+
+   Steps 7–9 implement the **7-step shared PR lifecycle**
+   (`.codex/skills/_shared/pipeline-pr-lifecycle.md`): create/reuse PR → request
+   reviewers → AI review → feedback loop → CI validation → re-verify reviewers →
+   human merge. The same lifecycle is consumed by the bug-fix, hotfix, and PROD
+   release-PR flows.
 8. **Review and fix loop** — delegate to `dev-flow-pr-review-feedback-loop` (Stage 6).
 9. **Re-verify reviewers** after the AI review completes — re-run the same
    `request-reviewers` command (idempotent) so the merge gate never silently misses a
