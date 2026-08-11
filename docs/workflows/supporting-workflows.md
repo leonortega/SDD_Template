@@ -107,7 +107,7 @@ fallback when no deterministic route matches, missing-stack fallback
 
 **Status sources.**
 
-- Tickets by configured states (TO DO, In Progress, Developed, In testing, Tested,
+- Tickets by configured states (Specified, In progress, Developed, In testing,
   Closed) and generated markers (branch, PR, QA deployment, E2E QA, PROD, rollback,
   QA bug).
 - Active `.codex/delivery-context.local.json` lock and any mismatch with discovered
