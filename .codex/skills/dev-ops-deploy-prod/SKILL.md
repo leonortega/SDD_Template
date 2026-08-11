@@ -176,6 +176,12 @@ constraint:
 2. Create the **final annotated tag** (`vX.Y.Z`) on that same commit.
 3. Open a **release-blocking PR** `release/vX.Y.Z → main`, label it `codex-reviewed` (clean AI review marker),
    get **1 approval from a user other than the PR author** (self-approval is rejected), and merge.
+
+   This is the **PROD release-PR variant (Step 1 only)** of the shared PR
+   lifecycle (`.codex/skills/_shared/pipeline-pr-lifecycle.md`): the artifact is
+   already QA-approved and code-reviewed, so no AI review, feedback loop, or CI
+   fix loop runs — only PR creation + reviewer request (Step 2 command) + the
+   `codex-reviewed` label + human approval/merge.
 4. Then dispatch `package-deploy` with `workflow_dispatch` inputs `environment=prod`,
    `artifact_commit_sha={qaApprovedCommit}`, `release_version={finalVersion}`, and
    `source_rc_version={sourceRcVersion}` on the release branch so the workflow checks out exactly the QA-approved

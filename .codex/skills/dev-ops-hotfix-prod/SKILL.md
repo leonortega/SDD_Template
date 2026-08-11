@@ -74,7 +74,10 @@ is explicitly `no-openspec` or ops-only.
 
 6. **⚠️ MANDATORY: Implement Fix With Tests** — delegate to `dev-flow-implement-ticket` for the code fix, tests, PR,
 review-agent loop, and handoff. The TDD test-first pattern is defined in
-`.codex/skills/_shared/pipeline-tdd-cycle.md`. Key hotfix-specific details:
+`.codex/skills/_shared/pipeline-tdd-cycle.md`, and the PR runs the **7-step shared
+PR lifecycle** (`.codex/skills/_shared/pipeline-pr-lifecycle.md` — create/reuse
+PR → request reviewers → AI review → feedback loop → CI validation →
+re-verify reviewers → human merge). Key hotfix-specific details:
 
    - **AC source:** the incident/hotfix ticket description (set in step 3).
    - **Task source:** the OpenSpec `tasks.md` for any tasks created in step 5.
