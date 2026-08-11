@@ -197,7 +197,9 @@ jobs:
             echo "WARNING: Registry ${REGISTRY} not reachable via HTTP — will skip push"
           fi
 
-          # Login to Nexus Docker registry (non-fatal if registry is HTTP-only and insecure-registries not set)
+          # Login to Nexus Docker registry (non-fatal here; the fail-closed
+          # manifest check below makes a skipped push fatal when the registry
+          # is reachable).
           LOGGED_IN=false
           if [ -n "${NEXUS_USERNAME:-}" ] && [ -n "${NEXUS_PASSWORD:-}" ]; then
             if echo "${NEXUS_PASSWORD}" | docker login "${REGISTRY}" -u "${NEXUS_USERNAME}" --password-stdin 2>/dev/null; then
@@ -226,12 +228,51 @@ jobs:
 
               if [ "$LOGGED_IN" = "true" ] && [ "$REGISTRY_REACHABLE" = "true" ]; then
                 echo "Pushing ${IMAGE}..."
-                docker push "${IMAGE}"
-                docker tag "${IMAGE}" "${REGISTRY}/${app_id}:latest"
-                docker push "${REGISTRY}/${app_id}:latest"
+                # Docker daemons default to HTTPS for registries; the Nexus
+                # :5001 registry is HTTP-only. `localhost` is Docker's implicit
+                # insecure (HTTP) registry, so for local-lab registries push a
+                # localhost retag — pushing host.docker.internal:5001 attempts
+                # HTTPS and fails. Customized remote registries push directly.
+                # The registry stores repo:tag by name (host-independent), so
+                # the PROD gate's host.docker.internal manifest check finds it.
+                case "${REGISTRY%%:*}" in
+                  localhost|127.0.0.1|host.docker.internal)
+                    PUSH_HOST="localhost:${REGISTRY##*:}"
+                    ;;
+                  *)
+                    PUSH_HOST="${REGISTRY}"
+                    ;;
+                esac
+                PUSH_TAG="${PUSH_HOST}/${app_id}:${COMMIT_SHA}"
+                docker tag "${IMAGE}" "${PUSH_TAG}"
+                docker push "${PUSH_TAG}"
+                docker tag "${IMAGE}" "${PUSH_HOST}/${app_id}:latest"
+                docker push "${PUSH_HOST}/${app_id}:latest"
                 echo "${app_id} pushed to registry"
               else
                 echo "Skipping push for ${app_id} (registry not available)"
+              fi
+
+              # Fail-closed registry verification: a green "build + push" does NOT
+              # guarantee persistence — a login/HTTPS failure above silently skips
+              # the push, and the PROD artifact gate checks the registry, not local
+              # state. Verify the manifest exists when the registry is reachable.
+              if [ "$REGISTRY_REACHABLE" = "true" ]; then
+                if [ -n "${NEXUS_USERNAME:-}" ] && [ -n "${NEXUS_PASSWORD:-}" ]; then
+                  MANIFEST_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+                    -u "${NEXUS_USERNAME}:${NEXUS_PASSWORD}" \
+                    -H 'Accept: application/vnd.docker.distribution.manifest.v2+json' \
+                    "http://${REGISTRY}/v2/${app_id}/manifests/${COMMIT_SHA}")
+                else
+                  MANIFEST_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+                    -H 'Accept: application/vnd.docker.distribution.manifest.v2+json' \
+                    "http://${REGISTRY}/v2/${app_id}/manifests/${COMMIT_SHA}")
+                fi
+                if [ "$MANIFEST_CODE" != "200" ]; then
+                  echo "ERROR: ${REGISTRY}/${app_id}:${COMMIT_SHA} missing from registry (HTTP ${MANIFEST_CODE}) — push failed or was skipped"
+                  exit 1
+                fi
+                echo "${app_id} verified in registry (manifest HTTP 200)"
               fi
 
               # Load image into kind cluster so K8s can find it (kind's containerd

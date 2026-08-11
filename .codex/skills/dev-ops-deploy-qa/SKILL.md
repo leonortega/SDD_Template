@@ -284,6 +284,26 @@ the Grafana dashboard is updated,
 `.codex/skills/_shared/delivery-contract-qa.md` to validate the deployment against the ticket's acceptance criteria
 (which targets the deployed QA URLs).
 
+### Sync The Local Checkout To The Deployed Commit First
+
+**Before running Playwright against the QA URLs, sync the local checkout to the deployed commit.** The E2E specs
+live in the repo checkout that runs them, so a checkout behind the deployed commit encodes the **old UI** in the
+specs and produces false failures (e.g. asserting a `link` role for a hero CTA that QA already serves as a
+`button`).
+
+```bash
+git fetch gitea && git merge --ff-only gitea/dev
+```
+
+- Sync **after** the QA deployment is confirmed OK (so the checkout includes the deployed spec versions) and
+  **before** the first Playwright run.
+- Use `git merge --ff-only`; never reset or force-push the checkout. Preserve unrelated local working tree changes.
+- Confirm the sync landed on the deployed commit (`git log --oneline -1`) before running the suite.
+- If `gitea/dev` has moved ahead of the deployed QA artifact (another PR merged since the dispatch), check out the
+  exact deployed SHA instead of dev HEAD so the specs match what QA serves.
+- If the first E2E run fails, re-check the checkout vs the deployed commit before treating it as a product
+  regression.
+
 **This is a required gate.** Do not skip the E2E QA evidence step — the release pipeline must not proceed to PROD
 without:
 

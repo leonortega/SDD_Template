@@ -370,6 +370,9 @@ For web/API application work, preserve the delivery health contract required by 
 deployment-facing behavior changes.
 - Treat removal or breakage of `/health` as an implementation failure because DEV, QA, and PROD promotion gates depend
 on it.
+- Never define a client-side (SPA) route at `/health` — the web server owns that path for the probe
+  (`location = /health`), so a SPA route there works in local dev but silently breaks in the deployed (nginx)
+  topology. Put any user-facing health/status page on a non-probe path (e.g. `/status`).
 
 Run Deployment Topology Review through the selected deployment configure skill when changes touch deployable project
 files, deployment manifests, provider-specific deployment infrastructure, or

@@ -148,6 +148,25 @@ contents.
    - `Knowledge updated: <files>` or `Knowledge updated: none`
    - `Knowledge consulted: <files>` or `Knowledge consulted: none` when a consult ran before acting
 
+## Shared-Index Merge Conflicts (union resolution)
+
+`docs/knowledge-coverage.md` (coverage matrix) and `knowledge/lessons-learned/README.md` (catalog) are
+**shared tables**: every docs PR that adds a lesson appends rows to them, so two docs PRs in flight
+produce content merge conflicts in the same files even when each touches disjoint lesson files. The
+rows are additive and independent — resolve **as a union of both sides' rows**, never dropping either
+side's entry:
+
+1. Keep every row from both sides (no `--ours` / `--theirs` deletion).
+2. Remove the conflict markers, then run `npx trunk fmt` on both files to re-align columns.
+3. Verify no lesson file is left orphaned: every `knowledge/lessons-learned/*.md` on disk must have a
+   row in both indexes.
+4. Keep the matrix header counts (e.g. "N files") in sync with the actual row count in the same commit.
+5. Commit the merge and re-run CI — Gitea does **not** auto-rerun on label changes, so trigger the run
+   manually.
+
+If two PRs edit the **same row** (not just add rows), a real content decision is required: pick the
+newer/source-backed wording and note it.
+
 ## Output
 
 Report the updated candidate files exactly as the classifier selected them: `Docs updated: <files>` /

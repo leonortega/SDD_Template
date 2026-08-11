@@ -361,6 +361,27 @@ SecondUser) as repo collaborators with write permission via the Gitea API (`PUT
 (`pr.minimumApprovals.dev`, `pr.minimumApprovals.main`) default to 1 each.
 **Safety:** Never print the API token. Do not create labels automatically without user approval.
 
+### Gitea Git Push Credentials (Windows)
+
+`git push` to the local Gitea remote can hang indefinitely on Windows: the `wincred` credential helper
+has no stored credential for the host, so git blocks on a non-interactive prompt. Disable the prompt
+and send the Gitea API token as the password via a Basic-auth header:
+
+```bash
+TOKEN=$(python -c "import json; print(json.load(open('.codex/client-tools.local.json'))['gitea']['apiToken'])")
+# Replace <repo-owner> with the repo owner username (e.g. admin)
+GIT_TERMINAL_PROMPT=0 git -c http.extraheader="Authorization: Basic $(printf '<repo-owner>:%s' "$TOKEN" | base64)" \
+  push gitea <branch>
+```
+
+Verify the push with `git ls-remote --heads gitea <branch>` and confirm the expected commit SHA is
+printed — `ls-remote` exits 0 even when nothing matches, so a naive `&& echo EXISTS` check can
+false-positive. Anonymous `git fetch` works; only push needs the header. Never print the token.
+
+**Branch protection:** `dev` and `main` reject direct pushes (`Not allowed to push to protected branch`).
+Use PR merges; only temporarily remove a protection (via the Gitea API, restore immediately) when the
+user explicitly asks.
+
 ### Gitea Actions Runner
 
 Configure the CI runner for PR validation and deployment jobs.

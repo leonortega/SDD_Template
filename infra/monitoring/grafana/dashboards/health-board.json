@@ -1,7 +1,7 @@
 {
-  "title": "\ud83d\ude80 SDD Service Status",
+  "title": "🚀 SDD Service Status",
   "uid": "agentic-e2e-health-board",
-  "version": 1786124943,
+  "version": 1786242601,
   "schemaVersion": 39,
   "timezone": "browser",
   "editable": true,
@@ -11,7 +11,10 @@
     "agentic-e2e",
     "health",
     "urls",
-    "infrastructure"
+    "infrastructure",
+    "env-dev",
+    "env-qa",
+    "env-prod"
   ],
   "timepicker": {
     "refresh_intervals": [
@@ -37,7 +40,7 @@
   },
   "panels": [
     {
-      "title": "\ud83d\udfe2 Service Health",
+      "title": "🟢 Service Health",
       "id": 1,
       "type": "table",
       "description": "Live health status - probes each environment /health endpoint on every refresh (30s). Green = deployed and responding; 'Not deployed' = endpoint unreachable. Direct URLs use the host-remapped ports.",
@@ -205,7 +208,7 @@
       ]
     },
     {
-      "title": "\ud83d\udd27 Infrastructure Access",
+      "title": "🔧 Infrastructure Access",
       "id": 6,
       "type": "text",
       "description": "Quick access to all infrastructure services with URLs and default credentials",
@@ -216,7 +219,7 @@
         "y": 14
       },
       "options": {
-        "content": "| Service | URL | Default Credentials |\n|---|---|---|\n| **\ud83d\udcca Grafana** | http://localhost:3001 | `admin` / `admin` |\n| **\ud83d\udd27 Gitea** (Git) | http://localhost:3000 | `admin` / `admin123` |\n| **\ud83d\udce6 Nexus** (Artifacts) | http://localhost:8088 | `admin` / `admin123` |\n| **\ud83d\udccb Dozzle** (Logs) | http://localhost:8888 | \u2014 |\n\n```bash\n# Kubernetes\nkubectl -n sdd-dev get po -o wide\nkubectl -n sdd-dev get svc\nkubectl -n sdd-qa get po -o wide\nkubectl -n sdd-qa get svc\n```\n\n> \ud83d\udd04 Services are deployed via **Gitea Actions CI** \u2192 **kind K8s cluster**\n",
+        "content": "| Service | URL | Default Credentials |\n|---|---|---|\n| **📊 Grafana** | http://localhost:3001 | `admin` / `admin` |\n| **🔧 Gitea** (Git) | http://localhost:3000 | `admin` / `admin123` |\n| **📦 Nexus** (Artifacts) | http://localhost:8088 | `admin` / `admin123` |\n| **📋 Dozzle** (Logs) | http://localhost:8888 | — |\n\n```bash\n# Kubernetes\nkubectl -n sdd-dev get po -o wide\nkubectl -n sdd-dev get svc\nkubectl -n sdd-qa get po -o wide\nkubectl -n sdd-qa get svc\nkubectl -n sdd-prod get po -o wide\nkubectl -n sdd-prod get svc\n```\n\n> 🔄 Services are deployed via **Gitea Actions CI** → **kind K8s cluster** &nbsp;·&nbsp; 🔷 DEV &nbsp;·&nbsp; 🟢 QA &nbsp;·&nbsp; 🔴 PROD\n",
         "mode": "markdown"
       }
     },
@@ -231,7 +234,7 @@
         "y": 0
       },
       "options": {
-        "content": "# \ud83d\ude80 SDD Service Status Dashboard\n\n**Cluster:** `sdd-cluster` &nbsp;\u00b7&nbsp; **Refresh:** `30s` &nbsp;\u00b7&nbsp; **Grafana:** http://localhost:3001 &nbsp;\u00b7&nbsp; _Click a **Direct URL** to open the service._",
+        "content": "# 🚀 SDD Service Status Dashboard\n\n**Cluster:** `sdd-cluster` &nbsp;·&nbsp; **Refresh:** `30s` &nbsp;·&nbsp; **Grafana:** http://localhost:3001 &nbsp;·&nbsp; _Click a **Direct URL** to open the service._",
         "mode": "markdown"
       }
     }

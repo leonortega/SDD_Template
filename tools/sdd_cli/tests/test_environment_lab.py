@@ -323,3 +323,91 @@ def test_prune_docker_leftovers_failure_is_nonblocking(tmp_path) -> None:
     assert result["valid"] is True
     assert len(result["findings"]) == 3
     assert all(f.get("severity") == "warning" for f in result["findings"])
+
+
+# ── set_semgrep_config (single-source-of-truth header) ─────────────────
+
+
+def _write_project_profile(tmp_path, stack: dict) -> None:
+    codex = tmp_path / ".codex"
+    codex.mkdir(parents=True)
+    (codex / "project-profile.local.json").write_text(
+        json.dumps({"stack": stack}), encoding="utf-8"
+    )
+
+
+def test_set_semgrep_config_writes_single_source_of_truth_yml(tmp_path) -> None:
+    """Generated .semgrep.yml is header-only; rule packs live in the JSON."""
+    from tools.sdd_cli.environment_lab import set_semgrep_config
+
+    _write_project_profile(
+        tmp_path,
+        {
+            "frontend": {"value": "angular"},
+            "backend": {"value": "express"},
+            "database": {"value": "postgresql"},
+        },
+    )
+    result = set_semgrep_config(tmp_path, dry_run=False)
+
+    assert result["valid"] is True
+    yml = (tmp_path / ".semgrep.yml").read_text(encoding="utf-8")
+    assert "Single source of truth for active rule packs: .semgrep-rules.json" in yml
+    assert "This file intentionally contains no rule list" in yml
+    assert "rules: []" in yml
+    assert "# - p/" not in yml  # no inline rule-list comments anymore
+
+    rules = json.loads((tmp_path / ".semgrep-rules.json").read_text())["rules"]
+    assert rules == ["p/typescript", "p/javascript", "p/sql-injection"]
+
+    profile = json.loads(
+        (tmp_path / ".codex" / "project-profile.local.json").read_text()
+    )
+    assert profile["stack"]["semgrepRules"] == rules
+
+
+def test_set_semgrep_config_no_stack_uses_fallback_rules(tmp_path) -> None:
+    """No stack configured → broad fallback set, same header-only yml."""
+    from tools.sdd_cli.environment_lab import set_semgrep_config
+
+    _write_project_profile(
+        tmp_path,
+        {
+            "frontend": {"value": ""},
+            "backend": {"value": ""},
+            "database": {"value": ""},
+        },
+    )
+    result = set_semgrep_config(tmp_path, dry_run=False)
+
+    assert result["valid"] is True
+    yml = (tmp_path / ".semgrep.yml").read_text(encoding="utf-8")
+    assert "# - p/" not in yml
+    rules = json.loads((tmp_path / ".semgrep-rules.json").read_text())["rules"]
+    assert rules == ["p/typescript", "p/javascript", "p/python", "p/csharp"]
+
+
+def test_set_semgrep_config_dry_run_message_aligned(tmp_path) -> None:
+    """Dry-run action no longer claims rule packs are written to .semgrep.yml."""
+    from tools.sdd_cli.environment_lab import set_semgrep_config
+
+    _write_project_profile(
+        tmp_path,
+        {
+            "frontend": {"value": "react"},
+            "backend": {"value": ""},
+            "database": {"value": ""},
+        },
+    )
+    result = set_semgrep_config(tmp_path, dry_run=True)
+
+    assert result["valid"] is True
+    yml_msg = next(
+        a["message"]
+        for a in result["actions"]
+        if a["path"] == ".semgrep.yml" and a["key"] == "config.written"
+    )
+    assert ".semgrep.yml" in yml_msg
+    assert "rule pack(s):" not in yml_msg
+    assert not (tmp_path / ".semgrep.yml").exists()
+    assert not (tmp_path / ".semgrep-rules.json").exists()

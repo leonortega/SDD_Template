@@ -59,7 +59,8 @@ _DEFAULT_PORTS = {
 
 # Canonical source of truth: infra/deployment/ports.json (see tools/sdd_cli/k8s_ports.py).
 _PORTS_FILE = Path("/app/ports.json")
-_SERVICE_LABELS = {"frontend": "Frontend (React)", "backend": "Backend (.NET API)"}
+# Stack-agnostic role labels — the template never assumes a tech stack.
+_SERVICE_LABELS = {"frontend": "Frontend (Web)", "backend": "Backend (API)"}
 
 
 def _load_ports() -> dict:

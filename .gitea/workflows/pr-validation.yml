@@ -87,6 +87,22 @@ jobs:
         shell: bash
         run: checkov -d . --compact --config-file .checkov.yml 2>&1
 
+      # Kustomize overlay validation gate (residual QA risk fix): renders every
+      # env overlay (dev/qa/prod) exactly like the deploy step and asserts
+      # NodePort uniqueness cluster-wide + drift against
+      # infra/deployment/ports.json. Catches unwired service-patches BEFORE they
+      # reach `kubectl apply` (cluster-scoped NodePort collision regression). The
+      # CI image ships kustomize v5.4.3 + pyyaml. Deterministic, stack-independent.
+      - name: Validate Kustomize overlays (build + NodePort uniqueness)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -d infra/k8s/overlays ]; then
+            python3 -m tools.sdd_cli environment-lab validate-k8s-overlays
+          else
+            echo "No infra/k8s/overlays — kustomize overlay validation skipped."
+          fi
+
       # ── Tests ──
       # Repo tooling tests: always run the shell's own Python test suite
       # (deterministic, stack-independent). Product tests (unit, integration,

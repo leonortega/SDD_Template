@@ -95,6 +95,69 @@ def test_run_eval_handles_dict_results_key(tmp_path: Path) -> None:
     assert result["valid"] is True
 
 
+def test_run_eval_handles_v3_envelope(tmp_path: Path) -> None:
+    """Promptfoo v3 --output envelope {"results": {"results": [rows]}}."""
+    root = _make_root(tmp_path)
+    fake = _fake_run('{"results": {"results": [{"pass": true}, {"pass": false}]}}')
+    with patch("tools.sdd_cli.agent_eval.subprocess.run", side_effect=fake):
+        result = run_eval(root)
+    assert result["total"] == 2
+    assert result["passed"] == 1
+    assert result["failed"] == 1
+    assert result["results_json"]["results"]["results"][0]["pass"] is True
+
+
+def test_run_eval_falls_back_to_success_flag(tmp_path: Path) -> None:
+    """Rows flagging pass/fail via `success` are counted correctly."""
+    root = _make_root(tmp_path)
+    fake = _fake_run('[{"success": true}, {"success": false}]')
+    with patch("tools.sdd_cli.agent_eval.subprocess.run", side_effect=fake):
+        result = run_eval(root)
+    assert result["total"] == 2
+    assert result["passed"] == 1
+    assert result["failed"] == 1
+
+
+def test_run_eval_falls_back_to_grading_result(tmp_path: Path) -> None:
+    """Rows with only gradingResult.pass are counted correctly."""
+    root = _make_root(tmp_path)
+    payload = (
+        '[{"gradingResult": {"pass": true}}, '
+        '{"gradingResult": {"pass": false}}]'
+    )
+    fake = _fake_run(payload)
+    with patch("tools.sdd_cli.agent_eval.subprocess.run", side_effect=fake):
+        result = run_eval(root)
+    assert result["total"] == 2
+    assert result["passed"] == 1
+    assert result["failed"] == 1
+
+
+def test_run_eval_falls_back_through_flags_in_order(tmp_path: Path) -> None:
+    """pass > success > gradingResult.pass precedence when flags are mixed."""
+    root = _make_root(tmp_path)
+    payload = (
+        '[{"pass": true, "success": false}, '
+        '{"success": true, "gradingResult": {"pass": false}}]'
+    )
+    fake = _fake_run(payload)
+    with patch("tools.sdd_cli.agent_eval.subprocess.run", side_effect=fake):
+        result = run_eval(root)
+    assert result["passed"] == 2
+    assert result["failed"] == 0
+    assert result["valid"] is True
+
+
+def test_run_eval_raises_when_envelope_has_no_row_list(tmp_path: Path) -> None:
+    """An envelope without a results row list is a loud failure."""
+    root = _make_root(tmp_path)
+    fake = _fake_run('{"results": {"foo": "bar"}}')
+    with patch("tools.sdd_cli.agent_eval.subprocess.run", side_effect=fake):
+        with pytest.raises(CliError) as exc:
+            run_eval(root)
+    assert "unexpected format" in str(exc.value)
+
+
 def test_run_eval_invalid_when_promptfoo_exits_nonzero_even_if_all_pass(
     tmp_path: Path,
 ) -> None:
