@@ -144,6 +144,11 @@ from `project-profile.local.json`.
 4. **Nexus must be running** with Docker hosted repository configured (or available to create one).
 5. **K8s cluster must be available** — Run `python -m tools.sdd_cli environment-lab setup-kind-cluster` to create a kind
 cluster, or enable Kubernetes in Docker Desktop. Verify with `kubectl cluster-info`.
+6. **Kustomize binary must be available** — the overlay gate (`environment-lab validate-k8s-overlays`) and the deploy
+steps render overlays with `kustomize build`. Install it with `python -m tools.sdd_cli tool-installer
+install-kustomize` (pinned to the CI image version v5.4.3; auto-downloads to the user-local bin and verifies with
+`kustomize version`). If the user-local bin is not on PATH, prepend it when running the gate (Windows:
+`PATH="$LOCALAPPDATA/bin:$PATH"`; Linux/macOS: `PATH="$HOME/.local/bin:$PATH"`).
 
 ## Configuration
 
@@ -535,6 +540,9 @@ Verify end-to-end:
 
 1. **Docker build works**: `docker build -f frontend/Dockerfile frontend`
 2. **Kustomize build works**: `cd infra/k8s/overlays/dev && kustomize build . | kubectl apply --dry-run=client -f -`
+   (or run the full gate: `python -m tools.sdd_cli environment-lab validate-k8s-overlays` — renders all three overlays
+   and checks NodePort uniqueness cluster-wide + `infra/deployment/ports.json` parity; requires kustomize, see
+   Prerequisites)
 3. **kind image loaded**: Ensure images are loaded into kind via `kind load docker-image --name sdd-cluster
 host.docker.internal:5001/frontend:latest`
 4. **Trigger CI**: Push to `dev` branch and verify the workflow succeeds
