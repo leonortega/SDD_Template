@@ -81,7 +81,8 @@ jobs:
           git init .
           git remote add origin "$repo_url"
           # Depth 2 so the deployable-changes gate can resolve the deploy
-          # commit's parent for workflow_dispatch runs (first-parent diff).
+          # commit's first parent (pre-merge base) for the change-set diff —
+          # used for both PR-merge and workflow_dispatch runs.
           git fetch --depth 2 origin "${{ steps.sha.outputs.SHA }}"
           git checkout --force FETCH_HEAD
 
@@ -120,23 +121,41 @@ jobs:
         # fails open when the base commit cannot be resolved or the diff cannot
         # be computed (no way to prove the change is doc-only, so do not block
         # deploys).
+        #
+        # EXCEPTION (operator override): a workflow_dispatch that supplies an
+        # explicit artifact_commit_sha pins a specific verified commit to deploy
+        # (QA approval / PROD promotion) and is UNCONDITIONALLY deployable — the
+        # src/test diff gate does not apply even when the pinned commit's own
+        # delta is infra-only (e.g. a kustomize overlay fix). PR-merge
+        # auto-deploys and ref-head dispatches (no pin) keep the strict gate.
         id: changes
         shell: bash
+        env:
+          # Gitea renders the input expression ONCE into this env var; the bash
+          # script then reads the plain variable. Avoids inline ${{ }} context-
+          # expression edge cases inside the shell test. Always set (possibly
+          # empty), so ${PINNED_SHA} is safe under `set -u`.
+          PINNED_SHA: ${{ github.event.inputs.artifact_commit_sha }}
         run: |
           set -euo pipefail
           DEPLOY_SHA="${{ steps.sha.outputs.SHA }}"
 
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            # PR merge: the change set is the diff between the base branch head
-            # and the merge commit that landed on dev.
-            BASE_SHA="${{ github.event.pull_request.base.sha }}"
-            git fetch --depth 1 origin "${BASE_SHA}" >/dev/null 2>&1 || BASE_SHA=""
-          else
-            # workflow_dispatch: use the change set this commit introduces
-            # (first-parent diff); the checkout fetch (depth 2) made the parent
-            # object available.
-            BASE_SHA=$(git rev-parse --verify "${DEPLOY_SHA}^" 2>/dev/null || echo "")
+          # Explicit artifact_commit_sha dispatch = operator override: deploy
+          # the pinned verified commit unconditionally (no src/test diff gate).
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${PINNED_SHA}" ]; then
+            echo "Pinned artifact dispatch (artifact_commit_sha) — treating change as deployable."
+            echo "DEPLOYABLE=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+
+          # Base for the change-set diff: the deploy commit's FIRST PARENT.
+          # For a merged-PR event, pull_request.base.sha points at the base
+          # branch head AFTER the merge — i.e. the merge commit itself — so
+          # base..merge would be empty and every deploy would be skipped. The
+          # first parent is the pre-merge dev head (PR merge) / the dispatched
+          # commit's parent (workflow_dispatch); the depth-2 checkout made it
+          # available in both cases.
+          BASE_SHA=$(git rev-parse --verify "${DEPLOY_SHA}^" 2>/dev/null || echo "")
 
           if [ -z "${BASE_SHA}" ]; then
             echo "No base commit available — treating change as deployable."
