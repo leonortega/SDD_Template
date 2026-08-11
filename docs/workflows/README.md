@@ -9,6 +9,7 @@ flow, in the same order the skills execute them.
 | File                                            | Purpose                                                                        | Typical author | AI updatable |
 | ----------------------------------------------- | ------------------------------------------------------------------------------ | -------------- | ------------ |
 | `implementation-deploy-flows.md`                | Linear ticket → PROD flow: Stages 1–14, routing matrix, gates, markers, env     | AI             | Yes          |
+| `pr-lifecycle.md`                               | Shared 7-step PR lifecycle (create → reviewers → AI review → feedback loop → CI → re-verify → human merge), consumed by every flow that opens a PR | AI | Yes          |
 | `supporting-workflows.md`                       | Supporting/operational workflows (resume, explore, status, scaffold, retro, docs, Grafana) | AI       | Yes          |
 | `parallel-delivery.md`                          | Optional multi-ticket coordination (worktrees + deployment lane)               | AI             | Yes          |
 | `setup-flow-plan.md`                            | Architectural plan for the `full-setup` flow (summarized in `supporting-workflows.md` §8) | AI    | Yes          |
@@ -23,8 +24,8 @@ Every row in the `AGENTS.md` routing table is documented in exactly one place:
 | `dev-flow-propose-change` (Stage 2) | `implementation-deploy-flows.md` §3 |
 | `dev-flow-implement-ticket` (Stage 3) | `implementation-deploy-flows.md` §3 |
 | `dev-flow-verify-change` (Stage 4) | `implementation-deploy-flows.md` §3 |
-| `dev-flow-pr-review-agent` (Stage 5) | `implementation-deploy-flows.md` §3 |
-| `dev-flow-pr-review-feedback-loop` (Stage 6) | `implementation-deploy-flows.md` §3 |
+| `dev-flow-pr-review-agent` (Stage 5) | `implementation-deploy-flows.md` §3 + `pr-lifecycle.md` |
+| `dev-flow-pr-review-feedback-loop` (Stage 6) | `implementation-deploy-flows.md` §3 + `pr-lifecycle.md` |
 | `dev-ops-post-merge-deploy` (Stage 7) | `implementation-deploy-flows.md` §4 |
 | `dev-ops-deploy-qa` (Stage 8) | `implementation-deploy-flows.md` §4 |
 | E2E QA evidence gate (Stage 9, contract gate `delivery-contract-qa.md`) | `implementation-deploy-flows.md` §4 |
@@ -50,10 +51,12 @@ Every row in the `AGENTS.md` routing table is documented in exactly one place:
    user request to the skill to load.
 2. For the **linear flow** (ticket → PROD), read `implementation-deploy-flows.md`
    Stages 1–14 with its gates and markers sections.
-3. For **everything around the line** (resume, status, scaffold, audits, docs,
+3. For the **shared PR lifecycle** (every PR: creation → reviewers → AI review →
+   feedback loop → CI → re-verify → human merge), read `pr-lifecycle.md`.
+4. For **everything around the line** (resume, status, scaffold, audits, docs,
    dashboards), read `supporting-workflows.md`.
-4. For **multi-ticket delivery**, read `parallel-delivery.md`.
-5. For the **setup flow** (`full-setup`), read `supporting-workflows.md` §8, with the full architectural plan in
+5. For **multi-ticket delivery**, read `parallel-delivery.md`.
+6. For the **setup flow** (`full-setup`), read `supporting-workflows.md` §8, with the full architectural plan in
 `setup-flow-plan.md`.
 
 ## Eval Alignment
