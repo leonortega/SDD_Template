@@ -21,9 +21,9 @@ Use this skill when E2E QA fails against the QA deployment. This skill handles t
 E2E QA fails → File bug → Move to Specified → Update parent OpenSpec → Commit → Move to In progress → Branch → PR → Merge & deploy to DEV → user approval → deploy to QA → Close bug
 ```
 
-The **bug flow ends with the QA deployment** (Phase 6). The parent ticket is returned to `In testing` (ID 9) and its
-E2E QA re-run continues as the **parent's own flow** (via `dev-ops-deploy-qa` → E2E QA evidence
-gate) — it is never part of the bug flow.
+The **bug flow ends with the QA deployment** (Phase 6). The parent ticket remains in `In testing` (ID 9) — an E2E
+failure never changes its state — and its E2E QA re-run continues as the **parent's own flow** (via
+`dev-ops-deploy-qa` → E2E QA evidence gate) — it is never part of the bug flow.
 
 **Key differences from feature flow:**
 
@@ -96,7 +96,8 @@ comment pattern. Use:
    - Comment body: `**Bug ticket:** {bugUrl}\n**Evidence:** {evidencePath}`
    - Severity: `advisory` (log and continue on failure)
 
-    Leave the parent in its current state (e.g., `Test failed` ID 11 or `In testing` ID 9). The parent does NOT move
+    Leave the parent in `In testing` (ID 9) — an E2E failure does not change the parent's state (there is no
+    `Test failed` state in the flow). The parent does NOT move
     until the bug is fixed and
     E2E QA re-runs successfully.
 
@@ -401,17 +402,17 @@ deployment, bug closure, and return to the parent ticket's QA flow.
     }
     ```
 
- 1. Move the parent ticket `{parentTicketKey}` from `Test failed` (ID 11) back to `In testing` (ID 9) — the bug is
- fixed, deployed, and the parent can be re-tested:
+ 1. Verify the parent ticket `{parentTicketKey}` is still in `In testing` (ID 9) — the parent never left it (an E2E
+ failure does not change the parent's state; there is no `Test failed` state in the flow). The bug is fixed and
+ deployed, so the parent can be re-tested:
 
     ```bash
-    PATCH /api/v3/work_packages/{parentId}
-    {"lockVersion": {n}, "_links": {"status": {"href": "/api/v3/statuses/9"}}}
+    GET /api/v3/work_packages/{parentId}   # confirm status is In testing (ID 9)
     ```
 
  1. Hand the parent back to its own QA flow. The **bug flow ends with the QA deployment** — the bug does not run E2E
     or PROD itself:
-    - The parent is already back in `In testing` (ID 9) above
+    - The parent is already in `In testing` (ID 9) — it never left
     - The parent's E2E QA evidence gate runs as part of the parent's own flow (`dev-ops-deploy-qa` →
       `delivery-contract-qa.md`), with the ticket in `In testing`, over QA only
     - If that E2E QA passes, the parent proceeds to PROD promotion per `dev-ops-deploy-prod`
@@ -448,7 +449,7 @@ Report the parent ticket, bug ticket (with link), E2E QA evidence path, bug spec
 parent OpenSpec change updated with bug tasks, fix branch name and remote with
 initial commit, PR URL, AI review result (passed / blocking findings with ids), merge commit SHA, deployment status (DEV
 ✓ / QA ✓), bug-closure status (tasks marked done, branch deleted, ticket moved
-to Closed), parent ticket returned to In testing, and handoff to E2E QA for the parent.
+to Closed), parent ticket verified still in `In testing`, and handoff to E2E QA for the parent.
 
 For non-code defects, report the parent ticket, evidence path, and required non-code owner and stop (no branch, no
 deploy, no close).
@@ -475,6 +476,5 @@ skips cleanly (expected template state).
 update tests and re-run coverage until the threshold is met.
 - PR not merged before Phase 6: stop and report the PR URL — do not deploy unmerged changes.
 - QA deployment fails (Phase 6 step 5): stop and report deployment failure — do not close the bug or return the parent
-to QA.
-- Parent ticket is not in `Test failed` when moving back to `In testing`: report the current state but continue — the
-parent may already be in a valid retest state.
+to QA.- Parent ticket is not in `In testing` when returning to the parent QA flow: report
+  the current state but continue — the parent may already be in a valid retest state.

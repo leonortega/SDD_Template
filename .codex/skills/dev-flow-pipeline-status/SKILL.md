@@ -40,7 +40,7 @@ provider, Nexus, selected deployment provider, tags, or release manifests.
 
 Collect what is relevant to the request:
 
-- tickets by configured states: TO DO, In Progress, Developed, In testing (IN QA), Tested, Closed.
+- tickets by configured states: Specified, In progress, Developed, In testing, Closed.
 - Current ticket generated markers: branch, PR, QA deployment, E2E QA, PROD deployment, rollback, QA bug.
 - Active `.codex/delivery-context.local.json` lock, including ticket key, branch, PR, artifact commit, RC/final
 versions, and any mismatch with discovered state.

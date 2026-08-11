@@ -437,8 +437,8 @@ never DEV**.
    - `FAIL` — required assertion failed, oracle missing, evidence contradictory, wrong
      environment, or product defect.
 4. **On PASS**: ticket comment marker `IA generated E2E QA: {ticketKey}` (commit SHA,
-   QA URL, pass/fail counts, AC mapping summary); move ticket to Done (or `Tested` if
-   Done is reserved for PROD); update `release-qa.json` with `e2eQaStatus: "passed"` and
+   QA URL, pass/fail counts, AC mapping summary); move ticket to the configured `Done`
+   state (`Closed` by default — ID 12); update `release-qa.json` with `e2eQaStatus: "passed"` and
    `versionStatus: "RC candidate"`; optionally create the annotated RC tag
    `vMAJOR.MINOR.PATCH-rc.N` on the tested commit; archive the OpenSpec change (Stage 10
    below); delete the temporary QA trigger branch.
@@ -473,9 +473,9 @@ E2E QA fails -> File bug -> Move to Specified -> Update parent OpenSpec -> Commi
   -> Move to In progress -> Branch -> PR -> Merge & deploy to DEV -> user approval -> deploy to QA -> Close bug
 ```
 
-The bug flow **ends with the QA deployment** (user-approved). The parent is returned to `In testing` (ID 9) and its E2E
-QA re-run continues as the parent's own flow (`dev-ops-deploy-qa` → E2E QA evidence gate) — never
-part of the bug flow.
+The bug flow **ends with the QA deployment** (user-approved). The parent remains in `In testing` (ID 9) — an E2E
+failure never changes its state — and its E2E QA re-run continues as the parent's own flow
+(`dev-ops-deploy-qa` → E2E QA evidence gate) — never part of the bug flow.
 
 1. **File bug with evidence** — child ticket of the parent, marker
    `IA generated QA bug: {parentTicketKey}`; parent stays in its current state.
@@ -499,8 +499,9 @@ part of the bug flow.
 8. **Close bug** — mark bug tasks done in parent `tasks.md`, delete fix branch, comment
    `IA generated bug closed: {bugKey}`, move bug to `Closed` (ID 12), switch the ticket
    lock back to the parent.
-9. **Hand back to parent QA** — move parent from `Test failed` (ID 11) back to
-   `In testing` (ID 9). The parent's E2E QA re-run is the **parent's own flow**
+9. **Hand back to parent QA** — verify the parent remains in `In testing` (ID 9) (an
+   E2E failure never changes the parent's state — there is no `Test failed` state in
+   the flow). The parent's E2E QA re-run is the **parent's own flow**
    (`dev-ops-deploy-qa` → E2E QA evidence gate) — not part of the bug flow.
 
 Non-code defects (data/environment/requirements only): no OpenSpec change, no branch;
@@ -656,26 +657,29 @@ worktree delivery, Section 10 below), and `tdd` (RED/GREEN discipline inside imp
 
 ## 6. Ticket States (OpenProject Status Mapping)
 
-| External label | OpenProject status | ID | Meaning |
-| -------------- | ------------------ | -- | ------- |
-| New | New | 1 | Bug starting point (filed from E2E QA failure) |
-| (refining) | In specification | 2 | Ticket being refined with acceptance criteria |
-| TO DO | Specified | 3 | Feature starting point — ACs defined |
-| (confirmed) | Confirmed | 4 | Bug reproduced and confirmed |
-| (queue) | To be scheduled | 5 | Queued for a future sprint |
-| (sprint) | Scheduled | 6 | Assigned to a sprint |
-| In progress | In progress | 7 | Implementation active on the branch |
-| IN REVIEW | Developed | 8 | Code complete, PR exists for review |
-| IN QA | In testing | 9 | Artifact deployed to QA, awaiting E2E validation |
-| Tested | Tested | 10 | E2E QA passed, ACs proven |
-| (failed) | Test failed | 11 | E2E QA failed — routes to bug lifecycle |
-| Closed | Closed | 12 | Done (closed) |
-| (paused) | On hold | 13 | Work paused |
-| Rejected | Rejected | 14 | Declined (closed) |
+| OpenProject status | ID | Meaning |
+| ------------------ | -- | ------- |
+| New | 1 | Bug starting point (filed from E2E QA failure) |
+| In specification | 2 | Ticket being refined — fallback only, never a flow state |
+| Specified | 3 | Feature starting point — ACs defined |
+| Confirmed | 4 | Bug reproduced and confirmed — never a flow state |
+| To be scheduled | 5 | Queued for a future sprint — never a flow state |
+| Scheduled | 6 | Assigned to a sprint — never a flow state |
+| In progress | 7 | Implementation active on the branch |
+| Developed | 8 | Code complete, PR exists for review |
+| In testing | 9 | Artifact deployed to QA, awaiting E2E validation |
+| Closed | 12 | All tests passed — done |
+| On hold | 13 | Work paused — never a flow state |
+| Rejected | 14 | Declined (closed) — never a flow state |
 
-Standard flow: `Specified → In progress → Developed → In testing → Tested → Closed`.
-Bug flow: `New → Specified → In progress → Developed → In testing → Tested → Closed`.
-Bug revert: `Test failed → (child bug) → New → … → Closed → parent back to In testing`.
+The flow uses **OpenProject status names directly** (no external labels) and only the chain statuses
+(`Specified → In progress → Developed → In testing → Closed`; bugs start at `New`). An
+E2E failure does **not** move the ticket — it stays in `In testing` while a child bug
+is filed, fixed, and deployed (Stage 11), then E2E re-runs in `In testing`.
+
+Standard flow: `Specified → In progress → Developed → In testing → Closed`.
+Bug flow: `New → Specified → In progress → Developed → In testing → Closed`.
+Bug revert: `In testing → (E2E FAIL → child bug) → New → … → Closed → parent re-tests in In testing`.
 
 ---
 

@@ -171,7 +171,7 @@ Read the test results and classify the outcome per the QA outcomes taxonomy:
    - Test results: passed/failed/skipped counts
    - Pass verdict with acceptance criteria mapping summary
    - Screenshots of any failed tests (if any)
-2. Move the ticket to the configured `Done` state (or `Tested` if `Done` is reserved for PROD)
+2. Move the ticket to the configured `Done` state (`Closed` by default — OpenProject ID 12; all tests passed)
 3. Update Nexus `release-qa.json` with `e2eQaStatus: "passed"` and `versionStatus: "RC candidate"`
 4. Optionally create an RC tag on the QA-approved commit: `git tag -a "v{MAJOR}.{MINOR}.{PATCH}-rc.{N}"`
 
@@ -188,10 +188,10 @@ Read the test results and classify the outcome per the QA outcomes taxonomy:
    - Failing test names and assertion details
    - Console errors, screenshots, or trace evidence
    - Classification: product defect, test defect, or environment issue
-2. Move the ticket to `Test failed` (OpenProject ID 11) — the E2E-failed state that routes to the bug lifecycle (E2E
-   ran with the ticket in `In testing` ID 9; FAIL advances it to `Test failed`)
+2. Leave the ticket in `In testing` (OpenProject ID 9) — an E2E failure does not change the ticket's state (there is
+   no `Test failed` state in the flow). The ticket stays in `In testing` until all tests pass.
 3. Do not create an RC tag
-4. Recommend fix and re-run: invoke `dev-flow-file-qa-bug`; after the fix is deployed to QA the parent returns to
+4. Recommend fix and re-run: invoke `dev-flow-file-qa-bug`; after the fix is deployed to QA the parent is re-tested in
    `In testing` (ID 9) and E2E re-runs against QA (never DEV)
 
 ### Step 4 — Archive OpenSpec Change
