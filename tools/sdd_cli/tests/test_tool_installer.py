@@ -139,6 +139,9 @@ def test_ensure_quality_tools_auto_installs_trunk(tmp_path: Path) -> None:
     ), patch(
         "tools.sdd_cli.tool_installer.install_lefthook",
         return_value={"valid": True, "actions": [], "findings": []},
+    ), patch(
+        "tools.sdd_cli.tool_installer.install_kustomize",
+        return_value={"valid": True, "actions": [], "findings": []},
     ):
         result = ensure_quality_tools(tmp_path, dry_run=False)
 
@@ -170,6 +173,9 @@ def test_ensure_quality_tools_trunk_install_failure_warns(tmp_path: Path) -> Non
         "tools.sdd_cli.tool_installer.run_native", side_effect=fake_run
     ), patch(
         "tools.sdd_cli.tool_installer.install_lefthook",
+        return_value={"valid": True, "actions": [], "findings": []},
+    ), patch(
+        "tools.sdd_cli.tool_installer.install_kustomize",
         return_value={"valid": True, "actions": [], "findings": []},
     ):
         result = ensure_quality_tools(tmp_path, dry_run=False)
@@ -383,3 +389,230 @@ def test_ensure_mcp_servers_prune_junk_flag(tmp_path: Path) -> None:
         ensure_mcp_servers(tmp_path, dry_run=False, prune_junk=False)
 
     assert pruned == [False]  # ran for the default call only
+
+
+# ── Kustomize installer ──────────────────────────────────────────────────
+
+
+def test_install_kustomize_existing_binary_is_verified(tmp_path: Path) -> None:
+    """Kustomize already resolvable → version probe verifies it, no download."""
+    from tools.sdd_cli.tool_installer import install_kustomize
+
+    with patch(
+        "tools.sdd_cli.tool_installer._resolve_kustomize",
+        return_value=str(tmp_path / "kustomize"),
+    ), patch(
+        "tools.sdd_cli.tool_installer.run_native",
+        return_value={"returncode": 0, "stdout": "v5.4.3", "stderr": ""},
+    ):
+        result = install_kustomize(tmp_path, dry_run=False)
+
+    assert result["valid"] is True
+    assert any(a["key"] == "verify" for a in result["actions"])
+    assert not any(f.get("severity") == "error" for f in result["findings"])
+
+
+def test_install_kustomize_existing_binary_fails_to_run_is_error(
+    tmp_path: Path,
+) -> None:
+    """Binary found but broken → error finding and invalid result."""
+    from tools.sdd_cli.tool_installer import install_kustomize
+
+    with patch(
+        "tools.sdd_cli.tool_installer._resolve_kustomize",
+        return_value=str(tmp_path / "kustomize"),
+    ), patch(
+        "tools.sdd_cli.tool_installer.run_native",
+        return_value={"returncode": 1, "stdout": "", "stderr": "exec error"},
+    ):
+        result = install_kustomize(tmp_path, dry_run=False)
+
+    assert result["valid"] is False
+    assert any(
+        f.get("path") == "kustomize" and f.get("severity") == "error"
+        for f in result["findings"]
+    )
+
+
+def test_install_kustomize_dry_run_reports_would_download(tmp_path: Path) -> None:
+    """No binary + dry-run → would-download action, no network call."""
+    from tools.sdd_cli.tool_installer import install_kustomize
+
+    with patch(
+        "tools.sdd_cli.tool_installer._resolve_kustomize", return_value=None
+    ), patch(
+        "tools.sdd_cli.tool_installer._install_kustomize_user_local"
+    ) as download:
+        result = install_kustomize(tmp_path, dry_run=True)
+
+    assert result["valid"] is True
+    assert any("Would download" in a["message"] for a in result["actions"])
+    download.assert_not_called()
+
+
+def test_install_kustomize_download_failure_is_error(tmp_path: Path) -> None:
+    """Auto-install failure → error finding and invalid result."""
+    from tools.sdd_cli.tool_installer import install_kustomize
+
+    def fake_install(result: dict) -> str | None:
+        # Mirror the real helper: it records the error finding before returning None.
+        result["findings"].append(
+            {
+                "path": "kustomize",
+                "key": "install",
+                "message": "Could not install kustomize: boom",
+                "severity": "error",
+                "phase": "apply",
+            }
+        )
+        return None
+
+    with patch(
+        "tools.sdd_cli.tool_installer._resolve_kustomize", return_value=None
+    ), patch(
+        "tools.sdd_cli.tool_installer._install_kustomize_user_local",
+        side_effect=fake_install,
+    ):
+        result = install_kustomize(tmp_path, dry_run=False)
+
+    assert result["valid"] is False
+    assert any(f.get("severity") == "error" for f in result["findings"])
+
+
+def test_install_kustomize_user_local_extracts_binary(tmp_path: Path) -> None:
+    """Downloaded tar.gz is extracted and the kustomize binary lands in user bin."""
+    import io
+    import tarfile
+
+    from tools.sdd_cli.tool_installer import _install_kustomize_user_local
+
+    payload = b"#!/bin/sh\necho kustomize\n"
+    archive_bytes = io.BytesIO()
+    with tarfile.open(fileobj=archive_bytes, mode="w:gz") as archive:
+        info = tarfile.TarInfo("kustomize")
+        info.size = len(payload)
+        archive.addfile(info, io.BytesIO(payload))
+    archive_bytes.seek(0)
+
+    class FakeResponse:
+        def read(self):
+            return archive_bytes.read()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    result = {"actions": [], "findings": []}
+    with patch(
+        "tools.sdd_cli.tool_installer._tool_platform", return_value="linux"
+    ), patch(
+        "tools.sdd_cli.tool_installer._tool_arch_github", return_value="x86_64"
+    ), patch(
+        "tools.sdd_cli.tool_installer._tool_user_bin",
+        return_value=tmp_path / "bin",
+    ), patch(
+        "urllib.request.urlopen", return_value=FakeResponse(),
+    ):
+        path = _install_kustomize_user_local(result)
+
+    assert path == str(tmp_path / "bin" / "kustomize")
+    assert (tmp_path / "bin" / "kustomize").read_bytes() == payload
+    # lefthook-style x86_64 must be translated to kustomize's amd64 asset name.
+    assert any(
+        "kustomize_v5.4.3_linux_amd64.tar.gz" in a.get("message", "")
+        for a in result["actions"]
+    )
+    assert not any(f.get("severity") == "error" for f in result["findings"])
+
+
+def test_install_kustomize_user_local_extracts_windows_zip(tmp_path: Path) -> None:
+    """Windows downloads the .zip asset and extracts kustomize.exe."""
+    import io
+    import zipfile
+
+    from tools.sdd_cli.tool_installer import _install_kustomize_user_local
+
+    payload = b"MZ\x90\x00fake-pe"
+    zip_bytes = io.BytesIO()
+    with zipfile.ZipFile(zip_bytes, "w") as archive:
+        archive.writestr("kustomize.exe", payload)
+    zip_bytes.seek(0)
+
+    class FakeResponse:
+        def read(self):
+            return zip_bytes.read()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    result = {"actions": [], "findings": []}
+    with patch(
+        "tools.sdd_cli.tool_installer._tool_platform", return_value="windows"
+    ), patch(
+        "tools.sdd_cli.tool_installer._tool_arch_github", return_value="x86_64"
+    ), patch(
+        "tools.sdd_cli.tool_installer._tool_user_bin",
+        return_value=tmp_path / "bin",
+    ), patch(
+        "urllib.request.urlopen", return_value=FakeResponse(),
+    ):
+        path = _install_kustomize_user_local(result)
+
+    assert path == str(tmp_path / "bin" / "kustomize.exe")
+    assert (tmp_path / "bin" / "kustomize.exe").read_bytes() == payload
+    assert any(
+        "kustomize_v5.4.3_windows_amd64.zip" in a.get("message", "")
+        for a in result["actions"]
+    )
+    assert not any(f.get("severity") == "error" for f in result["findings"])
+
+
+def test_ensure_quality_tools_kustomize_missing_warns(tmp_path: Path) -> None:
+    """Kustomize install failure → warning preserved and result marked invalid."""
+    from tools.sdd_cli.tool_installer import ensure_quality_tools
+
+    (tmp_path / "lefthook.yml").write_text(
+        "pre-commit:\n  commands: {}\n", encoding="utf-8"
+    )
+
+    def fake_run(command, root, timeout=30):
+        joined = " ".join(command)
+        if "gitleaks" in joined or "trivy" in joined:
+            return {"returncode": 0, "stdout": "ok", "stderr": ""}
+        return {"returncode": 127, "stdout": "", "stderr": "missing"}
+
+    with patch(
+        "tools.sdd_cli.tool_installer.run_native", side_effect=fake_run
+    ), patch(
+        "tools.sdd_cli.tool_installer.install_lefthook",
+        return_value={"valid": True, "actions": [], "findings": []},
+    ), patch(
+        "tools.sdd_cli.tool_installer.install_kustomize",
+        return_value={
+            "valid": False,
+            "actions": [],
+            "findings": [
+                {
+                    "path": "kustomize",
+                    "key": "install",
+                    "message": "Could not install kustomize: boom",
+                    "severity": "error",
+                    "phase": "apply",
+                }
+            ],
+        },
+    ):
+        result = ensure_quality_tools(tmp_path, dry_run=False)
+
+    assert any(w.get("path") == "kustomize" for w in result["warnings"])
+    assert any(
+        f.get("path") == "kustomize" and f.get("severity") == "error"
+        for f in result["findings"]
+    )
+    assert result["valid"] is False  # error findings propagate (lefthook parity)
+

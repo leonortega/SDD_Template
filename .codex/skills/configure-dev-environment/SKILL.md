@@ -41,6 +41,7 @@ Before running quick setup, ensure the following CLI tools are available on the 
 | Node.js (v20+) | [nodejs.org](https://nodejs.org/) or `winget install OpenJS.NodeJS` | OpenSpec CLI, frontend builds                                                            |
 | OpenSpec CLI   | `npm install -g @fission-ai/openspec@latest`                        | OpenSpec opsx chat flow (`$openspec-propose`, `$openspec-apply-change`; CLI: `openspec status`, `openspec instructions`) |
 | Lefthook       | `python -m tools.sdd_cli tool-installer install-lefthook`           | Pre-commit hooks (gitleaks scan, commit-msg validation) + pre-push `stack-tests` with coverage gate (`python -m tools.sdd_cli stack-tests` — unit/integration/architecture tests + `coverage.minimumPercent`, default 80) |
+| Kustomize      | `python -m tools.sdd_cli tool-installer install-kustomize`          | K8s overlay gate (`environment-lab validate-k8s-overlays` — renders dev/qa/prod overlays; NOT installed by `setup-lab`) |
 
 Verify tools are installed:
 
@@ -55,6 +56,17 @@ Lefthook installs automatically during `setup-lab`. To install separately:
 ```bash
 python -m tools.sdd_cli tool-installer install-lefthook
 ```
+
+Kustomize is **not** installed by `setup-lab` — install it before running the K8s overlay gate
+(`environment-lab validate-k8s-overlays`):
+
+```bash
+python -m tools.sdd_cli tool-installer install-kustomize
+```
+
+The installer pins kustomize to the CI image version (v5.4.3), downloads it to the user-local bin, and verifies it
+with `kustomize version`. If the user-local bin is not on PATH, prepend it when running the gate (Windows:
+`PATH="$LOCALAPPDATA/bin:$PATH"`; Linux/macOS: `PATH="$HOME/.local/bin:$PATH"`).
 
 ## Quick Setup
 
@@ -118,6 +130,7 @@ If you need to run steps individually:
 | Provision Gitea secrets             | `python -m tools.sdd_cli environment-lab provision-gitea-secrets`                 |
 | Prune Docker leftovers              | `python -m tools.sdd_cli environment-lab prune-docker-leftovers`                  |
 | Install lefthook                    | `python -m tools.sdd_cli tool-installer install-lefthook`                         |
+| Install kustomize                   | `python -m tools.sdd_cli tool-installer install-kustomize`                        |
 
 ## Safety Rules
 
@@ -194,6 +207,8 @@ Dockerfile exists.
 `host.docker.internal:5001`, Docker socket present, Docker Compose available.
 - `validate-gitea-runner`: check Docker, Gitea runner images, runner tools, Docker socket mount, and
 `tools/docker_push.py` existence.
+- `validate-k8s-overlays`: render every environment overlay with `kustomize build` and check NodePort uniqueness
+cluster-wide + parity with `infra/deployment/ports.json` (requires kustomize — `tool-installer install-kustomize`).
 
 ## CI Workflow Configuration
 

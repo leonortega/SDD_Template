@@ -161,7 +161,7 @@ def install_lefthook(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
 def _resolve_lefthook() -> str | None:
     """Find lefthook binary in PATH or user-local bin."""
-    user_bin = _lefthook_user_bin()
+    user_bin = _tool_user_bin()
     exe = "lefthook.exe" if sys.platform.startswith("win") else "lefthook"
     if (user_bin / exe).exists():
         return str(user_bin / exe)
@@ -172,7 +172,7 @@ def _resolve_lefthook() -> str | None:
     return None
 
 
-def _lefthook_user_bin() -> Path:
+def _tool_user_bin() -> Path:
     if sys.platform.startswith("win"):
         return (
             Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local")))
@@ -181,7 +181,7 @@ def _lefthook_user_bin() -> Path:
     return Path.home() / ".local" / "bin"
 
 
-def _lefthook_platform() -> str | None:
+def _tool_platform() -> str | None:
     if sys.platform.startswith("win"):
         return "windows"
     if sys.platform.startswith("darwin"):
@@ -191,7 +191,7 @@ def _lefthook_platform() -> str | None:
     return None
 
 
-def _lefthook_arch_github() -> str | None:
+def _tool_arch_github() -> str | None:
     machine = platform.machine().lower()
     if sys.platform == "win32":
         env_machine = os.environ.get("PROCESSOR_ARCHITECTURE", "").lower()
@@ -215,8 +215,8 @@ def _lefthook_arch_github() -> str | None:
 
 def _install_lefthook_user_local(root: Path, result: dict[str, Any]) -> str | None:
     """Download lefthook binary from GitHub releases."""
-    platform_name = _lefthook_platform()
-    arch = _lefthook_arch_github()
+    platform_name = _tool_platform()
+    arch = _tool_arch_github()
     if not platform_name or not arch:
         add_bucket_item(
             result["findings"],
@@ -227,7 +227,7 @@ def _install_lefthook_user_local(root: Path, result: dict[str, Any]) -> str | No
             "apply",
         )
         return None
-    bin_dir = _lefthook_user_bin()
+    bin_dir = _tool_user_bin()
     bin_name = "lefthook.exe" if platform_name == "windows" else "lefthook"
     destination = bin_dir / bin_name
     if destination.exists():
@@ -303,6 +303,236 @@ def _install_lefthook_user_local(root: Path, result: dict[str, Any]) -> str | No
             "lefthook",
             "install",
             f"Could not install lefthook: {ex}",
+            "error",
+            "apply",
+        )
+        return None
+
+
+# ── Kustomize ────────────────────────────────────────────────────────────
+
+# Pinned to match the CI image (infra/gitea/actions-images/e2e-ci/Dockerfile
+# installs kustomize v5.4.3) so local overlay rendering matches CI rendering.
+KUSTOMIZE_VERSION = "5.4.3"
+
+
+def _resolve_kustomize() -> str | None:
+    """Find the kustomize binary in PATH or user-local bin."""
+    user_bin = _tool_user_bin()
+    exe = "kustomize.exe" if sys.platform.startswith("win") else "kustomize"
+    if (user_bin / exe).exists():
+        return str(user_bin / exe)
+    for name in ("kustomize", "kustomize.exe"):
+        found = shutil.which(name)
+        if found:
+            return found
+    return None
+
+
+def install_kustomize(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Install the kustomize binary (pinned to :data:`KUSTOMIZE_VERSION`).
+
+    Mirrors :func:`install_lefthook`: resolves the binary, auto-downloads it
+    into user-local bin when missing, and verifies it runs. The
+    ``validate-k8s-overlays`` gate (k8s_validate.py) needs kustomize locally to
+    render the dev/qa/prod overlays.
+    """
+    result = configure_result("InstallKustomize", dry_run, write_enabled=not dry_run)
+    kustomize_path = _resolve_kustomize()
+    if kustomize_path is None:
+        result["actions"].append(
+            {
+                "path": "kustomize",
+                "key": "install",
+                "severity": "info",
+                "message": "kustomize binary not found. Attempting auto-install.",
+                "phase": "apply",
+            }
+        )
+        if dry_run:
+            result["actions"].append(
+                {
+                    "path": "kustomize",
+                    "key": "install",
+                    "severity": "info",
+                    "message": "Would download and install kustomize to user-local bin.",
+                    "phase": "apply",
+                }
+            )
+            result["valid"] = True
+            return result
+        kustomize_path = _install_kustomize_user_local(result)
+        if kustomize_path is None:
+            result["valid"] = False
+            return result
+    if dry_run:
+        result["actions"].append(
+            {
+                "path": "kustomize",
+                "key": "verify",
+                "severity": "info",
+                "message": f"Would verify kustomize at {kustomize_path}.",
+                "phase": "apply",
+            }
+        )
+        result["valid"] = True
+        return result
+    check = run_native([kustomize_path, "version"], root, timeout=15)
+    if check["returncode"] == 0:
+        result["actions"].append(
+            {
+                "path": "kustomize",
+                "key": "verify",
+                "severity": "info",
+                "message": f"Kustomize available: {check['stdout'][:60]}",
+                "phase": "apply",
+            }
+        )
+        result["valid"] = True
+    else:
+        add_bucket_item(
+            result["findings"],
+            "kustomize",
+            "verify",
+            f"kustomize binary found but failed to run: {check['stderr'][:120] or check['stdout'][:120]}",
+            "error",
+            "apply",
+        )
+        result["valid"] = False
+    return result
+
+
+def _install_kustomize_user_local(result: dict[str, Any]) -> str | None:
+    """Download and extract the pinned kustomize binary from GitHub releases.
+
+    Kustomize publishes ``.tar.gz`` archives for Linux/macOS (single
+    ``kustomize`` member) and ``.zip`` archives for Windows (single
+    ``kustomize.exe`` member) — unlike lefthook's raw binaries. The payload is
+    extracted in memory with :mod:`tarfile`/:mod:`zipfile`.
+    """
+    platform_name = _tool_platform()
+    arch = _tool_arch_github()
+    # Kustomize release assets use amd64/arm64 — lefthook-style x86_64/i386
+    # names do not exist in kubernetes-sigs/kustomize releases (CI image uses
+    # kustomize_v5.4.3_linux_amd64.tar.gz).
+    kustomize_arch = {"x86_64": "amd64", "arm64": "arm64"}.get(arch)
+    if not platform_name or not kustomize_arch:
+        add_bucket_item(
+            result["findings"],
+            "kustomize",
+            "platform.unsupported",
+            f"Unsupported platform/arch for kustomize auto-install: {sys.platform}/{arch}",
+            "error",
+            "apply",
+        )
+        return None
+    bin_dir = _tool_user_bin()
+    bin_name = "kustomize.exe" if platform_name == "windows" else "kustomize"
+    destination = bin_dir / bin_name
+    if destination.exists():
+        result["actions"].append(
+            {
+                "path": str(destination),
+                "key": "install",
+                "severity": "info",
+                "message": "kustomize binary already exists.",
+                "phase": "apply",
+            }
+        )
+        return str(destination)
+    # Tag is `kustomize/v5.4.3`; GitHub canonicalizes the embedded slash as
+    # %2F in the download path (same asset the CI image fetches).
+    tag = f"kustomize/v{KUSTOMIZE_VERSION}"
+    asset_ext = ".zip" if platform_name == "windows" else ".tar.gz"
+    asset = f"kustomize_v{KUSTOMIZE_VERSION}_{platform_name}_{kustomize_arch}{asset_ext}"
+    download_url = (
+        "https://github.com/kubernetes-sigs/kustomize/releases/download/"
+        f"{tag.replace('/', '%2F')}/{asset}"
+    )
+    result["actions"].append(
+        {
+            "path": "kustomize",
+            "key": "download",
+            "severity": "info",
+            "message": f"Downloading kustomize from {download_url}.",
+            "phase": "apply",
+        }
+    )
+    try:
+        import io
+        import tarfile
+        import urllib.request
+        import zipfile
+
+        req = urllib.request.Request(download_url, headers={"User-Agent": "sdd-cli"})
+        with urllib.request.urlopen(req, timeout=60) as response:  # nosec
+            payload = response.read()
+        if not payload:
+            add_bucket_item(
+                result["findings"],
+                "kustomize",
+                "download",
+                "Downloaded kustomize payload was empty.",
+                "error",
+                "apply",
+            )
+            return None
+        if platform_name == "windows":
+            # Windows assets are .zip archives containing kustomize.exe.
+            with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+                data = archive.read("kustomize.exe")
+        else:
+            with tarfile.open(fileobj=io.BytesIO(payload), mode="r:*") as archive:
+                member = next(
+                    (
+                        m
+                        for m in archive.getmembers()
+                        if m.isfile() and m.name == "kustomize"
+                    ),
+                    None,
+                )
+                if member is None:
+                    add_bucket_item(
+                        result["findings"],
+                        "kustomize",
+                        "archive",
+                        "kustomize archive did not contain a kustomize binary member.",
+                        "error",
+                        "apply",
+                    )
+                    return None
+                extracted = archive.extractfile(member)
+                if extracted is None:
+                    add_bucket_item(
+                        result["findings"],
+                        "kustomize",
+                        "archive",
+                        "Could not read the kustomize binary from the archive.",
+                        "error",
+                        "apply",
+                    )
+                    return None
+                data = extracted.read()
+        bin_dir.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(data)
+        if platform_name != "windows":
+            destination.chmod(destination.stat().st_mode | 0o111)
+        result["actions"].append(
+            {
+                "path": str(destination),
+                "key": "install",
+                "severity": "info",
+                "message": f"Installed kustomize to {destination}. Ensure this dir is on PATH for 'kustomize build' in validate-k8s-overlays.",
+                "phase": "apply",
+            }
+        )
+        return str(destination)
+    except Exception as ex:
+        add_bucket_item(
+            result["findings"],
+            "kustomize",
+            "install",
+            f"Could not install kustomize: {ex}",
             "error",
             "apply",
         )
@@ -1333,7 +1563,7 @@ def _coverage_probe_commands(root: Path) -> list[tuple[list[str], str]]:
 
 
 def ensure_quality_tools(root: Path, dry_run: bool = False) -> dict[str, Any]:
-    """Ensure quality tools are installed: lefthook, gitleaks, trivy, trunk, coverage."""
+    """Ensure quality tools are installed: lefthook, gitleaks, trivy, kustomize, trunk, coverage."""
     result = configure_result("EnsureQualityTools", dry_run, write_enabled=not dry_run)
     # Lefthook
     lf_result = install_lefthook(root, dry_run)
@@ -1413,6 +1643,26 @@ def ensure_quality_tools(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 "severity": "info",
                 "message": "Would check trivy availability.",
                 "phase": "audit",
+            }
+        )
+    # Kustomize (k8s overlay rendering) — auto-install like lefthook: the
+    # validate-k8s-overlays gate (k8s_validate.py) needs the binary locally to
+    # render the dev/qa/prod overlays. Pinned to the CI image version. No
+    # separate PATH probe here: install_kustomize verifies via the resolved
+    # full path (user-local bin may not be on PATH), matching lefthook.
+    kz_result = install_kustomize(root, dry_run)
+    for action in kz_result.get("actions", []):
+        result["actions"].append(action)
+    for finding in kz_result.get("findings", []):
+        result["findings"].append(finding)
+    if not kz_result.get("valid", True):
+        result["warnings"].append(
+            {
+                "path": "kustomize",
+                "key": "install",
+                "severity": "warning",
+                "message": "Kustomize installation had issues; continuing with other checks.",
+                "phase": "apply",
             }
         )
     # Trunk (formatting) (skip in dry-run; resolves via npx from node_modules/.bin)
@@ -2061,11 +2311,12 @@ def run_tool_installer(args: list[str]) -> int:
 
     if not args:
         print(
-            "Available: install-lefthook, install-playwright-mcp, "
-            "install-grafana-mcp, install-openproject-mcp, "
-            "validate-manifest, install-k8s-mcp, install-gitea-mcp, "
-            "install-skill, list-skills, ensure-mcp-servers, "
-            "ensure-quality-tools, install-sdd-template, update-sdd-template",
+            "Available: install-lefthook, install-kustomize, "
+            "install-playwright-mcp, install-grafana-mcp, "
+            "install-openproject-mcp, validate-manifest, install-k8s-mcp, "
+            "install-gitea-mcp, install-skill, list-skills, "
+            "ensure-mcp-servers, ensure-quality-tools, "
+            "install-sdd-template, update-sdd-template",
             file=sys.stderr,
         )
         return 1
@@ -2075,6 +2326,7 @@ def run_tool_installer(args: list[str]) -> int:
     dry_run = options.get("dry-run", "false").lower() == "true"
     handlers: dict[str, Any] = {
         "install-lefthook": lambda: install_lefthook(root, dry_run),
+        "install-kustomize": lambda: install_kustomize(root, dry_run),
         "install-playwright-mcp": lambda: install_playwright_mcp(root, dry_run),
         "install-grafana-mcp": lambda: install_grafana_mcp(root, dry_run),
         "install-openproject-mcp": lambda: install_openproject_mcp(root, dry_run),
