@@ -266,11 +266,12 @@ never used for .NET), then runs the **coverage gate** with the configurable thre
 A failing test or coverage-below-threshold step fails the push. A framework with tests but no mapped coverage command
 reports a gap step (non-blocking) — CI remains the authoritative coverage gate for
 that framework.
-  - **.NET stacks:** the coverage gate runs `dotnet test /p:CollectCoverage=true /p:Threshold={n}` and therefore
-  requires `coverlet.msbuild` referenced in the test project. Without it, `dotnet test`
-  silently ignores those properties and exits 0 — a false pass. `dev-flow-scaffold-project` must add `coverlet.msbuild`
-  to .NET test projects; verify it is present before relying on the .NET coverage
-  gate.
+  - **Stack-native coverage:** the coverage gate runs each framework's native coverage command with the configured
+  threshold — e.g. .NET stacks run `dotnet test /p:CollectCoverage=true /p:Threshold={n}`, which requires
+  `coverlet.msbuild` referenced in the test project. Without it, `dotnet test`
+  silently ignores those properties and exits 0 — a false pass. `dev-flow-scaffold-project` must add the framework's
+  coverage tool (e.g. `coverlet.msbuild` for .NET) to test projects; verify it is present before relying on the
+  coverage gate.
 - **No stack configured (template state):** the hook skips cleanly and exits 0 — no tests to run.
 - **Never bypass with `--no-verify`** unless the user explicitly requests it in the current chat. If a push is blocked
 by failing stack tests, fix the tests before pushing (same treatment as the

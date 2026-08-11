@@ -123,6 +123,7 @@ class TopLevelDispatchTests(unittest.TestCase):
         output = stderr.getvalue()
         self.assertIn("install-playwright-mcp", output)
         self.assertIn("ensure-quality-tools", output)
+        self.assertIn("ensure-stack-toolchain", output)
         self.assertIn("install-lefthook", output)
 
     def test_template_installer_no_args(self) -> None:
@@ -918,15 +919,15 @@ class ToolInstallerDispatchTests(unittest.TestCase):
             self.assertEqual(0, rc)  # Dry-run skips external tool checks
 
     def test_coverage_probe_commands_follow_stack_frameworks(self) -> None:
-        """ensure-quality-tools coverage probe is stack-driven, not hardcoded."""
+        """ensure-quality-tools coverage probe is stack-driven, never hardcoded."""
         from tools.sdd_cli.tool_installer import _coverage_probe_commands
 
-        # No stack configured → falls back to the classic tri-list.
+        # No stack configured → nothing probed (never assume a stack).
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            probes = _coverage_probe_commands(root)
-            names = [name for _, name in probes]
-            self.assertEqual(["dotnet", "pytest", "jest"], names)
+            probes, reason = _coverage_probe_commands(root)
+            self.assertEqual([], probes)
+            self.assertIn("no stack.testFrameworks", reason)
 
             # pytest stack → only pytest probed (no dotnet/jest fallback).
             codex = root / ".codex"
@@ -935,36 +936,57 @@ class ToolInstallerDispatchTests(unittest.TestCase):
                 json.dumps({"stack": {"testFrameworks": ["pytest"]}}),
                 encoding="utf-8",
             )
-            probes = _coverage_probe_commands(root)
-            names = [name for _, name in probes]
-            self.assertEqual(["pytest"], names)
+            probes, reason = _coverage_probe_commands(root)
+            self.assertIsNone(reason)
+            self.assertEqual(["pytest"], [name for _, name in probes])
 
             # .NET variants normalize to the single dotnet probe.
             (codex / "project-profile.local.json").write_text(
                 json.dumps({"stack": {"testFrameworks": ["xunit", "nunit"]}}),
                 encoding="utf-8",
             )
-            probes = _coverage_probe_commands(root)
-            names = [name for _, name in probes]
-            self.assertEqual(["dotnet"], names)
+            probes, reason = _coverage_probe_commands(root)
+            self.assertIsNone(reason)
+            self.assertEqual(["dotnet"], [name for _, name in probes])
 
             # Mixed stack → deduplicated probes in profile order.
             (codex / "project-profile.local.json").write_text(
                 json.dumps({"stack": {"testFrameworks": ["jest", "pytest"]}}),
                 encoding="utf-8",
             )
-            probes = _coverage_probe_commands(root)
-            names = [name for _, name in probes]
-            self.assertEqual(["jest", "pytest"], names)
+            probes, reason = _coverage_probe_commands(root)
+            self.assertIsNone(reason)
+            self.assertEqual(["jest", "pytest"], [name for _, name in probes])
 
-            # Configured-but-unmapped framework → falls back to the tri-list.
+            # Configured-but-unmapped framework → nothing probed + reason.
             (codex / "project-profile.local.json").write_text(
                 json.dumps({"stack": {"testFrameworks": ["golang"]}}),
                 encoding="utf-8",
             )
-            probes = _coverage_probe_commands(root)
-            names = [name for _, name in probes]
-            self.assertEqual(["dotnet", "pytest", "jest"], names)
+            probes, reason = _coverage_probe_commands(root)
+            self.assertEqual([], probes)
+            self.assertIn("golang", reason)
+
+    def test_ensure_stack_toolchain_dry_run_dispatch(self) -> None:
+        """tool-installer ensure-stack-toolchain --dry-run true works."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = cli.main(
+                    [
+                        "tool-installer",
+                        "ensure-stack-toolchain",
+                        "--root",
+                        str(root),
+                        "--dry-run",
+                        "true",
+                    ]
+                )
+            self.assertEqual(0, rc)
+            result = json.loads(stdout.getvalue())
+            self.assertTrue(result["valid"])
+            self.assertEqual("EnsureStackToolchain", result["mode"])
 
     def test_install_lefthook_dry_run(self) -> None:
         """tool-installer install-lefthook --dry-run true works."""

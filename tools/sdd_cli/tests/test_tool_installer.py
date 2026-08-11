@@ -616,3 +616,143 @@ def test_ensure_quality_tools_kustomize_missing_warns(tmp_path: Path) -> None:
     )
     assert result["valid"] is False  # error findings propagate (lefthook parity)
 
+
+# ── Stack toolchain installer (verify + guided install) ────────────
+
+
+def test_stack_runtime_keys_from_test_frameworks() -> None:
+    """testFrameworks drive the runtime set (dotnet family collapses)."""
+    from tools.sdd_cli.tool_installer import _stack_runtime_keys
+
+    assert _stack_runtime_keys({"testFrameworks": ["xunit", "pytest"]}) == [
+        "dotnet",
+        "python",
+    ]
+    # golang is a mapped runtime → the toolchain derives Go for it.
+    assert _stack_runtime_keys({"testFrameworks": ["golang"]}) == ["go"]
+
+
+def test_stack_runtime_keys_from_domains_and_languages() -> None:
+    """frontend/backend values and languages map to runtimes."""
+    from tools.sdd_cli.tool_installer import _stack_runtime_keys
+
+    stack = {
+        "frontend": {"applies": True, "value": "blazor"},
+        "backend": {"applies": True, "value": "asp.net core"},
+        "database": {"applies": False, "value": ""},
+        "languages": ["typescript"],
+    }
+    assert _stack_runtime_keys(stack) == ["dotnet", "node"]
+    assert _stack_runtime_keys({}) == []
+
+
+def test_ensure_stack_toolchain_no_stack_reports_skip(tmp_path: Path) -> None:
+    """No stack configured → skip action, valid, nothing probed."""
+    from tools.sdd_cli.tool_installer import ensure_stack_toolchain
+
+    result = ensure_stack_toolchain(tmp_path, dry_run=False)
+    assert result["valid"] is True
+    assert any("skipped" in a.get("message", "") for a in result["actions"])
+
+
+def test_ensure_stack_toolchain_dry_run_lists_probes(tmp_path: Path) -> None:
+    """Dry-run reports would-probe actions for each derived runtime."""
+    from tools.sdd_cli.tool_installer import ensure_stack_toolchain
+
+    codex = tmp_path / ".codex"
+    codex.mkdir()
+    (codex / "project-profile.local.json").write_text(
+        json.dumps({"stack": {"testFrameworks": ["pytest", "dotnet"]}}),
+        encoding="utf-8",
+    )
+    result = ensure_stack_toolchain(tmp_path, dry_run=True)
+    assert result["valid"] is True
+    messages = " ".join(a.get("message", "") for a in result["actions"])
+    assert "Would probe Python" in messages
+    assert "Would probe .NET SDK" in messages
+
+
+def test_ensure_stack_toolchain_unmapped_stack_warns(tmp_path: Path) -> None:
+    """Configured-but-unknown stack values surface a warning, not a silent pass."""
+    from tools.sdd_cli.tool_installer import ensure_stack_toolchain
+
+    codex = tmp_path / ".codex"
+    codex.mkdir()
+    (codex / "project-profile.local.json").write_text(
+        json.dumps({"stack": {"languages": ["kotlin"]}}),
+        encoding="utf-8",
+    )
+    result = ensure_stack_toolchain(tmp_path, dry_run=False)
+    assert result["valid"] is True  # warning, not an error
+    assert any(f.get("key") == "unmapped" for f in result["findings"])
+
+
+def test_ensure_stack_toolchain_missing_tool_guides_install(tmp_path: Path) -> None:
+    """Missing runtime → warning finding with OS-specific install command."""
+    from tools.sdd_cli.tool_installer import ensure_stack_toolchain
+
+    codex = tmp_path / ".codex"
+    codex.mkdir()
+    (codex / "project-profile.local.json").write_text(
+        json.dumps({"stack": {"testFrameworks": ["dotnet"]}}),
+        encoding="utf-8",
+    )
+    with patch(
+        "tools.sdd_cli.tool_installer._tool_platform", return_value="windows"
+    ), patch(
+        "tools.sdd_cli.tool_installer.run_native",
+        return_value={"returncode": 127, "stdout": "", "stderr": "not found"},
+    ):
+        result = ensure_stack_toolchain(tmp_path, dry_run=False)
+    assert result["valid"] is True  # guided install is a warning, not an error
+    missing = [f for f in result["findings"] if f.get("path") == "dotnet"]
+    assert missing
+    assert "winget install Microsoft.DotNet.SDK.8" in missing[0]["message"]
+
+
+def test_ensure_stack_toolchain_present_tool_reports_available(
+    tmp_path: Path,
+) -> None:
+    """Present runtime → info action, no findings."""
+    from tools.sdd_cli.tool_installer import ensure_stack_toolchain
+
+    codex = tmp_path / ".codex"
+    codex.mkdir()
+    (codex / "project-profile.local.json").write_text(
+        json.dumps({"stack": {"testFrameworks": ["pytest"]}}),
+        encoding="utf-8",
+    )
+    with patch(
+        "tools.sdd_cli.tool_installer.run_native",
+        return_value={"returncode": 0, "stdout": "Python 3.12\n", "stderr": ""},
+    ):
+        result = ensure_stack_toolchain(tmp_path, dry_run=False)
+    assert result["valid"] is True
+    assert not result["findings"]
+    assert any("Python available" in a.get("message", "") for a in result["actions"])
+
+
+def test_ensure_quality_tools_skips_coverage_probe_without_stack(
+    tmp_path: Path,
+) -> None:
+    """No stack → ensure-quality-tools reports the coverage probe skip."""
+    from tools.sdd_cli.tool_installer import ensure_quality_tools
+
+    (tmp_path / "lefthook.yml").write_text("x: y\n", encoding="utf-8")
+    with patch(
+        "tools.sdd_cli.tool_installer.install_lefthook",
+        return_value={"valid": True, "actions": [], "findings": []},
+    ), patch(
+        "tools.sdd_cli.tool_installer.install_kustomize",
+        return_value={"valid": True, "actions": [], "findings": []},
+    ), patch(
+        "tools.sdd_cli.tool_installer.run_native",
+        return_value={"returncode": 127, "stdout": "", "stderr": ""},
+    ):
+        result = ensure_quality_tools(tmp_path, dry_run=False)
+    assert result["valid"] is True
+    assert any(
+        "Coverage tool probe skipped" in a.get("message", "")
+        for a in result["actions"]
+    )
+

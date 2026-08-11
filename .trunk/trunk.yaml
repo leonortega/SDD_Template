@@ -17,13 +17,28 @@ runtimes:
     - python@3.14.4
 # This is the section where you manage your linters. (https://docs.trunk.io/check/configuration)
 lint:
-  # Third-party installed community skills and generated eval artifacts are
-  # vendor content, not repo-authored code; keep them out of the lint gate.
+  # Template shell content that a consumer implementation does not need
+  # linted: template docs/knowledge/openspec artifacts, the SDD CLI tooling,
+  # vendor skills + eval content, and lab infrastructure (compose/gitea/
+  # monitoring/nexus/openproject). Kept checked: infra/k8s + infra/deployment,
+  # .gitea workflows, root tool config, and product paths (src/, test/, ...).
   ignore:
     - linters: [ALL]
       paths:
-        - .codex/skills/**
+        - .agents/**
         - .codex/agent-evals/**
+        - .codex/ponytail/**
+        - .codex/skills/**
+        - agent-evals/**
+        - docs/**
+        - knowledge/**
+        - openspec/**
+        - tools/**
+        - infra/compose.yml
+        - infra/gitea/**
+        - infra/monitoring/**
+        - infra/nexus/**
+        - infra/openproject/**
   enabled:
     - bandit@1.9.4
     - black@26.5.1
