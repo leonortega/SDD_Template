@@ -272,7 +272,8 @@ jobs:
               if role == 'web':
                   has_build = os.path.isdir(os.path.join(path, 'dist'))
               elif role == 'api':
-                  # Check for .NET publish first, then assume source-based
+                  # Check for the stack's compiled publish output first (e.g.
+                  # .NET bin/Release/publish/), then assume source-based
                   has_build = (os.path.isdir(os.path.join(path, 'bin', 'Release', 'publish')) or
                                os.path.isfile(os.path.join(path, 'requirements.txt')) or
                                os.path.isfile(os.path.join(path, 'pyproject.toml')))
@@ -540,19 +541,19 @@ The `python -m tools.sdd_cli stack-tests` driver (`tools/sdd_cli/stack_tests.py`
 | `jest`    | `npm ci` | `npx jest test/unit test/integration test/architecture` |
 | `dotnet`, `xunit`, `nunit`, `mstest` | `dotnet restore` | `dotnet test` |
 
-**⚠️ pytest is Python-only.** It CANNOT run .NET tests. All .NET test
-frameworks (xUnit, NUnit, MSTest) run through `dotnet test`, which requires the
-**.NET SDK installed on the developer machine** — never map a .NET framework to
-pytest. Run the hook with:
+**⚠️ Test frameworks are runner-specific.** Never map a framework to another
+runner — pytest is Python-only and cannot run .NET tests; .NET test frameworks
+(xUnit, NUnit, MSTest) run through `dotnet test`, which requires the **.NET SDK
+installed on the developer machine**. Run the hook with:
 
 ```bash
 python -m tools.sdd_cli stack-tests            # real run
 python -m tools.sdd_cli stack-tests --dry-run true  # preview only
 ```
 
-If a test framework has no runtime on the dev machine, the hook fails with
-`dotnet`/`go` not found — that failure is a signal to install the runtime
-locally, not to switch the framework to pytest.
+If a test framework has no runtime on the dev machine, the hook fails with the
+framework's runner not found (e.g. `dotnet`/`go`) — that failure is a signal to
+install the runtime locally, not to switch the framework to a different runner.
 
 ### 6. Dry-Run Mode
 

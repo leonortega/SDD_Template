@@ -1530,36 +1530,37 @@ _FRAMEWORK_COVERAGE_PROBES: dict[str, tuple[list[str], str]] = {
 }
 
 
-# Classic fallback when no stack is configured (template state) or every
-# declared framework is unmapped (e.g. a custom runner) — the audit still
-# probes the common coverage tools.
-_FALLBACK_COVERAGE_PROBES: list[tuple[list[str], str]] = [
-    (["dotnet", "--version"], "dotnet"),
-    (["pytest", "--version"], "pytest"),
-    (native_command("npx") + ["jest", "--version"], "jest"),
-]
-
-
-def _coverage_probe_commands(root: Path) -> list[tuple[list[str], str]]:
+def _coverage_probe_commands(
+    root: Path,
+) -> tuple[list[tuple[list[str], str]], str | None]:
     """Coverage-tool probe commands driven by stack.testFrameworks.
 
     Reads the configured test frameworks from the project profile and returns
     the matching probe commands (normalized via stack_tests so .NET variants
-    collapse to dotnet). When no stack is configured (template state) or no
-    framework has a mapped probe, falls back to the classic dotnet/pytest/jest
-    tri-list so the audit still checks something.
+    collapse to dotnet) plus a skip reason when nothing should be probed. The
+    stack is a user decision — with no stack configured, or only unmapped
+    frameworks, nothing is probed (the template never assumes a default
+    toolchain).
     """
     from ._shared import load_project_profile
     from .stack_tests import _normalize_framework
 
     profile = load_project_profile(root)
     frameworks = (profile.get("stack") or {}).get("testFrameworks") or []
+    if not frameworks:
+        return [], "no stack.testFrameworks configured — never assume a stack"
     probes: list[tuple[list[str], str]] = []
+    unmapped: list[str] = []
     for fw in frameworks:
-        entry = _FRAMEWORK_COVERAGE_PROBES.get(_normalize_framework(fw))
+        key = _normalize_framework(fw)
+        entry = _FRAMEWORK_COVERAGE_PROBES.get(key)
         if entry and entry not in probes:
             probes.append(entry)
-    return probes or _FALLBACK_COVERAGE_PROBES
+        elif not entry:
+            unmapped.append(str(fw))
+    if probes:
+        return probes, None
+    return [], f"no coverage probe mapped for testFrameworks: {', '.join(unmapped)}"
 
 
 def ensure_quality_tools(root: Path, dry_run: bool = False) -> dict[str, Any]:
@@ -1738,10 +1739,22 @@ def ensure_quality_tools(root: Path, dry_run: bool = False) -> dict[str, Any]:
             }
         )
     # Coverage tool — stack-driven: probe only the frameworks declared in
-    # stack.testFrameworks (pytest/vitest/jest/dotnet). Falls back to the
-    # classic tri-list when no stack is configured. Skip in dry-run.
+    # stack.testFrameworks (pytest/vitest/jest/dotnet). With no stack
+    # configured (or only unmapped frameworks) nothing is probed — the stack
+    # is a user decision and must never be assumed. Skip in dry-run.
+    probes, probe_reason = _coverage_probe_commands(root)
     if not dry_run:
-        for tool_cmd, tool_name in _coverage_probe_commands(root):
+        if not probes:
+            result["actions"].append(
+                {
+                    "path": "coverage",
+                    "key": "check.skipped",
+                    "severity": "info",
+                    "message": f"Coverage tool probe skipped: {probe_reason}.",
+                    "phase": "audit",
+                }
+            )
+        for tool_cmd, tool_name in probes:
             check = run_native(tool_cmd, root, timeout=10)
             if check["returncode"] == 0:
                 result["actions"].append(
@@ -1764,6 +1777,321 @@ def ensure_quality_tools(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 "phase": "audit",
             }
         )
+    result["valid"] = not any(
+        item.get("severity") == "error" for item in result["findings"]
+    )
+    return result
+
+
+# ── Stack toolchain (verify + guided install) ───────────────────
+
+# Normalized stack signal → runtime key. Signals come from stack.languages,
+# stack.frameworks, stack.testFrameworks, and the frontend/backend/database
+# values in the project profile. Each row is an example mapping — the stack
+# is always a user decision, never assumed.
+_STACK_SIGNAL_ALIASES: dict[str, str] = {
+    # Languages
+    "python": "python",
+    "javascript": "node",
+    "typescript": "node",
+    "c#": "dotnet",
+    "csharp": "dotnet",
+    "go": "go",
+    "golang": "go",
+    "java": "java",
+    "ruby": "ruby",
+    "rust": "rust",
+    "php": "php",
+    # Frontend / backend frameworks
+    "react": "node",
+    "vue": "node",
+    "angular": "node",
+    "svelte": "node",
+    "next": "node",
+    "nuxt": "node",
+    "node": "node",
+    "express": "node",
+    "fastapi": "python",
+    "django": "python",
+    "flask": "python",
+    "asp.net": "dotnet",
+    "asp.net core": "dotnet",
+    "asp.net mvc": "dotnet",
+    "asp.net razor": "dotnet",
+    "aspnetcore": "dotnet",
+    "blazor": "dotnet",
+    "razor": "dotnet",
+    "spring": "java",
+    "maven": "java",
+    "gradle": "java",
+    "rails": "ruby",
+    "laravel": "php",
+    # Test frameworks (normalized keys come from stack_tests)
+    "pytest": "python",
+    "vitest": "node",
+    "jest": "node",
+    "dotnet": "dotnet",
+    "xunit": "dotnet",
+    "nunit": "dotnet",
+    "mstest": "dotnet",
+    "xunit.net": "dotnet",
+    "xunit.v3": "dotnet",
+    "nunit3": "dotnet",
+}
+
+# Runtime details: probe commands (first success wins), per-platform install
+# guidance, and the test/coverage tooling that runtime provides. The installer
+# only VERIFIES and prints the exact install command for missing tools — it
+# never installs compilers/SDKs automatically.
+_STACK_RUNTIMES: dict[str, dict[str, Any]] = {
+    "python": {
+        "label": "Python",
+        "probes": (["python3", "--version"], ["python", "--version"]),
+        "install": {
+            "windows": "winget install Python.Python.3.12",
+            "darwin": "brew install python",
+            "linux": "sudo apt install -y python3 python3-pip",
+        },
+        "tooling": "test: pytest · coverage: pytest-cov",
+    },
+    "node": {
+        "label": "Node.js",
+        "probes": (["node", "--version"],),
+        "install": {
+            "windows": "winget install OpenJS.NodeJS.LTS",
+            "darwin": "brew install node",
+            "linux": "sudo apt install -y nodejs npm",
+        },
+        "tooling": "test: vitest/jest (npm ci installs from the lockfile)",
+    },
+    "dotnet": {
+        "label": ".NET SDK",
+        "probes": (["dotnet", "--version"],),
+        "install": {
+            "windows": "winget install Microsoft.DotNet.SDK.8",
+            "darwin": "brew install --cask dotnet-sdk",
+            "linux": "sudo apt install -y dotnet-sdk-8.0",
+        },
+        "tooling": "test: xunit/nunit/mstest via `dotnet test` · coverage: coverlet.msbuild",
+    },
+    "go": {
+        "label": "Go",
+        "probes": (["go", "version"],),
+        "install": {
+            "windows": "winget install GoLang.Go",
+            "darwin": "brew install go",
+            "linux": "sudo apt install -y golang-go",
+        },
+        "tooling": "test/coverage: `go test -cover`",
+    },
+    "java": {
+        "label": "Java (JDK + Maven)",
+        "probes": (["java", "-version"], ["mvn", "-version"]),
+        "install": {
+            "windows": "winget install Microsoft.OpenJDK.21 && winget install Apache.Maven",
+            "darwin": "brew install openjdk maven",
+            "linux": "sudo apt install -y openjdk-21-jdk maven",
+        },
+        "tooling": "test: JUnit · coverage: JaCoCo",
+    },
+    "ruby": {
+        "label": "Ruby",
+        "probes": (["ruby", "--version"],),
+        "install": {
+            "windows": "winget install RubyInstallerTeam.Ruby",
+            "darwin": "brew install ruby",
+            "linux": "sudo apt install -y ruby-full",
+        },
+        "tooling": "test: RSpec · coverage: SimpleCov",
+    },
+    "rust": {
+        "label": "Rust",
+        "probes": (["rustc", "--version"],),
+        "install": {
+            "windows": "winget install Rustlang.Rustup",
+            "darwin": "brew install rustup-init",
+            "linux": "sudo apt install -y rustc cargo",
+        },
+        "tooling": "test: cargo test · coverage: tarpaulin",
+    },
+    "php": {
+        "label": "PHP",
+        "probes": (["php", "--version"],),
+        "install": {
+            "windows": "winget install PHP.PHP",
+            "darwin": "brew install php",
+            "linux": "sudo apt install -y php-cli",
+        },
+        "tooling": "test: PHPUnit · coverage: Xdebug",
+    },
+}
+
+
+def _stack_configured(stack: dict[str, Any]) -> bool:
+    """True when the profile stack carries any actual stack signal.
+
+    The template's default profile has every domain at ``applies: false`` —
+    that is "no stack", not a configured stack.
+    """
+    domains = [stack.get(d) for d in ("frontend", "backend", "database")]
+    any_applies = any(
+        isinstance(entry, dict) and entry.get("applies") is True for entry in domains
+    )
+    return bool(
+        any_applies
+        or stack.get("languages")
+        or stack.get("frameworks")
+        or stack.get("testFrameworks")
+    )
+
+
+def _stack_runtime_keys(stack: dict[str, Any]) -> list[str]:
+    """Derive the deduplicated runtimes a configured stack requires.
+
+    Collects signals from stack.testFrameworks (normalized via stack_tests),
+    the frontend/backend/database values, and stack.languages/frameworks, then
+    maps each to a runtime via _STACK_SIGNAL_ALIASES. Returns [] when nothing
+    is derivable — the caller reports a skip instead of assuming a stack.
+    """
+    from .stack_tests import _normalize_framework
+
+    keys: list[str] = []
+    for fw in stack.get("testFrameworks") or []:
+        keys.append(_STACK_SIGNAL_ALIASES.get(_normalize_framework(fw), ""))
+    signals: list[str] = []
+    for domain in ("frontend", "backend", "database"):
+        entry = stack.get(domain)
+        if isinstance(entry, dict) and entry.get("applies") is True:
+            signals.append(str(entry.get("value", "")).lower().strip())
+    signals += [str(v).lower().strip() for v in (stack.get("languages") or [])]
+    signals += [str(v).lower().strip() for v in (stack.get("frameworks") or [])]
+    for signal in signals:
+        if signal:
+            keys.append(_STACK_SIGNAL_ALIASES.get(signal, ""))
+    return sorted({key for key in keys if key})
+
+
+def _stack_unmapped_signals(stack: dict[str, Any]) -> list[str]:
+    """Profile stack signals that carry no runtime mapping.
+
+    Used to report configured-but-unknown stack values instead of silently
+    passing (the stack is the user's decision — an unmapped value is a gap the
+    user should see, not hide).
+    """
+    from .stack_tests import _normalize_framework
+
+    unmapped: list[str] = []
+    for fw in stack.get("testFrameworks") or []:
+        key = _normalize_framework(fw)
+        if key and key not in _STACK_SIGNAL_ALIASES:
+            unmapped.append(str(fw))
+    signals: list[str] = []
+    for domain in ("frontend", "backend", "database"):
+        entry = stack.get(domain)
+        if isinstance(entry, dict) and entry.get("applies") is True:
+            signals.append(str(entry.get("value", "")).lower().strip())
+    signals += [str(v).lower().strip() for v in (stack.get("languages") or [])]
+    signals += [str(v).lower().strip() for v in (stack.get("frameworks") or [])]
+    for signal in signals:
+        if signal and signal not in _STACK_SIGNAL_ALIASES:
+            unmapped.append(signal)
+    return sorted(set(unmapped))
+
+
+def ensure_stack_toolchain(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Verify the toolchain the selected stack needs (verify + guided install).
+
+    Derives the required runtimes (compilers, test runners, coverage tools)
+    from the configured stack and probes each one. Missing tools are reported
+    as warning findings with the exact install command for the host OS —
+    nothing is installed automatically. With no stack configured this reports
+    a skip (the stack is a user decision and is never assumed).
+    """
+    result = configure_result("EnsureStackToolchain", dry_run, write_enabled=False)
+    from ._shared import load_project_profile
+
+    profile = load_project_profile(root)
+    stack = profile.get("stack") or {}
+    runtimes = _stack_runtime_keys(stack)
+    if not runtimes:
+        if not _stack_configured(stack):
+            result["actions"].append(
+                {
+                    "path": "stack-toolchain",
+                    "key": "check.skipped",
+                    "severity": "info",
+                    "message": (
+                        "No stack configured — stack toolchain check skipped "
+                        "(never assume a tech stack)."
+                    ),
+                    "phase": "audit",
+                }
+            )
+        else:
+            # A configured stack that maps to no runtimes is a config gap —
+            # surface it as a warning (stack-tests fails loudly for unmapped
+            # frameworks; this is the verify-and-guide analogue).
+            unmapped = _stack_unmapped_signals(stack)
+            add_bucket_item(
+                result["findings"],
+                "stack-toolchain",
+                "unmapped",
+                "Configured stack maps to no known runtimes — review stack "
+                f"values: {', '.join(unmapped) or '(empty)'}. Add the runtime "
+                "to _STACK_SIGNAL_ALIASES/_STACK_RUNTIMES or fix the profile.",
+                "warning",
+                "pre-start",
+            )
+        result["valid"] = not any(
+            item.get("severity") == "error" for item in result["findings"]
+        )
+        return result
+
+    for key in runtimes:
+        runtime = _STACK_RUNTIMES[key]
+        label = runtime["label"]
+        if dry_run:
+            result["actions"].append(
+                {
+                    "path": key,
+                    "key": "probe",
+                    "severity": "info",
+                    "message": f"Would probe {label} ({' '.join(runtime['probes'][0])}).",
+                    "phase": "audit",
+                }
+            )
+            continue
+        check: dict[str, Any] = {"returncode": 1}
+        for probe in runtime["probes"]:
+            check = run_native(probe, root, timeout=15)
+            if check["returncode"] == 0:
+                break
+        if check["returncode"] == 0:
+            result["actions"].append(
+                {
+                    "path": key,
+                    "key": "check",
+                    "severity": "info",
+                    "message": (
+                        f"{label} available: {check['stdout'][:60]} "
+                        f"({runtime['tooling']})."
+                    ),
+                    "phase": "audit",
+                }
+            )
+        else:
+            guidance = runtime["install"].get(_tool_platform() or "") or (
+                "see the official installer for your OS"
+            )
+            add_bucket_item(
+                result["findings"],
+                key,
+                "missing",
+                f"{label} not found — install it to build/test the selected "
+                f"stack: {guidance} ({runtime['tooling']}).",
+                "warning",
+                "pre-start",
+            )
     result["valid"] = not any(
         item.get("severity") == "error" for item in result["findings"]
     )
@@ -2316,7 +2644,7 @@ def run_tool_installer(args: list[str]) -> int:
             "install-openproject-mcp, validate-manifest, install-k8s-mcp, "
             "install-gitea-mcp, install-skill, list-skills, "
             "ensure-mcp-servers, ensure-quality-tools, "
-            "install-sdd-template, update-sdd-template",
+            "ensure-stack-toolchain, install-sdd-template, update-sdd-template",
             file=sys.stderr,
         )
         return 1
@@ -2354,6 +2682,7 @@ def run_tool_installer(args: list[str]) -> int:
             prune_junk=options.get("prune-junk", "true").lower() != "false",
         ),
         "ensure-quality-tools": lambda: ensure_quality_tools(root, dry_run),
+        "ensure-stack-toolchain": lambda: ensure_stack_toolchain(root, dry_run),
     }
     if subcommand in ("install-sdd-template", "update-sdd-template"):
         source = Path(options.get("source", REPO_ROOT))

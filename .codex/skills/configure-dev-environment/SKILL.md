@@ -42,6 +42,7 @@ Before running quick setup, ensure the following CLI tools are available on the 
 | OpenSpec CLI   | `npm install -g @fission-ai/openspec@latest`                        | OpenSpec opsx chat flow (`$openspec-propose`, `$openspec-apply-change`; CLI: `openspec status`, `openspec instructions`) |
 | Lefthook       | `python -m tools.sdd_cli tool-installer install-lefthook`           | Pre-commit hooks (gitleaks scan, commit-msg validation) + pre-push `stack-tests` with coverage gate (`python -m tools.sdd_cli stack-tests` — unit/integration/architecture tests + `coverage.minimumPercent`, default 80) |
 | Kustomize      | `python -m tools.sdd_cli tool-installer install-kustomize`          | K8s overlay gate (`environment-lab validate-k8s-overlays` — renders dev/qa/prod overlays; NOT installed by `setup-lab`) |
+| Stack toolchain | `python -m tools.sdd_cli tool-installer ensure-stack-toolchain`     | Compilers/test runners/coverage tools for the user-selected stack (verify + guided install — missing tools print the exact install command; nothing auto-installed) |
 
 Verify tools are installed:
 
@@ -67,6 +68,12 @@ python -m tools.sdd_cli tool-installer install-kustomize
 The installer pins kustomize to the CI image version (v5.4.3), downloads it to the user-local bin, and verifies it
 with `kustomize version`. If the user-local bin is not on PATH, prepend it when running the gate (Windows:
 `PATH="$LOCALAPPDATA/bin:$PATH"`; Linux/macOS: `PATH="$HOME/.local/bin:$PATH"`).
+
+The stack toolchain (compilers, test runners, coverage tools) is verified against the configured stack with
+`tool-installer ensure-stack-toolchain` — run it after `set-project-stack`. It derives the required runtimes from
+`stack.languages`, `stack.frameworks`, `stack.testFrameworks`, and the frontend/backend/database values, probes each
+one, and reports missing tools with the exact install command for your OS (nothing is installed automatically). With
+no stack configured it skips cleanly — the template never assumes a stack.
 
 ## Quick Setup
 
@@ -131,6 +138,7 @@ If you need to run steps individually:
 | Prune Docker leftovers              | `python -m tools.sdd_cli environment-lab prune-docker-leftovers`                  |
 | Install lefthook                    | `python -m tools.sdd_cli tool-installer install-lefthook`                         |
 | Install kustomize                   | `python -m tools.sdd_cli tool-installer install-kustomize`                        |
+| Ensure stack toolchain              | `python -m tools.sdd_cli tool-installer ensure-stack-toolchain`                  |
 
 ## Safety Rules
 
@@ -511,6 +519,11 @@ Configure code quality thresholds, scanning tools, and local hooks.
 
 Trunk is a universal code formatter and linter manager installed locally (not in CI). The lefthook hooks `trunk-fmt` and `trunk-check` run `npx --yes trunk fmt` and `npx --yes trunk check` on every commit (`--yes` prevents the npx install prompt from blocking non-TTY hooks), so
 trunk must be initialized before the first commit. `ensure-quality-tools` (run by `full-setup`) auto-installs `@trunkio/launcher` into the gitignored `node_modules/` when the probe fails, so hooks resolve trunk without prompting.
+
+`trunk check` ignores the template shell content that a consumer implementation does not need linted — see the
+`lint.ignore` block in `.trunk/trunk.yaml` (`docs/`, `knowledge/`, `openspec/`, `tools/`, `.agents/`, `agent-evals/`,
+vendor skills, and lab infra except `infra/k8s` + `infra/deployment`). Kept checked: product paths (`src/`, `test/`, ...),
+`infra/k8s/` + `infra/deployment/`, `.gitea/` workflows, and root tool config.
 
 1. **Initialize trunk in the repo:** `npx trunk init`
    - `npx` auto-downloads the launcher — no manual install needed

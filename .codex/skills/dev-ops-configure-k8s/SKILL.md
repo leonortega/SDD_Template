@@ -301,7 +301,8 @@ implement a GET `/health` endpoint in their code. This prevents rollout failures
 endpoints.
 - **Image references**: Base manifests use `image: host.docker.internal:5001/{appId}` without tags — overlays set the
 actual tag via `newTag`
-- **API env vars**: `ASPNETCORE_URLS=http://+:5000` is set for `api`-role apps
+- **API env vars**: `api`-role apps get a stack-independent `PORT` env var (default 5000); the Dockerfile maps it to
+  the framework's port setting (e.g. `ASPNETCORE_URLS` for .NET)
 
 ### Per-Environment: Dedicated NodePorts via Service Patch
 
