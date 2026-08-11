@@ -176,16 +176,26 @@ jobs:
       - name: Check for deployable changes (src/ or test/ folders)
         id: changes
         shell: bash
+        env:
+          # Render the dispatch input once into an env var (see workflow).
+          PINNED_SHA: ${{ github.event.inputs.artifact_commit_sha }}
         run: |
           set -euo pipefail
           DEPLOY_SHA="${{ steps.sha.outputs.SHA }}"
 
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            BASE_SHA="${{ github.event.pull_request.base.sha }}"
-            git fetch --depth 1 origin "${BASE_SHA}" >/dev/null 2>&1 || BASE_SHA=""
-          else
-            BASE_SHA=$(git rev-parse --verify "${DEPLOY_SHA}^" 2>/dev/null || echo "")
+          # Operator override: an explicit artifact_commit_sha dispatch pins a
+          # specific verified commit to deploy (QA/PROD promotion) — deploy it
+          # unconditionally, without the src/test diff gate.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${PINNED_SHA}" ]; then
+            echo "DEPLOYABLE=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+
+          # First-parent base: for a merged-PR event pull_request.base.sha
+          # points at the merge commit itself (base..merge empty → skipped
+          # deploy); the first parent is the pre-merge base head. The checkout
+          # fetch (depth 2) made the parent available for both event types.
+          BASE_SHA=$(git rev-parse --verify "${DEPLOY_SHA}^" 2>/dev/null || echo "")
 
           if [ -z "${BASE_SHA}" ]; then
             echo "DEPLOYABLE=true" >> "$GITHUB_OUTPUT"
@@ -477,9 +487,14 @@ hardened patterns — each one prevented a real CI failure:
    run a PROD `/health` smoke gate (host ports from `infra/deployment/ports.json`) after deploy. Never rebuild or
    republish during PROD promotion.
 7. **src/test deploy gate** — deploy in ANY environment only when the change set touches a `src/`, `test/`, or
-   `tests/` folder at any depth (`(^|/)(src|test|tests)/`). For PR merges diff the PR base against the merge commit;
-   for `workflow_dispatch` use the commit's first-parent diff (checkout at depth 2). Docs, infra, and workflow-only
-   changes must not deploy — gate every deploy step with `if: steps.changes.outputs.deployable == 'true'`.
+   `tests/` folder at any depth (`(^|/)(src|test|tests)/`). The change set is the deploy commit's **first-parent diff**
+   for PR merges and ref-head `workflow_dispatch` runs (checkout at depth 2). Never use `pull_request.base.sha` for PR
+   merges: after the merge it points at the base branch head — the merge commit itself — so the diff is empty and
+   the deploy is wrongly skipped. **Operator-override exception:** a `workflow_dispatch` with an explicit
+   `artifact_commit_sha` pins a specific verified commit to deploy (QA approval / PROD promotion) and must be
+   **unconditionally deployable** — skip the diff gate (`DEPLOYABLE=true`), even for infra-only pinned commits. Docs,
+   infra, and workflow-only changes must not deploy on the auto paths — gate every deploy step with
+   `if: steps.changes.outputs.deployable == 'true'`.
 
 ### 5. Generate `pr-validation.yml`
 

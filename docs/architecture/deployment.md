@@ -231,10 +231,18 @@ Checkout → Determine Env → Check Changed Paths (src/test) → Build Docker I
 **2. Determine Environment** — `dev` on a PR merge, or user-selected env on workflow_dispatch.
 
 **2a. Check for Deployable Changes** — deploys in **any** environment run only when the change set touches a `src/`,
-`test/`, or `tests/` folder at any depth (e.g. `src/...`, `frontend/src/...`, `backend/tests/...`). For a PR merge the
-change set is the diff between the PR base and the merge commit; for `workflow_dispatch` it is the dispatched commit's
-first-parent diff. Docs, infra, and workflow-only changes skip the entire deploy pipeline (the run stays green with the
-deploy steps skipped).
+`test/`, or `tests/` folder at any depth (e.g. `src/...`, `frontend/src/...`, `backend/tests/...`). For PR-merge
+auto-deploys and ref-head `workflow_dispatch` runs (no `artifact_commit_sha` input) the change set is the deploy
+commit's **first-parent diff** (the pre-merge dev head vs. the merge commit, or the dispatched commit vs. its parent).
+The gate never uses `pull_request.base.sha` for PR merges: after the merge that SHA points at the base branch head —
+the merge commit itself — so diffing it against the merge commit yields an empty change set and wrongly skips the
+deploy. The depth-2 checkout makes the first parent available. Docs, infra, and workflow-only changes skip the entire
+deploy pipeline (the run stays green with the deploy steps skipped).
+
+**Exception (operator override):** a `workflow_dispatch` that supplies an explicit `artifact_commit_sha` pins a
+specific verified commit to deploy (QA approval / PROD promotion) and is **unconditionally deployable** — the
+src/test diff gate does not apply, even when the pinned commit's own delta is infra-only (e.g. a kustomize overlay
+fix). PROD still runs its artifact-verification (`container-images.json` + registry) and `/health` gates.
 
 **3. Build and Push Docker Images** — For each app in `apps.json` (**skipped for PROD** — PROD reuses the QA-approved
 images pushed by the DEV/QA pipeline for the pinned artifact commit):

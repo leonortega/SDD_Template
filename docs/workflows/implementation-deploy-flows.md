@@ -193,6 +193,14 @@ If the forecast reports `400-line budget risk: High`, `Chained PRs recommended: 
 `Decision needed before apply: Yes`, implementation must not start until a split /
 `size:exception` / `exception-ok` decision is recorded.
 
+> **Chained PRs and CI timing.** `pr-validation.yml` triggers only on PRs targeting `main` / `dev`
+> (see `.gitea/workflows/pr-validation.yml`). A chained PR that targets PR 1's feature branch gets
+> **no CI run** — validation happens only once PR 1 merges and the chained PR is retargeted to `dev`.
+> Until then the `codex-reviewed` label gate cannot go green on the chained PR, so run the review
+> loop (`dev-flow-pr-review-feedback-loop`) on the chained PR **after** the retarget to `dev` to
+> drive it to `codex-reviewed` against a real PR Validation run. The local CI loop (Section 7.1)
+> covers the gap in the meantime.
+
 ### Stage 3 — Implement Ticket (`dev-flow-implement-ticket`)
 
 Pre-flight gate (authority level 5, enforced even on resume):
@@ -338,7 +346,10 @@ artifacts, then delegates to `dev-ops-deploy-qa`.
    `dev` (HTTP `204` = success). The pipeline deploys to **DEV only** (QA is NOT
    auto-promoted), gated: it verifies every app's `/health` on the external DEV URLs
    right after the DEV rollout and **fails when DEV is unhealthy** (the agent's fix
-   loop repairs the issue, then the pipeline re-runs on the fixed commit).
+   loop repairs the issue, then the pipeline re-runs on the fixed commit). This auto
+   path keeps the strict `src/test` deployable-changes gate — an infra-only merge
+   (e.g. a kustomize overlay fix) skips the deploy; such fixes reach QA/PROD via the
+   pinned dispatches in Stages 8 and 12.
 6. **Wait for Nexus artifacts** (bounded, up to 10 minutes, backoff): per app
    `app/{commitSha}/{artifactName}` + `.sha256`, `deployable-apps.json`, `commit.sha`,
    `release-dev.json`, `env-urls-dev.json`,
@@ -372,7 +383,9 @@ DEV verification → user approval → QA dispatch:
 - If DEV is not healthy, stop and report — do not ask the user.
 - **Ask the user for approval to deploy to QA** (hard gate — no QA deploy without it).
 - On approval, dispatch `package-deploy` with `environment=qa` + `artifact_commit_sha=<verified DEV commit>`;
-  wait for the QA artifacts.
+  wait for the QA artifacts. The pinned `artifact_commit_sha` makes this an
+  **operator override**: the deployable-changes gate treats it as unconditionally
+  deployable, so a verified infra-only fix (no `src/test` delta) still promotes to QA.
 - Verify QA: same artifact set (no rebuild); QA URL + `/health` validated;
   deployment configuration applied and verified.
 - On failure: add failure comment, do not move the ticket.
@@ -532,6 +545,11 @@ artifact_commit_sha={qaApprovedCommit}
 release_version={finalVersion}
 source_rc_version={sourceRcVersion}
 ```
+
+The pinned `artifact_commit_sha` makes this an **operator override**: the
+deployable-changes gate treats it as unconditionally deployable, so a verified
+infra-only fix promotes to PROD. PROD still enforces the Nexus artifact-verification
+and `/health` gates.
 
 PROD verification (direct, before commenting success):
 
