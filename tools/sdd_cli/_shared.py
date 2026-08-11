@@ -273,7 +273,9 @@ def read_json(path: Path, optional: bool = False) -> dict[str, Any]:
 def write_json(path: Path, data: dict[str, Any]) -> None:
     """Write a JSON file with pretty-printing."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    # newline="\n": on Windows, text-mode write_text would translate LF to
+    # CRLF; keep generated JSON LF to match .editorconfig (end_of_line = lf).
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8", newline="\n")
 
 
 def nested(data: dict[str, Any], *keys: str) -> Any:
@@ -715,8 +717,12 @@ def read_env_file(path: Path) -> dict[str, str]:
 def write_env_file(path: Path, values: dict[str, str]) -> None:
     """Write a dict of key-value pairs as a .env file."""
     path.parent.mkdir(parents=True, exist_ok=True)
+    # newline="\n": on Windows, text-mode write_text would translate LF to
+    # CRLF; keep generated .env files LF to match .editorconfig (end_of_line = lf).
     path.write_text(
-        "".join(f"{key}={value}\n" for key, value in values.items()), encoding="utf-8"
+        "".join(f"{key}={value}\n" for key, value in values.items()),
+        encoding="utf-8",
+        newline="\n",
     )
 
 

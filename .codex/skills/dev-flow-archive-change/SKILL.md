@@ -47,6 +47,19 @@ or ambiguous you MUST prompt for available changes.
    - the change directory is still present after the archive operation (`OpenSpec archive blocker: change still active
    after archive`).
 
+   **Task checkboxes (`tasks.md`):** Run this verification **before** the task-completion blocker check
+   above — in worktree/parallel-delivery flows the checkboxes can be all `- [ ]` even when every task is
+   merged, deployed, and QA-tested (nothing flips them at PR merge). Verify task completion against
+   **actual delivery evidence** (merged PRs, deployed environments, Tested ticket state), not `- [ ]` counts.
+   Mark verified-done tasks `[x]` in `openspec/changes/<name>/tasks.md`
+   (`sed -i 's/^- \[ \]/- [x]/' openspec/changes/<name>/tasks.md`), then re-check that no genuinely
+   incomplete task remains. Never mark incomplete work done.
+
+   **Synced spec formatting:** `openspec archive` writes synced main specs without repo markdownlint conformance
+   (MD012/MD022/MD032), which blocks the lefthook `commit-msg` trunk-check gate. After the archive, run
+   `npx trunk fmt openspec/specs/<capability>/spec.md` on each newly synced spec before staging/committing.
+   `trunk fmt` may reflow more than headings — review the diff before commit.
+
 3. **Display summary**
 
    Show archive completion summary including:
@@ -100,6 +113,10 @@ All artifacts complete. All tasks complete.
 assessment, and the archive move — do not hand-implement with raw file commands
 - Incomplete artifacts, incomplete tasks, missing tasks.md, failed spec sync, or failed archive movement are blockers.
 Never archive by confirmation when work is incomplete.
+- Mark `- [ ]` tasks `[x]` only against delivery evidence (merged PRs / deployed envs / Tested state), never for
+incomplete work.
+- Run `npx trunk fmt` on newly synced main specs before the archive commit (the commit-msg trunk-check hook rejects
+unformatted specs).
 - Preserve .openspec.yaml when moving to archive (the CLI archive keeps it with the directory)
 - Show clear summary of what happened
 - If sync is requested, let the CLI apply the delta specs to the main specs

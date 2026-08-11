@@ -201,6 +201,14 @@ Pitfalls:
 - `main` diverges from `dev` after a release-branch merge (the merge commit is only on `main`). This is expected and
   does **not** block the next promotion — a fresh release branch from the new QA-approved dev commit works.
 - The final version must not already exist as a tag — the skill blocks reusing an existing final tag.
+- **Operator-promotion rule:** a `workflow_dispatch` with an explicit `artifact_commit_sha` is an
+  operator promotion and is **unconditionally deployable** — the strict src/test
+  "deployable-changes" gate applies only to auto-deploy (merge) paths, never to an explicit dispatch.
+- **Dispatch-ref discipline:** the workflow file is loaded from the **dispatch ref's tree**. A
+  `release/vX.Y.Z` cut from a commit that predates the explicit-`artifact_commit_sha` override in
+  `package-deploy.yml` would run the pre-fix gate and silently skip every deploy step while reporting
+  success. Ensure the release branch includes the override, or dispatch from `dev` — the
+  `artifact_commit_sha` input pins the exact QA-approved commit regardless of the dispatch ref's code.
 
 ## PROD Deployment
 

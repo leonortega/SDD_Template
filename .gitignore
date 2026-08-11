@@ -73,6 +73,7 @@ BenchmarkDotNet.Artifacts/
 # Node/frontend artifacts that may appear in future projects
 node_modules/
 dist/
+.angular/
 .vite/
 .next/
 .nuxt/

@@ -7,7 +7,8 @@ Maps every `knowledge/` file to its template home (`.codex/skills/`, `tools/sdd_
   added the `knowledge/errors/` scaffold stub.
 - **Last restructure:** 2026-08-06 — the 7 implemented lesson files were deleted; their rules now
   live inline in skills, scripts, and workflows (see the Removed table below).
-- **Scope:** the 14 `.md` files remaining under `knowledge/`.
+- **Scope:** the 14 `.md` files remaining under `knowledge/`. (The 2026-08-11 SDD_Test knowledge port
+  was fully applied as real template fixes and cleaned — see the note below.)
 - **Rule:** a lesson is *covered* when the template enforces it via a skill, script, workflow, or
   tracked config — not when it exists only as prose in `knowledge/`. Informational/reference docs
   (`✅ Reference`) map to their documentation home (`AGENTS.md`, `docs/`) and are intentionally not
@@ -25,6 +26,15 @@ Maps every `knowledge/` file to its template home (`.codex/skills/`, `tools/sdd_
 
 All enforceable lessons have been moved out of `knowledge/` into the template — the folder now holds
 only the index, category scaffolds, and reference/placeholder files.
+
+**2026-08-11 SDD_Test knowledge port — applied and cleaned.** Ten consumer-delivery knowledge
+files were ported; their fixes were applied as real template changes where applicable and the files
+were deleted: agent-eval encoding/v3-envelope fix (`agent_eval.py` + tests), checkout-sync rule
+(`dev-ops-deploy-qa`), OpenProject `lockVersion` (`api-helpers.md`), Nexus fail-closed manifest check +
+localhost retag (`package-deploy.yml`), SPA `/health` rule (`dev-flow-implement-ticket`), archive
+mechanics (`dev-flow-archive-change`), git-push credential recipe (`configure-dev-environment`),
+dispatch discipline (`dev-ops-deploy-prod`), and the shared-index union rule
+(`docs-knowledge-maintenance`).
 
 ## Current Matrix (14 files)
 

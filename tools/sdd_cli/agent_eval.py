@@ -54,6 +54,11 @@ def run_eval(root: Path | None = None) -> dict[str, Any]:
         ) from err
 
     # Run eval without cache
+    # Decode child output as UTF-8 explicitly: promptfoo's console table uses
+    # box-drawing characters, and with text=True Python defaults to the locale
+    # encoding (cp1252 on Windows), which crashes the reader thread with
+    # UnicodeDecodeError. errors="replace" keeps a stray byte from breaking
+    # the run (the structured results come from the JSON file, not stdout).
     try:
         result = subprocess.run(  # nosec
             native_command("npx")
@@ -68,6 +73,8 @@ def run_eval(root: Path | None = None) -> dict[str, Any]:
             ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=300,
         )
     except subprocess.TimeoutExpired as err:
@@ -105,29 +112,38 @@ def run_eval(root: Path | None = None) -> dict[str, Any]:
             f"promptfoo results file could not be parsed: {results_path}\n{err}"
         ) from err
 
-    if isinstance(raw, list):
-        results["tests"] = raw
-        results["total"] = len(raw)
-        for test in raw:
-            if test.get("pass"):
-                results["passed"] += 1
-            else:
-                results["failed"] += 1
-    elif isinstance(raw, dict):
+    # Promptfoo writes different JSON shapes depending on the output path:
+    #   - `--output` file: v3 envelope {"results": {"results": [rows...]}}
+    #   - `--output`/`--json` older: {"results": [rows...]}
+    #   - bare list of rows (very old / custom exporters)
+    # Rows mark pass/fail either via `pass` or `success`, and grading details
+    # live in `gradingResult.pass` when the per-row flag is absent.
+    if isinstance(raw, dict):
         results["results_json"] = raw
         nested = raw.get("results")
-        if isinstance(nested, list):
-            results["tests"] = nested
-            results["total"] = len(nested)
-            for test in nested:
-                if test.get("pass"):
-                    results["passed"] += 1
-                else:
-                    results["failed"] += 1
-    else:
+        if isinstance(nested, dict):
+            # v3 envelope: results.results is the row list
+            nested = nested.get("results")
+        raw = nested if isinstance(nested, list) else None
+
+    if not isinstance(raw, list):
         raise CliError(
             f"promptfoo results file has an unexpected format: {results_path}"
         )
+
+    results["tests"] = raw
+    results["total"] = len(raw)
+    for test in raw:
+        passed = test.get("pass")
+        if passed is None:
+            passed = test.get("success")
+        if passed is None:
+            grading = test.get("gradingResult") or {}
+            passed = grading.get("pass")
+        if passed:
+            results["passed"] += 1
+        else:
+            results["failed"] += 1
 
     if results["total"] == 0:
         raise CliError(
