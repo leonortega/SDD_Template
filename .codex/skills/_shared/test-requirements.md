@@ -27,10 +27,11 @@ and tasks for the same component. One integration test file covers an entire
 endpoint or feature boundary. Architecture tests are a single project-wide file that validates the entire change.
 2. **Order:** Tests MUST be written BEFORE product code (TDD RED phase). No product code is allowed until all three
 levels are written and confirmed RED.
-3. **Folders:** Tests go in a separate `test/` directory (mirroring `src/` structure unless the stack convention
-dictates otherwise):
+3. **Folders (authority level 5):** **all** tests go under a single `test/` directory, one subfolder per test type.
+   This is the only allowed layout — never scatter tests in `tests/`, `__tests__/`, or co-located files:
    - `test/unit/` — unit tests
    - `test/integration/` — integration tests
+   - `test/e2e/` — end-to-end / browser tests (Playwright, Cypress, ...)
    - `test/architecture/` — architecture tests (single file per change)
 4. **Framework:** Use the stack's test framework as declared in `project-profile.json → stack.testFrameworks` or
 detected from the project's build configuration (Vitest, pytest, xUnit, Jest, etc.).

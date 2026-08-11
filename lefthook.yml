@@ -3,7 +3,7 @@
 #   commit-msg  -> commit message contract + secrets on the full tree
 #   pre-push    -> product tests + coverage gate (stack-tests)
 #   CI          -> full gate set (gitleaks detect, semgrep, trivy, checkov,
-#                  JSON validation, repo tooling tests, dev-flow label) in
+#                  JSON validation, dev-flow label) in
 #                  .gitea/workflows/pr-validation.yml — CI remains the
 #                  authoritative coverage/scan gate.
 pre-commit:

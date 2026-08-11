@@ -230,8 +230,8 @@ Checkout → Determine Env → Check Changed Paths (src/test) → Build Docker I
 
 **2. Determine Environment** — `dev` on a PR merge, or user-selected env on workflow_dispatch.
 
-**2a. Check for Deployable Changes** — deploys in **any** environment run only when the change set touches a `src/`,
-`test/`, or `tests/` folder at any depth (e.g. `src/...`, `frontend/src/...`, `backend/tests/...`). For PR-merge
+**2a. Check for Deployable Changes** — deploys in **any** environment run only when the change set touches a `src/`
+or `test/` folder at any depth (e.g. `src/...`, `frontend/src/...`, `backend/test/...`). For PR-merge
 auto-deploys and ref-head `workflow_dispatch` runs (no `artifact_commit_sha` input) the change set is the deploy
 commit's **first-parent diff** (the pre-merge dev head vs. the merge commit, or the dispatched commit vs. its parent).
 The gate never uses `pull_request.base.sha` for PR merges: after the merge that SHA points at the base branch head —

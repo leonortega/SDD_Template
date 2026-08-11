@@ -16,12 +16,12 @@ description: >-
 ## Overview
 
 The template repo is **intentionally stack-agnostic** — it ships no `package.json`,
-no `playwright.config.ts`, no `src/` or `tests/` folders, and no Dockerfiles. The
+no `playwright.config.ts`, no `src/` or `test/` folders, and no Dockerfiles. The
 stack is defined by the user via `set-project-stack` and recorded in
 `.codex/project-profile.local.json` (`stack.frontend`, `stack.backend`,
 `stack.database`).
 
-`set-project-stack` only creates the deterministic skeleton (`src/` + `tests/`)
+`set-project-stack` only creates the deterministic skeleton (`src/` + `test/`)
 and then marks `scaffoldRequired: true` with `nextStage: dev-flow-scaffold-project`.
 **This skill resolves everything else as an AI** — the exact files depend on the
 chosen stack, so they can never come from a fixed list of combinations.
@@ -86,7 +86,7 @@ require, then generate the files. Examples, never exhaustive:
 
 - **Frontend JS/TS** (react, vue, angular, svelte, next, nuxt, ...): folder
   layout under `src/`, `package.json` (dev/build/test/e2e scripts), test
-  framework config (vitest/jest), E2E tool (playwright/cypress), `e2e/`
+  framework config (vitest/jest), E2E tool (playwright/cypress), `test/e2e/`
   folder, `playwright.config.ts`/`cypress.config.ts` (BASE_URL-aware for QA).
 - **Frontend .NET** (blazor, asp.net razor, mvc): solution + project layout
   under `src/`, `*.csproj`, test project(s), `dotnet test` wiring.
@@ -166,7 +166,7 @@ and residual risk.
 ## Deliverables Checklist
 
 - [ ] `src/` structure per architecture skill for the stack
-- [ ] `tests/` with unit + integration (+ architecture) test setup per TDD skill
+- [ ] `test/` with unit + integration + e2e + architecture subfolders per TDD skill
 - [ ] Build manifest(s) for the stack's native tooling
 - [ ] Test config + runner wiring
 - [ ] Dockerfile(s) per app role (or documented skip)

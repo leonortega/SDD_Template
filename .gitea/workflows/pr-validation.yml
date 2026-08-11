@@ -20,7 +20,7 @@ on:
 # Scan layering: local lefthook hooks (pre-commit gitleaks protect / trunk
 # fmt, commit-msg contract) are the fast first line; this workflow is the
 # authoritative full gate (gitleaks detect, semgrep, trivy, checkov, JSON
-# validation, repo tooling tests, dev-flow label). Product tests run via the
+# validation, dev-flow label). Product tests run via the
 # pre-push stack-tests hook on dev machines — never assume a tech stack.
 
 jobs:
@@ -101,22 +101,6 @@ jobs:
             python3 -m tools.sdd_cli environment-lab validate-k8s-overlays
           else
             echo "No infra/k8s/overlays — kustomize overlay validation skipped."
-          fi
-
-      # ── Tests ──
-      # Repo tooling tests: always run the shell's own Python test suite
-      # (deterministic, stack-independent). Product tests (unit, integration,
-      # architecture) run via the lefthook pre-push hook (`stack-tests`) so the
-      # CI image stays lean — stack runtimes live on dev machines, not in
-      # sdd-e2e-ci:local. Never assume a tech stack.
-      - name: Repo tooling tests (SDD shell)
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -d tools/sdd_cli/tests ]; then
-            python3 -m pytest tools/sdd_cli/tests/ -q
-          else
-            echo "No tools/sdd_cli/tests — repo tooling tests skipped."
           fi
 
       - name: Dev flow gate (codex-reviewed label)

@@ -136,7 +136,7 @@ class SddCliTests(unittest.TestCase):
             root = Path(tmp)
             result = cli.classify_knowledge(
                 "Fixed Playwright login timeout",
-                ["tests/e2e/login.spec.ts", "src/auth/client.ts"],
+                ["test/e2e/login.spec.ts", "src/auth/client.ts"],
                 "1 failed, 2 passed",
                 root,
             )
@@ -504,7 +504,7 @@ class SddCliTests(unittest.TestCase):
     def test_scaffold_project_files_creates_only_stack_independent_skeleton(
         self,
     ) -> None:
-        """ScaffoldProjectFiles creates only src/ and tests/ + delegation marker."""
+        """ScaffoldProjectFiles creates only src/ and test/ + delegation marker."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             codex = root / ".codex"
@@ -526,7 +526,11 @@ class SddCliTests(unittest.TestCase):
 
             self.assertTrue(result["valid"])
             self.assertTrue((root / "src").is_dir())
-            self.assertTrue((root / "tests").is_dir())
+            # All tests live under test/, one subfolder per type.
+            self.assertTrue((root / "test" / "unit").is_dir())
+            self.assertTrue((root / "test" / "integration").is_dir())
+            self.assertTrue((root / "test" / "e2e").is_dir())
+            self.assertTrue((root / "test" / "architecture").is_dir())
             # Stack-specific artifacts are delegated to the AI scaffold skill —
             # the script never generates package.json/playwright for any stack.
             self.assertFalse((root / "e2e").exists())
@@ -558,11 +562,41 @@ class SddCliTests(unittest.TestCase):
 
             self.assertTrue(result["valid"])
             self.assertTrue((root / "src").is_dir())
-            self.assertTrue((root / "tests").is_dir())
+            self.assertTrue((root / "test" / "unit").is_dir())
+            self.assertTrue((root / "test" / "integration").is_dir())
+            self.assertTrue((root / "test" / "e2e").is_dir())
+            self.assertTrue((root / "test" / "architecture").is_dir())
             self.assertFalse((root / "package.json").exists())
             self.assertFalse((root / "playwright.config.ts").exists())
             keys = {item["key"] for item in result["actions"]}
             self.assertIn("stack.delegated", keys)
+
+    def test_scaffold_project_files_warns_on_legacy_tests_layout(self) -> None:
+        """ScaffoldProjectFiles warns when a legacy tests/ folder exists."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            codex = root / ".codex"
+            codex.mkdir()
+            (codex / "project-profile.local.json").write_text(
+                json.dumps(
+                    {
+                        "stack": {
+                            "frontend": {"applies": True, "value": "react"},
+                            "backend": {"applies": False, "value": ""},
+                            "database": {"applies": False, "value": ""},
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (root / "tests").mkdir()
+
+            result = cli.run_configure_mode("ScaffoldProjectFiles", root, {}, False)
+
+            self.assertTrue(result["valid"])
+            keys = {item["key"] for item in result["actions"]}
+            self.assertIn("folder.legacy-tests", keys)
+            self.assertTrue((root / "test" / "unit").is_dir())
 
     def test_scaffold_k8s_delegates_dockerfiles_and_keeps_deterministic_manifests(
         self,

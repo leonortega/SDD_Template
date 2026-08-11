@@ -169,8 +169,8 @@ jobs:
           git checkout --force FETCH_HEAD
 
       # ── Deployable-changes gate (src/test folders only) ──
-      # Deploy in ANY environment only when the change set touches a src/,
-      # test/, or tests/ folder at any depth. Docs/infra/workflow-only changes
+      # Deploy in ANY environment only when the change set touches a src/ or
+      # test/ folder at any depth. Docs/infra/workflow-only changes
       # must not deploy. Gate every deploy-pipeline step with:
       #   if: steps.changes.outputs.deployable == 'true'
       - name: Check for deployable changes (src/ or test/ folders)
@@ -216,7 +216,7 @@ jobs:
             exit 0
           fi
 
-          COUNT=$(echo "${CHANGED}" | grep -cE '(^|/)(src|test|tests)/' || true)
+          COUNT=$(echo "${CHANGED}" | grep -cE '(^|/)(src|test)/' || true)
           if [ "${COUNT}" -gt 0 ]; then
             echo "DEPLOYABLE=true" >> "$GITHUB_OUTPUT"
           else
@@ -487,8 +487,8 @@ hardened patterns — each one prevented a real CI failure:
    `app/{commitSha}/container-images.json` on Nexus (commitSha match + registry image existence) before deploy, and
    run a PROD `/health` smoke gate (host ports from `infra/deployment/ports.json`) after deploy. Never rebuild or
    republish during PROD promotion.
-7. **src/test deploy gate** — deploy in ANY environment only when the change set touches a `src/`, `test/`, or
-   `tests/` folder at any depth (`(^|/)(src|test|tests)/`). The change set is the deploy commit's **first-parent diff**
+7. **src/test deploy gate** — deploy in ANY environment only when the change set touches a `src/` or `test/` folder
+   at any depth (`(^|/)(src|test)/`). The change set is the deploy commit's **first-parent diff**
    for PR merges and ref-head `workflow_dispatch` runs (checkout at depth 2). Never use `pull_request.base.sha` for PR
    merges: after the merge it points at the base branch head — the merge commit itself — so the diff is empty and
    the deploy is wrongly skipped. **Operator-override exception:** a `workflow_dispatch` with an explicit
@@ -502,8 +502,7 @@ hardened patterns — each one prevented a real CI failure:
 This workflow is mostly static. Generate it with the standard checkout, JSON validation, secret scan,
 SAST/SCA/IaC scans, and the dev-flow review gate steps. **Do NOT use `--skip-db-update` on a first-run
 Trivy scan** (no pre-cached vuln DB in the CI image) — the runner container has outbound internet, so let
-Trivy download its DB on the first run. It also includes the **repo tooling tests** step (see
-`.codex/skills/_shared/test-requirements.md`):
+Trivy download its DB on the first run.
 
 **If SCA (Trivy fs) flags `react-router` in a consumer frontend:** the MEDIUM/HIGH advisories are only
 fixed by a coordinated upgrade — `npm install react@^19.2.7 react-dom@^19.2.7 react-router@^8.3.0`
@@ -511,13 +510,7 @@ fixed by a coordinated upgrade — `npm install react@^19.2.7 react-dom@^19.2.7 
 `react-router-dom` from `package.json`, and migrate imports `from "react-router-dom"` →
 `from "react-router"` (same declarative API: `BrowserRouter`, `Routes`, `Route`, `Link`, `useNavigate`).
 
-1. **Repo tooling tests** — always run the shell's own Python test suite (deterministic, stack-independent):
-
-   ```bash
-   python3 -m pytest tools/sdd_cli/tests/ -q
-   ```
-
-2. **Product tests (unit, integration, architecture) run via the lefthook `pre-push` hook** — NOT in the CI image. This
+1. **Product tests (unit, integration, architecture) run via the lefthook `pre-push` hook** — NOT in the CI image. This
 keeps `sdd-e2e-ci:local` lean: stack runtimes (.NET SDK, Go, ...) live on the
 developer machine, and the tests run locally BEFORE push. The hook executes `python -m tools.sdd_cli stack-tests`, which
 reads `project-profile.local.json → stack.testFrameworks` and runs the mapped

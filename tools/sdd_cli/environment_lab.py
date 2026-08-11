@@ -2541,18 +2541,37 @@ def scaffold_project_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
     The template repo is intentionally stack-agnostic. After the tech stack is
     defined (set-project-stack), this step creates only the stack-independent
-    skeleton: ``src/`` and ``tests/`` folders. Every stack-specific artifact
-    (package.json, test framework config, Dockerfiles, CI workflows, k8s
-    manifests) is delegated to the AI-driven ``dev-flow-scaffold-project``
-    skill, which reads the stack from project-profile.local.json and resolves
-    what to scaffold — never a fixed template list.
+    skeleton: ``src/`` and ``test/`` (with one subfolder per test type:
+    ``unit``, ``integration``, ``e2e``, ``architecture``). Every
+    stack-specific artifact (package.json, test framework config, Dockerfiles,
+    CI workflows, k8s manifests) is delegated to the AI-driven
+    ``dev-flow-scaffold-project`` skill, which reads the stack from
+    project-profile.local.json and resolves what to scaffold — never a fixed
+    template list.
     """
     result = configure_result(
         "ScaffoldProjectFiles", dry_run, write_enabled=not dry_run
     )
 
-    # Always create src/ and tests/ folders (stack-independent)
-    for folder in ("src", "tests"):
+    # Always create src/ and test/ folders (stack-independent). All tests live
+    # under test/, one subfolder per type: unit, integration, e2e, architecture.
+    for folder in ("src", "test"):
+        if folder == "test":
+            for sub in ("unit", "integration", "e2e", "architecture"):
+                sub_path = root / folder / sub
+                if not sub_path.exists():
+                    if not dry_run:
+                        sub_path.mkdir(parents=True, exist_ok=True)
+                    result["actions"].append(
+                        {
+                            "path": f"{folder}/{sub}/",
+                            "key": "folder.created",
+                            "severity": "info",
+                            "message": f"Created {folder}/{sub}/ test folder.",
+                            "phase": "apply",
+                        }
+                    )
+            continue
         folder_path = root / folder
         if not folder_path.exists():
             if not dry_run:
@@ -2578,6 +2597,25 @@ def scaffold_project_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
             )
 
     # Delegate every stack-specific artifact to the AI scaffold skill.
+    # Warn when a legacy tests/ layout exists — all tests must live under
+    # test/ with one subfolder per type (test/unit, test/integration, test/e2e,
+    # test/architecture).
+    legacy_tests = root / "tests"
+    if legacy_tests.is_dir():
+        result["actions"].append(
+            {
+                "path": "tests/",
+                "key": "folder.legacy-tests",
+                "severity": "warning",
+                "message": (
+                    "Legacy tests/ folder detected — all tests must live under "
+                    "test/ (test/unit, test/integration, test/e2e, "
+                    "test/architecture). Move existing tests before pushing."
+                ),
+                "phase": "audit",
+            }
+        )
+
     result["actions"].append(
         {
             "path": ".codex/skills/dev-flow-scaffold-project/SKILL.md",

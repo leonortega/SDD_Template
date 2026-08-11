@@ -64,6 +64,10 @@ Report concise sections:
 
 If the next step is ambiguous, list the candidate routes and recommend the safest one.
 
+**E2E target rule:** Never recommend running E2E against the deployed DEV environment. E2E always runs against the
+deployed QA URLs only — a DEV deployment is verified by health/smoke checks and then promoted to QA, where the E2E QA
+evidence gate runs (see `delivery-contract-qa.md`).
+
 ## Failure Rules
 
 - Do not mutate state.

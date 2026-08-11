@@ -127,7 +127,7 @@ Configure this repository for my sample project stack: frontend React,
 backend FastAPI, database PostgreSQL.
 ```
 
-The agent records your decision, creates the deterministic `src/` + `tests/` skeleton,
+The agent records your decision, creates the deterministic `src/` + `test/` skeleton,
 and asks you to confirm the stack before scaffolding the stack-specific artifacts
 (package manifests, test runners, Dockerfiles, CI workflows) via
 `dev-flow-scaffold-project`. Details:
