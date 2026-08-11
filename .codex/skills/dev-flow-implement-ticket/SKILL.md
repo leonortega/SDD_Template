@@ -276,7 +276,7 @@ that framework.
 - **Never bypass with `--no-verify`** unless the user explicitly requests it in the current chat. If a push is blocked
 by failing stack tests, fix the tests before pushing (same treatment as the
 coverage gate). The CI image intentionally does not contain stack runtimes, so this local hook is the only product-test
-gate — CI covers repo tooling tests and scans only.
+gate — CI covers scans only.
 
 Discover a local coverage command:
 

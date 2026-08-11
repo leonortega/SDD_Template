@@ -113,9 +113,9 @@ jobs:
           fi
 
       - name: Check for deployable changes (src/ or test/ folders)
-        # Deploy in ANY environment only when the change set touches a src/,
-        # test/, or tests/ folder at any depth (e.g. src/..., frontend/src/...,
-        # backend/tests/...). Docs, infra, and workflow-only changes must not
+        # Deploy in ANY environment only when the change set touches a src/ or
+        # test/ folder at any depth (e.g. src/..., frontend/src/...,
+        # backend/test/...). Docs, infra, and workflow-only changes must not
         # deploy. Note: only folder-based matches count — co-located test files
         # outside these folders (e.g. pkg/foo_test.go) are not matched. The gate
         # fails open when the base commit cannot be resolved or the diff cannot
@@ -183,7 +183,7 @@ jobs:
           echo "Changed files:"
           echo "${CHANGED}" | sed 's/^/  - /'
 
-          COUNT=$(echo "${CHANGED}" | grep -cE '(^|/)(src|test|tests)/' || true)
+          COUNT=$(echo "${CHANGED}" | grep -cE '(^|/)(src|test)/' || true)
           if [ "${COUNT}" -gt 0 ]; then
             echo "Deployable changes found (${COUNT} path(s) under src/test)."
             echo "DEPLOYABLE=true" >> "$GITHUB_OUTPUT"

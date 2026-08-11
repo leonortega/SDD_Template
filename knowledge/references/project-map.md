@@ -18,7 +18,7 @@ Absent by design:
 
 ```text
 src/
-tests/
+test/
 ```
 
 Add product source, tests, stack guidance, app targets, and quality gates in a future ticket after the new product stack

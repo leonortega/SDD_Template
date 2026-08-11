@@ -13,7 +13,7 @@ hardcoded layout. Per framework the gate resolves at runtime:
 
 - **pytest** — uses `python3` with a `python` fallback (Windows); runs only
   inside existing canonical test dirs (`test/unit`, `test/integration`,
-  `test/architecture`, plus `tests/` variants). When none exist it reports a
+  `test/architecture`). When none exist it reports a
   non-blocking gap instead of running pytest repo-wide (which would pick up
   unrelated tests such as `tools/sdd_cli`).
 - **vitest / jest** — `npm ci` and the test runner run from the resolved
@@ -113,14 +113,12 @@ _DOTNET_PREFIXES = ("dotnet", "xunit", "nunit", "mstest")
 
 _DEFAULT_THRESHOLD = 80
 
-# Canonical test-directory layouts per framework, in priority order. Only
-# directories that exist are used; when none exist vitest/jest fall back to
-# their own config-driven discovery and pytest reports a non-blocking gap.
+# Canonical test-directory layout (all tests under test/, one subfolder per
+# type). Only directories that exist are used; when none exist vitest/jest
+# fall back to their own config-driven discovery and pytest reports a
+# non-blocking gap.
 _CANONICAL_TEST_DIRS: dict[str, tuple[str, ...]] = {
-    "pytest": (
-        "test/unit", "test/integration", "test/architecture",
-        "tests/unit", "tests/integration", "tests/architecture",
-    ),
+    "pytest": ("test/unit", "test/integration", "test/architecture"),
     "vitest": ("test/unit", "test/integration", "test/architecture"),
     "jest": ("test/unit", "test/integration", "test/architecture"),
 }
@@ -163,7 +161,7 @@ def _resolve_package_root(root: Path) -> Path | None:
 
 
 def _resolve_test_paths(root: Path, fw_key: str) -> list[str]:
-    """Existing canonical test dirs (test/unit|integration|architecture, ...)."""
+    """Existing canonical test dirs (test/unit|integration|architecture)."""
     return [
         directory
         for directory in _CANONICAL_TEST_DIRS.get(fw_key, ())
@@ -248,12 +246,22 @@ def run_stack_tests(root: Path, dry_run: bool = False) -> dict[str, Any]:
             if not paths:
                 # Never run pytest repo-wide (it would pick up unrelated tests,
                 # e.g. tools/sdd_cli). Report the gap; CI remains authoritative.
+                legacy = any(
+                    (root / d).is_dir()
+                    for d in ("tests/unit", "tests/integration", "tests/architecture")
+                )
+                hint = (
+                    " Legacy tests/ layout found — rename it to test/unit|integration|architecture "
+                    "(all tests must live under test/)."
+                    if legacy
+                    else ""
+                )
                 result["steps"].append({
                     "command": f"stack-tests/{fw}",
                     "message": (
                         f"{fw}: no test/unit|integration|architecture directories "
-                        "found — nothing to run; CI remains the authoritative "
-                        "product-test gate."
+                        f"found — nothing to run; CI remains the authoritative "
+                        f"product-test gate.{hint}"
                     ),
                     "valid": True,
                 })

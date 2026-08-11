@@ -14,7 +14,7 @@ document is the readable map, not a replacement for the skill.
 | Continue implementation | `dev-flow-continue-implementation` | Read-first | Yes (branch, OpenProject telemetry) | Resume an in-progress ticket |
 | Explore / ask questions | `dev-flow-explore-change` | Yes | No | "Explore this change", planning, architecture discussion |
 | Check pipeline status | `dev-flow-pipeline-status` | **Yes** | **No** | "What's the state?", ambiguous routing fallback |
-| Scaffold project | `dev-flow-scaffold-project` | No | Yes (src/, tests/, Dockerfiles, CI) | After `set-project-stack` |
+| Scaffold project | `dev-flow-scaffold-project` | No | Yes (src/, test/, Dockerfiles, CI) | After `set-project-stack` |
 | Retrospective audit | `dev-flow-retrospective-audit` | Default read-only | Apply mode on request | Post-PROD, eval improvement, periodic review |
 | Update docs / knowledge | `docs-knowledge-maintenance` | No | Yes (docs/, knowledge/) | Any durable learning discovered |
 | Grafana board update | `grafana-board-update` | No | Yes (dashboard JSON, commit) | After each CI deploy completes |
@@ -120,6 +120,10 @@ fallback when no deterministic route matches, missing-stack fallback
 **Output.** Concise sections: current state + next recommended skill, open blockers,
 ticket/PR/artifact mapping, active lock and cross-ticket mismatches, deployed versions,
 missing configuration. Ambiguous states list candidate routes and recommend the safest.
+Never recommend running E2E against the deployed DEV environment — E2E always runs
+against the deployed QA URLs only (a DEV deployment is verified by health/smoke checks
+and then promoted to QA, where the E2E QA evidence gate runs, per
+`delivery-contract-qa.md`).
 
 **Failure rules.** Record unconfigured/unreachable systems as unavailable instead of
 failing the whole status. Do not update knowledge unless the user explicitly asks for a

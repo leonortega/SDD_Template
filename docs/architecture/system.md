@@ -37,7 +37,7 @@ observability.
 - `.gitea/workflows/` contains placeholder workflows until a new product stack is added.
 - `tools/` contains delivery helper tooling.
 
-The `src/` and `tests/` product trees are intentionally absent.
+The `src/` and `test/` product trees are intentionally absent.
 
 ## Sources Of Truth
 

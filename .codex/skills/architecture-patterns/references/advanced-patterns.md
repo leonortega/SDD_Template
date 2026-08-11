@@ -32,7 +32,7 @@ ecommerce/
 │   │   │   │       └── auth_controller.py
 │   │   │   └── infrastructure/
 │   │   │       └── jwt_service.py
-│   │   └── tests/
+│   │   └── test/
 │   │       ├── unit/
 │   │       └── integration/
 │   │
@@ -47,7 +47,7 @@ ecommerce/
 │   │   │   └── use_cases/
 │   │   │       ├── create_product.py
 │   │   │       └── update_inventory.py
-│   │   └── tests/
+│   │   └── test/
 │   │
 │   └── ordering/                    # Bounded context: orders
 │       ├── ordering/
@@ -68,7 +68,7 @@ ecommerce/
 │       │       │   └── catalog_http_client.py  # ACL adapter
 │       │       └── repositories/
 │       │           └── postgres_order_repository.py
-│       └── tests/
+│       └── test/
 │
 ├── shared/                          # Shared kernel (use sparingly)
 │   └── domain_events/

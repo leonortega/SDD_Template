@@ -83,7 +83,7 @@ The hallmark of correctly applied Clean Architecture is that every use case can 
 no real database, no Docker, and no network:
 
 ```python
-# tests/unit/test_create_user.py
+# test/unit/test_create_user.py
 import asyncio
 from typing import Dict, Optional
 from domain.entities.user import User

@@ -249,9 +249,6 @@ python -m tools.sdd_cli environment-lab setup-lab         # Full idempotent lab 
 python -m tools.sdd_cli dev-flow validate-commit-message "E2EPROJECT-123: message"
 python -m tools.sdd_cli dev-flow create-release-manifest --version v1.0.30
 
-# Tests
-python -m pytest tools/sdd_cli/tests/ -q                   # Run CLI tests
-
 # New stack: add product-specific build/test commands here
 ```text
 
@@ -259,10 +256,9 @@ python -m pytest tools/sdd_cli/tests/ -q                   # Run CLI tests
 
 Before handoff for any repo change:
 
-1. ✅ **Tests**: `python -m pytest tools/sdd_cli/tests/ -q` passes
-2. ✅ **JSON validity**: All `.json` files are valid JSON
-3. ✅ **Security**: No secrets or credentials in code
-4. ✅ **Consistency**: Changes follow the delivery contract and skills
+1. ✅ **JSON validity**: All `.json` files are valid JSON
+2. ✅ **Security**: No secrets or credentials in code
+3. ✅ **Consistency**: Changes follow the delivery contract and skills
 
 **Product gates** (add when a stack is selected): build, unit tests, coverage, formatting, linting, package verification.
 

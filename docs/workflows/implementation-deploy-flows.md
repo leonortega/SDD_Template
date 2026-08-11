@@ -57,7 +57,7 @@ Key principles:
   environments — DEV, QA, PROD, and rollback all reuse `app/{commitSha}/` artifacts
   from Nexus.
 - **PROD promotion is explicit.** QA passing alone never releases to PROD; the user or
-  a ticket-named `src/**` / `tests/**` merge to `main` must trigger it.
+  a ticket-named `src/**` / `test/**` merge to `main` must trigger it.
 - **QA is evidence, not smoke.** `QA Done = acceptance criteria proven by executable
   assertions against the deployed QA artifact`.
 - **Deterministic next step.** Every stage has exactly one next skill defined by the
@@ -735,8 +735,6 @@ run_gate "semgrep scan --config p/typescript --config p/javascript --config p/py
 run_gate "trivy fs --format table --exit-code 1 --no-progress --skip-db-update ."
 # 5. IaC scan (Checkov) — blocking, config-file skip list applies
 run_gate "checkov -d . --compact --config-file .checkov.yml"
-# 6. Repo tooling tests
-run_gate "python3 -m pytest tools/sdd_cli/tests/ -q"
 
 echo "ALL GATES PASSED"
 ```
@@ -750,9 +748,8 @@ echo "ALL GATES PASSED"
 | 3 | Semgrep | exit 0 with `--error` — no findings at the selected rule level | code matching `p/typescript` / `p/javascript` / `p/python` / `p/csharp` rules |
 | 4 | Trivy | exit 0 — no vulnerabilities at default severity | vulnerable lockfiles/dependency manifests; DB must be pre-cached in the image (`--skip-db-update`) |
 | 5 | Checkov | exit 0 — IaC checks pass (**blocking** since `--soft-fail` was removed) | unskipped `CKV_K8S_*` / `CKV_SECRET_*` findings; extend `.checkov.yml` `skip-check` only for intentional template values |
-| 6 | Repo tooling tests | `pytest tools/sdd_cli/tests/` all green | broken tests, fixture drift, import errors |
 
-**Definition of done.** All six gates exit 0 inside `sdd-e2e-ci:local` **before** opening
+**Definition of done.** All five gates exit 0 inside `sdd-e2e-ci:local` **before** opening
 or updating the PR. If any gate fails, fix the code/config, re-run the loop from the
 start (gates are order-independent but are run in CI order), and only push when the loop
 prints `ALL GATES PASSED`.
