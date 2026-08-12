@@ -61,7 +61,7 @@ Install with npx skills add <owner/repo@skill>
 
 def _make_profile(root: Path, frontend: str = "", backend: str = "", database: str = "") -> None:
     """Create project-profile.local.json with the given stack values."""
-    codex = root / ".codex"
+    codex = root / ".template"
     codex.mkdir(parents=True, exist_ok=True)
     stack = {}
     for domain, val in [("frontend", frontend), ("backend", backend), ("database", database)]:
@@ -75,8 +75,8 @@ def _make_profile(root: Path, frontend: str = "", backend: str = "", database: s
 
 
 def _make_manifest(root: Path, categories: dict | None = None) -> dict:
-    """Create a basic manifest.json in .codex/skills/."""
-    skills_dir = root / ".codex" / "skills"
+    """Create a basic manifest.json in .agents/skills/."""
+    skills_dir = root / ".agents" / "skills"
     skills_dir.mkdir(parents=True, exist_ok=True)
     if categories is None:
         categories = {
@@ -226,7 +226,7 @@ class TestSetupProjectGuidance:
                 )
 
         assert result["valid"] is True
-        manifest_path = tmp_path / ".codex" / "skills" / "manifest.json"
+        manifest_path = tmp_path / ".agents" / "skills" / "manifest.json"
         assert not manifest_path.exists(), "Manifest should not be written in dry-run mode"
 
     def test_never_auto_installs_without_interactive_confirmation(

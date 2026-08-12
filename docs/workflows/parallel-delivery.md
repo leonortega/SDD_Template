@@ -21,16 +21,17 @@ back-and-forth, or work where multiple phases must share one evolving context.
 ## Required Isolation
 
 Parallel delivery uses only Git worktrees. Each active ticket has exactly one worktree under
-`parallelDelivery.worktreeRoot`, one implementation branch, and one ignored `.codex/delivery-context.local.json` inside
+`parallelDelivery.worktreeRoot`, one implementation branch, and one ignored `.template/delivery-context.local.json` inside
 that worktree.
 
-The coordinator checkout owns ignored `.codex/parallel-delivery.local.json`. Do not copy that file into ticket
-worktrees. Copy ignored local config such as `.codex/client-tools.local.json`, `.codex/project-profile.local.json`, and
-`.codex/quality.local.json` only when a child skill requires it, and report only filenames.
+The coordinator checkout owns ignored `.template/parallel-delivery.local.json`. Do not copy that file into ticket
+worktrees. Copy ignored local config such as `.template/client-tools.local.json`,
+`.template/project-profile.local.json`, and
+`.template/quality.local.json` only when a child skill requires it, and report only filenames.
 
-The default worktree-local config allowlist is `.codex/client-tools.local.json`, `.codex/project-profile.local.json`,
-and `.codex/quality.local.json` when present. Do not copy `.codex/delivery-context.local.json`,
-`.codex/parallel-delivery.local.json`, or app `*.local.json` files by default. Use `configure-dev-environment` mode
+The default worktree-local config allowlist is `.template/client-tools.local.json`, `.template/project-profile.local.json`,
+and `.template/quality.local.json` when present. Do not copy `.template/delivery-context.local.json`,
+`.template/parallel-delivery.local.json`, or app `*.local.json` files by default. Use `configure-dev-environment` mode
 `SyncWorktreeLocalConfig` to repair new or reused ticket worktrees before routing child skills. Use
 `EnsureDeliveryContext` to repair a missing ticket lock only after the worktree's ticket key, branch, OpenSpec change,
 and PR number are known.
@@ -103,7 +104,7 @@ deploy, test, tag, move QA/Done state, or write deployment evidence for a ticket
 
 Use cleanup and recovery when runtime state and durable state disagree:
 
-- stale runtime state: compare `.codex/parallel-delivery.local.json` with `git worktree list`, OpenProject, Gitea, and
+- stale runtime state: compare `.template/parallel-delivery.local.json` with `git worktree list`, OpenProject, Gitea, and
 branch state; do not route stale entries until repaired
 - missing worktree: report the ticket and branch, then recreate only after durable checkpoints confirm the same
 ticket/branch mapping

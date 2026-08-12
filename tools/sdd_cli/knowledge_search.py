@@ -109,7 +109,7 @@ def search_knowledge(root: Path, queries: list[str], list_topics: bool) -> Any:
 # ── Knowledge classification (deterministic) ─────────────────────────────
 
 # Keyword → knowledge category mapping (deterministic, no LLM). Mirrors the
-# classification table in .codex/skills/docs-knowledge-maintenance/SKILL.md
+# classification table in .agents/skills/docs-knowledge-maintenance/SKILL.md
 # and knowledge/README.md#update-process.
 CATEGORY_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
     ("errors", ("error", "errors", "failed", "failure", "timeout", "crash", "exception", "traceback")),
@@ -263,10 +263,10 @@ def classify_knowledge(
             add("docs-workflows", f"docs/workflows/{stem}.md", f"changed path: {path}")
         elif lowered.startswith("docs/adr/"):
             add("docs-adr", f"docs/adr/{stem}.md", f"changed path: {path} (draft only — propose)")
-        elif ".codex/skills/" in lowered or "delivery-contract" in lowered:
+        elif ".agents/skills/" in lowered or "delivery-contract" in lowered:
             add(
                 "contract",
-                ".codex/skills/_shared/delivery-contract.md",
+                ".agents/skills/_shared/delivery-contract.md",
                 f"changed path: {path} (enforceable automation)",
             )
         elif lowered.startswith(_IMPLEMENTATION_PREFIXES):

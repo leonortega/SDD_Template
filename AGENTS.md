@@ -21,21 +21,21 @@ artifacts (code blocks, documentation, config files).
 ## Start Here
 
 After the mandatory first step, inspect the relevant local context for the current workflow stage. **Assemble context in
-tier order** (see `.codex/delivery-policy.json` → `agentOptimization.contextTiers`):
+tier order** (see `.template/delivery-policy.json` → `agentOptimization.contextTiers`):
 
-1. **TIER 1 — Stable prefix** (cache once per session): `AGENTS.md`, `.codex/skills/_shared/repo-startup.md`,
-`.codex/delivery-policy.json`, `.codex/mcp-instructions.md`
-2. **TIER 2 — Semi-stable** (cache once per session): `.codex/skills/_shared/delivery-contract.md`,
-`.codex/skills/_shared/delivery-contract-core.md`, `.codex/skills/_shared/skill-startup.md`, `knowledge/README.md`
+1. **TIER 1 — Stable prefix** (cache once per session): `AGENTS.md`, `.agents/skills/_shared/repo-startup.md`,
+`.template/delivery-policy.json`, `.agents/mcp-instructions.md`
+2. **TIER 2 — Semi-stable** (cache once per session): `.agents/skills/_shared/delivery-contract.md`,
+`.agents/skills/_shared/delivery-contract-core.md`, `.agents/skills/_shared/skill-startup.md`, `knowledge/README.md`
 3. **TIER 3 — Stage-specific** (cache per stage): relevant `delivery-contract-{stage}.md`, `api-helpers.md`
 4. **TIER 4 — Dynamic** (never cached): user message, conversation history, tool outputs, live state
 
 Always read in order:
 
 - `README.md`
-- `.codex/skills/_shared/skill-startup.md`
+- `.agents/skills/_shared/skill-startup.md`
 - `knowledge/README.md`
-- `.codex/delivery-policy.json`
+- `.template/delivery-policy.json`
 
 Then read only the stage-specific docs, OpenSpec artifacts, skills, and workflow files needed for the task. Read local
 config only when the workflow needs those values, and never print secrets or credential-bearing values.
@@ -75,14 +75,14 @@ it — do not assume it is implicit.
 ## Mandatory Skill Catalog Review
 
 Before every task (read-only work excluded), every agent **must** consult the skill manifest at
-`.codex/skills/manifest.json` and determine which skills are relevant. This is a hard gate: no work begins until the
+`.agents/skills/manifest.json` and determine which skills are relevant. This is a hard gate: no work begins until the
 catalog is reviewed and skills are declared.
 
 **Authority level**: 5 (same as Mandatory First Step, Mandatory Skill Declaration, Mandatory MCP Routing).
 
 ### Review Process
 
-1. **Read the manifest:** Open `.codex/skills/manifest.json` and inspect the `categories` section to find skill groups
+1. **Read the manifest:** Open `.agents/skills/manifest.json` and inspect the `categories` section to find skill groups
 relevant to the current task.
 2. **Assess relevance:** For each relevant category, review its skills and determine which rules, patterns, or
 constraints apply:
@@ -134,7 +134,7 @@ python -m tools.sdd_cli environment-lab build-gitea-images
 python -m tools.sdd_cli environment-lab set-project-stack --values-json '{"frontend": "react", "backend": "fastapi", "database": "postgresql"}'
 ```
 
-See `.codex/skills/configure-dev-environment/SKILL.md` for available modes.
+See `.agents/skills/configure-dev-environment/SKILL.md` for available modes.
 
 ## Delivery Workflow
 
@@ -210,7 +210,7 @@ directly from GitHub.
 python -m tools.sdd_cli tool-installer list-skills
 ```
 
-Reads configured sources from `.codex/skill-sources.json` (or `.codex/skill-sources.example.json`) and lists all
+Reads configured sources from `.template/skill-sources.json` (or `.template/skill-sources.example.json`) and lists all
 discoverable skill directories from each GitHub repo.
 
 #### Install a skill
@@ -232,7 +232,7 @@ python -m tools.sdd_cli tool-installer install-skill --source awesome-copilot --
 
 #### Default configured sources
 
-The shipped `.codex/skill-sources.example.json` includes:
+The shipped `.template/skill-sources.example.json` includes:
 
 | Name | Repo | Description |
 |------|------|-------------|
@@ -274,9 +274,9 @@ them as examples.
 
 ## Agent Guidance
 
-When in doubt, first inspect the applicable skill under `.codex/skills/` and follow its workflow.
+When in doubt, first inspect the applicable skill under `.agents/skills/` and follow its workflow.
 
-Apply Tool And Skill Blocker Consent from `.codex/skills/_shared/delivery-contract-core.md` when a required repo skill,
+Apply Tool And Skill Blocker Consent from `.agents/skills/_shared/delivery-contract-core.md` when a required repo skill,
 command, knowledge rule, or configured tool/install path cannot be applied.
 
 Use `knowledge/` as the reviewable repository knowledge layer. Knowledge is guidance only and must be verified against
@@ -318,30 +318,30 @@ API fails, stop and report. There is no alternative path.
 
 | User request / context                 | Stage                              | Skill to load                                             |
 | -------------------------------------- | ---------------------------------- | --------------------------------------------------------- |
-| Start a ticket (specific or next Todo) | `dev-flow-start-ticket`            | `.codex/skills/dev-flow-start-ticket/SKILL.md`            |
-| Create / propose an OpenSpec change    | `dev-flow-propose-change`          | `.codex/skills/dev-flow-propose-change/SKILL.md`          |
-| Implement a ticket / change            | `dev-flow-implement-ticket`        | `.codex/skills/dev-flow-implement-ticket/SKILL.md`        |
-| Start or implement more than one ticket / multiple tickets | `dev-flow-parallel-ticket-coordinator` | `.codex/skills/dev-flow-parallel-ticket-coordinator/SKILL.md` |
-| Continue implementation                | `dev-flow-continue-implementation` | `.codex/skills/dev-flow-continue-implementation/SKILL.md` |
-| Review a pull request                  | `dev-flow-pr-review-agent`         | `.codex/skills/dev-flow-pr-review-agent/SKILL.md`         |
-| Address PR review feedback             | `dev-flow-pr-review-feedback-loop` | `.codex/skills/dev-flow-pr-review-feedback-loop/SKILL.md` |
-| Verify an OpenSpec change              | `dev-flow-verify-change`           | `.codex/skills/dev-flow-verify-change/SKILL.md`           |
-| Archive an OpenSpec change             | `dev-flow-archive-change`          | `.codex/skills/dev-flow-archive-change/SKILL.md`          |
-| Deploy to QA                           | `dev-ops-deploy-qa`                | `.codex/skills/dev-ops-deploy-qa/SKILL.md`                |
-| Deploy to production                   | `dev-ops-deploy-prod`              | `.codex/skills/dev-ops-deploy-prod/SKILL.md`              |
-| Rollback production                    | `dev-ops-rollback-prod`            | `.codex/skills/dev-ops-rollback-prod/SKILL.md`            |
-| Hotfix production                      | `dev-ops-hotfix-prod`              | `.codex/skills/dev-ops-hotfix-prod/SKILL.md`              |
-| Post-merge deploy                      | `dev-ops-post-merge-deploy`        | `.codex/skills/dev-ops-post-merge-deploy/SKILL.md`        |
-| CI deploy completed / post-deploy update | `grafana-board-update`             | `.codex/skills/grafana-board-update/SKILL.md`             |
-| File and fix a QA bug                  | `dev-flow-file-qa-bug`             | `.codex/skills/dev-flow-file-qa-bug/SKILL.md`             |
-| Check pipeline status                  | `dev-flow-pipeline-status`         | `.codex/skills/dev-flow-pipeline-status/SKILL.md`         |
-| Run retrospective audit                | `dev-flow-retrospective-audit`     | `.codex/skills/dev-flow-retrospective-audit/SKILL.md`     |
-| Explore a change / ask questions       | `dev-flow-explore-change`          | `.codex/skills/dev-flow-explore-change/SKILL.md`          |
-| Scaffold project after stack selection | `dev-flow-scaffold-project`        | `.codex/skills/dev-flow-scaffold-project/SKILL.md`        |
-| Update AI-updatable docs / knowledge   | `docs-knowledge-maintenance`        | `.codex/skills/docs-knowledge-maintenance/SKILL.md`      |
+| Start a ticket (specific or next Todo) | `dev-flow-start-ticket`            | `.agents/skills/dev-flow-start-ticket/SKILL.md`            |
+| Create / propose an OpenSpec change    | `dev-flow-propose-change`          | `.agents/skills/dev-flow-propose-change/SKILL.md`          |
+| Implement a ticket / change            | `dev-flow-implement-ticket`        | `.agents/skills/dev-flow-implement-ticket/SKILL.md`        |
+| Start or implement more than one ticket / multiple tickets | `dev-flow-parallel-ticket-coordinator` | `.agents/skills/dev-flow-parallel-ticket-coordinator/SKILL.md` |
+| Continue implementation                | `dev-flow-continue-implementation` | `.agents/skills/dev-flow-continue-implementation/SKILL.md` |
+| Review a pull request                  | `dev-flow-pr-review-agent`         | `.agents/skills/dev-flow-pr-review-agent/SKILL.md`         |
+| Address PR review feedback             | `dev-flow-pr-review-feedback-loop` | `.agents/skills/dev-flow-pr-review-feedback-loop/SKILL.md` |
+| Verify an OpenSpec change              | `dev-flow-verify-change`           | `.agents/skills/dev-flow-verify-change/SKILL.md`           |
+| Archive an OpenSpec change             | `dev-flow-archive-change`          | `.agents/skills/dev-flow-archive-change/SKILL.md`          |
+| Deploy to QA                           | `dev-ops-deploy-qa`                | `.agents/skills/dev-ops-deploy-qa/SKILL.md`                |
+| Deploy to production                   | `dev-ops-deploy-prod`              | `.agents/skills/dev-ops-deploy-prod/SKILL.md`              |
+| Rollback production                    | `dev-ops-rollback-prod`            | `.agents/skills/dev-ops-rollback-prod/SKILL.md`            |
+| Hotfix production                      | `dev-ops-hotfix-prod`              | `.agents/skills/dev-ops-hotfix-prod/SKILL.md`              |
+| Post-merge deploy                      | `dev-ops-post-merge-deploy`        | `.agents/skills/dev-ops-post-merge-deploy/SKILL.md`        |
+| CI deploy completed / post-deploy update | `grafana-board-update`             | `.agents/skills/grafana-board-update/SKILL.md`             |
+| File and fix a QA bug                  | `dev-flow-file-qa-bug`             | `.agents/skills/dev-flow-file-qa-bug/SKILL.md`             |
+| Check pipeline status                  | `dev-flow-pipeline-status`         | `.agents/skills/dev-flow-pipeline-status/SKILL.md`         |
+| Run retrospective audit                | `dev-flow-retrospective-audit`     | `.agents/skills/dev-flow-retrospective-audit/SKILL.md`     |
+| Explore a change / ask questions       | `dev-flow-explore-change`          | `.agents/skills/dev-flow-explore-change/SKILL.md`          |
+| Scaffold project after stack selection | `dev-flow-scaffold-project`        | `.agents/skills/dev-flow-scaffold-project/SKILL.md`        |
+| Update AI-updatable docs / knowledge   | `docs-knowledge-maintenance`        | `.agents/skills/docs-knowledge-maintenance/SKILL.md`      |
 
 > **Eval-internal route (not a user-requested stage):** `dev-ops-deploy-qa-approval-gate`
-> exists only in the agent-eval routing matrix (`.codex/agent-evals/`) as the intermediate
+> exists only in the agent-eval routing matrix (`.agents/agent-evals/`) as the intermediate
 > outcome when QA is pending user approval — the agent stops and asks, it never auto-approves.
 > It is not a stage to load; on approval the flow continues to `dev-ops-deploy-qa`. See
 > `docs/workflows/implementation-deploy-flows.md` (Section 2) for the full routing matrix.
@@ -352,7 +352,7 @@ requires an API call, comment, label, or state change that the skill defines, ex
 ## Mandatory MCP Routing
 
 This repository relies on the **service MCP servers** (gitea, openproject, grafana, kubernetes) for lab-service
-interactions. Every agent **must** follow `.codex/mcp-instructions.md` (the definitive MCP routing contract) when
+interactions. Every agent **must** follow `.agents/mcp-instructions.md` (the definitive MCP routing contract) when
 interacting with lab services. Repository content search uses the agent's built-in file/search tools — there are no
 dedicated content-search MCP servers.
 

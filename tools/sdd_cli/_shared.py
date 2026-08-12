@@ -489,13 +489,13 @@ def http_json(
 def quality_coverage_minimum(root: Path, fallback: int = 80) -> int:
     """Read the coverage minimum percent from the quality config chain.
 
-    Checks ``.codex/quality.local.json`` then ``.codex/quality.example.json``
+    Checks ``.template/quality.local.json`` then ``.template/quality.example.json``
     for ``coverage.minimumPercent``; returns ``fallback`` when unset or
     unparseable. Single source of truth for the coverage gate (stack-tests,
     CI, and audit modes all read the same chain).
     """
     for name in ("quality.local.json", "quality.example.json"):
-        path = root / ".codex" / name
+        path = root / ".template" / name
         if not path.exists():
             continue
         try:
@@ -515,11 +515,11 @@ def quality_coverage_minimum(root: Path, fallback: int = 80) -> int:
 
 def load_project_profile(root: Path) -> dict[str, Any]:
     """Load the project profile, merging base and local overlays."""
-    base_path = root / ".codex" / "project-profile.json"
+    base_path = root / ".template" / "project-profile.json"
     if not base_path.exists():
-        base_path = root / ".codex" / "project-profile.example.json"
+        base_path = root / ".template" / "project-profile.example.json"
     base = read_json(base_path, optional=True)
-    local = read_json(root / ".codex" / "project-profile.local.json", optional=True)
+    local = read_json(root / ".template" / "project-profile.local.json", optional=True)
     return merge_dicts(base, local)
 
 
@@ -551,26 +551,26 @@ def read_ticket_pattern(root: Path) -> str:
     pattern = nested(profile, "workflow", "ticketKeyPattern")
     if pattern:
         return pattern
-    policy = read_json(root / ".codex" / "delivery-policy.json", optional=True)
+    policy = read_json(root / ".template" / "delivery-policy.json", optional=True)
     return policy.get("ticketKeyPattern", "E2EPROJECT-[0-9]+")
 
 
 def profile_audit_findings(root: Path) -> list[dict[str, str]]:
     """Audit the project profile and return findings."""
     findings: list[dict[str, str]] = []
-    if not (root / ".codex" / "project-profile.json").exists():
+    if not (root / ".template" / "project-profile.json").exists():
         add_bucket_item(
             findings,
-            ".codex/project-profile.json",
+            ".template/project-profile.json",
             "missing.profile",
             "Project profile is missing.",
             "warning",
             "pre-start",
         )
-    if not (root / ".codex" / "project-profile.schema.json").exists():
+    if not (root / ".template" / "project-profile.schema.json").exists():
         add_bucket_item(
             findings,
-            ".codex/project-profile.schema.json",
+            ".template/project-profile.schema.json",
             "missing.schema",
             "Project profile schema is missing.",
             "warning",
@@ -782,7 +782,7 @@ def client_tools_project_identifier_findings(root: Path) -> list[dict[str, str]]
     files.
     """
     findings: list[dict[str, str]] = []
-    path = root / ".codex" / "client-tools.local.json"
+    path = root / ".template" / "client-tools.local.json"
     if not path.exists():
         return findings
     try:
@@ -796,7 +796,7 @@ def client_tools_project_identifier_findings(root: Path) -> list[dict[str, str]]
     if not identifier or identifier.startswith("replace-with"):
         add_bucket_item(
             findings,
-            ".codex/client-tools.local.json",
+            ".template/client-tools.local.json",
             "openProject.projectIdentifier",
             (
                 "openProject.projectIdentifier is missing or still a placeholder "

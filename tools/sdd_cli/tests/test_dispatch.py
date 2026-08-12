@@ -263,8 +263,8 @@ class DevFlowDispatchTests(unittest.TestCase):
         """dev-flow validate-commit-message works."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / ".codex").mkdir()
-            (root / ".codex" / "project-profile.json").write_text(
+            (root / ".template").mkdir()
+            (root / ".template" / "project-profile.json").write_text(
                 json.dumps({"workflow": {"ticketKeyPattern": "ABC-[0-9]+"}}),
                 encoding="utf-8",
             )
@@ -344,7 +344,7 @@ class DevFlowDispatchTests(unittest.TestCase):
             self.assertEqual(0, rc)
             result = json.loads(stdout.getvalue())
             self.assertTrue(result["valid"])
-            lock = root / ".codex" / "delivery-context.local.json"
+            lock = root / ".template" / "delivery-context.local.json"
             self.assertTrue(lock.exists())
             data = json.loads(lock.read_text(encoding="utf-8"))
             self.assertEqual("ABC-1", data["ticketKey"])
@@ -470,7 +470,7 @@ class DevFlowDispatchTests(unittest.TestCase):
             self.assertTrue(result["valid"])
             self.assertEqual("appended", result["action"])
             self.assertTrue(
-                (root / ".codex" / "agent-telemetry.local.jsonl").exists()
+                (root / ".template" / "agent-telemetry.local.jsonl").exists()
             )
 
 
@@ -481,7 +481,7 @@ class GuidanceDispatchTests(unittest.TestCase):
         """guidance discover --dry-run true works (internet-only, no results in dry-run)."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            codex = root / ".codex"
+            codex = root / ".template"
             codex.mkdir(parents=True)
             # Stack values come from the profile; dry-run never searches the internet.
             (codex / "project-profile.local.json").write_text(
@@ -541,7 +541,7 @@ class StackTestsDispatchTests(unittest.TestCase):
         """stack-tests --dry-run true reports commands for configured frameworks."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            codex = root / ".codex"
+            codex = root / ".template"
             codex.mkdir(parents=True)
             (codex / "project-profile.local.json").write_text(
                 json.dumps({"stack": {"testFrameworks": ["pytest"]}}),
@@ -595,7 +595,7 @@ class EnvironmentLabDispatchTests(unittest.TestCase):
         """environment-lab init-local-files works."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            codex = root / ".codex"
+            codex = root / ".template"
             codex.mkdir()
             (codex / "client-tools.example.json").write_text("{}", encoding="utf-8")
             (codex / "quality.example.json").write_text("{}", encoding="utf-8")
@@ -643,7 +643,7 @@ class EnvironmentLabDispatchTests(unittest.TestCase):
                     ]
                 )
             self.assertEqual(0, rc)
-            self.assertTrue((root / ".codex" / "project-profile.example.json").exists())
+            self.assertTrue((root / ".template" / "project-profile.example.json").exists())
 
     def test_init_quality_templates(self) -> None:
         """environment-lab init-quality-templates works."""
@@ -930,7 +930,7 @@ class ToolInstallerDispatchTests(unittest.TestCase):
             self.assertIn("no stack.testFrameworks", reason)
 
             # pytest stack → only pytest probed (no dotnet/jest fallback).
-            codex = root / ".codex"
+            codex = root / ".template"
             codex.mkdir()
             (codex / "project-profile.local.json").write_text(
                 json.dumps({"stack": {"testFrameworks": ["pytest"]}}),
@@ -1076,7 +1076,7 @@ class ToolInstallerDispatchTests(unittest.TestCase):
         """tool-installer list-skills --dry-run true with source config works."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            codex = root / ".codex"
+            codex = root / ".template"
             codex.mkdir()
             (codex / "skill-sources.json").write_text(
                 json.dumps({
@@ -1111,10 +1111,10 @@ class ToolInstallerDispatchTests(unittest.TestCase):
             self.assertIn("skills", result)
 
     def test_list_skills_uses_example_config_when_no_local(self) -> None:
-        """list-skills falls back to .codex/skill-sources.example.json."""
+        """list-skills falls back to .template/skill-sources.example.json."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            codex = root / ".codex"
+            codex = root / ".template"
             codex.mkdir()
             # Only create the example file, not the local one
             (codex / "skill-sources.example.json").write_text(
@@ -1151,7 +1151,7 @@ class ToolInstallerDispatchTests(unittest.TestCase):
         """tool-installer install-skill --source works with dry-run."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            codex = root / ".codex"
+            codex = root / ".template"
             codex.mkdir()
             (codex / "skill-sources.json").write_text(
                 json.dumps({
@@ -1272,10 +1272,10 @@ class ToolInstallerDispatchTests(unittest.TestCase):
             self.assertFalse(any("?ref=main?ref" in u for u in requested))
             # Both the top-level and nested files were installed.
             self.assertTrue(
-                (root / ".codex" / "skills" / "demo" / "SKILL.md").exists()
+                (root / ".agents" / "skills" / "demo" / "SKILL.md").exists()
             )
             self.assertTrue(
-                (root / ".codex" / "skills" / "demo" / "sub" / "extra.md").exists()
+                (root / ".agents" / "skills" / "demo" / "sub" / "extra.md").exists()
             )
 
     def test_ensure_mcp_servers_dry_run(self) -> None:

@@ -20,8 +20,8 @@
     "kubernetes"
   ],
   "ALLOWLISTED_LOCAL_CONFIG": [
-    ".codex/client-tools.local.json",
-    ".codex/project-profile.local.json",
-    ".codex/quality.local.json"
+    ".template/client-tools.local.json",
+    ".template/project-profile.local.json",
+    ".template/quality.local.json"
   ]
 }

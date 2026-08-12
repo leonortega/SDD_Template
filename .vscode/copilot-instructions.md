@@ -5,12 +5,12 @@
 **Always read the repository skills before acting independently:**
 
 1. When asked to implement a feature, configure tooling, deploy, or document patterns:
-   - Check `.codex/skills/` first to see if a skill already covers this area
-   - Check `.codex/skills/_shared/delivery-contract.md` for the authoritative policy
-   - Check referenced documents in the skill (`docs/`, `.codex/quality.local.json`, etc.)
+   - Check `.agents/skills/` first to see if a skill already covers this area
+   - Check `.agents/skills/_shared/delivery-contract.md` for the authoritative policy
+   - Check referenced documents in the skill (`docs/`, `.template/quality.local.json`, etc.)
 
 2. **Source-of-truth hierarchy** (from delivery-contract.md):
-   - `.codex/skills/_shared/delivery-contract.md`
+   - `.agents/skills/_shared/delivery-contract.md`
    - `docs/conventions/context-management.md`, `docs/architecture/system.md`, `docs/conventions/development.md`,
      `docs/architecture/deployment.md`
    - Non-OpenSpec delivery-flow skills
@@ -38,9 +38,9 @@ patterns.
 
 This is an agentic SDD/SDLC delivery lab. Work is driven from OpenProject work packages through OpenSpec planning,
 implementation, review, artifact promotion, deployment, QA, and production handoff. All delivery workflows, domain
-knowledge, and learnings are captured in `.codex/` without duplication.
+knowledge, and learnings are captured in `.template/` without duplication.
 
-**Reference live `.codex/` files directly—do not copy or recreate them.**
+**Reference live `.template/` files directly—do not copy or recreate them.**
 
 ## Reference Architecture
 
@@ -63,62 +63,62 @@ OpenProject Ticket (Todo)
 
 ### Key Repository Locations
 
-- **Skills**: `.codex/skills/` — delivery workflow skills for every SDLC stage
+- **Skills**: `.agents/skills/` — delivery workflow skills for every SDLC stage
 - **Infrastructure**: `infra/` — Docker Compose services, K8s manifests, deployment configs
 - **Documentation**: `docs/` — architecture (system, deployment), conventions (development, context-management), ADRs,
   modules, workflows
 - **Knowledge**: `knowledge/` — errors, fixes, patterns, troubleshooting, lessons-learned, prompts (AI-updatable)
 - **Delivery CLI**: `tools/sdd_cli/` — Python CLI helpers for environment lab, dev flow, tooling
 
-## Critical `.codex/` Resources
+## Critical `.template/` Resources
 
-### 1. **Skills** (`.codex/skills/`)
+### 1. **Skills** (`.agents/skills/`)
 
 Domain-specific workflows for each delivery stage. Load these based on task type:
 
 #### Ticket Implementation
 
-- [`dev-flow-continue-implementation`](.codex/skills/dev-flow-continue-implementation/) – Main entry point; inspects
+- [`dev-flow-continue-implementation`](.agents/skills/dev-flow-continue-implementation/) – Main entry point; inspects
   state, routes to next workflow
-- [`dev-flow-implement-ticket`](.codex/skills/dev-flow-implement-ticket/) – Core ticket implementation workflow
-- [`dev-flow-start-ticket`](.codex/skills/dev-flow-start-ticket/) – Initialize new ticket from OpenProject
+- [`dev-flow-implement-ticket`](.agents/skills/dev-flow-implement-ticket/) – Core ticket implementation workflow
+- [`dev-flow-start-ticket`](.agents/skills/dev-flow-start-ticket/) – Initialize new ticket from OpenProject
 
 #### OpenSpec Planning & Changes
 
-- [`dev-flow-explore-change`](.codex/skills/dev-flow-explore-change/) – Explore change requirements
-- [`dev-flow-propose-change`](.codex/skills/dev-flow-propose-change/) – Create OpenSpec change proposal
-- [`dev-flow-implement-ticket`](.codex/skills/dev-flow-implement-ticket/) – Implement proposed change
-- [`dev-flow-verify-change`](.codex/skills/dev-flow-verify-change/) – Verify implementation matches spec
-- [`dev-flow-archive-change`](.codex/skills/dev-flow-archive-change/) – Archive completed change
+- [`dev-flow-explore-change`](.agents/skills/dev-flow-explore-change/) – Explore change requirements
+- [`dev-flow-propose-change`](.agents/skills/dev-flow-propose-change/) – Create OpenSpec change proposal
+- [`dev-flow-implement-ticket`](.agents/skills/dev-flow-implement-ticket/) – Implement proposed change
+- [`dev-flow-verify-change`](.agents/skills/dev-flow-verify-change/) – Verify implementation matches spec
+- [`dev-flow-archive-change`](.agents/skills/dev-flow-archive-change/) – Archive completed change
 
 #### Deployment & Release
 
-- [`dev-ops-deploy-prod`](.codex/skills/dev-ops-deploy-prod/) – Promote to production
-- [`dev-ops-post-merge-deploy`](.codex/skills/dev-ops-post-merge-deploy/) – Deploy after merge
-- [`dev-ops-hotfix-prod`](.codex/skills/dev-ops-hotfix-prod/) – Emergency hotfix workflow
-- [`dev-ops-rollback-prod`](.codex/skills/dev-ops-rollback-prod/) – Rollback production
+- [`dev-ops-deploy-prod`](.agents/skills/dev-ops-deploy-prod/) – Promote to production
+- [`dev-ops-post-merge-deploy`](.agents/skills/dev-ops-post-merge-deploy/) – Deploy after merge
+- [`dev-ops-hotfix-prod`](.agents/skills/dev-ops-hotfix-prod/) – Emergency hotfix workflow
+- [`dev-ops-rollback-prod`](.agents/skills/dev-ops-rollback-prod/) – Rollback production
 
 #### Infrastructure & Configuration
 
-- [`configure-dev-environment`](.codex/skills/configure-dev-environment/) – Setup local environment
-- [`configure-ci-workflows`](.codex/skills/configure-ci-workflows/) – CI workflow configuration
+- [`configure-dev-environment`](.agents/skills/configure-dev-environment/) – Setup local environment
+- [`configure-ci-workflows`](.agents/skills/configure-ci-workflows/) – CI workflow configuration
 
 #### Quality & Review
 
-- [`dev-flow-file-qa-bug`](.codex/skills/dev-flow-file-qa-bug/) – Log QA failures
-- [`dev-flow-pr-review-agent`](.codex/skills/dev-flow-pr-review-agent/) – Automated PR review
-- [`dev-flow-pr-review-feedback-loop`](.codex/skills/dev-flow-pr-review-feedback-loop/) – Handle PR feedback
-- [`e2e-testing-patterns`](.codex/skills/e2e-testing-patterns/) – Run E2E tests
+- [`dev-flow-file-qa-bug`](.agents/skills/dev-flow-file-qa-bug/) – Log QA failures
+- [`dev-flow-pr-review-agent`](.agents/skills/dev-flow-pr-review-agent/) – Automated PR review
+- [`dev-flow-pr-review-feedback-loop`](.agents/skills/dev-flow-pr-review-feedback-loop/) – Handle PR feedback
+- [`e2e-testing-patterns`](.agents/skills/e2e-testing-patterns/) – Run E2E tests
 
 #### Development Guidance
 
-- [`project-guidance-acquire`](.codex/skills/project-guidance-acquire/) – Get project insights
-- [`project-guidance-discover`](.codex/skills/project-guidance-discover/) – Explore patterns
-- [`security-best-practices`](.codex/skills/security-best-practices/) – Security patterns
+- [`project-guidance-acquire`](.agents/skills/project-guidance-acquire/) – Get project insights
+- [`project-guidance-discover`](.agents/skills/project-guidance-discover/) – Explore patterns
+- [`security-best-practices`](.agents/skills/security-best-practices/) – Security patterns
 
 #### Shared Resources
 
-- [`_shared/delivery-contract.md`](.codex/skills/_shared/delivery-contract.md) – Core delivery contract
+- [`_shared/delivery-contract.md`](.agents/skills/_shared/delivery-contract.md) – Core delivery contract
 
 **How to use**: When starting work, check if a matching skill exists. If yes, load it directly. Skill files are
       live—Copilot reads them without duplication.
@@ -143,13 +143,13 @@ automatically at session start.
       folder. Update knowledge following `knowledge/README.md#update-process` after significant events (blockers, fixes,
       deployment issues, QA findings).
 
-### 3. **Policy & Configuration** (`.codex/`)
+### 3. **Policy & Configuration** (`.template/`)
 
 | File                                                        | Purpose                                          |
 | ----------------------------------------------------------- | ------------------------------------------------ |
-| [`delivery-policy.json`](.codex/delivery-policy.json)       | Ticket key pattern, agent constraints, telemetry |
-| [`quality.local.json`](.codex/quality.local.json)           | Build, test, coverage, lint gates (do not edit)  |
-| [`client-tools.local.json`](.codex/client-tools.local.json) | Local tooling config (do not edit)               |
+| [`delivery-policy.json`](.template/delivery-policy.json)       | Ticket key pattern, agent constraints, telemetry |
+| [`quality.local.json`](.template/quality.local.json)           | Build, test, coverage, lint gates (do not edit)  |
+| [`client-tools.local.json`](.template/client-tools.local.json) | Local tooling config (do not edit)               |
 
 **How to use**: Read at session start to understand constraints. Do not edit `.local.json` files—these are local only.
 
@@ -159,7 +159,7 @@ automatically at session start.
 
 ```text
 "automatically continue this ticket"
-→ .codex/skills/dev-flow-continue-implementation
+→ .agents/skills/dev-flow-continue-implementation
 → Inspects OpenProject, Git, Gitea, Nexus, OpenSpec, QA state
 → Routes to next focused skill
 ```
@@ -183,9 +183,9 @@ Choose based on task:
 In chat, you can directly reference files:
 
 ```text
-@.codex/skills/dev-flow-implement-ticket/SKILL.md
+@.agents/skills/dev-flow-implement-ticket/SKILL.md
 @knowledge/README.md
-@.codex/delivery-policy.json
+@.template/delivery-policy.json
 ```
 
 Copilot loads the file into context without copying.
@@ -212,14 +212,14 @@ Copilot automatically discovers the matching skill based on task context.
 
 When a conversation requires multiple steps, Copilot may activate a skill-driven mode that:
 
-1. Loads the skill from `.codex/skills/`
+1. Loads the skill from `.agents/skills/`
 2. Checks knowledge for relevant context
 3. Follows the workflow sequentially
 4. Updates knowledge after significant steps
 
 ### Copilot Chat Model Configuration
 
-Copilot chat sessions can use the repository's OpenRouter runtime configuration from `.codex/client-tools.local.json`:
+Copilot chat sessions can use the repository's OpenRouter runtime configuration from `.template/client-tools.local.json`:
 
 - `openRouter.baseUrl`
 - `openRouter.apiKey`
@@ -232,7 +232,7 @@ Copilot chat sessions can use the repository's OpenRouter runtime configuration 
 
 - **Ticket Key Pattern**: `E2EPROJECT-[0-9]+` (from `delivery-policy.json`)
 - **Coverage Threshold**: 80% (from knowledge base)
-- **No Duplication**: All `.codex/` files are live references, not copies
+- **No Duplication**: All `.template/` files are live references, not copies
 - **Knowledge is Guidance**: Never override active OpenProject work package, OpenSpec, user request, or live tool output
 - **Quality Gates**: Run all gates before handoff (build, test, coverage, lint)
 - **Checkpoint-Based**: Reruns continue from existing state (branches, PRs, artifacts, QA evidence)
@@ -262,18 +262,18 @@ Before handoff for any repo change:
 
 **Product gates** (add when a stack is selected): build, unit tests, coverage, formatting, linting, package verification.
 
-See `.codex/quality.local.json` for the authoritative gate configuration when populated.
+See `.template/quality.local.json` for the authoritative gate configuration when populated.
 
 ## Session Protocol
 
 1. **Start**: Load `knowledge/README.md`
-2. **Discover**: Identify matching skill from `.codex/skills/`
+2. **Discover**: Identify matching skill from `.agents/skills/`
 3. **Execute**: Follow skill workflow, referencing docs & knowledge
 4. **Validate**: Run quality gates
 5. **Update**: Capture learnings in knowledge following `knowledge/README.md#update-process`
 6. **Handoff**: Confirm state change in OpenProject, Gitea, or deployment system
 
-## When to Consult `.codex/` Resources
+## When to Consult `.template/` Resources
 
 | Situation             | Consult                                                    |
 | --------------------- | ---------------------------------------------------------- |
@@ -288,13 +288,13 @@ See `.codex/quality.local.json` for the authoritative gate configuration when po
 
 ## Summary
 
-- ✅ All domain knowledge is in `.codex/skills/` — skills are **live references**
+- ✅ All domain knowledge is in `.agents/skills/` — skills are **live references**
 - ✅ Learnings are in `knowledge/` — knowledge is **automatically consulted**
-- ✅ Policy & gates are in `.codex/` JSON files — no duplication needed
+- ✅ Policy & gates are in `.template/` JSON files — no duplication needed
 - ✅ Start with `knowledge/README.md` each session
-- ✅ Use `@knowledge/` and `@.codex/` references to load files on demand
-- ✅ Never copy or recreate `.codex/` or `knowledge/` content — reference it directly
+- ✅ Use `@knowledge/` and `@.template/` references to load files on demand
+- ✅ Never copy or recreate `.template/` or `knowledge/` content — reference it directly
 - ✅ Update knowledge after significant work (use `knowledge/README.md` as guide)
 
 For detailed delivery workflow, start with
-[`.codex/skills/_shared/delivery-contract.md`](.codex/skills/_shared/delivery-contract.md).
+[`.agents/skills/_shared/delivery-contract.md`](.agents/skills/_shared/delivery-contract.md).

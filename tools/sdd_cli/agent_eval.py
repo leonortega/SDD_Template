@@ -26,8 +26,8 @@ def run_eval(root: Path | None = None) -> dict[str, Any]:
     failed run is loud instead of a false "0 tests passed" success.
     """
     base = root or REPO_ROOT
-    config_path = base / ".codex" / "agent-evals" / "promptfooconfig.yaml"
-    results_path = base / ".codex" / "agent-evals" / "results.tmp.json"
+    config_path = base / ".agents" / "agent-evals" / "promptfooconfig.yaml"
+    results_path = base / ".agents" / "agent-evals" / "results.tmp.json"
 
     if not config_path.exists():
         raise CliError(f"Eval config not found: {config_path}")
@@ -50,7 +50,7 @@ def run_eval(root: Path | None = None) -> dict[str, Any]:
             "npx (Node.js package runner) is not available. Install Node.js "
             "LTS (includes npm/npx) from https://nodejs.org/ and re-run. "
             "Without npx you can still verify every eval case with the "
-            "deterministic Python provider — see .codex/agent-evals/README.md."
+            "deterministic Python provider — see .agents/agent-evals/README.md."
         ) from err
 
     # Run eval without cache
@@ -102,7 +102,7 @@ def run_eval(root: Path | None = None) -> dict[str, Any]:
             f"stdout: {stdout.strip()[:500] or '(empty)'}\n"
             f"stderr: {stderr.strip()[:500] or '(empty)'}\n"
             "If this is the Windows npm cache EBUSY/EPERM issue, see the "
-            "workaround in .codex/agent-evals/README.md."
+            "workaround in .agents/agent-evals/README.md."
         )
 
     try:
@@ -192,7 +192,7 @@ def show_view(root: Path | None = None) -> int:
     except FileNotFoundError:
         print(
             "promptfoo not found. Install with: npm install -g promptfoo. "
-            "Deterministic fallback documented in .codex/agent-evals/README.md."
+            "Deterministic fallback documented in .agents/agent-evals/README.md."
         )
         return 1
 

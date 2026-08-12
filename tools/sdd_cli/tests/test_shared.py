@@ -138,7 +138,7 @@ class ProfileAuditFindingsTests(unittest.TestCase):
     def test_returns_warning_when_profile_missing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / ".codex").mkdir()
+            (root / ".template").mkdir()
             findings = profile_audit_findings(root)
             keys = {item["key"] for item in findings}
             self.assertIn("missing.profile", keys)
@@ -147,7 +147,7 @@ class ProfileAuditFindingsTests(unittest.TestCase):
     def test_returns_no_findings_when_both_exist(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            codex = root / ".codex"
+            codex = root / ".template"
             codex.mkdir()
             (codex / "project-profile.json").write_text("{}", encoding="utf-8")
             (codex / "project-profile.schema.json").write_text("{}", encoding="utf-8")
@@ -157,7 +157,7 @@ class ProfileAuditFindingsTests(unittest.TestCase):
     def test_returns_warning_when_schema_missing_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            codex = root / ".codex"
+            codex = root / ".template"
             codex.mkdir()
             (codex / "project-profile.json").write_text("{}", encoding="utf-8")
             findings = profile_audit_findings(root)
@@ -171,7 +171,7 @@ class ClientToolsProjectIdentifierFindingsTests(unittest.TestCase):
 
     @staticmethod
     def _write(root: Path, openproject: dict) -> None:
-        codex = root / ".codex"
+        codex = root / ".template"
         codex.mkdir(parents=True, exist_ok=True)
         (codex / "client-tools.local.json").write_text(
             json.dumps({"openProject": openproject}), encoding="utf-8"
@@ -210,7 +210,7 @@ class ClientToolsProjectIdentifierFindingsTests(unittest.TestCase):
     def test_non_dict_openproject_no_findings(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            codex = root / ".codex"
+            codex = root / ".template"
             codex.mkdir(parents=True)
             (codex / "client-tools.local.json").write_text(
                 '{"openProject": "not-a-dict"}', encoding="utf-8"

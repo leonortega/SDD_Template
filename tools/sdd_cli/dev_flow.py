@@ -45,7 +45,7 @@ def ensure_delivery_context(
     root: Path, values: dict[str, Any], dry_run: bool = False
 ) -> dict[str, Any]:
     """Create/update ticket delivery context lock."""
-    path = root / ".codex" / "delivery-context.local.json"
+    path = root / ".template" / "delivery-context.local.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     existing = read_json(path, optional=True) if path.exists() else {}
     ticket_key = values.get("ticketKey")
@@ -57,7 +57,7 @@ def ensure_delivery_context(
         and not replace_existing
     ):
         raise CliError(
-            f"Existing .codex/delivery-context.local.json points to '{existing.get('ticketKey')}'."
+            f"Existing .template/delivery-context.local.json points to '{existing.get('ticketKey')}'."
         )
     data = {
         "ticketKey": ticket_key,
@@ -76,7 +76,7 @@ def ensure_delivery_context(
         "path": str(path),
         "actions": [
             {
-                "path": ".codex/delivery-context.local.json",
+                "path": ".template/delivery-context.local.json",
                 "key": "ensure-delivery-context",
                 "severity": "info",
                 "message": f"Create or update ticket context lock for {ticket_key}.",
@@ -378,7 +378,7 @@ def audit_skill_contracts(
 ) -> dict[str, Any]:
     """Audit SKILL.md files for required sections and terms."""
     profile_findings = profile_audit_findings(root)
-    skill_root = root / ".codex" / "skills"
+    skill_root = root / ".agents" / "skills"
     results: list[dict[str, Any]] = []
     # Skills exempt from the repo contract audit. Repo-owned support/flow skills
     # (caveman, ponytail, grill-*, domain-modeling) stay exempt because they are
@@ -455,7 +455,7 @@ def audit_skill_contracts(
         "Failure Rules",
     ]
     required_terms = [
-        ".codex/skills/_shared/delivery-contract.md",
+        ".agents/skills/_shared/delivery-contract.md",
         "docs/conventions/context-management.md",
         "ticket",
         "validation",
@@ -927,11 +927,11 @@ def run_dev_flow(args: list[str]) -> int:
             root, _parse_values(options), dry_run
         ),
         "validate-ticket-lock": lambda: validate_ticket_lock(
-            Path(options.get("path", root / ".codex" / "delivery-context.local.json")),
+            Path(options.get("path", root / ".template" / "delivery-context.local.json")),
             {k[4:]: v for k, v in options.items() if k.startswith("opt-")},
         ),
         "validate-deployment-lane": lambda: validate_deployment_lane(
-            Path(options.get("path", root / ".codex" / "parallel-delivery.local.json")),
+            Path(options.get("path", root / ".template" / "parallel-delivery.local.json")),
             {k[4:]: v for k, v in options.items() if k.startswith("opt-")},
         ),
         "validate-parallel-dry-run": lambda: validate_parallel_delivery_dry_run(

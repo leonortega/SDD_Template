@@ -28,7 +28,7 @@ def _write_client_tools(
         gitea["reviewers"] = reviewers
     if provisioning_users is not None:
         gitea["provisioning"] = {"users": provisioning_users}
-    codex = root / ".codex"
+    codex = root / ".template"
     codex.mkdir(parents=True, exist_ok=True)
     (codex / "client-tools.local.json").write_text(
         json.dumps({"gitea": gitea}), encoding="utf-8"

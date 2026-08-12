@@ -7,7 +7,7 @@ re-derived the reviewer list and hand-rolled the REST calls, so a PR could
 slip through with no reviewers requested. This module makes the operation a
 single CLI command (`gitea request-reviewers`) that:
 
-1. Reads the Gitea connection from `.codex/client-tools.local.json`
+1. Reads the Gitea connection from `.template/client-tools.local.json`
    (`gitea.baseUrl`, `gitea.apiToken`, `gitea.owner`, `gitea.repo`).
 2. Resolves the reviewer list in priority order:
    - `gitea.reviewers` (explicit list in client-tools) — used as-is after
@@ -44,13 +44,13 @@ _PLACEHOLDER_MARKERS = ("replace-with", "changeme", "your-")
 
 def _load_gitea_config(root: Path) -> tuple[dict[str, Any], str | None]:
     """Load the gitea client config; returns (gitea_dict, error_or_None)."""
-    client = read_json(root / ".codex" / "client-tools.local.json", optional=True)
+    client = read_json(root / ".template" / "client-tools.local.json", optional=True)
     gitea = (client or {}).get("gitea", {}) if client else {}
     token = str(gitea.get("apiToken", "") or "")
     if not token or any(m in token.lower() for m in _PLACEHOLDER_MARKERS):
         return gitea, (
             "Gitea apiToken is missing or a placeholder in "
-            ".codex/client-tools.local.json — run setup-lab provisioning first."
+            ".template/client-tools.local.json — run setup-lab provisioning first."
         )
     return gitea, None
 

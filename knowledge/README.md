@@ -145,7 +145,7 @@ It maps the task summary, changed files, and test results to the exact candidate
    no new `knowledge/` entry is minted for a spec-only change.
    - Authoritative architecture, setup, development, deployment, or context policy belongs in `docs/` (use the
    `docs-knowledge-maintenance` skill for AI-updatable docs).
-   - Enforceable automation behavior belongs in `.codex/skills/_shared/delivery-contract.md` plus affected skills and
+   - Enforceable automation behavior belongs in `.agents/skills/_shared/delivery-contract.md` plus affected skills and
    tests.
    - Reusable but non-authoritative workflow knowledge belongs in `knowledge/`.
 2. Verify the source against current files, command output, OpenProject, Gitea, Nexus, health checks, QA evidence, or
