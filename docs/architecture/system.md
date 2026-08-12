@@ -36,8 +36,12 @@ experiments.
 observability.
 - `.gitea/workflows/` contains placeholder workflows until a new product stack is added.
 - `tools/` contains delivery helper tooling.
+- `apps/` holds one self-contained folder per deployable application (`src/`, `test/`, `deploy/`, `Dockerfile`,
+  `app.json`); `packages/` holds shared libraries consumed by apps. See ADR-0002.
 
-The `src/` and `test/` product trees are intentionally absent.
+The product trees (`apps/`, `packages/`) are intentionally absent in the shell: the scaffold
+(`ScaffoldProjectFiles`) creates the `apps/` + `packages/` containers and one `apps/example/` app skeleton once a
+stack is selected — never a root `src/`/`test/` pair.
 
 ## Sources Of Truth
 
@@ -80,4 +84,5 @@ project code, secrets, local overlays, and product OpenSpec changes untouched.
 
 Deployment providers remain configured as shell capabilities. No app target is currently deployable.
 `infra/deployment/apps.json` is empty until a new product adds concrete artifacts, health checks, and environment
-configuration.
+configuration. Each app's `projectPath` points at `apps/<appId>/` (ADR-0002), making that folder the Docker build
+context; the env overlays in `infra/k8s/overlays/{dev,qa,prod}` compose the per-app `apps/<appId>/deploy/` manifests.

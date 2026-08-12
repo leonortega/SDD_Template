@@ -28,9 +28,10 @@ component/module, not per AC × task — one test file per component/module). Se
 examples.
 
 4. **Write tests for ALL acceptance criteria and tasks** before writing any product code:
-   - **Unit tests** in `test/unit/` (one file per component)
-   - **Integration tests** in `test/integration/` (one file per endpoint/feature, covers multiple ACs)
-   - **Architecture tests** in `test/architecture/` as a **single project-wide file**
+   - **Unit tests** in `apps/<appId>/test/unit/` (one file per component)
+   - **Integration tests** in `apps/<appId>/test/integration/` (one file per endpoint/feature, covers multiple ACs)
+   - **Architecture tests** in `apps/<appId>/test/architecture/` as a **single project-wide file** (ADR-0002 per-app
+   layout — never a shared root `test/`)
 
 5. **Confirm every test is RED** — run the test suite and verify all new tests fail as expected (no product code yet =
 tests cannot pass). If a test passes before product code exists, it's a false

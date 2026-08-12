@@ -17,6 +17,27 @@ default, with Docker Desktop's built-in K8s as a fallback.
 No app target is currently deployable. Product apps will be added through `infra/deployment/apps.json` when the product
 stack is defined.
 
+### Product Layout (ADR-0002)
+
+Product code lives under **`apps/<appId>/`** — one self-contained folder per deployable app — with shared libraries
+under **`packages/`**:
+
+```text
+apps/<appId>/                  # Deployable app (e.g. web-storefront, api-orders)
+  src/                        # Application source
+  test/                       # unit/, integration/, e2e/, architecture/
+  deploy/                     # Per-app Kubernetes manifests (Deployment, Service)
+  Dockerfile                  # Generated per stack by dev-flow-scaffold-project
+  .dockerignore
+  app.json                    # appId, role, healthPath, templateVersion marker
+packages/                     # Shared libraries consumed by apps (auth, UI kit, API client, domain)
+```
+
+The shell (`.agents/`, `.template/`, `infra/`, `tools/`, `docs/`, `knowledge/`, `openspec/`) stays at the root.
+`apps.json → projectPath` points at each app folder, so the Docker build context is `apps/<appId>/` — never the repo
+root. The deployable-changes gate matches `(^|/)(src|test)/` at any depth, so `apps/<appId>/src/...` triggers deploys
+with no gate change.
+
 ## Architecture Overview
 
 ```text
@@ -64,34 +85,28 @@ Three environments, each a separate K8s namespace:
 | **qa**      | `sdd-qa`   | 2        | `workflow_dispatch` with env=qa   |
 | **prod**    | `sdd-prod` | 3        | `workflow_dispatch` with env=prod |
 
-Each environment uses a **Kustomize overlay** that inherits from a shared base:
+Each environment uses a **Kustomize overlay** that **composes the per-app manifests** from `apps/<appId>/deploy/`
+(ADR-0002) plus environment-level patches:
 
 ```text
+apps/<appId>/deploy/             # Per-app manifests (Deployment, Service) — one folder per app (ADR-0002)
 infra/k8s/
-├── base/                        # Shared manifests
-│   ├── kustomization.yaml
-│   ├── deployment.yaml          # Deployment with ContainerPort 80
-│   └── service.yaml             # NodePort type
-├── overlays/
+├── overlays/                    # Env entry point: one kustomize build/apply per environment
 │   ├── dev/
-│   │   ├── kustomization.yaml   # images.newTag: latest
+│   │   ├── kustomization.yaml   # resources: ../../../../apps/<appId>/deploy (relative refs)
 │   │   └── service-patch.yaml   # dev nodePorts (30080/30500)
 │   ├── qa/
 │   │   ├── kustomization.yaml
 │   │   └── service-patch.yaml   # QA nodePorts (31080/31500)
-│   ├── prod/
-│   │   ├── kustomization.yaml
-│   │   └── service-patch.yaml   # PROD nodePorts (32080/32500)
-│   │   └── kustomization.yaml
 │   └── prod/
-│       └── kustomization.yaml
-└── Dockerfile                   # Per-app multi-stage build
+│       ├── kustomization.yaml
+│       └── service-patch.yaml   # PROD nodePorts (32080/32500)
 ```
 
-**Note:** The base `namespace.yaml` and overlay `config-patch.yaml` files were removed to fix a Kustomize build failure
-(unresolved `${COMPONENT_NAME}` placeholders blocked `kustomize build`). Namespaces are created by the CI workflow via
-`kubectl create namespace`, and image tags are set by `kustomize edit set image`. If you need per-overlay environment
-variables, add patches targeting actual deployment names (not placeholder variables).
+**Note:** The old `infra/k8s/base/` directory no longer exists — per-app manifests were migrated into
+`apps/<appId>/deploy/` (ADR-0002) and the env overlays compose them via relative Kustomize references. Namespaces are
+created by the CI workflow via `kubectl create namespace`, and image tags are set by `kustomize edit set image`. If you
+need per-overlay environment variables, add patches targeting actual deployment names (not placeholder variables).
 
 ### Service Type: NodePort
 
@@ -147,14 +162,15 @@ python -m tools.sdd_cli environment-lab scaffold-k8s
 
 Generates per app:
 
-- `frontend/Dockerfile` — multi-stage (node build → nginx serve)
-- `frontend/.dockerignore` — excludes node_modules, .git, .env
-- `frontend/nginx.conf` — SPA routing + /health endpoint
+- `apps/<appId>/Dockerfile` — multi-stage (node build → nginx serve)
+- `apps/<appId>/.dockerignore` — excludes node_modules, .git, .env
+- `apps/<appId>/nginx.conf` — SPA routing + /health endpoint
+- `apps/<appId>/deploy/` — per-app K8s manifests (ADR-0002), composed into the env overlays
 - `infra/k8s/deploy.yaml` — single envsubst manifest (Namespace, Deployment, Service)
 
-**Note:** The CI workflow uses a Kustomize overlay structure (`infra/k8s/base/` + `infra/k8s/overlays/`) instead of the
-envsubst manifest. The Kustomize overlays must be created/updated separately from `scaffold-k8s`. See the
-`dev-ops-configure-k8s` skill for overlay setup guidance.
+**Note:** The CI workflow uses a Kustomize overlay structure (`infra/k8s/overlays/` composing the per-app
+`apps/<appId>/deploy/` manifests, ADR-0002) instead of the envsubst manifest. The Kustomize overlays must be
+created/updated separately from `scaffold-k8s`. See the `dev-ops-configure-k8s` skill for overlay setup guidance.
 
 ### setup-kind-cluster
 
@@ -231,37 +247,53 @@ Checkout → Determine Env → Check Changed Paths (src/test) → Build Docker I
 **2. Determine Environment** — `dev` on a PR merge, or user-selected env on workflow_dispatch.
 
 **2a. Check for Deployable Changes** — deploys in **any** environment run only when the change set touches a `src/`
-or `test/` folder at any depth (e.g. `src/...`, `frontend/src/...`, `backend/test/...`). For PR-merge
-auto-deploys and ref-head `workflow_dispatch` runs (no `artifact_commit_sha` input) the change set is the deploy
-commit's **first-parent diff** (the pre-merge dev head vs. the merge commit, or the dispatched commit vs. its parent).
-The gate never uses `pull_request.base.sha` for PR merges: after the merge that SHA points at the base branch head —
-the merge commit itself — so diffing it against the merge commit yields an empty change set and wrongly skips the
-deploy. The depth-2 checkout makes the first parent available. Docs, infra, and workflow-only changes skip the entire
-deploy pipeline (the run stays green with the deploy steps skipped).
+or `test/` folder at any depth (e.g. `apps/<appId>/src/...`, `apps/<appId>/test/...`), or a `packages/<pkg>/**` path
+whose package an app declares in `apps.json → dependsOn` (shared-code change → rebuild the dependent apps; a package
+with no dependents does **not** deploy). For PR-merge auto-deploys and ref-head `workflow_dispatch` runs (no
+`artifact_commit_sha` input) the change set is the deploy commit's **first-parent diff** (the pre-merge dev head vs. the
+merge commit, or the dispatched commit vs. its parent). The gate never uses `pull_request.base.sha` for PR merges:
+after the merge that SHA points at the base branch head — the merge commit itself — so diffing it against the merge
+commit yields an empty change set and wrongly skips the deploy. The depth-2 checkout makes the first parent available.
+Docs, infra, and workflow-only changes skip the entire deploy pipeline (the run stays green with the deploy steps
+skipped).
+
+The gate also emits **`AFFECTED_APPS`** (ADR-0002 app-aware build): the comma-separated appIds to build/deploy on
+PR-merge auto-deploys (`apps/<appId>/src|test` changes plus the dependents of changed packages), `ALL` for
+unconditional runs (pinned dispatch / fails-open → every app is built and deployed, the pre-filter behavior), or empty
+when the change is deployable but no app resolves (e.g. a change under the scaffold placeholder `apps/example/`) —
+build/apply then run zero times and the pipeline stays green.
 
 **Exception (operator override):** a `workflow_dispatch` that supplies an explicit `artifact_commit_sha` pins a
 specific verified commit to deploy (QA approval / PROD promotion) and is **unconditionally deployable** — the
 src/test diff gate does not apply, even when the pinned commit's own delta is infra-only (e.g. a kustomize overlay
 fix). PROD still runs its artifact-verification (`container-images.json` + registry) and `/health` gates.
 
-**3. Build and Push Docker Images** — For each app in `apps.json` (**skipped for PROD** — PROD reuses the QA-approved
-images pushed by the DEV/QA pipeline for the pinned artifact commit):
+**3. Build and Push Docker Images** — For each app in `apps.json` that `AFFECTED_APPS` marks affected (**all apps** on
+unconditional dispatch / `ALL`; only the affected subset on PR-merge auto-deploys). **Skipped for PROD** — PROD reuses
+the QA-approved images pushed by the DEV/QA pipeline for the pinned artifact commit:
 
 - Probes `http://host.docker.internal:5001/v2/` — if the registry is unreachable, the push is **skipped**
 - Logs into Nexus Docker registry (`host.docker.internal:5001`) — plain-HTTP push requires `host.docker.internal:5001`
 in Docker Desktop **insecure registries**
-- Runs `docker build` using the app's `Dockerfile`
+- Runs `docker build -f {projectPath}/Dockerfile {projectPath}` — the build context is the app folder from
+  `apps.json → projectPath` (e.g. `apps/<appId>`), never the repo root
 - Pushes `{appId}:{commitSha}` and `{appId}:latest` tags (only when login succeeded)
 - **Loads images into the kind cluster** via `kind load docker-image` — this is the actual path used to get images to
 the cluster (kind's containerd is separate from host Docker; without this the pods hit `ImagePullBackOff`)
 - Prunes old local/kind images (keeps newest commit tags per app) so the runner's image store does not grow unbounded
 
-**4. Deploy to K8s** — For the target environment:
+**4. Deploy to K8s** — For the target environment (ADR-0002 app-aware; only `AFFECTED_APPS` on filtered runs, all
+apps on `ALL`):
 
-- Reads `apps.json` to get app list
-- Runs `kustomize edit set image` to set the commit SHA tag
-- Runs `kustomize build . | kubectl apply -f -` (per-env overlays patch unique cluster-scoped nodePorts)
-- Waits for rollout of each deployment
+- Reads `apps.json` to get app list, filtered to the affected apps
+- Runs `kustomize edit set image` to set the commit SHA tag **for the affected apps only** (unaffected apps keep
+their committed `:latest` entry and are never re-tagged)
+- Runs `kustomize build .` and, on filtered runs, **drops the unaffected apps' resources** from the rendered
+manifest — so `kubectl apply` never re-touches them (applying `:latest` tags would trigger an unwanted rollout).
+  When the filter leaves nothing, apply is skipped entirely
+- Deletes the affected Deployments (selector immutability), then `kubectl apply -f -` (per-env overlays patch unique
+cluster-scoped nodePorts)
+- Waits for rollout of each affected deployment
 
 **5. Discover Environment URLs** — Single Python script:
 
@@ -399,10 +431,10 @@ credentials (`NEXUS_USERNAME`/`NEXUS_PASSWORD`)
 
 ### Image Strategy
 
-| Mode      | Build Command                               | Registry             | Image Tag             |
-| --------- | ------------------------------------------- | -------------------- | --------------------- |
-| Local dev | `docker build -t frontend:latest frontend/` | None (shared daemon) | `frontend:latest`     |
-| CI build  | `docker build` + `docker push`              | Nexus :5001          | `{appId}:{commitSha}` |
+| Mode      | Build Command                                             | Registry             | Image Tag             |
+| --------- | --------------------------------------------------------- | -------------------- | --------------------- |
+| Local dev | `docker build -t <appId>:latest apps/<appId>/`              | None (shared daemon) | `<appId>:latest`       |
+| CI build  | `docker build -f apps/<appId>/Dockerfile apps/<appId>` + push | Nexus :5001          | `{appId}:{commitSha}` |
 
 ## Accessing Deployed Apps
 
@@ -623,11 +655,14 @@ these via the Infinity datasource (using `source: "inline"` to avoid the URL bug
 
 ## Adding a New App
 
-1. Add an entry to `infra/deployment/apps.json` with `appId`, `projectPath`, `role`, `healthPath`
-2. Run `scaffold-k8s` to generate the Dockerfile and K8s manifests
-3. Build locally: `docker build -f {projectPath}/Dockerfile {projectPath}`
+1. Add an entry to `infra/deployment/apps.json` with `appId`, `projectPath` (`apps/<appId>`), `role`, `healthPath`;
+   optionally add `dependsOn: ["<package>"]` to list the `packages/` libraries the app consumes — a
+   `packages/<package>/**` change then rebuilds and redeploys this app automatically
+2. Run `scaffold-k8s` to generate the K8s manifests; stack-specific files (Dockerfile, package manifests, test
+   config) are AI-generated per stack by `dev-flow-scaffold-project` — never from a fixed template list
+3. Build locally: `docker build -f apps/<appId>/Dockerfile apps/<appId>`
 4. Open a PR to `dev` and merge it — the CI pipeline builds and deploys automatically on the PR merge (direct pushes
-to `dev` never deploy).
+to `dev` never deploy). A change under `apps/<appId>/src` or `apps/<appId>/test` triggers the deployable-changes gate.
 
 ## Known Limitations
 
@@ -638,8 +673,9 @@ recreate it.
 - **Fixed nodePorts**: NodePorts are fixed per environment (canonical in `infra/deployment/ports.json`); host access
 goes through kind `extraPortMappings`. Run `setup-k8s-access` after each deploy to confirm URLs.
 - **Runner mounts**: The Gitea Actions runner needs host Docker socket and kubeconfig mounted.
-- **Single-app manifests**: `scaffold-k8s` generates manifests for the first app in `apps.json` only. Extend manually
-for multi-app.
+- **Per-app manifest migration complete**: per ADR-0002, per-app Deployment/Service manifests now live in
+  `apps/<appId>/deploy/` and are composed into the env overlays via relative Kustomize references — the shared
+  `infra/k8s/base/` directory is gone. `scaffold-k8s` generates the per-app `deploy/` folders and composed overlays.
 - **AI-driven Dockerfiles**: `scaffold-k8s` no longer generates stack-specific Dockerfiles/nginx — those are delegated
 to the `dev-flow-scaffold-project` skill, which resolves what to generate from the selected stack (never a fixed
 template list). `scaffold-k8s` only emits deterministic Kustomize manifests.

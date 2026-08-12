@@ -112,10 +112,10 @@ Before starting, confirm:
 3. Run `openspec list --json` to identify the active OpenSpec change matching the ticket key
 4. Read the OpenSpec change's `tasks.md` to enumerate every acceptance criterion
 5. Map each criterion to the committed Playwright test that covers it:
-   - `test/e2e/login-flow.spec.ts` covers: landing page rendering, navigation, form validation, login success/failure,
-   logout, authenticated redirects, forgot password flow
-   - `test/e2e/responsive.spec.ts` covers: mobile/tablet/desktop viewport rendering, responsive layout, hamburger menu,
-   KPI grid layout
+   - `apps/<appId>/test/e2e/login-flow.spec.ts` covers: landing page rendering, navigation, form validation, login
+   success/failure, logout, authenticated redirects, forgot password flow
+   - `apps/<appId>/test/e2e/responsive.spec.ts` covers: mobile/tablet/desktop viewport rendering, responsive layout,
+   hamburger menu, KPI grid layout
 6. If any criterion has no committed test coverage, mark it blocked and stop — do not proceed to testing
 
 ### Step 2 — Run Playwright E2E Tests Against QA

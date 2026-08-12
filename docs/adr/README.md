@@ -8,6 +8,7 @@ human owner.
 | ADR                                                        | Decision                                   |
 | ---------------------------------------------------------- | ------------------------------------------ |
 | [ADR-0001](ADR-0001-repository-decisions.md)               | Repository remains an SDLC shell            |
+| [ADR-0002](ADR-0002-product-layout-and-deployment.md)      | Product layout (`apps/` + `packages/`) and deployment model |
 
 ## Template
 

@@ -27,12 +27,13 @@ and tasks for the same component. One integration test file covers an entire
 endpoint or feature boundary. Architecture tests are a single project-wide file that validates the entire change.
 2. **Order:** Tests MUST be written BEFORE product code (TDD RED phase). No product code is allowed until all three
 levels are written and confirmed RED.
-3. **Folders (authority level 5):** **all** tests go under a single `test/` directory, one subfolder per test type.
-   This is the only allowed layout — never scatter tests in `tests/`, `__tests__/`, or co-located files:
-   - `test/unit/` — unit tests
-   - `test/integration/` — integration tests
-   - `test/e2e/` — end-to-end / browser tests (Playwright, Cypress, ...)
-   - `test/architecture/` — architecture tests (single file per change)
+3. **Folders (authority level 5):** **all** tests go under a `test/` directory **per app** (ADR-0002 layout — one
+   self-contained app folder per deployable unit, never a shared root `test/`), one subfolder per test type. This is the
+   only allowed layout — never scatter tests in `tests/`, `__tests__/`, or co-located files:
+   - `apps/<appId>/test/unit/` — unit tests
+   - `apps/<appId>/test/integration/` — integration tests
+   - `apps/<appId>/test/e2e/` — end-to-end / browser tests (Playwright, Cypress, ...)
+   - `apps/<appId>/test/architecture/` — architecture tests (single file per change)
 4. **Framework:** Use the stack's test framework as declared in `project-profile.json → stack.testFrameworks` or
 detected from the project's build configuration (Vitest, pytest, xUnit, Jest, etc.).
 5. **Coverage:** Unit and integration tests collectively must meet the `coverage.minimumPercent` threshold from
@@ -50,9 +51,9 @@ its corresponding test level. The map documents coverage and prevents gaps.
 
 | AC / Task | Unit Test | Integration Test | Architecture Test |
 |-----------|-----------|-----------------|-------------------|
-| AC-1: User can register | `test/unit/auth.RegisterUser.test.ts` | `test/integration/auth.register.test.ts` | `test/architecture/layering.test.ts` |
+| AC-1: User can register | `apps/auth/test/unit/auth.RegisterUser.test.ts` | `apps/auth/test/integration/auth.register.test.ts` | `apps/auth/test/architecture/layering.test.ts` |
 | AC-2: Duplicate email rejected | Same file (same component) | Same file (same endpoint) | Same file |
-| Task-3: Add password hashing | `test/unit/auth.passwordHash.test.ts` | — | Same file |
+| Task-3: Add password hashing | `apps/auth/test/unit/auth.passwordHash.test.ts` | — | Same file |
 
 ---
 

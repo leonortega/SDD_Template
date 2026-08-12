@@ -152,6 +152,52 @@ class TestRunStackTests:
         assert "--coverage" in calls[2].args[0]
         assert Path(calls[2].kwargs["cwd"]) == src
 
+    def test_vitest_runs_in_apps_package_root(self, tmp_path: Path) -> None:
+        """ADR-0002 layout: npm ci + vitest run from apps/<appId>."""
+        _make_profile(tmp_path, ["vitest"])
+        app = tmp_path / "apps" / "web-storefront"
+        app.mkdir(parents=True, exist_ok=True)
+        (app / "package-lock.json").write_text("{}", encoding="utf-8")
+        (app / "package.json").write_text("{}", encoding="utf-8")
+        (app / "src").mkdir(parents=True, exist_ok=True)
+        (app / "src" / "App.test.tsx").write_text("", encoding="utf-8")
+
+        with patch(
+            "tools.sdd_cli.stack_tests.subprocess.call", return_value=0
+        ) as mock_call:
+            result = stack_tests.run_stack_tests(tmp_path, dry_run=False)
+
+        assert result["valid"] is True
+        assert mock_call.call_count == 3  # npm ci + vitest run + vitest coverage
+        calls = mock_call.call_args_list
+        # Commands run from apps/web-storefront (the resolved package root).
+        assert Path(calls[0].kwargs["cwd"]) == app
+        assert calls[0].args[0][-1] == "ci"
+        vitest_cmd = calls[1].args[0]
+        assert "vitest" in vitest_cmd
+        assert "test/unit" not in vitest_cmd  # config-driven discovery
+        assert Path(calls[1].kwargs["cwd"]) == app
+        assert "--coverage" in calls[2].args[0]
+        assert Path(calls[2].kwargs["cwd"]) == app
+
+    def test_vitest_runs_in_apps_src_package_root(self, tmp_path: Path) -> None:
+        """ADR-0002 colocated lockfile: npm ci + vitest run from apps/<appId>/src."""
+        _make_profile(tmp_path, ["vitest"])
+        app_src = tmp_path / "apps" / "api-orders" / "src"
+        app_src.mkdir(parents=True, exist_ok=True)
+        (app_src / "package-lock.json").write_text("{}", encoding="utf-8")
+        (app_src / "package.json").write_text("{}", encoding="utf-8")
+
+        with patch(
+            "tools.sdd_cli.stack_tests.subprocess.call", return_value=0
+        ) as mock_call:
+            result = stack_tests.run_stack_tests(tmp_path, dry_run=False)
+
+        assert result["valid"] is True
+        calls = mock_call.call_args_list
+        assert Path(calls[0].kwargs["cwd"]) == app_src
+        assert Path(calls[1].kwargs["cwd"]) == app_src
+
     def test_vitest_canonical_dirs_resolved_inside_package_root(
         self, tmp_path: Path
     ) -> None:

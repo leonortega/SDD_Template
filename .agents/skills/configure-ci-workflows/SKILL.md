@@ -31,7 +31,10 @@ Before generating workflows, read:
 1. **Project profile** — use the merged profile (reads `project-profile.json` first, falls back to
 `project-profile.example.json`, merges with `project-profile.local.json`). Get stack: frontend,
 backend, database values and provider selections.
-2. `infra/deployment/apps.json` — for app topology (appId, projectPath, role, artifactName, healthPath, deployOrder)
+2. `infra/deployment/apps.json` — for app topology (appId, projectPath, role, artifactName, healthPath,
+   deployOrder, optional dependsOn). `dependsOn: ["<package>"]` declares the `packages/` libraries an app
+   consumes — a `packages/<package>/**` change then rebuilds/redeploys that app (the deployable-changes gate
+   resolves `AFFECTED_APPS` from these, see `package-deploy.yml`).
 3. `.template/client-tools.local.json` — for Gitea base URL, Nexus base URL and repository
 
 Also follow `.agents/skills/_shared/skill-startup.md` for the standard startup sequence, then read
@@ -168,10 +171,14 @@ jobs:
           git fetch --depth 2 origin "${{ steps.sha.outputs.SHA }}"
           git checkout --force FETCH_HEAD
 
-      # ── Deployable-changes gate (src/test folders only) ──
-      # Deploy in ANY environment only when the change set touches a src/ or
-      # test/ folder at any depth. Docs/infra/workflow-only changes
-      # must not deploy. Gate every deploy-pipeline step with:
+      # ── Deployable-changes gate (app-aware, ADR-0002) ──
+      # Deploy in ANY environment only when the change set touches an
+      # apps/<appId>/src|test path at any depth, or a packages/<pkg>/** path
+      # whose package an app declares in apps.json `dependsOn`. Docs, infra,
+      # and workflow-only changes must not deploy. Also emits AFFECTED_APPS
+      # (comma-separated appIds to build/deploy; "ALL" for unconditional
+      # runs) so downstream build/deploy steps act only on changed apps.
+      # Gate every deploy-pipeline step with:
       #   if: steps.changes.outputs.deployable == 'true'
       - name: Check for deployable changes (src/ or test/ folders)
         id: changes
@@ -185,9 +192,11 @@ jobs:
 
           # Operator override: an explicit artifact_commit_sha dispatch pins a
           # specific verified commit to deploy (QA/PROD promotion) — deploy it
-          # unconditionally, without the src/test diff gate.
+          # unconditionally, without the src/test diff gate, and mark every
+          # app affected.
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${PINNED_SHA}" ]; then
             echo "DEPLOYABLE=true" >> "$GITHUB_OUTPUT"
+            echo "AFFECTED_APPS=ALL" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -199,6 +208,7 @@ jobs:
 
           if [ -z "${BASE_SHA}" ]; then
             echo "DEPLOYABLE=true" >> "$GITHUB_OUTPUT"
+            echo "AFFECTED_APPS=ALL" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -209,6 +219,7 @@ jobs:
           DIFF_STATUS="${DIFF_STATUS:-0}"
           if [ "${DIFF_STATUS}" -gt 1 ]; then
             echo "DEPLOYABLE=true" >> "$GITHUB_OUTPUT"
+            echo "AFFECTED_APPS=ALL" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           if [ -z "${CHANGED}" ]; then
@@ -216,8 +227,49 @@ jobs:
             exit 0
           fi
 
-          COUNT=$(echo "${CHANGED}" | grep -cE '(^|/)(src|test)/' || true)
-          if [ "${COUNT}" -gt 0 ]; then
+          # App-aware mapping: apps/<appId>/src|test -> that app; a
+          # packages/<pkg>/** change -> every app that declares the package in
+          # apps.json `dependsOn`. packages/** is EXCLUDED from the generic
+          # src/test count (an orphan package must not deploy by itself).
+          export CHANGED_LIST="${CHANGED}"
+          python3 << 'PYEOF'
+          import json, os, re
+
+          changed = os.environ.get("CHANGED_LIST", "").splitlines()
+          apps = []
+          try:
+              with open("infra/deployment/apps.json", encoding="utf-8") as f:
+                  apps = json.load(f).get("apps", [])
+          except (OSError, ValueError):
+              print("WARNING: infra/deployment/apps.json missing or invalid")
+          apps_by_id = {a["appId"]: a for a in apps}
+          affected = []
+          packages_deployable = False
+          for path in changed:
+              m = re.match(r"^apps/([^/]+)/(src|test)/", path)
+              if m:
+                  if m.group(1) not in affected:
+                      affected.append(m.group(1))
+                  continue
+              m = re.match(r"^packages/([^/]+)/", path)
+              if m:
+                  for app_id, app in apps_by_id.items():
+                      if m.group(1) in (app.get("dependsOn") or []):
+                          packages_deployable = True
+                          if app_id not in affected:
+                              affected.append(app_id)
+          affected.sort()
+          print(f"Affected apps from change set: {','.join(affected) or '(none)'}")
+          print(f"Packages with dependents in change set: {'yes' if packages_deployable else 'no'}")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"AFFECTED_APPS={','.join(affected)}\n")
+              out.write(f"PACKAGES_DEPLOYABLE={'true' if packages_deployable else 'false'}\n")
+          PYEOF
+          PACKAGES_DEPLOYABLE=$(sed -n 's/^PACKAGES_DEPLOYABLE=//p' "$GITHUB_OUTPUT" | tr -d '\r' | tail -1)
+          PACKAGES_DEPLOYABLE="${PACKAGES_DEPLOYABLE:-false}"
+
+          COUNT=$(echo "${CHANGED}" | grep -vE '^packages/' | grep -cE '(^|/)(src|test)/' || true)
+          if [ "${COUNT}" -gt 0 ] || [ "${PACKAGES_DEPLOYABLE}" = "true" ]; then
             echo "DEPLOYABLE=true" >> "$GITHUB_OUTPUT"
           else
             echo "DEPLOYABLE=false" >> "$GITHUB_OUTPUT"
@@ -226,12 +278,12 @@ jobs:
       # ── Build steps (one per app in apps.json) ──
       # For each app in apps.json where role == "web" and its projectPath has a buildable project:
       #   Generate a Build step with the appropriate command from the stack table above
-      #   Example for React:
+      #   Example for React (projectPath = apps/<appId>, ADR-0002):
       #     - name: Build frontend
       #       shell: bash
       #       run: |
       #         set -euo pipefail
-      #         cd frontend
+      #         cd apps/frontend
       #         npm ci
       #         npm run build
 
@@ -243,7 +295,7 @@ jobs:
       #       shell: bash
       #       run: |
       #         set -euo pipefail
-      #         cd frontend
+      #         cd apps/frontend
       #         npm run test -- --run
 
       # ── Package artifacts step ──
@@ -487,15 +539,19 @@ hardened patterns — each one prevented a real CI failure:
    `app/{commitSha}/container-images.json` on Nexus (commitSha match + registry image existence) before deploy, and
    run a PROD `/health` smoke gate (host ports from `infra/deployment/ports.json`) after deploy. Never rebuild or
    republish during PROD promotion.
-7. **src/test deploy gate** — deploy in ANY environment only when the change set touches a `src/` or `test/` folder
-   at any depth (`(^|/)(src|test)/`). The change set is the deploy commit's **first-parent diff**
+7. **App-aware deploy gate** (ADR-0002) — deploy in ANY environment only when the change set touches an
+   `apps/<appId>/src|test` path at any depth, or a `packages/<pkg>/**` path whose package an app declares in
+   `apps.json` `dependsOn` (shared-code change → rebuild the dependent apps). The gate also emits `AFFECTED_APPS`
+   (comma-separated appIds; `ALL` on unconditional runs) so build/deploy/metadata steps act only on changed apps —
+   `packages/**` paths are excluded from the generic `(^|/)(src|test)/` count (an orphan package with no dependents
+   must not deploy). The change set is the deploy commit's **first-parent diff**
    for PR merges and ref-head `workflow_dispatch` runs (checkout at depth 2). Never use `pull_request.base.sha` for PR
    merges: after the merge it points at the base branch head — the merge commit itself — so the diff is empty and
    the deploy is wrongly skipped. **Operator-override exception:** a `workflow_dispatch` with an explicit
    `artifact_commit_sha` pins a specific verified commit to deploy (QA approval / PROD promotion) and must be
-   **unconditionally deployable** — skip the diff gate (`DEPLOYABLE=true`), even for infra-only pinned commits. Docs,
-   infra, and workflow-only changes must not deploy on the auto paths — gate every deploy step with
-   `if: steps.changes.outputs.deployable == 'true'`.
+   **unconditionally deployable** — skip the diff gate (`DEPLOYABLE=true`, `AFFECTED_APPS=ALL`), even for infra-only
+   pinned commits. Docs, infra, and workflow-only changes must not deploy on the auto paths — gate every deploy step
+   with `if: steps.changes.outputs.deployable == 'true'`.
 
 ### 5. Generate `pr-validation.yml`
 
@@ -533,6 +589,13 @@ The `python -m tools.sdd_cli stack-tests` driver (`tools/sdd_cli/stack_tests.py`
 | `vitest`  | `npm ci` | `npx vitest run test/unit test/integration test/architecture` |
 | `jest`    | `npm ci` | `npx jest test/unit test/integration test/architecture` |
 | `dotnet`, `xunit`, `nunit`, `mstest` | `dotnet restore` | `dotnet test` |
+
+Path resolution follows the ADR-0002 per-app layout: vitest/jest run from the resolved **package root** (the directory
+holding `package-lock.json`, e.g. `apps/<appId>/`), so `test/unit` resolves to `apps/<appId>/test/unit`; pytest's
+canonical `test/` dirs resolve from the repo root only (per-app Python test dirs under `apps/*/` are a known
+stack-tests limitation — CI remains the authoritative gate for them). The `stack-tests` driver appends these paths at
+runtime and reports a non-blocking gap when no canonical dirs exist. Never assume a stack — frameworks come from
+`project-profile.local.json → stack.testFrameworks`.
 
 **⚠️ Test frameworks are runner-specific.** Never map a framework to another
 runner — pytest is Python-only and cannot run .NET tests; .NET test frameworks

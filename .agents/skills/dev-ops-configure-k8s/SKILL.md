@@ -56,24 +56,27 @@ kind load docker-image --name sdd-cluster host.docker.internal:5001/frontend:lat
 
 The CI workflow does this automatically after each `docker build` step.
 
-Environments use a **Kustomize overlay structure** with per-app manifests in `infra/k8s/base/` and environment-specific
-image tags in `infra/k8s/overlays/{env}/`:
+Environments use a **Kustomize overlay structure** that composes per-app manifests from `apps/<appId>/deploy/`
+(ADR-0002 — no `infra/k8s/base/` anymore) with environment-specific image tags in `infra/k8s/overlays/{env}/`:
 
 ```text
-infra/k8s/
-├── base/
-│   ├── kustomization.yaml              # References all apps from apps.json
+apps/
+├── frontend/deploy/                    # per-app manifests (ADR-0002)
+│   ├── kustomization.yaml              # that app's Deployment + Service
 │   ├── frontend-deployment.yaml
-│   ├── frontend-service.yaml
-│   ├── backend-deployment.yaml
-│   └── backend-service.yaml
-├── overlays/
-│   ├── dev/kustomization.yaml          # namespace: sdd-dev, image tags
-│   ├── dev/service-patch.yaml          # dev nodePorts (30080/30500)
-│   ├── qa/kustomization.yaml
-│   ├── qa/service-patch.yaml           # QA nodePorts (31080/31500)
-│   ├── prod/kustomization.yaml
-│   └── prod/service-patch.yaml         # PROD nodePorts (32080/32500)
+│   └── frontend-service.yaml
+└── backend/deploy/
+    ├── kustomization.yaml
+    ├── backend-deployment.yaml
+    └── backend-service.yaml
+infra/k8s/
+└── overlays/
+    ├── dev/kustomization.yaml          # composes ../../../../apps/*/deploy, image tags
+    ├── dev/service-patch.yaml          # dev nodePorts (30080/30500)
+    ├── qa/kustomization.yaml
+    ├── qa/service-patch.yaml           # QA nodePorts (31080/31500)
+    ├── prod/kustomization.yaml
+    └── prod/service-patch.yaml         # PROD nodePorts (32080/32500)
 ```
 
 **⚠️ Canonical port source.** `infra/deployment/ports.json` is the single source of truth for host ports + nodePorts per
@@ -180,7 +183,8 @@ Read the merged project profile and `infra/deployment/apps.json` to determine:
 
 ### 2. Generate Dockerfile Per App
 
-For each app in `apps.json`, generate a `Dockerfile` at the app's project root (e.g., `frontend/Dockerfile`).
+For each app in `apps.json`, generate a `Dockerfile` at the app's project root (`apps/<appId>/Dockerfile`, the
+`projectPath` from `apps.json` — e.g., `apps/frontend/Dockerfile`).
 
 **AI-driven (no fixed template list):** Dockerfile/nginx.conf/.dockerignore generation is delegated to the
 `dev-flow-scaffold-project` skill, which reads `project-profile.local.json → stack.frontend` and resolves the correct
@@ -273,24 +277,25 @@ Run `scaffold-k8s` to generate a complete Kustomize structure matching every app
 python -m tools.sdd_cli environment-lab scaffold-k8s
 ```
 
-This creates:
+This creates (ADR-0002 composed layout):
 
 ```text
+apps/
+└── {appId}/deploy/                 # one folder per app
+    ├── kustomization.yaml          # that app's own resources
+    ├── {appId}-deployment.yaml     # port 80 for web, 5000 for api
+    └── {appId}-service.yaml        # NodePort per app
 infra/k8s/
-├── base/
-│   ├── kustomization.yaml          # References all app manifests
-│   ├── {appId}-deployment.yaml     # Per app (port 80 for web, 5000 for api)
-│   ├── {appId}-service.yaml        # NodePort per app
-├── overlays/
-│   ├── dev/
-│   │   ├── kustomization.yaml      # namespace: sdd-dev, image tags
-│   │   └── service-patch.yaml      # dev nodePorts
-│   ├── qa/
-│   │   ├── kustomization.yaml
-│   │   └── service-patch.yaml      # qa nodePorts
-│   └── prod/
-│       ├── kustomization.yaml
-│       └── service-patch.yaml      # prod nodePorts
+└── overlays/
+    ├── dev/
+    │   ├── kustomization.yaml      # composes ../../../../apps/*/deploy, image tags
+    │   └── service-patch.yaml      # dev nodePorts
+    ├── qa/
+    │   ├── kustomization.yaml
+    │   └── service-patch.yaml      # qa nodePorts
+    └── prod/
+        ├── kustomization.yaml
+        └── service-patch.yaml      # prod nodePorts
 ```
 
 **Key design decisions:**
@@ -299,7 +304,7 @@ infra/k8s/
 - **Health probes always point to `/health`**: Web apps get `/health` via generated `nginx.conf`. API apps must
 implement a GET `/health` endpoint in their code. This prevents rollout failures where probes point to non-existent
 endpoints.
-- **Image references**: Base manifests use `image: host.docker.internal:5001/{appId}` without tags — overlays set the
+- **Image references**: App manifests use `image: host.docker.internal:5001/{appId}` without tags — overlays set the
 actual tag via `newTag`
 - **API env vars**: `api`-role apps get a stack-independent `PORT` env var (default 5000); the Dockerfile maps it to
   the framework's port setting (e.g. `ASPNETCORE_URLS` for .NET)
@@ -506,8 +511,8 @@ See the actual `.gitea/workflows/package-deploy.yml` for the full implementation
 
 - `kind load docker-image` is called after each image build — kind's containerd is separate from the host Docker daemon,
 so images must be explicitly loaded
-- `kustomize edit set image` updates the overlay's image entries; the base kustomization references all apps from
-`apps.json`
+- `kustomize edit set image` updates the overlay's image entries; the env overlays compose each app's
+`apps/<appId>/deploy/` kustomization
 - The CI container runs with `--user root` and `--add-host host.docker.internal:host-gateway` for Docker socket access
 and hostname resolution
 
@@ -539,7 +544,7 @@ python -m tools.sdd_cli environment-lab provision-gitea-secrets
 
 Verify end-to-end:
 
-1. **Docker build works**: `docker build -f frontend/Dockerfile frontend`
+1. **Docker build works**: `docker build -f apps/frontend/Dockerfile apps/frontend`
 2. **Kustomize build works**: `cd infra/k8s/overlays/dev && kustomize build . | kubectl apply --dry-run=client -f -`
    (or run the full gate: `python -m tools.sdd_cli environment-lab validate-k8s-overlays` — renders all three overlays
    and checks NodePort uniqueness cluster-wide + `infra/deployment/ports.json` parity; requires kustomize, see
@@ -556,18 +561,20 @@ Three CLI commands automate the K8s setup process:
 
 Scaffold Dockerfiles, per-app Kustomize base manifests, and environment overlays.
 
-This is the primary command for generating K8s deployment resources. It reads `infra/deployment/apps.json` and creates:
+This is the primary command for generating K8s deployment resources. It reads `infra/deployment/apps.json` and creates
+(ADR-0002 composed layout):
 
 ```text
+apps/
+└── {appId}/deploy/                 # one folder per app
+    ├── kustomization.yaml          # that app's own resources
+    ├── {appId}-deployment.yaml     # One per app (port by role)
+    └── {appId}-service.yaml        # One per app (NodePort)
 infra/k8s/
-├── base/
-│   ├── kustomization.yaml          # References all apps
-│   ├── {appId}-deployment.yaml     # One per app (port by role)
-│   ├── {appId}-service.yaml        # One per app (NodePort)
-├── overlays/
-│   ├── dev/kustomization.yaml      # namespace: sdd-dev, image tags
-│   ├── qa/kustomization.yaml
-│   └── prod/kustomization.yaml
+└── overlays/
+    ├── dev/kustomization.yaml      # composes ../../../../apps/*/deploy, image tags
+    ├── qa/kustomization.yaml
+    └── prod/kustomization.yaml
 ```
 
 **⚠️ Always use `/health` as the health probe path.** The scaffold sets `/health` for all apps. Web apps get nginx.conf
@@ -619,7 +626,8 @@ Report:
 
 - Dockerfiles created/updated (path per app)
 - nginx.conf created (with /health endpoint for web apps)
-- K8s base manifests created (`infra/k8s/base/{appId}-deployment.yaml` and `{appId}-service.yaml` per app)
+- K8s per-app manifests created (`apps/{appId}/deploy/{appId}-deployment.yaml`, `{appId}-service.yaml` and
+  `kustomization.yaml` per app)
 - K8s overlays created (`infra/k8s/overlays/{env}/kustomization.yaml` for dev, qa, prod)
 - Nexus Docker repository configured (or already exists)
 - CI workflow changes applied (diff summary)
@@ -691,7 +699,7 @@ a failure; do not regress them.
     column 0 of the generated script. Validate with `bash -n` / `python -m py_compile` on extracted
     scripts.
 12. **`.gitignore` casing**: with `core.ignorecase` (Windows), `**/data/` can silently match
-    `src/backend/Data/` source. Add negations (`!src/backend/Data/` + `!src/backend/Data/**`) and
+    an app's `Data/` source. Add negations (`!apps/**/Data/` + `!apps/**/Data/**`) and
     verify with `git check-ignore` when a local build passes but CI compile fails.
 13. **Non-root containers**: a non-root `USER <uid>` needs the workdir pre-chowned — `RUN chown -R
     <uid>:<gid> /app` before `USER <uid>` — or state writes fail at boot (SQLite `unable to open

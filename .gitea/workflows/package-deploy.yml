@@ -114,13 +114,21 @@ jobs:
 
       - name: Check for deployable changes (src/ or test/ folders)
         # Deploy in ANY environment only when the change set touches a src/ or
-        # test/ folder at any depth (e.g. src/..., frontend/src/...,
-        # backend/test/...). Docs, infra, and workflow-only changes must not
+        # test/ folder at any depth (e.g. apps/frontend/src/...,
+        # apps/backend/test/...), or a packages/<pkg>/** path whose package an
+        # app declares in apps.json `dependsOn` (shared-code change -> rebuild
+        # the dependent apps). Docs, infra, and workflow-only changes must not
         # deploy. Note: only folder-based matches count — co-located test files
         # outside these folders (e.g. pkg/foo_test.go) are not matched. The gate
         # fails open when the base commit cannot be resolved or the diff cannot
         # be computed (no way to prove the change is doc-only, so do not block
         # deploys).
+        #
+        # Outputs (ADR-0002 app-aware build):
+        # - DEPLOYABLE=true/false — whether any app must be rebuilt+redeployed.
+        # - AFFECTED_APPS — comma-separated appIds to build/deploy on filtered
+        #   runs; "ALL" for unconditional runs (pinned dispatch / fails-open) so
+        #   every app is built; empty when deployable but no app resolves.
         #
         # EXCEPTION (operator override): a workflow_dispatch that supplies an
         # explicit artifact_commit_sha pins a specific verified commit to deploy
@@ -145,6 +153,7 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${PINNED_SHA}" ]; then
             echo "Pinned artifact dispatch (artifact_commit_sha) — treating change as deployable."
             echo "DEPLOYABLE=true" >> "$GITHUB_OUTPUT"
+            echo "AFFECTED_APPS=ALL" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -160,6 +169,7 @@ jobs:
           if [ -z "${BASE_SHA}" ]; then
             echo "No base commit available — treating change as deployable."
             echo "DEPLOYABLE=true" >> "$GITHUB_OUTPUT"
+            echo "AFFECTED_APPS=ALL" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -172,6 +182,7 @@ jobs:
             echo "WARNING: git diff failed (status ${DIFF_STATUS}) — treating change as deployable."
             cat /tmp/diff-err.log >&2
             echo "DEPLOYABLE=true" >> "$GITHUB_OUTPUT"
+            echo "AFFECTED_APPS=ALL" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           if [ -z "${CHANGED}" ]; then
@@ -183,12 +194,68 @@ jobs:
           echo "Changed files:"
           echo "${CHANGED}" | sed 's/^/  - /'
 
-          COUNT=$(echo "${CHANGED}" | grep -cE '(^|/)(src|test)/' || true)
-          if [ "${COUNT}" -gt 0 ]; then
-            echo "Deployable changes found (${COUNT} path(s) under src/test)."
+          # App-aware mapping (ADR-0002): resolve the change set to the affected
+          # appIds. apps/<appId>/src|test paths map to that app; a
+          # packages/<pkg>/** change maps to every app that declares the package
+          # in apps.json `dependsOn` (shared code -> rebuild dependents). The
+          # block writes AFFECTED_APPS (comma-separated; empty when no app
+          # resolves) and PACKAGES_DEPLOYABLE into $GITHUB_OUTPUT.
+          export CHANGED_LIST="${CHANGED}"
+          python3 << 'PYEOF'
+          import json, os, re
+
+          changed = os.environ.get("CHANGED_LIST", "").splitlines()
+          apps = []
+          try:
+              with open("infra/deployment/apps.json", encoding="utf-8") as f:
+                  apps = json.load(f).get("apps", [])
+          except (OSError, ValueError):
+              print("WARNING: infra/deployment/apps.json missing or invalid - packages changes have no known dependents")
+          apps_by_id = {a["appId"]: a for a in apps}
+          affected = []
+          packages_deployable = False
+          for path in changed:
+              path = path.strip()
+              if not path:
+                  continue
+              m = re.match(r"^apps/([^/]+)/(src|test)/", path)
+              if m:
+                  if m.group(1) not in affected:
+                      affected.append(m.group(1))
+                  continue
+              m = re.match(r"^packages/([^/]+)/", path)
+              if m:
+                  pkg = m.group(1)
+                  for app_id, app in apps_by_id.items():
+                      if pkg in (app.get("dependsOn") or []):
+                          # Deployable whenever a dependent exists, even if it
+                          # was already in `affected` via a src/test change.
+                          packages_deployable = True
+                          if app_id not in affected:
+                              affected.append(app_id)
+          affected.sort()
+          affected_csv = ",".join(affected)
+          print(f"Affected apps from change set: {affected_csv or '(none)'}")
+          print(f"Packages with dependents in change set: {'yes' if packages_deployable else 'no'}")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"AFFECTED_APPS={affected_csv}\n")
+              out.write(f"PACKAGES_DEPLOYABLE={'true' if packages_deployable else 'false'}\n")
+          PYEOF
+          # tr -d '\r': python's text-mode append writes CRLF on Windows checkouts
+          # of the gate script; CI is Linux, but the read-back must be robust.
+          PACKAGES_DEPLOYABLE=$(sed -n 's/^PACKAGES_DEPLOYABLE=//p' "$GITHUB_OUTPUT" | tr -d '\r' | tail -1)
+          PACKAGES_DEPLOYABLE="${PACKAGES_DEPLOYABLE:-false}"
+
+          # packages/** paths are handled ONLY via the dependsOn mapping above
+          # (a package with no dependents must not deploy); exclude them from
+          # the generic src/test match so e.g. packages/shared-ui/src/... does
+          # not fire the gate by itself.
+          COUNT=$(echo "${CHANGED}" | grep -vE '^packages/' | grep -cE '(^|/)(src|test)/' || true)
+          if [ "${COUNT}" -gt 0 ] || [ "${PACKAGES_DEPLOYABLE}" = "true" ]; then
+            echo "Deployable changes found (${COUNT} path(s) under src/test; packages dependents: ${PACKAGES_DEPLOYABLE})."
             echo "DEPLOYABLE=true" >> "$GITHUB_OUTPUT"
           else
-            echo "No changes under src/ or test(s)/ — skipping deploy."
+            echo "No changes under src/ or test(s)/ and no packages dependents — skipping deploy."
             echo "DEPLOYABLE=false" >> "$GITHUB_OUTPUT"
           fi
 
@@ -196,11 +263,17 @@ jobs:
         # PROD skips the build entirely: it reuses the QA-approved images pushed
         # by the DEV/QA pipeline for the pinned artifact commit (never rebuild or
         # republish during PROD promotion).
+        #
+        # App-aware (ADR-0002): on PR-merge auto-deploys only the apps resolved
+        # by the gate's AFFECTED_APPS output are built; packages/** changes map
+        # to their dependent apps. Unconditional dispatch / fails-open runs pass
+        # AFFECTED_APPS=ALL -> every app is built (pre-filter behavior).
         if: steps.changes.outputs.deployable == 'true' && steps.env.outputs.ENV != 'prod'
         env:
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
           NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
           NEXUS_DOCKER_REGISTRY: ${{ secrets.NEXUS_DOCKER_REGISTRY }}
+          AFFECTED_APPS: ${{ steps.changes.outputs.AFFECTED_APPS }}
         shell: bash
         run: |
           set -euo pipefail
@@ -229,12 +302,26 @@ jobs:
             fi
           fi
 
-          # Read apps from apps.json
+          # Read apps from apps.json, filtered to the gate's affected app set
+          # (ADR-0002). AFFECTED_APPS is empty only when apps.json has no
+          # matching app — the loop below then runs zero times and nothing is
+          # built (the pipeline stays green with nothing to do).
+          if [ -n "${AFFECTED_APPS:-}" ] && [ "${AFFECTED_APPS}" != "ALL" ]; then
+            echo "Build set (affected apps): ${AFFECTED_APPS}"
+          elif [ "${AFFECTED_APPS:-}" = "ALL" ]; then
+            echo "Build set: ALL apps (unconditional dispatch)"
+          else
+            echo "Build set: none (no affected app resolved - nothing to build)"
+          fi
           APPS=$(python3 -c "
-          import json
+          import json, os
+          affected_raw = os.environ.get('AFFECTED_APPS', '')
+          affected = None if (not affected_raw or affected_raw == 'ALL') else set(affected_raw.split(','))
           with open('infra/deployment/apps.json') as f:
               apps = json.load(f).get('apps', [])
           for a in apps:
+              if affected is not None and a['appId'] not in affected:
+                  continue
               print(f\"{a['appId']}|{a.get('projectPath', a['appId'])}\")
           " 2>/dev/null || echo "frontend|frontend")
 
@@ -446,9 +533,14 @@ jobs:
           echo "PROD artifact verification passed."
 
       - name: Deploy to K8s (all targets)
+        # App-aware (ADR-0002): only the gate's AFFECTED_APPS get their image
+        # tag set, are deleted, applied, and rollout-waited. Unaffected apps
+        # keep their running state untouched. AFFECTED_APPS=ALL (unconditional
+        # dispatch / fails-open) keeps the pre-filter all-apps behavior.
         if: steps.changes.outputs.deployable == 'true'
         env:
           KUBE_CONFIG_DATA: ${{ secrets.KUBECONFIG }}
+          AFFECTED_APPS: ${{ steps.changes.outputs.AFFECTED_APPS }}
         shell: bash
         run: |
           set -euo pipefail
@@ -500,14 +592,18 @@ jobs:
             cd "${OVERLAY_DIR}"
 
           python3 -c "
-          import json, subprocess, os
+          import json, os, subprocess
           apps_json = '${APPS_JSON}'
           registry = '${REGISTRY}'
           commit_sha = '${COMMIT_SHA}'
+          affected_raw = os.environ.get('AFFECTED_APPS', '')
+          affected = None if (not affected_raw or affected_raw == 'ALL') else set(affected_raw.split(','))
           with open(apps_json) as f:
               apps = json.load(f).get('apps', [])
           for app in apps:
               app_id = app['appId']
+              if affected is not None and app_id not in affected:
+                  continue
               image = f'{registry}/{app_id}:{commit_sha}'
               subprocess.run(['kustomize', 'edit', 'set', 'image', image], check=True)
               print(f'Set image for {app_id}: {image}')
@@ -523,6 +619,43 @@ jobs:
             fi
             echo "Manifest size: $(wc -l < /tmp/k8s-manifest.yaml) lines"
 
+            # App-aware manifest filter (ADR-0002): on filtered runs, drop the
+            # resources of unaffected apps so kubectl apply never re-touches
+            # them (their image tags are still :latest from the committed
+            # overlay — applying them would trigger an unwanted rollout).
+            # AFFECTED_APPS=ALL applies everything unchanged.
+            APPLY_SKIPPED=false
+            if [ -n "${AFFECTED_APPS}" ] && [ "${AFFECTED_APPS}" != "ALL" ]; then
+              echo "Filtering manifest to affected apps: ${AFFECTED_APPS}"
+              python3 << 'PYEOF'
+          import os, re
+          affected = {a for a in os.environ.get("AFFECTED_APPS", "").split(",") if a}
+          raw = open("/tmp/k8s-manifest.yaml", encoding="utf-8").read()
+          docs = [d.strip() for d in re.split(r"^---\s*$", raw, flags=re.M) if d.strip()]
+          kept, skipped = [], []
+          for doc in docs:
+              name_m = re.search(r"^  name:\s*(\S+)", doc, flags=re.M)
+              name = name_m.group(1) if name_m else ""
+              if name in affected:
+                  kept.append(doc)
+              else:
+                  skipped.append(name)
+          # Always rewrite the file: when nothing is kept it must be TRUNCATED,
+          # or the APPLY_SKIPPED guard below would apply the stale full
+          # manifest (with :latest tags) instead of skipping.
+          with open("/tmp/k8s-manifest.yaml", "w", encoding="utf-8") as f:
+              f.write("\n---\n".join(kept) + ("\n" if kept else ""))
+          if kept:
+              print(f"Filtered manifest: kept {len(kept)} resource(s), dropped {len(skipped)} unaffected resource(s).")
+          else:
+              print(f"No affected resources found (dropped {len(skipped)}) - manifest truncated: nothing to apply for this run.")
+          PYEOF
+              if [ ! -s /tmp/k8s-manifest.yaml ]; then
+                echo "No affected resources to apply — skipping kubectl apply."
+                APPLY_SKIPPED=true
+              fi
+            fi
+
             # Delete existing apps to avoid "field is immutable" errors when K8s
             # resources change their selector/matchLabels (e.g. commonLabels→labels).
             # The CI pipeline is the sole deployer, so delete-then-recreate is safe.
@@ -531,32 +664,44 @@ jobs:
             # spec.selector.matchLabels changes (e.g. commonLabels→labels migration).
             # Services are NOT deleted — their selectors are mutable.
           python3 << PYEOF
-          import json, subprocess
+          import json, os, subprocess
           apps_json = '${APPS_JSON}'
           namespace = '${NAMESPACE}'
+          affected_raw = os.environ.get('AFFECTED_APPS', '')
+          affected = None if (not affected_raw or affected_raw == 'ALL') else set(affected_raw.split(','))
           with open(apps_json) as f:
               apps = json.load(f).get('apps', [])
           for app in apps:
               app_id = app['appId']
+              if affected is not None and app_id not in affected:
+                  continue
               subprocess.run(['kubectl', '-n', namespace, 'delete', 'deploy', app_id, '--ignore-not-found'], check=False)
           PYEOF
 
-            # Apply to K8s
-            echo "Deploying to ${ENV}..."
-            if ! kubectl apply -f /tmp/k8s-manifest.yaml 2>&1; then
-              echo "ERROR: kubectl apply failed - running dry-run for diagnosis..."
-              kubectl apply --dry-run=client -f /tmp/k8s-manifest.yaml 2>&1 | head -20
-              exit 1
+            # Apply to K8s (skipped when the affected filter left nothing)
+            if [ "${APPLY_SKIPPED}" = "true" ]; then
+              echo "Nothing to apply for this run — skipping apply."
+            else
+              echo "Deploying to ${ENV}..."
+              if ! kubectl apply -f /tmp/k8s-manifest.yaml 2>&1; then
+                echo "ERROR: kubectl apply failed - running dry-run for diagnosis..."
+                kubectl apply --dry-run=client -f /tmp/k8s-manifest.yaml 2>&1 | head -20
+                exit 1
+              fi
             fi
 
             # Wait for rollout of each app
           python3 -c "
-          import json, subprocess
+          import json, os, subprocess
           namespace = 'sdd-${ENV}'
+          affected_raw = os.environ.get('AFFECTED_APPS', '')
+          affected = None if (not affected_raw or affected_raw == 'ALL') else set(affected_raw.split(','))
           with open('${APPS_JSON}') as f:
               apps = json.load(f).get('apps', [])
           for app in apps:
               app_id = app['appId']
+              if affected is not None and app_id not in affected:
+                  continue
               print(f'Waiting for rollout of {app_id} in {namespace}...')
               subprocess.run(
                   ['kubectl', '-n', namespace, 'rollout', 'status', 'deployment', app_id, '--timeout=120s'],
@@ -914,12 +1059,17 @@ jobs:
           PYEOF
 
       - name: Generate Nexus metadata artifacts
+        # App-aware (ADR-0002): deployable-apps.json and container-images.json
+        # list only the built/deployed apps on filtered runs; AFFECTED_APPS=ALL
+        # (unconditional dispatch) lists every app — so QA re-runs always
+        # overwrite the commit's evidence with the full app set PROD verifies.
         if: steps.changes.outputs.deployable == 'true'
         env:
           # Optional PROD release metadata (workflow_dispatch inputs); empty for
           # PR-merge runs — release-{env}.json falls back to version 0.1.0.
           RELEASE_VERSION: ${{ github.event.inputs.release_version }}
           SOURCE_RC_VERSION: ${{ github.event.inputs.source_rc_version }}
+          AFFECTED_APPS: ${{ steps.changes.outputs.AFFECTED_APPS }}
         shell: bash
         run: |
           set -euo pipefail
@@ -931,26 +1081,31 @@ jobs:
 
           # Write deployable-apps.json from apps.json (shared across all environments)
           python3 << PYEOF
-          import json
+          import json, os
 
           commit_sha = "${COMMIT_SHA}"
+          affected_raw = os.environ.get('AFFECTED_APPS', '')
+          affected = None if (not affected_raw or affected_raw == 'ALL') else set(affected_raw.split(','))
 
           with open('infra/deployment/apps.json') as f:
               deploy_config = json.load(f)
 
+          deployable_apps = [
+              {
+                  'appId': app['appId'],
+                  'artifactName': f'{app["appId"]}-sdd-app.zip',
+                  'healthPath': app.get('healthPath', '/health'),
+                  'role': app.get('role', 'web'),
+                  'deployOrder': app.get('deployOrder', 0)
+              }
+              for app in deploy_config.get('apps', [])
+              if affected is None or app['appId'] in affected
+          ]
+
           deployable = {
               'version': 1,
               'commitSha': commit_sha,
-              'apps': [
-                  {
-                      'appId': app['appId'],
-                      'artifactName': f'{app["appId"]}-sdd-app.zip',
-                      'healthPath': app.get('healthPath', '/health'),
-                      'role': app.get('role', 'web'),
-                      'deployOrder': app.get('deployOrder', 0)
-                  }
-                  for app in deploy_config.get('apps', [])
-              ]
+              'apps': deployable_apps
           }
 
           with open(f'app/{commit_sha}/deployable-apps.json', 'w') as f:
@@ -964,6 +1119,8 @@ jobs:
 
           commit_sha = "${COMMIT_SHA}"
           registry = "${NEXUS_DOCKER_REGISTRY:-host.docker.internal:5001}"
+          affected_raw = os.environ.get('AFFECTED_APPS', '')
+          affected = None if (not affected_raw or affected_raw == 'ALL') else set(affected_raw.split(','))
 
           with open('infra/deployment/apps.json') as f:
               deploy_config = json.load(f)
@@ -977,6 +1134,7 @@ jobs:
                       'image': f'{registry}/{app["appId"]}:{commit_sha}'
                   }
                   for app in deploy_config.get('apps', [])
+                  if affected is None or app['appId'] in affected
               ]
           }
 

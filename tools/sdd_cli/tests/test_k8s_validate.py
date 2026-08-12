@@ -43,11 +43,13 @@ spec:
 
 
 def _write_overlay_dirs(tmp_path) -> None:
+    """Minimal overlay dirs in the ADR-0002 composed shape (kustomize is mocked
+    in these tests, so the relative refs never need to resolve)."""
     for env in ("dev", "qa", "prod"):
         overlay = tmp_path / "infra" / "k8s" / "overlays" / env
         overlay.mkdir(parents=True)
         (overlay / "kustomization.yaml").write_text(
-            "resources:\n  - ../../base\n", encoding="utf-8"
+            "resources:\n  - ../../../../apps/frontend/deploy\n", encoding="utf-8"
         )
 
 
@@ -120,3 +122,25 @@ def test_clean_overlays_pass(tmp_path) -> None:
 
     assert result["valid"] is True
     assert result["findings"] == []
+
+
+# ── Committed overlay composition guard (ADR-0002) ───────────────────────
+
+
+def test_committed_overlays_compose_app_deploy_dirs() -> None:
+    """Every committed env overlay composes apps/<appId>/deploy via relative
+    Kustomize refs that resolve on disk — the infra/k8s/base/ layout is gone."""
+    yaml = pytest.importorskip("yaml")
+    root = REPO_ROOT
+    for env in ("dev", "qa", "prod"):
+        kus = root / "infra" / "k8s" / "overlays" / env / "kustomization.yaml"
+        data = yaml.safe_load(kus.read_text(encoding="utf-8"))
+        resources = data.get("resources") or []
+        assert resources, f"{env} overlay lists no composed resources"
+        for res in resources:
+            assert res != "../../base", f"{env} still references the deleted base dir"
+            target = (kus.parent / res).resolve()
+            assert (target / "kustomization.yaml").is_file(), (
+                f"{env}: {res} does not resolve to an app deploy dir"
+            )
+    assert not (root / "infra" / "k8s" / "base").exists(), "infra/k8s/base/ must be deleted"
