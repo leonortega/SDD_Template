@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: <appId>
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: <appId>
+  template:
+    metadata:
+      labels:
+        app: <appId>
+    spec:
+      containers:
+        - name: <appId>
+          image: host.docker.internal:5001/<appId>
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: <port>   # role containerPort from infra/deployment/roles.json
+          # Emitted for roles with "portEnv": true in roles.json (e.g. api) — the
+          # generated Dockerfile consumes PORT (ASPNETCORE_URLS, uvicorn port, ...).
+          env:
+            - name: PORT
+              value: "<port>"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: <port>
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: <port>
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"

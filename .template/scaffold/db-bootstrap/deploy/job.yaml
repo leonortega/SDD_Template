@@ -1,0 +1,30 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-bootstrap
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: db-bootstrap
+          image: host.docker.internal:5001/db-bootstrap
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DB_HOST
+              value: db.internal   # shared engine ClusterIP service (ADR-0003)
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: username
+                  optional: true
+            - name: DB_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: password
+                  optional: true

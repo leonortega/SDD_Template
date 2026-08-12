@@ -606,6 +606,21 @@ class EnvironmentLabDispatchTests(unittest.TestCase):
         self.assertEqual(0, rc)
         mock_prune.assert_called_once()
 
+    def test_prune_scaffold_dispatches(self) -> None:
+        """environment-lab prune-scaffold calls prune_scaffold_shapes."""
+        from unittest.mock import patch
+
+        with patch(
+            "tools.sdd_cli.environment_lab.prune_scaffold_shapes",
+            return_value={"valid": True, "actions": []},
+        ) as mock_prune:
+            rc = cli.main(
+                ["environment-lab", "prune-scaffold", "--dry-run", "true"]
+            )
+
+        self.assertEqual(0, rc)
+        mock_prune.assert_called_once()
+
     def test_init_local_files_creates_knowledge_seed(self) -> None:
         """environment-lab init-local-files works."""
         with tempfile.TemporaryDirectory() as tmp:

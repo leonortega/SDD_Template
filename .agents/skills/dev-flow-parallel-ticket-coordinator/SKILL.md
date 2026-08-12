@@ -35,8 +35,9 @@ and QA adapters for lane decisions.
 
 ## Configuration
 
-Read `.template/client-tools.local.json` first. Fall back to `.template/client-tools.example.json` only for structure and safe
-defaults. Required/defaulted values:
+Read `.template/client-tools.local.json` first. Fall back to
+`.template/client-tools.example.json` only for structure and safe defaults.
+Required/defaulted values:
 
 - **No `parallelDelivery.enabled` gate** — parallel delivery applies when the AI determines the user asked to implement
   more than one ticket; the keys below configure capacity and isolation only.
@@ -104,6 +105,7 @@ Track:
 - model and reasoning policy used for spawned role agents
 - active ticket key, branch, worktree path, current stage, PR number, artifact commit, RC/final versions when known
 - deployment lane owner ticket and stage when `deploymentLanePolicy` is `serialized`
+- `pruneOwner` per scaffold kind (`service`/`job`/`db-bootstrap`) so the prune runs once, not per ticket
 - stale or blocked ticket entries that need user or system cleanup
 
 Each ticket worktree must have its own ignored `.template/delivery-context.local.json`. Child role skills must be invoked
@@ -204,6 +206,29 @@ rollback/hotfix handoff recorded, or a blocker is reported.
 - If another ticket owns the lane, continue implementation/review work for other tickets when possible and report the
 lane owner for blocked promotion work.
 
+### 6. Scaffold Shape Prune Ownership
+
+`dev-flow-implement-ticket` step 9.5 prunes `.template/scaffold/` shapes once an app of that kind is registered
+(`environment-lab prune-scaffold`). In parallel delivery every ticket runs implementation in its own worktree — if two
+tickets implement the same kind (e.g. two service-kind apps), both would delete the same shape: duplicate deletions and
+PR merge conflicts. **The coordinator owns the prune, once per kind.**
+
+1. **Assign prune ownership per kind.** Before routing implementation tickets that register apps, determine which
+   ticket is the prune owner for each kind (`service`, `job`, and `db-bootstrap`): prefer the lowest `deployOrder`
+   among the apps the ticket registers, then the lowest ticket key. Record `pruneOwner` per kind in
+   `.template/parallel-delivery.local.json`.
+2. **Owner ticket runs step 9.5 normally** — the destructive `prune-scaffold` runs in that worktree and its PR carries
+   the deletion.
+3. **Non-owner tickets dry-run only.** For tickets that register an app of an already-owned kind, instruct the
+   `implementation` role agent to run `prune-scaffold --dry-run true` (confirm the plan, do NOT delete) and report the
+   outcome — their PRs must not touch the shape files. **This coordinator instruction overrides step 9.5 for
+   non-owner tickets**: the child must not run the destructive prune even though the implement-ticket skill describes it
+   as the default.
+4. **Coordinator safety net.** After the owner ticket's PR merges, run `prune-scaffold` from the coordinator checkout
+   once as an idempotent verification: a leftover shape (e.g. a second kind registered by a later ticket) is removed;
+   an already-pruned shape reports `prune.missing` and is left alone. Never run the destructive prune from more than
+   one worktree.
+
 ## Failure Rules
 
 - Single-ticket request routed here: when the AI determines only one ticket is to be implemented, do not start parallel
@@ -222,6 +247,9 @@ ignored local runtime files.
 - Serialized deployment lane owned by another ticket: do not promote, deploy, tag, move QA/Done state, or write release
 evidence for the blocked ticket.
 - Missing child-skill config: preserve the child skill blocker and do not route around it.
+- Two tickets registering the same scaffold kind with no `pruneOwner` assigned, or a non-owner ticket executing the
+destructive `prune-scaffold`: stop, reconcile the owner in `.template/parallel-delivery.local.json`, and re-instruct the
+child implementation agents before any merge.
 
 ## Cleanup And Recovery
 

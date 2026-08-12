@@ -358,7 +358,7 @@ def test_pr_merge_packages_change_without_dependents_is_skipped(
     assert res["affected"] == ""
 
 
-# ── Deploy-step manifest filter (ADR-0002) ───────────────────────────────
+# ── Deploy-step manifest filter + phase split (ADR-0002 + ADR-0003) ──────
 
 
 def _deploy_filter_script() -> str:
@@ -369,7 +369,9 @@ def _deploy_filter_script() -> str:
     """
     data = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
     steps = data["jobs"]["build-and-deploy"]["steps"]
-    deploy = next(s for s in steps if s["name"] == "Deploy to K8s (all targets)")
+    deploy = next(
+        s for s in steps if s["name"].startswith("Deploy to K8s (phased")
+    )
     m = re.search(r"python3 << 'PYEOF'\n(.*?)\nPYEOF", deploy["run"], re.DOTALL)
     assert m, "manifest filter python not found in the Deploy step"
     return m.group(1)
@@ -379,16 +381,34 @@ SAMPLE_MANIFEST = (
     "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: frontend\n---\n"
     "apiVersion: v1\nkind: Service\nmetadata:\n  name: frontend\n---\n"
     "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: backend\n---\n"
-    "apiVersion: v1\nkind: Service\nmetadata:\n  name: backend\n"
+    "apiVersion: v1\nkind: Service\nmetadata:\n  name: backend\n---\n"
+    "apiVersion: batch/v1\nkind: Job\nmetadata:\n  name: db-bootstrap\n"
 )
 
 
-def _run_deploy_filter(script: str, tmp_path: Path, affected: str, manifest: str) -> str:
-    """Run the extracted filter against a scratch manifest; returns the result."""
-    path = tmp_path / "k8s-manifest.yaml"
-    path.write_text(manifest, encoding="utf-8")
-    patched = script.replace('"/tmp/k8s-manifest.yaml"', 'os.environ["K8S_MANIFEST"]')
-    env = {**os.environ, "AFFECTED_APPS": affected, "K8S_MANIFEST": str(path)}
+def _run_deploy_filter(
+    script: str, tmp_path: Path, affected: str, manifest: str
+) -> tuple[str, str]:
+    """Run the extracted filter against a scratch manifest.
+
+    Returns (deployments_file, jobs_file) contents — the filter now splits the
+    render into a jobs phase and a deployments phase (ADR-0003)."""
+    src_path = tmp_path / "k8s-manifest.yaml"
+    src_path.write_text(manifest, encoding="utf-8")
+    jobs_path = tmp_path / "k8s-jobs.yaml"
+    deployments_path = tmp_path / "k8s-deployments.yaml"
+    patched = script.replace(
+        '"/tmp/k8s-manifest.yaml"', 'os.environ["K8S_MANIFEST"]'
+    ).replace('"/tmp/k8s-jobs.yaml"', 'os.environ["K8S_JOBS"]').replace(
+        '"/tmp/k8s-deployments.yaml"', 'os.environ["K8S_DEPLOYMENTS"]'
+    )
+    env = {
+        **os.environ,
+        "AFFECTED_APPS": affected,
+        "K8S_MANIFEST": str(src_path),
+        "K8S_JOBS": str(jobs_path),
+        "K8S_DEPLOYMENTS": str(deployments_path),
+    }
     subprocess.run(
         ["python3"],
         cwd=tmp_path,
@@ -399,21 +419,29 @@ def _run_deploy_filter(script: str, tmp_path: Path, affected: str, manifest: str
         encoding="utf-8",
         check=True,
     )
-    return path.read_text(encoding="utf-8")
+    return deployments_path.read_text(encoding="utf-8"), jobs_path.read_text(
+        encoding="utf-8"
+    )
 
 
 def test_deploy_filter_keeps_only_affected_apps(tmp_path) -> None:
     """A filtered run keeps only the affected app's Deployment + Service."""
-    out = _run_deploy_filter(
+    deployments, jobs = _run_deploy_filter(
         _deploy_filter_script(), tmp_path, "frontend", SAMPLE_MANIFEST
     )
-    assert "name: frontend" in out
-    assert "name: backend" not in out
+    assert "name: frontend" in deployments
+    assert "name: backend" not in deployments
+    # Jobs are always kept — they run before any rollout (ADR-0003).
+    assert "name: db-bootstrap" in jobs
 
 
-def test_deploy_filter_truncates_manifest_when_nothing_kept(tmp_path) -> None:
+def test_deploy_filter_truncates_manifests_when_nothing_kept(tmp_path) -> None:
     """Regression guard: when no affected resource matches (empty AFFECTED_APPS),
-    the filter must TRUNCATE the manifest so kubectl apply is skipped — never
-    apply the stale full manifest with :latest tags."""
-    out = _run_deploy_filter(_deploy_filter_script(), tmp_path, "", SAMPLE_MANIFEST)
-    assert out.strip() == ""
+    the filter must TRUNCATE the deployment manifest so kubectl apply is
+    skipped — never apply the stale full manifest with :latest tags. Jobs stay
+    in their own phase file."""
+    deployments, jobs = _run_deploy_filter(
+        _deploy_filter_script(), tmp_path, "", SAMPLE_MANIFEST
+    )
+    assert deployments.strip() == ""
+    assert "name: db-bootstrap" in jobs

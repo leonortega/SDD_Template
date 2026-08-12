@@ -19,6 +19,7 @@ from tools.sdd_cli.k8s_ports import (
     env_node_block,
     kind_config_yaml,
     load_ports,
+    load_roles,
     role_host_base,
     role_host_block,
     service_patch_yaml,
@@ -31,19 +32,19 @@ def _valid_ports() -> dict:
     return {
         "version": 1,
         "registry": "host.docker.internal:5001",
-        "appPorts": {"frontend": 80, "backend": 5000},
+        "appPorts": {"app-web": 80, "app-api": 5000},
         "environments": {
             "dev": {
-                "frontend": {"hostPort": 8081, "nodePort": 30080},
-                "backend": {"hostPort": 5002, "nodePort": 30500},
+                "app-web": {"hostPort": 8081, "nodePort": 30080, "role": "web"},
+                "app-api": {"hostPort": 5002, "nodePort": 30500, "role": "api"},
             },
             "qa": {
-                "frontend": {"hostPort": 8082, "nodePort": 31080},
-                "backend": {"hostPort": 5003, "nodePort": 31500},
+                "app-web": {"hostPort": 8082, "nodePort": 31080, "role": "web"},
+                "app-api": {"hostPort": 5003, "nodePort": 31500, "role": "api"},
             },
             "prod": {
-                "frontend": {"hostPort": 8083, "nodePort": 32080},
-                "backend": {"hostPort": 5004, "nodePort": 32500},
+                "app-web": {"hostPort": 8083, "nodePort": 32080, "role": "web"},
+                "app-api": {"hostPort": 5004, "nodePort": 32500, "role": "api"},
             },
         },
     }
@@ -68,7 +69,7 @@ def _read_artifact(path: Path) -> str:
 def test_load_ports_accepts_valid(tmp_path: Path) -> None:
     _write_ports(tmp_path, _valid_ports())
     data = load_ports(tmp_path)
-    assert data["environments"]["prod"]["frontend"]["hostPort"] == 8083
+    assert data["environments"]["prod"]["app-web"]["hostPort"] == 8083
 
 
 def test_load_ports_missing_file(tmp_path: Path) -> None:
@@ -87,7 +88,7 @@ def test_load_ports_bad_version(tmp_path: Path) -> None:
 def test_load_ports_nodeport_collision_across_envs(tmp_path: Path) -> None:
     """NodePorts are cluster-scoped — the same nodePort in two envs must fail."""
     data = _valid_ports()
-    data["environments"]["qa"]["frontend"]["nodePort"] = 30080  # dup of dev
+    data["environments"]["qa"]["app-web"]["nodePort"] = 30080  # dup of dev
     _write_ports(tmp_path, data)
     with pytest.raises(ValueError, match="NodePort collision"):
         load_ports(tmp_path)
@@ -96,7 +97,7 @@ def test_load_ports_nodeport_collision_across_envs(tmp_path: Path) -> None:
 def test_load_ports_hostport_collision_across_envs(tmp_path: Path) -> None:
     """HostPorts are host-scoped — the same hostPort in two envs must fail."""
     data = _valid_ports()
-    data["environments"]["qa"]["frontend"]["hostPort"] = 8081  # dup of dev
+    data["environments"]["qa"]["app-web"]["hostPort"] = 8081  # dup of dev
     _write_ports(tmp_path, data)
     with pytest.raises(ValueError, match="hostPort collision"):
         load_ports(tmp_path)
@@ -106,7 +107,7 @@ def test_load_ports_hostport_collision_across_envs(tmp_path: Path) -> None:
 def test_load_ports_reserved_hostport_rejected(tmp_path: Path, reserved: int) -> None:
     """hostPorts must not collide with lab compose services (RESERVED_HOST_PORTS)."""
     data = _valid_ports()
-    data["environments"]["prod"]["backend"]["hostPort"] = reserved
+    data["environments"]["prod"]["app-api"]["hostPort"] = reserved
     _write_ports(tmp_path, data)
     with pytest.raises(ValueError, match="RESERVED_HOST_PORTS"):
         load_ports(tmp_path)
@@ -134,12 +135,33 @@ def test_kind_config_yaml_renders_all_mappings(tmp_path: Path) -> None:
 def test_service_patch_yaml_per_env(tmp_path: Path) -> None:
     _write_ports(tmp_path, _valid_ports())
     dev = service_patch_yaml(load_ports(tmp_path), "dev")
-    assert "name: frontend" in dev and "nodePort: 30080" in dev
-    assert "name: backend" in dev and "nodePort: 30500" in dev
+    assert "name: app-web" in dev and "nodePort: 30080" in dev
+    assert "name: app-api" in dev and "nodePort: 30500" in dev
     prod = service_patch_yaml(load_ports(tmp_path), "prod")
     assert "nodePort: 32080" in prod and "nodePort: 32500" in prod
     # Deterministic.
     assert service_patch_yaml(load_ports(tmp_path), "dev") == dev
+
+
+def test_service_patch_yaml_database_uses_role_port_and_service_name(
+    tmp_path: Path,
+) -> None:
+    """The shared database entry patches db.internal with the database role's
+    container port (5432), type NodePort, and the env nodePort."""
+    ports = _valid_ports()
+    for env in ("dev", "qa", "prod"):
+        ports["environments"][env]["database"] = {
+            "hostPort": 5432 + {"dev": 0, "qa": 1, "prod": 2}[env],
+            "nodePort": {"dev": 30700, "qa": 31700, "prod": 32700}[env],
+            "role": "database",
+            "serviceName": "db.internal",
+        }
+    _write_ports(tmp_path, ports)
+    dev = service_patch_yaml(load_ports(tmp_path), "dev")
+    assert "name: db.internal" in dev
+    assert "type: NodePort" in dev
+    assert "port: 5432" in dev and "targetPort: 5432" in dev
+    assert "nodePort: 30700" in dev
 
 
 def test_write_artifacts_idempotent(tmp_path: Path) -> None:
@@ -242,7 +264,9 @@ def test_committed_artifacts_match_generator() -> None:
     assert kind_config_yaml(data).strip() == _read_artifact(
         root / "infra" / "k8s" / "kind-config.yaml"
     )
-    for env in data["environments"]:
+    for env, apps in data["environments"].items():
+        if not apps:
+            continue  # template ships no reference apps (ADR-0005) — no patch
         patch_path = root / "infra" / "k8s" / "overlays" / env / "service-patch.yaml"
         assert service_patch_yaml(data, env).strip() == _read_artifact(
             patch_path
@@ -343,16 +367,16 @@ def test_assign_app_ports_block_rollover() -> None:
 
 def test_assign_app_ports_idempotent_existing() -> None:
     """Assigning an app that already exists returns its current ports unchanged."""
-    got = assign_app_ports(_valid_ports(), "frontend", "web")
-    assert got["dev"] == {"hostPort": 8081, "nodePort": 30080}
-    assert got["prod"] == {"hostPort": 8083, "nodePort": 32080}
+    got = assign_app_ports(_valid_ports(), "app-web", "web")
+    assert got["dev"] == {"hostPort": 8081, "nodePort": 30080, "role": "web"}
+    assert got["prod"] == {"hostPort": 8083, "nodePort": 32080, "role": "web"}
 
 
 def test_assign_app_ports_partial_present_raises() -> None:
     data = _valid_ports()
-    del data["environments"]["qa"]["frontend"]
+    del data["environments"]["qa"]["app-web"]
     with pytest.raises(ValueError, match="inconsistent"):
-        assign_app_ports(data, "frontend", "web")
+        assign_app_ports(data, "app-web", "web")
 
 
 def test_assign_app_ports_unknown_role_raises() -> None:
@@ -363,7 +387,7 @@ def test_assign_app_ports_unknown_role_raises() -> None:
 def test_load_ports_rejects_host_below_role_base(tmp_path: Path) -> None:
     """A web hostPort below the 8081 base (e.g. 7000) is out of range."""
     data = _valid_ports()
-    data["environments"]["dev"]["frontend"]["hostPort"] = 7000
+    data["environments"]["dev"]["app-web"]["hostPort"] = 7000
     _write_ports(tmp_path, data)
     with pytest.raises(ValueError, match="below the 'web' host-port range"):
         load_ports(tmp_path)
@@ -372,7 +396,7 @@ def test_load_ports_rejects_host_below_role_base(tmp_path: Path) -> None:
 def test_load_ports_rejects_node_outside_env_range(tmp_path: Path) -> None:
     """A dev nodePort in qa's range (31100 >= 31000) is rejected."""
     data = _valid_ports()
-    data["environments"]["dev"]["frontend"]["nodePort"] = 31100
+    data["environments"]["dev"]["app-web"]["nodePort"] = 31100
     _write_ports(tmp_path, data)
     with pytest.raises(ValueError, match="outside the 'web' dev nodePort range"):
         load_ports(tmp_path)
@@ -406,3 +430,117 @@ def test_assign_app_ports_to_file_writes_and_regenerates(tmp_path: Path) -> None
         "nodePort": 30081,
         "role": "web",
     }
+
+
+# ── Role registry (config-driven, ADR-0004) ──────────────────────────────
+
+
+def _write_roles(root: Path, data: dict) -> Path:
+    """Write infra/deployment/roles.json into a temp root."""
+    path = root / "infra" / "deployment" / "roles.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data), encoding="utf-8")
+    return path
+
+
+def test_load_roles_missing_file_uses_shipped_defaults(tmp_path: Path) -> None:
+    """No roles.json (bare checkout / fixtures) -> shipped web/api/database defaults."""
+    roles = load_roles(tmp_path)
+    assert set(roles) == {"web", "api", "database"}
+    assert roles["api"]["hostPortBase"] == 5002
+    assert roles["api"]["portEnv"] is True
+    assert roles["web"]["portEnv"] is False
+    assert roles["database"]["hostPortBase"] == 5432
+    assert roles["database"]["healthCheck"] == "tcp"
+
+
+def test_load_roles_reads_custom_role(tmp_path: Path) -> None:
+    """A consumer role (worker) is honored without touching Python."""
+    _write_roles(
+        tmp_path,
+        {
+            "version": 1,
+            "roles": {
+                "web": {
+                    "hostPortBase": 8081,
+                    "nodePortOffset": 80,
+                    "containerPort": 80,
+                },
+                "worker": {
+                    "hostPortBase": 6001,
+                    "nodePortOffset": 650,
+                    "containerPort": 3000,
+                    "portEnv": True,
+                },
+            },
+        },
+    )
+    roles = load_roles(tmp_path)
+    assert set(roles) == {"web", "worker"}
+    assert roles["worker"]["containerPort"] == 3000
+    assert roles["worker"]["portEnv"] is True
+
+
+def test_load_roles_invalid_raises(tmp_path: Path) -> None:
+    """Present-but-invalid roles.json raises — a typo never silently re-defaults."""
+    _write_roles(tmp_path, {"version": 1, "roles": {"web": {"hostPortBase": "x"}}})
+    with pytest.raises(ValueError, match="hostPortBase"):
+        load_roles(tmp_path)
+
+
+def test_role_host_base_with_custom_roles() -> None:
+    """role_host_base honors an explicit registry passed by the caller."""
+    custom = {"worker": {"hostPortBase": 6001}}
+    assert role_host_base("worker", custom) == 6001
+    with pytest.raises(ValueError, match="no host-port range"):
+        role_host_base("nope", custom)
+
+
+def test_assign_app_ports_custom_role_with_root(tmp_path: Path) -> None:
+    """assign-app-ports honors a consumer role when root has roles.json."""
+    _write_roles(
+        tmp_path,
+        {
+            "version": 1,
+            "roles": {
+                "web": {
+                    "hostPortBase": 8081,
+                    "nodePortOffset": 80,
+                    "containerPort": 80,
+                },
+                "worker": {
+                    "hostPortBase": 6001,
+                    "nodePortOffset": 650,
+                    "containerPort": 3000,
+                },
+            },
+        },
+    )
+    got = assign_app_ports(_valid_ports(), "crawler", "worker", root=tmp_path)
+    assert got["dev"]["hostPort"] == 6001
+    assert got["dev"]["nodePort"] == 30650
+    assert got["qa"]["nodePort"] == 31650
+    assert got["prod"]["nodePort"] == 32650
+
+
+def test_assign_app_ports_custom_role_without_root_raises() -> None:
+    """Without a root (no roles.json), only the shipped defaults are known."""
+    with pytest.raises(ValueError, match="no host-port range"):
+        assign_app_ports(_valid_ports(), "crawler", "worker")
+
+
+def test_shipped_roles_json_matches_defaults() -> None:
+    """The committed roles.json must equal the Python fallback registry — any
+    drift fails CI loudly (ADR-0004 single source of truth)."""
+    from tools.sdd_cli._shared import REPO_ROOT
+    from tools.sdd_cli.k8s_ports import _DEFAULT_ROLES
+
+    def _core(cfg: dict) -> dict:
+        return {
+            k: cfg[k]
+            for k in ("hostPortBase", "nodePortOffset", "containerPort", "portEnv", "healthCheck")
+        }
+
+    shipped = {name: _core(cfg) for name, cfg in load_roles(REPO_ROOT).items()}
+    defaults = {name: _core(cfg) for name, cfg in _DEFAULT_ROLES.items()}
+    assert shipped == defaults

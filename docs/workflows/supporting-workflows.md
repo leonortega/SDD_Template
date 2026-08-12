@@ -143,6 +143,12 @@ this skill resolves everything else as an AI (exact files depend on the stack).
 from the local profile before generating anything. Unset/incomplete/ambiguous → ask the
 user. If `metadataValidationStatus == "needs-user-validation"`, confirm first.
 
+**Hard rule: never assume a project name.** Via the standard `set-project-stack` flow,
+`values.name` is required (placeholders like `example`, `my-app`, `untitled` are rejected)
+and the layout app is named `apps/<project-slug>/` from the recorded name — never an
+example or random name. (A direct scaffold call with no recorded name falls back to
+`apps/example/` purely as a layout placeholder.)
+
 **Workflow.**
 
 1. **Read the stack** — summarize it for the user (e.g. "Frontend: React +
@@ -160,6 +166,12 @@ user. If `metadataValidationStatus == "needs-user-validation"`, confirm first.
    gates that cannot run.
 6. **Record and continue** — confirm generated files; optionally persist a non-obvious
    stack decision to `knowledge/`.
+
+**Scaffold shape lifecycle.** `.template/scaffold/` shapes are starting points only:
+once a generated app is registered in `apps.json` and implemented,
+`dev-flow-implement-ticket` step 9.5 prunes the matching shape
+(`environment-lab prune-scaffold`) — the real app becomes the reference. Do not
+regenerate a pruned shape.
 
 ---
 
@@ -332,7 +344,7 @@ The full architectural plan is in [`setup-flow-plan.md`](setup-flow-plan.md).
 ## 9. Eval Alignment (Promptfoo Coverage)
 
 Every workflow in this document is exercised by the agent eval
-(`.agents/agent-evals/promptfooconfig.yaml`, 60 cases — see
+(`.agents/agent-evals/promptfooconfig.yaml`, 61 cases — see
 `.agents/agent-evals/README.md` for the authoritative count). Coverage per workflow:
 
 | Workflow | Eval coverage mechanism | Covered? |
@@ -353,7 +365,7 @@ Every workflow in this document is exercised by the agent eval
 route, so an explicit "update the docs" request fell through to
 `dev-flow-pipeline-status`. It now has an explicit `requestType` mapping and a matching
 Promptfoo test case. Frontend design skills are verified via `activatedSkills` on
-implementation-stage routes (impeccable activated only for frontend stacks); all 55
+implementation-stage routes (impeccable activated only for frontend stacks); all 61
 eval cases pass against the provider.
 
 ---

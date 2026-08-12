@@ -1,0 +1,13 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: <appId>
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: <appId>
+          image: host.docker.internal:5001/<appId>
+          imagePullPolicy: IfNotPresent

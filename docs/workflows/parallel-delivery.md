@@ -100,6 +100,22 @@ release tags, and OpenProject deployment evidence.
 If another ticket owns the deployment lane, continue implementation or review work for other tickets when safe. Do not
 deploy, test, tag, move QA/Done state, or write deployment evidence for a ticket that does not own the lane.
 
+## Scaffold Shape Prune Ownership
+
+`dev-flow-implement-ticket` step 9.5 prunes `.template/scaffold/` shapes once an app of that kind is registered
+(`environment-lab prune-scaffold`). In parallel delivery, each ticket implements in its own worktree — if two tickets
+implement the same kind (e.g. two service-kind apps), both would delete the same shape and their PRs would conflict.
+The coordinator owns the prune **once per kind**:
+
+- Assign a `pruneOwner` per kind (`service`/`job`/`db-bootstrap`) in `.template/parallel-delivery.local.json` — prefer
+the lowest `deployOrder` among the apps the ticket registers, then the lowest ticket key.
+- The owner ticket runs step 9.5 destructively; its PR carries the deletion.
+- Non-owner tickets register apps of an already-owned kind and run `prune-scaffold --dry-run true` only — they confirm
+the plan but never delete, so only one PR touches the shape files. The coordinator's dry-run instruction overrides step
+9.5's default destructive prune for non-owner tickets.
+- After the owner's PR merges, the coordinator runs `prune-scaffold` once from its own checkout as an idempotent
+safety net (a leftover shape is removed; an already-pruned one reports `prune.missing`).
+
 ## Cleanup And Recovery
 
 Use cleanup and recovery when runtime state and durable state disagree:

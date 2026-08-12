@@ -40,8 +40,10 @@ observability.
   `app.json`); `packages/` holds shared libraries consumed by apps. See ADR-0002.
 
 The product trees (`apps/`, `packages/`) are intentionally absent in the shell: the scaffold
-(`ScaffoldProjectFiles`) creates the `apps/` + `packages/` containers and one `apps/example/` app skeleton once a
-stack is selected — never a root `src/`/`test/` pair.
+(`ScaffoldProjectFiles`) creates the `apps/` + `packages/` containers and one layout app skeleton named from the
+project (`apps/<project-slug>/`) once a stack and project name are selected — never a root `src/`/`test/` pair.
+Through the standard `set-project-stack` flow the name is required (no example or random app names); a direct
+scaffold call without a recorded name falls back to `apps/example/` purely as a layout placeholder.
 
 ## Sources Of Truth
 

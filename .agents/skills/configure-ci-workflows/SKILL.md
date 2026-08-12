@@ -73,6 +73,7 @@ Once the user confirms the stack, set it via:
 
 ```bash
 python -m tools.sdd_cli environment-lab set-project-stack --values-json '{
+  "name": "transportar",
   "frontend": "react",
   "backend": "fastapi",
   "database": "postgresql"
@@ -283,7 +284,7 @@ jobs:
       #       shell: bash
       #       run: |
       #         set -euo pipefail
-      #         cd apps/frontend
+      #         cd apps/<appId>
       #         npm ci
       #         npm run build
 
@@ -295,7 +296,7 @@ jobs:
       #       shell: bash
       #       run: |
       #         set -euo pipefail
-      #         cd apps/frontend
+      #         cd apps/<appId>
       #         npm run test -- --run
 
       # ── Package artifacts step ──

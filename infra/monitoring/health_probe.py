@@ -47,20 +47,31 @@ TIMEOUT_SECONDS = 4.0
 PROBE_HOST = os.environ.get("PROBE_HOST", "host.docker.internal")
 
 # Default port map (used only when infra/deployment/ports.json is unavailable).
-# NodePorts are per-environment and cluster-scoped (per-env fix, PR #6):
-#   DEV  30080/30500 | QA  31080/31500 | PROD  32080/32500
-# Status is determined from the external host ports (hostPort) — the URLs users
-# navigate — not from the internal nodePorts.
-_DEFAULT_PORTS = {
-    "dev": {"frontend": {"hostPort": 8081, "nodePort": 30080}, "backend": {"hostPort": 5002, "nodePort": 30500}},
-    "qa": {"frontend": {"hostPort": 8082, "nodePort": 31080}, "backend": {"hostPort": 5003, "nodePort": 31500}},
-    "prod": {"frontend": {"hostPort": 8083, "nodePort": 32080}, "backend": {"hostPort": 5004, "nodePort": 32500}},
+# The template ships only the shared database (ADR-0003/0005), so the
+# standalone fallback carries just its per-env ports — services appear once
+# a consumer registers apps and the mounted ports.json carries them all.
+_DEFAULT_PORTS: dict = {
+    "dev": {
+        "database": {"hostPort": 5432, "nodePort": 30700, "role": "database"}
+    },
+    "qa": {
+        "database": {"hostPort": 5433, "nodePort": 31700, "role": "database"}
+    },
+    "prod": {
+        "database": {"hostPort": 5434, "nodePort": 32700, "role": "database"}
+    },
 }
+
+# Role -> health-check type (mirrors infra/deployment/roles.json healthCheck;
+# used when roles.json is not mounted alongside ports.json). Databases and
+# other non-HTTP services are checked with a raw TCP connect.
+_DEFAULT_ROLE_CHECKS: dict = {"web": "http", "api": "http", "database": "tcp"}
 
 # Canonical source of truth: infra/deployment/ports.json (see tools/sdd_cli/k8s_ports.py).
 _PORTS_FILE = Path("/app/ports.json")
-# Stack-agnostic role labels — the template never assumes a tech stack.
-_SERVICE_LABELS = {"frontend": "Frontend (Web)", "backend": "Backend (API)"}
+_ROLES_FILE = Path("/app/roles.json")
+# Optional appId -> display label; unknown apps fall back to the title-cased id.
+_SERVICE_LABELS: dict = {"database": "Database"}
 
 
 def _load_ports() -> dict:
@@ -76,6 +87,22 @@ def _load_ports() -> dict:
     return _DEFAULT_PORTS
 
 
+def _load_role_checks() -> dict:
+    """Load role -> healthCheck from roles.json, falling back to defaults."""
+    try:
+        if _ROLES_FILE.exists():
+            data = json.loads(_ROLES_FILE.read_text(encoding="utf-8"))
+            roles = data.get("roles")
+            if isinstance(roles, dict):
+                return {
+                    name: (cfg.get("healthCheck") if isinstance(cfg, dict) else None)
+                    for name, cfg in roles.items()
+                }
+    except (OSError, json.JSONDecodeError):
+        pass
+    return _DEFAULT_ROLE_CHECKS
+
+
 def build_services(ports: dict | None = None) -> list[dict]:
     """Build the probe target list from the port map (canonical or fallback).
 
@@ -84,22 +111,40 @@ def build_services(ports: dict | None = None) -> list[dict]:
     (localhost host port), health path, and the K8s nodePort (display only).
     """
     ports = ports if ports is not None else _load_ports()
+    role_checks = _load_role_checks()
     services = []
     for env, apps in ports.items():
         for app_id, cfg in apps.items():
             node_port = cfg["nodePort"]
             host_port = cfg["hostPort"]
-            services.append(
-                {
-                    "env": env.upper(),
-                    "service": _SERVICE_LABELS.get(app_id, app_id.title()),
-                    "externalUrl": f"http://{PROBE_HOST}:{host_port}",
-                    "directUrl": f"http://localhost:{host_port}",
-                    "healthPath": "/health",
-                    "nodePort": str(node_port),
-                }
-            )
-    # Stable ordering: DEV, QA, PROD × frontend, backend.
+            role = cfg.get("role", "web")
+            check = role_checks.get(role, "http")
+            if check == "tcp":
+                services.append(
+                    {
+                        "env": env.upper(),
+                        "service": _SERVICE_LABELS.get(app_id, app_id.title()),
+                        "externalHost": PROBE_HOST,
+                        "externalPort": host_port,
+                        "directUrl": f"http://localhost:{host_port}",
+                        "healthPath": "tcp",
+                        "nodePort": str(node_port),
+                        "check": "tcp",
+                    }
+                )
+            else:
+                services.append(
+                    {
+                        "env": env.upper(),
+                        "service": _SERVICE_LABELS.get(app_id, app_id.title()),
+                        "externalUrl": f"http://{PROBE_HOST}:{host_port}",
+                        "directUrl": f"http://localhost:{host_port}",
+                        "healthPath": "/health",
+                        "nodePort": str(node_port),
+                        "check": "http",
+                    }
+                )
+    # Stable ordering: DEV, QA, PROD.
     order = {"dev": 0, "qa": 1, "prod": 2}
     return sorted(services, key=lambda s: (order.get(s["env"].lower(), 9), s["service"]))
 
@@ -118,6 +163,20 @@ def probe(service: dict) -> dict:
         "status": "Not deployed",
         "http": "-",
     }
+    if service.get("check") == "tcp":
+        # Non-HTTP service (e.g. the shared database): a TCP connect to the
+        # host-remapped port proves reachability — no HTTP status to read.
+        import socket
+
+        host = service["externalHost"]
+        port = service["externalPort"]
+        try:
+            with socket.create_connection((host, port), timeout=TIMEOUT_SECONDS):
+                result["http"] = "TCP"
+                result["status"] = "UP"
+        except OSError:
+            pass  # refused / timeout / dns -> Not deployed
+        return result
     target = service["externalUrl"] + service["healthPath"]
     try:
         with urlopen(Request(target, method="GET"), timeout=TIMEOUT_SECONDS) as resp:

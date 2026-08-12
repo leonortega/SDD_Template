@@ -1,0 +1,14 @@
+# Shared database PVC — the engine's persistent volume (ADR-0003).
+# One PVC per environment namespace; apps own logical databases within it.
+# Kind-lab note: the PVC dies with cluster recreation — see statefulset.yaml.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: database-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 5Gi

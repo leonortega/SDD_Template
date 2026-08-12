@@ -196,7 +196,8 @@ Useful `environment-lab` modes:
 - `init-local-files`: create ignored local files from tracked templates.
 - `init-project-profile`: create project profile, schema, and local overlay.
 - `set-client-tools`: update `.template/client-tools.local.json`.
-- `set-project-stack`: update ignored `.template/project-profile.local.json` with frontend/backend/database choices.
+- `set-project-stack`: update ignored `.template/project-profile.local.json` with the project name (`values.name`,
+  required — no example/random names) and frontend/backend/database choices.
 - `set-gitea-branch-protection`: apply PR approval rules via Gitea API.
 - `validate-observability`: check Seq + Grafana endpoints and provisioning.
 - `validate-gitea-runner`: check Docker, Gitea runner images, and runner tools.

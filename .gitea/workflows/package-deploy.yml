@@ -114,10 +114,10 @@ jobs:
 
       - name: Check for deployable changes (src/ or test/ folders)
         # Deploy in ANY environment only when the change set touches a src/ or
-        # test/ folder at any depth (e.g. apps/frontend/src/...,
-        # apps/backend/test/...), or a packages/<pkg>/** path whose package an
-        # app declares in apps.json `dependsOn` (shared-code change -> rebuild
-        # the dependent apps). Docs, infra, and workflow-only changes must not
+        # test/ folder at any depth (e.g. apps/<appId>/src/...), or a
+        # packages/<pkg>/** path whose package an app declares in apps.json
+        # `dependsOn` (shared-code change -> rebuild the dependent apps). Docs,
+        # infra, and workflow-only changes must not
         # deploy. Note: only folder-based matches count — co-located test files
         # outside these folders (e.g. pkg/foo_test.go) are not matched. The gate
         # fails open when the base commit cannot be resolved or the diff cannot
@@ -323,7 +323,7 @@ jobs:
               if affected is not None and a['appId'] not in affected:
                   continue
               print(f\"{a['appId']}|{a.get('projectPath', a['appId'])}\")
-          " 2>/dev/null || echo "frontend|frontend")
+          " || true)
 
           echo "${APPS}" | while IFS='|' read -r app_id project_path; do
             if [ -f "${project_path}/Dockerfile" ]; then
@@ -532,11 +532,15 @@ jobs:
           done < /tmp/prod-images.txt
           echo "PROD artifact verification passed."
 
-      - name: Deploy to K8s (all targets)
-        # App-aware (ADR-0002): only the gate's AFFECTED_APPS get their image
-        # tag set, are deleted, applied, and rollout-waited. Unaffected apps
-        # keep their running state untouched. AFFECTED_APPS=ALL (unconditional
-        # dispatch / fails-open) keeps the pre-filter all-apps behavior.
+      - name: Deploy to K8s (phased apply, all targets)
+        # App-aware (ADR-0002) + phase-gated (ADR-0003): only the gate's
+        # AFFECTED_APPS service apps get their image tag set, are deleted,
+        # applied, and rollout-waited. Unaffected service apps keep their
+        # running state untouched. Job apps (kind: job — db-bootstrap,
+        # migration jobs) are always applied and waited-for-complete BEFORE any
+        # Deployment rollout; a failed Job fails the deploy. AFFECTED_APPS=ALL
+        # (unconditional dispatch / fails-open) keeps the pre-filter all-apps
+        # behavior.
         if: steps.changes.outputs.deployable == 'true'
         env:
           KUBE_CONFIG_DATA: ${{ secrets.KUBECONFIG }}
@@ -588,7 +592,9 @@ jobs:
             echo "Overlay: ${OVERLAY_DIR}"
             echo "================================"
 
-            # Read apps and set image tags
+            # Read apps and set image tags for kind=service apps. Only these
+            # carry an image in the Deployment manifests — job apps are tagged
+            # via `kubectl set image` on the phase file before apply (below).
             cd "${OVERLAY_DIR}"
 
           python3 -c "
@@ -602,6 +608,8 @@ jobs:
               apps = json.load(f).get('apps', [])
           for app in apps:
               app_id = app['appId']
+              if app.get('kind', 'service') != 'service':
+                  continue
               if affected is not None and app_id not in affected:
                   continue
               image = f'{registry}/{app_id}:{commit_sha}'
@@ -619,11 +627,18 @@ jobs:
             fi
             echo "Manifest size: $(wc -l < /tmp/k8s-manifest.yaml) lines"
 
-            # App-aware manifest filter (ADR-0002): on filtered runs, drop the
-            # resources of unaffected apps so kubectl apply never re-touches
-            # them (their image tags are still :latest from the committed
-            # overlay — applying them would trigger an unwanted rollout).
-            # AFFECTED_APPS=ALL applies everything unchanged.
+            # App-aware manifest filter (ADR-0002) + phase split (ADR-0003):
+            # on filtered runs, drop the resources of unaffected SERVICE apps
+            # so kubectl apply never re-touches them (their image tags are
+            # still :latest from the committed overlay — applying them would
+            # trigger an unwanted rollout). AFFECTED_APPS=ALL applies
+            # everything unchanged. Outputs are split into two files:
+            #   /tmp/k8s-jobs.yaml         — kind: Job resources (wait-for-
+            #     completion phases: db-bootstrap, per-app migration jobs).
+            #     Jobs are ALWAYS kept when present, regardless of the affected
+            #     set: migrations must run before any rollout in this env.
+            #   /tmp/k8s-deployments.yaml  — everything else (Deployments,
+            #     Services, StatefulSets, PVCs) filtered by affected apps.
             APPLY_SKIPPED=false
             if [ -n "${AFFECTED_APPS}" ] && [ "${AFFECTED_APPS}" != "ALL" ]; then
               echo "Filtering manifest to affected apps: ${AFFECTED_APPS}"
@@ -632,37 +647,56 @@ jobs:
           affected = {a for a in os.environ.get("AFFECTED_APPS", "").split(",") if a}
           raw = open("/tmp/k8s-manifest.yaml", encoding="utf-8").read()
           docs = [d.strip() for d in re.split(r"^---\s*$", raw, flags=re.M) if d.strip()]
-          kept, skipped = [], []
+          kept_jobs, kept_deployments, skipped = [], [], []
           for doc in docs:
+              kind_m = re.search(r"^kind:\s*(\S+)", doc, flags=re.M)
+              doc_kind = kind_m.group(1) if kind_m else ""
               name_m = re.search(r"^  name:\s*(\S+)", doc, flags=re.M)
               name = name_m.group(1) if name_m else ""
-              if name in affected:
-                  kept.append(doc)
+              if doc_kind == "Job":
+                  # Migration/bootstrap jobs always run (ADR-0003 ordering).
+                  kept_jobs.append(doc)
+              elif name in affected:
+                  kept_deployments.append(doc)
               else:
                   skipped.append(name)
-          # Always rewrite the file: when nothing is kept it must be TRUNCATED,
-          # or the APPLY_SKIPPED guard below would apply the stale full
-          # manifest (with :latest tags) instead of skipping.
-          with open("/tmp/k8s-manifest.yaml", "w", encoding="utf-8") as f:
-              f.write("\n---\n".join(kept) + ("\n" if kept else ""))
+          # Always rewrite both files: when nothing is kept they must be
+          # TRUNCATED, or the APPLY_SKIPPED guard below would apply the stale
+          # full manifest (with :latest tags) instead of skipping.
+          with open("/tmp/k8s-jobs.yaml", "w", encoding="utf-8") as f:
+              f.write("\n---\n".join(kept_jobs) + ("\n" if kept_jobs else ""))
+          with open("/tmp/k8s-deployments.yaml", "w", encoding="utf-8") as f:
+              f.write("\n---\n".join(kept_deployments) + ("\n" if kept_deployments else ""))
+          kept = len(kept_jobs) + len(kept_deployments)
           if kept:
-              print(f"Filtered manifest: kept {len(kept)} resource(s), dropped {len(skipped)} unaffected resource(s).")
+              print(f"Filtered manifest: kept {len(kept_deployments)} deployment/resource(s) + {len(kept_jobs)} job(s), dropped {len(skipped)} unaffected resource(s).")
           else:
-              print(f"No affected resources found (dropped {len(skipped)}) - manifest truncated: nothing to apply for this run.")
+              print(f"No affected resources found (dropped {len(skipped)}) - manifests truncated: nothing to apply for this run.")
           PYEOF
-              if [ ! -s /tmp/k8s-manifest.yaml ]; then
+              if [ ! -s /tmp/k8s-jobs.yaml ] && [ ! -s /tmp/k8s-deployments.yaml ]; then
                 echo "No affected resources to apply — skipping kubectl apply."
                 APPLY_SKIPPED=true
               fi
+            else
+              # Unfiltered (ALL / no affected filter): split the full render.
+              python3 << 'PYEOF'
+          import re
+          raw = open("/tmp/k8s-manifest.yaml", encoding="utf-8").read()
+          docs = [d.strip() for d in re.split(r"^---\s*$", raw, flags=re.M) if d.strip()]
+          jobs = [d for d in docs if re.search(r"^kind:\s*Job\s*$", d, flags=re.M)]
+          others = [d for d in docs if d not in jobs]
+          with open("/tmp/k8s-jobs.yaml", "w", encoding="utf-8") as f:
+              f.write("\n---\n".join(jobs) + ("\n" if jobs else ""))
+          with open("/tmp/k8s-deployments.yaml", "w", encoding="utf-8") as f:
+              f.write("\n---\n".join(others) + ("\n" if others else ""))
+          PYEOF
             fi
 
-            # Delete existing apps to avoid "field is immutable" errors when K8s
-            # resources change their selector/matchLabels (e.g. commonLabels→labels).
-            # The CI pipeline is the sole deployer, so delete-then-recreate is safe.
-            echo "Removing existing apps for clean apply..."
-            # Delete existing deployments to avoid "field is immutable" errors when
-            # spec.selector.matchLabels changes (e.g. commonLabels→labels migration).
-            # Services are NOT deleted — their selectors are mutable.
+            # Delete existing deployments to avoid "field is immutable" errors
+            # when spec.selector.matchLabels changes (e.g. commonLabels→labels
+            # migration). Services are NOT deleted — their selectors are
+            # mutable. Job apps have no Deployment; they are recreated fresh.
+            echo "Removing existing service-app deployments for clean apply..."
           python3 << PYEOF
           import json, os, subprocess
           apps_json = '${APPS_JSON}'
@@ -673,25 +707,107 @@ jobs:
               apps = json.load(f).get('apps', [])
           for app in apps:
               app_id = app['appId']
+              if app.get('kind', 'service') != 'service':
+                  continue
               if affected is not None and app_id not in affected:
                   continue
               subprocess.run(['kubectl', '-n', namespace, 'delete', 'deploy', app_id, '--ignore-not-found'], check=False)
           PYEOF
 
-            # Apply to K8s (skipped when the affected filter left nothing)
-            if [ "${APPLY_SKIPPED}" = "true" ]; then
-              echo "Nothing to apply for this run — skipping apply."
-            else
-              echo "Deploying to ${ENV}..."
-              if ! kubectl apply -f /tmp/k8s-manifest.yaml 2>&1; then
-                echo "ERROR: kubectl apply failed - running dry-run for diagnosis..."
-                kubectl apply --dry-run=client -f /tmp/k8s-manifest.yaml 2>&1 | head -20
+            # ── Phase 1: Jobs (bootstrap + migrations) — apply & wait ────────
+            # ADR-0003: Job apps run BEFORE any Deployment rollout. A failed
+            # Job fails the deploy here — rollouts never start.
+            if [ -s /tmp/k8s-jobs.yaml ]; then
+              # Pin every registered job app's image to the deploy commit — the
+              # env overlay images: section only lists service apps, so the
+              # Job manifests would otherwise keep the committed :latest tag
+              # (and PROD would run migrations at :latest, not the pinned
+              # QA-approved artifact).
+              python3 << PYEOF
+          import json, os, subprocess, sys
+          namespace = '${NAMESPACE}'
+          apps_json = '${APPS_JSON}'
+          registry = '${REGISTRY}'
+          commit_sha = '${COMMIT_SHA}'
+          with open(apps_json) as f:
+              apps = json.load(f).get('apps', [])
+          for app in apps:
+              if app.get('kind', 'service') != 'job':
+                  continue
+              app_id = app['appId']
+              image = f'{registry}/{app_id}:{commit_sha}'
+              tag = subprocess.run(
+                  ['kubectl', '-n', namespace, 'set', 'image', '-f', '/tmp/k8s-jobs.yaml',
+                   f'{app_id}={image}', '--local', '-o', 'yaml'],
+                  capture_output=True, text=True
+              )
+              if tag.returncode != 0:
+                  print(f'ERROR: could not tag Job image for {app_id}: {tag.stderr}')
+                  sys.exit(1)
+              with open('/tmp/k8s-jobs.yaml', 'w', encoding='utf-8') as f:
+                  f.write(tag.stdout)
+              print(f'Pinned Job image for {app_id}: {image}')
+          PYEOF
+
+              echo "Applying Job phase (${ENV})..."
+              if ! kubectl apply -f /tmp/k8s-jobs.yaml 2>&1; then
+                echo "ERROR: kubectl apply failed for jobs - running dry-run for diagnosis..."
+                kubectl apply --dry-run=client -f /tmp/k8s-jobs.yaml 2>&1 | head -20
                 exit 1
               fi
+              echo "Waiting for Jobs to complete (${ENV})..."
+              # Wait ONLY on job resources actually present in the applied
+              # phase file — a registered-but-unrendered job app (missing
+              # overlay resources entry) must not fail the wait with a
+              # misleading error.
+              python3 << PYEOF
+          import json, os, re, subprocess, sys
+          namespace = '${NAMESPACE}'
+          apps_json = '${APPS_JSON}'
+          jobs_raw = open('/tmp/k8s-jobs.yaml', encoding='utf-8').read()
+          applied_jobs = set(re.findall(r'^  name:\s*(\S+)', jobs_raw, flags=re.M))
+          with open(apps_json) as f:
+              apps = json.load(f).get('apps', [])
+          for app in apps:
+              if app.get('kind', 'service') != 'job':
+                  continue
+              app_id = app['appId']
+              if app_id not in applied_jobs:
+                  print(f'INFO: Job {app_id} registered but not in this env overlay - skipping wait')
+                  continue
+              print(f'Waiting for Job {app_id} in {namespace}...')
+              wait = subprocess.run(
+                  ['kubectl', '-n', namespace, 'wait', '--for=condition=complete',
+                   '--timeout=300s', f'job/{app_id}'],
+                  capture_output=True, text=True
+              )
+              if wait.returncode != 0:
+                  # A Job can complete or fail; the failure case must fail the deploy.
+                  status = subprocess.run(
+                      ['kubectl', '-n', namespace, 'get', 'job', app_id, '-o', 'jsonpath={.status}'],
+                      capture_output=True, text=True
+                  )
+                  print(f'ERROR: Job {app_id} did not complete: {status.stdout} {wait.stderr}')
+                  sys.exit(1)
+              print(f'  Job {app_id} completed.')
+          PYEOF
+            else
+              echo "No Job phase for ${ENV} — skipping."
             fi
 
-            # Wait for rollout of each app
-          python3 -c "
+            # ── Phase 2: Deployments — apply & rollout ──────────────────────
+            # Applied only after every Job above completed (gating, ADR-0003).
+            if [ "${APPLY_SKIPPED}" = "true" ]; then
+              echo "Nothing to apply for this run — skipping apply."
+            elif [ -s /tmp/k8s-deployments.yaml ]; then
+              echo "Deploying to ${ENV}..."
+              if ! kubectl apply -f /tmp/k8s-deployments.yaml 2>&1; then
+                echo "ERROR: kubectl apply failed - running dry-run for diagnosis..."
+                kubectl apply --dry-run=client -f /tmp/k8s-deployments.yaml 2>&1 | head -20
+                exit 1
+              fi
+              echo "Waiting for rollouts (${ENV})..."
+              python3 -c "
           import json, os, subprocess
           namespace = 'sdd-${ENV}'
           affected_raw = os.environ.get('AFFECTED_APPS', '')
@@ -700,6 +816,8 @@ jobs:
               apps = json.load(f).get('apps', [])
           for app in apps:
               app_id = app['appId']
+              if app.get('kind', 'service') != 'service':
+                  continue
               if affected is not None and app_id not in affected:
                   continue
               print(f'Waiting for rollout of {app_id} in {namespace}...')
@@ -708,6 +826,9 @@ jobs:
                   check=False
               )
           "
+            else
+              echo "Nothing to apply for this run — skipping apply."
+            fi
 
             cd "${REPO_ROOT}"
 
@@ -733,6 +854,11 @@ jobs:
           failures = []
           for app in apps:
               app_id = app['appId']
+              # Job apps (db-bootstrap, migration jobs) have no Service/ports —
+              # they are wait-for-completion phases, not health-check targets.
+              if app.get('kind', 'service') != 'service':
+                  print(f'INFO: {app_id} is a job app - skipping health check')
+                  continue
               health_path = app.get('healthPath', '/health')
               host_port = ports.get('environments', {}).get(env, {}).get(app_id, {}).get('hostPort')
               if not host_port:
@@ -942,11 +1068,15 @@ jobs:
                   config = json.load(f)
               apps = config.get('apps', [])
           else:
-              apps = [{'appId': 'frontend', 'healthPath': '/health'}]
+              apps = []  # template ships no apps (ADR-0005) — nothing to discover
 
           discovered = []
           for app in apps:
               app_id = app['appId']
+              # Job apps expose no Service — nothing to discover (ADR-0003).
+              if app.get('kind', 'service') != 'service':
+                  print(f"  {app_id}: job app (no Service/nodePort) — skipped")
+                  continue
               health_path = app.get('healthPath', '/health')
 
               # Discover nodePort from K8s service
@@ -1022,6 +1152,9 @@ jobs:
 
           for app in apps:
               app_id = app['appId']
+              if app.get('kind', 'service') != 'service':
+                  print(f'INFO: {app_id} is a job app - skipping health check')
+                  continue
               health_path = app.get('healthPath', '/health')
               host_port = prod_ports.get(app_id, {}).get('hostPort')
               if not host_port:

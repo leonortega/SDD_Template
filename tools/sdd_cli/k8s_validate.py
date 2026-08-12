@@ -177,20 +177,25 @@ def validate_overlays(root: Path, dry_run: bool = False) -> dict[str, Any]:
             else:
                 seen_node_ports.setdefault(node_port, key)
 
-    # Canonical drift: every rendered nodePort must match ports.json
+    # Canonical drift: every rendered nodePort must match ports.json. The
+    # rendered Service is matched by its manifest name — usually the ports.json
+    # key, but infra services may override it (the shared database registers as
+    # ``database`` and renders as ``db.internal`` via the serviceName field).
     if canonical is not None:
         envs = canonical.get("environments", {})
         for env, apps in envs.items():
             for app, cfg in apps.items():
                 expected = int(cfg["nodePort"])
-                actual = rendered_ports.get(f"{env}/{app}")
+                service = cfg.get("serviceName", app)
+                actual = rendered_ports.get(f"{env}/{service}")
                 if actual is None:
                     add_bucket_item(
                         result["findings"],
                         f"infra/k8s/overlays/{env}",
                         "nodeport.missing",
-                        f"{env}/{app} renders no nodePort - its service-patch is "
-                        "likely unwired (kustomization.yaml must list it).",
+                        f"{env}/{app} ({service}) renders no nodePort - its "
+                        "service-patch is likely unwired (kustomization.yaml "
+                        "must list it).",
                         "error",
                         "pre-start",
                     )

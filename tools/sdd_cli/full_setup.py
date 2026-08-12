@@ -412,12 +412,18 @@ def stage4_project_guidance(root: Path, dry_run: bool = False) -> dict[str, Any]
             frontend = stack_values.get("frontend", "?")
             backend = stack_values.get("backend", "?")
             database = stack_values.get("database", "?")
+            project_name = str(profile.get("projectName") or "").strip()
+            if not project_name:
+                print(
+                    "  [WARN] No project name set - set-project-stack requires values.name "
+                    "(no example/random names)."
+                )
             print(f"  [OK] Stack configured: {frontend} / {backend} / {database}")
             steps.append({
                 "command": "stage4-profile",
                 "title": "Project profile",
                 "valid": True,
-                "message": f"Stack configured: frontend={frontend}, backend={backend}, database={database}.",
+                "message": f"Stack configured: project={project_name or '<unnamed>'}, frontend={frontend}, backend={backend}, database={database}.",
             })
         else:
             print("  [WARN] Stack not fully configured.")

@@ -22,9 +22,11 @@ stack is defined by the user via `set-project-stack` and recorded in
 `stack.database`).
 
 `set-project-stack` only creates the deterministic skeleton (`apps/` + `packages/`,
-with one `apps/example/` app documenting the per-app layout — ADR-0002; there is
-never a root `src/` + `test/` pair)
-and then marks `scaffoldRequired: true` with `nextStage: dev-flow-scaffold-project`.
+with one app named from the project — `apps/<project-slug>/` — documenting the
+per-app layout (ADR-0002; the project name is required by `set-project-stack`, so
+the template never ships example or random names; there is never a root `src/` +
+`test/` pair) and then marks `scaffoldRequired: true` with
+`nextStage: dev-flow-scaffold-project`.
 **This skill resolves everything else as an AI** — the exact files depend on the
 chosen stack, so they can never come from a fixed list of combinations.
 
@@ -54,14 +56,15 @@ Follow these steps in order. Do not skip steps.
 
 ### 1. Read the stack
 
-Read `.template/project-profile.local.json` and extract `stack.frontend`,
-`stack.backend`, `stack.database` (each is `{applies: bool, value: str}`).
-Also read `stack.languages`, `stack.frameworks`, `stack.testFrameworks` when
-present. Summarize the stack for the user, e.g.:
-"Frontend: React + TypeScript · Backend: FastAPI · Database: PostgreSQL".
+Read `.template/project-profile.local.json` and extract `projectName` plus
+`stack.frontend`, `stack.backend`, `stack.database` (each is
+`{applies: bool, value: str}`). Also read `stack.languages`, `stack.frameworks`,
+`stack.testFrameworks` when present. Summarize the project for the user, e.g.:
+"Transportar — Frontend: React + TypeScript · Backend: FastAPI · Database: PostgreSQL".
 
 If `metadataValidationStatus == "needs-user-validation"`, confirm the stack
-with the user before scaffolding.
+with the user before scaffolding. If `projectName` is missing or a placeholder,
+ask the user for the real project name — never invent or reuse a sample name.
 
 ### 2. Mandatory Skill Catalog Review
 
@@ -165,6 +168,13 @@ and residual risk.
   non-obvious stack decision was made.
 - The next flow stage continues normally (no manual next-step question — the
   process is deterministic).
+
+> **Scaffold shape lifecycle:** shapes in `.template/scaffold/` are starting
+> points only. When an app you materialized is registered in `apps.json` and
+> implemented, `dev-flow-implement-ticket` step 9.5 prunes the matching shape
+> (`environment-lab prune-scaffold`): `apps/service/` for service-kind apps,
+> `apps/job/` for job-kind apps, `db-bootstrap/` for the bootstrap job. Do not
+> regenerate a pruned shape — the real app is the reference.
 
 ## Deliverables Checklist
 

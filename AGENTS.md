@@ -131,7 +131,7 @@ For step-by-step control, run individual subcommands:
 python -m tools.sdd_cli environment-lab init-local-files
 python -m tools.sdd_cli environment-lab compose-up
 python -m tools.sdd_cli environment-lab build-gitea-images
-python -m tools.sdd_cli environment-lab set-project-stack --values-json '{"frontend": "react", "backend": "fastapi", "database": "postgresql"}'
+python -m tools.sdd_cli environment-lab set-project-stack --values-json '{"name": "transportar", "frontend": "react", "backend": "fastapi", "database": "postgresql"}'
 ```
 
 See `.agents/skills/configure-dev-environment/SKILL.md` for available modes.
@@ -154,6 +154,10 @@ commands, or any other task that depends on the product technology stack), every
 3. **Never auto-detect or infer** the tech stack from file extensions, package.json, requirements.txt, or any other
 source code patterns.
 4. **Never assume** a default stack or fallback.
+
+**Project name is part of the same gate:** `set-project-stack` requires a real project name (`values.name`), so
+scaffolded appIds/folders never use example or random names. Ask the user for the project name together with the
+stack and pass it in `--values-json` (e.g. `{"name": "transportar", "frontend": "react", ...}`).
 
 This is a hard gate (authority level 5). The stack must come from an explicit user decision, not from automated
 detection or assumptions.
