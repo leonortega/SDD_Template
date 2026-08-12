@@ -522,7 +522,7 @@ trunk must be initialized before the first commit. `ensure-quality-tools` (run b
 
 `trunk check` ignores the template shell content that a consumer implementation does not need linted — see the
 `lint.ignore` block in `.trunk/trunk.yaml` (`docs/`, `knowledge/`, `openspec/`, `tools/`, `.agents/`, `agent-evals/`,
-vendor skills, and lab infra except `infra/k8s` + `infra/deployment`). Kept checked: product paths (`src/`, `test/`, ...),
+vendor skills, and lab infra except `infra/k8s` + `infra/deployment`). Kept checked: product paths (`apps/`, `packages/`, ...),
 `infra/k8s/` + `infra/deployment/`, `.gitea/` workflows, and root tool config.
 
 1. **Initialize trunk in the repo:** `npx trunk init`

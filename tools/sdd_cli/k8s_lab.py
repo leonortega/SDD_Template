@@ -189,11 +189,13 @@ def scaffold_k8s(root, dry_run=False):
     """Scaffold K8s deployment files: Kustomize base and environment overlays.
 
     Reads infra/deployment/apps.json and generates deterministic, stack-independent
-    manifests for each app:
-    - infra/k8s/base/{app}-deployment.yaml
-    - infra/k8s/base/{app}-service.yaml
-    - infra/k8s/base/kustomization.yaml (all apps)
-    - infra/k8s/overlays/{dev,qa,prod}/kustomization.yaml (env-specific image tags)
+    manifests for each app (ADR-0002 composed layout):
+    - apps/{appId}/deploy/{appId}-deployment.yaml
+    - apps/{appId}/deploy/{appId}-service.yaml
+    - apps/{appId}/deploy/kustomization.yaml (that app's resources)
+    - infra/k8s/overlays/{dev,qa,prod}/kustomization.yaml which COMPOSE the
+      per-app deploy dirs via relative Kustomize references (env image tags
+      stay in the overlay; the infra/k8s/base/ directory no longer exists)
 
     Stack-specific artifacts (Dockerfile, nginx.conf, .dockerignore) are delegated
     to the AI-driven dev-flow-scaffold-project skill — never generated here.
@@ -213,10 +215,11 @@ def scaffold_k8s(root, dry_run=False):
                 "severity": "info",
                 "message": (
                     "Would scaffold K8s deployment files:"
-                    "\n  - infra/k8s/base/{app}-deployment.yaml per app"
-                    "\n  - infra/k8s/base/{app}-service.yaml per app"
-                    "\n  - infra/k8s/base/kustomization.yaml (all apps)"
+                    "\n  - apps/{appId}/deploy/{appId}-deployment.yaml per app"
+                    "\n  - apps/{appId}/deploy/{appId}-service.yaml per app"
+                    "\n  - apps/{appId}/deploy/kustomization.yaml per app"
                     "\n  - infra/k8s/overlays/{dev,qa,prod}/kustomization.yaml"
+                    "\n    (composing per-app deploy dirs + env image tags)"
                 ),
                 "phase": "apply",
             }
@@ -346,10 +349,12 @@ def scaffold_k8s(root, dry_run=False):
         }
     )
 
-    # ── Generate Kustomize base manifests (one Deployment + Service per app) ──
-    base_dir = k8s_dir / "base"
-    base_dir.mkdir(parents=True, exist_ok=True)
-    base_resources = []
+    # ── Generate per-app Kustomize manifests (Deployment + Service per app) ──
+    # ADR-0002: every app is self-contained — its manifests live in
+    # apps/<appId>/deploy/, and the env overlays compose them via relative
+    # Kustomize references. The old shared infra/k8s/base/ directory is gone;
+    # each app owns its own kustomization.yaml.
+    app_deploy_resources: list[str] = []  # overlay refs to each app deploy dir
 
     for app in apps:
         app_id = app["appId"]
@@ -357,9 +362,12 @@ def scaffold_k8s(root, dry_run=False):
         port = _port_for_role(role)
         health_path = "/health"  # Always use /health — nginx.conf has it for web, api apps must implement it
 
+        deploy_dir = root / "apps" / app_id / "deploy"
+        deploy_dir.mkdir(parents=True, exist_ok=True)
+
         # Deployment YAML
         dep_file = f"{app_id}-deployment.yaml"
-        dep_path = base_dir / dep_file
+        dep_path = deploy_dir / dep_file
         if not dep_path.exists():
             dep_yaml = (
                 "apiVersion: apps/v1\n"
@@ -416,7 +424,7 @@ def scaffold_k8s(root, dry_run=False):
             dep_path.write_text(dep_yaml, encoding="utf-8")
             result["actions"].append(
                 {
-                    "path": f"infra/k8s/base/{dep_file}",
+                    "path": f"apps/{app_id}/deploy/{dep_file}",
                     "key": "file.created",
                     "severity": "info",
                     "message": f"Created K8s Deployment for {app_id} (role={role}, port={port}).",
@@ -426,7 +434,7 @@ def scaffold_k8s(root, dry_run=False):
         else:
             result["actions"].append(
                 {
-                    "path": f"infra/k8s/base/{dep_file}",
+                    "path": f"apps/{app_id}/deploy/{dep_file}",
                     "key": "file.exists",
                     "severity": "info",
                     "message": f"Deployment YAML already exists for {app_id}.",
@@ -436,7 +444,7 @@ def scaffold_k8s(root, dry_run=False):
 
         # Service YAML
         svc_file = f"{app_id}-service.yaml"
-        svc_path = base_dir / svc_file
+        svc_path = deploy_dir / svc_file
         if not svc_path.exists():
             node_port = _node_port_for_app(app_id)
             svc_yaml = (
@@ -457,17 +465,17 @@ def scaffold_k8s(root, dry_run=False):
             svc_path.write_text(svc_yaml, encoding="utf-8")
             result["actions"].append(
                 {
-                    "path": f"infra/k8s/base/{svc_file}",
+                    "path": f"apps/{app_id}/deploy/{svc_file}",
                     "key": "file.created",
                     "severity": "info",
-                    "message": f"Created K8s Service for {app_id} (LoadBalancer, port {port}).",
+                    "message": f"Created K8s Service for {app_id} (NodePort, port {port}).",
                     "phase": "apply",
                 }
             )
         else:
             result["actions"].append(
                 {
-                    "path": f"infra/k8s/base/{svc_file}",
+                    "path": f"apps/{app_id}/deploy/{svc_file}",
                     "key": "file.exists",
                     "severity": "info",
                     "message": f"Service YAML already exists for {app_id}.",
@@ -475,42 +483,43 @@ def scaffold_k8s(root, dry_run=False):
                 }
             )
 
-        base_resources.append(f"  - {dep_file}")
-        base_resources.append(f"  - {svc_file}")
+        # Per-app kustomization.yaml (this app's own resources)
+        app_kustomization = deploy_dir / "kustomization.yaml"
+        if not app_kustomization.exists():
+            kustomize_yaml = (
+                "apiVersion: kustomize.config.k8s.io/v1beta1\n"
+                "kind: Kustomization\n"
+                "resources:\n"
+                f"  - {dep_file}\n"
+                f"  - {svc_file}\n"
+                "labels:\n"
+                "  - pairs:\n"
+                "      app.kubernetes.io/managed-by: sdd-cli\n"
+            )
+            app_kustomization.write_text(kustomize_yaml, encoding="utf-8")
+            result["actions"].append(
+                {
+                    "path": f"apps/{app_id}/deploy/kustomization.yaml",
+                    "key": "file.created",
+                    "severity": "info",
+                    "message": f"Created per-app kustomization.yaml for {app_id}.",
+                    "phase": "apply",
+                }
+            )
+        else:
+            result["actions"].append(
+                {
+                    "path": f"apps/{app_id}/deploy/kustomization.yaml",
+                    "key": "file.exists",
+                    "severity": "info",
+                    "message": f"Per-app kustomization.yaml already exists for {app_id}.",
+                    "phase": "audit",
+                }
+            )
 
-    # Base kustomization.yaml
-    base_kustomization = base_dir / "kustomization.yaml"
-    if not base_kustomization.exists():
-        kustomize_yaml = (
-            "apiVersion: kustomize.config.k8s.io/v1beta1\n"
-            "kind: Kustomization\n"
-            "resources:\n"
-            + "\n".join(base_resources)
-            + "\n"
-            "commonLabels:\n"
-            "  app.kubernetes.io/managed-by: sdd-cli\n"
-        )
-        base_kustomization.write_text(kustomize_yaml, encoding="utf-8")
-        app_names = ", ".join(a["appId"] for a in apps)
-        result["actions"].append(
-            {
-                "path": "infra/k8s/base/kustomization.yaml",
-                "key": "file.created",
-                "severity": "info",
-                "message": f"Created base kustomization.yaml with {len(apps)} app(s): {app_names}.",
-                "phase": "apply",
-            }
-        )
-    else:
-        result["actions"].append(
-            {
-                "path": "infra/k8s/base/kustomization.yaml",
-                "key": "file.exists",
-                "severity": "info",
-                "message": "Base kustomization.yaml already exists — add new apps manually if needed.",
-                "phase": "audit",
-            }
-        )
+        # Overlay reference: 4 levels up from infra/k8s/overlays/{env}/ to the
+        # repo root, then into the app's deploy dir.
+        app_deploy_resources.append(f"../../../../apps/{app_id}/deploy")
 
     # ── Generate environment overlays (dev, qa, prod) ──
     registry = "host.docker.internal:5001"
@@ -533,7 +542,10 @@ def scaffold_k8s(root, dry_run=False):
                 "kind: Kustomization\n"
                 f"namespace: sdd-{env_name}\n"
                 "resources:\n"
-                "  - ../../base\n"
+                + "\n".join(f"  - {res}" for res in app_deploy_resources)
+                + "\n"
+                "patches:\n"
+                "  - path: service-patch.yaml\n"
                 "images:\n"
                 + "".join(image_entries)
             )
@@ -545,7 +557,10 @@ def scaffold_k8s(root, dry_run=False):
                     "path": f"infra/k8s/overlays/{env_name}/kustomization.yaml",
                     "key": "file.created",
                     "severity": "info",
-                    "message": f"Created {env_name} overlay kustomization.yaml with {count} app image {label}.",
+                    "message": (
+                        f"Created {env_name} overlay kustomization.yaml composing "
+                        f"{count} app deploy dir(s) with {count} image {label}."
+                    ),
                     "phase": "apply",
                 }
             )

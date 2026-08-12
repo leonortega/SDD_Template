@@ -336,7 +336,9 @@ decorative — they must be actively applied during every TDD cycle.
 - **Before any service interaction, check MCP routing** per `.agents/mcp-instructions.md`: service MCPs (gitea,
 openproject, grafana, kubernetes). Repository content search uses built-in file/search
 tools.
-- **Create `src/` and `test/` folder structure** before writing any product code. Always **ask the user** to confirm the
+- **Create the per-app folder structure** (`apps/<appId>/src/` and `apps/<appId>/test/`, ADR-0002 layout) before
+writing any product code. There is no root `src/`/`test/` pair — each deployable app owns its source, tests,
+`deploy/` manifests, and `Dockerfile` under `apps/<appId>/`. Always **ask the user** to confirm the
 scaffold structure before creating files.
 - **Declare skills at start of every response** body via a `Skills used:` block (see Section 1 for format).
 - **Mark task complete** only after its tests pass and acceptance-to-test map entries are verified.

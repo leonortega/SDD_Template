@@ -6,3 +6,6 @@
 # the CI Semgrep step stays green on repo-owned code.
 .agents/skills/
 .agents/agent-evals/
+# Generator/reference config only (ADR-0002): example profiles and local
+# overlays, never scanned by CI either.
+.template/

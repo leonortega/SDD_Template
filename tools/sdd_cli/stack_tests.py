@@ -7,9 +7,10 @@ runtimes (.NET SDK, Go, ...) live on the developer machine, not in
 test-requirements.md` (unit/integration/architecture).
 
 The gate is **layout-tolerant**: the AI-driven scaffold (dev-flow-scaffold-project)
-chooses the app layout (e.g. package.json under `src/frontend/`, colocated
-tests like `src/App.test.tsx`), so the commands must not assume a single
-hardcoded layout. Per framework the gate resolves at runtime:
+chooses the app layout (ADR-0002 per-app layout `apps/<appId>/` with package.json
+under `apps/<appId>/` or `apps/<appId>/src/`, legacy layouts such as
+`src/frontend/`, colocated tests like `src/App.test.tsx`), so the commands must
+not assume a single hardcoded layout. Per framework the gate resolves at runtime:
 
 - **pytest** — uses `python3` with a `python` fallback (Windows); runs only
   inside existing canonical test dirs (`test/unit`, `test/integration`,
@@ -125,12 +126,15 @@ _CANONICAL_TEST_DIRS: dict[str, tuple[str, ...]] = {
 
 # Glob patterns (relative to the repo root) locating package-lock.json — the
 # JS/TS package root where `npm ci` and vitest/jest must run. Covers the
-# scaffold convention (src/frontend, src/backend) plus common top-level
+# ADR-0002 per-app convention (apps/<appId>, apps/<appId>/src) plus the legacy
+# scaffold convention (src/frontend, src/backend) and common top-level
 # layouts; bounded, never walks node_modules.
 _PACKAGE_ROOT_PATTERNS = (
     "package-lock.json",
     "*/package-lock.json",
     "src/*/package-lock.json",
+    "apps/*/package-lock.json",
+    "apps/*/src/package-lock.json",
 )
 
 
@@ -153,7 +157,14 @@ def _resolve_python(root: Path) -> list[str]:
 
 
 def _resolve_package_root(root: Path) -> Path | None:
-    """Directory containing package-lock.json (npm ci / vitest cwd), or None."""
+    """Directory containing package-lock.json (npm ci / vitest cwd), or None.
+
+    Known limitation (ADR-0002 multi-app layout): only the FIRST sorted
+    lockfile is returned, so with multiple apps (apps/*/) the pre-push gate
+    runs the JS/TS framework against one package root and silently skips the
+    rest. Per-package-root execution across apps/* is a known limitation, not
+    a per-app test runner — CI remains the authoritative per-app test gate.
+    """
     for pattern in _PACKAGE_ROOT_PATTERNS:
         for lockfile in sorted(root.glob(pattern)):
             return lockfile.parent
@@ -279,9 +290,9 @@ def run_stack_tests(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 result["steps"].append({
                     "command": f"stack-tests/{fw}",
                     "message": (
-                        f"{fw}: no package-lock.json found (checked root, */ and "
-                        "src/*/) — the scaffold may be incomplete. Run the project "
-                        "scaffold before pushing."
+                        f"{fw}: no package-lock.json found (checked root, */, "
+                        "src/*/, apps/*/ and apps/*/src/) — the scaffold may be "
+                        "incomplete. Run the project scaffold before pushing."
                     ),
                     "valid": False,
                 })

@@ -81,8 +81,8 @@ Improve project guidance acquisition flow`. Do this before invoking `git commit`
 the `require-ticket` hook does not fail on a preventable prefix issue.
 
 PROD promotion is explicit and release-centric. Do not promote to PROD only because QA passed unless the user asks for
-PROD promotion or a ticket-named `src/**` or `test/**` merge to `main` triggers
-the PROD-only workflow.
+PROD promotion or a feature-branch merge whose diff touches `apps/<appId>/src/**` or
+`apps/<appId>/test/**` triggers the PROD-only workflow.
 
 ## Ticket Refinement Gate
 

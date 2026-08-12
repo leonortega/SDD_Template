@@ -86,7 +86,7 @@ lesson now lives.
 | 10 | Deployment selector immutability — delete Deployments before apply | `.gitea/workflows/package-deploy.yml` delete step + `configure-ci-workflows`; inline rule 10 | ✅ |
 | 11a | Trivy `--skip-db-update` on first run | `.gitea/workflows/pr-validation.yml` (flag dropped) + `configure-ci-workflows`; inline rule 14 | ✅ |
 | 11b | React Router SCA upgrade chain | Coordinated upgrade recipe in `configure-ci-workflows` §5 (inline) | ✅ |
-| 12a | `.gitignore` case-insensitive match silently drops source | `.gitignore` negations (`!src/backend/Data/` + `/**`); inline rule 12 | ✅ |
+| 12a | `.gitignore` case-insensitive match silently drops source | `.gitignore` negations (`!apps/**/Data/` + `/**`); inline rule 12 | ✅ |
 | 12b | YAML block-scalar indent breaks heredoc terminators (column-0) | `configure-ci-workflows`; inline rule 11 | ✅ |
 | 12c | `python3 -c` bodies must start at column 0 | `configure-ci-workflows`; inline rule 11 | ✅ |
 | 12d | Non-root container can't write root-owned workdir | `dev-flow-scaffold-project` §Dockerfile (`RUN chown -R <uid>:<gid> /app` before `USER`); inline rule 13 | ✅ |

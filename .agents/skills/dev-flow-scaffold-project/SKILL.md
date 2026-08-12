@@ -16,12 +16,14 @@ description: >-
 ## Overview
 
 The template repo is **intentionally stack-agnostic** — it ships no `package.json`,
-no `playwright.config.ts`, no `src/` or `test/` folders, and no Dockerfiles. The
+no `playwright.config.ts`, no `apps/` product folders, and no Dockerfiles. The
 stack is defined by the user via `set-project-stack` and recorded in
 `.template/project-profile.local.json` (`stack.frontend`, `stack.backend`,
 `stack.database`).
 
-`set-project-stack` only creates the deterministic skeleton (`src/` + `test/`)
+`set-project-stack` only creates the deterministic skeleton (`apps/` + `packages/`,
+with one `apps/example/` app documenting the per-app layout — ADR-0002; there is
+never a root `src/` + `test/` pair)
 and then marks `scaffoldRequired: true` with `nextStage: dev-flow-scaffold-project`.
 **This skill resolves everything else as an AI** — the exact files depend on the
 chosen stack, so they can never come from a fixed list of combinations.
@@ -67,7 +69,7 @@ Consult `.agents/skills/manifest.json` (per AGENTS.md) and activate the skills
 relevant to the selected stack. Typical activations:
 
 - Architecture: `clean-architecture`, `clean-code`, `domain-modeling`,
-  `architecture-patterns` — structure of `src/` per stack
+  `architecture-patterns` — structure of `apps/<appId>/src/` per stack
 - Testing: `tdd`, `e2e-testing-patterns`, `webapp-testing` —
   unit/integration/architecture test setup
 - CI: `configure-ci-workflows` — build/test/package workflows for the stack
@@ -85,11 +87,12 @@ For each domain, decide what the stack's **native tooling and conventions**
 require, then generate the files. Examples, never exhaustive:
 
 - **Frontend JS/TS** (react, vue, angular, svelte, next, nuxt, ...): folder
-  layout under `src/`, `package.json` (dev/build/test/e2e scripts), test
-  framework config (vitest/jest), E2E tool (playwright/cypress), `test/e2e/`
-  folder, `playwright.config.ts`/`cypress.config.ts` (BASE_URL-aware for QA).
+  layout under `apps/<appId>/src/`, `package.json` (dev/build/test/e2e scripts),
+  test framework config (vitest/jest), E2E tool (playwright/cypress),
+  `apps/<appId>/test/e2e/` folder, `playwright.config.ts`/`cypress.config.ts`
+  (BASE_URL-aware for QA).
 - **Frontend .NET** (blazor, asp.net razor, mvc): solution + project layout
-  under `src/`, `*.csproj`, test project(s), `dotnet test` wiring.
+  under `apps/<appId>/src/`, `*.csproj`, test project(s), `dotnet test` wiring.
 - **Backend** (fastapi/django/flask, node/express, spring, rails, go, ...):
   app entry point, dependency manifest (`requirements.txt`, `package.json`,
   `pom.xml`, `Gemfile`, `go.mod`, ...), settings/env handling, `/health`
@@ -127,7 +130,7 @@ non-negotiable — each one prevented a real failure in a consumer delivery:
    rule swallow a source `Data/` layer. On Windows (`core.ignorecase`) the rule
    matches `Data/` case-insensitively and silently drops the file from CI
    checkouts → `CS0234: 'Data' does not exist`. Add negations
-   (`!src/<app>/Data/`, `!src/<app>/Data/**`) and verify with
+   (`!apps/**/Data/`, `!apps/**/Data/**`) and verify with
    `git check-ignore <file>` + `git ls-files`. A green local build is **not**
    proof the CI build will work.
 3. **Dependency versions must be current enough for SCA:** default frontend
@@ -165,8 +168,8 @@ and residual risk.
 
 ## Deliverables Checklist
 
-- [ ] `src/` structure per architecture skill for the stack
-- [ ] `test/` with unit + integration + e2e + architecture subfolders per TDD skill
+- [ ] `apps/<appId>/src/` structure per architecture skill for the stack
+- [ ] `apps/<appId>/test/` with unit + integration + e2e + architecture subfolders per TDD skill
 - [ ] Build manifest(s) for the stack's native tooling
 - [ ] Test config + runner wiring
 - [ ] Dockerfile(s) per app role (or documented skip)

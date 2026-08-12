@@ -504,7 +504,7 @@ class SddCliTests(unittest.TestCase):
     def test_scaffold_project_files_creates_only_stack_independent_skeleton(
         self,
     ) -> None:
-        """ScaffoldProjectFiles creates only src/ and test/ + delegation marker."""
+        """ScaffoldProjectFiles creates the apps/ skeleton + delegation marker."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             codex = root / ".template"
@@ -525,12 +525,25 @@ class SddCliTests(unittest.TestCase):
             result = cli.run_configure_mode("ScaffoldProjectFiles", root, {}, False)
 
             self.assertTrue(result["valid"])
-            self.assertTrue((root / "src").is_dir())
-            # All tests live under test/, one subfolder per type.
-            self.assertTrue((root / "test" / "unit").is_dir())
-            self.assertTrue((root / "test" / "integration").is_dir())
-            self.assertTrue((root / "test" / "e2e").is_dir())
-            self.assertTrue((root / "test" / "architecture").is_dir())
+            # ADR-0002 containers: apps/ (one folder per deployable app) + packages/.
+            self.assertTrue((root / "apps").is_dir())
+            self.assertTrue((root / "packages").is_dir())
+            # One example app documents the per-app layout: src/, deploy/ and
+            # test/ with one subfolder per type.
+            self.assertTrue((root / "apps" / "example" / "src").is_dir())
+            self.assertTrue((root / "apps" / "example" / "deploy").is_dir())
+            self.assertTrue((root / "apps" / "example" / "test" / "unit").is_dir())
+            self.assertTrue(
+                (root / "apps" / "example" / "test" / "integration").is_dir()
+            )
+            self.assertTrue((root / "apps" / "example" / "test" / "e2e").is_dir())
+            self.assertTrue(
+                (root / "apps" / "example" / "test" / "architecture").is_dir()
+            )
+            self.assertTrue((root / "apps" / "example" / "app.json").is_file())
+            # No root-level src/ or test/ skeleton (per-app layout only).
+            self.assertFalse((root / "src").exists())
+            self.assertFalse((root / "test").exists())
             # Stack-specific artifacts are delegated to the AI scaffold skill —
             # the script never generates package.json/playwright for any stack.
             self.assertFalse((root / "e2e").exists())
@@ -538,6 +551,7 @@ class SddCliTests(unittest.TestCase):
             self.assertFalse((root / "playwright.config.ts").exists())
             keys = {item["key"] for item in result["actions"]}
             self.assertIn("stack.delegated", keys)
+            self.assertIn("app.marker", keys)
 
     def test_scaffold_project_files_delegates_for_any_stack(self) -> None:
         """Non-JS stacks get the same skeleton + delegation (no stack heuristics)."""
@@ -561,11 +575,16 @@ class SddCliTests(unittest.TestCase):
             result = cli.run_configure_mode("ScaffoldProjectFiles", root, {}, False)
 
             self.assertTrue(result["valid"])
-            self.assertTrue((root / "src").is_dir())
-            self.assertTrue((root / "test" / "unit").is_dir())
-            self.assertTrue((root / "test" / "integration").is_dir())
-            self.assertTrue((root / "test" / "e2e").is_dir())
-            self.assertTrue((root / "test" / "architecture").is_dir())
+            self.assertTrue((root / "apps" / "example" / "src").is_dir())
+            self.assertTrue((root / "apps" / "example" / "deploy").is_dir())
+            self.assertTrue((root / "apps" / "example" / "test" / "unit").is_dir())
+            self.assertTrue(
+                (root / "apps" / "example" / "test" / "integration").is_dir()
+            )
+            self.assertTrue((root / "apps" / "example" / "test" / "e2e").is_dir())
+            self.assertTrue(
+                (root / "apps" / "example" / "test" / "architecture").is_dir()
+            )
             self.assertFalse((root / "package.json").exists())
             self.assertFalse((root / "playwright.config.ts").exists())
             keys = {item["key"] for item in result["actions"]}
@@ -596,7 +615,7 @@ class SddCliTests(unittest.TestCase):
             self.assertTrue(result["valid"])
             keys = {item["key"] for item in result["actions"]}
             self.assertIn("folder.legacy-tests", keys)
-            self.assertTrue((root / "test" / "unit").is_dir())
+            self.assertTrue((root / "apps" / "example" / "test" / "unit").is_dir())
 
     def test_scaffold_k8s_delegates_dockerfiles_and_keeps_deterministic_manifests(
         self,
@@ -638,6 +657,72 @@ class SddCliTests(unittest.TestCase):
             self.assertTrue(result["valid"])
             keys = {item["key"] for item in result["actions"]}
             self.assertIn("stack.delegated", keys)
+
+    def test_scaffold_k8s_real_run_composes_app_deploy_dirs_into_overlays(
+        self,
+    ) -> None:
+        """Real run: manifests land in apps/<appId>/deploy/ and the env overlays
+        compose them via relative Kustomize refs (ADR-0002, no infra/k8s/base/)."""
+        from unittest.mock import patch
+
+        from tools.sdd_cli.environment_lab import scaffold_k8s
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "infra" / "deployment").mkdir(parents=True)
+            (root / "infra" / "deployment" / "apps.json").write_text(
+                json.dumps(
+                    {
+                        "apps": [
+                            {"appId": "frontend", "role": "web"},
+                            {"appId": "backend", "role": "api"},
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            # Seed a valid canonical ports.json (the shipped file, valid by
+            # construction) so load_ports + write_artifacts succeed.
+            src = (
+                Path(__file__).resolve().parents[3]
+                / "infra"
+                / "deployment"
+                / "ports.json"
+            )
+            (root / "infra" / "deployment" / "ports.json").write_bytes(
+                src.read_bytes()
+            )
+
+            with patch(
+                "tools.sdd_cli.k8s_lab.run_native",
+                return_value={"returncode": 0, "stdout": "{}", "stderr": ""},
+            ):
+                result = scaffold_k8s(root, dry_run=False)
+
+            self.assertTrue(result["valid"])
+            # Per-app manifests + kustomization land in apps/<appId>/deploy/.
+            for app_id in ("frontend", "backend"):
+                deploy = root / "apps" / app_id / "deploy"
+                self.assertTrue((deploy / f"{app_id}-deployment.yaml").is_file())
+                self.assertTrue((deploy / f"{app_id}-service.yaml").is_file())
+                self.assertTrue((deploy / "kustomization.yaml").is_file())
+            # The old shared base dir is never created.
+            self.assertFalse((root / "infra" / "k8s" / "base").exists())
+            # Every env overlay composes the per-app deploy dirs via relative
+            # refs that resolve from infra/k8s/overlays/{env}/ (4 levels up),
+            # and keeps the service-patch wired as a strategic-merge patch.
+            for env in ("dev", "qa", "prod"):
+                kus = root / "infra" / "k8s" / "overlays" / env / "kustomization.yaml"
+                text = kus.read_text(encoding="utf-8")
+                self.assertIn("../../../../apps/frontend/deploy", text)
+                self.assertIn("../../../../apps/backend/deploy", text)
+                self.assertIn("patches:", text)
+                self.assertIn("service-patch.yaml", text)
+                for ref in (
+                    "../../../../apps/frontend/deploy",
+                    "../../../../apps/backend/deploy",
+                ):
+                    self.assertTrue((kus.parent / ref).is_dir(), ref)
 
     def test_project_stack_discovery_returns_skills_from_internet(
         self,

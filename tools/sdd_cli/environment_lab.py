@@ -440,8 +440,8 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
     )
 
     summary["k8s"] = {
-        "base": "infra/k8s/base/kustomization.yaml (all apps from apps.json)",
-        "overlays": "infra/k8s/overlays/{dev,qa,prod}/kustomization.yaml (env-specific image tags)",
+        "base": "apps/<appId>/deploy/ (per-app Deployment/Service kustomizations)",
+        "overlays": "infra/k8s/overlays/{dev,qa,prod}/kustomization.yaml (compose per-app deploy/ dirs + env image tags)",
         "deploy": [
             "cd infra/k8s/overlays/dev && kustomize build . | kubectl apply -f -",
             "cd infra/k8s/overlays/qa && kustomize build . | kubectl apply -f -",
@@ -2541,8 +2541,11 @@ def scaffold_project_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
     The template repo is intentionally stack-agnostic. After the tech stack is
     defined (set-project-stack), this step creates only the stack-independent
-    skeleton: ``src/`` and ``test/`` (with one subfolder per test type:
-    ``unit``, ``integration``, ``e2e``, ``architecture``). Every
+    skeleton (ADR-0002): the ``apps/`` container for deployable applications
+    (one folder per app, each with ``src/``, ``deploy/``, and ``test/`` with
+    one subfolder per test type: ``unit``, ``integration``, ``e2e``,
+    ``architecture``), the ``packages/`` container for shared libraries, and
+    one ``apps/example/`` app documenting the expected per-app layout. Every
     stack-specific artifact (package.json, test framework config, Dockerfiles,
     CI workflows, k8s manifests) is delegated to the AI-driven
     ``dev-flow-scaffold-project`` skill, which reads the stack from
@@ -2553,25 +2556,9 @@ def scaffold_project_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
         "ScaffoldProjectFiles", dry_run, write_enabled=not dry_run
     )
 
-    # Always create src/ and test/ folders (stack-independent). All tests live
-    # under test/, one subfolder per type: unit, integration, e2e, architecture.
-    for folder in ("src", "test"):
-        if folder == "test":
-            for sub in ("unit", "integration", "e2e", "architecture"):
-                sub_path = root / folder / sub
-                if not sub_path.exists():
-                    if not dry_run:
-                        sub_path.mkdir(parents=True, exist_ok=True)
-                    result["actions"].append(
-                        {
-                            "path": f"{folder}/{sub}/",
-                            "key": "folder.created",
-                            "severity": "info",
-                            "message": f"Created {folder}/{sub}/ test folder.",
-                            "phase": "apply",
-                        }
-                    )
-            continue
+    # Product containers (ADR-0002, stack-independent): apps/ holds one folder
+    # per deployable application, packages/ holds shared libraries.
+    for folder in ("apps", "packages"):
         folder_path = root / folder
         if not folder_path.exists():
             if not dry_run:
@@ -2581,7 +2568,7 @@ def scaffold_project_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
                     "path": f"{folder}/",
                     "key": "folder.created",
                     "severity": "info",
-                    "message": f"Created {folder}/ implementation scaffold folder.",
+                    "message": f"Created {folder}/ product folder.",
                     "phase": "apply",
                 }
             )
@@ -2596,10 +2583,67 @@ def scaffold_project_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 }
             )
 
+    # One example app documenting the expected per-app layout (not 12
+    # skeletons): src/, deploy/, and test/ with one subfolder per type.
+    # Real apps are scaffolded per stack by dev-flow-scaffold-project.
+    example = root / "apps" / "example"
+    for folder in ("src", "deploy"):
+        folder_path = example / folder
+        if not folder_path.exists():
+            if not dry_run:
+                folder_path.mkdir(parents=True, exist_ok=True)
+            result["actions"].append(
+                {
+                    "path": f"apps/example/{folder}/",
+                    "key": "folder.created",
+                    "severity": "info",
+                    "message": f"Created apps/example/{folder}/ scaffold folder.",
+                    "phase": "apply",
+                }
+            )
+    for sub in ("unit", "integration", "e2e", "architecture"):
+        sub_path = example / "test" / sub
+        if not sub_path.exists():
+            if not dry_run:
+                sub_path.mkdir(parents=True, exist_ok=True)
+            result["actions"].append(
+                {
+                    "path": f"apps/example/test/{sub}/",
+                    "key": "folder.created",
+                    "severity": "info",
+                    "message": f"Created apps/example/test/{sub}/ test folder.",
+                    "phase": "apply",
+                }
+            )
+
+    # Per-app template-version marker (ADR-0002: versioning without Copier).
+    # templateVersion is a placeholder here — dev-flow-scaffold-project
+    # overwrites it per app when scaffolding the real stack.
+    marker = example / "app.json"
+    if not marker.exists():
+        if not dry_run:
+            write_json(
+                marker,
+                {
+                    "appId": "example",
+                    "role": "web",
+                    "healthPath": "/health",
+                    "templateVersion": "0.0.0",
+                },
+            )
+        result["actions"].append(
+            {
+                "path": "apps/example/app.json",
+                "key": "app.marker",
+                "severity": "info",
+                "message": "Created apps/example/app.json template-version marker.",
+                "phase": "apply",
+            }
+        )
+
     # Delegate every stack-specific artifact to the AI scaffold skill.
-    # Warn when a legacy tests/ layout exists — all tests must live under
-    # test/ with one subfolder per type (test/unit, test/integration, test/e2e,
-    # test/architecture).
+    # Warn when a legacy tests/ layout exists — all tests must live under each
+    # app's test/ with one subfolder per type (apps/<appId>/test/unit, ...).
     legacy_tests = root / "tests"
     if legacy_tests.is_dir():
         result["actions"].append(
@@ -2609,8 +2653,8 @@ def scaffold_project_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 "severity": "warning",
                 "message": (
                     "Legacy tests/ folder detected — all tests must live under "
-                    "test/ (test/unit, test/integration, test/e2e, "
-                    "test/architecture). Move existing tests before pushing."
+                    "each app's test/ (apps/<appId>/test/unit, test/integration, "
+                    "test/e2e, test/architecture). Move existing tests before pushing."
                 ),
                 "phase": "audit",
             }

@@ -57,7 +57,8 @@ Key principles:
   environments — DEV, QA, PROD, and rollback all reuse `app/{commitSha}/` artifacts
   from Nexus.
 - **PROD promotion is explicit.** QA passing alone never releases to PROD; the user or
-  a ticket-named `src/**` / `test/**` merge to `main` must trigger it.
+  a feature-branch merge whose diff touches `apps/<appId>/src/**` or
+  `apps/<appId>/test/**` must trigger it.
 - **QA is evidence, not smoke.** `QA Done = acceptance criteria proven by executable
   assertions against the deployed QA artifact`.
 - **Deterministic next step.** Every stage has exactly one next skill defined by the
@@ -221,9 +222,9 @@ Workflow:
    `tasks.md` with vertical TDD
    cycles (see `.agents/skills/_shared/pipeline-tdd-cycle.md`):
    - Write all tests first (RED) — no product code before tests.
-   - Three test levels: **unit** (per component, `test/unit/`), **integration** (per
-     endpoint/feature, `test/integration/`), **architecture** (single project-wide file,
-     `test/architecture/`).
+   - Three test levels: **unit** (per component, `apps/<appId>/test/unit/`), **integration**
+     (per endpoint/feature, `apps/<appId>/test/integration/`), **architecture** (single
+     project-wide file, `apps/<appId>/test/architecture/`).
    - Build the acceptance-to-test map from the IA curated ticket block + `tasks.md`.
    - GREEN with minimal code (`ponytail full`), REFACTOR while GREEN.
 4. **Quality gates** (details in Section 7):

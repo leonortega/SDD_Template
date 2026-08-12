@@ -3,8 +3,6 @@ kind: Kustomization
 resources:
   - frontend-deployment.yaml
   - frontend-service.yaml
-  - backend-deployment.yaml
-  - backend-service.yaml
 labels:
   - pairs:
       app.kubernetes.io/managed-by: sdd-cli
