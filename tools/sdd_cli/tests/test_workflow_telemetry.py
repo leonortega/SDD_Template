@@ -12,6 +12,8 @@ from tools.sdd_cli.workflow_telemetry import (
     _default_activity_name,
     _iso8601_duration,
     _resolve_activity_id,
+    _resolve_work_package_id,
+    _ticket_numeric_id,
     append_telemetry_cli,
     render_telemetry_comment,
     telemetry_upsert_cli,
@@ -236,6 +238,107 @@ class UpsertTests(unittest.TestCase):
             self.assertTrue(
                 (root / ".template" / "agent-telemetry.local.jsonl").exists()
             )
+
+
+
+class TicketNumericIdTests(unittest.TestCase):
+    """Trailing numeric id extraction from ticket keys."""
+
+    def test_key_with_numeric_suffix(self) -> None:
+        self.assertEqual("37", _ticket_numeric_id("E2EPROJECT-37"))
+
+    def test_bare_numeric_key(self) -> None:
+        self.assertEqual("37", _ticket_numeric_id("37"))
+
+    def test_no_numeric_suffix(self) -> None:
+        self.assertIsNone(_ticket_numeric_id("landing-page"))
+
+    def test_multi_hyphen_key_is_not_treated_as_numeric(self) -> None:
+        self.assertIsNone(_ticket_numeric_id("PLAN-2026-08"))
+
+
+class WorkPackageResolutionTests(unittest.TestCase):
+    """Numeric-id resolution with subject-search fallback."""
+
+    def test_key_with_suffix_resolves_by_numeric_id(self) -> None:
+        with patch(
+            "tools.sdd_cli.workflow_telemetry.http_json",
+            return_value=(200, json.dumps({"id": 37, "subject": "Landing page"})),
+        ) as mock:
+            result = _resolve_work_package_id(
+                "http://op:8080", "tok", "e2eproject", "E2EPROJECT-37"
+            )
+        self.assertEqual(37, result)
+        # numeric-id GET first; subject search must not run
+        self.assertEqual(
+            "http://op:8080/api/v3/work_packages/37", mock.call_args.args[1]
+        )
+        mock.assert_called_once()
+
+    def test_bare_numeric_key_resolves_by_numeric_id(self) -> None:
+        with patch(
+            "tools.sdd_cli.workflow_telemetry.http_json",
+            return_value=(200, json.dumps({"id": 37})),
+        ) as mock:
+            result = _resolve_work_package_id(
+                "http://op:8080", "tok", "e2eproject", "37"
+            )
+        self.assertEqual(37, result)
+        mock.assert_called_once()
+
+    def test_missing_numeric_id_falls_back_to_subject_search(self) -> None:
+        responses = [
+            (404, "not found"),
+            (200, json.dumps({"_embedded": {"elements": [{"id": 12}]}})),
+        ]
+        with patch(
+            "tools.sdd_cli.workflow_telemetry.http_json", side_effect=responses
+        ) as mock:
+            result = _resolve_work_package_id(
+                "http://op:8080", "tok", "e2eproject", "ABC-1"
+            )
+        self.assertEqual(12, result)
+        self.assertEqual(2, mock.call_count)
+        self.assertIn("work_packages?filters=", mock.call_args.args[1])
+
+    def test_no_match_returns_none(self) -> None:
+        with patch(
+            "tools.sdd_cli.workflow_telemetry.http_json",
+            return_value=(200, json.dumps({"_embedded": {"elements": []}})),
+        ) as mock:
+            result = _resolve_work_package_id(
+                "http://op:8080", "tok", "e2eproject", "landing-page"
+            )
+        self.assertIsNone(result)
+        self.assertIn("work_packages?filters=", mock.call_args.args[1])
+
+    def test_multi_hyphen_key_skips_numeric_id_and_searches_subject(self) -> None:
+        with patch(
+            "tools.sdd_cli.workflow_telemetry.http_json",
+            return_value=(200, json.dumps({"_embedded": {"elements": [{"id": 8}]}})),
+        ) as mock:
+            result = _resolve_work_package_id(
+                "http://op:8080", "tok", "e2eproject", "PLAN-2026-08"
+            )
+        self.assertEqual(8, result)
+        # must not have tried GET /work_packages/08
+        self.assertIn("work_packages?filters=", mock.call_args.args[1])
+        mock.assert_called_once()
+
+    def test_numeric_error_status_falls_back_to_subject_search(self) -> None:
+        responses = [
+            (500, "boom"),
+            (200, json.dumps({"_embedded": {"elements": [{"id": 12}]}})),
+        ]
+        with patch(
+            "tools.sdd_cli.workflow_telemetry.http_json", side_effect=responses
+        ) as mock:
+            result = _resolve_work_package_id(
+                "http://op:8080", "tok", "e2eproject", "ABC-1"
+            )
+        self.assertEqual(12, result)
+        self.assertEqual(2, mock.call_count)
+        self.assertIn("work_packages?filters=", mock.call_args.args[1])
 
 
 if __name__ == "__main__":

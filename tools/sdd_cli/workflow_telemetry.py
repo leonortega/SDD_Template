@@ -19,6 +19,7 @@ ignored JSONL file instead.
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -159,8 +160,29 @@ def _resolve_work_package_id(
     project_identifier: str,
     ticket_key: str,
 ) -> int | None:
-    """Find the work package id whose subject contains the ticket key."""
+    """Find the work package id for the ticket key.
+
+    Prefers the numeric id embedded in the ticket key (``E2EPROJECT-37`` -> 37,
+    or a bare numeric key like ``37``) via ``GET /api/v3/work_packages/{id}``.
+    Falls back to a subject-contains search for keys without a numeric suffix.
+    """
     import urllib.parse
+
+    numeric_id = _ticket_numeric_id(ticket_key)
+    if numeric_id is not None:
+        status, body = http_json(
+            "GET",
+            f"{base_url}/api/v3/work_packages/{numeric_id}",
+            bearer=token,
+            timeout=10,
+        )
+        if status == 200:
+            try:
+                data = json.loads(body)
+                if isinstance(data, dict) and data.get("id"):
+                    return int(data["id"])
+            except (ValueError, TypeError):
+                pass
 
     filters = json.dumps(
         [{"subject": {"operator": "~", "values": [ticket_key]}}]
@@ -180,6 +202,16 @@ def _resolve_work_package_id(
     except (ValueError, TypeError):
         return None
     return None
+
+
+def _ticket_numeric_id(ticket_key: str) -> str | None:
+    """Return the numeric id for keys shaped ``<prefix>-<digits>`` or a bare integer.
+
+    Multi-hyphen keys (``PLAN-2026-08``) are not ticket keys and return None so
+    they fall through to subject search instead of binding a wrong work package.
+    """
+    match = re.match(r"^(?:[^-]+-)?(\d+)$", ticket_key)
+    return match.group(1) if match else None
 
 
 def _resolve_user_id(base_url: str, token: str) -> int | None:
