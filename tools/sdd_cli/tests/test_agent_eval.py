@@ -36,7 +36,7 @@ def _fake_run(results: str | None, *, returncode: int = 0, stderr: str = ""):
 
 def _make_root(tmp_path: Path) -> Path:
     """Create a minimal eval config so run_eval gets past the config check."""
-    config = tmp_path / ".codex" / "agent-evals" / "promptfooconfig.yaml"
+    config = tmp_path / ".agents" / "agent-evals" / "promptfooconfig.yaml"
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text("prompts: []\n", encoding="utf-8")
     return tmp_path
@@ -82,7 +82,7 @@ def test_run_eval_counts_pass_fail_and_cleans_tmp(tmp_path: Path) -> None:
     assert result["passed"] == 2
     assert result["failed"] == 1
     assert result["valid"] is False
-    assert not (root / ".codex" / "agent-evals" / "results.tmp.json").exists()
+    assert not (root / ".agents" / "agent-evals" / "results.tmp.json").exists()
 
 
 def test_run_eval_handles_dict_results_key(tmp_path: Path) -> None:
@@ -175,7 +175,7 @@ def test_run_eval_invalid_when_promptfoo_exits_nonzero_even_if_all_pass(
 def test_run_eval_stale_results_file_removed_before_run(tmp_path: Path) -> None:
     """A stale tmp file from a previous run must not mask a failed run."""
     root = _make_root(tmp_path)
-    stale = root / ".codex" / "agent-evals" / "results.tmp.json"
+    stale = root / ".agents" / "agent-evals" / "results.tmp.json"
     stale.write_text('[{"pass": true}]', encoding="utf-8")
     fake = _fake_run(None, returncode=1)
     with patch("tools.sdd_cli.agent_eval.subprocess.run", side_effect=fake):

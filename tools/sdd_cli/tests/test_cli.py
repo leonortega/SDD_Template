@@ -15,8 +15,8 @@ class SddCliTests(unittest.TestCase):
     def test_commit_message_accepts_ticket_openspec_and_sdd(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / ".codex").mkdir()
-            (root / ".codex" / "project-profile.json").write_text(
+            (root / ".template").mkdir()
+            (root / ".template" / "project-profile.json").write_text(
                 json.dumps({"workflow": {"ticketKeyPattern": "ABC-[0-9]+"}}),
                 encoding="utf-8",
             )
@@ -284,10 +284,10 @@ class SddCliTests(unittest.TestCase):
     def test_audit_warns_when_openproject_time_activity_map_is_missing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            write(root / ".codex" / "project-profile.json", "{}")
-            write(root / ".codex" / "project-profile.schema.json", "{}")
+            write(root / ".template" / "project-profile.json", "{}")
+            write(root / ".template" / "project-profile.schema.json", "{}")
             write(
-                root / ".codex" / "client-tools.local.json",
+                root / ".template" / "client-tools.local.json",
                 json.dumps(
                     {
                         "openProject": {
@@ -306,7 +306,7 @@ class SddCliTests(unittest.TestCase):
             self.assertIn("openProject.timeTelemetry.activityByStage", findings)
 
             write(
-                root / ".codex" / "client-tools.local.json",
+                root / ".template" / "client-tools.local.json",
                 json.dumps(
                     {
                         "openProject": {
@@ -334,8 +334,8 @@ class SddCliTests(unittest.TestCase):
             root = Path(tmp)
             for path in (
                 "README.md",
-                ".codex/delivery-policy.json",
-                ".codex/skills/_shared/delivery-contract.md",
+                ".template/delivery-policy.json",
+                ".agents/skills/_shared/delivery-contract.md",
                 "docs/conventions/context-management.md",
                 "infra/compose.yml",
                 "lefthook.yml",
@@ -344,7 +344,7 @@ class SddCliTests(unittest.TestCase):
                 target = root / path
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text("x", encoding="utf-8")
-            profile = root / ".codex" / "project-profile.json"
+            profile = root / ".template" / "project-profile.json"
             profile.parent.mkdir(parents=True, exist_ok=True)
             profile.write_text(
                 json.dumps(
@@ -352,7 +352,7 @@ class SddCliTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            (root / ".codex" / "project-profile.schema.json").write_text(
+            (root / ".template" / "project-profile.schema.json").write_text(
                 "{}", encoding="utf-8"
             )
 
@@ -369,10 +369,10 @@ class SddCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             write(
-                root / ".codex" / "project-profile.json",
+                root / ".template" / "project-profile.json",
                 json.dumps({"providers": {"deployment": {"id": "example"}}}),
             )
-            write(root / ".codex" / "client-tools.local.json", "{}")
+            write(root / ".template" / "client-tools.local.json", "{}")
             for mode in cli.ALL_CONFIGURE_MODES:
                 result = cli.run_configure_mode(mode, root, {}, True)
                 self.assertNotIn(
@@ -385,7 +385,7 @@ class SddCliTests(unittest.TestCase):
         """DiscoverProjectGuidance returns stackTags and internet-found skills."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            codex = root / ".codex"
+            codex = root / ".template"
             codex.mkdir()
             (codex / "project-profile.local.json").write_text(
                 json.dumps({
@@ -414,7 +414,7 @@ class SddCliTests(unittest.TestCase):
     def test_project_profile_local_overlay_merges_with_common_profile(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            codex = root / ".codex"
+            codex = root / ".template"
             codex.mkdir()
             (codex / "project-profile.json").write_text(
                 json.dumps(
@@ -452,7 +452,7 @@ class SddCliTests(unittest.TestCase):
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            codex = root / ".codex"
+            codex = root / ".template"
             codex.mkdir()
             common = codex / "project-profile.json"
             common.write_text(json.dumps({"schemaVersion": 1}), encoding="utf-8")
@@ -507,7 +507,7 @@ class SddCliTests(unittest.TestCase):
         """ScaffoldProjectFiles creates only src/ and test/ + delegation marker."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            codex = root / ".codex"
+            codex = root / ".template"
             codex.mkdir()
             (codex / "project-profile.local.json").write_text(
                 json.dumps(
@@ -543,7 +543,7 @@ class SddCliTests(unittest.TestCase):
         """Non-JS stacks get the same skeleton + delegation (no stack heuristics)."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            codex = root / ".codex"
+            codex = root / ".template"
             codex.mkdir()
             (codex / "project-profile.local.json").write_text(
                 json.dumps(
@@ -575,7 +575,7 @@ class SddCliTests(unittest.TestCase):
         """ScaffoldProjectFiles warns when a legacy tests/ folder exists."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            codex = root / ".codex"
+            codex = root / ".template"
             codex.mkdir()
             (codex / "project-profile.local.json").write_text(
                 json.dumps(
@@ -606,7 +606,7 @@ class SddCliTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            codex = root / ".codex"
+            codex = root / ".template"
             codex.mkdir()
             (codex / "project-profile.local.json").write_text(
                 json.dumps(
@@ -645,13 +645,13 @@ class SddCliTests(unittest.TestCase):
         """DiscoverProjectGuidance searches the internet — never local skills."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            codex = root / ".codex"
+            codex = root / ".template"
             codex.mkdir()
             (codex / "project-profile.json").write_text(
                 json.dumps({"schemaVersion": 1}), encoding="utf-8"
             )
-            skills_dir = codex / "skills"
-            skills_dir.mkdir()
+            skills_dir = root / ".agents" / "skills"
+            skills_dir.mkdir(parents=True)
             # A rich local manifest must NOT influence discover results.
             (skills_dir / "manifest.json").write_text(
                 json.dumps(
@@ -704,8 +704,8 @@ class SddCliTests(unittest.TestCase):
     def test_configure_values_json_file_stdin_inline_and_invalid_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / ".codex").mkdir()
-            (root / ".codex" / "project-profile.local.json").write_text(
+            (root / ".template").mkdir()
+            (root / ".template" / "project-profile.local.json").write_text(
                 "{}", encoding="utf-8"
             )
             values_file = root / "values.json"
@@ -731,7 +731,7 @@ class SddCliTests(unittest.TestCase):
                     ),
                 )
             profile = json.loads(
-                (root / ".codex" / "project-profile.local.json").read_text(
+                (root / ".template" / "project-profile.local.json").read_text(
                     encoding="utf-8"
                 )
             )
@@ -759,7 +759,7 @@ class SddCliTests(unittest.TestCase):
                     ),
                 )
             profile = json.loads(
-                (root / ".codex" / "project-profile.local.json").read_text(
+                (root / ".template" / "project-profile.local.json").read_text(
                     encoding="utf-8"
                 )
             )
@@ -785,7 +785,7 @@ class SddCliTests(unittest.TestCase):
                     ),
                 )
             profile = json.loads(
-                (root / ".codex" / "project-profile.local.json").read_text(
+                (root / ".template" / "project-profile.local.json").read_text(
                     encoding="utf-8"
                 )
             )
@@ -818,8 +818,8 @@ class SddCliTests(unittest.TestCase):
             target = root / "consumer"
             write(source / "README.md", "readme")
             write(source / "AGENTS.md", "agents")
-            write(source / ".codex" / "skills" / "demo" / "SKILL.md", "skill")
-            write(source / ".codex" / "project-profile.json", "{}")
+            write(source / ".agents" / "skills" / "demo" / "SKILL.md", "skill")
+            write(source / ".template" / "project-profile.json", "{}")
             write(source / "openspec" / "config.yaml", "config")
             write(source / "openspec" / "changes" / "internal" / "tasks.md", "no")
             write(source / "tools" / "sdd_cli" / "cli.py", "tool")
@@ -842,7 +842,7 @@ class SddCliTests(unittest.TestCase):
 
             self.assertEqual("v0.1.0", result["version"])
             self.assertTrue(
-                (target / ".codex" / "skills" / "demo" / "SKILL.md").exists()
+                (target / ".agents" / "skills" / "demo" / "SKILL.md").exists()
             )
             self.assertTrue((target / "tools" / "sdd_cli" / "cli.py").exists())
             self.assertFalse(
@@ -872,7 +872,7 @@ class SddCliTests(unittest.TestCase):
                 ).exists()
             )
             manifest = json.loads(
-                (target / ".codex" / "sdd-tool-version.json").read_text(
+                (target / ".template" / "sdd-tool-version.json").read_text(
                     encoding="utf-8"
                 )
             )
@@ -881,8 +881,8 @@ class SddCliTests(unittest.TestCase):
     def test_init_local_files_repairs_knowledge_and_env_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            write(root / ".codex" / "client-tools.example.json", "{}")
-            write(root / ".codex" / "quality.example.json", "{}")
+            write(root / ".template" / "client-tools.example.json", "{}")
+            write(root / ".template" / "quality.example.json", "{}")
             write(
                 root / "infra" / "openproject" / "variables.env.example",
                 "OPENPROJECT_HOST=http://localhost\n",
@@ -968,8 +968,8 @@ class SddCliTests(unittest.TestCase):
     def test_audit_reports_env_template_drift(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            write(root / ".codex" / "project-profile.json", "{}")
-            write(root / ".codex" / "project-profile.schema.json", "{}")
+            write(root / ".template" / "project-profile.json", "{}")
+            write(root / ".template" / "project-profile.schema.json", "{}")
             write(
                 root / "infra" / "openproject" / "variables.env.example",
                 "OPENPROJECT_TAG=17\nOPENPROJECT_SECRET_KEY_BASE=placeholder\n",
@@ -996,7 +996,7 @@ class SddCliTests(unittest.TestCase):
             encoding="utf-8"
         )
         configure = (
-            repo / ".codex" / "skills" / "configure-dev-environment" / "SKILL.md"
+            repo / ".agents" / "skills" / "configure-dev-environment" / "SKILL.md"
         ).read_text(encoding="utf-8")
 
         self.assertIn("SECRET_KEY_BASE: ${OPENPROJECT_SECRET_KEY_BASE:", compose)
@@ -1008,10 +1008,30 @@ class SddCliTests(unittest.TestCase):
         self.assertIn("compose-up", configure)
         self.assertIn("set-project-stack", configure)
 
+    def test_skill_catalog_lives_in_agents_skills(self) -> None:
+        """Skills live in .agents/skills; .codex hosts no skill or pointer files."""
+        repo = Path(__file__).resolve().parents[3]
+        # Canonical skill home: manifest + shared contracts resolve on disk.
+        self.assertTrue((repo / ".agents" / "skills" / "manifest.json").is_file())
+        self.assertTrue(
+            (repo / ".agents" / "skills" / "_shared" / "delivery-contract.md").is_file()
+        )
+        # The config home is now .template; the old .codex dir must not exist.
+        self.assertTrue((repo / ".template" / "delivery-policy.json").is_file())
+        self.assertFalse(
+            (repo / ".codex").exists(),
+            ".codex must not exist (config home renamed to .template)",
+        )
+        # The runtime index resolves to the skills directory.
+        index = json.loads(
+            (repo / ".agents" / "skills.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual([{"path": "./skills"}], index["entries"])
+
     def test_setup_lab_dry_run_returns_valid(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            codex = root / ".codex"
+            codex = root / ".template"
             codex.mkdir()
             (codex / "client-tools.example.json").write_text("{}", encoding="utf-8")
             (codex / "quality.example.json").write_text("{}", encoding="utf-8")
@@ -1103,32 +1123,32 @@ class SddCliTests(unittest.TestCase):
             source = root / "tool"
             target = root / "consumer"
             write(source / "README.md", "one")
-            write(source / ".codex" / "skills" / "demo" / "SKILL.md", "old")
-            write(source / ".codex" / "skills" / "stale" / "SKILL.md", "remove later")
+            write(source / ".agents" / "skills" / "demo" / "SKILL.md", "old")
+            write(source / ".agents" / "skills" / "stale" / "SKILL.md", "remove later")
             cli.install_sdd_tool(source, target, "v0.1.0", "install")
             write(
-                target / ".codex" / "project-profile.local.json",
+                target / ".template" / "project-profile.local.json",
                 '{"stack": "consumer"}',
             )
             write(target / "src" / "app.txt", "product")
 
-            write(source / ".codex" / "skills" / "demo" / "SKILL.md", "new")
-            (source / ".codex" / "skills" / "stale" / "SKILL.md").unlink()
+            write(source / ".agents" / "skills" / "demo" / "SKILL.md", "new")
+            (source / ".agents" / "skills" / "stale" / "SKILL.md").unlink()
             result = cli.install_sdd_tool(source, target, "v0.2.0", "update")
 
             self.assertEqual("v0.2.0", result["version"])
             self.assertEqual(
                 "new",
-                (target / ".codex" / "skills" / "demo" / "SKILL.md").read_text(
+                (target / ".agents" / "skills" / "demo" / "SKILL.md").read_text(
                     encoding="utf-8"
                 ),
             )
             self.assertFalse(
-                (target / ".codex" / "skills" / "stale" / "SKILL.md").exists()
+                (target / ".agents" / "skills" / "stale" / "SKILL.md").exists()
             )
             self.assertEqual(
                 '{"stack": "consumer"}',
-                (target / ".codex" / "project-profile.local.json").read_text(
+                (target / ".template" / "project-profile.local.json").read_text(
                     encoding="utf-8"
                 ),
             )
@@ -1164,7 +1184,7 @@ class SddCliTests(unittest.TestCase):
 
             self.assertEqual("v0.1.7", result["version"])
             manifest = json.loads(
-                (target / ".codex" / "sdd-tool-version.json").read_text(
+                (target / ".template" / "sdd-tool-version.json").read_text(
                     encoding="utf-8"
                 )
             )
@@ -1194,8 +1214,8 @@ class SddCliTests(unittest.TestCase):
             for relative in (
                 "AGENTS.md",
                 "lefthook.yml",
-                ".codex/skills/manifest.json",
-                ".codex/skills/docs-knowledge-maintenance/SKILL.md",
+                ".agents/skills/manifest.json",
+                ".agents/skills/docs-knowledge-maintenance/SKILL.md",
                 "tools/sdd_cli/cli.py",
                 "tools/sdd_cli/knowledge_search.py",
                 "knowledge/README.md",
@@ -1216,7 +1236,7 @@ class SddCliTests(unittest.TestCase):
             # compared against the SOURCE tree (every managed file exists there,
             # so a silently-missed copy or byte drift both fail this assertion).
             manifest = json.loads(
-                (target / ".codex" / "sdd-tool-version.json").read_text(
+                (target / ".template" / "sdd-tool-version.json").read_text(
                     encoding="utf-8"
                 )
             )
@@ -1239,7 +1259,7 @@ class SddCliTests(unittest.TestCase):
                 "infra/monitoring/variables.env", manifest["managedFiles"]
             )
             self.assertNotIn(
-                ".codex/client-tools.local.json", manifest["managedFiles"]
+                ".template/client-tools.local.json", manifest["managedFiles"]
             )
             self.assertNotIn(".trunk/configs/.markdownlint.yaml", manifest["managedFiles"])
 
@@ -1273,7 +1293,7 @@ class SddCliTests(unittest.TestCase):
 
             # Simulate an OLD install whose manifest managed the env file.
             write(
-                target / ".codex" / "sdd-tool-version.json",
+                target / ".template" / "sdd-tool-version.json",
                 json.dumps(
                     {
                         "schemaVersion": 1,

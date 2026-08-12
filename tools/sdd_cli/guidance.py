@@ -177,8 +177,8 @@ def _search_stack_tokens(
 
 
 def _skill_exists_locally(root: Path, skill_name: str) -> bool:
-    """Check if a skill directory with SKILL.md already exists under .codex/skills/."""
-    skill_dir = root / ".codex" / "skills" / skill_name
+    """Check if a skill directory with SKILL.md already exists under .agents/skills/."""
+    skill_dir = root / ".agents" / "skills" / skill_name
     return skill_dir.is_dir() and (skill_dir / "SKILL.md").exists()
 
 
@@ -218,7 +218,7 @@ def _install_skill_via_npx(
 
     if dry_run:
         result["actions"].append({
-            "path": f".codex/skills/{skill_name}",
+            "path": f".agents/skills/{skill_name}",
             "key": "internet.install",
             "severity": "info",
             "message": f"Would install '{skill_name}' from {package} via npx skills add.",
@@ -233,7 +233,7 @@ def _install_skill_via_npx(
         install_result = run_native(cmd, root, timeout=60)
         if install_result["returncode"] == 0:
             result["actions"].append({
-                "path": f".codex/skills/{skill_name}",
+                "path": f".agents/skills/{skill_name}",
                 "key": "internet.installed",
                 "severity": "info",
                 "message": f"Skill '{skill_name}' installed from {package} via npx skills add.",
@@ -256,7 +256,7 @@ def _install_skill_via_npx(
             )
             fallback_valid = fallback_res.get("valid", False)
             result["actions"].append({
-                "path": f".codex/skills/{skill_name}",
+                "path": f".agents/skills/{skill_name}",
                 "key": "internet.fallback",
                 "severity": "info" if fallback_valid else "warning",
                 "message": (
@@ -289,7 +289,7 @@ def _update_manifest_with_skills(
     installed: list[dict[str, Any]],
     dry_run: bool,
 ) -> dict[str, Any]:
-    """Update .codex/skills/manifest.json to include newly installed internet skills.
+    """Update .agents/skills/manifest.json to include newly installed internet skills.
 
     Creates or updates a ``"stack"`` category with ``stackTags`` matching the
     installed skill names, so agents can discover what skills are available for
@@ -300,7 +300,7 @@ def _update_manifest_with_skills(
         "UpdateManifest", dry_run, write_enabled=not dry_run
     )
 
-    manifest_path = root / ".codex" / "skills" / "manifest.json"
+    manifest_path = root / ".agents" / "skills" / "manifest.json"
     if manifest_path.exists():
         manifest = read_json(manifest_path, optional=False)
     else:
@@ -323,7 +323,7 @@ def _update_manifest_with_skills(
 
     if not new_skill_names:
         result["actions"].append({
-            "path": ".codex/skills/manifest.json",
+            "path": ".agents/skills/manifest.json",
             "key": "manifest.update",
             "severity": "info",
             "message": "No new skills installed; manifest unchanged.",
@@ -369,7 +369,7 @@ def _update_manifest_with_skills(
     if not dry_run:
         write_json(manifest_path, manifest)
         result["actions"].append({
-            "path": ".codex/skills/manifest.json",
+            "path": ".agents/skills/manifest.json",
             "key": "manifest.written",
             "severity": "info",
             "message": f"Updated manifest with {len(new_skill_names)} new skill(s) in 'stack' category.",
@@ -434,7 +434,7 @@ def setup_project_guidance(
        ``npx skills find <query>`` and picks the top results by popularity
     3. If interactive=True in a TTY: shows discovered skills and asks user which to install
     4. Installs ONLY the user-selected skills via ``npx skills add`` (falls back to GitHub copy)
-    5. Updates ``.codex/skills/manifest.json`` with the new skills and their
+    5. Updates ``.agents/skills/manifest.json`` with the new skills and their
        stack category tags (bookkeeping only — guidance is never answered from local skills)
 
     Without an interactive TTY confirmation (CI or non-interactive callers),
@@ -570,7 +570,7 @@ def setup_project_guidance(
         # Idempotency: skip if the skill already exists on disk
         if _skill_exists_locally(root, skill_name):
             result["actions"].append({
-                "path": f".codex/skills/{skill_name}",
+                "path": f".agents/skills/{skill_name}",
                 "key": "internet.skipped",
                 "severity": "info",
                 "message": f"Skill '{skill_name}' already exists locally — skipping install.",

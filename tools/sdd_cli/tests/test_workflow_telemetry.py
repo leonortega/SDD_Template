@@ -76,7 +76,7 @@ class UpsertTests(unittest.TestCase):
 
     @staticmethod
     def _client_tools(root: Path) -> None:
-        codex = root / ".codex"
+        codex = root / ".template"
         codex.mkdir(parents=True)
         (codex / "client-tools.local.json").write_text(
             json.dumps(
@@ -173,7 +173,7 @@ class UpsertTests(unittest.TestCase):
             self.assertFalse(result["valid"])
             self.assertTrue(any("upsert failed" in err for err in result["errors"]))
             self.assertFalse(
-                (root / ".codex" / "agent-telemetry.local.jsonl").exists()
+                (root / ".template" / "agent-telemetry.local.jsonl").exists()
             )
 
     def test_jsonl_fallback_opt_in(self) -> None:
@@ -194,7 +194,7 @@ class UpsertTests(unittest.TestCase):
             )
             self.assertTrue(result["valid"])
             self.assertEqual("jsonl-fallback", result["action"])
-            jsonl = root / ".codex" / "agent-telemetry.local.jsonl"
+            jsonl = root / ".template" / "agent-telemetry.local.jsonl"
             self.assertTrue(jsonl.exists())
             row = json.loads(jsonl.read_text(encoding="utf-8").splitlines()[0])
             self.assertEqual("ABC-1", row["ticketKey"])
@@ -234,7 +234,7 @@ class UpsertTests(unittest.TestCase):
             self.assertTrue(result["valid"])
             self.assertEqual("appended", result["action"])
             self.assertTrue(
-                (root / ".codex" / "agent-telemetry.local.jsonl").exists()
+                (root / ".template" / "agent-telemetry.local.jsonl").exists()
             )
 
 

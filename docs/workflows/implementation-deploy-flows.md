@@ -10,17 +10,17 @@ It has two purposes:
    production, including every stage, gate, marker, and handoff.
 2. **Promptfoo improvement input** — the routing matrix, stage transitions, gates,
    blockers, and stable markers are the exact inputs the agent eval
-   (`.codex/agent-evals/`) reasons about. The final section shows how this document
+   (`.agents/agent-evals/`) reasons about. The final section shows how this document
    maps to `promptfooconfig.yaml` and `routing_provider.py` so the next eval
    improvement step can extend test coverage from a single source of truth.
 
 Source of truth for every rule below:
 
-- `.codex/skills/_shared/delivery-contract.md` (index) and
+- `.agents/skills/_shared/delivery-contract.md` (index) and
 `delivery-contract-{core,ticket,review,qa,deploy,parallel,format}.md`
-- `.codex/skills/dev-flow-*` and `.codex/skills/dev-ops-*` workflow skills
+- `.agents/skills/dev-flow-*` and `.agents/skills/dev-ops-*` workflow skills
 - `AGENTS.md` → Workflow Stage Routing table
-- `.codex/agent-evals/promptfooconfig.yaml`, `.codex/agent-evals/routing_provider.py`
+- `.agents/agent-evals/promptfooconfig.yaml`, `.agents/agent-evals/routing_provider.py`
 - `docs/architecture/system.md`, `docs/conventions/development.md`, `docs/architecture/deployment.md`,
 `docs/conventions/context-management.md`, `docs/workflows/parallel-delivery.md`
 
@@ -74,26 +74,26 @@ matching skill and follows its Workflow section step by step.
 
 | User request / context | Stage | Skill |
 | ---------------------- | ----- | ----- |
-| Start a ticket (specific or next Todo) | `dev-flow-start-ticket` | `.codex/skills/dev-flow-start-ticket/SKILL.md` |
-| Create / propose an OpenSpec change | `dev-flow-propose-change` | `.codex/skills/dev-flow-propose-change/SKILL.md` |
-| Implement a ticket / change | `dev-flow-implement-ticket` | `.codex/skills/dev-flow-implement-ticket/SKILL.md` |
-| Continue implementation | `dev-flow-continue-implementation` | `.codex/skills/dev-flow-continue-implementation/SKILL.md` |
-| Review a pull request | `dev-flow-pr-review-agent` | `.codex/skills/dev-flow-pr-review-agent/SKILL.md` |
-| Address PR review feedback | `dev-flow-pr-review-feedback-loop` | `.codex/skills/dev-flow-pr-review-feedback-loop/SKILL.md` |
-| Verify an OpenSpec change | `dev-flow-verify-change` | `.codex/skills/dev-flow-verify-change/SKILL.md` |
-| Archive an OpenSpec change | `dev-flow-archive-change` | `.codex/skills/dev-flow-archive-change/SKILL.md` |
-| Deploy to QA | `dev-ops-deploy-qa` | `.codex/skills/dev-ops-deploy-qa/SKILL.md` |
-| Deploy to production | `dev-ops-deploy-prod` | `.codex/skills/dev-ops-deploy-prod/SKILL.md` |
-| Rollback production | `dev-ops-rollback-prod` | `.codex/skills/dev-ops-rollback-prod/SKILL.md` |
-| Hotfix production | `dev-ops-hotfix-prod` | `.codex/skills/dev-ops-hotfix-prod/SKILL.md` |
-| Post-merge deploy | `dev-ops-post-merge-deploy` | `.codex/skills/dev-ops-post-merge-deploy/SKILL.md` |
-| CI deploy completed / post-deploy update | `grafana-board-update` | `.codex/skills/grafana-board-update/SKILL.md` |
-| File and fix a QA bug | `dev-flow-file-qa-bug` | `.codex/skills/dev-flow-file-qa-bug/SKILL.md` |
-| Check pipeline status | `dev-flow-pipeline-status` | `.codex/skills/dev-flow-pipeline-status/SKILL.md` |
-| Run retrospective audit | `dev-flow-retrospective-audit` | `.codex/skills/dev-flow-retrospective-audit/SKILL.md` |
-| Explore a change / ask questions | `dev-flow-explore-change` | `.codex/skills/dev-flow-explore-change/SKILL.md` |
-| Scaffold project after stack selection | `dev-flow-scaffold-project` | `.codex/skills/dev-flow-scaffold-project/SKILL.md` |
-| Update AI-updatable docs / knowledge | `docs-knowledge-maintenance` | `.codex/skills/docs-knowledge-maintenance/SKILL.md` |
+| Start a ticket (specific or next Todo) | `dev-flow-start-ticket` | `.agents/skills/dev-flow-start-ticket/SKILL.md` |
+| Create / propose an OpenSpec change | `dev-flow-propose-change` | `.agents/skills/dev-flow-propose-change/SKILL.md` |
+| Implement a ticket / change | `dev-flow-implement-ticket` | `.agents/skills/dev-flow-implement-ticket/SKILL.md` |
+| Continue implementation | `dev-flow-continue-implementation` | `.agents/skills/dev-flow-continue-implementation/SKILL.md` |
+| Review a pull request | `dev-flow-pr-review-agent` | `.agents/skills/dev-flow-pr-review-agent/SKILL.md` |
+| Address PR review feedback | `dev-flow-pr-review-feedback-loop` | `.agents/skills/dev-flow-pr-review-feedback-loop/SKILL.md` |
+| Verify an OpenSpec change | `dev-flow-verify-change` | `.agents/skills/dev-flow-verify-change/SKILL.md` |
+| Archive an OpenSpec change | `dev-flow-archive-change` | `.agents/skills/dev-flow-archive-change/SKILL.md` |
+| Deploy to QA | `dev-ops-deploy-qa` | `.agents/skills/dev-ops-deploy-qa/SKILL.md` |
+| Deploy to production | `dev-ops-deploy-prod` | `.agents/skills/dev-ops-deploy-prod/SKILL.md` |
+| Rollback production | `dev-ops-rollback-prod` | `.agents/skills/dev-ops-rollback-prod/SKILL.md` |
+| Hotfix production | `dev-ops-hotfix-prod` | `.agents/skills/dev-ops-hotfix-prod/SKILL.md` |
+| Post-merge deploy | `dev-ops-post-merge-deploy` | `.agents/skills/dev-ops-post-merge-deploy/SKILL.md` |
+| CI deploy completed / post-deploy update | `grafana-board-update` | `.agents/skills/grafana-board-update/SKILL.md` |
+| File and fix a QA bug | `dev-flow-file-qa-bug` | `.agents/skills/dev-flow-file-qa-bug/SKILL.md` |
+| Check pipeline status | `dev-flow-pipeline-status` | `.agents/skills/dev-flow-pipeline-status/SKILL.md` |
+| Run retrospective audit | `dev-flow-retrospective-audit` | `.agents/skills/dev-flow-retrospective-audit/SKILL.md` |
+| Explore a change / ask questions | `dev-flow-explore-change` | `.agents/skills/dev-flow-explore-change/SKILL.md` |
+| Scaffold project after stack selection | `dev-flow-scaffold-project` | `.agents/skills/dev-flow-scaffold-project/SKILL.md` |
+| Update AI-updatable docs / knowledge | `docs-knowledge-maintenance` | `.agents/skills/docs-knowledge-maintenance/SKILL.md` |
 
 Routing decisions use the following state inputs (the same variables the Promptfoo eval
 passes to `routing_provider.py`):
@@ -165,7 +165,7 @@ Specified tickets. Bug tickets (status `New`, ID 1) are re-routed to
    human text, never replace**; markers `<!-- ia-generated:start -->` /
    `<!-- ia-generated:end -->`.
 10. **Branch comment** — marker `IA generated branch: {branchName}` (skip if present).
-11. **Ticket context lock** — create/update ignored `.codex/delivery-context.local.json`
+11. **Ticket context lock** — create/update ignored `.template/delivery-context.local.json`
     with `ticketKey`, `branch`, `openspecChange`, PR/artifact fields. Never commit it.
 12. **Move ticket to `In progress`** (OpenProject ID 7).
 13. **OpenSpec propose flow** — delegate to `dev-flow-propose-change` (Stage 2).
@@ -215,11 +215,11 @@ Workflow:
    ticket lock; stop on mismatch. Detect resume checkpoints (completed tasks, commits,
    existing PR, review markers, feedback tasks, labels) and continue from the latest.
 2. **Skill scan** — map the declared stack to applicable skills, then scan **every**
-   installed `.codex/skills/*/SKILL.md`; declare each active/skipped skill with
+   installed `.agents/skills/*/SKILL.md`; declare each active/skipped skill with
    rationale in a `Skills used:` block. Missing a declaration is a process violation.
 3. **TDD implementation** — run the opsx apply flow (`openspec-apply-change` skill → `openspec` CLI status) over
    `tasks.md` with vertical TDD
-   cycles (see `.codex/skills/_shared/pipeline-tdd-cycle.md`):
+   cycles (see `.agents/skills/_shared/pipeline-tdd-cycle.md`):
    - Write all tests first (RED) — no product code before tests.
    - Three test levels: **unit** (per component, `test/unit/`), **integration** (per
      endpoint/feature, `test/integration/`), **architecture** (single project-wide file,
@@ -245,7 +245,7 @@ Workflow:
    context/docs/knowledge classification, and `Reviewers requested: <usernames>`.
 
    Steps 7–9 implement the **7-step shared PR lifecycle**
-   (`.codex/skills/_shared/pipeline-pr-lifecycle.md`): create/reuse PR → request
+   (`.agents/skills/_shared/pipeline-pr-lifecycle.md`): create/reuse PR → request
    reviewers → AI review → feedback loop → CI validation → re-verify reviewers →
    human merge. The same lifecycle is consumed by the bug-fix, hotfix, and PROD
    release-PR flows.
@@ -583,9 +583,9 @@ python -m tools.sdd_cli agent-eval run
 ```
 
 (Direct fallback when the CLI runner is unavailable:
-`npx promptfoo eval --config .codex/agent-evals/promptfooconfig.yaml --no-cache`.)
+`npx promptfoo eval --config .agents/agent-evals/promptfooconfig.yaml --no-cache`.)
 
-Persist results to `.codex/agent-evals/results.local.json` with mode `post-prod-eval`,
+Persist results to `.agents/agent-evals/results.local.json` with mode `post-prod-eval`,
 scope = final release version.
 
 Post-PROD retrospective (`dev-flow-retrospective-audit` in `post-prod-ticket-release`
@@ -687,7 +687,7 @@ Bug revert: `In testing → (E2E FAIL → child bug) → New → … → Closed 
 
 | Gate | Where | Rule |
 | ---- | ----- | ---- |
-| Coverage | local + CI | `coverage.minimumPercent` from `.codex/quality.local.json`, default **80** — HARD GATE before PR creation/review/handoff; never lower the threshold |
+| Coverage | local + CI | `coverage.minimumPercent` from `.template/quality.local.json`, default **80** — HARD GATE before PR creation/review/handoff; never lower the threshold |
 | Pre-push stack tests | lefthook | `python -m tools.sdd_cli stack-tests` — unit + integration + architecture per `stack.testFrameworks` + coverage gate; clean skip with no stack; never bypass with `--no-verify` |
 | Pre-commit | lefthook | `gitleaks protect --staged --redact`, `npx trunk fmt` |
 | Commit message | lefthook | `python -m tools.sdd_cli dev-flow validate-commit-message`, gitleaks detect, trunk check |
@@ -873,12 +873,12 @@ through a deployment lane. There is no `parallelDelivery.enabled` flag gate — 
 ## 11. Mapping To The Promptfoo Agent Eval
 
 The Promptfoo eval (run via `python -m tools.sdd_cli agent-eval run`; direct fallback
-`npx promptfoo eval --config .codex/agent-evals/promptfooconfig.yaml --no-cache`)
+`npx promptfoo eval --config .agents/agent-evals/promptfooconfig.yaml --no-cache`)
 verifies that the routing logic in `routing_provider.py` matches the delivery contract.
 This document is the human-readable spec of that contract; the eval encodes it as test
 cases.
 
-**Test case anatomy** (60 cases today — see `.codex/agent-evals/README.md` for the
+**Test case anatomy** (60 cases today — see `.agents/agent-evals/README.md` for the
 authoritative count): each case provides `scenario`, `ticketState`,
 `branchExists`, `prExists`, `prMerged`, `qaEvidence`, `productStack` plus optional
 `incident`, `hotfix`, `parallelEnabled`, `maxActiveReached`, `laneOwner`,

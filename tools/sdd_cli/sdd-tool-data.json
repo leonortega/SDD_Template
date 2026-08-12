@@ -1,8 +1,8 @@
 {
-  "SDD_TOOL_MANIFEST": ".codex/sdd-tool-version.json",
+  "SDD_TOOL_MANIFEST": ".template/sdd-tool-version.json",
   "SDD_TOOL_INCLUDE_DIRS": [
     ".agents",
-    ".codex/skills",
+    ".agents/skills",
     ".gitea/workflows",
     "docs",
     "infra",
@@ -31,10 +31,10 @@
     ".pyo"
   ],
   "SDD_TOOL_PRESERVE_FILES": [
-    ".codex/client-tools.local.json",
-    ".codex/environment-urls.local.json",
-    ".codex/project-profile.local.json",
-    ".codex/quality.local.json",
+    ".template/client-tools.local.json",
+    ".template/environment-urls.local.json",
+    ".template/project-profile.local.json",
+    ".template/quality.local.json",
     "knowledge/README.md",
     "infra/monitoring/variables.env",
     "infra/openproject/variables.env",

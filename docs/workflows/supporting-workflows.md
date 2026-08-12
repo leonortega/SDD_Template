@@ -6,7 +6,7 @@ ticket → PROD flow. The linear flow (Stages 1–14) is documented in
 [`implementation-deploy-flows.md`](implementation-deploy-flows.md).
 
 Every workflow below is routed by `AGENTS.md` → Workflow Stage Routing and has its own
-`.codex/skills/*/SKILL.md`. Follow the skill's Workflow section step by step; this
+`.agents/skills/*/SKILL.md`. Follow the skill's Workflow section step by step; this
 document is the readable map, not a replacement for the skill.
 
 | Workflow | Skill | Read-only? | Mutates? | Typical trigger |
@@ -43,7 +43,7 @@ used by the Promptfoo eval (`resumeRequested`).
 
 **Workflow (read-first):**
 
-1. **Pre-flight branch auto-checkout** — read `.codex/delivery-context.local.json` for
+1. **Pre-flight branch auto-checkout** — read `.template/delivery-context.local.json` for
    the `branch` field; stash a dirty tree; switch to / fetch the target branch; pull
    `--ff-only` when an upstream exists. A corrupted or missing lock is reported, not
    fatal. A branch that exists nowhere routes to `dev-flow-pipeline-status`.
@@ -110,7 +110,7 @@ fallback when no deterministic route matches, missing-stack fallback
 - Tickets by configured states (Specified, In progress, Developed, In testing,
   Closed) and generated markers (branch, PR, QA deployment, E2E QA, PROD, rollback,
   QA bug).
-- Active `.codex/delivery-context.local.json` lock and any mismatch with discovered
+- Active `.template/delivery-context.local.json` lock and any mismatch with discovered
   state.
 - Open PRs / merged PRs, labels, review markers, CI status.
 - Nexus artifacts and `release.json` for relevant commits.
@@ -135,7 +135,7 @@ workflow-memory correction.
 
 **Purpose.** Generate the product scaffold for the **user-selected** stack. The
 template repo is intentionally stack-agnostic: `set-project-stack` records the decision
-in `.codex/project-profile.local.json` and returns `nextStage: dev-flow-scaffold-project`;
+in `.template/project-profile.local.json` and returns `nextStage: dev-flow-scaffold-project`;
 this skill resolves everything else as an AI (exact files depend on the stack).
 
 **Hard rule: never assume a stack.** Read `stack.frontend`, `stack.backend`,
@@ -167,7 +167,7 @@ user. If `metadataValidationStatus == "needs-user-validation"`, confirm first.
 
 **Purpose.** The **single hub for Promptfoo-driven improvements** and delivery audits.
 It runs the eval (`python -m tools.sdd_cli agent-eval run`), reads
-`.codex/agent-evals/results.local.json`, classifies failures into findings
+`.agents/agent-evals/results.local.json`, classifies failures into findings
 (`eval-regression`, `eval-coverage`), and recommends/edits
 `routing_provider.py`, `promptfooconfig.yaml`, or delivery skills.
 
@@ -197,7 +197,7 @@ those candidates (read-only/proposal modes report them as recommendations and ap
 nothing). `NO_CHANGES` is a valid outcome.
 
 **Apply gate.** Never silently rewrite workflow rules from one isolated failure. Apply
-the Agent Self-Improvement Gate (`.codex/skills/_shared/delivery-contract.md`) before
+the Agent Self-Improvement Gate (`.agents/skills/_shared/delivery-contract.md`) before
 changing skills, policy, templates, or gates.
 
 ---
@@ -240,7 +240,7 @@ applies the classification table, standard template, conflict, and security rule
 agents can retrieve and reason consistently.
 
 **Ownership.** Authoritative findings → `docs/`; enforceable automation →
-`.codex/skills/_shared/delivery-contract.md` + affected skills and tests; reusable
+`.agents/skills/_shared/delivery-contract.md` + affected skills and tests; reusable
 non-authoritative knowledge → `knowledge/`. Record `Docs updated: <files>` in PR
 bodies and OpenProject handoff comments.
 
@@ -300,7 +300,7 @@ Behavior-over-implementation testing discipline used inside implementation: vert
 RED/GREEN cycles (one test → one implementation → repeat), three test levels (unit,
 integration, architecture), acceptance-to-test mapping. Explicitly **avoids horizontal
 slices** (all tests first, then all code). Tests verify behavior through public
-interfaces, not internal structure. See `.codex/skills/tdd/SKILL.md`, `tests.md`,
+interfaces, not internal structure. See `.agents/skills/tdd/SKILL.md`, `tests.md`,
 `mocking.md`, and `_shared/pipeline-tdd-cycle.md`.
 
 ---
@@ -332,8 +332,8 @@ The full architectural plan is in [`setup-flow-plan.md`](setup-flow-plan.md).
 ## 9. Eval Alignment (Promptfoo Coverage)
 
 Every workflow in this document is exercised by the agent eval
-(`.codex/agent-evals/promptfooconfig.yaml`, 60 cases — see
-`.codex/agent-evals/README.md` for the authoritative count). Coverage per workflow:
+(`.agents/agent-evals/promptfooconfig.yaml`, 60 cases — see
+`.agents/agent-evals/README.md` for the authoritative count). Coverage per workflow:
 
 | Workflow | Eval coverage mechanism | Covered? |
 | -------- | ----------------------- | -------- |
@@ -349,7 +349,7 @@ Every workflow in this document is exercised by the agent eval
 | Frontend design (impeccable) | `activatedSkills` stack-mapping group (3 cases: frontend impl, backend-only, pre-impl) | ✅ |
 
 **Resolved gaps.** `docs-knowledge-maintenance` previously had no entry in
-`EXPLICIT_REQUEST_ROUTES` (`.codex/agent-evals/routing_provider.py`) and no state
+`EXPLICIT_REQUEST_ROUTES` (`.agents/agent-evals/routing_provider.py`) and no state
 route, so an explicit "update the docs" request fell through to
 `dev-flow-pipeline-status`. It now has an explicit `requestType` mapping and a matching
 Promptfoo test case. Frontend design skills are verified via `activatedSkills` on

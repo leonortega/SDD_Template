@@ -8,10 +8,10 @@ One command writes the OpenProject time-entry row for any delivery stage:
       --finished-utc 2026-08-07T11:30:00Z --outcome PASS
 
 The script encapsulates the whole shared pattern (see
-``.codex/skills/_shared/pipeline-workflow-telemetry.md``): resolve the activity
+``.agents/skills/_shared/pipeline-workflow-telemetry.md``): resolve the activity
 ID (client-tools ``timeTelemetry`` override or the default per-stage mapping),
 build the time-entry payload with the canonical marker comment, POST
-``/api/v3/time_entries`` with Bearer auth from ``.codex/client-tools.local.json``,
+``/api/v3/time_entries`` with Bearer auth from ``.template/client-tools.local.json``,
 and fail loud on API errors unless ``--jsonl-fallback true`` records to the
 ignored JSONL file instead.
 """
@@ -54,7 +54,7 @@ _STAGE_ACTIVITY: dict[str, str] = {
     "dev-flow-continue-implementation": "Development",
 }
 
-_TELEMETRY_JSONL = ".codex/agent-telemetry.local.jsonl"
+_TELEMETRY_JSONL = ".template/agent-telemetry.local.jsonl"
 
 
 def render_telemetry_comment(ticket_key: str, row: dict[str, Any]) -> str:
@@ -142,7 +142,7 @@ def _elapsed_seconds(started_utc: str, finished_utc: str) -> int:
 
 def _openproject_config(root: Path) -> dict[str, Any]:
     """Read the openProject section of client-tools.local.json (empty on error)."""
-    path = root / ".codex" / "client-tools.local.json"
+    path = root / ".template" / "client-tools.local.json"
     if not path.exists():
         return {}
     try:

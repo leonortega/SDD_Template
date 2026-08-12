@@ -23,14 +23,15 @@ guidance before the product needs it.
 - Product tests: not present yet.
 - Delivery helpers: `tools/`.
 - OpenSpec config: `openspec/config.yaml`.
-- Repo-local Codex workflows: `.codex/skills/`.
+- Repo-local Codex workflows: `.agents/skills/`.
 - Platform infrastructure: `infra/`.
 
 ## Adding The Next Product
 
 When the stack is chosen:
 
-1. Add languages, frameworks, and test frameworks to ignored `.codex/project-profile.local.json` while exploring the new
+1. Add languages, frameworks, and test frameworks to ignored
+   `.template/project-profile.local.json` while exploring the new
 project.
 2. Add product source and test folders.
 3. Add OpenSpec specs for product behavior.
@@ -56,8 +57,8 @@ the update command preserves them because they are not managed tool files.
 - Use the OpenProject/OpenSpec workflow for ticketed changes.
 - Keep changes scoped to the active ticket or explicit user request.
 - Use TDD for product behavior once a stack exists.
-- Keep docs, `.codex/project-profile.json`, and `.codex/project-profile.local.json` synchronized with stack and workflow
-changes. Note: stack config lives **only** in `.codex/project-profile.local.json`.
+- Keep docs, `.template/project-profile.json`, and `.template/project-profile.local.json` synchronized with stack and workflow
+changes. Note: stack config lives **only** in `.template/project-profile.local.json`.
 - Do not add speculative stack guidance, dependencies, or CI jobs before the new product needs them.
 
 ## Quality Gates

@@ -3,9 +3,9 @@
 artifacts/
 .git/
 .vs/
-.codex/*.local.json
-.codex/*.local.jsonl
-.codex/agent-evals/results.local.json
+.template/*.local.json
+.template/*.local.jsonl
+.agents/agent-evals/results.local.json
 infra/**/variables.env
 *.db
 *.db-shm

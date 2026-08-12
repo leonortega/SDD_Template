@@ -4,9 +4,9 @@
 
 ## Shell Modules
 
-- `.codex/skills/`: repo-local delivery and configuration skills.
-- `.codex/project-profile.json`: tracked common provider, workflow, quality, and adapter defaults.
-- `.codex/project-profile.local.json`: ignored local overlay for stack choices and project-specific adapter experiments.
+- `.agents/skills/`: repo-local delivery and configuration skills.
+- `.template/project-profile.json`: tracked common provider, workflow, quality, and adapter defaults.
+- `.template/project-profile.local.json`: ignored local overlay for stack choices and project-specific adapter experiments.
 - `docs/`: durable human-readable shell context.
 - `openspec/config.yaml`: OpenSpec rules for future changes.
 - `infra/`: local delivery platform and deployment placeholders.

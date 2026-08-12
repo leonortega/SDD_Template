@@ -394,7 +394,7 @@ def stage4_project_guidance(root: Path, dry_run: bool = False) -> dict[str, Any]
     from ._shared import load_project_profile
 
     profile = load_project_profile(root)
-    profile_path = root / ".codex" / "project-profile.json"
+    profile_path = root / ".template" / "project-profile.json"
 
     stack_values: dict[str, str] = {}
 

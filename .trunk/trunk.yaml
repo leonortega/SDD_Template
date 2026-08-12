@@ -26,9 +26,6 @@ lint:
     - linters: [ALL]
       paths:
         - .agents/**
-        - .codex/agent-evals/**
-        - .codex/ponytail/**
-        - .codex/skills/**
         - agent-evals/**
         - docs/**
         - knowledge/**

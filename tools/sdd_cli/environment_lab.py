@@ -515,15 +515,15 @@ def init_local_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
     result = configure_result("InitLocalFiles", dry_run, write_enabled=not dry_run)
     copy_seed_file(
         root,
-        ".codex/client-tools.example.json",
-        ".codex/client-tools.local.json",
+        ".template/client-tools.example.json",
+        ".template/client-tools.local.json",
         result,
         dry_run,
     )
     copy_seed_file(
         root,
-        ".codex/quality.example.json",
-        ".codex/quality.local.json",
+        ".template/quality.example.json",
+        ".template/quality.local.json",
         result,
         dry_run,
     )
@@ -681,7 +681,7 @@ def validate_client_tools(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
 def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
     """Create project profile schema, example, tracked common profile, and local overlay."""
-    codex = root / ".codex"
+    codex = root / ".template"
     codex.mkdir(parents=True, exist_ok=True)
     schema_path = codex / "project-profile.schema.json"
     profile_path = codex / "project-profile.example.json"
@@ -702,20 +702,20 @@ def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
             )
         actions.append(
             {
-                "path": ".codex/project-profile.schema.json",
+                "path": ".template/project-profile.schema.json",
                 "key": "created",
                 "severity": "info",
-                "message": "Created .codex/project-profile.schema.json.",
+                "message": "Created .template/project-profile.schema.json.",
                 "phase": "apply",
             }
         )
     else:
         actions.append(
             {
-                "path": ".codex/project-profile.schema.json",
+                "path": ".template/project-profile.schema.json",
                 "key": "exists",
                 "severity": "info",
-                "message": "Template already exists: .codex/project-profile.schema.json",
+                "message": "Template already exists: .template/project-profile.schema.json",
                 "phase": "apply",
             }
         )
@@ -741,20 +741,20 @@ def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
             write_json(profile_path, profile)
         actions.append(
             {
-                "path": ".codex/project-profile.example.json",
+                "path": ".template/project-profile.example.json",
                 "key": "created",
                 "severity": "info",
-                "message": "Created .codex/project-profile.example.json.",
+                "message": "Created .template/project-profile.example.json.",
                 "phase": "apply",
             }
         )
     else:
         actions.append(
             {
-                "path": ".codex/project-profile.example.json",
+                "path": ".template/project-profile.example.json",
                 "key": "exists",
                 "severity": "info",
-                "message": "Template already exists: .codex/project-profile.example.json",
+                "message": "Template already exists: .template/project-profile.example.json",
                 "phase": "apply",
             }
         )
@@ -780,20 +780,20 @@ def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
             write_json(common_path, common_profile)
         actions.append(
             {
-                "path": ".codex/project-profile.json",
+                "path": ".template/project-profile.json",
                 "key": "created",
                 "severity": "info",
-                "message": "Created .codex/project-profile.json (tracked common profile).",
+                "message": "Created .template/project-profile.json (tracked common profile).",
                 "phase": "apply",
             }
         )
     else:
         actions.append(
             {
-                "path": ".codex/project-profile.json",
+                "path": ".template/project-profile.json",
                 "key": "exists",
                 "severity": "info",
-                "message": "Template already exists: .codex/project-profile.json",
+                "message": "Template already exists: .template/project-profile.json",
                 "phase": "apply",
             }
         )
@@ -819,7 +819,7 @@ def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
             write_json(local_profile_path, local_profile)
         actions.append(
             {
-                "path": ".codex/project-profile.local.json",
+                "path": ".template/project-profile.local.json",
                 "key": "created",
                 "severity": "info",
                 "message": "Created ignored stack/profile overlay.",
@@ -829,10 +829,10 @@ def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
     else:
         actions.append(
             {
-                "path": ".codex/project-profile.local.json",
+                "path": ".template/project-profile.local.json",
                 "key": "exists",
                 "severity": "info",
-                "message": "Template already exists: .codex/project-profile.local.json",
+                "message": "Template already exists: .template/project-profile.local.json",
                 "phase": "apply",
             }
         )
@@ -841,7 +841,7 @@ def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
         "mode": "InitProjectProfile",
         "valid": True,
         "changed": changed,
-        "path": ".codex/project-profile.example.json",
+        "path": ".template/project-profile.example.json",
         "dryRun": dry_run,
         "actions": actions,
     }
@@ -852,8 +852,8 @@ def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
 def init_quality_templates(root: Path, dry_run: bool = False) -> dict[str, Any]:
     """Create delivery-policy.json from the SDD template."""
-    path = root / ".codex" / "delivery-policy.json"
-    data = read_json(REPO_ROOT / ".codex" / "delivery-policy.json")
+    path = root / ".template" / "delivery-policy.json"
+    data = read_json(REPO_ROOT / ".template" / "delivery-policy.json")
     changed = not path.exists()
     if not dry_run:
         write_json(path, data)
@@ -861,7 +861,7 @@ def init_quality_templates(root: Path, dry_run: bool = False) -> dict[str, Any]:
         "mode": "InitQualityGateTemplates",
         "valid": True,
         "changed": changed,
-        "path": ".codex/delivery-policy.json",
+        "path": ".template/delivery-policy.json",
         "dryRun": dry_run,
     }
 
@@ -1115,7 +1115,7 @@ def set_gitea_branch_protection(root: Path, dry_run: bool = False) -> dict[str, 
     result = configure_result(
         "SetGiteaBranchProtection", dry_run, write_enabled=not dry_run
     )
-    client = read_json(root / ".codex" / "client-tools.local.json", optional=True)
+    client = read_json(root / ".template" / "client-tools.local.json", optional=True)
     gitea = client.get("gitea", {})
     token = gitea.get("apiToken", "")
     base_url = str(gitea.get("baseUrl", "")).rstrip("/")
@@ -1126,7 +1126,7 @@ def set_gitea_branch_protection(root: Path, dry_run: bool = False) -> dict[str, 
             "mode": "SetGiteaBranchProtection",
             "valid": False,
             "errors": [
-                "Gitea baseUrl, owner, repo, and apiToken are required in .codex/client-tools.local.json."
+                "Gitea baseUrl, owner, repo, and apiToken are required in .template/client-tools.local.json."
             ],
         }
     approvals = nested(client, "pr", "minimumApprovals") or {"dev": 1, "main": 1}
@@ -1260,7 +1260,7 @@ def verify_gitea_api_token(
     result = configure_result(
         "VerifyGiteaApiToken", dry_run, write_enabled=not dry_run
     )
-    client = read_json(root / ".codex" / "client-tools.local.json", optional=True)
+    client = read_json(root / ".template" / "client-tools.local.json", optional=True)
     gitea = client.get("gitea", {}) if client else {}
     token = gitea.get("apiToken", "")
     base_url = str(gitea.get("baseUrl", "http://localhost:3000")).rstrip("/")
@@ -1346,14 +1346,14 @@ def generate_gitea_api_token(
 ) -> dict[str, Any]:
     """Generate a new Gitea API token with write scopes using admin Basic auth.
 
-    The token is written to .codex/client-tools.local.json under gitea.apiToken.
+    The token is written to .template/client-tools.local.json under gitea.apiToken.
     Uses the admin credentials (admin/admin123) via Basic auth to create the token
     for the admin user via POST /api/v1/users/admin/tokens.
     """
     result = configure_result(
         "GenerateGiteaApiToken", dry_run, write_enabled=not dry_run
     )
-    client_path = root / ".codex" / "client-tools.local.json"
+    client_path = root / ".template" / "client-tools.local.json"
     client = read_json(client_path, optional=True)
     gitea = client.get("gitea", {}) if client else {}
     base_url = str(gitea.get("baseUrl", "http://localhost:3000")).rstrip("/")
@@ -1363,7 +1363,7 @@ def generate_gitea_api_token(
     if dry_run:
         result["actions"].append(
             {
-                "path": ".codex/client-tools.local.json",
+                "path": ".template/client-tools.local.json",
                 "key": "token.generate",
                 "severity": "info",
                 "message": "Would generate Gitea API token with scopes: write:repository, write:issue, write:pull_request.",
@@ -1421,7 +1421,7 @@ def generate_gitea_api_token(
                 write_json(client_path, client)
                 result["actions"].append(
                     {
-                        "path": ".codex/client-tools.local.json/gitea.apiToken",
+                        "path": ".template/client-tools.local.json/gitea.apiToken",
                         "key": "token.generated",
                         "severity": "info",
                         "message": "Generated and saved new Gitea API token with write scopes.",
@@ -1477,7 +1477,7 @@ def generate_gitea_api_token(
                     if del_resp.status in {204, 200}:
                         result["actions"].append(
                             {
-                                "path": ".codex/client-tools.local.json/gitea.apiToken",
+                                "path": ".template/client-tools.local.json/gitea.apiToken",
                                 "key": "token.deleted",
                                 "severity": "info",
                                 "message": "Deleted old Gitea API token to allow regeneration.",
@@ -1530,7 +1530,7 @@ def renovate_gitea_api_token(
     if not dry_run and verify_result.get("tokenValid") is True:
         result["actions"].append(
             {
-                "path": ".codex/client-tools.local.json/gitea.apiToken",
+                "path": ".template/client-tools.local.json/gitea.apiToken",
                 "key": "token.verified",
                 "severity": "info",
                 "message": "Current Gitea API token is valid. No renovation needed.",
@@ -1545,7 +1545,7 @@ def renovate_gitea_api_token(
     if dry_run:
         result["actions"].append(
             {
-                "path": ".codex/client-tools.local.json/gitea.apiToken",
+                "path": ".template/client-tools.local.json/gitea.apiToken",
                 "key": "token.renovate",
                 "severity": "info",
                 "message": "Would renovate Gitea API token (verify + generate if invalid).",
@@ -1560,7 +1560,7 @@ def renovate_gitea_api_token(
     if gen_result.get("valid", False):
         result["actions"].append(
             {
-                "path": ".codex/client-tools.local.json/gitea.apiToken",
+                "path": ".template/client-tools.local.json/gitea.apiToken",
                 "key": "token.renovated",
                 "severity": "info",
                 "message": "Renovated Gitea API token (old token was invalid or missing).",
@@ -2168,7 +2168,7 @@ def set_client_tools(
     root: Path, values: dict[str, Any], dry_run: bool = False
 ) -> dict[str, Any]:
     """Set client-tools.local.json values."""
-    path = root / ".codex" / "client-tools.local.json"
+    path = root / ".template" / "client-tools.local.json"
     current = read_json(path, optional=True)
     from ._shared import merge_dicts
 
@@ -2196,7 +2196,7 @@ def set_project_stack(
                 "values.frontend, values.backend, or values.database is required."
             ],
         }
-    path = root / ".codex" / "project-profile.local.json"
+    path = root / ".template" / "project-profile.local.json"
     current = read_json(path, optional=True)
     stack_raw = current.get("stack")
     stack: dict[str, Any] = stack_raw if isinstance(stack_raw, dict) else {}
@@ -2252,12 +2252,12 @@ def set_project_stack(
         "mode": "SetProjectStack",
         "valid": True,
         "changed": True,
-        "path": ".codex/project-profile.local.json",
+        "path": ".template/project-profile.local.json",
         "dryRun": dry_run,
         "writeEnabled": not dry_run,
         "actions": [
             {
-                "path": ".codex/project-profile.local.json",
+                "path": ".template/project-profile.local.json",
                 "key": "stack",
                 "severity": "info",
                 "message": "Recorded frontend/backend/database stack choices.",
@@ -2291,7 +2291,7 @@ def set_project_stack_metadata(
                 "metadataValidationStatus must be needs-user-validation or validated."
             ],
         }
-    path = root / ".codex" / "project-profile.local.json"
+    path = root / ".template" / "project-profile.local.json"
     current = read_json(path, optional=True)
     stack_raw = current.get("stack")
     stack: dict[str, Any] = stack_raw if isinstance(stack_raw, dict) else {}
@@ -2305,12 +2305,12 @@ def set_project_stack_metadata(
         "mode": "SetProjectStackMetadata",
         "valid": True,
         "changed": True,
-        "path": ".codex/project-profile.local.json",
+        "path": ".template/project-profile.local.json",
         "dryRun": dry_run,
         "writeEnabled": not dry_run,
         "actions": [
             {
-                "path": ".codex/project-profile.local.json",
+                "path": ".template/project-profile.local.json",
                 "key": "stack.metadata",
                 "severity": "info",
                 "message": "Recorded project stack metadata for user validation.",
@@ -2324,7 +2324,7 @@ def set_quality_config(
     root: Path, values: dict[str, Any], dry_run: bool = False
 ) -> dict[str, Any]:
     """Set quality configuration."""
-    path = root / ".codex" / "quality.local.json"
+    path = root / ".template" / "quality.local.json"
     if not values:
         return {
             "mode": "SetQualityConfig",
@@ -2433,7 +2433,7 @@ def set_semgrep_config(root: Path, dry_run: bool = False) -> dict[str, Any]:
     result = configure_result("SetSemgrepConfig", dry_run, write_enabled=not dry_run)
 
     # Read project profile
-    profile_path = root / ".codex" / "project-profile.local.json"
+    profile_path = root / ".template" / "project-profile.local.json"
     profile = read_json(profile_path, optional=True)
     stack = profile.get("stack", {}) if isinstance(profile.get("stack"), dict) else {}
 
@@ -2618,7 +2618,7 @@ def scaffold_project_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
     result["actions"].append(
         {
-            "path": ".codex/skills/dev-flow-scaffold-project/SKILL.md",
+            "path": ".agents/skills/dev-flow-scaffold-project/SKILL.md",
             "key": "stack.delegated",
             "severity": "info",
             "message": (
@@ -2842,7 +2842,7 @@ def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str,
     # (written by provision_lab_users after changing it), 2) the generated
     # password file on a fresh install, 3) the default admin123.
     nexus_pass = "admin123"
-    _cfg = read_json(root / ".codex" / "client-tools.local.json", optional=True) or {}
+    _cfg = read_json(root / ".template" / "client-tools.local.json", optional=True) or {}
     _cfg_pass = (_cfg.get("nexus") or {}).get("password", "")
     if _cfg_pass and "replace-with" not in _cfg_pass:
         nexus_pass = _cfg_pass
@@ -2860,7 +2860,7 @@ def provision_nexus_repositories(root: Path, dry_run: bool = False) -> dict[str,
     # Also save Nexus password to client-tools.local.json for persistence
     if not dry_run and nexus_pass:
         try:
-            _cfg_path = root / ".codex" / "client-tools.local.json"
+            _cfg_path = root / ".template" / "client-tools.local.json"
             _cfg = read_json(_cfg_path, optional=True) or {}
             _cfg.setdefault("nexus", {})["password"] = nexus_pass
             _cfg["nexus"].setdefault("baseUrl", nexus_base)
@@ -3666,7 +3666,7 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
                     break
             # Also save to client-tools.local.json for persistence
             try:
-                config_path = root / ".codex" / "client-tools.local.json"
+                config_path = root / ".template" / "client-tools.local.json"
                 config = read_json(config_path, optional=True) or {}
                 op_config = config.setdefault("openProject", {})
                 op_config["apiToken"] = _op_token
@@ -3689,7 +3689,7 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
         # Read API token on first call
         if _op_token is None:
             try:
-                config_path = root / ".codex" / "client-tools.local.json"
+                config_path = root / ".template" / "client-tools.local.json"
                 config = read_json(config_path, optional=True)
                 op_config = (
                     config.get("openProject", config.get("openproject", {}))
@@ -3775,7 +3775,7 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
         })
         # Update client-tools.local.json with actual owner/repo
         try:
-            _config_path = root / ".codex" / "client-tools.local.json"
+            _config_path = root / ".template" / "client-tools.local.json"
             _config = read_json(_config_path, optional=True) or {}
             _gitea_section = _config.setdefault("gitea", {})
             _gitea_section["owner"] = _gitea_owner
@@ -3783,14 +3783,14 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
             _gitea_section.setdefault("baseUrl", "http://localhost:3000")
             write_json(_config_path, _config)
             result["actions"].append({
-                "path": ".codex/client-tools.local.json/gitea",
+                "path": ".template/client-tools.local.json/gitea",
                 "key": "config.updated",
                 "severity": "info",
                 "message": f"Updated client-tools: owner={_gitea_owner}, repo={_gitea_repo}",
                 "phase": "apply",
             })
         except Exception as _ex:
-            add_bucket_item(result["findings"], ".codex/client-tools.local.json",
+            add_bucket_item(result["findings"], ".template/client-tools.local.json",
                            "config.update", f"Could not update config: {_ex}",
                            "warning", "apply")
     else:
@@ -3806,7 +3806,7 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
     #   infra/gitea/runner.env - canonical copy (used by tooling)
     #   infra/runner.env       - the file the compose runner actually reads
     #                            (env_file: ./runner.env, project dir = infra/)
-    _client_cfg = read_json(root / ".codex" / "client-tools.local.json", optional=True)
+    _client_cfg = read_json(root / ".template" / "client-tools.local.json", optional=True)
     _gitea_cfg = _client_cfg.get("gitea", {}) if _client_cfg else {}
     _owner = _gitea_cfg.get("owner", "sdd-admin")
     _repo = _gitea_cfg.get("repo", "sdd-test")
@@ -4672,7 +4672,7 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
         # Persist the working admin password so later steps (e.g.
         # provision_nexus_repositories) authenticate with admin123.
         try:
-            _cfg_path = root / ".codex" / "client-tools.local.json"
+            _cfg_path = root / ".template" / "client-tools.local.json"
             _cfg = read_json(_cfg_path, optional=True) or {}
             _cfg.setdefault("nexus", {})["password"] = "admin123"
             _cfg["nexus"].setdefault("baseUrl", nexus_base)
@@ -4682,7 +4682,7 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
     # ── 4. Save provisioning config to client-tools.local.json ────────
     if not dry_run:
-        config_path = root / ".codex" / "client-tools.local.json"
+        config_path = root / ".template" / "client-tools.local.json"
         config = read_json(config_path, optional=True)
 
         # Merge provisioning info into openProject section
@@ -4736,7 +4736,7 @@ def provision_lab_users(root: Path, dry_run: bool = False) -> dict[str, Any]:
         write_json(config_path, config)
         result["actions"].append(
             {
-                "path": ".codex/client-tools.local.json",
+                "path": ".template/client-tools.local.json",
                 "key": "config.saved",
                 "severity": "info",
                 "message": "Saved provisioning config (project, board with plain lists, users).",
@@ -4791,7 +4791,7 @@ def provision_gitea_secrets(root: Path, dry_run: bool = False) -> dict[str, Any]
     from urllib.parse import urlparse
 
     # Resolve owner/repo from client-tools.local.json or default
-    client = read_json(root / ".codex" / "client-tools.local.json", optional=True)
+    client = read_json(root / ".template" / "client-tools.local.json", optional=True)
     gitea_cfg = client.get("gitea", {})
     owner = gitea_cfg.get("owner", "sdd-admin")
     repo = gitea_cfg.get("repo", "sdd-test")
@@ -4912,7 +4912,7 @@ def push_to_gitea(root: Path, dry_run: bool = False) -> dict[str, Any]:
         result["valid"] = True
         return result
 
-    client = read_json(root / ".codex" / "client-tools.local.json", optional=True)
+    client = read_json(root / ".template" / "client-tools.local.json", optional=True)
     gitea = client.get("gitea", {})
     base_url = str(gitea.get("baseUrl", "http://localhost:3000")).rstrip("/")
     token = gitea.get("apiToken", "")

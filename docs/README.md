@@ -25,4 +25,4 @@ retrospective work. Use the `docs-knowledge-maintenance` skill to update them, a
 
 Docs marked **Propose only** or **Draft only** must not be edited directly by agents; propose changes
 to the human owner instead. If a finding is enforceable automation behavior, update
-`.codex/skills/_shared/delivery-contract.md` plus affected skills and tests instead of these docs.
+`.agents/skills/_shared/delivery-contract.md` plus affected skills and tests instead of these docs.

@@ -20,9 +20,9 @@ When sources disagree, use this order until the conflict is resolved:
 1. Latest explicit user request in the current conversation.
 2. Active ticket-provider state, description, acceptance criteria, and generated markers.
 3. Active OpenSpec proposal, design, specs, and tasks.
-4. `.codex/project-profile.json`, optional `.codex/project-profile.local.json` (stack lives only in this file), and
-selected `.codex/skills/*/references/*.md` adapter files for fixed-tool API behavior.
-5. `.codex/skills/_shared/delivery-contract.md` for agent-enforced delivery behavior.
+4. `.template/project-profile.json`, optional `.template/project-profile.local.json` (stack lives only in this file), and
+selected `.agents/skills/*/references/*.md` adapter files for fixed-tool API behavior.
+5. `.agents/skills/_shared/delivery-contract.md` for agent-enforced delivery behavior.
 6. Canonical docs in `docs/`.
 7. Current code, tests, workflow files, and configuration templates.
 8. Historical ticket comments, PR comments, QA evidence, release manifests, and tags.
@@ -73,7 +73,7 @@ definition, or configured tool/install path cannot be applied, use the delivery 
 Consent rule: report the blocker, current-flow fix, viable alternative, and risk, then get explicit user choice before
 continuing through the alternative.
 
-If docs conflict with `.codex/skills/_shared/delivery-contract.md`, the delivery contract wins for automation behavior
+If docs conflict with `.agents/skills/_shared/delivery-contract.md`, the delivery contract wins for automation behavior
 until the docs are corrected.
 
 ## Handoff Compression
@@ -95,7 +95,7 @@ Every implementation, review, QA, deployment, PROD, rollback, or hotfix handoff 
 ## Prompt Cache Hygiene & Tiered Context Assembly
 
 Long-running agent workflows must assemble prompts in tier order to maximize provider-side prompt caching. The
-machine-readable tier definitions (exact file lists, cache strategy, breakpoints) live in `.codex/delivery-policy.json`
+machine-readable tier definitions (exact file lists, cache strategy, breakpoints) live in `.template/delivery-policy.json`
 → `agentOptimization.contextTiers` — that file is the single source of truth for which files load in which tier.
 
 ### Tier 1 — Stable Prefix (cache once per session)
@@ -158,7 +158,7 @@ Strict gates do not require every run to load every long instruction body. Agent
 evidence.
 
 Skills, tools, and MCPs are fixed for the lab stack. Product-specific skills are added from
-`.codex/skills/manifest.json` when the tech stack is selected. The manifest is the single source of truth for available
+`.agents/skills/manifest.json` when the tech stack is selected. The manifest is the single source of truth for available
 skills.
 
 Avoid duplicate context systems. Ticket refinement belongs in the managed OpenProject block; implementation planning
@@ -171,7 +171,7 @@ alignment where no durable repo context is expected. Product or ticket clarity g
 planned behavior and design go to OpenSpec, durable repository or process knowledge goes to `docs/`, and reusable
 non-authoritative lessons go to `knowledge/`. Do not introduce a separate `CONTEXT.md`, ADR convention, global grill
 skill installation, or upstream-default grill artifact path unless a separate explicit change adopts that model.
-Repo-local external grill skills are allowed under `.codex/skills/` when cataloged and governed by this mapping.
+Repo-local external grill skills are allowed under `.agents/skills/` when cataloged and governed by this mapping.
 
 ## Context Findings
 
@@ -181,7 +181,7 @@ During implementation and retrospective work, update durable docs when new reusa
 - local setup, commands, repo conventions, testing, or quality gates -> `docs/conventions/development.md`
 - artifact, deployment, QA, release, rollback, or monitoring finding -> `docs/architecture/deployment.md`
 - agent context loading, freshness, authority, handoff, or conflict rule -> `docs/conventions/context-management.md`
-- enforceable automation behavior -> `.codex/skills/_shared/delivery-contract.md` plus affected skills and tests
+- enforceable automation behavior -> `.agents/skills/_shared/delivery-contract.md` plus affected skills and tests
 - reusable but non-authoritative workflow knowledge -> `knowledge/`
 
 When updating knowledge, follow `knowledge/README.md`. Knowledge updates must be source-backed, small, and reviewable.

@@ -234,7 +234,7 @@ def test_provision_grafana_token_missing_env(tmp_path) -> None:
 
 
 def _write_client_tools(tmp_path, openproject: dict) -> None:
-    codex = tmp_path / ".codex"
+    codex = tmp_path / ".template"
     codex.mkdir(parents=True)
     (codex / "client-tools.local.json").write_text(
         json.dumps({"openProject": openproject}), encoding="utf-8"
@@ -329,7 +329,7 @@ def test_prune_docker_leftovers_failure_is_nonblocking(tmp_path) -> None:
 
 
 def _write_project_profile(tmp_path, stack: dict) -> None:
-    codex = tmp_path / ".codex"
+    codex = tmp_path / ".template"
     codex.mkdir(parents=True)
     (codex / "project-profile.local.json").write_text(
         json.dumps({"stack": stack}), encoding="utf-8"
@@ -361,7 +361,7 @@ def test_set_semgrep_config_writes_single_source_of_truth_yml(tmp_path) -> None:
     assert rules == ["p/typescript", "p/javascript", "p/sql-injection"]
 
     profile = json.loads(
-        (tmp_path / ".codex" / "project-profile.local.json").read_text()
+        (tmp_path / ".template" / "project-profile.local.json").read_text()
     )
     assert profile["stack"]["semgrepRules"] == rules
 

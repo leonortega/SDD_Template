@@ -350,19 +350,19 @@ def _run_audit(root: Path, dry_run: bool) -> dict[str, Any]:
     add_env_drift_findings(root, result)
 
     # Check project profile (check file existence, not content — {} is valid but falsy)
-    if not (root / ".codex" / "project-profile.json").exists():
+    if not (root / ".template" / "project-profile.json").exists():
         add_bucket_item(
             result["findings"],
-            ".codex/project-profile.json",
+            ".template/project-profile.json",
             "profile.missing",
             "Project profile is missing. Run InitProjectProfile.",
             "error",
             "pre-start",
         )
-    if not (root / ".codex" / "project-profile.schema.json").exists():
+    if not (root / ".template" / "project-profile.schema.json").exists():
         add_bucket_item(
             result["findings"],
-            ".codex/project-profile.schema.json",
+            ".template/project-profile.schema.json",
             "schema.missing",
             "Project profile schema is missing. Run InitProjectProfile.",
             "error",
@@ -370,12 +370,12 @@ def _run_audit(root: Path, dry_run: bool) -> dict[str, Any]:
         )
 
     # Check quality gates
-    policy = _safe_read_json(root / ".codex" / "delivery-policy.json")
+    policy = _safe_read_json(root / ".template" / "delivery-policy.json")
     gates = policy.get("quality", {}).get("gates", []) or policy.get("gates", [])
     if not gates:
         add_bucket_item(
             result["findings"],
-            ".codex/delivery-policy.json",
+            ".template/delivery-policy.json",
             "quality.gates.missing",
             "No quality gates are configured in delivery-policy.json.",
             "warning",
@@ -383,7 +383,7 @@ def _run_audit(root: Path, dry_run: bool) -> dict[str, Any]:
         )
 
     # Check client tools
-    client_tools = _safe_read_json(root / ".codex" / "client-tools.local.json")
+    client_tools = _safe_read_json(root / ".template" / "client-tools.local.json")
     if client_tools:
         openproject = client_tools.get("openProject", {})
         if isinstance(openproject, dict):
@@ -395,7 +395,7 @@ def _run_audit(root: Path, dry_run: bool) -> dict[str, Any]:
                 if not activity_by_stage:
                     add_bucket_item(
                         result["findings"],
-                        ".codex/client-tools.local.json",
+                        ".template/client-tools.local.json",
                         "openProject.timeTelemetry.activityByStage",
                         "timeTelemetry is enabled but activityByStage is not configured.",
                         "warning",
@@ -409,7 +409,7 @@ def _run_audit(root: Path, dry_run: bool) -> dict[str, Any]:
                             if entry is None:
                                 add_bucket_item(
                                     result["findings"],
-                                    ".codex/client-tools.local.json",
+                                    ".template/client-tools.local.json",
                                     "openProject.timeTelemetry.activityFlow",
                                     f"Activity '{activity}' maps stage '{stage}' which has no entry in activityByStage.",
                                     "warning",
@@ -418,7 +418,7 @@ def _run_audit(root: Path, dry_run: bool) -> dict[str, Any]:
                             elif entry.get("activityName") != activity:
                                 add_bucket_item(
                                     result["findings"],
-                                    ".codex/client-tools.local.json",
+                                    ".template/client-tools.local.json",
                                     "openProject.timeTelemetry.activityFlow",
                                     f"Activity '{activity}' maps stage '{stage}' which has activityName '{entry.get('activityName')}' instead.",
                                     "warning",
@@ -441,11 +441,11 @@ def _run_audit_quality_gates(root: Path, dry_run: bool) -> dict[str, Any]:
     from ._shared import add_bucket_item, configure_result
 
     result = configure_result("AuditQualityGates", dry_run, write_enabled=False)
-    policy = read_json(root / ".codex" / "delivery-policy.json", optional=True)
+    policy = read_json(root / ".template" / "delivery-policy.json", optional=True)
     # Fallback to project-profile.json for quality gates (test compatibility)
     gates = policy.get("quality", {}).get("gates", []) or policy.get("gates", [])
     if not gates:
-        profile = read_json(root / ".codex" / "project-profile.json", optional=True)
+        profile = read_json(root / ".template" / "project-profile.json", optional=True)
         gates = profile.get("quality", {}).get("gates", []) or profile.get("gates", [])
     required_gates: list[str] = []
     for gate in gates:
@@ -456,7 +456,7 @@ def _run_audit_quality_gates(root: Path, dry_run: bool) -> dict[str, Any]:
             else:
                 add_bucket_item(
                     result["findings"],
-                    ".codex/delivery-policy.json",
+                    ".template/delivery-policy.json",
                     "gate.missing-id",
                     "A quality gate entry is missing an 'id' field.",
                     "warning",

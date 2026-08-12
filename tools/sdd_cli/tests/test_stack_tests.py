@@ -38,7 +38,7 @@ _PYTHON_PROBE_OK = {"returncode": 0, "stdout": "Python 3.12.0", "stderr": ""}
 
 
 def _make_profile(root: Path, frameworks: list[str]) -> None:
-    codex = root / ".codex"
+    codex = root / ".template"
     codex.mkdir(parents=True, exist_ok=True)
     (codex / "project-profile.local.json").write_text(
         json.dumps({"stack": {"testFrameworks": frameworks}}),
@@ -223,7 +223,7 @@ class TestRunStackTests:
         """quality.local.json -> coverage.minimumPercent overrides the default."""
         _make_profile(tmp_path, ["pytest"])
         _make_test_dirs(tmp_path)
-        codex = tmp_path / ".codex"
+        codex = tmp_path / ".template"
         (codex / "quality.local.json").write_text(
             json.dumps({"coverage": {"minimumPercent": 75}}),
             encoding="utf-8",

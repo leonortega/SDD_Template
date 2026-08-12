@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 def _write_client_tools(root: Path, token: str = "") -> None:
     """Write a client-tools.local.json with an optional gitea apiToken."""
-    path = root / ".codex" / "client-tools.local.json"
+    path = root / ".template" / "client-tools.local.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     data: dict = {"gitea": {"baseUrl": "http://localhost:3000"}}
     if token:
@@ -659,7 +659,7 @@ def test_ensure_stack_toolchain_dry_run_lists_probes(tmp_path: Path) -> None:
     """Dry-run reports would-probe actions for each derived runtime."""
     from tools.sdd_cli.tool_installer import ensure_stack_toolchain
 
-    codex = tmp_path / ".codex"
+    codex = tmp_path / ".template"
     codex.mkdir()
     (codex / "project-profile.local.json").write_text(
         json.dumps({"stack": {"testFrameworks": ["pytest", "dotnet"]}}),
@@ -676,7 +676,7 @@ def test_ensure_stack_toolchain_unmapped_stack_warns(tmp_path: Path) -> None:
     """Configured-but-unknown stack values surface a warning, not a silent pass."""
     from tools.sdd_cli.tool_installer import ensure_stack_toolchain
 
-    codex = tmp_path / ".codex"
+    codex = tmp_path / ".template"
     codex.mkdir()
     (codex / "project-profile.local.json").write_text(
         json.dumps({"stack": {"languages": ["kotlin"]}}),
@@ -691,7 +691,7 @@ def test_ensure_stack_toolchain_missing_tool_guides_install(tmp_path: Path) -> N
     """Missing runtime → warning finding with OS-specific install command."""
     from tools.sdd_cli.tool_installer import ensure_stack_toolchain
 
-    codex = tmp_path / ".codex"
+    codex = tmp_path / ".template"
     codex.mkdir()
     (codex / "project-profile.local.json").write_text(
         json.dumps({"stack": {"testFrameworks": ["dotnet"]}}),
@@ -716,7 +716,7 @@ def test_ensure_stack_toolchain_present_tool_reports_available(
     """Present runtime → info action, no findings."""
     from tools.sdd_cli.tool_installer import ensure_stack_toolchain
 
-    codex = tmp_path / ".codex"
+    codex = tmp_path / ".template"
     codex.mkdir()
     (codex / "project-profile.local.json").write_text(
         json.dumps({"stack": {"testFrameworks": ["pytest"]}}),

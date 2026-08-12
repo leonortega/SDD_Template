@@ -3,7 +3,7 @@ schema: spec-driven
 context: |
   This repository is an agentic SDD/SDLC delivery shell with no current product implementation. Agents move OpenProject work packages through OpenSpec planning, implementation, Gitea review, Nexus artifact promotion, QA evidence, explicit PROD promotion, rollback, and hotfix workflows once a product stack is configured.
 
-  Durable project intent lives in docs/. The shared delivery contract at .codex/skills/_shared/delivery-contract.md is the agent-enforced policy layer. Agents should use documented intent first, then verify against current files and live tool output before mutating state.
+  Durable project intent lives in docs/. The shared delivery contract at .agents/skills/_shared/delivery-contract.md is the agent-enforced policy layer. Agents should use documented intent first, then verify against current files and live tool output before mutating state.
 
   Delivery tool set: OpenProject records tickets, states, and generated markers; OpenSpec records planned behavior; Gitea hosts PRs and reviews; Gitea Actions is the authoritative validation/deployment runner; Nexus stores immutable artifacts, release manifests, and preferred QA evidence bundles; Docker Desktop is the default local deployment lane; Seq, Grafana, and Dozzle support local observability.
 

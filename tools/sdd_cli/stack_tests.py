@@ -3,7 +3,7 @@ coverage gate locally.
 
 Used by the lefthook pre-push hook so the CI image stays lean: stack
 runtimes (.NET SDK, Go, ...) live on the developer machine, not in
-`sdd-e2e-ci:local`. The test levels follow `.codex/skills/_shared/
+`sdd-e2e-ci:local`. The test levels follow `.agents/skills/_shared/
 test-requirements.md` (unit/integration/architecture).
 
 The gate is **layout-tolerant**: the AI-driven scaffold (dev-flow-scaffold-project)
@@ -27,7 +27,7 @@ hardcoded layout. Per framework the gate resolves at runtime:
 
 Coverage gate: after a framework's tests pass, coverage runs with the
 configurable threshold `coverage.minimumPercent` from
-`.codex/quality.local.json` (fallback `.codex/quality.example.json`, default
+`.template/quality.local.json` (fallback `.template/quality.example.json`, default
 `80`). Coverage below the threshold fails the gate. Frameworks with no
 coverage command mapped report a gap step (non-blocking) — the CI workflow
 remains the authoritative coverage gate for those, per the delivery contract.

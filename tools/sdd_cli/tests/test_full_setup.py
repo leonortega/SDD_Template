@@ -495,7 +495,7 @@ def test_stage4_project_guidance_with_profile(tmp_path: Path) -> None:
     """stage4 detects stack and searches internet when profile is configured."""
     from tools.sdd_cli.full_setup import stage4_project_guidance
 
-    profile_dir = tmp_path / ".codex"
+    profile_dir = tmp_path / ".template"
     profile_dir.mkdir(exist_ok=True)
     profile = {
         "stack": {
@@ -528,7 +528,7 @@ def test_stage4_project_guidance_no_stack(tmp_path: Path) -> None:
     """stage4 handles profile without fully configured stack."""
     from tools.sdd_cli.full_setup import stage4_project_guidance
 
-    profile_dir = tmp_path / ".codex"
+    profile_dir = tmp_path / ".template"
     profile_dir.mkdir(exist_ok=True)
     profile = {
         "stack": {
@@ -552,7 +552,7 @@ def test_stage4_project_guidance_exception(tmp_path: Path) -> None:
     """stage4 handles setup_project_guidance raising an exception."""
     from tools.sdd_cli.full_setup import stage4_project_guidance
 
-    profile_dir = tmp_path / ".codex"
+    profile_dir = tmp_path / ".template"
     profile_dir.mkdir(exist_ok=True)
     profile = {
         "stack": {

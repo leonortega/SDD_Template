@@ -33,7 +33,7 @@ learning.
   maps code, docs, SQL schemas, and configs into a graph with every edge tagged
   `EXTRACTED`/`INFERRED` — a vector-free alternative to grep-based code reading. Not
   installed by the lab; see [§7](#7-considered-but-not-adopted-future-improvements).
-- **Skills** — 77 Codex skills (in `.codex/skills/`) that encode the workflow stages:
+- **Skills** — 85 Codex skills (in `.agents/skills/`) that encode the workflow stages:
   ticket start, OpenSpec change, implementation, review, QA, deploy, rollback,
   retrospective, and more.
 - **Agent eval** — a deterministic Promptfoo suite (60 routing cases) that verifies the
@@ -97,8 +97,8 @@ python -m tools.sdd_cli template-installer update --version v0.2.0 --target C:\p
 
 If `--version` is omitted, the installer uses the latest final Git tag matching
 `vMAJOR.MINOR.PATCH` (release candidates like `v0.1.7-rc.2` are ignored). The install
-writes `.codex/sdd-tool-version.json` (version, source commit, checksum, managed files)
-and seeds `knowledge/README.md`. Test-project files (`.codex/project-profile.local.json`,
+writes `.template/sdd-tool-version.json` (version, source commit, checksum, managed files)
+and seeds `knowledge/README.md`. Test-project files (`.template/project-profile.local.json`,
 secrets, product source, tests, OpenSpec changes) are preserved on updates.
 
 ### 2.2 Use Prompts In Chat
@@ -306,16 +306,16 @@ python -m tools.sdd_cli agent-eval run      # fails loudly, exits non-zero on fa
 python -m tools.sdd_cli agent-eval view     # open the report in the browser
 ```
 
-- **60 routing cases** (see `.codex/agent-evals/README.md` for the authoritative count)
+- **60 routing cases** (see `.agents/agent-evals/README.md` for the authoritative count)
   cover ticket lifecycle, edge cases, parallel delivery, deployment lanes,
   infrastructure validation, explicit workflow-stage requests, state-driven resume,
   frontend design skill activation, and regression.
 - To verify cases without promptfoo, run the Python provider directly against the
-  YAML assertions (see `.codex/agent-evals/`).
+  YAML assertions (see `.agents/agent-evals/`).
 - After a PROD release, the eval runs as a post-PROD check and any routing regression
   feeds the retrospective → eval-driven-improvement loop.
 
-Details: [`.codex/agent-evals/README.md`](.codex/agent-evals/README.md).
+Details: [`.agents/agent-evals/README.md`](.agents/agent-evals/README.md).
 
 ---
 
@@ -331,14 +331,14 @@ Details: [`.codex/agent-evals/README.md`](.codex/agent-evals/README.md).
 | Architecture decisions | [`docs/adr/README.md`](docs/adr/README.md) |
 | Conventions (context management, development) | [`docs/conventions/README.md`](docs/conventions/README.md) |
 | Agent-consulted knowledge base (errors, fixes, patterns, lessons) | [`knowledge/README.md`](knowledge/README.md) |
-| Agent-enforced delivery policy | [`.codex/skills/_shared/delivery-contract.md`](.codex/skills/_shared/delivery-contract.md) |
-| Agent eval (Promptfoo routing suite) | [`.codex/agent-evals/README.md`](.codex/agent-evals/README.md) |
+| Agent-enforced delivery policy | [`.agents/skills/_shared/delivery-contract.md`](.agents/skills/_shared/delivery-contract.md) |
+| Agent eval (Promptfoo routing suite) | [`.agents/agent-evals/README.md`](.agents/agent-evals/README.md) |
 
 ### Skills Catalog
 
 The full skill manifest (77 skills across ticket, implement, review, QA, deploy,
 monitor, security, test, quality, observability, kubernetes, and more) lives in
-[`.codex/skills/manifest.json`](.codex/skills/manifest.json). Skills are the executable
+[`.agents/skills/manifest.json`](.agents/skills/manifest.json). Skills are the executable
 instructions the agent loads per routing stage.
 
 ### Tools & Tech Stack

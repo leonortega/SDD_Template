@@ -16,21 +16,21 @@ This repository is a product-free SDLC shell. No product stack is currently sele
 **Delivery tooling:** Gitea (source control + CI), OpenProject (tickets), Nexus (artifacts), Grafana/Seq/Dozzle
 (observability), Docker Desktop K8s (deployment target).
 
-For stack configuration, see `.codex/project-profile.local.json` (ignored local overlay — stack lives only in this
-file). See `.codex/project-profile.json` for tracked provider and workflow defaults.
+For stack configuration, see `.template/project-profile.local.json` (ignored local overlay — stack lives only in this
+file). See `.template/project-profile.json` for tracked provider and workflow defaults.
 
 This repository is a product-free SDLC shell. The previous sample application has been removed so a new product can
 start from zero while reusing the delivery workflow.
 
 ## System Topology
 
-- `.codex/skills` contains repo-local workflow skills for configuration, ticket start, planning, implementation
+- `.agents/skills` contains repo-local workflow skills for configuration, ticket start, planning, implementation
 orchestration, review, deployment, QA coordination, rollback, and retrospective work.
-- `.codex/project-profile.json` is the tracked non-secret declaration for common providers, workflow, and quality
+- `.template/project-profile.json` is the tracked non-secret declaration for common providers, workflow, and quality
 defaults.
-- `.codex/project-profile.local.json` is the ignored local overlay for stack choices and project-specific adapter
+- `.template/project-profile.local.json` is the ignored local overlay for stack choices and project-specific adapter
 experiments.
-- `.codex/skills/*/references/` contains reference docs for the fixed tools (OpenProject API, Gitea API, Nexus API).
+- `.agents/skills/*/references/` contains reference docs for the fixed tools (OpenProject API, Gitea API, Nexus API).
 - `openspec/config.yaml` keeps the OpenSpec process available for future product specs.
 - `infra/` contains local platform infrastructure for ticketing, repository, artifact storage, deployment support, and
 observability.
@@ -42,16 +42,16 @@ The `src/` and `test/` product trees are intentionally absent.
 ## Sources Of Truth
 
 - Current user request and active ticket context define the work.
-- `.codex/project-profile.json` defines common selected providers and workflow defaults;
-`.codex/project-profile.local.json` may add local stack choices before a product stack is committed.
-- Selected `.codex/skills/*/references/*.md` files define provider API behavior for the fixed tools.
+- `.template/project-profile.json` defines common selected providers and workflow defaults;
+`.template/project-profile.local.json` may add local stack choices before a product stack is committed.
+- Selected `.agents/skills/*/references/*.md` files define provider API behavior for the fixed tools.
 - OpenSpec artifacts define planned behavior for active product changes.
-- `.codex/skills/_shared/delivery-contract.md` defines agent-enforced delivery behavior.
+- `.agents/skills/_shared/delivery-contract.md` defines agent-enforced delivery behavior.
 - `docs/` holds durable human-readable project context.
 
 ## Product Stack
 
-No product stack is selected. Future work can draft stack choices in `.codex/project-profile.local.json`. When the new
+No product stack is selected. Future work can draft stack choices in `.template/project-profile.local.json`. When the new
 product becomes real, update the tracked profile, docs, workflow jobs, deployment targets, quality gates, and OpenSpec
 specs together.
 
@@ -72,7 +72,7 @@ tree is included except the rule exclusions in `tools/sdd_cli/sdd-tool-data.json
 DB data, eval output). Tracked files — including tracked-but-ignored ones like `.vscode/mcp.json` — and
 untracked-but-not-ignored files are kept, so the installer is a blacklist walk, not a git whitelist.
 
-The consumer manifest `.codex/sdd-tool-version.json` records the installed version, source repo, source commit,
+The consumer manifest `.template/sdd-tool-version.json` records the installed version, source repo, source commit,
 checksum, managed file list, and preserved local file list. Updates replace only managed files and leave consumer
 project code, secrets, local overlays, and product OpenSpec changes untouched.
 

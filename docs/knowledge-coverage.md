@@ -1,6 +1,6 @@
 # Knowledge Base → Template Coverage Matrix
 
-Maps every `knowledge/` file to its template home (`.codex/skills/`, `tools/sdd_cli/`,
+Maps every `knowledge/` file to its template home (`.agents/skills/`, `tools/sdd_cli/`,
 `.gitea/workflows/`, or `infra/`) so a lesson's enforcement point is discoverable in one place.
 
 - **Audited:** 2026-08-06 (conversation-wide audit of `knowledge/` vs the template); 2026-08-07
@@ -62,13 +62,13 @@ lesson now lives.
 
 | Removed file | Lesson now enforced by |
 | ------------ | ---------------------- |
-| `errors/installed-readme-excluded-tests.md` | `.codex/skills/docs-knowledge-maintenance/SKILL.md` (inline rule: installed validation must use CLI smoke checks, e.g. `environment-lab health-check`, never `python -m unittest tools.sdd_cli.tests.test_cli`) |
-| `errors/no-powershell-alternate-execution.md` | `.codex/skills/dev-flow-implement-ticket/SKILL.md` §7 "Windows agent tool-execution rule" (PowerShell-default discipline) |
+| `errors/installed-readme-excluded-tests.md` | `.agents/skills/docs-knowledge-maintenance/SKILL.md` (inline rule: installed validation must use CLI smoke checks, e.g. `environment-lab health-check`, never `python -m unittest tools.sdd_cli.tests.test_cli`) |
+| `errors/no-powershell-alternate-execution.md` | `.agents/skills/dev-flow-implement-ticket/SKILL.md` §7 "Windows agent tool-execution rule" (PowerShell-default discipline) |
 | `errors/openproject-container-secret-key-base.md` | `infra/openproject/compose.yml` (`SECRET_KEY_BASE: ${OPENPROJECT_SECRET_KEY_BASE:?...}`) + `ensure_openproject_env()` in `environment_lab.py` |
 | `errors/template-config-infra-native-modes.md` | `test_all_configure_modes_have_native_dispatch` in `tools/sdd_cli/tests/test_cli.py` + `init_local_files()` knowledge seeding |
 | `errors/tool-update-runtime-db-directories.md` | `tools/sdd_cli/sdd-tool-data.json` (excludes `pgdata`, `data`, `logs`) + `walk_sdd_source_files()` in `tools/sdd_cli/_shared.py` |
-| `lessons-learned/ci-pipeline-fixes.md` | `.codex/skills/dev-ops-configure-k8s/SKILL.md` "Lessons Learned: CI Pipeline Fixes" (14 inline rules), `.codex/skills/configure-ci-workflows/SKILL.md`, `.gitea/workflows/package-deploy.yml`, `.gitea/workflows/pr-validation.yml`, `infra/gitea/compose.yml`, `.gitignore`, `environment_lab.py`, `k8s_lab.py`, `dev-flow-scaffold-project` |
-| `lessons-learned/release-lessons.md` | `.codex/skills/dev-ops-deploy-prod/SKILL.md` "Branch-Protected `main` (Release-Branch PR Flow)" (inline) |
+| `lessons-learned/ci-pipeline-fixes.md` | `.agents/skills/dev-ops-configure-k8s/SKILL.md` "Lessons Learned: CI Pipeline Fixes" (14 inline rules), `.agents/skills/configure-ci-workflows/SKILL.md`, `.gitea/workflows/package-deploy.yml`, `.gitea/workflows/pr-validation.yml`, `infra/gitea/compose.yml`, `.gitignore`, `environment_lab.py`, `k8s_lab.py`, `dev-flow-scaffold-project` |
+| `lessons-learned/release-lessons.md` | `.agents/skills/dev-ops-deploy-prod/SKILL.md` "Branch-Protected `main` (Release-Branch PR Flow)" (inline) |
 
 ### ci-pipeline-fixes.md — Per-Section Mapping (historical record)
 

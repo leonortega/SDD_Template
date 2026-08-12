@@ -4,7 +4,7 @@ Every pull request in this template — feature ticket, bug fix, hotfix, or rele
 — runs the **same 7-step PR lifecycle**. The sequence never changes; only the PR
 body and the handoff context differ per flow. This document is the readable map
 of that pattern; the authoritative mechanics live in
-`.codex/skills/_shared/pipeline-pr-lifecycle.md` (referenced by the flow skills
+`.agents/skills/_shared/pipeline-pr-lifecycle.md` (referenced by the flow skills
 `dev-flow-implement-ticket` §10–11.5, `dev-flow-file-qa-bug`, `dev-ops-hotfix-prod`,
 and `dev-ops-deploy-prod`).
 
@@ -69,12 +69,12 @@ No AI review, feedback loop, or CI fix loop runs for this PR.
 
 ## Related Files
 
-- `.codex/skills/_shared/pipeline-pr-lifecycle.md` — authoritative lifecycle
+- `.agents/skills/_shared/pipeline-pr-lifecycle.md` — authoritative lifecycle
   (Steps 1–7 + PROD variant)
-- `.codex/skills/_shared/pipeline-review-handoff.md` — detailed reviewer request
+- `.agents/skills/_shared/pipeline-review-handoff.md` — detailed reviewer request
   pattern (Steps 2/6 mechanics)
-- `.codex/skills/dev-flow-pr-review-agent/SKILL.md` — the AI review (Step 3)
-- `.codex/skills/dev-flow-pr-review-feedback-loop/SKILL.md` — the feedback loop
+- `.agents/skills/dev-flow-pr-review-agent/SKILL.md` — the AI review (Step 3)
+- `.agents/skills/dev-flow-pr-review-feedback-loop/SKILL.md` — the feedback loop
   (Step 4)
 - `.gitea/workflows/pr-validation.yml` — the CI gate (Step 5)
 - `implementation-deploy-flows.md` — the linear ticket → PROD flow (Stage 5 = PR
