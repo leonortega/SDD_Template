@@ -334,6 +334,7 @@ API fails, stop and report. There is no alternative path.
 | Post-merge deploy                      | `dev-ops-post-merge-deploy`        | `.agents/skills/dev-ops-post-merge-deploy/SKILL.md`        |
 | CI deploy completed / post-deploy update | `grafana-board-update`             | `.agents/skills/grafana-board-update/SKILL.md`             |
 | File and fix a QA bug                  | `dev-flow-file-qa-bug`             | `.agents/skills/dev-flow-file-qa-bug/SKILL.md`             |
+| Clean up temporary resources after a closed ticket | `dev-ops-cleanup-resources` | `.agents/skills/dev-ops-cleanup-resources/SKILL.md` |
 | Check pipeline status                  | `dev-flow-pipeline-status`         | `.agents/skills/dev-flow-pipeline-status/SKILL.md`         |
 | Run retrospective audit                | `dev-flow-retrospective-audit`     | `.agents/skills/dev-flow-retrospective-audit/SKILL.md`     |
 | Explore a change / ask questions       | `dev-flow-explore-change`          | `.agents/skills/dev-flow-explore-change/SKILL.md`          |

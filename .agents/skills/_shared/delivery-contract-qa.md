@@ -220,6 +220,22 @@ On `PASS` only, after Nexus evidence exists, comment verified, and RC tag create
 If any blocking step is incomplete (evidence publication, comment verification, RC tagging, Done mutation), keep the
 branch until resolved.
 
+### Step 6 — Clean Up Temporary Resources
+
+On `PASS` only, after the ticket is in the configured `Done` state (`Closed`), the `IA generated E2E QA: {ticketKey}`
+marker comment and Nexus release manifest are confirmed published, and the trigger branch is deleted, run the
+post-close cleanup (`dev-ops-cleanup-resources`) to remove temporary test resources left behind by the ticket:
+
+1. Prune leftover Docker containers, images, and volumes created to test something (scoped — compose-labeled lab
+   services and their images/volumes are protected):
+   `python -m tools.sdd_cli environment-lab prune-docker-leftovers`
+2. Remove scratch/temp files created during implementation and testing (`.template/_tmp_*`, `*.tmp`, `tmp_*`,
+   `*_scratch*`, local `test-results/`, `playwright-report/`, `e2e-qa-output.json`)
+3. Report what was pruned/removed; never delete tracked files, local config, the delivery-context lock, or published
+   evidence
+
+Non-fatal and idempotent: a failed prune is a warning; re-running reports `nothing to remove`.
+
 ### Stable Markers
 
 - QA deployment: `IA generated QA deployment: {commitSha}`
@@ -236,6 +252,7 @@ branch until resolved.
 - Do not create an RC tag on `FAIL` or `PASS WITH GAPS`.
 - Do not skip OpenSpec archiving — report blocker if it fails.
 - Do not leave QA trigger branches behind after E2E QA completes.
+- Do not leave temporary test resources behind after E2E QA completes — run the post-close cleanup step.
 
 ## Workflow Telemetry
 

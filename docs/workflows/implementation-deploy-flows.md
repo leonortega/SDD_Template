@@ -441,7 +441,11 @@ never DEV**.
    state (`Closed` by default — ID 12); update `release-qa.json` with `e2eQaStatus: "passed"` and
    `versionStatus: "RC candidate"`; optionally create the annotated RC tag
    `vMAJOR.MINOR.PATCH-rc.N` on the tested commit; archive the OpenSpec change (Stage 10
-   below); delete the temporary QA trigger branch.
+   below); delete the temporary QA trigger branch; run the post-close temporary-resource
+   cleanup (`dev-ops-cleanup-resources`): prune leftover Docker containers/images/volumes
+   created to test something plus temp/scratch files (`.template/_tmp_*`, `*.tmp`,
+   `*_scratch*`, local `test-results/`, `playwright-report/`, `e2e-qa-output.json`) —
+   non-fatal and idempotent, lab services (compose-labeled) and local config untouched.
 5. **On FAIL**: ticket comment with failing tests + classification (product defect /
    test defect / environment issue); leave ticket in QA; no RC tag; route to
    `dev-flow-file-qa-bug` (Stage 11).

@@ -33,7 +33,7 @@ learning.
   maps code, docs, SQL schemas, and configs into a graph with every edge tagged
   `EXTRACTED`/`INFERRED` — a vector-free alternative to grep-based code reading. Not
   installed by the lab; see [§7](#7-considered-but-not-adopted-future-improvements).
-- **Skills** — 85 Codex skills (in `.agents/skills/`) that encode the workflow stages:
+- **Skills** — 86 Codex skills (in `.agents/skills/`) that encode the workflow stages:
   ticket start, OpenSpec change, implementation, review, QA, deploy, rollback,
   retrospective, and more.
 - **Agent eval** — a deterministic Promptfoo suite (60 routing cases) that verifies the

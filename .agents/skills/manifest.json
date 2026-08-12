@@ -35,11 +35,12 @@
       ]
     },
     "qa": {
-      "description": "QA deployment, bug lifecycle (file \u2192 fix \u2192 PR \u2192 handoff), and E2E QA",
+      "description": "QA deployment, bug lifecycle (file \u2192 fix \u2192 PR \u2192 handoff), E2E QA, and post-close cleanup",
       "skills": [
         "dev-ops-deploy-qa/SKILL.md",
         "dev-ops-post-merge-deploy/SKILL.md",
-        "dev-flow-file-qa-bug/SKILL.md"
+        "dev-flow-file-qa-bug/SKILL.md",
+        "dev-ops-cleanup-resources/SKILL.md"
       ]
     },
     "deploy": {

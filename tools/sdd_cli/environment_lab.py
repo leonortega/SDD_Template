@@ -5334,7 +5334,7 @@ def run_environment_lab(args: list[str]) -> int:
             "validate-docker-desktop-k8s, validate-k8s-overlays, setup-kind-cluster, setup-k8s-access, "
             "scaffold-k8s, assign-app-ports, "
             "ensure-headlamp, provision-lab-users, push-to-gitea, verify-gitea-token, "
-            "generate-gitea-token, renovate-gitea-token",
+            "generate-gitea-token, renovate-gitea-token, prune-docker-leftovers",
             file=sys.stderr,
         )
         return 1
