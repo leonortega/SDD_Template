@@ -311,6 +311,7 @@ without:
 - Nexus release manifest updated with `e2eQaStatus: "passed"`
 - OpenSpec change archived (per delivery-contract-qa.md → OpenSpec Completion Archive Gate)
 - QA trigger branch cleaned up (per delivery-contract-qa.md → QA Evidence Trigger Branch Cleanup)
+- Temporary test resources cleaned up (per delivery-contract-qa.md → Clean Up Temporary Resources, via `dev-ops-cleanup-resources`)
 
 ## Output
 

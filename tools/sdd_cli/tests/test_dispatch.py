@@ -591,6 +591,21 @@ class EnvironmentLabDispatchTests(unittest.TestCase):
         # Should NOT have delegated to full-setup
         mock_full.assert_not_called()
 
+    def test_prune_docker_leftovers_dispatches(self) -> None:
+        """environment-lab prune-docker-leftovers calls prune_docker_leftovers."""
+        from unittest.mock import patch
+
+        with patch(
+            "tools.sdd_cli.environment_lab.prune_docker_leftovers",
+            return_value={"valid": True, "actions": []},
+        ) as mock_prune:
+            rc = cli.main(
+                ["environment-lab", "prune-docker-leftovers", "--dry-run", "true"]
+            )
+
+        self.assertEqual(0, rc)
+        mock_prune.assert_called_once()
+
     def test_init_local_files_creates_knowledge_seed(self) -> None:
         """environment-lab init-local-files works."""
         with tempfile.TemporaryDirectory() as tmp:

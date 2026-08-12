@@ -598,6 +598,21 @@ tests:
       - type: javascript
         value: JSON.parse(output).route === 'docs-knowledge-maintenance'
 
+  - description: "Explicit cleanup-resources request routes to dev-ops-cleanup-resources"
+    vars:
+      scenario: Ticket closed and user asks to clean up temporary test resources (Docker leftovers, temp files)
+      ticketState: Done
+      branchExists: false
+      prExists: false
+      prMerged: true
+      qaEvidence: passed
+      productStack: selected
+      requestType: cleanup-resources
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-ops-cleanup-resources'
+
   - description: "Explicit multi-ticket request routes to dev-flow-parallel-ticket-coordinator"
     vars:
       scenario: User asks to implement more than one ticket at the same time (e.g. implement tickets A and B)

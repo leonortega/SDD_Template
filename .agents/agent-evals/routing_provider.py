@@ -31,6 +31,7 @@ EXPLICIT_REQUEST_ROUTES = {
     "retrospective-audit": "dev-flow-retrospective-audit",
     "docs-knowledge-maintenance": "docs-knowledge-maintenance",
     "deploy-qa": "dev-ops-deploy-qa",
+    "cleanup-resources": "dev-ops-cleanup-resources",
 }
 
 
