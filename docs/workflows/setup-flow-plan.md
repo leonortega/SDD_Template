@@ -1,4 +1,8 @@
-# Setup Flow — Architectural Plan
+# Setup Flow — Implementation Architecture
+
+**Status: implemented.** This document records the architecture of the `full-setup` flow as shipped
+(`tools/sdd_cli/full_setup.py` + `environment-lab setup-lab` alias, CLI wiring in `tools/sdd_cli/cli.py`).
+It is kept as the reference rationale behind the 4-stage design.
 
 ## Problem
 
@@ -13,15 +17,16 @@ Currently the installation flow is fragmented across multiple CLI commands with 
 
 No single command or document ties them together.
 
-## Proposed Solution
+## Solution
 
-Add a new top-level CLI subcommand: `full-setup`
+The shipped top-level CLI subcommand is `full-setup`:
 
 ```bash
 python -m tools.sdd_cli full-setup [--dry-run]
 ```
 
-It runs 4 stages in order, each with a clear pass/fail summary:
+`environment-lab setup-lab` is an alias for the same 4-stage flow. It runs 4 stages in order, each with a clear
+pass/fail summary:
 
 ```text
 full-setup
@@ -61,7 +66,7 @@ full-setup
 
 ## File & Module Design
 
-### New file: `tools/sdd_cli/full_setup.py`
+### Module: `tools/sdd_cli/full_setup.py`
 
 ```python
 def run_full_setup(root, dry_run) -> int:
@@ -83,7 +88,7 @@ def stage4_project_guidance(root, dry_run) -> dict[str, Any]:
 ### CLI wiring in `tools/sdd_cli/cli.py`
 
 ```python
-# New subparser
+# full-setup subparser (also dispatched by `environment-lab setup-lab`)
 full = sub.add_parser("full-setup")
 full.add_argument("--dry-run", action="store_true", default=False)
 full.add_argument("--root", default=str(REPO_ROOT))
@@ -130,7 +135,8 @@ The final output aggregates all 4 stages:
 - **Idempotent**: re-running skips completed steps (via existing dry-run patterns)
 - **Visible failures**: each stage reports pass/fail, errors collected and shown
 - **Modular**: each stage is a separate function, easy to test and maintain
-- **Backward compatible**: existing `setup-lab`, `prereqs check`, etc. remain unchanged
+- **Backward compatible**: existing CLI entry points (`setup-lab`, `prereqs check`, `tool-installer install-*`)
+  remain available — `setup-lab` is now an alias for the full 4-stage flow instead of lab-only
 
 ## Notes
 

@@ -25,6 +25,7 @@ from ._shared import (
     http_json,
     http_status,
     local_path,
+    load_project_profile,
     native_command,
     nested,
     normalize_stack_domain,
@@ -345,8 +346,8 @@ def setup_lab(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
     # 16. Create kind cluster (or verify existing) with port mappings for direct host access.
     #     Uses infra/k8s/kind-config.yaml which maps:
-    #       host:8081 -> nodePort:30080 -> frontend:80
-    #       host:5002 -> nodePort:30500 -> backend:5000
+    #       host:8081 -> nodePort:30080 -> <appId>:80 (web role)
+    #       host:5002 -> nodePort:30500 -> <appId>:5000 (api role)
     #     This replaces Docker Desktop K8s — kind runs as a container, avoids
     #     Docker Engine restart that would disrupt running compose services.
     early = _add_step(setup_kind_cluster(root, dry_run), fatal=True)
@@ -728,6 +729,7 @@ def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
             "providers": {
                 "deployment": {"id": "docker-desktop"},
             },
+            "projectName": "",
             "stack": {
                 "frontend": {"applies": False, "value": ""},
                 "backend": {"applies": False, "value": ""},
@@ -767,6 +769,7 @@ def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
             "providers": {
                 "deployment": {"id": "docker-desktop"},
             },
+            "projectName": "",
             "stack": {
                 "frontend": {"applies": False, "value": ""},
                 "backend": {"applies": False, "value": ""},
@@ -806,6 +809,7 @@ def init_project_profile(root: Path, dry_run: bool = False) -> dict[str, Any]:
             "providers": {
                 "deployment": {"id": "docker-desktop"},
             },
+            "projectName": "",
             "stack": {
                 "frontend": {"applies": False, "value": ""},
                 "backend": {"applies": False, "value": ""},
@@ -2184,10 +2188,53 @@ def set_client_tools(
     }
 
 
+def _project_name_slug(name: str) -> str:
+    """Slugify a project name into a kebab-case appId/folder-safe string."""
+    import re as _re
+
+    slug = _re.sub(r"[^a-z0-9]+", "-", name.strip().lower()).strip("-")
+    return slug or "project"
+
+
+def _validate_project_name(name: Any) -> str:
+    """Normalize and validate a project name; raise ValueError with the reason."""
+    raw = "" if name is None else str(name).strip()
+    if not raw:
+        raise ValueError("values.name (project name) is required.")
+    placeholder = {
+        s.strip().lower()
+        for s in (
+            "example", "sample", "test", "demo", "my-app", "myproject",
+            "my-project", "app", "project", "template", "placeholder", "todo",
+            "untitled", "name", "project-name", "sdd", "sdd-template",
+            "sddshell", "shell",
+        )
+    }
+    if raw.lower() in placeholder:
+        raise ValueError(
+            f"values.name {raw!r} is a placeholder — provide the real project name "
+            "(e.g. 'transportar'), not a sample name."
+        )
+    import re as _re
+
+    slug = _project_name_slug(raw)
+    if len(slug) < 2 or not _re.search(r"[a-z]", slug):
+        raise ValueError(
+            "values.name must contain at least two letters (a pure number or "
+            "punctuation-only name is not a valid project name)."
+        )
+    return raw
+
+
 def set_project_stack(
     root: Path, values: dict[str, Any], dry_run: bool = False
 ) -> dict[str, Any]:
-    """Set frontend/backend/database stack choices."""
+    """Set frontend/backend/database stack choices and the project name.
+
+    The project name is required: the template never uses example or random
+    names — scaffolded appIds/folders derive from it. Pass it as
+    ``values.name`` (e.g. ``{"name": "transportar", "frontend": "react", ...}``).
+    """
     if not any(key in values for key in ("frontend", "backend", "database")):
         return {
             "mode": "SetProjectStack",
@@ -2195,6 +2242,14 @@ def set_project_stack(
             "errors": [
                 "values.frontend, values.backend, or values.database is required."
             ],
+        }
+    try:
+        project_name = _validate_project_name(values.get("name"))
+    except ValueError as exc:
+        return {
+            "mode": "SetProjectStack",
+            "valid": False,
+            "errors": [str(exc)],
         }
     path = root / ".template" / "project-profile.local.json"
     current = read_json(path, optional=True)
@@ -2223,6 +2278,7 @@ def set_project_stack(
     stack["testFrameworks"] = sorted(set(stack.get("testFrameworks", [])))
     stack["selectionRecorded"] = True
     current["$schema"] = current.get("$schema", "./project-profile.schema.json")
+    current["projectName"] = project_name
     current["stack"] = stack
     if not dry_run:
         write_json(path, current)
@@ -2260,7 +2316,7 @@ def set_project_stack(
                 "path": ".template/project-profile.local.json",
                 "key": "stack",
                 "severity": "info",
-                "message": "Recorded frontend/backend/database stack choices.",
+                "message": f"Recorded project name {project_name!r} and frontend/backend/database stack choices.",
                 "phase": "apply",
             }
         ],
@@ -2545,8 +2601,10 @@ def scaffold_project_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
     (one folder per app, each with ``src/``, ``deploy/``, and ``test/`` with
     one subfolder per test type: ``unit``, ``integration``, ``e2e``,
     ``architecture``), the ``packages/`` container for shared libraries, and
-    one ``apps/example/`` app documenting the expected per-app layout. Every
-    stack-specific artifact (package.json, test framework config, Dockerfiles,
+    one layout app named from the project (``apps/<project-slug>/``) documenting
+    the expected per-app layout (falls back to ``apps/example/`` only when no
+    project name is recorded). Every stack-specific artifact (package.json, test
+    framework config, Dockerfiles,
     CI workflows, k8s manifests) is delegated to the AI-driven
     ``dev-flow-scaffold-project`` skill, which reads the stack from
     project-profile.local.json and resolves what to scaffold — never a fixed
@@ -2583,10 +2641,15 @@ def scaffold_project_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 }
             )
 
-    # One example app documenting the expected per-app layout (not 12
-    # skeletons): src/, deploy/, and test/ with one subfolder per type.
-    # Real apps are scaffolded per stack by dev-flow-scaffold-project.
-    example = root / "apps" / "example"
+    # One app documenting the expected per-app layout (not 12 skeletons):
+    # src/, deploy/, and test/ with one subfolder per type. The app is named
+    # from the project (set-project-stack requires values.name) so the template
+    # never ships example or random names. Real apps are scaffolded per stack
+    # by dev-flow-scaffold-project.
+    profile = load_project_profile(root)
+    project_name = str(profile.get("projectName") or "").strip()
+    app_slug = _project_name_slug(project_name) if project_name else "example"
+    example = root / "apps" / app_slug
     for folder in ("src", "deploy"):
         folder_path = example / folder
         if not folder_path.exists():
@@ -2594,10 +2657,10 @@ def scaffold_project_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 folder_path.mkdir(parents=True, exist_ok=True)
             result["actions"].append(
                 {
-                    "path": f"apps/example/{folder}/",
+                    "path": f"apps/{app_slug}/{folder}/",
                     "key": "folder.created",
                     "severity": "info",
-                    "message": f"Created apps/example/{folder}/ scaffold folder.",
+                    "message": f"Created apps/{app_slug}/{folder}/ scaffold folder.",
                     "phase": "apply",
                 }
             )
@@ -2608,10 +2671,10 @@ def scaffold_project_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 sub_path.mkdir(parents=True, exist_ok=True)
             result["actions"].append(
                 {
-                    "path": f"apps/example/test/{sub}/",
+                    "path": f"apps/{app_slug}/test/{sub}/",
                     "key": "folder.created",
                     "severity": "info",
-                    "message": f"Created apps/example/test/{sub}/ test folder.",
+                    "message": f"Created apps/{app_slug}/test/{sub}/ test folder.",
                     "phase": "apply",
                 }
             )
@@ -2625,7 +2688,7 @@ def scaffold_project_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
             write_json(
                 marker,
                 {
-                    "appId": "example",
+                    "appId": app_slug,
                     "role": "web",
                     "healthPath": "/health",
                     "templateVersion": "0.0.0",
@@ -2633,10 +2696,10 @@ def scaffold_project_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
             )
         result["actions"].append(
             {
-                "path": "apps/example/app.json",
+                "path": f"apps/{app_slug}/app.json",
                 "key": "app.marker",
                 "severity": "info",
-                "message": "Created apps/example/app.json template-version marker.",
+                "message": f"Created apps/{app_slug}/app.json template-version marker.",
                 "phase": "apply",
             }
         )
@@ -2676,6 +2739,150 @@ def scaffold_project_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
     result["valid"] = True
     return result    # ── Provision Nexus repositories (sdd-artifacts, app-releases, docker-hosted) ──
+
+
+# ── Prune scaffold shapes once real apps exist ─────────────────────────
+
+
+# Kind -> scaffold shape path (relative to root). A shape is the starting
+# point for generated apps; once a real app of that kind is registered in
+# apps.json (implementation complete), the shape is redundant — the real app
+# becomes the reference (ADR-0005 lifecycle).
+_SCAFFOLD_KIND_SHAPES: dict[str, str] = {
+    "service": ".template/scaffold/apps/service",
+    "job": ".template/scaffold/apps/job",
+}
+
+# The db-bootstrap app has its own shape (engine-level bootstrap template).
+_DB_BOOTSTRAP_APP_ID = "db-bootstrap"
+_DB_BOOTSTRAP_SHAPE = ".template/scaffold/db-bootstrap"
+
+
+def prune_scaffold_shapes(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Remove scaffold shapes whose kind is now implemented by a real app.
+
+    Scaffold shapes in `.template/scaffold/` are starting points the AI
+    scaffold materializes into `apps/<appId>/`. Once a real app of a given
+    kind is registered in apps.json — the implementation-complete signal —
+    the corresponding shape is pruned so the template never carries starter
+    shapes alongside real implementations (ADR-0005). Runs after an
+    implementation finishes; the implementation skill calls this as a final
+    cleanup step.
+
+    Removal rules (per kind):
+
+    - any registered app with `kind: service` removes
+      `.template/scaffold/apps/service/`;
+    - any registered app with `kind: job` removes
+      `.template/scaffold/apps/job/`;
+    - a registered `db-bootstrap` app removes
+      `.template/scaffold/db-bootstrap/`.
+    """
+    import shutil as _shutil
+
+    result = configure_result(
+        "PruneScaffoldShapes", dry_run, write_enabled=not dry_run
+    )
+    apps_path = root / "infra" / "deployment" / "apps.json"
+    if not apps_path.exists():
+        result["valid"] = True
+        result["actions"].append(
+            {
+                "path": "infra/deployment/apps.json",
+                "key": "prune.skip",
+                "severity": "info",
+                "message": "apps.json missing — no app registry to prune against.",
+                "phase": "audit",
+            }
+        )
+        return result
+
+    try:
+        apps_data = json.loads(apps_path.read_text(encoding="utf-8"))
+        apps = apps_data.get("apps", []) if isinstance(apps_data, dict) else []
+    except json.JSONDecodeError as ex:
+        add_bucket_item(
+            result["findings"],
+            "infra/deployment/apps.json",
+            "parse.error",
+            f"apps.json is not valid JSON: {ex}",
+            "error",
+            "pre-start",
+        )
+        result["valid"] = False
+        return result
+
+    # Derive which shapes are now redundant from the registry. seen_targets
+    # dedupes so a duplicated appId in apps.json never emits duplicate actions.
+    targets: list[tuple[str, str]] = []  # (shape path, reason)
+    seen_kinds: set[str] = set()
+    seen_targets: set[str] = set()
+    for app in apps:
+        if not isinstance(app, dict):
+            continue
+        kind = app.get("kind")
+        app_id = str(app.get("appId") or "")
+        if kind in _SCAFFOLD_KIND_SHAPES and kind not in seen_kinds:
+            seen_kinds.add(kind)
+            targets.append(
+                (_SCAFFOLD_KIND_SHAPES[kind], f"registered {kind}-kind app")
+            )
+        if app_id == _DB_BOOTSTRAP_APP_ID:
+            targets.append(
+                (_DB_BOOTSTRAP_SHAPE, f"registered app '{_DB_BOOTSTRAP_APP_ID}'")
+            )
+    deduped: list[tuple[str, str]] = []
+    for shape_rel, reason in targets:
+        if shape_rel in seen_targets:
+            continue
+        seen_targets.add(shape_rel)
+        deduped.append((shape_rel, reason))
+    targets = deduped
+
+    if not targets:
+        result["actions"].append(
+            {
+                "path": ".template/scaffold/",
+                "key": "prune.none",
+                "severity": "info",
+                "message": "No scaffold shapes are redundant yet — apps.json registers "
+                "no apps (or only kinds without shapes).",
+                "phase": "audit",
+            }
+        )
+        result["valid"] = True
+        return result
+
+    for shape_rel, reason in targets:
+        shape = root / shape_rel
+        if not shape.exists():
+            result["actions"].append(
+                {
+                    "path": shape_rel,
+                    "key": "prune.missing",
+                    "severity": "info",
+                    "message": f"{shape_rel} already pruned ({reason}).",
+                    "phase": "audit",
+                }
+            )
+            continue
+        if not dry_run:
+            _shutil.rmtree(shape)
+        result["actions"].append(
+            {
+                "path": shape_rel,
+                "key": "prune.removed" if not dry_run else "prune.plan",
+                "severity": "info",
+                "message": f"Removed {shape_rel} — {reason}; the real app is the "
+                "reference now."
+                if not dry_run
+                else f"Would remove {shape_rel} — {reason}.",
+                "phase": "apply" if not dry_run else "audit",
+            }
+        )
+
+    result["valid"] = True
+    return result
 
 
 # ── Validate app deployment config ─────────────────────────────────────
@@ -2770,6 +2977,67 @@ def validate_app_config(root: Path, dry_run: bool = False) -> dict[str, Any]:
             )
             result["valid"] = False
             return result
+
+    # Role registry (ADR-0004): infra/deployment/roles.json defines the role
+    # vocabulary + port ranges. Validate it against roles.schema.json so a
+    # consumer's custom-role edit fails the gate, not a later deploy.
+    roles_path = root / "infra" / "deployment" / "roles.json"
+    if not roles_path.exists():
+        add_bucket_item(
+            result["findings"],
+            "infra/deployment/roles.json",
+            "roles.missing",
+            "infra/deployment/roles.json not found — shipped defaults (web, api) apply.",
+            "warning",
+            "pre-start",
+        )
+    else:
+        try:
+            roles_data = json.loads(roles_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as e:
+            add_bucket_item(
+                result["findings"],
+                "infra/deployment/roles.json",
+                "roles.parse.error",
+                f"roles.json is not valid JSON: {e}",
+                "error",
+                "pre-start",
+            )
+            result["valid"] = False
+            return result
+        roles_schema_path = root / "infra" / "deployment" / "roles.schema.json"
+        if roles_schema_path.exists():
+            try:
+                import jsonschema
+
+                jsonschema.validate(
+                    instance=roles_data,
+                    schema=json.loads(
+                        roles_schema_path.read_text(encoding="utf-8")
+                    ),
+                )
+                result["actions"].append(
+                    {
+                        "path": "infra/deployment/roles.json",
+                        "key": "roles.schema.validated",
+                        "severity": "info",
+                        "message": "roles.json is valid against roles.schema.json.",
+                        "phase": "audit",
+                    }
+                )
+            except ImportError:
+                pass
+            except jsonschema.ValidationError as e:
+                add_bucket_item(
+                    result["findings"],
+                    "infra/deployment/roles.json",
+                    "roles.schema.error",
+                    f"roles.json failed schema validation: {e.message}",
+                    "error",
+                    "pre-start",
+                )
+                result["valid"] = False
+                return result
 
     apps = apps_data.get("apps", [])
     if not isinstance(apps, list):
@@ -5329,16 +5597,20 @@ from .k8s_validate import validate_overlays as validate_k8s_overlays  # noqa: E4
 def assign_app_ports_step(root: Path, options: dict, dry_run: bool) -> dict:
     """environment-lab assign-app-ports: allocate ports for a new app.
 
-    Requires --app <appId> --role <role> (roles with defined ranges: web, api).
-    Allocates host/node ports from the block-of-10 ranges (web from 8081, api
-    from 5002; nodePorts per env anchored at env_code*1000 + role offset),
-    updates ports.json, and regenerates kind-config.yaml + service patches.
+    Requires --app <appId> --role <role> (roles and their ranges come from
+    infra/deployment/roles.json, ADR-0004; shipped: web, api). Allocates
+    host/node ports from the block-of-10 ranges, updates ports.json, and
+    regenerates kind-config.yaml + service patches.
     """
-    from .k8s_ports import assign_app_ports_to_file
+    from .k8s_ports import assign_app_ports_to_file, load_roles
 
     app_id = options.get("app") or options.get("app-id")
     role = options.get("role")
     if not app_id or not role:
+        try:
+            known = ", ".join(sorted(load_roles(root)))
+        except ValueError:
+            known = "web, api"
         return {
             "mode": "AssignAppPorts",
             "dryRun": dry_run,
@@ -5350,7 +5622,7 @@ def assign_app_ports_step(root: Path, options: dict, dry_run: bool) -> dict:
                     "severity": "error",
                     "message": (
                         "assign-app-ports requires --app <appId> --role <role> "
-                        "(roles with ranges: web, api)."
+                        f"(roles with ranges: {known})."
                     ),
                 }
             ],
@@ -5376,7 +5648,7 @@ def run_environment_lab(args: list[str]) -> int:
             "provision-nexus-repositories, provision-gitea-secrets, set-client-tools, set-project-stack, "
             "set-project-stack-metadata, set-semgrep-config, set-quality-config, "
             "validate-docker-desktop-k8s, validate-k8s-overlays, setup-kind-cluster, setup-k8s-access, "
-            "scaffold-k8s, assign-app-ports, "
+            "scaffold-k8s, assign-app-ports, prune-scaffold, "
             "ensure-headlamp, provision-lab-users, push-to-gitea, verify-gitea-token, "
             "generate-gitea-token, renovate-gitea-token, prune-docker-leftovers",
             file=sys.stderr,
@@ -5428,6 +5700,7 @@ def run_environment_lab(args: list[str]) -> int:
         "setup-k8s-access": lambda: setup_k8s_access(root, dry_run),
         "scaffold-k8s": lambda: scaffold_k8s(root, dry_run),
         "assign-app-ports": lambda: assign_app_ports_step(root, options, dry_run),
+        "prune-scaffold": lambda: prune_scaffold_shapes(root, dry_run),
         "ensure-headlamp": lambda: ensure_headlamp(root, dry_run),
 
         "set-semgrep-config": lambda: set_semgrep_config(root, dry_run),

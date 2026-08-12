@@ -475,6 +475,7 @@ class SddCliTests(unittest.TestCase):
                 "SetProjectStack",
                 root,
                 {
+                    "name": "Transportar",
                     "frontend": "React + TypeScript",
                     "backend": "none",
                     "database": "",
@@ -485,6 +486,7 @@ class SddCliTests(unittest.TestCase):
             self.assertEqual(before_common, common.read_text(encoding="utf-8"))
             profile = json.loads(local.read_text(encoding="utf-8"))
             stack = profile["stack"]
+            self.assertEqual("Transportar", profile["projectName"])
             self.assertEqual(
                 {"applies": True, "value": "React + TypeScript"}, stack["frontend"]
             )
@@ -500,6 +502,55 @@ class SddCliTests(unittest.TestCase):
                     {"applies": False, "value": ""},
                     cli.normalize_stack_domain(empty_value),
                 )
+
+    def test_set_project_stack_requires_real_project_name(self) -> None:
+        """SetProjectStack rejects a missing or placeholder project name."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            codex = root / ".template"
+            codex.mkdir()
+            (codex / "project-profile.local.json").write_text(
+                json.dumps({"stack": {}}), encoding="utf-8"
+            )
+            for values in (
+                {"frontend": "react"},  # name missing
+                {"name": "example", "frontend": "react"},
+                {"name": "my-app", "frontend": "react"},
+                {"name": "x", "frontend": "react"},
+                {"name": "42", "frontend": "react"},  # pure number
+            ):
+                result = cli.run_configure_mode(
+                    "SetProjectStack", root, values, False
+                )
+                self.assertFalse(result["valid"])
+                self.assertTrue(result["errors"], f"expected error for {values}")
+
+    def test_set_project_stack_accepts_name_then_scaffold_uses_it(self) -> None:
+        """After set-project-stack, the scaffold names the layout app from the
+        project name instead of a hardcoded 'example'."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            codex = root / ".template"
+            codex.mkdir()
+            (codex / "project-profile.local.json").write_text(
+                json.dumps({"stack": {}}), encoding="utf-8"
+            )
+
+            result = cli.run_configure_mode(
+                "SetProjectStack",
+                root,
+                {"name": "Transportar Suite", "frontend": "react"},
+                False,
+            )
+            self.assertTrue(result["valid"])
+            self.assertTrue((root / "apps" / "transportar-suite" / "src").is_dir())
+            self.assertFalse((root / "apps" / "example").exists())
+            marker = json.loads(
+                (root / "apps" / "transportar-suite" / "app.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual("transportar-suite", marker["appId"])
 
     def test_scaffold_project_files_creates_only_stack_independent_skeleton(
         self,
@@ -674,8 +725,8 @@ class SddCliTests(unittest.TestCase):
                 json.dumps(
                     {
                         "apps": [
-                            {"appId": "frontend", "role": "web"},
-                            {"appId": "backend", "role": "api"},
+                            {"appId": "frontend", "role": "web", "kind": "service"},
+                            {"appId": "backend", "role": "api", "kind": "service"},
                         ]
                     }
                 ),
@@ -724,6 +775,58 @@ class SddCliTests(unittest.TestCase):
                 ):
                     self.assertTrue((kus.parent / ref).is_dir(), ref)
 
+    def test_scaffold_k8s_job_app_emits_job_yaml_no_service(self) -> None:
+        """ADR-0003: a kind=job app gets a Job manifest only — no Service, no
+        NodePort, and it is composed into the env overlays like any app."""
+        from unittest.mock import patch
+
+        from tools.sdd_cli.environment_lab import scaffold_k8s
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "infra" / "deployment").mkdir(parents=True)
+            (root / "infra" / "deployment" / "apps.json").write_text(
+                json.dumps(
+                    {
+                        "apps": [
+                            {"appId": "db-bootstrap", "role": "job", "kind": "job"},
+                            {"appId": "app-web", "role": "web", "kind": "service"},
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            src = (
+                Path(__file__).resolve().parents[3]
+                / "infra"
+                / "deployment"
+                / "ports.json"
+            )
+            (root / "infra" / "deployment" / "ports.json").write_bytes(
+                src.read_bytes()
+            )
+
+            with patch(
+                "tools.sdd_cli.k8s_lab.run_native",
+                return_value={"returncode": 0, "stdout": "{}", "stderr": ""},
+            ):
+                result = scaffold_k8s(root, dry_run=False)
+
+            self.assertTrue(result["valid"])
+            boot_deploy = root / "apps" / "db-bootstrap" / "deploy"
+            # Job manifest, kustomization — and NO service/deployment files.
+            self.assertTrue((boot_deploy / "job.yaml").is_file())
+            self.assertTrue((boot_deploy / "kustomization.yaml").is_file())
+            self.assertFalse((boot_deploy / "db-bootstrap-service.yaml").exists())
+            self.assertFalse((boot_deploy / "db-bootstrap-deployment.yaml").exists())
+            # Service app keeps the Deployment+Service pair.
+            storefront = root / "apps" / "app-web" / "deploy"
+            self.assertTrue((storefront / "app-web-deployment.yaml").is_file())
+            self.assertTrue((storefront / "app-web-service.yaml").is_file())
+            # Job app is composed into the overlays like any app.
+            dev_kus = root / "infra" / "k8s" / "overlays" / "dev" / "kustomization.yaml"
+            self.assertIn("../../../../apps/db-bootstrap/deploy", dev_kus.read_text(encoding="utf-8"))
+
     def test_project_stack_discovery_returns_skills_from_internet(
         self,
     ) -> None:
@@ -764,6 +867,7 @@ class SddCliTests(unittest.TestCase):
                     "SetProjectStack",
                     root,
                     {
+                        "name": "transportar",
                         "frontend": "reactjs",
                         "backend": ".net-core-10",
                         "database": "sqlite",
@@ -794,7 +898,10 @@ class SddCliTests(unittest.TestCase):
                 "{}", encoding="utf-8"
             )
             values_file = root / "values.json"
-            values_file.write_text(json.dumps({"frontend": "none"}), encoding="utf-8")
+            values_file.write_text(
+                json.dumps({"name": "Transportar", "frontend": "none"}),
+                encoding="utf-8",
+            )
 
             with redirect_stdout(io.StringIO()):
                 self.assertEqual(
@@ -823,7 +930,10 @@ class SddCliTests(unittest.TestCase):
             self.assertFalse(profile["stack"]["frontend"]["applies"])
 
             with patch(
-                "sys.stdin", io.StringIO(json.dumps({"backend": "FastAPI + Python"}))
+                "sys.stdin",
+                io.StringIO(
+                    json.dumps({"name": "Transportar", "backend": "FastAPI + Python"})
+                ),
             ), redirect_stdout(io.StringIO()):
                 self.assertEqual(
                     0,
@@ -863,7 +973,9 @@ class SddCliTests(unittest.TestCase):
                                     "--root",
                                     str(root),
                                     "--values-json",
-                                    json.dumps({"database": "PostgreSQL"}),
+                                    json.dumps(
+                                        {"name": "Transportar", "database": "PostgreSQL"}
+                                    ),
                                 ],
                             },
                         )()

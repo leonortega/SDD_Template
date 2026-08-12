@@ -36,7 +36,7 @@ learning.
 - **Skills** — 86 Codex skills (in `.agents/skills/`) that encode the workflow stages:
   ticket start, OpenSpec change, implementation, review, QA, deploy, rollback,
   retrospective, and more.
-- **Agent eval** — a deterministic Promptfoo suite (60 routing cases) that verifies the
+- **Agent eval** — a deterministic Promptfoo suite (61 routing cases) that verifies the
   harness routes user requests to the correct skill. See the
   [Agent Eval](#52-agent-eval-verify-the-router) section.
 - **QA as evidence** — a release to PROD requires executable proof: acceptance
@@ -65,7 +65,7 @@ so you can exercise every concept below in one repeatable environment:
 | **Rollback & hotfix** | Redeploy known-good artifacts, expedited hotfix lane from `main` |
 | **Observability** | Grafana health dashboard, Seq log search, Dozzle container logs |
 | **Quality gates** | Gitleaks (secrets), Semgrep (SAST), Trivy (SCA), Checkov (IaC), JSON validation — local and in CI |
-| **Agent evaluation** | Promptfoo eval (60 routing cases) verifies the agent routes requests correctly |
+| **Agent evaluation** | Promptfoo eval (61 routing cases) verifies the agent routes requests correctly |
 | **Operational learning** | A `knowledge/` base that captures errors, fixes, patterns, and lessons learned for future agents |
 | **Parallel delivery** | Optional multi-ticket coordination in isolated Git worktrees with a serialized deployment lane |
 
@@ -306,7 +306,7 @@ python -m tools.sdd_cli agent-eval run      # fails loudly, exits non-zero on fa
 python -m tools.sdd_cli agent-eval view     # open the report in the browser
 ```
 
-- **60 routing cases** (see `.agents/agent-evals/README.md` for the authoritative count)
+- **61 routing cases** (see `.agents/agent-evals/README.md` for the authoritative count)
   cover ticket lifecycle, edge cases, parallel delivery, deployment lanes,
   infrastructure validation, explicit workflow-stage requests, state-driven resume,
   frontend design skill activation, and regression.

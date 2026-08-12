@@ -17,7 +17,7 @@ from ._shared import (
     read_json,
     run_native,
 )
-from .k8s_ports import load_ports
+from .k8s_ports import load_ports, load_roles
 
 # ── Headlamp (K8s web UI) ────────────────────────────────────────────────
 
@@ -190,8 +190,10 @@ def scaffold_k8s(root, dry_run=False):
 
     Reads infra/deployment/apps.json and generates deterministic, stack-independent
     manifests for each app (ADR-0002 composed layout):
-    - apps/{appId}/deploy/{appId}-deployment.yaml
-    - apps/{appId}/deploy/{appId}-service.yaml
+    - apps/{appId}/deploy/{appId}-deployment.yaml      (kind: service)
+    - apps/{appId}/deploy/{appId}-service.yaml         (kind: service)
+    - apps/{appId}/deploy/job.yaml                     (kind: job — no Service,
+      no ports; wait-for-completion phases, ADR-0003)
     - apps/{appId}/deploy/kustomization.yaml (that app's resources)
     - infra/k8s/overlays/{dev,qa,prod}/kustomization.yaml which COMPOSE the
       per-app deploy dirs via relative Kustomize references (env image tags
@@ -215,8 +217,10 @@ def scaffold_k8s(root, dry_run=False):
                 "severity": "info",
                 "message": (
                     "Would scaffold K8s deployment files:"
-                    "\n  - apps/{appId}/deploy/{appId}-deployment.yaml per app"
-                    "\n  - apps/{appId}/deploy/{appId}-service.yaml per app"
+                    "\n  - apps/{appId}/deploy/{appId}-deployment.yaml per service app"
+                    "\n  - apps/{appId}/deploy/{appId}-service.yaml per service app"
+                    "\n  - apps/{appId}/deploy/job.yaml per job app"
+                    "\n    (kind=job — no Service, no ports; ADR-0003)"
                     "\n  - apps/{appId}/deploy/kustomization.yaml per app"
                     "\n  - infra/k8s/overlays/{dev,qa,prod}/kustomization.yaml"
                     "\n    (composing per-app deploy dirs + env image tags)"
@@ -299,14 +303,20 @@ def scaffold_k8s(root, dry_run=False):
     k8s_dir.mkdir(parents=True, exist_ok=True)
 
     # ── Port mapping by app ──
-    # Canonical source of truth: infra/deployment/ports.json
-    # (tools/sdd_cli/k8s_ports.py). appPorts holds the container port per app;
-    # per-env nodePorts are derived for kind extraPortMappings + overlay service
-    # patches. The dev environment values seed the base manifests (overlays
-    # override per env).
-    _port_map = {"web": 80, "api": 5000}  # role -> container port fallback
+    # Canonical sources: infra/deployment/ports.json (per-app container ports
+    # + per-env nodePorts, derived by tools/sdd_cli/k8s_ports.py) and
+    # infra/deployment/roles.json (role -> container-port fallback + which
+    # roles emit a PORT env var, ADR-0004). The dev environment values seed
+    # the base manifests (overlays override per env).
+    _port_map: dict[str, int] = {}
+    _port_env_roles: set[str] = set()
     _dev_node_ports: dict[str, int] = {}  # appId -> dev nodePort (canonical)
     try:
+        _roles = load_roles(root)
+        _port_map = {name: cfg["containerPort"] for name, cfg in _roles.items()}
+        _port_env_roles = {
+            name for name, cfg in _roles.items() if cfg.get("portEnv")
+        }
         _ports = load_ports(root)
         _dev_cfg = _ports.get("environments", {}).get("dev", {})
         _app_port_map = _ports.get("appPorts", {})
@@ -314,10 +324,11 @@ def scaffold_k8s(root, dry_run=False):
             _dev_node_ports[_app_id] = _cfg["nodePort"]
             _port_map[_app_id] = _app_port_map.get(_app_id, _port_map.get(_app_id, 80))
     except (FileNotFoundError, ValueError):
-        # Fall back to defaults only when ports.json is missing or invalid
-        # (never in the shipped repo) — keeps the scaffold usable in a bare
-        # checkout and degrades gracefully instead of crashing.
-        pass
+        # Fall back to defaults only when ports.json/roles.json is missing or
+        # invalid (never in the shipped repo) — keeps the scaffold usable in a
+        # bare checkout and degrades gracefully instead of crashing.
+        _port_map = {"web": 80, "api": 5000}
+        _port_env_roles = {"api"}
     _used_node_ports: set[int] = set()
 
     def _port_for_role(role: str) -> int:
@@ -359,11 +370,90 @@ def scaffold_k8s(root, dry_run=False):
     for app in apps:
         app_id = app["appId"]
         role = app.get("role", "web")
+        kind = app.get("kind", "service")
         port = _port_for_role(role)
         health_path = "/health"  # Always use /health — nginx.conf has it for web, api apps must implement it
 
         deploy_dir = root / "apps" / app_id / "deploy"
         deploy_dir.mkdir(parents=True, exist_ok=True)
+
+        # ADR-0003 kind branch: job apps emit job.yaml only — no Service, no
+        # ports. They are wait-for-completion phases in CI (db-bootstrap,
+        # per-app migration jobs) and stay out of ports.json / the overlay gate.
+        if kind == "job":
+            # Matches the scaffold template (.template/scaffold/apps/job/job.yaml, ADR-0005).
+            job_file = "job.yaml"
+            job_path = deploy_dir / job_file
+            if not job_path.exists():
+                job_yaml = (
+                    "apiVersion: batch/v1\n"
+                    "kind: Job\n"
+                    "metadata:\n"
+                    f"  name: {app_id}\n"
+                    "spec:\n"
+                    "  backoffLimit: 2\n"
+                    "  template:\n"
+                    "    spec:\n"
+                    "      restartPolicy: Never\n"
+                    "      containers:\n"
+                    f"        - name: {app_id}\n"
+                    f"          image: host.docker.internal:5001/{app_id}\n"
+                    "          imagePullPolicy: IfNotPresent\n"
+                )
+                job_path.write_text(job_yaml, encoding="utf-8")
+                result["actions"].append(
+                    {
+                        "path": f"apps/{app_id}/deploy/{job_file}",
+                        "key": "file.created",
+                        "severity": "info",
+                        "message": f"Created K8s Job for {app_id} (kind=job, no Service/ports).",
+                        "phase": "apply",
+                    }
+                )
+            else:
+                result["actions"].append(
+                    {
+                        "path": f"apps/{app_id}/deploy/{job_file}",
+                        "key": "file.exists",
+                        "severity": "info",
+                        "message": f"Job YAML already exists for {app_id}.",
+                        "phase": "audit",
+                    }
+                )
+
+            app_kustomization = deploy_dir / "kustomization.yaml"
+            if not app_kustomization.exists():
+                app_kustomization.write_text(
+                    "apiVersion: kustomize.config.k8s.io/v1beta1\n"
+                    "kind: Kustomization\n"
+                    "resources:\n"
+                    f"  - {job_file}\n"
+                    "labels:\n"
+                    "  - pairs:\n"
+                    "      app.kubernetes.io/managed-by: sdd-cli\n",
+                    encoding="utf-8",
+                )
+                result["actions"].append(
+                    {
+                        "path": f"apps/{app_id}/deploy/kustomization.yaml",
+                        "key": "file.created",
+                        "severity": "info",
+                        "message": f"Created per-app kustomization.yaml for {app_id} (kind=job).",
+                        "phase": "apply",
+                    }
+                )
+            else:
+                result["actions"].append(
+                    {
+                        "path": f"apps/{app_id}/deploy/kustomization.yaml",
+                        "key": "file.exists",
+                        "severity": "info",
+                        "message": f"Per-app kustomization.yaml already exists for {app_id}.",
+                        "phase": "audit",
+                    }
+                )
+            app_deploy_resources.append(f"../../../../apps/{app_id}/deploy")
+            continue
 
         # Deployment YAML
         dep_file = f"{app_id}-deployment.yaml"
@@ -391,10 +481,11 @@ def scaffold_k8s(root, dry_run=False):
                 "          ports:\n"
                 f"            - containerPort: {port}\n"
             )
-            # Stack-independent PORT env for api-role apps — the AI scaffold
+            # Stack-independent PORT env for roles that declare portEnv in
+            # infra/deployment/roles.json (e.g. api, ADR-0004) — the AI scaffold
             # skill generates the Dockerfile that consumes it (ASPNETCORE_URLS,
             # uvicorn port, etc.). The script never assumes a runtime.
-            if role == "api":
+            if role in _port_env_roles:
                 dep_yaml += (
                     "          env:\n"
                     '            - name: PORT\n'
@@ -682,8 +773,8 @@ def setup_kind_cluster(root: Path, dry_run: bool = False) -> dict[str, Any]:
     """Create a kind cluster with extraPortMappings for direct host access.
 
     Uses infra/k8s/kind-config.yaml which defines fixed nodePort → host port mappings:
-      host:8081 → nodePort:30080 → frontend:80
-      host:5002 → nodePort:30500 → backend:5000
+      host:8081 → nodePort:30080 → <appId>:80 (web role)
+      host:5002 → nodePort:30500 → <appId>:5000 (api role)
 
     This replaces Docker Desktop K8s — kind runs as a Docker container, avoids
     Docker Engine restart, and requires no Docker Desktop Kubernetes toggle.
@@ -704,7 +795,7 @@ def setup_kind_cluster(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 "path": "kind",
                 "key": "cluster.create",
                 "severity": "info",
-                "message": "Would create kind cluster 'sdd-cluster' with extraPortMappings (8081→frontend, 5002→backend).",
+                "message": "Would create kind cluster 'sdd-cluster' with extraPortMappings (host ports from roles.json, per app in ports.json).",
                 "phase": "apply",
             }
         )
@@ -1461,8 +1552,8 @@ def setup_k8s_access(root, dry_run=False):
     """Discover deployed app URLs via kind extraPortMappings (no kubectl port-forward needed).
 
     The kind cluster is configured with extraPortMappings in infra/k8s/kind-config.yaml:
-      host:8081 → kind-node:30080 → frontend:80
-      host:5002 → kind-node:30500 → backend:5000
+      host:<hostPort> → kind-node:<nodePort> → <appId> (one mapping per registered app;
+      host 5432/5433/5434 → 30700/31700/32700 → db.internal for the shared database)
 
     These mappings make services directly accessible at localhost without port-forward.
     """
@@ -1559,11 +1650,18 @@ def setup_k8s_access(root, dry_run=False):
             # Determine host port from ports.json (env+app specific)
             host_port = _HOST_PORT_MAP.get((env, app_id))
             if host_port is None:
-                # Fallback guess (only when ports.json is missing): web→808x, api→500x
-                host_port = {
-                    "dev": 8081 if role == "web" else 5002,
-                    "qa": 8082 if role == "web" else 5003,
-                    "prod": 8083 if role == "web" else 5004,
+                # Fallback guess (only when ports.json is missing): derive from
+                # the role's hostPortBase in infra/deployment/roles.json — dev/
+                # qa/prod consume consecutive slots (base, base+1, base+2).
+                _role_cfg: dict[str, Any] = {}
+                try:
+                    _role_cfg = load_roles(root).get(role, {})
+                except ValueError:
+                    pass
+                host_port = _role_cfg.get("hostPortBase", 8081) + {
+                    "dev": 0,
+                    "qa": 1,
+                    "prod": 2,
                 }[env]
 
             # Check if namespace exists

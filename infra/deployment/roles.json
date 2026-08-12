@@ -1,0 +1,30 @@
+{
+  "$schema": "./roles.schema.json",
+  "version": 1,
+  "roles": {
+    "web": {
+      "description": "Browser-facing frontend (serves HTTP)",
+      "hostPortBase": 8081,
+      "nodePortOffset": 80,
+      "containerPort": 80,
+      "portEnv": false,
+      "healthCheck": "http"
+    },
+    "api": {
+      "description": "Backend API service",
+      "hostPortBase": 5002,
+      "nodePortOffset": 500,
+      "containerPort": 5000,
+      "portEnv": true,
+      "healthCheck": "http"
+    },
+    "database": {
+      "description": "Shared database engine (StatefulSet, service db.internal)",
+      "hostPortBase": 5432,
+      "nodePortOffset": 700,
+      "containerPort": 5432,
+      "portEnv": false,
+      "healthCheck": "tcp"
+    }
+  }
+}

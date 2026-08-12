@@ -155,7 +155,7 @@ class TestRunStackTests:
     def test_vitest_runs_in_apps_package_root(self, tmp_path: Path) -> None:
         """ADR-0002 layout: npm ci + vitest run from apps/<appId>."""
         _make_profile(tmp_path, ["vitest"])
-        app = tmp_path / "apps" / "web-storefront"
+        app = tmp_path / "apps" / "app-web"
         app.mkdir(parents=True, exist_ok=True)
         (app / "package-lock.json").write_text("{}", encoding="utf-8")
         (app / "package.json").write_text("{}", encoding="utf-8")
@@ -170,7 +170,7 @@ class TestRunStackTests:
         assert result["valid"] is True
         assert mock_call.call_count == 3  # npm ci + vitest run + vitest coverage
         calls = mock_call.call_args_list
-        # Commands run from apps/web-storefront (the resolved package root).
+        # Commands run from apps/app-web (the resolved package root).
         assert Path(calls[0].kwargs["cwd"]) == app
         assert calls[0].args[0][-1] == "ci"
         vitest_cmd = calls[1].args[0]
@@ -183,7 +183,7 @@ class TestRunStackTests:
     def test_vitest_runs_in_apps_src_package_root(self, tmp_path: Path) -> None:
         """ADR-0002 colocated lockfile: npm ci + vitest run from apps/<appId>/src."""
         _make_profile(tmp_path, ["vitest"])
-        app_src = tmp_path / "apps" / "api-orders" / "src"
+        app_src = tmp_path / "apps" / "app-api" / "src"
         app_src.mkdir(parents=True, exist_ok=True)
         (app_src / "package-lock.json").write_text("{}", encoding="utf-8")
         (app_src / "package.json").write_text("{}", encoding="utf-8")

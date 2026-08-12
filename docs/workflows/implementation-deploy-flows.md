@@ -237,6 +237,12 @@ Workflow:
 5. **Verify OpenSpec** — run `dev-flow-verify-change` (Stage 4) before PR handoff.
 6. **Commit checkpoints** — commit after each completed step with ticket-key-prefixed
    messages; keep the working tree clean between steps.
+6.5 **Prune implemented scaffold shapes** (skill step 9.5) — once the implemented app
+   is registered in `apps.json` and all checks pass, run `environment-lab prune-scaffold`
+   to delete the `.template/scaffold/` shape whose kind the real app now replaces
+   (service/job/db-bootstrap). Dry-run first; include the removal in the PR. In parallel
+   delivery the coordinator owns this once per kind (see `parallel-delivery.md` §
+   Scaffold Shape Prune Ownership).
 7. **Create / reuse the PR** to the base branch, then **immediately** request the
    configured reviewers (`python -m tools.sdd_cli gitea request-reviewers --pr
    {prNumber}`; unprovisioned lab config is a BLOCKER), add ticket comment
@@ -883,7 +889,7 @@ verifies that the routing logic in `routing_provider.py` matches the delivery co
 This document is the human-readable spec of that contract; the eval encodes it as test
 cases.
 
-**Test case anatomy** (60 cases today — see `.agents/agent-evals/README.md` for the
+**Test case anatomy** (61 cases today — see `.agents/agent-evals/README.md` for the
 authoritative count): each case provides `scenario`, `ticketState`,
 `branchExists`, `prExists`, `prMerged`, `qaEvidence`, `productStack` plus optional
 `incident`, `hotfix`, `parallelEnabled`, `maxActiveReached`, `laneOwner`,
@@ -892,11 +898,12 @@ authoritative count): each case provides `scenario`, `ticketState`,
 asserts `JSON.parse(output).route === '<expected>'` (skill-activation and CI-gate cases
 also assert `activatedSkills` / the `review` gate).
 
-**Coverage groups today** (sums to the 60-case total): ticket lifecycle (7), edge cases (4),
-parallel delivery (5), deployment lane (5), infrastructure validation (2), explicit
-workflow-stage requests (12), state-driven resume (1), regression (1), frontend design skill
-activation (3), PR validation gate (7), QA approval gate (3), ticket refinement gate (3),
-parallel refinement gate (2), durable learning capture gate (5).
+**Coverage groups today** (sums to the 61-case total): ticket lifecycle (7 lifecycle-unique;
+3 more cross-listed in the QA approval gate), edge cases (4), parallel delivery (5), deployment
+lane (5), infrastructure validation (2), explicit workflow-stage requests (13), state-driven
+resume (1), regression (1), frontend design skill activation (3), PR validation gate (7), QA
+approval gate (3), ticket refinement gate (3), parallel refinement gate (2), durable learning
+capture gate (5).
 
 **How to use this document for the next improvement step:**
 

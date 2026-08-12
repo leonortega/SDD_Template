@@ -1,6 +1,7 @@
 {
   "$schema": "./project-profile.schema.json",
   "schemaVersion": 1,
+  "projectName": "",
   "stack": {
     "frontend": {
       "applies": false,

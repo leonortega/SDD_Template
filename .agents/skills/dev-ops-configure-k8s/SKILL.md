@@ -42,7 +42,7 @@ Two modes — local dev (no registry push) and CI (registry push + kind load):
 
 | Mode             | Cluster Provider                       | Image Delivery                                                                             | Registry Needed   |
 | ---------------- | -------------------------------------- | ------------------------------------------------------------------------------------------ | ----------------- |
-| Local dev        | kind or Docker Desktop K8s             | `docker build -t frontend:latest` + `kind load docker-image`                               | No                |
+| Local dev        | kind or Docker Desktop K8s             | `docker build -t <appId>:latest` + `kind load docker-image`                         | No                |
 | CI/Gitea Actions | kind (preferred) or Docker Desktop K8s | Build + push to `host.docker.internal:5001/{appId}:{commitSha}` + `kind load docker-image` | Nexus Docker repo |
 
 **Why `kind load docker-image` is required:** kind runs each cluster node as a Docker container with its own containerd
@@ -50,8 +50,8 @@ instance. Images on the host Docker daemon are NOT visible to kind's nodes. Afte
 you must explicitly load it into kind:
 
 ```bash
-docker build -t host.docker.internal:5001/frontend:latest .
-kind load docker-image --name sdd-cluster host.docker.internal:5001/frontend:latest
+docker build -t host.docker.internal:5001/<appId>:latest .
+kind load docker-image --name sdd-cluster host.docker.internal:5001/<appId>:latest
 ```
 
 The CI workflow does this automatically after each `docker build` step.
@@ -61,14 +61,14 @@ Environments use a **Kustomize overlay structure** that composes per-app manifes
 
 ```text
 apps/
-├── frontend/deploy/                    # per-app manifests (ADR-0002)
+├── <appId>/deploy/              # per-app manifests (ADR-0002)
 │   ├── kustomization.yaml              # that app's Deployment + Service
-│   ├── frontend-deployment.yaml
-│   └── frontend-service.yaml
-└── backend/deploy/
+│   ├── <appId>-deployment.yaml
+│   └── <appId>-service.yaml
+└── <api-appId>/deploy/
     ├── kustomization.yaml
-    ├── backend-deployment.yaml
-    └── backend-service.yaml
+    ├── <api-appId>-deployment.yaml
+    └── <api-appId>-service.yaml
 infra/k8s/
 └── overlays/
     ├── dev/kustomization.yaml          # composes ../../../../apps/*/deploy, image tags
@@ -184,7 +184,7 @@ Read the merged project profile and `infra/deployment/apps.json` to determine:
 ### 2. Generate Dockerfile Per App
 
 For each app in `apps.json`, generate a `Dockerfile` at the app's project root (`apps/<appId>/Dockerfile`, the
-`projectPath` from `apps.json` — e.g., `apps/frontend/Dockerfile`).
+`projectPath` from `apps.json` — e.g., `apps/<appId>/Dockerfile`).
 
 **AI-driven (no fixed template list):** Dockerfile/nginx.conf/.dockerignore generation is delegated to the
 `dev-flow-scaffold-project` skill, which reads `project-profile.local.json → stack.frontend` and resolves the correct
@@ -222,7 +222,7 @@ backend service DNS entry hasn't propagated yet (e.g. first deploy to a new name
 **CrashLoopBackOff**. Always include:
 
 - `resolver kube-dns.kube-system.svc.cluster.local valid=10s;` in the `server` block
-- `set $backend_upstream http://backend:5000;` and `proxy_pass $backend_upstream;` — using a variable forces nginx to
+- `set $api_upstream http://<api-appId>:5000;` and `proxy_pass $api_upstream;` — using a variable forces nginx to
 resolve the hostname at runtime via the resolver, not at startup
 
 ```nginx
@@ -241,13 +241,13 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
-    # Use a variable in proxy_pass so nginx resolves the backend
+    # Use a variable in proxy_pass so nginx resolves the API service
     # hostname at runtime (via the resolver) instead of at startup.
-    # Without this, nginx fails to start if 'backend' isn't resolvable
+    # Without this, nginx fails to start if '<api-appId>' isn't resolvable
     # immediately (e.g. on first deploy to a new namespace).
     location /api/ {
-        set $backend_upstream http://backend:5000;
-        proxy_pass $backend_upstream;
+        set $api_upstream http://<api-appId>:5000;
+        proxy_pass $api_upstream;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -315,35 +315,35 @@ The base K8s services use `type: NodePort`. NodePorts are **cluster-scoped and i
 **every** environment overlay (dev, qa, prod) needs a `service-patch.yaml` assigning dedicated nodePorts — otherwise two
 environments collide (`provided port is already allocated`). Per-env ports (canonical in `infra/deployment/ports.json`):
 
-| Env  | Frontend host→node | Backend host→node |
-| ---- | ------------------ | ----------------- |
-| dev  | `8081` → `30080`   | `5002` → `30500`  |
-| qa   | `8082` → `31080`   | `5003` → `31500`  |
-| prod | `8083` → `32080`   | `5004` → `32500`  |
+| Env  | <appId> host→node | <api-appId> host→node |
+| ---- | ------------------------ | -------------------- |
+| dev  | `8081` → `30080`         | `5002` → `30500`     |
+| qa   | `8082` → `31080`         | `5003` → `31500`     |
+| prod | `8083` → `32080`         | `5004` → `32500`     |
 
 ```yaml
 # infra/k8s/overlays/qa/service-patch.yaml
 apiVersion: v1
 kind: Service
 metadata:
-  name: frontend
+  name: <appId>
 spec:
   ports:
     - protocol: TCP          # ⚠️ REQUIRED — without protocol: TCP the merge is a silent no-op
       port: 80
       targetPort: 80
-      nodePort: 31080        # QA frontend NodePort
+      nodePort: 31080        # QA <appId> NodePort
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: backend
+  name: <api-appId>
 spec:
   ports:
     - protocol: TCP
       port: 5000
       targetPort: 5000
-      nodePort: 31500        # QA backend NodePort
+      nodePort: 31500        # QA <api-appId> NodePort
 ```
 
 Then reference it in the QA overlay's `kustomization.yaml`:
@@ -361,10 +361,10 @@ keep that filename and parseable `nodePort:` lines.
 
 The kind cluster's `extraPortMappings` in `infra/k8s/kind-config.yaml` maps these NodePorts to host ports:
 
-- **31080 → 8082** (QA frontend)
-- **31500 → 5003** (QA backend)
-- **32080 → 8083** (PROD frontend)
-- **32500 → 5004** (PROD backend)
+- **31080 → 8082** (QA <appId>)
+- **31500 → 5003** (QA <api-appId>)
+- **32080 → 8083** (PROD <appId>)
+- **32500 → 5004** (PROD <api-appId>)
 
 See the kind-config section below for the full mapping.
 
@@ -380,20 +380,20 @@ each app's image — if a manifest is missing for an app, the image tag is silen
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: frontend
+  name: <appId>
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: frontend
+      app: <appId>
   template:
     metadata:
       labels:
-        app: frontend
+        app: <appId>
     spec:
       containers:
-        - name: frontend
-          image: host.docker.internal:5001/frontend
+        - name: <appId>
+          image: host.docker.internal:5001/<appId>
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 80
@@ -425,7 +425,7 @@ Deploy using kustomize overlays (the CI workflow does this automatically):
 ```bash
 cd infra/k8s/overlays/dev
 kustomize build . | kubectl apply -f -
-kubectl -n sdd-dev rollout status deployment/frontend --timeout=120s
+kubectl -n sdd-dev rollout status deployment/<appId> --timeout=120s
 ```
 
 **How the CI workflow sets image tags:**
@@ -436,7 +436,7 @@ the correct image tags.
 
 ```bash
 # Example: what the CI does per app
-kustomize edit set image host.docker.internal:5001/frontend:abc123def
+kustomize edit set image host.docker.internal:5001/<appId>:abc123def
 kustomize build . | kubectl apply -f -
 ```
 
@@ -500,7 +500,7 @@ apply -f -`
 3. **Rollout**: Waits for each deployment to become ready with `kubectl rollout status`
 
 **⚠️ Delete Deployments before apply (selector immutability):** Deployment `spec.selector.matchLabels` is **immutable**.
-If an existing Deployment's labels change, `kubectl apply` fails with `Deployment.apps "frontend" is invalid:
+If an existing Deployment's labels change, `kubectl apply` fails with `Deployment.apps "<appId>" is invalid:
 spec.selector: Invalid value ... field is immutable`. The CI workflow must `kubectl delete deployment` (per app, in the
 target namespace) **before** applying — Services are NOT deleted (their `spec.selector` IS mutable, so they update in
 place and deleting them causes unnecessary traffic interruption).
@@ -544,13 +544,13 @@ python -m tools.sdd_cli environment-lab provision-gitea-secrets
 
 Verify end-to-end:
 
-1. **Docker build works**: `docker build -f apps/frontend/Dockerfile apps/frontend`
+1. **Docker build works**: `docker build -f apps/<appId>/Dockerfile apps/<appId>`
 2. **Kustomize build works**: `cd infra/k8s/overlays/dev && kustomize build . | kubectl apply --dry-run=client -f -`
    (or run the full gate: `python -m tools.sdd_cli environment-lab validate-k8s-overlays` — renders all three overlays
    and checks NodePort uniqueness cluster-wide + `infra/deployment/ports.json` parity; requires kustomize, see
    Prerequisites)
 3. **kind image loaded**: Ensure images are loaded into kind via `kind load docker-image --name sdd-cluster
-host.docker.internal:5001/frontend:latest`
+host.docker.internal:5001/<appId>:latest`
 4. **Trigger CI**: Push to `dev` branch and verify the workflow succeeds
 
 ## CLI Commands

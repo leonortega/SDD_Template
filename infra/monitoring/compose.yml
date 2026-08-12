@@ -70,6 +70,9 @@ services:
       # Canonical port source (infra/deployment/ports.json) — the probe reads
       # nodePorts/hostPorts from it instead of hardcoding them.
       - ../deployment/ports.json:/app/ports.json:ro
+      # Role registry (infra/deployment/roles.json) — role -> healthCheck
+      # (http vs tcp) so databases are checked with a TCP connect.
+      - ../deployment/roles.json:/app/roles.json:ro
     networks:
       - monitoring
     # restart: unless-stopped auto-restarts the probe whenever its process

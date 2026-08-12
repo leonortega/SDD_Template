@@ -60,7 +60,7 @@ terminals: printing emoji from eval JSON crashes `print()` — prefix with
 
 ## Test Cases
 
-**60 test cases** covering the full delivery routing matrix including parallel delivery,
+**61 test cases** covering the full delivery routing matrix including parallel delivery,
 deployment lanes, explicit workflow-stage requests, state-driven resume, the QA
 user-approval gate, frontend stack skill activation, the PR Validation gate
 (CI-in-loop review blocking), the ticket refinement gate (always ask the user
@@ -68,7 +68,7 @@ for extra info before writing the IA block, linear and parallel context), and th
 Durable Learning Capture Gate (archive / hotfix / retrospective must run the
 classifier and update only the classifier-selected candidates):
 
-### Ticket Lifecycle (9 tests — rows 6–8 are cross-listed in the QA User-Approval Gate section below; 7 are lifecycle-unique)
+### Ticket Lifecycle (10 tests — rows 6–8 are cross-listed in the QA User-Approval Gate section below; 7 are lifecycle-unique)
 
 | #   | Scenario                         | Expected Route                  |
 | --- | -------------------------------- | ------------------------------- |
@@ -244,8 +244,8 @@ recommendations, nothing written).
 | 58  | Retrospective in read-only mode is advisory only                           | `dev-flow-retrospective-audit` | `applied=false`, `scope=advisory-only` |
 | 59  | Capture gate not applicable outside archive/hotfix/retrospective routes    | `dev-flow-implement-ticket`    | `capture === null`                      |
 
-> Note: table row numbers trail the YAML file order by one (a pre-existing numbering drift — the
-> table ends at row 59 while `promptfooconfig.yaml` holds 60 cases). Use the YAML `tests:` list as
+> Note: table row numbers trail the YAML file order (a pre-existing numbering drift — the
+> table ends at row 59 while `promptfooconfig.yaml` holds 61 cases). Use the YAML `tests:` list as
 > the authoritative order; row numbers here are labels only.
 
 ## Adding Test Cases

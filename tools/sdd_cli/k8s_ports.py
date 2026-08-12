@@ -21,6 +21,8 @@ from pathlib import Path
 from typing import Any
 
 PORTS_FILE = Path("infra/deployment/ports.json")
+APPS_FILE = Path("infra/deployment/apps.json")
+ROLES_FILE = Path("infra/deployment/roles.json")
 KIND_CONFIG = Path("infra/k8s/kind-config.yaml")
 OVERLAY_DIR = Path("infra/k8s/overlays")
 
@@ -36,29 +38,120 @@ RESERVED_HOST_PORTS: frozenset[int] = frozenset(
     {3000, 2222, 8123, 8088, 5001, 8080, 3001, 8090, 8888, 5341}
 )
 
-# ── Role/environment port ranges (blocks of 10) ─────────────────────────
+# ── Role registry (config-driven, ADR-0004) ─────────────────────────────
+# infra/deployment/roles.json is the single source of truth for the role
+# vocabulary and its port ranges: which roles exist, where their host-port
+# blocks start, their nodePort offsets, and their default container port.
+# Consumers add roles (worker, scheduler, ...) there — no Python changes.
+# _DEFAULT_ROLES below mirrors the shipped file and is used only as a
+# fallback when the file is absent (bare checkout, unit fixtures); it must
+# stay in sync with the committed infra/deployment/roles.json.
+#   web: host 8081+, nodePort offset 80, container 80
+#   api: host 5002+, nodePort offset 500, container 5000
+#   database: host 5432+, nodePort offset 700, container 5432
+_DEFAULT_ROLES: dict[str, dict[str, Any]] = {
+    "web": {
+        "hostPortBase": 8081,
+        "nodePortOffset": 80,
+        "containerPort": 80,
+        "portEnv": False,
+        "healthCheck": "http",
+    },
+    "api": {
+        "hostPortBase": 5002,
+        "nodePortOffset": 500,
+        "containerPort": 5000,
+        "portEnv": True,
+        "healthCheck": "http",
+    },
+    "database": {
+        "hostPortBase": 5432,
+        "nodePortOffset": 700,
+        "containerPort": 5432,
+        "portEnv": False,
+        "healthCheck": "tcp",
+    },
+}
+
 # Host ports are allocated per ROLE in blocks of 10 anchored at the role
 # base: block 0 = [base, base+9], block 1 = [base+10, base+19], ... When a
 # block is full (or its slots collide with RESERVED_HOST_PORTS), the next
 # block of 10 is used — the scheme scales past 10 ports of a role.
 #   web: 8081-8090, 8091-8100, ...
 #   api: 5002-5011, 5012-5021, ...
+#   database: 5432-5441, 5442-5451, ...
 HOST_PORT_BLOCK = 10
-ROLE_HOST_BASES: dict[str, int] = {"web": 8081, "api": 5002}
 
 # NodePorts are allocated per ENV per ROLE in blocks of 10 anchored at
 # env_code*1000 + role_offset. Environment codes keep the ranges disjoint
 # (dev 30xxx, qa 31xxx, prod 32xxx) so nodePorts stay cluster-unique.
-#   dev:  web 30080-30089, 30090-30099, ... | api 30500-30509, ...
-#   qa:   web 31080-31089, ...              | api 31500-31509, ...
-#   prod: web 32080-32089, ...              | api 32500-32509, ...
+#   dev:  web 30080-30089, ... | api 30500-30509, ... | database 30700-30709, ...
+#   qa:   web 31080-31089, ... | api 31500-31509, ... | database 31700-31709, ...
+#   prod: web 32080-32089, ... | api 32500-32509, ... | database 32700-32709, ...
 NODE_PORT_BLOCK = 10
 ENV_NODE_CODES: dict[str, int] = {"dev": 30, "qa": 31, "prod": 32}
-ROLE_NODE_OFFSETS: dict[str, int] = {"web": 80, "api": 500}
 _NODE_PORT_UPPER = 32768  # K8s NodePort range ends at 32767 (exclusive bound)
 
-# appId -> role fallback when a ports.json entry omits the explicit role
-_APP_ID_ROLES: dict[str, str] = {"frontend": "web", "backend": "api"}
+def _role_for_app(root: Path, app_id: str) -> str | None:
+    """Role fallback for an appId from the apps.json registry.
+
+    The registry (infra/deployment/apps.json) is the canonical appId -> role
+    source (ADR-0002). Only reached for ports.json entries that omit the
+    explicit ``role`` key; ports.schema.json requires ``role``, so a missing
+    one is a config error surfaced by load_ports.
+    """
+    try:
+        apps_path = root / APPS_FILE
+        if apps_path.exists():
+            apps = json.loads(apps_path.read_text(encoding="utf-8")).get("apps", [])
+            for app in apps:
+                if app.get("appId") == app_id and app.get("role"):
+                    return app["role"]
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def load_roles(root: Path) -> dict[str, dict[str, Any]]:
+    """Load the role registry from infra/deployment/roles.json.
+
+    The shipped file defines the built-in roles (web, api); consumers add
+    their own (worker, scheduler, ...) with their port ranges without
+    touching Python. A missing file (bare checkout / unit fixtures) falls
+    back to the shipped defaults below; a present-but-invalid file raises
+    ValueError so a config typo never silently re-defaults.
+    """
+    path = root / ROLES_FILE
+    if not path.exists():
+        return _DEFAULT_ROLES
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as ex:
+        raise ValueError(f"{path}: invalid JSON: {ex}") from ex
+    if data.get("version") != 1:
+        raise ValueError(
+            f"{path}: roles.json version must be 1, got {data.get('version')}"
+        )
+    roles = data.get("roles")
+    if not isinstance(roles, dict) or not roles:
+        raise ValueError(f"{path}: 'roles' object is missing or empty")
+    for name, cfg in roles.items():
+        if not isinstance(cfg, dict):
+            raise ValueError(f"{path}: role {name!r} must be an object")
+        for key in ("hostPortBase", "nodePortOffset", "containerPort"):
+            if not isinstance(cfg.get(key), int):
+                raise ValueError(
+                    f"{path}: role {name!r} must define integer {key!r}"
+                )
+    return roles
+
+
+def _role_bases(roles: dict[str, dict[str, Any]]) -> dict[str, int]:
+    return {name: cfg["hostPortBase"] for name, cfg in roles.items()}
+
+
+def _role_offsets(roles: dict[str, dict[str, Any]]) -> dict[str, int]:
+    return {name: cfg["nodePortOffset"] for name, cfg in roles.items()}
 
 
 def load_ports(root: Path) -> dict[str, Any]:
@@ -73,8 +166,10 @@ def load_ports(root: Path) -> dict[str, Any]:
     # runs under `python -O` and fails with a clear message).
     if data.get("version") != 1:
         raise ValueError(f"{path}: ports.json version must be 1, got {data.get('version')}")
-    if not data.get("appPorts"):
-        raise ValueError(f"{path}: 'appPorts' is missing or empty")
+    if "appPorts" not in data:
+        raise ValueError(f"{path}: 'appPorts' key is missing")
+    # Empty per-app assignments are valid: the template ships no reference apps
+    # (ADR-0005), and the port scheme lives in infra/deployment/roles.json.
     envs = data.get("environments")
     if not envs:
         raise ValueError(f"{path}: 'environments' is missing or empty")
@@ -83,6 +178,7 @@ def load_ports(root: Path) -> dict[str, Any]:
     seen_node: dict[int, str] = {}
     # HostPorts are host-scoped: must be unique across ALL environments too.
     seen_host: dict[int, str] = {}
+    roles = load_roles(root)
     for env, apps in envs.items():
         for app, cfg in apps.items():
             np = cfg["nodePort"]
@@ -103,28 +199,29 @@ def load_ports(root: Path) -> dict[str, Any]:
                     f"service port (RESERVED_HOST_PORTS) — pick a free host port."
                 )
             # Range checks: every app must resolve to a known role, and its
-            # ports must stay inside the role/env block scheme.
-            role = cfg.get("role") or _APP_ID_ROLES.get(app)
+            # ports must stay inside the role/env block scheme. The role
+            # vocabulary comes from infra/deployment/roles.json (ADR-0004).
+            role = cfg.get("role") or _role_for_app(root, app)
             if not role:
                 raise ValueError(
                     f"{path}: {env}/{app} is missing a role — add \"role\" "
-                    f"({', '.join(sorted(ROLE_HOST_BASES))}) or register the "
-                    "appId in _APP_ID_ROLES (k8s_ports.py)."
+                    f"({', '.join(sorted(roles))}) or register the appId in apps.json."
                 )
-            if role not in ROLE_HOST_BASES:
+            if role not in roles:
                 raise ValueError(
                     f"{path}: {env}/{app} has unknown role {role!r} — register it "
-                    f"in ROLE_HOST_BASES/ROLE_NODE_OFFSETS (k8s_ports.py) before "
-                    f"assigning ports (known: {', '.join(sorted(ROLE_HOST_BASES))})."
+                    f"in infra/deployment/roles.json before assigning ports "
+                    f"(known: {', '.join(sorted(roles))})."
                 )
-            if hp < role_host_base(role):
+            base_hp = role_host_base(role, roles)
+            if hp < base_hp:
                 raise ValueError(
                     f"{path}: hostPort {hp} for {env}/{app} is below the {role!r} "
-                    f"host-port range base {role_host_base(role)} (blocks of 10 "
-                    f"starting at {role_host_base(role)})."
+                    f"host-port range base {base_hp} (blocks of 10 "
+                    f"starting at {base_hp})."
                 )
             if env in ENV_NODE_CODES:
-                base = env_node_base(env, role)
+                base = env_node_base(env, role, roles)
                 upper = min((ENV_NODE_CODES[env] + 1) * 1000, _NODE_PORT_UPPER)
                 if not base <= np < upper:
                     raise ValueError(
@@ -162,25 +259,39 @@ def host_ports(data: dict[str, Any]) -> list[tuple[int, str, str]]:
     )
 
 
-def role_host_base(role: str) -> int:
-    """Base host port for a role (block 0 start). Unknown roles raise."""
+def role_host_base(
+    role: str, roles: dict[str, dict[str, Any]] | None = None
+) -> int:
+    """Base host port for a role (block 0 start). Unknown roles raise.
+
+    ``roles`` optionally supplies the registry from infra/deployment/roles.json
+    (load_roles); when omitted the shipped defaults apply.
+    """
+    bases = _role_bases(roles or _DEFAULT_ROLES)
     try:
-        return ROLE_HOST_BASES[role]
+        return bases[role]
     except KeyError:
         raise ValueError(
             f"no host-port range defined for role {role!r} "
-            f"(known: {sorted(ROLE_HOST_BASES)})"
+            f"(known: {sorted(bases)})"
         ) from None
 
 
-def env_node_base(env: str, role: str) -> int:
-    """Base nodePort for (env, role) — block 0 start."""
+def env_node_base(
+    env: str, role: str, roles: dict[str, dict[str, Any]] | None = None
+) -> int:
+    """Base nodePort for (env, role) — block 0 start.
+
+    ``roles`` optionally supplies the registry from infra/deployment/roles.json
+    (load_roles); when omitted the shipped defaults apply.
+    """
+    offsets = _role_offsets(roles or _DEFAULT_ROLES)
     try:
-        return ENV_NODE_CODES[env] * 1000 + ROLE_NODE_OFFSETS[role]
+        return ENV_NODE_CODES[env] * 1000 + offsets[role]
     except KeyError:
         raise ValueError(
             f"no node-port range defined for env={env!r} role={role!r} "
-            f"(envs: {sorted(ENV_NODE_CODES)}, roles: {sorted(ROLE_NODE_OFFSETS)})"
+            f"(envs: {sorted(ENV_NODE_CODES)}, roles: {sorted(offsets)})"
         ) from None
 
 
@@ -210,7 +321,12 @@ def _first_free(
     raise ValueError(f"no free port in [{start}, {upper}) — range exhausted")
 
 
-def assign_app_ports(data: dict[str, Any], app_id: str, role: str) -> dict[str, dict[str, int]]:
+def assign_app_ports(
+    data: dict[str, Any],
+    app_id: str,
+    role: str,
+    root: Path | None = None,
+) -> dict[str, dict[str, int]]:
     """Allocate host/node ports for a new app across dev/qa/prod.
 
     Host ports come from the role's block sequence (10 per block anchored at
@@ -218,6 +334,10 @@ def assign_app_ports(data: dict[str, Any], app_id: str, role: str) -> dict[str, 
     (env, role) block sequence (10 per block anchored at env_code*1000 +
     role_offset) — env codes keep them cluster-unique. Returns
     {env: {"hostPort": n, "nodePort": n}} in dev → qa → prod order.
+
+    ``root`` optionally supplies infra/deployment/roles.json so consumer roles
+    (worker, scheduler, ...) resolve; when omitted (or the file is absent)
+    the shipped web/api defaults apply (ADR-0004).
 
     Idempotent: when the app already exists in every environment, returns its
     current ports unchanged. Raises when the app exists in only some envs
@@ -238,14 +358,15 @@ def assign_app_ports(data: dict[str, Any], app_id: str, role: str) -> dict[str, 
             used_host.add(cfg["hostPort"])
             used_node.add(cfg["nodePort"])
 
-    host_base = role_host_base(role)
+    roles = load_roles(root) if root is not None else _DEFAULT_ROLES
+    host_base = role_host_base(role, roles)
     allocations: dict[str, dict[str, int]] = {}
     for env in ENV_NODE_CODES:
         host_port = _first_free(used_host, host_base, 65536, RESERVED_HOST_PORTS)
         used_host.add(host_port)
         node_port = _first_free(
             used_node,
-            env_node_base(env, role),
+            env_node_base(env, role, roles),
             min((ENV_NODE_CODES[env] + 1) * 1000, _NODE_PORT_UPPER),
         )
         used_node.add(node_port)
@@ -266,7 +387,7 @@ def assign_app_ports_to_file(root: Path, app_id: str, role: str, dry_run: bool =
     }
     try:
         data = load_ports(root)
-        allocations = assign_app_ports(data, app_id, role)
+        allocations = assign_app_ports(data, app_id, role, root)
     except (FileNotFoundError, ValueError) as ex:
         result["findings"].append(
             {"key": "ports.assign", "severity": "error", "message": str(ex)}
@@ -308,14 +429,28 @@ def assign_app_ports_to_file(root: Path, app_id: str, role: str, dry_run: bool =
     return result
 
 
-def kind_config_yaml(data: dict[str, Any]) -> str:
+def kind_config_yaml(
+    data: dict[str, Any], roles: dict[str, dict[str, Any]] | None = None
+) -> str:
     """Render infra/k8s/kind-config.yaml (extraPortMappings) from ports.json.
 
     Environment/app order follows the canonical environments dict (dev, qa,
     prod) with app order from each env entry, so output is stable and matches
-    the committed file ordering.
+    the committed file ordering. ``roles`` (load_roles) drives the range
+    comments; omitted → shipped defaults (ADR-0004).
     """
-    role_label = {"frontend": "web", "backend": "api"}
+    roles = roles or _DEFAULT_ROLES
+    host_desc = ", ".join(
+        f"{name} from {cfg['hostPortBase']}" for name, cfg in roles.items()
+    )
+    node_desc = ", ".join(
+        f"{env} "
+        + "/".join(
+            str(ENV_NODE_CODES[env] * 1000 + cfg["nodePortOffset"])
+            for cfg in roles.values()
+        )
+        for env in ("dev", "qa", "prod")
+    )
     lines = [
         "# Kind cluster config for sdd-cluster",
         "# extraPortMappings enable direct host access to NodePort services",
@@ -325,7 +460,7 @@ def kind_config_yaml(data: dict[str, Any]) -> str:
     ]
     for env, apps in data["environments"].items():
         for app, cfg in apps.items():
-            role = cfg.get("role") or role_label.get(app, "web")
+            role = cfg.get("role", "web")
             lines.append(
                 f"#  {cfg['hostPort']}    ->  {cfg['nodePort']}   -> {app} {env.upper()} ({role})"
             )
@@ -334,33 +469,53 @@ def kind_config_yaml(data: dict[str, Any]) -> str:
     reserved = ", ".join(str(p) for p in sorted(RESERVED_HOST_PORTS))
     lines.append("# Reserved lab host ports (compose services), hostPorts must avoid:")
     lines.append(f"#   {reserved}")
-    lines.append("# Host ports: per-role blocks of 10 (web from 8081, api from 5002).")
-    lines.append("# NodePorts: per-env per-role blocks of 10 (dev 30080/30500, qa 31080/31500, prod 32080/32500).")
+    lines.append(f"# Host ports: per-role blocks of 10 ({host_desc}).")
+    lines.append(f"# NodePorts: per-env per-role blocks of 10 ({node_desc}).")
     lines.append("kind: Cluster")
     lines.append("apiVersion: kind.x-k8s.io/v1alpha4")
     lines.append("nodes:")
     lines.append("  - role: control-plane")
-    lines.append("    extraPortMappings:")
-    for env, apps in data["environments"].items():
-        for app, cfg in apps.items():
-            lines.append("      - containerPort: %d" % cfg["nodePort"])
-            lines.append("        hostPort: %d" % cfg["hostPort"])
+    mappings = [
+        (cfg["nodePort"], cfg["hostPort"])
+        for env, apps in data["environments"].items()
+        for app, cfg in apps.items()
+    ]
+    if mappings:
+        lines.append("    extraPortMappings:")
+        for node_port, host_port in mappings:
+            lines.append("      - containerPort: %d" % node_port)
+            lines.append("        hostPort: %d" % host_port)
             lines.append("        protocol: TCP")
     return "\n".join(lines) + "\n"
 
 
-def service_patch_yaml(data: dict[str, Any], env: str) -> str:
-    """Render infra/k8s/overlays/{env}/service-patch.yaml from ports.json."""
+def service_patch_yaml(
+    data: dict[str, Any], env: str, roles: dict[str, dict[str, Any]] | None = None
+) -> str:
+    """Render infra/k8s/overlays/{env}/service-patch.yaml from ports.json.
+
+    Each block patches the Service named by ``app`` (or its ``serviceName``
+    override — infra services like the shared database register as
+    ``database`` but expose ``db.internal``) to the env's NodePort, forcing
+    ``type: NodePort`` so kind extraPortMappings can reach it. The container
+    port comes from ``appPorts`` when present, else the role's containerPort
+    (roles.json / shipped defaults) — the shared database is 5432.
+    """
+    roles = roles or _DEFAULT_ROLES
     blocks = []
     for app in data["environments"][env]:
         cfg = data["environments"][env][app]
-        container_port = data["appPorts"].get(app, 80)
+        service = cfg.get("serviceName", app)
+        container_port = data["appPorts"].get(
+            app, role_container_port(cfg.get("role", "web"), roles)
+        )
         blocks.append(
             "apiVersion: v1\n"
             "kind: Service\n"
             "metadata:\n"
-            f"  name: {app}\n"
+            f"  name: {service}\n"
             "spec:\n"
+            "  type: NodePort\n"
             "  ports:\n"
             "    - port: %d\n"
             "      targetPort: %d\n"
@@ -370,14 +525,33 @@ def service_patch_yaml(data: dict[str, Any], env: str) -> str:
     return "\n---\n".join(blocks) + "\n"
 
 
+def role_container_port(
+    role: str, roles: dict[str, dict[str, Any]] | None = None
+) -> int:
+    """Default container port for a role (scaffold fallback for appPorts)."""
+    roles = roles or _DEFAULT_ROLES
+    try:
+        return int(roles[role]["containerPort"])
+    except (KeyError, TypeError):
+        raise ValueError(
+            f"no container port defined for role {role!r} "
+            f"(known: {sorted(roles)})"
+        ) from None
+
+
 def render_all(root: Path) -> dict[str, Path]:
-    """Return {label: path} for every artifact derived from ports.json."""
+    """Return {label: path} for every artifact derived from ports.json.
+
+    Service patches are only rendered for environments that actually have apps
+    (the template ships none — ADR-0005 — so no empty patch files are written).
+    """
     data = load_ports(root)
+    patch_envs = [env for env, apps in data["environments"].items() if apps]
     return {
         "kind-config": root / KIND_CONFIG,
         **{
             f"service-patch-{env}": root / OVERLAY_DIR / env / "service-patch.yaml"
-            for env in data["environments"]
+            for env in patch_envs
         },
     }
 
@@ -389,15 +563,18 @@ def write_artifacts(root: Path) -> dict[str, Path]:
     `git status` stay clean on Windows checkouts.
     """
     data = load_ports(root)
+    roles = load_roles(root)
     targets = render_all(root)
     (root / OVERLAY_DIR).mkdir(parents=True, exist_ok=True)
     for env in data["environments"]:
         (root / OVERLAY_DIR / env).mkdir(parents=True, exist_ok=True)
     (root / KIND_CONFIG).parent.mkdir(parents=True, exist_ok=True)
 
-    (root / KIND_CONFIG).write_text(kind_config_yaml(data), encoding="utf-8")
-    for env in data["environments"]:
+    (root / KIND_CONFIG).write_text(kind_config_yaml(data, roles), encoding="utf-8")
+    for env, apps in data["environments"].items():
+        if not apps:
+            continue  # no apps in this env (ADR-0005) — no patch to write
         (root / OVERLAY_DIR / env / "service-patch.yaml").write_text(
-            service_patch_yaml(data, env), encoding="utf-8"
+            service_patch_yaml(data, env, roles), encoding="utf-8"
         )
     return targets

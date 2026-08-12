@@ -3,38 +3,26 @@
 # without needing kubectl port-forward.
 #
 # Host port -> NodePort -> Service
-#  8081    ->  30080   -> frontend DEV (web)
-#  5002    ->  30500   -> backend DEV (api)
-#  8082    ->  31080   -> frontend QA (web)
-#  5003    ->  31500   -> backend QA (api)
-#  8083    ->  32080   -> frontend PROD (web)
-#  5004    ->  32500   -> backend PROD (api)
+#  5432    ->  30700   -> database DEV (database)
+#  5433    ->  31700   -> database QA (database)
+#  5434    ->  32700   -> database PROD (database)
 # NodePorts are per-environment and cluster-scoped (per-env fix, PR #6).
 # Generated from infra/deployment/ports.json (tools/sdd_cli/k8s_ports.py).
 # Reserved lab host ports (compose services), hostPorts must avoid:
 #   2222, 3000, 3001, 5001, 5341, 8080, 8088, 8090, 8123, 8888
-# Host ports: per-role blocks of 10 (web from 8081, api from 5002).
-# NodePorts: per-env per-role blocks of 10 (dev 30080/30500, qa 31080/31500, prod 32080/32500).
+# Host ports: per-role blocks of 10 (web from 8081, api from 5002, database from 5432).
+# NodePorts: per-env per-role blocks of 10 (dev 30080/30500/30700, qa 31080/31500/31700, prod 32080/32500/32700).
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
   - role: control-plane
     extraPortMappings:
-      - containerPort: 30080
-        hostPort: 8081
+      - containerPort: 30700
+        hostPort: 5432
         protocol: TCP
-      - containerPort: 30500
-        hostPort: 5002
+      - containerPort: 31700
+        hostPort: 5433
         protocol: TCP
-      - containerPort: 31080
-        hostPort: 8082
-        protocol: TCP
-      - containerPort: 31500
-        hostPort: 5003
-        protocol: TCP
-      - containerPort: 32080
-        hostPort: 8083
-        protocol: TCP
-      - containerPort: 32500
-        hostPort: 5004
+      - containerPort: 32700
+        hostPort: 5434
         protocol: TCP

@@ -411,3 +411,156 @@ def test_set_semgrep_config_dry_run_message_aligned(tmp_path) -> None:
     assert "rule pack(s):" not in yml_msg
     assert not (tmp_path / ".semgrep.yml").exists()
     assert not (tmp_path / ".semgrep-rules.json").exists()
+
+
+# ── prune_scaffold_shapes (ADR-0005 lifecycle) ─────────────────────────
+
+
+def _write_scaffold_shape(tmp_path, rel: str) -> Path:
+    """Materialize a fake scaffold shape dir under tmp_path."""
+    shape = tmp_path / rel
+    shape.mkdir(parents=True, exist_ok=True)
+    (shape / "shape.txt").write_text("starting shape\n", encoding="utf-8")
+    return shape
+
+
+def _write_apps_json(tmp_path, apps: list[dict]) -> Path:
+    apps_path = tmp_path / "infra" / "deployment" / "apps.json"
+    apps_path.parent.mkdir(parents=True, exist_ok=True)
+    apps_path.write_text(
+        json.dumps({"version": 1, "apps": apps}), encoding="utf-8"
+    )
+    return apps_path
+
+
+def test_prune_scaffold_removes_service_shape_for_service_app(tmp_path) -> None:
+    """A registered service-kind app removes the apps/service shape."""
+    from tools.sdd_cli.environment_lab import prune_scaffold_shapes
+
+    _write_scaffold_shape(tmp_path, ".template/scaffold/apps/service")
+    _write_apps_json(
+        tmp_path,
+        [
+            {
+                "appId": "api-orders",
+                "projectPath": "apps/api-orders",
+                "role": "api",
+                "kind": "service",
+                "healthPath": "/health",
+                "deployOrder": 0,
+            }
+        ],
+    )
+
+    result = prune_scaffold_shapes(tmp_path, dry_run=False)
+
+    assert result["valid"] is True
+    assert not (tmp_path / ".template/scaffold/apps/service").exists()
+    # Unrelated job shape untouched.
+    assert (tmp_path / ".template/scaffold/apps/job").exists() is False
+    assert any(
+        a["key"] == "prune.removed"
+        and ".template/scaffold/apps/service" in a["path"]
+        for a in result["actions"]
+    )
+
+
+def test_prune_scaffold_removes_job_and_db_bootstrap_shapes(tmp_path) -> None:
+    """A registered job-kind app removes apps/job; db-bootstrap removes its shape."""
+    from tools.sdd_cli.environment_lab import prune_scaffold_shapes
+
+    _write_scaffold_shape(tmp_path, ".template/scaffold/apps/job")
+    _write_scaffold_shape(tmp_path, ".template/scaffold/db-bootstrap")
+    _write_apps_json(
+        tmp_path,
+        [
+            {
+                "appId": "db-bootstrap",
+                "projectPath": "apps/db-bootstrap",
+                "role": "job",
+                "kind": "job",
+                "healthPath": "/",
+                "deployOrder": 0,
+            }
+        ],
+    )
+
+    result = prune_scaffold_shapes(tmp_path, dry_run=False)
+
+    assert result["valid"] is True
+    assert not (tmp_path / ".template/scaffold/apps/job").exists()
+    assert not (tmp_path / ".template/scaffold/db-bootstrap").exists()
+    removed = {a["path"] for a in result["actions"] if a["key"] == "prune.removed"}
+    assert removed == {
+        ".template/scaffold/apps/job",
+        ".template/scaffold/db-bootstrap",
+    }
+
+
+def test_prune_scaffold_keeps_shapes_when_no_apps(tmp_path) -> None:
+    """Empty apps.json → no shape removed, audit action only."""
+    from tools.sdd_cli.environment_lab import prune_scaffold_shapes
+
+    _write_scaffold_shape(tmp_path, ".template/scaffold/apps/service")
+    _write_scaffold_shape(tmp_path, ".template/scaffold/db-bootstrap")
+    _write_apps_json(tmp_path, [])
+
+    result = prune_scaffold_shapes(tmp_path, dry_run=False)
+
+    assert result["valid"] is True
+    assert (tmp_path / ".template/scaffold/apps/service").exists()
+    assert (tmp_path / ".template/scaffold/db-bootstrap").exists()
+    assert any(a["key"] == "prune.none" for a in result["actions"])
+
+
+def test_prune_scaffold_dry_run_reports_without_deleting(tmp_path) -> None:
+    """Dry-run: would-remove actions, shapes stay on disk."""
+    from tools.sdd_cli.environment_lab import prune_scaffold_shapes
+
+    service = _write_scaffold_shape(tmp_path, ".template/scaffold/apps/service")
+    _write_apps_json(
+        tmp_path,
+        [
+            {
+                "appId": "web",
+                "projectPath": "apps/web",
+                "role": "web",
+                "kind": "service",
+                "healthPath": "/health",
+                "deployOrder": 0,
+            }
+        ],
+    )
+
+    result = prune_scaffold_shapes(tmp_path, dry_run=True)
+
+    assert result["valid"] is True
+    assert service.exists()
+    assert any(
+        a["key"] == "prune.plan" and "Would remove" in a["message"]
+        for a in result["actions"]
+    )
+
+
+def test_prune_scaffold_missing_shape_reports_already_pruned(tmp_path) -> None:
+    """Shape already gone → audit action, no error."""
+    from tools.sdd_cli.environment_lab import prune_scaffold_shapes
+
+    _write_apps_json(
+        tmp_path,
+        [
+            {
+                "appId": "api",
+                "projectPath": "apps/api",
+                "role": "api",
+                "kind": "service",
+                "healthPath": "/health",
+                "deployOrder": 0,
+            }
+        ],
+    )
+
+    result = prune_scaffold_shapes(tmp_path, dry_run=False)
+
+    assert result["valid"] is True
+    assert any(a["key"] == "prune.missing" for a in result["actions"])

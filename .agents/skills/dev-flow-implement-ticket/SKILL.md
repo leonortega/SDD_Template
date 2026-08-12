@@ -576,6 +576,28 @@ host if the image lacks them:
 **❌ HARD RULE**: If any quality check fails inside the container, do NOT create the PR. Fix, commit, re-run, loop until
 zero errors. This is a process violation (authority level 5).
 
+### 9.5 Prune Implemented Scaffold Shapes
+
+Once the implemented app is registered in `infra/deployment/apps.json` and all checks pass, remove the
+scaffold shape whose kind the real app now replaces — the real app is the reference (ADR-0005 lifecycle).
+
+Run the deterministic prune step:
+
+```bash
+python -m tools.sdd_cli environment-lab prune-scaffold
+```
+
+It removes, per registered app kind:
+
+- a registered `kind: service` app → deletes `.template/scaffold/apps/service/`
+- a registered `kind: job` app → deletes `.template/scaffold/apps/job/`
+- a registered `db-bootstrap` app → deletes `.template/scaffold/db-bootstrap/`
+
+Dry-run first with `--dry-run true` and confirm the plan with the user. Include the removal in the PR so the
+template never carries starter shapes alongside real implementations. If no shape is redundant yet (e.g. an
+app was implemented without being registered), the step reports `prune.none` and continues — it is never a
+blocker, only a cleanup.
+
 ### 10. Create Or Reuse The repository PR
 
 **PR lifecycle is shared.** Sections 10–11.5 implement the **7-step shared PR
