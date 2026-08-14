@@ -666,17 +666,17 @@ jobs:
             # so kubectl apply never re-touches them (their image tags are
             # still :latest from the committed overlay — applying them would
             # trigger an unwanted rollout). AFFECTED_APPS=ALL applies
-            # everything unchanged. Outputs are split into two files:
-            #   /tmp/k8s-infra.yaml       - shared infra (the database engine:
-          #     StatefulSet, PVC, db Service - labelled
-          #     app.kubernetes.io/component: database). Applied FIRST so the
-          #     bootstrap Job can connect to a running engine on a fresh
-          #     namespace (ADR-0003). Always kept when present.
-          #   /tmp/k8s-jobs.yaml        - kind: Job resources (wait-for-
+            # everything unchanged. Outputs are split into THREE files:
+            #   /tmp/k8s-infra.yaml       — shared infra (the database engine:
+            #     StatefulSet, PVC, db Service — labelled
+            #     app.kubernetes.io/component: database). Applied FIRST so the
+            #     bootstrap Job can connect to a running engine on a fresh
+            #     namespace (ADR-0003). Always kept when present.
+            #   /tmp/k8s-jobs.yaml        — kind: Job resources (wait-for-
             #     completion phases: db-bootstrap, per-app migration jobs).
             #     Jobs are ALWAYS kept when present, regardless of the affected
             #     set: migrations must run before any rollout in this env.
-            #   /tmp/k8s-deployments.yaml  — everything else (Deployments,
+            #   /tmp/k8s-deployments.yaml — everything else (Deployments,
             #     Services, StatefulSets, PVCs) filtered by affected apps.
             APPLY_SKIPPED=false
             if [ -n "${AFFECTED_APPS}" ] && [ "${AFFECTED_APPS}" != "ALL" ]; then
@@ -762,25 +762,28 @@ jobs:
               subprocess.run(['kubectl', '-n', namespace, 'delete', 'deploy', app_id, '--ignore-not-found'], check=False)
           PYEOF
 
-            # -- Phase 0: shared infra (database engine) - apply & wait ready --
-            # The shared database (StatefulSet + PVC + db Service) must
-            # exist BEFORE the db-bootstrap Job can connect (ADR-0003: bootstrap
-            # creates the logical role/db against the running engine). It ships in
-            # the overlay's shared/database kustomization, so it is part of the
-            # rendered manifest and must be applied first - on a fresh namespace
-            # the Job would otherwise wait for a database that does not exist.
-            if [ -s /tmp/k8s-infra.yaml ]; then
-              echo "Applying shared infra (database) to ${ENV}..."
-              if ! kubectl apply -f /tmp/k8s-infra.yaml 2>&1; then
-                echo "ERROR: kubectl apply failed for shared infra - running dry-run for diagnosis..."
-                kubectl apply --dry-run=client -f /tmp/k8s-infra.yaml 2>&1 | head -20
-                exit 1
-              fi
-              echo "Waiting for database rollout (${ENV})..."
-              kubectl -n "sdd-${ENV}" rollout status statefulset/database --timeout=180s
+          # ── Phase 0: shared infra (database engine) — apply & wait ready ──
+          # The shared database (StatefulSet + PVC + db Service) must
+          # exist BEFORE the db-bootstrap Job can connect (ADR-0003: bootstrap
+          # creates the logical role/db against the running engine). It ships in
+          # the overlay's shared/database kustomization, so it is part of the
+          # rendered manifest and must be applied first — on a fresh namespace
+          # the Job would otherwise wait for a database that does not exist.
+          if [ -s /tmp/k8s-infra.yaml ]; then
+            echo "Applying shared infra (database) to ${ENV}..."
+            if ! kubectl apply -f /tmp/k8s-infra.yaml 2>&1; then
+              echo "ERROR: kubectl apply failed for shared infra - running dry-run for diagnosis..."
+              kubectl apply --dry-run=client -f /tmp/k8s-infra.yaml 2>&1 | head -20
+              exit 1
             fi
+            echo "Waiting for database rollout (${ENV})..."
+            kubectl -n "sdd-${ENV}" rollout status statefulset/database --timeout=180s
+          fi
 
-            if [ -s /tmp/k8s-jobs.yaml ]; then
+          # ── Phase 1: Jobs (bootstrap + migrations) — apply & wait ────────
+          # ADR-0003: Job apps run BEFORE any Deployment rollout. A failed
+          # Job fails the deploy here — rollouts never start.
+          if [ -s /tmp/k8s-jobs.yaml ]; then
               # Pin every registered job app's image to the deploy commit — the
               # env overlay images: section only lists service apps, so the
               # Job manifests would otherwise keep the committed :latest tag
