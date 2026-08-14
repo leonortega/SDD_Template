@@ -28,18 +28,18 @@ VALID_PORTS = {
     "environments": {
         "dev": {
             "database": {"hostPort": 5432, "nodePort": 30700, "role": "database", "serviceName": "db"},
-            "dellop-web": {"hostPort": 8081, "nodePort": 30080, "role": "web"},
-            "dellop-api": {"hostPort": 5002, "nodePort": 30500, "role": "api"},
+            "web": {"hostPort": 8081, "nodePort": 30080, "role": "web"},
+            "api": {"hostPort": 5002, "nodePort": 30500, "role": "api"},
         },
         "qa": {
             "database": {"hostPort": 5433, "nodePort": 31700, "role": "database", "serviceName": "db"},
-            "dellop-web": {"hostPort": 8082, "nodePort": 31080, "role": "web"},
-            "dellop-api": {"hostPort": 5003, "nodePort": 31500, "role": "api"},
+            "web": {"hostPort": 8082, "nodePort": 31080, "role": "web"},
+            "api": {"hostPort": 5003, "nodePort": 31500, "role": "api"},
         },
         "prod": {
             "database": {"hostPort": 5434, "nodePort": 32700, "role": "database", "serviceName": "db"},
-            "dellop-web": {"hostPort": 8083, "nodePort": 32080, "role": "web"},
-            "dellop-api": {"hostPort": 5004, "nodePort": 32500, "role": "api"},
+            "web": {"hostPort": 8083, "nodePort": 32080, "role": "web"},
+            "api": {"hostPort": 5004, "nodePort": 32500, "role": "api"},
         },
     },
 }
@@ -50,7 +50,7 @@ class Dns1123RegexTests(unittest.TestCase):
         self.assertIsNone(k8s_validate.DNS1123_LABEL.match("db.internal"))
 
     def test_accepts_valid_names(self) -> None:
-        for name in ("db", "dellop-api", "dellop-web", "a", "a-b-c"):
+        for name in ("db", "api", "web", "a", "a-b-c"):
             self.assertIsNotNone(k8s_validate.DNS1123_LABEL.match(name), name)
 
     def test_rejects_uppercase_and_leading_trailing_dash(self) -> None:
@@ -70,14 +70,14 @@ metadata:
 apiVersion: v1
 kind: Service
 metadata:
-  name: dellop-api
+  name: api
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: dellop-api
+  name: api
 """
-        self.assertEqual(["db", "dellop-api"], k8s_validate._parse_service_names(rendered))
+        self.assertEqual(["db", "api"], k8s_validate._parse_service_names(rendered))
 
 
 class LoadPortsServiceNameTests(unittest.TestCase):

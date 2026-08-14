@@ -33,18 +33,18 @@ PORTS = {
     "environments": {
         "dev": {
             "database": {"hostPort": 5432, "nodePort": 30700, "role": "database", "serviceName": "db"},
-            "dellop-web": {"hostPort": 8081, "nodePort": 30080, "role": "web"},
-            "dellop-api": {"hostPort": 5002, "nodePort": 30500, "role": "api"},
+            "web": {"hostPort": 8081, "nodePort": 30080, "role": "web"},
+            "api": {"hostPort": 5002, "nodePort": 30500, "role": "api"},
         },
         "qa": {
             "database": {"hostPort": 5433, "nodePort": 31700, "role": "database", "serviceName": "db"},
-            "dellop-web": {"hostPort": 8082, "nodePort": 31080, "role": "web"},
-            "dellop-api": {"hostPort": 5003, "nodePort": 31500, "role": "api"},
+            "web": {"hostPort": 8082, "nodePort": 31080, "role": "web"},
+            "api": {"hostPort": 5003, "nodePort": 31500, "role": "api"},
         },
         "prod": {
             "database": {"hostPort": 5434, "nodePort": 32700, "role": "database", "serviceName": "db"},
-            "dellop-web": {"hostPort": 8083, "nodePort": 32080, "role": "web"},
-            "dellop-api": {"hostPort": 5004, "nodePort": 32500, "role": "api"},
+            "web": {"hostPort": 8083, "nodePort": 32080, "role": "web"},
+            "api": {"hostPort": 5004, "nodePort": 32500, "role": "api"},
         },
     },
 }
@@ -52,9 +52,9 @@ PORTS = {
 # (env, service name) -> nodePort as the generator emits them (serviceName for
 # database, app key otherwise) — the *correct* committed patch shape.
 PATCHES = {
-    "dev": {"db": 30700, "dellop-web": 30080, "dellop-api": 30500},
-    "qa": {"db": 31700, "dellop-web": 31080, "dellop-api": 31500},
-    "prod": {"db": 32700, "dellop-web": 32080, "dellop-api": 32500},
+    "dev": {"db": 30700, "web": 30080, "api": 30500},
+    "qa": {"db": 31700, "web": 31080, "api": 31500},
+    "prod": {"db": 32700, "web": 32080, "api": 32500},
 }
 
 
@@ -118,21 +118,21 @@ class NodePortGateTests(unittest.TestCase):
 
     def test_wrong_nodeport_raises_drift(self) -> None:
         patches = {env: dict(services) for env, services in PATCHES.items()}
-        patches["dev"]["dellop-web"] = 30081  # differs from ports.json
+        patches["dev"]["web"] = 30081  # differs from ports.json
         with self.assertRaises(SystemExit) as cm:
             _run_gate(PORTS, patches)
         self.assertEqual(1, cm.exception.code)
 
     def test_missing_patch_entry_raises_drift(self) -> None:
         patches = {env: dict(services) for env, services in PATCHES.items()}
-        del patches["dev"]["dellop-api"]
+        del patches["dev"]["api"]
         with self.assertRaises(SystemExit) as cm:
             _run_gate(PORTS, patches)
         self.assertEqual(1, cm.exception.code)
 
     def test_nodeport_collision_across_envs_raises(self) -> None:
         patches = {env: dict(services) for env, services in PATCHES.items()}
-        patches["qa"]["dellop-web"] = 30080  # collides with dev/dellop-web
+        patches["qa"]["web"] = 30080  # collides with dev/web
         with self.assertRaises(SystemExit) as cm:
             _run_gate(PORTS, patches)
         self.assertEqual(1, cm.exception.code)
