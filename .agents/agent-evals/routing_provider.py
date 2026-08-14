@@ -73,18 +73,18 @@ def _review_outcome(
 
     Mirrors the CI-in-loop rule enforced in the skills: a red, pending, or
     unreadable PR Validation run on the current head is a BLOCKER finding
-    (stable id CI-001) and keeps the `codex-reviewed` clean marker off, so
+    (stable id CI-001) and keeps the `agent-reviewed` clean marker off, so
     the PR stays blocked on the CI gate until the run is green. Only an
     open    PR (exists, not merged) has a review gate; merged or absent PRs
     return None (gate not applicable). Unset status defaults to "unknown"
     (fail-closed), matching the skill rule that an undetermined status keeps
-    `codex-reviewed` off; legacy tests that predate the gate assert only the
+    `agent-reviewed` off; legacy tests that predate the gate assert only the
     route, so they are unaffected.
     """
     if not pr_exists or pr_merged:
         return None
     if pr_validation_status == "green":
-        return {"codexReviewed": True, "findings": []}
+        return {"agentReviewed": True, "findings": []}
     if pr_validation_status == "red":
         reason = "PR Validation run failed: at least one step is red"
     elif pr_validation_status == "pending":
@@ -92,7 +92,7 @@ def _review_outcome(
     else:
         reason = "PR Validation run status could not be determined"
     return {
-        "codexReviewed": False,
+        "agentReviewed": False,
         "findings": [
             {
                 "id": "CI-001",
@@ -110,9 +110,12 @@ def _refinement_outcome(
 ) -> dict[str, Any] | None:
     """Model the ticket-refinement gate per dev-flow-start-ticket step 7.
 
-    Refinement runs at least 1 grill-with-docs cycle (at most 4) and ALWAYS
-    asks the user for extra info — even when the ticket seems complete —
-    before the curated IA block is written. The gate applies only on the
+    Refinement runs 1 to 4 grill-with-docs cycles with no fixed default
+    (~2 typical; never cut the process short — keep grilling while questions
+    remain, up to the 4-cycle maximum; stop only when a cycle produces no new
+    questions AND the user confirms the plan is fully clear) and ALWAYS asks
+    the user for extra info — even when the ticket seems complete — before
+    the curated IA block is written. The gate applies only on the
     ``dev-flow-start-ticket`` route (a Todo ticket with no branch): until the
     user has been asked, the IA block must not be written (``blocked``).
     Other routes return None (gate not applicable), mirroring how the review
@@ -214,7 +217,7 @@ def call_api(
     hotfix = str(vars_data.get("hotfix", "false")).strip().lower() == "true"
     # PR Validation (Gitea Actions) run status for the current head.
     # green | red | pending | unknown — defaults to "unknown" (fail-closed):
-    # an unspecified run keeps `codex-reviewed` off, mirroring the skill rule
+    # an unspecified run keeps `agent-reviewed` off, mirroring the skill rule
     # that an undetermined status blocks the clean marker. Legacy tests that
     # predate the gate assert only `route`, so they are unaffected.
     pr_validation_status = str(
@@ -263,6 +266,13 @@ def call_api(
     qa_approved = (
         str(vars_data.get("qaApproved", "false")).strip().lower() == "true"
     )
+    # Post-close cleanup (dev-ops-cleanup-resources): a closed ticket's closing
+    # flow must run the MUST prunes (prune-docker-leftovers + prune-kind-images
+    # — CI pruning was removed from package-deploy.yml). True = the ticket is
+    # Done/Closed but the cleanup step is still pending.
+    cleanup_pending = (
+        str(vars_data.get("cleanupPending", "false")).strip().lower() == "true"
+    )
     # Ticket refinement gate (dev-flow-start-ticket step 7): whether the
     # refinement has already asked the user for extra info. False/unset = the
     # grill-with-docs cycles have not asked the user yet, so the curated IA
@@ -281,7 +291,7 @@ def call_api(
 
     # Review gate: models dev-flow-pr-review-agent's CI-in-loop rule. A red,
     # pending, or unreadable PR Validation run is a BLOCKER finding and keeps
-    # `codex-reviewed` off, so the PR stays blocked on the CI gate until the
+    # `agent-reviewed` off, so the PR stays blocked on the CI gate until the
     # run is green. Route is unaffected — the review/fix loop still runs.
     review = _review_outcome(
         pr_exists=pr_exists,
@@ -310,6 +320,7 @@ def call_api(
         request_type=request_type,
         resume_requested=resume_requested,
         qa_approved=qa_approved,
+        cleanup_pending=cleanup_pending,
     )
 
     # Ticket refinement gate: applies on the dev-flow-start-ticket route only.
@@ -348,14 +359,15 @@ def call_api(
         "resumeRequested": resume_requested,
         "prValidationStatus": pr_validation_status,
         "qaApproved": qa_approved,
+        "cleanupPending": cleanup_pending,
         "refinementUserAsked": refinement_user_asked,
         "captureMode": capture_mode,
     }
 
     reasoning = _build_reasoning(inputs, route)
-    if review and not review["codexReviewed"]:
+    if review and not review["agentReviewed"]:
         reasoning.append(
-            "PR Validation run not green: review is blocked, codex-reviewed stays off."
+            "PR Validation run not green: review is blocked, agent-reviewed stays off."
         )
 
     result = {
@@ -395,6 +407,7 @@ def _evaluate_route(
     request_type: str = "",
     resume_requested: bool = False,
     qa_approved: bool = False,
+    cleanup_pending: bool = False,
 ) -> str:
     """Determine the correct workflow route based on the delivery contract.
 
@@ -493,6 +506,11 @@ def _evaluate_route(
     if ticket_state == "done":
         if lane_blocked:
             return "blocked-lane-conflict"
+        # Post-close cleanup runs when the closing flow hasn't finished it yet
+        # (MUST prunes: prune-docker-leftovers + prune-kind-images); PROD
+        # promotion is a separate explicit decision after cleanup completes.
+        if cleanup_pending:
+            return "dev-ops-cleanup-resources"
         return "dev-ops-deploy-prod" if prod_requested else "blocked-no-prod"
 
     # Priority 5: Unknown/ambiguous state
@@ -529,6 +547,11 @@ def _build_reasoning(inputs: dict, route: str) -> list[str]:
         steps.append("QA not deployed: verify DEV, ask the user for approval.")
     if route == "dev-ops-deploy-qa" and inputs.get("qaApproved"):
         steps.append("User approved QA: dispatch the QA deployment.")
+    if route == "dev-ops-cleanup-resources":
+        steps.append(
+            "Cleanup MUST: prune-docker-leftovers + prune-kind-images "
+            "(CI pruning removed; both prunes run at ticket close)."
+        )
     if route == "dev-flow-start-ticket" and not inputs.get("refinementUserAsked"):
         steps.append(
             "Refinement: ask the user for extra info before writing the IA block "

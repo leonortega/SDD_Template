@@ -71,6 +71,14 @@ these hardened rules apply — each one prevented a real CI failure:
   then `npm ci && npm run build` before the app's tsc. Packages must ship compiled
   `dist/` (`exports`/`types` → `dist`, `files: ["dist"]`) so app tsc (NodeNext,
   `rootDir: src`) resolves them instead of pulling `.ts` into the app program.
+- **Every consuming app Dockerfile must build the shared package — not just one app's.**
+  When a shared package becomes a runtime `dependencies` entry of an app, that app's
+  Dockerfile needs its own build step; an image that never builds the package fails at
+  app `tsc` with `TS2307: Cannot find module '<pkg>'` (observed: web Dockerfile built
+  `api-client`, dellop-api's did not — dev deploy failed until the step was added).
+  Whenever a `file:` dependency is added or promoted to runtime use, audit **every**
+  app Dockerfile that imports it; mirror the web app's working pattern, and verify with
+  a local `docker build` + container boot/health check before pushing.
 - **Classify shared deps by runtime need** — build-time-only packages (bundled by
   vite/webpack, e.g. a UI kit) go in `devDependencies` so the runtime stage stays
   lean; runtime-imported packages go in `dependencies`. The runtime stage runs

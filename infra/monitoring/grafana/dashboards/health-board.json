@@ -1,7 +1,7 @@
 {
   "title": "🚀 SDD Service Status",
   "uid": "agentic-e2e-health-board",
-  "version": 1786557016,
+  "version": 1786748642,
   "schemaVersion": 39,
   "timezone": "browser",
   "editable": true,
@@ -76,6 +76,12 @@
               {
                 "id": "custom.width",
                 "value": 130
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
               },
               {
                 "id": "mappings",
@@ -219,7 +225,7 @@
         "y": 14
       },
       "options": {
-        "content": "| Service | URL | Default Credentials |\n|---|---|---|\n| **📊 Grafana** | http://localhost:3001 | `admin` / `admin` |\n| **🔧 Gitea** (Git) | http://localhost:3000 | `admin` / `admin123` |\n| **📦 Nexus** (Artifacts) | http://localhost:8088 | `admin` / `admin123` |\n| **📋 Dozzle** (Logs) | http://localhost:8888 | — |\n| **📋 OpenProject** (Tickets) | http://localhost:8080 | `admin` / `admin` |\n\n```bash\n# Kubernetes\nkubectl -n sdd-dev get po -o wide\nkubectl -n sdd-dev get svc\nkubectl -n sdd-qa get po -o wide\nkubectl -n sdd-qa get svc\nkubectl -n sdd-prod get po -o wide\nkubectl -n sdd-prod get svc\n```\n\n> 🔄 Services are deployed via **Gitea Actions CI** → **kind K8s cluster** &nbsp;·&nbsp; 🔷 DEV &nbsp;·&nbsp; 🟢 QA &nbsp;·&nbsp; 🔴 PROD\n",
+        "content": "| Service | URL | Default Credentials |\n|---|---|---|\n| **📊 Grafana** | http://localhost:3001 | `admin` / `admin` |\n| **🔧 Gitea** (Git) | http://localhost:3000 | `admin` / `admin123` |\n| **📦 Nexus** (Artifacts) | http://localhost:8088 | `admin` / `admin123` |\n| **📋 Dozzle** (Logs) | http://localhost:8888 | — |\n| **📋 OpenProject** (Tickets) | http://localhost:8080 | `admin` / `admin` |\n| **👥 Gitea lab users** | http://localhost:3000 | `FirstUser` / `FirstUser123` &nbsp;·&nbsp; `SecondUser` / `SecondUser123` |\n| **👥 OpenProject lab users** | http://localhost:8080 | `FirstUser` / `FirstUser123!` &nbsp;·&nbsp; `SecondUser` / `SecondUser123!` |\n\n```bash\n# Kubernetes\nkubectl -n sdd-dev get po -o wide\nkubectl -n sdd-dev get svc\nkubectl -n sdd-qa get po -o wide\nkubectl -n sdd-qa get svc\nkubectl -n sdd-prod get po -o wide\nkubectl -n sdd-prod get svc\n```\n\n> 🔄 Services are deployed via **Gitea Actions CI** → **kind K8s cluster** &nbsp;·&nbsp; 🔷 DEV &nbsp;·&nbsp; 🟢 QA &nbsp;·&nbsp; 🔴 PROD\n",
         "mode": "markdown"
       }
     },

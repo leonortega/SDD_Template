@@ -495,3 +495,85 @@ def test_deploy_filter_truncates_manifests_when_nothing_kept(tmp_path) -> None:
     assert deployments.strip() == ""
     assert "name: db-bootstrap" in jobs
     assert infra.strip() == ""
+
+def _build_set_script() -> str:
+    """Extract the build-set heredoc (APPS=...) from the workflow file.
+
+    The build set resolves which apps are actually built/loaded into kind and
+    must ALWAYS include job apps (kind: job) so their pinned COMMIT_SHA image
+    exists. Regression: PR-20 deploy (37104d96e5) touched only dellop-api/web,
+    the build loop filtered db-bootstrap out, the Jobs phase then pinned
+    db-bootstrap:${COMMIT_SHA} (never built/loaded; kind cannot pull from the
+    HTTP-only Nexus) -> ImagePullBackOff -> deploy timeout with api/web left
+    half-deleted by the clean-apply step.
+    """
+    data = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    steps = data["jobs"]["build-and-deploy"]["steps"]
+    for s in steps:
+        run = s.get("run", "")
+        if "Resolve the build set" in run and "AFFECTED_APPS_RAW" in run:
+            m = re.search(r"python3 << 'PYEOF'\n(.*?)\n[ \t]*PYEOF", run, re.DOTALL)
+            if m:
+                return m.group(1)
+    raise AssertionError("build-set heredoc not found in package-deploy.yml")
+
+
+def _run_build_set(tmp_path: Path, affected: str | None) -> list[str]:
+    """Exec the real build-set heredoc with a fixture apps.json + AFFECTED_APPS."""
+    script = _build_set_script()
+    deployment = tmp_path / "infra" / "deployment"
+    deployment.mkdir(parents=True)
+    (deployment / "apps.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "apps": [
+                    {"appId": "db-bootstrap", "projectPath": "apps/db-bootstrap", "role": "job", "kind": "job"},
+                    {"appId": "dellop-api", "projectPath": "apps/dellop-api", "role": "api", "kind": "service"},
+                    {"appId": "dellop-web", "projectPath": "apps/dellop-web", "role": "web", "kind": "service"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    old_cwd = os.getcwd()
+    old_env = os.environ.get("AFFECTED_APPS_RAW")
+    try:
+        os.chdir(tmp_path)
+        os.environ["AFFECTED_APPS_RAW"] = affected or ""
+        import contextlib
+        import io
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            exec(compile(script, "build_set.py", "exec"), {})
+        return [ln.strip() for ln in buf.getvalue().splitlines() if ln.strip()]
+    finally:
+        os.chdir(old_cwd)
+        if old_env is None:
+            os.environ.pop("AFFECTED_APPS_RAW", None)
+        else:
+            os.environ["AFFECTED_APPS_RAW"] = old_env
+
+
+def test_build_set_job_app_included_when_unaffected_by_partial_change(tmp_path) -> None:
+    """Job apps (kind: job) are always built even when the change set only
+    touches service apps (PR-20 regression)."""
+    out = _run_build_set(tmp_path, "dellop-api")
+    assert "db-bootstrap|apps/db-bootstrap" in out
+    assert "dellop-api|apps/dellop-api" in out
+    assert "dellop-web" not in out
+
+
+def test_build_set_job_app_included_when_affected_is_none(tmp_path) -> None:
+    out = _run_build_set(tmp_path, None)
+    assert "db-bootstrap|apps/db-bootstrap" in out
+    assert "dellop-api|apps/dellop-api" in out
+    assert "dellop-web|apps/dellop-web" in out
+
+
+def test_build_set_service_apps_still_filtered(tmp_path) -> None:
+    out = _run_build_set(tmp_path, "dellop-web")
+    assert "db-bootstrap|apps/db-bootstrap" in out
+    assert "dellop-api" not in out
+    assert "dellop-web|apps/dellop-web" in out

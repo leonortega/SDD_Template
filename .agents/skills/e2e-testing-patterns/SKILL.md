@@ -77,7 +77,13 @@ insufficient.
 5. **Clean Up Test Data**: Create and destroy test data in each test
 6. **Use Page Objects**: Encapsulate page logic
 7. **Meaningful Assertions**: Check actual user-visible behavior
-8. **Optimize for Speed**: Mock when possible, parallel execution
+8. **Assertion Oracles Match The Actual Generated Format**: When an E2E oracle regex-asserts on a generated
+   ID/reference number, derive the pattern from the generator's real output — verify against the generator or a
+   captured sample before committing. An over-strict digits-only regex (e.g. `/Q-\d{4}-\d{6}/`) silently never
+   matches an alphanumeric base36 segment (`Q-2026-MSTBYUZH373567`) → the whole suite FAILs on a correct product.
+   Match the actual shape, e.g. `/Q-\d{4}-[A-Z0-9]{6,}\d{6}/` (observed: TICKET-41 — committed oracle never
+   matched; the product was correct, the oracle was wrong).
+9. **Optimize for Speed**: Mock when possible, parallel execution
 
 ```typescript
 // ❌ Bad selectors

@@ -75,7 +75,7 @@ be a repository-adapter merge commit whose PR title starts with that ticket key 
 configured deploy-trigger paths do not run automatic CI/deployment work.
 
 Before committing, classify the change as ticketed work, an OpenSpec maintenance change, or direct SDD repository
-maintenance. Ticketed work uses the configured ticket prefix such as `E2EPROJECT-123:
+maintenance. Ticketed work uses the configured ticket prefix such as `TICKET-123:
 ...`; OpenSpec maintenance uses the OpenSpec id prefix; direct SDD maintenance must use `[SDD]`, for example `[SDD]
 Improve project guidance acquisition flow`. Do this before invoking `git commit` so
 the `require-ticket` hook does not fail on a preventable prefix issue.
@@ -154,9 +154,9 @@ Baseline shape:
 
 ```json
 {
-  "ticketKey": "E2EPROJECT-123",
-  "branch": "feat/e2eproject-123-example",
-  "openspecChange": "feat-e2eproject-123-example",
+  "ticketKey": "TICKET-123",
+  "branch": "feat/ticket-123-example",
+  "openspecChange": "feat-ticket-123-example",
   "prNumber": 12,
   "artifactCommitSha": "abc123",
   "sourceRcVersion": "v1.2.3-rc.1",

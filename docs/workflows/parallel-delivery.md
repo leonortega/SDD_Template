@@ -47,7 +47,8 @@ Default configuration:
 
 Each Todo ticket started in parallel runs its own refinement inside its worktree through
 `dev-flow-start-ticket`, and every ticket follows the same always-ask gate as the linear
-flow: at least 1 `grill-with-docs` cycle (at most 4), and the user is **always asked for
+flow: 1 to 4 `grill-with-docs` cycles with no fixed default (~2 typical; never cut the
+process short — keep grilling while questions remain), and the user is **always asked for
 extra info for that ticket** — even when the ticket seems complete — before that ticket's
 curated IA block is written. The coordinator must not let any ticketStarter agent write an
 IA block without the user having been asked for that ticket, and must not batch-answer or
@@ -130,7 +131,9 @@ and lane ownership allow it
 blocker releases the lane
 - completed ticket: after QA evidence is recorded and the OpenProject work package is moved to Done, the coordinator
 checkout should verify the ticket worktree is clean, verify its branch is merged into the configured base branch, run
-`git worktree remove <worktreePath>` followed by `git worktree prune`, and then remove the ticket from the local runtime
+the **MUST post-close cleanup** (`environment-lab prune-docker-leftovers` + `prune-kind-images` — CI pruning was
+removed, so every closed ticket, chained/sibling included, cleans up here), then `git worktree remove <worktreePath>`
+followed by `git worktree prune`, and then remove the ticket from the local runtime
 index
 
 Never clear a ticket lock, lane owner, or worktree mapping silently. If durable checkpoints conflict, stop and ask for

@@ -190,7 +190,7 @@ OpenSpec task tracking.
     git checkout -b fix/{bugKeySlug}-{short-description}
     ```
 
-    Example: `fix/e2eproject-38-no-validate-forgot-password`
+    Example: `fix/ticket-38-no-validate-forgot-password`
  6. Push the branch to the remote with upstream tracking:
 
     ```bash
@@ -290,7 +290,7 @@ git push
       reviewer gap in the PR body and handoff comment.
 
     - **Step 3 — run AI review on the PR.** Load and follow the `dev-flow-pr-review-agent` skill to review the PR
-      diffs, post findings, and apply labels (e.g., `codex-reviewed`, `needs-changes`, `needs-tests`).
+      diffs, post findings, and apply labels (e.g., `agent-reviewed`, `needs-changes`, `needs-tests`).
 
       This step runs after reviewer assignment so the developer has AI review feedback before merging. If the AI
       review finds blocking issues (`BLOCKER` severity), the implementation phase should

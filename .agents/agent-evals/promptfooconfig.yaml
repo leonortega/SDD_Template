@@ -9,7 +9,7 @@
 
 prompts:
   # Single prompt template - the provider receives the scenario as vars
-  - "Evaluate the correct workflow route for this delivery scenario:\n\nScenario: {{scenario}}\nTicket state: {{ticketState}}\nBranch exists: {{branchExists}}\nPR exists: {{prExists}}\nPR merged: {{prMerged}}\nQA evidence: {{qaEvidence}}\nQA approved: {{qaApproved}}\nProduct stack: {{productStack}}\nExplicit request: {{requestType}}\nResume requested: {{resumeRequested}}\nRefinement asked user: {{refinementUserAsked}}\nCapture mode: {{captureMode}}"
+  - "Evaluate the correct workflow route for this delivery scenario:\n\nScenario: {{scenario}}\nTicket state: {{ticketState}}\nBranch exists: {{branchExists}}\nPR exists: {{prExists}}\nPR merged: {{prMerged}}\nQA evidence: {{qaEvidence}}\nQA approved: {{qaApproved}}\nCleanup pending: {{cleanupPending}}\nProduct stack: {{productStack}}\nExplicit request: {{requestType}}\nResume requested: {{resumeRequested}}\nRefinement asked user: {{refinementUserAsked}}\nCapture mode: {{captureMode}}"
 
 providers:
   # Path relative to promptfooconfig.yaml's directory (same directory)
@@ -164,6 +164,24 @@ tests:
       - type: is-json
       - type: javascript
         value: JSON.parse(output).route === 'blocked-no-prod'
+
+  - description: "Closed ticket with pending cleanup routes to dev-ops-cleanup-resources (MUST: both prunes)"
+    vars:
+      scenario: QA passed, ticket moved to Closed, post-close cleanup still pending
+      ticketState: Done
+      branchExists: false
+      prExists: false
+      prMerged: true
+      qaEvidence: passed
+      productStack: selected
+      cleanupPending: true
+    assert:
+      - type: is-json
+      - type: javascript
+        value: >
+          JSON.parse(output).route === 'dev-ops-cleanup-resources'
+          && output.includes('prune-docker-leftovers')
+          && output.includes('prune-kind-images')
 
   # ═══════════════════════════════════════════════════════════════
   # EDGE CASES
@@ -722,10 +740,10 @@ tests:
   # ═══════════════════════════════════════════════════════════════
   # Models dev-flow-pr-review-agent's CI-in-loop rule: a red, pending, or
   # unreadable PR Validation run on the current head is a BLOCKER finding
-  # (id CI-001) and keeps the `codex-reviewed` clean marker off. The route
+  # (id CI-001) and keeps the `agent-reviewed` clean marker off. The route
   # is unchanged — the review/fix loop still runs to fix the failing steps.
 
-  - description: "Red PR Validation run blocks the review: BLOCKER finding, no codex-reviewed"
+  - description: "Red PR Validation run blocks the review: BLOCKER finding, no agent-reviewed"
     vars:
       scenario: PR Validation (Gitea Actions) run is red on the current head
       ticketState: In Progress
@@ -739,10 +757,10 @@ tests:
       - type: is-json
       - type: javascript
         value: JSON.parse(output).route === 'dev-flow-implement-ticket' &&
-          JSON.parse(output).review.codexReviewed === false &&
+          JSON.parse(output).review.agentReviewed === false &&
           JSON.parse(output).review.findings.some(f => f.severity === 'BLOCKER' && f.source === 'pr-validation')
 
-  - description: "Green PR Validation run with open PR keeps codex-reviewed clean"
+  - description: "Green PR Validation run with open PR keeps agent-reviewed clean"
     vars:
       scenario: PR Validation run is green on the current head with no findings
       ticketState: In Progress
@@ -755,9 +773,9 @@ tests:
     assert:
       - type: is-json
       - type: javascript
-        value: JSON.parse(output).route === 'dev-flow-implement-ticket' && JSON.parse(output).review.codexReviewed === true && JSON.parse(output).review.findings.length === 0
+        value: JSON.parse(output).route === 'dev-flow-implement-ticket' && JSON.parse(output).review.agentReviewed === true && JSON.parse(output).review.findings.length === 0
 
-  - description: "Pending PR Validation run keeps codex-reviewed off (still blocking)"
+  - description: "Pending PR Validation run keeps agent-reviewed off (still blocking)"
     vars:
       scenario: PR Validation run is still running on the current head
       ticketState: In Progress
@@ -770,9 +788,9 @@ tests:
     assert:
       - type: is-json
       - type: javascript
-        value: JSON.parse(output).route === 'dev-flow-implement-ticket' && JSON.parse(output).review.codexReviewed === false && JSON.parse(output).review.findings.some(f => f.severity === 'BLOCKER')
+        value: JSON.parse(output).route === 'dev-flow-implement-ticket' && JSON.parse(output).review.agentReviewed === false && JSON.parse(output).review.findings.some(f => f.severity === 'BLOCKER')
 
-  - description: "Unreadable PR Validation run keeps codex-reviewed off (blocks clean marker)"
+  - description: "Unreadable PR Validation run keeps agent-reviewed off (blocks clean marker)"
     vars:
       scenario: PR Validation run status cannot be determined for the current head
       ticketState: In Progress
@@ -785,7 +803,45 @@ tests:
     assert:
       - type: is-json
       - type: javascript
-        value: JSON.parse(output).route === 'dev-flow-implement-ticket' && JSON.parse(output).review.codexReviewed === false && JSON.parse(output).review.findings.some(f => f.severity === 'BLOCKER')
+        value: JSON.parse(output).route === 'dev-flow-implement-ticket' && JSON.parse(output).review.agentReviewed === false && JSON.parse(output).review.findings.some(f => f.severity === 'BLOCKER')
+
+  # Chained/parallel PRs get the same review gate as the first PR: the full
+  # dev-flow-pr-review-agent workflow (CI check + AI review + agent-reviewed
+  # tag) is mandatory for every open PR, and the CI-in-loop rule applies
+  # identically in parallel context — red keeps the label off, green applies it.
+  - description: "Parallel (chained) open PR with red PR Validation run keeps agent-reviewed off"
+    vars:
+      scenario: Chained sibling PR in parallel delivery with a red PR Validation run
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      parallelEnabled: true
+      prValidationStatus: red
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-implement-ticket' &&
+          JSON.parse(output).review.agentReviewed === false &&
+          JSON.parse(output).review.findings.some(f => f.severity === 'BLOCKER' && f.source === 'pr-validation')
+
+  - description: "Parallel (chained) open PR with green PR Validation run keeps agent-reviewed clean"
+    vars:
+      scenario: Chained sibling PR in parallel delivery with a green PR Validation run and no findings
+      ticketState: In Progress
+      branchExists: true
+      prExists: true
+      prMerged: false
+      qaEvidence:
+      productStack: selected
+      parallelEnabled: true
+      prValidationStatus: green
+    assert:
+      - type: is-json
+      - type: javascript
+        value: JSON.parse(output).route === 'dev-flow-implement-ticket' && JSON.parse(output).review.agentReviewed === true && JSON.parse(output).review.findings.length === 0
 
   - description: "Explicit PR review with red PR Validation run routes to review agent with BLOCKER finding"
     vars:
@@ -802,7 +858,7 @@ tests:
       - type: is-json
       - type: javascript
         value: JSON.parse(output).route === 'dev-flow-pr-review-agent' &&
-          JSON.parse(output).review.codexReviewed === false &&
+          JSON.parse(output).review.agentReviewed === false &&
           JSON.parse(output).review.findings.some(f => f.severity === 'BLOCKER')
 
   - description: "Explicit feedback request with red PR Validation run routes to the fix loop"
@@ -819,7 +875,7 @@ tests:
     assert:
       - type: is-json
       - type: javascript
-        value: JSON.parse(output).route === 'dev-flow-pr-review-feedback-loop' && JSON.parse(output).review.codexReviewed === false
+        value: JSON.parse(output).route === 'dev-flow-pr-review-feedback-loop' && JSON.parse(output).review.agentReviewed === false
 
   - description: "Merged PR with red run has no review gate (CI no longer blocks merge)"
     vars:

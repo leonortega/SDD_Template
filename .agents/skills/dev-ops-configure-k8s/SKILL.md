@@ -751,6 +751,7 @@ a failure; do not regress them.
 | `lookup host.docker.internal: no such host` (on host) | Resolves only inside containers with `--add-host ...:host-gateway` — test from a container, not the host |
 | `Error: Process completed with exit code 1` on build step | Run `kustomize build . 2>&1` locally to see the real error |
 | `The Service "db.internal" is invalid: must not contain dots` | Service names must be DNS-1123 (no dots) — rename to `db`; the `validate-k8s-overlays` gate now catches it in CI |
+| `ImagePullBackOff` persists after `kind load` | The Job pins the **full registry-qualified ref** (`host.docker.internal:5001/<app>:<sha>`) — loading the short tag (`<app>:<sha>`) does NOT match the manifest ref. Load the image under its full name, then delete the stuck Job (`kubectl delete job <name> --ignore-not-found`) so it re-creates with the loaded image (Job pod templates are immutable) |
 | `Job db-bootstrap did not complete: BackoffLimitExceeded` on a fresh namespace | Shared infra applied after the Job — apply the database (Phase 0) before the Job phase |
 | `The Job "db-bootstrap" is invalid: ... field is immutable` on re-deploy | Job pod templates are immutable — delete existing Jobs by name (`kubectl delete job <name> --ignore-not-found`) before the Job-phase apply (delete-then-apply) |
 | PVC stuck `Pending`, database never starts | Explicit `storageClassName` doesn't exist in the cluster (kind default is `standard`) — drop the explicit class |

@@ -340,17 +340,32 @@ jobs:
           else
             echo "Build set: none (no affected app resolved - nothing to build)"
           fi
-          APPS=$(python3 -c "
+          # Resolve the build set: the affected apps, PLUS every job app
+          # (kind: job - db-bootstrap). Job apps always build: the Jobs phase
+          # pins their image to COMMIT_SHA unconditionally (ADR-0003 bootstrap
+          # runs before every rollout), so a job skipped here would reference an
+          # image that was never built/pushed/loaded -> ImagePullBackOff
+          # (observed: PR-20 deploy, db-bootstrap:37104d96e5). This block is
+          # exec-tested by tools/sdd_cli/tests/test_deployable_gate.py.
+          export AFFECTED_APPS_RAW="${AFFECTED_APPS:-}"
+          APPS=$(python3 << 'PYEOF'
           import json, os
-          affected_raw = os.environ.get('AFFECTED_APPS', '')
+          affected_raw = os.environ.get('AFFECTED_APPS_RAW', '')
           affected = None if (not affected_raw or affected_raw == 'ALL') else set(affected_raw.split(','))
           with open('infra/deployment/apps.json') as f:
               apps = json.load(f).get('apps', [])
           for a in apps:
-              if affected is not None and a['appId'] not in affected:
+              # Job apps (kind: job) are ALWAYS built, even when unaffected: the
+              # Jobs phase pins their image to COMMIT_SHA and kind cannot pull
+              # from the HTTP-only registry, so the image must exist in kind
+              # from this build.
+              # Same semantics as the Jobs-phase pin loop: an app is a job
+              # when its kind is 'job' (default 'service' when unset).
+              if affected is not None and a['appId'] not in affected and a.get('kind', 'service') != 'job':
                   continue
-              print(f\"{a['appId']}|{a.get('projectPath', a['appId'])}\")
-          " || true)
+              print(f"{a['appId']}|{a.get('projectPath', a['appId'])}")
+          PYEOF
+          ) || true
 
           echo "${APPS}" | while IFS='|' read -r app_id project_path; do
             if [ -f "${project_path}/Dockerfile" ]; then
@@ -990,131 +1005,10 @@ jobs:
             echo "=== ${ENV} deployment complete ==="
           done
 
-      - name: Prune old local images (keep newest commit tags per app)
-        # Skipped for PROD: no build happens, so there is nothing new to prune,
-        # and pruning must not remove images other environments still run.
-        if: steps.changes.outputs.deployable == 'true' && steps.env.outputs.ENV != 'prod'
-        env:
-          NEXUS_DOCKER_REGISTRY: ${{ secrets.NEXUS_DOCKER_REGISTRY }}
-          LOCAL_IMAGE_KEEP: ${{ secrets.LOCAL_IMAGE_KEEP }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          # The runner builds against the host Docker daemon (socket mount), so
-          # every deploy leaves ${REGISTRY}/{app}:<commitSha> tags in the LOCAL
-          # image store that never get pruned. Keep the newest KEEP commit tags
-          # per app (the current build is always newest) and remove the rest.
-          # Default 3; override with the LOCAL_IMAGE_KEEP repository secret.
-          export REGISTRY="${NEXUS_DOCKER_REGISTRY:-host.docker.internal:5001}"
-          export KEEP="${LOCAL_IMAGE_KEEP:-3}"
-          echo "Pruning old ${REGISTRY} images (keeping newest ${KEEP} commit tags per app)..."
-          DELETE=$(docker images --format '{{.CreatedAt}}\t{{.Repository}}:{{.Tag}}' | sort -r | python3 -c "
-          import os
-          import sys
-
-          registry = os.environ['REGISTRY']
-          keep = int(os.environ['KEEP'])
-          prefix = registry + '/'
-          counts = {}
-          hex_chars = '0123456789abcdef'
-
-          for line in sys.stdin:
-              _created, tag = line.rstrip('\n').split('\t', 1)
-              if not tag.startswith(prefix):
-                  continue
-              rest = tag[len(prefix):]
-              app, sep, sha = rest.rpartition(':')
-              if not sep or len(sha) != 40 or any(c not in hex_chars for c in sha):
-                  continue
-              if counts.get(app, 0) < keep:
-                  counts[app] = counts.get(app, 0) + 1
-                  continue
-              print(tag)
-          ") || true
-          if [ -n "${DELETE}" ]; then
-            echo "Removing old local images:"
-            echo "${DELETE}" | sed 's/^/  - /'
-            # rmi is non-fatal: an image still in use (e.g. by the current
-            # build) must not abort the job.
-            echo "${DELETE}" | xargs -r docker rmi || echo "WARNING: some images could not be removed (in use)"
-          else
-            echo "No old commit tags to prune."
-          fi
-          # Drop any images left dangling by the untagging above.
-          docker image prune -f >/dev/null 2>&1 || true
-
-      - name: Prune old images in kind cluster (keep current build per app)
-        # Skipped for PROD: same rationale as the local prune — the PROD run
-        # builds nothing, so kind must keep every image other environments run.
-        if: steps.changes.outputs.deployable == 'true' && steps.env.outputs.ENV != 'prod'
-        env:
-          NEXUS_DOCKER_REGISTRY: ${{ secrets.NEXUS_DOCKER_REGISTRY }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          # kind's containerd accumulates one ${REGISTRY}/{app}:<commitSha> tag
-          # per deploy, separate from the host daemon. The cluster only needs the
-          # CURRENT build's tag (pods run it; old tags are never pulled), so
-          # prune every older SHA tag per app. crictl dedups by digest, so use
-          # ctr inside the node for per-tag listing. Non-fatal: a failed prune
-          # must never fail the deploy, and the current build is always kept.
-          export REGISTRY="${NEXUS_DOCKER_REGISTRY:-host.docker.internal:5001}"
-          export CURRENT="$(git rev-parse HEAD)"
-          KIND_NODE="${KIND_NODE:-sdd-cluster-control-plane}"
-          if ! docker inspect "${KIND_NODE}" >/dev/null 2>&1; then
-            echo "WARNING: kind node ${KIND_NODE} not found - skipping kind prune"
-            exit 0
-          fi
-          # Safety guard: only prune when the CURRENT build's image is present in
-          # kind. If HEAD moved past the deployed images (e.g. re-run without a
-          # new deploy), pruned tags would leave running pods without their image.
-          # NOTE trade-off: this keeps ONLY the current build's tags, so a
-          # workflow_dispatch deploy to one env (while another env still runs an
-          # older SHA, e.g. prod) prunes that env's older images from kind. Running
-          # pods are unaffected until they restart; re-deploying that env restores
-          # the restart image.
-          CURRENT_LOADED=$(docker exec "${KIND_NODE}" ctr -n k8s.io images list 2>/dev/null \
-            | grep -c "${REGISTRY}/.*:${CURRENT}" || true)
-          if [ "${CURRENT_LOADED}" -eq 0 ]; then
-            echo "WARNING: current build (${CURRENT}) not loaded in kind - skipping prune to protect deployed images"
-            exit 0
-          fi
-          echo "Pruning old images in kind node ${KIND_NODE} (keeping current build ${CURRENT})..."
-          OLD=$(docker exec "${KIND_NODE}" ctr -n k8s.io images list 2>/dev/null | python3 -c "
-          import os, sys
-
-          registry = os.environ['REGISTRY']
-          current = os.environ['CURRENT']
-          prefix = registry + '/'
-          hex_chars = '0123456789abcdef'
-
-          for line in sys.stdin:
-              fields = line.split()
-              if not fields:
-                  continue
-              ref = fields[0]
-              if not ref.startswith(prefix):
-                  continue
-              rest = ref[len(prefix):]
-              app, sep, sha = rest.rpartition(':')
-              if not sep or len(sha) != 40 or any(c not in hex_chars for c in sha):
-                  continue
-              if sha == current:
-                  continue  # never prune the build this run deployed
-              print(ref.rstrip())
-          " | tr -d '\r') || true
-          if [ -n "${OLD}" ]; then
-            echo "Removing old images from kind:"
-            echo "${OLD}" | sed 's/^/  - /'
-            # Strip CRs (Windows checkouts) — a trailing \r makes ctr report
-            # "image not found". Pass refs as a single arg list (ctr accepts
-            # multiple images); xargs would misparse the docker exec args.
-            # shellcheck disable=SC2086
-            docker exec "${KIND_NODE}" ctr -n k8s.io images rm ${OLD//$'\r'/} || echo "WARNING: some kind images could not be removed"
-          else
-            echo "No old images to prune in kind."
-          fi
-
+      # Image pruning is NOT part of CI: the local/kind prune steps were removed
+      # (they never ran reliably). Container/image/volume/kind cleanup is the
+      # ticket-close job — dev-ops-cleanup-resources runs
+      # `environment-lab prune-docker-leftovers` + `prune-kind-images`.
       - name: Discover environment URLs (all targets)
         if: steps.changes.outputs.deployable == 'true'
         id: urls
@@ -1362,7 +1256,7 @@ jobs:
           print(f'Created {path}')
           PYEOF
 
-          # Extract ticket key from the latest commit message (e.g. 'E2EPROJECT-37: ...')
+          # Extract ticket key from the latest commit message (e.g. 'TICKET-37: ...')
           TICKET_KEY=$(git log -1 --format='%s' | grep -oE '[A-Z0-9]+-[0-9]+' | head -1 || echo '')
 
           # Write release.json per deployed environment

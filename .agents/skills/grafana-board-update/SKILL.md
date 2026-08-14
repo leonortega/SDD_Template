@@ -135,23 +135,42 @@ When editing `health-board.json`:
 - Set it to `int(time.time())` (epoch seconds) — this guarantees a higher value
 - Never set version lower than the current value
 
-### Rule 2: Infinity datasource — no `color` in mappings
+### Rule 2: Status colors — use the modern `options` mapping format ONLY
 
-The Infinity datasource plugin (`yesoreyeram-infinity-datasource`) crashes with:
+The **old flat mapping format** (`{"type": "value", "value": "X", "text": "Y", "color": "green"}`) crashes the Infinity
+datasource plugin (`yesoreyeram-infinity-datasource`) with:
 
 ```text
 TypeError: Cannot read properties of undefined (reading 'Not deployed')
 ```
 
-when value mappings contain a `"color"` property. **Never include `"color"` inside mapping objects.** Use text-only:
+The **modern Grafana `options`-nested format works** — color is REQUIRED for the Status column. The Service Health
+table MUST colorize status: **green = UP, red = DOWN, gray = Not deployed** (verified live in Grafana; this is the
+shipped `health-board.json` shape).
+
+**Mappings alone are NOT enough** — the column MUST also set `custom.cellOptions: {"type": "color-background"}`
+(per-column override) or the mapping colors never paint and the cells stay default gray. This is the exact trap the
+previous rule hit: the mappings shipped with colors but the cells rendered plain until `cellOptions` was added:
 
 ```json
-// ❌ BAD — crashes Infinity
+// ❌ OLD FLAT FORMAT — crashes Infinity. NEVER use
 "mappings": [{"type": "value", "value": "Active", "text": "✅ Active", "color": "green"}]
 
-// ✅ GOOD — works fine
-"mappings": [{"type": "value", "value": "Active", "text": "✅ Active"}]
+// ✅ MODERN FORMAT — REQUIRED. color lives INSIDE the options map, plus cellOptions paints the cell
+"properties": [
+  {"id": "custom.width", "value": 130},
+  {"id": "custom.cellOptions", "value": {"type": "color-background"}},
+  {"id": "mappings", "value": [
+    {"type": "value", "options": {"UP": {"text": "UP", "color": "green"}}},
+    {"type": "value", "options": {"Not deployed": {"text": "Not deployed", "color": "gray"}}},
+    {"type": "value", "options": {"DOWN": {"text": "DOWN", "color": "red"}}}
+  ]}
+]
 ```
+
+Every table panel that has a Status column MUST include the three mappings (UP=green, DOWN=red, Not deployed=gray) AND
+the `custom.cellOptions` color-background override. Never strip the `color` property or `cellOptions` — without either
+the status column renders uncolored.
 
 ### Rule 3: Infinity datasource — use `source: "inline"` for tables
 
@@ -255,7 +274,9 @@ Before saving or pushing:
 2. Check that all panel `id` values are unique (10, 1, 6)
 3. Check that no two panels occupy overlapping `gridPos` rectangles
 4. Check that Infinity inline `data` strings are valid JSON (use a Python json.loads check on the inline data)
-5. Check that no Infinity mapping contains a `"color"` property
+5. Check that every Status column mapping uses the modern `options` format with colors (UP=green, DOWN=red, Not
+deployed=gray) AND has the `custom.cellOptions` color-background override — the old flat format (top-level
+`value`/`text`/`color` keys) must NOT be used, and mappings without `cellOptions` render uncolored
 
 ### Step 5: Push to Grafana API (optional, for immediate effect)
 
@@ -402,13 +423,29 @@ A live `table` panel backed by the Infinity datasource, fed by the health probe
 
 `Environment` · `Service` · `Status` · `HTTP` · `Direct URL` · `Health Endpoint` · `K8s NodePort`
 
-Status value mappings (as shipped in `health-board.json`):
+Status value mappings (MUST ship, modern `options` format — see Rule 2):
 
-- `UP` (green) — probe reports the service reachable
-- `Not deployed` (gray) — service expected but endpoint unreachable
-- `DOWN` (red) — probe cannot reach the endpoint
+- `UP` → `green` — probe reports the service reachable
+- `Not deployed` → `gray` — service expected but endpoint unreachable
+- `DOWN` → `red` — probe cannot reach the endpoint
 
-The probe payload is the source of truth; do not hand-maintain rows here.
+```json
+"overrides": [{
+  "matcher": {"id": "byName", "options": "Status"},
+  "properties": [
+    {"id": "custom.width", "value": 130},
+    {"id": "custom.cellOptions", "value": {"type": "color-background"}},
+    {"id": "mappings", "value": [
+      {"type": "value", "options": {"UP": {"text": "UP", "color": "green"}}},
+      {"type": "value", "options": {"Not deployed": {"text": "Not deployed", "color": "gray"}}},
+      {"type": "value", "options": {"DOWN": {"text": "DOWN", "color": "red"}}}
+    ]}
+  ]
+}]
+```
+
+The probe payload is the source of truth for the rows; the Status color mappings + `custom.cellOptions` are fixed and
+must never be removed.
 
 ### Panel 6: Infrastructure Access (id: 6)
 
@@ -419,7 +456,7 @@ Static markdown table with all infrastructure services. Update the environment n
 | Symptom | Likely Cause | Fix |
 |---|---|---|
 | Dashboard shows old URLs | ci deployed but dashboard not updated yet | Run this skill → the deploy has new URLs in Nexus |
-| Panel shows `Cannot read properties of undefined` | Infinity crash from `color` in mappings | Remove all `"color"` properties from mappings |
+| Panel shows `Cannot read properties of undefined` | Infinity crash from the OLD flat mapping format | Convert mappings to the modern `options` format (color inside `options`, never top-level) — keep the green/gray/red colors |
 | Dashboard not updating after JSON edit | Version number not incremented | Set version to `int(time.time())` |
 | `412 Precondition Failed` on API push | Version lower than stored version | Increase version and retry |
 | Grafana returns 404 for dashboard | Dashboard never created | Create from scratch using the template |

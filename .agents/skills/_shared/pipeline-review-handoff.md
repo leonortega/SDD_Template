@@ -20,13 +20,14 @@ placeholders:
 
 ## Pattern
 
-### Human-Only Approvals (Hard Gate)
+### Approval Is Automated; Merge Is Human-Only (Hard Gate)
 
-**❌ HARD GATE (authority level 5):** PR approvals and merges are **human-only actions**. Never submit an approval
-review or merge a pull request on behalf of any user — including provisioned lab accounts such as FirstUser/SecondUser.
-The agent's Gitea API token is limited to reads, PR comments, labels, and requesting reviewers. Posting an `APPROVED`
-review, a `DISMISSED` review, or a merge (direct or via the API) as any user is a process violation: refuse, explain
-that approvals/merges are human-only, and report the request as a blocker instead.
+**❌ HARD GATE (authority level 5):** **Never use human users to approve a PR.** The automated approval is the
+`agent-reviewed` label applied only on zero findings + green PR Validation — never request, wait for, or orchestrate
+a human-user approval of any PR (provisioned lab accounts such as FirstUser/SecondUser included). Merges remain
+human-only: the agent never submits a merge on behalf of any user. Posting an `APPROVED` review, a `DISMISSED` review,
+or a merge (direct or via the API) as any user is a process violation: if asked to arrange a human approval, explain
+that the automated gate IS the approval; if asked to merge, refuse and report the request as a blocker instead.
 
 ### Step 1 — Request Human Reviewers (At PR Creation — Hard Gate)
 
@@ -86,7 +87,7 @@ before handoff. Do not hand off a PR with no reviewers requested.
 ### Step 2 — Run AI Review, Then Re-Verify (Hard Gate)
 
 Invoke the `dev-flow-pr-review-agent` skill against the PR. This reviews the diffs, posts findings as PR comments, and
-applies labels (`codex-reviewed`, `needs-changes`, `needs-tests`).
+applies labels (`agent-reviewed`, `needs-changes`, `needs-tests`).
 
 **❌ HARD GATE (authority level 5):** After the AI review completes, re-run the reviewer automation to confirm the
 reviewers are still present — the command is idempotent (reviewers already requested are verified; missing ones are

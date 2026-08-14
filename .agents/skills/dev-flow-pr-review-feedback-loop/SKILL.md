@@ -19,7 +19,7 @@ The loop has two timed phases:
 
 1. AI review runs immediately after PR creation and after every pushed feedback fix.
 2. Human review feedback is processed only on a later manual resume, such as `automatically continue this ticket` or
-`continue E2EPROJECT-123`.
+`continue TICKET-123`.
 
 ## Shared Context
 
@@ -63,7 +63,7 @@ Required/defaulted values:
 1. Resolve the ticket, active branch, OpenSpec change, PR number, current head SHA, latest repository workflow status,
 and current PR labels.
 2. Invoke or reuse `dev-flow-pr-review-agent` for the current head SHA. The AI review comment must use `<!--
-codex-review-agent:{headSha} -->` and stable finding ids for every finding.
+agent-review:{headSha} -->` and stable finding ids for every finding.
 3. Read current PR feedback sources:
    - AI review findings from the latest current-head review-agent comment, including adversarial review findings,
    `ponytail-review` simplification findings, and verdict when present,
@@ -102,9 +102,16 @@ recording source type, source id or link, head SHA, severity, review mode,
    Use the ticket activities API with a `comment.raw` payload. Read activities back and verify the activity comment
    starts with the marker.
 
-8. First ensure the `codex-reviewed` label is REMOVED when any actionable feedback exists on the current head or the
-current-head PR Validation run is red or pending (the CI `codex-reviewed` gate must
-stay red until the loop is clean). Then apply the requested code, test, documentation, or workflow change in the
+8. First ensure the `agent-reviewed` label is REMOVED when any actionable feedback exists on the current head or the
+current-head PR Validation run is red or pending (the CI `agent-reviewed` gate must
+stay red until the loop is clean). Run the deterministic idempotent command (labels are
+per-PR idempotent — never applied twice, never removed when absent):
+
+   ```bash
+   python -m tools.sdd_cli gitea labels --pr <number> --remove agent-reviewed
+   ```
+
+   Then apply the requested code, test, documentation, or workflow change in the
 existing PR branch. Update OpenSpec specs or design artifacts when behavior changes.
 9. Run the relevant validation checks for changed files. Use the same quality-gate discovery and failure classification
 as `dev-flow-implement-ticket`. If feedback fixes touch deployable project
@@ -138,9 +145,17 @@ Use the ticket activities API with a `comment.raw` payload. If a generated activ
 marker activity and then read activities back before handoff. 12. Rerun the AI
 review loop on the new head before returning to human review or implementation handoff. Confirm the new head's PR
 Validation run completed (not running/pending) before handoff. The re-review re-reads
-the run and updates the labels per `dev-flow-pr-review-agent`: `codex-reviewed` is applied only when the new head has
+the run and updates the labels via `python -m tools.sdd_cli gitea labels --pr <number> --add agent-reviewed --remove needs-tests,needs-changes` per the `dev-flow-pr-review-agent` gating rules: `agent-reviewed` is applied only when the new head has
 ZERO findings of any severity AND its PR Validation run is green — at most one
-`codex-reviewed` label live means the loop finished clean.
+`agent-reviewed` label live means the loop finished clean (the CLI is idempotent, so
+re-running it never duplicates a label on the PR).
+
+**⚠️ Label changes do NOT trigger a fresh CI run.** Applying `agent-reviewed` (or removing `needs-*`) does not
+re-run PR Validation automatically — the label gate evaluates the label state at run start, so a run that started
+before the label was applied stays red even after a clean re-review. After the final label update, re-run the PR
+Validation workflow on the current head (e.g. `POST /api/v1/repos/{owner}/{repo}/actions/runs/{runId}/rerun` or a fresh
+push) and confirm the new run is green before handoff. Observed: runs 48/49 passed all real steps but failed only the
+`agent-reviewed` gate because they started pre-label; the fix was a manual rerun.
 
 Keep ticket provider in `Developed` (OpenProject ID 8) while late human feedback fixes are applied. Do not move the
 ticket backward unless another workflow rule explicitly requires it.
@@ -163,10 +178,10 @@ state.
 - Adversarial verdict `FAIL` or `PASS WITH GAPS`: keep feedback tasks open until fixes and validation are complete and a
 new current-head review passes clean.
 - OpenSpec `## PR Review Feedback` tasks remain incomplete: do not hand off for merge or QA promotion.
-- `codex-reviewed` must be present AND `needs-tests`/`needs-changes` absent on the current head before handoff for
-merge: exactly one `codex-reviewed` label live means zero findings remain and the PR
+- `agent-reviewed` must be present AND `needs-tests`/`needs-changes` absent on the current head before handoff for
+merge: exactly one `agent-reviewed` label live means zero findings remain and the PR
 Validation run is green after the loop.
 - PR Validation run red, pending, or unreadable on the current head: do not hand off for merge — keep feedback open
-until the run is green and a clean re-review reapplies `codex-reviewed`.
+until the run is green and a clean re-review reapplies `agent-reviewed`.
 - `needs-tests` or `needs-changes` remains valid after fixes: do not remove the label or hand off.
 - Validation failure after applying feedback: keep the task open, classify the failure, and report the blocker.

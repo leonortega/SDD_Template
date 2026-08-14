@@ -21,6 +21,8 @@ approval, and QA dispatch.
 
 Do not perform DEV/QA validation inside this skill. `dev-ops-deploy-qa` owns environment checks and ticket updates.
 
+**Pipeline-hardening merges (deploy-pipeline fixes):** when a merged PR changes the deploy pipeline itself (`package-deploy.yml`, deploy gates, k8s overlay logic, image build/load steps), the skill must run the post-merge deploy cycle immediately after the merge — do not defer it until the next feature merge. A deploy-pipeline fix that sits unmerged is dead code: the next deploy still runs the broken workflow (observed twice on TICKET-38/39 — the job-always-build fix merged late, so the db-bootstrap ImagePullBackOff recurred). Merge-and-deploy pipeline hardening promptly, and treat a pipeline fix's own post-merge deploy as the proof it works, not an optional step.
+
 ## Shared Context
 
 Before running, follow `.agents/skills/_shared/skill-startup.md`, which reads `.template/project-profile.json`,

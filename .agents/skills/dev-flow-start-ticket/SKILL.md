@@ -203,7 +203,7 @@ Fold relevant entries into the proposal context and risk analysis. Record `Knowl
 
 6. **Feed human ticket text to dev-flow-explore-change skill.** Load `.agents/skills/dev-flow-explore-change/SKILL.md`. Feed it the human-authored ticket description (fetched in step 1). It produces an exploratory analysis with structure, gaps, risks, and insights.
 
-7. **Run iterative grill-with-docs cycles on the human ticket text (at least 1 cycle, at most 4).**
+7. **Run iterative grill-with-docs cycles on the human ticket text (1 minimum, 4 maximum — no fixed default; ~2 typical, keep grilling while questions remain).**
 
     a. **Cycle 1 (mandatory — always ask the user):** grill-with-docs interviews the user on
     unclear aspects, generating questions about gaps, ambiguities, and missing context. **Even
@@ -212,11 +212,16 @@ Fold relevant entries into the proposal context and risk analysis. Record `Knowl
     assumption) before proceeding. Never complete the refinement without asking the user.
     b. **The user answers the posed questions; the IA answers each remaining question** with
     the best possible answer based on available context.
-    c. **Cycle 2-4:** Repeat — each cycle, grill-with-docs generates new questions based on
-    the previous answers. Ask the user again whenever new questions arise; the IA answers the
-    rest.
-    d. **Stop when** 4 cycles are reached or grill-with-docs has no more questions — never
-    before completing at least 1 cycle.
+    c. **Keep grilling (no fixed default):** continue the grill for each subsequent cycle —
+    every cycle generates NEW questions from the previous answers (deeper scope boundaries,
+    edge cases, validation expectations, unstated assumptions) and the user is asked again;
+    the IA answers the rest. There is NO default cap: ~2 cycles is the typical aim, but
+    never cut the process short — if more grilling is needed, do it, up to the 4-cycle
+    maximum.
+    d. **Stop only when genuinely exhausted:** stop when a cycle produces NO new questions
+    AND the user confirms the plan is fully clear (no remaining ambiguity). Never stop at 1
+    or 2 just because the ticket seems handled — keep grilling while any question remains.
+    Ticket depth drives the count.
     e. **Combine all grilled answers** from every cycle into one consolidated grill-with-docs output (refined/clarified requirements with domain knowledge).
 
     Uses `/grilling` + `/domain-modeling` under the hood. Output: a single comprehensive refined-requirements document built from all cycles.
@@ -255,7 +260,7 @@ Fold relevant entries into the proposal context and risk analysis. Record `Knowl
        openspec new change "<change-name>"
 ```text
 
-       Use the branch name converted to kebab-case: replace `/` with `-`. Example: branch `feat/e2eproject-1-files` becomes `feat-e2eproject-1-files`.
+       Use the branch name converted to kebab-case: replace `/` with `-`. Example: branch `feat/ticket-1-files` becomes `feat-ticket-1-files`.
 
     b. **Generate all planning artifacts via the opsx propose flow.** Run the `openspec-propose` skill
        (`.agents/skills/openspec-propose/SKILL.md`, manifest `openspec` category) and follow it exactly: it drives the
@@ -325,7 +330,7 @@ Slug rules:
 Default example:
 
 ```text
-feat/e2eproject-1-create-files-and-folders-for-a-site
+feat/ticket-1-create-files-and-folders-for-a-site
 ```text
 
 ## Generated Ticket Block

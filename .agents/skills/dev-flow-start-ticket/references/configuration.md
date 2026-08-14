@@ -73,7 +73,7 @@ workflows.
 Default recommendation:
 
 ```text
-feat/e2eproject-1-create-files-and-folders-for-a-site
+feat/ticket-1-create-files-and-folders-for-a-site
 ```
 
 ## OpenProject API Setup

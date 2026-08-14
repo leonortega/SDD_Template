@@ -44,7 +44,7 @@ collaborators and exclude the PR author plus the authenticated automation user. 
 normalized before filtering: treat both a JSON array and a single collaborator
 object as a candidate list, and resolve each username from `login` first, then `username`.
 
-Do not treat the Codex review-agent comment, `codex-reviewed` label, or passing PR validation as a substitute for human
+Do not treat the Codex review-agent comment, `agent-reviewed` label, or passing PR validation as a substitute for human
 reviewer assignment. If no eligible reviewers can be resolved, or Gitea rejects
 reviewer assignment, keep the PR open but document the reviewer gap in the PR body, OpenProject handoff comment, and
 final summary.
@@ -53,7 +53,7 @@ final summary.
 
 Default labels:
 
-- Reviewed: `codex-reviewed`
+- Reviewed: `agent-reviewed`
 - Missing tests: `needs-tests`
 - Blocking changes: `needs-changes`
 

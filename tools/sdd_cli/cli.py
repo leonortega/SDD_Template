@@ -649,9 +649,15 @@ def _dispatch_dev_flow(args: Any) -> int:
 
 
 def _dispatch_gitea(args: Any) -> int:
+    raw = getattr(args, "gitea_args", [])
+    # gitea labels — deterministic idempotent label reconciliation (see gitea_labels.py)
+    if raw and raw[0] == "labels":
+        from .gitea_labels import labels_cli
+
+        return labels_cli(raw)
     from .gitea_reviewers import request_reviewers_cli
 
-    return request_reviewers_cli(getattr(args, "gitea_args", []))
+    return request_reviewers_cli(raw)
 
 
 def _dispatch_knowledge_search(args: Any) -> int:

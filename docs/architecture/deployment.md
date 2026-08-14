@@ -268,7 +268,7 @@ The gate also emits **`AFFECTED_APPS`** (ADR-0002 app-aware build): the comma-se
 PR-merge auto-deploys (`apps/<appId>/src|test` changes plus the dependents of changed packages), `ALL` for
 unconditional runs (pinned dispatch / fails-open → every app is built and deployed, the pre-filter behavior), or empty
 when the change is deployable but no app resolves (e.g. a change under the scaffold placeholder app
-`apps/<project-slug>/`) —
+`apps/<project-slug>-<role>/`) —
 build/apply then run zero times and the pipeline stays green.
 
 **Exception (operator override):** a `workflow_dispatch` that supplies an explicit `artifact_commit_sha` pins a
@@ -289,7 +289,8 @@ in Docker Desktop **insecure registries**
 - Pushes `{appId}:{commitSha}` and `{appId}:latest` tags (only when login succeeded)
 - **Loads images into the kind cluster** via `kind load docker-image` — this is the actual path used to get images to
 the cluster (kind's containerd is separate from host Docker; without this the pods hit `ImagePullBackOff`)
-- Prunes old local/kind images (keeps newest commit tags per app) so the runner's image store does not grow unbounded
+- Does NOT prune images in CI — image/volume/container/kind cleanup is the ticket-close job
+  (`dev-ops-cleanup-resources` → `environment-lab prune-docker-leftovers` + `prune-kind-images`)
 
 **4. Deploy to K8s (phased apply)** — For the target environment (ADR-0002 app-aware; only
 `AFFECTED_APPS` service apps on filtered runs, all apps on `ALL`; ADR-0003 phase ordering):
@@ -585,27 +586,40 @@ frontend bugs that cause JS console errors:
 
 #### Issue 2: `TypeError: Cannot read properties of undefined (reading 'Not deployed')`
 
-**Cause:** Value mappings on Infinity-driven table columns with `"color": "green"` or `"color": "text"` properties
-inside the mapping object. The Infinity frontend code crashes when processing inline color values.
+**Cause:** Value mappings on Infinity-driven table columns using the **old flat mapping format** — `"color"` as a
+top-level key next to `value`/`text`. The Infinity frontend code crashes when processing inline color values in that
+format.
 
-**Fix:** Remove the `"color"` property from inside mapping objects. Use text-only transformations:
+**Fix:** Use the **modern `options`-nested mapping format** — `color` goes INSIDE the `options` map. This format renders
+correctly (verified live in Grafana). Status colors are REQUIRED on the Service Health table: **green = UP, red = DOWN,
+gray = Not deployed**.
+
+**Mappings alone are not enough:** the Status column must ALSO set `custom.cellOptions: {"type": "color-background"}`
+(per-column override). Without `cellOptions` the mapping colors never paint and the cells stay default gray — this was
+observed live: the mappings shipped with colors but the table rendered uncolored until `cellOptions` was added.
 
 ```json
-// ❌ BAD — crashes Infinity
+// ❌ OLD FLAT FORMAT — crashes Infinity
 "mappings": [{
   "type": "value",
   "value": "Active",
   "text": "✅ Active",
-  "color": "green"    // <-- crashes Infinity
+  "color": "green"    // top-level color <-- crashes Infinity
 }]
 
-// ✅ GOOD — works fine
-"mappings": [{
-  "type": "value",
-  "value": "Active",
-  "text": "✅ Active"   // no color property
-}]
+// ✅ MODERN FORMAT — works fine, color REQUIRED, cellOptions paints the cell
+"properties": [
+  {"id": "custom.width", "value": 130},
+  {"id": "custom.cellOptions", "value": {"type": "color-background"}},
+  {"id": "mappings", "value": [{
+    "type": "value",
+    "options": {"UP": {"text": "UP", "color": "green"}}
+  }]}
+]
 ```
+
+Never strip the `color` property or the `cellOptions` override — together they are the color source for the status
+column.
 
 #### What works reliably with Infinity
 

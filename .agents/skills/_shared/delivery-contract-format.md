@@ -27,7 +27,7 @@ Use these exact markers for idempotency. Markers are grouped by workflow stage.
 
 ### Review Flow (AI & Human PR Review)
 
-- PR review agent: `<!-- codex-review-agent:{headSha} -->`
+- PR review agent: `<!-- agent-review:{headSha} -->`
 - PR review feedback detected: `IA generated PR feedback detected: {headSha}:{feedbackBatchId}`
 - PR review feedback fixes: `IA generated PR feedback fixes: {headSha}:{feedbackBatchId}`
 

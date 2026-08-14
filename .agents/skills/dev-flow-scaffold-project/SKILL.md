@@ -22,7 +22,8 @@ stack is defined by the user via `set-project-stack` and recorded in
 `stack.database`).
 
 `set-project-stack` only creates the deterministic skeleton (`apps/` + `packages/`,
-with one app named from the project — `apps/<project-slug>/` — documenting the
+with one app named from the project — `apps/<project-slug>-<role>/` (the layout
+marker is the project's web skeleton, so `<project-slug>-web`) — documenting the
 per-app layout (ADR-0002; the project name is required by `set-project-stack`, so
 the template never ships example or random names; there is never a root `src/` +
 `test/` pair) and then marks `scaffoldRequired: true` with
@@ -86,6 +87,16 @@ TypeScript project").
 
 ### 3. Resolve the scaffold per stack (AI decision)
 
+**Project-name prefix rule (naming):** name every generated app
+`<project-slug>-<role>` — the project name is the mandatory prefix. Example:
+project `dellop` → `apps/dellop-web/`, `apps/dellop-user-api/`, `apps/dellop-db/`
+(appIds `dellop-web`, `dellop-user-api`, `dellop-db`). Never use unprefixed
+appIds (`web`, `user-api`, `db`). The `validate-app-config` gate enforces this on
+`apps.json` (every registered appId must start with `<project-slug>-`; the fixed
+infra bootstrap job `db-bootstrap` is exempt), and CI runs it in
+`pr-validation.yml`. Kebab-case only — underscores fail the DNS-1123 Service-name
+hard gate.
+
 For each domain, decide what the stack's **native tooling and conventions**
 require, then generate the files. Examples, never exhaustive:
 
@@ -117,7 +128,7 @@ not selected (`applies: false`).
   deterministic Deployment/Service/Kustomize from `apps.json`; the AI supplies
   the stack-specific Dockerfiles/nginx.conf/.dockerignore).
 
-### 5. Scaffold quality requirements (proven by E2EPROJECT-37)
+### 5. Scaffold quality requirements (proven by TICKET-37)
 
 Apply these hard-won requirements to **every** generated scaffold. They are
 non-negotiable — each one prevented a real failure in a consumer delivery:

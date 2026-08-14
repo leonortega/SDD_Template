@@ -1,6 +1,6 @@
 """Tests for the Kustomize overlay validation gate (tools/sdd_cli/k8s_validate.py).
 
-Ported from SDD_Test with the pr-validation.yml gate (E2EPROJECT-37 finding 3):
+Ported from SDD_Test with the pr-validation.yml gate (TICKET-37 finding 3):
 renders every env overlay and asserts buildability, cluster-scoped NodePort
 uniqueness, and drift against infra/deployment/ports.json.
 """

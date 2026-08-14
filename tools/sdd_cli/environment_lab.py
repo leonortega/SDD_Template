@@ -208,9 +208,416 @@ def prune_docker_leftovers(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 "warning",
                 "apply",
             )
+    # Tagged app images (old registry commit SHAs + scratch tags) — the CI prune
+    # steps were removed from package-deploy.yml, so this is the only place they
+    # get cleaned (runs at ticket close via dev-ops-cleanup-resources and at the
+    # end of setup-lab). Non-fatal, dry-run capable.
+    _prune_tagged_images(result, root, dry_run)
     result["valid"] = not any(
         item.get("severity") == "error" for item in result["findings"]
     )
+    return result
+
+
+def _registered_app_ids(root: Path) -> set[str]:
+    """appIds from ``infra/deployment/apps.json`` (empty when missing/unparseable)."""
+    apps_path = root / "infra" / "deployment" / "apps.json"
+    if not apps_path.exists():
+        return set()
+    try:
+        apps_data = json.loads(apps_path.read_text(encoding="utf-8"))
+        apps = apps_data.get("apps", []) if isinstance(apps_data, dict) else []
+    except json.JSONDecodeError:
+        return set()
+    return {
+        str(a.get("appId", "")).strip()
+        for a in apps
+        if isinstance(a, dict) and a.get("appId")
+    }
+
+
+def _list_tagged_images(root: Path) -> tuple[list[tuple[str, str, str]], str | None]:
+    """docker images --format '{CreatedAt}\t{Repository}:{Tag}' → [(created, repo, tag)]."""
+    out = run_native(
+        ["docker", "images", "--format", "{{.CreatedAt}}\t{{.Repository}}:{{.Tag}}"],
+        root,
+        timeout=60,
+    )
+    if out["returncode"] != 0:
+        return [], out["stderr"].strip() or "docker images failed"
+    rows: list[tuple[str, str, str]] = []
+    for line in out["stdout"].splitlines():
+        if "\t" not in line:
+            continue
+        created, ref = line.split("\t", 1)
+        repo, sep, tag = ref.rpartition(":")
+        if sep:
+            rows.append((created.strip(), repo.strip(), tag.strip()))
+    return rows, None
+
+
+_REGISTRY_PREFIXES = ("host.docker.internal:5001/", "localhost:5001/")
+
+
+def _prune_tagged_images(result: dict[str, Any], root: Path, dry_run: bool) -> None:
+    """Retention for TAGGED app images: old registry commit SHAs + scratch tags.
+
+    The CI prune steps were removed from ``package-deploy.yml``, so this is the
+    only place old tagged app images get cleaned (runs at ticket close via
+    ``dev-ops-cleanup-resources`` and at the end of ``setup-lab``):
+
+    - ``registry-tags``: ``{host.docker.internal:5001|localhost:5001}/{app}:<sha>``
+      — keep ``:latest`` and the newest ``LOCAL_IMAGE_KEEP`` (default 1) SHA per
+      app, remove older SHAs. The host can always rebuild or pull from Nexus, so
+      unlike the kind store (keep 3 — kind cannot pull) the host needs only the
+      current build.
+    - ``scratch-tags``: unqualified ``{appId}:<tag>`` images (``dellop-api:fix``,
+      ``:jwt``, ``:pkgs``, ``:test``, ...) — removed for every app registered in
+      ``apps.json``, except ``:latest``. Skips cleanly when apps.json has no apps
+      (template state).
+
+    Non-fatal: a failed rmi is a warning finding. Dry-run adds would-do actions
+    without calling docker.
+    """
+    keep = int(os.environ.get("LOCAL_IMAGE_KEEP", "1"))
+    app_ids = _registered_app_ids(root)
+
+    if dry_run:
+        result["actions"].append(
+            {
+                "path": "docker",
+                "key": "prune.registry-tags",
+                "severity": "info",
+                "message": (
+                    f"Would prune leftover registry-tags: keep :latest + newest {keep} "
+                    "commit SHA per app on host.docker.internal:5001 and "
+                    "localhost:5001, remove older SHAs."
+                ),
+                "phase": "apply",
+            }
+        )
+        if app_ids:
+            result["actions"].append(
+                {
+                    "path": "docker",
+                    "key": "prune.scratch-tags",
+                    "severity": "info",
+                    "message": (
+                        "Would prune leftover scratch-tags: remove unqualified tags "
+                        f"of registered apps ({', '.join(sorted(app_ids))}) except :latest."
+                    ),
+                    "phase": "apply",
+                }
+            )
+        return
+
+    rows, list_err = _list_tagged_images(root)
+    if list_err:
+        add_bucket_item(
+            result["findings"],
+            "docker",
+            "prune.tagged-images",
+            f"docker images list failed: {list_err}",
+            "warning",
+            "apply",
+        )
+        return
+
+    # Phase A — registry commit SHAs (keep :latest + newest KEEP per app).
+    hex_chars = "0123456789abcdef"
+    by_app: dict[str, list[tuple[str, str]]] = {}
+    for created, repo, tag in rows:
+        if not repo.startswith(_REGISTRY_PREFIXES):
+            continue
+        app = repo.split("/", 1)[1]
+        if tag == "latest":
+            continue  # never prune :latest
+        if len(tag) != 40 or any(c not in hex_chars for c in tag):
+            continue
+        by_app.setdefault(app, []).append((created, f"{repo}:{tag}"))
+    registry_prune: list[str] = []
+    for app, entries in sorted(by_app.items()):
+        # Lexicographic sort works for Go's CreatedAt format.
+        entries.sort(key=lambda e: e[0], reverse=True)
+        for _, ref in entries[keep:]:
+            registry_prune.append(ref)
+
+    if registry_prune:
+        removed = run_native(["docker", "rmi", *registry_prune], root, timeout=120)
+        if removed["returncode"] == 0:
+            result["actions"].append(
+                {
+                    "path": "docker",
+                    "key": "prune.registry-tags",
+                    "severity": "info",
+                    "message": (
+                        f"Pruned leftover registry-tags: removed {len(registry_prune)} "
+                        f"old commit SHA tag(s) (kept :latest + newest {keep} per app)."
+                    ),
+                    "phase": "apply",
+                }
+            )
+        else:
+            add_bucket_item(
+                result["findings"],
+                "docker",
+                "prune.registry-tags",
+                f"docker rmi failed for old registry tags: {removed['stderr']}",
+                "warning",
+                "apply",
+            )
+    else:
+        result["actions"].append(
+            {
+                "path": "docker",
+                "key": "prune.registry-tags",
+                "severity": "info",
+                "message": "No old registry tags to prune.",
+                "phase": "apply",
+            }
+        )
+
+    # Phase B — unqualified scratch tags of registered apps (skip when none).
+    if not app_ids:
+        return
+    scratch_prune: list[str] = []
+    for _, repo, tag in rows:
+        if "/" in repo or repo not in app_ids or tag == "latest":
+            continue
+        scratch_prune.append(f"{repo}:{tag}")
+    if scratch_prune:
+        removed = run_native(["docker", "rmi", *scratch_prune], root, timeout=120)
+        if removed["returncode"] == 0:
+            result["actions"].append(
+                {
+                    "path": "docker",
+                    "key": "prune.scratch-tags",
+                    "severity": "info",
+                    "message": (
+                        f"Pruned leftover scratch-tags: removed {len(scratch_prune)} "
+                        f"unqualified app tag(s) ({', '.join(sorted(scratch_prune))})."
+                    ),
+                    "phase": "apply",
+                }
+            )
+        else:
+            add_bucket_item(
+                result["findings"],
+                "docker",
+                "prune.scratch-tags",
+                f"docker rmi failed for scratch tags: {removed['stderr']}",
+                "warning",
+                "apply",
+            )
+    else:
+        result["actions"].append(
+            {
+                "path": "docker",
+                "key": "prune.scratch-tags",
+                "severity": "info",
+                "message": "No scratch tags to prune.",
+                "phase": "apply",
+            }
+        )
+
+
+def prune_kind_images(root: Path, dry_run: bool = False) -> dict[str, Any]:
+    """Remove old app images from the kind cluster's containerd store.
+
+    Ticket-close counterpart of the CI prune steps removed from
+    ``package-deploy.yml`` (they never ran reliably): the kind node accumulates
+    one ``{registry}/{app}:<commitSha>`` tag per deploy via ``kind load
+    docker-image`` and the host Docker daemon prune never touches it. This
+    command keeps the newest ``KEEP`` commit tags per app and removes the rest.
+
+    Conservative and non-fatal:
+
+    - node: ``docker inspect ${KIND_NODE}`` (default ``sdd-cluster-control-plane``);
+      a missing node skips the prune (reported, not a failure).
+    - listing: ``docker exec <node> ctr -n k8s.io images list`` — refs are
+      ``{registry}/{app}:{40-hex-sha}``; non-app or malformed refs are ignored.
+    - age ordering: host daemon ``CreatedAt`` (``docker images --format``) so the
+      newest tags per app are deterministic; kind refs with no host timestamp
+      sort as oldest (prune candidates). ``KEEP`` defaults to 3
+      (``KIND_IMAGE_KEEP``), registry defaults to ``host.docker.internal:5001``
+      (``NEXUS_DOCKER_REGISTRY``).
+    - removal: ``docker exec <node> ctr -n k8s.io images rm <refs...>`` in one
+      call (ctr accepts multiple images); a failed removal is a warning.
+
+    Dry-run only reports what would be pruned (no docker calls). Idempotent.
+    """
+    result = configure_result(
+        "PruneKindImages", dry_run, write_enabled=not dry_run
+    )
+    node = os.environ.get("KIND_NODE", "sdd-cluster-control-plane")
+    keep = int(os.environ.get("KIND_IMAGE_KEEP", "3"))
+    registry = os.environ.get(
+        "NEXUS_DOCKER_REGISTRY", "host.docker.internal:5001"
+    ).rstrip("/")
+
+    if dry_run:
+        result["actions"].append(
+            {
+                "path": "kind",
+                "key": "prune.kind-images",
+                "severity": "info",
+                "message": (
+                    f"Would prune leftover kind-images: keep newest {keep} "
+                    f"commit tags per app in kind node {node}, remove the rest "
+                    f"(docker exec {node} ctr -n k8s.io images list/rm)."
+                ),
+                "phase": "apply",
+            }
+        )
+        result["valid"] = True
+        return result
+
+    inspect = run_native(["docker", "inspect", node], root, timeout=60)
+    if inspect["returncode"] != 0:
+        result["actions"].append(
+            {
+                "path": "kind",
+                "key": "prune.kind-images",
+                "severity": "info",
+                "message": (
+                    f"Kind node {node} not found - skipping kind image prune."
+                ),
+                "phase": "apply",
+            }
+        )
+        result["valid"] = True
+        return result
+
+    listed = run_native(
+        ["docker", "exec", node, "ctr", "-n", "k8s.io", "images", "list"],
+        root,
+        timeout=120,
+    )
+    if listed["returncode"] != 0:
+        add_bucket_item(
+            result["findings"],
+            "kind",
+            "prune.kind-images",
+            f"ctr images list failed: {listed['stderr']}",
+            "warning",
+            "apply",
+        )
+        result["valid"] = True
+        return result
+
+    prefix = registry + "/"
+    hex_chars = "0123456789abcdef"
+    refs: set[str] = set()
+    for line in listed["stdout"].splitlines():
+        fields = line.strip().split()
+        if not fields:
+            continue
+        ref = fields[0].rstrip("\r")
+        if not ref.startswith(prefix):
+            continue
+        app, sep, sha = ref[len(prefix):].rpartition(":")
+        if not sep or len(sha) != 40 or any(c not in hex_chars for c in sha):
+            continue
+        refs.add(ref)
+
+    if not refs:
+        result["actions"].append(
+            {
+                "path": "kind",
+                "key": "prune.kind-images",
+                "severity": "info",
+                "message": "No app images to prune in kind.",
+                "phase": "apply",
+            }
+        )
+        result["valid"] = True
+        return result
+
+    # Host daemon CreatedAt gives a deterministic age per tag; kind refs missing
+    # on the host (e.g. host store already pruned) sort as oldest candidates.
+    created_at: dict[str, str] = {}
+    host_images = run_native(
+        [
+            "docker",
+            "images",
+            "--format",
+            "{{.CreatedAt}}\t{{.Repository}}:{{.Tag}}",
+        ],
+        root,
+        timeout=60,
+    )
+    if host_images["returncode"] == 0:
+        for line in host_images["stdout"].splitlines():
+            if "\t" not in line:
+                continue
+            created, tag = line.split("\t", 1)
+            created_at[tag.strip()] = created.strip()
+
+    by_app: dict[str, list[tuple[str, str]]] = {}
+    for ref in refs:
+        app = ref[len(prefix):].rpartition(":")[0]
+        by_app.setdefault(app, []).append((ref, created_at.get(ref, "")))
+
+    prune_list: list[str] = []
+    for app, entries in sorted(by_app.items()):
+        # Lexicographic sort works for Go's CreatedAt format; empty = oldest.
+        entries.sort(key=lambda e: e[1], reverse=True)
+        for ref, _ in entries[keep:]:
+            prune_list.append(ref)
+
+    if not prune_list:
+        result["actions"].append(
+            {
+                "path": "kind",
+                "key": "prune.kind-images",
+                "severity": "info",
+                "message": (
+                    f"No old images to prune in kind (kept newest {keep} per app)."
+                ),
+                "phase": "apply",
+            }
+        )
+        result["valid"] = True
+        return result
+
+    removed = run_native(
+        [
+            "docker",
+            "exec",
+            node,
+            "ctr",
+            "-n",
+            "k8s.io",
+            "images",
+            "rm",
+            *prune_list,
+        ],
+        root,
+        timeout=120,
+    )
+    if removed["returncode"] == 0:
+        result["actions"].append(
+            {
+                "path": "kind",
+                "key": "prune.kind-images",
+                "severity": "info",
+                "message": (
+                    f"Pruned leftover kind-images: removed {len(prune_list)} "
+                    f"old tag(s) from node {node} (kept newest {keep} per app)."
+                ),
+                "phase": "apply",
+            }
+        )
+    else:
+        add_bucket_item(
+            result["findings"],
+            "kind",
+            "prune.kind-images",
+            f"kind image prune failed: {removed['stderr']}",
+            "warning",
+            "apply",
+        )
+    result["valid"] = True
     return result
 
 
@@ -2712,7 +3119,8 @@ def scaffold_project_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
     (one folder per app, each with ``src/``, ``deploy/``, and ``test/`` with
     one subfolder per test type: ``unit``, ``integration``, ``e2e``,
     ``architecture``), the ``packages/`` container for shared libraries, and
-    one layout app named from the project (``apps/<project-slug>/``) documenting
+    one layout app named from the project (``apps/<project-slug>-<role>/`` — the
+    marker is the project's web skeleton, so ``<project-slug>-web``) documenting
     the expected per-app layout (falls back to ``apps/example/`` only when no
     project name is recorded). Every stack-specific artifact (package.json, test
     framework config, Dockerfiles,
@@ -2755,11 +3163,14 @@ def scaffold_project_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
     # One app documenting the expected per-app layout (not 12 skeletons):
     # src/, deploy/, and test/ with one subfolder per type. The app is named
     # from the project (set-project-stack requires values.name) so the template
-    # never ships example or random names. Real apps are scaffolded per stack
-    # by dev-flow-scaffold-project.
+    # never ships example or random names. Project-name prefix rule (ADR-0002
+    # naming): app folders/appIds are named <project-slug>-<role> — the layout
+    # marker is the project's web skeleton (role: web below). Real apps are
+    # scaffolded per stack by dev-flow-scaffold-project.
     profile = load_project_profile(root)
     project_name = str(profile.get("projectName") or "").strip()
-    app_slug = _project_name_slug(project_name) if project_name else "example"
+    project_slug = _project_name_slug(project_name) if project_name else ""
+    app_slug = f"{project_slug}-web" if project_slug else "example"
     example = root / "apps" / app_slug
     for folder in ("src", "deploy"):
         folder_path = example / folder
@@ -3171,8 +3582,33 @@ def validate_app_config(root: Path, dry_run: bool = False) -> dict[str, Any]:
         return result
 
     all_valid = True
+
+    # Project-name prefix rule (ADR-0002 naming): every registered appId must
+    # start with "<project-slug>-" so apps are discoverable by project (e.g.
+    # project 'dellop' -> dellop-web, dellop-user-api). The fixed infra
+    # bootstrap job (db-bootstrap) is exempt. Skipped until a project name is
+    # recorded (template / pre-set-project-stack state).
+    profile = load_project_profile(root)
+    project_name = str(profile.get("projectName") or "").strip()
+    prefix = f"{_project_name_slug(project_name)}-" if project_name else None
+
     for i, app in enumerate(apps):
         app_id = app.get("appId", f"app[{i}]")
+        if prefix is not None and app_id != "db-bootstrap" and not app_id.startswith(
+            prefix
+        ):
+            add_bucket_item(
+                result["findings"],
+                f"infra/deployment/apps.json#{app_id}",
+                "appId.project-prefix",
+                f"App '{app_id}' must be prefixed with the project name "
+                f"(project {project_name!r} -> '{prefix}<role>', e.g. "
+                f"'{prefix}web' / '{prefix}api' / '{prefix}db'). The fixed infra "
+                "job 'db-bootstrap' is exempt.",
+                "error",
+                "pre-start",
+            )
+            all_valid = False
         project_path = app.get("projectPath", app_id)
         dockerfile = root / project_path / "Dockerfile"
         if not dockerfile.exists():
@@ -5768,7 +6204,7 @@ def run_environment_lab(args: list[str]) -> int:
             "validate-docker-desktop-k8s, validate-k8s-overlays, setup-kind-cluster, setup-k8s-access, "
             "scaffold-k8s, assign-app-ports, prune-scaffold, "
             "ensure-headlamp, provision-lab-users, push-to-gitea, verify-gitea-token, "
-            "generate-gitea-token, renovate-gitea-token, prune-docker-leftovers",
+            "generate-gitea-token, renovate-gitea-token, prune-docker-leftovers, prune-kind-images",
             file=sys.stderr,
         )
         return 1
@@ -5828,6 +6264,7 @@ def run_environment_lab(args: list[str]) -> int:
         "provision-lab-users": lambda: provision_lab_users(root, dry_run),
         "health-check": lambda: health_check(root, dry_run),
         "prune-docker-leftovers": lambda: prune_docker_leftovers(root, dry_run),
+        "prune-kind-images": lambda: prune_kind_images(root, dry_run),
         "push-to-gitea": lambda: push_to_gitea(root, dry_run),
     }
 

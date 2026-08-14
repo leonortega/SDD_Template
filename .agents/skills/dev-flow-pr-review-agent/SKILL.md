@@ -51,7 +51,7 @@ Required or defaulted values:
 - `selected repository/review adapter token`: required for PR reads and comments when the repository is private.
 - `selected repository owner` and `selected repository name`: infer from `git remote get-url origin` when omitted.
 - `pr.labels.enabled`: default `true`.
-- `pr.labels.reviewed`: default `codex-reviewed`.
+- `pr.labels.reviewed`: default `agent-reviewed`.
 - `pr.labels.needsTests`: default `needs-tests`.
 - `pr.labels.needsChanges`: default `needs-changes`.
 
@@ -82,7 +82,7 @@ and per-step results
 - delivery risk and adversarial-review trigger using the shared delivery contract; prefer repo-local helpers when
 available
 
-If a comment contains `<!-- codex-review-agent:{headSha} -->`, skip posting another review for the same head SHA unless
+If a comment contains `<!-- agent-review:{headSha} -->`, skip posting another review for the same head SHA unless
 the user explicitly asks for a fresh review. The existing review still remains
 an implementation feedback source for `dev-flow-implement-ticket`.
 
@@ -121,17 +121,17 @@ Use these severity labels for every finding:
 - `BLOCKER`: likely bug, security/data-loss risk, broken required behavior, missing required test, failing gate, or
 release-blocking compatibility issue.
 - `WARNING`: meaningful risk or maintainability issue that should be considered. WARNINGs do not gate an individual
-finding's severity, but like every finding they keep the `codex-reviewed` clean
+finding's severity, but like every finding they keep the `agent-reviewed` clean
 marker off until resolved.
 - `SUGGESTION`: optional improvement by severity, still tracked as required PR review feedback in this repository before
-human-review handoff; like every finding, it keeps `codex-reviewed` off until
+human-review handoff; like every finding, it keeps `agent-reviewed` off until
 resolved.
 
-The implementation loop converts every AI finding into OpenSpec PR review feedback tasks. The `codex-reviewed` label is
+The implementation loop converts every AI finding into OpenSpec PR review feedback tasks. The `agent-reviewed` label is
 the **clean marker**: it is applied only when the current head has ZERO findings
 of any severity — no `BLOCKER`, `WARNING`, or `SUGGESTION`, no missing or failing tests, no unresolved adversarial `PASS
 WITH GAPS`/`FAIL` verdict, no residual verification gaps, and a green (success)
-PR Validation run on the current head. Any finding — of any severity, actionable or not — keeps `codex-reviewed`
+PR Validation run on the current head. Any finding — of any severity, actionable or not — keeps `agent-reviewed`
 removed, so the PR stays red on the CI gate until the feedback loop resolves every
 finding. `needs-changes` marks actionable defects (`BLOCKER`/`WARNING`/`SUGGESTION`); missing or failing tests mark
 `needs-tests`.
@@ -181,7 +181,7 @@ proven consumer-project failure patterns in addition to the priorities above:
   restore on close, scroll lock while open, and an Escape guard that does NOT
   submit mid-flight. Missing any is a `WARNING` (a11y + behavioral).
 
-These patterns are the durable rules from consumer-project E2EPROJECT-38/39;
+These patterns are the durable rules from consumer-project TICKET-38/39;
 cite the affected file/behavior per the finding rules below.
 
 ### 2.1 PR Validation Gate Check (mandatory)
@@ -192,9 +192,9 @@ a hard requirement — never post a review without inspecting it.
 - A failing step is a `BLOCKER` finding with a stable finding id. Quote the step name and the exact error so
 `dev-flow-pr-review-feedback-loop` can fix it and re-check the next run.
 - A run that is red, still running/pending, or whose status cannot be determined (missing run, API error) also keeps
-`codex-reviewed` off — the PR stays red on the CI gate until the run completes
+`agent-reviewed` off — the PR stays red on the CI gate until the run completes
 green.
-- A green run plus zero findings is the only combination that lets `codex-reviewed` be applied.
+- A green run plus zero findings is the only combination that lets `agent-reviewed` be applied.
 
 ### 2.5 Ponytail Complexity Pass
 
@@ -215,7 +215,7 @@ complexity creates meaningful maintainability or validation risk.
 
 Post one top-level repository PR comment. Include:
 
-- marker `<!-- codex-review-agent:{headSha} -->`
+- marker `<!-- agent-review:{headSha} -->`
 - short review summary
 - findings ordered by severity, each with a stable finding id
 - separate `ponytail-review` simplification findings, each actionable item with a stable finding id
@@ -232,42 +232,52 @@ Stable finding ids must be deterministic for the same head SHA and finding targe
 If no issues are found, say so clearly. Residual or unverifiable areas count as gaps — record them as findings so the
 clean marker is not applied prematurely.
 
-### 3.5 Never Approve Or Merge (Hard Gate)
+### 3.5 Approval Is The Automated Gate; Merge Is Human-Only (Hard Gate)
 
-**❌ HARD GATE (authority level 5):** PR approvals and merges are **human-only actions**. Never submit an approval
-review or merge a pull request on behalf of any user — including provisioned lab accounts such as FirstUser/SecondUser.
-The agent's API token is limited to reads, PR comments, labels, and requesting reviewers. If a user or a skill asks the
-agent to approve or merge a PR, refuse, explain that approvals/merges are human-only, and report the request as a
-blocker instead of performing the action.
+**❌ HARD GATE (authority level 5):** **Never use human users to approve a PR.** The automated approval IS the
+`agent-reviewed` label applied only on zero findings + a green PR Validation run (the CI `agent-reviewed` gate).
+Do not request, wait for, or orchestrate a human-user approval of any PR — provisioned lab accounts such as
+FirstUser/SecondUser included. Merges remain human-only: never submit a merge on behalf of any user; the agent's API
+token is limited to reads, PR comments, labels, and requesting reviewers. If a user or a skill asks the agent to
+arrange a human approval, explain that the automated gate (`agent-reviewed` + green CI) IS the approval; if asked to
+merge, refuse — merges are human-only — and report the request as a blocker instead of performing the action.
 
 ### 4. Apply Labels
 
-When `pr.labels.enabled` is true:
+When `pr.labels.enabled` is true, drive ALL label changes through the deterministic idempotent CLI — never hand-roll
+the REST calls:
 
-1. Ensure configured labels exist in repository/review provider. Create missing labels before applying them. Use
-deterministic colors:
-   - `codex-reviewed`: `#5319e7`
-   - `needs-tests`: `#fbca04`
-   - `needs-changes`: `#d73a4a`
-2. Apply the `codex-reviewed` label ONLY when the current-head review has ZERO findings of any severity (no `BLOCKER`,
+```bash
+python -m tools.sdd_cli gitea labels --pr <number> --add a,b --remove c
+python -m tools.sdd_cli gitea labels --pr <number> --add agent-reviewed --dry-run true  # preview
+```
+
+The command is idempotent per PR: it lists repo label definitions and deletes duplicates (one canonical id per name),
+diffs the PR's current labels, applies/removes only the delta, and verifies after writing. **All Gitea PR labels are
+idempotent per PR — a name is never applied twice and never removed when absent.** Deterministic colors (managed by the
+command): `agent-reviewed` `#5319e7`, `needs-tests` `#fbca04`, `needs-changes` `#d73a4a`.
+
+Gating rules (unchanged — they decide WHICH labels, the CLI decides HOW):
+
+1. Apply the `agent-reviewed` label ONLY when the current-head review has ZERO findings of any severity (no `BLOCKER`,
 `WARNING`, or `SUGGESTION`, no missing/failing tests, no unresolved adversarial
 verdict — `PASS WITH GAPS` or `FAIL` keep it off, as do residual verification gaps) AND the current-head PR Validation
 run is green (success). A red, pending, or unreadable run keeps it off. It is the
-clean/mergeable marker: exactly one `codex-reviewed` label live means the PR has been looped reviewed and fixed until
+clean/mergeable marker: exactly one `agent-reviewed` label live means the PR has been looped reviewed and fixed until
 nothing remains.
-3. If ANY finding exists — of any severity, actionable or not — REMOVE the `codex-reviewed` label (or do not apply it).
-The PR stays red on the CI `codex-reviewed` gate until the feedback loop
+2. If ANY finding exists — of any severity, actionable or not — REMOVE the `agent-reviewed` label (or do not apply it).
+The PR stays red on the CI `agent-reviewed` gate until the feedback loop
 resolves every finding and a re-review confirms a clean head.
-4. Apply the needs-tests label if the review identifies missing or failing tests.
-5. Apply the needs-changes label if the review identifies actionable defects (`BLOCKER`, `WARNING`, or `SUGGESTION`).
-6. Remove the needs-tests label when the current head no longer has missing or failing test findings.
-7. Remove the needs-changes label when the current head no longer has actionable findings of any severity.
-8. If label creation, assignment, or removal fails due to permissions or disabled labels, continue the review and
-mention the label failure in the PR comment or completion summary.
+3. Apply the needs-tests label if the review identifies missing or failing tests.
+4. Apply the needs-changes label if the review identifies actionable defects (`BLOCKER`, `WARNING`, or `SUGGESTION`).
+5. Remove the needs-tests label when the current head no longer has missing or failing test findings.
+6. Remove the needs-changes label when the current head no longer has actionable findings of any severity.
+7. If the CLI fails (permissions, disabled labels, network), continue the review and
+mention the label failure in the PR comment or completion summary — never fall back to hand-rolled REST calls.
 
 ## Output
 
-Return the reviewed PR number, head SHA, labels applied or removed (including whether `codex-reviewed` is present — i.e.
+Return the reviewed PR number, head SHA, labels applied or removed (including whether `agent-reviewed` is present — i.e.
 the head is clean), validation context inspected, findings summary, and any
 handoff notes for `dev-flow-implement-ticket`.
 
@@ -285,9 +295,10 @@ are no findings, state that directly.
 - Large diffs: follow the threshold rules above and clearly state what was not reviewed line-by-line.
 - Required adversarial review without acceptance/spec context: stop or report `FAIL` when required behavior cannot be
 proven.
-- Findings present on the current head: never apply `codex-reviewed`; report the head as not clean so
+- Findings present on the current head: never apply `agent-reviewed`; report the head as not clean so
 `dev-flow-pr-review-feedback-loop` keeps iterating.
-- PR Validation run red, pending, or unreadable on the current head: never apply `codex-reviewed`; report each failing
+- PR Validation run red, pending, or unreadable on the current head: never apply `agent-reviewed`; report each failing
 step as a `BLOCKER` finding and the head as not clean.
-- Approval or merge request (any user, provisioned accounts included): refuse — approvals/merges are human-only
-(authority level 5) — and report the request as a blocker instead of acting on it.
+- Merge request (any user, provisioned accounts included): refuse — merges are human-only (authority level 5) — and
+report the request as a blocker instead of acting on it. Human-approval request: never route PR approval through
+human users — the automated `agent-reviewed` + green-CI gate IS the approval; explain that and do not arrange one.
