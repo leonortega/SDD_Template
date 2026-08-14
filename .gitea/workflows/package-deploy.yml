@@ -112,12 +112,13 @@ jobs:
             echo "TARGETS=${{ steps.env.outputs.ENV }}" >> $GITHUB_OUTPUT
           fi
 
-      - name: Check for deployable changes (src/ or test/ folders)
+      - name: Check for deployable changes (src/, test/, or Dockerfiles)
         # Deploy in ANY environment only when the change set touches a src/ or
-        # test/ folder at any depth (e.g. apps/<appId>/src/...), or a
-        # packages/<pkg>/** path whose package an app declares in apps.json
-        # `dependsOn` (shared-code change -> rebuild the dependent apps). Docs,
-        # infra, and workflow-only changes must not
+        # test/ folder at any depth (e.g. apps/<appId>/src/...), an app's
+        # Dockerfile (apps/<appId>/Dockerfile - the image content depends on
+        # it), or a packages/<pkg>/** path whose package an app declares in
+        # apps.json `dependsOn` (shared-code change -> rebuild the dependent
+        # apps). Docs, infra, and workflow-only changes must not
         # deploy. Note: only folder-based matches count — co-located test files
         # outside these folders (e.g. pkg/foo_test.go) are not matched. The gate
         # fails open when the base commit cannot be resolved or the diff cannot
@@ -355,7 +356,9 @@ jobs:
             if [ -f "${project_path}/Dockerfile" ]; then
               IMAGE="${REGISTRY}/${app_id}:${COMMIT_SHA}"
               echo "Building ${app_id}..."
-              docker build -t "${IMAGE}" -f "${project_path}/Dockerfile" "${project_path}"
+              # Build context is the REPO ROOT so apps/package.json file: deps
+              # (packages/<pkg>) resolve inside the image (ADR-0002 packages/).
+              docker build -t "${IMAGE}" -f "${project_path}/Dockerfile" .
               echo "${app_id} built successfully"
 
               if [ "$LOGGED_IN" = "true" ] && [ "$REGISTRY_REACHABLE" = "true" ]; then
@@ -1357,7 +1360,7 @@ jobs:
           PYEOF
 
           # Extract ticket key from the latest commit message (e.g. 'E2EPROJECT-37: ...')
-          TICKET_KEY=$(git log -1 --format='%s' | grep -oE '[A-Z]+-[0-9]+' | head -1 || echo '')
+          TICKET_KEY=$(git log -1 --format='%s' | grep -oE '[A-Z0-9]+-[0-9]+' | head -1 || echo '')
 
           # Write release.json per deployed environment
           RELEASE_VERSION="${RELEASE_VERSION:-0.1.0}"
