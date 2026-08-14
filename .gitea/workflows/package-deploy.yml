@@ -809,6 +809,25 @@ jobs:
               print(f'Pinned Job image for {app_id}: {image}')
           PYEOF
 
+              # Job pod templates are immutable: a Job created by a previous
+              # deploy cannot be re-applied with a new image ("field is
+              # immutable"). Delete existing Jobs by name (ignore-not-found),
+              # then apply fresh so bootstrap/migration jobs re-run per deploy.
+              python3 << PYEOF
+          import re, subprocess, sys
+          namespace = '${NAMESPACE}'
+          jobs_raw = open('/tmp/k8s-jobs.yaml', encoding='utf-8').read()
+          names = re.findall(r'^  name:\s*(\S+)', jobs_raw, flags=re.M)
+          for name in names:
+              print(f'Removing existing Job {name} (immutable spec) ...')
+              r = subprocess.run(
+                  ['kubectl', '-n', namespace, 'delete', 'job', name, '--ignore-not-found'],
+                  capture_output=True, text=True)
+              if r.returncode != 0:
+                  print(f'ERROR: could not delete Job {name}: {r.stderr.strip()}')
+                  sys.exit(1)
+          PYEOF
+
               echo "Applying Job phase (${ENV})..."
               if ! kubectl apply -f /tmp/k8s-jobs.yaml 2>&1; then
                 echo "ERROR: kubectl apply failed for jobs - running dry-run for diagnosis..."

@@ -730,6 +730,11 @@ a failure; do not regress them.
 19. **HTTP-only registry login**: `docker login host.docker.internal:5001` forces HTTPS and fails (not in the
     daemon's insecure-registries); log in and push via the `localhost` retag instead. See
     `configure-ci-workflows` rule 8.
+20. **Job pod templates are immutable**: a `Job` created by a previous deploy cannot be re-applied with a new
+    image — `kubectl apply` fails with `The Job "<name>" is invalid: ... field is immutable`. The deploy step must
+    delete existing Jobs by name before the Job-phase apply (`kubectl delete job <name> --ignore-not-found`,
+    deleting every Job name present in the phase file), so bootstrap/migration jobs re-run fresh per deploy. See the
+    delete-before-apply block in `package-deploy.yml` before `Applying Job phase`.
 
 ### Troubleshooting Quick Reference
 
@@ -747,6 +752,7 @@ a failure; do not regress them.
 | `Error: Process completed with exit code 1` on build step | Run `kustomize build . 2>&1` locally to see the real error |
 | `The Service "db.internal" is invalid: must not contain dots` | Service names must be DNS-1123 (no dots) — rename to `db`; the `validate-k8s-overlays` gate now catches it in CI |
 | `Job db-bootstrap did not complete: BackoffLimitExceeded` on a fresh namespace | Shared infra applied after the Job — apply the database (Phase 0) before the Job phase |
+| `The Job "db-bootstrap" is invalid: ... field is immutable` on re-deploy | Job pod templates are immutable — delete existing Jobs by name (`kubectl delete job <name> --ignore-not-found`) before the Job-phase apply (delete-then-apply) |
 | PVC stuck `Pending`, database never starts | Explicit `storageClassName` doesn't exist in the cluster (kind default is `standard`) — drop the explicit class |
 | `npm error code EUSAGE` / `Missing target in lock file` in image build | npm 10 arborist bug on `file:` deps + layout mismatch — pin npm@11, mirror repo layout, absolute COPY destinations |
 | `Docker login failed (HTTPS fallback)` / manifest check `HTTP 404` | Registry is HTTP-only — log in and push via the `localhost` retag |
