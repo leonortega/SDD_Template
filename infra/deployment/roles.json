@@ -19,7 +19,7 @@
       "healthCheck": "http"
     },
     "database": {
-      "description": "Shared database engine (StatefulSet, service db.internal)",
+      "description": "Shared database engine (StatefulSet, service db)",
       "hostPortBase": 5432,
       "nodePortOffset": 700,
       "containerPort": 5432,

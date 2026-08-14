@@ -17,6 +17,7 @@ Callers:
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -91,6 +92,13 @@ HOST_PORT_BLOCK = 10
 NODE_PORT_BLOCK = 10
 ENV_NODE_CODES: dict[str, int] = {"dev": 30, "qa": 31, "prod": 32}
 _NODE_PORT_UPPER = 32768  # K8s NodePort range ends at 32767 (exclusive bound)
+
+# Kubernetes Service names must be DNS-1123 labels (no dots): the shared
+# engine once shipped as ``db.internal`` and only failed on the real apply
+# (`kubectl apply --dry-run=client` does not validate names server-side).
+# Any ``serviceName`` override must satisfy this too, since it becomes the
+# Service patch's metadata.name.
+_DNS1123_LABEL = re.compile(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
 
 def _role_for_app(root: Path, app_id: str) -> str | None:
     """Role fallback for an appId from the apps.json registry.
@@ -201,6 +209,13 @@ def load_ports(root: Path) -> dict[str, Any]:
             # Range checks: every app must resolve to a known role, and its
             # ports must stay inside the role/env block scheme. The role
             # vocabulary comes from infra/deployment/roles.json (ADR-0004).
+            service = cfg.get("serviceName", app)
+            if len(service) > 63 or not _DNS1123_LABEL.match(service):
+                raise ValueError(
+                    f"{path}: {env}/{app} serviceName {service!r} is not a valid "
+                    "DNS-1123 label (lowercase alphanumerics and '-', no dots) — "
+                    "kubectl apply will reject the Service patch."
+                )
             role = cfg.get("role") or _role_for_app(root, app)
             if not role:
                 raise ValueError(
@@ -496,7 +511,7 @@ def service_patch_yaml(
 
     Each block patches the Service named by ``app`` (or its ``serviceName``
     override — infra services like the shared database register as
-    ``database`` but expose ``db.internal``) to the env's NodePort, forcing
+    ``database`` but expose ``db``) to the env's NodePort, forcing
     ``type: NodePort`` so kind extraPortMappings can reach it. The container
     port comes from ``appPorts`` when present, else the role's containerPort
     (roles.json / shipped defaults) — the shared database is 5432.

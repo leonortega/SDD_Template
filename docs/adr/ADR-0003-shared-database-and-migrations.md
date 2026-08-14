@@ -43,10 +43,10 @@ coupling the template to any one stack:
 
 1. **Shared engine per environment** — `infra/k8s/shared/database/` (not `base/`, which
    ADR-0002 deleted) holds `statefulset.yaml` + `pvc.yaml` + `service.yaml` (ClusterIP,
-   e.g. `db.internal`, patched to NodePort per env via `ports.json` — see below) +
+   e.g. `db`, patched to NodePort per env via `ports.json` — see below) +
    `kustomization.yaml`. It is composed into every env overlay, so each
    namespace (`sdd-dev` / `sdd-qa` / `sdd-prod`) gets exactly one engine. Apps connect via
-   `db.internal` plus their own logical database name (orders, storefront, ...). The engine
+   `db` plus their own logical database name (orders, storefront, ...). The engine
    itself is a project-wide choice from `project-profile.local.json → stack.database`, never a
    per-app field.
 2. **Cluster-level manifests home** — `infra/k8s/shared/` is the corrected home for shared
@@ -70,7 +70,7 @@ coupling the template to any one stack:
    `ports.json` (no ports). The shared database is the one infra service that IS registered:
    `roles.json` ships a `database` role (host base 5432, nodePort offset 700, TCP health
    check) and `ports.json` assigns per-env host/node ports (dev 5432/30700, qa 5433/31700,
-   prod 5434/32700) with a `serviceName: db.internal` override so the overlay gate matches
+   prod 5434/32700) with a `serviceName: db` override so the overlay gate matches
    the rendered Service name. The health probe TCP-checks it so the Grafana Service Health
    panel shows the database row per environment.
 6. **Overlay composition (corrected paths)** — from `infra/k8s/overlays/{env}/`:
@@ -125,7 +125,7 @@ coupling the template to any one stack:
 - `.gitea/workflows/package-deploy.yml` — phased applies (bootstrap → migration-jobs →
   deployments), `wait --for=condition=complete`, Job-failure gating, dispatch-path ordering.
 - `infra/k8s/shared/database/` — `kustomization.yaml` plus StatefulSet (with readiness/liveness
-  probes, e.g. `pg_isready`), PVC, and the `db.internal` Service (ClusterIP base, upgraded to
+  probes, e.g. `pg_isready`), PVC, and the `db` Service (ClusterIP base, upgraded to
   NodePort per env by the overlay service patches generated from `ports.json`). The overlay-compose
   guard (`test_k8s_validate`) requires every composed resource to resolve to a directory containing
   a `kustomization.yaml`.

@@ -44,7 +44,7 @@ The shipped template contains **no reference apps**:
 
 Deliberately **not** changed:
 
-- `infra/k8s/shared/database/` (StatefulSet + PVC + `db.internal`, ClusterIP base upgraded to NodePort per env via
+- `infra/k8s/shared/database/` (StatefulSet + PVC + `db`, ClusterIP base upgraded to NodePort per env via
   the overlay service patches from `ports.json`) stays — it is the template's deployment machinery (ADR-0003), not
   product implementation.
 - Test fixtures keep arbitrary appIds (`app-web`/`app-api`) — the machinery is proven by the test suite, not by

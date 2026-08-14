@@ -544,7 +544,8 @@ python -m tools.sdd_cli environment-lab provision-gitea-secrets
 
 Verify end-to-end:
 
-1. **Docker build works**: `docker build -f apps/<appId>/Dockerfile apps/<appId>`
+1. **Docker build works**: `docker build -f apps/<appId>/Dockerfile .` — from the **repo root**, because an app's
+   `file:` deps on `packages/<pkg>` resolve from `../../packages` inside the image
 2. **Kustomize build works**: `cd infra/k8s/overlays/dev && kustomize build . | kubectl apply --dry-run=client -f -`
    (or run the full gate: `python -m tools.sdd_cli environment-lab validate-k8s-overlays` — renders all three overlays
    and checks NodePort uniqueness cluster-wide + `infra/deployment/ports.json` parity; requires kustomize, see
@@ -706,6 +707,29 @@ a failure; do not regress them.
     database file`).
 14. **Trivy first run**: do not use `--skip-db-update` on a first-run scan — the CI image has no
     pre-cached vuln DB. The runner container has outbound internet, so let Trivy download its DB.
+15. **Service names must be DNS-1123 (no dots)**: a Service named `db.internal` passes
+    `kubectl apply --dry-run=client` (client-side validation does NOT check names) and only fails on the
+    real apply with `The Service "..." is invalid: must not contain dots`. Name services
+    `[a-z0-9]([-a-z0-9]*[a-z0-9])?` (≤63 chars) — e.g. the shared engine is `db`, not `db.internal`. The
+    `validate-k8s-overlays` gate now enforces this on every rendered Service, and
+    `k8s_ports.load_ports` rejects a dotted `serviceName` in ports.json.
+16. **Fresh-namespace phase ordering (shared infra before Jobs)**: the shared database (StatefulSet + PVC +
+    Service, labelled `app.kubernetes.io/component: database`) must be applied and ready BEFORE the
+    `db-bootstrap` Job runs. On a fresh namespace the Job waits for a database that does not exist yet and
+    dies with `BackoffLimitExceeded`. The deploy step applies `k8s-infra.yaml` (Phase 0) and waits for the
+    statefulset rollout before the Job phase.
+17. **storageClassName must exist in the cluster**: kind's default StorageClass is `standard`
+    (rancher.io/local-path provisioner). Pinning a class the cluster does not ship (e.g. `local-path`) leaves
+    the PVC `Pending` forever and the database never starts. Do not set an explicit `storageClassName` unless
+    you know the cluster provides it.
+18. **npm `file:` deps in images**: pin `npm@11` (npm 10 crashes on `file:` links), mirror the repo layout in
+    the image (`/app/apps/<appId>` + `/app/packages` — npm resolves link targets via `relpath` against the
+    lockfile), use ABSOLUTE COPY destinations (a relative one resolves against `WORKDIR` — reordering WORKDIR
+    silently breaks it), and build packages' `dist/` before the app's tsc. See the `multi-stage-dockerfile`
+    skill for the full rule set.
+19. **HTTP-only registry login**: `docker login host.docker.internal:5001` forces HTTPS and fails (not in the
+    daemon's insecure-registries); log in and push via the `localhost` retag instead. See
+    `configure-ci-workflows` rule 8.
 
 ### Troubleshooting Quick Reference
 
@@ -721,3 +745,9 @@ a failure; do not regress them.
 | Runner never picks up CI jobs | `labels: ["ubuntu-latest"]` must match the workflow `runs-on` |
 | `lookup host.docker.internal: no such host` (on host) | Resolves only inside containers with `--add-host ...:host-gateway` — test from a container, not the host |
 | `Error: Process completed with exit code 1` on build step | Run `kustomize build . 2>&1` locally to see the real error |
+| `The Service "db.internal" is invalid: must not contain dots` | Service names must be DNS-1123 (no dots) — rename to `db`; the `validate-k8s-overlays` gate now catches it in CI |
+| `Job db-bootstrap did not complete: BackoffLimitExceeded` on a fresh namespace | Shared infra applied after the Job — apply the database (Phase 0) before the Job phase |
+| PVC stuck `Pending`, database never starts | Explicit `storageClassName` doesn't exist in the cluster (kind default is `standard`) — drop the explicit class |
+| `npm error code EUSAGE` / `Missing target in lock file` in image build | npm 10 arborist bug on `file:` deps + layout mismatch — pin npm@11, mirror repo layout, absolute COPY destinations |
+| `Docker login failed (HTTPS fallback)` / manifest check `HTTP 404` | Registry is HTTP-only — log in and push via the `localhost` retag |
+| `Does not have enough approvals` on PR merge | Branch protection requires 1 approval; PR author cannot approve own PR — approve with a review-user token (FirstUser/SecondUser) |

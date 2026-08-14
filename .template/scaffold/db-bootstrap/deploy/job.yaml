@@ -13,7 +13,7 @@ spec:
           imagePullPolicy: IfNotPresent
           env:
             - name: DB_HOST
-              value: db.internal   # shared engine ClusterIP service (ADR-0003)
+              value: db   # shared engine ClusterIP service (ADR-0003)
             - name: DB_PORT
               value: "5432"
             - name: DB_ADMIN_USER

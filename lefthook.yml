@@ -12,7 +12,9 @@ pre-commit:
       run: gitleaks protect --staged --redact
     trunk-fmt:
       # --yes: npx must not prompt to install the launcher mid-hook (non-TTY).
-      run: npx --yes trunk fmt
+      # Scoped to apps/: community skills under .agents/skills are third-party
+      # and are not formatted by the product hook.
+      run: npx --yes trunk fmt apps
 
 # Product tests (unit, integration, architecture) + the coverage gate run
 # locally BEFORE push so the CI image stays lean (stack runtimes live on the
@@ -32,4 +34,6 @@ commit-msg:
       run: gitleaks detect --source . --no-git --redact --verbose --config .gitleaks.toml
     trunk-check:
       # --yes: npx must not prompt to install the launcher mid-hook (non-TTY).
-      run: npx --yes trunk check --all --ci --no-fix
+      # Scoped to apps/: the SDD shell (template/docs/infra/tools) is validated
+      # by its own CI gates, not the product pre-push hook.
+      run: npx --yes trunk check apps --ci --no-fix

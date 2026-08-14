@@ -124,3 +124,6 @@ $RECYCLE.BIN/
 # checkov --download-external-modules artifact (must never ship)
 .external_modules/
 nul
+
+# TypeScript incremental build artifacts
+*.tsbuildinfo

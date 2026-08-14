@@ -146,7 +146,7 @@ def test_service_patch_yaml_per_env(tmp_path: Path) -> None:
 def test_service_patch_yaml_database_uses_role_port_and_service_name(
     tmp_path: Path,
 ) -> None:
-    """The shared database entry patches db.internal with the database role's
+    """The shared database entry patches db with the database role's
     container port (5432), type NodePort, and the env nodePort."""
     ports = _valid_ports()
     for env in ("dev", "qa", "prod"):
@@ -154,11 +154,11 @@ def test_service_patch_yaml_database_uses_role_port_and_service_name(
             "hostPort": 5432 + {"dev": 0, "qa": 1, "prod": 2}[env],
             "nodePort": {"dev": 30700, "qa": 31700, "prod": 32700}[env],
             "role": "database",
-            "serviceName": "db.internal",
+            "serviceName": "db",
         }
     _write_ports(tmp_path, ports)
     dev = service_patch_yaml(load_ports(tmp_path), "dev")
-    assert "name: db.internal" in dev
+    assert "name: db" in dev
     assert "type: NodePort" in dev
     assert "port: 5432" in dev and "targetPort: 5432" in dev
     assert "nodePort: 30700" in dev

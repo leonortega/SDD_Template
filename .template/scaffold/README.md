@@ -13,14 +13,23 @@ adapts — they are never deployed directly and are not registered in
 | `apps/service/`               | Deployable app shape: Deployment + Service (+ per-app kustomization) |
 | `apps/job/`                   | Wait-for-completion Job shape (no Service, no ports — ADR-0003)    |
 | `db-bootstrap/`               | Engine-level bootstrap (logical DBs/roles/extensions) — the script + engine-client image the scaffold rewrites per selected engine |
+| `packages/node/`              | Shared-library skeleton (package.json, tsconfig, src stub, unit test) — materialized as `packages/<pkg>/` with `<pkgName>` substituted for JS/TS stacks |
 
 Placeholder conventions:
 
 - `<appId>` is the app identifier from `apps.json` (lowercase, `^[a-z][a-z0-9_-]*$`).
+- `<pkgName>` is a shared-library name in `packages/` (lowercase, `^[a-z][a-z0-9_-]*$`).
 - Ports: the role's `containerPort` fallback from `infra/deployment/roles.json`;
   per-env nodePorts come from `assign-app-ports` → `ports.json`.
 - Stack-specific artifacts (Dockerfile, package manifests, test config) are
   generated per stack — never from a fixed template list.
+
+## Lifecycle: packages shapes are NOT pruned
+
+The `packages/` shapes stay — unlike app shapes, they are not tied to a
+registered appId, so `prune-scaffold` never removes them. Once a real
+implementation of a package exists, delete its shape by hand if you want the
+shape list to shrink.
 
 ## Lifecycle: shapes are pruned once implemented
 

@@ -178,6 +178,12 @@ Body: `Do` (req: `merge|rebase|rebase-merge|squash|fast-forward-only`, **note th
 
 A 405 typically means the PR is not mergeable (conflicts, failing required checks, missing approvals).
 
+**Approvals diagnostic (branch-protected repos):** `Does not have enough approvals` means the branch protection rule's
+`required_approvals` is unmet. A PR author can NEVER satisfy it themselves — Gitea rejects `approve your own pull is
+not allowed` — so the approval must come from a different user (e.g. a provisioned reviewer account). Check who owns the
+PR (`POST` author vs reviewer), list existing reviews, and report the gap; a protected branch merge without an eligible
+non-author approver is a blocker.
+
 ## PR reviews
 
 ### List reviews · `GET /repos/{owner}/{repo}/pulls/{idx}/reviews?page=1&limit=30` · read-only

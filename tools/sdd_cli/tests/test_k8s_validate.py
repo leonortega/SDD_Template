@@ -153,7 +153,7 @@ def test_clean_overlays_pass(tmp_path) -> None:
 
 def test_drift_matches_service_name_override(tmp_path) -> None:
     """A ports.json entry rendered under its serviceName override (the shared
-    database registers as 'database' but its Service renders as 'db.internal')
+    database registers as 'database' but its Service renders as 'db')
     must match the canonical nodePort instead of being flagged as missing."""
     pytest.importorskip("yaml")
     _write_overlay_dirs(tmp_path)
@@ -169,7 +169,7 @@ def test_drift_matches_service_name_override(tmp_path) -> None:
                     "hostPort": 5432 + i,
                     "nodePort": 30700 + i * 1000,
                     "role": "database",
-                    "serviceName": "db.internal",
+                    "serviceName": "db",
                 }
             }
             for i, env in enumerate(("dev", "qa", "prod"))
@@ -181,7 +181,7 @@ def test_drift_matches_service_name_override(tmp_path) -> None:
         env = str(command[-1]).replace("\\", "/").split("/")[-1]
         cfg = ports["environments"][env]["database"]
         doc = (
-            "apiVersion: v1\nkind: Service\nmetadata:\n  name: db.internal\n"
+            "apiVersion: v1\nkind: Service\nmetadata:\n  name: db\n"
             "spec:\n  ports:\n    - port: 5432\n      targetPort: 5432\n"
             f"      nodePort: {cfg['nodePort']}\n"
         )

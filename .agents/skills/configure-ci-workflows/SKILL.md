@@ -174,14 +174,15 @@ jobs:
 
       # ── Deployable-changes gate (app-aware, ADR-0002) ──
       # Deploy in ANY environment only when the change set touches an
-      # apps/<appId>/src|test path at any depth, or a packages/<pkg>/** path
-      # whose package an app declares in apps.json `dependsOn`. Docs, infra,
-      # and workflow-only changes must not deploy. Also emits AFFECTED_APPS
-      # (comma-separated appIds to build/deploy; "ALL" for unconditional
-      # runs) so downstream build/deploy steps act only on changed apps.
-      # Gate every deploy-pipeline step with:
+      # apps/<appId>/src|test path at any depth, an app's Dockerfile
+      # (apps/<appId>/Dockerfile — the image content depends on it), or a
+      # packages/<pkg>/** path whose package an app declares in apps.json
+      # `dependsOn`. Docs, infra, and workflow-only changes must not deploy.
+      # Also emits AFFECTED_APPS (comma-separated appIds to build/deploy;
+      # "ALL" for unconditional runs) so downstream build/deploy steps act
+      # only on changed apps. Gate every deploy-pipeline step with:
       #   if: steps.changes.outputs.deployable == 'true'
-      - name: Check for deployable changes (src/ or test/ folders)
+      - name: Check for deployable changes (src/, test/, or Dockerfiles)
         id: changes
         shell: bash
         env:
@@ -228,10 +229,12 @@ jobs:
             exit 0
           fi
 
-          # App-aware mapping: apps/<appId>/src|test -> that app; a
+          # App-aware mapping: apps/<appId>/src|test -> that app; an app's
+          # Dockerfile -> that app (image content depends on it); a
           # packages/<pkg>/** change -> every app that declares the package in
-          # apps.json `dependsOn`. packages/** is EXCLUDED from the generic
-          # src/test count (an orphan package must not deploy by itself).
+          # apps.json `dependsOn`. DEPLOYABLE is computed HERE (python) so the
+          # gate is end-to-end testable; packages/** only deploys when a
+          # dependent exists (an orphan package must not deploy by itself).
           export CHANGED_LIST="${CHANGED}"
           python3 << 'PYEOF'
           import json, os, re
@@ -246,11 +249,19 @@ jobs:
           apps_by_id = {a["appId"]: a for a in apps}
           affected = []
           packages_deployable = False
+          deployable = False
           for path in changed:
               m = re.match(r"^apps/([^/]+)/(src|test)/", path)
               if m:
                   if m.group(1) not in affected:
                       affected.append(m.group(1))
+                  deployable = True
+                  continue
+              m = re.match(r"^apps/([^/]+)/Dockerfile$", path)
+              if m:
+                  if m.group(1) not in affected:
+                      affected.append(m.group(1))
+                  deployable = True
                   continue
               m = re.match(r"^packages/([^/]+)/", path)
               if m:
@@ -265,12 +276,14 @@ jobs:
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
               out.write(f"AFFECTED_APPS={','.join(affected)}\n")
               out.write(f"PACKAGES_DEPLOYABLE={'true' if packages_deployable else 'false'}\n")
+              out.write(f"DEPLOYABLE={'true' if (deployable or packages_deployable) else 'false'}\n")
           PYEOF
           PACKAGES_DEPLOYABLE=$(sed -n 's/^PACKAGES_DEPLOYABLE=//p' "$GITHUB_OUTPUT" | tr -d '\r' | tail -1)
           PACKAGES_DEPLOYABLE="${PACKAGES_DEPLOYABLE:-false}"
+          DEPLOYABLE=$(sed -n 's/^DEPLOYABLE=//p' "$GITHUB_OUTPUT" | tr -d '\r' | tail -1)
+          DEPLOYABLE="${DEPLOYABLE:-false}"
 
-          COUNT=$(echo "${CHANGED}" | grep -vE '^packages/' | grep -cE '(^|/)(src|test)/' || true)
-          if [ "${COUNT}" -gt 0 ] || [ "${PACKAGES_DEPLOYABLE}" = "true" ]; then
+          if [ "${DEPLOYABLE}" = "true" ]; then
             echo "DEPLOYABLE=true" >> "$GITHUB_OUTPUT"
           else
             echo "DEPLOYABLE=false" >> "$GITHUB_OUTPUT"
@@ -524,7 +537,10 @@ hardened patterns — each one prevented a real CI failure:
 
 1. **NodePort uniqueness gate** — before any apply, validate every `infra/k8s/overlays/*/service-patch.yaml` `nodePort:`
    against `infra/deployment/ports.json` (cluster-scoped: dev `30080/30500`, qa `31080/31500`, prod `32080/32500`).
-   Drift or collision must fail the build. Use `tools/sdd_cli/k8s_ports.py` as the canonical generator.
+   Drift or collision must fail the build. Use `tools/sdd_cli/k8s_ports.py` as the canonical generator. **Resolve
+   `serviceName` overrides** when matching patches: the gate must look up the canonical entry by
+   `cfg.get('serviceName', app)`, not the raw key — the shared database registers as `database` but its Service is
+   `db`, and a raw-key lookup reports false DRIFT (`patch nodePort=None`).
 2. **Delete Deployments before apply** — Deployment `spec.selector.matchLabels` is immutable; delete the existing
    Deployment per app in the target namespace before `kubectl apply`, or the apply fails with `field is immutable`.
    Do **not** delete Services — their selector IS mutable and they update in place.
@@ -541,11 +557,14 @@ hardened patterns — each one prevented a real CI failure:
    run a PROD `/health` smoke gate (host ports from `infra/deployment/ports.json`) after deploy. Never rebuild or
    republish during PROD promotion.
 7. **App-aware deploy gate** (ADR-0002) — deploy in ANY environment only when the change set touches an
-   `apps/<appId>/src|test` path at any depth, or a `packages/<pkg>/**` path whose package an app declares in
-   `apps.json` `dependsOn` (shared-code change → rebuild the dependent apps). The gate also emits `AFFECTED_APPS`
+   `apps/<appId>/src|test` path at any depth, **an app's Dockerfile
+   (`apps/<appId>/Dockerfile` — image content depends on it, so a Dockerfile-only fix must rebuild+redeploy the app;
+   without this a Dockerfile hotfix silently deploys nothing)**, or a `packages/<pkg>/**` path whose package an app
+   declares in `apps.json` `dependsOn` (shared-code change → rebuild the dependent apps). Compute `DEPLOYABLE` in the
+   python heredoc (not a shell grep) so the gate is end-to-end testable. The gate also emits `AFFECTED_APPS`
    (comma-separated appIds; `ALL` on unconditional runs) so build/deploy/metadata steps act only on changed apps —
-   `packages/**` paths are excluded from the generic `(^|/)(src|test)/` count (an orphan package with no dependents
-   must not deploy). The change set is the deploy commit's **first-parent diff**
+   `packages/**` paths only deploy when a dependent exists (an orphan package with no dependents must not deploy).
+   The change set is the deploy commit's **first-parent diff**
    for PR merges and ref-head `workflow_dispatch` runs (checkout at depth 2). Never use `pull_request.base.sha` for PR
    merges: after the merge it points at the base branch head — the merge commit itself — so the diff is empty and
    the deploy is wrongly skipped. **Operator-override exception:** a `workflow_dispatch` with an explicit
@@ -553,6 +572,19 @@ hardened patterns — each one prevented a real CI failure:
    **unconditionally deployable** — skip the diff gate (`DEPLOYABLE=true`, `AFFECTED_APPS=ALL`), even for infra-only
    pinned commits. Docs, infra, and workflow-only changes must not deploy on the auto paths — gate every deploy step
    with `if: steps.changes.outputs.deployable == 'true'`.
+8. **HTTP-only registry login** — when the Docker registry is an HTTP lab registry (Nexus `:5001`), `docker login
+   host.docker.internal:5001` forces HTTPS and fails (the host isn't in the daemon's insecure-registries), which skips
+   the push and then fails the fail-closed manifest check (`HTTP 404`). Docker treats `localhost`/`127.0.0.1` as
+   implicitly insecure, so log in AND push via the `localhost` retag (`localhost:${REGISTRY##*:}`) for local-lab
+   registries — the registry stores repo names host-independently, so manifest checks against
+   `host.docker.internal` still find the pushed images.
+9. **Fresh-namespace phase ordering (shared infra before Jobs)** — split the rendered manifest into three files:
+   `/tmp/k8s-infra.yaml` (shared infra — resources labelled `app.kubernetes.io/component: database`),
+   `/tmp/k8s-jobs.yaml` (kind: Job — bootstrap/migrations), and `/tmp/k8s-deployments.yaml` (everything else).
+   Apply **infra first** and wait for its rollout (e.g. `kubectl rollout status statefulset/database`), THEN apply Jobs
+   and wait for completion, THEN deployments. On a fresh namespace the bootstrap Job otherwise waits for a database
+   that does not exist yet and dies with `BackoffLimitExceeded`. Keep infra + Jobs out of the affected-app filter
+   (they always apply).
 
 ### 5. Generate `pr-validation.yml`
 

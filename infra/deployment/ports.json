@@ -9,7 +9,7 @@
         "hostPort": 5432,
         "nodePort": 30700,
         "role": "database",
-        "serviceName": "db.internal"
+        "serviceName": "db"
       }
     },
     "qa": {
@@ -17,7 +17,7 @@
         "hostPort": 5433,
         "nodePort": 31700,
         "role": "database",
-        "serviceName": "db.internal"
+        "serviceName": "db"
       }
     },
     "prod": {
@@ -25,7 +25,7 @@
         "hostPort": 5434,
         "nodePort": 32700,
         "role": "database",
-        "serviceName": "db.internal"
+        "serviceName": "db"
       }
     }
   }
