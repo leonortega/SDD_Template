@@ -153,12 +153,14 @@ Specified tickets. Bug tickets (status `New`, ID 1) are re-routed to
    `IA generated workflow telemetry: {ticketKey}:dev-flow-start-ticket`. No fallback:
    if the API fails, stop and report.
 7. **Branch** — pull base branch (`git pull --ff-only`), create/reuse the configured
-   branch name (e.g. `feat/e2eproject-1-create-files-and-folders-for-a-site`), pre-scan
+   branch name (e.g. `feat/ticket-1-create-files-and-folders-for-a-site`), pre-scan
    local/remote conflicts, push with upstream.
 8. **Planning analysis** — feed the human ticket text to `dev-flow-explore-change`, then run
-   at least 1 and up to 4 iterative `grill-with-docs` cycles, **always asking the user for
-   extra info** (at least one clarifying question even when the ticket seems complete);
-   consolidate into one refined-requirements document.
+   1 to 4 iterative `grill-with-docs` cycles with **no fixed default** (~2 typical; never cut
+   the process short — keep grilling while questions remain, up to the 4-cycle maximum; stop
+   only when a cycle produces no new questions AND the user confirms the plan is fully clear),
+   **always asking the user for extra info** (at least one clarifying question even when the
+   ticket seems complete); consolidate into one refined-requirements document.
 9. **Curated ticket block** — merge both outputs into one agile-format IA block
    (problem/opportunity, user story, concrete acceptance criteria, scope, **out of
    scope**, dependencies/assumptions, validation expectations, risks, definition of
@@ -178,7 +180,7 @@ Specified tickets. Bug tickets (status `New`, ID 1) are re-routed to
 Creates the change and generates all planning artifacts in one flow:
 
 ```bash
-openspec new change "<change-name>"        # kebab-case, e.g. feat-e2eproject-1-files
+openspec new change "<change-name>"        # kebab-case, e.g. feat-ticket-1-files
 ```
 
 - `proposal.md` — problem/opportunity, user story, scope, acceptance criteria, out of
@@ -197,9 +199,9 @@ If the forecast reports `400-line budget risk: High`, `Chained PRs recommended: 
 > **Chained PRs and CI timing.** `pr-validation.yml` triggers only on PRs targeting `main` / `dev`
 > (see `.gitea/workflows/pr-validation.yml`). A chained PR that targets PR 1's feature branch gets
 > **no CI run** — validation happens only once PR 1 merges and the chained PR is retargeted to `dev`.
-> Until then the `codex-reviewed` label gate cannot go green on the chained PR, so run the review
+> Until then the `agent-reviewed` label gate cannot go green on the chained PR, so run the review
 > loop (`dev-flow-pr-review-feedback-loop`) on the chained PR **after** the retarget to `dev` to
-> drive it to `codex-reviewed` against a real PR Validation run. The local CI loop (Section 7.1)
+> drive it to `agent-reviewed` against a real PR Validation run. The local CI loop (Section 7.1)
 > covers the gap in the meantime.
 
 ### Stage 3 — Implement Ticket (`dev-flow-implement-ticket`)
@@ -276,7 +278,7 @@ SUGGESTION (nice to fix). Critical issues block PR handoff and archive.
 ### Stage 5 — PR Review Agent (`dev-flow-pr-review-agent`)
 
 Reviews one explicit PR (invoked after PR creation or on resume; marker
-`<!-- codex-review-agent:{headSha} -->` prevents duplicate reviews for the same head):
+`<!-- agent-review:{headSha} -->` prevents duplicate reviews for the same head):
 
 1. **Resolve the PR** — verify PR/branch/head against the ticket lock.
 2. **Review the code** — finding priority: bugs/regressions, missing edge tests,
@@ -292,16 +294,16 @@ Reviews one explicit PR (invoked after PR creation or on resume; marker
    hand-rolled stdlib behavior, speculative abstractions).
 5. **Post the review** — one top-level comment with stable finding ids (`AI-001`…),
    test gaps, review mode, adversarial verdict, sources consulted.
-6. **Labels** — `codex-reviewed` (#5319e7), `needs-tests` (#fbca04), `needs-changes`
+6. **Labels** — `agent-reviewed` (#5319e7), `needs-tests` (#fbca04), `needs-changes`
    (#d73a4a); create missing labels, apply/remove based on current head findings.
-   `codex-reviewed` is the CLEAN marker: applied only when the head has zero findings
+   `agent-reviewed` is the CLEAN marker: applied only when the head has zero findings
    of any severity (no BLOCKER/WARNING/SUGGESTION, no test gaps) AND its PR Validation
    run is green, and REMOVED whenever any finding exists or the run is red/pending —
    so the CI gate stays red until the review loop is clean.
 7. **PR Validation gate check (mandatory)** — read the latest Gitea Actions
    `pr-validation` run for the current head before finalizing the review. Every
    failing step is a `BLOCKER` finding quoting the step name and exact error; a red,
-   pending, or unreadable run also keeps `codex-reviewed` off.
+   pending, or unreadable run also keeps `agent-reviewed` off.
 
 ### Stage 6 — PR Review Feedback Loop (`dev-flow-pr-review-feedback-loop`)
 
@@ -319,7 +321,7 @@ human review (on manual resume).
 6. Add one OpenSpec `## PR Review Feedback` task per feedback item (source type, id,
    head SHA, severity, requested change).
 7. Add ticket comment marker `IA generated PR feedback detected: {headSha}:{feedbackBatchId}`.
-8. Ensure the `codex-reviewed` label is removed while actionable feedback exists or the
+8. Ensure the `agent-reviewed` label is removed while actionable feedback exists or the
    current-head PR Validation run is red/pending (CI stays red until the loop is clean),
    then apply fixes, run relevant validation, mark tasks complete only after code +
    validation.
@@ -328,14 +330,14 @@ human review (on manual resume).
    status, reviewer feedback addressed, how IA resolved it, changed, validation,
    reviewer readiness, skipped comments).
 10. Rerun the AI review loop on the new head and re-check its PR Validation run (must
-    have completed, not running/pending); the re-review reapplies `codex-reviewed` only
+    have completed, not running/pending); the re-review reapplies `agent-reviewed` only
     when the new head has zero findings of any severity AND its PR Validation run is
     green.
 
 Ticket stays in `Developed` (ID 8) during late feedback fixes. Handoff to merge is
-blocked while any feedback batch is unresolved, `codex-reviewed` is absent (current-head
+blocked while any feedback batch is unresolved, `agent-reviewed` is absent (current-head
 review not clean or PR Validation run not green), or `needs-tests`/`needs-changes` is
-valid on the current head. At most one `codex-reviewed` label live means the loop
+valid on the current head. At most one `agent-reviewed` label live means the loop
 finished clean.
 
 ---
@@ -775,7 +777,7 @@ or updating the PR. If any gate fails, fix the code/config, re-run the loop from
 start (gates are order-independent but are run in CI order), and only push when the loop
 prints `ALL GATES PASSED`.
 
-**What is NOT covered locally (CI-only):** the `codex-reviewed` label gate (requires the
+**What is NOT covered locally (CI-only):** the `agent-reviewed` label gate (requires the
 PR + Gitea API — the label is present only when the current-head AI review found zero
 findings AND the current-head PR Validation run is green, so CI stays red until the
 review loop is clean) and checkout networking. The review loop re-checks the run on
@@ -797,7 +799,7 @@ Markers are exact strings; matching markers mean the step is already complete.
 | | `IA generated workflow timing: {ticketKey}` |
 | | ticket block: `<!-- ia-generated:start -->` … `<!-- ia-generated:end -->` |
 | | telemetry: `IA generated workflow telemetry: {ticketKey}:{workflowStage}` |
-| Review | `<!-- codex-review-agent:{headSha} -->` |
+| Review | `<!-- agent-review:{headSha} -->` |
 | | `IA generated PR feedback detected: {headSha}:{feedbackBatchId}` |
 | | `IA generated PR feedback fixes: {headSha}:{feedbackBatchId}` |
 | QA / E2E | `IA generated QA deployment: {commitSha}` |
@@ -917,7 +919,7 @@ capture gate (5).
    `docs-knowledge-maintenance`; `resumeRequested` covers
    the state-driven auto-continue variant. The PR validation gate group (7 cases)
    asserts the CI-in-loop rule via the `review` gate: a red/pending/unknown run is a
-   `BLOCKER` finding with `codexReviewed=false` (no dead-end blocked route — the
+   `BLOCKER` finding with `agentReviewed=false` (no dead-end blocked route — the
    review/fix loop still runs to fix failing steps). Future additions should also
    consider marker-driven idempotency decisions (Section 8) and state-driven variants
    of other stages.

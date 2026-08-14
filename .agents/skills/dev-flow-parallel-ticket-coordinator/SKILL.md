@@ -13,7 +13,7 @@ description: >-
 ## Overview
 
 Use this skill when the AI determines the user asked to implement more than one ticket — for example "implement tickets
-E2EPROJECT-11 and E2EPROJECT-12" or "process these 2 tickets". Ticket count is the decision: one ticket stays on the
+TICKET-11 and TICKET-12" or "process these 2 tickets". Ticket count is the decision: one ticket stays on the
 linear flow (`dev-flow-start-ticket` → `dev-flow-implement-ticket`), two or more use this coordinator. There is no
 `parallelDelivery.enabled` flag gate. Use the coordinator only when the tickets can make progress independently —
 tightly coupled tickets stay sequential at the AI's judgment. Also use this skill when the user asks to run parallel
@@ -137,8 +137,10 @@ checklist question is: `Can I safely start these 2 tickets in parallel?`
 and stop.
 4. Reuse existing ticket worktrees when the ticket key, branch, and local lock agree.
 5. **Per-ticket refinement always asks the user.** Each Todo ticket's refinement runs in its own worktree via
-`dev-flow-start-ticket` and MUST follow the same always-ask gate as the linear flow: at least 1 `grill-with-docs`
-cycle (at most 4), and the user is ALWAYS asked for extra info for that ticket — even
+`dev-flow-start-ticket` and MUST follow the same always-ask gate as the linear flow: 1 to 4 `grill-with-docs`
+cycles with no fixed default (~2 typical; never cut the process short — keep grilling while questions remain), and
+the user is
+ALWAYS asked for extra info for that ticket — even
 when the ticket seems complete — before that ticket's curated IA block is written. The coordinator must not let any
 ticketStarter agent write an IA block without the user having been asked for that ticket (no batching, no silent
 self-answering across tickets).
@@ -171,7 +173,18 @@ Route each ticket by current durable checkpoint:
 - Todo with no branch: use `dev-flow-start-ticket` in that ticket worktree. The child agent MUST run the
   refinement always-ask gate (Section 2 step 5) before writing that ticket's curated IA block.
 - In Progress with branch/OpenSpec and no PR: use `dev-flow-implement-ticket` in that ticket worktree.
-- Open PR: use `dev-flow-implement-ticket` for the review/fix loop or `dev-flow-pr-review-agent` for a focused review.
+- Open PR (chained or not): run the FULL PR review skill — `dev-flow-pr-review-agent` — for EVERY open PR in that
+  ticket worktree. It is mandatory, never optional: first check the PR Validation (Gitea Actions) CI run for the
+  head SHA (a red/pending/unreadable run is a BLOCKER finding and keeps `agent-reviewed` off), then post AI
+  findings, and apply the `agent-reviewed` label ONLY on green + zero findings (`dev-flow-pr-review-agent` §2.1).
+  Drive every label change through the deterministic idempotent CLI (`gitea labels` — the review skill's Apply
+  Labels step; never hand-rolled REST): `python -m tools.sdd_cli gitea labels --pr <number> --add agent-reviewed
+  --remove needs-tests,needs-changes`. The command dedupes repo label definitions to one canonical id per name and
+  diffs the PR's current labels, so no label is ever applied twice or removed when absent — chained PRs get the
+  same one-canonical-id treatment as the first PR. Resolve findings through `dev-flow-pr-review-feedback-loop`
+  (fix → push → rerun AI review → re-check CI; label changes do NOT trigger a fresh CI run, so rerun PR Validation
+  on the new head). Chained/sibling PRs get the same gate as the first PR — never skip the review skill for any
+  open PR, and never tag `agent-reviewed` on a PR whose CI is red or unreviewed.
 - Merged PR awaiting artifact/QA: use `dev-ops-post-merge-deploy` only when the serialized deployment lane is free or
 already owned by that ticket.
 - Ticket in QA: use `configured QA gate` only when the serialized deployment lane is free or already owned by that
@@ -229,6 +242,28 @@ PR merge conflicts. **The coordinator owns the prune, once per kind.**
    an already-pruned shape reports `prune.missing` and is left alone. Never run the destructive prune from more than
    one worktree.
 
+### 7. Sibling PR Merge Conflicts
+
+Parallel tickets branched from the same base frequently touch the same files (e.g. `app.ts` router wiring,
+`index.css`, shared page components). When one PR merges first, the later PR goes red with conflicts. Resolve them in
+the later ticket's worktree — never on `dev` — and verify before pushing (TICKET-38/39 lesson):
+
+1. **Merge the base into the ticket branch** (`git merge gitea/dev` or the configured base). Resolve each conflict by
+   keeping BOTH sides' contributions (e.g. both routers, both CSS blocks) unless the change is genuinely superseded.
+2. **Manual resolution is error-prone — verify with hooks and full suites on the merged tree.** A string/regex
+   conflict resolution silently dropped a closing brace (unclosed `.quote-confirmation-note {`) that swallowed
+   unrelated CSS and broke the web build; prettier/trunk caught it only because the hooks ran. After resolving:
+   - run the repo's formatter/lint (`trunk check`/prettier) on the merged files,
+   - run typecheck + the full test suites for every touched app (both tickets' tests now live in this tree),
+   - confirm `git status` shows no conflict markers (`<<<<<<<`/`=======`/`>>>>>>>`) before staging.
+3. Stage, commit with the ticket prefix, validate OpenSpec, and push. **Re-run the full PR review gate on the new
+   head — mandatory, not optional:** check the PR Validation CI run (rerun it manually when needed — labels do NOT
+   trigger a fresh CI run), then re-run `dev-flow-pr-review-agent` for the new head SHA. Apply/remove labels via
+   the idempotent `gitea labels` CLI (`python -m tools.sdd_cli gitea labels --pr <number> --add agent-reviewed
+   --remove needs-tests,needs-changes`) — never hand-rolled REST, so a re-review on a merged sibling's tree can
+   never duplicate a label on the PR. `agent-reviewed` stays off until the new head is green with zero findings. A
+   chained PR never merges without a clean re-review after conflict resolution.
+
 ## Failure Rules
 
 - Single-ticket request routed here: when the AI determines only one ticket is to be implemented, do not start parallel
@@ -267,8 +302,20 @@ checkout only:
   2. Verify the worktree branch is merged into configured `git.baseBranch`, for example `git merge-base --is-ancestor
   <branch> <baseBranch>`.
   3. Verify no deployment lane owner still references the ticket.
-  4. Run `git worktree remove <worktreePath>` and `git worktree prune`.
-  5. Remove the ticket from `.template/parallel-delivery.local.json`.
+  4. **Run the MUST post-close cleanup (authority level 5, never skipped)** — image/volume/container/kind pruning was
+     removed from CI, so every closed ticket (chained/sibling included) cleans up here, once, from the coordinator
+     checkout:
+
+     ```bash
+     python -m tools.sdd_cli environment-lab prune-docker-leftovers
+     python -m tools.sdd_cli environment-lab prune-kind-images
+     ```
+
+     Both commands are idempotent and non-fatal (a failed prune is a warning), but running them is mandatory — a
+     ticket is not fully closed without this step. If the prunes cannot be executed, report a blocker instead of
+     silently handing off.
+  5. Run `git worktree remove <worktreePath>` and `git worktree prune`.
+  6. Remove the ticket from `.template/parallel-delivery.local.json`.
 - Child role agents must not delete their own assigned worktree.
 
 ## Output

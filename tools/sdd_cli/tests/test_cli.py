@@ -543,14 +543,18 @@ class SddCliTests(unittest.TestCase):
                 False,
             )
             self.assertTrue(result["valid"])
-            self.assertTrue((root / "apps" / "transportar-suite" / "src").is_dir())
+            # Project-name prefix rule: the layout marker is the project's web
+            # skeleton, so it is named <project-slug>-<role> (transportar-suite-web).
+            self.assertTrue(
+                (root / "apps" / "transportar-suite-web" / "src").is_dir()
+            )
             self.assertFalse((root / "apps" / "example").exists())
             marker = json.loads(
-                (root / "apps" / "transportar-suite" / "app.json").read_text(
+                (root / "apps" / "transportar-suite-web" / "app.json").read_text(
                     encoding="utf-8"
                 )
             )
-            self.assertEqual("transportar-suite", marker["appId"])
+            self.assertEqual("transportar-suite-web", marker["appId"])
 
     def test_scaffold_project_files_creates_only_stack_independent_skeleton(
         self,

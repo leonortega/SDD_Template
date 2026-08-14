@@ -8,9 +8,11 @@ Authorization: token <gitea.apiToken>
 
 Never print token values.
 
-## Human-Only Approvals (Hard Gate)
+## Approval Is Automated; Merge Is Human-Only (Hard Gate)
 
-**❌ HARD GATE (authority level 5):** PR approvals and merges are **human-only actions**. The agent NEVER calls:
+**❌ HARD GATE (authority level 5):** **Never use human users to approve a PR.** The automated approval is the
+`agent-reviewed` label (zero findings + green PR Validation) — there is no human approval step in the PR flow. The
+agent NEVER calls:
 
 ```text
 POST {gitea.baseUrl}/api/v1/repos/{owner}/{repo}/pulls/{index}/reviews  # event: APPROVED / DISMISSED
@@ -18,8 +20,9 @@ POST {gitea.baseUrl}/api/v1/repos/{owner}/{repo}/pulls/{index}/merge    # any me
 ```
 
 on behalf of any user — provisioned lab accounts such as FirstUser/SecondUser included. The agent's token is limited
-to reads, top-level PR comments, labels, and requesting reviewers. Human reviewers approve and merge from their own
-accounts; if the agent is asked to approve or merge, it must refuse and report the request as a blocker.
+to reads, top-level PR comments, labels, and requesting reviewers. Apply approval via the `gitea labels` CLI
+(`agent-reviewed`); merges stay with the human. If asked to arrange a human approval, explain that the automated gate
+IS the approval; if asked to merge, refuse — merges are human-only — and report the request as a blocker.
 
 ## PR Lookup
 
@@ -61,7 +64,7 @@ GET {gitea.baseUrl}/api/v1/repos/{owner}/{repo}/pulls/{index}/reviews/{reviewId}
 ```
 
 Treat human-authored top-level comments, inline code comments, and review-thread replies as implementation feedback.
-Exclude generated comments such as `<!-- codex-review-agent:{headSha} -->`, `IA generated PR feedback detected:
+Exclude generated comments such as `<!-- agent-review:{headSha} -->`, `IA generated PR feedback detected:
 {headSha}:{feedbackBatchId}`, `IA generated PR feedback fixes: {headSha}:{feedbackBatchId}`, and other OpenProject
 stable markers from human-feedback fix requirements.
 
@@ -77,7 +80,7 @@ Payload:
 
 ```json
 {
-  "body": "<!-- codex-review-agent:{headSha} -->\nReview findings..."
+  "body": "<!-- agent-review:{headSha} -->\nReview findings..."
 }
 ```
 
@@ -125,7 +128,7 @@ Payload uses label ids:
 
 Default colors:
 
-- `codex-reviewed`: `#5319e7`
+- `agent-reviewed`: `#5319e7`
 - `needs-tests`: `#fbca04`
 - `needs-changes`: `#d73a4a`
 

@@ -219,7 +219,7 @@ the agent must redo the scan.
    - human-authored top-level PR comments and inline code review comments,
    - latest ticket provider `IA generated PR feedback detected: {headSha}:{feedbackBatchId}` markers,
    - latest ticket provider `IA generated PR feedback fixes: {headSha}:{feedbackBatchId}` markers,
-   - current `codex-reviewed`, `needs-tests`, and `needs-changes` labels,
+   - current `agent-reviewed`, `needs-tests`, and `needs-changes` labels,
    - latest repository workflow status.
      Continue from the latest completed checkpoint instead of restarting earlier steps.
 2. Confirm the OpenSpec change is active via the opsx flow: run `openspec status --change "<change>" --json` and check
@@ -448,8 +448,24 @@ At each workflow-step checkpoint with tracked changes:
 3. Run the smallest relevant validation for that step, or document why validation is deferred to CI.
 4. Run Context Findings Review before staging docs, knowledge, or workflow-policy changes.
 5. Stage only files related to that completed step.
-6. Commit with a message that satisfies the configured commit hook and starts with the ticket or OpenSpec id.
+6. Commit with a message that satisfies the configured commit hook and starts with the ticket or OpenSpec id. For
+   non-ticket repo changes (infra/Dockerfile/tooling fixes without an OpenProject ticket), use the `[SDD]` prefix the
+   commit-msg hook accepts — observed: the gate rejects unprefixed messages, so `[SDD] <summary>` is the canonical
+   shape for unticketed changes.
 7. Let hooks run naturally. Do not bypass hooks unless the user explicitly requests that in the current chat.
+
+**⚠️ Hook realities (observed during TICKET-38/39 parallel delivery):**
+
+- **`pre-commit trunk-fmt` reformats AFTER the commit lands.** The commit succeeds but leaves reformatted files dirty;
+  this is expected, not a failure. Re-check `git status` after every commit, and make a small separate
+  "formatting pass" commit (same ticket prefix) so the tree is clean before push. Some files may show `M` with an
+  empty diff (stat-cache/CRLF noise) — refresh the index (`git add` those paths or `git update-index --refresh`)
+  before treating them as real changes.
+- **Long hooks can kill the commit mid-run.** `trunk-check`/`gitleaks` can exceed a 2-minute tool timeout: the commit
+  aborts but leaves files staged. Before retrying, check `git status` (files staged, no new commit) and retry with a
+  longer timeout — do NOT assume the commit landed, and do NOT blind `git add -A` (see stash-conflict recovery
+  above).
+- **Budget hook time per commit** (trunk runs ~70s–4min); prefer fewer, larger checkpoint commits over many small ones.
 
 Create checkpoint commits for OpenSpec refinement, implementation, tests or reusable QA coverage, docs/context/knowledge
 updates, review-feedback fixes, and ticket-scoped tooling/config fixes when
@@ -677,7 +693,7 @@ Run the shared PR lifecycle Steps 3–5 from
 `.agents/skills/_shared/pipeline-pr-lifecycle.md`:
 
 1. **AI review** — load `dev-flow-pr-review-agent` (findings + labels +
-   `codex-reviewed` clean marker).
+   `agent-reviewed` clean marker).
 2. **Feedback loop** — invoke the repo-owned `dev-flow-pr-review-feedback-loop`
    skill after PR creation and on every open-PR resume. That skill owns AI
    review findings, late human PR comments, feedback batch ids, ticket
@@ -825,7 +841,7 @@ commit, push, and rerun AI review before handoff.
 and record the blocker in ticket provider.
 - Late human PR feedback after ticket is in `Developed` (OpenProject ID 8): process it on manual resume and keep the
 ticket in `Developed` while fixes are applied.
-- Stale PR labels: `codex-reviewed` is the clean marker — present only when the current-head AI review has ZERO findings
+- Stale PR labels: `agent-reviewed` is the clean marker — present only when the current-head AI review has ZERO findings
 of any severity AND the current-head PR Validation run is green; remove it
 whenever actionable findings exist or the run is red/pending, and rely on the re-review to reapply it when clean. Remove
 `needs-tests` after required tests are added and passing; remove

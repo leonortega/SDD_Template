@@ -35,6 +35,10 @@ or ambiguous you MUST prompt for available changes.
    - check task completion from the task list,
    - assess and apply delta-spec sync (`openspec` archive/sync semantics), and
    - perform the archive move (`openspec archive <name>`).
+   **Non-interactive run (CI/agent):** `openspec archive <name>` prompts `Proceed with spec updates? (Y/n)`
+   when delta specs exist and aborts with `requires confirmation, and no answer could be read from stdin`
+   when stdin is unavailable. Run `OPENSPEC_TELEMETRY=0 openspec archive <name> --yes` to answer the
+   confirmation non-interactively (observed: TICKET-38/39 archive in automation).
 
    The CLI is authoritative for artifact status, sync state, and the archive operation. Do NOT hand-implement the sync
    diff or the archive move with raw file commands.

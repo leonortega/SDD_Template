@@ -60,9 +60,10 @@ terminals: printing emoji from eval JSON crashes `print()` — prefix with
 
 ## Test Cases
 
-**61 test cases** covering the full delivery routing matrix including parallel delivery,
+**64 test cases** covering the full delivery routing matrix including parallel delivery,
 deployment lanes, explicit workflow-stage requests, state-driven resume, the QA
-user-approval gate, frontend stack skill activation, the PR Validation gate
+user-approval gate, the post-close cleanup gate (MUST prunes at ticket close),
+frontend stack skill activation, the PR Validation gate
 (CI-in-loop review blocking), the ticket refinement gate (always ask the user
 for extra info before writing the IA block, linear and parallel context), and the
 Durable Learning Capture Gate (archive / hotfix / retrospective must run the
@@ -81,6 +82,7 @@ classifier and update only the classifier-selected candidates):
 | 7   | QA user-approved                 | `dev-ops-deploy-qa`             |
 | 8   | QA failed                        | `dev-flow-file-qa-bug`          |
 | 9   | Done, QA passed, no PROD request | `blocked-no-prod`               |
+| 10  | Done, QA passed, cleanup pending | `dev-ops-cleanup-resources`     |
 
 ### QA User-Approval Gate (3 tests — rows 6–8, two cross-listed from Ticket Lifecycle)
 
@@ -176,30 +178,41 @@ route on a frontend stack reports `activatedSkills` including `impeccable` (plus
 | 41  | Backend-only (FastAPI) implementation, no frontend                    | `dev-flow-implement-ticket` | excludes `impeccable`      |
 | 42  | Frontend stack, Todo ticket, no branch (not in implementation stage)  | `dev-flow-start-ticket`     | excludes `impeccable`      |
 
-### PR Validation Gate (7 tests)
+### PR Validation Gate (9 tests)
 
 Verifies the CI-in-loop rule enforced in `dev-flow-pr-review-agent` /
 `dev-flow-pr-review-feedback-loop`: a **red, pending, or unreadable PR Validation run
 on the current head is a `BLOCKER` finding** (stable id `CI-001`) and **keeps the
-`codex-reviewed` clean marker off** — the PR stays blocked on the CI gate until the
+`agent-reviewed` clean marker off** — the PR stays blocked on the CI gate until the
 run is green. The route is unchanged (the review/fix loop still runs to fix the failing
 steps); the blocking is asserted via the provider's `review` gate object:
-`review.codexReviewed === false` with a `BLOCKER` finding in `review.findings`.
+`review.agentReviewed === false` with a `BLOCKER` finding in `review.findings`.
+
+Chained/parallel PRs get the **same gate**: the coordinator runs the full
+`dev-flow-pr-review-agent` workflow for every open PR (CI check → AI findings →
+`agent-reviewed` tag) and re-runs it after sibling-conflict resolution — rows 50-51
+mirror the gate in parallel context.
 
 | #   | Scenario                                                              | Expected Route                     | Review gate                          |
 | --- | --------------------------------------------------------------------- | ---------------------------------- | ------------------------------------ |
-| 43  | Red run on open PR (state-driven loop)                                | `dev-flow-implement-ticket`        | `codexReviewed=false`, `BLOCKER`     |
-| 44  | Green run on open PR                                                  | `dev-flow-implement-ticket`        | `codexReviewed=true`, no findings    |
-| 45  | Pending run on open PR                                                | `dev-flow-implement-ticket`        | `codexReviewed=false`, `BLOCKER`     |
-| 46  | Unknown/unreadable run on open PR                                     | `dev-flow-implement-ticket`        | `codexReviewed=false`, `BLOCKER`     |
-| 47  | Explicit PR review request + red run                                  | `dev-flow-pr-review-agent`         | `codexReviewed=false`, `BLOCKER`     |
-| 48  | Explicit PR review feedback request + red run                         | `dev-flow-pr-review-feedback-loop` | `codexReviewed=false`                |
+| 43  | Red run on open PR (state-driven loop)                                | `dev-flow-implement-ticket`        | `agentReviewed=false`, `BLOCKER`     |
+| 44  | Green run on open PR                                                  | `dev-flow-implement-ticket`        | `agentReviewed=true`, no findings    |
+| 45  | Pending run on open PR                                                | `dev-flow-implement-ticket`        | `agentReviewed=false`, `BLOCKER`     |
+| 46  | Unknown/unreadable run on open PR                                     | `dev-flow-implement-ticket`        | `agentReviewed=false`, `BLOCKER`     |
+| 47  | Explicit PR review request + red run                                  | `dev-flow-pr-review-agent`         | `agentReviewed=false`, `BLOCKER`     |
+| 48  | Explicit PR review feedback request + red run                         | `dev-flow-pr-review-feedback-loop` | `agentReviewed=false`                |
 | 49  | Merged PR with red run (gate not applicable)                          | `dev-ops-post-merge-deploy`        | `review === null`                    |
+| 50  | Parallel (chained) open PR, red run                                   | `dev-flow-implement-ticket`        | `agentReviewed=false`, `BLOCKER`     |
+| 51  | Parallel (chained) open PR, green run                                 | `dev-flow-implement-ticket`        | `agentReviewed=true`, no findings    |
 
 ### Ticket Refinement Gate (5 tests)
 
 Models `dev-flow-start-ticket` step 7: refinement runs **at least 1**
-`grill-with-docs` cycle (at most 4) and **ALWAYS asks the user for extra info** —
+`grill-with-docs` cycle (at most 4, **no fixed default** — ~2 typical; never
+cut the process short, keep grilling while questions remain up to the
+4-cycle maximum; stop only when a cycle produces
+no new questions AND the user confirms the plan is fully clear) and **ALWAYS
+asks the user for extra info** —
 even when the ticket seems complete — before the curated IA block is written.
 The route is unchanged (still `dev-flow-start-ticket`); the always-ask invariant
 is asserted via the provider's `refinement` gate object:
@@ -216,11 +229,11 @@ The provider applies the same `refinement` gate to a parallel Todo route
 
 | #   | Scenario                                                             | Expected Route             | Refinement gate                      |
 | --- | -------------------------------------------------------------------- | -------------------------- | ------------------------------------ |
-| 50  | Todo refinement, user not asked yet                                  | `dev-flow-start-ticket`    | `userAsked=false`, `blocked=true`    |
-| 51  | Todo refinement, user answered the clarifying questions              | `dev-flow-start-ticket`    | `userAsked=true`, `blocked=false`    |
-| 52  | Implementation in progress (gate not applicable)                     | `dev-flow-implement-ticket` | `refinement === null`               |
-| 53  | Parallel (multi-ticket) Todo, user not asked yet                     | `dev-flow-start-ticket`    | `userAsked=false`, `blocked=true`    |
-| 54  | Parallel (multi-ticket) Todo, user answered                          | `dev-flow-start-ticket`    | `userAsked=true`, `blocked=false`    |
+| 52  | Todo refinement, user not asked yet                                  | `dev-flow-start-ticket`    | `userAsked=false`, `blocked=true`    |
+| 53  | Todo refinement, user answered the clarifying questions              | `dev-flow-start-ticket`    | `userAsked=true`, `blocked=false`    |
+| 54  | Implementation in progress (gate not applicable)                     | `dev-flow-implement-ticket` | `refinement === null`               |
+| 55  | Parallel (multi-ticket) Todo, user not asked yet                     | `dev-flow-start-ticket`    | `userAsked=false`, `blocked=true`    |
+| 56  | Parallel (multi-ticket) Todo, user answered                          | `dev-flow-start-ticket`    | `userAsked=true`, `blocked=false`    |
 
 ### Durable Learning Capture Gate (5 tests)
 
@@ -238,14 +251,14 @@ recommendations, nothing written).
 
 | #   | Scenario                                                                  | Expected Route                 | Capture gate                            |
 | --- | ------------------------------------------------------------------------- | ------------------------------ | --------------------------------------- |
-| 55  | Archive route runs the capture gate                                        | `dev-flow-archive-change`      | `applied=true`, `classifierRun=true`    |
-| 56  | Hotfix route runs the capture gate                                         | `dev-ops-hotfix-prod`          | `applied=true`, `classifierRun=true`    |
-| 57  | Retrospective in apply mode runs the capture gate                          | `dev-flow-retrospective-audit` | `applied=true`, `classifierRun=true`    |
-| 58  | Retrospective in read-only mode is advisory only                           | `dev-flow-retrospective-audit` | `applied=false`, `scope=advisory-only` |
-| 59  | Capture gate not applicable outside archive/hotfix/retrospective routes    | `dev-flow-implement-ticket`    | `capture === null`                      |
+| 57  | Archive route runs the capture gate                                        | `dev-flow-archive-change`      | `applied=true`, `classifierRun=true`    |
+| 58  | Hotfix route runs the capture gate                                         | `dev-ops-hotfix-prod`          | `applied=true`, `classifierRun=true`    |
+| 59  | Retrospective in apply mode runs the capture gate                          | `dev-flow-retrospective-audit` | `applied=true`, `classifierRun=true`    |
+| 60  | Retrospective in read-only mode is advisory only                           | `dev-flow-retrospective-audit` | `applied=false`, `scope=advisory-only` |
+| 61  | Capture gate not applicable outside archive/hotfix/retrospective routes    | `dev-flow-implement-ticket`    | `capture === null`                      |
 
 > Note: table row numbers trail the YAML file order (a pre-existing numbering drift — the
-> table ends at row 59 while `promptfooconfig.yaml` holds 61 cases). Use the YAML `tests:` list as
+> tables end at row 61 while `promptfooconfig.yaml` holds 64 cases). Use the YAML `tests:` list as
 > the authoritative order; row numbers here are labels only.
 
 ## Adding Test Cases
@@ -275,13 +288,13 @@ routes activate none. Assert both `route` and `activatedSkills` in the test case
 
 **PR Validation gate:** to assert the CI-in-loop rule, set `prValidationStatus` in the
 test vars (`green`, `red`, `pending`, or `unknown`; unset defaults to `unknown` —
-fail-closed, matching the skill rule that an undetermined status keeps `codex-reviewed`
+fail-closed, matching the skill rule that an undetermined status keeps `agent-reviewed`
 off; legacy tests that predate the gate assert only `route` and are unaffected) and
 assert on the provider's `review` gate object, which is non-null only for an open PR
 (exists, not merged):
 
-- `review.codexReviewed === true` with empty `review.findings` only when the run is green.
-- `review.codexReviewed === false` with a `BLOCKER` finding (`id: CI-001`, `source:
+- `review.agentReviewed === true` with empty `review.findings` only when the run is green.
+- `review.agentReviewed === false` with a `BLOCKER` finding (`id: CI-001`, `source:
   pr-validation`) whenever the run is red, pending, or unknown.
 - `review === null` once the PR is merged (the gate no longer applies).
 
@@ -317,3 +330,12 @@ object, which is non-null only on the `dev-flow-start-ticket` route:
 
 Route is intentionally unaffected: refinement still runs in `dev-flow-start-ticket`;
 the gate only blocks writing the curated IA block until the user has been asked.
+
+**Post-close cleanup gate:** to assert the MUST cleanup job from
+`dev-ops-cleanup-resources` (wired into the parallel coordinator teardown and
+`delivery-contract-qa` Step 6), set `cleanupPending: true` on a Done ticket with
+QA passed. The provider routes it to `dev-ops-cleanup-resources` and the
+assertion must check the output includes BOTH prune commands
+(`prune-docker-leftovers` and `prune-kind-images`) — the cleanup is not complete
+without both. The explicit `requestType: cleanup-resources` route is covered
+separately (Explicit Workflow-Stage Requests).

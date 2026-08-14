@@ -271,7 +271,7 @@ def test_validate_client_tools_clean_when_identifier_set(tmp_path) -> None:
 
 
 def test_prune_docker_leftovers_runs_scoped_prunes(tmp_path) -> None:
-    """Issues the 3 scoped prunes; compose-labeled resources are protected."""
+    """Issues the 3 scoped prunes + the tagged-image retention pass."""
     from tools.sdd_cli.environment_lab import prune_docker_leftovers
 
     calls: list[list[str]] = []
@@ -286,15 +286,18 @@ def test_prune_docker_leftovers_runs_scoped_prunes(tmp_path) -> None:
         result = prune_docker_leftovers(tmp_path, dry_run=False)
 
     assert result["valid"] is True
-    assert len(calls) == 3
-    assert [c[1] for c in calls] == ["container", "image", "volume"]
+    assert len(calls) == 4  # container + image + volume + docker images list
+    assert [c[1] for c in calls[:3]] == ["container", "image", "volume"]
     # Container + volume prunes exclude compose-owned lab resources.
     for c in (calls[0], calls[2]):
         assert "--filter" in c
         assert "label!=com.docker.compose.project" in c
     # Image prune is dangling-only (no -a) so tagged lab images survive.
     assert "-a" not in calls[1]
+    # Tagged pass lists images (empty output → nothing pruned, no rmi call).
+    assert calls[3][0] == "docker" and "images" in calls[3]
     assert any("Pruned leftover containers" in a["message"] for a in result["actions"])
+    assert any("No old registry tags to prune" in a["message"] for a in result["actions"])
 
 
 def test_prune_docker_leftovers_dry_run_does_not_execute(tmp_path) -> None:
@@ -306,7 +309,7 @@ def test_prune_docker_leftovers_dry_run_does_not_execute(tmp_path) -> None:
 
     mock_run.assert_not_called()
     assert result["valid"] is True
-    assert len(result["actions"]) == 3
+    assert len(result["actions"]) == 4  # 3 scoped prunes + registry-tags (no apps.json → no scratch)
     assert all("Would prune leftover" in a["message"] for a in result["actions"])
 
 
@@ -321,7 +324,220 @@ def test_prune_docker_leftovers_failure_is_nonblocking(tmp_path) -> None:
         result = prune_docker_leftovers(tmp_path, dry_run=False)
 
     assert result["valid"] is True
-    assert len(result["findings"]) == 3
+    assert len(result["findings"]) == 4  # 3 scoped prunes + docker images list failure
+
+
+def test_prune_docker_leftovers_prunes_old_registry_shas(tmp_path) -> None:
+    """Old registry commit SHAs are pruned; :latest and newest LOCAL_IMAGE_KEEP kept."""
+    from tools.sdd_cli.environment_lab import prune_docker_leftovers
+
+    registry = "host.docker.internal:5001"
+    sha = lambda n: f"{n:040x}"
+    new_ref = f"{registry}/dellop-api:{sha(2)}"
+    old_ref = f"{registry}/dellop-api:{sha(1)}"
+    image_rows = "\n".join(
+        [
+            f"2026-08-14 12:00:00 +0000 UTC\t{new_ref}",
+            f"2026-08-13 12:00:00 +0000 UTC\t{old_ref}",
+            f"2026-08-12 12:00:00 +0000 UTC\t{registry}/dellop-api:latest",
+        ]
+    )
+    calls: list[list[str]] = []
+
+    def fake_run_native(command, root, timeout=30):
+        calls.append(command)
+        if command[:2] == ["docker", "images"]:
+            return {"returncode": 0, "stdout": image_rows + "\n", "stderr": ""}
+        if "rmi" in command:
+            return {"returncode": 0, "stdout": "deleted\n", "stderr": ""}
+        return {"returncode": 0, "stdout": "", "stderr": ""}
+
+    with patch(
+        "tools.sdd_cli.environment_lab.run_native", side_effect=fake_run_native
+    ):
+        result = prune_docker_leftovers(tmp_path, dry_run=False)
+
+    assert result["valid"] is True
+    rmi = [c for c in calls if "rmi" in c]
+    assert len(rmi) == 1
+    removed = set(rmi[0][rmi[0].index("rmi") + 1:])
+    assert removed == {old_ref}  # newest SHA + :latest kept, old SHA removed
+    assert any(
+        "Pruned leftover registry-tags" in a["message"] for a in result["actions"]
+    )
+
+
+def test_prune_docker_leftovers_prunes_scratch_tags_for_registered_apps(tmp_path) -> None:
+    """Unqualified tags of apps registered in apps.json are removed (except :latest)."""
+    from tools.sdd_cli.environment_lab import prune_docker_leftovers
+
+    apps = tmp_path / "infra" / "deployment"
+    apps.mkdir(parents=True)
+    (apps / "apps.json").write_text(
+        json.dumps({"version": 1, "apps": [{"appId": "dellop-api"}]}),
+        encoding="utf-8",
+    )
+    sha = f"{2:040x}"
+    image_rows = "\n".join(
+        [
+            f"2026-08-14 12:00:00 +0000 UTC\tdellop-api:fix",
+            f"2026-08-14 11:00:00 +0000 UTC\tdellop-api:jwt",
+            f"2026-08-14 10:00:00 +0000 UTC\tdellop-api:latest",
+            f"2026-08-14 09:00:00 +0000 UTC\tlocalhost:5001/dellop-api:{sha}",
+            f"2026-08-13 09:00:00 +0000 UTC\tnode:22-alpine",
+        ]
+    )
+    calls: list[list[str]] = []
+
+    def fake_run_native(command, root, timeout=30):
+        calls.append(command)
+        if command[:2] == ["docker", "images"]:
+            return {"returncode": 0, "stdout": image_rows + "\n", "stderr": ""}
+        if "rmi" in command:
+            return {"returncode": 0, "stdout": "deleted\n", "stderr": ""}
+        return {"returncode": 0, "stdout": "", "stderr": ""}
+
+    with patch(
+        "tools.sdd_cli.environment_lab.run_native", side_effect=fake_run_native
+    ):
+        result = prune_docker_leftovers(tmp_path, dry_run=False)
+
+    assert result["valid"] is True
+    rmi = [c for c in calls if "rmi" in c]
+    assert len(rmi) == 1  # only the scratch pass (registry SHA is newest/only → kept)
+    removed = set(rmi[0][rmi[0].index("rmi") + 1:])
+    assert removed == {"dellop-api:fix", "dellop-api:jwt"}
+    assert "dellop-api:latest" not in removed
+    assert "node:22-alpine" not in removed
+    assert any(
+        "Pruned leftover scratch-tags" in a["message"] for a in result["actions"]
+    )
+
+
+def test_prune_docker_leftovers_dry_run_reports_tagged_actions(tmp_path) -> None:
+    """Dry-run with registered apps reports both tagged-image passes without docker."""
+    from tools.sdd_cli.environment_lab import prune_docker_leftovers
+
+    apps = tmp_path / "infra" / "deployment"
+    apps.mkdir(parents=True)
+    (apps / "apps.json").write_text(
+        json.dumps({"version": 1, "apps": [{"appId": "dellop-api"}]}),
+        encoding="utf-8",
+    )
+
+    with patch("tools.sdd_cli.environment_lab.run_native") as mock_run:
+        result = prune_docker_leftovers(tmp_path, dry_run=True)
+
+    mock_run.assert_not_called()
+    assert result["valid"] is True
+    messages = [a["message"] for a in result["actions"]]
+    assert any("registry-tags" in m for m in messages)
+    assert any("scratch-tags" in m for m in messages)
+
+
+# ── prune_kind_images ────────────────────────────────────────────────────
+
+
+def test_prune_kind_images_dry_run_reports_without_executing(tmp_path) -> None:
+    """Dry-run reports the would-do action and never calls docker."""
+    from tools.sdd_cli.environment_lab import prune_kind_images
+
+    with patch("tools.sdd_cli.environment_lab.run_native") as mock_run:
+        result = prune_kind_images(tmp_path, dry_run=True)
+
+    mock_run.assert_not_called()
+    assert result["valid"] is True
+    assert any(
+        "Would prune leftover kind-images" in a["message"]
+        for a in result["actions"]
+    )
+
+
+def test_prune_kind_images_skips_when_node_missing(tmp_path) -> None:
+    """A missing kind node skips the prune (reported, not a failure)."""
+    from tools.sdd_cli.environment_lab import prune_kind_images
+
+    with patch(
+        "tools.sdd_cli.environment_lab.run_native",
+        return_value={"returncode": 1, "stdout": "", "stderr": "No such object"},
+    ):
+        result = prune_kind_images(tmp_path, dry_run=False)
+
+    assert result["valid"] is True
+    assert any(
+        "not found - skipping kind image prune" in a["message"]
+        for a in result["actions"]
+    )
+
+
+def test_prune_kind_images_keeps_newest_per_app(tmp_path, monkeypatch) -> None:
+    """Old SHA tags are pruned; the newest KIND_IMAGE_KEEP per app are kept."""
+    from tools.sdd_cli.environment_lab import prune_kind_images
+
+    monkeypatch.setenv("KIND_IMAGE_KEEP", "2")
+    registry = "host.docker.internal:5001"
+    sha = lambda n: f"{n:040x}"
+    refs = [f"{registry}/dellop-web:{sha(n)}" for n in (1, 2, 3, 4)]
+    created = [
+        f"2026-08-14 12:00:00 +0000 UTC\t{refs[3]}",
+        f"2026-08-13 12:00:00 +0000 UTC\t{refs[2]}",
+        f"2026-08-12 12:00:00 +0000 UTC\t{refs[1]}",
+        f"2026-08-11 12:00:00 +0000 UTC\t{refs[0]}",
+    ]
+    calls: list[list[str]] = []
+
+    def fake_run_native(command, root, timeout=30):
+        calls.append(command)
+        if command[:2] == ["docker", "inspect"]:
+            return {"returncode": 0, "stdout": "", "stderr": ""}
+        if "ctr" in command and "list" in command:
+            return {"returncode": 0, "stdout": "\n".join(refs) + "\n", "stderr": ""}
+        if command[1] == "images" and "--format" in command:
+            return {"returncode": 0, "stdout": "\n".join(created) + "\n", "stderr": ""}
+        if "rm" in command:
+            return {"returncode": 0, "stdout": "deleted\n", "stderr": ""}
+        return {"returncode": 0, "stdout": "", "stderr": ""}
+
+    with patch(
+        "tools.sdd_cli.environment_lab.run_native", side_effect=fake_run_native
+    ):
+        result = prune_kind_images(tmp_path, dry_run=False)
+
+    assert result["valid"] is True
+    rm_calls = [c for c in calls if "rm" in c]
+    assert len(rm_calls) == 1
+    pruned = set(rm_calls[0][rm_calls[0].index("rm") + 1:])
+    assert pruned == {refs[0], refs[1]}  # oldest two pruned, newest two kept
+    assert any("Pruned leftover kind-images" in a["message"] for a in result["actions"])
+
+
+def test_prune_kind_images_removal_failure_is_warning(tmp_path) -> None:
+    """A failed ctr rm is a warning finding, never an error."""
+    from tools.sdd_cli.environment_lab import prune_kind_images
+
+    registry = "host.docker.internal:5001"
+    sha = lambda n: f"{n:040x}"
+    refs = [f"{registry}/dellop-web:{sha(n)}" for n in (1, 2, 3, 4)]
+
+    def fake_run_native(command, root, timeout=30):
+        if command[:2] == ["docker", "inspect"]:
+            return {"returncode": 0, "stdout": "", "stderr": ""}
+        if "ctr" in command and "list" in command:
+            return {"returncode": 0, "stdout": "\n".join(refs) + "\n", "stderr": ""}
+        if command[1] == "images" and "--format" in command:
+            # No host timestamps → all refs sort as oldest; still prunes safely.
+            return {"returncode": 0, "stdout": "", "stderr": ""}
+        if "rm" in command:
+            return {"returncode": 1, "stdout": "", "stderr": "boom"}
+        return {"returncode": 0, "stdout": "", "stderr": ""}
+
+    with patch(
+        "tools.sdd_cli.environment_lab.run_native", side_effect=fake_run_native
+    ):
+        result = prune_kind_images(tmp_path, dry_run=False)
+
+    assert result["valid"] is True
+    assert any("kind image prune failed" in f["message"] for f in result["findings"])
     assert all(f.get("severity") == "warning" for f in result["findings"])
 
 

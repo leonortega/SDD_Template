@@ -145,8 +145,12 @@ user. If `metadataValidationStatus == "needs-user-validation"`, confirm first.
 
 **Hard rule: never assume a project name.** Via the standard `set-project-stack` flow,
 `values.name` is required (placeholders like `example`, `my-app`, `untitled` are rejected)
-and the layout app is named `apps/<project-slug>/` from the recorded name — never an
-example or random name. (A direct scaffold call with no recorded name falls back to
+and the layout app is named `apps/<project-slug>-<role>/` from the recorded name (the
+web skeleton `<project-slug>-web`) — never an
+example or random name. Project-name prefix rule: every app is named
+`<project-slug>-<role>` (e.g. `dellop-web`, `dellop-user-api`, `dellop-db`);
+`validate-app-config` enforces the prefix on `apps.json` (fixed infra job `db-bootstrap`
+exempt). (A direct scaffold call with no recorded name falls back to
 `apps/example/` purely as a layout placeholder.)
 
 **Workflow.**

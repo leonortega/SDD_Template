@@ -17,12 +17,14 @@ runtimes:
     - python@3.14.4
 # This is the section where you manage your linters. (https://docs.trunk.io/check/configuration)
 lint:
-  # Template shell content that a consumer implementation does not need
-  # linted: template docs/knowledge/openspec artifacts, the SDD CLI tooling,
-  # vendor skills + eval content, generator/reference config (.template/), and
-  # lab infrastructure (compose/gitea/monitoring/nexus/openproject). Kept
-  # checked: infra/k8s + infra/deployment, .gitea workflows, root tool config,
-  # and product paths (apps/, packages/, ...).
+  # Quality lint is scoped to the folders that are part of a deploy/
+  # implementation only: apps/ + packages/ (implementation) and infra/k8s +
+  # infra/deployment + .gitea (deploy artifacts). Everything else is shell
+  # content a consumer implementation does not need linted: docs/knowledge/
+  # openspec artifacts, the SDD CLI tooling, vendor skills + eval content,
+  # generator/reference config (.template/), lab infrastructure
+  # (compose/gitea/monitoring/nexus/openproject), and the root-level shell
+  # files (AGENTS.md/README.md/lefthook.yml + root tool config).
   ignore:
     - linters: [ALL]
       paths:
@@ -38,6 +40,22 @@ lint:
         - infra/monitoring/**
         - infra/nexus/**
         - infra/openproject/**
+        - AGENTS.md
+        - README.md
+        - lefthook.yml
+        - .bandit
+        - .checkov.yml
+        - .dockerignore
+        - .editorconfig
+        - .gitattributes
+        - .gitignore
+        - .gitleaks.toml
+        - .gitleaksignore
+        - .markdownlint-cli2.jsonc
+        - .markdownlint.json
+        - .semgrep-rules.json
+        - .semgrep.yml
+        - .semgrepignore
   enabled:
     - bandit@1.9.4
     - black@26.5.1
@@ -60,7 +78,7 @@ actions:
   # Trunk's own git-hook actions stay disabled: lefthook.yml owns pre-commit /
   # pre-push / commit-msg and already runs `trunk fmt` + `trunk check` there,
   # so enabling trunk's native hooks would double-run (a lefthook stash-restore
-  # conflict with trunk-fmt was recovered from in E2EPROJECT-39).
+  # conflict with trunk-fmt was recovered from in TICKET-39).
   disabled:
     - trunk-announce
     - trunk-check-pre-push

@@ -224,17 +224,23 @@ branch until resolved.
 
 On `PASS` only, after the ticket is in the configured `Done` state (`Closed`), the `IA generated E2E QA: {ticketKey}`
 marker comment and Nexus release manifest are confirmed published, and the trigger branch is deleted, run the
-post-close cleanup (`dev-ops-cleanup-resources`) to remove temporary test resources left behind by the ticket:
+post-close cleanup (`dev-ops-cleanup-resources`) to remove temporary test resources left behind by the ticket. **This
+is a MUST job (authority level 5) — the CI image-prune steps were removed from `package-deploy.yml`, so ALL
+image/volume/container/kind cleanup happens here; never hand off a closed ticket without it:**
 
-1. Prune leftover Docker containers, images, and volumes created to test something (scoped — compose-labeled lab
-   services and their images/volumes are protected):
+1. Prune leftover Docker containers, images, and volumes created to test something, plus old tagged app images
+   (registry commit SHAs — keeps `:latest` + newest SHA per app — and unqualified scratch tags of registered apps;
+   scoped — compose-labeled lab services and their images/volumes are protected):
    `python -m tools.sdd_cli environment-lab prune-docker-leftovers`
-2. Remove scratch/temp files created during implementation and testing (`.template/_tmp_*`, `*.tmp`, `tmp_*`,
+2. Prune old app images from the kind cluster's containerd store (keeps newest commit tags per app):
+   `python -m tools.sdd_cli environment-lab prune-kind-images`
+3. Remove scratch/temp files created during implementation and testing (`.template/_tmp_*`, `*.tmp`, `tmp_*`,
    `*_scratch*`, local `test-results/`, `playwright-report/`, `e2e-qa-output.json`)
-3. Report what was pruned/removed; never delete tracked files, local config, the delivery-context lock, or published
+4. Report what was pruned/removed; never delete tracked files, local config, the delivery-context lock, or published
    evidence
 
-Non-fatal and idempotent: a failed prune is a warning; re-running reports `nothing to remove`.
+Non-fatal and idempotent: a failed prune is a warning; re-running reports `nothing to remove`. Running the prunes is
+mandatory.
 
 ### Stable Markers
 

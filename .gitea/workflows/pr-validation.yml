@@ -1,12 +1,12 @@
 name: PR validation
 
 on:
-  pull_request:
-    branches:
-      - main
-      - dev
+  # Validate EVERY pull request — not only PRs targeting dev/main. PRs from
+  # one branch to another (cross-branch / chained PRs) get the same validation
+  # and the same `agent-reviewed` gate as PRs to the protected branches.
+  pull_request: {}
 
-# Dev flow gate: requires the `codex-reviewed` label to be set on the PR.
+# Dev flow gate: requires the `agent-reviewed` label to be set on the PR.
 # The AI review-agent (dev-flow-pr-review-agent skill) applies it ONLY when
 # the current-head review found ZERO findings of any severity (no
 # BLOCKER/WARNING/SUGGESTION, no test gaps) AND this workflow's run for the
@@ -14,7 +14,7 @@ on:
 # is red/pending. The review-agent must read this run on every head and feed
 # each failing step back as a BLOCKER finding. Without the label, CI fails —
 # so the PR must iterate through the review-and-fix loop until clean before
-# merge: at most one `codex-reviewed` label live means the PR has no
+# merge: at most one `agent-reviewed` label live means the PR has no
 # remaining issues and its PR Validation run is green.
 #
 # Scan layering: local lefthook hooks (pre-commit gitleaks protect / trunk
@@ -56,6 +56,14 @@ jobs:
         shell: bash
         run: gitleaks detect --source . --redact --no-git
 
+      # Quality scans (SAST/IaC/SCA) are scoped to the folders that are part
+      # of a deploy/implementation only: apps/, packages/ (implementation) and
+      # infra/k8s + infra/deployment + .gitea (deploy artifacts). Shell content
+      # (docs/, knowledge/, tools/, .template/, .agents/, openspec/) is not
+      # part of any deploy and is not scanned. Gitleaks stays repo-wide: it is
+      # a secret-detection security gate, not a quality lint — secrets can
+      # live anywhere. Steps skip cleanly when the target folders are absent
+      # (product-free template state).
       - name: SAST scan (Semgrep)
         shell: bash
         run: |
@@ -71,7 +79,13 @@ jobs:
             echo "FAIL: .semgrep-rules.json contains no rules - run 'configure set-semgrep-config'." >&2
             exit 1
           fi
-          semgrep scan $RULES --error --verbose . 2>&1
+          TARGETS=""
+          for d in apps packages; do [ -d "$d" ] && TARGETS="$TARGETS $d"; done
+          if [ -z "${TARGETS}" ]; then
+            echo "No apps/ or packages/ — SAST scan skipped (nothing deployed)."
+            exit 0
+          fi
+          semgrep scan $RULES --error --verbose $TARGETS 2>&1
 
       - name: SCA scan (Trivy)
         shell: bash
@@ -81,11 +95,25 @@ jobs:
           # vulnerability DB is not pre-cached in sdd-e2e-ci:local, so
           # --skip-db-update would fail with "cannot be specified on the
           # first run". Let Trivy download the DB on first run instead.
-          trivy fs --format table --exit-code 1 --no-progress . 2>&1
+          TARGETS=""
+          for d in apps packages; do [ -d "$d" ] && TARGETS="$TARGETS $d"; done
+          if [ -z "${TARGETS}" ]; then
+            echo "No apps/ or packages/ — SCA scan skipped (nothing deployed)."
+            exit 0
+          fi
+          trivy fs --format table --exit-code 1 --no-progress $TARGETS 2>&1
 
       - name: IaC scan (Checkov)
         shell: bash
-        run: checkov -d . --compact --config-file .checkov.yml 2>&1
+        run: |
+          set -euo pipefail
+          TARGETS=""
+          for d in apps infra/k8s infra/deployment .gitea; do [ -d "$d" ] && TARGETS="$TARGETS -d $d"; done
+          if [ -z "${TARGETS}" ]; then
+            echo "No deploy/implementation folders — IaC scan skipped."
+            exit 0
+          fi
+          checkov $TARGETS --compact --config-file .checkov.yml 2>&1
 
       # Kustomize overlay validation gate (residual QA risk fix): renders every
       # env overlay (dev/qa/prod) exactly like the deploy step and asserts
@@ -103,7 +131,21 @@ jobs:
             echo "No infra/k8s/overlays — kustomize overlay validation skipped."
           fi
 
-      - name: Dev flow gate (codex-reviewed label)
+      # App registry gate: apps.json schema + per-app Dockerfile existence + the
+      # project-name prefix rule (every registered appId must start with
+      # <project-slug>-, the fixed infra job db-bootstrap excepted). Same
+      # deterministic validator setup-lab runs.
+      - name: Validate app registry (apps.json schema + project-name prefix)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f infra/deployment/apps.json ]; then
+            python3 -m tools.sdd_cli environment-lab validate-app-config
+          else
+            echo "No infra/deployment/apps.json — app registry validation skipped."
+          fi
+
+      - name: Dev flow gate (agent-reviewed label)
         env:
           GITEA_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
@@ -112,6 +154,6 @@ jobs:
           PR_NUMBER="${{ github.event.pull_request.number }}"
           TOKEN="${GITEA_TOKEN:-}"
           API_URL="http://host.docker.internal:3000/api/v1/repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/labels"
-          echo "Checking codex-reviewed label on PR #${PR_NUMBER}..."
+          echo "Checking agent-reviewed label on PR #${PR_NUMBER}..."
           LABELS=$(curl -s --user "git:${TOKEN}" "${API_URL}" 2>/dev/null)
-          CHECK=$(echo "${LABELS}" | python3 -c "import sys, json; data=json.load(sys.stdin); names=[l.get('name','') for l in data]; sys.exit(0 if 'codex-reviewed' in names else 1)" 2>&1) && echo "PASS: codex-reviewed label found." || { echo "FAIL: codex-reviewed label not found - run dev-flow-pr-review-agent first."; exit 1; }
+          CHECK=$(echo "${LABELS}" | python3 -c "import sys, json; data=json.load(sys.stdin); names=[l.get('name','') for l in data]; sys.exit(0 if 'agent-reviewed' in names else 1)" 2>&1) && echo "PASS: agent-reviewed label found." || { echo "FAIL: agent-reviewed label not found - run dev-flow-pr-review-agent first."; exit 1; }

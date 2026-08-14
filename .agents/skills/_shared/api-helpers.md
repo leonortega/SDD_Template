@@ -89,6 +89,18 @@ Payload:
 After posting a generated marker, read activities back and verify the comment text starts with the marker before
 reporting success.
 
+**OpenProject write pitfalls (observed during TICKET-38/39):**
+
+- **409 Conflict on status/description PATCH** — the stored `lockVersion` drifted (another update landed between read
+  and write). Retry the PATCH with a freshly fetched `lockVersion` instead of guessing. A 409 body contains the
+  server's current `lockVersion`; re-read the work package and retry once before reporting failure.
+- **URL-encode filter query params** — filters like
+  `?filters=[{"status":{"operator":"=","values":["12"]}}]` must be URL-encoded (spaces, quotes, brackets) or the
+  request 401s/400s or silently returns wrong data. Build filter URLs with `urllib.parse.urlencode` (or
+  `requests` params) rather than string-concatenating raw JSON.
+- **Use the configured token, not a truncated/inferred guess** — a wrong token fails with 401 and wastes a round trip;
+  read the token from the project profile, never paste a partial value from memory.
+
 Workflow time telemetry uses OpenProject time entries first when the selected ticket adapter supports them and
 `openProject.timeTelemetry.enabled` is true:
 
@@ -195,6 +207,20 @@ Apply labels by id:
 ```text
 POST {gitea.baseUrl}/api/v1/repos/{owner}/{repo}/issues/{index}/labels
 ```
+
+**Labels are idempotent per PR — never apply a name twice and never remove one that is absent.** Repeated review
+loops previously re-applied labels without checking current state and re-created repo label definitions, so a PR
+ended up with `agent-reviewed` twice (two label ids with the same name, each assigned separately). Do NOT hand-roll
+label REST calls: use the deterministic CLI (same pattern as `gitea request-reviewers`), which dedupes repo
+label definitions to one canonical id per name, diffs the PR's current labels, applies/removes only the delta, and
+verifies after writing:
+
+```bash
+python -m tools.sdd_cli gitea labels --pr <number> --add agent-reviewed --remove needs-tests,needs-changes
+python -m tools.sdd_cli gitea labels --pr <number> --add agent-reviewed --dry-run true  # preview, no API calls
+```
+
+Deterministic colors (managed by the command): `agent-reviewed` `#5319e7`, `needs-tests` `#fbca04`, `needs-changes` `#d73a4a`.
 
 ## Nexus
 

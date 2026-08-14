@@ -4,11 +4,13 @@ Maps every `knowledge/` file to its template home (`.agents/skills/`, `tools/sdd
 `.gitea/workflows/`, or `infra/`) so a lesson's enforcement point is discoverable in one place.
 
 - **Audited:** 2026-08-06 (conversation-wide audit of `knowledge/` vs the template); 2026-08-07
-  added the `knowledge/errors/` scaffold stub.
+  added the `knowledge/errors/` scaffold stub; 2026-08-14 removed the 2 archive lesson
+  files after their fixes were applied inline (see the Removed table below).
 - **Last restructure:** 2026-08-06 — the 7 implemented lesson files were deleted; their rules now
   live inline in skills, scripts, and workflows (see the Removed table below).
 - **Scope:** the 14 `.md` files remaining under `knowledge/`. (The 2026-08-11 SDD_Test knowledge port
-  was fully applied as real template fixes and cleaned — see the note below.)
+  was fully applied as real template fixes and cleaned — see the note below. The 2026-08-14
+  TICKET-38/39/41 port was likewise applied as template fixes and its 2 files removed.)
 - **Rule:** a lesson is *covered* when the template enforces it via a skill, script, workflow, or
   tracked config — not when it exists only as prose in `knowledge/`. Informational/reference docs
   (`✅ Reference`) map to their documentation home (`AGENTS.md`, `docs/`) and are intentionally not
@@ -23,6 +25,7 @@ Maps every `knowledge/` file to its template home (`.agents/skills/`, `tools/sdd
 | Informational / index / placeholder      | 5     |
 | Category scaffolds (empty templates)     | 9     |
 | Removed 2026-08-06 (implemented inline)  | 7     |
+| Removed 2026-08-14 (implemented inline)  | 2     |
 
 All enforceable lessons have been moved out of `knowledge/` into the template — the folder now holds
 only the index, category scaffolds, and reference/placeholder files.
@@ -35,6 +38,12 @@ localhost retag (`package-deploy.yml`), SPA `/health` rule (`dev-flow-implement-
 mechanics (`dev-flow-archive-change`), git-push credential recipe (`configure-dev-environment`),
 dispatch discipline (`dev-ops-deploy-prod`), and the shared-index union rule
 (`docs-knowledge-maintenance`).
+
+**2026-08-14 TICKET-38/39/41 port — applied and cleaned.** The two archive/QA-lesson files
+(`fixes/archive-e2eproject-openspec-changes.md`, `lessons-learned/archive-e2eproject-openspec-changes.md`)
+were removed after their fixes were applied as template changes: non-interactive `openspec archive
+--yes` and `npx trunk fmt` on synced specs (`dev-flow-archive-change`), and the oracle-regex
+must-match-actual-format rule (`e2e-testing-patterns`). See the Removed table below.
 
 ## Current Matrix (14 files)
 
@@ -70,6 +79,16 @@ lesson now lives.
 | `lessons-learned/ci-pipeline-fixes.md` | `.agents/skills/dev-ops-configure-k8s/SKILL.md` "Lessons Learned: CI Pipeline Fixes" (14 inline rules), `.agents/skills/configure-ci-workflows/SKILL.md`, `.gitea/workflows/package-deploy.yml`, `.gitea/workflows/pr-validation.yml`, `infra/gitea/compose.yml`, `.gitignore`, `environment_lab.py`, `k8s_lab.py`, `dev-flow-scaffold-project` |
 | `lessons-learned/release-lessons.md` | `.agents/skills/dev-ops-deploy-prod/SKILL.md` "Branch-Protected `main` (Release-Branch PR Flow)" (inline) |
 
+## Removed 2026-08-14 — Implemented Inline In The Template
+
+These 2 files were deleted after their lessons were verified as enforced. Each row records where the
+lesson now lives.
+
+| Removed file | Lesson now enforced by |
+| ------------ | ---------------------- |
+| `fixes/archive-e2eproject-openspec-changes.md` | `.agents/skills/dev-flow-archive-change/SKILL.md` (non-interactive `OPENSPEC_TELEMETRY=0 openspec archive <name> --yes` + `npx trunk fmt` on newly synced specs before the archive commit) |
+| `lessons-learned/archive-e2eproject-openspec-changes.md` | `.agents/skills/e2e-testing-patterns/SKILL.md` (oracle regex must match the actual generated reference format — base36 alphanumeric, e.g. `/Q-\d{4}-[A-Z0-9]{6,}\d{6}/`); protected-dev archive-PR routing enforced by the pre-receive branch-protection hook |
+
 ### ci-pipeline-fixes.md — Per-Section Mapping (historical record)
 
 | § | Lesson | Where the rule now lives | Status |
@@ -92,7 +111,7 @@ lesson now lives.
 | 12d | Non-root container can't write root-owned workdir | `dev-flow-scaffold-project` §Dockerfile (`RUN chown -R <uid>:<gid> /app` before `USER`); inline rule 13 | ✅ |
 | 12e | NodePorts are cluster-scoped — per-env overlays + `protocol: TCP` gotcha | NodePort-uniqueness gate in `package-deploy.yml` + `configure-ci-workflows`; inline rule 4 | ✅ |
 | 12f | Process notes (protected branches, never copy CI logs, validation order) | `dev-ops-deploy-prod` + `lefthook.yml` gitleaks gate | ✅ |
-| 13 | `codex-reviewed` label loop (CI-in-loop review) | `dev-flow-pr-review-agent` + label gate in `.gitea/workflows/pr-validation.yml` | ✅ |
+| 13 | `agent-reviewed` label loop (CI-in-loop review) | `dev-flow-pr-review-agent` + label gate in `.gitea/workflows/pr-validation.yml` | ✅ |
 | 14 | kind API port is random — never hardcode 6443 | `setup_k8s_access()` derives the port from the live cluster; inline rule 5 | ✅ |
 
 ## Gaps Fixed On 2026-08-06 (before removal)

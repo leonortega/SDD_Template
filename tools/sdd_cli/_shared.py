@@ -552,7 +552,7 @@ def read_ticket_pattern(root: Path) -> str:
     if pattern:
         return pattern
     policy = read_json(root / ".template" / "delivery-policy.json", optional=True)
-    return policy.get("ticketKeyPattern", "E2EPROJECT-[0-9]+")
+    return policy.get("ticketKeyPattern", "TICKET-[0-9]+")
 
 
 def profile_audit_findings(root: Path) -> list[dict[str, str]]:

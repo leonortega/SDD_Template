@@ -25,7 +25,7 @@ Replace the placeholders:
 4. PR review feedback loop (dev-flow-pr-review-feedback-loop → OpenSpec tasks, fixes, re-review)
 5. CI validation check and fix (pr-validation.yml green on the current head)
 6. Re-verify human reviewers after the AI review (idempotent — HARD GATE)
-7. Human merge + post-merge handoff (approvals/merges are human-only — HARD GATE)
+7. Merge (human) + post-merge handoff (approval is the automated agent-reviewed gate; merges are human-only — HARD GATE)
 ```
 
 ### Step 1 — Create / Reuse The PR
@@ -111,15 +111,17 @@ Load and follow the `dev-flow-pr-review-agent` skill against the PR. It:
    gate check, the `ponytail-review` complexity pass, and adversarial review
    when risk is high.
 3. Posts one top-level PR comment with marker
-   `<!-- codex-review-agent:{headSha} -->`.
-4. Applies labels: `codex-reviewed` ONLY when the current head has ZERO
+   `<!-- agent-review:{headSha} -->`.
+4. Applies labels: `agent-reviewed` ONLY when the current head has ZERO
    findings of any severity AND its PR Validation run is green; otherwise
    `needs-tests` (missing/failing tests) and/or `needs-changes` (actionable
-   findings) keep the `codex-reviewed` clean marker off.
+   findings) keep the `agent-reviewed` clean marker off.
 
-**❌ HARD GATE (authority level 5):** PR approvals and merges are human-only
-actions. Never submit an approval review or merge a pull request on behalf of
-any user — including provisioned lab accounts.
+**❌ HARD GATE (authority level 5):** **Never use human users to approve a PR**
+— the automated approval is the `agent-reviewed` label (zero findings + green
+PR Validation). Never submit an approval review or merge a pull request on
+behalf of any user — provisioned lab accounts included. Merges remain
+human-only.
 
 ### Step 4 — PR Review Feedback Loop
 
@@ -135,12 +137,12 @@ Load and follow the `dev-flow-pr-review-feedback-loop` skill. It:
 4. Adds one OpenSpec `## PR Review Feedback` task per actionable item.
 5. Adds a ticket comment with marker
    `IA generated PR feedback detected: {headSha}:{feedbackBatchId}`.
-6. REMOVES the `codex-reviewed` label while any actionable feedback exists or
+6. REMOVES the `agent-reviewed` label while any actionable feedback exists or
    the CI run is red/pending, then applies the requested fixes, validates,
    commits (ticket-prefixed), and pushes.
 7. Adds a ticket comment with marker
    `IA generated PR feedback fixes: {headSha}:{feedbackBatchId}`.
-8. Reruns the AI review on the new head; `codex-reviewed` is applied only
+8. Reruns the AI review on the new head; `agent-reviewed` is applied only
    when the new head has ZERO findings AND its PR Validation run is green.
 
 The loop is done only when:
@@ -161,10 +163,10 @@ step closes the loop by fixing and re-checking until green.
 
 The authoritative PR Validation workflow is `.gitea/workflows/pr-validation.yml`
 (gitleaks detect, semgrep, trivy, checkov, JSON validation, kustomize overlay
-validation, and the `codex-reviewed` label gate). For every head:
+validation, and the `agent-reviewed` label gate). For every head:
 
 1. Read the latest PR Validation run for the current head SHA.
-2. A red, pending, or unreadable run keeps `codex-reviewed` off — the PR
+2. A red, pending, or unreadable run keeps `agent-reviewed` off — the PR
    stays red on the CI gate until the run completes green.
 3. Every failing step becomes a `BLOCKER` finding with a stable finding id;
    quote the step name and exact error so the feedback loop can fix it.
@@ -184,14 +186,17 @@ python -m tools.sdd_cli gitea request-reviewers --pr {prNumber}
 Apply the same failure handling as Step 2. Keep `Reviewers requested:
 <usernames>` in the PR body accurate if the resolved list changed.
 
-### Step 7 — Human Merge + Post-Merge Handoff
+### Step 7 — Merge (Human) + Post-Merge Handoff
 
-**❌ HARD GATE (authority level 5):** Approvals and merges are human-only. The
-agent never approves or merges — it reports the PR as ready and stops.
+**❌ HARD GATE (authority level 5):** **Never use human users to approve a PR**
+— the automated approval is `agent-reviewed` + green PR Validation (applied via
+the `gitea labels` CLI, never by requesting a human approval). Merges are
+human-only: the agent never merges — it reports the PR as ready (approved by
+the automated gate) and stops.
 
 Before handoff for merge, confirm:
 
-- `codex-reviewed` is present AND `needs-tests` / `needs-changes` are absent
+- `agent-reviewed` is present AND `needs-tests` / `needs-changes` are absent
   on the current head,
 - the current-head PR Validation run is green,
 - the ticket is in the developed/review state,
@@ -208,15 +213,17 @@ here — archiving happens in the post-merge flow.
 
 A release-blocking PR (`release/vX.Y.Z → main`) promotes an already
 QA-approved, code-reviewed artifact. The full review/feedback loop does not
-apply — **only Step 1** (plus the human approval + merge from Step 7):
+apply — **only Step 1** (plus the human merge from Step 7; the approval is the
+`agent-reviewed` label, automated):
 
 1. Open the PR `release/vX.Y.Z → main` with the release body.
-2. Apply the `codex-reviewed` label directly (the artifact is already clean —
+2. Apply the `agent-reviewed` label directly (the artifact is already clean —
    this is the caller's responsibility, not the review agent's). If the
    repository requires reviewers on the PR and reviewers are configured, run
    the Step 2 command — the caller may skip the parallel review loop.
-3. Require **1 approval from a user other than the PR author** (self-approval
-   is rejected), then the human merges.
+3. The `agent-reviewed` label is the approval — no human approval step
+   (branch-protection approval requirements, if configured, are enforced by
+   Gitea, never requested or orchestrated by the agent). The human merges.
 
 No AI review, feedback loop, or CI fix loop runs for this PR — the artifact
 was already verified in the QA flow.

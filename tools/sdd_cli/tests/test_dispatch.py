@@ -606,6 +606,21 @@ class EnvironmentLabDispatchTests(unittest.TestCase):
         self.assertEqual(0, rc)
         mock_prune.assert_called_once()
 
+    def test_prune_kind_images_dispatches(self) -> None:
+        """environment-lab prune-kind-images calls prune_kind_images."""
+        from unittest.mock import patch
+
+        with patch(
+            "tools.sdd_cli.environment_lab.prune_kind_images",
+            return_value={"valid": True, "actions": []},
+        ) as mock_prune:
+            rc = cli.main(
+                ["environment-lab", "prune-kind-images", "--dry-run", "true"]
+            )
+
+        self.assertEqual(0, rc)
+        mock_prune.assert_called_once()
+
     def test_prune_scaffold_dispatches(self) -> None:
         """environment-lab prune-scaffold calls prune_scaffold_shapes."""
         from unittest.mock import patch
@@ -841,6 +856,118 @@ class EnvironmentLabDispatchTests(unittest.TestCase):
             result = json.loads(stdout.getvalue())
             self.assertFalse(result["valid"])
             self.assertTrue(any("Dockerfile not found" in str(item) for item in result["findings"]))
+
+    def _write_apps_config(self, root: Path, apps: list[dict]) -> None:
+        """Write a minimal apps.json + project profile into a temp root."""
+        deployment = root / "infra" / "deployment"
+        deployment.mkdir(parents=True)
+        (deployment / "apps.json").write_text(
+            json.dumps({"version": 1, "apps": apps}), encoding="utf-8"
+        )
+        for app in apps:
+            docker = root / app.get("projectPath", app["appId"]) / "Dockerfile"
+            docker.parent.mkdir(parents=True, exist_ok=True)
+            docker.write_text("FROM scratch\n", encoding="utf-8")
+        template = root / ".template"
+        template.mkdir(parents=True, exist_ok=True)
+        (template / "project-profile.json").write_text(
+            json.dumps({"schemaVersion": 1}), encoding="utf-8"
+        )
+        (template / "project-profile.local.json").write_text(
+            json.dumps({"projectName": "dellop"}), encoding="utf-8"
+        )
+
+    def _run_validate_app_config(self, root: Path) -> tuple[int, dict]:
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            rc = cli.main(
+                ["environment-lab", "validate-app-config", "--root", str(root)]
+            )
+        return rc, json.loads(stdout.getvalue())
+
+    def test_validate_app_config_enforces_project_name_prefix(self) -> None:
+        """Project-name prefix rule: unprefixed appIds fail the gate."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_apps_config(
+                root,
+                [
+                    {
+                        "appId": "web",
+                        "projectPath": "apps/web",
+                        "role": "web",
+                        "healthPath": "/health",
+                        "deployOrder": 1,
+                    }
+                ],
+            )
+            rc, result = self._run_validate_app_config(root)
+            self.assertEqual(1, rc)
+            self.assertFalse(result["valid"])
+            keys = {item["key"] for item in result["findings"]}
+            self.assertIn("appId.project-prefix", keys)
+
+    def test_validate_app_config_accepts_prefixed_app_ids(self) -> None:
+        """Prefixed appIds (dellop-web/dellop-user-api/dellop-db) pass."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_apps_config(
+                root,
+                [
+                    {
+                        "appId": "dellop-web",
+                        "projectPath": "apps/dellop-web",
+                        "role": "web",
+                        "healthPath": "/health",
+                        "deployOrder": 1,
+                    },
+                    {
+                        "appId": "dellop-user-api",
+                        "projectPath": "apps/dellop-user-api",
+                        "role": "api",
+                        "healthPath": "/health",
+                        "deployOrder": 2,
+                    },
+                    {
+                        "appId": "dellop-db",
+                        "projectPath": "apps/dellop-db",
+                        "role": "database",
+                        "healthPath": "/health",
+                        "deployOrder": 3,
+                    },
+                ],
+            )
+            rc, result = self._run_validate_app_config(root)
+            self.assertEqual(0, rc)
+            self.assertTrue(result["valid"])
+
+    def test_validate_app_config_exempts_db_bootstrap(self) -> None:
+        """The fixed infra bootstrap job (db-bootstrap) is exempt from the prefix."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._write_apps_config(
+                root,
+                [
+                    {
+                        "appId": "db-bootstrap",
+                        "projectPath": "apps/db-bootstrap",
+                        "role": "job",
+                        "kind": "job",
+                        "healthPath": "/health",
+                        "deployOrder": 0,
+                    },
+                    {
+                        "appId": "dellop-web",
+                        "projectPath": "apps/dellop-web",
+                        "role": "web",
+                        "healthPath": "/health",
+                        "deployOrder": 1,
+                    },
+                ],
+            )
+            rc, result = self._run_validate_app_config(root)
+            self.assertEqual(0, rc)
+            self.assertTrue(result["valid"])
 
     def test_validate_docker_desktop_dry_run(self) -> None:
         """environment-lab validate-docker-desktop --dry-run true works."""

@@ -41,7 +41,10 @@ observability.
 
 The product trees (`apps/`, `packages/`) are intentionally absent in the shell: the scaffold
 (`ScaffoldProjectFiles`) creates the `apps/` + `packages/` containers and one layout app skeleton named from the
-project (`apps/<project-slug>/`) once a stack and project name are selected — never a root `src/`/`test/` pair.
+project (`apps/<project-slug>-<role>/`, the web skeleton `<project-slug>-web`) once a stack and project name are
+selected — never a root `src/`/`test/` pair. Project-name prefix rule: every app is named
+`<project-slug>-<role>` (e.g. `dellop-web`, `dellop-user-api`, `dellop-db`); the `validate-app-config` gate enforces
+it on `apps.json` (fixed infra job `db-bootstrap` exempt).
 Through the standard `set-project-stack` flow the name is required (no example or random app names); a direct
 scaffold call without a recorded name falls back to `apps/example/` purely as a layout placeholder.
 

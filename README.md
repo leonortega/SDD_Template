@@ -56,7 +56,7 @@ so you can exercise every concept below in one repeatable environment:
 | **Change specification** | OpenSpec proposals (`proposal.md`, `specs/`, `design.md`, `tasks.md`) and delta-spec sync |
 | **AI skill-driven implementation** | 77 Codex skills (see `manifest.json`) that drive planning, TDD, review, QA, deployment, rollback, and retrospective work |
 | **Test-driven development** | RED/GREEN vertical cycles, three test levels (unit, integration, architecture), coverage gate (≥ 80%) |
-| **PR review loop** | AI review agent with stable finding IDs, labels (`codex-reviewed` = clean, only when zero findings remain and the PR Validation run is green; `needs-tests`; `needs-changes`), PR Validation failures fed back as BLOCKER findings, feedback tasks, adversarial review, human review handoff |
+| **PR review loop** | AI review agent with stable finding IDs, labels (`agent-reviewed` = clean, only when zero findings remain and the PR Validation run is green; `needs-tests`; `needs-changes`), PR Validation failures fed back as BLOCKER findings, feedback tasks, adversarial review, human review handoff |
 | **CI/CD** | Gitea Actions pipelines that build immutable artifacts and deploy them |
 | **Immutable artifacts** | Sonatype Nexus stores artifacts by commit SHA; the same artifact is promoted across environments — never rebuilt |
 | **Multi-environment deployment** | DEV → QA → PROD on a local kind cluster (or Docker Desktop K8s), Kustomize overlays |
@@ -213,8 +213,10 @@ OpenProject ticket → OpenSpec change → feature branch → TDD implementation
    coherence; the PR review agent posts structured findings (`AI-001`…) and labels.
 5. **Feedback loop** — every AI/human finding becomes an OpenSpec feedback task;
    fixes are committed with markers and re-reviewed until clean.
-6. **Handoff** — the ticket sits in `Developed` until reviewers approve; the PR is
-   merged to `dev` and the deployment flow takes over.
+6. **Handoff** — approval is the automated gate: the ticket sits in `Developed`
+   until the AI review is clean and `agent-reviewed` is applied (zero findings +
+   green PR Validation); the human merges the PR to `dev` and the deployment
+   flow takes over.
 
 **Full details:**
 [`docs/workflows/implementation-deploy-flows.md`](docs/workflows/implementation-deploy-flows.md) (Stages 1–6).

@@ -3,7 +3,7 @@
 One command writes the OpenProject time-entry row for any delivery stage:
 
     python -m tools.sdd_cli dev-flow telemetry-upsert \
-      --ticket-key E2EPROJECT-11 --workflow-stage dev-flow-verify-change \
+      --ticket-key TICKET-11 --workflow-stage dev-flow-verify-change \
       --agent-role verify --started-utc 2026-08-07T10:00:00Z \
       --finished-utc 2026-08-07T11:30:00Z --outcome PASS
 
@@ -162,7 +162,7 @@ def _resolve_work_package_id(
 ) -> int | None:
     """Find the work package id for the ticket key.
 
-    Prefers the numeric id embedded in the ticket key (``E2EPROJECT-37`` -> 37,
+    Prefers the numeric id embedded in the ticket key (``TICKET-37`` -> 37,
     or a bare numeric key like ``37``) via ``GET /api/v3/work_packages/{id}``.
     Falls back to a subject-contains search for keys without a numeric suffix.
     """

@@ -245,7 +245,7 @@ class TicketNumericIdTests(unittest.TestCase):
     """Trailing numeric id extraction from ticket keys."""
 
     def test_key_with_numeric_suffix(self) -> None:
-        self.assertEqual("37", _ticket_numeric_id("E2EPROJECT-37"))
+        self.assertEqual("37", _ticket_numeric_id("TICKET-37"))
 
     def test_bare_numeric_key(self) -> None:
         self.assertEqual("37", _ticket_numeric_id("37"))
@@ -266,7 +266,7 @@ class WorkPackageResolutionTests(unittest.TestCase):
             return_value=(200, json.dumps({"id": 37, "subject": "Landing page"})),
         ) as mock:
             result = _resolve_work_package_id(
-                "http://op:8080", "tok", "e2eproject", "E2EPROJECT-37"
+                "http://op:8080", "tok", "e2eproject", "TICKET-37"
             )
         self.assertEqual(37, result)
         # numeric-id GET first; subject search must not run

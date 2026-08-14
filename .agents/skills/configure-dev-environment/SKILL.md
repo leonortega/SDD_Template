@@ -86,6 +86,12 @@ python -m tools.sdd_cli environment-lab setup-lab
 This runs 19+ steps in order (sub-steps numbered with letters). **All steps are fatal** — if any step fails, the setup
 stops immediately. Each step is validated before proceeding to the next.
 
+`setup-lab` is an alias for `full-setup`, which orchestrates **4 stages**: (1) prerequisites, (2) lab setup, (3) tool
+installation, (4) **project guidance** — always the final stage. When no project stack is configured yet, stage 4
+prompts for the project name + frontend/backend/database (interactive TTY only) and then runs the internet skill
+discovery + install flow (`set-project-stack` + guidance); non-TTY/CI runs just report the missing stack and never
+auto-install. A stack configured before `setup-lab` skips the prompt and runs guidance directly.
+
 ```text
 text
  1. InitLocalFiles            (config templates → local files)

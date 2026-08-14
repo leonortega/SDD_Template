@@ -548,6 +548,56 @@ def test_stage4_project_guidance_no_stack(tmp_path: Path) -> None:
     assert "No stack configured" in steps[1]["message"]
 
 
+def test_stage4_project_guidance_prompts_stack_when_missing(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """stage4 prompts for the stack at the END of setup-lab and runs guidance
+    exactly once (inside set-project-stack) — no second internet search."""
+    from tools.sdd_cli.full_setup import stage4_project_guidance
+
+    class FakeStdin:
+        """TTY-like stdin: isatty True, answers served via readline (input())."""
+
+        def __init__(self, answers: list[str]) -> None:
+            self._answers = list(answers)
+
+        def isatty(self) -> bool:
+            return True
+
+        def readline(self) -> str:
+            return (self._answers.pop(0) if self._answers else "") + "\n"
+
+    monkeypatch.setattr(
+        sys, "stdin", FakeStdin(["dellop", "react", "fastapi", "postgresql"])
+    )
+
+    dummy_guidance = {
+        "valid": True,
+        "foundSkills": ["owner/repo@react-skills"],
+        "installResults": [],
+        "actions": [],
+        "findings": [],
+    }
+    with patch(
+        "tools.sdd_cli.guidance.setup_project_guidance", return_value=dummy_guidance
+    ) as mock_guidance:
+        result = stage4_project_guidance(tmp_path, dry_run=False)
+
+    assert result["valid"] is True
+    steps = result["steps"]
+    assert any(s.get("command") == "stage4-stack" for s in steps)
+    assert any("dellop" in s.get("message", "") for s in steps)
+    # Guidance ran once inside set_project_stack; stage 4 must not search again.
+    assert mock_guidance.call_count == 1
+    # Profile was actually written by the prompt flow.
+    profile = json.loads(
+        (tmp_path / ".template" / "project-profile.local.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert profile["projectName"] == "dellop"
+
+
 def test_stage4_project_guidance_exception(tmp_path: Path) -> None:
     """stage4 handles setup_project_guidance raising an exception."""
     from tools.sdd_cli.full_setup import stage4_project_guidance

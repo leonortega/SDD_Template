@@ -53,12 +53,27 @@ required local runtime files.
 gate, or PROD deploy; other agents must wait or report the owner.
 - PROD promotion remains explicit. Parallel delivery must not promote to PROD only because QA passed.
 - Each ticket started in parallel runs its own refinement via `dev-flow-start-ticket` and follows the same always-ask
-gate as the linear flow: at least 1 `grill-with-docs` cycle (at most 4), always asking the user for extra info for
+gate as the linear flow: 1 to 4 `grill-with-docs` cycles with no fixed default (~2 typical;
+never cut the process short — keep grilling while questions remain),
+always asking the user for extra info for
 that ticket — even when the ticket seems complete — before writing its curated IA block, with no batching or silent
 self-answering across tickets. The coordinator never lets a ticketStarter write an IA block without the user having
 been asked for that ticket.
 - After QA evidence is recorded and OpenProject is moved to Done, the coordinator checkout owns ticket worktree
-teardown.
+teardown — and teardown runs the **MUST post-close cleanup** (authority level 5): `environment-lab
+  prune-docker-leftovers` + `prune-kind-images` from the coordinator checkout. Image/volume/container/kind pruning was
+  removed from CI, so every closed ticket (chained/sibling included) cleans up here; the prunes are idempotent and
+  non-fatal but mandatory — never hand off a closed ticket without them.
+- **Every open PR — chained/sibling included — runs the full PR review skill.** For each open PR in its ticket
+  worktree, run `dev-flow-pr-review-agent` (mandatory, never optional): check the PR Validation (Gitea Actions) CI
+  run for the head SHA, post AI findings, and apply the `agent-reviewed` label only on green + zero findings
+  (§2.1). All label changes go through the deterministic idempotent `gitea labels` CLI (`python -m tools.sdd_cli
+  gitea labels --pr <number> --add agent-reviewed --remove needs-tests,needs-changes`) — never hand-rolled REST —
+  so repeated review loops on chained PRs can never duplicate a label (one canonical id per name, diffed against
+  the PR's current labels). Resolve findings via `dev-flow-pr-review-feedback-loop` (fix → push → rerun AI review →
+  re-check CI; label changes do NOT trigger a fresh CI run, so rerun PR Validation on the new head). After
+  sibling-conflict resolution, re-run the gate on the new head before merge. Never skip the review skill for any
+  open PR.
 
 Role contracts:
 

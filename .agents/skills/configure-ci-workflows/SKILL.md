@@ -547,12 +547,14 @@ hardened patterns — each one prevented a real CI failure:
 3. **Heredoc/python column-0 rule** — any `python3 << PYEOF` / `python3 -c "..."` block inside a `run: |` block
    must start at **column 0** of the generated script (YAML keeps its indentation offset; bash heredoc terminators
    and Python `-c` bodies reject it). Validate with `bash -n` and `python -m py_compile` on extracted scripts.
-4. **kind image pruning** — prune old commit tags from the local daemon and the kind node (`ctr -n k8s.io`),
-   guarded so the current build's image is never pruned.
+4. **No CI image pruning** — the deploy workflow does NOT prune local/kind images (the prune steps were removed
+   from `package-deploy.yml`: they never ran reliably and duplicated work). ALL image/volume/container/kind
+   cleanup is the ticket-close job: `dev-ops-cleanup-resources` runs `environment-lab prune-docker-leftovers` +
+   `prune-kind-images` after every closed ticket (MUST).
 5. **CI kubeconfig** — never hardcode the API port `6443`; kind picks a random host port per cluster. Derive it
    from `kind get kubeconfig` and transform the file as YAML, not line surgery.
-6. **PROD artifact-reuse guard** — when the dispatch input `environment=prod` is used: skip the build and prune
-   steps (`if: steps.env.outputs.ENV != 'prod'`), deploy the pinned `artifact_commit_sha`, verify
+6. **PROD artifact-reuse guard** — when the dispatch input `environment=prod` is used: skip the build steps
+   (`if: steps.env.outputs.ENV != 'prod'`), deploy the pinned `artifact_commit_sha`, verify
    `app/{commitSha}/container-images.json` on Nexus (commitSha match + registry image existence) before deploy, and
    run a PROD `/health` smoke gate (host ports from `infra/deployment/ports.json`) after deploy. Never rebuild or
    republish during PROD promotion.
@@ -585,6 +587,16 @@ hardened patterns — each one prevented a real CI failure:
    and wait for completion, THEN deployments. On a fresh namespace the bootstrap Job otherwise waits for a database
    that does not exist yet and dies with `BackoffLimitExceeded`. Keep infra + Jobs out of the affected-app filter
    (they always apply).
+10. **Job apps always build — never filter `kind: job` out of the build set.** The Jobs phase pins every Job app's
+   image to `${COMMIT_SHA}` unconditionally (ADR-0003 bootstrap runs before every rollout), so the build loop must
+   ALWAYS include `kind: job` apps (e.g. `db-bootstrap`) even when the change set only touches service apps. A job
+   filtered out of the affected set references an image that was never built/pushed/loaded into kind →
+   `ImagePullBackOff`, the deploy times out, and the clean-apply step has already deleted the service Deployments,
+   leaving the environment half-deployed. Observed: PR-20 deploy (`37104d96e5`, dellop-api/web Dockerfile+CSS only)
+   failed exactly this way; the fix keeps the job-always-build rule in the build-set heredoc and exec-tests it in
+   `tools/sdd_cli/tests/test_deployable_gate.py` (`BuildSetGateTests` — job included when affected set is partial).
+   Kind cannot pull from the HTTP-only lab registry, so the pinned image MUST exist in kind from this build (the
+   `kind load docker-image` step) — never rely on kind pulling it.
 
 ### 5. Generate `pr-validation.yml`
 
