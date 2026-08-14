@@ -78,8 +78,9 @@ spec:
         name: data
       spec:
         accessModes: ["ReadWriteOnce"]
-        # local-path is kind's default StorageClass; swap per cluster.
-        storageClassName: local-path
+        # No explicit storageClassName: use the cluster default (kind ships
+        # `standard`, the rancher.io/local-path provisioner). Pinning a
+        # non-existent class (e.g. local-path) leaves the PVC Pending forever.
         resources:
           requests:
             storage: 5Gi

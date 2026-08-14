@@ -11,7 +11,7 @@
 # selected in project-profile.local.json -> stack.database (shipped: Postgres).
 set -eu
 
-DB_HOST="${DB_HOST:-db.internal}"
+DB_HOST="${DB_HOST:-db}"
 DB_PORT="${DB_PORT:-5432}"
 DB_ADMIN_USER="${DB_ADMIN_USER:-postgres}"
 DB_ADMIN_PASSWORD="${DB_ADMIN_PASSWORD:-postgres}"

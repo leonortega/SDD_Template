@@ -214,6 +214,7 @@ jobs:
           apps_by_id = {a["appId"]: a for a in apps}
           affected = []
           packages_deployable = False
+          deployable = False
           for path in changed:
               path = path.strip()
               if not path:
@@ -222,6 +223,15 @@ jobs:
               if m:
                   if m.group(1) not in affected:
                       affected.append(m.group(1))
+                  deployable = True
+                  continue
+              m = re.match(r"^apps/([^/]+)/Dockerfile$", path)
+              if m:
+                  # The image content depends on its Dockerfile - rebuild and
+                  # redeploy the app even without src/test changes.
+                  if m.group(1) not in affected:
+                      affected.append(m.group(1))
+                  deployable = True
                   continue
               m = re.match(r"^packages/([^/]+)/", path)
               if m:
@@ -240,22 +250,27 @@ jobs:
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
               out.write(f"AFFECTED_APPS={affected_csv}\n")
               out.write(f"PACKAGES_DEPLOYABLE={'true' if packages_deployable else 'false'}\n")
+              # A src/test change, an app Dockerfile, or a packages change with
+              # dependents makes the change deployable (packages without
+              # dependents must not deploy).
+              out.write(f"DEPLOYABLE={'true' if (deployable or packages_deployable) else 'false'}\n")
           PYEOF
           # tr -d '\r': python's text-mode append writes CRLF on Windows checkouts
           # of the gate script; CI is Linux, but the read-back must be robust.
           PACKAGES_DEPLOYABLE=$(sed -n 's/^PACKAGES_DEPLOYABLE=//p' "$GITHUB_OUTPUT" | tr -d '\r' | tail -1)
           PACKAGES_DEPLOYABLE="${PACKAGES_DEPLOYABLE:-false}"
+          DEPLOYABLE=$(sed -n 's/^DEPLOYABLE=//p' "$GITHUB_OUTPUT" | tr -d '\r' | tail -1)
+          DEPLOYABLE="${DEPLOYABLE:-false}"
 
-          # packages/** paths are handled ONLY via the dependsOn mapping above
-          # (a package with no dependents must not deploy); exclude them from
-          # the generic src/test match so e.g. packages/shared-ui/src/... does
-          # not fire the gate by itself.
-          COUNT=$(echo "${CHANGED}" | grep -vE '^packages/' | grep -cE '(^|/)(src|test)/' || true)
-          if [ "${COUNT}" -gt 0 ] || [ "${PACKAGES_DEPLOYABLE}" = "true" ]; then
-            echo "Deployable changes found (${COUNT} path(s) under src/test; packages dependents: ${PACKAGES_DEPLOYABLE})."
+          # DEPLOYABLE is computed in the python gate above: src/test paths,
+          # app Dockerfiles (apps/<appId>/Dockerfile), or packages changes
+          # with dependents. Docs/infra/workflow-only changes yield false and
+          # skip the build+deploy steps.
+          if [ "${DEPLOYABLE}" = "true" ]; then
+            echo "Deployable changes found (src/test, Dockerfile, or packages dependents)."
             echo "DEPLOYABLE=true" >> "$GITHUB_OUTPUT"
           else
-            echo "No changes under src/ or test(s)/ and no packages dependents — skipping deploy."
+            echo "No deployable changes (no src/test, Dockerfile, or package-dependent changes) - skipping deploy."
             echo "DEPLOYABLE=false" >> "$GITHUB_OUTPUT"
           fi
 
@@ -289,16 +304,27 @@ jobs:
             echo "WARNING: Registry ${REGISTRY} not reachable via HTTP — will skip push"
           fi
 
-          # Login to Nexus Docker registry (non-fatal here; the fail-closed
-          # manifest check below makes a skipped push fatal when the registry
-          # is reachable).
+          # Docker daemons default to HTTPS for registries; the Nexus :5001
+          # registry is HTTP-only. `localhost`/127.0.0.1 are Docker's implicit
+          # insecure (HTTP) registries, so for local-lab registries log in
+          # against the localhost retag - logging in against
+          # host.docker.internal:5001 attempts HTTPS and fails. Matches the
+          # PUSH_HOST logic below. Non-fatal here; the fail-closed manifest
+          # check below makes a skipped push fatal when the registry is
+          # reachable.
+          LOGIN_HOST="${REGISTRY}"
+          case "${REGISTRY%%:*}" in
+            localhost|127.0.0.1|host.docker.internal)
+              LOGIN_HOST="localhost:${REGISTRY##*:}"
+              ;;
+          esac
           LOGGED_IN=false
           if [ -n "${NEXUS_USERNAME:-}" ] && [ -n "${NEXUS_PASSWORD:-}" ]; then
-            if echo "${NEXUS_PASSWORD}" | docker login "${REGISTRY}" -u "${NEXUS_USERNAME}" --password-stdin 2>/dev/null; then
+            if echo "${NEXUS_PASSWORD}" | docker login "${LOGIN_HOST}" -u "${NEXUS_USERNAME}" --password-stdin 2>/dev/null; then
               LOGGED_IN=true
-              echo "Docker login successful"
+              echo "Docker login successful (${LOGIN_HOST})"
             else
-              echo "WARNING: Docker login failed (HTTPS fallback) — will skip push"
+              echo "WARNING: Docker login failed - will skip push"
             fi
           fi
 
@@ -429,13 +455,18 @@ jobs:
                   if m_port:
                       patch_ports[(env_name, current_service or 'unknown')] = int(m_port.group(1))
 
-          # 3. Cross-check: every canonical mapping must be present in the patches
+          # 3. Cross-check: every canonical mapping must be present in the patches.
+          # Patches are keyed by the Service name they target: the canonical app
+          # key, or its serviceName override (infra services like the shared
+          # database register as `database` but expose `db` - matches
+          # k8s_ports.service_patch_yaml).
           for env, apps in canonical.get('environments', {}).items():
               for app, cfg in apps.items():
                   expected = cfg['nodePort']
-                  actual = patch_ports.get((env, app))
+                  service = cfg.get('serviceName', app)
+                  actual = patch_ports.get((env, service))
                   if actual != expected:
-                      print(f'DRIFT: {env}/{app} patch nodePort={actual}, '
+                      print(f'DRIFT: {env}/{app} patch({service}) nodePort={actual}, '
                             f'ports.json says {expected} (run k8s_ports.write_artifacts)')
                       sys.exit(1)
 
@@ -633,7 +664,12 @@ jobs:
             # still :latest from the committed overlay — applying them would
             # trigger an unwanted rollout). AFFECTED_APPS=ALL applies
             # everything unchanged. Outputs are split into two files:
-            #   /tmp/k8s-jobs.yaml         — kind: Job resources (wait-for-
+            #   /tmp/k8s-infra.yaml       - shared infra (the database engine:
+          #     StatefulSet, PVC, db Service - labelled
+          #     app.kubernetes.io/component: database). Applied FIRST so the
+          #     bootstrap Job can connect to a running engine on a fresh
+          #     namespace (ADR-0003). Always kept when present.
+          #   /tmp/k8s-jobs.yaml        - kind: Job resources (wait-for-
             #     completion phases: db-bootstrap, per-app migration jobs).
             #     Jobs are ALWAYS kept when present, regardless of the affected
             #     set: migrations must run before any rollout in this env.
@@ -647,7 +683,7 @@ jobs:
           affected = {a for a in os.environ.get("AFFECTED_APPS", "").split(",") if a}
           raw = open("/tmp/k8s-manifest.yaml", encoding="utf-8").read()
           docs = [d.strip() for d in re.split(r"^---\s*$", raw, flags=re.M) if d.strip()]
-          kept_jobs, kept_deployments, skipped = [], [], []
+          kept_jobs, kept_infra, kept_deployments, skipped = [], [], [], []
           for doc in docs:
               kind_m = re.search(r"^kind:\s*(\S+)", doc, flags=re.M)
               doc_kind = kind_m.group(1) if kind_m else ""
@@ -656,25 +692,31 @@ jobs:
               if doc_kind == "Job":
                   # Migration/bootstrap jobs always run (ADR-0003 ordering).
                   kept_jobs.append(doc)
+              elif re.search(r"app\.kubernetes\.io/component:\s*database", doc):
+                  # Shared infra (database engine) must exist before the
+                  # bootstrap Job can connect - always applied, ahead of Jobs.
+                  kept_infra.append(doc)
               elif name in affected:
                   kept_deployments.append(doc)
               else:
                   skipped.append(name)
-          # Always rewrite both files: when nothing is kept they must be
+          # Always rewrite all three files: when nothing is kept they must be
           # TRUNCATED, or the APPLY_SKIPPED guard below would apply the stale
           # full manifest (with :latest tags) instead of skipping.
+          with open("/tmp/k8s-infra.yaml", "w", encoding="utf-8") as f:
+              f.write("\n---\n".join(kept_infra) + ("\n" if kept_infra else ""))
           with open("/tmp/k8s-jobs.yaml", "w", encoding="utf-8") as f:
               f.write("\n---\n".join(kept_jobs) + ("\n" if kept_jobs else ""))
           with open("/tmp/k8s-deployments.yaml", "w", encoding="utf-8") as f:
               f.write("\n---\n".join(kept_deployments) + ("\n" if kept_deployments else ""))
-          kept = len(kept_jobs) + len(kept_deployments)
+          kept = len(kept_jobs) + len(kept_infra) + len(kept_deployments)
           if kept:
-              print(f"Filtered manifest: kept {len(kept_deployments)} deployment/resource(s) + {len(kept_jobs)} job(s), dropped {len(skipped)} unaffected resource(s).")
+              print(f"Filtered manifest: kept {len(kept_deployments)} deployment/resource(s) + {len(kept_jobs)} job(s) + {len(kept_infra)} infra resource(s), dropped {len(skipped)} unaffected resource(s).")
           else:
               print(f"No affected resources found (dropped {len(skipped)}) - manifests truncated: nothing to apply for this run.")
           PYEOF
-              if [ ! -s /tmp/k8s-jobs.yaml ] && [ ! -s /tmp/k8s-deployments.yaml ]; then
-                echo "No affected resources to apply — skipping kubectl apply."
+              if [ ! -s /tmp/k8s-jobs.yaml ] && [ ! -s /tmp/k8s-deployments.yaml ] && [ ! -s /tmp/k8s-infra.yaml ]; then
+                echo "No affected resources to apply - skipping kubectl apply."
                 APPLY_SKIPPED=true
               fi
             else
@@ -684,7 +726,10 @@ jobs:
           raw = open("/tmp/k8s-manifest.yaml", encoding="utf-8").read()
           docs = [d.strip() for d in re.split(r"^---\s*$", raw, flags=re.M) if d.strip()]
           jobs = [d for d in docs if re.search(r"^kind:\s*Job\s*$", d, flags=re.M)]
-          others = [d for d in docs if d not in jobs]
+          infra = [d for d in docs if re.search(r"app\.kubernetes\.io/component:\s*database", d)]
+          others = [d for d in docs if d not in jobs and d not in infra]
+          with open("/tmp/k8s-infra.yaml", "w", encoding="utf-8") as f:
+              f.write("\n---\n".join(infra) + ("\n" if infra else ""))
           with open("/tmp/k8s-jobs.yaml", "w", encoding="utf-8") as f:
               f.write("\n---\n".join(jobs) + ("\n" if jobs else ""))
           with open("/tmp/k8s-deployments.yaml", "w", encoding="utf-8") as f:
@@ -714,9 +759,24 @@ jobs:
               subprocess.run(['kubectl', '-n', namespace, 'delete', 'deploy', app_id, '--ignore-not-found'], check=False)
           PYEOF
 
-            # ── Phase 1: Jobs (bootstrap + migrations) — apply & wait ────────
-            # ADR-0003: Job apps run BEFORE any Deployment rollout. A failed
-            # Job fails the deploy here — rollouts never start.
+            # -- Phase 0: shared infra (database engine) - apply & wait ready --
+            # The shared database (StatefulSet + PVC + db Service) must
+            # exist BEFORE the db-bootstrap Job can connect (ADR-0003: bootstrap
+            # creates the logical role/db against the running engine). It ships in
+            # the overlay's shared/database kustomization, so it is part of the
+            # rendered manifest and must be applied first - on a fresh namespace
+            # the Job would otherwise wait for a database that does not exist.
+            if [ -s /tmp/k8s-infra.yaml ]; then
+              echo "Applying shared infra (database) to ${ENV}..."
+              if ! kubectl apply -f /tmp/k8s-infra.yaml 2>&1; then
+                echo "ERROR: kubectl apply failed for shared infra - running dry-run for diagnosis..."
+                kubectl apply --dry-run=client -f /tmp/k8s-infra.yaml 2>&1 | head -20
+                exit 1
+              fi
+              echo "Waiting for database rollout (${ENV})..."
+              kubectl -n "sdd-${ENV}" rollout status statefulset/database --timeout=180s
+            fi
+
             if [ -s /tmp/k8s-jobs.yaml ]; then
               # Pin every registered job app's image to the deploy commit — the
               # env overlay images: section only lists service apps, so the

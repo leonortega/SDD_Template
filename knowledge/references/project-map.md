@@ -45,7 +45,7 @@ single shared `test/` directory.
 Shared database (ADR-0003 — see `docs/adr/ADR-0003-shared-database-and-migrations.md`):
 
 ```text
-infra/k8s/shared/database/        # one engine per env namespace (StatefulSet + PVC + db.internal; NodePort per env via ports.json)
+infra/k8s/shared/database/        # one engine per env namespace (StatefulSet + PVC + db; NodePort per env via ports.json)
 .template/scaffold/db-bootstrap/  # template: engine-level bootstrap (logical DBs/roles/extensions), idempotent (ADR-0005)
 apps/<app>/migrations/            # per-app schema migrations slot; tool implied by the app's resolved runtime
 apps/<app>/deploy/migration-job.yaml  # per-app migration Job (kind: job) — runs migrations/, scoped to that app
@@ -61,6 +61,6 @@ template). CI applies Jobs first (`wait --for=condition=complete`), then Deploym
 
 Port roles (ADR-0004 — see `docs/adr/ADR-0004-config-driven-role-registry.md`): the role vocabulary and its port
 ranges live in `infra/deployment/roles.json` (shipped: `web`, `api`, `database` — the shared DB role adds a TCP
-health check and a `serviceName: db.internal` override) — consumers add roles (`worker`, `scheduler`, ...) there
+health check and a `serviceName: db` override) — consumers add roles (`worker`, `scheduler`, ...) there
 without touching Python. `ports.json` entries reference these roles, and `k8s_ports.py` / `k8s_lab.py` read the
 registry instead of hardcoding it.

@@ -481,16 +481,33 @@ def scaffold_k8s(root, dry_run=False):
                 "          ports:\n"
                 f"            - containerPort: {port}\n"
             )
-            # Stack-independent PORT env for roles that declare portEnv in
-            # infra/deployment/roles.json (e.g. api, ADR-0004) — the AI scaffold
-            # skill generates the Dockerfile that consumes it (ASPNETCORE_URLS,
-            # uvicorn port, etc.). The script never assumes a runtime.
+            # Stack-independent env vars for roles that need them:
+            # - PORT for roles that declare portEnv in infra/deployment/roles.json
+            #   (e.g. api, ADR-0004) — the AI scaffold skill generates the
+            #   Dockerfile that consumes it (ASPNETCORE_URLS, uvicorn port, ...).
+            # - AUTH_SECRET (JWT signing secret) for api-role apps that consume
+            #   the auth-lib package. Read from the externally-provisioned
+            #   'auth-credentials' secret (kubectl create secret generic
+            #   auth-credentials --from-literal=secret=<value>); optional: true
+            #   keeps the lab runnable unprovisioned (app falls back to its
+            #   demo secret). The script never assumes a runtime.
+            env_entries: list[str] = []
             if role in _port_env_roles:
-                dep_yaml += (
-                    "          env:\n"
+                env_entries.append(
                     '            - name: PORT\n'
                     f'              value: "{port}"\n'
                 )
+            if role == "api":
+                env_entries.append(
+                    "            - name: AUTH_SECRET\n"
+                    "              valueFrom:\n"
+                    "                secretKeyRef:\n"
+                    "                  name: auth-credentials\n"
+                    "                  key: secret\n"
+                    "                  optional: true\n"
+                )
+            if env_entries:
+                dep_yaml += "          env:\n" + "".join(env_entries)
             dep_yaml += (
                 "          livenessProbe:\n"
                 "            httpGet:\n"
@@ -1553,7 +1570,7 @@ def setup_k8s_access(root, dry_run=False):
 
     The kind cluster is configured with extraPortMappings in infra/k8s/kind-config.yaml:
       host:<hostPort> → kind-node:<nodePort> → <appId> (one mapping per registered app;
-      host 5432/5433/5434 → 30700/31700/32700 → db.internal for the shared database)
+      host 5432/5433/5434 → 30700/31700/32700 → db for the shared database)
 
     These mappings make services directly accessible at localhost without port-forward.
     """

@@ -40,7 +40,7 @@
             },
             "serviceName": {
               "type": "string",
-              "description": "Optional K8s Service metadata.name override for the port patch and kind mapping (defaults to the appId). Used by infra services whose manifest name differs from the ports.json key — the shared database registers as 'database' but its Service is 'db.internal'."
+              "description": "Optional K8s Service metadata.name override for the port patch and kind mapping (defaults to the appId). Used by infra services whose manifest name differs from the ports.json key — the shared database registers as 'database' but its Service is 'db'."
             }
           }
         }

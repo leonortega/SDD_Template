@@ -1,5 +1,10 @@
 **/node_modules/
 **/TestResults/
+**/coverage/
+**/test-results/
+**/playwright-report/
+**/dist/
+**/*.tsbuildinfo
 artifacts/
 .git/
 .vs/

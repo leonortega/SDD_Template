@@ -89,9 +89,9 @@ def _commit(repo: Path, env: dict, message: str, files: dict[str, str]) -> str:
 def gate_fixture(tmp_path_factory):
     """Scratch git repo + the real gate script.
 
-    History:  A (root README) -> B (infra-only overlay fix) -> C (src change)
-    so that B's first-parent diff is infra-only and C's first-parent diff (B..C)
-    touches src/.
+    History:  A (root README) -> B (infra-only overlay fix) -> C (app src
+    change under apps/<appId>/src, ADR-0002) so that B's first-parent diff
+    is infra-only and C's first-parent diff (B..C) touches an app path.
     """
     step = _gate_step()
     script = step["run"]
@@ -112,8 +112,8 @@ def gate_fixture(tmp_path_factory):
     src_sha = _commit(
         repo,
         env,
-        "feat: src change",
-        {"src/app/main.txt": "x\n"},
+        "feat: app src change",
+        {"apps/web/src/app.txt": "x\n"},
     )
 
     return {
@@ -220,9 +220,8 @@ def test_ref_head_dispatch_infra_only_is_skipped(gate_fixture) -> None:
 
 def test_pr_merge_src_change_is_deployable(gate_fixture) -> None:
     """PR-merge auto-deploy of a src-touching merge commit must deploy. The
-    scratch repo has no apps.json and uses the legacy root src/ layout, so no
-    app resolves — AFFECTED_APPS stays empty but the gate still fires on the
-    generic (^|/)(src|test)/ match."""
+    app-aware gate resolves apps/<appId>/src changes to their app even
+    without apps.json registered (ADR-0002)."""
     res = _run_gate(
         gate_fixture,
         event_name="pull_request",
@@ -230,7 +229,7 @@ def test_pr_merge_src_change_is_deployable(gate_fixture) -> None:
         deploy_sha=gate_fixture["src_sha"],
     )
     assert res["deployable"] == "true"
-    assert res["affected"] == ""
+    assert res["affected"] == "web"
 
 
 def test_pr_merge_infra_only_is_skipped(gate_fixture) -> None:
@@ -294,6 +293,12 @@ def apps_gate_fixture(tmp_path_factory):
     frontend_sha = _commit(
         repo, env, "feat: frontend src", {"apps/frontend/src/app.txt": "x\n"}
     )
+    dockerfile_sha = _commit(
+        repo,
+        env,
+        "fix: frontend Dockerfile",
+        {"apps/frontend/Dockerfile": "FROM node:22-alpine\n"},
+    )
     packages_sha = _commit(
         repo,
         env,
@@ -313,6 +318,7 @@ def apps_gate_fixture(tmp_path_factory):
         "script": script,
         "env_template": env_template,
         "frontend_sha": frontend_sha,
+        "dockerfile_sha": dockerfile_sha,
         "packages_sha": packages_sha,
         "orphan_pkg_sha": orphan_pkg_sha,
     }
@@ -325,6 +331,21 @@ def test_pr_merge_app_src_maps_to_that_app(apps_gate_fixture) -> None:
         event_name="pull_request",
         pin="",
         deploy_sha=apps_gate_fixture["frontend_sha"],
+    )
+    assert res["deployable"] == "true"
+    assert res["affected"] == "frontend"
+
+
+def test_pr_merge_dockerfile_change_is_deployable(apps_gate_fixture) -> None:
+    """A Dockerfile-only change (apps/<appId>/Dockerfile) is deployable and maps
+    to that app: the image content depends on the Dockerfile, so the deployable-
+    changes gate must rebuild+redeploy even without src/test changes. Regression:
+    CI previously skipped Dockerfile-only changes entirely (deploy hotfix)."""
+    res = _run_gate(
+        apps_gate_fixture,
+        event_name="pull_request",
+        pin="",
+        deploy_sha=apps_gate_fixture["dockerfile_sha"],
     )
     assert res["deployable"] == "true"
     assert res["affected"] == "frontend"
@@ -388,26 +409,29 @@ SAMPLE_MANIFEST = (
 
 def _run_deploy_filter(
     script: str, tmp_path: Path, affected: str, manifest: str
-) -> tuple[str, str]:
+) -> tuple[str, str, str]:
     """Run the extracted filter against a scratch manifest.
 
-    Returns (deployments_file, jobs_file) contents — the filter now splits the
-    render into a jobs phase and a deployments phase (ADR-0003)."""
+    Returns (deployments_file, jobs_file, infra_file) contents — the filter
+    now splits the render into infra, jobs, and deployments phases (ADR-0002
+    + ADR-0003: the shared database must exist before the bootstrap Job)."""
     src_path = tmp_path / "k8s-manifest.yaml"
     src_path.write_text(manifest, encoding="utf-8")
     jobs_path = tmp_path / "k8s-jobs.yaml"
     deployments_path = tmp_path / "k8s-deployments.yaml"
+    infra_path = tmp_path / "k8s-infra.yaml"
     patched = script.replace(
         '"/tmp/k8s-manifest.yaml"', 'os.environ["K8S_MANIFEST"]'
     ).replace('"/tmp/k8s-jobs.yaml"', 'os.environ["K8S_JOBS"]').replace(
         '"/tmp/k8s-deployments.yaml"', 'os.environ["K8S_DEPLOYMENTS"]'
-    )
+    ).replace('"/tmp/k8s-infra.yaml"', 'os.environ["K8S_INFRA"]')
     env = {
         **os.environ,
         "AFFECTED_APPS": affected,
         "K8S_MANIFEST": str(src_path),
         "K8S_JOBS": str(jobs_path),
         "K8S_DEPLOYMENTS": str(deployments_path),
+        "K8S_INFRA": str(infra_path),
     }
     subprocess.run(
         ["python3"],
@@ -421,18 +445,43 @@ def _run_deploy_filter(
     )
     return deployments_path.read_text(encoding="utf-8"), jobs_path.read_text(
         encoding="utf-8"
-    )
+    ), infra_path.read_text(encoding="utf-8")
 
 
 def test_deploy_filter_keeps_only_affected_apps(tmp_path) -> None:
     """A filtered run keeps only the affected app's Deployment + Service."""
-    deployments, jobs = _run_deploy_filter(
+    deployments, jobs, infra = _run_deploy_filter(
         _deploy_filter_script(), tmp_path, "frontend", SAMPLE_MANIFEST
     )
     assert "name: frontend" in deployments
     assert "name: backend" not in deployments
     # Jobs are always kept — they run before any rollout (ADR-0003).
     assert "name: db-bootstrap" in jobs
+    # No database resource in this sample — infra phase is empty.
+    assert infra.strip() == ""
+
+
+def test_deploy_filter_splits_shared_infra_ahead_of_jobs(tmp_path) -> None:
+    """A resource labelled app.kubernetes.io/component: database (shared
+    engine) is split into the infra phase so it applies BEFORE the bootstrap
+    Job — on a fresh namespace the Job would otherwise wait for a database
+    that does not exist (ADR-0003, deploy hotfix)."""
+    manifest = (
+        SAMPLE_MANIFEST
+        + "---\n"
+        + "apiVersion: apps/v1\nkind: StatefulSet\nmetadata:\n  name: database\n"
+        + "  labels:\n    app.kubernetes.io/component: database\n"
+        + "---\n"
+        + "apiVersion: v1\nkind: Service\nmetadata:\n  name: db\n"
+        + "  labels:\n    app.kubernetes.io/component: database\n"
+    )
+    deployments, jobs, infra = _run_deploy_filter(
+        _deploy_filter_script(), tmp_path, "frontend", manifest
+    )
+    assert "name: database" in infra
+    assert "name: db" in infra
+    assert "name: db-bootstrap" in jobs
+    assert "name: database" not in deployments
 
 
 def test_deploy_filter_truncates_manifests_when_nothing_kept(tmp_path) -> None:
@@ -440,8 +489,9 @@ def test_deploy_filter_truncates_manifests_when_nothing_kept(tmp_path) -> None:
     the filter must TRUNCATE the deployment manifest so kubectl apply is
     skipped — never apply the stale full manifest with :latest tags. Jobs stay
     in their own phase file."""
-    deployments, jobs = _run_deploy_filter(
+    deployments, jobs, infra = _run_deploy_filter(
         _deploy_filter_script(), tmp_path, "", SAMPLE_MANIFEST
     )
     assert deployments.strip() == ""
     assert "name: db-bootstrap" in jobs
+    assert infra.strip() == ""

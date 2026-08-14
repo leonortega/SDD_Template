@@ -2591,6 +2591,117 @@ def set_semgrep_config(root: Path, dry_run: bool = False) -> dict[str, Any]:
 
 # ── Scaffold project implementation files ──────────────────────────────
 
+# Default shared-library skeletons materialized for a JS/TS stack (ADR-0002
+# packages/). Names are generic; content is the .template/scaffold/packages/node/
+# shape with `<pkgName>` substituted.
+_DEFAULT_PACKAGES = ("auth-lib", "ui-kit", "api-client")
+
+
+def _is_js_ts_stack(stack: dict[str, Any]) -> bool:
+    """True when the resolved stack is JavaScript/TypeScript."""
+    languages = stack.get("languages", []) or []
+    if any(lang in ("typescript", "javascript") for lang in languages):
+        return True
+    frameworks = stack.get("frameworks", []) or []
+    return any(
+        fw in ("react", "vue", "angular", "svelte", "next", "nuxt", "express", "node")
+        for fw in frameworks
+    )
+
+
+def _materialize_package_skeletons(
+    root: Path,
+    profile: dict[str, Any],
+    result: dict[str, Any],
+    dry_run: bool,
+) -> None:
+    """Copy the packages/ skeleton shape for the resolved stack, if applicable.
+
+    Stack-independent determinism only: this materializes the generic package
+    shapes from ``.template/scaffold/packages/<runtime>/`` (currently the node
+    shape: auth-lib, ui-kit, api-client) and substitutes the ``<pkgName>``
+    placeholder. Stack-specific package content is generated later by
+    ``dev-flow-scaffold-project``; this step never invents package logic.
+    Idempotent: an existing ``packages/<pkg>/`` is left unchanged.
+    """
+    stack = profile.get("stack", {}) or {}
+    if not _is_js_ts_stack(stack):
+        result["actions"].append(
+            {
+                "path": "packages/",
+                "key": "packages.shape-skip",
+                "severity": "info",
+                "message": (
+                    "No predefined packages/ shapes for this stack — shared "
+                    "libraries are generated per stack by dev-flow-scaffold-project."
+                ),
+                "phase": "apply",
+            }
+        )
+        return
+
+    shape = root / ".template" / "scaffold" / "packages" / "node"
+    if not shape.is_dir():
+        result["actions"].append(
+            {
+                "path": ".template/scaffold/packages/node",
+                "key": "packages.shape-missing",
+                "severity": "warning",
+                "message": "Node packages shape missing — skipping package skeleton generation.",
+                "phase": "apply",
+            }
+        )
+        return
+
+    for pkg in _DEFAULT_PACKAGES:
+        target = root / "packages" / pkg
+        if target.exists():
+            result["actions"].append(
+                {
+                    "path": f"packages/{pkg}",
+                    "key": "packages.exists",
+                    "severity": "info",
+                    "message": f"packages/{pkg}/ already exists — left unchanged.",
+                    "phase": "audit",
+                }
+            )
+            continue
+
+        if dry_run:
+            result["actions"].append(
+                {
+                    "path": f"packages/{pkg}",
+                    "key": "packages.would-create",
+                    "severity": "info",
+                    "message": f"Would create packages/{pkg}/ from the node skeleton shape.",
+                    "phase": "apply",
+                }
+            )
+            continue
+
+        import shutil as _shutil
+
+        _shutil.copytree(shape, target)
+        # Substitute the <pkgName> placeholder in every generated text file.
+        for file_path in target.rglob("*"):
+            if not file_path.is_file():
+                continue
+            try:
+                text = file_path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            if "<pkgName>" in text:
+                file_path.write_text(text.replace("<pkgName>", pkg), encoding="utf-8")
+        result["actions"].append(
+            {
+                "path": f"packages/{pkg}",
+                "key": "packages.created",
+                "severity": "info",
+                "message": f"Created packages/{pkg}/ skeleton (node shape).",
+                "phase": "apply",
+            }
+        )
+
 
 def scaffold_project_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
     """Create the deterministic implementation skeleton after the stack is set.
@@ -2703,6 +2814,13 @@ def scaffold_project_files(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 "phase": "apply",
             }
         )
+
+    # Shared-library skeletons (ADR-0002 packages/): when the resolved stack is
+    # JS/TS, materialize the default packages from .template/scaffold/packages/node/
+    # (auth-lib, ui-kit, api-client). Idempotent — existing packages are left
+    # unchanged. Other runtimes get an info note; their equivalent shapes are
+    # generated per stack by dev-flow-scaffold-project.
+    _materialize_package_skeletons(root, profile, result, dry_run)
 
     # Delegate every stack-specific artifact to the AI scaffold skill.
     # Warn when a legacy tests/ layout exists — all tests must live under each

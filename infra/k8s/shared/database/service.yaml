@@ -1,5 +1,5 @@
 # ClusterIP service for the shared engine (ADR-0003). Apps connect via
-# db.internal plus their own logical database name (orders, storefront, ...).
+# db plus their own logical database name (orders, storefront, ...).
 # The per-env overlay service patch (infra/k8s/overlays/{env}/service-patch.yaml,
 # generated from ports.json) upgrades it to type NodePort with the env's
 # nodePort, so kind extraPortMappings expose it to the host for health checks
@@ -7,7 +7,7 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: db.internal
+  name: db
 spec:
   type: ClusterIP
   selector:

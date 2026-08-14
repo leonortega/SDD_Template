@@ -74,6 +74,11 @@ apps/                      # Deployable applications (one folder per app)
 packages/                  # Shared libraries consumed by apps (auth, UI kit, API client, domain)
 ```
 
+Package skeletons are scaffold-generated per stack: `scaffold_project_files`
+materializes `.template/scaffold/packages/<runtime>/` into `packages/<pkg>/`
+(substituting `<pkgName>`), and the template itself ships `packages/` empty
+(ADR-0005).
+
 See `ADR-0003` for the extension of this layout with a shared database engine
 (`infra/k8s/shared/database/`), the `kind: service|job` app classification, and the phased
 CI apply order (Jobs before Deployments).

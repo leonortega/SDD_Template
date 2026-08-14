@@ -20,9 +20,20 @@ spec:
             - containerPort: <port>   # role containerPort from infra/deployment/roles.json
           # Emitted for roles with "portEnv": true in roles.json (e.g. api) — the
           # generated Dockerfile consumes PORT (ASPNETCORE_URLS, uvicorn port, ...).
+          # AUTH_SECRET is emitted for api-role apps that consume the auth-lib
+          # package: it reads the JWT signing secret from the externally
+          # provisioned 'auth-credentials' secret (kubectl create secret generic
+          # auth-credentials --from-literal=secret=<value>); optional: true keeps
+          # the lab runnable unprovisioned (app falls back to its demo secret).
           env:
             - name: PORT
               value: "<port>"
+            - name: AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: auth-credentials
+                  key: secret
+                  optional: true
           livenessProbe:
             httpGet:
               path: /health

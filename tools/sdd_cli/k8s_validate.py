@@ -17,6 +17,11 @@ command CI uses to deploy) and asserts:
    infra/deployment/ports.json (the single source of truth); a mismatch means
    the committed manifests and the canonical config have drifted (run
    `k8s_ports.write_artifacts` to regenerate).
+4. **DNS-1123 Service names** — every rendered Service `metadata.name` must be a
+   valid DNS-1123 label (lowercase alphanumerics + `-`, no dots, <= 63 chars).
+   `kubectl apply --dry-run=client` does NOT validate names server-side, so a
+   dotted name (e.g. `db.internal`) passes the dry run but fails the real
+   apply with `must not contain dots` — the gate catches it at CI time.
 
 Pure function `validate_overlays(root, dry_run)` returns a configure_result
 dict; the CLI wires it as `environment-lab validate-k8s-overlays`. CI runs it
@@ -25,6 +30,7 @@ in pr-validation.yml — the CI image ships kustomize v5.4.3 + pyyaml.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -62,6 +68,25 @@ def _render_overlay(root: Path, env: str) -> dict[str, Any]:
         err = (result.get("stderr") or "").strip() or "empty kustomize output"
         return {"ok": False, "error": err, "stdout": stdout}
     return {"ok": True, "error": None, "stdout": stdout}
+
+
+# DNS-1123 label: lowercase alphanumerics and '-', must start/end alphanumeric,
+# max 63 chars. Kubernetes Service names must satisfy this (no dots allowed).
+DNS1123_LABEL = re.compile(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
+
+
+def _parse_service_names(rendered: str) -> list[str]:
+    """Extract every rendered Service metadata.name (any Service)."""
+    names: list[str] = []
+    if _yaml is None:
+        return names
+    for doc in _yaml.safe_load_all(rendered):
+        if not isinstance(doc, dict) or doc.get("kind") != "Service":
+            continue
+        name = str(doc.get("metadata", {}).get("name", ""))
+        if name:
+            names.append(name)
+    return names
 
 
 def _parse_node_ports(rendered: str) -> list[tuple[str, int]]:
@@ -161,6 +186,18 @@ def validate_overlays(root: Path, dry_run: bool = False) -> dict[str, Any]:
                 "pre-start",
             )
             continue
+        for service_name in _parse_service_names(built["stdout"]):
+            if len(service_name) > 63 or not DNS1123_LABEL.match(service_name):
+                add_bucket_item(
+                    result["findings"],
+                    f"infra/k8s/overlays/{env}",
+                    "service.name.dns1123",
+                    f"{env}: Service name {service_name!r} is not a valid DNS-1123 "
+                    "label (lowercase alphanumerics and '-', no dots) - kubectl "
+                    "apply will reject it even though dry-run=client passes.",
+                    "error",
+                    "pre-start",
+                )
         for service, node_port in parsed_ports:
             key = f"{env}/{service}"
             rendered_ports[key] = node_port
@@ -180,7 +217,7 @@ def validate_overlays(root: Path, dry_run: bool = False) -> dict[str, Any]:
     # Canonical drift: every rendered nodePort must match ports.json. The
     # rendered Service is matched by its manifest name — usually the ports.json
     # key, but infra services may override it (the shared database registers as
-    # ``database`` and renders as ``db.internal`` via the serviceName field).
+    # ``database`` and renders as ``db`` via the serviceName field).
     if canonical is not None:
         envs = canonical.get("environments", {})
         for env, apps in envs.items():

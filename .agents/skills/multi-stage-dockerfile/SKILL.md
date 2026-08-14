@@ -46,3 +46,35 @@ installation)
 - Consider parallelization in build steps when possible
 - Set appropriate environment variables like NODE_ENV=production to optimize runtime behavior
 - Use appropriate healthchecks for the application type with the HEALTHCHECK instruction
+
+## Workspace Monorepo & `file:` Dependencies (npm/Node)
+
+When an app consumes `packages/<pkg>` via `file:` deps (repo layout
+`apps/<appId>` + `packages/`, ADR-0002), the build context is the **repo root** and
+these hardened rules apply — each one prevented a real CI failure:
+
+- **Pin npm >= 11 in every stage** — `RUN npm install -g npm@11 --no-audit --no-fund`.
+  npm 10.x (node:22-alpine) crashes on `file:` link deps (arborist
+  `loadVirtual`/`extraneous`/`EUSAGE`).
+- **Mirror the repo layout inside the image** — copy to
+  `/app/apps/<appId>` + `/app/packages` (not a flat `/app`). npm resolves
+  `file:` link targets via `relpath` against the lockfile; a flat layout yields
+  `../packages/x` instead of the lockfile's `../../packages/x` and `npm ci`
+  fails with `EMISSINGTARGET: Missing target in lock file`.
+- **Use absolute COPY destinations** — `COPY apps/<appId>/package.json
+  /app/apps/<appId>/`. A relative destination (`./apps/<appId>/`) resolves
+  against the current `WORKDIR`; reordering `WORKDIR` (e.g. a hadolint
+  DL3003 fix moving it above the COPY) silently drops the files into the wrong
+  folder and `npm ci` fails with EUSAGE "no lockfile". Rebuild images after any
+  Dockerfile lint fix.
+- **Build shared packages to `dist/` first** — `WORKDIR /app/packages/<pkg>`
+  then `npm ci && npm run build` before the app's tsc. Packages must ship compiled
+  `dist/` (`exports`/`types` → `dist`, `files: ["dist"]`) so app tsc (NodeNext,
+  `rootDir: src`) resolves them instead of pulling `.ts` into the app program.
+- **Classify shared deps by runtime need** — build-time-only packages (bundled by
+  vite/webpack, e.g. a UI kit) go in `devDependencies` so the runtime stage stays
+  lean; runtime-imported packages go in `dependencies`. The runtime stage runs
+  `npm ci --omit=dev`.
+- **Repo-root context ⇒ one root `.dockerignore`** — with the build context at
+  the repo root, Docker only reads the root `.dockerignore`; per-app
+  `.dockerignore` files are inert and must be removed.
