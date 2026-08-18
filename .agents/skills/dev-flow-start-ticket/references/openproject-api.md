@@ -6,7 +6,7 @@ request. Never print the token.
 ## Config Values
 
 - `baseUrl`: e.g. `http://localhost:8080`
-- `projectIdentifier`: e.g. `e2eproject`
+- `projectIdentifier`: e.g. `my-project` (configured in `.template/client-tools.local.json`)
 - `featureStatus`: e.g. `Specified` (feature starting point, ID 3)
 - `inProgressStatus`: e.g. `In progress` (lowercase p, ID 7)
 

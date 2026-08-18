@@ -123,6 +123,7 @@ $RECYCLE.BIN/
 !.trunk/trunk.yaml
 # checkov --download-external-modules artifact (must never ship)
 .external_modules/
+# Windows null-device name (created by shell redirects like > nul)
 nul
 
 # TypeScript incremental build artifacts

@@ -67,7 +67,7 @@
       ]
     },
     "openspec": {
-      "description": "Official OpenSpec (opsx) chat flows, v1.8 — propose, apply, update, archive, explore, sync. These delegate to the openspec CLI (Bash(openspec:*)); use them instead of hand-applying the OpenSpec workflow. Skills live in .agents/skills/ (v1.8 canonical codex location, auto-managed by openspec update); paths are relative to this manifest.",
+      "description": "Official OpenSpec (opsx) chat flows, v1.8 — propose, apply, update, archive, explore, sync. These delegate to the openspec CLI (Bash(openspec:*)). For delivery workflow routing (AGENTS.md), use the dev-flow-* equivalents instead (dev-flow-propose-change, dev-flow-apply-change, dev-flow-verify-change, dev-flow-archive-change) — they wrap these openspec skills with ticket/PR/deploy orchestration. These openspec-* skills are external (cannot modify); any workflow changes go in dev-flow-*.",
       "skills": [
         "../../.agents/skills/openspec-propose/SKILL.md",
         "../../.agents/skills/openspec-apply-change/SKILL.md",
@@ -97,9 +97,7 @@
       "skills": [
         "domain-modeling/SKILL.md",
         "domain-driven-design/SKILL.md",
-        "grill-me/SKILL.md",
-        "grill-with-docs/SKILL.md",
-        "grilling/SKILL.md"
+        "grill-with-docs/SKILL.md"
       ]
     },
     "architecture": {
@@ -169,8 +167,6 @@
     "observability": {
       "description": "Grafana, Seq, Dozzle \u2014 dashboards, queries, alerting, log correlation, logging patterns",
       "skills": [
-        "grafana-observability/SKILL.md",
-        "grafana-dashboards/SKILL.md",
         "grafana-board-update/SKILL.md",
         "dashboarding/SKILL.md",
         "grafana-oss/SKILL.md",

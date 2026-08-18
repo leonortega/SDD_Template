@@ -8,7 +8,6 @@ import os
 import subprocess
 import sys
 import tempfile
-import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -5653,9 +5652,6 @@ def provision_gitea_secrets(root: Path, dry_run: bool = False) -> dict[str, Any]
         result["valid"] = True
         return result
 
-    import base64
-    from urllib.parse import urlparse
-
     # Resolve owner/repo from client-tools.local.json or default
     client = read_json(root / ".template" / "client-tools.local.json", optional=True)
     gitea_cfg = client.get("gitea", {})
@@ -6195,16 +6191,17 @@ def run_environment_lab(args: list[str]) -> int:
 
     if not args:
         print(
-            "Available: setup-lab, compose-up, compose-down, health-check, init-local-files, init-project-profile, "
-            "init-quality-templates, set-openproject-env, set-monitoring-env, set-gitea-runner-env, "
-            "split-infra-env, build-gitea-images, set-gitea-branch-protection, validate-observability, "
-            "provision-grafana-token, validate-gitea-runner, validate-app-config, validate-docker-desktop, "
-            "provision-nexus-repositories, provision-gitea-secrets, set-client-tools, set-project-stack, "
-            "set-project-stack-metadata, set-semgrep-config, set-quality-config, "
-            "validate-docker-desktop-k8s, validate-k8s-overlays, setup-kind-cluster, setup-k8s-access, "
-            "scaffold-k8s, assign-app-ports, prune-scaffold, "
-            "ensure-headlamp, provision-lab-users, push-to-gitea, verify-gitea-token, "
-            "generate-gitea-token, renovate-gitea-token, prune-docker-leftovers, prune-kind-images",
+            "Available: "
+            "assign-app-ports, build-gitea-images, compose-down, compose-up, "
+            "ensure-headlamp, generate-gitea-token, health-check, init-local-files, "
+            "init-project-profile, init-quality-templates, provision-gitea-secrets, provision-grafana-token, "
+            "provision-lab-users, provision-nexus-repositories, prune-docker-leftovers, prune-kind-images, "
+            "prune-scaffold, push-to-gitea, renovate-gitea-token, scaffold-k8s, "
+            "set-client-tools, set-gitea-branch-protection, set-gitea-runner-env, set-monitoring-env, "
+            "set-openproject-env, set-project-stack, set-project-stack-metadata, set-quality-config, "
+            "set-semgrep-config, setup-k8s-access, setup-kind-cluster, setup-lab, "
+            "split-infra-env, validate-app-config, validate-docker-desktop, validate-docker-desktop-k8s, "
+            "validate-gitea-runner, validate-k8s-overlays, validate-observability, verify-gitea-token",
             file=sys.stderr,
         )
         return 1

@@ -34,7 +34,7 @@ experiments.
 - `openspec/config.yaml` keeps the OpenSpec process available for future product specs.
 - `infra/` contains local platform infrastructure for ticketing, repository, artifact storage, deployment support, and
 observability.
-- `.gitea/workflows/` contains placeholder workflows until a new product stack is added.
+- `.gitea/workflows/` contains active CI/CD workflows (PR validation, build-and-deploy) for the lab environment and future product stacks.
 - `tools/` contains delivery helper tooling.
 - `apps/` holds one self-contained folder per deployable application (`src/`, `test/`, `deploy/`, `Dockerfile`,
   `app.json`); `packages/` holds shared libraries consumed by apps. See ADR-0002.

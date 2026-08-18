@@ -2,7 +2,7 @@
 
 # AGENTS.md
 
-This repository is a product-free SDD/SDLC agentic shell. Use the workflow files and Codex skills as the source of truth
+This repository is a product-free SDD/SDLC agentic shell. Use the workflow files and skills as the source of truth
 before making changes.
 
 ## Mandatory First Step

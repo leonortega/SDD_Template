@@ -4,7 +4,7 @@ description: A relentless interview to sharpen a plan or design, which also crea
 disable-model-invocation: true
 ---
 
-Run a `/grilling` session, using the `/domain-modeling` skill.
+Run a grill-style interview session, using the `domain-modeling` skill.
 
 Repo-local adaptation: in this repository, keep the upstream questioning and domain-modeling stance, but write durable
 output to the existing SDD surfaces. Product or ticket clarity goes to the

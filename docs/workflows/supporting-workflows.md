@@ -88,7 +88,7 @@ understanding, not mutations.
 **OpenSpec awareness.** When an OpenSpec change exists, read its `proposal.md`,
 `specs/`, `design.md`, and `tasks.md` for context. When none exists, the discovery can
 feed a future proposal. Prefer `grill-with-docs` when answers should become durable
-context; use `grill-me` only for temporary alignment.
+context; use `grill-with-docs` for all grill refinement cycles.
 
 **Guardrails.** Read-only: no ticket, branch, OpenSpec, Git, or provider mutations.
 When discovery ends, summarize what was figured out and the open questions.

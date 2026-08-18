@@ -28,7 +28,7 @@ Read these docs for background:
 - `.agents/skills/_shared/delivery-contract.md` → deploy stage contract, handoff markers
 - `docs/conventions/context-management.md` → durable context rules
 - `docs/architecture/deployment.md` → Grafana provisioning, dashboard architecture
-- `.agents/skills/grafana-observability/SKILL.md` → Grafana patterns
+- `.agents/skills/dashboarding/SKILL.md` → Grafana dashboard JSON authoring and API push
 - `knowledge/README.md` → past issues / gotchas
 
 Run this skill after a deploy completes for the active ticket; scope dashboard edits to the deployed ticket's apps and
