@@ -49,7 +49,7 @@ Depending on what the user brings, you might:
 - Reframe the problem
 - Find analogies
 - Use a grill-style interview when the user wants the plan stress-tested. Prefer the `grill-with-docs` style when
-answers should become durable context; use `grill-me` style only when the alignment is
+answers should become durable context; use `grill-with-docs` style when the alignment is
 temporary.
 
 **Investigate the codebase**

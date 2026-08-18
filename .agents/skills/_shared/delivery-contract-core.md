@@ -167,7 +167,7 @@ skill dependency or parallel planning system.
 - `grill-with-docs` is the preferred style when the discussion should produce durable knowledge. Use it for domain
 terms, business rules, acceptance criteria, design choices, or future-reader
 rationale.
-- `grill-me` is the lightweight style for temporary alignment only.
+- `grill-with-docs` is the grill-style refinement skill for all alignment and planning cycles.
 
 Map resolved durable knowledge into the existing context surfaces:
 

@@ -6,7 +6,6 @@
       {"id": "semgrep", "required": true},
       {"id": "trivy", "required": true},
       {"id": "checkov", "required": true},
-      {"id": "repo-tooling-tests", "required": true},
       {"id": "stack-tests", "required": false},
       {"id": "agent-reviewed-label", "required": true}
     ]

@@ -166,7 +166,7 @@ belongs in OpenSpec; recurring workflow learning belongs in `dev-flow-retrospect
 or `knowledge/` according to the existing authority order.
 
 Grill-style planning is a questioning stance inside those same surfaces. Use `grill-with-docs` as the preferred style
-when answers should become durable context, with or without existing code. Use `grill-me` only for lightweight temporary
+when answers should become durable context, with or without existing code. Use `grill-with-docs` for lightweight temporary
 alignment where no durable repo context is expected. Product or ticket clarity goes to the managed OpenProject block,
 planned behavior and design go to OpenSpec, durable repository or process knowledge goes to `docs/`, and reusable
 non-authoritative lessons go to `knowledge/`. Do not introduce a separate `CONTEXT.md`, ADR convention, global grill

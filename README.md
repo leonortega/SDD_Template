@@ -33,7 +33,7 @@ learning.
   maps code, docs, SQL schemas, and configs into a graph with every edge tagged
   `EXTRACTED`/`INFERRED` — a vector-free alternative to grep-based code reading. Not
   installed by the lab; see [§7](#7-considered-but-not-adopted-future-improvements).
-- **Skills** — 86 Codex skills (in `.agents/skills/`) that encode the workflow stages:
+- **Skills** — 82 skills (in `.agents/skills/`) that encode the workflow stages:
   ticket start, OpenSpec change, implementation, review, QA, deploy, rollback,
   retrospective, and more.
 - **Agent eval** — a deterministic Promptfoo suite (61 routing cases) that verifies the
@@ -54,7 +54,7 @@ so you can exercise every concept below in one repeatable environment:
 | ------- | -------------- |
 | **Ticketed SDLC** | Work packages in OpenProject (Specified → In progress → Developed → In testing → Closed) with generated markers and time telemetry |
 | **Change specification** | OpenSpec proposals (`proposal.md`, `specs/`, `design.md`, `tasks.md`) and delta-spec sync |
-| **AI skill-driven implementation** | 77 Codex skills (see `manifest.json`) that drive planning, TDD, review, QA, deployment, rollback, and retrospective work |
+| **AI skill-driven implementation** | 82 skills (see `manifest.json`) that drive planning, TDD, review, QA, deployment, rollback, and retrospective work |
 | **Test-driven development** | RED/GREEN vertical cycles, three test levels (unit, integration, architecture), coverage gate (≥ 80%) |
 | **PR review loop** | AI review agent with stable finding IDs, labels (`agent-reviewed` = clean, only when zero findings remain and the PR Validation run is green; `needs-tests`; `needs-changes`), PR Validation failures fed back as BLOCKER findings, feedback tasks, adversarial review, human review handoff |
 | **CI/CD** | Gitea Actions pipelines that build immutable artifacts and deploy them |
@@ -338,7 +338,7 @@ Details: [`.agents/agent-evals/README.md`](.agents/agent-evals/README.md).
 
 ### Skills Catalog
 
-The full skill manifest (77 skills across ticket, implement, review, QA, deploy,
+The full skill manifest (82 skills across ticket, implement, review, QA, deploy,
 monitor, security, test, quality, observability, kubernetes, and more) lives in
 [`.agents/skills/manifest.json`](.agents/skills/manifest.json). Skills are the executable
 instructions the agent loads per routing stage.
@@ -365,11 +365,8 @@ instructions the agent loads per routing stage.
 
 - [Caveman](https://github.com/JuliusBrussee/caveman/tree/main/plugins/caveman/skills/caveman) — terse, token-saving
 communication
-- [Grill Me](https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me) — lightweight, temporary
-  alignment on planning decisions (no durable repo context expected)
 - [Domain Modeling](https://github.com/mattpocock/skills/tree/main/skills/engineering/domain-modeling),
   [Grill With Docs](https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs),
-  [Grilling](https://github.com/mattpocock/skills/tree/main/skills/productivity/grilling),
   [TDD](https://github.com/mattpocock/skills/tree/main/skills/engineering/tdd) — planning and implementation
 - [Ponytail](https://github.com/DietrichGebert/ponytail/tree/main/skills) — minimal-solution implementation
   and complexity review

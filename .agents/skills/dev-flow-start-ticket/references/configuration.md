@@ -10,7 +10,7 @@ tracked as the template. Environment variables are optional overrides for client
   "openProject": {
     "baseUrl": "http://localhost:8080",
     "apiToken": "replace-with-openproject-api-token",
-    "projectIdentifier": "e2eproject",
+    "projectIdentifier": "replace-with-project-identifier",
     "featureStatus": "Specified",
     "inProgressStatus": "In progress"
   },
@@ -68,7 +68,7 @@ workflows.
 - `{prefix}/{ticketKeySlug}`
 - `{prefix}/{projectKeySlug}/{ticketKeySlug}-{titleSlug}`
 - `ticket/{ticketKeySlug}-{titleSlug}`
-- `codex/{ticketKeySlug}-{titleSlug}`
+- `agent/{ticketKeySlug}-{titleSlug}`
 
 Default recommendation:
 
@@ -98,5 +98,5 @@ for the OpenSpec change id.
 Known local defaults:
 
 - `baseUrl`: `http://localhost:8080`
-- `projectIdentifier`: `e2eproject`
+- `projectIdentifier`: configured in `.template/client-tools.local.json`
 - `baseBranch`: `dev`

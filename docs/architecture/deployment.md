@@ -558,7 +558,7 @@ Otherwise, changes won't take effect after restart.
 
 ### Grafana Dashboard Best Practices
 
-Based on the official Grafana skills (`dashboarding`, `grafana-oss`, `grafana-dashboards`):
+Based on the Grafana skills (`dashboarding`, `grafana-oss`):
 
 1. **Add `description` fields** to every panel — this shows as a tooltip on the panel title's ℹ️ icon. Use it to explain
 what the panel shows.

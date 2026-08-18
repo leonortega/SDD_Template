@@ -397,9 +397,7 @@ def audit_skill_contracts(
         "ponytail-review",
         # Repo-owned planning/grill support
         "domain-modeling",
-        "grill-me",
         "grill-with-docs",
-        "grilling",
         # Vendored 3rd-party skill packs (external templates, not repo-owned)
         "architecture-decision-records",
         "architecture-patterns",
@@ -416,8 +414,6 @@ def audit_skill_contracts(
         "gitea",
         "gitea-actions-workflow",
         "gitea-tea",
-        "grafana-dashboards",
-        "grafana-observability",
         "grafana-oss",
         "improve-codebase-architecture",
         "kubernetes-manifest-authoring",
