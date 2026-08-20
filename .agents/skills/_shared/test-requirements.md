@@ -23,10 +23,10 @@ Every implementation must cover **three levels** of automated tests, written in 
 ### Key Rules
 
 1. **Scope:** The three levels apply **per component/module**, not per AC × task. One unit test file covers multiple ACs
-and tasks for the same component. One integration test file covers an entire
-endpoint or feature boundary. Architecture tests are a single project-wide file that validates the entire change.
+   and tasks for the same component. One integration test file covers an entire
+   endpoint or feature boundary. Architecture tests are a single project-wide file that validates the entire change.
 2. **Order:** Tests MUST be written BEFORE product code (TDD RED phase). No product code is allowed until all three
-levels are written and confirmed RED.
+   levels are written and confirmed RED.
 3. **Folders (authority level 5):** **all** tests go under a `test/` directory **per app** (ADR-0002 layout — one
    self-contained app folder per deployable unit, never a shared root `test/`), one subfolder per test type. This is the
    only allowed layout — never scatter tests in `tests/`, `__tests__/`, or co-located files:
@@ -35,10 +35,35 @@ levels are written and confirmed RED.
    - `apps/<appId>/test/e2e/` — end-to-end / browser tests (Playwright, Cypress, ...)
    - `apps/<appId>/test/architecture/` — architecture tests (single file per change)
 4. **Framework:** Use the stack's test framework as declared in `project-profile.json → stack.testFrameworks` or
-detected from the project's build configuration (Vitest, pytest, xUnit, Jest, etc.).
+   detected from the project's build configuration (Vitest, pytest, xUnit, Jest, etc.).
 5. **Coverage:** Unit and integration tests collectively must meet the `coverage.minimumPercent` threshold from
-`.template/quality.local.json` (default `80`). Architecture tests do not contribute to
-coverage percentage but are mandatory for structural validation.
+   `.template/quality.local.json` (default `80`). Architecture tests do not contribute to
+   coverage percentage but are mandatory for structural validation.
+
+---
+
+## ❌ HARD GATE: Test Folder Structure (authority level 5)
+
+**Before writing ANY test or product code**, the following folder structure MUST exist for every app:
+
+```
+apps/<appId>/test/unit/
+apps/<appId>/test/integration/
+apps/<appId>/test/e2e/
+apps/<appId>/test/architecture/
+```
+
+**Enforcement:**
+
+1. **Scaffold creates the folders.** `dev-flow-scaffold-project` MUST create these 4 subfolders under `apps/<appId>/test/` during scaffolding. If the scaffold runs after implementation has already started, it must create the missing folders before continuing.
+
+2. **Implementation blocks on missing folders.** `dev-flow-implement-ticket` Step 3 MUST verify these 4 folders exist before writing any tests or product code. If any folder is missing, **stop** and create them. This is a hard gate — no exceptions.
+
+3. **Co-located tests are a process violation.** Tests placed in `src/` (e.g., `src/components/Foo.test.tsx`) instead of `test/unit/` violate the ADR-0002 layout. The `test/` directory is the ONLY allowed location for test files.
+
+4. **CI enforces the structure.** The pre-push stack-tests hook (`python -m tools.sdd_cli stack-tests`) runs unit, integration, and architecture tests from `apps/<appId>/test/`. Tests outside this structure are invisible to CI and never run.
+
+**Why this exists:** Co-located tests in `src/` miss E2E coverage and are invisible to CI.
 
 ---
 

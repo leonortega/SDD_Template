@@ -50,3 +50,8 @@ fallbacks.
 For the raw API contract (payload fields, activity IDs, reverse-lookup), see
 `.agents/skills/openproject-sprint-backlog/references/openproject-api.md` → Operations → `time-telemetry-upsert`, and
 `.agents/skills/_shared/api-helpers.md` → OpenProject → Workflow time telemetry.
+
+For the complete step-to-message mapping table (which stage, activity ID, comment
+message, and duration variable to use for every dev/devops step), see
+`.agents/skills/_shared/time-tracking-step-map.md`. Every delivery step MUST
+call `time-telemetry-upsert` after completion using the mapping in that file.

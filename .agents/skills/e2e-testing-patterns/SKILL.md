@@ -81,7 +81,7 @@ insufficient.
    ID/reference number, derive the pattern from the generator's real output — verify against the generator or a
    captured sample before committing. An over-strict digits-only regex (e.g. `/Q-\d{4}-\d{6}/`) silently never
    matches an alphanumeric base36 segment (`Q-2026-MSTBYUZH373567`) → the whole suite FAILs on a correct product.
-   Match the actual shape, e.g. `/Q-\d{4}-[A-Z0-9]{6,}\d{6}/` (observed: TICKET-41 — committed oracle never
+   Match the actual shape, e.g. `/Q-\d{4}-[A-Z0-9]{6,}\d{6}/` (committed oracle never
    matched; the product was correct, the oracle was wrong).
 9. **Optimize for Speed**: Mock when possible, parallel execution
 
@@ -108,8 +108,15 @@ cy.get('[data-testid="email-input"]').type("user@example.com");
 
 ## Debugging Failing Tests
 
+> **⚠️ CI E2E runs use the `sdd-e2e-ci:local` container** — never install Playwright or Chromium
+> locally. For interactive debugging (`--headed`, `--debug`), run locally with a display.
+> For CI/QA validation, use:
+> ```bash
+> docker run --rm -e BASE_URL="${QA_URL}" -v "$(pwd):/workspace" -w /workspace sdd-e2e-ci:local npx playwright test
+> ```
+
 ```typescript
-// Playwright debugging
+// Playwright debugging (local interactive — requires display)
 // 1. Run in headed mode
 npx playwright test --headed
 

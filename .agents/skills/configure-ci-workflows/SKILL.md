@@ -73,10 +73,10 @@ Once the user confirms the stack, set it via:
 
 ```bash
 python -m tools.sdd_cli environment-lab set-project-stack --values-json '{
-  "name": "transportar",
-  "frontend": "react",
-  "backend": "fastapi",
-  "database": "postgresql"
+  "name": "myproject",
+  "frontend": "<user-choice>",
+  "backend": "<user-choice>",
+  "database": "<user-choice>"
 }'
 ```
 
@@ -604,6 +604,14 @@ This workflow is mostly static. Generate it with the standard checkout, JSON val
 SAST/SCA/IaC scans, and the dev-flow review gate steps. **Do NOT use `--skip-db-update` on a first-run
 Trivy scan** (no pre-cached vuln DB in the CI image) — the runner container has outbound internet, so let
 Trivy download its DB on the first run.
+
+**❌ HARD GATE (authority level 5): `trivy fs` accepts exactly ONE target.** Never pass space-separated targets like `trivy fs apps packages` — it fails with `multiple targets cannot be specified`. Loop over targets individually:
+
+```bash
+for target in apps packages; do
+  trivy fs --security-checks vuln,secret,config "${target}"
+done
+```
 
 **If SCA (Trivy fs) flags `react-router` in a consumer frontend:** the MEDIUM/HIGH advisories are only
 fixed by a coordinated upgrade — `npm install react@^19.2.7 react-dom@^19.2.7 react-router@^8.3.0`

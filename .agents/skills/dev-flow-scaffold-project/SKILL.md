@@ -87,6 +87,21 @@ TypeScript project").
 
 ### 3. Resolve the scaffold per stack (AI decision)
 
+**❌ HARD GATE (authority level 5): Create test folder structure.** Before generating any product code, create the 4 test subfolders for every app:
+
+```bash
+mkdir -p apps/<appId>/test/unit
+mkdir -p apps/<appId>/test/integration
+mkdir -p apps/<appId>/test/e2e
+mkdir -p apps/<appId>/test/architecture
+touch apps/<appId>/test/unit/.gitkeep
+ touch apps/<appId>/test/integration/.gitkeep
+touch apps/<appId>/test/e2e/.gitkeep
+touch apps/<appId>/test/architecture/.gitkeep
+```
+
+This is non-negotiable. If the scaffold skips this, implementation is blocked. See `.agents/skills/_shared/test-requirements.md` §HARD GATE: Test Folder Structure.
+
 **Project-name prefix rule (naming):** name every generated app
 `<project-slug>-<role>` — the project name is the mandatory prefix. Example:
 project `dellop` → `apps/dellop-web/`, `apps/dellop-user-api/`, `apps/dellop-db/`
@@ -128,7 +143,7 @@ not selected (`applies: false`).
   deterministic Deployment/Service/Kustomize from `apps.json`; the AI supplies
   the stack-specific Dockerfiles/nginx.conf/.dockerignore).
 
-### 5. Scaffold quality requirements (proven by TICKET-37)
+### 5. Scaffold quality requirements
 
 Apply these hard-won requirements to **every** generated scaffold. They are
 non-negotiable — each one prevented a real failure in a consumer delivery:
@@ -157,6 +172,28 @@ non-negotiable — each one prevented a real failure in a consumer delivery:
    generated script (YAML keeps its indentation offset; Python and `<< EOF`
    terminators reject it). Validate extracted scripts with `bash -n` and
    `python -m py_compile`.
+5. **Frontend API URLs must be relative (nginx proxy):** never hardcode
+   `http://localhost:<port>` as the API base URL in frontend code. In the
+   deployed topology, nginx proxies `/api/*` to the backend — the frontend
+   calls `/api/quotes` not `http://localhost:5000/api/quotes`. Hardcoded
+   localhost URLs break in QA/PROD where the frontend and backend are on
+   different hosts. Use relative URLs (`/api/...`) for all fetch/Axios calls;
+   reserve `VITE_API_URL` / `NEXT_PUBLIC_API_URL` env vars only for local dev
+   overrides with `proxy` config in vite.config.ts or next.config.js. Verify
+   with `grep -r 'localhost:' apps/<appId>/src/` — no matches expected.
+   (Prevents QA deploy failures.)
+6. **TypeScript strict unused-locals in scaffold tsconfig:** enable
+   `"noUnusedLocals": true` and `"noUnusedParameters": true` in every
+   generated `tsconfig.json`. Unused imports (e.g. `useRef`, `useCallback`,
+   `useEffect` imported but not used) fail `tsc -b` in CI and block the
+   Docker build. The strict flags catch these at scaffold time instead of
+   CI time.
+7. **Library type-deps verification:** when scaffolding a frontend that uses
+   a component library with peer dependencies (react-leaflet, react-md,
+   etc.), ensure `@types/<peer-lib>` is in `devDependencies` when the peer
+   lib ships separate type packages. Missing type packages cause TS2322
+   (`Property 'x' does not exist on type`) at build time. Verify with
+   `npx tsc --noEmit` after scaffold, before handoff.
 
 ### 6. Validate before handoff
 
@@ -167,7 +204,9 @@ Run the stack's local quality gates on the scaffold:
 3. Dockerfiles build (`docker build`) when Docker is available, then `docker run`
    and curl the health/DB endpoints (requirement 1 above).
 4. Manifests are valid (`kubectl apply --dry-run=client` / `kustomize build`).
-5. SCA is clean (`trivy fs` / `npm audit`) or upgrades are documented.
+5. SCA is clean — run `trivy fs` inside the `sdd-e2e-ci:local` container (never install trivy
+   locally: `docker run --rm -v "$(pwd):/workspace" -w /workspace sdd-e2e-ci:local trivy fs --security-checks
+   vuln,secret,config .`), or use `npm audit` for JS-only stacks. Upgrades are documented when findings exist.
 
 Fix failures before reporting done. If a gate cannot run, document the reason
 and residual risk.
@@ -190,13 +229,20 @@ and residual risk.
 ## Deliverables Checklist
 
 - [ ] `apps/<appId>/src/` structure per architecture skill for the stack
-- [ ] `apps/<appId>/test/` with unit + integration + e2e + architecture subfolders per TDD skill
+- [ ] `apps/<appId>/test/` with **all 4 subfolders** created (authority level 5):
+  - [ ] `apps/<appId>/test/unit/` — with a placeholder `.gitkeep` or initial test file
+  - [ ] `apps/<appId>/test/integration/` — with a placeholder `.gitkeep` or initial test file
+  - [ ] `apps/<appId>/test/e2e/` — with a placeholder `.gitkeep` or initial test file
+  - [ ] `apps/<appId>/test/architecture/` — with a placeholder `.gitkeep` or initial test file
+- [ ] `playwright.config.ts` (or `cypress.config.ts`) with `BASE_URL` env var support for QA targeting
 - [ ] Build manifest(s) for the stack's native tooling
-- [ ] Test config + runner wiring
+- [ ] Test config + runner wiring (vitest/jest/pytest configured to read from `test/` folders)
 - [ ] Dockerfile(s) per app role (or documented skip)
 - [ ] CI workflow(s) using the stack's commands
 - [ ] k8s stack-specific artifacts (nginx.conf/.dockerignore) where applicable
 - [ ] All local quality gates green (or documented residual risk)
+
+**❌ HARD RULE (authority level 5):** The scaffold MUST create all 4 test subfolders. If the scaffold is skipped or the folders are missing when `dev-flow-implement-ticket` runs, implementation is blocked until the folders exist. Tests placed in `src/` instead of `test/` are a process violation.
 
 ## Output
 

@@ -2619,7 +2619,7 @@ def _validate_project_name(name: Any) -> str:
     if raw.lower() in placeholder:
         raise ValueError(
             f"values.name {raw!r} is a placeholder — provide the real project name "
-            "(e.g. 'transportar'), not a sample name."
+            "(e.g. 'myproject'), not a sample name."
         )
     import re as _re
 
@@ -2639,7 +2639,7 @@ def set_project_stack(
 
     The project name is required: the template never uses example or random
     names — scaffolded appIds/folders derive from it. Pass it as
-    ``values.name`` (e.g. ``{"name": "transportar", "frontend": "react", ...}``).
+    ``values.name`` (e.g. ``{"name": "myproject", "frontend": "react", ...}``).
     """
     if not any(key in values for key in ("frontend", "backend", "database")):
         return {

@@ -31,6 +31,29 @@ Run `setup-lab` (all-in-one) or the individual steps below in order. Each step v
 first failure and report it. Confirm the stack with the user before any
 stack-dependent step, then hand off to the next delivery stage.
 
+### Stage Progression (show the user, then continue)
+
+`setup-lab` is deterministic. The agent **must** follow this sequence and **inform** the user at each boundary:
+
+1. **Before starting:** announce `Running setup-lab (4 stages)...`
+2. **After each stage completes:** show a one-line summary of what the stage did, then tell the user what the next
+   stage is (e.g., `✅ Stage 1 done. Starting Stage 2: Lab Setup...`).
+3. **Continue to the next stage** — never ask "What's next?" or "How should I continue?".
+4. **After stage 4 completes:** show the final summary (services, URLs, credentials, Grafana board) and state the
+   next delivery stage: `Next: start a ticket or propose a change.`
+5. **If a stage fails:** stop, show the error, and state what the user needs to fix before re-running.
+
+Stage sequence:
+
+```text
+Stage 1: Prerequisites     → verify host tools
+Stage 2: Lab Setup         → Compose, observability, users, Nexus, K8s, semgrep
+Stage 3: Tool Installation → MCP servers, quality tools, manifest validation
+Stage 4: Project Guidance  → internet skill discovery for the configured stack
+```
+The agent shows progress and continues. It does not ask for direction between stages. Only pause if a stage
+requires user input that cannot be automated (e.g., stack selection in stage 4 when no stack is configured).
+
 ## Prerequisites
 
 Before running quick setup, ensure the following CLI tools are available on the host:

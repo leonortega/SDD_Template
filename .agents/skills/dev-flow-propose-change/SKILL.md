@@ -92,6 +92,7 @@ files.
 - If context is critically unclear, ask the user - but prefer making reasonable decisions to keep momentum
 - If a change with that name already exists, ask if user wants to continue it or create a new one
 - Verify all artifacts exist with `openspec status` before declaring the propose flow complete
+- **Include test structure in tasks.md (authority level 5):** The `tasks.md` MUST include a task to verify/create the 4 test folders (`test/unit/`, `test/integration/`, `test/e2e/`, `test/architecture/`) before any implementation tasks. This is the first task in the checklist — no code or tests are written until this task is complete. See `.agents/skills/_shared/test-requirements.md` §HARD GATE: Test Folder Structure.
 
 ## Overview
 

@@ -19,7 +19,7 @@ The loop has two timed phases:
 
 1. AI review runs immediately after PR creation and after every pushed feedback fix.
 2. Human review feedback is processed only on a later manual resume, such as `automatically continue this ticket` or
-`continue TICKET-123`.
+`continue TICKET-XXX` (where XXX is the ticket key).
 
 ## Shared Context
 

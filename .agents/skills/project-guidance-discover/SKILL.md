@@ -50,6 +50,10 @@ level 5).
 idempotency (skip reinstall) and catalog review — never as the basis for recommending
 skills.
 - **Always ask before installing.** Internet-discovered skills are candidates; the user chooses which to install.
+- **Never include the project name in skill search queries.** The `npx skills find` query must contain only
+technology tokens (frontend, backend, database), never the project name. The project name is metadata for the
+profile — it is not a search keyword. The `_read_stack_values` function in `guidance.py` explicitly excludes the
+`name` key from the search values.
 
 ## Failure Rules
 

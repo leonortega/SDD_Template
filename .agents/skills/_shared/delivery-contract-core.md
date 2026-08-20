@@ -230,9 +230,15 @@ pause.
 applicable skill and follow its Workflow section.
 4. **If the next step has prerequisites** (missing config, env vars, tool installs), state the blocker and what the user
 needs to provide — don't offer open-ended alternatives.
+5. **Setup-lab stage flow** — when running `setup-lab`, the agent follows the fixed stage sequence (1 → 2 → 3 → 4).
+After each stage completes, show a one-line summary of what the stage did, then tell the user what the next stage
+is (e.g., `Stage 2 done. Starting Stage 3: Tool Installation...`). Continue to the next stage without asking for
+direction. Only pause if a stage requires user input that cannot be automated (e.g., stack selection when no stack
+is configured). After stage 4 completes, show the final summary and state the next delivery stage:
+`Next: start a ticket or propose a change.`
 
-This applies in all contexts: after PR review, after QA failure, after deployment, after ticket handoff. Do not default
-to asking the user for direction on the next workflow step.
+This applies in all contexts: after PR review, after QA failure, after deployment, after ticket handoff, during
+setup-lab. Do not default to asking the user for direction on the next workflow step.
 
 Exception: if the routing table has no match for the current context, then — and only then — ask the user to clarify
 which workflow stage applies.

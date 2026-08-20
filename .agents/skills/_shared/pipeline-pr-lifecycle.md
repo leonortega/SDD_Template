@@ -28,7 +28,11 @@ Replace the placeholders:
 7. Merge (human) + post-merge handoff (approval is the automated agent-reviewed gate; merges are human-only — HARD GATE)
 ```
 
+**❌ HARD GATE (authority level 5): Never remove branch protection to merge a PR.** Branch protection exists to enforce review quality. If self-approval is blocked, use a review-user token (FirstUser/SecondUser) to approve — do NOT delete or weaken the protection rule.
+
 ### Step 1 — Create / Reuse The PR
+
+**❌ HARD GATE (authority level 5): PR base branch MUST be `{baseBranch}` (normally `dev`), never `main`, unless the user explicitly directs a PROD release PR.** Creating a PR targeting `main` when the workflow deploys from `dev` means code never reaches the deploy branch.
 
 Reuse an existing open PR for the branch when present; otherwise create a PR
 targeting the configured base branch (`{baseBranch}`, normally `dev`).
@@ -145,9 +149,16 @@ Load and follow the `dev-flow-pr-review-feedback-loop` skill. It:
 8. Reruns the AI review on the new head; `agent-reviewed` is applied only
    when the new head has ZERO findings AND its PR Validation run is green.
 
+**❌ HARD GATE (authority level 5): ALL findings must be fixed — BLOCKER, WARNING, and SUGGESTION.**
+The `agent-reviewed` label is the clean marker: it is applied ONLY when the current head has ZERO findings
+of ANY severity. This means every BLOCKER, every WARNING, and every SUGGESTION must be addressed before
+the loop can exit. A SUGGESTION that is ignored keeps `agent-reviewed` off. If the agent disagrees with a
+finding, it must document the rationale and request user confirmation before marking it non-actionable.
+
 The loop is done only when:
 
 - the current-head AI review has been run or reused,
+- **ZERO findings of any severity remain** (BLOCKER, WARNING, SUGGESTION — none)
 - all OpenSpec `## PR Review Feedback` tasks are complete,
 - all feedback batches have fix markers,
 - validation for feedback fixes has passed,

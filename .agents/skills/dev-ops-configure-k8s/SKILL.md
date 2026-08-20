@@ -192,6 +192,8 @@ Dockerfile for the actual stack. Use the JS/TS multi-stage node→nginx template
 (React/Vue/Angular/Svelte), a .NET `dotnet publish` Dockerfile for ASP.NET/Blazor, and the equivalent template for any
 other runtime — never assume a stack.
 
+**❌ HARD GATE (authority level 5): All COPY paths in Dockerfiles MUST be relative to the repo root (the build context). Never use app-local relative paths like `COPY package.json ./`. Use `COPY apps/<appId>/package.json ./` instead.** Every generated Dockerfile MUST also end with a `CMD` or `ENTRYPOINT` instruction — verify before writing.
+
 **For JS/TS web apps (React/Vue/Angular):**
 
 ```dockerfile
@@ -205,6 +207,9 @@ RUN npm run build
 
 # Stage 2: Serve with nginx
 FROM nginx:alpine
+# nginx:alpine needs root for port 80 binding and /run/nginx.pid.
+# CKV_DOCKER_3: USER instruction present. CKV_DOCKER_8: skip — nginx requires root.
+USER root
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
@@ -243,10 +248,10 @@ server {
 
     # Use a variable in proxy_pass so nginx resolves the API service
     # hostname at runtime (via the resolver) instead of at startup.
-    # Without this, nginx fails to start if '<api-appId>' isn't resolvable
+    # Without this, nginx fails to start if the API service isn't resolvable
     # immediately (e.g. on first deploy to a new namespace).
     location /api/ {
-        set $api_upstream http://<api-appId>:5000;
+        set $api_upstream http://__API_APP_ID__:5000;
         proxy_pass $api_upstream;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -256,6 +261,11 @@ server {
     location /health {
         return 200 '{"status":"ok"}';
         add_header Content-Type application/json;
+    }
+
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
     }
 }
 ```
@@ -359,14 +369,15 @@ If strategic merge fights you again, fall back to a JSON patch (`patches:` + `ta
 `/spec/ports/0/nodePort`). The CI workflow's NodePort-uniqueness gate scans `infra/k8s/overlays/*/service-patch.yaml` —
 keep that filename and parseable `nodePort:` lines.
 
-The kind cluster's `extraPortMappings` in `infra/k8s/kind-config.yaml` maps these NodePorts to host ports:
+The kind cluster's `extraPortMappings` in `infra/k8s/kind-config.yaml` maps these NodePorts to host ports. **⚠️ Actual host ports may differ from the values above** — kind assigns host ports at cluster creation and they can drift if another service claimed the expected port. After cluster creation, always verify with:
 
-- **31080 → 8082** (QA <appId>)
-- **31500 → 5003** (QA <api-appId>)
-- **32080 → 8083** (PROD <appId>)
-- **32500 → 5004** (PROD <api-appId>)
+```bash
+docker port sdd-cluster-control-plane | grep -E '30080|30500|31080|31500|32080|32500'
+```
 
-See the kind-config section below for the full mapping.
+If ports don't match, re-run `scaffold-k8s` and recreate the cluster. See the kind-config section below for the full mapping.
+
+**❌ HARD GATE (authority level 5): After any edit to `ports.json`, MUST run `scaffold-k8s` to regenerate `kind-config.yaml` and overlay patches.** Never edit `kind-config.yaml` by hand — it is a generated file. The gate sequence is: edit `ports.json` → run `scaffold-k8s` → recreate kind cluster if port mappings changed.
 
 ### Critical: K8s manifests must match apps.json
 
@@ -531,10 +542,13 @@ Ensure these secrets exist in Gitea:
 `KUBECONFIG` secret after any cluster recreation. Derive the port from the live cluster and **transform kubeconfig as
 YAML** (`yaml.safe_load` → mutate the dict → `safe_dump`) — never line-based string surgery, which once dropped the
 `name:`/`contexts:` keys and broke kubectl with `context was not found`. `setup-kind-cluster`
-(`tools/sdd_cli/k8s_lab.py`) does this automatically and writes `infra/k8s/kind-kubeconfig-ci.yaml`.
+(`tools/sdd_cli/k8s_lab.py`) does this automatically and writes `infra/k8s/kind-kubeconfig-ci.yaml`.**❌ HARD GATE (authority level 5):** After `kind create cluster`, you MUST run `provision-gitea-secrets` before any CI dispatch. Without this step, the `KUBECONFIG` secret is missing and every deploy fails with `KUBECONFIG secret not set`. This is not optional — the CI runner cannot reach the K8s API without it.
 
-Use the `provision-gitea-secrets` command for Nexus credentials (called automatically by `setup-lab` step 13; idempotent
-— re-run to re-sync after a credential change):
+```bash
+python -m tools.sdd_cli environment-lab provision-gitea-secrets
+```
+
+Use the `provision-gitea-secrets` command for Nexus credentials (called automatically by `setup-lab` step 13; idempotent — re-run to re-sync after a credential change):
 
 ```bash
 python -m tools.sdd_cli environment-lab provision-gitea-secrets
@@ -552,7 +566,11 @@ Verify end-to-end:
    Prerequisites)
 3. **kind image loaded**: Ensure images are loaded into kind via `kind load docker-image --name sdd-cluster
 host.docker.internal:5001/<appId>:latest`
-4. **Trigger CI**: Push to `dev` branch and verify the workflow succeeds
+4. **nginx.conf proxy rule**: For web apps with a backend API, verify `apps/<appId>/nginx.conf` contains a
+   `location /api/` block with `proxy_pass` to the API service. Vite's dev server proxies `/api` automatically,
+   but production nginx does not — missing this rule causes 405 errors on login and API calls. See
+   `knowledge/anti-patterns/nginx-missing-api-proxy.md`.
+5. **Trigger CI**: Push to `dev` branch and verify the workflow succeeds
 
 ## CLI Commands
 
@@ -649,6 +667,9 @@ Report:
 - **kubectl not available**: stop — cannot scaffold K8s manifests without kubectl.
 - **Never overwrite existing Dockerfiles or K8s manifests without showing a dry-run diff first.**
 - **Never hardcode secrets or tokens into manifest files.**
+- **nginx.conf for web apps with a backend API MUST include `location /api/` with `proxy_pass` to the API service.**
+  Vite dev server proxies `/api` automatically, but production nginx does not — missing this rule causes 405 errors.
+  See `knowledge/anti-patterns/nginx-missing-api-proxy.md`.
 
 ## Lessons Learned: CI Pipeline Fixes
 
@@ -676,6 +697,26 @@ a failure; do not regress them.
    `certificate-authority-data` and set `insecure-skip-tls-verify: true` (having both is rejected);
    transform the file with `yaml.safe_load`/`safe_dump`, never line surgery; set the Gitea
    `KUBECONFIG` secret to the raw YAML — Gitea base64-encodes internally, never pre-encode.
+
+   **Correct kubeconfig transformation (Python):**
+   ```python
+   import yaml
+   raw = subprocess.check_output(['kind', 'get', 'kubeconfig', '--name', 'sdd-cluster'])
+   cfg = yaml.safe_load(raw)
+   # Rewrite server host
+   cfg['clusters'][0]['cluster']['server'] = cfg['clusters'][0]['cluster']['server'].replace(
+       '127.0.0.1', 'host.docker.internal'
+   )
+   # Remove CA data and skip TLS (both required — having CA data with skip-tls is rejected)
+   cfg['clusters'][0]['cluster'].pop('certificate-authority-data', None)
+   cfg['clusters'][0]['cluster']['insecure-skip-tls-verify'] = True
+   # Remove cert/key from user (not needed with skip-tls)
+   cfg['users'][0]['user'].pop('client-certificate-data', None)
+   cfg['users'][0]['user'].pop('client-key-data', None)
+   ci_yaml = yaml.safe_dump(cfg)
+   # Store RAW in Gitea secret — Gitea base64-encodes internally
+   # NEVER pre-encode with base64
+   ```
 6. **Gitea secrets**: set via API `PUT /api/v1/repos/{owner}/{repo}/actions/secrets/{name}` with
    `{"data": "<raw-value>"}`. The lab does this in `provision_gitea_secrets` (environment-lab).
 7. **Kustomize**: never use `${VARIABLE}` placeholders in overlay patches — kustomize treats them as
@@ -702,9 +743,7 @@ a failure; do not regress them.
 12. **`.gitignore` casing**: with `core.ignorecase` (Windows), `**/data/` can silently match
     an app's `Data/` source. Add negations (`!apps/**/Data/` + `!apps/**/Data/**`) and
     verify with `git check-ignore` when a local build passes but CI compile fails.
-13. **Non-root containers**: a non-root `USER <uid>` needs the workdir pre-chowned — `RUN chown -R
-    <uid>:<gid> /app` before `USER <uid>` — or state writes fail at boot (SQLite `unable to open
-    database file`).
+13. **Non-root containers**: a non-root `USER <uid>` needs the workdir pre-chowned — `RUN chown -R <uid>:<gid> /app` before `USER <uid>` — or state writes fail at boot (SQLite `unable to open database file`). **nginx:alpine specifically** — use `USER root` in the Dockerfile. nginx master process needs root for port 80 binding and `/run/nginx.pid`. This satisfies CKV_DOCKER_3 (USER instruction present). CKV_DOCKER_8 (`last USER is not root`) is a false positive for nginx:alpine — skip it. Do NOT use a non-root USER for nginx containers without switching to port 8080 + K8s targetPort mapping (adds deployment complexity).
 14. **Trivy first run**: do not use `--skip-db-update` on a first-run scan — the CI image has no
     pre-cached vuln DB. The runner container has outbound internet, so let Trivy download its DB.
 15. **Service names must be DNS-1123 (no dots)**: a Service named `db.internal` passes

@@ -13,7 +13,7 @@ description: >-
 ## Overview
 
 Use this skill when the AI determines the user asked to implement more than one ticket — for example "implement tickets
-TICKET-11 and TICKET-12" or "process these 2 tickets". Ticket count is the decision: one ticket stays on the
+TICKET-001 and TICKET-002" or "process these 2 tickets". Ticket count is the decision: one ticket stays on the
 linear flow (`dev-flow-start-ticket` → `dev-flow-implement-ticket`), two or more use this coordinator. There is no
 `parallelDelivery.enabled` flag gate. Use the coordinator only when the tickets can make progress independently —
 tightly coupled tickets stay sequential at the AI's judgment. Also use this skill when the user asks to run parallel
@@ -21,6 +21,10 @@ ticket delivery, create parallel role agents, or coordinate concurrent ticket pr
 
 This skill orchestrates existing role skills. It does not duplicate child workflows and does not implement
 ticket-specific code itself.
+
+**PR flow is owned by the shared lifecycle** (`.agents/skills/_shared/pipeline-pr-lifecycle.md`) — this skill
+never redefines reviewer requests, label rules, AI review steps, feedback loops, or merge gates. All PR-related
+routing in this skill points to the shared lifecycle or the child skills that implement its steps.
 
 The coordinator owns preflight, routing, runtime-state synthesis, deployment lane ownership, and all cross-ticket
 decisions. It must synthesize child-agent results before reporting handoff, and it
@@ -173,18 +177,12 @@ Route each ticket by current durable checkpoint:
 - Todo with no branch: use `dev-flow-start-ticket` in that ticket worktree. The child agent MUST run the
   refinement always-ask gate (Section 2 step 5) before writing that ticket's curated IA block.
 - In Progress with branch/OpenSpec and no PR: use `dev-flow-implement-ticket` in that ticket worktree.
-- Open PR (chained or not): run the FULL PR review skill — `dev-flow-pr-review-agent` — for EVERY open PR in that
-  ticket worktree. It is mandatory, never optional: first check the PR Validation (Gitea Actions) CI run for the
-  head SHA (a red/pending/unreadable run is a BLOCKER finding and keeps `agent-reviewed` off), then post AI
-  findings, and apply the `agent-reviewed` label ONLY on green + zero findings (`dev-flow-pr-review-agent` §2.1).
-  Drive every label change through the deterministic idempotent CLI (`gitea labels` — the review skill's Apply
-  Labels step; never hand-rolled REST): `python -m tools.sdd_cli gitea labels --pr <number> --add agent-reviewed
-  --remove needs-tests,needs-changes`. The command dedupes repo label definitions to one canonical id per name and
-  diffs the PR's current labels, so no label is ever applied twice or removed when absent — chained PRs get the
-  same one-canonical-id treatment as the first PR. Resolve findings through `dev-flow-pr-review-feedback-loop`
-  (fix → push → rerun AI review → re-check CI; label changes do NOT trigger a fresh CI run, so rerun PR Validation
-  on the new head). Chained/sibling PRs get the same gate as the first PR — never skip the review skill for any
-  open PR, and never tag `agent-reviewed` on a PR whose CI is red or unreviewed.
+- Open PR (chained or not): **follow the shared PR lifecycle** (`.agents/skills/_shared/pipeline-pr-lifecycle.md`) —
+  steps 2–7 apply to EVERY open PR in that ticket worktree. The shared lifecycle is the single source of truth for
+  the PR flow: reviewer requests (Steps 2 + 6), AI review (Step 3), feedback loop (Step 4), CI validation (Step 5),
+  and merge readiness (Step 7). Chained/sibling PRs get the same gate as the first PR — never skip the shared
+  lifecycle for any open PR. Run `dev-flow-pr-review-agent` as Step 3, and `dev-flow-pr-review-feedback-loop` as
+  Step 4, but do NOT redefine their behavior here.
 - Merged PR awaiting artifact/QA: use `dev-ops-post-merge-deploy` only when the serialized deployment lane is free or
 already owned by that ticket.
 - Ticket in QA: use `configured QA gate` only when the serialized deployment lane is free or already owned by that
@@ -246,7 +244,7 @@ PR merge conflicts. **The coordinator owns the prune, once per kind.**
 
 Parallel tickets branched from the same base frequently touch the same files (e.g. `app.ts` router wiring,
 `index.css`, shared page components). When one PR merges first, the later PR goes red with conflicts. Resolve them in
-the later ticket's worktree — never on `dev` — and verify before pushing (TICKET-38/39 lesson):
+the later ticket's worktree — never on `dev` — and verify before pushing:
 
 1. **Merge the base into the ticket branch** (`git merge gitea/dev` or the configured base). Resolve each conflict by
    keeping BOTH sides' contributions (e.g. both routers, both CSS blocks) unless the change is genuinely superseded.
@@ -256,13 +254,11 @@ the later ticket's worktree — never on `dev` — and verify before pushing (TI
    - run the repo's formatter/lint (`trunk check`/prettier) on the merged files,
    - run typecheck + the full test suites for every touched app (both tickets' tests now live in this tree),
    - confirm `git status` shows no conflict markers (`<<<<<<<`/`=======`/`>>>>>>>`) before staging.
-3. Stage, commit with the ticket prefix, validate OpenSpec, and push. **Re-run the full PR review gate on the new
-   head — mandatory, not optional:** check the PR Validation CI run (rerun it manually when needed — labels do NOT
-   trigger a fresh CI run), then re-run `dev-flow-pr-review-agent` for the new head SHA. Apply/remove labels via
-   the idempotent `gitea labels` CLI (`python -m tools.sdd_cli gitea labels --pr <number> --add agent-reviewed
-   --remove needs-tests,needs-changes`) — never hand-rolled REST, so a re-review on a merged sibling's tree can
-   never duplicate a label on the PR. `agent-reviewed` stays off until the new head is green with zero findings. A
-   chained PR never merges without a clean re-review after conflict resolution.
+3. Stage, commit with the ticket prefix, validate OpenSpec, and push. **Re-run the shared PR lifecycle
+   (`.agents/skills/_shared/pipeline-pr-lifecycle.md`) steps 2–6 on the new head — mandatory, not optional.**
+   This includes reviewer requests (Steps 2 + 6), AI review (Step 3), feedback loop (Step 4), and CI
+   validation (Step 5). Do NOT redefine the PR flow here — the shared lifecycle is the single source of
+   truth. `agent-reviewed` stays off until the new head is green with zero findings AND reviewers are verified.
 
 ## Failure Rules
 

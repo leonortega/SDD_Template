@@ -269,35 +269,10 @@ git push
 - Comment body: `**Branch:** fix/{bugKeySlug}-{short-description}\n**Parent ticket:** {parentTicketKey}`
 - Severity: `blocking` (stop if comment cannot be created — the PR link is required for traceability)
 
- 1. **Run the shared PR lifecycle** — this bug PR follows the **7-step shared PR
-    lifecycle** (`.agents/skills/_shared/pipeline-pr-lifecycle.md`): create/reuse
-    PR → request reviewers → AI review → feedback loop → CI validation →
-    re-verify reviewers → human merge. The bug-specific PR body is filled
-    above; the mechanics are defined once in the shared pattern.
-
-    - **Step 2 — request reviewers immediately after creation** (do NOT defer — the AI review must not block
-      reviewer assignment). Run the reviewer automation:
-
-      ```bash
-      python -m tools.sdd_cli gitea request-reviewers --pr {prNumber}
-      ```
-
-      Exit code 0 = verified; 1 = failed. If it fails because the lab config is
-      unprovisioned (placeholder `apiToken`/`owner`/`repo` in
-      `client-tools.local.json`), treat it as a **BLOCKER (authority level 5)** — stop
-      and report, and run the environment provisioning before handoff. For any other
-      failure (no eligible reviewers, Gitea rejects the request), document the
-      reviewer gap in the PR body and handoff comment.
-
-    - **Step 3 — run AI review on the PR.** Load and follow the `dev-flow-pr-review-agent` skill to review the PR
-      diffs, post findings, and apply labels (e.g., `agent-reviewed`, `needs-changes`, `needs-tests`).
-
-      This step runs after reviewer assignment so the developer has AI review feedback before merging. If the AI
-      review finds blocking issues (`BLOCKER` severity), the implementation phase should
-      address them before merging.
-
-    - **Step 6 — re-verify reviewers after the AI review** (idempotent command, same as Step 2). See
-      `.agents/skills/_shared/pipeline-pr-lifecycle.md` for the full pattern.
+ 1. **Follow the 7-step shared PR lifecycle** in `.agents/skills/_shared/pipeline-pr-lifecycle.md` exactly.
+    Do NOT re-implement, duplicate, or redefine its steps. The bug-specific PR body is filled above;
+    the mechanics (create/reuse PR → request reviewers → AI review → feedback loop → CI validation →
+    re-verify reviewers → human merge) are defined once in the shared pattern.
 
 ### Phase 6 — Merge & Deploy To QA (User-Approved)
 
