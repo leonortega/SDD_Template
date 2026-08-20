@@ -166,7 +166,7 @@ suggested correction.
 ### 2.05 Frontend / Web Review Checkpoints (web PRs)
 
 When the diff touches a web frontend (React/Vue/Angular/other SPA), check these
-proven consumer-project failure patterns in addition to the priorities above:
+proven frontend failure patterns in addition to the priorities above:
 
 - **Trust boundary first:** any endpoint that echoes user-supplied identifiers
   back must reject malformed input server-side (e.g. id > 64 chars or non-
@@ -181,7 +181,7 @@ proven consumer-project failure patterns in addition to the priorities above:
   restore on close, scroll lock while open, and an Escape guard that does NOT
   submit mid-flight. Missing any is a `WARNING` (a11y + behavioral).
 
-These patterns are the durable rules from consumer-project TICKET-38/39;
+These patterns are proven frontend review rules;
 cite the affected file/behavior per the finding rules below.
 
 ### 2.1 PR Validation Gate Check (mandatory)

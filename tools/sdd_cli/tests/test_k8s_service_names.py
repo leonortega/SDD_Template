@@ -1,4 +1,4 @@
-"""Tests for the DNS-1123 Service-name hard gates added from TICKET-37.
+"""Tests for the DNS-1123 Service-name hard gates.
 
 The shared database once shipped as `db.internal`; the name only failed on the
 real `kubectl apply` (`must not contain dots`) because `--dry-run=client` does

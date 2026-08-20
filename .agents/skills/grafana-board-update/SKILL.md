@@ -64,6 +64,10 @@ The dashboard (`uid: agentic-e2e-health-board`) has these panels:
 | `1` | 🟢 Service Health | `table` (Infinity datasource) | Live per-service status table fed by the health probe |
 | `6` | 🔧 Infrastructure Access | `text` (markdown) | Static table with Grafana/Gitea/Nexus/Dozzle links |
 
+**❌ HARD GATE (authority level 5): After any `apps.json` change, MUST verify `ports.json` has matching entries for all apps in all environments.** If an app is in `apps.json` but missing from `ports.json`, the health probe won't report it and the dashboard will show stale data.
+
+**❌ HARD GATE (authority level 5): After any successful DEV deploy, MUST run `grafana-board-update` as part of post-merge handoff.** Do not defer dashboard updates — the dashboard is the operator's source of truth for service health.
+
 ## Decision Framework
 
 When updating the dashboard, use this decision order:

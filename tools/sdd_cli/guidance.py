@@ -42,11 +42,18 @@ def _read_stack_values(root: Path, values: dict[str, Any]) -> dict[str, str]:
 
     Accepts raw strings or ``{applies, value}`` dicts for the three domains
     (frontend, backend, database). Returns lowercase non-empty values.
+
+    The project name (``name`` key) is NEVER included — skill search uses
+    only technology tokens (frontend, backend, database), never the project
+    name.
     """
+    # Exclude project name from search tokens — skill search queries must
+    # contain only technology keywords, not the project name.
+    search_values = {k: v for k, v in values.items() if k != "name"}
     stack_values: dict[str, str] = {}
     for domain in ("frontend", "backend", "database"):
-        if domain in values and values[domain]:
-            raw = _normalize_stack_value(values[domain])
+        if domain in search_values and search_values[domain]:
+            raw = _normalize_stack_value(search_values[domain])
             if raw:
                 stack_values[domain] = raw
     if stack_values:

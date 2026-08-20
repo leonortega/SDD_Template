@@ -22,9 +22,51 @@ from ._shared import (
     run_native,
 )
 
+# ── Stage progress helpers ─────────────────────────────────────────────
+
+
+def _print_stage_result(stage: dict[str, Any], stage_num: int) -> None:
+    """Print a one-line summary after each stage completes."""
+    valid = stage.get("valid", True)
+    mode = stage.get("mode", f"Stage{stage_num}")
+    if valid:
+        print(f"  ✓ {mode} complete.")
+    else:
+        findings = stage.get("findings", [])
+        errors = [f for f in findings if f.get("severity") == "error"]
+        if errors:
+            print(f"  ✗ {mode} failed: {errors[0].get('message', 'unknown error')}")
+        else:
+            print(f"  ✗ {mode} completed with warnings.")
+
+
+def _run_validation(root: Path, command: str) -> None:
+    """Run a validation command and print its result."""
+    try:
+        from .environment_lab import (
+            validate_app_config,
+            validate_docker_desktop,
+            validate_gitea_runner,
+            validate_observability,
+        )
+
+        validators = {
+            "validate-docker-desktop": validate_docker_desktop,
+            "validate-app-config": validate_app_config,
+            "validate-observability": validate_observability,
+            "validate-gitea-runner": validate_gitea_runner,
+        }
+        func = validators.get(command)
+        if func:
+            result = func(root, dry_run=False)
+            valid = result.get("valid", True)
+            status = "✓" if valid else "✗"
+            print(f"    {status} {command}")
+    except Exception as ex:
+        print(f"    ✗ {command}: {ex}")
+
 
 # ── Main entry point ─────────────────────────────────────────────────────
-
 
 def run_full_setup(
     args: list[str] | None = None,
@@ -54,20 +96,49 @@ def run_full_setup(
     stages: list[dict[str, Any]] = []
 
     # ── Stage 1: Prerequisites ──────────────────────────────────────────
+    print("\n" + "=" * 60)
+    print("  STAGE 1/4: PREREQUISITES")
+    print("=" * 60)
     stage1 = stage1_prerequisites(effective_root, effective_dry_run)
     stages.append(stage1)
+    _print_stage_result(stage1, 1)
+    if not stage1.get("valid", True):
+        print("\n  ✗ Stage 1 failed. Fix prerequisites and re-run.")
+        return 1
 
     # ── Stage 2: Lab Setup ──────────────────────────────────────────────
+    print("\n" + "=" * 60)
+    print("  STAGE 2/4: LAB SETUP")
+    print("=" * 60)
     stage2 = stage2_lab_setup(effective_root, effective_dry_run)
     stages.append(stage2)
+    _print_stage_result(stage2, 2)
+    if not stage2.get("valid", True):
+        print("\n  ✗ Stage 2 failed. Check Docker and re-run.")
+        return 1
+
+    # ── Post-Stage 2 validations ────────────────────────────────────────
+    print("\n  Running post-setup validations...")
+    _run_validation(effective_root, "validate-docker-desktop")
+    _run_validation(effective_root, "validate-app-config")
+    _run_validation(effective_root, "validate-observability")
+    _run_validation(effective_root, "validate-gitea-runner")
 
     # ── Stage 3: Tool Installation (remaining) ──────────────────────────
+    print("\n" + "=" * 60)
+    print("  STAGE 3/4: TOOL INSTALLATION")
+    print("=" * 60)
     stage3 = stage3_tool_installation(effective_root, effective_dry_run)
     stages.append(stage3)
+    _print_stage_result(stage3, 3)
 
     # ── Stage 4: Project Guidance ───────────────────────────────────────
+    print("\n" + "=" * 60)
+    print("  STAGE 4/4: PROJECT GUIDANCE")
+    print("=" * 60)
     stage4 = stage4_project_guidance(effective_root, effective_dry_run)
     stages.append(stage4)
+    _print_stage_result(stage4, 4)
 
     # ── Aggregate results ───────────────────────────────────────────────
     all_valid = all(s.get("valid", True) for s in stages)
@@ -127,6 +198,10 @@ def run_full_setup(
         print()
         print("  Need a tool URL or its credentials? Use the Infrastructure")
         print("  Access section on the board.\n")
+
+    if all_valid:
+        print("  Next: start a ticket or propose a change.")
+        print("  Run: \"start a ticket\" or \"propose a change\"\n")
 
     return 0 if all_valid else 1
 

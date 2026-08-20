@@ -1,7 +1,7 @@
 """Kustomize overlay validation gate.
 
 Deterministic, stack-independent validator that closes the residual QA risk
-(TICKET-37 finding 3): per-env service-patch files can be generated but not
+Per-env service-patch files can be generated but not
 wired into the overlay kustomization.yaml, which makes `kubectl apply` fail with
 a cluster-scoped NodePort collision AFTER deployments are created.
 

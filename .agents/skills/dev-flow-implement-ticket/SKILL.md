@@ -324,12 +324,62 @@ surfaces a reusable lesson the change depends on, capture it via `knowledge/READ
 
 ### 3. Implement — Tests First, Then Code
 
+**❌ HARD GATE (authority level 5): Test folder structure must exist.** Before writing ANY test or product code, verify that all 4 test folders exist:
+
+```
+apps/<appId>/test/unit/
+apps/<appId>/test/integration/
+apps/<appId>/test/e2e/
+apps/<appId>/test/architecture/
+```
+
+If ANY folder is missing, **stop** and create them. Tests in `src/` (co-located) are a process violation — the `test/` directory is the ONLY allowed location. See `.agents/skills/_shared/test-requirements.md` §HARD GATE: Test Folder Structure.
+
+**❌ HARD GATE (authority level 5): TDD test-first is mandatory.** Before writing ANY product code, all acceptance
+criteria must have tests written and confirmed RED (failing). This gate is non-negotiable.
+
+**❌ HARD GATE (authority level 5): AC source is the IA curated block, NOT the original ticket description.**
+The IA curated block (from enrich steps 10-12 in `dev-flow-start-ticket`) is the **only** source of truth for
+acceptance criteria. The original ticket description is raw input — the IA refinement process transforms it into
+curated, testable ACs. Read the IA curated block from the ticket description (look for the section starting with
+`## IA Curated` or the structured AC list added by the start-ticket enrichment). If the IA curated block is missing,
+stop and route back to `dev-flow-start-ticket` to complete enrichment first.
+
+**Do NOT derive tests from:**
+- The original ticket description (before IA refinement)
+- OpenSpec proposal.md (it describes what/why, not testable ACs)
+- OpenSpec design.md (it describes how, not testable ACs)
+- Assumed behavior not explicitly listed in the IA curated block
+
+**Enforcement sequence:**
+1. **Read the IA curated block** from the ticket description — extract every acceptance criterion.
+2. Build the **acceptance-to-test map**: map each IA curated AC to specific tests. Every AC must have at least one
+corresponding test. If an AC cannot be tested, flag it and ask the user.
+3. Write ALL tests first (unit + integration + architecture per `.agents/skills/_shared/test-requirements.md`).
+4. Run the test suite — confirm ALL new tests are RED (failing because no product code exists yet).
+5. **Only after RED is confirmed**, proceed to write product code.
+6. Each implementation cycle follows RED → GREEN → REFACTOR per `.agents/skills/_shared/pipeline-tdd-cycle.md`.
+7. **After each GREEN cycle, check off the corresponding task** in `openspec/changes/<change>/tasks.md` —
+change `- [ ]` to `- [x]` for the task just completed. Do NOT batch check-offs. Do NOT move to the next task
+until the current task is checked off. This is a hard gate: unchecked tasks at PR handoff are a process violation.
+
+**If product code is written before tests are confirmed RED:**
+- Stop immediately.
+- Record the process violation.
+- Delete or revert the premature product code.
+- Write the missing tests.
+- Confirm RED.
+- Then continue from GREEN.
+
+This is the same rule from `.agents/skills/_shared/pipeline-tdd-cycle.md` Phase A, enforced as a hard gate here.
+Do not treat it as advisory. Do not skip it on resume. A previous agent may have skipped it.
+
 See `.agents/skills/_shared/pipeline-tdd-cycle.md` for the common TDD test-first pattern. The following are
 feature-flow-specific additions:
 
 - **AC source:** the **IA curated block** in the ticket description (from enrich steps 10-12 in
-`dev-flow-start-ticket`). This contains the acceptance criteria, scope, out of scope, dependencies, and
-risks. The **IA curated block is the source of truth** for what to build.
+`dev-flow-start-ticket`). This is the ONLY valid source for acceptance criteria and test derivation.
+The original ticket description, OpenSpec proposal, and design doc are context — not test sources.
 - **Task source:** `openspec/changes/<change>/tasks.md`
 - **Before coding, activate skills from step 5a-f scan.** The declared skills in the `Skills used:` block are NOT
 decorative — they must be actively applied during every TDD cycle.
@@ -425,7 +475,7 @@ keep artifacts current with the final code state.
 Use one PR with multiple commits as the default ticket shape. Chained PRs apply only when the Review Workload Forecast,
 OpenSpec artifacts, or user direction records that split.
 
-**⚠️ Lefthook stash-conflict recovery (consumer-project lesson):** when a commit fails with `Unable to restore
+**⚠️ Lefthook stash-conflict recovery:** when a commit fails with `Unable to restore
 previously hidden unstaged changes` (lefthook stashes unstaged changes, runs `trunk fmt`,
 then fails to restore the stash because a file was both staged and unstaged), the working tree may have been silently
 **reverted to HEAD** for all modified tracked files. Do NOT follow the suggested
@@ -454,7 +504,7 @@ At each workflow-step checkpoint with tracked changes:
    shape for unticketed changes.
 7. Let hooks run naturally. Do not bypass hooks unless the user explicitly requests that in the current chat.
 
-**⚠️ Hook realities (observed during TICKET-38/39 parallel delivery):**
+**⚠️ Hook realities (observed in parallel delivery):**
 
 - **`pre-commit trunk-fmt` reformats AFTER the commit lands.** The commit succeeds but leaves reformatted files dirty;
   this is expected, not a failure. Re-check `git status` after every commit, and make a small separate
@@ -477,7 +527,7 @@ feedback-fix commit.
 Do not automatically stash normal ticket progress. Use stash only for unrelated local or user changes that block the
 current step, and document the stash in the handoff when it affects delivery flow.
 
-**⚠️ Windows agent tool-execution rule (consumer-project lesson):** complex bash quoting (nested quotes/escapes in
+**⚠️ Windows agent tool-execution rule:** complex bash quoting (nested quotes/escapes in
 one-line `python -c "..."` or curl commands reading `client-tools.local.json`) can
 break JSON parsing of the agent tool call on Windows. For non-trivial shell logic, write a temp Python script under
 `.template/` (e.g. `.template/_tmp_<purpose>.py`), run it, and delete it after — keep
@@ -612,176 +662,33 @@ It removes, per registered app kind:
 Dry-run first with `--dry-run true` and confirm the plan with the user. Include the removal in the PR so the
 template never carries starter shapes alongside real implementations. If no shape is redundant yet (e.g. an
 app was implemented without being registered), the step reports `prune.none` and continues — it is never a
-blocker, only a cleanup.
+blocker, only a cleanup.### 10–12. PR Lifecycle (Shared)
 
-### 10. Create Or Reuse The repository PR
+**Follow the 7-step shared PR lifecycle** in `.agents/skills/_shared/pipeline-pr-lifecycle.md` exactly. Do NOT
+re-implement, duplicate, or redefine its steps. The shared lifecycle owns:
 
-**PR lifecycle is shared.** Sections 10–11.5 implement the **7-step shared PR
-lifecycle** (`.agents/skills/_shared/pipeline-pr-lifecycle.md`): create/reuse PR
-→ request reviewers → AI review → feedback loop → CI validation → re-verify
-reviewers → human merge. This skill owns the ticket-specific PR body and
-handoff; the mechanics (reviewers, AI review, labels, loop, CI gate) are
-defined once in the shared pattern and in the two review skills it points to.
+- Step 1: Create/reuse PR + ticket comment + state move
+- Step 2: Request human reviewers (hard gate — immediate)
+- Step 3: AI review via `dev-flow-pr-review-agent`
+- Step 4: Feedback loop via `dev-flow-pr-review-feedback-loop`
+- Step 5: CI validation (pr-validation.yml)
+- Step 6: Re-verify reviewers (hard gate)
+- Step 7: Human merge + post-merge handoff
 
-Reuse an existing open PR for the branch when present. Otherwise create a PR targeting the configured base branch.
+This skill adds only **ticket-specific PR body content** and **ticket-specific handoff comment content**.
 
-Resolve configured human reviewers for the PR body and ticket comment, and **request them on the PR immediately after
-creation or reuse** — shared PR lifecycle **Step 2**
-(`.agents/skills/_shared/pipeline-pr-lifecycle.md`), which defines the
-`python -m tools.sdd_cli gitea request-reviewers --pr {prNumber}` command, the
-reviewer resolution order, the verification/retry behavior, and the HARD GATEs
-(unprovisioned lab config = BLOCKER; any other failure = document the reviewer
-gap and never hand off without it). Do NOT defer (Section 11.5 only re-verifies
-after the AI review).
-
-Include `Reviewers requested: <usernames>` in the PR body and ticket comment.
-
-**Immediately after PR creation or reuse, add a comment on the ticket and move it to the configured review state.** Do
-NOT defer this to Section 12 — the ticket must reflect the PR even if the review
-loop pauses or encounters issues:
-
-- **Add a ticket comment** with:
-
-  ```text
-  IA generated PR: {prUrl}
-  
-  **Branch:** {branchName}
-  **OpenSpec change:** {openspecChangeName}
-  **Reviewers requested:** {reviewers}
-  ```
-
-- **Move the ticket to** `Developed` (OpenProject ID 8) — the configured `configured developed state`. If the ticket is
-already in this state (from a previous resume), skip the state transition but
-still add the comment.
-
-  Use the selected ticket adapter's `move-state` and `comment` operations. For OpenProject, see
-  `.agents/skills/_shared/api-helpers.md` → OpenProject → Patch description or status (for move-state) and
-  → OpenProject → Create generated comments (for adding the comment via `POST ... /activities` with `{"comment": {"raw":
-  "..."}}`).
-
-  **If the move-state or comment API call fails**, log the error as a non-blocking note and continue. The Section 12
-  handoff will retry both the state move and the comment.
-
-The PR body must include:
-
-- ticket id
-- OpenSpec change id
-- implementation summary
+**Ticket-specific PR body additions** (beyond the shared lifecycle's standard body):
 - acceptance-to-test map for every acceptance criterion
 - TDD RED/GREEN evidence for tests added or updated
-- tests added or updated
-- E2E expectations for QA when browser acceptance is relevant, or `E2E expectations for QA: none`
-- coverage threshold used
-- **coverage result: `<percentage>%` (`<pass|fail>`)**
-- configured quality gates expected to run
-- feature fixes applied
-- quality/test fixes applied
-- infra validation fixes applied
-- Context findings: added/updated/none
-- Docs updated: <files> or Docs: no durable context changes
 - `Knowledge updated: <files>` or `Knowledge updated: none`
-- Delivery risk: low/standard/high
-- Review workload forecast: low/medium/high and split/exception decision when applicable
-- Reviewers requested: <usernames>
-- Assumptions recorded: <short list or none>
-- remaining non-blocking infra notes
-- known non-blocking product risks or gaps
+- Deployment topology: updated/verified/no deployable app changes
 
-### 11. Review And Fix Loop (Shared Lifecycle Steps 3–5)
-
-Run the shared PR lifecycle Steps 3–5 from
-`.agents/skills/_shared/pipeline-pr-lifecycle.md`:
-
-1. **AI review** — load `dev-flow-pr-review-agent` (findings + labels +
-   `agent-reviewed` clean marker).
-2. **Feedback loop** — invoke the repo-owned `dev-flow-pr-review-feedback-loop`
-   skill after PR creation and on every open-PR resume. That skill owns AI
-   review findings, late human PR comments, feedback batch ids, ticket
-   provider detection/fix comments, and OpenSpec `## PR Review Feedback` tasks.
-3. **CI validation** — `.gitea/workflows/pr-validation.yml` green on the
-   current head; every failing step is a `BLOCKER` finding until fixed.
-
-After the loop returns, continue only when:
-
-- current-head AI review has been run or reused,
-- all OpenSpec `## PR Review Feedback` tasks are complete,
-- all current feedback batches have `IA generated PR feedback fixes: {headSha}:{feedbackBatchId}` markers,
-- validation for feedback fixes has passed,
-- `pr.labels.needsTests` and `pr.labels.needsChanges` are no longer valid for the current head.
-
-Keep the ticket in `Developed` (OpenProject ID 8) while late human feedback fixes are applied. If
-`dev-flow-pr-review-feedback-loop` reports ambiguous or conflicting human feedback, stop and preserve
-its blocker classification.
-
-### 11.5 Re-Verify Human Reviewers (After AI Review) — HARD GATE (Shared Lifecycle Step 6)
-
-**❌ HARD GATE (authority level 5):** After the AI review (and any feedback
-fixes) complete, re-run the reviewer automation (shared lifecycle Step 6) —
-`python -m tools.sdd_cli gitea request-reviewers --pr {prNumber}` is idempotent
-(reviewers already requested are verified, missing ones are re-requested). Do
-not skip this step.
-
-- On failure (no eligible reviewers, Gitea rejects): log the issue, document the reviewer gap in the PR body and
-  the Section 12 handoff comment, and report it in the final summary — never hand off without at least documenting
-  the gap. A placeholder token should not occur here if Section 10's BLOCKER gate passed — if it does, treat it as a
-  BLOCKER and run the environment provisioning (`setup-lab`).
-- Keep `Reviewers requested: <usernames>` in the PR body accurate if the resolved list changed.
-
-See `.agents/skills/_shared/pipeline-pr-lifecycle.md` (Steps 2/6) and
-`.agents/skills/_shared/pipeline-review-handoff.md` for the full pattern.
-
-### 12. Ticket Provider Handoff
-
-The ticket was already moved to `Developed` (OpenProject ID 8) in Section 10 (immediately after PR creation). Verify the
-current state and comment and retry if either failed:
-
-1. **Check current ticket state** via the ticket provider API. If it is already `Developed` (ID 8), skip the state
-transition. This is expected on normal flow.
-
-2. **If the ticket is still in a pre-developed state** (e.g., `In progress`, ID 7), the Section 10 move failed — retry
-now: move the ticket to `Developed` (OpenProject ID 8).
-
-   > **Deploy gate:** the `dev-ops-deploy-qa` stage enforces a hard gate that the ticket is in `Developed` (ID 8)
-   > before any QA deployment. Leaving the ticket in `Developed` here satisfies that gate — do not move the ticket to
-   > `In testing` or later states before the QA deployment runs.
-
-3. **Verify the Section 10 PR comment was created and retry if missing.** See
-`.agents/skills/_shared/pipeline-ticket-comment.md` for the common comment verification pattern. Use:
-   - Marker: `IA generated PR: {prUrl}`
-   - Comment body: `**Branch:** {branchName}\n**OpenSpec change:** {openspecChangeName}\n**Reviewers requested:**
-   {reviewers}`
-   - Severity: `blocking` (stop if comment cannot be created)
-
-4. **Add the comprehensive handoff comment** (this supplements the Section 10 PR comment with full detail). Follow the
-same pattern from `.agents/skills/_shared/pipeline-ticket-comment.md`. Use:
-   - Marker: `IA generated handoff: {ticketKey}`
-   - Severity: `blocking`
-
-   The handoff comment must include:
-   - IA generated handoff marker: `IA generated handoff: {ticketKey}`
-   - PR link
-   - acceptance-to-test map for every acceptance criterion
-   - TDD RED/GREEN evidence for tests added or updated
-   - coverage threshold used
-   - **coverage result: `<percentage>%` (`<pass|fail>`)**
-   - quality gate result
-   - feature fixes applied
-   - quality/test fixes applied
-   - infra validation fixes applied
-   - improvements applied
-   - tests added or updated
-   - E2E expectations for QA when browser acceptance is relevant, or `E2E expectations for QA: none`
-   - Context findings: added/updated/none
-   - Docs updated: <files> or Docs: no durable context changes
-   - `Knowledge updated: <files>` or `Knowledge updated: none`
-   - Delivery risk: low/standard/high
-   - Review workload forecast: low/medium/high and split/exception decision when applicable
-   - Assumptions recorded: <short list or none>
-   - remaining non-blocking infra notes
-   - remaining non-blocking risks or gaps
-   - Deployment topology: updated/verified/no deployable app changes
-
-Do not move the ticket to Done.
+**Ticket-specific handoff comment** — follow `.agents/skills/_shared/pipeline-ticket-comment.md`:
+- Marker: `IA generated handoff: {ticketKey}`
+- Severity: `blocking`
+- Include: PR link, acceptance-to-test map, TDD RED/GREEN evidence, coverage result, quality gate result,
+  feature/quality/infra fixes, tests, Context findings, Docs, Knowledge, Delivery risk, Deployment topology.
+- Do not move the ticket to Done.
 
 ## Output
 
@@ -799,6 +706,12 @@ remaining blockers or risks.
 ## Failure Rules
 
 - Missing branch or OpenSpec change: stop and route to `dev-flow-start-ticket`.
+- **Reviewers not requested on PR (authority level 5):** Stop after PR creation. Run `python -m tools.sdd_cli
+gitea request-reviewers --pr {prNumber}` before proceeding to AI review or handoff. A PR without reviewers
+is incomplete — the shared PR lifecycle Step 2 is a hard gate, not optional.
+- **Missing IA curated block in ticket description (authority level 5):** Stop before any implementation or test
+writing. The IA curated block (from enrich steps 10-12) is the mandatory AC source. Route back to
+dev-flow-start-ticket to complete ticket enrichment. Do not guess or infer ACs from the raw ticket description.
 - Dirty worktree with unrelated changes: stop before implementation.
 - Missing or placeholder API token: stop before ticket provider or repository/review provider mutations.
 - Invalid coverage config: use `80`, report the issue, and do not lower the gate.
@@ -815,13 +728,14 @@ proceed — but if CI fails on coverage, stop and fix before re-triggering CI.
 source.
 - Missing acceptance-to-test map or committed automated coverage for any acceptance criterion: stop before product-code
 handoff or PR review handoff and add the missing tests.
-- Product code changed before the first relevant failing test: stop, record the process gap, add the missing behavior
-test, confirm it fails against the pre-fix behavior when still feasible, then
-continue from GREEN.
+- **TDD test-first violated (authority level 5):** Product code changed before ALL acceptance tests were written and
+confirmed RED. Stop immediately. Revert premature product code. Write all missing tests. Confirm RED.
+Then continue from GREEN. This is a hard gate — no exceptions, no resume shortcuts. Record the violation in the PR
+body and ticket handoff.
 - Missing Review Workload Forecast: update OpenSpec tasks before implementation, or stop if the forecast cannot be
-derived safely.
-- Unchecked OpenSpec tasks at PR handoff: stop before moving the ticket to review; complete the task evidence or report
-the blocker.
+derived safely.- **Unchecked OpenSpec tasks at PR handoff (authority level 5):** Stop before moving the ticket to review. Every
+task must be checked off (`- [x]`) as it is implemented — not batched at the end. If any `- [ ]` remains, the
+implementation is incomplete. Complete the task evidence or report the blocker.
 - Oversized/high workload without split or `size:exception`: stop before implementation and request or record the
 required decision.
 - Flaky test or CI failure: rerun once before classifying; do not edit product code solely for an unconfirmed

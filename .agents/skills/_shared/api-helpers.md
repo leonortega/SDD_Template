@@ -6,6 +6,8 @@ Use these patterns for repeated OpenProject, Gitea, Nexus, and Git operations. L
 `.template/client-tools.local.json` or approved environment overrides. Never print tokens or
 credential-bearing URLs.
 
+**❌ HARD GATE (authority level 5): Before any Gitea API call sequence, verify token validity.** Run `GET /api/v1/user` with the configured token. If it returns 401/403, re-read the token from `client-tools.local.json` or prompt the user. Never proceed with a stale token — a failed API call mid-workflow leaves partial state that is hard to recover from.
+
 ## OpenProject
 
 Headers:
@@ -89,7 +91,7 @@ Payload:
 After posting a generated marker, read activities back and verify the comment text starts with the marker before
 reporting success.
 
-**OpenProject write pitfalls (observed during TICKET-38/39):**
+**OpenProject write pitfalls:**
 
 - **409 Conflict on status/description PATCH** — the stored `lockVersion` drifted (another update landed between read
   and write). Retry the PATCH with a freshly fetched `lockVersion` instead of guessing. A 409 body contains the

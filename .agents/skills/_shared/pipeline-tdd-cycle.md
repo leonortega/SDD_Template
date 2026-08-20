@@ -16,6 +16,8 @@ Use this pattern before writing any product code in a flow skill. Replace the pl
 Tests must be created based on the acceptance criteria (ACs) AND the tasks before any product code is written. This is a
 hard gate — no product code without tests.
 
+**Pre-flight: Verify test folder structure (authority level 5).** Before writing any test or product code, verify the 4 test folders exist (`apps/<appId>/test/{unit,integration,e2e,architecture}/`). If missing, create them. See `.agents/skills/_shared/test-requirements.md` §HARD GATE: Test Folder Structure for the full spec.
+
 1. **Load the `tdd` skill** via `skill('tdd')` (or read `.agents/skills/tdd/SKILL.md` directly). Apply its test-first
 cycles, RED/GREEN/REFACTOR guidance, and public-interface testing rules throughout.
 
@@ -32,6 +34,7 @@ examples.
    - **Integration tests** in `apps/<appId>/test/integration/` (one file per endpoint/feature, covers multiple ACs)
    - **Architecture tests** in `apps/<appId>/test/architecture/` as a **single project-wide file** (ADR-0002 per-app
    layout — never a shared root `test/`)
+   - **E2E tests** in `apps/<appId>/test/e2e/` (Playwright/Cypress specs per acceptance criterion)
 
 5. **Confirm every test is RED** — run the test suite and verify all new tests fail as expected (no product code yet =
 tests cannot pass). If a test passes before product code exists, it's a false

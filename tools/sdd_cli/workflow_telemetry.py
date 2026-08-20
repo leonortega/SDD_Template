@@ -3,7 +3,7 @@
 One command writes the OpenProject time-entry row for any delivery stage:
 
     python -m tools.sdd_cli dev-flow telemetry-upsert \
-      --ticket-key TICKET-11 --workflow-stage dev-flow-verify-change \
+      --ticket-key TICKET-XXX --workflow-stage dev-flow-verify-change \
       --agent-role verify --started-utc 2026-08-07T10:00:00Z \
       --finished-utc 2026-08-07T11:30:00Z --outcome PASS
 
@@ -369,11 +369,15 @@ def telemetry_upsert_cli(
         return _fallback("openProject.apiToken is missing or placeholder")
 
     activity_id = _resolve_activity_id(workflow_stage, config, options.get("activity-id", ""))
-    if activity_id is None:
-        return _fallback(f"could not resolve activity for stage '{workflow_stage}'")
-    payload["_links"]["activity"]["href"] = (
-        f"/api/v3/time_entries/activities/{activity_id}"
-    )
+    if activity_id is not None:
+        payload["_links"]["activity"]["href"] = (
+            f"/api/v3/time_entries/activities/{activity_id}"
+        )
+    else:
+        # No activity configured — omit the activity link and let OpenProject
+        # use the project's default activity.  This is normal for fresh instances
+        # where no activities have been explicitly created.
+        payload["_links"].pop("activity", None)
 
     work_package_id = options.get("work-package-id", "")
     if work_package_id and work_package_id.isdigit():

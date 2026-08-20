@@ -281,22 +281,27 @@ Fold relevant entries into the proposal context and risk analysis. Record `Knowl
 
        Confirm that `proposal.md`, `design.md`, `specs/`, and `tasks.md` all show as complete (`[x]`).
 
-13. **Parse workload forecast and set estimated time on the work package:**
-
-    a. **Parse the forecast:**
+    d. ⚠️ **HARD GATE: Parse forecast and set estimated time** (must complete before handoff):
 
        ```bash
-       python -m tools.sdd_cli dev-flow parse-workload-forecast --tasks-path openspec/changes/<change-name>/tasks.md
-       --openspec-change <change-name>
+       python -m tools.sdd_cli dev-flow parse-workload-forecast --tasks-path openspec/changes/<change-name>/tasks.md --openspec-change <change-name>
 ```text
 
-       Extract `estimatedTotalHours` from the result.
+       Extract `estimatedTotalHours` from the result. Convert to ISO-8601 duration (e.g. `8` → `PT8H`, `2.5` → `PT2H30M`). Fetch current `lockVersion` from the ticket adapter, then PATCH `estimatedTime` on the work package.
 
-    b. **Set estimatedTime on the work package** via the ticket adapter's `set-estimated-time` operation (see `.agents/skills/openproject-sprint-backlog/references/openproject-api.md` → Operations → `set-estimated-time`). Convert hours to ISO-8601 duration (e.g. `5` → `PT5H`, `2.5` → `PT2H30M`). Fetch current `lockVersion` first.
+       **If `parse-workload-forecast` returns `valid: false` or `estimatedTotalHours` is empty, STOP and report the error. Do not proceed without estimated time.**
 
-    c. **Log a time entry for the start-ticket stage** via `time-telemetry-upsert` if not already logged (see Workflow Telemetry section above).
+    e. ⚠️ **HARD GATE: Log time entry for start-ticket stage** (must complete before handoff):
 
-Only move the ticket to the in-progress status after branch creation, repository/review provider push, generated description update (steps 11-13), and branch comment (step 14) all succeed or are confirmed idempotently already complete. Only create the OpenSpec proposal (step 16) after the ticket is in the in-progress status.
+       Run `time-telemetry-upsert` if not already logged (see Workflow Telemetry section above). Use the `telemetry-upsert` CLI:
+
+       ```bash
+       python -m tools.sdd_cli dev-flow telemetry-upsert --ticket-key <ticketKey> --workflow-stage dev-flow-start-ticket --agent-role startTicket --started-utc <startUtc> --finished-utc <finishUtc> --outcome PASS
+```text
+
+       **If `telemetry-upsert` returns `valid: false`, STOP and report the failure. Do not proceed without the time entry.**
+
+Only move the ticket to the in-progress status after branch creation, repository/review provider push, generated description update (steps 9-10), delivery lock (step 10), and OpenSpec proposal with forecast (step 12) all succeed. The forecast and telemetry gates (steps 12d-12e) must pass before declaring the ticket started.
 
 ## OpenSpec Decision
 
